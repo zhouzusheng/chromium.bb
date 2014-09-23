@@ -7,9 +7,12 @@
 #include "base/command_line.h"
 #include "base/strings/string_split.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/corewm/corewm_switches.h"
 #include "ui/views/widget/widget.h"
 
@@ -172,9 +175,7 @@ gfx::Rect TooltipAura::GetBoundsForTooltip(
   // (which comes from the RootWindow).
   if (screen_type_ == gfx::SCREEN_TYPE_NATIVE &&
       gfx::SCREEN_TYPE_NATIVE != gfx::SCREEN_TYPE_ALTERNATE) {
-    aura::WindowEventDispatcher* dispatcher = tooltip_window_->GetDispatcher();
-    widget_bounds = gfx::Rect(dispatcher->GetHostOrigin(),
-                              dispatcher->GetHostSize());
+    widget_bounds = tooltip_window_->GetDispatcher()->host()->GetBounds();
   }
   gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
   gfx::Rect bounds(screen->GetDisplayNearestPoint(origin).bounds());

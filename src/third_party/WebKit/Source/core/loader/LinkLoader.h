@@ -33,7 +33,7 @@
 #define LinkLoader_h
 
 #include "core/fetch/ResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/ResourceOwner.h"
 #include "core/loader/LinkLoaderClient.h"
 #include "platform/PrerenderClient.h"
 #include "platform/Timer.h"
@@ -46,7 +46,7 @@ class LinkRelAttribute;
 class PrerenderHandle;
 
 // The LinkLoader can load link rel types icon, dns-prefetch, subresource, prefetch and prerender.
-class LinkLoader : public ResourceClient, public PrerenderClient {
+class LinkLoader : public ResourceOwner<Resource, ResourceClient>, public PrerenderClient {
 
 public:
     explicit LinkLoader(LinkLoaderClient*);
@@ -70,7 +70,6 @@ private:
 
     LinkLoaderClient* m_client;
 
-    ResourcePtr<Resource> m_cachedLinkResource;
     Timer<LinkLoader> m_linkLoadTimer;
     Timer<LinkLoader> m_linkLoadingErrorTimer;
 

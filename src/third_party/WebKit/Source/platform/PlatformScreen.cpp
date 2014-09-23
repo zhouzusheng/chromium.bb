@@ -33,7 +33,6 @@
 
 #include "platform/HostWindow.h"
 #include "platform/Widget.h"
-#include "platform/geometry/FloatRect.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebScreenInfo.h"
 
@@ -91,8 +90,8 @@ FloatRect screenAvailableRect(Widget* widget)
 
 void screenColorProfile(ColorProfile& toProfile)
 {
-    WebKit::WebVector<char> profile;
-    WebKit::Platform::current()->screenColorProfile(&profile);
+    blink::WebVector<char> profile;
+    blink::Platform::current()->screenColorProfile(&profile);
     toProfile.append(profile.data(), profile.size());
 }
 

@@ -34,7 +34,7 @@ CSSVariables status=experimental
 CSSViewport status=experimental
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
-CustomElements status=experimental
+CustomElements status=stable
 Database status=stable
 DataListElement status=stable
 DeviceMotion status=stable
@@ -43,13 +43,14 @@ DevicePixelRatioIncludesZoom status=stable
 DialogElement status=experimental
 DirectoryUpload status=stable
 DirectWrite
-// FIXME: Remove this separate feature when CustomElements are always enabled
+// FIXME: Remove this separate feature now that CustomElements are enabled
 EmbedderCustomElements
 EncodingAPI status=experimental
 EncryptedMedia status=experimental
 EncryptedMediaAnyVersion status=stable
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
+FileConstructor status=experimental
 FileSystem status=stable
 FontLoadEvents status=experimental
 Fullscreen status=stable
@@ -58,7 +59,7 @@ Gamepad status=stable
 Geolocation status=stable
 HTMLImports status=test
 HighResolutionTimeInWorkers status=experimental
-IMEAPI status=test
+IMEAPI status=experimental
 IndexedDB status=stable
 IndexedDBExperimental status=experimental
 InputModeAttribute status=test
@@ -71,6 +72,7 @@ Media status=stable
 MediaSource status=stable
 MediaSourceExperimental depends_on=MediaSource, status=experimental
 MediaStream status=stable
+NavigatorContentUtils
 Notifications status=stable
 ObjectFitPosition status=stable
 // Only enabled on Android, and for certain layout tests on Linux.
@@ -94,17 +96,22 @@ RepaintAfterLayout
 RequestAutocomplete status=test
 RowSpanLogicalHeightSpreading status=stable
 ScriptedSpeech status=stable
+
+// Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
+// as per the spec, matching other Web engines.
+ScrollTopLeftInterop status=experimental
+
 SeamlessIFrames status=experimental
 ServiceWorker status=experimental
 SessionStorage status=stable
 ShadowDOM status=experimental
 SharedWorker status=stable
 SpeechInput status=stable
-SpeechSynthesis status=experimental
+SpeechSynthesis status=stable
 Srcset status=experimental
 Stream status=experimental
 StyleScoped status=experimental
-SubpixelFontScaling
+SubpixelFontScaling status=experimental
 SVGPaintOrder status=experimental
 
 // Many websites disable mouse support when touch APIs are available.  We'd
@@ -115,10 +122,10 @@ Touch status=stable
 
 UserSelectAll status=experimental
 Vibration status=stable
-VideoTrack status=stable
-WebAnimations
-WebAnimationsCSS depends_on=WebAnimations
-WebAnimationsSVG depends_on=WebAnimations
+VideoTrack depends_on=Media, status=stable
+WebAnimationsCSS status=stable
+WebAnimationsSVG depends_on=WebAnimationsCSS
+WebAnimationsAPI depends_on=WebAnimationsCSS, status=experimental
 WebAudio condition=WEB_AUDIO, status=stable
 WebGLDraftExtensions status=experimental
 WebMIDI status=test

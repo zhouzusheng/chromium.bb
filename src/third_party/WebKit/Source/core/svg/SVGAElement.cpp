@@ -66,17 +66,16 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGAElement::SVGAElement(Document& document)
+    : SVGGraphicsElement(SVGNames::aTag, document)
 {
-    ASSERT(hasTagName(SVGNames::aTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGAElement();
 }
 
-PassRefPtr<SVGAElement> SVGAElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGAElement> SVGAElement::create(Document& document)
 {
-    return adoptRef(new SVGAElement(tagName, document));
+    return adoptRef(new SVGAElement(document));
 }
 
 String SVGAElement::title() const
@@ -163,7 +162,7 @@ void SVGAElement::defaultEventHandler(Event* event)
 
             if (url[0] == '#') {
                 Element* targetElement = treeScope().getElementById(url.substring(1));
-                if (SVGSMILElement::isSMILElement(targetElement)) {
+                if (targetElement && isSVGSMILElement(*targetElement)) {
                     toSVGSMILElement(targetElement)->beginByLinkActivation();
                     event->setDefaultHandled();
                     return;
@@ -181,7 +180,7 @@ void SVGAElement::defaultEventHandler(Event* event)
             Frame* frame = document().frame();
             if (!frame)
                 return;
-            FrameLoadRequest frameRequest(document().securityOrigin(), ResourceRequest(document().completeURL(url)), target);
+            FrameLoadRequest frameRequest(&document(), ResourceRequest(document().completeURL(url)), target);
             frameRequest.setTriggeringEvent(event);
             frame->loader().load(frameRequest);
             return;
@@ -235,7 +234,7 @@ bool SVGAElement::childShouldCreateRenderer(const Node& child) const
     if (parentNode() && parentNode()->isSVGElement())
         return parentNode()->childShouldCreateRenderer(child);
 
-    return SVGElement::childShouldCreateRenderer(child);
+    return SVGGraphicsElement::childShouldCreateRenderer(child);
 }
 
 } // namespace WebCore

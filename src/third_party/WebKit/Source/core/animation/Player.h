@@ -50,36 +50,47 @@ public:
     //  0         - if this player requires an update on the next frame
     //  n         - if this player requires an update after 'n' units of time
     bool update(double* timeToEffectChange = 0, bool* didTriggerStyleRecalc = 0);
-
     void cancel();
+
     double currentTime() const;
     void setCurrentTime(double);
+
     bool paused() const { return !m_isPausedForTesting && pausedInternal(); }
     void setPaused(bool);
+
     double playbackRate() const { return m_playbackRate; }
     void setPlaybackRate(double);
-    double startTime() const { return m_startTime; }
     double timeDrift() const;
     DocumentTimeline& timeline() { return m_timeline; }
+
+    bool hasStartTime() const { return !isNull(m_startTime); }
+    double startTime() const { return m_startTime; }
+    void setStartTime(double);
+
     TimedItem* source() { return m_content.get(); }
 
     // Pausing via this method is not reflected in the value returned by
     // paused() and must never overlap with pausing via setPaused().
     void pauseForTesting();
-    // Reflects all pausing, including via pauseForTesting().
-    bool pausedInternal() const { return !isNull(m_pauseStartTime); }
+
+    bool maybeStartAnimationOnCompositor();
+    void cancelAnimationOnCompositor();
+    bool hasActiveAnimationsOnCompositor();
 
 private:
     Player(DocumentTimeline&, TimedItem*);
     inline double pausedTimeDrift() const;
     inline double currentTimeBeforeDrift() const;
 
+
     void setPausedImpl(bool);
+    // Reflects all pausing, including via pauseForTesting().
+    bool pausedInternal() const { return !isNull(m_pauseStartTime); }
 
     double m_pauseStartTime;
     double m_playbackRate;
     double m_timeDrift;
-    const double m_startTime;
+    double m_startTime;
 
     RefPtr<TimedItem> m_content;
     DocumentTimeline& m_timeline;

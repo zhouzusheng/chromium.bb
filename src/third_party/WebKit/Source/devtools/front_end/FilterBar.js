@@ -56,15 +56,15 @@ WebInspector.FilterBar.FilterBarState = {
 
 WebInspector.FilterBar.prototype = {
     /**
-     * @return {Element}
+     * @return {!WebInspector.StatusBarButton}
      */
     filterButton: function()
     {
-        return this._filterButton.element;
+        return this._filterButton;
     },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     filtersElement: function()
     {
@@ -80,7 +80,7 @@ WebInspector.FilterBar.prototype = {
     },
 
     /**
-     * @param {WebInspector.FilterUI} filter
+     * @param {!WebInspector.FilterUI} filter
      */
     addFilter: function(filter)
     {
@@ -91,7 +91,7 @@ WebInspector.FilterBar.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _filterChanged: function(event)
     {
@@ -119,13 +119,20 @@ WebInspector.FilterBar.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _handleFilterButtonClick: function(event)
     {
         this._filtersShown = !this._filtersShown;
         this._updateFilterButton();
         this.dispatchEventToListeners(WebInspector.FilterBar.Events.FiltersToggled, this._filtersShown);
+    },
+
+    clear: function()
+    {
+        this._element.removeChildren();
+        this._filters = [];
+        this._updateFilterButton();
     },
 
     __proto__: WebInspector.Object.prototype
@@ -150,7 +157,7 @@ WebInspector.FilterUI.prototype = {
     isActive: function() { },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     element: function() { }
 }
@@ -159,9 +166,13 @@ WebInspector.FilterUI.prototype = {
  * @constructor
  * @implements {WebInspector.FilterUI}
  * @extends {WebInspector.Object}
+ * @param {boolean=} supportRegex
  */
-WebInspector.TextFilterUI = function()
+WebInspector.TextFilterUI = function(supportRegex)
 {
+    this._supportRegex = !!supportRegex;
+    this._regex = null;
+
     this._filterElement = document.createElement("div");
     this._filterElement.className = "filter-text-filter";
 
@@ -171,6 +182,18 @@ WebInspector.TextFilterUI = function()
     this._filterInputElement.addEventListener("mousedown", this._onFilterFieldManualFocus.bind(this), false); // when the search field is manually selected
     this._filterInputElement.addEventListener("input", this._onInput.bind(this), false);
     this._filterInputElement.addEventListener("change", this._onInput.bind(this), false);
+
+    if (this._supportRegex) {
+        this._filterElement.classList.add("supports-regex");
+        this._regexCheckBox = this._filterElement.createChild("input");
+        this._regexCheckBox.type = "checkbox";
+        this._regexCheckBox.id = "text-filter-regex";
+        this._regexCheckBox.addEventListener("change", this._onInput.bind(this), false);
+
+        this._regexLabel = this._filterElement.createChild("label");
+        this._regexLabel.htmlFor = "text-filter-regex";
+        this._regexLabel.textContent = WebInspector.UIString("Regex");
+    }
 }
 
 WebInspector.TextFilterUI.prototype = {
@@ -183,7 +206,7 @@ WebInspector.TextFilterUI.prototype = {
     },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     element: function()
     {
@@ -212,15 +235,11 @@ WebInspector.TextFilterUI.prototype = {
      */
     regex: function()
     {
-        if (this._regex !== undefined)
-            return this._regex;
-        var filterQuery = this.value();
-        this._regex = filterQuery ? createPlainTextSearchRegex(filterQuery, "i") : null;
         return this._regex;
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _onFilterFieldManualFocus: function(event)
     {
@@ -228,7 +247,7 @@ WebInspector.TextFilterUI.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onInput: function(event)
     {
@@ -236,7 +255,22 @@ WebInspector.TextFilterUI.prototype = {
     },
 
     _valueChanged: function() {
-        delete this._regex;
+        var filterQuery = this.value();
+
+        this._regex = null;
+        this._filterInputElement.classList.remove("filter-text-invalid");
+        if (filterQuery) {
+            if (this._supportRegex && this._regexCheckBox.checked) {
+                try {
+                    this._regex = new RegExp(filterQuery, "i");
+                } catch (e) {
+                    this._filterInputElement.classList.add("filter-text-invalid");
+                }
+            } else {
+                this._regex = createPlainTextSearchRegex(filterQuery, "i");
+            }
+        }
+
         this.dispatchEventToListeners(WebInspector.FilterUI.Events.FilterChanged, null);
     },
 
@@ -254,10 +288,9 @@ WebInspector.NamedBitSetFilterUI = function()
     this._filtersElement.className = "filter-bitset-filter status-bar-item";
     this._filtersElement.title = WebInspector.UIString("Use %s Click to select multiple types.", WebInspector.KeyboardShortcut.shortcutToString("", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta));
 
-    this._names = [];
     this._allowedTypes = {};
     this._typeFilterElements = {};
-    this._addTypeFilter(WebInspector.NamedBitSetFilterUI.ALL_TYPES, WebInspector.UIString("All"));
+    this.addBit(WebInspector.NamedBitSetFilterUI.ALL_TYPES, WebInspector.UIString("All"));
     this._filtersElement.createChild("div", "filter-bitset-filter-divider");
     this._toggleTypeFilter(WebInspector.NamedBitSetFilterUI.ALL_TYPES, false);
 }
@@ -274,16 +307,18 @@ WebInspector.NamedBitSetFilterUI.prototype = {
     },
 
     /**
-     * @param {string} name
-     * @param {string} label
+     * @param {!WebInspector.Setting} setting
      */
-    addBit: function(name, label)
+    bindSetting: function(setting)
     {
-        this._addTypeFilter(name, label);
+        console.assert(!this._setting);
+        this._setting = setting;
+        setting.addChangeListener(this._settingChanged.bind(this));
+        this._settingChanged();
     },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     element: function()
     {
@@ -299,37 +334,22 @@ WebInspector.NamedBitSetFilterUI.prototype = {
         return !!this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES] || !!this._allowedTypes[typeName];
     },
 
-    /**
-     * @return {Array.<string>}
-     */
-    filteredOutTypes: function()
+    _settingChanged: function()
     {
-        if (this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES])
-            return [];
-        var result = [];
-        for (var i = 0; i < this._names.length; ++i) {
-            var name = this._names[i];
-            if (!this._allowedTypes[name])
-                result.push(name);
+        var allowedTypes = this._setting.get();
+        this._allowedTypes = {};
+        for (var typeName in this._typeFilterElements) {
+            if (allowedTypes[typeName])
+                this._allowedTypes[typeName] = true;
         }
-        return result;
+        this._update();
     },
 
-    /**
-     * @param {Array.<string>} filteredOutTypes
-     */
-    setFilteredOutTypes: function(filteredOutTypes)
+    _update: function()
     {
-        this._allowedTypes = {};
-        if (filteredOutTypes.length === 0) {
+        if ((Object.keys(this._allowedTypes).length === 0) || this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES]) {
+            this._allowedTypes = {};
             this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES] = true;
-        } else {
-            for (var i = 0; i < this._names.length; ++i) {
-                var name = this._names[i];
-                this._allowedTypes[name] = true;
-            }
-            for (var i = 0; i < filteredOutTypes.length; ++i)
-                delete this._allowedTypes[filteredOutTypes[i]];
         }
         for (var typeName in this._typeFilterElements)
             this._typeFilterElements[typeName].enableStyleClass("selected", this._allowedTypes[typeName]);
@@ -337,46 +357,16 @@ WebInspector.NamedBitSetFilterUI.prototype = {
     },
 
     /**
-     * @return {Array.<string>}
-     */
-    acceptedTypes: function()
-    {
-        if (this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES])
-            return [WebInspector.NamedBitSetFilterUI.ALL_TYPES];
-        var result = [];
-        for (var i = 0; i < this._names.length; ++i) {
-            var name = this._names[i];
-            if (this._allowedTypes[name])
-                result.push(name);
-        }
-        return result;
-    },
-
-    /**
-     * @param {Array.<string>} acceptedTypes
-     */
-    setAcceptedTypes: function(acceptedTypes)
-    {
-        this._allowedTypes = {};
-        for (var i = 0; i < acceptedTypes.length; ++i)
-            this._allowedTypes[acceptedTypes[i]] = true;
-        for (var typeName in this._typeFilterElements)
-            this._typeFilterElements[typeName].enableStyleClass("selected", this._allowedTypes[typeName]);
-        this.dispatchEventToListeners(WebInspector.FilterUI.Events.FilterChanged, null);
-    },
-
-    /**
-     * @param {string} typeName
+     * @param {string} name
      * @param {string} label
      */
-    _addTypeFilter: function(typeName, label)
+    addBit: function(name, label)
     {
-        var typeFilterElement = this._filtersElement.createChild("li", typeName);
-        typeFilterElement.typeName = typeName;
+        var typeFilterElement = this._filtersElement.createChild("li", name);
+        typeFilterElement.typeName = name;
         typeFilterElement.createTextChild(label);
         typeFilterElement.addEventListener("click", this._onTypeFilterClicked.bind(this), false);
-        this._typeFilterElements[typeName] = typeFilterElement;
-        this._names.push(typeName);
+        this._typeFilterElements[name] = typeFilterElement;
     },
 
     /**
@@ -399,21 +389,16 @@ WebInspector.NamedBitSetFilterUI.prototype = {
     _toggleTypeFilter: function(typeName, allowMultiSelect)
     {
         if (allowMultiSelect && typeName !== WebInspector.NamedBitSetFilterUI.ALL_TYPES)
-            this._typeFilterElements[WebInspector.NamedBitSetFilterUI.ALL_TYPES].removeStyleClass("selected");
-        else {
-            for (var key in this._typeFilterElements)
-                this._typeFilterElements[key].removeStyleClass("selected");
-        }
+            this._allowedTypes[WebInspector.NamedBitSetFilterUI.ALL_TYPES] = false;
+        else
+            this._allowedTypes = {};
 
-        var filterElement = this._typeFilterElements[typeName];
-        filterElement.enableStyleClass("selected", !filterElement.hasStyleClass("selected"));
+        this._allowedTypes[typeName] = !this._allowedTypes[typeName];
 
-        this._allowedTypes = {};
-        for (var key in this._typeFilterElements) {
-            if (this._typeFilterElements[key].hasStyleClass("selected"))
-                this._allowedTypes[key] = true;
-        }
-        this.dispatchEventToListeners(WebInspector.FilterUI.Events.FilterChanged, null);
+        if (this._setting)
+            this._setting.set(this._allowedTypes);
+        else
+            this._update();
     },
 
     __proto__: WebInspector.Object.prototype
@@ -423,7 +408,7 @@ WebInspector.NamedBitSetFilterUI.prototype = {
  * @constructor
  * @implements {WebInspector.FilterUI}
  * @extends {WebInspector.Object}
- * @param {Array.<{value: *, label: string, title: string}>} options
+ * @param {!Array.<{value: *, label: string, title: string}>} options
  */
 WebInspector.ComboBoxFilterUI = function(options)
 {
@@ -453,7 +438,7 @@ WebInspector.ComboBoxFilterUI.prototype = {
     },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     element: function()
     {
@@ -471,7 +456,7 @@ WebInspector.ComboBoxFilterUI.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _filterChanged: function(event)
     {
@@ -487,15 +472,26 @@ WebInspector.ComboBoxFilterUI.prototype = {
  * @constructor
  * @implements {WebInspector.FilterUI}
  * @extends {WebInspector.Object}
- * @param {boolean} activeWhenChecked
+ * @param {string} className
+ * @param {string} title
+ * @param {boolean=} activeWhenChecked
+ * @param {!WebInspector.Setting=} setting
  */
-WebInspector.CheckboxFilterUI = function(className, title, activeWhenChecked)
+WebInspector.CheckboxFilterUI = function(className, title, activeWhenChecked, setting)
 {
-    this._className = className;
     this._filterElement = document.createElement("div");
-    this._filterElement.classList.add("filter-checkbox-filter", "filter-checkbox-filter-" + this._className);
-    this._activeWhenChecked = activeWhenChecked;
+    this._filterElement.classList.add("filter-checkbox-filter", "filter-checkbox-filter-" + className);
+    this._activeWhenChecked = !!activeWhenChecked;
     this._createCheckbox(title);
+
+    if (setting) {
+        this._setting = setting;
+        setting.addChangeListener(this._settingChanged.bind(this));
+        this._settingChanged();
+    } else {
+        this._checked = !this._activeWhenChecked;
+        this._update();
+    }
 }
 
 WebInspector.CheckboxFilterUI.prototype = {
@@ -504,11 +500,11 @@ WebInspector.CheckboxFilterUI.prototype = {
      */
     isActive: function()
     {
-        return this._activeWhenChecked === this._checkElement.checked;
+        return this._activeWhenChecked === this._checked;
     },
 
     /**
-     * @return {Element}
+     * @return {!Element}
      */
     element: function()
     {
@@ -520,33 +516,42 @@ WebInspector.CheckboxFilterUI.prototype = {
      */
     checked: function()
     {
-        return this._checkElement.checked;
+        return this._checked;
     },
 
-    /**
-     * @param {boolean} checked
-     */
-    setChecked: function(checked)
+    _update: function()
     {
-        this._checkElement.checked = checked;
-        this._checkElement.enableStyleClass("checkbox-filter-checkbox-checked", this._checkElement.checked);
+        this._checkElement.enableStyleClass("checkbox-filter-checkbox-checked", this._checked);
         this.dispatchEventToListeners(WebInspector.FilterUI.Events.FilterChanged, null);
     },
 
+    _settingChanged: function()
+    {
+        this._checked = this._setting.get();
+        this._update();
+    },
+
+    /**
+     * @param {?Event} event
+     */
+    _onClick: function(event)
+    {
+        this._checked = !this._checked;
+        if (this._setting)
+            this._setting.set(this._checked);
+        else
+            this._update();
+    },
+
+    /**
+     * @param {string} title
+     */
     _createCheckbox: function(title)
     {
         var label = this._filterElement.createChild("label");
         var checkBorder = label.createChild("div", "checkbox-filter-checkbox");
-        this._checkElement = checkBorder.createChild("div", "checkbox-filter-checkbox-check checkbox-filter-checkbox-checked");
-        this._checkElement.type = "checkbox";
-        this._checkElement.checked = true;
-        this._filterElement.addEventListener("click", listener.bind(this), false);
-
-        function listener(event)
-        {
-            this.setChecked(!this._checkElement.checked);
-        }
-
+        this._checkElement = checkBorder.createChild("div", "checkbox-filter-checkbox-check");
+        this._filterElement.addEventListener("click", this._onClick.bind(this), false);
         var typeElement = label.createChild("span", "type");
         typeElement.textContent = title;
     },

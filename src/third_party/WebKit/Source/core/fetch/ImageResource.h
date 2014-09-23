@@ -23,12 +23,12 @@
 #ifndef ImageResource_h
 #define ImageResource_h
 
-#include "core/fetch/Resource.h"
-#include "core/platform/graphics/ImageObserver.h"
-#include "core/platform/graphics/IntSizeHash.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/svg/graphics/SVGImageCache.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/geometry/IntSizeHash.h"
 #include "platform/geometry/LayoutSize.h"
+#include "platform/graphics/ImageObserver.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -45,6 +45,8 @@ class ImageResource : public Resource, public ImageObserver {
     friend class MemoryCache;
 
 public:
+    typedef ImageResourceClient ClientType;
+
     ImageResource(const ResourceRequest&);
     ImageResource(WebCore::Image*);
     virtual ~ImageResource();
@@ -126,6 +128,8 @@ private:
     bool m_loadingMultipartContent;
     bool m_hasDevicePixelRatioHeaderValue;
 };
+
+DEFINE_RESOURCE_TYPE_CASTS(Image);
 
 }
 

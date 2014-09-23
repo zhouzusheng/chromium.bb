@@ -60,6 +60,11 @@ class KURL;
 class ResourceTimingInfo;
 class ResourceLoaderSet;
 
+enum CORSEnabled {
+    NotCORSEnabled,
+    PotentiallyCORSEnabled // Indicates "potentially CORS-enabled fetch" in HTML standard.
+};
+
 // The ResourceFetcher provides a per-context interface to the MemoryCache
 // and enforces a bunch of security checks and rules for resource revalidation.
 // Its lifetime is roughly per-DocumentLoader, in that it is generally created
@@ -128,7 +133,7 @@ public:
     void preload(Resource::Type, FetchRequest&, const String& charset);
     void checkForPendingPreloads();
     void printPreloadStats();
-    bool canAccess(Resource*);
+    bool canAccess(Resource*, CORSEnabled, FetchRequest::OriginRestriction = FetchRequest::UseDefaultOriginRestrictionForType);
 
     void setDefersLoading(bool);
     void stopFetching();
@@ -145,6 +150,7 @@ public:
     virtual void willSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const ResourceLoaderOptions&) OVERRIDE;
     virtual void didReceiveResponse(const Resource*, const ResourceResponse&, const ResourceLoaderOptions&) OVERRIDE;
     virtual void didReceiveData(const Resource*, const char* data, int dataLength, int encodedDataLength, const ResourceLoaderOptions&) OVERRIDE;
+    virtual void didDownloadData(const Resource*, int dataLength, int encodedDataLength, const ResourceLoaderOptions&) OVERRIDE;
     virtual void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*) OVERRIDE;
     virtual void didInitializeResourceLoader(ResourceLoader*) OVERRIDE;
     virtual void willTerminateResourceLoader(ResourceLoader*) OVERRIDE;
@@ -176,7 +182,7 @@ private:
     ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type);
     void addAdditionalRequestHeaders(ResourceRequest&, Resource::Type);
 
-    bool canRequest(Resource::Type, const KURL&, const ResourceLoaderOptions&, bool forPreload = false);
+    bool canRequest(Resource::Type, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction);
     bool checkInsecureContent(Resource::Type, const KURL&, MixedContentBlockingTreatment) const;
 
     static bool resourceNeedsLoad(Resource*, const FetchRequest&, RevalidationPolicy);
@@ -184,6 +190,9 @@ private:
     void notifyLoadedFromMemoryCache(Resource*);
 
     void garbageCollectDocumentResourcesTimerFired(Timer<ResourceFetcher>*);
+
+    void resourceTimingReportTimerFired(Timer<ResourceFetcher>*);
+
     void performPostLoadActions();
 
     bool clientDefersImage(const KURL&) const;
@@ -205,9 +214,12 @@ private:
     Deque<PendingPreload> m_pendingPreloads;
 
     Timer<ResourceFetcher> m_garbageCollectDocumentResourcesTimer;
+    Timer<ResourceFetcher> m_resourceTimingReportTimer;
 
     typedef HashMap<Resource*, RefPtr<ResourceTimingInfo> > ResourceTimingInfoMap;
     ResourceTimingInfoMap m_resourceTimingInfoMap;
+
+    HashMap<RefPtr<ResourceTimingInfo>, bool> m_scheduledResourceTimingReports;
 
     OwnPtr<ResourceLoaderSet> m_loaders;
     OwnPtr<ResourceLoaderSet> m_multipartLoaders;

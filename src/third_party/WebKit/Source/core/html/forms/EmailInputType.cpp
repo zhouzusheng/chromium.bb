@@ -24,21 +24,21 @@
 #include "config.h"
 #include "core/html/forms/EmailInputType.h"
 
-#include <unicode/uidna.h>
+#include "InputTypeNames.h"
+#include "bindings/v8/ScriptRegexp.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/platform/text/RegularExpression.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
+#include <unicode/uidna.h>
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/states-of-the-type-attribute.html#valid-e-mail-address
 static const char localPartCharacters[] = "abcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+/=?^_`{|}~.-";
@@ -88,7 +88,7 @@ String EmailInputType::convertEmailAddressToUnicode(const String& address) const
         return address;
 
     String languages = chrome()->client().acceptLanguages();
-    String unicodeHost = WebKit::Platform::current()->convertIDNToUnicode(address.substring(atPosition + 1), languages);
+    String unicodeHost = blink::Platform::current()->convertIDNToUnicode(address.substring(atPosition + 1), languages);
     StringBuilder builder;
     builder.append(address, 0, atPosition + 1);
     builder.append(unicodeHost);
@@ -125,7 +125,7 @@ static bool isValidEmailAddress(const String& address)
     if (!addressLength)
         return false;
 
-    DEFINE_STATIC_LOCAL(const RegularExpression, regExp, (emailPattern, TextCaseInsensitive));
+    DEFINE_STATIC_LOCAL(const ScriptRegexp, regExp, (emailPattern, TextCaseInsensitive));
 
     int matchLength;
     int matchOffset = regExp.match(address, 0, &matchLength);
@@ -153,7 +153,7 @@ void EmailInputType::countUsage()
 
 const AtomicString& EmailInputType::formControlType() const
 {
-    return InputTypeNames::email();
+    return InputTypeNames::email;
 }
 
 // The return value is an invalid email address string if the specified string

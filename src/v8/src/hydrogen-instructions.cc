@@ -947,6 +947,25 @@ void HBoundsCheck::InferRepresentation(HInferRepresentationPhase* h_infer) {
 }
 
 
+Range* HBoundsCheck::InferRange(Zone* zone) {
+  Representation r = representation();
+  if (r.IsSmiOrInteger32() && length()->HasRange()) {
+    int upper = length()->range()->upper() - (allow_equality() ? 0 : 1);
+    int lower = 0;
+
+    Range* result = new(zone) Range(lower, upper);
+    if (index()->HasRange()) {
+      result->Intersect(index()->range());
+    }
+
+    // In case of Smi representation, clamp result to Smi::kMaxValue.
+    if (r.IsSmi()) result->ClampToSmi();
+    return result;
+  }
+  return HValue::InferRange(zone);
+}
+
+
 void HBoundsCheckBaseIndexInformation::PrintDataTo(StringStream* stream) {
   stream->Add("base: ");
   base_index()->PrintNameTo(stream);
@@ -1177,6 +1196,20 @@ void HTypeofIsAndBranch::PrintDataTo(StringStream* stream) {
 }
 
 
+bool HTypeofIsAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
+  if (value()->representation().IsSpecialization()) {
+    if (compares_number_type()) {
+      *block = FirstSuccessor();
+    } else {
+      *block = SecondSuccessor();
+    }
+    return true;
+  }
+  *block = NULL;
+  return false;
+}
+
+
 void HCheckMapValue::PrintDataTo(StringStream* stream) {
   value()->PrintNameTo(stream);
   stream->Add(" ");
@@ -1245,6 +1278,26 @@ HValue* HBitwise::Canonicalize() {
     return arg;
   }
   return this;
+}
+
+
+Representation HAdd::RepresentationFromInputs() {
+  Representation left_rep = left()->representation();
+  if (left_rep.IsExternal()) {
+    return Representation::External();
+  }
+  return HArithmeticBinaryOperation::RepresentationFromInputs();
+}
+
+
+Representation HAdd::RequiredInputRepresentation(int index) {
+  if (index == 2) {
+    Representation left_rep = left()->representation();
+    if (left_rep.IsExternal()) {
+      return Representation::Integer32();
+    }
+  }
+  return HArithmeticBinaryOperation::RequiredInputRepresentation(index);
 }
 
 
@@ -1321,6 +1374,23 @@ void HTypeof::PrintDataTo(StringStream* stream) {
 }
 
 
+HInstruction* HForceRepresentation::New(Zone* zone, HValue* context,
+       HValue* value, Representation required_representation) {
+  if (FLAG_fold_constants && value->IsConstant()) {
+    HConstant* c = HConstant::cast(value);
+    if (c->HasNumberValue()) {
+      double double_res = c->DoubleValue();
+      if (TypeInfo::IsInt32Double(double_res)) {
+        return HConstant::New(zone, context,
+                              static_cast<int32_t>(double_res),
+                              required_representation);
+      }
+    }
+  }
+  return new(zone) HForceRepresentation(value, required_representation);
+}
+
+
 void HForceRepresentation::PrintDataTo(StringStream* stream) {
   stream->Add("%s ", representation().Mnemonic());
   value()->PrintNameTo(stream);
@@ -1371,7 +1441,6 @@ HValue* HUnaryMathOperation::Canonicalize() {
 
   if (op() == kMathFloor) {
     HValue* val = value();
-    if (val->IsChange()) val = HChange::cast(val)->value();
     if (val->IsDiv() && (val->UseCount() == 1)) {
       HDiv* hdiv = HDiv::cast(val);
       HValue* left = hdiv->left();
@@ -1410,17 +1479,8 @@ HValue* HUnaryMathOperation::Canonicalize() {
       }
       HMathFloorOfDiv* instr =
           HMathFloorOfDiv::New(block()->zone(), context(), new_left, new_right);
-      // Replace this HMathFloor instruction by the new HMathFloorOfDiv.
       instr->InsertBefore(this);
-      ReplaceAllUsesWith(instr);
-      Kill();
-      // We know the division had no other uses than this HMathFloor. Delete it.
-      // Dead code elimination will deal with |left| and |right| if
-      // appropriate.
-      hdiv->DeleteAndReplaceWith(NULL);
-
-      // Return NULL to remove this instruction from the graph.
-      return NULL;
+      return instr;
     }
   }
   return this;
@@ -2463,6 +2523,7 @@ HConstant::HConstant(Handle<Object> handle, Representation r)
     has_smi_value_ = has_int32_value_ && Smi::IsValid(int32_value_);
     double_value_ = n;
     has_double_value_ = true;
+    // TODO(titzer): if this heap number is new space, tenure a new one.
   } else {
     is_internalized_string_ = handle->IsInternalizedString();
   }
@@ -2661,6 +2722,9 @@ void HConstant::PrintDataTo(StringStream* stream) {
   } else {
     handle(Isolate::Current())->ShortPrint(stream);
   }
+  if (!is_not_in_new_space_) {
+    stream->Add("[new space] ");
+  }
 }
 
 
@@ -2856,8 +2920,17 @@ Range* HShl::InferRange(Zone* zone) {
 
 
 Range* HLoadNamedField::InferRange(Zone* zone) {
-  if (access().representation().IsByte()) {
-    return new(zone) Range(0, 255);
+  if (access().representation().IsInteger8()) {
+    return new(zone) Range(kMinInt8, kMaxInt8);
+  }
+  if (access().representation().IsUInteger8()) {
+    return new(zone) Range(kMinUInt8, kMaxUInt8);
+  }
+  if (access().representation().IsInteger16()) {
+    return new(zone) Range(kMinInt16, kMaxInt16);
+  }
+  if (access().representation().IsUInteger16()) {
+    return new(zone) Range(kMinUInt16, kMaxUInt16);
   }
   if (access().IsStringLength()) {
     return new(zone) Range(0, String::kMaxLength);
@@ -2868,16 +2941,15 @@ Range* HLoadNamedField::InferRange(Zone* zone) {
 
 Range* HLoadKeyed::InferRange(Zone* zone) {
   switch (elements_kind()) {
-    case EXTERNAL_PIXEL_ELEMENTS:
-      return new(zone) Range(0, 255);
     case EXTERNAL_BYTE_ELEMENTS:
-      return new(zone) Range(-128, 127);
+      return new(zone) Range(kMinInt8, kMaxInt8);
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-      return new(zone) Range(0, 255);
+    case EXTERNAL_PIXEL_ELEMENTS:
+      return new(zone) Range(kMinUInt8, kMaxUInt8);
     case EXTERNAL_SHORT_ELEMENTS:
-      return new(zone) Range(-32768, 32767);
+      return new(zone) Range(kMinInt16, kMaxInt16);
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      return new(zone) Range(0, 65535);
+      return new(zone) Range(kMinUInt16, kMaxUInt16);
     default:
       return HValue::InferRange(zone);
   }
@@ -2934,6 +3006,24 @@ void HCompareHoleAndBranch::InferRepresentation(
     HInferRepresentationPhase* h_infer) {
   ChangeRepresentation(value()->representation());
 }
+
+
+bool HCompareMinusZeroAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
+  if (value()->representation().IsSmiOrInteger32()) {
+    // A Smi or Integer32 cannot contain minus zero.
+    *block = SecondSuccessor();
+    return true;
+  }
+  *block = NULL;
+  return false;
+}
+
+
+void HCompareMinusZeroAndBranch::InferRepresentation(
+    HInferRepresentationPhase* h_infer) {
+  ChangeRepresentation(value()->representation());
+}
+
 
 
 void HGoto::PrintDataTo(StringStream* stream) {
@@ -3371,7 +3461,7 @@ void HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
     }
   }
 
-  if (new_dominator_size > Page::kMaxNonCodeHeapObjectSize) {
+  if (new_dominator_size > isolate()->heap()->MaxRegularSpaceAllocationSize()) {
     if (FLAG_trace_allocation_folding) {
       PrintF("#%d (%s) cannot fold into #%d (%s) due to size: %d\n",
           id(), Mnemonic(), dominator_allocate->id(),
@@ -3409,7 +3499,7 @@ void HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
       HInnerAllocatedObject::New(zone,
                                  context(),
                                  dominator_allocate,
-                                 dominator_size_constant,
+                                 dominator_size,
                                  type());
   dominated_allocate_instr->InsertBefore(this);
   DeleteAndReplaceWith(dominated_allocate_instr);
@@ -3505,11 +3595,9 @@ void HAllocate::UpdateFreeSpaceFiller(int32_t free_space_size) {
 void HAllocate::CreateFreeSpaceFiller(int32_t free_space_size) {
   ASSERT(filler_free_space_size_ == NULL);
   Zone* zone = block()->zone();
-  int32_t dominator_size =
-      HConstant::cast(dominating_allocate_->size())->GetInteger32Constant();
   HInstruction* free_space_instr =
       HInnerAllocatedObject::New(zone, context(), dominating_allocate_,
-      dominator_size, type());
+      dominating_allocate_->size(), type());
   free_space_instr->InsertBefore(this);
   HConstant* filler_map = HConstant::New(
       zone,
@@ -3873,8 +3961,7 @@ HInstruction* HMathMinMax::New(
 HInstruction* HMod::New(Zone* zone,
                         HValue* context,
                         HValue* left,
-                        HValue* right,
-                        Maybe<int> fixed_right_arg) {
+                        HValue* right) {
   if (FLAG_fold_constants && left->IsConstant() && right->IsConstant()) {
     HConstant* c_left = HConstant::cast(left);
     HConstant* c_right = HConstant::cast(right);
@@ -3893,7 +3980,7 @@ HInstruction* HMod::New(Zone* zone,
       }
     }
   }
-  return new(zone) HMod(context, left, right, fixed_right_arg);
+  return new(zone) HMod(context, left, right);
 }
 
 
@@ -3988,6 +4075,26 @@ HInstruction* HShr::New(
     }
   }
   return new(zone) HShr(context, left, right);
+}
+
+
+HInstruction* HSeqStringGetChar::New(Zone* zone,
+                                     HValue* context,
+                                     String::Encoding encoding,
+                                     HValue* string,
+                                     HValue* index) {
+  if (FLAG_fold_constants && string->IsConstant() && index->IsConstant()) {
+    HConstant* c_string = HConstant::cast(string);
+    HConstant* c_index = HConstant::cast(index);
+    if (c_string->HasStringValue() && c_index->HasInteger32Value()) {
+      Handle<String> s = c_string->StringValue();
+      int32_t i = c_index->Integer32Value();
+      ASSERT_LE(0, i);
+      ASSERT_LT(i, s->length());
+      return H_CONSTANT_INT(s->Get(i));
+    }
+  }
+  return new(zone) HSeqStringGetChar(encoding, string, index);
 }
 
 
@@ -4189,14 +4296,14 @@ HObjectAccess HObjectAccess::ForBackingStoreOffset(int offset,
 
 HObjectAccess HObjectAccess::ForField(Handle<Map> map,
     LookupResult *lookup, Handle<String> name) {
-  ASSERT(lookup->IsField() || lookup->IsTransitionToField(*map));
+  ASSERT(lookup->IsField() || lookup->IsTransitionToField());
   int index;
   Representation representation;
   if (lookup->IsField()) {
     index = lookup->GetLocalFieldIndexFromMap(*map);
     representation = lookup->representation();
   } else {
-    Map* transition = lookup->GetTransitionMapFromMap(*map);
+    Map* transition = lookup->GetTransitionTarget();
     int descriptor = transition->LastAdded();
     index = transition->instance_descriptors()->GetFieldIndex(descriptor) -
         map->inobject_properties();

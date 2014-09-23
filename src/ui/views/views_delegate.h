@@ -29,6 +29,7 @@ class SiteInstance;
 }
 
 namespace gfx {
+class ImageSkia;
 class Rect;
 }
 
@@ -91,6 +92,8 @@ class VIEWS_EXPORT ViewsDelegate {
   // Returns true if the window passed in is in the Windows 8 metro
   // environment.
   virtual bool IsWindowInMetro(gfx::NativeWindow window) const = 0;
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  virtual gfx::ImageSkia* GetDefaultWindowIcon() const = 0;
 #endif
 
   // Creates a default NonClientFrameView to be used for windows that don't

@@ -42,7 +42,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/WTFString.h"
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 using namespace std;
 
 namespace WebCore {
@@ -289,14 +289,15 @@ AXObjectInclusion AXObject::defaultObjectInclusion() const
 
 bool AXObject::isInertOrAriaHidden() const
 {
-    if (equalIgnoringCase(getAttribute(aria_hiddenAttr), "true"))
-        return true;
-    if (node() && node()->isInert())
-        return true;
-
-    for (AXObject* object = parentObject(); object; object = object->parentObject()) {
+    bool mightBeInInertSubtree = true;
+    for (const AXObject* object = this; object; object = object->parentObject()) {
         if (equalIgnoringCase(object->getAttribute(aria_hiddenAttr), "true"))
             return true;
+        if (mightBeInInertSubtree && object->node()) {
+            if (object->node()->isInert())
+                return true;
+            mightBeInInertSubtree = false;
+        }
     }
 
     return false;
@@ -526,10 +527,10 @@ AXObject* AXObject::firstAccessibleObjectFromNode(const Node* node)
     AXObjectCache* cache = node->document().axObjectCache();
     AXObject* accessibleObject = cache->getOrCreate(node->renderer());
     while (accessibleObject && accessibleObject->accessibilityIsIgnored()) {
-        node = NodeTraversal::next(node);
+        node = NodeTraversal::next(*node);
 
         while (node && !node->renderer())
-            node = NodeTraversal::nextSkippingChildren(node);
+            node = NodeTraversal::nextSkippingChildren(*node);
 
         if (!node)
             return 0;
@@ -589,14 +590,6 @@ FrameView* AXObject::documentFrameView() const
         return 0;
 
     return object->documentFrameView();
-}
-
-Page* AXObject::page() const
-{
-    Document* document = this->document();
-    if (!document)
-        return 0;
-    return document->page();
 }
 
 String AXObject::language() const

@@ -44,7 +44,7 @@
 using namespace WebCore;
 using namespace std;
 
-namespace WebKit {
+namespace blink {
 
 class RubberbandCandidate {
   public:
@@ -478,7 +478,7 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
     LayoutUnit firstHitTop = hits[0].m_absRect.y();
     LayoutUnit firstHitHeight = hits[0].m_absRect.height();
 
-    std::vector<int> lineBreaks;
+    std::vector<std::size_t> lineBreaks;
     {
         LayoutUnit currLineTop = hits[0].m_absRect.y();
         LayoutUnit currLineBottom = hits[0].m_absRect.maxY();
@@ -860,4 +860,4 @@ WebString WebViewImpl::getTextInRubberband(const WebRect& rc)
     return result;
 }
 
-} // namespace WebKit
+} // namespace blink

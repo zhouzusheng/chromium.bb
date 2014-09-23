@@ -36,11 +36,11 @@
 #include "modules/quota/StorageErrorCallback.h"
 #include "modules/quota/StorageUsageCallback.h"
 #include "modules/quota/WebStorageQuotaCallbacksImpl.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebStorageQuotaCallbacks.h"
 #include "public/platform/WebStorageQuotaType.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -50,12 +50,12 @@ StorageQuota::StorageQuota(Type type)
     ScriptWrappable::init(this);
 }
 
-void StorageQuota::queryUsageAndQuota(ExecutionContext* executionContext, PassRefPtr<StorageUsageCallback> successCallback, PassRefPtr<StorageErrorCallback> errorCallback)
+void StorageQuota::queryUsageAndQuota(ExecutionContext* executionContext, PassOwnPtr<StorageUsageCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
 {
     ASSERT(executionContext);
 
-    WebKit::WebStorageQuotaType storageType = static_cast<WebKit::WebStorageQuotaType>(m_type);
-    if (storageType != WebKit::WebStorageQuotaTypeTemporary && storageType != WebKit::WebStorageQuotaTypePersistent) {
+    blink::WebStorageQuotaType storageType = static_cast<blink::WebStorageQuotaType>(m_type);
+    if (storageType != blink::WebStorageQuotaTypeTemporary && storageType != blink::WebStorageQuotaTypePersistent) {
         // Unknown storage type is requested.
         executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
         return;
@@ -68,7 +68,7 @@ void StorageQuota::queryUsageAndQuota(ExecutionContext* executionContext, PassRe
     }
 
     KURL storagePartition = KURL(KURL(), securityOrigin->toString());
-    WebKit::Platform::current()->queryStorageUsageAndQuota(storagePartition, storageType, WebStorageQuotaCallbacksImpl::createLeakedPtr(successCallback, errorCallback));
+    blink::Platform::current()->queryStorageUsageAndQuota(storagePartition, storageType, WebStorageQuotaCallbacksImpl::createLeakedPtr(successCallback, errorCallback));
 }
 
 StorageQuota::~StorageQuota()

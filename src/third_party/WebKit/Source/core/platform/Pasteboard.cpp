@@ -31,25 +31,15 @@
 #include "config.h"
 #include "core/platform/Pasteboard.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
-#include "core/dom/Element.h"
-#include "core/dom/Range.h"
-#include "core/editing/markup.h"
-#include "core/fetch/ImageResource.h"
-#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/rendering/RenderImage.h"
 #include "platform/clipboard/ClipboardUtilities.h"
+#include "platform/graphics/Image.h"
+#include "platform/graphics/skia/NativeImageSkia.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebClipboard.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
-#include "weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -62,31 +52,18 @@ Pasteboard* Pasteboard::generalPasteboard()
 }
 
 Pasteboard::Pasteboard()
-    : m_buffer(WebKit::WebClipboard::BufferStandard)
+    : m_buffer(blink::WebClipboard::BufferStandard)
 {
 }
 
 bool Pasteboard::isSelectionMode() const
 {
-    return m_buffer == WebKit::WebClipboard::BufferSelection;
+    return m_buffer == blink::WebClipboard::BufferSelection;
 }
 
 void Pasteboard::setSelectionMode(bool selectionMode)
 {
-    m_buffer = selectionMode ? WebKit::WebClipboard::BufferSelection : WebKit::WebClipboard::BufferStandard;
-}
-
-void Pasteboard::writeSelection(Range* selectedRange, bool canSmartCopyOrDelete, const String& text)
-{
-    String html = createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
-    KURL url = selectedRange->startContainer()->document().url();
-    String plainText = text;
-#if OS(WIN)
-    replaceNewlinesWithWindowsStyleNewlines(plainText);
-#endif
-    replaceNBSPWithSpace(plainText);
-
-    WebKit::Platform::current()->clipboard()->writeHTML(html, url, plainText, canSmartCopyOrDelete);
+    m_buffer = selectionMode ? blink::WebClipboard::BufferSelection : blink::WebClipboard::BufferStandard;
 }
 
 void Pasteboard::writePlainText(const String& text, SmartReplaceOption)
@@ -95,68 +72,48 @@ void Pasteboard::writePlainText(const String& text, SmartReplaceOption)
 #if OS(WIN)
     String plainText(text);
     replaceNewlinesWithWindowsStyleNewlines(plainText);
-    WebKit::Platform::current()->clipboard()->writePlainText(plainText);
+    blink::Platform::current()->clipboard()->writePlainText(plainText);
 #else
-    WebKit::Platform::current()->clipboard()->writePlainText(text);
+    blink::Platform::current()->clipboard()->writePlainText(text);
 #endif
 }
 
-void Pasteboard::writeImage(Node* node, const KURL&, const String& title)
+void Pasteboard::writeImage(Image* image, const KURL& url, const String& title)
 {
-    ASSERT(node);
-
-    if (!(node->renderer() && node->renderer()->isImage()))
-        return;
-
-    RenderImage* renderer = toRenderImage(node->renderer());
-    ImageResource* cachedImage = renderer->cachedImage();
-    if (!cachedImage || cachedImage->errorOccurred())
-        return;
-    Image* image = cachedImage->imageForRenderer(renderer);
     ASSERT(image);
 
     RefPtr<NativeImageSkia> bitmap = image->nativeImageForCurrentFrame();
     if (!bitmap)
         return;
 
-    // If the image is wrapped in a link, |url| points to the target of the
-    // link. This isn't useful to us, so get the actual image URL.
-    AtomicString urlString;
-    if (node->hasTagName(HTMLNames::imgTag) || node->hasTagName(HTMLNames::inputTag))
-        urlString = toElement(node)->getAttribute(HTMLNames::srcAttr);
-    else if (node->hasTagName(SVGNames::imageTag))
-        urlString = toElement(node)->getAttribute(XLinkNames::hrefAttr);
-    else if (node->hasTagName(HTMLNames::embedTag) || node->hasTagName(HTMLNames::objectTag))
-        urlString = toElement(node)->imageSourceURL();
-    KURL url = urlString.isEmpty() ? KURL() : node->document().completeURL(stripLeadingAndTrailingHTMLSpaces(urlString));
-    WebKit::WebImage webImage = bitmap->bitmap();
-    WebKit::Platform::current()->clipboard()->writeImage(webImage, WebKit::WebURL(url), WebKit::WebString(title));
+    blink::WebImage webImage = bitmap->bitmap();
+    blink::Platform::current()->clipboard()->writeImage(webImage, blink::WebURL(url), blink::WebString(title));
 }
 
 void Pasteboard::writeDataObject(PassRefPtr<ChromiumDataObject> dataObject)
 {
-    WebKit::Platform::current()->clipboard()->writeDataObject(dataObject);
+    blink::Platform::current()->clipboard()->writeDataObject(dataObject);
 }
 
 bool Pasteboard::canSmartReplace()
 {
-    return WebKit::Platform::current()->clipboard()->isFormatAvailable(WebKit::WebClipboard::FormatSmartPaste, m_buffer);
+    return blink::Platform::current()->clipboard()->isFormatAvailable(blink::WebClipboard::FormatSmartPaste, m_buffer);
 }
 
 bool Pasteboard::isHTMLAvailable()
 {
-    return WebKit::Platform::current()->clipboard()->isFormatAvailable(WebKit::WebClipboard::FormatHTML, m_buffer);
+    return blink::Platform::current()->clipboard()->isFormatAvailable(blink::WebClipboard::FormatHTML, m_buffer);
 }
 
 String Pasteboard::plainText()
 {
-    return WebKit::Platform::current()->clipboard()->readPlainText(m_buffer);
+    return blink::Platform::current()->clipboard()->readPlainText(m_buffer);
 }
 
 String Pasteboard::readHTML(KURL& url, unsigned& fragmentStart, unsigned& fragmentEnd)
 {
-    WebKit::WebURL webURL;
-    WebKit::WebString markup = WebKit::Platform::current()->clipboard()->readHTML(m_buffer, &webURL, &fragmentStart, &fragmentEnd);
+    blink::WebURL webURL;
+    blink::WebString markup = blink::Platform::current()->clipboard()->readHTML(m_buffer, &webURL, &fragmentStart, &fragmentEnd);
     if (!markup.isEmpty()) {
         url = webURL;
         // fragmentStart and fragmentEnd are populated by WebClipboard::readHTML.
@@ -166,6 +123,17 @@ String Pasteboard::readHTML(KURL& url, unsigned& fragmentStart, unsigned& fragme
         fragmentEnd = 0;
     }
     return markup;
+}
+
+void Pasteboard::writeHTML(const String& markup, const KURL& documentURL, const String& plainText, bool canSmartCopyOrDelete)
+{
+    String text = plainText;
+#if OS(WIN)
+    replaceNewlinesWithWindowsStyleNewlines(text);
+#endif
+    replaceNBSPWithSpace(text);
+
+    blink::Platform::current()->clipboard()->writeHTML(markup, documentURL, text, canSmartCopyOrDelete);
 }
 
 } // namespace WebCore

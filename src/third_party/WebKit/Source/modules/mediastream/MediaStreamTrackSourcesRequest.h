@@ -34,14 +34,13 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit {
+namespace blink {
 class WebSourceInfo;
 }
 
 namespace WebCore {
 
 class MediaStreamTrackSourcesCallback;
-class ExecutionContext;
 
 class MediaStreamTrackSourcesRequest FINAL : public RefCounted<MediaStreamTrackSourcesRequest> {
 public:
@@ -50,22 +49,22 @@ public:
         virtual ~ExtraData() { }
     };
 
-    static PassRefPtr<MediaStreamTrackSourcesRequest> create(ExecutionContext*, PassRefPtr<MediaStreamTrackSourcesCallback>);
+    static PassRefPtr<MediaStreamTrackSourcesRequest> create(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
     ~MediaStreamTrackSourcesRequest();
 
     String origin() { return m_origin; }
 
-    void requestSucceeded(const WebKit::WebVector<WebKit::WebSourceInfo>&);
+    void requestSucceeded(const blink::WebVector<blink::WebSourceInfo>&);
 
     PassRefPtr<ExtraData> extraData() const { return m_extraData; }
     void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
 private:
-    MediaStreamTrackSourcesRequest(ExecutionContext*, PassRefPtr<MediaStreamTrackSourcesCallback>);
+    MediaStreamTrackSourcesRequest(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
 
     void scheduledEventTimerFired(Timer<MediaStreamTrackSourcesRequest>*);
 
-    RefPtr<MediaStreamTrackSourcesCallback> m_callback;
+    OwnPtr<MediaStreamTrackSourcesCallback> m_callback;
     RefPtr<ExtraData> m_extraData;
     String m_origin;
     Timer<MediaStreamTrackSourcesRequest> m_scheduledEventTimer;

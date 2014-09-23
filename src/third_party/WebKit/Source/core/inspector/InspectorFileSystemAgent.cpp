@@ -39,11 +39,10 @@
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReader.h"
+#include "core/frame/Frame.h"
 #include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
-#include "core/frame/Frame.h"
-#include "core/platform/MIMETypeRegistry.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryReader.h"
@@ -57,8 +56,9 @@
 #include "modules/filesystem/LocalFileSystem.h"
 #include "modules/filesystem/Metadata.h"
 #include "modules/filesystem/MetadataCallback.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/MIMETypeRegistry.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
@@ -84,14 +84,14 @@ class CallbackDispatcher : public BaseCallback {
 public:
     typedef bool (Handler::*HandlingMethod)(Argument);
 
-    static PassRefPtr<CallbackDispatcher> create(PassRefPtr<Handler> handler, HandlingMethod handlingMethod)
+    static PassOwnPtr<CallbackDispatcher> create(PassRefPtr<Handler> handler, HandlingMethod handlingMethod)
     {
-        return adoptRef(new CallbackDispatcher(handler, handlingMethod));
+        return adoptPtr(new CallbackDispatcher(handler, handlingMethod));
     }
 
-    virtual bool handleEvent(Argument argument) OVERRIDE
+    virtual void handleEvent(Argument argument) OVERRIDE
     {
-        return (m_handler.get()->*m_handlingMethod)(argument);
+        (m_handler.get()->*m_handlingMethod)(argument);
     }
 
 private:
@@ -107,7 +107,7 @@ template<typename BaseCallback>
 class CallbackDispatcherFactory {
 public:
     template<typename Handler, typename Argument>
-    static PassRefPtr<CallbackDispatcher<BaseCallback, Handler, Argument> > create(Handler* handler, bool (Handler::*handlingMethod)(Argument))
+    static PassOwnPtr<CallbackDispatcher<BaseCallback, Handler, Argument> > create(Handler* handler, bool (Handler::*handlingMethod)(Argument))
     {
         return CallbackDispatcher<BaseCallback, Handler, Argument>::create(PassRefPtr<Handler>(handler), handlingMethod);
     }
@@ -149,7 +149,7 @@ void FileSystemRootRequest::start(ExecutionContext* executionContext)
 {
     ASSERT(executionContext);
 
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileSystemRootRequest::didHitError);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileSystemRootRequest::didHitError);
 
     FileSystemType type;
     if (!DOMFileSystemBase::pathPrefixToFileSystemType(m_type, type)) {
@@ -163,8 +163,8 @@ void FileSystemRootRequest::start(ExecutionContext* executionContext)
         return;
     }
 
-    RefPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileSystemRootRequest::didGetEntry);
-    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, executionContext);
+    OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileSystemRootRequest::didGetEntry);
+    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
     LocalFileSystem::from(executionContext)->resolveURL(executionContext, rootURL, fileSystemCallbacks.release());
 }
 
@@ -224,10 +224,10 @@ void DirectoryContentRequest::start(ExecutionContext* executionContext)
 {
     ASSERT(executionContext);
 
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DirectoryContentRequest::didHitError);
-    RefPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DirectoryContentRequest::didGetEntry);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DirectoryContentRequest::didHitError);
+    OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DirectoryContentRequest::didGetEntry);
 
-    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, executionContext);
+    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
 
     LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
@@ -239,7 +239,7 @@ bool DirectoryContentRequest::didGetEntry(Entry* entry)
         return true;
     }
 
-    m_directoryReader = static_cast<DirectoryEntry*>(entry)->createReader();
+    m_directoryReader = toDirectoryEntry(entry)->createReader();
     m_entries = Array<TypeBuilder::FileSystem::Entry>::create();
     readDirectoryEntries();
     return true;
@@ -252,9 +252,9 @@ void DirectoryContentRequest::readDirectoryEntries()
         return;
     }
 
-    RefPtr<EntriesCallback> successCallback = CallbackDispatcherFactory<EntriesCallback>::create(this, &DirectoryContentRequest::didReadDirectoryEntries);
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DirectoryContentRequest::didHitError);
-    m_directoryReader->readEntries(successCallback, errorCallback);
+    OwnPtr<EntriesCallback> successCallback = CallbackDispatcherFactory<EntriesCallback>::create(this, &DirectoryContentRequest::didReadDirectoryEntries);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DirectoryContentRequest::didHitError);
+    m_directoryReader->readEntries(successCallback.release(), errorCallback.release());
 }
 
 bool DirectoryContentRequest::didReadDirectoryEntries(const EntryVector& entries)
@@ -342,9 +342,9 @@ void MetadataRequest::start(ExecutionContext* executionContext)
 {
     ASSERT(executionContext);
 
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &MetadataRequest::didHitError);
-    RefPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &MetadataRequest::didGetEntry);
-    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, executionContext);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &MetadataRequest::didHitError);
+    OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &MetadataRequest::didGetEntry);
+    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
     LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
 
@@ -355,9 +355,9 @@ bool MetadataRequest::didGetEntry(Entry* entry)
         return true;
     }
 
-    RefPtr<MetadataCallback> successCallback = CallbackDispatcherFactory<MetadataCallback>::create(this, &MetadataRequest::didGetMetadata);
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &MetadataRequest::didHitError);
-    entry->getMetadata(successCallback, errorCallback);
+    OwnPtr<MetadataCallback> successCallback = CallbackDispatcherFactory<MetadataCallback>::create(this, &MetadataRequest::didGetMetadata);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &MetadataRequest::didHitError);
+    entry->getMetadata(successCallback.release(), errorCallback.release());
     m_isDirectory = entry->isDirectory();
     return true;
 }
@@ -440,10 +440,10 @@ void FileContentRequest::start(ExecutionContext* executionContext)
 {
     ASSERT(executionContext);
 
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileContentRequest::didHitError);
-    RefPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileContentRequest::didGetEntry);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileContentRequest::didHitError);
+    OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileContentRequest::didGetEntry);
 
-    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, executionContext);
+    OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
     LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
 
@@ -459,9 +459,9 @@ bool FileContentRequest::didGetEntry(Entry* entry)
         return true;
     }
 
-    RefPtr<FileCallback> successCallback = CallbackDispatcherFactory<FileCallback>::create(this, &FileContentRequest::didGetFile);
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileContentRequest::didHitError);
-    static_cast<FileEntry*>(entry)->file(successCallback, errorCallback);
+    OwnPtr<FileCallback> successCallback = CallbackDispatcherFactory<FileCallback>::create(this, &FileContentRequest::didGetFile);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &FileContentRequest::didHitError);
+    toFileEntry(entry)->file(successCallback.release(), errorCallback.release());
 
     m_reader = FileReader::create(entry->filesystem()->executionContext());
     m_mimeType = MIMETypeRegistry::getMIMETypeForPath(entry->name());
@@ -489,14 +489,14 @@ void FileContentRequest::didRead()
         return;
     }
 
-    RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create(m_mimeType, m_charset, true);
+    OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create(m_mimeType, m_charset, true);
     String result = decoder->decode(static_cast<char*>(buffer->data()), buffer->byteLength());
     result.append(decoder->flush());
     m_charset = decoder->encoding().name();
     reportResult(static_cast<FileError::ErrorCode>(0), &result, &m_charset);
 }
 
-class DeleteEntryRequest : public VoidCallback {
+class DeleteEntryRequest : public RefCounted<DeleteEntryRequest> {
 public:
     static PassRefPtr<DeleteEntryRequest> create(PassRefPtr<DeleteEntryCallback> requestCallback, const KURL& url)
     {
@@ -508,14 +508,26 @@ public:
         reportResult(FileError::ABORT_ERR);
     }
 
-    virtual bool handleEvent() OVERRIDE
-    {
-        return didDeleteEntry();
-    }
-
     void start(ExecutionContext*);
 
 private:
+    // CallbackDispatcherFactory doesn't handle 0-arg handleEvent methods
+    class VoidCallbackImpl : public VoidCallback {
+    public:
+        explicit VoidCallbackImpl(PassRefPtr<DeleteEntryRequest> handler)
+            : m_handler(handler)
+        {
+        }
+
+        virtual void handleEvent() OVERRIDE
+        {
+            m_handler->didDeleteEntry();
+        }
+
+    private:
+        RefPtr<DeleteEntryRequest> m_handler;
+    };
+
     bool didHitError(FileError* error)
     {
         reportResult(error->code());
@@ -542,7 +554,7 @@ void DeleteEntryRequest::start(ExecutionContext* executionContext)
 {
     ASSERT(executionContext);
 
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DeleteEntryRequest::didHitError);
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DeleteEntryRequest::didHitError);
 
     FileSystemType type;
     String path;
@@ -552,23 +564,26 @@ void DeleteEntryRequest::start(ExecutionContext* executionContext)
     }
 
     if (path == "/") {
-        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(this, errorCallback, 0);
+        OwnPtr<VoidCallback> successCallback = adoptPtr(new VoidCallbackImpl(this));
+        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(successCallback.release(), errorCallback.release(), 0);
         LocalFileSystem::from(executionContext)->deleteFileSystem(executionContext, type, fileSystemCallbacks.release());
     } else {
-        RefPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DeleteEntryRequest::didGetEntry);
-        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, executionContext);
+        OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DeleteEntryRequest::didGetEntry);
+        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
         LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
     }
 }
 
 bool DeleteEntryRequest::didGetEntry(Entry* entry)
 {
-    RefPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DeleteEntryRequest::didHitError);
+    OwnPtr<VoidCallback> successCallback = adoptPtr(new VoidCallbackImpl(this));
+    OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &DeleteEntryRequest::didHitError);
     if (entry->isDirectory()) {
-        DirectoryEntry* directoryEntry = static_cast<DirectoryEntry*>(entry);
-        directoryEntry->removeRecursively(this, errorCallback);
-    } else
-        entry->remove(this, errorCallback);
+        DirectoryEntry* directoryEntry = toDirectoryEntry(entry);
+        directoryEntry->removeRecursively(successCallback.release(), errorCallback.release());
+    } else {
+        entry->remove(successCallback.release(), errorCallback.release());
+    }
     return true;
 }
 

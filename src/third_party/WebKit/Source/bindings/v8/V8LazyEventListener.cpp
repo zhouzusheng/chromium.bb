@@ -136,7 +136,7 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     // FIXME: Remove the following 'with' hack.
     //
     // Nodes other than the document object, when executing inline event
-    // handlers push document, form, and the target node on the scope chain.
+    // handlers push document, form owner, and the target node on the scope chain.
     // We do this by using 'with' statement.
     // See chrome/fast/forms/form-action.html
     //     chrome/fast/forms/selected-index-value.html
@@ -159,7 +159,7 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
             "};"
         "}}}})";
 
-    v8::Handle<v8::String> codeExternalString = v8String(code, isolate);
+    v8::Handle<v8::String> codeExternalString = v8String(isolate, code);
 
     v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate, m_sourceURL, m_position, 0);
     if (result.IsEmpty())
@@ -171,7 +171,7 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
 
     HTMLFormElement* formElement = 0;
     if (m_node && m_node->isHTMLElement())
-        formElement = toHTMLElement(m_node)->form();
+        formElement = toHTMLElement(m_node)->formOwner();
 
     v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, isolate);
     v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, isolate);
@@ -205,17 +205,17 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     v8::Handle<v8::FunctionTemplate> toStringTemplate =
         V8PerIsolateData::current()->lazyEventListenerToStringTemplate();
     if (toStringTemplate.IsEmpty())
-        toStringTemplate = v8::FunctionTemplate::New(V8LazyEventListenerToString);
+        toStringTemplate = v8::FunctionTemplate::New(isolate, V8LazyEventListenerToString);
     v8::Local<v8::Function> toStringFunction;
     if (!toStringTemplate.IsEmpty())
         toStringFunction = toStringTemplate->GetFunction();
     if (!toStringFunction.IsEmpty()) {
         String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
-        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(toStringString, isolate));
-        wrappedFunction->Set(v8::String::NewSymbol("toString"), toStringFunction);
+        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(isolate, toStringString));
+        wrappedFunction->Set(v8AtomicString(isolate, "toString"), toStringFunction);
     }
 
-    wrappedFunction->SetName(v8String(m_functionName, isolate));
+    wrappedFunction->SetName(v8String(isolate, m_functionName));
 
     // FIXME: Remove the following comment-outs.
     // See https://bugs.webkit.org/show_bug.cgi?id=85152 for more details.

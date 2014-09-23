@@ -28,26 +28,24 @@
 #include "config.h"
 #include "modules/filesystem/WorkerGlobalScopeFileSystem.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/FileError.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
-#include "modules/filesystem/DOMFileSystemSync.h"
 #include "modules/filesystem/DirectoryEntrySync.h"
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileEntrySync.h"
 #include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
+#include "modules/filesystem/LocalFileSystem.h"
 #include "modules/filesystem/SyncCallbackHelper.h"
-#include "modules/filesystem/WorkerLocalFileSystem.h"
 #include "platform/FileSystemType.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* worker, int type, long long size, PassRefPtr<FileSystemCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* worker, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
     ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
@@ -61,20 +59,20 @@ void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* wor
         return;
     }
 
-    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, worker, fileSystemType));
+    LocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, worker, fileSystemType));
 }
 
-PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(WorkerGlobalScope* worker, int type, long long size, ExceptionState& es)
+PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(WorkerGlobalScope* worker, int type, long long size, ExceptionState& exceptionState)
 {
     ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("webkitRequestFileSystemSync", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
+        exceptionState.throwSecurityError(FileError::securityErrorMessage);
         return 0;
     }
 
     FileSystemType fileSystemType = static_cast<FileSystemType>(type);
     if (!DOMFileSystemBase::isValidType(fileSystemType)) {
-        es.throwDOMException(InvalidModificationError, ExceptionMessages::failedToExecute("webkitRequestFileSystemSync", "WorkerGlobalScopeFileSystem", "the type must be TEMPORARY or PERSISTENT."));
+        exceptionState.throwDOMException(InvalidModificationError, "the type must be TEMPORARY or PERSISTENT.");
         return 0;
     }
 
@@ -82,11 +80,11 @@ PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSyst
     OwnPtr<AsyncFileSystemCallbacks> callbacks = FileSystemCallbacks::create(helper.successCallback(), helper.errorCallback(), worker, fileSystemType);
     callbacks->setShouldBlockUntilCompletion(true);
 
-    WorkerLocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, callbacks.release());
-    return helper.getResult(es);
+    LocalFileSystem::from(worker)->requestFileSystem(worker, fileSystemType, size, callbacks.release());
+    return helper.getResult(exceptionState);
 }
 
-void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalScope* worker, const String& url, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalScope* worker, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
     KURL completedURL = worker->completeURL(url);
     ExecutionContext* secureContext = worker->executionContext();
@@ -100,20 +98,20 @@ void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalSc
         return;
     }
 
-    WorkerLocalFileSystem::from(worker)->resolveURL(worker, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, worker));
+    LocalFileSystem::from(worker)->resolveURL(worker, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, worker));
 }
 
-PassRefPtr<EntrySync> WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope* worker, const String& url, ExceptionState& es)
+PassRefPtr<EntrySync> WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope* worker, const String& url, ExceptionState& exceptionState)
 {
     KURL completedURL = worker->completeURL(url);
     ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem() || !secureContext->securityOrigin()->canRequest(completedURL)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
+        exceptionState.throwSecurityError(FileError::securityErrorMessage);
         return 0;
     }
 
     if (!completedURL.isValid()) {
-        es.throwDOMException(EncodingError, ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", "the URL '" + url + "' is invalid."));
+        exceptionState.throwDOMException(EncodingError, "the URL '" + url + "' is invalid.");
         return 0;
     }
 
@@ -121,9 +119,9 @@ PassRefPtr<EntrySync> WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemS
     OwnPtr<AsyncFileSystemCallbacks> callbacks = ResolveURICallbacks::create(resolveURLHelper.successCallback(), resolveURLHelper.errorCallback(), worker);
     callbacks->setShouldBlockUntilCompletion(true);
 
-    WorkerLocalFileSystem::from(worker)->resolveURL(worker, completedURL, callbacks.release());
+    LocalFileSystem::from(worker)->resolveURL(worker, completedURL, callbacks.release());
 
-    RefPtr<EntrySync> entry = resolveURLHelper.getResult(es);
+    RefPtr<EntrySync> entry = resolveURLHelper.getResult(exceptionState);
     if (!entry)
         return 0;
     return entry.release();

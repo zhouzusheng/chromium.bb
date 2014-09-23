@@ -36,7 +36,8 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/frame/Frame.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
+#include "core/page/SpellCheckerClient.h"
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextCheckerClient.h"
 
@@ -160,12 +161,12 @@ PassRefPtr<Range> TextCheckingParagraph::subrange(int characterOffset, int chara
     return TextIterator::subrange(paragraphRange().get(), characterOffset, characterCount);
 }
 
-int TextCheckingParagraph::offsetTo(const Position& position, ExceptionState& es) const
+int TextCheckingParagraph::offsetTo(const Position& position, ExceptionState& exceptionState) const
 {
     ASSERT(m_checkingRange);
     RefPtr<Range> range = offsetAsRange()->cloneRange(ASSERT_NO_EXCEPTION);
-    range->setEnd(position.containerNode(), position.computeOffsetInContainerNode(), es);
-    if (es.hadException())
+    range->setEnd(position.containerNode(), position.computeOffsetInContainerNode(), exceptionState);
+    if (exceptionState.hadException())
         return 0;
     return TextIterator::rangeLength(range.get());
 }
@@ -218,7 +219,7 @@ int TextCheckingParagraph::checkingLength() const
     return m_checkingLength;
 }
 
-TextCheckingHelper::TextCheckingHelper(EditorClient& client, PassRefPtr<Range> range)
+TextCheckingHelper::TextCheckingHelper(SpellCheckerClient& client, PassRefPtr<Range> range)
     : m_client(&client)
     , m_range(range)
 {

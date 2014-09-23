@@ -32,11 +32,11 @@
 #include "config.h"
 #include "core/html/forms/SubmitInputType.h"
 
+#include "InputTypeNames.h"
 #include "core/events/Event.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -49,7 +49,7 @@ PassRefPtr<InputType> SubmitInputType::create(HTMLInputElement& element)
 
 const AtomicString& SubmitInputType::formControlType() const
 {
-    return InputTypeNames::submit();
+    return InputTypeNames::submit;
 }
 
 bool SubmitInputType::appendFormData(FormDataList& encoding, bool) const
@@ -83,7 +83,7 @@ bool SubmitInputType::canBeSuccessfulSubmitButton()
 
 String SubmitInputType::defaultValue() const
 {
-    return locale().queryString(WebKit::WebLocalizedString::SubmitButtonDefaultLabel);
+    return locale().queryString(blink::WebLocalizedString::SubmitButtonDefaultLabel);
 }
 
 bool SubmitInputType::isSubmitButton() const

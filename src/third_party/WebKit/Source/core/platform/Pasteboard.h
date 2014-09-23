@@ -32,16 +32,11 @@
 #include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
 
-// FIXME: This class is too high-level to be in the platform directory, since it
-// uses the DOM and makes calls to Editor. It should either be divested of its
-// knowledge of the frame and editor or moved into the editing directory.
-
 namespace WebCore {
 
 class ChromiumDataObject;
+class Image;
 class KURL;
-class Node;
-class Range;
 
 class Pasteboard {
     WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
@@ -52,9 +47,8 @@ public:
     };
 
     static Pasteboard* generalPasteboard();
-    void writeSelection(Range*, bool canSmartCopyOrDelete, const String& text);
     void writePlainText(const String&, SmartReplaceOption);
-    void writeImage(Node*, const KURL&, const String& title);
+    void writeImage(Image*, const KURL&, const String& title);
     void writeDataObject(PassRefPtr<ChromiumDataObject>);
     bool canSmartReplace();
     bool isHTMLAvailable();
@@ -67,15 +61,17 @@ public:
     // fragmentStart will be zero and fragmentEnd will be the same as the length of the markup.
     String readHTML(KURL&, unsigned& fragmentStart, unsigned& fragmentEnd);
 
+    void writeHTML(const String& markup, const KURL& documentURL, const String& plainText, bool canSmartCopyOrDelete);
+
     bool isSelectionMode() const;
     void setSelectionMode(bool);
 
-    WebKit::WebClipboard::Buffer buffer() const { return m_buffer; }
+    blink::WebClipboard::Buffer buffer() const { return m_buffer; }
 
 private:
     Pasteboard();
 
-    WebKit::WebClipboard::Buffer m_buffer;
+    blink::WebClipboard::Buffer m_buffer;
 };
 
 } // namespace WebCore

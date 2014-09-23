@@ -28,12 +28,12 @@
 
 #include "core/html/HTMLTrackElement.h"
 #include "core/html/track/TextTrackCueList.h"
-#include "core/html/track/VTTRegionList.h"
+#include "core/html/track/vtt/VTTRegionList.h"
 
 namespace WebCore {
 
-LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track, const String& kind, const String& label, const String& language)
-    : TextTrack(track->document(), track, kind, label, language, TrackElement)
+LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track)
+    : TextTrack(track->document(), track, emptyAtom, emptyAtom, emptyAtom, emptyAtom, TrackElement)
     , m_trackElement(track)
     , m_loadTimer(this, &LoadableTextTrack::loadTimerFired)
     , m_isDefault(false)
@@ -97,7 +97,7 @@ void LoadableTextTrack::newCuesAvailable(TextTrackLoader* loader)
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
-    Vector<RefPtr<TextTrackCue> > newCues;
+    Vector<RefPtr<VTTCue> > newCues;
     m_loader->getNewCues(newCues);
 
     if (!m_cues)

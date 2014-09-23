@@ -33,9 +33,9 @@
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/fetch/ShaderResource.h"
-#include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/rendering/style/StyleShader.h"
-#include "weborigin/KURL.h"
+#include "platform/graphics/filters/custom/CustomFilterProgram.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/FastAllocBase.h"
 
 namespace WebCore {

@@ -36,7 +36,7 @@
 
 namespace WebCore { class HistoryItem; }
 
-namespace WebKit {
+namespace blink {
 class WebHTTPBody;
 class WebString;
 class WebSerializedScriptValue;
@@ -106,6 +106,7 @@ public:
     BLINK_EXPORT void setHTTPBody(const WebHTTPBody&);
 
     BLINK_EXPORT WebVector<WebHistoryItem> children() const;
+    BLINK_EXPORT void setChildren(const WebVector<WebHistoryItem>&);
     BLINK_EXPORT void appendToChildren(const WebHistoryItem&);
 
     BLINK_EXPORT WebVector<WebString> getReferencedFilePaths() const;
@@ -121,6 +122,6 @@ private:
     WebPrivatePtr<WebCore::HistoryItem> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

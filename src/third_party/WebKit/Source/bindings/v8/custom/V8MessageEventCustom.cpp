@@ -77,7 +77,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::PropertyCallbackInfo<v8
 
     case MessageEvent::DataTypeString: {
         String stringValue = event->dataAsString();
-        result = v8String(stringValue, info.GetIsolate());
+        result = v8String(info.GetIsolate(), stringValue);
         break;
     }
 
@@ -93,7 +93,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::PropertyCallbackInfo<v8
     // Overwrite the data attribute so it returns the cached result in future invocations.
     // This custom handler (dataAccessGetter) will not be called again.
     v8::PropertyAttribute dataAttr = static_cast<v8::PropertyAttribute>(v8::DontDelete | v8::ReadOnly);
-    info.Holder()->ForceSet(v8::String::NewSymbol("data"), result, dataAttr);
+    info.Holder()->ForceSet(v8AtomicString(info.GetIsolate(), "data"), result, dataAttr);
     v8SetReturnValue(info, result);
 }
 
@@ -110,7 +110,7 @@ void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo
     DOMWindow* sourceArg = 0;
     if (info[6]->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(info[6]);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::domTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
         if (!window.IsEmpty())
             sourceArg = V8Window::toNative(window);
     }

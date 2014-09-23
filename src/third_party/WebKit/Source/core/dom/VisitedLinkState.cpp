@@ -63,7 +63,7 @@ void VisitedLinkState::invalidateStyleForAllLinks()
 {
     if (m_linksCheckedForVisitedState.isEmpty())
         return;
-    for (Element* element = ElementTraversal::firstWithin(&m_document); element; element = ElementTraversal::next(element)) {
+    for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink())
             element->setNeedsStyleRecalc();
     }
@@ -73,7 +73,7 @@ void VisitedLinkState::invalidateStyleForLink(LinkHash linkHash)
 {
     if (!m_linksCheckedForVisitedState.contains(linkHash))
         return;
-    for (Element* element = ElementTraversal::firstWithin(&m_document); element; element = ElementTraversal::next(element)) {
+    for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink() && linkHashForElement(*element) == linkHash)
             element->setNeedsStyleRecalc();
     }
@@ -99,7 +99,7 @@ EInsideLink VisitedLinkState::determineLinkStateSlowCase(const Element& element)
 
     if (LinkHash hash = linkHashForElement(element, attribute)) {
         m_linksCheckedForVisitedState.add(hash);
-        if (WebKit::Platform::current()->isLinkVisited(hash))
+        if (blink::Platform::current()->isLinkVisited(hash))
             return InsideVisitedLink;
     }
 

@@ -30,8 +30,9 @@
 #include "core/events/TextEventInputType.h"
 #include "core/page/DragActions.h"
 #include "core/page/FocusDirection.h"
-#include "core/platform/Cursor.h"
 #include "core/rendering/HitTestRequest.h"
+#include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/Cursor.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/Timer.h"
 #include "platform/UserGestureIndicator.h"
@@ -130,7 +131,6 @@ public:
 
     bool scrollOverflow(ScrollDirection, ScrollGranularity, Node* startingNode = 0);
     bool scrollRecursively(ScrollDirection, ScrollGranularity, Node* startingNode = 0);
-    bool logicalScrollRecursively(ScrollLogicalDirection, ScrollGranularity, Node* startingNode = 0);
 
     bool handleMouseMoveEvent(const PlatformMouseEvent&);
     void handleMouseLeaveEvent(const PlatformMouseEvent&);
@@ -170,12 +170,11 @@ public:
 
     void capsLockStateMayHaveChanged(); // Only called by FrameSelection
 
-    void sendResizeEvent(); // Only called in FrameView
-    void sendScrollEvent(); // Ditto
-
     bool handleTouchEvent(const PlatformTouchEvent&);
 
     bool useHandCursor(Node*, bool isOverLink, bool shiftKey);
+
+    void notifyElementActivated();
 
 private:
     static DragState& dragState();
@@ -199,10 +198,10 @@ private:
 
     bool handlePasteGlobalSelection(const PlatformMouseEvent&);
 
-    bool handleGestureTap(const PlatformGestureEvent&);
-    bool handleGestureLongPress(const PlatformGestureEvent&);
-    bool handleGestureLongTap(const PlatformGestureEvent&);
-    bool handleGestureTwoFingerTap(const PlatformGestureEvent&);
+    bool handleGestureTap(const PlatformGestureEvent&, const IntPoint& adjustedPoint);
+    bool handleGestureLongPress(const PlatformGestureEvent&, const IntPoint& adjustedPoint);
+    bool handleGestureLongTap(const PlatformGestureEvent&, const IntPoint& adjustedPoint);
+    bool handleGestureTwoFingerTap(const PlatformGestureEvent&, const IntPoint& adjustedPoint);
     bool handleGestureScrollUpdate(const PlatformGestureEvent&);
     bool handleGestureScrollBegin(const PlatformGestureEvent&);
     void clearGestureScrollNodes();
@@ -214,8 +213,7 @@ private:
 
     void hoverTimerFired(Timer<EventHandler>*);
     void cursorUpdateTimerFired(Timer<EventHandler>*);
-
-    bool logicalScrollOverflow(ScrollLogicalDirection, ScrollGranularity, Node* startingNode = 0);
+    void activeIntervalTimerFired(Timer<EventHandler>*);
 
     bool shouldTurnVerticalTicksIntoHorizontal(const HitTestResult&, const PlatformWheelEvent&) const;
     bool mouseDownMayStartSelect() const { return m_mouseDownMayStartSelect; }
@@ -230,6 +228,8 @@ private:
     ScrollableArea* associatedScrollableArea(const RenderLayer*) const;
 
     bool dispatchSyntheticTouchEventIfEnabled(const PlatformMouseEvent&);
+    TouchAction computeEffectiveTouchAction(const Node&);
+
     bool handleMouseEventAsEmulatedGesture(const PlatformMouseEvent&);
     bool handleWheelEventAsEmulatedGesture(const PlatformWheelEvent&);
     HitTestResult hitTestResultInFrame(Frame*, const LayoutPoint&, HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
@@ -303,7 +303,6 @@ private:
 
     bool m_mouseDownMayStartSelect;
     bool m_mouseDownMayStartDrag;
-    bool m_dragMayStartSelectionInstead;
     bool m_mouseDownWasSingleClickInSelection;
     enum SelectionInitiationState { HaveNotStartedSelection, PlacedCaret, ExtendedSelection };
     SelectionInitiationState m_selectionInitiationState;
@@ -378,6 +377,10 @@ private:
     OwnPtr<IntPoint> m_lastSyntheticPinchAnchorDip;
     OwnPtr<IntPoint> m_lastSyntheticPanLocation;
     float m_syntheticPageScaleFactor;
+
+    Timer<EventHandler> m_activeIntervalTimer;
+    double m_lastShowPressTimestamp;
+    RefPtr<Element> m_lastDeferredTapElement;
 };
 
 } // namespace WebCore

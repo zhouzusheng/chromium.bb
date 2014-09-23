@@ -28,7 +28,6 @@
 #include "StorageAreaProxy.h"
 
 #include "StorageNamespaceProxy.h"
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -40,7 +39,7 @@
 #include "core/page/PageGroup.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageEvent.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
@@ -51,7 +50,7 @@
 
 namespace WebCore {
 
-StorageAreaProxy::StorageAreaProxy(PassOwnPtr<WebKit::WebStorageArea> storageArea, StorageType storageType)
+StorageAreaProxy::StorageAreaProxy(PassOwnPtr<blink::WebStorageArea> storageArea, StorageType storageType)
     : m_storageArea(storageArea)
     , m_storageType(storageType)
     , m_canAccessStorageCachedResult(false)
@@ -63,70 +62,70 @@ StorageAreaProxy::~StorageAreaProxy()
 {
 }
 
-unsigned StorageAreaProxy::length(ExceptionState& es, Frame* frame)
+unsigned StorageAreaProxy::length(ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToGet("length", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return 0;
     }
     return m_storageArea->length();
 }
 
-String StorageAreaProxy::key(unsigned index, ExceptionState& es, Frame* frame)
+String StorageAreaProxy::key(unsigned index, ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("length", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return String();
     }
     return m_storageArea->key(index);
 }
 
-String StorageAreaProxy::getItem(const String& key, ExceptionState& es, Frame* frame)
+String StorageAreaProxy::getItem(const String& key, ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("getItem", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return String();
     }
     return m_storageArea->getItem(key);
 }
 
-void StorageAreaProxy::setItem(const String& key, const String& value, ExceptionState& es, Frame* frame)
+void StorageAreaProxy::setItem(const String& key, const String& value, ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("setItem", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return;
     }
-    WebKit::WebStorageArea::Result result = WebKit::WebStorageArea::ResultOK;
+    blink::WebStorageArea::Result result = blink::WebStorageArea::ResultOK;
     m_storageArea->setItem(key, value, frame->document()->url(), result);
-    if (result != WebKit::WebStorageArea::ResultOK)
-        es.throwDOMException(QuotaExceededError, ExceptionMessages::failedToExecute("setItem", "Storage", "Setting the value of '" + key + "' exceeded the quota."));
+    if (result != blink::WebStorageArea::ResultOK)
+        exceptionState.throwDOMException(QuotaExceededError, "Setting the value of '" + key + "' exceeded the quota.");
 }
 
-void StorageAreaProxy::removeItem(const String& key, ExceptionState& es, Frame* frame)
+void StorageAreaProxy::removeItem(const String& key, ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("removeItem", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return;
     }
     m_storageArea->removeItem(key, frame->document()->url());
 }
 
-void StorageAreaProxy::clear(ExceptionState& es, Frame* frame)
+void StorageAreaProxy::clear(ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("clear", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return;
     }
     m_storageArea->clear(frame->document()->url());
 }
 
-bool StorageAreaProxy::contains(const String& key, ExceptionState& es, Frame* frame)
+bool StorageAreaProxy::contains(const String& key, ExceptionState& exceptionState, Frame* frame)
 {
     if (!canAccessStorage(frame)) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("contains", "Storage", "access is denied for this document."));
+        exceptionState.throwSecurityError("access is denied for this document.");
         return false;
     }
-    return !getItem(key, es, frame).isNull();
+    return !getItem(key, exceptionState, frame).isNull();
 }
 
 bool StorageAreaProxy::canAccessStorage(Frame* frame)
@@ -135,9 +134,15 @@ bool StorageAreaProxy::canAccessStorage(Frame* frame)
         return false;
     if (m_canAccessStorageCachedFrame == frame)
         return m_canAccessStorageCachedResult;
-    WebKit::WebFrameImpl* webFrame = WebKit::WebFrameImpl::fromFrame(frame);
-    WebKit::WebViewImpl* webView = webFrame->viewImpl();
-    bool result = !webView->permissionClient() || webView->permissionClient()->allowStorage(webFrame, m_storageType == LocalStorage);
+    blink::WebFrameImpl* webFrame = blink::WebFrameImpl::fromFrame(frame);
+    bool result;
+    if (webFrame->permissionClient()) {
+        result = webFrame->permissionClient()->allowStorage(webFrame, m_storageType == LocalStorage);
+    } else {
+        blink::WebViewImpl* webView = webFrame->viewImpl();
+        result = !webView->permissionClient() || webView->permissionClient()->allowStorage(webFrame, m_storageType == LocalStorage);
+    }
+
     m_canAccessStorageCachedFrame = frame;
     m_canAccessStorageCachedResult = result;
     return result;
@@ -149,7 +154,7 @@ size_t StorageAreaProxy::memoryBytesUsedByCache()
 }
 
 void StorageAreaProxy::dispatchLocalStorageEvent(const String& key, const String& oldValue, const String& newValue,
-                                                 SecurityOrigin* securityOrigin, const KURL& pageURL, WebKit::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
+                                                 SecurityOrigin* securityOrigin, const KURL& pageURL, blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
     // FIXME: This looks suspicious. Why doesn't this use allPages instead?
     const HashSet<Page*>& pages = PageGroup::sharedGroup()->pages();
@@ -163,7 +168,7 @@ void StorageAreaProxy::dispatchLocalStorageEvent(const String& key, const String
     }
 }
 
-static Page* findPageWithSessionStorageNamespace(const WebKit::WebStorageNamespace& sessionNamespace)
+static Page* findPageWithSessionStorageNamespace(const blink::WebStorageNamespace& sessionNamespace)
 {
     // FIXME: This looks suspicious. Why doesn't this use allPages instead?
     const HashSet<Page*>& pages = PageGroup::sharedGroup()->pages();
@@ -177,8 +182,8 @@ static Page* findPageWithSessionStorageNamespace(const WebKit::WebStorageNamespa
 }
 
 void StorageAreaProxy::dispatchSessionStorageEvent(const String& key, const String& oldValue, const String& newValue,
-                                                   SecurityOrigin* securityOrigin, const KURL& pageURL, const WebKit::WebStorageNamespace& sessionNamespace,
-                                                   WebKit::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
+                                                   SecurityOrigin* securityOrigin, const KURL& pageURL, const blink::WebStorageNamespace& sessionNamespace,
+                                                   blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
     Page* page = findPageWithSessionStorageNamespace(sessionNamespace);
     if (!page)
@@ -192,7 +197,7 @@ void StorageAreaProxy::dispatchSessionStorageEvent(const String& key, const Stri
     InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, SessionStorage, securityOrigin);
 }
 
-bool StorageAreaProxy::isEventSource(Storage* storage, WebKit::WebStorageArea* sourceAreaInstance)
+bool StorageAreaProxy::isEventSource(Storage* storage, blink::WebStorageArea* sourceAreaInstance)
 {
     ASSERT(storage);
     StorageAreaProxy* areaProxy = static_cast<StorageAreaProxy*>(storage->area());

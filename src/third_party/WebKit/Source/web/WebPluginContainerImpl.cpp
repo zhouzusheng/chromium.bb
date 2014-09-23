@@ -33,7 +33,6 @@
 
 #include "ChromeClientImpl.h"
 #include "ScrollbarGroup.h"
-#include "WebCursorInfo.h"
 #include "WebDataSourceImpl.h"
 #include "WebElement.h"
 #include "WebInputEvent.h"
@@ -64,22 +63,23 @@
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/ScrollAnimator.h"
-#include "core/platform/ScrollView.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
-#include "core/platform/chromium/KeyboardCodes.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
 #include "platform/HostWindow.h"
+#include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsLayer.h"
+#include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollView.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 #include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebCursorInfo.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebRect.h"
@@ -91,7 +91,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Public methods --------------------------------------------------------------
 
@@ -341,7 +341,7 @@ void WebPluginContainerImpl::copy()
     if (!m_webPlugin->hasSelection())
         return;
 
-    WebKit::Platform::current()->clipboard()->writeHTML(m_webPlugin->selectionAsMarkup(), WebURL(), m_webPlugin->selectionAsText(), false);
+    blink::Platform::current()->clipboard()->writeHTML(m_webPlugin->selectionAsMarkup(), WebURL(), m_webPlugin->selectionAsText(), false);
 }
 
 bool WebPluginContainerImpl::executeEditCommand(const WebString& name)
@@ -466,7 +466,7 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
         WebDataSourceImpl::setNextPluginLoadObserver(observer.release());
     }
 
-    FrameLoadRequest frameRequest(frame->document()->securityOrigin(), request.toResourceRequest(), target);
+    FrameLoadRequest frameRequest(frame->document(), request.toResourceRequest(), target);
     UserGestureIndicator gestureIndicator(request.hasUserGesture() ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
     frame->loader().load(frameRequest);
 }
@@ -587,6 +587,11 @@ bool WebPluginContainerImpl::getFormValue(String& value)
 bool WebPluginContainerImpl::supportsKeyboardFocus() const
 {
     return m_webPlugin->supportsKeyboardFocus();
+}
+
+bool WebPluginContainerImpl::supportsInputMethod() const
+{
+    return m_webPlugin->supportsInputMethod();
 }
 
 bool WebPluginContainerImpl::canProcessDrag() const
@@ -897,4 +902,4 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     return clipRect;
 }
 
-} // namespace WebKit
+} // namespace blink

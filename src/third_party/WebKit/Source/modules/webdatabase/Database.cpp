@@ -47,7 +47,7 @@
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -71,7 +71,6 @@ Database::Database(PassRefPtr<DatabaseContext> databaseContext,
     : DatabaseBase(databaseContext->executionContext())
     , DatabaseBackend(databaseContext, name, expectedVersion, displayName, estimatedSize)
     , m_databaseContext(DatabaseBackend::databaseContext())
-    , m_deleted(false)
 {
     ScriptWrappable::init(this);
     m_databaseThreadSecurityOrigin = m_contextThreadSecurityOrigin->isolatedCopy();
@@ -128,28 +127,7 @@ PassRefPtr<DatabaseBackend> Database::backend()
 
 String Database::version() const
 {
-    if (m_deleted)
-        return String();
     return DatabaseBackendBase::version();
-}
-
-void Database::markAsDeletedAndClose()
-{
-    if (m_deleted || !databaseContext()->databaseThread())
-        return;
-
-    LOG(StorageAPI, "Marking %s (%p) as deleted", stringIdentifier().ascii().data(), this);
-    m_deleted = true;
-
-    DatabaseTaskSynchronizer synchronizer;
-    if (databaseContext()->databaseThread()->terminationRequested(&synchronizer)) {
-        LOG(StorageAPI, "Database handle %p is on a terminated DatabaseThread, cannot be marked for normal closure\n", this);
-        return;
-    }
-
-    OwnPtr<DatabaseCloseTask> task = DatabaseCloseTask::create(this, &synchronizer);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
-    synchronizer.waitForTaskCompletion();
 }
 
 void Database::closeImmediately()
@@ -158,44 +136,49 @@ void Database::closeImmediately()
     DatabaseThread* databaseThread = databaseContext()->databaseThread();
     if (databaseThread && !databaseThread->terminationRequested() && opened()) {
         logErrorMessage("forcibly closing database");
-        databaseThread->scheduleImmediateTask(DatabaseCloseTask::create(this, 0));
+        databaseThread->scheduleTask(DatabaseCloseTask::create(this, 0));
     }
 }
 
-void Database::changeVersion(const String& oldVersion, const String& newVersion,
-                             PassRefPtr<SQLTransactionCallback> callback, PassRefPtr<SQLTransactionErrorCallback> errorCallback,
-                             PassRefPtr<VoidCallback> successCallback)
+void Database::changeVersion(const String& oldVersion, const String& newVersion, PassOwnPtr<SQLTransactionCallback> callback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback, PassOwnPtr<VoidCallback> successCallback)
 {
     ChangeVersionData data(oldVersion, newVersion);
     runTransaction(callback, errorCallback, successCallback, false, &data);
 }
 
-void Database::transaction(PassRefPtr<SQLTransactionCallback> callback, PassRefPtr<SQLTransactionErrorCallback> errorCallback, PassRefPtr<VoidCallback> successCallback)
+void Database::transaction(PassOwnPtr<SQLTransactionCallback> callback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback, PassOwnPtr<VoidCallback> successCallback)
 {
     runTransaction(callback, errorCallback, successCallback, false);
 }
 
-void Database::readTransaction(PassRefPtr<SQLTransactionCallback> callback, PassRefPtr<SQLTransactionErrorCallback> errorCallback, PassRefPtr<VoidCallback> successCallback)
+void Database::readTransaction(PassOwnPtr<SQLTransactionCallback> callback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback, PassOwnPtr<VoidCallback> successCallback)
 {
     runTransaction(callback, errorCallback, successCallback, true);
 }
 
-static void callTransactionErrorCallback(ExecutionContext*, PassRefPtr<SQLTransactionErrorCallback> callback, PassRefPtr<SQLError> error)
+static void callTransactionErrorCallback(ExecutionContext*, PassOwnPtr<SQLTransactionErrorCallback> callback, PassRefPtr<SQLError> error)
 {
     callback->handleEvent(error.get());
 }
 
-void Database::runTransaction(PassRefPtr<SQLTransactionCallback> callback, PassRefPtr<SQLTransactionErrorCallback> errorCallback,
-    PassRefPtr<VoidCallback> successCallback, bool readOnly, const ChangeVersionData* changeVersionData)
+void Database::runTransaction(PassOwnPtr<SQLTransactionCallback> callback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
+    PassOwnPtr<VoidCallback> successCallback, bool readOnly, const ChangeVersionData* changeVersionData)
 {
-    RefPtr<SQLTransactionErrorCallback> anotherRefToErrorCallback = errorCallback;
-    RefPtr<SQLTransaction> transaction = SQLTransaction::create(this, callback, successCallback, anotherRefToErrorCallback, readOnly);
-
-    RefPtr<SQLTransactionBackend> transactionBackend;
-    transactionBackend = backend()->runTransaction(transaction.release(), readOnly, changeVersionData);
-    if (!transactionBackend && anotherRefToErrorCallback) {
-        RefPtr<SQLError> error = SQLError::create(SQLError::UNKNOWN_ERR, "database has been closed");
-        executionContext()->postTask(createCallbackTask(&callTransactionErrorCallback, anotherRefToErrorCallback, error.release()));
+    // FIXME: Rather than passing errorCallback to SQLTransaction and then sometimes firing it ourselves,
+    // this code should probably be pushed down into DatabaseBackend so that we only create the SQLTransaction
+    // if we're actually going to run it.
+#if !ASSERT_DISABLED
+    SQLTransactionErrorCallback* originalErrorCallback = errorCallback.get();
+#endif
+    RefPtr<SQLTransaction> transaction = SQLTransaction::create(this, callback, successCallback, errorCallback, readOnly);
+    RefPtr<SQLTransactionBackend> transactionBackend = backend()->runTransaction(transaction, readOnly, changeVersionData);
+    if (!transactionBackend) {
+        OwnPtr<SQLTransactionErrorCallback> callback = transaction->releaseErrorCallback();
+        ASSERT(callback == originalErrorCallback);
+        if (callback) {
+            RefPtr<SQLError> error = SQLError::create(SQLError::UNKNOWN_ERR, "database has been closed");
+            executionContext()->postTask(createCallbackTask(&callTransactionErrorCallback, callback.release(), error.release()));
+        }
     }
 }
 
@@ -231,7 +214,7 @@ Vector<String> Database::performGetTableNames()
 
     SQLiteStatement statement(sqliteDatabase(), "SELECT name FROM sqlite_master WHERE type='table';");
     if (statement.prepare() != SQLResultOk) {
-        LOG_ERROR("Unable to retrieve list of tables for database %s", databaseDebugName().ascii().data());
+        WTF_LOG_ERROR("Unable to retrieve list of tables for database %s", databaseDebugName().ascii().data());
         enableAuthorizer();
         return Vector<String>();
     }
@@ -247,7 +230,7 @@ Vector<String> Database::performGetTableNames()
     enableAuthorizer();
 
     if (result != SQLResultDone) {
-        LOG_ERROR("Error getting tables for database %s", databaseDebugName().ascii().data());
+        WTF_LOG_ERROR("Error getting tables for database %s", databaseDebugName().ascii().data());
         return Vector<String>();
     }
 
@@ -264,7 +247,7 @@ Vector<String> Database::tableNames()
         return result;
 
     OwnPtr<DatabaseTableNamesTask> task = DatabaseTableNamesTask::create(this, &synchronizer, result);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
+    databaseContext()->databaseThread()->scheduleTask(task.release());
     synchronizer.waitForTaskCompletion();
 
     return result;
@@ -274,7 +257,7 @@ SecurityOrigin* Database::securityOrigin() const
 {
     if (m_executionContext->isContextThread())
         return m_contextThreadSecurityOrigin.get();
-    if (currentThread() == databaseContext()->databaseThread()->getThreadID())
+    if (databaseContext()->databaseThread()->isDatabaseThread())
         return m_databaseThreadSecurityOrigin.get();
     return 0;
 }

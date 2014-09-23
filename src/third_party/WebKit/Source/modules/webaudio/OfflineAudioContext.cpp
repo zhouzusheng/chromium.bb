@@ -36,42 +36,30 @@
 
 namespace WebCore {
 
-PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& es)
+PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
 {
     // FIXME: add support for workers.
     if (!context || !context->isDocument()) {
-        es.throwDOMException(
+        exceptionState.throwDOMException(
             NotSupportedError,
-            ExceptionMessages::failedToConstruct("OfflineAudioContext"));
+            "Workers are not supported.");
         return 0;
     }
 
     Document* document = toDocument(context);
 
     if (!numberOfFrames) {
-        es.throwDOMException(
-            SyntaxError,
-            ExceptionMessages::failedToConstruct(
-                "OfflineAudioContext",
-                "number of frames cannot be zero."));
+        exceptionState.throwDOMException(SyntaxError, "number of frames cannot be zero.");
         return 0;
     }
 
     if (numberOfChannels > 10) {
-        es.throwDOMException(
-            SyntaxError,
-            ExceptionMessages::failedToConstruct(
-                "OfflineAudioContext",
-                "number of channels (" + String::number(numberOfChannels) + ") exceeds maximum (10)."));
+        exceptionState.throwDOMException(SyntaxError, "number of channels (" + String::number(numberOfChannels) + ") exceeds maximum (10).");
         return 0;
     }
 
     if (!isSampleRateRangeGood(sampleRate)) {
-        es.throwDOMException(
-            SyntaxError,
-            ExceptionMessages::failedToConstruct(
-                "OfflineAudioContext",
-                "sample rate (" + String::number(sampleRate) + ") must be in the range 44100-96000 Hz."));
+        exceptionState.throwDOMException(SyntaxError, "sample rate (" + String::number(sampleRate) + ") must be in the range 44100-96000 Hz.");
         return 0;
     }
 

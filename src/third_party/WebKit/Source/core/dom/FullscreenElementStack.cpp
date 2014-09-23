@@ -30,14 +30,13 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderFullScreen.h"
 #include "platform/UserGestureIndicator.h"
 
@@ -515,6 +514,10 @@ void FullscreenElementStack::fullScreenElementRemoved()
 void FullscreenElementStack::removeFullScreenElementOfSubtree(Node* node, bool amongChildrenOnly)
 {
     if (!m_fullScreenElement)
+        return;
+
+    // If the node isn't in a document it can't have a fullscreen'd child.
+    if (!node->inDocument())
         return;
 
     bool elementInSubtree = false;

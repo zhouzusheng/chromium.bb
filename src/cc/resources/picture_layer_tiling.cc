@@ -391,7 +391,7 @@ void PictureLayerTiling::UpdateTilePriorities(
         current_frame_time_in_seconds - last_impl_frame_time_in_seconds_;
   }
 
-  gfx::Rect view_rect(device_viewport);
+  gfx::RectF view_rect(device_viewport);
   float current_scale = current_layer_contents_scale / contents_scale_;
   float last_scale = last_layer_contents_scale / contents_scale_;
 
@@ -426,7 +426,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_scale) + last_offset;
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(
@@ -506,7 +506,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_tile_origin + last_vertical).BoundingBox();
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(
@@ -541,7 +541,7 @@ void PictureLayerTiling::UpdateTilePriorities(
           last_screen_transform, last_layer_content_rect);
 
       float distance_to_visible_in_pixels =
-          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+          current_screen_rect.ManhattanInternalDistance(view_rect);
 
       float time_to_visible_in_seconds =
           TilePriority::TimeForBoundsToIntersect(

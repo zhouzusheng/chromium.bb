@@ -32,7 +32,7 @@
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceLoadInfo.h"
 #include "platform/network/ResourceLoadTiming.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/CString.h"
@@ -85,10 +85,10 @@ public:
     const AtomicString& httpStatusText() const;
     void setHTTPStatusText(const AtomicString&);
 
-    String httpHeaderField(const AtomicString& name) const;
-    String httpHeaderField(const char* name) const;
-    void setHTTPHeaderField(const AtomicString& name, const String& value);
-    void addHTTPHeaderField(const AtomicString& name, const String& value);
+    const AtomicString& httpHeaderField(const AtomicString& name) const;
+    const AtomicString& httpHeaderField(const char* name) const;
+    void setHTTPHeaderField(const AtomicString& name, const AtomicString& value);
+    void addHTTPHeaderField(const AtomicString& name, const AtomicString& value);
     void clearHTTPHeaderField(const AtomicString& name);
     const HTTPHeaderMap& httpHeaderFields() const;
 

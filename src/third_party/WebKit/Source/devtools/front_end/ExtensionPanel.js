@@ -30,6 +30,7 @@
 
 /**
  * @constructor
+ * @implements {WebInspector.Searchable}
  * @extends {WebInspector.Panel}
  * @param {string} id
  * @param {string} pageURL
@@ -38,11 +39,14 @@ WebInspector.ExtensionPanel = function(id, pageURL)
 {
     WebInspector.Panel.call(this, id);
     this.setHideOnDetach();
-    this.element.addStyleClass("extension-panel");
+    this.element.classList.add("extension-panel");
     this._panelStatusBarElement = this.element.createChild("div", "panel-status-bar hidden");
 
+    this._searchableView = new WebInspector.SearchableView(this);
+    this._searchableView.show(this.element);
+
     var extensionView = new WebInspector.ExtensionView(id, pageURL, "extension panel");
-    extensionView.show(this.element);
+    extensionView.show(this._searchableView.element);
     this.setDefaultFocusedElement(extensionView.defaultFocusedElement());
 }
 
@@ -53,18 +57,26 @@ WebInspector.ExtensionPanel.prototype = {
     },
 
     /**
-     * @param {Element} element
+     * @param {!Element} element
      */
     addStatusBarItem: function(element)
     {
-        this._panelStatusBarElement.removeStyleClass("hidden");
+        this._panelStatusBarElement.classList.remove("hidden");
         this._panelStatusBarElement.appendChild(element);
     },
 
-    searchCanceled: function(startingNewSearch)
+    searchCanceled: function()
     {
         WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.CancelSearch);
-        WebInspector.Panel.prototype.searchCanceled.apply(this, arguments);
+        this._searchableView.updateSearchMatchesCount(0);
+    },
+
+    /**
+     * @return {!WebInspector.SearchableView}
+     */
+    searchableView: function()
+    {
+        return this._searchableView;
     },
 
     /**
@@ -79,13 +91,11 @@ WebInspector.ExtensionPanel.prototype = {
     jumpToNextSearchResult: function()
     {
         WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.NextSearchResult);
-        WebInspector.Panel.prototype.jumpToNextSearchResult.call(this);
     },
 
     jumpToPreviousSearchResult: function()
     {
         WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.PreviousSearchResult);
-        WebInspector.Panel.prototype.jumpToPreviousSearchResult.call(this);
     },
 
     __proto__: WebInspector.Panel.prototype
@@ -144,7 +154,7 @@ WebInspector.ExtensionSidebarPane = function(title, id)
 
 WebInspector.ExtensionSidebarPane.prototype = {
     /**
-     * @param {Object} object
+     * @param {!Object} object
      * @param {string} title
      * @param {function(?string=)} callback
      */
@@ -196,7 +206,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
      * @param {string} title
      * @param {function(?string=)} callback
      * @param {?Protocol.Error} error
-     * @param {RuntimeAgent.RemoteObject} result
+     * @param {!RuntimeAgent.RemoteObject} result
      * @param {boolean=} wasThrown
      */
     _onEvaluate: function(title, callback, error, result, wasThrown)
@@ -220,7 +230,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
     },
 
     /**
-     * @param {WebInspector.RemoteObject} object
+     * @param {!WebInspector.RemoteObject} object
      * @param {string} title
      * @param {function(?string=)} callback
      */
@@ -234,7 +244,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
         this._objectPropertiesView.element.removeChildren();
         var section = new WebInspector.ObjectPropertiesSection(object, title);
         if (!title)
-            section.headerElement.addStyleClass("hidden");
+            section.headerElement.classList.add("hidden");
         section.expanded = true;
         section.editable = false;
         this._objectPropertiesView.element.appendChild(section.element);

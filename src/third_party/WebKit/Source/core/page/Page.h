@@ -22,8 +22,10 @@
 #define Page_h
 
 #include "core/dom/ViewportDescription.h"
+#include "core/frame/SettingsDelegate.h"
+#include "core/frame/UseCounter.h"
+#include "core/loader/HistoryController.h"
 #include "core/page/PageVisibilityState.h"
-#include "core/page/UseCounter.h"
 #include "core/rendering/Pagination.h"
 #include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
@@ -72,14 +74,16 @@ class ScrollableArea;
 class ScrollingCoordinator;
 class Settings;
 class SharedWorkerRepositoryClient;
+class SpellCheckerClient;
 class StorageNamespace;
+class UndoStack;
 class ValidationMessageClient;
 
 typedef uint64_t LinkHash;
 
 float deviceScaleFactor(Frame*);
 
-class Page : public Supplementable<Page>, public LifecycleContext<Page> {
+class Page : public Supplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
@@ -98,6 +102,7 @@ public:
         DragClient* dragClient;
         InspectorClient* inspectorClient;
         BackForwardClient* backForwardClient;
+        SpellCheckerClient* spellCheckerClient;
     };
 
     explicit Page(PageClients&);
@@ -111,6 +116,10 @@ public:
     PluginData* pluginData() const;
 
     EditorClient& editorClient() const { return *m_editorClient; }
+    SpellCheckerClient& spellCheckerClient() const { return *m_spellCheckerClient; }
+    UndoStack& undoStack() const { return *m_undoStack; }
+
+    HistoryController& historyController() const { return *m_historyController; }
 
     void setMainFrame(PassRefPtr<Frame>);
     Frame* mainFrame() const { return m_mainFrame.get(); }
@@ -120,11 +129,7 @@ public:
     bool openedByDOM() const;
     void setOpenedByDOM();
 
-    // DEPRECATED. Use backForward() instead of the following function.
-    void goToItem(HistoryItem*);
-
-    // FIXME: InspectorPageGroup is only needed to support single process debugger layout tests, it should be removed when DumpRenderTree is gone.
-    enum PageGroupType { InspectorPageGroup, PrivatePageGroup, SharedPageGroup };
+    enum PageGroupType { PrivatePageGroup, SharedPageGroup };
     void setGroupType(PageGroupType);
     void clearPageGroup();
     PageGroup& group()
@@ -167,6 +172,9 @@ public:
 
     void unmarkAllTextMatches();
 
+    // DefersLoading is used to delay loads during modal dialogs.
+    // Modal dialogs are supposed to freeze all background processes
+    // in the page, including prevent additional loads from staring/continuing.
     void setDefersLoading(bool);
     bool defersLoading() const { return m_defersLoading; }
 
@@ -182,11 +190,6 @@ public:
     // FrameView.
     const Pagination& pagination() const { return m_pagination; }
     void setPagination(const Pagination&);
-
-    void userStyleSheetLocationChanged();
-    const String& userStyleSheet() const;
-
-    void dnsPrefetchingStateChanged();
 
     static void allVisitedStateChanged(PageGroup*);
     static void visitedStateChanged(PageGroup*, LinkHash visitedHash);
@@ -221,7 +224,6 @@ public:
 
     void addMultisamplingChangedObserver(MultisamplingChangedObserver*);
     void removeMultisamplingChangedObserver(MultisamplingChangedObserver*);
-    void multisamplingChanged();
 
     void didCommitLoad(Frame*);
 
@@ -242,6 +244,10 @@ private:
 
     void setTimerAlignmentInterval(double);
 
+    // SettingsDelegate overrides.
+    virtual Page* page() OVERRIDE { return this; }
+    virtual void settingsChanged(SettingsDelegate::ChangeType) OVERRIDE;
+
     const OwnPtr<AutoscrollController> m_autoscrollController;
     const OwnPtr<Chrome> m_chrome;
     const OwnPtr<DragCaretController> m_dragCaretController;
@@ -252,8 +258,9 @@ private:
     const OwnPtr<PointerLockController> m_pointerLockController;
     RefPtr<ScrollingCoordinator> m_scrollingCoordinator;
 
-    const OwnPtr<Settings> m_settings;
+    const OwnPtr<HistoryController> m_historyController;
     const OwnPtr<ProgressTracker> m_progress;
+    const OwnPtr<UndoStack> m_undoStack;
 
     RefPtr<Frame> m_mainFrame;
 
@@ -263,6 +270,7 @@ private:
     EditorClient* const m_editorClient;
     ValidationMessageClient* m_validationMessageClient;
     SharedWorkerRepositoryClient* m_sharedWorkerRepositoryClient;
+    SpellCheckerClient* const m_spellCheckerClient;
 
     UseCounter m_useCounter;
 
@@ -276,9 +284,6 @@ private:
     float m_deviceScaleFactor;
 
     Pagination m_pagination;
-
-    String m_userStyleSheet;
-    bool m_didLoadUserStyleSheet;
 
     RefPtr<PageGroup> m_group;
 

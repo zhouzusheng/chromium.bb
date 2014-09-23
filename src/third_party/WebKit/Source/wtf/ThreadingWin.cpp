@@ -213,13 +213,12 @@ ThreadIdentifier createThreadInternal(ThreadFunction entryPoint, void* data, con
     OwnPtr<ThreadFunctionInvocation> invocation = adoptPtr(new ThreadFunctionInvocation(entryPoint, data));
     HANDLE threadHandle = reinterpret_cast<HANDLE>(_beginthreadex(0, 0, wtfThreadEntryPoint, invocation.get(), 0, &threadIdentifier));
     if (!threadHandle) {
-        LOG_ERROR("Failed to create thread at entry point %p with data %p: %ld", entryPoint, data, errno);
+        WTF_LOG_ERROR("Failed to create thread at entry point %p with data %p: %ld", entryPoint, data, errno);
         return 0;
     }
 
     // The thread will take ownership of invocation.
-    ThreadFunctionInvocation* leakedInvocation = invocation.leakPtr();
-    UNUSED_PARAM(leakedInvocation);
+    ThreadFunctionInvocation* ALLOW_UNUSED leakedInvocation = invocation.leakPtr();
 
     threadID = static_cast<ThreadIdentifier>(threadIdentifier);
     storeThreadHandleByIdentifier(threadIdentifier, threadHandle);
@@ -233,11 +232,11 @@ int waitForThreadCompletion(ThreadIdentifier threadID)
 
     HANDLE threadHandle = threadHandleForIdentifier(threadID);
     if (!threadHandle)
-        LOG_ERROR("ThreadIdentifier %u did not correspond to an active thread when trying to quit", threadID);
+        WTF_LOG_ERROR("ThreadIdentifier %u did not correspond to an active thread when trying to quit", threadID);
 
     DWORD joinResult = WaitForSingleObject(threadHandle, INFINITE);
     if (joinResult == WAIT_FAILED)
-        LOG_ERROR("ThreadIdentifier %u was found to be deadlocked trying to quit", threadID);
+        WTF_LOG_ERROR("ThreadIdentifier %u was found to be deadlocked trying to quit", threadID);
 
     CloseHandle(threadHandle);
     clearThreadHandleForIdentifier(threadID);

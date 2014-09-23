@@ -24,13 +24,14 @@
 #include "core/xml/XSLTProcessor.h"
 
 #include "core/dom/DOMImplementation.h"
+#include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/editing/markup.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 
@@ -90,7 +91,9 @@ PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourc
         result = DOMWindow::createDocument(sourceMIMEType, init, forceXHTML);
     }
 
-    result->setEncoding(sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding));
+    DocumentEncodingData data;
+    data.encoding = sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding);
+    result->setEncodingData(data);
     result->setContent(documentSource);
 
     return result.release();

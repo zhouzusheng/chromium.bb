@@ -117,7 +117,8 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual LayoutRect boundingBox() const OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
-    virtual void setActive(bool active = true, bool pause = false) OVERRIDE;
+    void focusStateChanged();
+    virtual void setActive(bool = true) OVERRIDE;
     virtual void setHovered(bool = true) OVERRIDE;
 
     // -----------------------------------------------------------------------------
@@ -147,6 +148,14 @@ protected:
 private:
     void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
     void insertBeforeCommon(Node& nextChild, Node& oldChild);
+    void updateTreeAfterInsertion(Node& child);
+    void willRemoveChildren();
+    void willRemoveChild(Node& child);
+
+    inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState&) const;
+    inline bool checkAcceptChild(const Node* newChild, const Node* oldChild, ExceptionState&) const;
+    inline bool containsConsideringHostElements(const Node&) const;
+    inline bool isChildTypeAllowed(const Node& child) const;
 
     void attachChildren(const AttachContext& = AttachContext());
     void detachChildren(const AttachContext& = AttachContext());

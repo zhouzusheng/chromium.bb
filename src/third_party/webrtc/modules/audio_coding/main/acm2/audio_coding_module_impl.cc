@@ -20,6 +20,7 @@
 #include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_generic_codec.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
+#include "webrtc/modules/audio_coding/main/acm2/call_statistics.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
@@ -1973,6 +1974,15 @@ std::vector<uint16_t> AudioCodingModuleImpl::GetNackList(
 
 int AudioCodingModuleImpl::LeastRequiredDelayMs() const {
   return receiver_.LeastRequiredDelayMs();
+}
+
+const char* AudioCodingModuleImpl::Version() const {
+  return kExperimentalAcmVersion;
+}
+
+void AudioCodingModuleImpl::GetDecodingCallStatistics(
+      AudioDecodingCallStats* call_stats) const {
+  receiver_.GetDecodingCallStatistics(call_stats);
 }
 
 }  // namespace acm2

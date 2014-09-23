@@ -34,13 +34,9 @@ using namespace std;
 namespace WebCore {
 
 bool RenderLayerModelObject::s_wasFloating = false;
-bool RenderLayerModelObject::s_hadLayer = false;
-bool RenderLayerModelObject::s_hadTransform = false;
-bool RenderLayerModelObject::s_layerWasSelfPainting = false;
 
 RenderLayerModelObject::RenderLayerModelObject(ContainerNode* node)
     : RenderObject(node)
-    , m_layer(0)
 {
 }
 
@@ -53,16 +49,14 @@ RenderLayerModelObject::~RenderLayerModelObject()
 
 void RenderLayerModelObject::destroyLayer()
 {
-    ASSERT(!hasLayer()); // Callers should have already called setHasLayer(false)
-    ASSERT(m_layer);
-    delete m_layer;
-    m_layer = 0;
+    setHasLayer(false);
+    m_layer = nullptr;
 }
 
 void RenderLayerModelObject::createLayer()
 {
     ASSERT(!m_layer);
-    m_layer = new RenderLayer(this);
+    m_layer = adoptPtr(new RenderLayer(this));
     setHasLayer(true);
     m_layer->insertOnlyThisLayer();
 }
@@ -89,17 +83,14 @@ void RenderLayerModelObject::willBeDestroyed()
         }
     }
 
-    // RenderObject::willBeDestroyed calls back to destroyLayer() for layer destruction
     RenderObject::willBeDestroyed();
+
+    destroyLayer();
 }
 
 void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
 {
     s_wasFloating = isFloating();
-    s_hadLayer = hasLayer();
-    s_hadTransform = hasTransform();
-    if (s_hadLayer)
-        s_layerWasSelfPainting = layer()->isSelfPaintingLayer();
 
     // If our z-index changes value or our visibility changes,
     // we need to dirty our stacking context's z-order list.
@@ -143,6 +134,10 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
 
 void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
+    bool hadTransform = hasTransform();
+    bool hadLayer = hasLayer();
+    bool layerWasSelfPainting = hadLayer && layer()->isSelfPaintingLayer();
+
     RenderObject::styleDidChange(diff, oldStyle);
     updateFromStyle();
 
@@ -164,13 +159,13 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
         layer()->removeOnlyThisLayer(); // calls destroyLayer() which clears m_layer
         if (s_wasFloating && isFloating())
             setChildNeedsLayout();
-        if (s_hadTransform)
+        if (hadTransform)
             setNeedsLayoutAndPrefWidthsRecalc();
     }
 
     if (layer()) {
         layer()->styleChanged(diff, oldStyle);
-        if (s_hadLayer && layer()->isSelfPaintingLayer() != s_layerWasSelfPainting)
+        if (hadLayer && layer()->isSelfPaintingLayer() != layerWasSelfPainting)
             setChildNeedsLayout();
     }
 
@@ -204,9 +199,19 @@ void RenderLayerModelObject::addLayerHitTestRects(LayerHitTestRects& rects, cons
     }
 }
 
-CompositedLayerMapping* RenderLayerModelObject::compositedLayerMapping() const
+CompositedLayerMappingPtr RenderLayerModelObject::compositedLayerMapping() const
 {
     return m_layer ? m_layer->compositedLayerMapping() : 0;
+}
+
+bool RenderLayerModelObject::hasCompositedLayerMapping() const
+{
+    return m_layer ? m_layer->hasCompositedLayerMapping() : false;
+}
+
+CompositedLayerMapping* RenderLayerModelObject::groupedMapping() const
+{
+    return m_layer ? m_layer->groupedMapping() : 0;
 }
 
 } // namespace WebCore

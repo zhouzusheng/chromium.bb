@@ -64,11 +64,11 @@ class StringRef {
 }  // close namespace blpwtk2
 
 #ifdef BLPWTK2_IMPLEMENTATION
-namespace WebKit {
+namespace blink {
     class WebString;
-}  // close namespace WebKit
+}  // close namespace blink
 namespace blpwtk2 {
-WebKit::WebString toWebString(const StringRef&);
+blink::WebString toWebString(const StringRef&);
 }  // close namespace blpwtk2
 #endif  // BLPWTK2_IMPLEMENTATION
 

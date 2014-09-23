@@ -69,8 +69,8 @@
           'action_name': 'Generate angle bindings',
           'inputs': [
             'gen_angle_bindings.py',
-            '<(DEPTH)/third_party/angle_dx11/src/libGLESv2/libGLESv2.def',
-            '<(DEPTH)/third_party/angle_dx11/src/libEGL/libEGL.def',
+            '<(angle_path)/src/libGLESv2/libGLESv2.def',
+            '<(angle_path)/src/libEGL/libEGL.def',
           ],
           'outputs': [
             '<(angle_bindings_cc)',
@@ -120,10 +120,10 @@
         '../ui/views/views.gyp:views',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
+        '../webkit/child/webkit_child.gyp:webkit_child',
         '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/glue/webkit_glue.gyp:glue',
-        '../webkit/glue/webkit_glue.gyp:glue_child',
         '../webkit/webkit_resources.gyp:webkit_resources',
         'blpangle',
         'blpwtk2_generate_sources',
@@ -287,14 +287,8 @@
         'public/blpwtk2_toolkitcreateparams.h',
         'public/blpwtk2_toolkitfactory.cc',
         'public/blpwtk2_toolkitfactory.h',
-        'public/blpwtk2_webdocument.cc',
-        'public/blpwtk2_webdocument.h',
-        'public/blpwtk2_webelement.cc',
-        'public/blpwtk2_webelement.h',
         'public/blpwtk2_webframe.cc',
         'public/blpwtk2_webframe.h',
-        'public/blpwtk2_webnode.cc',
-        'public/blpwtk2_webnode.h',
         'public/blpwtk2_webview.cc',
         'public/blpwtk2_webview.h',
         'public/blpwtk2_webviewcreateparams.cc',
@@ -342,8 +336,8 @@
       'type': 'loadable_module',
       'dependencies': [
         'blpwtk2_generate_sources',
-        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libGLESv2_static',
-        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libEGL_static',
+        '<(angle_path)/src/build_angle.gyp:libGLESv2_static',
+        '<(angle_path)/src/build_angle.gyp:libEGL_static',
       ],
       'conditions': [
         ['bb_version!=""', {

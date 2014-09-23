@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-std::pair<EventTarget*, StringImpl*> scheduledEventTargetKey(const Event* event)
+std::pair<EventTarget*, StringImpl*> eventTargetKey(const Event* event)
 {
     return std::make_pair(event->target(), event->type().impl());
 }
@@ -66,10 +66,10 @@ void ScriptedAnimationController::resume()
     scheduleAnimationIfNeeded();
 }
 
-ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassRefPtr<RequestAnimationFrameCallback> callback)
+ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassOwnPtr<RequestAnimationFrameCallback> callback)
 {
     ScriptedAnimationController::CallbackId id = ++m_nextCallbackId;
-    callback->m_firedOrCancelled = false;
+    callback->m_cancelled = false;
     callback->m_id = id;
     m_callbacks.append(callback);
     scheduleAnimationIfNeeded();
@@ -83,9 +83,16 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
 {
     for (size_t i = 0; i < m_callbacks.size(); ++i) {
         if (m_callbacks[i]->m_id == id) {
-            m_callbacks[i]->m_firedOrCancelled = true;
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacks.remove(i);
+            return;
+        }
+    }
+    for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
+        if (m_callbacksToInvoke[i]->m_id == id) {
+            InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
+            m_callbacksToInvoke[i]->m_cancelled = true;
+            // will be removed at the end of executeCallbacks()
             return;
         }
     }
@@ -95,11 +102,13 @@ void ScriptedAnimationController::dispatchEvents()
 {
     Vector<RefPtr<Event> > events;
     events.swap(m_eventQueue);
-    m_scheduledEventTargets.clear();
+    m_perFrameEvents.clear();
 
     for (size_t i = 0; i < events.size(); ++i) {
         EventTarget* eventTarget = events[i]->target();
-        // FIXME: we should figure out how to make dispatchEvent properly virtual to avoid this.
+        // FIXME: we should figure out how to make dispatchEvent properly virtual to avoid
+        // special casting window.
+        // FIXME: We should not fire events for nodes that are no longer in the tree.
         if (DOMWindow* window = eventTarget->toDOMWindow())
             window->dispatchEvent(events[i], 0);
         else
@@ -118,12 +127,12 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
 
     // First, generate a list of callbacks to consider.  Callbacks registered from this point
     // on are considered only for the "next" frame, not this one.
-    CallbackList callbacks(m_callbacks);
+    ASSERT(m_callbacksToInvoke.isEmpty());
+    m_callbacksToInvoke.swap(m_callbacks);
 
-    for (size_t i = 0; i < callbacks.size(); ++i) {
-        RequestAnimationFrameCallback* callback = callbacks[i].get();
-        if (!callback->m_firedOrCancelled) {
-            callback->m_firedOrCancelled = true;
+    for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
+        RequestAnimationFrameCallback* callback = m_callbacksToInvoke[i].get();
+        if (!callback->m_cancelled) {
             InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireAnimationFrame(m_document, callback->m_id);
             if (callback->m_useLegacyTimeBase)
                 callback->handleEvent(legacyHighResNowMs);
@@ -133,13 +142,7 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
         }
     }
 
-    // Remove any callbacks we fired from the list of pending callbacks.
-    for (size_t i = 0; i < m_callbacks.size();) {
-        if (m_callbacks[i]->m_firedOrCancelled)
-            m_callbacks.remove(i);
-        else
-            ++i;
-    }
+    m_callbacksToInvoke.clear();
 }
 
 void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTimeNow)
@@ -158,12 +161,17 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     scheduleAnimationIfNeeded();
 }
 
-void ScriptedAnimationController::scheduleEvent(PassRefPtr<Event> event)
+void ScriptedAnimationController::enqueueEvent(PassRefPtr<Event> event)
 {
-    if (!m_scheduledEventTargets.add(scheduledEventTargetKey(event.get())).isNewEntry)
-        return;
     m_eventQueue.append(event);
     scheduleAnimationIfNeeded();
+}
+
+void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtr<Event> event)
+{
+    if (!m_perFrameEvents.add(eventTargetKey(event.get())).isNewEntry)
+        return;
+    enqueueEvent(event);
 }
 
 void ScriptedAnimationController::scheduleAnimationIfNeeded()

@@ -37,14 +37,13 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CookieJar.h"
-#include "core/platform/Cookie.h"
 #include "modules/websockets/WebSocket.h"
+#include "platform/Cookie.h"
 #include "platform/Logging.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/SHA1.h"
 #include "wtf/StdLibExtras.h"
@@ -53,7 +52,6 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
-#include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
@@ -146,7 +144,7 @@ WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, 
 
 WebSocketHandshake::~WebSocketHandshake()
 {
-    WebKit::Platform::current()->histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
+    blink::Platform::current()->histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
 }
 
 const KURL& WebSocketHandshake::url() const
@@ -310,7 +308,7 @@ int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
         m_mode = Failed; // m_failureReason is set inside readStatusLine().
         return len;
     }
-    LOG(Network, "WebSocketHandshake %p readServerHandshake() Status code is %d", this, statusCode);
+    WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() Status code is %d", this, statusCode);
     m_response.setStatusCode(statusCode);
     m_response.setStatusText(statusText);
     if (statusCode != 101) {
@@ -326,12 +324,12 @@ int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
     }
     const char* p = readHTTPHeaders(header + lineLength, header + len);
     if (!p) {
-        LOG(Network, "WebSocketHandshake %p readServerHandshake() readHTTPHeaders() failed", this);
+        WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() readHTTPHeaders() failed", this);
         m_mode = Failed; // m_failureReason is set inside readHTTPHeaders().
         return len;
     }
     if (!checkResponseHeaders()) {
-        LOG(Network, "WebSocketHandshake %p readServerHandshake() checkResponseHeaders() failed", this);
+        WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() checkResponseHeaders() failed", this);
         m_mode = Failed;
         return p - header;
     }
@@ -350,32 +348,32 @@ String WebSocketHandshake::failureReason() const
     return m_failureReason;
 }
 
-String WebSocketHandshake::serverWebSocketProtocol() const
+const AtomicString& WebSocketHandshake::serverWebSocketProtocol() const
 {
     return m_response.headerFields().get("sec-websocket-protocol");
 }
 
-String WebSocketHandshake::serverSetCookie() const
+const AtomicString& WebSocketHandshake::serverSetCookie() const
 {
     return m_response.headerFields().get("set-cookie");
 }
 
-String WebSocketHandshake::serverSetCookie2() const
+const AtomicString& WebSocketHandshake::serverSetCookie2() const
 {
     return m_response.headerFields().get("set-cookie2");
 }
 
-String WebSocketHandshake::serverUpgrade() const
+const AtomicString& WebSocketHandshake::serverUpgrade() const
 {
     return m_response.headerFields().get("upgrade");
 }
 
-String WebSocketHandshake::serverConnection() const
+const AtomicString& WebSocketHandshake::serverConnection() const
 {
     return m_response.headerFields().get("connection");
 }
 
-String WebSocketHandshake::serverWebSocketAccept() const
+const AtomicString& WebSocketHandshake::serverWebSocketAccept() const
 {
     return m_response.headerFields().get("sec-websocket-accept");
 }
@@ -480,7 +478,7 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
     m_response.clearHeaderFields();
 
     AtomicString name;
-    String value;
+    AtomicString value;
     bool sawSecWebSocketAcceptHeaderField = false;
     bool sawSecWebSocketProtocolHeaderField = false;
     const char* p = start;
@@ -528,10 +526,10 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
 
 bool WebSocketHandshake::checkResponseHeaders()
 {
-    const String& serverWebSocketProtocol = this->serverWebSocketProtocol();
-    const String& serverUpgrade = this->serverUpgrade();
-    const String& serverConnection = this->serverConnection();
-    const String& serverWebSocketAccept = this->serverWebSocketAccept();
+    const AtomicString& serverWebSocketProtocol = this->serverWebSocketProtocol();
+    const AtomicString& serverUpgrade = this->serverUpgrade();
+    const AtomicString& serverConnection = this->serverConnection();
+    const AtomicString& serverWebSocketAccept = this->serverWebSocketAccept();
 
     if (serverUpgrade.isNull()) {
         m_failureReason = formatHandshakeFailureReason("'Upgrade' header is missing");
@@ -567,7 +565,7 @@ bool WebSocketHandshake::checkResponseHeaders()
         Vector<String> result;
         m_clientProtocol.split(String(WebSocket::subProtocolSeperator()), result);
         if (!result.contains(serverWebSocketProtocol)) {
-            m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header value '" + serverWebSocketProtocol + "' in response does not match any of sent values'");
+            m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header value '" + serverWebSocketProtocol + "' in response does not match any of sent values");
             return false;
         }
     } else if (!m_clientProtocol.isEmpty()) {
@@ -582,7 +580,7 @@ bool WebSocketHandshake::checkResponseHeaders()
             }
         }
         if (!match) {
-            m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response is received");
+            m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
             return false;
         }
     }

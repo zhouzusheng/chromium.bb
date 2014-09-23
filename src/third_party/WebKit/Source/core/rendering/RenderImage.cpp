@@ -31,21 +31,23 @@
 #include "HTMLNames.h"
 #include "core/editing/FrameSelection.h"
 #include "core/fetch/ImageResource.h"
+#include "core/fetch/ResourceLoadPriorityOptimizer.h"
+#include "core/fetch/ResourceLoader.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMapElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/Frame.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/graphics/SVGImage.h"
-#include "wtf/UnusedParam.h"
+#include "platform/fonts/Font.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 using namespace std;
 
@@ -162,10 +164,6 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
 
     if (newImage != m_imageResource->imagePtr())
         return;
-
-    // FIXME: this is a quick fix for crbug.com/328069. Perhaps this is reasonable to keep for the long term, or
-    // perhaps it's too aggressive, and we need to identify when the image *really* changed before issuing this call?
-    document().view()->scheduleAnimation();
 
     // Per the spec, we let the server-sent header override srcset/other sources of dpr.
     // https://github.com/igrigorik/http-client-hints/blob/master/draft-grigorik-http-client-hints-01.txt#L255
@@ -362,7 +360,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
                 // Only draw the alt text if it'll fit within the content box,
                 // and only if it fits above the error image.
-                TextRun textRun = RenderBlockFlow::constructTextRun(this, font, m_altText, style());
+                TextRun textRun = RenderBlockFlow::constructTextRun(this, font, m_altText, style(), TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, DefaultTextRunFlags | RespectDirection);
                 LayoutUnit textWidth = font.width(textRun);
                 TextRunPaintInfo textRunPaintInfo(textRun);
                 textRunPaintInfo.bounds = FloatRect(textRectOrigin, FloatSize(textWidth, fontMetrics.height()));
@@ -489,9 +487,8 @@ bool RenderImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance 
     return !const_cast<RenderImage*>(this)->backgroundIsKnownToBeObscured();
 }
 
-bool RenderImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const
+bool RenderImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned) const
 {
-    UNUSED_PARAM(maxDepthToTest);
     if (!m_imageResource->hasImage() || m_imageResource->errorOccurred())
         return false;
     if (m_imageResource->cachedImage() && !m_imageResource->cachedImage()->isLoaded())
@@ -571,8 +568,43 @@ void RenderImage::updateAltText()
 
 void RenderImage::layout()
 {
+    LayoutRectRecorder recorder(*this);
     RenderReplaced::layout();
     updateInnerContentRect();
+}
+
+void RenderImage::didLayout(ResourceLoadPriorityOptimizer& optimizer)
+{
+    RenderReplaced::didLayout(optimizer);
+    updateImageLoadingPriority(optimizer);
+}
+
+void RenderImage::didScroll(ResourceLoadPriorityOptimizer& optimizer)
+{
+    RenderReplaced::didScroll(optimizer);
+    updateImageLoadingPriority(optimizer);
+}
+
+void RenderImage::updateImageLoadingPriority(ResourceLoadPriorityOptimizer& optimizer)
+{
+    if (!m_imageResource || !m_imageResource->cachedImage() || m_imageResource->cachedImage()->isLoaded())
+        return;
+
+    LayoutRect viewBounds = viewRect();
+    LayoutRect objectBounds = absoluteContentBox();
+
+    // The object bounds might be empty right now, so intersects will fail since it doesn't deal
+    // with empty rects. Use LayoutRect::contains in that case.
+    bool isVisible;
+    if (!objectBounds.isEmpty())
+        isVisible =  viewBounds.intersects(objectBounds);
+    else
+        isVisible = viewBounds.contains(objectBounds);
+
+    ResourceLoadPriorityOptimizer::VisibilityStatus status = isVisible ?
+        ResourceLoadPriorityOptimizer::Visible : ResourceLoadPriorityOptimizer::NotVisible;
+
+    optimizer.notifyImageResourceVisibility(m_imageResource->cachedImage(), status);
 }
 
 void RenderImage::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const
@@ -589,7 +621,8 @@ void RenderImage::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, dou
         }
     }
     // Don't compute an intrinsic ratio to preserve historical WebKit behavior if we're painting alt text and/or a broken image.
-    if (m_imageResource && m_imageResource->errorOccurred()) {
+    // Video is excluded from this behavior because video elements have a default aspect ratio that a failed poster image load should not override.
+    if (m_imageResource && m_imageResource->errorOccurred() && !isVideo()) {
         intrinsicRatio = 1;
         return;
     }

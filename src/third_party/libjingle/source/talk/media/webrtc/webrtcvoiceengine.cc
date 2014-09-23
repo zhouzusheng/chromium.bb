@@ -230,6 +230,7 @@ static AudioOptions GetDefaultEngineOptions() {
   options.experimental_agc.Set(false);
   options.experimental_aec.Set(false);
   options.aec_dump.Set(false);
+  options.experimental_acm.Set(false);
   return options;
 }
 
@@ -260,7 +261,7 @@ class WebRtcSoundclipMedia : public SoundclipMedia {
     if (!engine_->voe_sc()) {
       return false;
     }
-    webrtc_channel_ = engine_->voe_sc()->base()->CreateChannel();
+    webrtc_channel_ = engine_->CreateSoundclipVoiceChannel();
     if (webrtc_channel_ == -1) {
       LOG_RTCERR0(CreateChannel);
       return false;
@@ -333,6 +334,7 @@ WebRtcVoiceEngine::WebRtcVoiceEngine()
       log_filter_(SeverityToFilter(kDefaultLogSeverity)),
       is_dumping_aec_(false),
       desired_local_monitor_enable_(false),
+      use_experimental_acm_(false),
       tx_processor_ssrc_(0),
       rx_processor_ssrc_(0) {
   Construct();
@@ -350,6 +352,7 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(VoEWrapper* voe_wrapper,
       log_filter_(SeverityToFilter(kDefaultLogSeverity)),
       is_dumping_aec_(false),
       desired_local_monitor_enable_(false),
+      use_experimental_acm_(false),
       tx_processor_ssrc_(0),
       rx_processor_ssrc_(0) {
   Construct();
@@ -377,6 +380,10 @@ void WebRtcVoiceEngine::Construct() {
       RtpHeaderExtension(kRtpAudioLevelHeaderExtension,
                          kRtpAudioLevelHeaderExtensionId));
   options_ = GetDefaultEngineOptions();
+
+  // Initialize the VoE Configuration to the default ACM.
+  voe_config_.Set<webrtc::AudioCodingModuleFactory>(
+      new webrtc::AudioCodingModuleFactory);
 }
 
 static bool IsOpus(const AudioCodec& codec) {
@@ -714,6 +721,12 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
 
   LOG(LS_INFO) << "Applying audio options: " << options.ToString();
 
+  // Configure whether ACM1 or ACM2 is used.
+  bool enable_acm2 = false;
+  if (options.experimental_acm.Get(&enable_acm2)) {
+    EnableExperimentalAcm(enable_acm2);
+  }
+
   webrtc::VoEAudioProcessing* voep = voe_wrapper_->processing();
 
   bool echo_cancellation;
@@ -940,7 +953,7 @@ bool WebRtcVoiceEngine::SetDevices(const Device* in_device,
   }
   if (ret) {
     if (voe_wrapper_->hw()->SetRecordingDevice(in_id) == -1) {
-      LOG_RTCERR2(SetRecordingDevice, in_device->name, in_id);
+      LOG_RTCERR2(SetRecordingDevice, in_name, in_id);
       ret = false;
     }
   }
@@ -952,7 +965,7 @@ bool WebRtcVoiceEngine::SetDevices(const Device* in_device,
   }
   if (ret) {
     if (voe_wrapper_->hw()->SetPlayoutDevice(out_id) == -1) {
-      LOG_RTCERR2(SetPlayoutDevice, out_device->name, out_id);
+      LOG_RTCERR2(SetPlayoutDevice, out_name, out_id);
       ret = false;
     }
   }
@@ -1246,6 +1259,21 @@ bool WebRtcVoiceEngine::ShouldIgnoreTrace(const std::string& trace) {
     }
   }
   return false;
+}
+
+void WebRtcVoiceEngine::EnableExperimentalAcm(bool enable) {
+  if (enable == use_experimental_acm_)
+    return;
+  if (enable) {
+    LOG(LS_INFO) << "VoiceEngine is set to use new ACM (ACM2 + NetEq4).";
+    voe_config_.Set<webrtc::AudioCodingModuleFactory>(
+        new webrtc::NewAudioCodingModuleFactory());
+  } else {
+    LOG(LS_INFO) << "VoiceEngine is set to use legacy ACM (ACM1 + Neteq3).";
+    voe_config_.Set<webrtc::AudioCodingModuleFactory>(
+        new webrtc::AudioCodingModuleFactory());
+  }
+  use_experimental_acm_ = enable;
 }
 
 void WebRtcVoiceEngine::Print(webrtc::TraceLevel level, const char* trace,
@@ -1580,6 +1608,18 @@ void WebRtcVoiceEngine::StopAecDump() {
   }
 }
 
+int WebRtcVoiceEngine::CreateVoiceChannel(VoEWrapper* voice_engine_wrapper) {
+  return voice_engine_wrapper->base()->CreateChannel(voe_config_);
+}
+
+int WebRtcVoiceEngine::CreateMediaVoiceChannel() {
+  return CreateVoiceChannel(voe_wrapper_.get());
+}
+
+int WebRtcVoiceEngine::CreateSoundclipVoiceChannel() {
+  return CreateVoiceChannel(voe_wrapper_sc_.get());
+}
+
 // This struct relies on the generated copy constructor and assignment operator
 // since it is used in an stl::map.
 struct WebRtcVoiceMediaChannel::WebRtcVoiceChannelInfo {
@@ -1597,7 +1637,7 @@ struct WebRtcVoiceMediaChannel::WebRtcVoiceChannelInfo {
 WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(WebRtcVoiceEngine *engine)
     : WebRtcMediaChannel<VoiceMediaChannel, WebRtcVoiceEngine>(
           engine,
-          engine->voe()->base()->CreateChannel()),
+          engine->CreateMediaVoiceChannel()),
       send_bw_setting_(false),
       send_autobw_(false),
       send_bw_bps_(0),
@@ -2231,7 +2271,7 @@ bool WebRtcVoiceMediaChannel::AddSendStream(const StreamParams& sp) {
     channel = voe_channel();
   } else {
     // Create a new channel for sending audio data.
-    channel = engine()->voe()->base()->CreateChannel();
+    channel = engine()->CreateMediaVoiceChannel();
     if (channel == -1) {
       LOG_RTCERR0(CreateChannel);
       return false;
@@ -2346,7 +2386,7 @@ bool WebRtcVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
   }
 
   // Create a new channel for receiving audio data.
-  int channel = engine()->voe()->base()->CreateChannel();
+  int channel = engine()->CreateMediaVoiceChannel();
   if (channel == -1) {
     LOG_RTCERR0(CreateChannel);
     return false;
@@ -2781,7 +2821,8 @@ bool WebRtcVoiceMediaChannel::InsertDtmf(uint32 ssrc, int event,
   return true;
 }
 
-void WebRtcVoiceMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
+void WebRtcVoiceMediaChannel::OnPacketReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   // Pick which channel to send this packet to. If this packet doesn't match
   // any multiplexed streams, just send it to the default channel. Otherwise,
   // send it to the specific decoder instance for that stream.
@@ -2814,7 +2855,8 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
       static_cast<unsigned int>(packet->length()));
 }
 
-void WebRtcVoiceMediaChannel::OnRtcpReceived(talk_base::Buffer* packet) {
+void WebRtcVoiceMediaChannel::OnRtcpReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   // Sending channels need all RTCP packets with feedback information.
   // Even sender reports can contain attached report blocks.
   // Receiving channels need sender reports in order to create
@@ -2966,7 +3008,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
       continue;
     }
 
-    sinfo.ssrc = ssrc;
+    sinfo.add_ssrc(ssrc);
     sinfo.codec_name = send_codec_.get() ? send_codec_->plname : "";
     sinfo.bytes_sent = cs.bytesSent;
     sinfo.packets_sent = cs.packetsSent;
@@ -2988,7 +3030,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
       for (iter = receive_blocks.begin(); iter != receive_blocks.end();
            ++iter) {
         // Lookup report for send ssrc only.
-        if (iter->source_SSRC == sinfo.ssrc) {
+        if (iter->source_SSRC == sinfo.ssrc()) {
           // Convert Q8 to floating point.
           sinfo.fraction_lost = static_cast<float>(iter->fraction_lost) / 256;
           // Convert samples to milliseconds.
@@ -3041,7 +3083,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
         engine()->voe()->rtp()->GetRTCPStatistics(*it, cs) != -1 &&
         engine()->voe()->codec()->GetRecCodec(*it, codec) != -1) {
       VoiceReceiverInfo rinfo;
-      rinfo.ssrc = ssrc;
+      rinfo.add_ssrc(ssrc);
       rinfo.bytes_rcvd = cs.bytesReceived;
       rinfo.packets_rcvd = cs.packetsReceived;
       // The next four fields are from the most recently sent RTCP report.
@@ -3065,9 +3107,12 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
             static_cast<float>(ns.currentExpandRate) / (1 << 14);
       }
       if (engine()->voe()->sync()) {
+        int jitter_buffer_delay_ms = 0;
         int playout_buffer_delay_ms = 0;
         engine()->voe()->sync()->GetDelayEstimate(
-            *it, &rinfo.delay_estimate_ms, &playout_buffer_delay_ms);
+            *it, &jitter_buffer_delay_ms, &playout_buffer_delay_ms);
+        rinfo.delay_estimate_ms = jitter_buffer_delay_ms +
+            playout_buffer_delay_ms;
       }
 
       // Get speech level.

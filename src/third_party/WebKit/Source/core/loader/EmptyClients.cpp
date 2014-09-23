@@ -59,6 +59,9 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
     static BackForwardClient* dummyBackForwardClient = adoptPtr(new EmptyBackForwardClient).leakPtr();
     pageClients.backForwardClient = dummyBackForwardClient;
+
+    static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
+    pageClients.spellCheckerClient = dummySpellCheckerClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -82,6 +85,10 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClien
 PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
     return PassRefPtr<DateTimeChooser>();
+}
+
+void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
+{
 }
 
 void EmptyChromeClient::runOpenPanel(Frame*, PassRefPtr<FileChooser>)
@@ -130,19 +137,11 @@ void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequ
 {
 }
 
-void EmptyEditorClient::registerUndoStep(PassRefPtr<UndoStep>)
-{
-}
-
-void EmptyEditorClient::registerRedoStep(PassRefPtr<UndoStep>)
-{
-}
-
 void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)
 {
 }
 
-PassOwnPtr<WebKit::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider(PassOwnPtr<WebKit::WebServiceWorkerProviderClient>)
+PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>)
 {
     return nullptr;
 }

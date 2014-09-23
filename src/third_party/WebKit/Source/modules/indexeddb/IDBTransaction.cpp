@@ -28,7 +28,6 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/DOMError.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -74,19 +73,6 @@ const AtomicString& IDBTransaction::modeVersionChange()
     DEFINE_STATIC_LOCAL(AtomicString, versionchange, ("versionchange", AtomicString::ConstructFromLiteral));
     return versionchange;
 }
-
-const AtomicString& IDBTransaction::modeReadOnlyLegacy()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, readonly, ("0", AtomicString::ConstructFromLiteral));
-    return readonly;
-}
-
-const AtomicString& IDBTransaction::modeReadWriteLegacy()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, readwrite, ("1", AtomicString::ConstructFromLiteral));
-    return readwrite;
-}
-
 
 IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
     : ActiveDOMObject(context)
@@ -136,10 +122,10 @@ void IDBTransaction::setError(PassRefPtr<DOMError> error)
     }
 }
 
-PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionState& es)
+PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionState& exceptionState)
 {
     if (m_state == Finished) {
-        es.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
+        exceptionState.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
         return 0;
     }
 
@@ -148,14 +134,14 @@ PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, Excep
         return it->value;
 
     if (!isVersionChange() && !m_objectStoreNames.contains(name)) {
-        es.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
+        exceptionState.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
         return 0;
     }
 
     int64_t objectStoreId = m_database->findObjectStoreId(name);
     if (objectStoreId == IDBObjectStoreMetadata::InvalidId) {
         ASSERT(isVersionChange());
-        es.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
+        exceptionState.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
         return 0;
     }
 
@@ -201,10 +187,10 @@ void IDBTransaction::setActive(bool active)
         backendDB()->commit(m_id);
 }
 
-void IDBTransaction::abort(ExceptionState& es)
+void IDBTransaction::abort(ExceptionState& exceptionState)
 {
     if (m_state == Finishing || m_state == Finished) {
-        es.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
+        exceptionState.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
         return;
     }
 
@@ -295,7 +281,7 @@ bool IDBTransaction::hasPendingActivity() const
     return m_hasPendingActivity && !m_contextStopped;
 }
 
-IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& es)
+IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& exceptionState)
 {
     if (modeString.isNull()
         || modeString == IDBTransaction::modeReadOnly())
@@ -303,7 +289,7 @@ IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString
     if (modeString == IDBTransaction::modeReadWrite())
         return IndexedDB::TransactionReadWrite;
 
-    es.throwUninformativeAndGenericTypeError();
+    exceptionState.throwUninformativeAndGenericTypeError();
     return IndexedDB::TransactionReadOnly;
 }
 
@@ -392,9 +378,9 @@ void IDBTransaction::enqueueEvent(PassRefPtr<Event> event)
     eventQueue->enqueueEvent(event);
 }
 
-IDBDatabaseBackendInterface* IDBTransaction::backendDB() const
+blink::WebIDBDatabase* IDBTransaction::backendDB() const
 {
-    return db()->backend();
+    return m_database->backend();
 }
 
 } // namespace WebCore

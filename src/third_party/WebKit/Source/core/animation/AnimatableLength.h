@@ -44,11 +44,12 @@ enum NumberRange {
 };
 
 // Handles animation of CSS length and percentage values including CSS calc.
-// See primitiveUnitToNumberType() for the list of supported units (with the exception of calc).
+// See primitiveUnitToNumberType() for the list of supported units.
 // If created from a CSSPrimitiveValue this class will cache it to be returned in toCSSValue().
 class AnimatableLength : public AnimatableValue {
 public:
     enum NumberUnitType {
+        UnitTypeCalc,
         UnitTypePixels,
         UnitTypePercentage,
         UnitTypeFontSize,
@@ -58,7 +59,6 @@ public:
         UnitTypeViewportHeight,
         UnitTypeViewportMin,
         UnitTypeViewportMax,
-        UnitTypeInvalid,
     };
 
     virtual ~AnimatableLength() { }
@@ -73,7 +73,7 @@ public:
         return adoptRef(new AnimatableLength(calcExpression, cssPrimitiveValue));
     }
     PassRefPtr<CSSValue> toCSSValue(NumberRange = AllValues) const;
-    Length toLength(const RenderStyle* currStyle, const RenderStyle* rootStyle, double zoom, NumberRange = AllValues) const;
+    Length toLength(const CSSToLengthConversionData&, NumberRange = AllValues) const;
 
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
@@ -81,15 +81,14 @@ protected:
 
 private:
     AnimatableLength(double number, NumberUnitType unitType, CSSPrimitiveValue* cssPrimitiveValue)
-        : m_isCalc(false)
-        , m_number(number)
+        : m_number(number)
         , m_unitType(unitType)
         , m_cachedCSSPrimitiveValue(cssPrimitiveValue)
     {
-        ASSERT(m_unitType != UnitTypeInvalid);
+        ASSERT(m_unitType != UnitTypeCalc);
     }
     AnimatableLength(PassRefPtr<CSSCalcExpressionNode> calcExpression, CSSPrimitiveValue* cssPrimitiveValue)
-        : m_isCalc(true)
+        : m_unitType(UnitTypeCalc)
         , m_calcExpression(calcExpression)
         , m_cachedCSSPrimitiveValue(cssPrimitiveValue)
     {
@@ -97,6 +96,16 @@ private:
     }
     virtual AnimatableType type() const OVERRIDE { return TypeLength; }
     virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+
+    bool isCalc() const
+    {
+        return m_unitType == UnitTypeCalc;
+    }
+
+    bool isViewportUnit() const
+    {
+        return m_unitType == UnitTypeViewportWidth || m_unitType == UnitTypeViewportHeight || m_unitType == UnitTypeViewportMin || m_unitType == UnitTypeViewportMax;
+    }
 
     static PassRefPtr<AnimatableLength> create(const AnimatableLength* leftAddend, const AnimatableLength* rightAddend)
     {
@@ -110,10 +119,13 @@ private:
     PassRefPtr<AnimatableLength> scale(double) const;
     double clampedNumber(NumberRange range) const
     {
-        ASSERT(!m_isCalc);
+        ASSERT(!isCalc());
         return (range == NonNegativeValues && m_number <= 0) ? 0 : m_number;
     }
-    static NumberUnitType primitiveUnitToNumberType(unsigned short primitiveUnit);
+
+    // Returns true and populates numberType, if primitiveUnit is a primitive length unit. Otherwise, returns false.
+    static bool primitiveUnitToNumberType(unsigned short primitiveUnit, NumberUnitType& numberType);
+
     static unsigned short numberTypeToPrimitiveUnit(NumberUnitType numberType);
 
     // Zero is effectively unitless, except in the case of percentage.
@@ -121,14 +133,11 @@ private:
     // e.g. calc(100% - 100% + 1em) resolves to calc(0% + 1em), not to calc(1em)
     bool isUnitlessZero() const
     {
-        return !m_isCalc && !m_number && m_unitType != UnitTypePercentage;
+        return !isCalc() && !m_number && m_unitType != UnitTypePercentage;
     }
 
     NumberUnitType commonUnitType(const AnimatableLength* length) const
     {
-        if (m_isCalc || length->m_isCalc)
-            return UnitTypeInvalid;
-
         if (m_unitType == length->m_unitType)
             return m_unitType;
 
@@ -137,19 +146,17 @@ private:
         if (length->isUnitlessZero())
             return m_unitType;
 
-        return UnitTypeInvalid;
+        return UnitTypeCalc;
     }
 
-    bool m_isCalc;
-
     double m_number;
-    NumberUnitType m_unitType;
+    const NumberUnitType m_unitType;
 
     RefPtr<CSSCalcExpressionNode> m_calcExpression;
 
     mutable RefPtr<CSSPrimitiveValue> m_cachedCSSPrimitiveValue;
 
-    friend class CoreAnimationAnimatableLengthTest;
+    friend class AnimationAnimatableLengthTest;
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableLength, isLength());

@@ -70,7 +70,7 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
                 return;
             }
         }
-        action = adoptPtr(new ScheduledAction(v8Context, toWebCoreString(function.As<v8::String>()), workerGlobalScope->url(), info.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(v8Context, toCoreString(function.As<v8::String>()), workerGlobalScope->url(), info.GetIsolate()));
     } else if (function->IsFunction()) {
         size_t paramCount = argumentCount >= 2 ? argumentCount - 2 : 0;
         OwnPtr<v8::Local<v8::Value>[]> params;
@@ -109,11 +109,11 @@ v8::Handle<v8::Value> toV8(WorkerGlobalScope* impl, v8::Handle<v8::Object> creat
     // Notice that we explicitly ignore creationContext because the WorkerGlobalScope is its own creationContext.
 
     if (!impl)
-        return v8NullWithCheck(isolate);
+        return v8::Null(isolate);
 
     WorkerScriptController* script = impl->script();
     if (!script)
-        return v8NullWithCheck(isolate);
+        return v8::Null(isolate);
 
     v8::Handle<v8::Object> global = script->context()->Global();
     ASSERT(!global.IsEmpty());

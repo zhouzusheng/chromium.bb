@@ -38,17 +38,22 @@
 
 #include "core/rendering/FloatingObjects.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/style/RenderStyleConstants.h"
 
 namespace WebCore {
 
 class MarginInfo;
 class LineBreaker;
 class LineWidth;
+class RenderNamedFlowFragment;
 
 class RenderBlockFlow : public RenderBlock {
 public:
     explicit RenderBlockFlow(ContainerNode*);
     virtual ~RenderBlockFlow();
+
+    static RenderBlockFlow* createAnonymous(Document*);
+    RenderBlockFlow* createAnonymousBlockFlow() const;
 
     virtual bool isRenderBlockFlow() const OVERRIDE FINAL { return true; }
 
@@ -64,6 +69,8 @@ public:
     bool containsFloat(RenderBox*) const;
 
     void removeFloatingObjects();
+
+    bool generatesLineBoxesForInlineChild(RenderObject*);
 
     LayoutUnit logicalTopForFloat(const FloatingObject* floatingObject) const { return isHorizontalWritingMode() ? floatingObject->y() : floatingObject->x(); }
     LayoutUnit logicalBottomForFloat(const FloatingObject* floatingObject) const { return isHorizontalWritingMode() ? floatingObject->maxY() : floatingObject->maxX(); }
@@ -107,6 +114,11 @@ public:
             floatingObject->setHeight(logicalWidth);
     }
 
+    LayoutUnit startAlignedOffsetForLine(LayoutUnit position, bool shouldIndentText);
+
+    void setStaticInlinePositionForChild(RenderBox*, LayoutUnit blockOffset, LayoutUnit inlinePosition);
+    void updateStaticInlinePositionForChild(RenderBox*, LayoutUnit logicalTop);
+
     static bool shouldSkipCreatingRunsForObject(RenderObject* obj)
     {
         return obj->isFloating() || (obj->isOutOfFlowPositioned() && !obj->style()->isOriginalDisplayInlineType() && !obj->container()->isRenderInline());
@@ -129,6 +141,22 @@ public:
 
     static TextRun constructTextRun(RenderObject* context, const Font&, const UChar* characters, int length, RenderStyle*,
         TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
+
+    RootInlineBox* lineGridBox() const { return m_rareData ? m_rareData->m_lineGridBox : 0; }
+    void setLineGridBox(RootInlineBox* box)
+    {
+        RenderBlockFlow::RenderBlockFlowRareData& rareData = ensureRareData();
+        if (rareData.m_lineGridBox)
+            rareData.m_lineGridBox->destroy();
+        rareData.m_lineGridBox = box;
+    }
+    void layoutLineGridBox();
+
+    void addOverflowFromInlineChildren();
+
+    GapRects inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
+        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
+        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected);
 protected:
     // Only used by RenderSVGText, which explicitly overrides RenderBlock::layoutBlock(), do NOT use for anything else.
     void forceLayoutInlineChildren()
@@ -145,6 +173,9 @@ protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
     void addOverflowFromFloats();
+
+    virtual void insertedIntoTree() OVERRIDE;
+    virtual void willBeDestroyed() OVERRIDE;
 private:
     void layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloatLogicalBottom, SubtreeLayoutScope&);
     void layoutInlineChildren(bool relayoutChildren, LayoutUnit& repaintLogicalTop, LayoutUnit& repaintLogicalBottom);
@@ -197,13 +228,23 @@ private:
 
     virtual void moveAllChildrenIncludingFloatsTo(RenderBlock* toBlock, bool fullRemoveInsert) OVERRIDE;
     virtual void repaintOverhangingFloats(bool paintAllDescendants) OVERRIDE FINAL;
+    virtual void repaintOverflow() OVERRIDE;
     virtual void paintFloats(PaintInfo&, const LayoutPoint&, bool preservePhase = false) OVERRIDE FINAL;
     virtual void clipOutFloatingObjects(RenderBlock*, const PaintInfo*, const LayoutPoint&, const LayoutSize&) OVERRIDE;
     void clearFloats(EClear);
-    virtual LayoutUnit logicalRightFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit* heightRemaining, LayoutUnit logicalHeight, ShapeOutsideFloatOffsetMode) const OVERRIDE;
-    virtual LayoutUnit logicalLeftFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit* heightRemaining, LayoutUnit logicalHeight, ShapeOutsideFloatOffsetMode) const OVERRIDE;
+
+    virtual LayoutUnit logicalRightFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit logicalHeight) const OVERRIDE;
+    virtual LayoutUnit logicalLeftFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit logicalHeight) const OVERRIDE;
+
+    LayoutUnit logicalRightOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit* heightRemaining) const;
+    LayoutUnit logicalLeftOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit* heightRemaining) const;
+
     virtual void adjustForBorderFit(LayoutUnit x, LayoutUnit& left, LayoutUnit& right) const OVERRIDE; // Helper function for borderFitAdjust
 
+    virtual RootInlineBox* createRootInlineBox() OVERRIDE;
+
+    void updateLogicalWidthForAlignment(const ETextAlign&, const RootInlineBox*, BidiRun* trailingSpaceRun, float& logicalLeft, float& totalLogicalWidth, float& availableLogicalWidth, int expansionOpportunityCount);
+    virtual bool relayoutForPagination(bool hasSpecifiedPageLogicalHeight, LayoutUnit pageLogicalHeight, LayoutStateMaintainer&);
 public:
     struct FloatWithRect {
         FloatWithRect(RenderBox* f)
@@ -245,14 +286,18 @@ public:
     };
     MarginValues marginValuesForChild(RenderBox* child) const;
 
+    virtual void updateLogicalHeight() OVERRIDE;
+
     // Allocated only when some of these fields have non-default values
     struct RenderBlockFlowRareData {
         WTF_MAKE_NONCOPYABLE(RenderBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED;
     public:
         RenderBlockFlowRareData(const RenderBlockFlow* block)
             : m_margins(positiveMarginBeforeDefault(block), negativeMarginBeforeDefault(block), positiveMarginAfterDefault(block), negativeMarginAfterDefault(block))
+            , m_lineGridBox(0)
             , m_discardMarginBefore(false)
             , m_discardMarginAfter(false)
+            , m_renderNamedFlowFragment(0)
         {
         }
 
@@ -274,9 +319,17 @@ public:
         }
 
         MarginValues m_margins;
+
+        RootInlineBox* m_lineGridBox;
+
         bool m_discardMarginBefore : 1;
         bool m_discardMarginAfter : 1;
+        RenderNamedFlowFragment* m_renderNamedFlowFragment;
     };
+    LayoutUnit marginOffsetForSelfCollapsingBlock();
+
+    RenderNamedFlowFragment* renderNamedFlowFragment() const { return m_rareData ? m_rareData->m_renderNamedFlowFragment : 0; }
+    void setRenderNamedFlowFragment(RenderNamedFlowFragment*);
 
 protected:
     LayoutUnit maxPositiveMarginBefore() const { return m_rareData ? m_rareData->m_margins.positiveMarginBefore() : RenderBlockFlowRareData::positiveMarginBeforeDefault(this); }
@@ -310,6 +363,7 @@ protected:
         }
     }
 
+    virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const;
 private:
     virtual LayoutUnit collapsedMarginBefore() const OVERRIDE FINAL { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
     virtual LayoutUnit collapsedMarginAfter() const OVERRIDE FINAL { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
@@ -329,6 +383,16 @@ private:
     // Used to store state between styleWillChange and styleDidChange
     static bool s_canPropagateFloatIntoSibling;
 
+    virtual bool canHaveChildren() const OVERRIDE;
+    virtual bool canHaveGeneratedChildren() const OVERRIDE;
+
+    void createRenderNamedFlowFragmentIfNeeded();
+
+    RenderBlockFlowRareData& ensureRareData();
+
+    LayoutUnit m_repaintLogicalTop;
+    LayoutUnit m_repaintLogicalBottom;
+
 protected:
     OwnPtr<RenderBlockFlowRareData> m_rareData;
     OwnPtr<FloatingObjects> m_floatingObjects;
@@ -342,9 +406,6 @@ protected:
 // RenderBlockLineLayout. They should be moved to the proper header once the
 // line layout code is separated from RenderBlock and RenderBlockFlow.
 // START METHODS DEFINED IN RenderBlockLineLayout
-public:
-    static void appendRunsForObject(BidiRunList<BidiRun>&, int start, int end, RenderObject*, InlineBidiResolver&);
-
 private:
     InlineFlowBox* createLineBoxes(RenderObject*, const LineInfo&, InlineBox* childBox, bool startsNewSegment);
     RootInlineBox* constructLine(BidiRunList<BidiRun>&, const LineInfo&);

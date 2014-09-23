@@ -35,20 +35,20 @@
 #include "core/fileapi/Blob.h"
 #include "core/html/PublicURLManager.h"
 #include "platform/blob/BlobURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
 
-DOMURL::DOMURL(const String& url, const KURL& base, ExceptionState& es)
+DOMURL::DOMURL(const String& url, const KURL& base, ExceptionState& exceptionState)
 {
     ScriptWrappable::init(this);
     if (!base.isValid())
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToConstruct("URL", "Invalid base URL"));
+        exceptionState.throwDOMException(SyntaxError, "Invalid base URL");
 
     m_url = KURL(base, url);
     if (!m_url.isValid())
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToConstruct("URL", "Invalid URL"));
+        exceptionState.throwDOMException(SyntaxError, "Invalid URL");
 }
 
 void DOMURL::setInput(const String& value)

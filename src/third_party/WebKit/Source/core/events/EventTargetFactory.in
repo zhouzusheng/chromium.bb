@@ -21,7 +21,7 @@ core/workers/SharedWorkerGlobalScope
 core/workers/Worker
 core/xml/XMLHttpRequest
 core/xml/XMLHttpRequestUpload
-modules/encryptedmedia/MediaKeySession Conditional=ENCRYPTED_MEDIA_V2
+modules/encryptedmedia/MediaKeySession
 modules/filesystem/FileWriter
 modules/indexeddb/IDBDatabase
 modules/indexeddb/IDBOpenDBRequest
@@ -38,6 +38,8 @@ modules/mediastream/RTCDTMFSender
 modules/mediastream/RTCDataChannel
 modules/mediastream/RTCPeerConnection
 modules/notifications/Notification
+modules/notifications/WebKitNotification Conditional=LEGACY_NOTIFICATIONS
+modules/serviceworkers/ServiceWorkerGlobalScope
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesisUtterance
 modules/webaudio/AudioContext Conditional=WEB_AUDIO

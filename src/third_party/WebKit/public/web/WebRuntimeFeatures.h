@@ -33,7 +33,7 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 // This class is used to enable runtime features of Blink.
 // All features are disabled by default.
@@ -47,6 +47,10 @@ public:
 
     BLINK_EXPORT static void enableApplicationCache(bool);
     BLINK_EXPORT static bool isApplicationCacheEnabled();
+
+    BLINK_EXPORT static void enableCSS3TextDecorations(bool);
+    BLINK_EXPORT static void enableCSS3Text(bool);
+    BLINK_EXPORT static void enableCSSGridLayout(bool);
 
     BLINK_EXPORT static void enableDatabase(bool);
     BLINK_EXPORT static bool isDatabaseEnabled();
@@ -65,6 +69,9 @@ public:
 
     BLINK_EXPORT static void enablePrefixedEncryptedMedia(bool);
     BLINK_EXPORT static bool isPrefixedEncryptedMediaEnabled();
+
+    BLINK_EXPORT static void enableDirectWrite(bool);
+    BLINK_EXPORT static bool isDirectWriteEnabled();
 
     BLINK_EXPORT static void enableExperimentalCanvasFeatures(bool);
     BLINK_EXPORT static bool isExperimentalCanvasFeaturesEnabled();
@@ -104,6 +111,9 @@ public:
     BLINK_EXPORT static void enableNotifications(bool);
     BLINK_EXPORT static bool isNotificationsEnabled();
 
+    BLINK_EXPORT static void enableNavigatorContentUtils(bool);
+    BLINK_EXPORT static bool isNavigatorContentUtilsEnabled();
+
     BLINK_EXPORT static void enablePagePopup(bool);
     BLINK_EXPORT static bool isPagePopupEnabled();
 
@@ -131,8 +141,8 @@ public:
     BLINK_EXPORT static void enableTouch(bool);
     BLINK_EXPORT static bool isTouchEnabled();
 
-    BLINK_EXPORT static void enableWebAnimationsCSS();
-    BLINK_EXPORT static void enableWebAnimationsSVG();
+    BLINK_EXPORT static void enableWebAnimationsCSS(bool);
+    BLINK_EXPORT static void enableWebAnimationsSVG(bool);
 
     BLINK_EXPORT static void enableWebAudio(bool);
     BLINK_EXPORT static bool isWebAudioEnabled();
@@ -167,6 +177,6 @@ private:
     WebRuntimeFeatures();
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

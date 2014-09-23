@@ -35,8 +35,6 @@
 #include "SVGNames.h"
 #include "bindings/v8/CustomElementConstructorBuilder.h"
 #include "core/dom/DocumentLifecycleObserver.h"
-#include "core/dom/custom/CustomElement.h"
-#include "core/dom/custom/CustomElementDefinition.h"
 #include "core/dom/custom/CustomElementException.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 
@@ -58,7 +56,7 @@ private:
     bool m_wentAway;
 };
 
-CustomElementDefinition* CustomElementRegistry::registerElement(Document* document, CustomElementConstructorBuilder* constructorBuilder, const AtomicString& userSuppliedName, CustomElement::NameSet validNames, ExceptionState& es)
+CustomElementDefinition* CustomElementRegistry::registerElement(Document* document, CustomElementConstructorBuilder* constructorBuilder, const AtomicString& userSuppliedName, CustomElement::NameSet validNames, ExceptionState& exceptionState)
 {
     // FIXME: In every instance except one it is the
     // CustomElementConstructorBuilder that observes document
@@ -69,24 +67,24 @@ CustomElementDefinition* CustomElementRegistry::registerElement(Document* docume
     AtomicString type = userSuppliedName.lower();
 
     if (!constructorBuilder->isFeatureAllowed()) {
-        CustomElementException::throwException(CustomElementException::CannotRegisterFromExtension, type, es);
+        CustomElementException::throwException(CustomElementException::CannotRegisterFromExtension, type, exceptionState);
         return 0;
     }
 
     if (!CustomElement::isValidName(type, validNames)) {
-        CustomElementException::throwException(CustomElementException::InvalidName, type, es);
+        CustomElementException::throwException(CustomElementException::InvalidName, type, exceptionState);
         return 0;
     }
 
     QualifiedName tagName = nullQName();
-    if (!constructorBuilder->validateOptions(type, tagName, es))
+    if (!constructorBuilder->validateOptions(type, tagName, exceptionState))
         return 0;
 
     ASSERT(tagName.namespaceURI() == HTMLNames::xhtmlNamespaceURI || tagName.namespaceURI() == SVGNames::svgNamespaceURI);
 
     // FIXME: This should be done earlier in validateOptions.
     if (m_registeredTypeNames.contains(type)) {
-        CustomElementException::throwException(CustomElementException::TypeAlreadyRegistered, type, es);
+        CustomElementException::throwException(CustomElementException::TypeAlreadyRegistered, type, exceptionState);
         return 0;
     }
 
@@ -97,21 +95,21 @@ CustomElementDefinition* CustomElementRegistry::registerElement(Document* docume
     // Consulting the constructor builder could execute script and
     // kill the document.
     if (observer.registrationContextWentAway()) {
-        CustomElementException::throwException(CustomElementException::ContextDestroyedCreatingCallbacks, type, es);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedCreatingCallbacks, type, exceptionState);
         return 0;
     }
 
     const CustomElementDescriptor descriptor(type, tagName.namespaceURI(), tagName.localName());
     RefPtr<CustomElementDefinition> definition = CustomElementDefinition::create(descriptor, lifecycleCallbacks);
 
-    if (!constructorBuilder->createConstructor(document, definition.get(), es))
+    if (!constructorBuilder->createConstructor(document, definition.get(), exceptionState))
         return 0;
 
     m_definitions.add(descriptor, definition);
     m_registeredTypeNames.add(descriptor.type());
 
     if (!constructorBuilder->didRegisterDefinition(definition.get())) {
-        CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, type, es);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, type, exceptionState);
         return 0;
     }
 

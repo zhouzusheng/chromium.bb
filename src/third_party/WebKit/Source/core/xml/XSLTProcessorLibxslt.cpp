@@ -44,7 +44,7 @@
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
@@ -102,8 +102,8 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
         xmlFree(base);
 
         ResourceLoaderOptions fetchOptions(ResourceFetcher::defaultResourceOptions());
-        fetchOptions.requestOriginPolicy = RestrictToSameOrigin;
         FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, fetchOptions);
+        request.setOriginRestriction(FetchRequest::RestrictToSameOrigin);
         ResourcePtr<Resource> resource = globalResourceFetcher->fetchSynchronously(request);
         if (!resource || !globalProcessor)
             return 0;

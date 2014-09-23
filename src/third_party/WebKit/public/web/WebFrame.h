@@ -53,7 +53,7 @@ template <class T> class Handle;
 template <class T> class Local;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebData;
 class WebDataSource;
@@ -63,7 +63,9 @@ class WebFormElement;
 class WebFrameClient;
 class WebHistoryItem;
 class WebInputElement;
+class WebLayer;
 class WebPerformance;
+class WebPermissionClient;
 class WebRange;
 class WebSecurityOrigin;
 class WebString;
@@ -155,6 +157,14 @@ public:
     // WebIconURL::Type values, used to select from the available set of icon
     // URLs
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const = 0;
+
+    // For a WebFrame with contents being rendered in another process, this
+    // sets a layer for use by the in-process compositor. WebLayer should be
+    // null if the content is being rendered in the current process.
+    virtual void setRemoteWebLayer(blink::WebLayer*) = 0;
+
+    // Initializes the various client interfaces.
+    virtual void setPermissionClient(WebPermissionClient*) = 0;
 
 
     // Geometry -----------------------------------------------------------
@@ -253,7 +263,7 @@ public:
     // gets its own wrappers for all DOM nodes and DOM constructors.
     // extensionGroup is an embedder-provided specifier that controls which
     // v8 extensions are loaded into the new context - see
-    // WebKit::registerExtension for the corresponding specifier.
+    // blink::registerExtension for the corresponding specifier.
     //
     // worldID must be > 0 (as 0 represents the main world).
     // worldID must be < EmbedderWorldIdLimit, high number used internally.
@@ -416,10 +426,6 @@ public:
     // Returns the number of registered unload listeners.
     virtual unsigned unloadListenerCount() const = 0;
 
-    // Returns true if this frame is in the process of opening a new frame
-    // with a suppressed opener.
-    virtual bool willSuppressOpenerInNewFrame() const = 0;
-
 
     // Editing -------------------------------------------------------------
 
@@ -471,9 +477,8 @@ public:
     // there is ranged selection.
     virtual bool selectWordAroundCaret() = 0;
 
-    // DEPRECATED: Use moveRangeSelection/moveCaretSelection.
+    // DEPRECATED: Use moveRangeSelection.
     virtual void selectRange(const WebPoint& base, const WebPoint& extent) = 0;
-    virtual void moveCaretSelectionTowardsWindowPoint(const WebPoint&) = 0;
 
     virtual void selectRange(const WebRange&) = 0;
 
@@ -677,6 +682,6 @@ protected:
     ~WebFrame() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

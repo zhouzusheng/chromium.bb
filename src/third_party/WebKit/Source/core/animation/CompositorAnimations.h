@@ -31,30 +31,45 @@
 #ifndef CompositorAnimations_h
 #define CompositorAnimations_h
 
+#include "core/animation/AnimationEffect.h"
 #include "core/animation/Timing.h"
+#include "core/platform/animation/TimingFunction.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
 class Element;
-class AnimationEffect;
+
+// Given an input timing function between keyframe at 0 and keyframe at 1.0, we
+// need a timing function such that the behavior with the keyframes swapped is
+// equivalent to reversing time with the input timing function and keyframes.
+// This means flipping the timing function about x=0.5 and about y=0.5.
+// FIXME: Remove once the Compositor natively understands reversing time.
+class CompositorAnimationsTimingFunctionReverser {
+public:
+    static PassRefPtr<TimingFunction> reverse(const LinearTimingFunction* timefunc);
+    static PassRefPtr<TimingFunction> reverse(const CubicBezierTimingFunction* timefunc);
+    static PassRefPtr<TimingFunction> reverse(const ChainedTimingFunction* timefunc);
+    static PassRefPtr<TimingFunction> reverse(const TimingFunction* timefunc);
+};
 
 class CompositorAnimations {
-
 public:
     static CompositorAnimations* instance() { return instance(0); }
     static void setInstanceForTesting(CompositorAnimations* newInstance) { instance(newInstance); }
 
-    virtual bool isCandidateForCompositorAnimation(const Timing&, const AnimationEffect*);
-    virtual bool canStartCompositorAnimation(const Element*);
-    virtual void startCompositorAnimation(const Element*, const Timing&, const AnimationEffect*, Vector<int>& startedAnimationIds);
-    virtual void cancelCompositorAnimation(const Element*, int id);
+    virtual bool isCandidateForAnimationOnCompositor(const Timing&, const AnimationEffect&);
+    virtual bool canStartAnimationOnCompositor(const Element&);
+    // FIXME: This should return void. We should know ahead of time whether these animations can be started.
+    virtual bool startAnimationOnCompositor(const Element&, const Timing&, const AnimationEffect&, Vector<int>& startedAnimationIds);
+    virtual void cancelAnimationOnCompositor(const Element&, int id);
+    virtual void pauseAnimationForTestingOnCompositor(const Element&, int id, double pauseTime);
 
 protected:
     CompositorAnimations() { }
 
 private:
-    static CompositorAnimations* instance(CompositorAnimations* newInstance = 0)
+    static CompositorAnimations* instance(CompositorAnimations* newInstance)
     {
         static CompositorAnimations* instance = new CompositorAnimations();
         if (newInstance) {

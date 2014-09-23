@@ -35,7 +35,7 @@
 #include "core/page/PageScaleConstraints.h"
 #include "platform/geometry/IntSize.h"
 
-namespace WebKit {
+namespace blink {
 
 // This class harmonizes the viewport (particularly page scale) constraints from
 // the meta viewport tag and other sources.
@@ -49,7 +49,7 @@ public:
     // is enabled.
     const WebCore::PageScaleConstraints& pageDefinedConstraints() const { return m_pageDefinedConstraints; }
     void updatePageDefinedConstraints(const WebCore::ViewportDescription&, WebCore::IntSize viewSize);
-    void adjustForAndroidWebViewQuirks(const WebCore::ViewportDescription&, WebCore::IntSize viewSize, int layoutFallbackWidth, float deviceScaleFactor, bool supportTargetDensityDPI, bool wideViewportQuirkEnabled, bool useWideViewport, bool loadWithOverviewMode);
+    void adjustForAndroidWebViewQuirks(const WebCore::ViewportDescription&, WebCore::IntSize viewSize, int layoutFallbackWidth, float deviceScaleFactor, bool supportTargetDensityDPI, bool wideViewportQuirkEnabled, bool useWideViewport, bool loadWithOverviewMode, bool nonUserScalableQuirkEnabled);
 
     // Constraints may also be set from Chromium -- this overrides any
     // page-defined values.
@@ -73,6 +73,8 @@ public:
     bool constraintsDirty() const { return m_constraintsDirty; }
 
 private:
+    WebCore::PageScaleConstraints computeConstraintsStack() const;
+
     WebCore::PageScaleConstraints m_pageDefinedConstraints;
     WebCore::PageScaleConstraints m_userAgentConstraints;
     WebCore::PageScaleConstraints m_finalConstraints;

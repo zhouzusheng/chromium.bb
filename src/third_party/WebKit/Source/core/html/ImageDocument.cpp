@@ -42,8 +42,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "wtf/text/StringBuilder.h"
 
 using std::min;
@@ -94,7 +93,7 @@ private:
     {
     }
 
-    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) OVERRIDE;
     virtual void finish();
 };
 
@@ -120,19 +119,18 @@ static String imageTitle(const String& filename, const IntSize& size)
     return result.toString();
 }
 
-size_t ImageDocumentParser::appendBytes(const char* data, size_t length)
+void ImageDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!length)
-        return 0;
+        return;
 
     Frame* frame = document()->frame();
     Settings* settings = frame->settings();
-    if (!frame->loader().client()->allowImage(!settings || settings->areImagesEnabled(), document()->url()))
-        return 0;
+    if (!frame->loader().client()->allowImage(!settings || settings->imagesEnabled(), document()->url()))
+        return;
 
     document()->cachedImage()->appendData(data, length);
     document()->imageUpdated();
-    return 0;
 }
 
 void ImageDocumentParser::finish()
@@ -362,7 +360,7 @@ ImageResource* ImageDocument::cachedImage()
 
 bool ImageDocument::shouldShrinkToFit() const
 {
-    return frame()->settings()->shrinksStandaloneImagesToFit() && frame()->page()->mainFrame() == frame();
+    return frame()->settings()->shrinksStandaloneImagesToFit() && frame()->isMainFrame();
 }
 
 void ImageDocument::dispose()

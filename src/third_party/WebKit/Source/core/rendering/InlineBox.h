@@ -101,7 +101,6 @@ public:
     void* operator new(size_t);
     void operator delete(void*);
 
-public:
 #ifndef NDEBUG
     void showTreeForThis() const;
     void showLineTreeForThis() const;
@@ -198,8 +197,8 @@ public:
 
     const FloatPoint& topLeft() const { return m_topLeft; }
 
-    float width() const { return isHorizontal() ? logicalWidth() : logicalHeight(); }
-    float height() const { return isHorizontal() ? logicalHeight() : logicalWidth(); }
+    float width() const { return isHorizontal() ? logicalWidth() : hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight(); }
+    float height() const { return isHorizontal() ? hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight() : logicalWidth(); }
     FloatSize size() const { return FloatSize(width(), height()); }
     float right() const { return left() + width(); }
     float bottom() const { return top() + height(); }
@@ -295,13 +294,6 @@ public:
     bool dirOverride() const { return m_bitfields.dirOverride(); }
     void setDirOverride(bool dirOverride) { m_bitfields.setDirOverride(dirOverride); }
 
-private:
-    InlineBox* m_next; // The next element on the same line as us.
-    InlineBox* m_prev; // The previous element on the same line as us.
-
-    InlineFlowBox* m_parent; // The box that contains us.
-
-public:
 #define ADD_BOOLEAN_BITFIELD(name, Name) \
     private:\
     unsigned m_##name : 1;\
@@ -380,6 +372,12 @@ public:
     };
 #undef ADD_BOOLEAN_BITFIELD
 
+private:
+    InlineBox* m_next; // The next element on the same line as us.
+    InlineBox* m_prev; // The previous element on the same line as us.
+
+    InlineFlowBox* m_parent; // The box that contains us.
+
 protected:
     // For RootInlineBox
     bool endsWithBreak() const { return m_bitfields.endsWithBreak(); }
@@ -425,6 +423,9 @@ inline void InlineBox::setHasBadParent()
     m_hasBadParent = true;
 }
 #endif
+
+#define DEFINE_INLINE_BOX_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS(typeName, InlineBox, box, box->is##typeName(), box.is##typeName())
 
 } // namespace WebCore
 

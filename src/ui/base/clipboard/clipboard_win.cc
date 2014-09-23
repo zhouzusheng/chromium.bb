@@ -203,6 +203,10 @@ bool Clipboard::FormatType::operator<(const FormatType& other) const {
   return ToUINT() < other.ToUINT();
 }
 
+bool Clipboard::FormatType::Equals(const FormatType& other) const {
+  return ToUINT() == other.ToUINT();
+}
+
 Clipboard::Clipboard() {
   if (base::MessageLoop::current()->type() == base::MessageLoop::TYPE_UI)
     clipboard_owner_.reset(new base::win::MessageWindow());
@@ -539,7 +543,11 @@ SkBitmap Clipboard::ReadImage(ClipboardType type) const {
   // We use a DIB rather than a DDB here since ::GetObject() with the
   // HBITMAP returned from ::GetClipboardData(CF_BITMAP) always reports a color
   // depth of 32bpp.
-  BITMAPINFO* bitmap = static_cast<BITMAPINFO*>(::GetClipboardData(CF_DIB));
+  HANDLE hBitmap = ::GetClipboardData(CF_DIB);
+  if (!hBitmap)
+    return SkBitmap();
+
+  BITMAPINFO* bitmap = static_cast<BITMAPINFO*>(GlobalLock(hBitmap));
   if (!bitmap)
     return SkBitmap();
   int color_table_length = 0;
@@ -594,6 +602,8 @@ SkBitmap Clipboard::ReadImage(ClipboardType type) const {
       MakeBitmapOpaque(device_bitmap);
     }
   }
+
+  GlobalUnlock(hBitmap);
 
   return canvas.ExtractImageRep().sk_bitmap();
 }
@@ -675,7 +685,7 @@ void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
 }
 
 // static
-Clipboard::FormatType Clipboard::GetFormatType(
+Clipboard::FormatType Clipboard::GetFormatTypeInternal(
     const std::string& format_string) {
   return FormatType(
       ::RegisterClipboardFormat(ASCIIToWide(format_string).c_str()));
@@ -800,7 +810,7 @@ const Clipboard::FormatType& Clipboard::GetWebCustomDataFormatType() {
   CR_DEFINE_STATIC_LOCAL(
       FormatType,
       type,
-      (::RegisterClipboardFormat(L"Chromium Web Custom MIME Data Format")));
+      (GetFormatType("Chromium Web Custom MIME Data Format")));
   return type;
 }
 
@@ -809,7 +819,7 @@ const Clipboard::FormatType& Clipboard::GetPepperCustomDataFormatType() {
   CR_DEFINE_STATIC_LOCAL(
       FormatType,
       type,
-      (::RegisterClipboardFormat(L"Chromium Pepper MIME Data Format")));
+      (GetFormatType("Chromium Pepper MIME Data Format")));
   return type;
 }
 

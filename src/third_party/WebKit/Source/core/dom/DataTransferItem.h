@@ -50,13 +50,10 @@ public:
     static PassRefPtr<DataTransferItem> create(PassRefPtr<Clipboard>, PassRefPtr<ChromiumDataObjectItem>);
     ~DataTransferItem();
 
-    static const char kindString[];
-    static const char kindFile[];
-
     String kind() const;
     String type() const;
 
-    void getAsString(ExecutionContext*, PassRefPtr<StringCallback>) const;
+    void getAsString(ExecutionContext*, PassOwnPtr<StringCallback>) const;
     PassRefPtr<Blob> getAsFile() const;
 
     Clipboard* clipboard() { return m_clipboard.get(); }

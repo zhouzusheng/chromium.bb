@@ -40,7 +40,7 @@ namespace WebCore {
 class RTCVoidRequest;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebRTCVoidRequest {
 public:
@@ -59,29 +59,29 @@ public:
         return *this;
     }
 
-    BLINK_EXPORT void assign(const WebRTCVoidRequest&);
+    BLINK_PLATFORM_EXPORT void assign(const WebRTCVoidRequest&);
 
-    BLINK_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    BLINK_EXPORT void requestSucceeded() const;
-    BLINK_EXPORT void requestFailed(const WebString& error) const;
+    BLINK_PLATFORM_EXPORT void requestSucceeded() const;
+    BLINK_PLATFORM_EXPORT void requestFailed(const WebString& error) const;
 
     // Extra data associated with this object.
     // If non-null, the extra data pointer will be deleted when the object is destroyed.
     // Setting the extra data pointer will cause any existing non-null
     // extra data pointer to be deleted.
-    BLINK_EXPORT ExtraData* extraData() const;
-    BLINK_EXPORT void setExtraData(ExtraData*);
+    BLINK_PLATFORM_EXPORT ExtraData* extraData() const;
+    BLINK_PLATFORM_EXPORT void setExtraData(ExtraData*);
 
-#if BLINK_IMPLEMENTATION
-    WebRTCVoidRequest(const WTF::PassRefPtr<WebCore::RTCVoidRequest>&);
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebRTCVoidRequest(const WTF::PassRefPtr<WebCore::RTCVoidRequest>&);
 #endif
 
 private:
     WebPrivatePtr<WebCore::RTCVoidRequest> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebRTCVoidRequest_h

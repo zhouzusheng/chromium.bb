@@ -36,7 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebSharedWorkerRepositoryClient;
 
@@ -50,7 +50,7 @@ public:
 
     virtual ~SharedWorkerRepositoryClientImpl() { }
 
-    virtual void connect(PassRefPtr<WebCore::SharedWorker>, PassOwnPtr<WebCore::MessagePortChannel>, const WebCore::KURL&, const String& name, WebCore::ExceptionState&) OVERRIDE;
+    virtual void connect(PassRefPtr<WebCore::SharedWorker>, PassOwnPtr<WebMessagePortChannel>, const WebCore::KURL&, const String& name, WebCore::ExceptionState&) OVERRIDE;
     virtual void documentDetached(WebCore::Document*) OVERRIDE;
 
 private:
@@ -59,6 +59,6 @@ private:
     WebSharedWorkerRepositoryClient* m_client;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // SharedWorkerRepositoryClientImpl_h

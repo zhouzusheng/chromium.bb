@@ -45,7 +45,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 inline PickerIndicatorElement::PickerIndicatorElement(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_pickerIndicatorOwner(&pickerIndicatorOwner)
 {
 }
@@ -53,7 +53,7 @@ inline PickerIndicatorElement::PickerIndicatorElement(Document& document, Picker
 PassRefPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
 {
     RefPtr<PickerIndicatorElement> element = adoptRef(new PickerIndicatorElement(document, pickerIndicatorOwner));
-    element->setPart(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::pickerIndicator());
     return element.release();
 }
@@ -98,6 +98,12 @@ void PickerIndicatorElement::didChooseValue(const String& value)
     if (!m_pickerIndicatorOwner)
         return;
     m_pickerIndicatorOwner->pickerIndicatorChooseValue(value);
+}
+
+void PickerIndicatorElement::didChooseValue(double value)
+{
+    if (m_pickerIndicatorOwner)
+        m_pickerIndicatorOwner->pickerIndicatorChooseValue(value);
 }
 
 void PickerIndicatorElement::didEndChooser()

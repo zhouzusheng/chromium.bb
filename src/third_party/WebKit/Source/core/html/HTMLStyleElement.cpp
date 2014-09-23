@@ -44,14 +44,13 @@ static StyleEventSender& styleLoadEventSender()
     return sharedLoadEventSender;
 }
 
-inline HTMLStyleElement::HTMLStyleElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : HTMLElement(tagName, document)
+inline HTMLStyleElement::HTMLStyleElement(Document& document, bool createdByParser)
+    : HTMLElement(styleTag, document)
     , StyleElement(&document, createdByParser)
     , m_firedLoad(false)
     , m_loadedSheet(false)
     , m_scopedStyleRegistrationState(NotRegistered)
 {
-    ASSERT(hasTagName(styleTag));
     ScriptWrappable::init(this);
 }
 
@@ -64,9 +63,9 @@ HTMLStyleElement::~HTMLStyleElement()
     styleLoadEventSender().cancelEvent(this);
 }
 
-PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLStyleElement(tagName, document, createdByParser));
+    return adoptRef(new HTMLStyleElement(document, createdByParser));
 }
 
 void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -115,8 +114,8 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
     if (m_scopedStyleRegistrationState != RegisteredAsScoped)
         return;
 
-    document().styleEngine()->removeStyleSheetCandidateNode(this, parentNode());
     unregisterWithScopingNode(parentNode());
+    document().styleEngine()->removeStyleSheetCandidateNode(this, parentNode());
 
     // As any <style> in a shadow tree is treated as "scoped",
     // need to add the <style> to its shadow root.

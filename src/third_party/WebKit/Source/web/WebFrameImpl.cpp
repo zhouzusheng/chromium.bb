@@ -148,7 +148,6 @@
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/IconController.h"
 #include "core/loader/SubstituteData.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
@@ -156,12 +155,7 @@
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/page/PrintContext.h"
-#include "core/page/Settings.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsLayerClient.h"
-#include "core/platform/graphics/skia/SkiaUtils.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderFrame.h"
@@ -180,27 +174,32 @@
 #include "platform/TraceEvent.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/clipboard/ClipboardUtilities.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsLayerClient.h"
+#include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SchemeRegistry.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileSystem.h"
-#include "public/platform/WebFileSystemType.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
+#include "public/platform/WebLayer.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SchemeRegistry.h"
-#include "weborigin/SecurityPolicy.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/HashMap.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static int frameCount = 0;
 
@@ -222,10 +221,10 @@ static void frameContentAsPlainText(size_t maxChars, Frame* frame, StringBuilder
 
     // Select the document body.
     RefPtr<Range> range(document->createRange());
-    TrackExceptionState es;
-    range->selectNodeContents(document->body(), es);
+    TrackExceptionState exceptionState;
+    range->selectNodeContents(document->body(), exceptionState);
 
-    if (!es.hadException()) {
+    if (!exceptionState.hadException()) {
         // The text iterator will walk nodes giving us text. This is similar to
         // the plainText() function in core/editing/TextIterator.h, but we implement the maximum
         // size and also copy the results directly into a wstring, avoiding the
@@ -506,7 +505,7 @@ int WebFrame::instanceCount()
 
 WebFrame* WebFrame::frameForCurrentContext()
 {
-    v8::Handle<v8::Context> context = v8::Context::GetCurrent();
+    v8::Handle<v8::Context> context = v8::Isolate::GetCurrent()->GetCurrentContext();
     if (context.IsEmpty())
         return 0;
     return frameForContext(context);
@@ -553,8 +552,26 @@ WebVector<WebIconURL> WebFrameImpl::iconURLs(int iconTypesMask) const
     // The URL to the icon may be in the header. As such, only
     // ask the loader for the icon if it's finished loading.
     if (frame()->loader().state() == FrameStateComplete)
-        return frame()->loader().icon()->urlsForTypes(iconTypesMask);
+        return frame()->document()->iconURLs(iconTypesMask);
     return WebVector<WebIconURL>();
+}
+
+void WebFrameImpl::setRemoteWebLayer(WebLayer* webLayer)
+{
+    if (!frame())
+        return;
+
+    if (frame()->remotePlatformLayer())
+        GraphicsLayer::unregisterContentsLayer(frame()->remotePlatformLayer());
+    if (webLayer)
+        GraphicsLayer::registerContentsLayer(webLayer);
+    frame()->setRemotePlatformLayer(webLayer);
+    frame()->ownerElement()->setNeedsStyleRecalc(WebCore::SubtreeStyleChange, WebCore::StyleChangeFromRenderer);
+}
+
+void WebFrameImpl::setPermissionClient(WebPermissionClient* permissionClient)
+{
+    m_permissionClient = permissionClient;
 }
 
 WebSize WebFrameImpl::scrollOffset() const
@@ -931,12 +948,7 @@ void WebFrameImpl::loadHistoryItem(const WebHistoryItem& item)
     ASSERT(frame());
     RefPtr<HistoryItem> historyItem = PassRefPtr<HistoryItem>(item);
     ASSERT(historyItem);
-
-    frame()->loader().prepareForHistoryNavigation();
-    RefPtr<HistoryItem> currentItem = frame()->loader().history()->currentItem();
-    m_inSameDocumentHistoryLoad = currentItem && currentItem->shouldDoSameDocumentNavigationTo(historyItem.get());
-    frame()->page()->goToItem(historyItem.get());
-    m_inSameDocumentHistoryLoad = false;
+    frame()->page()->historyController().goToItem(historyItem.get());
 }
 
 void WebFrameImpl::loadData(const WebData& data, const WebString& mimeType, const WebString& textEncoding, const WebURL& baseURL, const WebURL& unreachableURL, bool replace)
@@ -1007,7 +1019,7 @@ WebHistoryItem WebFrameImpl::previousHistoryItem() const
     // only get saved to history when it becomes the previous item.  The caller
     // is expected to query the history item after a navigation occurs, after
     // the desired history item has become the previous entry.
-    return WebHistoryItem(frame()->loader().history()->previousItem());
+    return WebHistoryItem(frame()->page()->historyController().previousItemForExport());
 }
 
 WebHistoryItem WebFrameImpl::currentHistoryItem() const
@@ -1023,13 +1035,13 @@ WebHistoryItem WebFrameImpl::currentHistoryItem() const
     // document state.  However, it is OK for new navigations.
     // FIXME: Can we make this a plain old getter, instead of worrying about
     // clobbering here?
-    if (!m_inSameDocumentHistoryLoad && (frame()->loader().loadType() == FrameLoadTypeStandard
+    if (!frame()->page()->historyController().inSameDocumentLoad() && (frame()->loader().loadType() == FrameLoadTypeStandard
         || !frame()->loader().activeDocumentLoader()->isLoadingInAPISense()))
-        frame()->loader().history()->saveDocumentAndScrollState();
+        frame()->loader().saveDocumentAndScrollState();
 
-    if (HistoryItem* item = frame()->loader().history()->provisionalItem())
+    if (RefPtr<HistoryItem> item = frame()->page()->historyController().provisionalItemForExport())
         return WebHistoryItem(item);
-    return WebHistoryItem(frame()->page()->mainFrame()->loader().history()->currentItem());
+    return WebHistoryItem(frame()->page()->historyController().currentItemForExport());
 }
 
 void WebFrameImpl::enableViewSourceMode(bool enable)
@@ -1047,7 +1059,7 @@ bool WebFrameImpl::isViewSourceModeEnabled() const
 
 void WebFrameImpl::setReferrerForRequest(WebURLRequest& request, const WebURL& referrerURL)
 {
-    String referrer = referrerURL.isEmpty() ? frame()->loader().outgoingReferrer() : String(referrerURL.spec().utf16());
+    String referrer = referrerURL.isEmpty() ? frame()->document()->outgoingReferrer() : String(referrerURL.spec().utf16());
     referrer = SecurityPolicy::generateReferrerHeader(frame()->document()->referrerPolicy(), request.url(), referrer);
     if (referrer.isEmpty())
         return;
@@ -1068,11 +1080,6 @@ WebURLLoader* WebFrameImpl::createAssociatedURLLoader(const WebURLLoaderOptions&
 unsigned WebFrameImpl::unloadListenerCount() const
 {
     return frame()->domWindow()->pendingUnloadEventListeners();
-}
-
-bool WebFrameImpl::willSuppressOpenerInNewFrame() const
-{
-    return frame()->loader().suppressOpenerInNewFrame();
 }
 
 void WebFrameImpl::replaceSelection(const WebString& text)
@@ -1336,11 +1343,6 @@ void WebFrameImpl::selectRange(const WebRange& webRange)
 {
     if (RefPtr<Range> range = static_cast<PassRefPtr<Range> >(webRange))
         frame()->selection().setSelectedRange(range.get(), WebCore::VP_DEFAULT_AFFINITY, false);
-}
-
-void WebFrameImpl::moveCaretSelectionTowardsWindowPoint(const WebPoint& point)
-{
-    moveCaretSelection(point);
 }
 
 void WebFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent)
@@ -1614,13 +1616,13 @@ void WebFrameImpl::scopeStringMatches(int identifier, const WebString& searchTex
     Node* originalEndContainer = searchRange->endContainer();
     int originalEndOffset = searchRange->endOffset();
 
-    TrackExceptionState es, es2;
+    TrackExceptionState exceptionState, exceptionState2;
     if (m_resumeScopingFromRange) {
         // This is a continuation of a scoping operation that timed out and didn't
         // complete last time around, so we should start from where we left off.
-        searchRange->setStart(m_resumeScopingFromRange->startContainer(), m_resumeScopingFromRange->startOffset(es2) + 1, es);
-        if (es.hadException() || es2.hadException()) {
-            if (es2.hadException()) // A non-zero |es| happens when navigating during search.
+        searchRange->setStart(m_resumeScopingFromRange->startContainer(), m_resumeScopingFromRange->startOffset(exceptionState2) + 1, exceptionState);
+        if (exceptionState.hadException() || exceptionState2.hadException()) {
+            if (exceptionState2.hadException()) // A non-zero |exceptionState| happens when navigating during search.
                 ASSERT_NOT_REACHED();
             return;
         }
@@ -1643,13 +1645,13 @@ void WebFrameImpl::scopeStringMatches(int identifier, const WebString& searchTex
         RefPtr<Range> resultRange(findPlainText(searchRange.get(),
                                                 searchText,
                                                 options.matchCase ? 0 : CaseInsensitive));
-        if (resultRange->collapsed(es)) {
+        if (resultRange->collapsed(exceptionState)) {
             if (!resultRange->startContainer()->isInShadowTree())
                 break;
 
             searchRange->setStartAfter(
-                resultRange->startContainer()->deprecatedShadowAncestorNode(), es);
-            searchRange->setEnd(originalEndContainer, originalEndOffset, es);
+                resultRange->startContainer()->deprecatedShadowAncestorNode(), exceptionState);
+            searchRange->setEnd(originalEndContainer, originalEndOffset, exceptionState);
             continue;
         }
 
@@ -1694,11 +1696,11 @@ void WebFrameImpl::scopeStringMatches(int identifier, const WebString& searchTex
         // result range. There is no need to use a VisiblePosition here,
         // since findPlainText will use a TextIterator to go over the visible
         // text nodes.
-        searchRange->setStart(resultRange->endContainer(es), resultRange->endOffset(es), es);
+        searchRange->setStart(resultRange->endContainer(exceptionState), resultRange->endOffset(exceptionState), exceptionState);
 
         Node* shadowTreeRoot = searchRange->shadowRoot();
-        if (searchRange->collapsed(es) && shadowTreeRoot)
-            searchRange->setEnd(shadowTreeRoot, shadowTreeRoot->childNodeCount(), es);
+        if (searchRange->collapsed(exceptionState) && shadowTreeRoot)
+            searchRange->setEnd(shadowTreeRoot, shadowTreeRoot->childNodeCount(), exceptionState);
 
         m_resumeScopingFromRange = resultRange;
         timedOut = (currentTime() - startTime) >= maxScopingDuration;
@@ -2105,6 +2107,7 @@ WebFrameImpl::WebFrameImpl(WebFrameClient* client, long long embedderIdentifier)
     : FrameDestructionObserver(0)
     , m_frameInit(WebFrameInit::create(this, embedderIdentifier))
     , m_client(client)
+    , m_permissionClient(0)
     , m_currentActiveMatchFrame(0)
     , m_activeMatchIndexInCurrentFrame(-1)
     , m_locatingActiveRect(false)
@@ -2118,16 +2121,15 @@ WebFrameImpl::WebFrameImpl(WebFrameClient* client, long long embedderIdentifier)
     , m_nextInvalidateAfter(0)
     , m_findMatchMarkersVersion(0)
     , m_findMatchRectsAreValid(false)
-    , m_inSameDocumentHistoryLoad(false)
     , m_inputEventsScaleFactorForEmulation(1)
 {
-    WebKit::Platform::current()->incrementStatsCounter(webFrameActiveCount);
+    blink::Platform::current()->incrementStatsCounter(webFrameActiveCount);
     frameCount++;
 }
 
 WebFrameImpl::~WebFrameImpl()
 {
-    WebKit::Platform::current()->decrementStatsCounter(webFrameActiveCount);
+    blink::Platform::current()->decrementStatsCounter(webFrameActiveCount);
     frameCount--;
 
     cancelPendingScopingEffort();
@@ -2207,12 +2209,11 @@ PassRefPtr<Frame> WebFrameImpl::createChildFrame(const FrameLoadRequest& request
     if (!childFrame->tree().parent())
         return 0;
 
-    HistoryItem* parentItem = frame()->loader().history()->currentItem();
-    HistoryItem* childItem = 0;
     // If we're moving in the back/forward list, we might want to replace the content
     // of this child frame with whatever was there at that point.
-    if (parentItem && parentItem->children().size() && isBackForwardLoadType(frame()->loader().loadType()) && !frame()->document()->loadEventFinished())
-        childItem = parentItem->childItemWithTarget(childFrame->tree().uniqueName());
+    HistoryItem* childItem = 0;
+    if (isBackForwardLoadType(frame()->loader().loadType()) && !frame()->document()->loadEventFinished())
+        childItem = frame()->page()->historyController().itemForNewChildFrame(childFrame.get());
 
     if (childItem)
         childFrame->loader().loadHistoryItem(childItem);
@@ -2327,7 +2328,7 @@ void WebFrameImpl::setFindEndstateFocusAndSelection()
         // This, for example, sets focus to the first link if you search for
         // text and text that is within one or more links.
         node = m_activeMatch->firstNode();
-        for (; node && node != m_activeMatch->pastLastNode(); node = NodeTraversal::next(node)) {
+        for (; node && node != m_activeMatch->pastLastNode(); node = NodeTraversal::next(*node)) {
             if (!node->isElementNode())
                 continue;
             Element* element = toElement(node);
@@ -2536,4 +2537,4 @@ void WebFrameImpl::willDetachPage()
     }
 }
 
-} // namespace WebKit
+} // namespace blink

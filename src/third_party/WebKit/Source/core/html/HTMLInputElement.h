@@ -47,7 +47,7 @@ struct DateTimeChooserParameters;
 
 class HTMLInputElement : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLInputElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtr<HTMLInputElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
@@ -80,8 +80,8 @@ public:
     // Implementations of HTMLInputElement::stepUp() and stepDown().
     void stepUp(int, ExceptionState&);
     void stepDown(int, ExceptionState&);
-    void stepUp(ExceptionState& es) { stepUp(1, es); }
-    void stepDown(ExceptionState& es) { stepDown(1, es); }
+    void stepUp(ExceptionState& exceptionState) { stepUp(1, exceptionState); }
+    void stepDown(ExceptionState& exceptionState) { stepDown(1, exceptionState); }
     // stepUp()/stepDown() for user-interaction.
     bool isSteppable() const;
 
@@ -134,7 +134,7 @@ public:
     int size() const;
     bool sizeShouldIncludeDecoration(int& preferredSize) const;
 
-    void setType(const String&);
+    void setType(const AtomicString&);
 
     String value() const;
     void setValue(const String&, ExceptionState&, TextFieldEventBehavior = DispatchNoEvent);
@@ -190,13 +190,13 @@ public:
 
     int maxResults() const { return m_maxResults; }
 
-    String defaultValue() const;
-    void setDefaultValue(const String&);
+    const AtomicString& defaultValue() const;
+    void setDefaultValue(const AtomicString&);
 
     Vector<String> acceptMIMETypes();
     Vector<String> acceptFileExtensions();
-    String accept() const;
-    String alt() const;
+    const AtomicString& accept() const;
+    const AtomicString& alt() const;
 
     void setSize(unsigned);
     void setSize(unsigned, ExceptionState&);
@@ -230,6 +230,7 @@ public:
 
     HTMLElement* list() const;
     HTMLDataListElement* dataList() const;
+    bool hasValidDataListOptions() const;
     void listAttributeTargetChanged();
 
     HTMLInputElement* checkedRadioButtonForGroup() const;
@@ -280,14 +281,14 @@ public:
     bool supportsInputModeAttribute() const;
 
 protected:
-    HTMLInputElement(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
+    HTMLInputElement(Document&, HTMLFormElement*, bool createdByParser);
 
     virtual void defaultEventHandler(Event*);
 
 private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     virtual void didAddShadowRoot(ShadowRoot&) OVERRIDE;
 
     virtual void willChangeForm() OVERRIDE;
@@ -331,7 +332,7 @@ private:
     virtual bool appendFormData(FormDataList&, bool) OVERRIDE;
     virtual String resultForDialogSubmit() OVERRIDE;
 
-    virtual bool isSuccessfulSubmitButton() const;
+    virtual bool canBeSuccessfulSubmitButton() const OVERRIDE;
 
     virtual void resetImpl() OVERRIDE;
 
@@ -394,7 +395,6 @@ private:
     bool m_stateRestored : 1;
     bool m_parsingInProgress : 1;
     bool m_valueAttributeWasUpdatedAfterParsing : 1;
-    bool m_wasModifiedByUser : 1;
     bool m_canReceiveDroppedFiles : 1;
     bool m_hasTouchEventHandler : 1;
     RefPtr<InputType> m_inputType;

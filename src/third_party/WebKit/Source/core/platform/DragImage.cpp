@@ -26,27 +26,26 @@
 #include "config.h"
 #include "core/platform/DragImage.h"
 
-#include "core/platform/graphics/BitmapImage.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/StringTruncator.h"
-#include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "platform/fonts/Font.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontMetrics.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntPoint.h"
-#include "platform/geometry/IntSize.h"
+#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/Color.h"
-#include "platform/graphics/TextRun.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/Image.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/skia/NativeImageSkia.h"
+#include "platform/text/StringTruncator.h"
+#include "platform/text/TextRun.h"
 #include "platform/transforms/AffineTransform.h"
+#include "platform/weborigin/KURL.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkMatrix.h"
-#include "weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -66,7 +65,7 @@ const float kMaxDragLabelStringWidth = (kMaxDragLabelWidth - 2 * kDragLabelBorde
 const float kDragLinkLabelFontSize = 11;
 const float kDragLinkUrlFontSize = 10;
 
-PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnum shouldRespectImageOrientation)
+PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnum shouldRespectImageOrientation, float deviceScaleFactor)
 {
     if (!image)
         return nullptr;
@@ -77,7 +76,7 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
 
     if (image->isBitmapImage()) {
         ImageOrientation orientation = DefaultImageOrientation;
-        BitmapImage* bitmapImage = static_cast<BitmapImage*>(image);
+        BitmapImage* bitmapImage = toBitmapImage(image);
         IntSize sizeRespectingOrientation = bitmapImage->sizeRespectingOrientation();
 
         if (shouldRespectImageOrientation == RespectImageOrientation)
@@ -98,14 +97,14 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
             canvas.concat(affineTransformToSkMatrix(orientation.transformFromDefault(sizeRespectingOrientation)));
             canvas.drawBitmapRect(bitmap->bitmap(), 0, destRect);
 
-            return adoptPtr(new DragImage(skBitmap, bitmap->resolutionScale()));
+            return adoptPtr(new DragImage(skBitmap, deviceScaleFactor));
         }
     }
 
     SkBitmap skBitmap;
     if (!bitmap->bitmap().copyTo(&skBitmap, SkBitmap::kARGB_8888_Config))
         return nullptr;
-    return adoptPtr(new DragImage(skBitmap, bitmap->resolutionScale()));
+    return adoptPtr(new DragImage(skBitmap, deviceScaleFactor));
 }
 
 static Font deriveDragLabelFont(int size, FontWeight fontWeight, const FontDescription& systemFont)
@@ -164,9 +163,10 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     // fill the background
     IntSize scaledImageSize = imageSize;
     scaledImageSize.scale(deviceScaleFactor);
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(scaledImageSize, deviceScaleFactor));
+    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(scaledImageSize));
     if (!buffer)
         return nullptr;
+    buffer->context()->scale(FloatSize(deviceScaleFactor, deviceScaleFactor));
 
     const float DragLabelRadius = 5;
     const IntSize radii(DragLabelRadius, DragLabelRadius);
@@ -191,7 +191,7 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     buffer->context()->drawText(urlFont, TextRunPaintInfo(textRun), textPos);
 
     RefPtr<Image> image = buffer->copyImage();
-    return DragImage::create(image.get());
+    return DragImage::create(image.get(), DoNotRespectImageOrientation, deviceScaleFactor);
 }
 
 DragImage::DragImage(const SkBitmap& bitmap, float resolutionScale)

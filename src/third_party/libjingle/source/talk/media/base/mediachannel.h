@@ -173,6 +173,7 @@ struct AudioOptions {
     experimental_agc.SetFrom(change.experimental_agc);
     experimental_aec.SetFrom(change.experimental_aec);
     aec_dump.SetFrom(change.aec_dump);
+    experimental_acm.SetFrom(change.experimental_acm);
     tx_agc_target_dbov.SetFrom(change.tx_agc_target_dbov);
     tx_agc_digital_compression_gain.SetFrom(
         change.tx_agc_digital_compression_gain);
@@ -200,6 +201,7 @@ struct AudioOptions {
         experimental_aec == o.experimental_aec &&
         adjust_agc_delta == o.adjust_agc_delta &&
         aec_dump == o.aec_dump &&
+        experimental_acm == o.experimental_acm &&
         tx_agc_target_dbov == o.tx_agc_target_dbov &&
         tx_agc_digital_compression_gain == o.tx_agc_digital_compression_gain &&
         tx_agc_limiter == o.tx_agc_limiter &&
@@ -227,6 +229,7 @@ struct AudioOptions {
     ost << ToStringIfSet("experimental_agc", experimental_agc);
     ost << ToStringIfSet("experimental_aec", experimental_aec);
     ost << ToStringIfSet("aec_dump", aec_dump);
+    ost << ToStringIfSet("experimental_acm", experimental_acm);
     ost << ToStringIfSet("tx_agc_target_dbov", tx_agc_target_dbov);
     ost << ToStringIfSet("tx_agc_digital_compression_gain",
         tx_agc_digital_compression_gain);
@@ -263,6 +266,7 @@ struct AudioOptions {
   Settable<bool> experimental_agc;
   Settable<bool> experimental_aec;
   Settable<bool> aec_dump;
+  Settable<bool> experimental_acm;
   // Note that tx_agc_* only applies to non-experimental AGC.
   Settable<uint16> tx_agc_target_dbov;
   Settable<uint16> tx_agc_digital_compression_gain;
@@ -294,7 +298,6 @@ struct VideoOptions {
     adapt_view_switch.SetFrom(change.adapt_view_switch);
     video_adapt_third.SetFrom(change.video_adapt_third);
     video_noise_reduction.SetFrom(change.video_noise_reduction);
-    video_three_layers.SetFrom(change.video_three_layers);
     video_one_layer_screencast.SetFrom(change.video_one_layer_screencast);
     video_high_bitrate.SetFrom(change.video_high_bitrate);
     video_watermark.SetFrom(change.video_watermark);
@@ -313,6 +316,7 @@ struct VideoOptions {
     buffered_mode_latency.SetFrom(change.buffered_mode_latency);
     lower_min_bitrate.SetFrom(change.lower_min_bitrate);
     dscp.SetFrom(change.dscp);
+    suspend_below_min_bitrate.SetFrom(change.suspend_below_min_bitrate);
   }
 
   bool operator==(const VideoOptions& o) const {
@@ -322,7 +326,6 @@ struct VideoOptions {
         adapt_view_switch == o.adapt_view_switch &&
         video_adapt_third == o.video_adapt_third &&
         video_noise_reduction == o.video_noise_reduction &&
-        video_three_layers == o.video_three_layers &&
         video_one_layer_screencast == o.video_one_layer_screencast &&
         video_high_bitrate == o.video_high_bitrate &&
         video_watermark == o.video_watermark &&
@@ -338,7 +341,8 @@ struct VideoOptions {
             o.system_high_adaptation_threshhold &&
         buffered_mode_latency == o.buffered_mode_latency &&
         lower_min_bitrate == o.lower_min_bitrate &&
-        dscp == o.dscp;
+        dscp == o.dscp &&
+        suspend_below_min_bitrate == o.suspend_below_min_bitrate;
   }
 
   std::string ToString() const {
@@ -350,7 +354,6 @@ struct VideoOptions {
     ost << ToStringIfSet("adapt view switch", adapt_view_switch);
     ost << ToStringIfSet("video adapt third", video_adapt_third);
     ost << ToStringIfSet("noise reduction", video_noise_reduction);
-    ost << ToStringIfSet("3 layers", video_three_layers);
     ost << ToStringIfSet("1 layer screencast", video_one_layer_screencast);
     ost << ToStringIfSet("high bitrate", video_high_bitrate);
     ost << ToStringIfSet("watermark", video_watermark);
@@ -367,6 +370,8 @@ struct VideoOptions {
     ost << ToStringIfSet("buffered mode latency", buffered_mode_latency);
     ost << ToStringIfSet("lower min bitrate", lower_min_bitrate);
     ost << ToStringIfSet("dscp", dscp);
+    ost << ToStringIfSet("suspend below min bitrate",
+                         suspend_below_min_bitrate);
     ost << "}";
     return ost.str();
   }
@@ -383,8 +388,6 @@ struct VideoOptions {
   Settable<bool> video_adapt_third;
   // Enable denoising?
   Settable<bool> video_noise_reduction;
-  // Experimental: Enable multi layer?
-  Settable<bool> video_three_layers;
   // Experimental: Enable one layer screencast?
   Settable<bool> video_one_layer_screencast;
   // Experimental: Enable WebRtc higher bitrate?
@@ -415,6 +418,9 @@ struct VideoOptions {
   Settable<bool> lower_min_bitrate;
   // Set DSCP value for packet sent from video channel.
   Settable<bool> dscp;
+  // Enable WebRTC suspension of video. No video frames will be sent when the
+  // bitrate is below the configured minimum bitrate.
+  Settable<bool> suspend_below_min_bitrate;
 };
 
 // A class for playing out soundclips.
@@ -503,9 +509,11 @@ class MediaChannel : public sigslot::has_slots<> {
   }
 
   // Called when a RTP packet is received.
-  virtual void OnPacketReceived(talk_base::Buffer* packet) = 0;
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time) = 0;
   // Called when a RTCP packet is received.
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) = 0;
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time) = 0;
   // Called when the socket's ability to send has changed.
   virtual void OnReadyToSend(bool ready) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
@@ -624,6 +632,35 @@ struct MediaSenderInfo {
         fraction_lost(0.0),
         rtt_ms(0) {
   }
+  void add_ssrc(const SsrcSenderInfo& stat) {
+    local_stats.push_back(stat);
+  }
+  // Temporary utility function for call sites that only provide SSRC.
+  // As more info is added into SsrcSenderInfo, this function should go away.
+  void add_ssrc(uint32 ssrc) {
+    SsrcSenderInfo stat;
+    stat.ssrc = ssrc;
+    add_ssrc(stat);
+  }
+  // Utility accessor for clients that are only interested in ssrc numbers.
+  std::vector<uint32> ssrcs() const {
+    std::vector<uint32> retval;
+    for (std::vector<SsrcSenderInfo>::const_iterator it = local_stats.begin();
+         it != local_stats.end(); ++it) {
+      retval.push_back(it->ssrc);
+    }
+    return retval;
+  }
+  // Utility accessor for clients that make the assumption only one ssrc
+  // exists per media.
+  // This will eventually go away.
+  uint32 ssrc() const {
+    if (local_stats.size() > 0) {
+      return local_stats[0].ssrc;
+    } else {
+      return 0;
+    }
+  }
   int64 bytes_sent;
   int packets_sent;
   int packets_lost;
@@ -641,6 +678,35 @@ struct MediaReceiverInfo {
         packets_lost(0),
         fraction_lost(0.0) {
   }
+  void add_ssrc(const SsrcReceiverInfo& stat) {
+    local_stats.push_back(stat);
+  }
+  // Temporary utility function for call sites that only provide SSRC.
+  // As more info is added into SsrcSenderInfo, this function should go away.
+  void add_ssrc(uint32 ssrc) {
+    SsrcReceiverInfo stat;
+    stat.ssrc = ssrc;
+    add_ssrc(stat);
+  }
+  std::vector<uint32> ssrcs() const {
+    std::vector<uint32> retval;
+    for (std::vector<SsrcReceiverInfo>::const_iterator it = local_stats.begin();
+         it != local_stats.end(); ++it) {
+      retval.push_back(it->ssrc);
+    }
+    return retval;
+  }
+  // Utility accessor for clients that make the assumption only one ssrc
+  // exists per media.
+  // This will eventually go away.
+  uint32 ssrc() const {
+    if (local_stats.size() > 0) {
+      return local_stats[0].ssrc;
+    } else {
+      return 0;
+    }
+  }
+
   int64 bytes_rcvd;
   int packets_rcvd;
   int packets_lost;
@@ -651,8 +717,7 @@ struct MediaReceiverInfo {
 
 struct VoiceSenderInfo : public MediaSenderInfo {
   VoiceSenderInfo()
-      : ssrc(0),
-        ext_seqnum(0),
+      : ext_seqnum(0),
         jitter_ms(0),
         audio_level(0),
         aec_quality_min(0.0),
@@ -663,7 +728,6 @@ struct VoiceSenderInfo : public MediaSenderInfo {
         typing_noise_detected(false) {
   }
 
-  uint32 ssrc;
   int ext_seqnum;
   int jitter_ms;
   int audio_level;
@@ -677,8 +741,7 @@ struct VoiceSenderInfo : public MediaSenderInfo {
 
 struct VoiceReceiverInfo : public MediaReceiverInfo {
   VoiceReceiverInfo()
-      : ssrc(0),
-        ext_seqnum(0),
+      : ext_seqnum(0),
         jitter_ms(0),
         jitter_buffer_ms(0),
         jitter_buffer_preferred_ms(0),
@@ -687,7 +750,6 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
         expand_rate(0) {
   }
 
-  uint32 ssrc;
   int ext_seqnum;
   int jitter_ms;
   int jitter_buffer_ms;
@@ -709,10 +771,13 @@ struct VideoSenderInfo : public MediaSenderInfo {
         framerate_sent(0),
         nominal_bitrate(0),
         preferred_bitrate(0),
-        adapt_reason(0) {
+        adapt_reason(0),
+        capture_jitter_ms(0),
+        avg_encode_ms(0),
+        encode_usage_percent(0),
+        capture_queue_delay_ms_per_s(0) {
   }
 
-  std::vector<uint32> ssrcs;
   std::vector<SsrcGroup> ssrc_groups;
   int packets_cached;
   int firs_rcvd;
@@ -724,6 +789,10 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int nominal_bitrate;
   int preferred_bitrate;
   int adapt_reason;
+  int capture_jitter_ms;
+  int avg_encode_ms;
+  int encode_usage_percent;
+  int capture_queue_delay_ms_per_s;
 };
 
 struct VideoReceiverInfo : public MediaReceiverInfo {
@@ -747,7 +816,6 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
         current_delay_ms(0) {
   }
 
-  std::vector<uint32> ssrcs;
   std::vector<SsrcGroup> ssrc_groups;
   int packets_concealed;
   int firs_sent;
@@ -1065,25 +1133,15 @@ class DataMediaChannel : public MediaChannel {
 
   virtual ~DataMediaChannel() {}
 
-  virtual bool SetSendBandwidth(bool autobw, int bps) = 0;
   virtual bool SetSendCodecs(const std::vector<DataCodec>& codecs) = 0;
   virtual bool SetRecvCodecs(const std::vector<DataCodec>& codecs) = 0;
-  virtual bool SetRecvRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
-  virtual bool SetSendRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
-  virtual bool AddSendStream(const StreamParams& sp) = 0;
-  virtual bool RemoveSendStream(uint32 ssrc) = 0;
-  virtual bool AddRecvStream(const StreamParams& sp) = 0;
-  virtual bool RemoveRecvStream(uint32 ssrc) = 0;
+
   virtual bool MuteStream(uint32 ssrc, bool on) { return false; }
   // TODO(pthatcher): Implement this.
   virtual bool GetStats(DataMediaInfo* info) { return true; }
 
   virtual bool SetSend(bool send) = 0;
   virtual bool SetReceive(bool receive) = 0;
-  virtual void OnPacketReceived(talk_base::Buffer* packet) = 0;
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) = 0;
 
   virtual bool SendData(
       const SendDataParams& params,

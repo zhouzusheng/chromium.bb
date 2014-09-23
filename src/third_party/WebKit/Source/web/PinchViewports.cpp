@@ -36,10 +36,10 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/Scrollbar.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "platform/geometry/FloatSize.h"
+#include "platform/graphics/GraphicsLayer.h"
+#include "platform/scroll/Scrollbar.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayer.h"
@@ -48,7 +48,7 @@
 
 using WebCore::GraphicsLayer;
 
-namespace WebKit {
+namespace blink {
 
 PassOwnPtr<PinchViewports> PinchViewports::create(WebViewImpl* owner)
 {
@@ -185,7 +185,7 @@ void PinchViewports::clearViewportLayersForTreeView(WebLayerTreeView* layerTreeV
     layerTreeView->clearViewportLayers();
 }
 
-void PinchViewports::notifyAnimationStarted(const GraphicsLayer*, double time)
+void PinchViewports::notifyAnimationStarted(const GraphicsLayer*, double wallClockTime, double monotonicTime)
 {
 }
 
@@ -213,4 +213,4 @@ String PinchViewports::debugName(const GraphicsLayer* graphicsLayer)
     return name;
 }
 
-} // namespace WebKit
+} // namespace blink

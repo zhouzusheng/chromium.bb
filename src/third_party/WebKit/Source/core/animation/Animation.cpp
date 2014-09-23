@@ -32,6 +32,8 @@
 #include "core/animation/Animation.h"
 
 #include "core/animation/ActiveAnimations.h"
+#include "core/animation/CompositorAnimations.h"
+#include "core/animation/KeyframeAnimationEffect.h"
 #include "core/animation/Player.h"
 #include "core/dom/Element.h"
 
@@ -51,8 +53,16 @@ Animation::Animation(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> eff
 {
 }
 
+void Animation::didAttach()
+{
+    if (m_target)
+        m_target->ensureActiveAnimations()->players().add(player());
+}
+
 void Animation::willDetach()
 {
+    if (m_target)
+        m_target->activeAnimations()->players().remove(player());
     if (m_activeInAnimationStack)
         clearEffects();
 }
@@ -64,18 +74,24 @@ static AnimationStack& ensureAnimationStack(Element* element)
 
 bool Animation::applyEffects(bool previouslyInEffect)
 {
-    ASSERT(player());
+    ASSERT(isInEffect());
     if (!m_target || !m_effect)
         return false;
 
-    if (!previouslyInEffect) {
+    if (player() && !previouslyInEffect) {
         ensureAnimationStack(m_target.get()).add(this);
         m_activeInAnimationStack = true;
     }
 
-    m_compositableValues = m_effect->sample(currentIteration(), timeFraction());
-    m_target->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
-    return true;
+    double iteration = currentIteration();
+    ASSERT(iteration >= 0);
+    // FIXME: Handle iteration values which overflow int.
+    m_compositableValues = m_effect->sample(static_cast<int>(iteration), timeFraction());
+    if (player()) {
+        m_target->setNeedsAnimationStyleRecalc();
+        return true;
+    }
+    return false;
 }
 
 void Animation::clearEffects()
@@ -83,9 +99,11 @@ void Animation::clearEffects()
     ASSERT(player());
     ASSERT(m_activeInAnimationStack);
     ensureAnimationStack(m_target.get()).remove(this);
+    cancelAnimationOnCompositor();
     m_activeInAnimationStack = false;
     m_compositableValues.clear();
-    m_target->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
+    m_target->setNeedsAnimationStyleRecalc();
+    invalidate();
 }
 
 bool Animation::updateChildrenAndEffects() const
@@ -103,12 +121,18 @@ bool Animation::updateChildrenAndEffects() const
     return false;
 }
 
-double Animation::calculateTimeToEffectChange(double inheritedTime, double activeTime, Phase phase) const
+double Animation::calculateTimeToEffectChange(double localTime, double timeToNextIteration) const
 {
-    switch (phase) {
+    const double activeStartTime = startTime() + specified().startDelay;
+    switch (phase()) {
     case PhaseBefore:
-        return activeTime - inheritedTime;
+        return activeStartTime - localTime;
     case PhaseActive:
+        if (hasActiveAnimationsOnCompositor()) {
+            // Need service to apply fill / fire events.
+            const double activeEndTime = activeStartTime + activeDuration();
+            return std::min(activeEndTime - localTime, timeToNextIteration);
+        }
         return 0;
     case PhaseAfter:
         // If this Animation is still in effect then it will need to update
@@ -120,6 +144,61 @@ double Animation::calculateTimeToEffectChange(double inheritedTime, double activ
         ASSERT_NOT_REACHED();
         return 0;
     }
+}
+
+bool Animation::isCandidateForAnimationOnCompositor() const
+{
+    if (!effect() || !m_target)
+        return false;
+    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specified(), *effect());
+}
+
+bool Animation::maybeStartAnimationOnCompositor()
+{
+    ASSERT(!hasActiveAnimationsOnCompositor());
+    if (!isCandidateForAnimationOnCompositor())
+        return false;
+    if (!CompositorAnimations::instance()->canStartAnimationOnCompositor(*m_target.get()))
+        return false;
+    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target.get(), specified(), *effect(), m_compositorAnimationIds))
+        return false;
+    ASSERT(!m_compositorAnimationIds.isEmpty());
+    return true;
+}
+
+bool Animation::hasActiveAnimationsOnCompositor() const
+{
+    return !m_compositorAnimationIds.isEmpty();
+}
+
+bool Animation::hasActiveAnimationsOnCompositor(CSSPropertyID property) const
+{
+    return hasActiveAnimationsOnCompositor() && affects(property);
+}
+
+bool Animation::affects(CSSPropertyID property) const
+{
+    return m_effect && m_effect->affects(property);
+}
+
+void Animation::cancelAnimationOnCompositor()
+{
+    if (!hasActiveAnimationsOnCompositor())
+        return;
+    if (!m_target || !m_target->renderer())
+        return;
+    for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
+        CompositorAnimations::instance()->cancelAnimationOnCompositor(*m_target.get(), m_compositorAnimationIds[i]);
+    m_compositorAnimationIds.clear();
+}
+
+void Animation::pauseAnimationForTestingOnCompositor(double pauseTime)
+{
+    ASSERT(hasActiveAnimationsOnCompositor());
+    if (!m_target || !m_target->renderer())
+        return;
+    for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
+        CompositorAnimations::instance()->pauseAnimationForTestingOnCompositor(*m_target.get(), m_compositorAnimationIds[i], pauseTime);
 }
 
 } // namespace WebCore

@@ -42,15 +42,14 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLKeygenElement::HTMLKeygenElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLFormControlElementWithState(tagName, document, form)
+HTMLKeygenElement::HTMLKeygenElement(Document& document, HTMLFormElement* form)
+    : HTMLFormControlElementWithState(keygenTag, document, form)
 {
-    ASSERT(hasTagName(keygenTag));
     ScriptWrappable::init(this);
     ensureUserAgentShadowRoot();
 }
 
-void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot* root)
+void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     DEFINE_STATIC_LOCAL(AtomicString, keygenSelectPseudoId, ("-webkit-keygen-select", AtomicString::ConstructFromLiteral));
 
@@ -59,14 +58,14 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 
     // Create a select element with one option element for each key size.
     RefPtr<HTMLSelectElement> select = HTMLSelectElement::create(document());
-    select->setPart(keygenSelectPseudoId);
+    select->setPseudo(keygenSelectPseudoId);
     for (size_t i = 0; i < keys.size(); ++i) {
         RefPtr<HTMLOptionElement> option = HTMLOptionElement::create(document());
         option->appendChild(Text::create(document(), keys[i]));
         select->appendChild(option);
     }
 
-    root->appendChild(select);
+    root.appendChild(select);
 }
 
 void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

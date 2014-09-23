@@ -22,7 +22,6 @@
 #include "config.h"
 #include "core/css/resolver/StyleResolverState.h"
 
-#include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/page/Page.h"
@@ -33,6 +32,7 @@ StyleResolverState::StyleResolverState(Document& document, Element* element, Ren
     : m_elementContext(element ? ElementResolveContext(*element) : ElementResolveContext())
     , m_document(document)
     , m_style(0)
+    , m_cssToLengthConversionData(0, rootElementStyle())
     , m_parentStyle(parentStyle)
     , m_regionForStyling(regionForStyling)
     , m_applyPropertyToRegularStyle(true)

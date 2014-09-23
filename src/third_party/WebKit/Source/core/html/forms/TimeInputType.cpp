@@ -32,9 +32,9 @@
 #include "core/html/forms/TimeInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "platform/DateComponents.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/CurrentTime.h"
@@ -68,12 +68,7 @@ void TimeInputType::countUsage()
 
 const AtomicString& TimeInputType::formControlType() const
 {
-    return InputTypeNames::time();
-}
-
-DateComponents::Type TimeInputType::dateType() const
-{
-    return DateComponents::Time;
+    return InputTypeNames::time;
 }
 
 Decimal TimeInputType::defaultValueForStepUp() const
@@ -95,11 +90,7 @@ StepRange TimeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (timeDefaultStep, timeDefaultStepBase, timeStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element().fastGetAttribute(minAttr), 0);
-    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumTime()));
-    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumTime()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumTime()), Decimal::fromDouble(DateComponents::maximumTime()), stepDescription);
 }
 
 bool TimeInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const

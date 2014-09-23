@@ -392,10 +392,11 @@
             '../base/base.gyp:base',
             '../media/media.gyp:media_java',
             '../net/net.gyp:net',
-            '../ui/ui.gyp:ui_java',
+            '../ui/android/ui_android.gyp:ui_java',
             'common_aidl',
             'content_common',
             'page_transition_types_java',
+            'popup_item_type_java',
             'result_codes_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
@@ -428,6 +429,18 @@
           'variables': {
             'package_name': 'org/chromium/content/browser',
             'template_deps': ['public/common/page_transition_types_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'popup_item_type_java',
+          'type': 'none',
+          'sources': [
+            'public/android/java/src/org/chromium/content/browser/input/PopupItemType.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/content/browser/input',
+            'template_deps': ['browser/android/popup_item_type_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -476,12 +489,11 @@
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
-
         {
           'target_name': 'content_jni_headers',
           'type': 'none',
           'dependencies': [
-            'java_set_jni_headers',
+            'java_set_jni_headers'
           ],
           'direct_dependent_settings': {
             'include_dirs': [

@@ -32,6 +32,7 @@
 #define ColorChooserClient_h
 
 #include "platform/ColorChooser.h"
+#include "platform/ColorSuggestion.h"
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntRect.h"
 #include "wtf/OwnPtr.h"
@@ -39,8 +40,6 @@
 #include "wtf/Vector.h"
 
 namespace WebCore {
-
-class Color;
 
 class PLATFORM_EXPORT ColorChooserClient {
 public:
@@ -51,7 +50,7 @@ public:
     virtual IntRect elementRectRelativeToRootView() const = 0;
     virtual Color currentColor() = 0;
     virtual bool shouldShowSuggestions() const = 0;
-    virtual Vector<Color> suggestions() const = 0;
+    virtual Vector<ColorSuggestion> suggestions() const = 0;
 };
 
 } // namespace WebCore

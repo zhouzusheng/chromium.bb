@@ -11,10 +11,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
-#include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/indexed_db/webidbfactory_impl.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/child/web_database_observer_impl.h"
 #include "content/child/webblobregistry_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
@@ -30,18 +31,18 @@
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
 
-using WebKit::Platform;
-using WebKit::WebBlobRegistry;
-using WebKit::WebClipboard;
-using WebKit::WebFileInfo;
-using WebKit::WebFileSystem;
-using WebKit::WebFileUtilities;
-using WebKit::WebMessagePortChannel;
-using WebKit::WebMimeRegistry;
-using WebKit::WebSandboxSupport;
-using WebKit::WebStorageNamespace;
-using WebKit::WebString;
-using WebKit::WebURL;
+using blink::Platform;
+using blink::WebBlobRegistry;
+using blink::WebClipboard;
+using blink::WebFileInfo;
+using blink::WebFileSystem;
+using blink::WebFileUtilities;
+using blink::WebMessagePortChannel;
+using blink::WebMimeRegistry;
+using blink::WebSandboxSupport;
+using blink::WebStorageNamespace;
+using blink::WebString;
+using blink::WebURL;
 
 namespace content {
 
@@ -83,8 +84,12 @@ WorkerWebKitPlatformSupportImpl::WorkerWebKitPlatformSupportImpl(
       child_thread_loop_(base::MessageLoopProxy::current()),
       sync_message_filter_(sync_message_filter),
       quota_message_filter_(quota_message_filter) {
-  if (sender)
+  if (sender) {
     blob_registry_.reset(new WebBlobRegistryImpl(sender));
+    web_idb_factory_.reset(new WebIDBFactoryImpl(sender));
+    web_database_observer_impl_.reset(
+        new WebDatabaseObserverImpl(sync_message_filter));
+  }
 }
 
 WorkerWebKitPlatformSupportImpl::~WorkerWebKitPlatformSupportImpl() {
@@ -169,7 +174,7 @@ WorkerWebKitPlatformSupportImpl::createLocalStorageNamespace() {
 void WorkerWebKitPlatformSupportImpl::dispatchStorageEvent(
     const WebString& key, const WebString& old_value,
     const WebString& new_value, const WebString& origin,
-    const WebKit::WebURL& url, bool is_local_storage) {
+    const blink::WebURL& url, bool is_local_storage) {
   NOTREACHED();
 }
 
@@ -204,11 +209,15 @@ long long WorkerWebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
                                                  sync_message_filter_.get());
 }
 
-WebKit::WebIDBFactory* WorkerWebKitPlatformSupportImpl::idbFactory() {
+blink::WebIDBFactory* WorkerWebKitPlatformSupportImpl::idbFactory() {
   if (!web_idb_factory_)
-    web_idb_factory_.reset(
-        new RendererWebIDBFactoryImpl(thread_safe_sender_.get()));
+    web_idb_factory_.reset(new WebIDBFactoryImpl(thread_safe_sender_.get()));
   return web_idb_factory_.get();
+}
+
+blink::WebDatabaseObserver*
+WorkerWebKitPlatformSupportImpl::databaseObserver() {
+  return web_database_observer_impl_.get();
 }
 
 WebMimeRegistry::SupportsType
@@ -238,7 +247,7 @@ WorkerWebKitPlatformSupportImpl::supportsMediaMIMEType(
 }
 
 bool WorkerWebKitPlatformSupportImpl::supportsMediaSourceMIMEType(
-    const WebKit::WebString& mimeType, const WebKit::WebString& codecs) {
+    const blink::WebString& mimeType, const blink::WebString& codecs) {
   NOTREACHED();
   return false;
 }
@@ -281,9 +290,9 @@ WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
 }
 
 void WorkerWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
-    const WebKit::WebURL& storage_partition,
-    WebKit::WebStorageQuotaType type,
-    WebKit::WebStorageQuotaCallbacks* callbacks) {
+    const blink::WebURL& storage_partition,
+    blink::WebStorageQuotaType type,
+    blink::WebStorageQuotaCallbacks* callbacks) {
   if (!thread_safe_sender_.get() || !quota_message_filter_.get())
     return;
   QuotaDispatcher::ThreadSpecificInstance(

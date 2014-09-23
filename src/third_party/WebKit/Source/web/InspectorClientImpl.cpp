@@ -37,7 +37,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/DOMWindow.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "platform/geometry/FloatRect.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURL.h"
@@ -46,7 +46,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 InspectorClientImpl::InspectorClientImpl(WebViewImpl* webView)
     : m_inspectedWebView(webView)
@@ -166,9 +166,21 @@ void InspectorClientImpl::setTraceEventCallback(TraceEventCallback callback)
         agent->setTraceEventCallback(callback);
 }
 
+void InspectorClientImpl::startGPUEventsRecording()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->startGPUEventsRecording();
+}
+
+void InspectorClientImpl::stopGPUEventsRecording()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->stopGPUEventsRecording();
+}
+
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()
 {
     return static_cast<WebDevToolsAgentImpl*>(m_inspectedWebView->devToolsAgent());
 }
 
-} // namespace WebKit
+} // namespace blink

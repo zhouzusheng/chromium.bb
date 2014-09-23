@@ -9,8 +9,6 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/threading/thread.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -61,7 +59,7 @@ bool g_swap_processes_for_redirect = false;
 
 base::Thread* g_in_process_renderer_thread = 0;
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
     const std::string& process_type) {
   base::FilePath dumps_path =
@@ -114,7 +112,7 @@ int GetCrashSignalFD(const CommandLine& command_line) {
 
   return -1;
 }
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
 }  // namespace
 
@@ -163,12 +161,6 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
       BrowserContext::GetDefaultStoragePartition(browser_context())
           ->GetURLRequestContext()));
   host->Send(new ShellViewMsg_SetWebKitSourceDir(webkit_source_dir_));
-  registrar_.Add(this,
-                 NOTIFICATION_RENDERER_PROCESS_CREATED,
-                 Source<RenderProcessHost>(host));
-  registrar_.Add(this,
-                 NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                 Source<RenderProcessHost>(host));
 }
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
@@ -370,35 +362,6 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 #endif  // defined(OS_ANDROID)
 }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
-
-void ShellContentBrowserClient::Observe(int type,
-                                        const NotificationSource& source,
-                                        const NotificationDetails& details) {
-  switch (type) {
-    case NOTIFICATION_RENDERER_PROCESS_CREATED: {
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_CREATED,
-                        source);
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                        source);
-      break;
-    }
-
-    case NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_CREATED,
-                        source);
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                        source);
-      break;
-    }
-
-    default:
-      NOTREACHED();
-  }
-}
 
 ShellBrowserContext* ShellContentBrowserClient::browser_context() {
   return shell_browser_main_parts_->browser_context();

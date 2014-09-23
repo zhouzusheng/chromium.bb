@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/time/time.h"
-#include "ui/events/events_export.h"
+#include "ui/events/events_base_export.h"
 
 namespace ui {
 
@@ -38,6 +38,9 @@ enum LatencyComponentType {
   INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_COMPONENT,
   // Timestamp when the touch event is acked.
   INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT,
+  // Frame number when a window snapshot was requested. The snapshot
+  // is taken when the rendering results actually reach the screen.
+  WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
   // ---------------------------TERMINAL COMPONENT-----------------------------
   // TERMINAL COMPONENT is when we show the latency end in chrome://tracing.
   // Timestamp when the mouse event is acked from renderer and it does not
@@ -52,12 +55,18 @@ enum LatencyComponentType {
   // Timestamp when the frame is swapped (i.e. when the rendering caused by
   // input event actually takes effect).
   INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT,
-  // Frame number when a window snapshot was requested. The snapshot
-  // is taken when the rendering results actually reach the screen.
-  WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT
+  // This component indicates that the input causes a commit to be scheduled
+  // but the commit failed.
+  INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT,
+  // This component indicates that the input causes a swap to be scheduled
+  // but the swap failed.
+  INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT,
+  // This component indicates that the cached LatencyInfo number exceeds the
+  // maximal allowed size.
+  LATENCY_INFO_LIST_TERMINATED_OVERFLOW_COMPONENT,
 };
 
-struct EVENTS_EXPORT LatencyInfo {
+struct EVENTS_BASE_EXPORT LatencyInfo {
   struct LatencyComponent {
     // Nondecreasing number that can be used to determine what events happened
     // in the component at the time this struct was sent on to the next
@@ -107,7 +116,12 @@ struct EVENTS_EXPORT LatencyInfo {
                    int64 id,
                    LatencyComponent* output) const;
 
+  void RemoveLatency(LatencyComponentType type);
+
   void Clear();
+
+  // Records the |event_type| in trace buffer as TRACE_EVENT_ASYNC_STEP.
+  void TraceEventType(const char* event_type);
 
   LatencyMap latency_components;
   // The unique id for matching the ASYNC_BEGIN/END trace event.

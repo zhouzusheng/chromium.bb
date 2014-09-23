@@ -23,6 +23,7 @@
 #ifndef RenderLayerModelObject_h
 #define RenderLayerModelObject_h
 
+#include "core/rendering/CompositedLayerMappingPtr.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -36,11 +37,11 @@ public:
     explicit RenderLayerModelObject(ContainerNode*);
     virtual ~RenderLayerModelObject();
 
-    // Called by RenderObject::willBeDestroyed() and is the only way layers should ever be destroyed
+    // This is the only way layers should ever be destroyed.
     void destroyLayer();
 
     bool hasSelfPaintingLayer() const;
-    RenderLayer* layer() const { return m_layer; }
+    RenderLayer* layer() const { return m_layer.get(); }
     ScrollableArea* scrollableArea() const;
 
     virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
@@ -56,7 +57,9 @@ public:
     // This is null for anonymous renderers.
     ContainerNode* node() const { return toContainerNode(RenderObject::node()); }
 
-    CompositedLayerMapping* compositedLayerMapping() const;
+    CompositedLayerMappingPtr compositedLayerMapping() const;
+    bool hasCompositedLayerMapping() const;
+    CompositedLayerMapping* groupedMapping() const;
 
 protected:
     void createLayer();
@@ -68,13 +71,10 @@ protected:
 private:
     virtual bool isLayerModelObject() const OVERRIDE FINAL { return true; }
 
-    RenderLayer* m_layer;
+    OwnPtr<RenderLayer> m_layer;
 
     // Used to store state between styleWillChange and styleDidChange
     static bool s_wasFloating;
-    static bool s_hadLayer;
-    static bool s_hadTransform;
-    static bool s_layerWasSelfPainting;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderLayerModelObject, isLayerModelObject());

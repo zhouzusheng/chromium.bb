@@ -38,7 +38,7 @@ namespace WebCore {
 void V8JavaScriptCallFrame::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(info.Holder());
-    String expression = toWebCoreStringWithUndefinedOrNullCheck(info[0]);
+    String expression = toCoreStringWithUndefinedOrNullCheck(info[0]);
     v8SetReturnValue(info, impl->evaluate(expression));
 }
 
@@ -46,15 +46,6 @@ void V8JavaScriptCallFrame::restartMethodCustom(const v8::FunctionCallbackInfo<v
 {
     JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(info.Holder());
     v8SetReturnValue(info, impl->restart());
-}
-
-void V8JavaScriptCallFrame::setVariableValueMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(info.Holder());
-    int scopeIndex = info[0]->Int32Value();
-    String variableName = toWebCoreStringWithUndefinedOrNullCheck(info[1]);
-    v8::Handle<v8::Value> newValue = info[2];
-    v8SetReturnValue(info, impl->setVariableValue(scopeIndex, variableName, newValue));
 }
 
 void V8JavaScriptCallFrame::scopeChainAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -76,9 +67,15 @@ void V8JavaScriptCallFrame::thisObjectAttributeGetterCustom(const v8::PropertyCa
     v8SetReturnValue(info, impl->thisObject());
 }
 
+void V8JavaScriptCallFrame::returnValueAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
+{
+    JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(info.Holder());
+    v8SetReturnValue(info, impl->returnValue());
+}
+
 void V8JavaScriptCallFrame::typeAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    v8SetReturnValue(info, v8::String::NewSymbol("function"));
+    v8SetReturnValue(info, v8AtomicString(info.GetIsolate(), "function"));
 }
 
 } // namespace WebCore

@@ -31,7 +31,11 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
 
-namespace WebKit { class WebGraphicsContext3D; }
+namespace gpu {
+namespace gles {
+class GLES2Interface;
+}
+}
 
 namespace gfx {
 class Rect;
@@ -39,6 +43,7 @@ class Vector2d;
 }
 
 namespace cc {
+class IdAllocator;
 class SharedBitmap;
 class SharedBitmapManager;
 class TextureUploader;
@@ -66,7 +71,7 @@ class CC_EXPORT ResourceProvider {
       SharedBitmapManager* shared_bitmap_manager,
       int highp_threshold_min,
       bool use_rgba_4444_texture_format,
-      size_t texture_id_allocation_chunk_size);
+      size_t id_allocation_chunk_size);
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
@@ -100,18 +105,20 @@ class CC_EXPORT ResourceProvider {
   // Creates a resource which is tagged as being managed for GPU memory
   // accounting purposes.
   ResourceId CreateManagedResource(gfx::Size size,
+                                   GLenum target,
                                    GLint wrap_mode,
                                    TextureUsageHint hint,
                                    ResourceFormat format);
 
   // You can also explicitly create a specific resource type.
   ResourceId CreateGLTexture(gfx::Size size,
+                             GLenum target,
                              GLenum texture_pool,
                              GLint wrap_mode,
                              TextureUsageHint hint,
                              ResourceFormat format);
 
-  ResourceId CreateBitmap(gfx::Size size);
+  ResourceId CreateBitmap(gfx::Size size, GLint wrap_mode);
   // Wraps an external texture into a GL resource.
   ResourceId CreateResourceFromExternalTexture(
       unsigned texture_target,
@@ -135,10 +142,10 @@ class CC_EXPORT ResourceProvider {
   // Check upload status.
   size_t NumBlockingUploads();
   void MarkPendingUploadsAsNonBlocking();
-  double EstimatedUploadsPerSecond();
+  size_t EstimatedUploadsPerTick();
   void FlushUploads();
   void ReleaseCachedData();
-  base::TimeDelta TextureUpdateTickRate();
+  base::TimeTicks EstimatedUploadCompletionTime(size_t uploads_per_tick);
 
   // Flush all context operations, kicking uploads and ensuring ordering with
   // respect to other contexts.
@@ -220,18 +227,18 @@ class CC_EXPORT ResourceProvider {
    public:
     ScopedSamplerGL(ResourceProvider* resource_provider,
                     ResourceProvider::ResourceId resource_id,
-                    GLenum target,
                     GLenum filter);
     ScopedSamplerGL(ResourceProvider* resource_provider,
                     ResourceProvider::ResourceId resource_id,
-                    GLenum target,
                     GLenum unit,
                     GLenum filter);
     virtual ~ScopedSamplerGL();
 
+    GLenum target() const { return target_; }
+
    private:
-    GLenum target_;
     GLenum unit_;
+    GLenum target_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedSamplerGL);
   };
@@ -259,11 +266,13 @@ class CC_EXPORT ResourceProvider {
     ~ScopedReadLockSoftware();
 
     const SkBitmap* sk_bitmap() const { return &sk_bitmap_; }
+    GLint wrap_mode() const { return wrap_mode_; }
 
    private:
     ResourceProvider* resource_provider_;
     ResourceProvider::ResourceId resource_id_;
     SkBitmap sk_bitmap_;
+    GLint wrap_mode_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedReadLockSoftware);
   };
@@ -334,7 +343,6 @@ class CC_EXPORT ResourceProvider {
   // For tests only!
   void CreateForTesting(ResourceId id);
 
-  GLint WrapModeForTesting(ResourceId id);
   GLenum TargetForTesting(ResourceId id);
 
   // Sets the current read fence. If a resource is locked for read
@@ -351,7 +359,7 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  static GLint GetActiveTextureUnit(WebKit::WebGraphicsContext3D* context);
+  static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
  private:
   struct Resource {
@@ -435,7 +443,7 @@ class CC_EXPORT ResourceProvider {
                    SharedBitmapManager* shared_bitmap_manager,
                    int highp_threshold_min,
                    bool use_rgba_4444_texture_format,
-                   size_t texture_id_allocation_chunk_size);
+                   size_t id_allocation_chunk_size);
 
   void CleanUpGLIfNeeded();
 
@@ -447,7 +455,7 @@ class CC_EXPORT ResourceProvider {
   static void PopulateSkBitmapWithResource(SkBitmap* sk_bitmap,
                                            const Resource* resource);
 
-  void TransferResource(WebKit::WebGraphicsContext3D* context,
+  void TransferResource(gpu::gles2::GLES2Interface* gl,
                         ResourceId id,
                         TransferableResource* resource);
   enum DeleteStyle {
@@ -463,17 +471,14 @@ class CC_EXPORT ResourceProvider {
   void LazyAllocate(Resource* resource);
 
   // Binds the given GL resource to a texture target for sampling using the
-  // specified filter for both minification and magnification. The resource
-  // must be locked for reading.
-  void BindForSampling(ResourceProvider::ResourceId resource_id,
-                       GLenum target,
-                       GLenum unit,
-                       GLenum filter);
+  // specified filter for both minification and magnification. Returns the
+  // texture target used. The resource must be locked for reading.
+  GLenum BindForSampling(ResourceProvider::ResourceId resource_id,
+                         GLenum unit,
+                         GLenum filter);
 
   // Returns NULL if the output_surface_ does not have a ContextProvider.
-  WebKit::WebGraphicsContext3D* Context3d() const;
-
-  unsigned NextTextureId();
+  gpu::gles2::GLES2Interface* ContextGL() const;
 
   OutputSurface* output_surface_;
   SharedBitmapManager* shared_bitmap_manager_;
@@ -487,7 +492,6 @@ class CC_EXPORT ResourceProvider {
   ResourceType default_resource_type_;
   bool use_texture_storage_ext_;
   bool use_texture_usage_hint_;
-  bool use_shallow_flush_;
   bool use_compressed_texture_etc1_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
@@ -498,8 +502,9 @@ class CC_EXPORT ResourceProvider {
   scoped_refptr<Fence> current_read_lock_fence_;
   bool use_rgba_4444_texture_format_;
 
-  size_t texture_id_allocation_chunk_size_;
-  std::deque<unsigned> unused_texture_ids_;
+  const size_t id_allocation_chunk_size_;
+  scoped_ptr<IdAllocator> texture_id_allocator_;
+  scoped_ptr<IdAllocator> buffer_id_allocator_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

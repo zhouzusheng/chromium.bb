@@ -23,15 +23,9 @@
 #include "ui/views/controls/textfield/native_textfield_views.h"
 #include "ui/views/controls/textfield/native_textfield_wrapper.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
+#include "ui/views/painter.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(OS_WIN)
-#include "base/win/win_util.h"
-// TODO(beng): this should be removed when the OS_WIN hack from
-// ViewHierarchyChanged is removed.
-#include "ui/views/controls/textfield/native_textfield_win.h"
-#endif
 
 namespace {
 
@@ -49,22 +43,6 @@ namespace views {
 
 // static
 const char Textfield::kViewClassName[] = "Textfield";
-
-// static
-bool Textfield::IsViewsTextfieldEnabled() {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableViewsTextfield))
-    return false;
-  if (command_line->HasSwitch(switches::kEnableViewsTextfield))
-    return true;
-  // Avoid native Windows Textfields if the RichEdit library is not available.
-  static const HMODULE loaded_msftedit_dll = LoadLibrary(L"msftedit.dll");
-  if (!loaded_msftedit_dll)
-    return true;
-#endif
-  return true;
-}
 
 // static
 size_t Textfield::GetCaretBlinkMs() {
@@ -94,12 +72,15 @@ Textfield::Textfield()
       placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT),
       weak_ptr_factory_(this) {
-  set_focusable(true);
+  SetFocusable(true);
 
   if (ViewsDelegate::views_delegate) {
     obscured_reveal_duration_ = ViewsDelegate::views_delegate->
         GetDefaultTextfieldObscuredRevealDuration();
   }
+
+  if (NativeViewHost::kRenderNativeControlFocus)
+    focus_painter_ = Painter::CreateDashedFocusPainter();
 }
 
 Textfield::Textfield(StyleFlags style)
@@ -119,7 +100,7 @@ Textfield::Textfield(StyleFlags style)
       placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT),
       weak_ptr_factory_(this) {
-  set_focusable(true);
+  SetFocusable(true);
   if (IsObscured())
     SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
 
@@ -127,6 +108,9 @@ Textfield::Textfield(StyleFlags style)
     obscured_reveal_duration_ = ViewsDelegate::views_delegate->
         GetDefaultTextfieldObscuredRevealDuration();
   }
+
+  if (NativeViewHost::kRenderNativeControlFocus)
+    focus_painter_ = Painter::CreateDashedFocusPainter();
 }
 
 Textfield::~Textfield() {
@@ -290,6 +274,10 @@ void Textfield::SetFont(const gfx::Font& font) {
 }
 
 void Textfield::SetHorizontalMargins(int left, int right) {
+  if (horizontal_margins_were_set_ &&
+      left == margins_.left() && right == margins_.right()) {
+    return;
+  }
   margins_.Set(margins_.top(), left, margins_.bottom(), right);
   horizontal_margins_were_set_ = true;
   if (native_wrapper_)
@@ -298,6 +286,10 @@ void Textfield::SetHorizontalMargins(int left, int right) {
 }
 
 void Textfield::SetVerticalMargins(int top, int bottom) {
+  if (vertical_margins_were_set_ &&
+      top == margins_.top() && bottom == margins_.bottom()) {
+    return;
+  }
   margins_.Set(top, margins_.left(), bottom, margins_.right());
   vertical_margins_were_set_ = true;
   if (native_wrapper_)
@@ -416,6 +408,10 @@ void Textfield::ExecuteCommand(int command_id) {
   native_wrapper_->ExecuteTextCommand(command_id);
 }
 
+void Textfield::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
+  focus_painter_ = focus_painter.Pass();
+}
+
 bool Textfield::HasTextBeingDragged() {
   return native_wrapper_->HasTextBeingDragged();
 }
@@ -458,9 +454,10 @@ bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) {
   return e.key_code() == ui::VKEY_BACK || e.IsUnicodeKeyCode();
 }
 
-void Textfield::OnPaintFocusBorder(gfx::Canvas* canvas) {
+void Textfield::OnPaint(gfx::Canvas* canvas) {
+  View::OnPaint(canvas);
   if (NativeViewHost::kRenderNativeControlFocus)
-    View::OnPaintFocusBorder(canvas);
+    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& e) {
@@ -488,11 +485,17 @@ void Textfield::OnFocus() {
     // keyboard messages.
     View::OnFocus();
   }
+
+  // Border typically draws focus indicator.
+  SchedulePaint();
 }
 
 void Textfield::OnBlur() {
   if (native_wrapper_)
     native_wrapper_->HandleBlur();
+
+  // Border typically draws focus indicator.
+  SchedulePaint();
 }
 
 void Textfield::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -538,20 +541,7 @@ void Textfield::ViewHierarchyChanged(
     native_wrapper_ = NativeTextfieldWrapper::CreateWrapper(this);
     AddChildViewAt(native_wrapper_->GetView(), 0);
     Layout();
-
-    // TODO(beng): Move this initialization to NativeTextfieldWin once it
-    //             subclasses NativeControlWin.
     UpdateAllProperties();
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-    // TODO(beng): Remove this once NativeTextfieldWin subclasses
-    // NativeControlWin. This is currently called to perform post-AddChildView
-    // initialization for the wrapper.
-    //
-    // Remove the include for native_textfield_win.h above when you fix this.
-    if (!IsViewsTextfieldEnabled())
-      static_cast<NativeTextfieldWin*>(native_wrapper_)->AttachHack();
-#endif
   }
 }
 
@@ -582,10 +572,6 @@ void Textfield::AccessibilitySetValue(const string16& new_value) {
 // static
 NativeTextfieldWrapper* NativeTextfieldWrapper::CreateWrapper(
     Textfield* field) {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  if (!Textfield::IsViewsTextfieldEnabled())
-    return new NativeTextfieldWin(field);
-#endif
   return new NativeTextfieldViews(field);
 }
 

@@ -39,7 +39,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 {
@@ -51,7 +51,7 @@ WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 
 WebBlob WebBlob::fromV8Value(v8::Handle<v8::Value> value)
 {
-    if (V8Blob::HasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
+    if (V8Blob::hasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
         Blob* blob = V8Blob::toNative(object);
         ASSERT(blob);
@@ -100,4 +100,4 @@ WebBlob::operator WTF::PassRefPtr<WebCore::Blob>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

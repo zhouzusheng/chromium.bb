@@ -10,9 +10,9 @@
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "media/base/bind_to_loop.h"
-#include "third_party/WebKit/public/web/WebAudioSourceProviderClient.h"
+#include "third_party/WebKit/public/platform/WebAudioSourceProviderClient.h"
 
-using WebKit::WebVector;
+using blink::WebVector;
 
 namespace content {
 
@@ -62,7 +62,7 @@ WebAudioSourceProviderImpl::~WebAudioSourceProviderImpl() {
 }
 
 void WebAudioSourceProviderImpl::setClient(
-    WebKit::WebAudioSourceProviderClient* client) {
+    blink::WebAudioSourceProviderClient* client) {
   base::AutoLock auto_lock(sink_lock_);
   if (client && client != client_) {
     // Detach the audio renderer from normal playback.

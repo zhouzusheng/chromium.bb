@@ -23,7 +23,6 @@
 #define StyleResolver_h
 
 #include "core/animation/KeyframeAnimationEffect.h"
-#include "core/css/DocumentRuleSets.h"
 #include "core/css/InspectorCSSOMWrappers.h"
 #include "core/css/PseudoStyleRequest.h"
 #include "core/css/RuleFeature.h"
@@ -31,8 +30,10 @@
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorFilter.h"
 #include "core/css/SiblingTraversalStrategies.h"
+#include "core/css/TreeBoundaryCrossingRules.h"
 #include "core/css/resolver/MatchedPropertiesCache.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
+#include "core/css/resolver/ScopedStyleTree.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverIncludes.h"
 #include "core/css/resolver/StyleResolverState.h"
@@ -40,6 +41,7 @@
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
+#include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
@@ -65,6 +67,7 @@ class RuleData;
 class Settings;
 class StyleKeyframe;
 class StylePropertySet;
+class StyleResolverStats;
 class StyleRule;
 class StyleRuleKeyframes;
 class StyleRulePage;
@@ -87,81 +90,7 @@ enum RuleMatchingBehavior {
 };
 
 const unsigned styleSharingListSize = 40;
-typedef WTF::Deque<RefPtr<Element>, styleSharingListSize> StyleSharingList;
-
-#undef STYLE_STATS
-
-#ifdef STYLE_STATS
-struct StyleSharingStats {
-    void addSearch() { ++m_searches; ++m_totalSearches; }
-    void addElementEligibleForSharing() { ++m_elementsEligibleForSharing; ++m_totalElementsEligibleForSharing; }
-    void addStyleShared() { ++m_stylesShared; ++m_totalStylesShared; }
-    void addSearchFoundSiblingForSharing() { ++m_searchFoundSiblingForSharing; ++m_totalSearchFoundSiblingForSharing; }
-    void addSearchMissedSharing() { ++m_searchesMissedSharing; ++m_totalSearchesMissedSharing; }
-    void addMatchedPropertiesSearch() { ++m_matchedPropertiesSearches; ++m_totalMatchedPropertiesSearches; }
-    void addMatchedPropertiesHit() { ++m_matchedPropertiesHit; ++m_totalMatchedPropertiesHit; }
-    void addMatchedPropertiesHitSharedInherited() { ++m_matchedPropertiesSharedInheritedHit; ++m_totalMatchedPropertiesSharedInheritedHit; }
-    void addMatchedPropertiesToCache() { ++m_matchedPropertiesToCache; ++m_totalMatchedPropertiesToCache; }
-    void addMatchedPropertiesEnteredIntoCache() { ++m_matchedPropertiesEnteredIntoCache; ++m_totalMatchedPropertiesEnteredIntoCache; }
-
-    void clear()
-    {
-        m_searches = m_elementsEligibleForSharing = m_stylesShared = m_searchesMissedSharing = m_searchFoundSiblingForSharing =
-            m_matchedPropertiesSearches = m_matchedPropertiesHit = m_matchedPropertiesSharedInheritedHit = m_matchedPropertiesToCache =
-            m_matchedPropertiesEnteredIntoCache = 0;
-    }
-
-    void printStats() const;
-
-    unsigned m_searches;
-    unsigned m_elementsEligibleForSharing;
-    unsigned m_stylesShared;
-    unsigned m_searchFoundSiblingForSharing;
-    unsigned m_searchesMissedSharing;
-    unsigned m_matchedPropertiesSearches;
-    unsigned m_matchedPropertiesHit;
-    unsigned m_matchedPropertiesSharedInheritedHit;
-    unsigned m_matchedPropertiesToCache;
-    unsigned m_matchedPropertiesEnteredIntoCache;
-
-    unsigned m_totalSearches;
-    unsigned m_totalElementsEligibleForSharing;
-    unsigned m_totalStylesShared;
-    unsigned m_totalSearchFoundSiblingForSharing;
-    unsigned m_totalSearchesMissedSharing;
-    unsigned m_totalMatchedPropertiesSearches;
-    unsigned m_totalMatchedPropertiesHit;
-    unsigned m_totalMatchedPropertiesSharedInheritedHit;
-    unsigned m_totalMatchedPropertiesToCache;
-    unsigned m_totalMatchedPropertiesEnteredIntoCache;
-};
-
-#define STYLE_STATS_ADD_SEARCH() StyleResolver::styleSharingStats().addSearch();
-#define STYLE_STATS_ADD_ELEMENT_ELIGIBLE_FOR_SHARING() StyleResolver::styleSharingStats().addElementEligibleForSharing();
-#define STYLE_STATS_ADD_STYLE_SHARED() StyleResolver::styleSharingStats().addStyleShared();
-#define STYLE_STATS_ADD_SEARCH_FOUND_SIBLING_FOR_SHARING() StyleResolver::styleSharingStats().addSearchFoundSiblingForSharing();
-#define STYLE_STATS_ADD_SEARCH_MISSED_SHARING() StyleResolver::styleSharingStats().addSearchMissedSharing();
-#define STYLE_STATS_PRINT() StyleResolver::styleSharingStats().printStats();
-#define STYLE_STATS_CLEAR() StyleResolver::styleSharingStats().clear();
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_SEARCH() StyleResolver::styleSharingStats().addMatchedPropertiesSearch();
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_HIT() StyleResolver::styleSharingStats().addMatchedPropertiesHit();
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_HIT_SHARED_INHERITED() StyleResolver::styleSharingStats().addMatchedPropertiesHitSharedInherited();
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_TO_CACHE() StyleResolver::styleSharingStats().addMatchedPropertiesToCache();
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_ENTERED_INTO_CACHE() StyleResolver::styleSharingStats().addMatchedPropertiesEnteredIntoCache();
-#else
-#define STYLE_STATS_ADD_SEARCH() (void(0));
-#define STYLE_STATS_ADD_ELEMENT_ELIGIBLE_FOR_SHARING() (void(0));
-#define STYLE_STATS_ADD_STYLE_SHARED() (void(0));
-#define STYLE_STATS_ADD_SEARCH_FOUND_SIBLING_FOR_SHARING() (void(0));
-#define STYLE_STATS_ADD_SEARCH_MISSED_SHARING() (void(0));
-#define STYLE_STATS_PRINT() (void(0));
-#define STYLE_STATS_CLEAR() (void(0));
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_SEARCH() (void(0));
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_HIT() (void(0));
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_HIT_SHARED_INHERITED() (void(0));
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_TO_CACHE() (void(0));
-#define STYLE_STATS_ADD_MATCHED_PROPERTIES_ENTERED_INTO_CACHE() (void(0));
-#endif
+typedef WTF::Deque<Element*, styleSharingListSize> StyleSharingList;
 
 struct CSSPropertyValue {
     CSSPropertyValue(CSSPropertyID property, CSSValue* value)
@@ -176,26 +105,26 @@ struct CSSPropertyValue {
 class StyleResolver : public FontSelectorClient {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
-    StyleResolver(Document&, bool matchAuthorAndUserStyles);
+    explicit StyleResolver(Document&);
     ~StyleResolver();
 
     // FIXME: StyleResolver should not be keeping tree-walk state.
     // These should move to some global tree-walk state, or should be contained in a
     // TreeWalkContext or similar which is passed in to StyleResolver methods when available.
     // Using these during tree walk will allow style selector to optimize child and descendant selector lookups.
-    void pushParentElement(Element*);
-    void popParentElement(Element*);
+    void pushParentElement(Element&);
+    void popParentElement(Element&);
     void pushParentShadowRoot(const ShadowRoot&);
     void popParentShadowRoot(const ShadowRoot&);
 
     PassRefPtr<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules, RenderRegion* regionForStyling = 0);
 
-    // FIXME: The following logic related to animations and keyframes should be factored out of StyleResolver
-    void resolveKeyframes(Element*, const RenderStyle*, const AtomicString& animationName, TimingFunction* defaultTimingFunction, Vector<std::pair<KeyframeAnimationEffect::KeyframeVector, RefPtr<TimingFunction> > >&);
-    void keyframeStylesForAnimation(Element*, const RenderStyle*, KeyframeList&);
-    const StyleRuleKeyframes* matchScopedKeyframesRule(const Element*, const StringImpl* animationName);
-    PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle*, const StyleKeyframe*);
+    // FIXME: keyframeStylesForAnimation is only used in the legacy animations implementation
+    // and should be removed when that is replaced by Web Animations.
+    void keyframeStylesForAnimation(Element*, const RenderStyle&, KeyframeList&);
+    PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle&, RenderStyle* parentStyle, const StyleKeyframe*, const AtomicString& animationName);
+    static PassRefPtr<KeyframeAnimationEffect> createKeyframeAnimationEffect(Element&, const Vector<RefPtr<MutableStylePropertySet> >&, KeyframeAnimationEffect::KeyframeVector&);
 
     PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
 
@@ -209,23 +138,36 @@ public:
     // their dependency on Document* instead of grabbing one through StyleResolver.
     Document& document() { return m_document; }
 
-    // FIXME: It could be better to call m_ruleSets.appendAuthorStyleSheets() directly after we factor StyleRsolver further.
+    // FIXME: It could be better to call appendAuthorStyleSheets() directly after we factor StyleResolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
     void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
     void resetAuthorStyle(const ContainerNode*);
-    void resetAtHostRules(const ShadowRoot*);
     void finishAppendAuthorStyleSheets();
 
-    DocumentRuleSets& ruleSets() { return m_ruleSets; }
-    const DocumentRuleSets& ruleSets() const { return m_ruleSets; }
+    TreeBoundaryCrossingRules& treeBoundaryCrossingRules() { return m_treeBoundaryCrossingRules; }
+    void processScopedRules(const RuleSet& authorRules, const KURL&, ContainerNode* scope = 0);
+
+    void lazyAppendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
+    void removePendingAuthorStyleSheets(const Vector<RefPtr<CSSStyleSheet> >&);
+    void appendPendingAuthorStyleSheets();
+    bool hasPendingAuthorStyleSheets() const { return m_pendingStyleSheets.size() > 0 || m_needCollectFeatures; }
+
     SelectorFilter& selectorFilter() { return m_selectorFilter; }
 
     void setBuildScopedStyleTreeInDocumentOrder(bool enabled) { m_styleTree.setBuildInDocumentOrder(enabled); }
     bool buildScopedStyleTreeInDocumentOrder() const { return m_styleTree.buildInDocumentOrder(); }
+    bool styleTreeHasOnlyScopedResolverForDocument() const { return m_styleTree.hasOnlyScopedResolverForDocument(); }
+    ScopedStyleResolver* styleTreeScopedStyleResolverForDocument() const { return m_styleTree.scopedStyleResolverForDocument(); }
 
-    ScopedStyleResolver* ensureScopedStyleResolver(const ContainerNode* scope)
+    ScopedStyleResolver* ensureScopedStyleResolver(ContainerNode* scope)
     {
-        return m_styleTree.ensureScopedStyleResolver(scope ? *scope : document());
+        ASSERT(scope);
+        return m_styleTree.ensureScopedStyleResolver(*scope);
+    }
+
+    void styleTreeResolveScopedKeyframesRules(const Element* element, Vector<ScopedStyleResolver*, 8>& resolvers)
+    {
+        m_styleTree.resolveScopedKeyframesRules(element, resolvers);
     }
 
     // These methods will give back the set of rules that matched for a given element (or a pseudo-element).
@@ -244,10 +186,9 @@ public:
     // |properties| is an array with |count| elements.
     void applyPropertiesToStyle(const CSSPropertyValue* properties, size_t count, RenderStyle*);
 
-    CSSFontSelector* fontSelector() const { return m_fontSelector.get(); }
     ViewportStyleResolver* viewportStyleResolver() { return m_viewportStyleResolver.get(); }
 
-    typedef Vector<OwnPtr<MediaQueryResult> > MediaQueryResultList;
+    void addMediaQueryResults(const MediaQueryResultList&);
     MediaQueryResultList* viewportDependentMediaQueryResults() { return &m_viewportDependentMediaQueryResults; }
     bool hasViewportDependentMediaQueries() const { return !m_viewportDependentMediaQueryResults.isEmpty(); }
     bool affectedByViewportChange() const;
@@ -264,41 +205,62 @@ public:
     // FIXME: StyleResolver should not have this member or method.
     InspectorCSSOMWrappers& inspectorCSSOMWrappers() { return m_inspectorCSSOMWrappers; }
 
-    const RuleFeatureSet& ruleFeatureSet() const { return m_features; }
+    const RuleFeatureSet& ensureRuleFeatureSet()
+    {
+        if (hasPendingAuthorStyleSheets())
+            appendPendingAuthorStyleSheets();
+        return m_features;
+    }
 
     StyleSharingList& styleSharingList() { return m_styleSharingList; }
 
     bool hasRulesForId(const AtomicString&) const;
 
-    void addToStyleSharingList(Element*);
+    void addToStyleSharingList(Element&);
     void clearStyleSharingList();
 
-#ifdef STYLE_STATS
-    ALWAYS_INLINE static StyleSharingStats& styleSharingStats() { return m_styleSharingStats; }
-#endif
+    StyleResolverStats* stats() { return m_styleResolverStats.get(); }
+    StyleResolverStats* statsTotals() { return m_styleResolverStatsTotals.get(); }
+    enum StatsReportType { ReportDefaultStats, ReportSlowStats };
+    void enableStats(StatsReportType = ReportDefaultStats);
+    void disableStats();
+    void printStats();
+
+    unsigned accessCount() const { return m_accessCount; }
+    void didAccess() { ++m_accessCount; }
+
+    PassRefPtr<PseudoElement> createPseudoElementIfNeeded(Element&, PseudoId);
 
 private:
     // FontSelectorClient implementation.
     virtual void fontsNeedUpdate(FontSelector*);
 
 private:
+    void initWatchedSelectorRules(const Vector<RefPtr<StyleRule> >& watchedSelectors);
+
+    void addTreeBoundaryCrossingRules(const Vector<MinimalRuleData>&, ContainerNode* scope);
+
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
+
+    void appendCSSStyleSheet(CSSStyleSheet*);
 
     void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchUARules(ElementRuleCollector&, RuleSet*);
     void matchAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
     void matchAuthorRulesForShadowHost(Element*, ElementRuleCollector&, bool includeEmptyRules, Vector<ScopedStyleResolver*, 8>& resolvers, Vector<ScopedStyleResolver*, 8>& resolversInShadowTree);
-    void matchHostRules(Element*, ScopedStyleResolver*, ElementRuleCollector&, bool includeEmptyRules);
-    void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool matchAuthorAndUserStyles, bool includeSMILProperties);
+    void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool includeSMILProperties);
     void matchUARules(ElementRuleCollector&);
-    void matchUserRules(ElementRuleCollector&, bool includeEmptyRules);
+    // FIXME: watched selectors should be implemented using injected author stylesheets: http://crbug.com/316960
+    void matchWatchSelectorRules(ElementRuleCollector&);
     void collectFeatures();
-    void collectTreeBoundaryCrossingRules(ElementRuleCollector&, bool includeEmptyRules);
+    void collectTreeBoundaryCrossingRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
+    void resetRuleFeatures();
 
     bool fastRejectSelector(const RuleData&) const;
 
     void applyMatchedProperties(StyleResolverState&, const MatchResult&);
+    void applyAnimatedProperties(StyleResolverState&, Element* animatingElement);
 
     enum StyleApplicationPass {
         VariableDefinitions,
@@ -313,7 +275,7 @@ private:
     template <StyleApplicationPass pass>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <StyleApplicationPass pass>
-    bool applyAnimatedProperties(StyleResolverState&, const AnimationEffect::CompositableValueMap&);
+    void applyAnimatedProperties(StyleResolverState&, const AnimationEffect::CompositableValueMap&);
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>&, bool isLeftPage, bool isFirstPage, const String& pageName);
     void collectViewportRules();
@@ -324,7 +286,7 @@ private:
     bool isFirstPage(int pageIndex) const;
     String pageName(int pageIndex) const;
 
-    DocumentRuleSets m_ruleSets;
+    bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, RenderStyle* parentStyle, StyleResolverState&);
 
     // FIXME: This likely belongs on RuleSet.
     typedef HashMap<StringImpl*, RefPtr<StyleRuleKeyframes> > KeyframesRuleMap;
@@ -344,11 +306,9 @@ private:
     Document& m_document;
     SelectorFilter m_selectorFilter;
 
-    bool m_matchAuthorAndUserStyles;
-
-    RefPtr<CSSFontSelector> m_fontSelector;
-
     RefPtr<ViewportStyleResolver> m_viewportStyleResolver;
+
+    ListHashSet<CSSStyleSheet*, 16> m_pendingStyleSheets;
 
     ScopedStyleTree m_styleTree;
 
@@ -358,15 +318,23 @@ private:
     OwnPtr<RuleSet> m_siblingRuleSet;
     OwnPtr<RuleSet> m_uncommonAttributeRuleSet;
 
+    // FIXME: watched selectors should be implemented using injected author stylesheets: http://crbug.com/316960
+    OwnPtr<RuleSet> m_watchedSelectorsRules;
+    TreeBoundaryCrossingRules m_treeBoundaryCrossingRules;
+
+    bool m_needCollectFeatures;
+
     InspectorCSSOMWrappers m_inspectorCSSOMWrappers;
 
     StyleResourceLoader m_styleResourceLoader;
 
     StyleSharingList m_styleSharingList;
 
-#ifdef STYLE_STATS
-    static StyleSharingStats m_styleSharingStats;
-#endif
+    OwnPtr<StyleResolverStats> m_styleResolverStats;
+    OwnPtr<StyleResolverStats> m_styleResolverStatsTotals;
+    unsigned m_styleResolverStatsSequence;
+
+    unsigned m_accessCount;
 };
 
 inline bool checkRegionSelector(const CSSSelector* regionSelector, Element* regionElement)
@@ -377,8 +345,7 @@ inline bool checkRegionSelector(const CSSSelector* regionSelector, Element* regi
     SelectorChecker selectorChecker(regionElement->document(), SelectorChecker::QueryingRules);
     for (const CSSSelector* s = regionSelector; s; s = CSSSelectorList::next(s)) {
         SelectorChecker::SelectorCheckingContext selectorCheckingContext(s, regionElement, SelectorChecker::VisitedMatchDisabled);
-        PseudoId ignoreDynamicPseudo = NOPSEUDO;
-        if (selectorChecker.match(selectorCheckingContext, ignoreDynamicPseudo, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches)
+        if (selectorChecker.match(selectorCheckingContext, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches)
             return true;
     }
     return false;

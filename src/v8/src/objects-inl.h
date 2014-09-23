@@ -150,25 +150,6 @@ bool Object::IsAccessorInfo() {
 }
 
 
-bool Object::IsInstanceOf(FunctionTemplateInfo* expected) {
-  // There is a constraint on the object; check.
-  if (!this->IsJSObject()) return false;
-  // Fetch the constructor function of the object.
-  Object* cons_obj = JSObject::cast(this)->map()->constructor();
-  if (!cons_obj->IsJSFunction()) return false;
-  JSFunction* fun = JSFunction::cast(cons_obj);
-  // Iterate through the chain of inheriting function templates to
-  // see if the required one occurs.
-  for (Object* type = fun->shared()->function_data();
-       type->IsFunctionTemplateInfo();
-       type = FunctionTemplateInfo::cast(type)->parent_template()) {
-    if (type == expected) return true;
-  }
-  // Didn't find the required type in the inheritance chain.
-  return false;
-}
-
-
 bool Object::IsSmi() {
   return HAS_SMI_TAG(this);
 }
@@ -1330,8 +1311,22 @@ bool JSObject::ShouldTrackAllocationInfo() {
 
 
 void AllocationSite::Initialize() {
+  set_transition_info(Smi::FromInt(0));
   SetElementsKind(GetInitialFastElementsKind());
   set_nested_site(Smi::FromInt(0));
+  set_memento_create_count(Smi::FromInt(0));
+  set_memento_found_count(Smi::FromInt(0));
+  set_pretenure_decision(Smi::FromInt(0));
+  set_dependent_code(DependentCode::cast(GetHeap()->empty_fixed_array()),
+                     SKIP_WRITE_BARRIER);
+}
+
+
+void AllocationSite::MarkZombie() {
+  ASSERT(!IsZombie());
+  set_pretenure_decision(Smi::FromInt(kZombie));
+  // Clear all non-smi fields
+  set_transition_info(Smi::FromInt(0));
   set_dependent_code(DependentCode::cast(GetHeap()->empty_fixed_array()),
                      SKIP_WRITE_BARRIER);
 }
@@ -1363,7 +1358,64 @@ AllocationSiteMode AllocationSite::GetMode(ElementsKind from,
 
 
 inline bool AllocationSite::CanTrack(InstanceType type) {
+  if (FLAG_allocation_site_pretenuring) {
+    return type == JS_ARRAY_TYPE || type == JS_OBJECT_TYPE;
+  }
   return type == JS_ARRAY_TYPE;
+}
+
+
+inline DependentCode::DependencyGroup AllocationSite::ToDependencyGroup(
+    Reason reason) {
+  switch (reason) {
+    case TENURING:
+      return DependentCode::kAllocationSiteTenuringChangedGroup;
+      break;
+    case TRANSITIONS:
+      return DependentCode::kAllocationSiteTransitionChangedGroup;
+      break;
+  }
+  UNREACHABLE();
+  return DependentCode::kAllocationSiteTransitionChangedGroup;
+}
+
+
+inline void AllocationSite::IncrementMementoFoundCount() {
+  int value = memento_found_count()->value();
+  set_memento_found_count(Smi::FromInt(value + 1));
+}
+
+
+inline void AllocationSite::IncrementMementoCreateCount() {
+  ASSERT(FLAG_allocation_site_pretenuring);
+  int value = memento_create_count()->value();
+  set_memento_create_count(Smi::FromInt(value + 1));
+}
+
+
+inline bool AllocationSite::DigestPretenuringFeedback() {
+  bool decision_made = false;
+  if (!PretenuringDecisionMade()) {
+    int create_count = memento_create_count()->value();
+    if (create_count >= kPretenureMinimumCreated) {
+      int found_count = memento_found_count()->value();
+      double ratio = static_cast<double>(found_count) / create_count;
+      if (FLAG_trace_track_allocation_sites) {
+        PrintF("AllocationSite: %p (created, found, ratio) (%d, %d, %f)\n",
+               static_cast<void*>(this), create_count, found_count, ratio);
+      }
+      int result = ratio >= kPretenureRatio ? kTenure : kDontTenure;
+      set_pretenure_decision(Smi::FromInt(result));
+      decision_made = true;
+      // TODO(mvstanton): if the decision represents a change, any dependent
+      // code registered for pretenuring changes should be deopted.
+    }
+  }
+
+  // Clear feedback calculation fields until the next gc.
+  set_memento_found_count(Smi::FromInt(0));
+  set_memento_create_count(Smi::FromInt(0));
+  return decision_made;
 }
 
 
@@ -2293,6 +2345,11 @@ int DescriptorArray::SearchWithCache(Name* name, Map* map) {
 }
 
 
+PropertyDetails Map::GetLastDescriptorDetails() {
+  return instance_descriptors()->GetDetails(LastAdded());
+}
+
+
 void Map::LookupDescriptor(JSObject* holder,
                            Name* name,
                            LookupResult* result) {
@@ -2310,7 +2367,8 @@ void Map::LookupTransition(JSObject* holder,
     TransitionArray* transition_array = transitions();
     int number = transition_array->Search(name);
     if (number != TransitionArray::kNotFound) {
-      return result->TransitionResult(holder, number);
+      return result->TransitionResult(
+          holder, transition_array->GetTarget(number));
     }
   }
   result->NotFound();
@@ -2692,6 +2750,8 @@ bool Name::Equals(Name* other) {
 
 
 ACCESSORS(Symbol, name, Object, kNameOffset)
+ACCESSORS(Symbol, flags, Smi, kFlagsOffset)
+BOOL_ACCESSORS(Symbol, flags, is_private, kPrivateBit)
 
 
 bool String::Equals(String* other) {
@@ -3649,16 +3709,13 @@ bool Map::owns_descriptors() {
 }
 
 
-void Map::set_is_observed(bool is_observed) {
-  ASSERT(instance_type() < FIRST_JS_OBJECT_TYPE ||
-         instance_type() > LAST_JS_OBJECT_TYPE ||
-         has_slow_elements_kind() || has_external_array_elements());
-  set_bit_field3(IsObserved::update(bit_field3(), is_observed));
+void Map::set_has_instance_call_handler() {
+  set_bit_field3(HasInstanceCallHandler::update(bit_field3(), true));
 }
 
 
-bool Map::is_observed() {
-  return IsObserved::decode(bit_field3());
+bool Map::has_instance_call_handler() {
+  return HasInstanceCallHandler::decode(bit_field3());
 }
 
 
@@ -3838,14 +3895,14 @@ InlineCacheState Code::ic_state() {
 }
 
 
-Code::ExtraICState Code::extra_ic_state() {
+ExtraICState Code::extra_ic_state() {
   ASSERT((is_inline_cache_stub() && !needs_extended_extra_ic_state(kind()))
          || ic_state() == DEBUG_STUB);
   return ExtractExtraICStateFromFlags(flags());
 }
 
 
-Code::ExtraICState Code::extended_extra_ic_state() {
+ExtraICState Code::extended_extra_ic_state() {
   ASSERT(is_inline_cache_stub() || ic_state() == DEBUG_STUB);
   ASSERT(needs_extended_extra_ic_state(kind()));
   return ExtractExtendedExtraICStateFromFlags(flags());
@@ -3864,6 +3921,17 @@ int Code::arguments_count() {
 }
 
 
+// For initialization.
+void Code::set_raw_kind_specific_flags1(int value) {
+  WRITE_INT_FIELD(this, kKindSpecificFlags1Offset, value);
+}
+
+
+void Code::set_raw_kind_specific_flags2(int value) {
+  WRITE_INT_FIELD(this, kKindSpecificFlags2Offset, value);
+}
+
+
 inline bool Code::is_crankshafted() {
   return IsCrankshaftedField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags2Offset));
@@ -3878,31 +3946,14 @@ inline void Code::set_is_crankshafted(bool value) {
 
 
 int Code::major_key() {
-  ASSERT(kind() == STUB ||
-         kind() == HANDLER ||
-         kind() == BINARY_OP_IC ||
-         kind() == COMPARE_IC ||
-         kind() == COMPARE_NIL_IC ||
-         kind() == STORE_IC ||
-         kind() == LOAD_IC ||
-         kind() == KEYED_LOAD_IC ||
-         kind() == TO_BOOLEAN_IC);
+  ASSERT(has_major_key());
   return StubMajorKeyField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags2Offset));
 }
 
 
 void Code::set_major_key(int major) {
-  ASSERT(kind() == STUB ||
-         kind() == HANDLER ||
-         kind() == BINARY_OP_IC ||
-         kind() == COMPARE_IC ||
-         kind() == COMPARE_NIL_IC ||
-         kind() == LOAD_IC ||
-         kind() == KEYED_LOAD_IC ||
-         kind() == STORE_IC ||
-         kind() == KEYED_STORE_IC ||
-         kind() == TO_BOOLEAN_IC);
+  ASSERT(has_major_key());
   ASSERT(0 <= major && major < 256);
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags2Offset);
   int updated = StubMajorKeyField::update(previous, major);
@@ -3910,16 +3961,18 @@ void Code::set_major_key(int major) {
 }
 
 
-bool Code::is_pregenerated() {
-  return (kind() == STUB && IsPregeneratedField::decode(flags()));
-}
-
-
-void Code::set_is_pregenerated(bool value) {
-  ASSERT(kind() == STUB);
-  Flags f = flags();
-  f = static_cast<Flags>(IsPregeneratedField::update(f, value));
-  set_flags(f);
+bool Code::has_major_key() {
+  return kind() == STUB ||
+      kind() == HANDLER ||
+      kind() == BINARY_OP_IC ||
+      kind() == COMPARE_IC ||
+      kind() == COMPARE_NIL_IC ||
+      kind() == LOAD_IC ||
+      kind() == KEYED_LOAD_IC ||
+      kind() == STORE_IC ||
+      kind() == KEYED_STORE_IC ||
+      kind() == KEYED_CALL_IC ||
+      kind() == TO_BOOLEAN_IC;
 }
 
 
@@ -4167,9 +4220,9 @@ Code::Flags Code::ComputeFlags(Kind kind,
 
 Code::Flags Code::ComputeMonomorphicFlags(Kind kind,
                                           ExtraICState extra_ic_state,
+                                          InlineCacheHolderFlag holder,
                                           StubType type,
-                                          int argc,
-                                          InlineCacheHolderFlag holder) {
+                                          int argc) {
   return ComputeFlags(kind, MONOMORPHIC, extra_ic_state, type, argc, holder);
 }
 
@@ -4184,12 +4237,12 @@ InlineCacheState Code::ExtractICStateFromFlags(Flags flags) {
 }
 
 
-Code::ExtraICState Code::ExtractExtraICStateFromFlags(Flags flags) {
+ExtraICState Code::ExtractExtraICStateFromFlags(Flags flags) {
   return ExtraICStateField::decode(flags);
 }
 
 
-Code::ExtraICState Code::ExtractExtendedExtraICStateFromFlags(
+ExtraICState Code::ExtractExtendedExtraICStateFromFlags(
     Flags flags) {
   return ExtendedExtraICStateField::decode(flags);
 }
@@ -4422,6 +4475,17 @@ void Map::set_transitions(TransitionArray* transition_array,
   // When there is another reference to the array somewhere (e.g. a handle),
   // not zapping turns from a waste of memory into a source of crashes.
   if (HasTransitionArray()) {
+#ifdef DEBUG
+    for (int i = 0; i < transitions()->number_of_transitions(); i++) {
+      Map* target = transitions()->GetTarget(i);
+      if (target->instance_descriptors() == instance_descriptors()) {
+        Name* key = transitions()->GetKey(i);
+        int new_target_index = transition_array->Search(key);
+        ASSERT(new_target_index != TransitionArray::kNotFound);
+        ASSERT(transition_array->GetTarget(new_target_index) == target);
+      }
+    }
+#endif
     ASSERT(transitions() != transition_array);
     ZapTransitions();
   }
@@ -4554,6 +4618,10 @@ ACCESSORS(TypeSwitchInfo, types, Object, kTypesOffset)
 
 ACCESSORS(AllocationSite, transition_info, Object, kTransitionInfoOffset)
 ACCESSORS(AllocationSite, nested_site, Object, kNestedSiteOffset)
+ACCESSORS_TO_SMI(AllocationSite, memento_found_count, kMementoFoundCountOffset)
+ACCESSORS_TO_SMI(AllocationSite, memento_create_count,
+                 kMementoCreateCountOffset)
+ACCESSORS_TO_SMI(AllocationSite, pretenure_decision, kPretenureDecisionOffset)
 ACCESSORS(AllocationSite, dependent_code, DependentCode,
           kDependentCodeOffset)
 ACCESSORS(AllocationSite, weak_next, Object, kWeakNextOffset)
@@ -4807,6 +4875,8 @@ bool SharedFunctionInfo::is_classic_mode() {
 BOOL_GETTER(SharedFunctionInfo, compiler_hints, is_extended_mode,
             kExtendedModeFunction)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, native, kNative)
+BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, inline_builtin,
+               kInlineBuiltin)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints,
                name_should_print_as_anonymous,
                kNameShouldPrintAsAnonymous)
@@ -4867,6 +4937,7 @@ Code* SharedFunctionInfo::code() {
 
 
 void SharedFunctionInfo::set_code(Code* value, WriteBarrierMode mode) {
+  ASSERT(value->kind() != Code::OPTIMIZED_FUNCTION);
   WRITE_FIELD(this, kCodeOffset, value);
   CONDITIONAL_WRITE_BARRIER(value->GetHeap(), this, kCodeOffset, value, mode);
 }
@@ -5070,6 +5141,11 @@ void JSFunction::set_code_no_write_barrier(Code* value) {
 void JSFunction::ReplaceCode(Code* code) {
   bool was_optimized = IsOptimized();
   bool is_optimized = code->kind() == Code::OPTIMIZED_FUNCTION;
+
+  if (was_optimized && is_optimized) {
+    shared()->EvictFromOptimizedCodeMap(
+      this->code(), "Replacing with another optimized code");
+  }
 
   set_code(code);
 
@@ -5320,23 +5396,29 @@ INT_ACCESSORS(Code, prologue_offset, kPrologueOffset)
 ACCESSORS(Code, relocation_info, ByteArray, kRelocationInfoOffset)
 ACCESSORS(Code, handler_table, FixedArray, kHandlerTableOffset)
 ACCESSORS(Code, deoptimization_data, FixedArray, kDeoptimizationDataOffset)
+ACCESSORS(Code, raw_type_feedback_info, Object, kTypeFeedbackInfoOffset)
 
 
-// Type feedback slot: type_feedback_info for FUNCTIONs, stub_info for STUBs.
-void Code::InitializeTypeFeedbackInfoNoWriteBarrier(Object* value) {
-  WRITE_FIELD(this, kTypeFeedbackInfoOffset, value);
+void Code::WipeOutHeader() {
+  WRITE_FIELD(this, kRelocationInfoOffset, NULL);
+  WRITE_FIELD(this, kHandlerTableOffset, NULL);
+  WRITE_FIELD(this, kDeoptimizationDataOffset, NULL);
+  // Do not wipe out e.g. a minor key.
+  if (!READ_FIELD(this, kTypeFeedbackInfoOffset)->IsSmi()) {
+    WRITE_FIELD(this, kTypeFeedbackInfoOffset, NULL);
+  }
 }
 
 
 Object* Code::type_feedback_info() {
   ASSERT(kind() == FUNCTION);
-  return Object::cast(READ_FIELD(this, kTypeFeedbackInfoOffset));
+  return raw_type_feedback_info();
 }
 
 
 void Code::set_type_feedback_info(Object* value, WriteBarrierMode mode) {
   ASSERT(kind() == FUNCTION);
-  WRITE_FIELD(this, kTypeFeedbackInfoOffset, value);
+  set_raw_type_feedback_info(value, mode);
   CONDITIONAL_WRITE_BARRIER(GetHeap(), this, kTypeFeedbackInfoOffset,
                             value, mode);
 }
@@ -5344,13 +5426,13 @@ void Code::set_type_feedback_info(Object* value, WriteBarrierMode mode) {
 
 Object* Code::next_code_link() {
   CHECK(kind() == OPTIMIZED_FUNCTION);
-  return Object::cast(READ_FIELD(this, kTypeFeedbackInfoOffset));
+  return raw_type_feedback_info();
 }
 
 
 void Code::set_next_code_link(Object* value, WriteBarrierMode mode) {
   CHECK(kind() == OPTIMIZED_FUNCTION);
-  WRITE_FIELD(this, kTypeFeedbackInfoOffset, value);
+  set_raw_type_feedback_info(value);
   CONDITIONAL_WRITE_BARRIER(GetHeap(), this, kTypeFeedbackInfoOffset,
                             value, mode);
 }
@@ -5359,8 +5441,7 @@ void Code::set_next_code_link(Object* value, WriteBarrierMode mode) {
 int Code::stub_info() {
   ASSERT(kind() == COMPARE_IC || kind() == COMPARE_NIL_IC ||
          kind() == BINARY_OP_IC || kind() == LOAD_IC);
-  Object* value = READ_FIELD(this, kTypeFeedbackInfoOffset);
-  return Smi::cast(value)->value();
+  return Smi::cast(raw_type_feedback_info())->value();
 }
 
 
@@ -5373,7 +5454,7 @@ void Code::set_stub_info(int value) {
          kind() == KEYED_LOAD_IC ||
          kind() == STORE_IC ||
          kind() == KEYED_STORE_IC);
-  WRITE_FIELD(this, kTypeFeedbackInfoOffset, Smi::FromInt(value));
+  set_raw_type_feedback_info(Smi::FromInt(value));
 }
 
 
@@ -5447,6 +5528,16 @@ bool JSArrayBuffer::is_external() {
 
 void JSArrayBuffer::set_is_external(bool value) {
   set_flag(BooleanBit::set(flag(), kIsExternalBit, value));
+}
+
+
+bool JSArrayBuffer::should_be_freed() {
+  return BooleanBit::get(flag(), kShouldBeFreed);
+}
+
+
+void JSArrayBuffer::set_should_be_freed(bool value) {
+  set_flag(BooleanBit::set(flag(), kShouldBeFreed, value));
 }
 
 
@@ -5833,23 +5924,27 @@ PropertyAttributes JSReceiver::GetElementAttribute(uint32_t index) {
 }
 
 
-// TODO(504): this may be useful in other places too where JSGlobalProxy
-// is used.
-Object* JSObject::BypassGlobalProxy() {
-  if (IsJSGlobalProxy()) {
-    Object* proto = GetPrototype();
-    if (proto->IsNull()) return GetHeap()->undefined_value();
-    ASSERT(proto->IsJSGlobalObject());
-    return proto;
-  }
-  return this;
+bool JSGlobalObject::IsDetached() {
+  return JSGlobalProxy::cast(global_receiver())->IsDetachedFrom(this);
 }
 
 
-MaybeObject* JSReceiver::GetIdentityHash(CreationFlag flag) {
+bool JSGlobalProxy::IsDetachedFrom(GlobalObject* global) {
+  return GetPrototype() != global;
+}
+
+
+Handle<Object> JSReceiver::GetOrCreateIdentityHash(Handle<JSReceiver> object) {
+  return object->IsJSProxy()
+      ? JSProxy::GetOrCreateIdentityHash(Handle<JSProxy>::cast(object))
+      : JSObject::GetOrCreateIdentityHash(Handle<JSObject>::cast(object));
+}
+
+
+Object* JSReceiver::GetIdentityHash() {
   return IsJSProxy()
-      ? JSProxy::cast(this)->GetIdentityHash(flag)
-      : JSObject::cast(this)->GetIdentityHash(flag);
+      ? JSProxy::cast(this)->GetIdentityHash()
+      : JSObject::cast(this)->GetIdentityHash();
 }
 
 
@@ -5925,7 +6020,7 @@ void AccessorInfo::set_property_attributes(PropertyAttributes attributes) {
 bool AccessorInfo::IsCompatibleReceiver(Object* receiver) {
   Object* function_template = expected_receiver_type();
   if (!function_template->IsFunctionTemplateInfo()) return true;
-  return receiver->IsInstanceOf(FunctionTemplateInfo::cast(function_template));
+  return FunctionTemplateInfo::cast(function_template)->IsTemplateFor(receiver);
 }
 
 
@@ -6049,16 +6144,14 @@ bool ObjectHashTableShape<entrysize>::IsMatch(Object* key, Object* other) {
 
 template <int entrysize>
 uint32_t ObjectHashTableShape<entrysize>::Hash(Object* key) {
-  MaybeObject* maybe_hash = key->GetHash(OMIT_CREATION);
-  return Smi::cast(maybe_hash->ToObjectChecked())->value();
+  return Smi::cast(key->GetHash())->value();
 }
 
 
 template <int entrysize>
 uint32_t ObjectHashTableShape<entrysize>::HashForObject(Object* key,
                                                         Object* other) {
-  MaybeObject* maybe_hash = other->GetHash(OMIT_CREATION);
-  return Smi::cast(maybe_hash->ToObjectChecked())->value();
+  return Smi::cast(other->GetHash())->value();
 }
 
 

@@ -37,7 +37,6 @@
 
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
-#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -169,6 +168,12 @@ void WorkerScriptLoader::notifyError()
 {
     m_failed = true;
     notifyFinished();
+}
+
+void WorkerScriptLoader::cancel()
+{
+    if (m_threadableLoader)
+        m_threadableLoader->cancel();
 }
 
 String WorkerScriptLoader::script()

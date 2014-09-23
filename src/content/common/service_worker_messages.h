@@ -7,9 +7,15 @@
 #include "base/strings/string16.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "url/gurl.h"
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
+
 #define IPC_MESSAGE_START ServiceWorkerMsgStart
+
+IPC_ENUM_TRAITS(blink::WebServiceWorkerError::ErrorType)
 
 // Messages sent from the child process to the browser.
 
@@ -36,3 +42,32 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_ServiceWorkerUnregistered,
                      int32 /* thread_id */,
                      int32 /* request_id */)
+
+// Sent when any kind of registration error occurs during a
+// RegisterServiceWorker / UnregisterServiceWorker handler above.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistrationError,
+                     int32 /* thread_id */,
+                     int32 /* request_id */,
+                     blink::WebServiceWorkerError::ErrorType /* code */,
+                     base::string16 /* message */)
+
+// Informs the browser of a new ServiceWorkerProvider in the child process,
+// |provider_id| is unique within its child process.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderCreated,
+                     int /* provider_id */)
+
+// Informs the browser of a ServiceWorkerProvider being destroyed.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
+                     int /* provider_id */)
+
+// For EmbeddedWorker related messages -------------------------------------
+
+// Browser -> Renderer message to create a new embedded worker context.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_StartWorker,
+                     int /* embedded_worker_id */,
+                     int64 /* service_worker_version_id */,
+                     GURL /* script_url */)
+
+// Browser -> Renderer message to terminate the embedded worker.
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_TerminateWorker,
+                     int /* embedded_worker_id */)

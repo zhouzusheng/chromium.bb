@@ -129,9 +129,10 @@ enum RetransmissionMode {
 };
 
 enum RtxMode {
-  kRtxOff = 0,
-  kRtxRetransmitted = 1,  // Apply RTX only to retransmitted packets.
-  kRtxAll = 2  // Apply RTX to all packets (source + retransmissions).
+  kRtxOff                 = 0x0,
+  kRtxRetransmitted       = 0x1,  // Only send retransmissions over RTX.
+  kRtxRedundantPayloads   = 0x2   // Preventively send redundant payloads
+                                  // instead of padding.
 };
 
 const int kRtxHeaderSize = 2;
@@ -288,11 +289,13 @@ class RtcpBandwidthObserver {
   virtual ~RtcpBandwidthObserver() {}
 };
 
-class RtcpRttObserver {
+class RtcpRttStats {
  public:
   virtual void OnRttUpdate(uint32_t rtt) = 0;
 
-  virtual ~RtcpRttObserver() {};
+  virtual uint32_t LastProcessedRtt() const = 0;
+
+  virtual ~RtcpRttStats() {};
 };
 
 // Null object version of RtpFeedback.

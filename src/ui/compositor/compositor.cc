@@ -12,11 +12,13 @@
 #include "base/debug/trace_event.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
@@ -91,7 +93,7 @@ Texture::~Texture() {
 }
 
 std::string Texture::Produce() {
-  return EmptyString();
+  return std::string();
 }
 
 CompositorLock::CompositorLock(Compositor* compositor)
@@ -270,6 +272,8 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       command_line->HasSwitch(cc::switches::kUIShowCompositedLayerBorders);
   settings.initial_debug_state.show_fps_counter =
       command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
+  settings.initial_debug_state.show_layer_animation_bounds_rects =
+      command_line->HasSwitch(cc::switches::kUIShowLayerAnimationBounds);
   settings.initial_debug_state.show_paint_rects =
       command_line->HasSwitch(switches::kUIShowPaintRects);
   settings.initial_debug_state.show_property_changed_rects =
@@ -285,11 +289,15 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
   settings.initial_debug_state.show_non_occluding_rects =
       command_line->HasSwitch(cc::switches::kUIShowNonOccludingRects);
 
-  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner =
-      g_compositor_thread ? g_compositor_thread->message_loop_proxy() : NULL;
-
-  host_ =
-      cc::LayerTreeHost::Create(this, NULL, settings, compositor_task_runner);
+  base::TimeTicks before_create = base::TimeTicks::Now();
+  if (!!g_compositor_thread) {
+    host_ = cc::LayerTreeHost::CreateThreaded(
+        this, NULL, settings, g_compositor_thread->message_loop_proxy());
+  } else {
+    host_ = cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+  }
+  UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
+                      base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
   host_->SetLayerTreeHostClientReady();
 }
@@ -436,7 +444,9 @@ void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
 }
 
 void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
-  host_->SetLatencyInfo(latency_info);
+  scoped_ptr<cc::SwapPromise> swap_promise(
+      new cc::LatencyInfoSwapPromise(latency_info));
+  host_->QueueSwapPromise(swap_promise.Pass());
 }
 
 bool Compositor::ReadPixels(SkBitmap* bitmap,
@@ -487,37 +497,6 @@ bool Compositor::HasObserver(CompositorObserver* observer) {
   return observer_list_.HasObserver(observer);
 }
 
-void Compositor::OnSwapBuffersPosted() {
-  DCHECK(!g_compositor_thread);
-  posted_swaps_->PostSwap();
-}
-
-void Compositor::OnSwapBuffersComplete() {
-  DCHECK(!g_compositor_thread);
-  DCHECK(posted_swaps_->AreSwapsPosted());
-  DCHECK_GE(1, posted_swaps_->NumSwapsPosted(DRAW_SWAP));
-  if (posted_swaps_->NextPostedSwap() == DRAW_SWAP)
-    NotifyEnd();
-  posted_swaps_->EndSwap();
-}
-
-void Compositor::OnSwapBuffersAborted() {
-  if (!g_compositor_thread) {
-    DCHECK_GE(1, posted_swaps_->NumSwapsPosted(DRAW_SWAP));
-
-    // We've just lost the context, so unwind all posted_swaps.
-    while (posted_swaps_->AreSwapsPosted()) {
-      if (posted_swaps_->NextPostedSwap() == DRAW_SWAP)
-        NotifyEnd();
-      posted_swaps_->EndSwap();
-    }
-  }
-
-  FOR_EACH_OBSERVER(CompositorObserver,
-                    observer_list_,
-                    OnCompositingAborted(this));
-}
-
 void Compositor::OnUpdateVSyncParameters(base::TimeTicks timebase,
                                          base::TimeDelta interval) {
   FOR_EACH_OBSERVER(CompositorObserver,
@@ -535,7 +514,7 @@ void Compositor::Layout() {
 }
 
 scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface(bool fallback) {
-  return ContextFactory::GetInstance()->CreateOutputSurface(this);
+  return ContextFactory::GetInstance()->CreateOutputSurface(this, fallback);
 }
 
 void Compositor::DidCommit() {
@@ -553,8 +532,19 @@ void Compositor::DidCommitAndDrawFrame() {
 }
 
 void Compositor::DidCompleteSwapBuffers() {
-  DCHECK(g_compositor_thread);
-  NotifyEnd();
+  if (g_compositor_thread) {
+    NotifyEnd();
+  } else {
+    DCHECK(posted_swaps_->AreSwapsPosted());
+    DCHECK_GE(1, posted_swaps_->NumSwapsPosted(DRAW_SWAP));
+    if (posted_swaps_->NextPostedSwap() == DRAW_SWAP)
+      NotifyEnd();
+    posted_swaps_->EndSwap();
+  }
+}
+
+scoped_refptr<cc::ContextProvider> Compositor::OffscreenContextProvider() {
+  return ContextFactory::GetInstance()->OffscreenCompositorContextProvider();
 }
 
 void Compositor::ScheduleComposite() {
@@ -562,8 +552,30 @@ void Compositor::ScheduleComposite() {
     ScheduleDraw();
 }
 
-scoped_refptr<cc::ContextProvider> Compositor::OffscreenContextProvider() {
-  return ContextFactory::GetInstance()->OffscreenCompositorContextProvider();
+void Compositor::ScheduleAnimation() {
+  ScheduleComposite();
+}
+
+void Compositor::DidPostSwapBuffers() {
+  DCHECK(!g_compositor_thread);
+  posted_swaps_->PostSwap();
+}
+
+void Compositor::DidAbortSwapBuffers() {
+  if (!g_compositor_thread) {
+    DCHECK_GE(1, posted_swaps_->NumSwapsPosted(DRAW_SWAP));
+
+    // We've just lost the context, so unwind all posted_swaps.
+    while (posted_swaps_->AreSwapsPosted()) {
+      if (posted_swaps_->NextPostedSwap() == DRAW_SWAP)
+        NotifyEnd();
+      posted_swaps_->EndSwap();
+    }
+  }
+
+  FOR_EACH_OBSERVER(CompositorObserver,
+                    observer_list_,
+                    OnCompositingAborted(this));
 }
 
 const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {

@@ -27,6 +27,7 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/PluginDocument.h"
@@ -38,21 +39,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLEmbedElement::HTMLEmbedElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : HTMLPlugInElement(tagName, document, createdByParser, ShouldPreferPlugInsForImages)
+inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByParser)
+    : HTMLPlugInElement(embedTag, document, createdByParser, ShouldPreferPlugInsForImages)
 {
-    ASSERT(hasTagName(embedTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLEmbedElement(tagName, document, createdByParser));
-}
-
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document)
-{
-    return create(embedTag, document, false);
+    RefPtr<HTMLEmbedElement> element = adoptRef(new HTMLEmbedElement(document, createdByParser));
+    element->ensureUserAgentShadowRoot();
+    return element.release();
 }
 
 static inline RenderWidget* findWidgetRenderer(const Node* n)
@@ -127,7 +124,7 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
 
 // FIXME: This should be unified with HTMLObjectElement::updateWidget and
 // moved down into HTMLPluginElement.cpp
-void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
+void HTMLEmbedElement::updateWidgetInternal()
 {
     ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
@@ -140,15 +137,6 @@ void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
     // <object> which modifies url and serviceType before calling these.
     if (!allowedToLoadFrameURL(m_url))
         return;
-
-    // FIXME: It's sadness that we have this special case here.
-    //        See http://trac.webkit.org/changeset/25128 and
-    //        plugins/netscape-plugin-setwindow-size.html
-    if (pluginCreationOption == CreateOnlyNonNetscapePlugins && wouldLoadAsNetscapePlugin(m_url, m_serviceType)) {
-        // Ensure updateWidget() is called again during layout to create the Netscape plug-in.
-        setNeedsWidgetUpdate(true);
-        return;
-    }
 
     // FIXME: These should be joined into a PluginParameters class.
     Vector<String> paramNames;
@@ -214,6 +202,16 @@ void HTMLEmbedElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 
 bool HTMLEmbedElement::isInteractiveContent() const
 {
+    return true;
+}
+
+bool HTMLEmbedElement::isExposed() const
+{
+    // http://www.whatwg.org/specs/web-apps/current-work/#exposed
+    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
+        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+            return false;
+    }
     return true;
 }
 

@@ -35,6 +35,7 @@
 #include <content/public/common/menu_item.h>
 #include <third_party/WebKit/public/web/WebContextMenuData.h>
 #include <ui/aura/root_window.h>
+#include <ui/aura/window.h>
 
 namespace {
 
@@ -61,11 +62,11 @@ void convertItem(const content::MenuItem& item1, blpwtk2::ContextMenuItemImpl* i
     item2Impl->d_label = base::UTF16ToUTF8(item1.label);
     item2Impl->d_tooltip = base::UTF16ToUTF8(item1.tool_tip);
     switch (item1.type) {
-    case WebKit::WebMenuItemInfo::Option: item2Impl->d_type = blpwtk2::ContextMenuItem::OPTION; break;
-    case WebKit::WebMenuItemInfo::CheckableOption: item2Impl->d_type = blpwtk2::ContextMenuItem::CHECKABLE_OPTION; break;
-    case WebKit::WebMenuItemInfo::Group: item2Impl->d_type = blpwtk2::ContextMenuItem::GROUP; break;
-    case WebKit::WebMenuItemInfo::Separator: item2Impl->d_type = blpwtk2::ContextMenuItem::SEPARATOR; break;
-    case WebKit::WebMenuItemInfo::SubMenu: item2Impl->d_type = blpwtk2::ContextMenuItem::SUBMENU; break;
+    case blink::WebMenuItemInfo::Option: item2Impl->d_type = blpwtk2::ContextMenuItem::OPTION; break;
+    case blink::WebMenuItemInfo::CheckableOption: item2Impl->d_type = blpwtk2::ContextMenuItem::CHECKABLE_OPTION; break;
+    case blink::WebMenuItemInfo::Group: item2Impl->d_type = blpwtk2::ContextMenuItem::GROUP; break;
+    case blink::WebMenuItemInfo::Separator: item2Impl->d_type = blpwtk2::ContextMenuItem::SEPARATOR; break;
+    case blink::WebMenuItemInfo::SubMenu: item2Impl->d_type = blpwtk2::ContextMenuItem::SUBMENU; break;
     }
     item2Impl->d_action = item1.action;
     item2Impl->d_textDirection = item1.rtl ? blpwtk2::TextDirection::RIGHT_TO_LEFT : blpwtk2::TextDirection::LEFT_TO_RIGHT;
@@ -107,17 +108,17 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
 
     gfx::Point point(params.x, params.y);
     aura::RootWindow* rootWindow = webViewImpl->getNativeView()->GetDispatcher();
-    rootWindow->ConvertPointToNativeScreen(&point);
+    rootWindow->host()->ConvertPointToNativeScreen(&point);
 
     bool hasSelection = !params.selection_text.empty();
 
     ContextMenuParams params2;
     ContextMenuParamsImpl* params2Impl = getContextMenuParamsImpl(params2);
     params2Impl->d_pointOnScreen = point.ToPOINT();
-    params2Impl->d_canCut = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCut);
-    params2Impl->d_canCopy = hasSelection || (params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCopy));
-    params2Impl->d_canPaste = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanPaste);
-    params2Impl->d_canDelete = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanDelete);
+    params2Impl->d_canCut = params.is_editable && (params.edit_flags & blink::WebContextMenuData::CanCut);
+    params2Impl->d_canCopy = hasSelection || (params.is_editable && (params.edit_flags & blink::WebContextMenuData::CanCopy));
+    params2Impl->d_canPaste = params.is_editable && (params.edit_flags & blink::WebContextMenuData::CanPaste);
+    params2Impl->d_canDelete = params.is_editable && (params.edit_flags & blink::WebContextMenuData::CanDelete);
 
     convertCustomItems(params, params2Impl);
     convertSpellcheck(params, params2Impl);

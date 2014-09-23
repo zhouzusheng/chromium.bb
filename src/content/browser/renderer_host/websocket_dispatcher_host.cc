@@ -83,10 +83,13 @@ WebSocketHost* WebSocketDispatcherHost::GetHost(int routing_id) const {
 }
 
 WebSocketHostState WebSocketDispatcherHost::SendOrDrop(IPC::Message* message) {
+  const uint32 message_type = message->type();
+  const int32 message_routing_id = message->routing_id();
   if (!Send(message)) {
-    DVLOG(1) << "Sending of message type " << message->type()
+    message = NULL;
+    DVLOG(1) << "Sending of message type " << message_type
              << " failed. Dropping channel.";
-    DeleteWebSocketHost(message->routing_id());
+    DeleteWebSocketHost(message_routing_id);
     return WEBSOCKET_HOST_DELETED;
   }
   return WEBSOCKET_HOST_ALIVE;
@@ -126,11 +129,25 @@ WebSocketHostState WebSocketDispatcherHost::SendClosing(int routing_id) {
   return WEBSOCKET_HOST_ALIVE;
 }
 
+WebSocketHostState WebSocketDispatcherHost::SendStartOpeningHandshake(
+    int routing_id, const WebSocketHandshakeRequest& request) {
+  return SendOrDrop(new WebSocketMsg_NotifyStartOpeningHandshake(
+      routing_id, request));
+}
+
+WebSocketHostState WebSocketDispatcherHost::SendFinishOpeningHandshake(
+    int routing_id, const WebSocketHandshakeResponse& response) {
+  return SendOrDrop(new WebSocketMsg_NotifyFinishOpeningHandshake(
+      routing_id, response));
+}
+
 WebSocketHostState WebSocketDispatcherHost::DoDropChannel(
     int routing_id,
     uint16 code,
     const std::string& reason) {
-  if (SendOrDrop(new WebSocketMsg_DropChannel(routing_id, code, reason)) ==
+  bool was_clean = true;
+  if (SendOrDrop(
+          new WebSocketMsg_DropChannel(routing_id, was_clean, code, reason)) ==
       WEBSOCKET_HOST_DELETED)
     return WEBSOCKET_HOST_DELETED;
   DeleteWebSocketHost(routing_id);

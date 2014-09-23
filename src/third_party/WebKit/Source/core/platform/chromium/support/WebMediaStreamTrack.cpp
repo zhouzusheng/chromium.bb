@@ -26,8 +26,8 @@
 
 #include "public/platform/WebMediaStreamTrack.h"
 
-#include "core/platform/mediastream/MediaStreamComponent.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
+#include "platform/mediastream/MediaStreamComponent.h"
+#include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebAudioSourceProvider.h"
 #include "public/platform/WebMediaStream.h"
 #include "public/platform/WebMediaStreamSource.h"
@@ -36,7 +36,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
@@ -143,4 +143,4 @@ void WebMediaStreamTrack::assign(const WebMediaStreamTrack& other)
     m_private = other.m_private;
 }
 
-} // namespace WebKit
+} // namespace blink

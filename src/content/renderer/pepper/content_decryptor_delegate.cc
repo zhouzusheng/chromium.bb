@@ -44,7 +44,7 @@ namespace {
 bool MakeBufferResource(PP_Instance instance,
                         const uint8* data, uint32_t size,
                         scoped_refptr<PPB_Buffer_Impl>* resource) {
-  TRACE_EVENT0("eme", "ContentDecryptorDelegate - MakeBufferResource");
+  TRACE_EVENT0("media", "ContentDecryptorDelegate - MakeBufferResource");
   DCHECK(resource);
 
   if (!data || !size) {
@@ -262,65 +262,57 @@ ContentDecryptorDelegate::ContentDecryptorDelegate(
 ContentDecryptorDelegate::~ContentDecryptorDelegate() {
 }
 
-void ContentDecryptorDelegate::Initialize(const std::string& key_system,
-                                          bool can_challenge_platform) {
+void ContentDecryptorDelegate::Initialize(const std::string& key_system) {
   DCHECK(!key_system.empty());
   DCHECK(key_system_.empty());
   key_system_ = key_system;
 
   plugin_decryption_interface_->Initialize(
       pp_instance_,
-      StringVar::StringToPPVar(key_system_),
-      PP_FromBool(can_challenge_platform));
+      StringVar::StringToPPVar(key_system_));
 }
 
-void ContentDecryptorDelegate::SetKeyEventCallbacks(
-    const media::KeyAddedCB& key_added_cb,
-    const media::KeyErrorCB& key_error_cb,
-    const media::KeyMessageCB& key_message_cb) {
-  key_added_cb_ = key_added_cb;
-  key_error_cb_ = key_error_cb;
-  key_message_cb_ = key_message_cb;
+void ContentDecryptorDelegate::SetSessionEventCallbacks(
+    const media::SessionCreatedCB& session_created_cb,
+    const media::SessionMessageCB& session_message_cb,
+    const media::SessionReadyCB& session_ready_cb,
+    const media::SessionClosedCB& session_closed_cb,
+    const media::SessionErrorCB& session_error_cb) {
+  session_created_cb_ = session_created_cb;
+  session_message_cb_ = session_message_cb;
+  session_ready_cb_ = session_ready_cb;
+  session_closed_cb_ = session_closed_cb;
+  session_error_cb_ = session_error_cb;
 }
 
-bool ContentDecryptorDelegate::GenerateKeyRequest(const std::string& type,
-                                                  const uint8* init_data,
-                                                  int init_data_length) {
+bool ContentDecryptorDelegate::CreateSession(uint32 session_id,
+                                             const std::string& type,
+                                             const uint8* init_data,
+                                             int init_data_length) {
   PP_Var init_data_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
           init_data_length, init_data);
 
-  plugin_decryption_interface_->GenerateKeyRequest(
-      pp_instance_,
-      StringVar::StringToPPVar(type),
-      init_data_array);
+  plugin_decryption_interface_->CreateSession(pp_instance_,
+                                              session_id,
+                                              StringVar::StringToPPVar(type),
+                                              init_data_array);
   return true;
 }
 
-bool ContentDecryptorDelegate::AddKey(const std::string& session_id,
-                                      const uint8* key,
-                                      int key_length,
-                                      const uint8* init_data,
-                                      int init_data_length) {
-  PP_Var key_array =
-      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(key_length,
-                                                                 key);
-  PP_Var init_data_array =
+bool ContentDecryptorDelegate::UpdateSession(uint32 session_id,
+                                             const uint8* response,
+                                             int response_length) {
+  PP_Var response_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          init_data_length, init_data);
-
-  plugin_decryption_interface_->AddKey(
-      pp_instance_,
-      StringVar::StringToPPVar(session_id),
-      key_array,
-      init_data_array);
+          response_length, response);
+  plugin_decryption_interface_->UpdateSession(
+      pp_instance_, session_id, response_array);
   return true;
 }
 
-bool ContentDecryptorDelegate::CancelKeyRequest(const std::string& session_id) {
-  plugin_decryption_interface_->CancelKeyRequest(
-      pp_instance_,
-      StringVar::StringToPPVar(session_id));
+bool ContentDecryptorDelegate::ReleaseSession(uint32 session_id) {
+  plugin_decryption_interface_->ReleaseSession(pp_instance_, session_id);
   return true;
 }
 
@@ -570,7 +562,7 @@ bool ContentDecryptorDelegate::DecryptAndDecodeVideo(
   const uint32_t request_id = next_decryption_request_id_++;
   DVLOG(2) << "DecryptAndDecodeVideo() - request_id " << request_id;
   TRACE_EVENT_ASYNC_BEGIN0(
-      "eme", "ContentDecryptorDelegate::DecryptAndDecodeVideo", request_id);
+      "media", "ContentDecryptorDelegate::DecryptAndDecodeVideo", request_id);
 
   PP_EncryptedBlockInfo block_info = {};
   if (!MakeEncryptedBlockInfo(encrypted_buffer, request_id, &block_info)) {
@@ -597,38 +589,28 @@ bool ContentDecryptorDelegate::DecryptAndDecodeVideo(
   return true;
 }
 
-void ContentDecryptorDelegate::NeedKey(PP_Var key_system_var,
-                                       PP_Var session_id_var,
-                                       PP_Var init_data_var) {
-  // TODO(ddorwin): Remove from PPB_ContentDecryptor_Private.
-  NOTREACHED();
-}
-
-void ContentDecryptorDelegate::KeyAdded(PP_Var key_system_var,
-                                        PP_Var session_id_var) {
-  if (key_added_cb_.is_null())
+void ContentDecryptorDelegate::OnSessionCreated(uint32 session_id,
+                                                PP_Var web_session_id_var) {
+  if (session_created_cb_.is_null())
     return;
 
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
+  StringVar* session_id_string = StringVar::FromPPVar(web_session_id_var);
+
   if (!session_id_string) {
-    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
+    OnSessionError(session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  key_added_cb_.Run(session_id_string->value());
+  session_created_cb_.Run(session_id, session_id_string->value());
 }
 
-void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
-                                          PP_Var session_id_var,
-                                          PP_Var message_var,
-                                          PP_Var default_url_var) {
-  if (key_message_cb_.is_null())
+void ContentDecryptorDelegate::OnSessionMessage(uint32 session_id,
+                                                PP_Var message_var,
+                                                PP_Var default_url_var) {
+  if (session_message_cb_.is_null())
     return;
 
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-
-  ArrayBufferVar* message_array_buffer =
-      ArrayBufferVar::FromPPVar(message_var);
+  ArrayBufferVar* message_array_buffer = ArrayBufferVar::FromPPVar(message_var);
 
   std::vector<uint8> message;
   if (message_array_buffer) {
@@ -638,32 +620,37 @@ void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
 
   StringVar* default_url_string = StringVar::FromPPVar(default_url_var);
 
-  if (!session_id_string || !default_url_string) {
-    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
+  if (!default_url_string) {
+    OnSessionError(session_id, media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  key_message_cb_.Run(session_id_string->value(),
-                      message,
-                      default_url_string->value());
+  session_message_cb_.Run(session_id, message, default_url_string->value());
 }
 
-void ContentDecryptorDelegate::KeyError(PP_Var key_system_var,
-                                        PP_Var session_id_var,
-                                        int32_t media_error,
-                                        int32_t system_code) {
-  if (key_error_cb_.is_null())
+void ContentDecryptorDelegate::OnSessionReady(uint32 session_id) {
+  if (session_ready_cb_.is_null())
     return;
 
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  if (!session_id_string) {
-    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
-    return;
-  }
+  session_ready_cb_.Run(session_id);
+}
 
-  key_error_cb_.Run(session_id_string->value(),
-                    static_cast<media::MediaKeys::KeyError>(media_error),
-                    system_code);
+void ContentDecryptorDelegate::OnSessionClosed(uint32 session_id) {
+  if (session_closed_cb_.is_null())
+    return;
+
+  session_closed_cb_.Run(session_id);
+}
+
+void ContentDecryptorDelegate::OnSessionError(uint32 session_id,
+                                              int32_t media_error,
+                                              int32_t system_code) {
+  if (session_error_cb_.is_null())
+    return;
+
+  session_error_cb_.Run(session_id,
+                        static_cast<media::MediaKeys::KeyError>(media_error),
+                        system_code);
 }
 
 void ContentDecryptorDelegate::DecoderInitializeDone(
@@ -816,7 +803,7 @@ void ContentDecryptorDelegate::DeliverFrame(
   }
 
   TRACE_EVENT_ASYNC_END0(
-      "eme", "ContentDecryptorDelegate::DecryptAndDecodeVideo", request_id);
+      "media", "ContentDecryptorDelegate::DecryptAndDecodeVideo", request_id);
 
   DCHECK(!pending_video_decode_cb_.is_null());
   pending_video_decode_request_id_ = 0;
@@ -946,7 +933,7 @@ bool ContentDecryptorDelegate::MakeMediaBufferResource(
     media::Decryptor::StreamType stream_type,
     const scoped_refptr<media::DecoderBuffer>& encrypted_buffer,
     scoped_refptr<PPB_Buffer_Impl>* resource) {
-  TRACE_EVENT0("eme", "ContentDecryptorDelegate::MakeMediaBufferResource");
+  TRACE_EVENT0("media", "ContentDecryptorDelegate::MakeMediaBufferResource");
 
   // End of stream buffers are represented as null resources.
   if (encrypted_buffer->end_of_stream()) {

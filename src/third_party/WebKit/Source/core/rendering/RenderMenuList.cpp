@@ -39,12 +39,11 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/PopupMenu.h"
-#include "core/platform/graphics/FontCache.h"
 #include "core/rendering/RenderBR.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/geometry/IntSize.h"
 
 using namespace std;
@@ -379,13 +378,8 @@ void RenderMenuList::didUpdateActiveOption(int optionIndex)
     int listIndex = select->optionToListIndex(optionIndex);
     if (listIndex < 0 || listIndex >= static_cast<int>(select->listItems().size()))
         return;
-
-    HTMLElement* listItem = select->listItems()[listIndex];
-    ASSERT(listItem);
-    if (listItem->confusingAndOftenMisusedAttached()) {
-        if (AXMenuList* menuList = toAXMenuList(document().axObjectCache()->get(this)))
-            menuList->didUpdateActiveOption(optionIndex);
-    }
+    if (AXMenuList* menuList = toAXMenuList(document().axObjectCache()->get(this)))
+        menuList->didUpdateActiveOption(optionIndex);
 }
 
 String RenderMenuList::itemText(unsigned listIndex) const
@@ -608,7 +602,7 @@ void RenderMenuList::setTextFromItem(unsigned listIndex)
 
 FontSelector* RenderMenuList::fontSelector() const
 {
-    return document().styleResolver()->fontSelector();
+    return document().styleEngine()->fontSelector();
 }
 
 }

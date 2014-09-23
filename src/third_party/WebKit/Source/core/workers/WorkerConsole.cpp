@@ -31,22 +31,11 @@
 
 #include "core/workers/WorkerConsole.h"
 
-#include "bindings/v8/ScriptCallStackFactory.h"
-#include "bindings/v8/ScriptProfiler.h"
-#include "core/inspector/ConsoleAPITypes.h"
-#include "core/inspector/InspectorConsoleInstrumentation.h"
-#include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/inspector/ScriptProfile.h"
-#include "core/inspector/WorkerInspectorController.h"
-#include "core/frame/ConsoleBase.h"
-#include "core/frame/ConsoleTypes.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
-#include "platform/TraceEvent.h"
 
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -63,7 +52,7 @@ WorkerConsole::~WorkerConsole()
 void WorkerConsole::reportMessageToClient(MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack)
 {
     const ScriptCallFrame& lastCaller = callStack->at(0);
-    m_scope->thread()->workerReportingProxy().postConsoleMessageToWorkerObject(ConsoleAPIMessageSource, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
+    m_scope->thread()->workerReportingProxy().reportConsoleMessage(ConsoleAPIMessageSource, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
 }
 
 ExecutionContext* WorkerConsole::context()
@@ -73,12 +62,6 @@ ExecutionContext* WorkerConsole::context()
     return m_scope->executionContext();
 }
 
-bool WorkerConsole::profilerEnabled()
-{
-    return InspectorInstrumentation::profilerEnabled(m_scope);
-}
-
 // FIXME: add memory getter
 
 } // namespace WebCore
-

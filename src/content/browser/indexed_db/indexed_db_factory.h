@@ -24,7 +24,7 @@ class IndexedDBBackingStore;
 class IndexedDBContextImpl;
 
 class CONTENT_EXPORT IndexedDBFactory
-    : NON_EXPORTED_BASE(public base::RefCounted<IndexedDBFactory>) {
+    : NON_EXPORTED_BASE(public base::RefCountedThreadSafe<IndexedDBFactory>) {
  public:
   explicit IndexedDBFactory(IndexedDBContextImpl* context);
 
@@ -36,7 +36,7 @@ class CONTENT_EXPORT IndexedDBFactory
   void GetDatabaseNames(scoped_refptr<IndexedDBCallbacks> callbacks,
                         const GURL& origin_url,
                         const base::FilePath& data_directory);
-  void Open(const string16& name,
+  void Open(const base::string16& name,
             int64 version,
             int64 transaction_id,
             scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -44,7 +44,7 @@ class CONTENT_EXPORT IndexedDBFactory
             const GURL& origin_url,
             const base::FilePath& data_directory);
 
-  void DeleteDatabase(const string16& name,
+  void DeleteDatabase(const base::string16& name,
                       scoped_refptr<IndexedDBCallbacks> callbacks,
                       const GURL& origin_url,
                       const base::FilePath& data_directory);
@@ -55,20 +55,22 @@ class CONTENT_EXPORT IndexedDBFactory
   std::vector<IndexedDBDatabase*> GetOpenDatabasesForOrigin(
       const GURL& origin_url) const;
 
-  bool IsBackingStoreOpenForTesting(const GURL& origin_url) const;
+  // Called by IndexedDBContext after all connections are closed, to
+  // ensure the backing store closed immediately.
+  void ForceClose(const GURL& origin_url);
 
   // Called by the IndexedDBContext destructor so the factory can do cleanup.
   void ContextDestroyed();
 
  protected:
-  friend class base::RefCounted<IndexedDBFactory>;
+  friend class base::RefCountedThreadSafe<IndexedDBFactory>;
 
   virtual ~IndexedDBFactory();
 
   virtual scoped_refptr<IndexedDBBackingStore> OpenBackingStore(
       const GURL& origin_url,
       const base::FilePath& data_directory,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_reason,
       bool* disk_full);
 
@@ -76,10 +78,30 @@ class CONTENT_EXPORT IndexedDBFactory
   void CloseBackingStore(const GURL& origin_url);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest,
+                           BackingStoreReleasedOnForcedClose);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest,
+                           BackingStoreReleaseDelayedOnClose);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest, DatabaseFailedOpen);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest,
+                           DeleteDatabaseClosesBackingStore);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest,
+                           ForceCloseReleasesBackingStore);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBFactoryTest,
+                           GetDatabaseNamesClosesBackingStore);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTest,
+                           ForceCloseOpenDatabasesOnCommitFailure);
+
   // Called internally after a database is closed, with some delay. If this
   // factory has the last reference, it will be released.
   void MaybeCloseBackingStore(const GURL& origin_url);
   bool HasLastBackingStoreReference(const GURL& origin_url) const;
+
+  // Testing helpers, so unit tests don't need to grovel through internal state.
+  bool IsDatabaseOpen(const GURL& origin_url,
+                      const base::string16& name) const;
+  bool IsBackingStoreOpen(const GURL& origin_url) const;
+  bool IsBackingStorePendingClose(const GURL& origin_url) const;
 
   IndexedDBContextImpl* context_;
 

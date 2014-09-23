@@ -28,12 +28,12 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSParser.h"
-#include "core/css/CSSSelectorList.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/Node.h"
 #include "core/dom/StaticNodeList.h"
 
 namespace WebCore {
@@ -64,7 +64,7 @@ private:
 
 class ClassRootNodeList : public SimpleNodeList {
 public:
-    ClassRootNodeList(Node* rootNode, const AtomicString& className)
+    ClassRootNodeList(Node& rootNode, const AtomicString& className)
         : m_className(className)
         , m_rootNode(rootNode)
         , m_currentElement(nextInternal(ElementTraversal::firstWithin(m_rootNode))) { }
@@ -75,14 +75,14 @@ public:
     {
         Node* current = m_currentElement;
         ASSERT(current);
-        m_currentElement = nextInternal(ElementTraversal::nextSkippingChildren(m_currentElement, m_rootNode));
+        m_currentElement = nextInternal(ElementTraversal::nextSkippingChildren(*m_currentElement, &m_rootNode));
         return current;
     }
 
 private:
     Element* nextInternal(Element* element)
     {
-        for (; element; element = ElementTraversal::next(element, m_rootNode)) {
+        for (; element; element = ElementTraversal::next(*element, &m_rootNode)) {
             if (element->hasClass() && element->classNames().contains(m_className))
                 return element;
         }
@@ -90,13 +90,13 @@ private:
     }
 
     const AtomicString& m_className;
-    Node* m_rootNode;
+    Node& m_rootNode;
     Element* m_currentElement;
 };
 
 class ClassElementList : public SimpleNodeList {
 public:
-    ClassElementList(Node* rootNode, const AtomicString& className)
+    ClassElementList(Node& rootNode, const AtomicString& className)
         : m_className(className)
         , m_rootNode(rootNode)
         , m_currentElement(nextInternal(ElementTraversal::firstWithin(rootNode))) { }
@@ -107,14 +107,14 @@ public:
     {
         Node* current = m_currentElement;
         ASSERT(current);
-        m_currentElement = nextInternal(ElementTraversal::next(m_currentElement, m_rootNode));
+        m_currentElement = nextInternal(ElementTraversal::next(*m_currentElement, &m_rootNode));
         return current;
     }
 
 private:
     Element* nextInternal(Element* element)
     {
-        for (; element; element = ElementTraversal::next(element, m_rootNode)) {
+        for (; element; element = ElementTraversal::next(*element, &m_rootNode)) {
             if (element->hasClass() && element->classNames().contains(m_className))
                 return element;
         }
@@ -122,7 +122,7 @@ private:
     }
 
     const AtomicString& m_className;
-    Node* m_rootNode;
+    Node& m_rootNode;
     Element* m_currentElement;
 };
 
@@ -152,8 +152,7 @@ inline bool SelectorDataList::selectorMatches(const SelectorData& selectorData, 
     SelectorChecker::SelectorCheckingContext selectorCheckingContext(selectorData.selector, &element, SelectorChecker::VisitedMatchDisabled);
     selectorCheckingContext.behaviorAtBoundary = SelectorChecker::StaysWithinTreeScope;
     selectorCheckingContext.scope = !rootNode.isDocumentNode() && rootNode.isContainerNode() ? &toContainerNode(rootNode) : 0;
-    PseudoId ignoreDynamicPseudo = NOPSEUDO;
-    return selectorChecker.match(selectorCheckingContext, ignoreDynamicPseudo, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches;
+    return selectorChecker.match(selectorCheckingContext, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches;
 }
 
 bool SelectorDataList::matches(Element& targetElement) const
@@ -179,15 +178,9 @@ PassRefPtr<Element> SelectorDataList::queryFirst(Node& rootNode) const
     return executeQueryFirst(rootNode);
 }
 
-static inline bool isTreeScopeRoot(Node* node)
-{
-    ASSERT(node);
-    return node->isDocumentNode() || node->isShadowRoot();
-}
-
 void SelectorDataList::collectElementsByClassName(Node& rootNode, const AtomicString& className, Vector<RefPtr<Node> >& traversalRoots) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         if (element->hasClass() && element->classNames().contains(className))
             traversalRoots.append(element);
     }
@@ -195,7 +188,7 @@ void SelectorDataList::collectElementsByClassName(Node& rootNode, const AtomicSt
 
 void SelectorDataList::collectElementsByTagName(Node& rootNode, const QualifiedName& tagName, Vector<RefPtr<Node> >& traversalRoots) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         if (SelectorChecker::tagMatches(*element, tagName))
             traversalRoots.append(element);
     }
@@ -203,7 +196,7 @@ void SelectorDataList::collectElementsByTagName(Node& rootNode, const QualifiedN
 
 Element* SelectorDataList::findElementByClassName(Node& rootNode, const AtomicString& className) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         if (element->hasClass() && element->classNames().contains(className))
             return element;
     }
@@ -212,7 +205,7 @@ Element* SelectorDataList::findElementByClassName(Node& rootNode, const AtomicSt
 
 Element* SelectorDataList::findElementByTagName(Node& rootNode, const QualifiedName& tagName) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         if (SelectorChecker::tagMatches(*element, tagName))
             return element;
     }
@@ -224,12 +217,12 @@ inline bool SelectorDataList::canUseFastQuery(const Node& rootNode) const
     return m_selectors.size() == 1 && rootNode.inDocument() && !rootNode.document().inQuirksMode();
 }
 
-inline bool ancestorHasClassName(Node* rootNode, const AtomicString& className)
+inline bool ancestorHasClassName(Node& rootNode, const AtomicString& className)
 {
-    if (!rootNode->isElementNode())
+    if (!rootNode.isElementNode())
         return false;
 
-    for (Element* element = toElement(rootNode); element; element = element->parentElement()) {
+    for (Element* element = &toElement(rootNode); element; element = element->parentElement()) {
         if (element->hasClass() && element->classNames().contains(className))
             return true;
     }
@@ -244,11 +237,10 @@ inline bool ancestorHasClassName(Node* rootNode, const AtomicString& className)
 //
 // The travseralRoots may be empty, regardless of the returned bool value, if this method finds that the selectors won't
 // match any element.
-PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, bool& matchTraverseRoots) const
+PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node& rootNode, bool& matchTraverseRoots) const
 {
     // We need to return the matches in document order. To use id lookup while there is possiblity of multiple matches
     // we would need to sort the results. For now, just traverse the document in that case.
-    ASSERT(rootNode);
     ASSERT(m_selectors.size() == 1);
     ASSERT(m_selectors[0].selector);
 
@@ -256,21 +248,22 @@ PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, b
     bool startFromParent = false;
 
     for (const CSSSelector* selector = m_selectors[0].selector; selector; selector = selector->tagHistory()) {
-        if (selector->m_match == CSSSelector::Id && !rootNode->document().containsMultipleElementsWithId(selector->value())) {
-            Element* element = rootNode->treeScope().getElementById(selector->value());
-            if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
-                rootNode = element;
+        if (selector->m_match == CSSSelector::Id && !rootNode.document().containsMultipleElementsWithId(selector->value())) {
+            Element* element = rootNode.treeScope().getElementById(selector->value());
+            Node* adjustedNode = &rootNode;
+            if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(&rootNode)))
+                adjustedNode = element;
             else if (!element || isRightmostSelector)
-                rootNode = 0;
+                adjustedNode = 0;
             if (isRightmostSelector) {
                 matchTraverseRoots = true;
-                return adoptPtr(new SingleNodeList(rootNode));
+                return adoptPtr(new SingleNodeList(adjustedNode));
             }
-            if (startFromParent && rootNode)
-                rootNode = rootNode->parentNode();
+            if (startFromParent && adjustedNode)
+                adjustedNode = adjustedNode->parentNode();
 
             matchTraverseRoots = false;
-            return adoptPtr(new SingleNodeList(rootNode));
+            return adoptPtr(new SingleNodeList(adjustedNode));
         }
 
         // If we have both CSSSelector::Id and CSSSelector::Class at the same time, we should use Id
@@ -283,7 +276,7 @@ PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, b
             matchTraverseRoots = false;
             // Since there exists some ancestor element which has the class name, we need to see all children of rootNode.
             if (ancestorHasClassName(rootNode, selector->value()))
-                return adoptPtr(new SingleNodeList(rootNode));
+                return adoptPtr(new SingleNodeList(&rootNode));
 
             return adoptPtr(new ClassRootNodeList(rootNode, selector->value()));
         }
@@ -298,12 +291,12 @@ PassOwnPtr<SimpleNodeList> SelectorDataList::findTraverseRoots(Node* rootNode, b
     }
 
     matchTraverseRoots = false;
-    return adoptPtr(new SingleNodeList(rootNode));
+    return adoptPtr(new SingleNodeList(&rootNode));
 }
 
 void SelectorDataList::executeSlowQueryAll(Node& rootNode, Vector<RefPtr<Node> >& matchedElements) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         for (unsigned i = 0; i < m_selectors.size(); ++i) {
             if (selectorMatches(m_selectors[i], *element, rootNode)) {
                 matchedElements.append(element);
@@ -347,7 +340,7 @@ void SelectorDataList::executeQueryAll(Node& rootNode, Vector<RefPtr<Node> >& ma
     }
 
     bool matchTraverseRoots;
-    OwnPtr<SimpleNodeList> traverseRoots = findTraverseRoots(&rootNode, matchTraverseRoots);
+    OwnPtr<SimpleNodeList> traverseRoots = findTraverseRoots(rootNode, matchTraverseRoots);
     if (traverseRoots->isEmpty())
         return;
 
@@ -364,7 +357,8 @@ void SelectorDataList::executeQueryAll(Node& rootNode, Vector<RefPtr<Node> >& ma
 
     while (!traverseRoots->isEmpty()) {
         Node* traverseRoot = traverseRoots->next();
-        for (Element* element = ElementTraversal::firstWithin(traverseRoot); element; element = ElementTraversal::next(element, traverseRoot)) {
+        ASSERT(traverseRoot);
+        for (Element* element = ElementTraversal::firstWithin(*traverseRoot); element; element = ElementTraversal::next(*element, traverseRoot)) {
             if (selectorMatches(selector, *element, rootNode))
                 matchedElements.append(element);
         }
@@ -418,7 +412,7 @@ Node* SelectorDataList::findTraverseRoot(Node& rootNode, bool& matchTraverseRoot
 
 Element* SelectorDataList::executeSlowQueryFirst(Node& rootNode) const
 {
-    for (Element* element = ElementTraversal::firstWithin(&rootNode); element; element = ElementTraversal::next(element, &rootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
         for (unsigned i = 0; i < m_selectors.size(); ++i) {
             if (selectorMatches(m_selectors[i], *element, rootNode))
                 return element;
@@ -467,7 +461,7 @@ Element* SelectorDataList::executeQueryFirst(Node& rootNode) const
         return selectorMatches(m_selectors[0], element, rootNode) ? &element : 0;
     }
 
-    for (Element* element = ElementTraversal::firstWithin(traverseRootNode); element; element = ElementTraversal::next(element, traverseRootNode)) {
+    for (Element* element = ElementTraversal::firstWithin(*traverseRootNode); element; element = ElementTraversal::next(*element, traverseRootNode)) {
         if (selectorMatches(m_selectors[0], *element, rootNode))
             return element;
     }
@@ -495,7 +489,7 @@ PassRefPtr<Element> SelectorQuery::queryFirst(Node& rootNode) const
     return m_selectors.queryFirst(rootNode);
 }
 
-SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Document& document, ExceptionState& es)
+SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Document& document, ExceptionState& exceptionState)
 {
     HashMap<AtomicString, OwnPtr<SelectorQuery> >::iterator it = m_entries.find(selectors);
     if (it != m_entries.end())
@@ -506,17 +500,17 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Docu
     parser.parseSelector(selectors, selectorList);
 
     if (!selectorList.first()) {
-        es.throwDOMException(SyntaxError, "Failed to execute query: '" + selectors + "' is not a valid selector.");
+        exceptionState.throwDOMException(SyntaxError, "'" + selectors + "' is not a valid selector.");
         return 0;
     }
 
     // throw a NamespaceError if the selector includes any namespace prefixes.
     if (selectorList.selectorsNeedNamespaceResolution()) {
-        es.throwDOMException(NamespaceError, "Failed to execute query: '" + selectors + "' contains namespaces, which are not supported.");
+        exceptionState.throwDOMException(NamespaceError, "'" + selectors + "' contains namespaces, which are not supported.");
         return 0;
     }
 
-    const int maximumSelectorQueryCacheSize = 256;
+    const unsigned maximumSelectorQueryCacheSize = 256;
     if (m_entries.size() == maximumSelectorQueryCacheSize)
         m_entries.remove(m_entries.begin());
 

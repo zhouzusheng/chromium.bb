@@ -29,8 +29,10 @@
 #define Document_h
 
 #include "bindings/v8/ScriptValue.h"
+#include "core/animation/css/CSSPendingAnimations.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/DOMTimeStamp.h"
+#include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentLifecycle.h"
 #include "core/dom/DocumentSupplementable.h"
@@ -49,7 +51,7 @@
 #include "core/page/PageVisibilityState.h"
 #include "core/rendering/HitTestRequest.h"
 #include "platform/Timer.h"
-#include "weborigin/ReferrerPolicy.h"
+#include "platform/weborigin/ReferrerPolicy.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -63,6 +65,7 @@ class AnimationClock;
 class Attr;
 class BBPrintInfo;
 class CDATASection;
+class CSSFontSelector;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
 class CSSStyleSheetResource;
@@ -94,6 +97,8 @@ class Element;
 class Event;
 class EventListener;
 class ExceptionState;
+class MainThreadTaskRunner;
+class FastTextAutosizer;
 class FloatQuad;
 class FloatRect;
 class FormController;
@@ -153,7 +158,6 @@ class StyleSheetContents;
 class StyleSheetList;
 class Text;
 class TextAutosizer;
-class TextResourceDecoder;
 class Touch;
 class TouchList;
 class TransformSource;
@@ -221,6 +225,8 @@ public:
 
     MediaQueryMatcher& mediaQueryMatcher();
 
+    void mediaQueryAffectingValueChanged();
+
     using ContainerNode::ref;
     using ContainerNode::deref;
     using SecurityContext::securityOrigin;
@@ -266,6 +272,9 @@ public:
     void setReferrerPolicy(ReferrerPolicy referrerPolicy) { m_referrerPolicy = referrerPolicy; }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
 
+    String outgoingReferrer();
+    String outgoingOrigin() const;
+
     void setDoctype(PassRefPtr<DocumentType>);
     DocumentType* doctype() const { return m_docType.get(); }
 
@@ -286,14 +295,13 @@ public:
     PassRefPtr<Comment> createComment(const String& data);
     PassRefPtr<CDATASection> createCDATASection(const String& data, ExceptionState&);
     PassRefPtr<ProcessingInstruction> createProcessingInstruction(const String& target, const String& data, ExceptionState&);
-    PassRefPtr<Attr> createAttribute(const String& name, ExceptionState&);
-    PassRefPtr<Attr> createAttributeNS(const String& namespaceURI, const String& qualifiedName, ExceptionState&, bool shouldIgnoreNamespaceChecks = false);
+    PassRefPtr<Attr> createAttribute(const AtomicString& name, ExceptionState&);
+    PassRefPtr<Attr> createAttributeNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&, bool shouldIgnoreNamespaceChecks = false);
     PassRefPtr<Node> importNode(Node* importedNode, ExceptionState& ec) { return importNode(importedNode, true, ec); }
     PassRefPtr<Node> importNode(Node* importedNode, bool deep, ExceptionState&);
-    PassRefPtr<Element> createElementNS(const String& namespaceURI, const String& qualifiedName, ExceptionState&);
+    PassRefPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&);
     PassRefPtr<Element> createElement(const QualifiedName&, bool createdByParser);
 
-    bool cssCompositingEnabled() const;
     PassRefPtr<DOMNamedFlowCollection> webkitGetNamedFlows();
 
     NamedFlowCollection* namedFlows();
@@ -321,11 +329,11 @@ public:
 
     String defaultCharset() const;
 
-    String inputEncoding() const { return Document::encodingName(); }
-    String charset() const { return Document::encodingName(); }
-    String characterSet() const { return Document::encodingName(); }
+    AtomicString inputEncoding() const { return Document::encodingName(); }
+    AtomicString charset() const { return Document::encodingName(); }
+    AtomicString characterSet() const { return Document::encodingName(); }
 
-    String encodingName() const;
+    AtomicString encodingName() const;
 
     void setCharset(const String&);
 
@@ -333,8 +341,8 @@ public:
 
     String suggestedMIMEType() const;
 
-    String contentLanguage() const { return m_contentLanguage; }
-    void setContentLanguage(const String&);
+    const AtomicString& contentLanguage() const { return m_contentLanguage; }
+    void setContentLanguage(const AtomicString&);
 
     String xmlEncoding() const { return m_xmlEncoding; }
     String xmlVersion() const { return m_xmlVersion; }
@@ -352,8 +360,8 @@ public:
 
     virtual KURL baseURI() const;
 
-    String webkitVisibilityState() const;
-    bool webkitHidden() const;
+    String visibilityState() const;
+    bool hidden() const;
     void dispatchVisibilityStateChangeEvent();
 
     DOMSecurityPolicy* securityPolicy();
@@ -362,7 +370,6 @@ public:
 
     PassRefPtr<HTMLCollection> images();
     PassRefPtr<HTMLCollection> embeds();
-    PassRefPtr<HTMLCollection> plugins(); // an alias for embeds() required for the JS DOM bindings.
     PassRefPtr<HTMLCollection> applets();
     PassRefPtr<HTMLCollection> links();
     PassRefPtr<HTMLCollection> forms();
@@ -388,19 +395,13 @@ public:
     bool isSrcdocDocument() const { return m_isSrcdocDocument; }
     bool isMobileDocument() const { return m_isMobileDocument; }
 
-    StyleResolver* styleResolverIfExists() const { return m_styleResolver.get(); }
+    StyleResolver* styleResolver() const;
+    StyleResolver& ensureStyleResolver() const;
 
     bool isViewSource() const { return m_isViewSource; }
     void setIsViewSource(bool);
 
     bool sawElementsInKnownNamespaces() const { return m_sawElementsInKnownNamespaces; }
-
-    StyleResolver* styleResolver()
-    {
-        if (!m_styleResolver)
-            createStyleResolver();
-        return m_styleResolver.get();
-    }
 
     void notifyRemovePendingSheetIfNeeded();
 
@@ -425,8 +426,6 @@ public:
     void modifiedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred, StyleResolverUpdateMode = FullStyleUpdate);
     void changedSelectorWatch() { styleResolverChanged(RecalcStyleDeferred); }
 
-    void didAccessStyleResolver() { ++m_styleResolverAccessCount; }
-
     void evaluateMediaQueryList();
 
     // Never returns 0.
@@ -446,12 +445,10 @@ public:
     PassRefPtr<NodeIterator> createNodeIterator(Node* root, ExceptionState&);
     PassRefPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, ExceptionState&);
     PassRefPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, ExceptionState&);
-    PassRefPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, bool expandEntityReferences, ExceptionState&);
 
     PassRefPtr<TreeWalker> createTreeWalker(Node* root, ExceptionState&);
     PassRefPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, ExceptionState&);
     PassRefPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, ExceptionState&);
-    PassRefPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, bool expandEntityReferences, ExceptionState&);
 
     // Special support for editing
     PassRefPtr<CSSStyleDeclaration> createCSSStyleDeclaration();
@@ -463,7 +460,11 @@ public:
     void updateStyleIfNeeded();
     void updateStyleForNodeIfNeeded(Node*);
     void updateLayout();
-    void updateLayoutIgnorePendingStylesheets();
+    enum RunPostLayoutTasks {
+        RunPostLayoutTasksAsyhnchronously,
+        RunPostLayoutTasksSynchronously,
+    };
+    void updateLayoutIgnorePendingStylesheets(RunPostLayoutTasks = RunPostLayoutTasksAsyhnchronously);
     void partialUpdateLayoutIgnorePendingStylesheets(Node*);
     PassRefPtr<RenderStyle> styleForElementIgnoringPendingStylesheets(Element*);
     PassRefPtr<RenderStyle> styleForPage(int pageIndex);
@@ -650,7 +651,7 @@ public:
     void nodeChildrenWillBeRemoved(ContainerNode*);
     // nodeWillBeRemoved is only safe when removing one node at a time.
     void nodeWillBeRemoved(Node&);
-    bool canReplaceChild(Node& newChild, Node& oldChild);
+    bool canReplaceChild(const Node& newChild, const Node& oldChild) const;
 
     void didInsertText(Node*, unsigned offset, unsigned length);
     void didRemoveText(Node*, unsigned offset, unsigned length);
@@ -706,7 +707,7 @@ public:
      * @param equiv The http header name (value of the meta tag's "equiv" attribute)
      * @param content The header value (value of the meta tag's "content" attribute)
      */
-    void processHttpEquiv(const String& equiv, const String& content);
+    void processHttpEquiv(const AtomicString& equiv, const AtomicString& content);
     void processViewport(const String& features, ViewportDescription::Type origin);
     void updateViewportDescription();
     void processReferrerPolicy(const String& policy);
@@ -728,7 +729,7 @@ public:
     String cookie(ExceptionState&) const;
     void setCookie(const String&, ExceptionState&);
 
-    String referrer() const;
+    const AtomicString& referrer() const;
 
     String domain() const;
     void setDomain(const String& newDomain, ExceptionState&);
@@ -758,7 +759,7 @@ public:
     // The following breaks a qualified name into a prefix and a local name.
     // It also does a validity check, and returns false if the qualified name
     // is invalid.  It also sets ExceptionCode when name is invalid.
-    static bool parseQualifiedName(const String& qualifiedName, String& prefix, String& localName, ExceptionState&);
+    static bool parseQualifiedName(const AtomicString& qualifiedName, AtomicString& prefix, AtomicString& localName, ExceptionState&);
 
     // Checks to make sure prefix and namespace do not conflict (per DOM Core 3)
     static bool hasValidNamespaceForElements(const QualifiedName&);
@@ -818,8 +819,7 @@ public:
     bool hasNodesWithPlaceholderStyle() const { return m_hasNodesWithPlaceholderStyle; }
     void setHasNodesWithPlaceholderStyle() { m_hasNodesWithPlaceholderStyle = true; }
 
-    const Vector<IconURL>& shortcutIconURLs();
-    const Vector<IconURL>& iconURLs(int iconTypesMask);
+    Vector<IconURL> iconURLs(int iconTypesMask);
 
     void setUseSecureKeyboardEntryWhenActive(bool);
     bool useSecureKeyboardEntryWhenActive() const;
@@ -834,18 +834,22 @@ public:
     bool isDNSPrefetchEnabled() const { return m_isDNSPrefetchEnabled; }
     void parseDNSPrefetchControlHeader(const String&);
 
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>); // Executes the task on context's thread asynchronously.
+    // FIXME(crbug.com/305497): This should be removed once DOMWindow is an ExecutionContext.
+    virtual void postTask(PassOwnPtr<ExecutionContextTask>) OVERRIDE; // Executes the task on context's thread asynchronously.
 
-    void suspendScriptedAnimationControllerCallbacks();
-    void resumeScriptedAnimationControllerCallbacks();
+    virtual void tasksWereSuspended() OVERRIDE;
+    virtual void tasksWereResumed() OVERRIDE;
+    virtual void suspendScheduledTasks() OVERRIDE;
+    virtual void resumeScheduledTasks() OVERRIDE;
+    virtual bool tasksNeedSuspension() OVERRIDE;
 
     void finishedParsing();
 
-    void setDecoder(PassRefPtr<TextResourceDecoder>);
-    TextResourceDecoder* decoder() const { return m_decoder.get(); }
+    void setEncodingData(const DocumentEncodingData& newData);
+    const WTF::TextEncoding& encoding() const { return m_encodingData.encoding; }
 
-    void setEncoding(const WTF::TextEncoding&);
-    const WTF::TextEncoding& encoding() const { return m_encoding; }
+    bool encodingWasDetectedHeuristically() const { return m_encodingData.wasDetectedHeuristically; }
+    bool sawDecodingError() const { return m_encodingData.sawDecodingError; }
 
     void setAnnotatedRegionsDirty(bool f) { m_annotatedRegionsDirty = f; }
     bool annotatedRegionsDirty() const { return m_annotatedRegionsDirty; }
@@ -892,8 +896,9 @@ public:
     bool containsValidityStyleRules() const { return m_containsValidityStyleRules; }
     void setContainsValidityStyleRules() { m_containsValidityStyleRules = true; }
 
+    void enqueueResizeEvent();
     void enqueueScrollEventForNode(Node*);
-    void scheduleAnimationFrameEvent(PassRefPtr<Event>);
+    void enqueueAnimationFrameEvent(PassRefPtr<Event>);
 
     const QualifiedName& idAttributeName() const { return m_idAttributeName; }
 
@@ -913,7 +918,7 @@ public:
 
     const DocumentTiming* timing() const { return &m_documentTiming; }
 
-    int requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
+    int requestAnimationFrame(PassOwnPtr<RequestAnimationFrameCallback>);
     void cancelAnimationFrame(int id);
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
@@ -936,15 +941,15 @@ public:
 
     bool isInDocumentWrite() { return m_writeRecursionDepth > 0; }
 
-    void suspendScheduledTasks();
-    void resumeScheduledTasks();
-
     IntSize initialViewportSize() const;
 
-    TextAutosizer* textAutosizer() { return m_textAutosizer.get(); }
+    // There are currently two parallel autosizing implementations: TextAutosizer and FastTextAutosizer.
+    // See http://tinyurl.com/chromium-fast-autosizer for more details.
+    TextAutosizer* textAutosizer();
+    FastTextAutosizer* fastTextAutosizer();
 
     PassRefPtr<Element> createElement(const AtomicString& localName, const AtomicString& typeExtension, ExceptionState&);
-    PassRefPtr<Element> createElementNS(const AtomicString& namespaceURI, const String& qualifiedName, const AtomicString& typeExtension, ExceptionState&);
+    PassRefPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& typeExtension, ExceptionState&);
     ScriptValue registerElement(WebCore::ScriptState*, const AtomicString& name, ExceptionState&);
     ScriptValue registerElement(WebCore::ScriptState*, const AtomicString& name, const Dictionary& options, ExceptionState&, CustomElement::NameSet validNames = CustomElement::StandardNames);
     CustomElementRegistrationContext* registrationContext() { return m_registrationContext.get(); }
@@ -954,8 +959,8 @@ public:
     bool haveImportsLoaded() const;
     void didLoadAllImports();
 
-    void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>&, RenderObject*);
-    void adjustFloatRectForScrollAndAbsoluteZoom(FloatRect&, RenderObject*);
+    void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>&, RenderObject&);
+    void adjustFloatRectForScrollAndAbsoluteZoom(FloatRect&, RenderObject&);
 
     bool hasActiveParser();
     unsigned activeParserCount() { return m_activeParserCount; }
@@ -980,6 +985,7 @@ public:
     AnimationClock& animationClock() { return *m_animationClock; }
     DocumentTimeline* timeline() const { return m_timeline.get(); }
     DocumentTimeline* transitionTimeline() const { return m_transitionTimeline.get(); }
+    CSSPendingAnimations& cssPendingAnimations() { return m_cssPendingAnimations; }
 
     void addToTopLayer(Element*, const Element* before = 0);
     void removeFromTopLayer(Element*);
@@ -1062,8 +1068,6 @@ private:
     void updateFocusAppearanceTimerFired(Timer<Document>*);
     void updateBaseURL();
 
-    void createStyleResolver();
-
     void executeScriptsWaitingForResourcesIfNeeded();
 
     void seamlessParentUpdatedStylesheets();
@@ -1074,11 +1078,7 @@ private:
 
     void loadEventDelayTimerFired(Timer<Document>*);
 
-    void pendingTasksTimerFired(Timer<Document>*);
-
-    static void didReceiveTask(void*);
-
-    PageVisibilityState visibilityState() const;
+    PageVisibilityState pageVisibilityState() const;
 
     PassRefPtr<HTMLCollection> ensureCachedCollection(CollectionType);
 
@@ -1093,26 +1093,16 @@ private:
     void didAssociateFormControlsTimerFired(Timer<Document>*);
     void styleResolverThrowawayTimerFired(Timer<Document>*);
 
-    void processHttpEquivDefaultStyle(const String& content);
-    void processHttpEquivRefresh(const String& content);
-    void processHttpEquivSetCookie(const String& content);
-    void processHttpEquivXFrameOptions(const String& content);
-    void processHttpEquivContentSecurityPolicy(const String& equiv, const String& content);
+    void processHttpEquivDefaultStyle(const AtomicString& content);
+    void processHttpEquivRefresh(const AtomicString& content);
+    void processHttpEquivSetCookie(const AtomicString& content);
+    void processHttpEquivXFrameOptions(const AtomicString& content);
+    void processHttpEquivContentSecurityPolicy(const AtomicString& equiv, const AtomicString& content);
 
     DocumentLifecycle m_lifecyle;
 
-    // FIXME: This should probably be handled inside the style resolver itself.
-    Timer<Document> m_styleResolverThrowawayTimer;
-    unsigned m_styleResolverAccessCount;
-    unsigned m_lastStyleResolverAccessCount;
-
-    OwnPtr<StyleResolver> m_styleResolver;
-    bool m_didCalculateStyleResolver;
     bool m_hasNodesWithPlaceholderStyle;
     bool m_needsNotifyRemoveAllPendingStylesheet;
-    // But sometimes you need to ignore pending stylesheet count to
-    // force an immediate layout when requested by JS.
-    bool m_ignorePendingStylesheets;
     bool m_evaluateMediaQueriesOnStyleRecalc;
 
     // If we do ignore the pending stylesheet count, then we need to add a boolean
@@ -1230,10 +1220,9 @@ private:
     unsigned m_xmlStandalone : 2;
     unsigned m_hasXMLDeclaration : 1;
 
-    String m_contentLanguage;
+    AtomicString m_contentLanguage;
 
-    RefPtr<TextResourceDecoder> m_decoder;
-    WTF::TextEncoding m_encoding;
+    DocumentEncodingData m_encodingData;
 
     InheritedBool m_designMode;
 
@@ -1247,8 +1236,6 @@ private:
     bool m_annotatedRegionsDirty;
 
     HashMap<String, RefPtr<HTMLCanvasElement> > m_cssCanvasElements;
-
-    Vector<IconURL> m_iconURLs;
 
     OwnPtr<SelectorQueryCache> m_selectorQueryCache;
 
@@ -1295,15 +1282,11 @@ private:
     double m_lastHandledUserGestureTimestamp;
 
     RefPtr<ScriptedAnimationController> m_scriptedAnimationController;
-
-    Timer<Document> m_pendingTasksTimer;
-    Vector<OwnPtr<ExecutionContextTask> > m_pendingTasks;
-
+    OwnPtr<MainThreadTaskRunner> m_taskRunner;
     OwnPtr<TextAutosizer> m_textAutosizer;
+    OwnPtr<FastTextAutosizer> m_fastTextAutosizer;
 
     RefPtr<CustomElementRegistrationContext> m_registrationContext;
-
-    bool m_scheduledTasksAreSuspended;
 
     RefPtr<NamedFlowCollection> m_namedFlows;
 
@@ -1324,6 +1307,7 @@ private:
     OwnPtr<AnimationClock> m_animationClock;
     RefPtr<DocumentTimeline> m_timeline;
     RefPtr<DocumentTimeline> m_transitionTimeline;
+    CSSPendingAnimations m_cssPendingAnimations;
 
     RefPtr<Document> m_templateDocument;
     Document* m_templateDocumentHost; // Manually managed weakref (backpointer from m_templateDocument).
@@ -1370,6 +1354,9 @@ inline const Document* toDocument(const ExecutionContext* executionContext)
 }
 
 DEFINE_NODE_TYPE_CASTS(Document, isDocumentNode());
+
+#define DEFINE_DOCUMENT_TYPE_CASTS(thisType) \
+    DEFINE_TYPE_CASTS(thisType, Document, document, document->is##thisType(), document.is##thisType())
 
 // All these varations are needed to avoid ambiguous overloads with the Node and TreeScope versions.
 inline bool operator==(const Document& a, const Document& b) { return &a == &b; }

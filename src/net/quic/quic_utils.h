@@ -75,7 +75,18 @@ class NET_EXPORT_PRIVATE QuicUtils {
   static char* AsChars(unsigned char* data) {
     return reinterpret_cast<char*>(data);
   }
+
+  static QuicPriority LowestPriority();
+
+  static QuicPriority HighestPriority();
 };
+
+// Utility function that returns an IOVector object wrapped around |str|.
+inline IOVector MakeIOVector(base::StringPiece str) {
+  IOVector iov;
+  iov.Append(const_cast<char*>(str.data()), str.size());
+  return iov;
+}
 
 }  // namespace net
 

@@ -115,7 +115,7 @@ public:
     void setInnerHTML(const String&, ExceptionState&);
 
     PassRefPtr<Node> cloneNode(bool, ExceptionState&);
-    PassRefPtr<Node> cloneNode(ExceptionState& es) { return cloneNode(true, es); }
+    PassRefPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
 
     StyleSheetList* styleSheets();
 
@@ -131,7 +131,7 @@ private:
 
     void addChildShadowRoot();
     void removeChildShadowRoot();
-    void invalidateChildInsertionPoints();
+    void invalidateDescendantInsertionPoints();
 
     // ShadowRoots should never be cloned.
     virtual PassRefPtr<Node> cloneNode(bool) OVERRIDE { return 0; }
@@ -148,55 +148,16 @@ private:
     unsigned m_resetStyleInheritance : 1;
     unsigned m_type : 1;
     unsigned m_registeredWithParentShadowRoot : 1;
-    unsigned m_childInsertionPointsIsValid : 1;
+    unsigned m_descendantInsertionPointsIsValid : 1;
 };
 
 inline Element* ShadowRoot::activeElement() const
 {
-    if (Element* element = treeScope().adjustedFocusedElement())
-        return element;
-    return 0;
+    return adjustedFocusedElement();
 }
 
-inline const ShadowRoot* toShadowRoot(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isShadowRoot());
-    return static_cast<const ShadowRoot*>(node);
-}
-
-inline ShadowRoot* toShadowRoot(Node* node)
-{
-    return const_cast<ShadowRoot*>(toShadowRoot(static_cast<const Node*>(node)));
-}
-
-inline ShadowRoot& toShadowRoot(Node& node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(node.isShadowRoot());
-    return static_cast<ShadowRoot&>(node);
-}
-
-inline const ShadowRoot& toShadowRoot(const Node& node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(node.isShadowRoot());
-    return static_cast<const ShadowRoot&>(node);
-}
-
-inline const ShadowRoot* toShadowRoot(const TreeScope* treeScope)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!treeScope || (treeScope->rootNode() && treeScope->rootNode()->isShadowRoot()));
-    return static_cast<const ShadowRoot*>(treeScope);
-}
-
-inline ShadowRoot* toShadowRoot(TreeScope* treeScope)
-{
-    return const_cast<ShadowRoot*>(toShadowRoot(static_cast<const TreeScope*>(treeScope)));
-}
-
-inline ShadowRoot& toShadowRoot(TreeScope& treeScope)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(treeScope.rootNode() && treeScope.rootNode()->isShadowRoot());
-    return static_cast<ShadowRoot&>(treeScope);
-}
+DEFINE_NODE_TYPE_CASTS(ShadowRoot, isShadowRoot());
+DEFINE_TYPE_CASTS(ShadowRoot, TreeScope, treeScope, treeScope->rootNode() && treeScope->rootNode()->isShadowRoot(), treeScope.rootNode() && treeScope.rootNode()->isShadowRoot());
 
 } // namespace
 

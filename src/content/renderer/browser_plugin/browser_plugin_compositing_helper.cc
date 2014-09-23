@@ -10,15 +10,19 @@
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/context_provider.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/resources/single_release_callback.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/render_thread_impl.h"
+#include "skia/ext/image_operations.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/skia_util.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 namespace content {
@@ -32,7 +36,7 @@ BrowserPluginCompositingHelper::SwapBuffersInfo::SwapBuffersInfo()
 }
 
 BrowserPluginCompositingHelper::BrowserPluginCompositingHelper(
-    WebKit::WebPluginContainer* container,
+    blink::WebPluginContainer* container,
     BrowserPluginManager* manager,
     int instance_id,
     int host_routing_id)
@@ -44,11 +48,27 @@ BrowserPluginCompositingHelper::BrowserPluginCompositingHelper(
       last_mailbox_valid_(false),
       ack_pending_(true),
       software_ack_pending_(false),
+      opaque_(true),
       container_(container),
       browser_plugin_manager_(manager) {
 }
 
 BrowserPluginCompositingHelper::~BrowserPluginCompositingHelper() {
+}
+
+void BrowserPluginCompositingHelper::CopyFromCompositingSurface(
+    int request_id,
+    gfx::Rect source_rect,
+    gfx::Size dest_size) {
+  CHECK(background_layer_);
+  scoped_ptr<cc::CopyOutputRequest> request =
+      cc::CopyOutputRequest::CreateBitmapRequest(base::Bind(
+          &BrowserPluginCompositingHelper::CopyFromCompositingSurfaceHasResult,
+          this,
+          request_id,
+          dest_size));
+  request->set_area(source_rect);
+  background_layer_->RequestCopyOfOutput(request.Pass());
 }
 
 void BrowserPluginCompositingHelper::DidCommitCompositorFrame() {
@@ -100,7 +120,7 @@ void BrowserPluginCompositingHelper::EnableCompositing(bool enable) {
   container_->setWebLayer(enable ? web_layer_.get() : NULL);
 }
 
-void BrowserPluginCompositingHelper::CheckSizeAndAdjustLayerBounds(
+void BrowserPluginCompositingHelper::CheckSizeAndAdjustLayerProperties(
     const gfx::Size& new_size,
     float device_scale_factor,
     cc::Layer* layer) {
@@ -113,6 +133,10 @@ void BrowserPluginCompositingHelper::CheckSizeAndAdjustLayerBounds(
         gfx::ScaleSize(buffer_size_, 1.0f / device_scale_factor));
     layer->SetBounds(device_scale_adjusted_size);
   }
+
+  // Manually manage background layer for transparent webview.
+  if (!opaque_)
+    background_layer_->SetIsDrawable(false);
 }
 
 void BrowserPluginCompositingHelper::MailboxReleased(
@@ -186,12 +210,13 @@ void BrowserPluginCompositingHelper::OnContainerDestroy() {
     container_->setWebLayer(NULL);
   container_ = NULL;
 
-  if (resource_collection_) {
-    resource_collection_->LoseAllResources();
-    resource_collection_ = NULL;
-  }
+  if (resource_collection_)
+    resource_collection_->SetClient(NULL);
+
   ack_pending_ = false;
   software_ack_pending_ = false;
+  resource_collection_ = NULL;
+  frame_provider_ = NULL;
   texture_layer_ = NULL;
   delegated_layer_ = NULL;
   background_layer_ = NULL;
@@ -226,7 +251,7 @@ void BrowserPluginCompositingHelper::OnBuffersSwappedPrivate(
   if (!texture_layer_.get()) {
     texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
     texture_layer_->SetIsDrawable(true);
-    texture_layer_->SetContentsOpaque(true);
+    SetContentsOpaque(opaque_);
 
     background_layer_->AddChild(texture_layer_);
   }
@@ -241,9 +266,9 @@ void BrowserPluginCompositingHelper::OnBuffersSwappedPrivate(
   // when a new buffer arrives.
   // Visually, this will either display a smaller part of the buffer
   // or introduce a gutter around it.
-  CheckSizeAndAdjustLayerBounds(mailbox.size,
-                                device_scale_factor,
-                                texture_layer_.get());
+  CheckSizeAndAdjustLayerProperties(mailbox.size,
+                                    device_scale_factor,
+                                    texture_layer_.get());
 
   bool is_software_frame = mailbox.type == SOFTWARE_COMPOSITOR_FRAME;
   bool current_mailbox_valid = is_software_frame ?
@@ -347,7 +372,8 @@ void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
   DCHECK(!texture_layer_.get());
 
   cc::DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
-  if (!frame_data)
+  // Do nothing if we are getting destroyed or have no frame data.
+  if (!frame_data || !background_layer_)
     return;
 
   DCHECK(!frame_data->render_pass_list.empty());
@@ -368,7 +394,10 @@ void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
     if (resource_collection_) {
-      resource_collection_->LoseAllResources();
+      resource_collection_->SetClient(NULL);
+
+      if (resource_collection_->LoseAllResources())
+        SendReturnedDelegatedResources();
       resource_collection_ = NULL;
     }
     last_output_surface_id_ = output_surface_id;
@@ -377,8 +406,7 @@ void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
   }
   if (!resource_collection_) {
     resource_collection_ = new cc::DelegatedFrameResourceCollection;
-    // TODO(danakj): Could return resources sooner if we set a client here and
-    // listened for UnusedResourcesAreAvailable().
+    resource_collection_->SetClient(this);
   }
   if (!frame_provider_.get() || frame_provider_->frame_size() != frame_size) {
     frame_provider_ = new cc::DelegatedFrameProvider(
@@ -386,15 +414,15 @@ void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
     if (delegated_layer_.get())
       delegated_layer_->RemoveFromParent();
     delegated_layer_ =
-        cc::DelegatedRendererLayer::Create(NULL, frame_provider_.get());
+        cc::DelegatedRendererLayer::Create(frame_provider_.get());
     delegated_layer_->SetIsDrawable(true);
-    delegated_layer_->SetContentsOpaque(true);
+    SetContentsOpaque(opaque_);
     background_layer_->AddChild(delegated_layer_);
   } else {
     frame_provider_->SetFrameData(frame->delegated_frame_data.Pass());
   }
 
-  CheckSizeAndAdjustLayerBounds(
+  CheckSizeAndAdjustLayerProperties(
       frame_data->render_pass_list.back()->output_rect.size(),
       frame->metadata.device_scale_factor,
       delegated_layer_.get());
@@ -407,6 +435,59 @@ void BrowserPluginCompositingHelper::UpdateVisibility(bool visible) {
     texture_layer_->SetIsDrawable(visible);
   if (delegated_layer_.get())
     delegated_layer_->SetIsDrawable(visible);
+}
+
+void BrowserPluginCompositingHelper::UnusedResourcesAreAvailable() {
+  if (ack_pending_)
+    return;
+
+  SendReturnedDelegatedResources();
+}
+
+void BrowserPluginCompositingHelper::SendReturnedDelegatedResources() {
+  cc::CompositorFrameAck ack;
+  if (resource_collection_)
+    resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
+  DCHECK(!ack.resources.empty());
+
+  browser_plugin_manager_->Send(
+      new BrowserPluginHostMsg_ReclaimCompositorResources(
+          host_routing_id_,
+          instance_id_,
+          last_route_id_,
+          last_output_surface_id_,
+          last_host_id_,
+          ack));
+}
+
+void BrowserPluginCompositingHelper::SetContentsOpaque(bool opaque) {
+  opaque_ = opaque;
+
+  if (texture_layer_.get())
+    texture_layer_->SetContentsOpaque(opaque_);
+  if (delegated_layer_.get())
+    delegated_layer_->SetContentsOpaque(opaque_);
+}
+
+void BrowserPluginCompositingHelper::CopyFromCompositingSurfaceHasResult(
+    int request_id,
+    gfx::Size dest_size,
+    scoped_ptr<cc::CopyOutputResult> result) {
+  scoped_ptr<SkBitmap> bitmap;
+  if (result && result->HasBitmap() && !result->size().IsEmpty())
+    bitmap = result->TakeBitmap();
+
+  SkBitmap resized_bitmap;
+  if (bitmap) {
+    resized_bitmap = skia::ImageOperations::Resize(*bitmap,
+                       skia::ImageOperations::RESIZE_BEST,
+                       dest_size.width(),
+                       dest_size.height());
+  }
+  browser_plugin_manager_->Send(
+      new BrowserPluginHostMsg_CopyFromCompositingSurfaceAck(
+          host_routing_id_, instance_id_, request_id,
+          resized_bitmap));
 }
 
 }  // namespace content

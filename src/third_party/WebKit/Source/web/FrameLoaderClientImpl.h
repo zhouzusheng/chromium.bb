@@ -33,11 +33,11 @@
 #define FrameLoaderClientImpl_h
 
 #include "core/loader/FrameLoaderClient.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebFrameImpl;
 class WebPluginContainerImpl;
@@ -81,12 +81,12 @@ public:
     virtual void dispatchDidLoadResourceFromMemoryCache(const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
     virtual void dispatchDidHandleOnloadEvents();
     virtual void dispatchDidReceiveServerRedirectForProvisionalLoad();
-    virtual void dispatchDidNavigateWithinPage(WebCore::NavigationHistoryPolicy);
+    virtual void dispatchDidNavigateWithinPage(WebCore::NavigationHistoryPolicy, WebCore::HistoryItem*);
     virtual void dispatchWillClose();
     virtual void dispatchDidStartProvisionalLoad();
     virtual void dispatchDidReceiveTitle(const String&);
     virtual void dispatchDidChangeIcons(WebCore::IconType);
-    virtual void dispatchDidCommitLoad(WebCore::NavigationHistoryPolicy);
+    virtual void dispatchDidCommitLoad(WebCore::Frame*, WebCore::HistoryItem*, WebCore::NavigationHistoryPolicy);
     virtual void dispatchDidFailProvisionalLoad(const WebCore::ResourceError&);
     virtual void dispatchDidFailLoad(const WebCore::ResourceError&);
     virtual void dispatchDidFinishDocumentLoad();
@@ -172,6 +172,6 @@ inline FrameLoaderClientImpl* toFrameLoaderClientImpl(WebCore::FrameLoaderClient
     return static_cast<FrameLoaderClientImpl*>(client);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

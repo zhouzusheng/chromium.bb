@@ -40,10 +40,9 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/frame/Frame.h"
 #include "core/page/FrameTree.h"
-#include "core/platform/Scrollbar.h"
-#include "core/rendering/HitTestLocation.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderTextFragment.h"
+#include "platform/scroll/Scrollbar.h"
 
 namespace WebCore {
 
@@ -249,10 +248,10 @@ String HitTestResult::title(TextDirection& dir) const
     return String();
 }
 
-String HitTestResult::altDisplayString() const
+const AtomicString& HitTestResult::altDisplayString() const
 {
     if (!m_innerNonSharedNode)
-        return String();
+        return nullAtom;
 
     if (m_innerNonSharedNode->hasTagName(imgTag)) {
         HTMLImageElement* image = toHTMLImageElement(m_innerNonSharedNode);
@@ -264,7 +263,7 @@ String HitTestResult::altDisplayString() const
         return input->alt();
     }
 
-    return String();
+    return nullAtom;
 }
 
 Image* HitTestResult::image() const
@@ -454,6 +453,10 @@ void HitTestResult::append(const HitTestResult& other)
 {
     ASSERT(isRectBasedTest() && other.isRectBasedTest());
 
+    if (!m_scrollbar && other.scrollbar()) {
+        setScrollbar(other.scrollbar());
+    }
+
     if (!m_innerNode && other.innerNode()) {
         m_innerNode = other.innerNode();
         m_innerPossiblyPseudoNode = other.innerPossiblyPseudoNode();
@@ -461,7 +464,6 @@ void HitTestResult::append(const HitTestResult& other)
         m_localPoint = other.localPoint();
         m_pointInInnerNodeFrame = other.m_pointInInnerNodeFrame;
         m_innerURLElement = other.URLElement();
-        m_scrollbar = other.scrollbar();
         m_isOverWidget = other.isOverWidget();
     }
 

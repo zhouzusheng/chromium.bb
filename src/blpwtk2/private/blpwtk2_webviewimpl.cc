@@ -202,13 +202,13 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
         host->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
         return;
     }
-    WebKit::WebFindOptions options;
+    blink::WebFindOptions options;
     options.findNext = request.findNext;
     options.forward = request.forward;
     options.matchCase = request.matchCase;
-    WebKit::WebString textStr =
-        WebKit::WebString::fromUTF8(request.text.data(),
-                                    request.text.length());
+    blink::WebString textStr =
+        blink::WebString::fromUTF8(request.text.data(),
+                                   request.text.length());
     host->Find(request.reqId, textStr, options);
 }
 
@@ -538,8 +538,8 @@ void WebViewImpl::setZoomPercent(int value)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->SetZoomLevel(
-        WebKit::WebView::zoomFactorToZoomLevel((double)value/100));
+    d_webContents->SetZoomLevel(
+        blink::WebView::zoomFactorToZoomLevel((double)value/100));
 }
 
 void WebViewImpl::replaceMisspelledRange(const StringRef& text)
@@ -768,7 +768,8 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
     delegateParams.setTargetUrl(target_url.spec());
 
     for (size_t i = 0; i < params.additional_features.size(); ++i) {
-        delegateParams.addAdditionalFeature(params.additional_features[i]);
+        delegateParams.addAdditionalFeature(
+            UTF16ToUTF8(params.additional_features[i]));
     }
 
     d_delegate->didCreateNewView(this,
@@ -930,7 +931,7 @@ bool WebViewImpl::ShouldSetLogicalFocusOnMouseDown()
 
 bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
                               const string16& tooltip_text,
-                              WebKit::WebTextDirection text_direction_hint)
+                              blink::WebTextDirection text_direction_hint)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
@@ -939,9 +940,9 @@ bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
     if (d_delegate) {
         TextDirection::Value direction;
         switch (text_direction_hint) {
-            case WebKit::WebTextDirectionLeftToRight:
+            case blink::WebTextDirectionLeftToRight:
                 direction = TextDirection::LEFT_TO_RIGHT; break;
-            case WebKit::WebTextDirectionRightToLeft:
+            case blink::WebTextDirectionRightToLeft:
                 direction = TextDirection::RIGHT_TO_LEFT; break;
             default:
                 direction = TextDirection::LEFT_TO_RIGHT;

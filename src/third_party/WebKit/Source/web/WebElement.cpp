@@ -32,8 +32,6 @@
 #include "WebDocument.h"
 #include "WebElement.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/css/CSSStyleDeclaration.h"
-#include "core/dom/DOMTokenList.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NamedNodeMap.h"
@@ -53,12 +51,11 @@
 #include "platform/text/TextChecking.h"
 #include "public/platform/WebRect.h"
 #include "wtf/PassRefPtr.h"
-#include <bindings/V8Element.h>
 
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 bool WebElement::isFormControlElement() const
 {
@@ -115,9 +112,9 @@ bool WebElement::setAttribute(const WebString& attrName, const WebString& attrVa
     // TODO: Custom element callbacks need to be called on WebKit API methods that
     // mutate the DOM in any way.
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliverCustomElementCallbacks;
-    TrackExceptionState es;
-    unwrap<Element>()->setAttribute(attrName, attrValue, es);
-    return !es.hadException();
+    TrackExceptionState exceptionState;
+    unwrap<Element>()->setAttribute(attrName, attrValue, exceptionState);
+    return !exceptionState.hadException();
 }
 
 unsigned WebElement::attributeCount() const
@@ -133,13 +130,6 @@ WebNode WebElement::shadowRoot() const
     if (!shadowRoot)
         return WebNode();
     return WebNode(shadowRoot->toNode());
-}
-
-WebString WebElement::attributeName(unsigned index) const
-{
-    if (index >= attributeCount())
-        return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->name().toString();
 }
 
 WebString WebElement::attributeLocalName(unsigned index) const
@@ -176,57 +166,6 @@ WebRect WebElement::boundsInViewportSpace()
     return unwrap<Element>()->boundsInRootViewSpace();
 }
 
-bool WebElement::setCssProperty(const WebString& name, const WebString& value, const WebString& priority)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->style()->setProperty(name, value, priority, es);
-    return !es.hadException();
-}
-
-bool WebElement::removeCssProperty(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->style()->removeProperty(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::addClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->add(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::removeClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->remove(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::containsClass(const WebString& name)
-{
-    TrackExceptionState es;
-    return unwrap<Element>()->classList()->contains(name, IGNORE_EXCEPTION);
-}
-
-bool WebElement::toggleClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->toggle(name, es);
-    return !es.hadException();
-}
-
-WebString WebElement::innerHTML() const
-{
-    const WebCore::Element* webCoreElemPtr = constUnwrap<Element>();
-    const WebCore::HTMLElement* htmlElemPtr =(const WebCore::HTMLElement*) webCoreElemPtr;
-    if (htmlElemPtr) {
-        return htmlElemPtr->innerHTML();
-    }
-    return WebString();
-}
-
 void WebElement::requestSpellCheck()
 {
     Element* element = unwrap<Element>();
@@ -245,7 +184,7 @@ void WebElement::requestSpellCheck()
                 WebElement documentElement = contentDocument->documentElement();
                 documentElement.requestSpellCheck();
             }
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
@@ -253,36 +192,17 @@ void WebElement::requestSpellCheck()
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->rendererIsEditable()) {
             RefPtr<Range> rangeToCheck = Range::create(element->document(), firstPositionInNode(element), lastPositionInNode(element));
             spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else {
-            element = ElementTraversal::next(element, stayWithin);
+            element = ElementTraversal::next(*element, stayWithin);
         }
     }
-}
-
-bool WebElement::isWebElement(v8::Handle<v8::Value> handle)
-{
-    if (!handle->IsObject()) {
-        return false;
-    }
-    v8::TryCatch tryCatch;
-    v8::Handle<v8::Object> obj = handle->ToObject();
-    if (!WebCore::V8Element::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
-        return false;
-    }
-    WebCore::V8Element::toNative(obj);
-    return !tryCatch.HasCaught();
-}
-
-WebElement WebElement::fromV8Handle(v8::Handle<v8::Value> handle)
-{
-    return WebCore::V8Element::toNative(handle->ToObject());
 }
 
 WebImage WebElement::imageContents()
@@ -317,4 +237,4 @@ WebElement::operator PassRefPtr<Element>() const
     return toElement(m_private.get());
 }
 
-} // namespace WebKit
+} // namespace blink

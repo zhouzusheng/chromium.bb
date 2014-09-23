@@ -21,10 +21,14 @@ const char* GetComponentName(ui::LatencyComponentType type) {
     CASE_TYPE(INPUT_EVENT_LATENCY_UI_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT);
+    CASE_TYPE(WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_MOUSE_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_TOUCH_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_GESTURE_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT);
+    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT);
+    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT);
+    CASE_TYPE(LATENCY_INFO_LIST_TERMINATED_OVERFLOW_COMPONENT);
     default:
       DLOG(WARNING) << "Unhandled LatencyComponentType.\n";
       break;
@@ -39,6 +43,9 @@ bool IsTerminalComponent(ui::LatencyComponentType type) {
     case ui::INPUT_EVENT_LATENCY_TERMINATED_TOUCH_COMPONENT:
     case ui::INPUT_EVENT_LATENCY_TERMINATED_GESTURE_COMPONENT:
     case ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT:
+    case ui::INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT:
+    case ui::INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT:
+    case ui::LATENCY_INFO_LIST_TERMINATED_OVERFLOW_COMPONENT:
       return true;
     default:
       return false;
@@ -98,6 +105,7 @@ scoped_refptr<base::debug::ConvertableToTraceFormat> AsTraceableData(
     component_info->SetDouble("count", it->second.event_count);
     record_data->Set(GetComponentName(it->first.first), component_info);
   }
+  record_data->SetDouble("trace_id", latency.trace_id);
   return LatencyInfoTracedValue::FromValue(record_data.PassAs<base::Value>());
 }
 
@@ -203,8 +211,28 @@ bool LatencyInfo::FindLatency(LatencyComponentType type,
   return true;
 }
 
+void LatencyInfo::RemoveLatency(LatencyComponentType type) {
+  LatencyMap::iterator it = latency_components.begin();
+  while (it != latency_components.end()) {
+    if (it->first.first == type) {
+      LatencyMap::iterator tmp = it;
+      ++it;
+      latency_components.erase(tmp);
+    } else {
+      it++;
+    }
+  }
+}
+
 void LatencyInfo::Clear() {
   latency_components.clear();
+}
+
+void LatencyInfo::TraceEventType(const char* event_type) {
+  TRACE_EVENT_ASYNC_STEP_INTO0("benchmark",
+                               "InputLatency",
+                               TRACE_ID_DONT_MANGLE(trace_id),
+                               event_type);
 }
 
 }  // namespace ui

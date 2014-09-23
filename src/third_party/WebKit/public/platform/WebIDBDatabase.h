@@ -29,7 +29,7 @@
 #include "WebCommon.h"
 #include "WebIDBMetadata.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebData;
 class WebIDBCallbacks;
@@ -67,6 +67,8 @@ public:
         CursorUpdate
     };
 
+    static const long long minimumIndexId = 30;
+
     typedef WebVector<WebIDBKey> WebIndexKeys;
 
     virtual void get(long long transactionId, long long objectStoreId, long long indexId, const WebIDBKeyRange&, bool keyOnly, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
@@ -83,6 +85,6 @@ protected:
     WebIDBDatabase() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebIDBDatabase_h

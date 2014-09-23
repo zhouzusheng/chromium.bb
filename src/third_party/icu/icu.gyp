@@ -77,7 +77,7 @@
                 {
                   'destination': '<(PRODUCT_DIR)',
                   'files': [
-                    'windows/icudt.dll',
+                    'windows/icudt_cr33.dll',
                   ],
                 },
               ],

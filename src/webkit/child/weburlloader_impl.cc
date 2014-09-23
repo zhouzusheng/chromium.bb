@@ -39,20 +39,20 @@
 
 using base::Time;
 using base::TimeTicks;
-using WebKit::WebData;
-using WebKit::WebHTTPBody;
-using WebKit::WebHTTPHeaderVisitor;
-using WebKit::WebHTTPLoadInfo;
-using WebKit::WebReferrerPolicy;
-using WebKit::WebSecurityPolicy;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoadTiming;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebData;
+using blink::WebHTTPBody;
+using blink::WebHTTPHeaderVisitor;
+using blink::WebHTTPLoadInfo;
+using blink::WebReferrerPolicy;
+using blink::WebSecurityPolicy;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoadTiming;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 namespace webkit_glue {
 
@@ -269,7 +269,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
 WebURLLoaderImpl::Context::Context(WebURLLoaderImpl* loader)
     : loader_(loader),
       client_(NULL),
-      referrer_policy_(WebKit::WebReferrerPolicyDefault) {
+      referrer_policy_(blink::WebReferrerPolicyDefault) {
 }
 
 void WebURLLoaderImpl::Context::Cancel() {
@@ -547,7 +547,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
     std::string boundary;
     net::HttpUtil::ParseContentType(content_type, &mime_type, &charset,
                                     &had_charset, &boundary);
-    TrimString(boundary, " \"", &boundary);
+    base::TrimString(boundary, " \"", &boundary);
 
     // If there's no boundary, just handle the request normally.  In the gecko
     // code, nsMultiMixedConv::OnStartRequest throws an exception.
@@ -693,6 +693,9 @@ WebURLError WebURLLoaderImpl::CreateError(const WebURL& unreachable_url,
   } else if (reason == net::ERR_TEMPORARILY_THROTTLED) {
     error.localizedDescription = WebString::fromUTF8(
         kThrottledErrorDescription);
+  } else {
+    error.localizedDescription = WebString::fromUTF8(
+        net::ErrorToString(reason));
   }
   return error;
 }

@@ -54,26 +54,25 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/DragActions.h"
 #include "core/page/DragClient.h"
+#include "core/page/DragData.h"
 #include "core/page/DragSession.h"
 #include "core/page/DragState.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/DragData.h"
+#include "core/frame/Settings.h"
 #include "core/platform/DragImage.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
-#include "core/platform/graphics/Image.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/FloatRect.h"
+#include "platform/graphics/Image.h"
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/network/ResourceRequest.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -621,45 +620,77 @@ bool DragController::tryDHTMLDrag(DragData* dragData, DragOperation& operation)
     return true;
 }
 
-Node* DragController::draggableNode(const Frame* src, Node* startNode, const IntPoint& dragOrigin, DragState& state) const
+Node* DragController::draggableNode(const Frame* src, Node* startNode, const IntPoint& dragOrigin, SelectionDragPolicy selectionDragPolicy, DragSourceAction& dragType) const
 {
-    state.m_dragType = (src->selection().contains(dragOrigin)) ? DragSourceActionSelection : DragSourceActionNone;
+    if (src->selection().contains(dragOrigin)) {
+        dragType = DragSourceActionSelection;
+        if (selectionDragPolicy == ImmediateSelectionDragResolution)
+            return startNode;
+    } else {
+        dragType = DragSourceActionNone;
+    }
 
+    Node* node = 0;
+    DragSourceAction candidateDragType = DragSourceActionNone;
     for (const RenderObject* renderer = startNode->renderer(); renderer; renderer = renderer->parent()) {
-        Node* node = renderer->nonPseudoNode();
-        if (!node)
+        node = renderer->nonPseudoNode();
+        if (!node) {
             // Anonymous render blocks don't correspond to actual DOM nodes, so we skip over them
             // for the purposes of finding a draggable node.
             continue;
-        if (!(state.m_dragType & DragSourceActionSelection) && node->isTextNode() && node->canStartSelection())
+        }
+        if (dragType != DragSourceActionSelection && node->isTextNode() && node->canStartSelection()) {
             // In this case we have a click in the unselected portion of text. If this text is
             // selectable, we want to start the selection process instead of looking for a parent
             // to try to drag.
             return 0;
+        }
         if (node->isElementNode()) {
             EUserDrag dragMode = renderer->style()->userDrag();
             if (dragMode == DRAG_NONE)
                 continue;
+            // Even if the image is part of a selection, we always only drag the image in this case.
             if (renderer->isImage()
                 && src->settings()
                 && src->settings()->loadsImagesAutomatically()) {
-                state.m_dragType = static_cast<DragSourceAction>(state.m_dragType | DragSourceActionImage);
+                dragType = DragSourceActionImage;
                 return node;
             }
+            // Other draggable elements are considered unselectable.
             if (isHTMLAnchorElement(node)
                 && toHTMLAnchorElement(node)->isLiveLink()) {
-                state.m_dragType = static_cast<DragSourceAction>(state.m_dragType | DragSourceActionLink);
-                return node;
+                candidateDragType = DragSourceActionLink;
+                break;
             }
             if (dragMode == DRAG_ELEMENT) {
-                state.m_dragType = static_cast<DragSourceAction>(state.m_dragType | DragSourceActionDHTML);
-                return node;
+                candidateDragType = DragSourceActionDHTML;
+                break;
             }
         }
     }
 
-    // We either have nothing to drag or we have a selection and we're not over a draggable element.
-    return (state.m_dragType & DragSourceActionSelection) ? startNode : 0;
+    if (candidateDragType == DragSourceActionNone) {
+        // Either:
+        // 1) Nothing under the cursor is considered draggable, so we bail out.
+        // 2) There was a selection under the cursor but selectionDragPolicy is set to
+        //    DelayedSelectionDragResolution and no other draggable element could be found, so bail
+        //    out and allow text selection to start at the cursor instead.
+        return 0;
+    }
+
+    ASSERT(node);
+    if (dragType == DragSourceActionSelection) {
+        // Dragging unselectable elements in a selection has special behavior if selectionDragPolicy
+        // is DelayedSelectionDragResolution and this drag was flagged as a potential selection
+        // drag. In that case, don't allow selection and just drag the entire selection instead.
+        ASSERT(selectionDragPolicy == DelayedSelectionDragResolution);
+        node = startNode;
+    } else {
+        // If the cursor isn't over a selection, then just drag the node we found earlier.
+        ASSERT(dragType == DragSourceActionNone);
+        dragType = candidateDragType;
+    }
+    return node;
 }
 
 static ImageResource* getImageResource(Element* element)
@@ -700,7 +731,7 @@ bool DragController::populateDragClipboard(Frame* src, const DragState& state, c
     if (!src->view() || !src->contentRenderer())
         return false;
 
-    HitTestResult hitTestResult = src->eventHandler().hitTestResultAtPoint(dragOrigin, HitTestRequest::ReadOnly | HitTestRequest::Active);
+    HitTestResult hitTestResult = src->eventHandler().hitTestResultAtPoint(dragOrigin);
     // FIXME: Can this even happen? I guess it's possible, but should verify
     // with a layout test.
     if (!state.m_dragSrc->contains(hitTestResult.innerNode())) {
@@ -821,11 +852,12 @@ bool DragController::startDrag(Frame* src, const DragState& state, const Platfor
         return false;
 
     HitTestResult hitTestResult = src->eventHandler().hitTestResultAtPoint(dragOrigin);
-    if (!state.m_dragSrc->contains(hitTestResult.innerNode()))
+    if (!state.m_dragSrc->contains(hitTestResult.innerNode())) {
         // The original node being dragged isn't under the drag origin anymore... maybe it was
         // hidden or moved out from under the cursor. Regardless, we don't want to start a drag on
         // something that's not actually under the drag origin.
         return false;
+    }
     const KURL& linkURL = hitTestResult.absoluteLinkURL();
     const KURL& imageURL = hitTestResult.absoluteImageURL();
 
@@ -898,7 +930,6 @@ void DragController::doSystemDrag(DragImage* image, const IntPoint& dragLocation
 {
     m_didInitiateDrag = true;
     m_dragInitiator = frame->document();
-
     // Protect this frame and view, as a load may occur mid drag and attempt to unload this frame
     RefPtr<Frame> frameProtector = m_page->mainFrame();
     RefPtr<FrameView> viewProtector = frameProtector->view();

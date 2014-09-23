@@ -34,7 +34,7 @@
 #include "unicode/udata.h"
 
 #define ICU_UTIL_DATA_SYMBOL "icudt" U_ICU_VERSION_SHORT "_dat"
-#define ICU_UTIL_DATA_SHARED_MODULE_NAME "icudt.dll"
+#define ICU_UTIL_DATA_SHARED_MODULE_NAME "icudt_cr33.dll"
 #endif
 
 namespace v8 {

@@ -32,7 +32,7 @@
 #define WebPopupMenuImpl_h
 
 #include "WebPopupMenu.h"
-#include "core/platform/chromium/FramelessScrollViewClient.h"
+#include "platform/scroll/FramelessScrollViewClient.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
 #include "wtf/OwnPtr.h"
@@ -48,7 +48,7 @@ class Range;
 class Widget;
 }
 
-namespace WebKit {
+namespace blink {
 class WebGestureEvent;
 class WebKeyboardEvent;
 class WebMouseEvent;
@@ -147,6 +147,6 @@ inline WebPopupMenuImpl* toWebPopupMenuImpl(WebCore::FramelessScrollViewClient* 
     return static_cast<WebPopupMenuImpl*>(client);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

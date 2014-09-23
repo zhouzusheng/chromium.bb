@@ -65,12 +65,22 @@ namespace {
 
 Length animatableValueToLength(const AnimatableValue* value, const StyleResolverState& state, NumberRange range = AllValues)
 {
-    const RenderStyle* style = state.style();
     if (value->isLength())
-        return toAnimatableLength(value)->toLength(style, state.rootElementStyle(), style->effectiveZoom(), range);
+        return toAnimatableLength(value)->toLength(state.cssToLengthConversionData(), range);
     RefPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
     CSSPrimitiveValue* cssPrimitiveValue = toCSSPrimitiveValue(cssValue.get());
-    return cssPrimitiveValue->convertToLength<AnyConversion>(style, state.rootElementStyle(), style->effectiveZoom());
+    return cssPrimitiveValue->convertToLength<AnyConversion>(state.cssToLengthConversionData());
+}
+
+BorderImageLength animatableValueToBorderImageLength(const AnimatableValue* value, const StyleResolverState& state)
+{
+    if (value->isLength())
+        return BorderImageLength(toAnimatableLength(value)->toLength(state.cssToLengthConversionData(), NonNegativeValues));
+    if (value->isDouble())
+        return BorderImageLength(clampTo<double>(toAnimatableDouble(value)->toDouble(), 0));
+    RefPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
+    CSSPrimitiveValue* cssPrimitiveValue = toCSSPrimitiveValue(cssValue.get());
+    return BorderImageLength(cssPrimitiveValue->convertToLength<AnyConversion>(state.cssToLengthConversionData()));
 }
 
 template<typename T> T animatableValueRoundClampTo(const AnimatableValue* value, T min = defaultMinimumForClamp<T>(), T max = defaultMaximumForClamp<T>())
@@ -87,6 +97,16 @@ LengthBox animatableValueToLengthBox(const AnimatableValue* value, const StyleRe
         animatableValueToLength(animatableLengthBox->right(), state, range),
         animatableValueToLength(animatableLengthBox->bottom(), state, range),
         animatableValueToLength(animatableLengthBox->left(), state, range));
+}
+
+BorderImageLengthBox animatableValueToBorderImageLengthBox(const AnimatableValue* value, const StyleResolverState& state)
+{
+    const AnimatableLengthBox* animatableLengthBox = toAnimatableLengthBox(value);
+    return BorderImageLengthBox(
+        animatableValueToBorderImageLength(animatableLengthBox->top(), state),
+        animatableValueToBorderImageLength(animatableLengthBox->right(), state),
+        animatableValueToBorderImageLength(animatableLengthBox->bottom(), state),
+        animatableValueToBorderImageLength(animatableLengthBox->left(), state));
 }
 
 LengthPoint animatableValueToLengthPoint(const AnimatableValue* value, const StyleResolverState& state, NumberRange range = AllValues)
@@ -249,7 +269,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderBottomWidth(animatableValueRoundClampTo<unsigned>(value));
         return;
     case CSSPropertyBorderImageOutset:
-        style->setBorderImageOutset(animatableValueToLengthBox(value, state, NonNegativeValues));
+        style->setBorderImageOutset(animatableValueToBorderImageLengthBox(value, state));
         return;
     case CSSPropertyBorderImageSlice:
         style->setBorderImageSlices(animatableValueToLengthBox(value, state, NonNegativeValues));
@@ -258,7 +278,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderImageSource(toAnimatableImage(value)->toStyleImage());
         return;
     case CSSPropertyBorderImageWidth:
-        style->setBorderImageWidth(animatableValueToLengthBox(value, state, NonNegativeValues));
+        style->setBorderImageWidth(animatableValueToBorderImageLengthBox(value, state));
         return;
     case CSSPropertyBorderLeftColor:
         style->setBorderLeftColor(toAnimatableColor(value)->color());
@@ -303,7 +323,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setVisitedLinkColor(toAnimatableColor(value)->visitedLinkColor());
         return;
     case CSSPropertyFillOpacity:
-        style->setFillOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, 1));
+        // Avoiding a value of 1 forces a layer to be created.
+        style->setFillOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, nextafterf(1, 0)));
         return;
     case CSSPropertyFill:
         {
@@ -381,7 +402,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setObjectPosition(animatableValueToLengthPoint(value, state));
         return;
     case CSSPropertyOpacity:
-        style->setOpacity(toAnimatableDouble(value)->toDouble());
+        // Avoiding a value of 1 forces a layer to be created.
+        style->setOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, nextafterf(1, 0)));
         return;
     case CSSPropertyOrphans:
         style->setOrphans(animatableValueRoundClampTo<unsigned short>(value, 1));
@@ -483,7 +505,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setFilter(toAnimatableFilterOperations(value)->operations());
         return;
     case CSSPropertyWebkitMaskBoxImageOutset:
-        style->setMaskBoxImageOutset(animatableValueToLengthBox(value, state, NonNegativeValues));
+        style->setMaskBoxImageOutset(animatableValueToBorderImageLengthBox(value, state));
         return;
     case CSSPropertyWebkitMaskBoxImageSlice:
         style->setMaskBoxImageSlices(animatableValueToLengthBox(toAnimatableLengthBoxAndBool(value)->box(), state, NonNegativeValues));
@@ -493,7 +515,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setMaskBoxImageSource(toAnimatableImage(value)->toStyleImage());
         return;
     case CSSPropertyWebkitMaskBoxImageWidth:
-        style->setMaskBoxImageWidth(animatableValueToLengthBox(value, state, NonNegativeValues));
+        style->setMaskBoxImageWidth(animatableValueToBorderImageLengthBox(value, state));
         return;
     case CSSPropertyWebkitMaskImage:
         setOnFillLayers<CSSPropertyWebkitMaskImage>(style->accessMaskLayers(), value, state);
@@ -525,13 +547,20 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyShapeMargin:
         style->setShapeMargin(animatableValueToLength(value, state, NonNegativeValues));
         return;
+    case CSSPropertyShapeImageThreshold:
+        style->setShapeImageThreshold(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, 1));
+        return;
     case CSSPropertyWebkitTextStrokeColor:
         style->setTextStrokeColor(toAnimatableColor(value)->color());
         style->setVisitedLinkTextStrokeColor(toAnimatableColor(value)->visitedLinkColor());
         return;
-    case CSSPropertyWebkitTransform:
-        style->setTransform(toAnimatableTransform(value)->transformOperations());
+    case CSSPropertyWebkitTransform: {
+        const TransformOperations& operations = toAnimatableTransform(value)->transformOperations();
+        // FIXME: Using identity matrix here when the transform list is empty
+        // forces a layer to be created in the presence of a transform animation.
+        style->setTransform(operations.size() ? operations : TransformOperations(true));
         return;
+    }
     case CSSPropertyWebkitTransformOriginX:
         style->setTransformOriginX(animatableValueToLength(value, state));
         return;
@@ -560,7 +589,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setZoom(clampTo<float>(toAnimatableDouble(value)->toDouble(), std::numeric_limits<float>::denorm_min()));
         return;
     default:
-        RELEASE_ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Unable to apply AnimatableValue to RenderStyle: %s", getPropertyNameString(property).utf8().data());
+        ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Unable to apply AnimatableValue to RenderStyle: %s", getPropertyNameString(property).utf8().data());
         ASSERT_NOT_REACHED();
     }
 }

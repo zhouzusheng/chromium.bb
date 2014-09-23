@@ -26,10 +26,11 @@
 #ifndef HostWindow_h
 #define HostWindow_h
 
+#include "platform/PlatformExport.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebKit {
+namespace blink {
 struct WebScreenInfo;
 }
 
@@ -39,7 +40,7 @@ class IntPoint;
 class IntRect;
 class IntSize;
 
-class HostWindow {
+class PLATFORM_EXPORT HostWindow {
     WTF_MAKE_NONCOPYABLE(HostWindow); WTF_MAKE_FAST_ALLOCATED;
 public:
     HostWindow() { }
@@ -58,7 +59,7 @@ public:
     virtual IntPoint screenToRootView(const IntPoint&) const = 0;
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
 
-    virtual WebKit::WebScreenInfo screenInfo() const = 0;
+    virtual blink::WebScreenInfo screenInfo() const = 0;
 
     virtual void scheduleAnimation() = 0;
 };

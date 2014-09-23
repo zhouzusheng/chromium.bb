@@ -91,7 +91,7 @@ IntRect Chrome::rootViewToScreen(const IntRect& rect) const
     return m_client->rootViewToScreen(rect);
 }
 
-WebKit::WebScreenInfo Chrome::screenInfo() const
+blink::WebScreenInfo Chrome::screenInfo() const
 {
     return m_client->screenInfo();
 }
@@ -357,6 +357,12 @@ PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* c
 {
     notifyPopupOpeningObservers();
     return m_client->openDateTimeChooser(client, parameters);
+}
+
+void Chrome::openTextDataListChooser(HTMLInputElement& input)
+{
+    notifyPopupOpeningObservers();
+    m_client->openTextDataListChooser(input);
 }
 
 void Chrome::runOpenPanel(Frame* frame, PassRefPtr<FileChooser> fileChooser)

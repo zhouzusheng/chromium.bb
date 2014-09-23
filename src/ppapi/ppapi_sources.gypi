@@ -69,7 +69,9 @@
 
       # Dev interfaces.
       'c/dev/pp_cursor_type_dev.h',
+      'c/dev/pp_optional_structs_dev.h',
       'c/dev/pp_video_dev.h',
+      'c/dev/ppb_alarms_dev.h',
       'c/dev/ppb_buffer_dev.h',
       'c/dev/ppb_char_set_dev.h',
       'c/dev/ppb_cursor_control_dev.h',
@@ -82,7 +84,6 @@
       'c/dev/ppb_printing_dev.h',
       'c/dev/ppb_resource_array_dev.h',
       'c/dev/ppb_scrollbar_dev.h',
-      'c/dev/ppb_testing_dev.h',
       'c/dev/ppb_text_input_dev.h',
       'c/dev/ppb_truetype_font_dev.h',
       'c/dev/ppb_url_util_dev.h',
@@ -114,13 +115,14 @@
       'c/private/ppb_flash_message_loop.h',
       'c/private/ppb_host_resolver_private.h',
       'c/private/ppb_instance_private.h',
+      'c/private/ppb_isolated_file_system_private.h',
       'c/private/ppb_nacl_private.h',
       'c/private/ppb_net_address_private.h',
       'c/private/ppb_output_protection_private.h',
       'c/private/ppb_pdf.h',
       'c/private/ppb_platform_verification_private.h',
       'c/private/ppb_proxy_private.h',
-      'c/private/ppp_instance_private.h',
+      'c/private/ppb_testing_private.h',
       'c/private/ppb_tcp_server_socket_private.h',
       'c/private/ppb_tcp_socket_private.h',
       'c/private/ppb_udp_socket_private.h',
@@ -128,6 +130,7 @@
       'c/private/ppb_video_source_private.h',
       'c/private/ppb_x509_certificate_private.h',
       'c/private/ppp_content_decryptor_private.h',
+      'c/private/ppp_instance_private.h',
 
       # Deprecated interfaces.
       'c/dev/deprecated_bool.h',
@@ -142,8 +145,6 @@
       'c/trusted/ppp_broker.h',
 
       # Extensions dev interfaces.
-      'c/extensions/dev/ppb_ext_alarms_dev.h',
-      'c/extensions/dev/ppb_ext_events_dev.h',
       'c/extensions/dev/ppb_ext_socket_dev.h',
     ],
     'cpp_source_files': [
@@ -322,6 +323,8 @@
       'cpp/private/host_resolver_private.h',
       'cpp/private/instance_private.cc',
       'cpp/private/instance_private.h',
+      'cpp/private/isolated_file_system_private.cc',
+      'cpp/private/isolated_file_system_private.h',
       'cpp/private/net_address_private.cc',
       'cpp/private/net_address_private.h',
       'cpp/private/output_protection_private.cc',
@@ -357,18 +360,12 @@
 
       # Extensions interfaces.
       'cpp/extensions/dict_field.h',
-      'cpp/extensions/event_base.cc',
-      'cpp/extensions/event_base.h',
       'cpp/extensions/ext_output_traits.h',
       'cpp/extensions/from_var_converter.h',
       'cpp/extensions/optional.h',
       'cpp/extensions/to_var_converter.h',
 
       # Extensions dev interfaces.
-      'cpp/extensions/dev/alarms_dev.cc',
-      'cpp/extensions/dev/alarms_dev.h',
-      'cpp/extensions/dev/events_dev.cc',
-      'cpp/extensions/dev/events_dev.h',
       'cpp/extensions/dev/socket_dev.cc',
       'cpp/extensions/dev/socket_dev.h',
 

@@ -33,7 +33,7 @@ namespace WebCore {
 class DateTimeChooserClient;
 }
 
-namespace WebKit {
+namespace blink {
 
 class ChromeClientImpl;
 class WebString;
@@ -46,6 +46,7 @@ public:
 
     // The following functions are for DateTimeChooserCompletion.
     void didChooseValue(const WebString&);
+    void didChooseValue(double);
     void didCancelChooser();
 
 private:

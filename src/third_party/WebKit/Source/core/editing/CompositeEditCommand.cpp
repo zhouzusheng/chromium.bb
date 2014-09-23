@@ -73,6 +73,24 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+namespace {
+class ReentrancyGuard {
+public:
+    static bool isRecursiveCall() { return s_nestingCounter; }
+
+    class Scope {
+    public:
+        Scope() { ++s_nestingCounter; }
+        ~Scope() { --s_nestingCounter; }
+    };
+    friend class Scope;
+
+private:
+    static int s_nestingCounter;
+};
+int ReentrancyGuard::s_nestingCounter;
+}
+
 PassRefPtr<EditCommandComposition> EditCommandComposition::create(Document* document,
     const VisibleSelection& startingSelection, const VisibleSelection& endingSelection, EditAction editAction)
 {
@@ -87,6 +105,12 @@ EditCommandComposition::EditCommandComposition(Document* document, const Visible
     , m_endingRootEditableElement(endingSelection.rootEditableElement())
     , m_editAction(editAction)
 {
+}
+
+bool EditCommandComposition::belongsTo(const Frame& frame) const
+{
+    ASSERT(m_document);
+    return m_document->frame() == &frame;
 }
 
 void EditCommandComposition::unapply()
@@ -158,6 +182,14 @@ CompositeEditCommand::~CompositeEditCommand()
 
 void CompositeEditCommand::apply()
 {
+    // We don't allow recusrive |apply()| to protect against attack code.
+    // Recursive call of |apply()| could be happened by moving iframe
+    // with script triggered by insertion, e.g. <iframe src="javascript:...">
+    // <iframe onload="...">. This usage is valid as of the specification
+    // although, it isn't common use case, rather it is used as attack code.
+    if (ReentrancyGuard::isRecursiveCall())
+        return;
+
     if (!endingSelection().isContentRichlyEditable()) {
         switch (editingAction()) {
         case EditActionTyping:
@@ -182,7 +214,8 @@ void CompositeEditCommand::apply()
     Frame* frame = document().frame();
     ASSERT(frame);
     {
-        EventQueueScope scope;
+        EventQueueScope eventQueueScope;
+        ReentrancyGuard::Scope reentrancyGuardScope;
         doApply();
     }
 
@@ -803,7 +836,7 @@ void CompositeEditCommand::deleteInsignificantText(const Position& start, const 
         return;
 
     Vector<RefPtr<Text> > nodes;
-    for (Node* node = start.deprecatedNode(); node; node = NodeTraversal::next(node)) {
+    for (Node* node = start.deprecatedNode(); node; node = NodeTraversal::next(*node)) {
         if (node->isTextNode())
             nodes.append(toText(node));
         if (node == end.deprecatedNode())
@@ -987,7 +1020,7 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
         appendNode(lastNode, blockElement);
     }
 
-    if (start.deprecatedNode() != outerNode && lastNode->isElementNode()) {
+    if (start.anchorNode() != outerNode && lastNode->isElementNode() && start.anchorNode()->isDescendantOf(outerNode.get())) {
         Vector<RefPtr<Node> > ancestors;
 
         // Insert each node from innerNode to outerNode (excluded) in a list.
@@ -1021,7 +1054,7 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
         }
 
         RefPtr<Node> startNode = start.deprecatedNode();
-        for (RefPtr<Node> node = NodeTraversal::nextSkippingChildren(startNode.get(), outerNode.get()); node; node = NodeTraversal::nextSkippingChildren(node.get(), outerNode.get())) {
+        for (RefPtr<Node> node = NodeTraversal::nextSkippingChildren(*startNode, outerNode.get()); node; node = NodeTraversal::nextSkippingChildren(*node, outerNode.get())) {
             // Move lastNode up in the tree as much as node was moved up in the
             // tree by NodeTraversal::nextSkippingChildren, so that the relative depth between
             // node and the original start node is maintained in the clone.
@@ -1128,7 +1161,7 @@ void CompositeEditCommand::moveParagraphWithClones(const VisiblePosition& startO
     beforeParagraph = VisiblePosition(beforeParagraph.deepEquivalent());
     afterParagraph = VisiblePosition(afterParagraph.deepEquivalent());
 
-    if (beforeParagraph.isNotNull() && !isTableElement(beforeParagraph.deepEquivalent().deprecatedNode())
+    if (beforeParagraph.isNotNull() && !isRenderedTable(beforeParagraph.deepEquivalent().deprecatedNode())
         && ((!isEndOfParagraph(beforeParagraph) && !isStartOfParagraph(beforeParagraph)) || beforeParagraph == afterParagraph)) {
         // FIXME: Trim text between beforeParagraph and afterParagraph if they aren't equal.
         insertNodeAt(createBreakElement(document()), beforeParagraph.deepEquivalent());

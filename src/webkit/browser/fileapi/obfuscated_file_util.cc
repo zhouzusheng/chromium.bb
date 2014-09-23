@@ -371,6 +371,8 @@ PlatformFileError ObfuscatedFileUtil::CreateDirectory(
     if (!db->GetChildWithName(parent_id, name, &parent_id))
       break;
   }
+  if (!db->IsDirectory(parent_id))
+    return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
   if (!recursive && components.size() - index > 1)
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   bool first = true;
@@ -588,7 +590,8 @@ PlatformFileError ObfuscatedFileUtil::CopyOrMoveFile(
           src_local_path,
           dest_local_path,
           option,
-          true /* copy */);
+          fileapi::NativeFileUtil::CopyOrMoveModeForDestination(
+              dest_url, true /* copy */));
     } else {  // non-overwrite
       error = CreateFile(context, src_local_path,
                          dest_url, &dest_file_info, 0, NULL);
@@ -645,7 +648,7 @@ PlatformFileError ObfuscatedFileUtil::CopyInForeignFile(
     return base::PLATFORM_FILE_ERROR_FAILED;
 
   base::PlatformFileInfo src_platform_file_info;
-  if (!file_util::GetFileInfo(src_file_path, &src_platform_file_info))
+  if (!base::GetFileInfo(src_file_path, &src_platform_file_info))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
 
   FileId dest_file_id;
@@ -692,7 +695,9 @@ PlatformFileError ObfuscatedFileUtil::CopyInForeignFile(
         DataPathToLocalPath(dest_url, dest_file_info.data_path);
     error = NativeFileUtil::CopyOrMoveFile(
         src_file_path, dest_local_path,
-        FileSystemOperation::OPTION_NONE, true);
+        FileSystemOperation::OPTION_NONE,
+        fileapi::NativeFileUtil::CopyOrMoveModeForDestination(dest_url,
+                                                              true /* copy */));
   } else {
     error = CreateFile(context, src_file_path,
                        dest_url, &dest_file_info, 0, NULL);
@@ -850,7 +855,7 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOriginAndType(
   base::FilePath path = origin_dir.AppendASCII(type_string);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   if (!base::DirectoryExists(path) &&
-      (!create || !file_util::CreateDirectory(path))) {
+      (!create || !base::CreateDirectory(path))) {
     error = create ?
           base::PLATFORM_FILE_ERROR_FAILED :
           base::PLATFORM_FILE_ERROR_NOT_FOUND;
@@ -1026,7 +1031,7 @@ PlatformFileError ObfuscatedFileUtil::GetFileInfoInternal(
   base::PlatformFileError error = NativeFileUtil::GetFileInfo(
       local_path, file_info);
   // We should not follow symbolic links in sandboxed file system.
-  if (file_util::IsLink(local_path)) {
+  if (base::IsLink(local_path)) {
     LOG(WARNING) << "Found a symbolic file.";
     error = base::PLATFORM_FILE_ERROR_NOT_FOUND;
   }
@@ -1066,7 +1071,9 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
     DCHECK(!handle);
     error = NativeFileUtil::CopyOrMoveFile(
         src_file_path, dest_local_path,
-        FileSystemOperation::OPTION_NONE, true /* copy */);
+        FileSystemOperation::OPTION_NONE,
+        fileapi::NativeFileUtil::CopyOrMoveModeForDestination(dest_url,
+                                                              true /* copy */));
     created = true;
   } else {
     if (base::PathExists(dest_local_path)) {
@@ -1162,7 +1169,8 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
   PlatformFileError error = base::PLATFORM_FILE_OK;
   base::FilePath path = GetDirectoryForURL(url, create, &error);
   if (error != base::PLATFORM_FILE_OK) {
-    LOG(WARNING) << "Failed to get origin+type directory: " << path.value();
+    LOG(WARNING) << "Failed to get origin+type directory: "
+                 << url.DebugString() << " error:" << error;
     return NULL;
   }
   MarkUsed();
@@ -1208,7 +1216,7 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
   }
 
   if (!exists_in_fs) {
-    if (!create || !file_util::CreateDirectory(path)) {
+    if (!create || !base::CreateDirectory(path)) {
       if (error_code)
         *error_code = create ?
             base::PLATFORM_FILE_ERROR_FAILED :
@@ -1260,7 +1268,7 @@ bool ObfuscatedFileUtil::InitOriginDatabase(const GURL& origin_hint,
 
   if (!create && !base::DirectoryExists(file_system_directory_))
     return false;
-  if (!file_util::CreateDirectory(file_system_directory_)) {
+  if (!base::CreateDirectory(file_system_directory_)) {
     LOG(WARNING) << "Failed to create FileSystem directory: " <<
         file_system_directory_.value();
     return false;

@@ -11,7 +11,7 @@
 #include "base/strings/string16.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 
-namespace WebKit {
+namespace blink {
 class WebMouseWheelEvent;
 }
 
@@ -46,7 +46,7 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Callback to give the browser a chance to handle the specified mouse wheel
   // event before sending it to the renderer.
   // Returns true if the |event| was handled.
-  virtual bool PreHandleWheelEvent(const WebKit::WebMouseWheelEvent& event);
+  virtual bool PreHandleWheelEvent(const blink::WebMouseWheelEvent& event);
 
   // Returns true if RWHV should take focus on mouse-down.
   virtual bool ShouldSetKeyboardFocusOnMouseDown();
@@ -57,7 +57,7 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
   virtual bool ShowTooltip(const string16& tooltip_text,
-                           WebKit::WebTextDirection text_direction_hint);
+                           blink::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}

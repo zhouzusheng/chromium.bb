@@ -37,6 +37,9 @@
 #include "modules/indexeddb/IDBObjectStore.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "modules/indexeddb/IndexedDB.h"
+#include "public/platform/WebIDBDatabase.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -49,24 +52,25 @@ class ExecutionContext;
 
 class IDBDatabase : public RefCounted<IDBDatabase>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(IDBDatabase);
+
 public:
-    static PassRefPtr<IDBDatabase> create(ExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>, PassRefPtr<IDBDatabaseCallbacks>);
+    static PassRefPtr<IDBDatabase> create(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, PassRefPtr<IDBDatabaseCallbacks>);
     ~IDBDatabase();
 
     void setMetadata(const IDBDatabaseMetadata& metadata) { m_metadata = metadata; }
     void indexCreated(int64_t objectStoreId, const IDBIndexMetadata&);
     void indexDeleted(int64_t objectStoreId, int64_t indexId);
     void transactionCreated(IDBTransaction*);
-    void transactionFinished(IDBTransaction*);
+    void transactionFinished(const IDBTransaction*);
 
     // Implement the IDL
     const String& name() const { return m_metadata.name; }
-    PassRefPtr<IDBAny> version() const;
+    ScriptValue version(ExecutionContext*) const;
     PassRefPtr<DOMStringList> objectStoreNames() const;
 
     PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionState&);
     PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionState&);
-    PassRefPtr<IDBTransaction> transaction(ExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionState& es) { return transaction(context, *scope, mode, es); }
+    PassRefPtr<IDBTransaction> transaction(ExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionState& exceptionState) { return transaction(context, *scope, mode, exceptionState); }
     PassRefPtr<IDBTransaction> transaction(ExecutionContext*, const Vector<String>&, const String& mode, ExceptionState&);
     PassRefPtr<IDBTransaction> transaction(ExecutionContext*, const String&, const String& mode, ExceptionState&);
     void deleteObjectStore(const String& name, ExceptionState&);
@@ -104,7 +108,7 @@ public:
         return findObjectStoreId(name) != IDBObjectStoreMetadata::InvalidId;
     }
 
-    IDBDatabaseBackendInterface* backend() const { return m_backend.get(); }
+    blink::WebIDBDatabase* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
 
@@ -123,12 +127,12 @@ public:
     static const char transactionInactiveErrorMessage[];
 
 private:
-    IDBDatabase(ExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>, PassRefPtr<IDBDatabaseCallbacks>);
+    IDBDatabase(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, PassRefPtr<IDBDatabaseCallbacks>);
 
     void closeConnection();
 
     IDBDatabaseMetadata m_metadata;
-    RefPtr<IDBDatabaseBackendInterface> m_backend;
+    OwnPtr<blink::WebIDBDatabase> m_backend;
     RefPtr<IDBTransaction> m_versionChangeTransaction;
     typedef HashMap<int64_t, RefPtr<IDBTransaction> > TransactionMap;
     TransactionMap m_transactions;

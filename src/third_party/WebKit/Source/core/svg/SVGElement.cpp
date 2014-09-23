@@ -32,7 +32,6 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSParser.h"
-#include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/events/Event.h"
@@ -101,7 +100,7 @@ SVGElement::cleanupAnimatedProperties()
     else {
         SVGElementRareData::SVGElementRareDataMap& rareDataMap = SVGElementRareData::rareDataMap();
         SVGElementRareData::SVGElementRareDataMap::iterator it = rareDataMap.find(this);
-        ASSERT(it != rareDataMap.end());
+        ASSERT_WITH_SECURITY_IMPLICATION(it != rareDataMap.end());
 
         SVGElementRareData* rareData = it->value;
         rareData->destroyAnimatedSMILStyleProperties();
@@ -239,12 +238,6 @@ void SVGElement::reportAttributeParsingError(SVGParsingError error, const Qualif
     ASSERT_NOT_REACHED();
 }
 
-
-bool SVGElement::isSupported(StringImpl* feature, StringImpl* version) const
-{
-    return DOMImplementation::hasFeature(feature, version);
-}
-
 String SVGElement::title() const
 {
     // According to spec, we should not return titles when hovering over root <svg> elements (those
@@ -271,8 +264,8 @@ String SVGElement::title() const
 
     // If we aren't an instance in a <use> or the <use> title was not found, then find the first
     // <title> child of this element.
-    Element* titleElement = ElementTraversal::firstWithin(this);
-    for (; titleElement; titleElement = ElementTraversal::nextSkippingChildren(titleElement, this)) {
+    Element* titleElement = ElementTraversal::firstWithin(*this);
+    for (; titleElement; titleElement = ElementTraversal::nextSkippingChildren(*titleElement, this)) {
         if (titleElement->hasTagName(SVGNames::titleTag) && titleElement->isSVGElement())
             break;
     }
@@ -302,10 +295,6 @@ PassRefPtr<CSSValue> SVGElement::getPresentationAttribute(const String& name)
     return cssValue ? cssValue->cloneForCSSOM() : 0;
 }
 
-bool SVGElement::isKnownAttribute(const QualifiedName& attrName)
-{
-    return isIdAttributeName(attrName);
-}
 
 bool SVGElement::instanceUpdatesBlocked() const
 {
@@ -318,7 +307,7 @@ void SVGElement::setInstanceUpdatesBlocked(bool value)
         svgRareData()->setInstanceUpdatesBlocked(value);
 }
 
-AffineTransform SVGElement::localCoordinateSpaceTransform(SVGLocatable::CTMScope) const
+AffineTransform SVGElement::localCoordinateSpaceTransform(CTMScope) const
 {
     // To be overriden by SVGGraphicsElement (or as special case SVGTextElement and SVGPatternElement)
     return AffineTransform();
@@ -332,6 +321,26 @@ String SVGElement::xmlbase() const
 void SVGElement::setXMLbase(const String& value)
 {
     setAttribute(XMLNames::baseAttr, value);
+}
+
+String SVGElement::xmllang() const
+{
+    return fastGetAttribute(XMLNames::langAttr);
+}
+
+void SVGElement::setXMLlang(const String& value)
+{
+    setAttribute(XMLNames::langAttr, value);
+}
+
+String SVGElement::xmlspace() const
+{
+    return fastGetAttribute(XMLNames::spaceAttr);
+}
+
+void SVGElement::setXMLspace(const String& value)
+{
+    setAttribute(XMLNames::spaceAttr, value);
 }
 
 Node::InsertionNotificationRequest SVGElement::insertedInto(ContainerNode* rootParent)
@@ -644,6 +653,12 @@ void SVGElement::parseAttribute(const QualifiedName& name, const AtomicString& v
     // standard events
     if (name == onloadAttr)
         setAttributeEventListener(EventTypeNames::load, createAttributeEventListener(this, name, value));
+    else if (name == onbeginAttr)
+        setAttributeEventListener(EventTypeNames::beginEvent, createAttributeEventListener(this, name, value));
+    else if (name == onendAttr)
+        setAttributeEventListener(EventTypeNames::endEvent, createAttributeEventListener(this, name, value));
+    else if (name == onrepeatAttr)
+        setAttributeEventListener(EventTypeNames::repeatEvent, createAttributeEventListener(this, name, value));
     else if (name == onclickAttr)
         setAttributeEventListener(EventTypeNames::click, createAttributeEventListener(this, name, value));
     else if (name == onmousedownAttr)
@@ -672,7 +687,7 @@ void SVGElement::parseAttribute(const QualifiedName& name, const AtomicString& v
         // style updates (instead of Element::parseAttribute). We don't
         // tell Element about the change to avoid parsing the class list twice
         setClassNameBaseValue(value);
-    } else if (SVGLangSpace::parseAttribute(name, value)) {
+    } else if (name.matches(XMLNames::langAttr) || name.matches(XMLNames::spaceAttr)) {
     } else
         Element::parseAttribute(name, value);
 }
@@ -1037,7 +1052,7 @@ void SVGElement::synchronizeSystemLanguage(SVGElement* contextElement)
 PassRefPtr<RenderStyle> SVGElement::customStyleForRenderer()
 {
     if (!correspondingElement())
-        return document().styleResolver()->styleForElement(this);
+        return document().ensureStyleResolver().styleForElement(this);
 
     RenderStyle* style = 0;
     if (Element* parent = parentOrShadowHostElement()) {
@@ -1045,7 +1060,7 @@ PassRefPtr<RenderStyle> SVGElement::customStyleForRenderer()
             style = renderer->style();
     }
 
-    return document().styleResolver()->styleForElement(correspondingElement(), style, DisallowStyleSharing);
+    return document().ensureStyleResolver().styleForElement(correspondingElement(), style, DisallowStyleSharing);
 }
 
 MutableStylePropertySet* SVGElement::animatedSMILStyleProperties() const

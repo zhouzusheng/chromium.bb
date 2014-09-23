@@ -9,11 +9,11 @@
     'linux_link_kerberos%': 0,
     'use_tracing_cache_backend%': 0,
     'conditions': [
-      ['chromeos==1 or OS=="android" or OS=="ios"', {
+      ['chromeos==1 or embedded==1 or OS=="android" or OS=="ios"', {
         # Disable Kerberos on ChromeOS, Android and iOS, at least for now.
         # It needs configuration (krb5.conf and so on).
         'use_kerberos%': 0,
-      }, {  # chromeos == 0
+      }, {  # chromeos == 0 and embedded==0 and OS!="android" and OS!="ios"
         'use_kerberos%': 1,
       }],
       ['OS=="android" and target_arch != "ia32"', {
@@ -270,19 +270,37 @@
         'cert/cert_verify_result.h',
         'cert/crl_set.cc',
         'cert/crl_set.h',
+        'cert/ct_known_logs.cc',
+        'cert/ct_known_logs.h',
+        'cert/ct_log_verifier.cc',
+        'cert/ct_log_verifier.h',
+        'cert/ct_log_verifier_nss.cc',
+        'cert/ct_log_verifier_openssl.cc',
+        'cert/ct_objects_extractor.h',
+        'cert/ct_objects_extractor_nss.cc',
+        'cert/ct_objects_extractor_openssl.cc',
         'cert/ct_serialization.cc',
         'cert/ct_serialization.h',
+        'cert/ct_signed_certificate_timestamp_log_param.cc',
+        'cert/ct_signed_certificate_timestamp_log_param.h',
+        'cert/ct_verifier.h',
+        'cert/ct_verify_result.cc',
+        'cert/ct_verify_result.h',
         'cert/ev_root_ca_metadata.cc',
         'cert/ev_root_ca_metadata.h',
         'cert/jwk_serializer_nss.cc',
         'cert/jwk_serializer_openssl.cc',
         'cert/jwk_serializer.h',
+        'cert/multi_log_ct_verifier.cc',
+        'cert/multi_log_ct_verifier.h',
         'cert/multi_threaded_cert_verifier.cc',
         'cert/multi_threaded_cert_verifier.h',
         'cert/nss_cert_database.cc',
         'cert/nss_cert_database.h',
         'cert/pem_tokenizer.cc',
         'cert/pem_tokenizer.h',
+        'cert/scoped_nss_types.h',
+        'cert/sct_status_flags.h',
         'cert/signed_certificate_timestamp.cc',
         'cert/signed_certificate_timestamp.h',
         'cert/single_request_cert_verifier.cc',
@@ -358,6 +376,7 @@
         'disk_cache/file.cc',
         'disk_cache/file.h',
         'disk_cache/file_block.h',
+        'disk_cache/file_ios.cc',
         'disk_cache/file_lock.cc',
         'disk_cache/file_lock.h',
         'disk_cache/file_posix.cc',
@@ -449,6 +468,8 @@
         'dns/dns_config_service_posix.h',
         'dns/dns_config_service_win.cc',
         'dns/dns_config_service_win.h',
+        'dns/dns_config_watcher_mac.cc',
+        'dns/dns_config_watcher_mac.h',
         'dns/dns_hosts.cc',
         'dns/dns_hosts.h',
         'dns/dns_protocol.h',
@@ -636,6 +657,8 @@
         'http/proxy_client_socket.cc',
         'http/proxy_connect_redirect_http_stream.h',
         'http/proxy_connect_redirect_http_stream.cc',
+        'http/transport_security_persister.cc',
+        'http/transport_security_persister.h',
         'http/transport_security_state.cc',
         'http/transport_security_state.h',
         'http/transport_security_state_static.h',
@@ -734,8 +757,8 @@
         'quic/congestion_control/leaky_bucket.h',
         'quic/congestion_control/paced_sender.cc',
         'quic/congestion_control/paced_sender.h',
-        'quic/congestion_control/quic_congestion_manager.cc',
-        'quic/congestion_control/quic_congestion_manager.h',
+        'quic/congestion_control/pacing_sender.cc',
+        'quic/congestion_control/pacing_sender.h',
         'quic/congestion_control/quic_max_sized_map.h',
         'quic/congestion_control/receive_algorithm_interface.cc',
         'quic/congestion_control/receive_algorithm_interface.h',
@@ -774,6 +797,8 @@
         'quic/crypto/curve25519_key_exchange.h',
         'quic/crypto/ephemeral_key_source.h',
         'quic/crypto/key_exchange.h',
+        'quic/crypto/local_strike_register_client.cc',
+        'quic/crypto/local_strike_register_client.h',
         'quic/crypto/null_decrypter.cc',
         'quic/crypto/null_decrypter.h',
         'quic/crypto/null_encrypter.cc',
@@ -801,10 +826,13 @@
         'quic/crypto/scoped_evp_cipher_ctx.h',
         'quic/crypto/strike_register.cc',
         'quic/crypto/strike_register.h',
+        'quic/crypto/strike_register_client.h',
         'quic/crypto/source_address_token.cc',
         'quic/crypto/source_address_token.h',
         'quic/iovector.cc',
         'quic/iovector.h',
+        'quic/port_suggester.cc',
+        'quic/port_suggester.h',
         'quic/quic_ack_notifier.cc',
         'quic/quic_ack_notifier.h',
         'quic/quic_ack_notifier_manager.cc',
@@ -837,6 +865,8 @@
         'quic/quic_crypto_stream.h',
         'quic/quic_data_reader.cc',
         'quic/quic_data_reader.h',
+        'quic/quic_data_stream.cc',
+        'quic/quic_data_stream.h',
         'quic/quic_data_writer.cc',
         'quic/quic_data_writer.h',
         'quic/quic_default_packet_writer.cc',
@@ -927,6 +957,8 @@
         'socket/ssl_server_socket_nss.cc',
         'socket/ssl_server_socket_nss.h',
         'socket/ssl_server_socket_openssl.cc',
+        'socket/ssl_session_cache_openssl.cc',
+        'socket/ssl_session_cache_openssl.h',
         'socket/ssl_socket.h',
         'socket/stream_listen_socket.cc',
         'socket/stream_listen_socket.h',
@@ -996,10 +1028,12 @@
         'spdy/spdy_write_queue.h',
         'spdy/write_blocked_list.h',
         'ssl/client_cert_store.h',
-        'ssl/client_cert_store_impl.h',
-        'ssl/client_cert_store_impl_mac.cc',
-        'ssl/client_cert_store_impl_nss.cc',
-        'ssl/client_cert_store_impl_win.cc',
+        'ssl/client_cert_store_mac.cc',
+        'ssl/client_cert_store_mac.h',
+        'ssl/client_cert_store_nss.cc',
+        'ssl/client_cert_store_nss.h',
+        'ssl/client_cert_store_win.cc',
+        'ssl/client_cert_store_win.h',
         'ssl/default_server_bound_cert_store.cc',
         'ssl/default_server_bound_cert_store.h',
         'ssl/openssl_client_key_store.cc',
@@ -1008,6 +1042,8 @@
         'ssl/server_bound_cert_service.h',
         'ssl/server_bound_cert_store.cc',
         'ssl/server_bound_cert_store.h',
+        'ssl/signed_certificate_timestamp_and_status.cc',
+        'ssl/signed_certificate_timestamp_and_status.h',
         'ssl/ssl_cert_request_info.cc',
         'ssl/ssl_cert_request_info.h',
         'ssl/ssl_cipher_suite_names.cc',
@@ -1117,6 +1153,10 @@
         'url_request/url_request_throttler_manager.h',
         'url_request/view_cache_helper.cc',
         'url_request/view_cache_helper.h',
+        'url_request/websocket_handshake_userdata_key.cc',
+        'url_request/websocket_handshake_userdata_key.h',
+        'websockets/websocket_basic_handshake_stream.cc',
+        'websockets/websocket_basic_handshake_stream.h',
         'websockets/websocket_basic_stream.cc',
         'websockets/websocket_basic_stream.h',
         'websockets/websocket_channel.cc',
@@ -1143,6 +1183,8 @@
         'websockets/websocket_handshake_handler.cc',
         'websockets/websocket_handshake_handler.h',
         'websockets/websocket_handshake_stream_base.h',
+        'websockets/websocket_handshake_stream_create_helper.cc',
+        'websockets/websocket_handshake_stream_create_helper.h',
         'websockets/websocket_inflater.cc',
         'websockets/websocket_inflater.h',
         'websockets/websocket_job.cc',
@@ -1255,9 +1297,12 @@
               'cert/cert_database_nss.cc',
               'cert/cert_verify_proc_nss.cc',
               'cert/cert_verify_proc_nss.h',
+              'cert/ct_log_verifier_nss.cc',
+              'cert/ct_objects_extractor_nss.cc',
               'cert/jwk_serializer_nss.cc',
               'cert/nss_cert_database.cc',
               'cert/nss_cert_database.h',
+              'cert/scoped_nss_types.h',
               'cert/test_root_certs_nss.cc',
               'cert/x509_certificate_nss.cc',
               'cert/x509_util_nss.cc',
@@ -1274,7 +1319,6 @@
               'socket/ssl_client_socket_nss.h',
               'socket/ssl_server_socket_nss.cc',
               'socket/ssl_server_socket_nss.h',
-              'ssl/client_cert_store_impl_nss.cc',
               'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
               'third_party/mozilla_security_manager/nsKeygenHandler.h',
               'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
@@ -1293,6 +1337,8 @@
               'cert/cert_database_openssl.cc',
               'cert/cert_verify_proc_openssl.cc',
               'cert/cert_verify_proc_openssl.h',
+              'cert/ct_log_verifier_openssl.cc',
+              'cert/ct_objects_extractor_openssl.cc',
               'cert/jwk_serializer_openssl.cc',
               'cert/test_root_certs_openssl.cc',
               'cert/x509_certificate_openssl.cc',
@@ -1307,6 +1353,8 @@
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
+              'socket/ssl_session_cache_openssl.cc',
+              'socket/ssl_session_cache_openssl.h',
               'ssl/openssl_client_key_store.cc',
               'ssl/openssl_client_key_store.h',
             ],
@@ -1317,6 +1365,8 @@
               '../build/linux/system.gyp:gconf',
               '../build/linux/system.gyp:gio',
             ],
+        }],
+        [ 'desktop_linux == 1 or chromeos == 1', {
             'conditions': [
               ['use_openssl==1', {
                 'dependencies': [
@@ -1377,7 +1427,8 @@
             'sources!': [
               'cert/cert_verify_proc_nss.cc',
               'cert/cert_verify_proc_nss.h',
-              'ssl/client_cert_store_impl_nss.cc',
+              'ssl/client_cert_store_nss.cc',
+              'ssl/client_cert_store_nss.h',
             ],
         }],
         [ 'enable_websockets != 1', {
@@ -1409,7 +1460,6 @@
               'http/http_auth_handler_ntlm_portable.cc',
               'socket/tcp_socket_libevent.cc',
               'socket/tcp_socket_libevent.h',
-              'ssl/client_cert_store_impl_nss.cc',
               'udp/udp_socket_libevent.cc',
               'udp/udp_socket_libevent.h',
             ],
@@ -1432,9 +1482,6 @@
           },
         ],
         [ 'OS == "mac"', {
-            'sources!': [
-              'ssl/client_cert_store_impl_nss.cc',
-            ],
             'dependencies': [
               '../third_party/nss/nss.gyp:nspr',
               '../third_party/nss/nss.gyp:nss',
@@ -1462,6 +1509,9 @@
                 '$(SDKROOT)/System/Library/Frameworks/Security.framework',
                 '$(SDKROOT)/System/Library/Frameworks/SystemConfiguration.framework',
                 '$(SDKROOT)/usr/lib/libresolv.dylib',
+              ],
+              'sources!': [
+                'disk_cache/file_posix.cc',
               ],
             },
           },
@@ -1513,7 +1563,6 @@
             ['include', '^cert/test_root_certs_nss\\.cc$'],
             ['include', '^cert/x509_util_nss\\.cc$'],
             ['include', '^cert/x509_util_nss\\.h$'],
-            ['include', '^dns/notify_watcher_mac\\.cc$'],
             ['include', '^proxy/proxy_resolver_mac\\.cc$'],
             ['include', '^proxy/proxy_server_mac\\.cc$'],
             ['include', '^ocsp/nss_ocsp\\.cc$'],
@@ -1576,12 +1625,16 @@
         'base/url_util_unittest.cc',
         'cert/cert_verify_proc_unittest.cc',
         'cert/crl_set_unittest.cc',
+        'cert/ct_log_verifier_unittest.cc',
+        'cert/ct_objects_extractor_unittest.cc',
         'cert/ct_serialization_unittest.cc',
         'cert/ev_root_ca_metadata_unittest.cc',
         'cert/jwk_serializer_unittest.cc',
+        'cert/multi_log_ct_verifier_unittest.cc',
         'cert/multi_threaded_cert_verifier_unittest.cc',
         'cert/nss_cert_database_unittest.cc',
         'cert/pem_tokenizer_unittest.cc',
+        'cert/signed_certificate_timestamp_unittest.cc',
         'cert/test_root_certs_unittest.cc',
         'cert/x509_certificate_unittest.cc',
         'cert/x509_cert_types_unittest.cc',
@@ -1694,6 +1747,7 @@
         'http/mock_http_cache.h',
         'http/mock_sspi_library_win.cc',
         'http/mock_sspi_library_win.h',
+        'http/transport_security_persister_unittest.cc',
         'http/transport_security_state_unittest.cc',
         'http/url_security_manager_unittest.cc',
         'ocsp/nss_ocsp_unittest.cc',
@@ -1729,8 +1783,7 @@
         'quic/congestion_control/inter_arrival_sender_test.cc',
         'quic/congestion_control/leaky_bucket_test.cc',
         'quic/congestion_control/paced_sender_test.cc',
-        'quic/congestion_control/quic_congestion_control_test.cc',
-        'quic/congestion_control/quic_congestion_manager_test.cc',
+        'quic/congestion_control/pacing_sender_test.cc',
         'quic/congestion_control/quic_max_sized_map_test.cc',
         'quic/congestion_control/tcp_cubic_sender_test.cc',
         'quic/congestion_control/tcp_receiver_test.cc',
@@ -1744,19 +1797,24 @@
         'quic/crypto/crypto_server_test.cc',
         'quic/crypto/crypto_utils_test.cc',
         'quic/crypto/curve25519_key_exchange_test.cc',
+        'quic/crypto/local_strike_register_client_test.cc',
         'quic/crypto/null_decrypter_test.cc',
         'quic/crypto/null_encrypter_test.cc',
         'quic/crypto/p256_key_exchange_test.cc',
         'quic/crypto/proof_test.cc',
+        'quic/crypto/quic_crypto_client_config_test.cc',
         'quic/crypto/quic_crypto_server_config_test.cc',
         'quic/crypto/quic_random_test.cc',
         'quic/crypto/strike_register_test.cc',
         'quic/iovector_test.cc',
+        'quic/port_suggester_unittest.cc',
         'quic/test_tools/crypto_test_utils.cc',
         'quic/test_tools/crypto_test_utils.h',
         'quic/test_tools/crypto_test_utils_chromium.cc',
         'quic/test_tools/crypto_test_utils_nss.cc',
         'quic/test_tools/crypto_test_utils_openssl.cc',
+        'quic/test_tools/delayed_verify_strike_register_client.cc',
+        'quic/test_tools/delayed_verify_strike_register_client.h',
         'quic/test_tools/mock_clock.cc',
         'quic/test_tools/mock_clock.h',
         'quic/test_tools/mock_crypto_client_stream.cc',
@@ -1769,12 +1827,16 @@
         'quic/test_tools/quic_client_session_peer.h',
         'quic/test_tools/quic_connection_peer.cc',
         'quic/test_tools/quic_connection_peer.h',
+        'quic/test_tools/quic_data_stream_peer.cc',
+        'quic/test_tools/quic_data_stream_peer.h',
         'quic/test_tools/quic_framer_peer.cc',
         'quic/test_tools/quic_framer_peer.h',
         'quic/test_tools/quic_packet_creator_peer.cc',
         'quic/test_tools/quic_packet_creator_peer.h',
         'quic/test_tools/quic_received_packet_manager_peer.cc',
         'quic/test_tools/quic_received_packet_manager_peer.h',
+        'quic/test_tools/quic_sent_packet_manager_peer.cc',
+        'quic/test_tools/quic_sent_packet_manager_peer.h',
         'quic/test_tools/quic_session_peer.cc',
         'quic/test_tools/quic_session_peer.h',
         'quic/test_tools/quic_test_utils.cc',
@@ -1798,6 +1860,7 @@
         'quic/quic_crypto_client_stream_test.cc',
         'quic/quic_crypto_server_stream_test.cc',
         'quic/quic_crypto_stream_test.cc',
+        'quic/quic_data_stream_test.cc',
         'quic/quic_data_writer_test.cc',
         'quic/quic_fec_group_test.cc',
         'quic/quic_framer_test.cc',
@@ -1833,6 +1896,7 @@
         'socket/ssl_client_socket_pool_unittest.cc',
         'socket/ssl_client_socket_unittest.cc',
         'socket/ssl_server_socket_unittest.cc',
+        'socket/ssl_session_cache_openssl_unittest.cc',
         'socket/tcp_client_socket_unittest.cc',
         'socket/tcp_listen_socket_unittest.cc',
         'socket/tcp_listen_socket_unittest.h',
@@ -1872,7 +1936,10 @@
         'spdy/spdy_websocket_test_util.h',
         'spdy/spdy_write_queue_unittest.cc',
         'spdy/write_blocked_list_test.cc',
-        'ssl/client_cert_store_impl_unittest.cc',
+        'ssl/client_cert_store_mac_unittest.cc',
+        'ssl/client_cert_store_nss_unittest.cc',
+        'ssl/client_cert_store_unittest-inl.h',
+        'ssl/client_cert_store_win_unittest.cc',
         'ssl/default_server_bound_cert_store_unittest.cc',
         'ssl/openssl_client_key_store_unittest.cc',
         'ssl/server_bound_cert_service_unittest.cc',
@@ -1915,11 +1982,13 @@
         'websockets/websocket_extension_parser_test.cc',
         'websockets/websocket_frame_parser_test.cc',
         'websockets/websocket_frame_test.cc',
-        'websockets/websocket_handshake_handler_test.cc',
         'websockets/websocket_handshake_handler_spdy_test.cc',
+        'websockets/websocket_handshake_handler_test.cc',
+        'websockets/websocket_handshake_stream_create_helper_test.cc',
         'websockets/websocket_inflater_test.cc',
         'websockets/websocket_job_test.cc',
         'websockets/websocket_net_log_params_test.cc',
+        'websockets/websocket_stream_test.cc',
         'websockets/websocket_test_util.cc',
         'websockets/websocket_test_util.h',
         'websockets/websocket_throttle_test.cc',
@@ -1936,21 +2005,15 @@
             'quic/quic_end_to_end_unittest.cc',
             'tools/balsa/balsa_frame_test.cc',
             'tools/balsa/balsa_headers_test.cc',
-            'tools/flip_server/flip_test_utils.cc',
-            'tools/flip_server/flip_test_utils.h',
-            'tools/flip_server/http_interface_test.cc',
-            'tools/flip_server/mem_cache_test.cc',
-            'tools/flip_server/spdy_interface_test.cc',
             'tools/quic/end_to_end_test.cc',
             'tools/quic/quic_client_session_test.cc',
             'tools/quic/quic_dispatcher_test.cc',
             'tools/quic/quic_epoll_clock_test.cc',
             'tools/quic/quic_epoll_connection_helper_test.cc',
             'tools/quic/quic_in_memory_cache_test.cc',
-            'tools/quic/quic_reliable_client_stream_test.cc',
-            'tools/quic/quic_reliable_server_stream_test.cc',
             'tools/quic/quic_server_session_test.cc',
             'tools/quic/quic_server_test.cc',
+            'tools/quic/quic_spdy_client_stream_test.cc',
             'tools/quic/quic_spdy_server_stream_test.cc',
             'tools/quic/quic_time_wait_list_manager_test.cc',
             'tools/quic/test_tools/http_message_test_utils.cc',
@@ -1988,23 +2051,35 @@
             # No res_ninit() et al on Android, so this doesn't make a lot of
             # sense.
             'dns/dns_config_service_posix_unittest.cc',
-            'ssl/client_cert_store_impl_unittest.cc',
           ],
           'dependencies': [
             'net_javatests',
             'net_test_jni_headers',
           ],
         }],
-        [ 'use_glib == 1', {
-            'dependencies': [
-              '../build/linux/system.gyp:ssl',
-            ],
-          }, {  # else use_glib == 0: !posix || mac
-            'sources!': [
-              'cert/nss_cert_database_unittest.cc',
-            ],
-          },
-        ],
+        [ 'use_nss != 1', {
+          'sources!': [
+            'ssl/client_cert_store_nss_unittest.cc',
+          ],
+        }],
+        [ 'use_openssl == 1', {
+          # Avoid compiling/linking with the system library.
+          'dependencies': [
+            '../third_party/openssl/openssl.gyp:openssl',
+          ],
+        }, {  # use_openssl == 0
+          'conditions': [
+            [ 'desktop_linux == 1 or chromeos == 1', {
+              'dependencies': [
+                '../build/linux/system.gyp:ssl',
+              ],
+            }, {  # desktop_linux == 0 and chromeos == 0
+              'sources!': [
+                'cert/nss_cert_database_unittest.cc',
+              ],
+            }],
+          ],
+        }],
         [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gtk',
@@ -2032,7 +2107,7 @@
             'http/mock_gssapi_library_posix.h',
           ],
         }],
-        [ 'use_openssl == 1 or (use_glib == 0 and OS != "ios")', {
+        [ 'use_openssl == 1 or (desktop_linux == 0 and chromeos == 0 and OS != "ios")', {
           # Only include this test when on Posix and using NSS for
           # cert verification or on iOS (which also uses NSS for certs).
           'sources!': [
@@ -2040,24 +2115,24 @@
           ],
         }],
         [ 'use_openssl==1', {
-            # When building for OpenSSL, we need to exclude NSS specific tests.
+            # When building for OpenSSL, we need to exclude NSS specific tests
+            # or functionality not supported by OpenSSL yet.
             # TODO(bulach): Add equivalent tests when the underlying
             #               functionality is ported to OpenSSL.
             'sources!': [
+              'cert/ct_objects_extractor_unittest.cc',
+              'cert/multi_log_ct_verifier_unittest.cc',
               'cert/nss_cert_database_unittest.cc',
               'cert/x509_util_nss_unittest.cc',
               'quic/test_tools/crypto_test_utils_nss.cc',
-              'ssl/client_cert_store_impl_unittest.cc',
             ],
           }, {  # else !use_openssl: remove the unneeded files
             'sources!': [
               'cert/x509_util_openssl_unittest.cc',
               'quic/test_tools/crypto_test_utils_openssl.cc',
               'socket/ssl_client_socket_openssl_unittest.cc',
+              'socket/ssl_session_cache_openssl_unittest.cc',
               'ssl/openssl_client_key_store_unittest.cc',
-            ],
-            'sources/': [
-              ['exclude', '^tools/flip_server'],
             ],
           },
         ],
@@ -2161,7 +2236,6 @@
               # Need TestServer.
               'proxy/proxy_script_fetcher_impl_unittest.cc',
               'socket/ssl_client_socket_unittest.cc',
-              'ssl/client_cert_store_impl_unittest.cc',
               'url_request/url_fetcher_impl_unittest.cc',
               'url_request/url_request_context_builder_unittest.cc',
               # Needs GetAppOutput().
@@ -2171,31 +2245,6 @@
               # iOS.
               # OS is not "linux" or "freebsd" or "openbsd".
               'socket/unix_domain_socket_posix_unittest.cc',
-            ],
-            'conditions': [
-              ['coverage != 0', {
-                'sources!': [
-                  # These sources can't be built with coverage due to a
-                  # toolchain bug: http://openradar.appspot.com/radar?id=1499403
-                  'http/transport_security_state_unittest.cc',
-
-                  # These tests crash when run with coverage turned on due to an
-                  # issue with llvm_gcda_increment_indirect_counter:
-                  # http://crbug.com/156058
-                  'cookies/cookie_monster_unittest.cc',
-                  'cookies/cookie_store_unittest.h',
-                  'http/http_auth_controller_unittest.cc',
-                  'http/http_network_layer_unittest.cc',
-                  'http/http_network_transaction_unittest.cc',
-                  'spdy/spdy_http_stream_unittest.cc',
-                  'spdy/spdy_proxy_client_socket_unittest.cc',
-                  'spdy/spdy_session_unittest.cc',
-
-                  # These tests crash when run with coverage turned on:
-                  # http://crbug.com/177203
-                  'proxy/proxy_service_unittest.cc',
-                ],
-              }],
             ],
         }],
         [ 'OS == "android"', {
@@ -2543,6 +2592,7 @@
             'tools/balsa/simple_buffer.h',
             'tools/balsa/split.cc',
             'tools/balsa/split.h',
+            'tools/balsa/string_piece_utils.h',
           ],
         },
         {
@@ -2602,7 +2652,23 @@
             'tools/flip_server/spdy_util.h',
             'tools/flip_server/streamer_interface.cc',
             'tools/flip_server/streamer_interface.h',
-            'tools/flip_server/string_piece_utils.h',
+          ],
+        },
+        {
+          'target_name': 'flip_in_mem_edsm_server_unittests',
+          'type': 'executable',
+          'dependencies': [
+              '../third_party/openssl/openssl.gyp:openssl',
+              'flip_in_mem_edsm_server_base',
+              'net',
+          ],
+          'sources': [
+            'tools/flip_server/flip_test_utils.cc',
+            'tools/flip_server/flip_test_utils.h',
+            'tools/flip_server/http_interface_test.cc',
+            'tools/flip_server/mem_cache_test.cc',
+            'tools/flip_server/run_all_tests.cc',
+            'tools/flip_server/spdy_interface_test.cc',
           ],
         },
         {
@@ -2648,10 +2714,6 @@
             'tools/quic/quic_epoll_connection_helper.h',
             'tools/quic/quic_in_memory_cache.cc',
             'tools/quic/quic_in_memory_cache.h',
-            'tools/quic/quic_reliable_client_stream.cc',
-            'tools/quic/quic_reliable_client_stream.h',
-            'tools/quic/quic_reliable_server_stream.cc',
-            'tools/quic/quic_reliable_server_stream.h',
             'tools/quic/quic_server.cc',
             'tools/quic/quic_server.h',
             'tools/quic/quic_server_session.cc',
@@ -2711,6 +2773,7 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
+            'jni_generator_ptr_type': 'long',
           },
           'direct_dependent_settings': {
             'include_dirs': [
@@ -2727,6 +2790,7 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
+            'jni_generator_ptr_type': 'long',
           },
           'direct_dependent_settings': {
             'include_dirs': [

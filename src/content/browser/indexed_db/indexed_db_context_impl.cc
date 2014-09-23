@@ -23,6 +23,7 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_quota_client.h"
+#include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/indexed_db_info.h"
@@ -106,6 +107,7 @@ IndexedDBContextImpl::IndexedDBContextImpl(
       special_storage_policy_(special_storage_policy),
       quota_manager_proxy_(quota_manager_proxy),
       task_runner_(task_runner) {
+  IDB_TRACE("init");
   if (!data_path.empty())
     data_path_ = data_path.Append(kIndexedDBDirectory);
   if (quota_manager_proxy) {
@@ -219,18 +221,18 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
 
           const char* kModes[] = { "readonly", "readwrite", "versionchange" };
           transaction_info->SetString("mode", kModes[transaction->mode()]);
-          switch (transaction->queue_status()) {
+          switch (transaction->state()) {
             case IndexedDBTransaction::CREATED:
-              transaction_info->SetString("status", "created");
-              break;
-            case IndexedDBTransaction::BLOCKED:
               transaction_info->SetString("status", "blocked");
               break;
-            case IndexedDBTransaction::UNBLOCKED:
-              if (transaction->IsRunning())
+            case IndexedDBTransaction::STARTED:
+              if (transaction->diagnostics().tasks_scheduled > 0)
                 transaction_info->SetString("status", "running");
               else
                 transaction_info->SetString("status", "started");
+              break;
+            case IndexedDBTransaction::FINISHED:
+              transaction_info->SetString("status", "finished");
               break;
           }
 
@@ -244,16 +246,16 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
                   transaction->id()));
           transaction_info->SetDouble(
               "age",
-              (base::Time::Now() - transaction->creation_time())
+              (base::Time::Now() - transaction->diagnostics().creation_time)
                   .InMillisecondsF());
           transaction_info->SetDouble(
               "runtime",
-              (base::Time::Now() - transaction->start_time())
+              (base::Time::Now() - transaction->diagnostics().start_time)
                   .InMillisecondsF());
-          transaction_info->SetDouble("tasks_scheduled",
-                                      transaction->tasks_scheduled());
-          transaction_info->SetDouble("tasks_completed",
-                                      transaction->tasks_completed());
+          transaction_info->SetDouble(
+              "tasks_scheduled", transaction->diagnostics().tasks_scheduled);
+          transaction_info->SetDouble(
+              "tasks_completed", transaction->diagnostics().tasks_completed);
 
           scoped_ptr<ListValue> scope(new ListValue());
           for (std::set<int64>::const_iterator scope_it =
@@ -295,7 +297,7 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
     return base::Time();
   base::FilePath idb_directory = GetFilePath(origin_url);
   base::PlatformFileInfo file_info;
-  if (!file_util::GetFileInfo(idb_directory, &file_info))
+  if (!base::GetFileInfo(idb_directory, &file_info))
     return base::Time();
   return file_info.last_modified;
 }
@@ -346,6 +348,8 @@ void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
     DCHECK_EQ(connections_[origin_url].size(), 0UL);
     connections_.erase(origin_url);
   }
+  if (factory_)
+    factory_->ForceClose(origin_url);
 }
 
 size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {

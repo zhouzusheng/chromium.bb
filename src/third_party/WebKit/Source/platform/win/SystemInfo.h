@@ -27,11 +27,10 @@
 #define SystemInfo_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-PLATFORM_EXPORT bool isWindowsVistaOrGreater();
+extern "C" PLATFORM_EXPORT bool isWindowsVistaOrGreater();
 
 } // namespace WebCore
 

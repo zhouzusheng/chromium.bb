@@ -50,11 +50,11 @@ static v8::Local<v8::Object> wrapInShadowTemplate(v8::Local<v8::Object> wrapper,
     V8PerIsolateData* data = V8PerIsolateData::from(isolate);
     v8::Handle<v8::FunctionTemplate> shadowTemplate = data->privateTemplateIfExists(currentWorldType, &shadowTemplateUniqueKey);
     if (shadowTemplate.IsEmpty()) {
-        shadowTemplate = v8::FunctionTemplate::New();
+        shadowTemplate = v8::FunctionTemplate::New(isolate);
         if (shadowTemplate.IsEmpty())
             return v8::Local<v8::Object>();
-        shadowTemplate->SetClassName(v8::String::NewSymbol("HTMLDocument"));
-        shadowTemplate->Inherit(V8HTMLDocument::GetTemplate(isolate, currentWorldType));
+        shadowTemplate->SetClassName(v8AtomicString(isolate, "HTMLDocument"));
+        shadowTemplate->Inherit(V8HTMLDocument::domTemplate(isolate, currentWorldType));
         shadowTemplate->InstanceTemplate()->SetInternalFieldCount(V8HTMLDocument::internalFieldCount);
         data->setPrivateTemplate(currentWorldType, &shadowTemplateUniqueKey, shadowTemplate);
     }
@@ -76,7 +76,7 @@ v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creatio
     V8WrapperInstantiationScope scope(creationContext, isolate);
 
     V8PerContextData* perContextData = V8PerContextData::from(scope.context());
-    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
+    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->domTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
 
     if (type == &V8HTMLDocument::wrapperTypeInfo && !wrapper.IsEmpty())
         wrapper = wrapInShadowTemplate(wrapper, static_cast<Node*>(impl), isolate);
@@ -103,7 +103,9 @@ bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
     v8::HandleScope scope(v8::Isolate::GetCurrent());
     ASSERT(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
-    return true;
+    const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink;
 }
 #endif
 
@@ -118,8 +120,10 @@ bool V8DOMWrapper::isDOMWrapper(v8::Handle<v8::Value> value)
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
 
+    const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
     // FIXME: Add class id checks.
-    return true;
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink;
 }
 
 bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, const WrapperTypeInfo* type)
@@ -132,7 +136,7 @@ bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, const WrapperTyp
     ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
     const WrapperTypeInfo* typeInfo = static_cast<const WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
-    return typeInfo == type;
+    return typeInfo->ginEmbedder == gin::kEmbedderBlink && typeInfo == type;
 }
 
 }  // namespace WebCore

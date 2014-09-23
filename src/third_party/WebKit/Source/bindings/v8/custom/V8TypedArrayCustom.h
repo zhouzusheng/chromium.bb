@@ -47,12 +47,12 @@ class TypedArrayTraits
 template<typename TypedArray>
 class V8TypedArray {
 public:
-    static bool HasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
+    static bool hasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
     {
         return TypedArrayTraits<TypedArray>::IsInstance(value);
     }
 
-    static bool HasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
+    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
     {
         return TypedArrayTraits<TypedArray>::IsInstance(value);
     }
@@ -72,7 +72,7 @@ public:
     static v8::Handle<v8::Value> toV8(TypedArray* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
     {
         if (UNLIKELY(!impl))
-            return v8NullWithCheck(isolate);
+            return v8::Null(isolate);
         v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapper<Binding>(impl, isolate);
         if (!wrapper.IsEmpty())
             return wrapper;
@@ -177,6 +177,7 @@ TypedArray* V8TypedArray<TypedArray>::toNative(v8::Handle<v8::Object> object)
 
 template <typename TypedArray>
 const WrapperTypeInfo V8TypedArray<TypedArray>::wrapperTypeInfo = {
+    gin::kEmbedderBlink,
     0, V8TypedArray<TypedArray>::derefObject,
     0, 0, 0, 0, 0, WrapperTypeObjectPrototype
 };

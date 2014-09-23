@@ -57,6 +57,7 @@ class IntPoint;
 class IntSize;
 class Page;
 class PlatformGestureEvent;
+class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 class PlatformTouchEvent;
 class PostWorkerNotificationToFrontendTask;
@@ -73,15 +74,12 @@ public:
     static PassOwnPtr<InspectorController> create(Page*, InspectorClient*);
     void inspectedPageDestroyed();
 
-    Page* inspectedPage() const;
-
     void setInspectorFrontendClient(PassOwnPtr<InspectorFrontendClient>);
     void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
     void setInjectedScriptForOrigin(const String& origin, const String& source);
 
     void dispatchMessageFromFrontend(const String& message);
 
-    bool hasFrontend() const { return m_inspectorFrontend; }
     void connectFrontend(InspectorFrontendChannel*);
     void disconnectFrontend();
     void reconnectFrontend();
@@ -99,6 +97,7 @@ public:
     bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
     bool handleMouseEvent(Frame*, const PlatformMouseEvent&);
     bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
+    bool handleKeyboardEvent(Frame*, const PlatformKeyboardEvent&);
 
     void requestPageScaleFactor(float scale, const IntPoint& origin);
     bool deviceEmulationEnabled();
@@ -110,8 +109,6 @@ public:
 
     void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
 
-    InspectorClient* inspectorClient() const { return m_inspectorClient; }
-
     void willProcessTask();
     void didProcessTask();
 
@@ -119,6 +116,8 @@ public:
     void didCancelFrame();
     void willComposite();
     void didComposite();
+
+    void processGPUEvent(double timestamp, int phase, bool foreign, size_t usedGPUMemoryBytes);
 
 private:
     InspectorController(Page*, InspectorClient*);

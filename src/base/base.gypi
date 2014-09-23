@@ -39,6 +39,10 @@
           'android/base_jni_registrar.h',
           'android/build_info.cc',
           'android/build_info.h',
+          'android/command_line_android.cc',
+          'android/command_line_android.h',
+          'android/content_uri_utils.cc',
+          'android/content_uri_utils.h',
           'android/cpu_features.cc',
           'android/fifo_utils.cc',
           'android/fifo_utils.h',
@@ -177,6 +181,8 @@
           'files/dir_reader_fallback.h',
           'files/dir_reader_linux.h',
           'files/dir_reader_posix.h',
+          'files/file.cc',
+          'files/file.h',
           'files/file_enumerator.cc',
           'files/file_enumerator.h',
           'files/file_enumerator_posix.cc',
@@ -190,8 +196,10 @@
           'files/file_path_watcher_linux.cc',
           'files/file_path_watcher_stub.cc',
           'files/file_path_watcher_win.cc',
+          'files/file_posix.cc',
           'files/file_util_proxy.cc',
           'files/file_util_proxy.h',
+          'files/file_win.cc',
           'files/important_file_writer.h',
           'files/important_file_writer.cc',
           'files/memory_mapped_file.cc',
@@ -284,11 +292,17 @@
           'memory/aligned_memory.cc',
           'memory/aligned_memory.h',
           'memory/discardable_memory.h',
+          'memory/discardable_memory_allocator_android.cc',
+          'memory/discardable_memory_allocator_android.h',
           'memory/discardable_memory_android.cc',
+          'memory/discardable_memory_android.h',
           'memory/discardable_memory_emulated.cc',
+          'memory/discardable_memory_emulated.h',
+          'memory/discardable_memory_linux.cc',
           'memory/discardable_memory_mac.cc',
           'memory/discardable_memory_provider.cc',
           'memory/discardable_memory_provider.h',
+          'memory/discardable_memory_win.cc',
           'memory/linked_ptr.h',
           'memory/manual_constructor.h',
           'memory/memory_pressure_listener.cc',
@@ -536,6 +550,7 @@
           'sys_info_android.cc',
           'sys_info_chromeos.cc',
           'sys_info_freebsd.cc',
+          'sys_info_internal.h',
           'sys_info_ios.mm',
           'sys_info_linux.cc',
           'sys_info_mac.cc',
@@ -699,13 +714,21 @@
           4018,
         ],
         'target_conditions': [
-          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+          ['(<(desktop_linux) == 0 and <(chromeos) == 0) or >(nacl_untrusted_build)==1', {
               'sources/': [
                 ['exclude', '^nix/'],
               ],
               'sources!': [
                 'atomicops_internals_x86_gcc.cc',
+              ],
+          }],
+          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_glib.cc',
+              ],
+          }],
+          ['<(use_x11)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_x11.cc',
               ],
           }],
@@ -847,14 +870,6 @@
           ],
           ['OS != "win" or >(nacl_untrusted_build)==1', {
               'sources/': [ ['exclude', '^win/'] ],
-            },
-          ],
-          ['<(native_discardable_memory)==1', {
-              'sources!': [
-                'memory/discardable_memory_emulated.cc',
-                'memory/discardable_memory_provider.cc',
-                'memory/discardable_memory_provider.h',
-              ],
             },
           ],
           ['OS != "android" or >(nacl_untrusted_build)==1', {

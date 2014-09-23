@@ -29,7 +29,7 @@
 #include "config.h"
 
 #include "core/events/ThreadLocalEventNames.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/frame/animation/AnimationControllerPrivate.h"
 #include "core/frame/animation/CSSPropertyAnimation.h"
 #include "core/frame/animation/CompositeAnimation.h"
@@ -40,7 +40,7 @@
 
 namespace WebCore {
 
-ImplicitAnimation::ImplicitAnimation(const CSSAnimationData* transition, CSSPropertyID animatingProperty, RenderObject* renderer, CompositeAnimation* compAnim, RenderStyle* fromStyle)
+ImplicitAnimation::ImplicitAnimation(const CSSAnimationData* transition, CSSPropertyID animatingProperty, RenderObject& renderer, CompositeAnimation* compAnim, RenderStyle* fromStyle)
     : AnimationBase(transition, renderer, compAnim)
     , m_transitionProperty(transition->property())
     , m_animatingProperty(animatingProperty)
@@ -49,7 +49,7 @@ ImplicitAnimation::ImplicitAnimation(const CSSAnimationData* transition, CSSProp
     , m_fromStyle(fromStyle)
 {
     ASSERT(animatingProperty != CSSPropertyInvalid);
-    WebKit::Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(m_animatingProperty));
+    blink::Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(m_animatingProperty));
 }
 
 ImplicitAnimation::~ImplicitAnimation()

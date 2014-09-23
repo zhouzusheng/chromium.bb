@@ -31,12 +31,13 @@
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/page/EventHandler.h"
 #include "core/frame/Frame.h"
-#include "core/platform/Cursor.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFrame.h"
 #include "core/rendering/RenderView.h"
+#include "platform/Cursor.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -440,7 +441,8 @@ void RenderFrameSet::layout()
 {
     ASSERT(needsLayout());
 
-    bool doFullRepaint = selfNeedsLayout() && checkForRepaintDuringLayout();
+    LayoutRectRecorder recorder(*this);
+    bool doFullRepaint = !RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && selfNeedsLayout() && checkForRepaintDuringLayout();
     LayoutRect oldBounds;
     RenderLayerModelObject* repaintContainer = 0;
     if (doFullRepaint) {

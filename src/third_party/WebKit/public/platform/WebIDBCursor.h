@@ -31,7 +31,7 @@
 #include "WebIDBKey.h"
 #include "WebString.h"
 
-namespace WebKit {
+namespace blink {
 
 // See comment in WebIDBFactory for a high level overview these classes.
 class WebIDBCursor {
@@ -46,13 +46,13 @@ public:
     };
 
     virtual void advance(unsigned long, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void continueFunction(const WebIDBKey&, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void continueFunction(const WebIDBKey&, const WebIDBKey& primaryKey, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void postSuccessHandlerCallback() { } // Only used in frontend.
 
 protected:
     WebIDBCursor() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebIDBCursor_h

@@ -30,8 +30,8 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
 #include "modules/mediastream/SourceInfo.h"
+#include "platform/mediastream/MediaStreamSource.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -60,7 +60,7 @@ public:
 
     String readyState() const;
 
-    static void getSources(ExecutionContext*, PassRefPtr<MediaStreamTrackSourcesCallback>, ExceptionState&);
+    static void getSources(ExecutionContext*, PassOwnPtr<MediaStreamTrackSourcesCallback>, ExceptionState&);
     void stopTrack(ExceptionState&);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mute);

@@ -50,7 +50,7 @@ public:
     ShadowRoot* oldestShadowRoot() const { return m_shadowRoots.tail(); }
     ElementShadow* containingShadow() const;
 
-    ShadowRoot* addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType);
+    ShadowRoot& addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType);
 
     bool applyAuthorStyles() const { return m_applyAuthorStyles; }
     bool didAffectApplyAuthorStyles();
@@ -82,7 +82,7 @@ private:
     void distribute();
     void clearDistribution();
 
-    void collectSelectFeatureSetFrom(ShadowRoot*);
+    void collectSelectFeatureSetFrom(ShadowRoot&);
     void distributeNodeChildrenTo(InsertionPoint*, ContainerNode*);
 
     bool needsSelectFeatureSet() const { return m_needsSelectFeatureSet; }
@@ -106,9 +106,14 @@ inline Element* ElementShadow::host() const
 
 inline ShadowRoot* Node::youngestShadowRoot() const
 {
-    if (!this->isElementNode())
+    if (!isElementNode())
         return 0;
-    if (ElementShadow* shadow = toElement(this)->shadow())
+    return toElement(this)->youngestShadowRoot();
+}
+
+inline ShadowRoot* Element::youngestShadowRoot() const
+{
+    if (ElementShadow* shadow = this->shadow())
         return shadow->youngestShadowRoot();
     return 0;
 }

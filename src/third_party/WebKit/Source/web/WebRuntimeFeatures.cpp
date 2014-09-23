@@ -36,7 +36,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebRuntimeFeatures::enableStableFeatures(bool enable)
 {
@@ -64,6 +64,21 @@ void WebRuntimeFeatures::enableApplicationCache(bool enable)
 bool WebRuntimeFeatures::isApplicationCacheEnabled()
 {
     return RuntimeEnabledFeatures::applicationCacheEnabled();
+}
+
+void WebRuntimeFeatures::enableCSS3TextDecorations(bool enable)
+{
+    RuntimeEnabledFeatures::setCSS3TextDecorationsEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableCSS3Text(bool enable)
+{
+    RuntimeEnabledFeatures::setCSS3TextEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableCSSGridLayout(bool enable)
+{
+    RuntimeEnabledFeatures::setCSSGridLayoutEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableDatabase(bool enable)
@@ -132,6 +147,17 @@ void WebRuntimeFeatures::enablePrefixedEncryptedMedia(bool enable)
 bool WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()
 {
     return RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled();
+}
+
+void WebRuntimeFeatures::enableDirectWrite(bool enable)
+{
+    RuntimeEnabledFeatures::setDirectWriteEnabled(enable);
+    RuntimeEnabledFeatures::setSubpixelFontScalingEnabled(enable || RuntimeEnabledFeatures::subpixelFontScalingEnabled());
+}
+
+bool WebRuntimeFeatures::isDirectWriteEnabled()
+{
+    return RuntimeEnabledFeatures::directWriteEnabled();
 }
 
 void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
@@ -259,6 +285,16 @@ bool WebRuntimeFeatures::isNotificationsEnabled()
     return RuntimeEnabledFeatures::notificationsEnabled();
 }
 
+void WebRuntimeFeatures::enableNavigatorContentUtils(bool enable)
+{
+    RuntimeEnabledFeatures::setNavigatorContentUtilsEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isNavigatorContentUtilsEnabled()
+{
+    return RuntimeEnabledFeatures::navigatorContentUtilsEnabled();
+}
+
 void WebRuntimeFeatures::enablePagePopup(bool enable)
 {
     RuntimeEnabledFeatures::setPagePopupEnabled(enable);
@@ -349,16 +385,14 @@ bool WebRuntimeFeatures::isTouchEnabled()
     return RuntimeEnabledFeatures::touchEnabled();
 }
 
-void WebRuntimeFeatures::enableWebAnimationsCSS()
+void WebRuntimeFeatures::enableWebAnimationsCSS(bool enable)
 {
-    RuntimeEnabledFeatures::setWebAnimationsEnabled(true);
-    RuntimeEnabledFeatures::setWebAnimationsCSSEnabled(true);
+    RuntimeEnabledFeatures::setWebAnimationsCSSEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableWebAnimationsSVG()
+void WebRuntimeFeatures::enableWebAnimationsSVG(bool enable)
 {
-    RuntimeEnabledFeatures::setWebAnimationsEnabled(true);
-    RuntimeEnabledFeatures::setWebAnimationsSVGEnabled(true);
+    RuntimeEnabledFeatures::setWebAnimationsSVGEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableWebAudio(bool enable)
@@ -446,4 +480,4 @@ void WebRuntimeFeatures::enableRepaintAfterLayout(bool enable)
     RuntimeEnabledFeatures::setRepaintAfterLayoutEnabled(enable);
 }
 
-} // namespace WebKit
+} // namespace blink

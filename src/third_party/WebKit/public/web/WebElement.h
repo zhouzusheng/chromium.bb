@@ -38,7 +38,7 @@
 namespace WebCore { class Element; }
 #endif
 
-namespace WebKit {
+namespace blink {
 struct WebRect;
 
     // Provides access to some properties of a DOM element node.
@@ -67,7 +67,6 @@ struct WebRect;
         BLINK_EXPORT bool setAttribute(const WebString& name, const WebString& value);
         BLINK_EXPORT WebString innerText();
         BLINK_EXPORT void requestFullScreen();
-        BLINK_EXPORT WebString attributeName(unsigned index) const;
         BLINK_EXPORT WebString attributeLocalName(unsigned index) const;
         BLINK_EXPORT WebString attributeValue(unsigned index) const;
         BLINK_EXPORT unsigned attributeCount() const;
@@ -85,17 +84,7 @@ struct WebRect;
         // This function will update the layout if required.
         BLINK_EXPORT WebRect boundsInViewportSpace();
 
-        BLINK_EXPORT bool setCssProperty(const WebString& name, const WebString& value, const WebString& priority);
-        BLINK_EXPORT bool removeCssProperty(const WebString& name);
-        BLINK_EXPORT bool addClass(const WebString& name);
-        BLINK_EXPORT bool removeClass(const WebString& name);
-        BLINK_EXPORT bool containsClass(const WebString& name);
-        BLINK_EXPORT bool toggleClass(const WebString& name);
-        BLINK_EXPORT WebString innerHTML() const;
         BLINK_EXPORT void requestSpellCheck();
-
-        BLINK_EXPORT static bool isWebElement(v8::Handle<v8::Value> handle);
-        BLINK_EXPORT static WebElement fromV8Handle(v8::Handle<v8::Value> handle);
 
         // Returns the image contents of this element or a null WebImage
         // if there isn't any.
@@ -108,6 +97,6 @@ struct WebRect;
 #endif
     };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

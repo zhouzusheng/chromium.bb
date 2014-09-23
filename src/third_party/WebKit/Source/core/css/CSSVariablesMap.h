@@ -30,6 +30,7 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSVariablesMapForEachCallback.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -52,8 +53,8 @@ public:
     void set(const AtomicString& name, const String& value, ExceptionState&);
     bool remove(const AtomicString& name);
     void clear(ExceptionState&);
-    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>, ScriptValue& thisArg) const;
-    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>) const;
+    void forEach(PassOwnPtr<CSSVariablesMapForEachCallback>, ScriptValue& thisArg) const;
+    void forEach(PassOwnPtr<CSSVariablesMapForEachCallback>) const;
 
     void clearStyleDeclaration() { m_styleDeclaration = 0; }
 
@@ -64,7 +65,7 @@ private:
         ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     }
 
-    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>, ScriptValue* thisArg) const;
+    void forEach(PassOwnPtr<CSSVariablesMapForEachCallback>, ScriptValue* thisArg) const;
 
     CSSStyleDeclaration* m_styleDeclaration;
     typedef Vector<CSSVariablesIterator*> Iterators;

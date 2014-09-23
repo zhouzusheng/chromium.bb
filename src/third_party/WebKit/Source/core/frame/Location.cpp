@@ -29,7 +29,6 @@
 #include "config.h"
 #include "core/frame/Location.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/DOMURLUtilsReadOnly.h"
 #include "core/dom/Document.h"
@@ -37,8 +36,8 @@
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
 #include "core/loader/FrameLoader.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -141,13 +140,13 @@ void Location::setHref(DOMWindow* activeWindow, DOMWindow* firstWindow, const St
     setLocation(url, activeWindow, firstWindow);
 }
 
-void Location::setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String& protocol, ExceptionState& es)
+void Location::setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String& protocol, ExceptionState& exceptionState)
 {
     if (!m_frame)
         return;
     KURL url = m_frame->document()->url();
     if (!url.setProtocol(protocol)) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToSet("protocol", "Location", "'" + protocol + "' is an invalid protocol."));
+        exceptionState.throwDOMException(SyntaxError, "'" + protocol + "' is an invalid protocol.");
         return;
     }
     setLocation(url.string(), activeWindow, firstWindow);

@@ -36,7 +36,7 @@
 #include "public/platform/WebVector.h"
 #include "wtf/Vector.h"
 
-namespace WebKit {
+namespace blink {
 
 // This class is used for converting from WebCompositionUnderline to
 // WebCore::CompositionUnderline.
@@ -47,6 +47,6 @@ public:
         : WebCore::CompositionUnderline(u.startOffset, u.endOffset, u.thick) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

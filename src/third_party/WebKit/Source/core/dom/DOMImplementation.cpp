@@ -47,13 +47,13 @@
 #include "core/loader/FrameLoader.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/MediaPlayer.h"
-#include "core/plugins/PluginData.h"
 #include "core/svg/SVGDocument.h"
 #include "platform/ContentType.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/MIMETypeRegistry.h"
+#include "platform/graphics/Image.h"
+#include "platform/graphics/media/MediaPlayer.h"
+#include "platform/plugins/PluginData.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -161,7 +161,7 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         && svgFeatures.contains(feature.right(feature.length() - 35));
 }
 
-DOMImplementation::DOMImplementation(Document* document)
+DOMImplementation::DOMImplementation(Document& document)
     : m_document(document)
 {
     ScriptWrappable::init(this);
@@ -178,14 +178,14 @@ bool DOMImplementation::hasFeature(const String& feature, const String& version)
     return true;
 }
 
-PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const String& qualifiedName,
-    const String& publicId, const String& systemId, ExceptionState& es)
+PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicString& qualifiedName,
+    const String& publicId, const String& systemId, ExceptionState& exceptionState)
 {
-    String prefix, localName;
-    if (!Document::parseQualifiedName(qualifiedName, prefix, localName, es))
+    AtomicString prefix, localName;
+    if (!Document::parseQualifiedName(qualifiedName, prefix, localName, exceptionState))
         return 0;
 
-    return DocumentType::create(m_document, qualifiedName, publicId, systemId);
+    return DocumentType::create(&m_document, qualifiedName, publicId, systemId);
 }
 
 DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
@@ -193,26 +193,26 @@ DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
     return 0;
 }
 
-PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceURI,
-    const String& qualifiedName, DocumentType* doctype, ExceptionState& es)
+PassRefPtr<Document> DOMImplementation::createDocument(const AtomicString& namespaceURI,
+    const AtomicString& qualifiedName, DocumentType* doctype, ExceptionState& exceptionState)
 {
     RefPtr<Document> doc;
-    DocumentInit init = DocumentInit::fromContext(m_document->contextDocument());
+    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument());
     if (namespaceURI == SVGNames::svgNamespaceURI) {
         doc = SVGDocument::create(init);
     } else if (namespaceURI == HTMLNames::xhtmlNamespaceURI) {
-        doc = Document::createXHTML(init.withRegistrationContext(m_document->registrationContext()));
+        doc = Document::createXHTML(init.withRegistrationContext(m_document.registrationContext()));
     } else {
         doc = Document::create(init);
     }
 
-    doc->setSecurityOrigin(m_document->securityOrigin()->isolatedCopy());
-    doc->setContextFeatures(m_document->contextFeatures());
+    doc->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
+    doc->setContextFeatures(m_document.contextFeatures());
 
     RefPtr<Node> documentElement;
     if (!qualifiedName.isEmpty()) {
-        documentElement = doc->createElementNS(namespaceURI, qualifiedName, es);
-        if (es.hadException())
+        documentElement = doc->createElementNS(namespaceURI, qualifiedName, exceptionState);
+        if (exceptionState.hadException())
             return 0;
     }
 
@@ -307,15 +307,15 @@ bool DOMImplementation::isTextMIMEType(const String& mimeType)
 
 PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& title)
 {
-    DocumentInit init = DocumentInit::fromContext(m_document->contextDocument())
-        .withRegistrationContext(m_document->registrationContext());
+    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument())
+        .withRegistrationContext(m_document.registrationContext());
     RefPtr<HTMLDocument> d = HTMLDocument::create(init);
     d->open();
     d->write("<!doctype html><html><body></body></html>");
     if (!title.isNull())
         d->setTitle(title);
-    d->setSecurityOrigin(m_document->securityOrigin()->isolatedCopy());
-    d->setContextFeatures(m_document->contextFeatures());
+    d->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
+    d->setContextFeatures(m_document.contextFeatures());
     return d.release();
 }
 

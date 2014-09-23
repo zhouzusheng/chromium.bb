@@ -42,14 +42,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLElement(tagName, document)
+HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form)
+    : HTMLElement(imgTag, document)
     , m_imageLoader(this)
     , m_form(form)
     , m_compositeOperator(CompositeSourceOver)
     , m_imageDevicePixelRatio(1.0f)
 {
-    ASSERT(hasTagName(imgTag));
     ScriptWrappable::init(this);
     if (form)
         form->registerImgElement(this);
@@ -57,12 +56,12 @@ HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document& docum
 
 PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
 {
-    return adoptRef(new HTMLImageElement(imgTag, document));
+    return adoptRef(new HTMLImageElement(document));
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLImageElement(tagName, document, form));
+    return adoptRef(new HTMLImageElement(document, form));
 }
 
 HTMLImageElement::~HTMLImageElement()
@@ -73,7 +72,7 @@ HTMLImageElement::~HTMLImageElement()
 
 PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
 {
-    RefPtr<HTMLImageElement> image = adoptRef(new HTMLImageElement(imgTag, document));
+    RefPtr<HTMLImageElement> image = adoptRef(new HTMLImageElement(document));
     if (width)
         image->setWidth(width);
     if (height)
@@ -115,6 +114,11 @@ const AtomicString HTMLImageElement::imageSourceURL() const
     return m_bestFitImageURL.isNull() ? fastGetAttribute(srcAttr) : m_bestFitImageURL;
 }
 
+HTMLFormElement* HTMLImageElement::formOwner() const
+{
+    return findFormAncestor();
+}
+
 void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == altAttr) {
@@ -138,23 +142,22 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
         setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else if (name == compositeAttr) {
         // FIXME: images don't support blend modes in their compositing attribute.
-        BlendMode blendOp = BlendModeNormal;
+        blink::WebBlendMode blendOp = blink::WebBlendModeNormal;
         if (!parseCompositeAndBlendOperator(value, m_compositeOperator, blendOp))
             m_compositeOperator = CompositeSourceOver;
     } else
         HTMLElement::parseAttribute(name, value);
 }
 
-String HTMLImageElement::altText() const
+const AtomicString& HTMLImageElement::altText() const
 {
     // lets figure out the alt text.. magic stuff
     // http://www.w3.org/TR/1998/REC-html40-19980424/appendix/notes.html#altgen
     // also heavily discussed by Hixie on bugzilla
-    String alt = getAttribute(altAttr);
+    if (!getAttribute(altAttr).isNull())
+        return getAttribute(altAttr);
     // fall back to title attribute
-    if (alt.isNull())
-        alt = getAttribute(titleAttr);
-    return alt;
+    return getAttribute(titleAttr);
 }
 
 RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
@@ -310,7 +313,7 @@ bool HTMLImageElement::draggable() const
 
 void HTMLImageElement::setHeight(int value)
 {
-    setAttribute(heightAttr, String::number(value));
+    setIntegralAttribute(heightAttr, value);
 }
 
 KURL HTMLImageElement::src() const
@@ -320,12 +323,12 @@ KURL HTMLImageElement::src() const
 
 void HTMLImageElement::setSrc(const String& value)
 {
-    setAttribute(srcAttr, value);
+    setAttribute(srcAttr, AtomicString(value));
 }
 
 void HTMLImageElement::setWidth(int value)
 {
-    setAttribute(widthAttr, String::number(value));
+    setIntegralAttribute(widthAttr, value);
 }
 
 int HTMLImageElement::x() const

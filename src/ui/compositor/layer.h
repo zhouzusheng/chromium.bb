@@ -287,6 +287,8 @@ class COMPOSITOR_EXPORT Layer
   // |compostior_| to repaint the content.
   void SendDamagedRects();
 
+  const SkRegion& damaged_region() const { return damaged_region_; }
+
   // Suppresses painting the content by disgarding damaged region and ignoring
   // new paint requests.
   void SuppressPaint();
@@ -321,7 +323,6 @@ class COMPOSITOR_EXPORT Layer
 
   // TextureLayerClient
   virtual unsigned PrepareTexture() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
   virtual bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
@@ -336,6 +337,9 @@ class COMPOSITOR_EXPORT Layer
 
   // LayerClient
   virtual std::string DebugName() OVERRIDE;
+
+  virtual scoped_refptr<base::debug::ConvertableToTraceFormat>
+      TakeDebugInfo() OVERRIDE;
 
   // LayerAnimationEventObserver
   virtual void OnAnimationStarted(const cc::AnimationEvent& event) OVERRIDE;

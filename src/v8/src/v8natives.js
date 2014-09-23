@@ -170,18 +170,17 @@ function GlobalParseFloat(string) {
 function GlobalEval(x) {
   if (!IS_STRING(x)) return x;
 
-  var global_receiver = %GlobalReceiver(global);
-  var global_is_detached = (global === global_receiver);
-
   // For consistency with JSC we require the global object passed to
   // eval to be the global object from which 'eval' originated. This
   // is not mandated by the spec.
   // We only throw if the global has been detached, since we need the
   // receiver as this-value for the call.
-  if (global_is_detached) {
+  if (!%IsAttachedGlobal(global)) {
     throw new $EvalError('The "this" value passed to eval must ' +
                          'be the global object from which eval originated');
   }
+
+  var global_receiver = %GlobalReceiver(global);
 
   var f = %CompileString(x, false);
   if (!IS_FUNCTION(f)) return f;
@@ -1249,7 +1248,7 @@ function ObjectFreeze(obj) {
     throw MakeTypeError("called_on_non_object", ["Object.freeze"]);
   }
   var isProxy = %IsJSProxy(obj);
-  if (isProxy || %HasNonStrictArgumentsElements(obj)) {
+  if (isProxy || %HasNonStrictArgumentsElements(obj) || %IsObserved(obj)) {
     if (isProxy) {
       ProxyFix(obj);
     }
@@ -1837,3 +1836,18 @@ function SetUpFunction() {
 }
 
 SetUpFunction();
+
+
+//----------------------------------------------------------------------------
+
+// TODO(rossberg): very simple abstraction for generic microtask queue.
+// Eventually, we should move to a real event queue that allows to maintain
+// relative ordering of different kinds of tasks.
+
+RunMicrotasks.runners = new InternalArray;
+
+function RunMicrotasks() {
+  while (%SetMicrotaskPending(false)) {
+    for (var i in RunMicrotasks.runners) RunMicrotasks.runners[i]();
+  }
+}

@@ -33,10 +33,9 @@
 
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebMIDIAccessor.h"
 #include "wtf/text/WTFString.h"
 
-using WebKit::WebString;
+using blink::WebString;
 
 namespace WebCore {
 
@@ -51,7 +50,7 @@ MIDIAccessor::MIDIAccessor(MIDIAccessorClient* client)
 {
     ASSERT(client);
 
-    m_accessor = adoptPtr(WebKit::Platform::current()->createMIDIAccessor(this));
+    m_accessor = adoptPtr(blink::Platform::current()->createMIDIAccessor(this));
 
     ASSERT(m_accessor);
 }

@@ -35,22 +35,18 @@ class ExceptionState;
 class HTMLTableRowElement FINAL : public HTMLTablePartElement {
 public:
     static PassRefPtr<HTMLTableRowElement> create(Document&);
-    static PassRefPtr<HTMLTableRowElement> create(const QualifiedName&, Document&);
 
     int rowIndex() const;
-    void setRowIndex(int);
 
     int sectionRowIndex() const;
-    void setSectionRowIndex(int);
 
     PassRefPtr<HTMLElement> insertCell(int index, ExceptionState&);
     void deleteCell(int index, ExceptionState&);
 
     PassRefPtr<HTMLCollection> cells();
-    void setCells(HTMLCollection *, ExceptionState&);
 
 private:
-    HTMLTableRowElement(const QualifiedName&, Document&);
+    explicit HTMLTableRowElement(Document&);
 };
 
 inline bool isHTMLTableRowElement(const Node* node)

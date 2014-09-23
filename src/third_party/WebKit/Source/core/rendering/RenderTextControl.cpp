@@ -23,9 +23,9 @@
 #include "core/rendering/RenderTextControl.h"
 
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/unicode/CharacterNames.h"
 
 using namespace std;
@@ -57,7 +57,7 @@ void RenderTextControl::addChild(RenderObject* newChild, RenderObject* beforeChi
     // FIXME: This is a terrible hack to get the caret over the placeholder text since it'll
     // make us paint the placeholder first. (See https://trac.webkit.org/changeset/118733)
     Node* node = newChild->node();
-    if (node && node->isElementNode() && toElement(node)->part() == "-webkit-input-placeholder")
+    if (node && node->isElementNode() && toElement(node)->pseudo() == "-webkit-input-placeholder")
         RenderBlock::addChild(newChild, firstChild());
     else
         RenderBlock::addChild(newChild, beforeChild);

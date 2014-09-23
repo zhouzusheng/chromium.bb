@@ -35,10 +35,10 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/frame/Frame.h"
 #include "core/platform/DragImage.h"
-#include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/MIMETypeRegistry.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
 #include "platform/clipboard/ClipboardUtilities.h"
 
@@ -201,7 +201,7 @@ PassRefPtr<FileList> Clipboard::files() const
         return files.release();
 
     for (size_t i = 0; i < m_dataObject->length(); ++i) {
-        if (m_dataObject->item(i)->kind() == DataTransferItem::kindFile) {
+        if (m_dataObject->item(i)->kind() == ChromiumDataObjectItem::FileKind) {
             RefPtr<Blob> blob = m_dataObject->item(i)->getAsFile();
             if (blob && blob->isFile())
                 files->append(toFile(blob.get()));
@@ -211,13 +211,13 @@ PassRefPtr<FileList> Clipboard::files() const
     return files.release();
 }
 
-void Clipboard::setDragImage(Element* image, int x, int y, ExceptionState& es)
+void Clipboard::setDragImage(Element* image, int x, int y, ExceptionState& exceptionState)
 {
     if (!isForDragAndDrop())
         return;
 
     if (!image) {
-        es.throwTypeError("setDragImage: Invalid first argument");
+        exceptionState.throwTypeError("setDragImage: Invalid first argument");
         return;
     }
     IntPoint location(x, y);

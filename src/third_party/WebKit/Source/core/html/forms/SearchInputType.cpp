@@ -32,11 +32,11 @@
 #include "core/html/forms/SearchInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/rendering/RenderSearchField.h"
@@ -69,7 +69,7 @@ RenderObject* SearchInputType::createRenderer(RenderStyle*) const
 
 const AtomicString& SearchInputType::formControlType() const
 {
-    return InputTypeNames::search();
+    return InputTypeNames::search;
 }
 
 bool SearchInputType::shouldRespectSpeechAttribute()
@@ -159,9 +159,9 @@ void SearchInputType::didSetValueByUserEdit(ValueChangeState state)
     TextFieldInputType::didSetValueByUserEdit(state);
 }
 
-void SearchInputType::updateInnerTextValue()
+void SearchInputType::updateView()
 {
-    BaseTextInputType::updateInnerTextValue();
+    BaseTextInputType::updateView();
     updateCancelButtonVisibility();
 }
 
@@ -170,10 +170,13 @@ void SearchInputType::updateCancelButtonVisibility()
     Element* button = element().userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton());
     if (!button)
         return;
-    if (element().value().isEmpty())
-        button->setInlineStyleProperty(CSSPropertyVisibility, CSSValueHidden);
-    else
-        button->removeInlineStyleProperty(CSSPropertyVisibility);
+    if (element().value().isEmpty()) {
+        button->setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::CSS_NUMBER);
+        button->setInlineStyleProperty(CSSPropertyPointerEvents, CSSValueNone);
+    } else {
+        button->removeInlineStyleProperty(CSSPropertyOpacity);
+        button->removeInlineStyleProperty(CSSPropertyPointerEvents);
+    }
 }
 
 bool SearchInputType::supportsInputModeAttribute() const

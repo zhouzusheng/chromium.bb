@@ -30,11 +30,11 @@
 #include "WebSecurityOrigin.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/geolocation/Geolocation.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebSecurityOrigin WebGeolocationPermissionRequest::securityOrigin() const
 {

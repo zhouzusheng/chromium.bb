@@ -387,6 +387,15 @@ const char kEnableBrowserPluginForAllViewTypes[] =
 // kEnableBrowserPluginGuestViews must also be set at this time.
 const char kEnableBrowserPluginDragDrop[]   = "enable-browser-plugin-drag-drop";
 
+// Enables CSS3 Text Decorations.
+const char kEnableCSS3TextDecorations[] = "enable-css3-text-decorations";
+
+// Enables CSS3 Text.
+const char kEnableCSS3Text[] = "enable-css3-text";
+
+// Enables CSS Grid Layout.
+const char kEnableCSSGridLayout[] = "enable-css-grid-layout";
+
 // Enables accelerated scrolling by the compositor for frames. Requires
 // kForceCompositingMode and kEnableAcceleratedScrollableFrames.
 const char kEnableCompositedScrollingForFrames[] =

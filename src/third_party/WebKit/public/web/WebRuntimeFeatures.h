@@ -48,6 +48,10 @@ public:
     BLINK_EXPORT static void enableApplicationCache(bool);
     BLINK_EXPORT static bool isApplicationCacheEnabled();
 
+    BLINK_EXPORT static void enableCSS3TextDecorations(bool);
+    BLINK_EXPORT static void enableCSS3Text(bool);
+    BLINK_EXPORT static void enableCSSGridLayout(bool);
+
     BLINK_EXPORT static void enableDatabase(bool);
     BLINK_EXPORT static bool isDatabaseEnabled();
 

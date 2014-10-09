@@ -13,6 +13,7 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/events/event.h"
 #include "ui/views/corewm/focus_rules.h"
+#include "ui/views/corewm/window_util.h"
 
 namespace views {
 namespace corewm {
@@ -25,10 +26,10 @@ void StackTransientParentsBelowModalWindow(aura::Window* window) {
   if (window->GetProperty(aura::client::kModalKey) != ui::MODAL_TYPE_WINDOW)
     return;
 
-  aura::Window* transient_parent = window->transient_parent();
+  aura::Window* transient_parent = views::corewm::GetTransientParent(window);
   while (transient_parent) {
     transient_parent->parent()->StackChildAtTop(transient_parent);
-    transient_parent = transient_parent->transient_parent();
+    transient_parent = views::corewm::GetTransientParent(transient_parent);
   }
 }
 
@@ -37,7 +38,7 @@ void StackWindowLayerAbove(aura::Window* window, aura::Window* relative_to) {
   // Stack |window| above the last transient child of |relative_to| that shares
   // the same parent.
   const aura::Window::Windows& window_transients(
-      relative_to->transient_children());
+      GetTransientChildren(relative_to));
   for (aura::Window::Windows::const_iterator i = window_transients.begin();
        i != window_transients.end(); ++i) {
     aura::Window* transient = *i;
@@ -254,6 +255,11 @@ void FocusController::SetFocusedWindow(aura::Window* window) {
 
   base::AutoReset<bool> updating_focus(&updating_focus_, true);
   aura::Window* lost_focus = focused_window_;
+  // Allow for the window losing focus to be deleted during dispatch. If it is
+  // deleted pass NULL to observers instead of a deleted window.
+  aura::WindowTracker window_tracker;
+  if (lost_focus)
+    window_tracker.Add(lost_focus);
   if (focused_window_ && observer_manager_.IsObserving(focused_window_) &&
       focused_window_ != active_window_) {
     observer_manager_.Remove(focused_window_);
@@ -264,14 +270,22 @@ void FocusController::SetFocusedWindow(aura::Window* window) {
 
   FOR_EACH_OBSERVER(aura::client::FocusChangeObserver,
                     focus_observers_,
-                    OnWindowFocused(focused_window_, lost_focus));
+                    OnWindowFocused(focused_window_,
+                                    window_tracker.Contains(lost_focus) ?
+                                    lost_focus : NULL));
+  if (window_tracker.Contains(lost_focus)) {
+    aura::client::FocusChangeObserver* observer =
+        aura::client::GetFocusChangeObserver(lost_focus);
+    if (observer)
+      observer->OnWindowFocused(focused_window_, lost_focus);
+  }
   aura::client::FocusChangeObserver* observer =
-      aura::client::GetFocusChangeObserver(lost_focus);
-  if (observer)
-    observer->OnWindowFocused(focused_window_, lost_focus);
-  observer = aura::client::GetFocusChangeObserver(focused_window_);
-  if (observer)
-    observer->OnWindowFocused(focused_window_, lost_focus);
+      aura::client::GetFocusChangeObserver(focused_window_);
+  if (observer) {
+    observer->OnWindowFocused(
+        focused_window_,
+        window_tracker.Contains(lost_focus) ? lost_focus : NULL);
+  }
 }
 
 void FocusController::SetActiveWindow(aura::Window* requested_window,

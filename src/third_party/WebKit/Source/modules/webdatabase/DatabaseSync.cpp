@@ -67,11 +67,6 @@ DatabaseSync::~DatabaseSync()
     ASSERT(m_executionContext->isContextThread());
 }
 
-PassRefPtr<DatabaseBackendSync> DatabaseSync::backend()
-{
-    return this;
-}
-
 void DatabaseSync::changeVersion(const String& oldVersion, const String& newVersion, PassOwnPtr<SQLTransactionSyncCallback> changeVersionCallback, ExceptionState& exceptionState)
 {
     ASSERT(m_executionContext->isContextThread());
@@ -79,7 +74,7 @@ void DatabaseSync::changeVersion(const String& oldVersion, const String& newVers
     if (sqliteDatabase().transactionInProgress()) {
         reportChangeVersionResult(1, SQLError::DATABASE_ERR, 0);
         setLastErrorMessage("unable to changeVersion from within a transaction");
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to change version from within a transaction.");
         return;
     }
 
@@ -156,7 +151,7 @@ void DatabaseSync::runTransaction(PassOwnPtr<SQLTransactionSyncCallback> callbac
 
     if (sqliteDatabase().transactionInProgress()) {
         setLastErrorMessage("unable to start a transaction from within a transaction");
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to start a transaction from within a transaction.");
         return;
     }
 

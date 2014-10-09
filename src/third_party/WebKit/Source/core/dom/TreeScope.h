@@ -39,6 +39,7 @@ class Document;
 class Element;
 class HTMLLabelElement;
 class HTMLMapElement;
+class HitTestResult;
 class LayoutPoint;
 class IdTargetObserverRegistry;
 class Node;
@@ -48,21 +49,25 @@ class RenderObject;
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
 // the destructor.
 class TreeScope {
-    friend class Document;
-    friend class TreeScopeAdopter;
-
 public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
-    void setParentTreeScope(TreeScope*);
+
+    TreeScope* olderShadowRootOrParentTreeScope() const;
+    bool isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(const TreeScope&) const;
 
     Element* adjustedFocusedElement() const;
     Element* getElementById(const AtomicString&) const;
+    const Vector<Element*>& getAllElementsById(const AtomicString&) const;
     bool hasElementWithId(StringImpl* id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
     void addElementById(const AtomicString& elementId, Element*);
     void removeElementById(const AtomicString& elementId, Element*);
 
-    Document* documentScope() const { return m_documentScope; }
+    Document& document() const
+    {
+        ASSERT(m_document);
+        return *m_document;
+    }
 
     Node* ancestorInThisScope(Node*) const;
 
@@ -92,7 +97,7 @@ public:
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node&);
 
-    Node* rootNode() const { return m_rootNode; }
+    Node& rootNode() const { return m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
@@ -125,23 +130,19 @@ public:
     Element* getElementByAccessKey(const String& key) const;
 
 protected:
-    TreeScope(ContainerNode*, Document*);
-    TreeScope(Document*);
+    TreeScope(ContainerNode&, Document&);
+    TreeScope(Document&);
     virtual ~TreeScope();
 
     void destroyTreeScopeData();
-    void clearDocumentScope();
-    void setDocumentScope(Document* document)
-    {
-        ASSERT(document);
-        m_documentScope = document;
-    }
+    void setDocument(Document& document) { m_document = &document; }
+    void setParentTreeScope(TreeScope&);
 
     bool hasGuardRefCount() const { return m_guardRefCount; }
 
-private:
-    TreeScope();
+    void setNeedsStyleRecalcForViewportUnits();
 
+private:
     virtual void dispose() { }
 
     int refCount() const;
@@ -155,8 +156,8 @@ private:
 
     bool rootNodeHasTreeSharedParent() const;
 
-    Node* m_rootNode;
-    Document* m_documentScope;
+    Node& m_rootNode;
+    Document* m_document;
     TreeScope* m_parentTreeScope;
     int m_guardRefCount;
 
@@ -187,7 +188,7 @@ inline bool operator!=(const TreeScope& a, const TreeScope& b) { return !(a == b
 inline bool operator!=(const TreeScope& a, const TreeScope* b) { return !(a == b); }
 inline bool operator!=(const TreeScope* a, const TreeScope& b) { return !(a == b); }
 
-RenderObject* rendererFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
+HitTestResult hitTestInDocument(const Document*, int x, int y);
 TreeScope* commonTreeScope(Node*, Node*);
 
 } // namespace WebCore

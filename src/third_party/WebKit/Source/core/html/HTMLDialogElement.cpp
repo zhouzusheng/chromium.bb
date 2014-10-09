@@ -57,7 +57,6 @@ static void setFocusForModalDialog(HTMLDialogElement* dialog)
             HTMLFormControlElement* control = toHTMLFormControlElement(node);
             if (control->isAutofocusable()) {
                 control->focus();
-                control->setAutofocused();
                 return;
             }
         }
@@ -92,7 +91,7 @@ static void inertSubtreesChanged(Document& document)
 
 HTMLDialogElement::HTMLDialogElement(Document& document)
     : HTMLElement(dialogTag, document)
-    , m_centeringMode(Uninitialized)
+    , m_centeringMode(NotCentered)
     , m_centeredPosition(0)
     , m_returnValue("")
 {
@@ -132,10 +131,10 @@ void HTMLDialogElement::closeDialog(const String& returnValue)
 
 void HTMLDialogElement::forceLayoutForCentering()
 {
-    m_centeringMode = Uninitialized;
+    m_centeringMode = NeedsCentering;
     document().updateLayoutIgnorePendingStylesheets();
-    if (m_centeringMode == Uninitialized)
-        m_centeringMode = NotCentered;
+    if (m_centeringMode == NeedsCentering)
+        setNotCentered();
 }
 
 void HTMLDialogElement::show()
@@ -143,7 +142,6 @@ void HTMLDialogElement::show()
     if (fastHasAttribute(openAttr))
         return;
     setBooleanAttribute(openAttr, true);
-    forceLayoutForCentering();
 }
 
 void HTMLDialogElement::showModal(ExceptionState& exceptionState)
@@ -168,16 +166,22 @@ void HTMLDialogElement::showModal(ExceptionState& exceptionState)
     setFocusForModalDialog(this);
 }
 
+void HTMLDialogElement::removedFrom(ContainerNode* insertionPoint)
+{
+    HTMLElement::removedFrom(insertionPoint);
+    setNotCentered();
+    // FIXME: We should call inertSubtreesChanged() here.
+}
+
 void HTMLDialogElement::setCentered(LayoutUnit centeredPosition)
 {
-    ASSERT(m_centeringMode == Uninitialized);
+    ASSERT(m_centeringMode == NeedsCentering);
     m_centeredPosition = centeredPosition;
     m_centeringMode = Centered;
 }
 
 void HTMLDialogElement::setNotCentered()
 {
-    ASSERT(m_centeringMode == Uninitialized);
     m_centeringMode = NotCentered;
 }
 
@@ -199,13 +203,6 @@ void HTMLDialogElement::defaultEventHandler(Event* event)
         return;
     }
     HTMLElement::defaultEventHandler(event);
-}
-
-bool HTMLDialogElement::shouldBeReparentedUnderRenderView(const RenderStyle* style) const
-{
-    if (style && style->position() == AbsolutePosition)
-        return true;
-    return Element::shouldBeReparentedUnderRenderView(style);
 }
 
 } // namespace WebCore

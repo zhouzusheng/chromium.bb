@@ -32,11 +32,13 @@
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/history/HistoryItem.h"
+#include "core/frame/Settings.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/HistoryItem.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Chrome.h"
@@ -45,17 +47,15 @@
 #include "core/page/DragController.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
-#include "core/page/PageConsole.h"
 #include "core/page/PageGroup.h"
 #include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PointerLockController.h"
-#include "core/frame/Settings.h"
+#include "core/page/StorageClient.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/storage/StorageNamespace.h"
-#include "core/workers/SharedWorkerRepositoryClient.h"
 #include "platform/plugins/PluginData.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -64,20 +64,22 @@
 
 namespace WebCore {
 
-static HashSet<Page*>* allPages;
-
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, pageCounter, ("Page"));
+
+// static
+HashSet<Page*>& Page::allPages()
+{
+    DEFINE_STATIC_LOCAL(HashSet<Page*>, allPages, ());
+    return allPages;
+}
 
 void Page::networkStateChanged(bool online)
 {
-    if (!allPages)
-        return;
-
     Vector<RefPtr<Frame> > frames;
 
     // Get all the frames of all the pages in all the page groups
-    HashSet<Page*>::iterator end = allPages->end();
-    for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it) {
+    HashSet<Page*>::iterator end = allPages().end();
+    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it) {
         for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext())
             frames.append(frame);
         InspectorInstrumentation::networkStateChanged(*it, online);
@@ -114,8 +116,8 @@ Page::Page(PageClients& pageClients)
     , m_backForwardClient(pageClients.backForwardClient)
     , m_editorClient(pageClients.editorClient)
     , m_validationMessageClient(0)
-    , m_sharedWorkerRepositoryClient(0)
     , m_spellCheckerClient(pageClients.spellCheckerClient)
+    , m_storageClient(pageClients.storageClient)
     , m_subframeCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
@@ -129,15 +131,12 @@ Page::Page(PageClients& pageClients)
 #ifndef NDEBUG
     , m_isPainting(false)
 #endif
-    , m_console(PageConsole::create(this))
+    , m_frameHost(FrameHost::create(*this))
 {
     ASSERT(m_editorClient);
 
-    if (!allPages)
-        allPages = new HashSet<Page*>;
-
-    ASSERT(!allPages->contains(this));
-    allPages->add(this);
+    ASSERT(!allPages().contains(this));
+    allPages().add(this);
 
 #ifndef NDEBUG
     pageCounter.increment();
@@ -148,11 +147,11 @@ Page::~Page()
 {
     m_mainFrame->setView(0);
     clearPageGroup();
-    allPages->remove(this);
+    allPages().remove(this);
 
     for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        frame->willDetachPage();
-        frame->detachFromPage();
+        frame->willDetachFrameHost();
+        frame->detachFromFrameHost();
     }
 
     m_inspectorController->inspectedPageDestroyed();
@@ -209,12 +208,11 @@ void Page::setMainFrame(PassRefPtr<Frame> mainFrame)
 
 void Page::documentDetached(Document* document)
 {
+    m_multisamplingChangedObservers.clear();
     m_pointerLockController->documentDetached(document);
     m_contextMenuController->documentDetached(document);
     if (m_validationMessageClient)
         m_validationMessageClient->documentDetached(*document);
-    if (m_sharedWorkerRepositoryClient)
-        m_sharedWorkerRepositoryClient->documentDetached(document);
 }
 
 bool Page::openedByDOM() const
@@ -253,12 +251,10 @@ void Page::setGroupType(PageGroupType type)
 
 void Page::scheduleForcedStyleRecalcForAllPages()
 {
-    if (!allPages)
-        return;
-    HashSet<Page*>::iterator end = allPages->end();
-    for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it)
+    HashSet<Page*>::iterator end = allPages().end();
+    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it)
         for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext())
-            frame->document()->setNeedsStyleRecalc();
+            frame->document()->setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void Page::setNeedsRecalcStyleInAllFrames()
@@ -267,17 +263,27 @@ void Page::setNeedsRecalcStyleInAllFrames()
         frame->document()->styleResolverChanged(RecalcStyleDeferred);
 }
 
+void Page::setNeedsLayoutInAllFrames()
+{
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (FrameView* view = frame->view()) {
+            view->setNeedsLayout();
+            view->scheduleRelayout();
+        }
+    }
+}
+
 void Page::refreshPlugins(bool reload)
 {
-    if (!allPages)
+    if (allPages().isEmpty())
         return;
 
     PluginData::refresh();
 
     Vector<RefPtr<Frame> > framesNeedingReload;
 
-    HashSet<Page*>::iterator end = allPages->end();
-    for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it) {
+    HashSet<Page*>::iterator end = allPages().end();
+    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it) {
         Page* page = *it;
 
         // Clear out the page's plug-in data.
@@ -350,7 +356,7 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
         m_chrome->client().deviceOrPageScaleFactorChanged();
 
         if (view)
-            view->setViewportConstrainedObjectsNeedLayout();
+            view->viewportConstrainedVisibleContentSizeChanged(true, true);
     }
 
     if (view && view->scrollPosition() != origin)
@@ -371,42 +377,24 @@ void Page::setDeviceScaleFactor(float scaleFactor)
     }
 }
 
-void Page::setPagination(const Pagination& pagination)
+void Page::allVisitedStateChanged()
 {
-    if (m_pagination == pagination)
-        return;
-
-    m_pagination = pagination;
-
-    setNeedsRecalcStyleInAllFrames();
-}
-
-void Page::allVisitedStateChanged(PageGroup* group)
-{
-    ASSERT(group);
-    if (!allPages)
-        return;
-
-    HashSet<Page*>::iterator pagesEnd = allPages->end();
-    for (HashSet<Page*>::iterator it = allPages->begin(); it != pagesEnd; ++it) {
+    HashSet<Page*>::iterator pagesEnd = allPages().end();
+    for (HashSet<Page*>::iterator it = allPages().begin(); it != pagesEnd; ++it) {
         Page* page = *it;
-        if (page->m_group != group)
+        if (page->m_group != PageGroup::sharedGroup())
             continue;
         for (Frame* frame = page->m_mainFrame.get(); frame; frame = frame->tree().traverseNext())
             frame->document()->visitedLinkState().invalidateStyleForAllLinks();
     }
 }
 
-void Page::visitedStateChanged(PageGroup* group, LinkHash linkHash)
+void Page::visitedStateChanged(LinkHash linkHash)
 {
-    ASSERT(group);
-    if (!allPages)
-        return;
-
-    HashSet<Page*>::iterator pagesEnd = allPages->end();
-    for (HashSet<Page*>::iterator it = allPages->begin(); it != pagesEnd; ++it) {
+    HashSet<Page*>::iterator pagesEnd = allPages().end();
+    for (HashSet<Page*>::iterator it = allPages().begin(); it != pagesEnd; ++it) {
         Page* page = *it;
-        if (page->m_group != group)
+        if (page->m_group != PageGroup::sharedGroup())
             continue;
         for (Frame* frame = page->m_mainFrame.get(); frame; frame = frame->tree().traverseNext())
             frame->document()->visitedLinkState().invalidateStyleForLink(linkHash);
@@ -416,7 +404,7 @@ void Page::visitedStateChanged(PageGroup* group, LinkHash linkHash)
 StorageNamespace* Page::sessionStorage(bool optionalCreate)
 {
     if (!m_sessionStorage && optionalCreate)
-        m_sessionStorage = StorageNamespace::sessionStorageNamespace(this);
+        m_sessionStorage = m_storageClient->createSessionStorageNamespace();
     return m_sessionStorage.get();
 }
 
@@ -465,7 +453,7 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
         lifecycleNotifier().notifyPageVisibilityChanged();
 
     if (!isInitialState && m_mainFrame)
-        m_mainFrame->dispatchVisibilityStateChangeEvent();
+        m_mainFrame->didChangeVisibilityState();
 }
 
 PageVisibilityState Page::visibilityState() const
@@ -494,7 +482,7 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             mainFrame()->document()->updateViewportDescription();
         break;
     case SettingsDelegate::MediaTypeChange:
-        m_mainFrame->view()->setMediaType(settings().mediaTypeOverride());
+        m_mainFrame->view()->setMediaType(AtomicString(settings().mediaTypeOverride()));
         setNeedsRecalcStyleInAllFrames();
         break;
     case SettingsDelegate::DNSPrefetchingChange:
@@ -514,12 +502,27 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
         }
         break;
     case SettingsDelegate::TextAutosizingChange:
-        // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
-        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-            TextAutosizer* textAutosizer = frame->document()->textAutosizer();
-            if (textAutosizer)
-                textAutosizer->recalculateMultipliers();
+        // FTA needs both setNeedsRecalcStyle and setNeedsLayout after a setting change.
+        if (RuntimeEnabledFeatures::fastTextAutosizingEnabled()) {
+            setNeedsRecalcStyleInAllFrames();
+        } else {
+            // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
+            for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+                TextAutosizer* textAutosizer = frame->document()->textAutosizer();
+                if (textAutosizer)
+                    textAutosizer->recalculateMultipliers();
+            }
         }
+        // TextAutosizing updates RenderStyle during layout phase (via TextAutosizer::processSubtree).
+        // We should invoke setNeedsLayout here.
+        setNeedsLayoutInAllFrames();
+        break;
+    case SettingsDelegate::ScriptEnableChange:
+        m_inspectorController->scriptsEnabled(settings().scriptEnabled());
+        break;
+    case SettingsDelegate::FontFamilyChange:
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
+            frame->document()->styleEngine()->updateGenericFontFamilySettings();
         setNeedsRecalcStyleInAllFrames();
         break;
     }
@@ -528,8 +531,10 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
 void Page::didCommitLoad(Frame* frame)
 {
     lifecycleNotifier().notifyDidCommitLoad(frame);
-    if (m_mainFrame == frame)
+    if (m_mainFrame == frame) {
         useCounter().didCommitLoad();
+        m_inspectorController->didCommitLoadForMainFrame();
+    }
 }
 
 PageLifecycleNotifier& Page::lifecycleNotifier()
@@ -550,6 +555,7 @@ Page::PageClients::PageClients()
     , inspectorClient(0)
     , backForwardClient(0)
     , spellCheckerClient(0)
+    , storageClient(0)
 {
 }
 

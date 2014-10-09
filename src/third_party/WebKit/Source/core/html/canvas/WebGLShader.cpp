@@ -31,18 +31,18 @@
 
 namespace WebCore {
 
-PassRefPtr<WebGLShader> WebGLShader::create(WebGLRenderingContext* ctx, GC3Denum type)
+PassRefPtr<WebGLShader> WebGLShader::create(WebGLRenderingContext* ctx, GLenum type)
 {
     return adoptRef(new WebGLShader(ctx, type));
 }
 
-WebGLShader::WebGLShader(WebGLRenderingContext* ctx, GC3Denum type)
+WebGLShader::WebGLShader(WebGLRenderingContext* ctx, GLenum type)
     : WebGLSharedObject(ctx)
     , m_type(type)
     , m_source("")
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createShader(type));
+    setObject(ctx->webGraphicsContext3D()->createShader(type));
 }
 
 WebGLShader::~WebGLShader()
@@ -50,7 +50,7 @@ WebGLShader::~WebGLShader()
     deleteObject(0);
 }
 
-void WebGLShader::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLShader::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
 {
     context3d->deleteShader(object);
 }

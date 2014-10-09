@@ -44,16 +44,16 @@ bool DiscardablePixelRefAllocator::allocPixelRef(SkBitmap* dst, SkColorTable* ct
     // It should not be possible to have a non-null color table in Blink.
     ASSERT(!ctable);
 
-    Sk64 size = dst->getSize64();
-    if (size.isNeg() || !size.is32())
+    int64_t size = dst->computeSize64();
+    if (size < 0 || !sk_64_isS32(size))
         return false;
 
     SkImageInfo info;
     if (!dst->asImageInfo(&info))
         return false;
 
-    SkAutoTUnref<DiscardablePixelRef> pixelRef(new DiscardablePixelRef(info, adoptPtr(new SkMutex())));
-    if (pixelRef->allocAndLockDiscardableMemory(size.get32())) {
+    SkAutoTUnref<DiscardablePixelRef> pixelRef(new DiscardablePixelRef(info, dst->rowBytes(), adoptPtr(new SkMutex())));
+    if (pixelRef->allocAndLockDiscardableMemory(sk_64_asS32(size))) {
         pixelRef->setURI(labelDiscardable);
         dst->setPixelRef(pixelRef.get());
         // This method is only called when a DiscardablePixelRef is created to back a SkBitmap.
@@ -68,10 +68,11 @@ bool DiscardablePixelRefAllocator::allocPixelRef(SkBitmap* dst, SkColorTable* ct
     return dst->allocPixels();
 }
 
-DiscardablePixelRef::DiscardablePixelRef(const SkImageInfo& info, PassOwnPtr<SkMutex> mutex)
+DiscardablePixelRef::DiscardablePixelRef(const SkImageInfo& info, size_t rowBytes, PassOwnPtr<SkMutex> mutex)
     : SkPixelRef(info, mutex.get())
     , m_lockedMemory(0)
     , m_mutex(mutex)
+    , m_rowBytes(rowBytes)
 {
 }
 
@@ -89,13 +90,18 @@ bool DiscardablePixelRef::allocAndLockDiscardableMemory(size_t bytes)
     return false;
 }
 
-void* DiscardablePixelRef::onLockPixels(SkColorTable** ctable)
+bool DiscardablePixelRef::onNewLockPixels(LockRec* rec)
 {
     if (!m_lockedMemory && m_discardable->lock())
         m_lockedMemory = m_discardable->data();
 
-    *ctable = 0;
-    return m_lockedMemory;
+    if (m_lockedMemory) {
+        rec->fPixels = m_lockedMemory;
+        rec->fColorTable = 0;
+        rec->fRowBytes = m_rowBytes;
+        return true;
+    }
+    return false;
 }
 
 void DiscardablePixelRef::onUnlockPixels()

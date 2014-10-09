@@ -33,20 +33,22 @@ public:
 
     Color stopColorIncludingOpacity() const;
 
+    SVGAnimatedNumber* offset() { return m_offset.get(); }
+
 private:
     explicit SVGStopElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     virtual bool isGradientStop() const OVERRIDE { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
+    RefPtr<SVGAnimatedNumber> m_offset;
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGStopElement)
-        DECLARE_ANIMATED_NUMBER(Offset, offset)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

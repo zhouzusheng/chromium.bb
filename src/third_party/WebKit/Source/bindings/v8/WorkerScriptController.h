@@ -94,7 +94,7 @@ namespace WebCore {
         void disableEval(const String&);
 
         // Returns WorkerScriptController for the currently executing context. 0 will be returned if the current executing context is not the worker context.
-        static WorkerScriptController* controllerForContext();
+        static WorkerScriptController* controllerForContext(v8::Isolate*);
 
         // Evaluate a script file in the current execution environment.
         ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, WorkerGlobalScopeExecutionState*);
@@ -118,11 +118,12 @@ namespace WebCore {
         OwnPtr<gin::ContextHolder> m_contextHolder;
         OwnPtr<V8PerContextData> m_perContextData;
         String m_disableEvalPending;
-        OwnPtr<DOMDataStore> m_domDataStore;
+        RefPtr<DOMWrapperWorld> m_world;
         bool m_executionForbidden;
         bool m_executionScheduledToTerminate;
         mutable Mutex m_scheduledTerminationMutex;
         RefPtr<ErrorEvent> m_errorEventFromImportedScript;
+        OwnPtr<V8IsolateInterruptor> m_interruptor;
     };
 
 } // namespace WebCore

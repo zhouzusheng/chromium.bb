@@ -22,6 +22,7 @@
 #include "config.h"
 #include "core/svg/SVGPaint.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 
 namespace WebCore {
@@ -64,13 +65,14 @@ void SVGPaint::setUri(const String&)
 
 void SVGPaint::setPaint(unsigned short, const String&, const String&, const String&, ExceptionState& exceptionState)
 {
-    exceptionState.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
+    exceptionState.throwDOMException(NoModificationAllowedError, ExceptionMessages::readOnly());
 }
 
 String SVGPaint::customCSSText() const
 {
     switch (m_paintType) {
     case SVG_PAINTTYPE_UNKNOWN:
+        return String();
     case SVG_PAINTTYPE_RGBCOLOR:
     case SVG_PAINTTYPE_RGBCOLOR_ICCCOLOR:
     case SVG_PAINTTYPE_CURRENTCOLOR:
@@ -102,9 +104,9 @@ SVGPaint::SVGPaint(const SVGPaint& cloneFrom)
 {
 }
 
-PassRefPtr<SVGPaint> SVGPaint::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<SVGPaint> SVGPaint::cloneForCSSOM() const
 {
-    return adoptRef(new SVGPaint(*this));
+    return adoptRefCountedWillBeRefCountedGarbageCollected(new SVGPaint(*this));
 }
 
 bool SVGPaint::equals(const SVGPaint& other) const

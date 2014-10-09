@@ -49,7 +49,7 @@ public:
     PassRefPtr<Text> replaceWholeText(const String&);
 
     void recalcTextStyle(StyleRecalcChange, Text* nextTextSibling);
-    bool textRendererIsNeeded(const NodeRenderingContext&);
+    bool textRendererIsNeeded(const RenderStyle&, const RenderObject& parent);
     RenderText* createTextRenderer(RenderStyle*);
     void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior = DoNotRecalcStyle);
 
@@ -68,14 +68,13 @@ protected:
 private:
     virtual String nodeName() const OVERRIDE;
     virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
 
     bool needsWhitespaceRenderer();
 
     virtual PassRefPtr<Text> cloneWithData(const String&);
 
 #ifndef NDEBUG
-    virtual void formatForDebugger(char* buffer, unsigned length) const;
+    virtual void formatForDebugger(char* buffer, unsigned length) const OVERRIDE;
 #endif
 };
 

@@ -30,9 +30,8 @@
 #include "HTMLNames.h"
 #include "XMLNames.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
-#include "core/css/CSSParser.h"
+#include "core/css/CSSMarkup.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
@@ -43,17 +42,16 @@
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
-#include "core/frame/Settings.h"
-#include "core/rendering/RenderWordBreak.h"
+#include "core/rendering/RenderObject.h"
 #include "platform/text/BidiResolver.h"
+#include "platform/text/BidiTextRun.h"
 #include "platform/text/TextRunIterator.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
@@ -204,7 +202,7 @@ void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name
         Element::collectStyleForPresentationAttribute(name, value, style);
 }
 
-const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& attrName) const
+const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& attrName)
 {
     if (!attrName.namespaceURI().isNull())
         return nullAtom;
@@ -283,6 +281,7 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
         attributeNameToEventNameMap.set(onprogressAttr.localName(), EventTypeNames::progress);
         attributeNameToEventNameMap.set(onratechangeAttr.localName(), EventTypeNames::ratechange);
         attributeNameToEventNameMap.set(onresetAttr.localName(), EventTypeNames::reset);
+        attributeNameToEventNameMap.set(onresizeAttr.localName(), EventTypeNames::resize);
         attributeNameToEventNameMap.set(onseekedAttr.localName(), EventTypeNames::seeked);
         attributeNameToEventNameMap.set(onseekingAttr.localName(), EventTypeNames::seeking);
         attributeNameToEventNameMap.set(onselectAttr.localName(), EventTypeNames::select);
@@ -452,24 +451,6 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
         mergeWithNextTextNode(prev.release(), exceptionState);
 }
 
-Element* HTMLElement::insertAdjacentElement(const String& where, Element* newChild, ExceptionState& exceptionState)
-{
-    if (!newChild) {
-        // IE throws COM Exception E_INVALIDARG; this is the best DOM exception alternative.
-        exceptionState.throwTypeError("The node provided is null.");
-        return 0;
-    }
-
-    Node* returnValue = insertAdjacent(where, newChild, exceptionState);
-    return toElement(returnValue);
-}
-
-void HTMLElement::insertAdjacentText(const String& where, const String& text, ExceptionState& exceptionState)
-{
-    RefPtr<Text> textNode = document().createTextNode(text);
-    insertAdjacent(where, textNode.get(), exceptionState);
-}
-
 void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, MutableStylePropertySet* style)
 {
     // Vertical alignment with respect to the current baseline of the text
@@ -600,7 +581,7 @@ void HTMLElement::accessKeyAction(bool sendMouseEvents)
 
 String HTMLElement::title() const
 {
-    return getAttribute(titleAttr);
+    return fastGetAttribute(titleAttr);
 }
 
 short HTMLElement::tabIndex() const
@@ -648,27 +629,6 @@ bool HTMLElement::translate() const
 void HTMLElement::setTranslate(bool enable)
 {
     setAttribute(translateAttr, enable ? "yes" : "no");
-}
-
-bool HTMLElement::rendererIsNeeded(const RenderStyle& style)
-{
-    if (hasLocalName(noscriptTag)) {
-        Frame* frame = document().frame();
-        if (frame && frame->script().canExecuteScripts(NotAboutToExecuteScript))
-            return false;
-    } else if (hasLocalName(noembedTag)) {
-        Frame* frame = document().frame();
-        if (frame && frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
-            return false;
-    }
-    return Element::rendererIsNeeded(style);
-}
-
-RenderObject* HTMLElement::createRenderer(RenderStyle* style)
-{
-    if (hasLocalName(wbrTag))
-        return new RenderWordBreak(this);
-    return RenderObject::createObject(this, style);
 }
 
 HTMLFormElement* HTMLElement::findFormAncestor() const
@@ -729,15 +689,6 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
 
     isAuto = true;
     return directionality();
-}
-
-static TextDirection determineDirectionality(const String& value, bool& hasStrongDirectionality)
-{
-    TextRun run(value);
-    BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
-    bidiResolver.setStatus(BidiStatus(run.direction(), run.directionalOverride()));
-    bidiResolver.setPositionIgnoringNestedIsolates(TextRunIterator(&run, 0));
-    return bidiResolver.determineParagraphDirectionality(&hasStrongDirectionality);
 }
 
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
@@ -806,7 +757,7 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element
         Element* elementToAdjust = this;
         for (; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
             if (elementAffectsDirectionality(elementToAdjust)) {
-                elementToAdjust->setNeedsStyleRecalc();
+                elementToAdjust->setNeedsStyleRecalc(SubtreeStyleChange);
                 return;
             }
         }
@@ -819,7 +770,7 @@ void HTMLElement::calculateAndAdjustDirectionality()
     TextDirection textDirection = directionality(&strongDirectionalityTextNode);
     setHasDirAutoFlagRecursively(this, true, strongDirectionalityTextNode);
     if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
@@ -955,8 +906,8 @@ void HTMLElement::addHTMLColorToStyle(MutableStylePropertySet* style, CSSPropert
         return;
 
     // If the string is a named CSS color or a 3/6-digit hex color, use that.
-    Color parsedColor(colorString);
-    if (!parsedColor.isValid())
+    Color parsedColor;
+    if (!parsedColor.setFromString(colorString))
         parsedColor.setRGB(parseColorStringWithCrazyLegacyRules(colorString));
 
     style->setProperty(propertyID, cssValuePool().createColorValue(parsedColor.rgb()));

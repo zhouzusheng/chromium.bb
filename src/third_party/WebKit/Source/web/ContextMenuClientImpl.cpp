@@ -50,15 +50,14 @@
 #include "core/dom/DocumentMarkerController.h"
 #include "core/editing/Editor.h"
 #include "core/editing/SpellChecker.h"
-#include "core/history/HistoryItem.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
-#include "core/html/HTMLVideoElement.h"
 #include "core/html/MediaError.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/HistoryItem.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/EventHandler.h"
 #include "core/frame/FrameView.h"
@@ -225,7 +224,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         // We know that if absoluteMediaURL() is not empty, then this
         // is a media element.
         HTMLMediaElement* mediaElement = toHTMLMediaElement(r.innerNonSharedNode());
-        if (isHTMLVideoElement(mediaElement))
+        if (mediaElement->hasTagName(HTMLNames::videoTag))
             data.mediaType = WebContextMenuData::MediaTypeVideo;
         else if (mediaElement->hasTagName(HTMLNames::audioTag))
             data.mediaType = WebContextMenuData::MediaTypeAudio;
@@ -253,7 +252,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             Widget* widget = toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer()) {
                 data.mediaType = WebContextMenuData::MediaTypePlugin;
-                WebPluginContainerImpl* plugin = toPluginContainerImpl(widget);
+                WebPluginContainerImpl* plugin = toWebPluginContainerImpl(widget);
                 WebString text = plugin->plugin()->selectionAsText();
                 if (!text.isEmpty()) {
                     data.selectedText = text;

@@ -30,7 +30,7 @@
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValueList.h"
@@ -169,7 +169,7 @@ protected:
     HTMLElementEquivalent(CSSPropertyID, const QualifiedName& tagName);
     HTMLElementEquivalent(CSSPropertyID, CSSValueID primitiveValue, const QualifiedName& tagName);
     const CSSPropertyID m_propertyID;
-    const RefPtr<CSSPrimitiveValue> m_primitiveValue;
+    const RefPtrWillBePersistent<CSSPrimitiveValue> m_primitiveValue;
     const QualifiedName* m_tagName; // We can store a pointer because HTML tag names are const global.
 };
 
@@ -210,8 +210,8 @@ public:
     {
         return adoptPtr(new HTMLTextDecorationEquivalent(primitiveValue, tagName));
     }
-    virtual bool propertyExistsInStyle(const StylePropertySet*) const;
-    virtual bool valueIsPresentInStyle(Element*, StylePropertySet*) const;
+    virtual bool propertyExistsInStyle(const StylePropertySet*) const OVERRIDE;
+    virtual bool valueIsPresentInStyle(Element*, StylePropertySet*) const OVERRIDE;
 
 private:
     HTMLTextDecorationEquivalent(CSSValueID primitiveValue, const QualifiedName& tagName);
@@ -248,10 +248,10 @@ public:
         return adoptPtr(new HTMLAttributeEquivalent(propertyID, attrName));
     }
 
-    bool matches(const Element* elem) const { return HTMLElementEquivalent::matches(elem) && elem->hasAttribute(m_attrName); }
-    virtual bool hasAttribute() const { return true; }
-    virtual bool valueIsPresentInStyle(Element*, StylePropertySet*) const;
-    virtual void addToStyle(Element*, EditingStyle*) const;
+    virtual bool matches(const Element* elem) const OVERRIDE { return HTMLElementEquivalent::matches(elem) && elem->hasAttribute(m_attrName); }
+    virtual bool hasAttribute() const OVERRIDE { return true; }
+    virtual bool valueIsPresentInStyle(Element*, StylePropertySet*) const OVERRIDE;
+    virtual void addToStyle(Element*, EditingStyle*) const OVERRIDE;
     virtual PassRefPtr<CSSValue> attributeValueAsCSSValue(Element*) const;
     inline const QualifiedName& attributeName() const { return m_attrName; }
 
@@ -299,13 +299,13 @@ PassRefPtr<CSSValue> HTMLAttributeEquivalent::attributeValueAsCSSValue(Element* 
     return dummyStyle->getPropertyCSSValue(m_propertyID);
 }
 
-class HTMLFontSizeEquivalent : public HTMLAttributeEquivalent {
+class HTMLFontSizeEquivalent FINAL : public HTMLAttributeEquivalent {
 public:
     static PassOwnPtr<HTMLFontSizeEquivalent> create()
     {
         return adoptPtr(new HTMLFontSizeEquivalent());
     }
-    virtual PassRefPtr<CSSValue> attributeValueAsCSSValue(Element*) const;
+    virtual PassRefPtr<CSSValue> attributeValueAsCSSValue(Element*) const OVERRIDE;
 
 private:
     HTMLFontSizeEquivalent();
@@ -357,14 +357,6 @@ EditingStyle::EditingStyle(const StylePropertySet* style)
     extractFontSizeDelta();
 }
 
-EditingStyle::EditingStyle(const CSSStyleDeclaration* style)
-    : m_mutableStyle(style ? style->copyProperties() : 0)
-    , m_shouldUseFixedDefaultFontSize(false)
-    , m_fontSizeDelta(NoFontDelta)
-{
-    extractFontSizeDelta();
-}
-
 EditingStyle::EditingStyle(CSSPropertyID propertyID, const String& value)
     : m_mutableStyle(0)
     , m_shouldUseFixedDefaultFontSize(false)
@@ -387,7 +379,7 @@ static RGBA32 cssValueToRGBA(CSSValue* colorValue)
         return primitiveColor->getRGBA32Value();
 
     RGBA32 rgba = 0;
-    CSSParser::parseColor(rgba, colorValue->cssText());
+    BisonCSSParser::parseColor(rgba, colorValue->cssText());
     return rgba;
 }
 
@@ -473,12 +465,12 @@ void EditingStyle::init(Node* node, PropertiesToInclude propertiesToInclude)
 
 void EditingStyle::removeTextFillAndStrokeColorsIfNeeded(RenderStyle* renderStyle)
 {
-    // If a node's text fill color is invalid, then its children use
+    // If a node's text fill color is currentColor, then its children use
     // their font-color as their text fill color (they don't
     // inherit it).  Likewise for stroke color.
-    if (!renderStyle->textFillColor().isValid())
+    if (renderStyle->textFillColor().isCurrentColor())
         m_mutableStyle->removeProperty(CSSPropertyWebkitTextFillColor);
-    if (!renderStyle->textStrokeColor().isValid())
+    if (renderStyle->textStrokeColor().isCurrentColor())
         m_mutableStyle->removeProperty(CSSPropertyWebkitTextStrokeColor);
 }
 
@@ -557,15 +549,6 @@ bool EditingStyle::textDirection(WritingDirection& writingDirection) const
     return false;
 }
 
-void EditingStyle::setStyle(PassRefPtr<MutableStylePropertySet> style)
-{
-    m_mutableStyle = style;
-    // FIXME: We should be able to figure out whether or not font is fixed width for mutable style.
-    // We need to check font-family is monospace as in FontDescription but we don't want to duplicate code here.
-    m_shouldUseFixedDefaultFontSize = false;
-    extractFontSizeDelta();
-}
-
 void EditingStyle::overrideWithStyle(const StylePropertySet* style)
 {
     if (!style || style->isEmpty())
@@ -633,8 +616,8 @@ void EditingStyle::removeStyleAddedByNode(Node* node)
         return;
     RefPtr<MutableStylePropertySet> parentStyle = editingStyleFromComputedStyle(CSSComputedStyleDeclaration::create(node->parentNode()), AllEditingProperties);
     RefPtr<MutableStylePropertySet> nodeStyle = editingStyleFromComputedStyle(CSSComputedStyleDeclaration::create(node), AllEditingProperties);
-    nodeStyle->removeEquivalentProperties(parentStyle->ensureCSSStyleDeclaration());
-    m_mutableStyle->removeEquivalentProperties(nodeStyle->ensureCSSStyleDeclaration());
+    nodeStyle->removeEquivalentProperties(parentStyle.get());
+    m_mutableStyle->removeEquivalentProperties(nodeStyle.get());
 }
 
 void EditingStyle::removeStyleConflictingWithStyleOfNode(Node* node)
@@ -644,7 +627,7 @@ void EditingStyle::removeStyleConflictingWithStyleOfNode(Node* node)
 
     RefPtr<MutableStylePropertySet> parentStyle = editingStyleFromComputedStyle(CSSComputedStyleDeclaration::create(node->parentNode()), AllEditingProperties);
     RefPtr<MutableStylePropertySet> nodeStyle = editingStyleFromComputedStyle(CSSComputedStyleDeclaration::create(node), AllEditingProperties);
-    nodeStyle->removeEquivalentProperties(parentStyle->ensureCSSStyleDeclaration());
+    nodeStyle->removeEquivalentProperties(parentStyle.get());
 
     unsigned propertyCount = nodeStyle->propertyCount();
     for (unsigned i = 0; i < propertyCount; ++i)
@@ -1449,7 +1432,7 @@ void StyleChange::extractTextStyles(Document* document, MutableStylePropertySet*
         DEFINE_STATIC_REF(CSSPrimitiveValue, underline, (CSSPrimitiveValue::createIdentifier(CSSValueUnderline)));
         DEFINE_STATIC_REF(CSSPrimitiveValue, lineThrough, (CSSPrimitiveValue::createIdentifier(CSSValueLineThrough)));
 
-        RefPtr<CSSValueList> newTextDecoration = toCSSValueList(textDecoration.get())->copy();
+        RefPtrWillBeRawPtr<CSSValueList> newTextDecoration = toCSSValueList(textDecoration.get())->copy();
         if (newTextDecoration->removeAll(underline))
             m_applyUnderline = true;
         if (newTextDecoration->removeAll(lineThrough))
@@ -1498,7 +1481,7 @@ static void diffTextDecorations(MutableStylePropertySet* style, CSSPropertyID pr
     if (!textDecoration || !textDecoration->isValueList() || !refTextDecoration || !refTextDecoration->isValueList())
         return;
 
-    RefPtr<CSSValueList> newTextDecoration = toCSSValueList(textDecoration.get())->copy();
+    RefPtrWillBeRawPtr<CSSValueList> newTextDecoration = toCSSValueList(textDecoration.get())->copy();
     CSSValueList* valuesInRefTextDecoration = toCSSValueList(refTextDecoration);
 
     for (size_t i = 0; i < valuesInRefTextDecoration->length(); i++)

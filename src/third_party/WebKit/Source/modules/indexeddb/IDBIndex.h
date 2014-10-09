@@ -33,6 +33,7 @@
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IDBObjectStore.h"
 #include "modules/indexeddb/IDBRequest.h"
+#include "public/platform/WebIDBCursor.h"
 #include "public/platform/WebIDBDatabase.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
@@ -67,12 +68,14 @@ public:
     bool isDeleted() const;
 
     // Used internally and by InspectorIndexedDBAgent:
-    PassRefPtr<IDBRequest> openCursor(ExecutionContext*, PassRefPtr<IDBKeyRange>, IndexedDB::CursorDirection);
+    PassRefPtr<IDBRequest> openCursor(ExecutionContext*, PassRefPtr<IDBKeyRange>, blink::WebIDBCursor::Direction);
 
     blink::WebIDBDatabase* backendDB() const;
 
 private:
     IDBIndex(const IDBIndexMetadata&, IDBObjectStore*, IDBTransaction*);
+
+    PassRefPtr<IDBRequest> getInternal(ExecutionContext*, const ScriptValue& key, ExceptionState&, bool keyOnly);
 
     IDBIndexMetadata m_metadata;
     RefPtr<IDBObjectStore> m_objectStore;

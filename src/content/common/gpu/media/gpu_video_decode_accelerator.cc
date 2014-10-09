@@ -26,10 +26,12 @@
 #include "base/win/windows_version.h"
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_device.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "ui/gl/gl_context_glx.h"
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
+#include "ui/gl/gl_context_glx.h"
+#include "ui/gl/gl_implementation.h"
 #elif defined(OS_ANDROID)
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
@@ -271,21 +273,29 @@ void GpuVideoDecodeAccelerator::Initialize(
   video_decode_accelerator_.reset(new DXVAVideoDecodeAccelerator(
       this, make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  video_decode_accelerator_.reset(new ExynosVideoDecodeAccelerator(
-      gfx::GLSurfaceEGL::GetHardwareDisplay(),
-      stub_->decoder()->GetGLContext()->GetHandle(),
-      this,
-      weak_factory_for_io_.GetWeakPtr(),
-      make_context_current_,
-      io_message_loop_));
+  scoped_ptr<V4L2Device> device = V4L2Device::Create();
+  if (!device.get()) {
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
+  video_decode_accelerator_.reset(
+      new V4L2VideoDecodeAccelerator(gfx::GLSurfaceEGL::GetHardwareDisplay(),
+                                     this,
+                                     weak_factory_for_io_.GetWeakPtr(),
+                                     make_context_current_,
+                                     device.Pass(),
+                                     io_message_loop_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
+  if (gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL) {
+    VLOG(1) << "HW video decode acceleration not available without "
+               "DesktopGL (GLX).";
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
   gfx::GLContextGLX* glx_context =
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
-  GLXContext glx_context_handle =
-      static_cast<GLXContext>(glx_context->GetHandle());
   video_decode_accelerator_.reset(new VaapiVideoDecodeAccelerator(
-      glx_context->display(), glx_context_handle, this,
-      make_context_current_));
+      glx_context->display(), this, make_context_current_));
 #elif defined(OS_ANDROID)
   video_decode_accelerator_.reset(new AndroidVideoDecodeAccelerator(
       this,

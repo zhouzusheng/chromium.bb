@@ -3,8 +3,6 @@
 // Note: Mandatory blank line to skip parameter parsing phase
 
 align-content
-align-items
-align-self type_name=EAlignItems
 background-attachment custom_all
 background-blend-mode custom_all
 background-clip custom_all
@@ -62,6 +60,7 @@ font-kerning custom_all
 font-size custom_all
 font-style custom_all
 font-variant custom_all
+font-variant-ligatures custom_all
 font-weight custom_all
 grid-auto-flow type_name=GridAutoFlow
 height type_name=Length, initial=initialSize, converter=convertLengthSizing
@@ -107,6 +106,7 @@ pointer-events
 position
 resize custom_value
 right type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
+scroll-behavior type_name=ScrollBehavior
 shape-image-threshold type_name=float
 shape-inside type_name=ShapeValue*, custom_value
 shape-margin type_name=Length, converter=convertLength
@@ -187,17 +187,11 @@ column-fill type_name=ColumnFill
 -webkit-column-rule-width type_name=unsigned short, converter=convertLineWidth<unsigned short>
 -webkit-column-span type_name=ColumnSpan
 -webkit-column-width type_name=float, custom_all
--webkit-flow-from type_name=AtomicString, name_for_methods=RegionThread, converter=convertString<CSSValueNone>
--webkit-flow-into type_name=AtomicString, name_for_methods=FlowThread, converter=convertString<CSSValueNone>
 -webkit-font-smoothing custom_all
--webkit-font-variant-ligatures custom_all
 -webkit-highlight type_name=AtomicString, converter=convertString<CSSValueNone>
 -webkit-hyphenate-character type_name=AtomicString, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
--webkit-line-align type_name=LineAlign
 -webkit-line-break type_name=LineBreak
 -webkit-line-clamp type_name=LineClampValue
--webkit-line-grid type_name=AtomicString, converter=convertString<CSSValueNone>
--webkit-line-snap type_name=LineSnap
 -webkit-margin-after-collapse type_name=EMarginCollapse
 -webkit-margin-before-collapse type_name=EMarginCollapse
 -webkit-margin-bottom-collapse type_name=EMarginCollapse, name_for_methods=MarginAfterCollapse
@@ -225,10 +219,6 @@ column-fill type_name=ColumnFill
 -webkit-perspective-origin-x type_name=Length, converter=convertLength
 -webkit-perspective-origin-y type_name=Length, converter=convertLength
 -webkit-print-color-adjust type_name=PrintColorAdjust
--webkit-region-break-after type_name=EPageBreak, initial=initialPageBreak
--webkit-region-break-before type_name=EPageBreak, initial=initialPageBreak
--webkit-region-break-inside type_name=EPageBreak, initial=initialPageBreak
--webkit-region-fragment type_name=RegionFragment
 -webkit-rtl-ordering type_name=Order, getter=rtlOrdering, setter=setRTLOrdering, initial=initialRTLOrdering
 -webkit-ruby-position type_name=RubyPosition
 -webkit-text-combine type_name=TextCombine

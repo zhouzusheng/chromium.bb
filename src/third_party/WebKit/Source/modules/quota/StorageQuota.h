@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,38 +31,36 @@
 #ifndef StorageQuota_h
 #define StorageQuota_h
 
+#include "bindings/v8/ScriptPromise.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "heap/Handle.h"
+#include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class ExecutionContext;
-class StorageErrorCallback;
-class StorageQuotaCallback;
-class StorageUsageCallback;
 
-class StorageQuota : public RefCounted<StorageQuota>, public ScriptWrappable {
+class StorageQuota FINAL : public RefCountedWillBeGarbageCollectedFinalized<StorageQuota>, public ScriptWrappable {
+    DECLARE_GC_INFO;
 public:
-    enum Type {
-        Temporary,
-        Persistent,
-    };
-
-    static PassRefPtr<StorageQuota> create(Type type)
+    static PassRefPtrWillBeRawPtr<StorageQuota> create()
     {
-        return adoptRef(new StorageQuota(type));
+        return adoptRefWillBeNoop(new StorageQuota());
     }
 
-    void queryUsageAndQuota(ExecutionContext*, PassOwnPtr<StorageUsageCallback>, PassOwnPtr<StorageErrorCallback>);
+    Vector<String> supportedTypes() const;
 
-    void requestQuota(ExecutionContext*, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
+    ScriptPromise queryInfo(ExecutionContext*, String type);
+    ScriptPromise requestPersistentQuota(ExecutionContext*, unsigned long long newQuota);
 
     ~StorageQuota();
 
+    void trace(Visitor*) { }
+
 private:
-    explicit StorageQuota(Type);
-    Type m_type;
+    StorageQuota();
 };
 
 } // namespace WebCore

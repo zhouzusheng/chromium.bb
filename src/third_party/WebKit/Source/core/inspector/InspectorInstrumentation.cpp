@@ -31,12 +31,13 @@
 #include "config.h"
 #include "core/inspector/InspectorInstrumentation.h"
 
+#include "core/events/EventTarget.h"
 #include "core/fetch/FetchInitiatorInfo.h"
-#include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
+#include "core/inspector/InspectorInspectorAgent.h"
 #include "core/inspector/InspectorProfilerAgent.h"
 #include "core/inspector/InspectorResourceAgent.h"
 #include "core/inspector/InspectorTimelineAgent.h"
@@ -94,11 +95,6 @@ bool isDebuggerPausedImpl(InstrumentingAgents* instrumentingAgents)
     return false;
 }
 
-void continueAfterPingLoaderImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, DocumentLoader* loader, ResourceRequest& request, const ResourceResponse& response)
-{
-    willSendRequestImpl(instrumentingAgents, identifier, loader, request, response, FetchInitiatorInfo());
-}
-
 void didReceiveResourceResponseButCanceledImpl(Frame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
 {
     didReceiveResourceResponse(frame, identifier, loader, r, 0);
@@ -133,7 +129,7 @@ void willDestroyResourceImpl(Resource* cachedResource)
 
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents* instrumentingAgents)
 {
-    if (InspectorAgent* inspectorAgent = instrumentingAgents->inspectorAgent())
+    if (InspectorInspectorAgent* inspectorAgent = instrumentingAgents->inspectorInspectorAgent())
         return inspectorAgent->hasFrontend();
     return false;
 }
@@ -206,6 +202,13 @@ InstrumentingAgents* instrumentingAgentsFor(Page* page)
     return instrumentationForPage(page);
 }
 
+InstrumentingAgents* instrumentingAgentsFor(EventTarget* eventTarget)
+{
+    if (!eventTarget)
+        return 0;
+    return instrumentingAgentsFor(eventTarget->executionContext());
+}
+
 InstrumentingAgents* instrumentingAgentsFor(RenderObject* renderer)
 {
     return instrumentingAgentsFor(renderer->frame());
@@ -232,8 +235,10 @@ const char PaintSetup[] = "PaintSetup";
 const char RasterTask[] = "RasterTask";
 const char Paint[] = "Paint";
 const char Layer[] = "Layer";
+const char RequestMainThreadFrame[] = "RequestMainThreadFrame";
 const char BeginFrame[] = "BeginFrame";
 const char ActivateLayerTree[] = "ActivateLayerTree";
+const char DrawFrame[] = "DrawFrame";
 };
 
 namespace InstrumentationEventArguments {

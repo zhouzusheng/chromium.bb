@@ -47,7 +47,7 @@ PassOwnPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
 
 LinkImport::LinkImport(HTMLLinkElement* owner)
     : LinkResource(owner)
-    , m_loader(0)
+    , m_child(0)
 {
 }
 
@@ -58,14 +58,14 @@ LinkImport::~LinkImport()
 
 Document* LinkImport::importedDocument() const
 {
-    if (!m_loader)
+    if (!m_child)
         return 0;
-    return m_loader->importedDocument();
+    return m_child->importedDocument();
 }
 
 void LinkImport::process()
 {
-    if (m_loader)
+    if (m_child)
         return;
     if (!m_owner)
         return;
@@ -85,8 +85,8 @@ void LinkImport::process()
 
     HTMLImport* parent = m_owner->document().import();
     HTMLImportsController* controller = parent->controller();
-    m_loader = controller->load(parent, this, builder.build(true));
-    if (!m_loader) {
+    m_child = controller->load(parent, this, builder.build(true));
+    if (!m_child) {
         didFinish();
         return;
     }
@@ -95,9 +95,9 @@ void LinkImport::process()
 void LinkImport::clear()
 {
     m_owner = 0;
-    if (m_loader) {
-        m_loader->clearClient();
-        m_loader = 0;
+    if (m_child) {
+        m_child->clearClient();
+        m_child = 0;
     }
 }
 
@@ -110,17 +110,36 @@ void LinkImport::didFinish()
 {
     if (!m_owner)
         return;
-    m_owner->scheduleEvent();
+    // Because didFinish() is called from import's own scheduler in HTMLImportsController,
+    // we don't need to scheduleEvent() here.
+    m_owner->dispatchEventImmediately();
 }
 
-void LinkImport::loaderWillBeDestroyed()
+void LinkImport::importChildWasDestroyed(HTMLImportChild* child)
 {
+    ASSERT(m_child == child);
+    m_child = 0;
     clear();
+}
+
+bool LinkImport::isCreatedByParser() const
+{
+    return m_owner && m_owner->isCreatedByParser();
+}
+
+HTMLLinkElement* LinkImport::link()
+{
+    return m_owner;
 }
 
 bool LinkImport::hasLoaded() const
 {
-    return m_loader && m_loader->isLoaded();
+    return m_child && m_child->isDone() && !m_child->loaderHasError();
+}
+
+bool LinkImport::ownsLoader() const
+{
+    return m_child && m_child->hasLoader() && m_child->ownsLoader();
 }
 
 } // namespace WebCore

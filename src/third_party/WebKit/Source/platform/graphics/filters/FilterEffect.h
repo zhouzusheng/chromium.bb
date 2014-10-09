@@ -26,6 +26,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/Color.h"
 #include "platform/graphics/ColorSpace.h"
 
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -97,7 +98,6 @@ public:
     void setIsAlphaImage(bool alphaImage) { m_alphaImage = alphaImage; }
 
     IntRect absolutePaintRect() const { return m_absolutePaintRect; }
-    void setAbsolutePaintRect(const IntRect& absolutePaintRect) { m_absolutePaintRect = absolutePaintRect; }
 
     FloatRect maxEffectRect() const { return m_maxEffectRect; }
     void setMaxEffectRect(const FloatRect& maxEffectRect) { m_maxEffectRect = maxEffectRect; }
@@ -111,8 +111,6 @@ public:
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*);
 
-    virtual void determineAbsolutePaintRect();
-
     // Mapping a rect forwards determines which which destination pixels a
     // given source rect would affect. Mapping a rect backwards determines
     // which pixels from the source rect would be required to fill a given
@@ -120,10 +118,19 @@ public:
     // each other. For example, for FEGaussianBlur, they are the same
     // transformation.
     virtual FloatRect mapRect(const FloatRect& rect, bool forward = true) { return rect; }
+    // A version of the above that is used for calculating paint rects. We can't
+    // use mapRect above for that, because that is also used for calculating effect
+    // regions for CSS filters and has undesirable effects for tile and
+    // displacement map.
+    virtual FloatRect mapPaintRect(const FloatRect& rect, bool forward)
+    {
+        return mapRect(rect, forward);
+    }
     FloatRect mapRectRecursive(const FloatRect&);
 
     // This is a recursive version of a backwards mapRect(), which also takes
     // into account the filter primitive subregion of each effect.
+    // Note: This works in absolute coordinates!
     FloatRect getSourceRect(const FloatRect& destRect, const FloatRect& clipRect);
 
     virtual FilterEffectType filterEffectType() const { return FilterEffectTypeUnknown; }
@@ -165,6 +172,10 @@ public:
     void transformResultColorSpace(ColorSpace);
 
     FloatRect determineFilterPrimitiveSubregion(DetermineSubregionFlags = DetermineSubregionNone);
+    void determineAllAbsolutePaintRects();
+
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedAbsoluteRect);
+    virtual bool affectsTransparentPixels() { return false; }
 
 protected:
     FilterEffect(Filter*);
@@ -172,6 +183,8 @@ protected:
     ImageBuffer* createImageBufferResult();
     Uint8ClampedArray* createUnmultipliedImageResult();
     Uint8ClampedArray* createPremultipliedImageResult();
+
+    Color adaptColorToOperatingColorSpace(const Color& deviceColor);
 
     // Return true if the filter will only operate correctly on valid RGBA values, with
     // alpha in [0,255] and each color component in [0, alpha].
@@ -181,7 +194,10 @@ protected:
     void forceValidPreMultipliedPixels();
     SkImageFilter::CropRect getCropRect(const FloatSize& cropOffset) const;
 
+    void addAbsolutePaintRect(const FloatRect& absolutePaintRect);
+
 private:
+    void applyRecursive();
     virtual void applySoftware() = 0;
     virtual bool applySkia() { return false; }
 

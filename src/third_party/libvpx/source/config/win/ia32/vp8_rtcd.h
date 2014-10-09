@@ -7,6 +7,10 @@
 #define RTCD_EXTERN extern
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * VP8
  */
@@ -825,4 +829,9 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_SSE2) vp8_denoiser_filter = vp8_denoiser_filter_sse2;
 }
 #endif
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
 #endif

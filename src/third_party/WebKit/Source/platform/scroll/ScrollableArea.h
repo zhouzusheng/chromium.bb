@@ -27,7 +27,7 @@
 #define ScrollableArea_h
 
 #include "platform/PlatformExport.h"
-#include "platform/scroll//ScrollAnimator.h"
+#include "platform/scroll/ScrollAnimator.h"
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
@@ -41,6 +41,12 @@ class PlatformGestureEvent;
 class PlatformWheelEvent;
 class ScrollAnimator;
 
+enum ScrollBehavior {
+    ScrollBehaviorAuto,
+    ScrollBehaviorInstant,
+    ScrollBehaviorSmooth,
+};
+
 class PLATFORM_EXPORT ScrollableArea {
     WTF_MAKE_NONCOPYABLE(ScrollableArea);
 public:
@@ -48,13 +54,15 @@ public:
     static float minFractionToStepWhenPaging();
     static int maxOverlapBetweenPages();
 
-    bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1);
+    bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
     void scrollToOffsetWithoutAnimation(const FloatPoint&);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
 
     // Should be called when the scroll position changes externally, for example if the scroll layer position
     // is updated on the scrolling thread and we need to notify the main thread.
     void notifyScrollPositionChanged(const IntPoint&);
+
+    static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
 
     bool handleWheelEvent(const PlatformWheelEvent&);
 
@@ -185,6 +193,27 @@ public:
     int maximumScrollPosition(ScrollbarOrientation orientation) { return orientation == HorizontalScrollbar ? maximumScrollPosition().x() : maximumScrollPosition().y(); }
     int clampScrollPosition(ScrollbarOrientation orientation, int pos)  { return std::max(std::min(pos, maximumScrollPosition(orientation)), minimumScrollPosition(orientation)); }
 
+    bool hasVerticalBarDamage() const { return m_hasVerticalBarDamage; }
+    bool hasHorizontalBarDamage() const { return m_hasHorizontalBarDamage; }
+
+    const IntRect& verticalBarDamage() const
+    {
+        ASSERT(m_hasVerticalBarDamage);
+        return m_verticalBarDamage;
+    }
+
+    const IntRect& horizontalBarDamage() const
+    {
+        ASSERT(m_hasHorizontalBarDamage);
+        return m_horizontalBarDamage;
+    }
+
+    void resetScrollbarDamage()
+    {
+        m_hasVerticalBarDamage = false;
+        m_hasHorizontalBarDamage = false;
+    }
+
 protected:
     ScrollableArea();
     virtual ~ScrollableArea();
@@ -203,6 +232,13 @@ protected:
     bool hasLayerForHorizontalScrollbar() const;
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
+
+    // For repaint after layout, stores the damage to be repainted for the
+    // scrollbars.
+    unsigned m_hasHorizontalBarDamage : 1;
+    unsigned m_hasVerticalBarDamage : 1;
+    IntRect m_horizontalBarDamage;
+    IntRect m_verticalBarDamage;
 
 private:
     void scrollPositionChanged(const IntPoint&);

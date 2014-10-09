@@ -52,7 +52,7 @@ all
 //normal
 small-caps
 
-// -webkit-font-variant-ligatures:
+// font-variant-ligatures:
 //
 // normal
 common-ligatures
@@ -663,17 +663,12 @@ media-fullscreen-volume-slider-thumb
 media-mute-button
 media-play-button
 media-overlay-play-button
-media-seek-back-button
-media-seek-forward-button
-media-rewind-button
-media-return-to-realtime-button
 media-toggle-closed-captions-button
 media-slider
 media-sliderthumb
 media-volume-slider-container
 media-volume-slider
 media-volume-sliderthumb
-media-volume-slider-mute-button
 media-controls-background
 media-controls-fullscreen-background
 media-current-time-display
@@ -916,10 +911,9 @@ optimizeQuality
 nonzero
 evenodd
 outside-shape
-
-// -webkit-region-fragment
-// auto
-break
+at
+// closest-side
+// farthest-side
 
 // -webkit-wrap-flow
 // auto
@@ -932,9 +926,6 @@ maximum
 // -webkit-wrap-through
 wrap
 // none
-
-// -webkit-line-align
-edges
 
 alphabetic
 
@@ -1017,3 +1008,23 @@ script
 // touch-action
 pan-x
 pan-y
+
+// justify-self
+// auto
+// stretch
+// baseline
+// center
+// start
+// end
+self-start
+self-end
+// flex-start
+// flex-end
+// left
+// right
+true
+safe
+
+// scroll-behavior
+instant
+smooth

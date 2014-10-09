@@ -137,24 +137,39 @@ static HashSet<AtomicString>& chainableResourceTags()
     return s_tagList;
 }
 
-static inline String targetReferenceFromResource(SVGElement* element)
+static inline AtomicString targetReferenceFromResource(SVGElement* element)
 {
     String target;
     if (element->hasTagName(SVGNames::patternTag))
-        target = toSVGPatternElement(element)->hrefCurrentValue();
+        target = toSVGPatternElement(element)->href()->currentValue()->value();
     else if (element->hasTagName(SVGNames::linearGradientTag) || element->hasTagName(SVGNames::radialGradientTag))
-        target = toSVGGradientElement(element)->hrefCurrentValue();
+        target = toSVGGradientElement(element)->href()->currentValue()->value();
     else if (element->hasTagName(SVGNames::filterTag))
-        target = toSVGFilterElement(element)->hrefCurrentValue();
+        target = toSVGFilterElement(element)->href()->currentValue()->value();
     else
         ASSERT_NOT_REACHED();
 
     return SVGURIReference::fragmentIdentifierFromIRIString(target, element->document());
 }
 
+static inline bool svgPaintTypeHasURL(SVGPaint::SVGPaintType paintType)
+{
+    switch (paintType) {
+    case SVGPaint::SVG_PAINTTYPE_URI_NONE:
+    case SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI:
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
 static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document& document, const SVGPaint::SVGPaintType& paintType, const String& paintUri, AtomicString& id, bool& hasPendingResource)
 {
-    if (paintType != SVGPaint::SVG_PAINTTYPE_URI && paintType != SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR)
+    if (!svgPaintTypeHasURL(paintType))
         return 0;
 
     id = SVGURIReference::fragmentIdentifierFromIRIString(paintUri, document);
@@ -218,19 +233,19 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     OwnPtr<SVGResources> resources;
     if (clipperFilterMaskerTags().contains(tagName)) {
         if (style->hasClipper()) {
-            AtomicString id(style->clipperResource());
+            AtomicString id = style->clipperResource();
             if (!ensureResources(resources)->setClipper(getRenderSVGResourceById<RenderSVGResourceClipper>(document, id)))
                 registerPendingResource(extensions, id, element);
         }
 
         if (style->hasFilter()) {
-            AtomicString id(style->filterResource());
+            AtomicString id = style->filterResource();
             if (!ensureResources(resources)->setFilter(getRenderSVGResourceById<RenderSVGResourceFilter>(document, id)))
                 registerPendingResource(extensions, id, element);
         }
 
         if (style->hasMasker()) {
-            AtomicString id(style->maskerResource());
+            AtomicString id = style->maskerResource();
             if (!ensureResources(resources)->setMasker(getRenderSVGResourceById<RenderSVGResourceMasker>(document, id)))
                 registerPendingResource(extensions, id, element);
         }
@@ -271,7 +286,7 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     }
 
     if (chainableResourceTags().contains(tagName)) {
-        AtomicString id(targetReferenceFromResource(element));
+        AtomicString id = targetReferenceFromResource(element);
         if (!ensureResources(resources)->setLinkedResource(getRenderSVGResourceContainerById(document, id)))
             registerPendingResource(extensions, id, element);
     }

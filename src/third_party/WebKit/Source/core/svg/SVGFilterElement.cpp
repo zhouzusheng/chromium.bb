@@ -35,40 +35,37 @@ namespace WebCore {
 // Animated property definitions
 DEFINE_ANIMATED_ENUMERATION(SVGFilterElement, SVGNames::filterUnitsAttr, FilterUnits, filterUnits, SVGUnitTypes::SVGUnitType)
 DEFINE_ANIMATED_ENUMERATION(SVGFilterElement, SVGNames::primitiveUnitsAttr, PrimitiveUnits, primitiveUnits, SVGUnitTypes::SVGUnitType)
-DEFINE_ANIMATED_LENGTH(SVGFilterElement, SVGNames::xAttr, X, x)
-DEFINE_ANIMATED_LENGTH(SVGFilterElement, SVGNames::yAttr, Y, y)
-DEFINE_ANIMATED_LENGTH(SVGFilterElement, SVGNames::widthAttr, Width, width)
-DEFINE_ANIMATED_LENGTH(SVGFilterElement, SVGNames::heightAttr, Height, height)
-DEFINE_ANIMATED_INTEGER_MULTIPLE_WRAPPERS(SVGFilterElement, SVGNames::filterResAttr, filterResXIdentifier(), FilterResX, filterResX)
-DEFINE_ANIMATED_INTEGER_MULTIPLE_WRAPPERS(SVGFilterElement, SVGNames::filterResAttr, filterResYIdentifier(), FilterResY, filterResY)
-DEFINE_ANIMATED_STRING(SVGFilterElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGFilterElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFilterElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(filterUnits)
     REGISTER_LOCAL_ANIMATED_PROPERTY(primitiveUnits)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(width)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(height)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(filterResX)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(filterResY)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGFilterElement::SVGFilterElement(Document& document)
     : SVGElement(SVGNames::filterTag, document)
+    , SVGURIReference(this)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth)))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight)))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth)))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight)))
+    , m_filterRes(SVGAnimatedIntegerOptionalInteger::create(this, SVGNames::filterResAttr))
     , m_filterUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
     , m_primitiveUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
-    , m_x(LengthModeWidth, "-10%")
-    , m_y(LengthModeHeight, "-10%")
-    , m_width(LengthModeWidth, "120%")
-    , m_height(LengthModeHeight, "120%")
 {
+    ScriptWrappable::init(this);
+
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "-10%" were specified.
     // Spec: If the width/height attribute is not specified, the effect is as if a value of "120%" were specified.
-    ScriptWrappable::init(this);
+    m_x->setDefaultValueAsString("-10%");
+    m_y->setDefaultValueAsString("-10%");
+    m_width->setDefaultValueAsString("120%");
+    m_height->setDefaultValueAsString("120%");
+
+    addToPropertyMap(m_x);
+    addToPropertyMap(m_y);
+    addToPropertyMap(m_width);
+    addToPropertyMap(m_height);
+    addToPropertyMap(m_filterRes);
     registerAnimatedPropertiesForSVGFilterElement();
 }
 
@@ -77,26 +74,13 @@ PassRefPtr<SVGFilterElement> SVGFilterElement::create(Document& document)
     return adoptRef(new SVGFilterElement(document));
 }
 
-const AtomicString& SVGFilterElement::filterResXIdentifier()
+void SVGFilterElement::setFilterRes(unsigned x, unsigned y)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResX", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
+    filterResX()->baseValue()->setValue(x);
+    filterResY()->baseValue()->setValue(y);
 
-const AtomicString& SVGFilterElement::filterResYIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResY", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
-
-void SVGFilterElement::setFilterRes(unsigned filterResX, unsigned filterResY)
-{
-    setFilterResXBaseValue(filterResX);
-    setFilterResYBaseValue(filterResY);
-
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
-    if (renderer)
-        renderer->invalidateCacheAndMarkForLayout();
+    invalidateSVGAttributes();
+    svgAttributeChanged(SVGNames::filterResAttr);
 }
 
 bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -104,7 +88,6 @@ bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::filterUnitsAttr);
         supportedAttributes.add(SVGNames::primitiveUnitsAttr);
         supportedAttributes.add(SVGNames::xAttr);
@@ -120,9 +103,9 @@ void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicStr
 {
     SVGParsingError parseError = NoError;
 
-    if (!isSupportedAttribute(name))
+    if (!isSupportedAttribute(name)) {
         SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::filterUnitsAttr) {
+    } else if (name == SVGNames::filterUnitsAttr) {
         SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
         if (propertyValue > 0)
             setFilterUnitsBaseValue(propertyValue);
@@ -130,24 +113,20 @@ void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicStr
         SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
         if (propertyValue > 0)
             setPrimitiveUnitsBaseValue(propertyValue);
-    } else if (name == SVGNames::xAttr)
-        setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (name == SVGNames::yAttr)
-        setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (name == SVGNames::widthAttr)
-        setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (name == SVGNames::heightAttr)
-        setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (name == SVGNames::filterResAttr) {
-        float x, y;
-        if (parseNumberOptionalNumber(value, x, y)) {
-            setFilterResXBaseValue(x);
-            setFilterResYBaseValue(y);
-        }
-    } else if (SVGURIReference::parseAttribute(name, value)
-             || SVGExternalResourcesRequired::parseAttribute(name, value)) {
-    } else
+    } else if (name == SVGNames::xAttr) {
+        m_x->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+    } else if (name == SVGNames::yAttr) {
+        m_y->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+    } else if (name == SVGNames::widthAttr) {
+        m_width->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+    } else if (name == SVGNames::heightAttr) {
+        m_height->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+    } else if (name == SVGNames::filterResAttr) {
+        m_filterRes->setBaseValueAsString(value, parseError);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
         ASSERT_NOT_REACHED();
+    }
 
     reportAttributeParsingError(parseError, name, value);
 }
@@ -195,51 +174,12 @@ RenderObject* SVGFilterElement::createRenderer(RenderStyle*)
     return renderer;
 }
 
-bool SVGFilterElement::childShouldCreateRenderer(const Node& child) const
-{
-    if (!child.isSVGElement())
-        return false;
-
-    const SVGElement* svgElement = toSVGElement(&child);
-
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, allowedChildElementTags, ());
-    if (allowedChildElementTags.isEmpty()) {
-        allowedChildElementTags.add(SVGNames::feBlendTag);
-        allowedChildElementTags.add(SVGNames::feColorMatrixTag);
-        allowedChildElementTags.add(SVGNames::feComponentTransferTag);
-        allowedChildElementTags.add(SVGNames::feCompositeTag);
-        allowedChildElementTags.add(SVGNames::feConvolveMatrixTag);
-        allowedChildElementTags.add(SVGNames::feDiffuseLightingTag);
-        allowedChildElementTags.add(SVGNames::feDisplacementMapTag);
-        allowedChildElementTags.add(SVGNames::feDistantLightTag);
-        allowedChildElementTags.add(SVGNames::feDropShadowTag);
-        allowedChildElementTags.add(SVGNames::feFloodTag);
-        allowedChildElementTags.add(SVGNames::feFuncATag);
-        allowedChildElementTags.add(SVGNames::feFuncBTag);
-        allowedChildElementTags.add(SVGNames::feFuncGTag);
-        allowedChildElementTags.add(SVGNames::feFuncRTag);
-        allowedChildElementTags.add(SVGNames::feGaussianBlurTag);
-        allowedChildElementTags.add(SVGNames::feImageTag);
-        allowedChildElementTags.add(SVGNames::feMergeTag);
-        allowedChildElementTags.add(SVGNames::feMergeNodeTag);
-        allowedChildElementTags.add(SVGNames::feMorphologyTag);
-        allowedChildElementTags.add(SVGNames::feOffsetTag);
-        allowedChildElementTags.add(SVGNames::fePointLightTag);
-        allowedChildElementTags.add(SVGNames::feSpecularLightingTag);
-        allowedChildElementTags.add(SVGNames::feSpotLightTag);
-        allowedChildElementTags.add(SVGNames::feTileTag);
-        allowedChildElementTags.add(SVGNames::feTurbulenceTag);
-    }
-
-    return allowedChildElementTags.contains<SVGAttributeHashTranslator>(svgElement->tagQName());
-}
-
 bool SVGFilterElement::selfHasRelativeLengths() const
 {
-    return xCurrentValue().isRelative()
-        || yCurrentValue().isRelative()
-        || widthCurrentValue().isRelative()
-        || heightCurrentValue().isRelative();
+    return m_x->currentValue()->isRelative()
+        || m_y->currentValue()->isRelative()
+        || m_width->currentValue()->isRelative()
+        || m_height->currentValue()->isRelative();
 }
 
 void SVGFilterElement::addClient(Node* client)

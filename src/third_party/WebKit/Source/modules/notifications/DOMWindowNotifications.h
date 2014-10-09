@@ -30,6 +30,7 @@
 #if ENABLE(LEGACY_NOTIFICATIONS)
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 #include "wtf/text/WTFString.h"
 
@@ -38,7 +39,7 @@ namespace WebCore {
 class DOMWindow;
 class NotificationCenter;
 
-class DOMWindowNotifications : public Supplement<DOMWindow>, public DOMWindowProperty {
+class DOMWindowNotifications FINAL : public Supplement<DOMWindow>, public DOMWindowProperty {
 public:
     virtual ~DOMWindowNotifications();
 
@@ -55,7 +56,7 @@ private:
     static const char* supplementName();
 
     DOMWindow* m_window;
-    RefPtr<NotificationCenter> m_notificationCenter;
+    RefPtrWillBePersistent<NotificationCenter> m_notificationCenter;
 };
 
 } // namespace WebCore

@@ -36,11 +36,12 @@
 #include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
 #include "core/fetch/ResourceLoaderOptions.h"
-#include "core/history/HistoryItem.h"
 #include "core/loader/FrameLoaderStateMachine.h"
 #include "core/loader/FrameLoaderTypes.h"
+#include "core/loader/HistoryItem.h"
 #include "core/loader/MixedContentChecker.h"
 #include "platform/Timer.h"
+#include "platform/network/ResourceRequest.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -60,7 +61,6 @@ class IconController;
 class NavigationAction;
 class Page;
 class ResourceError;
-class ResourceRequest;
 class ResourceResponse;
 class SecurityOrigin;
 class SerializedScriptValue;
@@ -86,7 +86,7 @@ public:
     // These functions start a load. All eventually call into loadWithNavigationAction() or loadInSameDocument().
     void load(const FrameLoadRequest&); // The entry point for non-reload, non-history loads.
     void reload(ReloadPolicy = NormalReload, const KURL& overrideURL = KURL(), const AtomicString& overrideEncoding = nullAtom);
-    void loadHistoryItem(HistoryItem*, HistoryLoadType = HistoryDifferentDocumentLoad); // The entry point for all back/forward loads
+    void loadHistoryItem(HistoryItem*, HistoryLoadType = HistoryDifferentDocumentLoad, ResourceRequestCachePolicy = UseProtocolCachePolicy); // The entry point for all back/forward loads
 
     static void reportLocalLoadFailed(Frame*, const String& url);
 
@@ -97,7 +97,7 @@ public:
     void stopLoading();
     bool closeURL();
     // FIXME: clear() is trying to do too many things. We should break it down into smaller functions.
-    void clear(ClearOptions);
+    void clear();
 
     // Sets a timer to notify the client that the initial empty document has
     // been accessed, and thus it is no longer safe to show a provisional URL
@@ -113,14 +113,12 @@ public:
 
     int numPendingOrLoadingRequests(bool recurse) const;
 
-    DocumentLoader* activeDocumentLoader() const;
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
     DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
     FrameState state() const { return m_state; }
     FetchContext& fetchContext() const { return *m_fetchContext; }
 
-    const ResourceRequest& originalRequest() const;
     void receivedMainResourceError(const ResourceError&);
 
     bool isLoadingMainFrame() const;
@@ -137,9 +135,6 @@ public:
 
     void checkLoadComplete(DocumentLoader*);
     void checkLoadComplete();
-    void detachFromParent();
-
-    void addExtraFieldsToRequest(ResourceRequest&);
 
     static void addHTTPOriginIfNeeded(ResourceRequest&, const AtomicString& origin);
 
@@ -192,10 +187,6 @@ public:
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
-    enum UpdateBackForwardListPolicy {
-        UpdateBackForwardList,
-        DoNotUpdateBackForwardList
-    };
     void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, UpdateBackForwardListPolicy);
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
@@ -223,29 +214,23 @@ private:
 
     SubstituteData defaultSubstituteDataForURL(const KURL&);
 
-    void checkNavigationPolicyAndContinueFragmentScroll(const NavigationAction&, bool isNewNavigation, ClientRedirectPolicy);
-
     bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const KURL&);
     void scrollToFragmentWithParentBoundary(const KURL&);
 
     void checkLoadCompleteForThisFrame();
 
-    void closeOldDataSources();
-
     // Calls continueLoadAfterNavigationPolicy
     void loadWithNavigationAction(const NavigationAction&, FrameLoadType, PassRefPtr<FormState>,
         const SubstituteData&, ClientRedirectPolicy = NotClientRedirect, const AtomicString& overrideEncoding = nullAtom);
 
+    void detachFromParent();
     void detachChildren();
     void closeAndRemoveChild(Frame*);
+    void detachClient();
 
-    enum HistoryItemPolicy {
-        CreateNewHistoryItem,
-        DoNotCreateNewHistoryItem
-    };
-    void setHistoryItemStateForCommit(HistoryItemPolicy);
+    void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, PassRefPtr<SerializedScriptValue> = 0);
 
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, bool isNewNavigation, ClientRedirectPolicy);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, UpdateBackForwardListPolicy, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
     void startCheckCompleteTimer();
@@ -275,6 +260,7 @@ private:
     OwnPtr<FetchContext> m_fetchContext;
 
     RefPtr<HistoryItem> m_currentItem;
+    RefPtr<HistoryItem> m_provisionalItem;
 
     bool m_inStopAllLoaders;
 

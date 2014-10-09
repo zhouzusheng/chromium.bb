@@ -31,12 +31,14 @@
 #include "core/html/HTMLElement.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/Canvas2DLayerBridge.h"
 #include "wtf/Forward.h"
 
 #define DefaultInterpolationQuality InterpolationMedium
 
 namespace WebCore {
 
+class AffineTransform;
 class CanvasContextAttributes;
 class CanvasRenderingContext;
 class GraphicsContext;
@@ -57,7 +59,7 @@ public:
     virtual void canvasDestroyed(HTMLCanvasElement*) = 0;
 };
 
-class HTMLCanvasElement FINAL : public HTMLElement {
+class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver {
 public:
     static PassRefPtr<HTMLCanvasElement> create(Document&);
     virtual ~HTMLCanvasElement();
@@ -124,13 +126,19 @@ public:
 
     bool shouldAccelerate(const IntSize&) const;
 
-    InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+
+    // DocumentVisibilityObserver implementation
+    virtual void didChangeVisibilityState(PageVisibilityState) OVERRIDE;
+
+protected:
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
 private:
     explicit HTMLCanvasElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void reset();
@@ -138,6 +146,7 @@ private:
     PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
     void clearImageBuffer();
+    void discardImageBuffer();
 
     void setSurfaceSize(const IntSize&);
 

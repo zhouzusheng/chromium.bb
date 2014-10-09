@@ -38,6 +38,7 @@
             'type': 'none',
             'dependencies': [
                 'devtools_html',
+                'supported_css_properties',
                 'frontend_protocol_sources',
             ],
             'conditions': [
@@ -46,6 +47,7 @@
                                      'concatenated_devtools_elements_js',
                                      'concatenated_devtools_resources_js',
                                      'concatenated_devtools_network_js',
+                                     'concatenated_devtools_extensions_js',
                                      'concatenated_devtools_scripts_js',
                                      'concatenated_devtools_timeline_js',
                                      'concatenated_devtools_profiles_js',
@@ -54,41 +56,52 @@
                                      'concatenated_devtools_layers_js',
                                      'concatenated_heap_snapshot_worker_js',
                                      'concatenated_script_formatter_worker_js',
+                                     'concatenated_temp_storage_shared_worker_js',
                                      'concatenated_devtools_css'],
                 }],
             ],
             'copies': [
                 {
                     'destination': '<(PRODUCT_DIR)/resources/inspector',
-                    'files': [
-                        '<@(devtools_files)',
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
-                    ],
                     'conditions': [
-                        ['debug_devtools==0', {
-                            'files/': [['exclude', '\\.(js|css|html)$']],
+                        ['debug_devtools==1', {
+                            'files': [
+                                '<@(devtools_files)',
+                                '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
+                                '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
+                                '<@(devtools_heap_snapshot_worker_js_files)',
+                                '<@(devtools_temp_storage_shared_worker_js_files)',
+                                '<@(devtools_script_formatter_worker_js_files)',
+                            ],
+                        },
+                        {
+                            'files': [],
                         }],
                     ],
                 },
                 {
                     'destination': '<(PRODUCT_DIR)/resources/inspector/UglifyJS',
-                    'files': [
-                        '<@(devtools_uglify_files)',
-                    ],
                     'conditions': [
-                        ['debug_devtools==0', {
-                            'files/': [['exclude', '\\.(js|css|html)$']],
+                        ['debug_devtools==1', {
+                            'files': [
+                                '<@(devtools_uglify_files)',
+                            ],
+                        },
+                        {
+                            'files': [],
                         }],
                     ],
                 },
                 {
                     'destination': '<(PRODUCT_DIR)/resources/inspector/cm',
-                    'files': [
-                        '<@(devtools_cm_files)',
-                    ],
                     'conditions': [
-                        ['debug_devtools==0', {
-                            'files/': [['exclude', '\\.(js|css|html)$']],
+                        ['debug_devtools==1', {
+                            'files': [
+                                '<@(devtools_cm_files)',
+                            ],
+                        },
+                        {
+                            'files': [],
                         }],
                     ],
                 },
@@ -143,6 +156,7 @@
                                      'concatenated_devtools_elements_js',
                                      'concatenated_devtools_resources_js',
                                      'concatenated_devtools_network_js',
+                                     'concatenated_devtools_extensions_js',
                                      'concatenated_devtools_scripts_js',
                                      'concatenated_devtools_timeline_js',
                                      'concatenated_devtools_profiles_js',
@@ -151,6 +165,7 @@
                                      'concatenated_devtools_layers_js',
                                      'concatenated_heap_snapshot_worker_js',
                                      'concatenated_script_formatter_worker_js',
+                                     'concatenated_temp_storage_shared_worker_js',
                                      'concatenated_devtools_css'],
                     'actions': [{
                         'action_name': 'generate_devtools_grd',
@@ -159,6 +174,7 @@
                             '<(PRODUCT_DIR)/resources/inspector/devtools.html',
                             '<(PRODUCT_DIR)/resources/inspector/inspector.js',
                             '<(PRODUCT_DIR)/resources/inspector/ElementsPanel.js',
+                            '<(PRODUCT_DIR)/resources/inspector/ExtensionServer.js',
                             '<(PRODUCT_DIR)/resources/inspector/ResourcesPanel.js',
                             '<(PRODUCT_DIR)/resources/inspector/NetworkPanel.js',
                             '<(PRODUCT_DIR)/resources/inspector/SourcesPanel.js',
@@ -169,6 +185,7 @@
                             '<(PRODUCT_DIR)/resources/inspector/CodeMirrorTextEditor.js',
                             '<(PRODUCT_DIR)/resources/inspector/HeapSnapshotWorker.js',
                             '<(PRODUCT_DIR)/resources/inspector/ScriptFormatterWorker.js',
+                            '<(PRODUCT_DIR)/resources/inspector/TempStorageSharedWorker.js',
                             '<(PRODUCT_DIR)/resources/inspector/inspector.css',
                             '<(PRODUCT_DIR)/resources/inspector/devtools_extension_api.js',
                             '<@(devtools_standalone_files)',
@@ -199,6 +216,7 @@
                         'input_pages': [
                             '<@(devtools_files)',
                             '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
+                            '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
                             '<(PRODUCT_DIR)/resources/inspector/devtools.html',
                         ],
                         'images': [
@@ -241,7 +259,32 @@
                 '--output_js_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
               ],
               'message': 'Generating Inspector protocol frontend sources from protocol.json',
-              'msvs_cygwin_shell': 1,
+            },
+          ]
+        },
+        {
+          'target_name': 'supported_css_properties',
+          'type': 'none',
+          'actions': [
+            {
+              'action_name': 'generateSupportedCSSProperties',
+              'inputs': [
+                # The python script in action below.
+                'scripts/generate_supported_css.py',
+                # Input files for the script.
+                '../core/css/CSSPropertyNames.in',
+                '../core/css/SVGCSSPropertyNames.in',
+                '../core/css/CSSShorthands.in',
+              ],
+              'outputs': [
+                '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
+              ],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                '<@(_outputs)',
+              ],
+              'message': 'Generating supported CSS properties for front end',
             },
           ]
         },
@@ -254,6 +297,7 @@
                     'type': 'none',
                     'dependencies': [
                         'devtools_html',
+                        'supported_css_properties',
                         'frontend_protocol_sources'
                     ],
                     'actions': [{
@@ -264,7 +308,8 @@
                             '<@(_script_name)',
                             '<@(_input_page)',
                             '<@(devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js'
+                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
+                            '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js'
                         ],
                         'search_path': [
                             'front_end',
@@ -319,6 +364,22 @@
                         ],
                         'search_path': 'front_end',
                         'outputs': ['<(PRODUCT_DIR)/resources/inspector/NetworkPanel.js'],
+                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
+                    }],
+                },
+                {
+                    'target_name': 'concatenated_devtools_extensions_js',
+                    'type': 'none',
+                    'actions': [{
+                        'action_name': 'concatenate_devtools_extensions_js',
+                        'script_name': 'scripts/inline_js_imports.py',
+                        'input_file': 'front_end/ExtensionServer.js',
+                        'inputs': [
+                            '<@(_script_name)',
+                            '<@(devtools_extensions_js_files)',
+                        ],
+                        'search_path': 'front_end',
+                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ExtensionServer.js'],
                         'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
                     }],
                 },
@@ -413,12 +474,7 @@
                         'inputs': [
                             '<@(_script_name)',
                             '<@(_input_file)',
-                            'front_end/AllocationProfile.js',
-                            'front_end/HeapSnapshot.js',
-                            'front_end/HeapSnapshotLoader.js',
-                            'front_end/HeapSnapshotWorkerDispatcher.js',
-                            'front_end/JSHeapSnapshot.js',
-                            'front_end/utilities.js',
+                            '<@(devtools_heap_snapshot_worker_js_files)',
                         ],
                         'search_path': 'front_end',
                         'outputs': ['<(PRODUCT_DIR)/resources/inspector/HeapSnapshotWorker.js'],
@@ -439,6 +495,22 @@
                         ],
                         'search_path': 'front_end',
                         'outputs': ['<(PRODUCT_DIR)/resources/inspector/ScriptFormatterWorker.js'],
+                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
+                    }],
+                },
+                {
+                    'target_name': 'concatenated_temp_storage_shared_worker_js',
+                    'type': 'none',
+                    'actions': [{
+                        'action_name': 'concatenate_temp_storage_shared_worker_js',
+                        'script_name': 'scripts/inline_js_imports.py',
+                        'input_file': 'front_end/TempStorageSharedWorker.js',
+                        'inputs': [
+                            '<@(_script_name)',
+                            '<@(devtools_temp_storage_shared_worker_js_files)'
+                        ],
+                        'search_path': 'front_end',
+                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/TempStorageSharedWorker.js'],
                         'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
                     }],
                 },

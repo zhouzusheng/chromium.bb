@@ -21,6 +21,7 @@
 #define SVGFontFaceSrcElement_h
 
 #if ENABLE(SVG_FONTS)
+#include "SVGNames.h"
 #include "core/svg/SVGElement.h"
 
 namespace WebCore {
@@ -31,14 +32,16 @@ class SVGFontFaceSrcElement FINAL : public SVGElement {
 public:
     static PassRefPtr<SVGFontFaceSrcElement> create(Document&);
 
-    PassRefPtr<CSSValueList> srcValue() const;
+    PassRefPtrWillBeRawPtr<CSSValueList> srcValue() const;
 
 private:
     explicit SVGFontFaceSrcElement(Document&);
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 };
+
+DEFINE_NODE_TYPE_CASTS(SVGFontFaceSrcElement, hasTagName(SVGNames::font_face_srcTag));
 
 } // namespace WebCore
 

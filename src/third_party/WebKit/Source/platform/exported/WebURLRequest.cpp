@@ -176,7 +176,16 @@ WebString WebURLRequest::httpHeaderField(const WebString& name) const
 
 void WebURLRequest::setHTTPHeaderField(const WebString& name, const WebString& value)
 {
+    RELEASE_ASSERT(!equalIgnoringCase(name, "referer"));
     m_private->m_resourceRequest->setHTTPHeaderField(name, value);
+}
+
+void WebURLRequest::setHTTPReferrer(const WebString& referrer, WebReferrerPolicy referrerPolicy)
+{
+    if (referrer.isEmpty())
+        m_private->m_resourceRequest->clearHTTPReferrer();
+    else
+        m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
 }
 
 void WebURLRequest::addHTTPHeaderField(const WebString& name, const WebString& value)
@@ -243,6 +252,11 @@ WebURLRequest::TargetType WebURLRequest::targetType() const
     if (targetType == TargetIsTextTrack || targetType == TargetIsUnspecified)
         return TargetIsSubresource;
     return targetType;
+}
+
+WebReferrerPolicy WebURLRequest::referrerPolicy() const
+{
+    return static_cast<WebReferrerPolicy>(m_private->m_resourceRequest->referrerPolicy());
 }
 
 bool WebURLRequest::hasUserGesture() const

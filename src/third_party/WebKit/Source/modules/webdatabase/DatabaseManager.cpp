@@ -31,7 +31,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "core/inspector/InspectorDatabaseInstrumentation.h"
 #include "platform/Logging.h"
 #include "modules/webdatabase/AbstractDatabaseServer.h"
 #include "modules/webdatabase/Database.h"
@@ -39,8 +38,8 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 #include "modules/webdatabase/DatabaseBackendSync.h"
 #include "modules/webdatabase/DatabaseCallback.h"
+#include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/DatabaseContext.h"
-#include "modules/webdatabase/DatabaseDetails.h"
 #include "modules/webdatabase/DatabaseServer.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/DatabaseTask.h"
@@ -69,14 +68,14 @@ DatabaseManager::DatabaseManager()
     ASSERT(m_server); // We should always have a server to work with.
 }
 
-class DatabaseCreationCallbackTask : public ExecutionContextTask {
+class DatabaseCreationCallbackTask FINAL : public ExecutionContextTask {
 public:
     static PassOwnPtr<DatabaseCreationCallbackTask> create(PassRefPtr<Database> database, PassOwnPtr<DatabaseCallback> creationCallback)
     {
         return adoptPtr(new DatabaseCreationCallbackTask(database, creationCallback));
     }
 
-    virtual void performTask(ExecutionContext*)
+    virtual void performTask(ExecutionContext*) OVERRIDE
     {
         m_creationCallback->handleEvent(m_database.get());
     }
@@ -230,7 +229,7 @@ PassRefPtr<Database> DatabaseManager::openDatabase(ExecutionContext* context,
 
     RefPtr<DatabaseContext> databaseContext = databaseContextFor(context);
     databaseContext->setHasOpenDatabases();
-    InspectorInstrumentation::didOpenDatabase(context, database, context->securityOrigin()->host(), name, expectedVersion);
+    DatabaseClient::from(context)->didOpenDatabase(database, context->securityOrigin()->host(), name, expectedVersion);
 
     if (backend->isNew() && creationCallback.get()) {
         WTF_LOG(StorageAPI, "Scheduling DatabaseCreationCallbackTask for database %p\n", database.get());
@@ -264,14 +263,6 @@ PassRefPtr<DatabaseSync> DatabaseManager::openDatabaseSync(ExecutionContext* con
 
     ASSERT(database);
     return database.release();
-}
-
-bool DatabaseManager::hasOpenDatabases(ExecutionContext* context)
-{
-    RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
-    if (!databaseContext)
-        return false;
-    return databaseContext->hasOpenDatabases();
 }
 
 void DatabaseManager::stopDatabases(ExecutionContext* context, DatabaseTaskSynchronizer* synchronizer)

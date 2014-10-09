@@ -88,6 +88,7 @@ offlineWebApplicationCacheEnabled initial=false
 usesEncodingDetector initial=false
 allowScriptsToCloseWindows initial=false
 acceleratedFiltersEnabled initial=false
+deferredFiltersEnabled initial=false
 regionBasedColumnsEnabled initial=false
 
 # FIXME: This should really be disabled by default as it makes platforms that
@@ -180,8 +181,6 @@ DOMPasteAllowed initial=false
 
 threadedHTMLParser initial=false
 useThreadedHTMLParserForDataURLs initial=false
-
-applyPageScaleFactorInCompositor initial=false
 
 allowCustomScrollbarInMainFrame initial=true
 webSecurityEnabled initial=true
@@ -287,3 +286,13 @@ compositorDrivenAcceleratedScrollingEnabled initial=false
 # FIXME: This is a temporary flag and should be removed
 # when squashing is ready. (crbug.com/261605)
 layerSquashingEnabled initial=false
+
+# Clients that execute script should call ScriptController::canExecuteScripts()
+# instead of this function. ScriptController::canExecuteScripts() checks the
+# HTML sandbox, plug-in sandboxing, and other important details.
+scriptEnabled initial=false, invalidate=ScriptEnable
+
+# Compensates for poor text legibility on mobile devices. This value is
+# multiplied by the font scale factor when performing text autosizing of
+# websites that do not set an explicit viewport description.
+deviceScaleAdjustment type=double, initial=1.0, invalidate=TextAutosizing

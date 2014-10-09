@@ -27,9 +27,10 @@
 #ifndef EventPath_h
 #define EventPath_h
 
-#include "core/events/EventContext.h"
+#include "core/events/NodeEventContext.h"
+#include "core/events/TreeScopeEventContext.h"
 
-#include "wtf/OwnPtr.h"
+#include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -37,6 +38,9 @@ namespace WebCore {
 class Event;
 class EventTarget;
 class Node;
+class TouchEvent;
+class TouchList;
+class TreeScope;
 
 enum EventDispatchBehavior {
     RetargetEvent,
@@ -49,14 +53,15 @@ public:
     explicit EventPath(Node*);
     void resetWith(Node*);
 
-    EventContext& operator[](size_t index) { return m_eventContexts[index]; }
-    const EventContext& operator[](size_t index) const { return m_eventContexts[index]; }
-    const EventContext& last() const { return m_eventContexts[size() - 1]; }
+    NodeEventContext& operator[](size_t index) { return m_nodeEventContexts[index]; }
+    const NodeEventContext& operator[](size_t index) const { return m_nodeEventContexts[index]; }
+    const NodeEventContext& last() const { return m_nodeEventContexts[size() - 1]; }
 
-    bool isEmpty() const { return m_eventContexts.isEmpty(); }
-    size_t size() const { return m_eventContexts.size(); }
+    bool isEmpty() const { return m_nodeEventContexts.isEmpty(); }
+    size_t size() const { return m_nodeEventContexts.size(); }
 
-    void shrink(size_t newSize) { m_eventContexts.shrink(newSize); }
+    void adjustForRelatedTarget(Node*, EventTarget* relatedTarget);
+    void adjustForTouchEvent(Node*, TouchEvent&);
 
     static Node* parent(Node*);
     static EventTarget* eventTargetRespectingTargetRules(Node*);
@@ -64,17 +69,35 @@ public:
 private:
     EventPath();
 
-    EventContext& at(size_t index) { return m_eventContexts[index]; }
+    NodeEventContext& at(size_t index) { return m_nodeEventContexts[index]; }
 
-    void addEventContext(Node*);
+    void addNodeEventContext(Node*);
 
     void calculatePath();
     void calculateAdjustedTargets();
-    void calculateAdjustedEventPathForEachNode();
+    void calculateAdjustedEventPath();
 
-    Vector<EventContext, 64> m_eventContexts;
+    void shrink(size_t newSize) { m_nodeEventContexts.shrink(newSize); }
+    void shrinkIfNeeded(const Node* target, const EventTarget* relatedTarget);
+
+    void adjustTouchList(const Node*, const TouchList*, Vector<TouchList*> adjustedTouchList, const Vector<TreeScope*>& treeScopes);
+
+    typedef HashMap<TreeScope*, RefPtr<TreeScopeEventContext> > TreeScopeEventContextMap;
+    TreeScopeEventContext* ensureTreeScopeEventContext(Node* currentTarget, TreeScope*, TreeScopeEventContextMap&);
+
+    typedef HashMap<TreeScope*, EventTarget*> RelatedTargetMap;
+
+    static void buildRelatedNodeMap(const Node*, RelatedTargetMap&);
+    static EventTarget* findRelatedNode(TreeScope*, RelatedTargetMap&);
+
+#ifndef NDEBUG
+    static void checkReachability(TreeScope&, TouchList&);
+#endif
+
+    Vector<NodeEventContext, 64> m_nodeEventContexts;
     Node* m_node;
     Event* m_event;
+    Vector<RefPtr<TreeScopeEventContext> > m_treeScopeEventContexts;
 };
 
 } // namespace

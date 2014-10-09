@@ -513,12 +513,12 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   Background* background() { return background_.get(); }
 
   // The border object is owned by this object and may be NULL.
-  void set_border(Border* b);
+  void SetBorder(scoped_ptr<Border> b);
   const Border* border() const { return border_.get(); }
   Border* border() { return border_.get(); }
 
   // Get the theme provider from the parent widget.
-  virtual ui::ThemeProvider* GetThemeProvider() const;
+  ui::ThemeProvider* GetThemeProvider() const;
 
   // Returns the NativeTheme to use for this View. This calls through to
   // GetNativeTheme() on the Widget this View is in. If this View is not in a
@@ -773,9 +773,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // not get the focus.
   void SetFocusable(bool focusable);
 
-  // Returns true if this view is capable of taking focus.
-  bool focusable() const { return focusable_ && enabled_ && visible_; }
-
   // Returns true if this view is |focusable_|, |enabled_| and drawn.
   virtual bool IsFocusable() const;
 
@@ -833,7 +830,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Any time the tooltip text that a View is displaying changes, it must
   // invoke TooltipTextChanged.
   // |p| provides the coordinates of the mouse (relative to this view).
-  virtual bool GetTooltipText(const gfx::Point& p, string16* tooltip) const;
+  virtual bool GetTooltipText(const gfx::Point& p,
+                              base::string16* tooltip) const;
 
   // Returns the location (relative to this View) for the text on the tooltip
   // to display. If false is returned (the default), the tooltip is placed at
@@ -1140,6 +1138,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual DragInfo* GetDragInfo();
 
   // Focus ---------------------------------------------------------------------
+
+  // Returns last value passed to SetFocusable(). Use IsFocusable() to determine
+  // if a view can take focus right now.
+  bool focusable() const { return focusable_; }
 
   // Override to be notified when focus has changed either to or from this View.
   virtual void OnFocus();

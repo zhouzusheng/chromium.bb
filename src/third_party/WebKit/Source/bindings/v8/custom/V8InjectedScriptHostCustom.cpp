@@ -32,6 +32,7 @@
 #include "V8InjectedScriptHost.h"
 
 #include "V8Database.h"
+#include "V8EventTarget.h"
 #include "V8HTMLAllCollection.h"
 #include "V8HTMLCollection.h"
 #include "V8Node.h"
@@ -43,7 +44,6 @@
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/custom/V8Float32ArrayCustom.h"
 #include "bindings/v8/custom/V8Float64ArrayCustom.h"
@@ -54,6 +54,8 @@
 #include "bindings/v8/custom/V8Uint32ArrayCustom.h"
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
 #include "bindings/v8/custom/V8Uint8ClampedArrayCustom.h"
+#include "core/events/EventTarget.h"
+#include "core/frame/DOMWindow.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorDOMAgent.h"
@@ -78,7 +80,7 @@ ScriptValue InjectedScriptHost::nodeAsScriptValue(ScriptState* state, Node* node
     v8::Context::Scope contextScope(context);
 
     ExceptionState exceptionState(v8::Handle<v8::Object>(), isolate);
-    if (!BindingSecurity::shouldAllowAccessToNode(node, exceptionState))
+    if (!BindingSecurity::shouldAllowAccessToNode(isolate, node, exceptionState))
         return ScriptValue(v8::Null(isolate), isolate);
     return ScriptValue(toV8(node, v8::Handle<v8::Object>(), isolate), isolate);
 }
@@ -119,7 +121,7 @@ void V8InjectedScriptHost::isHTMLAllCollectionMethodCustom(const v8::FunctionCal
         return;
     }
 
-    v8SetReturnValue(info, V8HTMLAllCollection::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())));
+    v8SetReturnValue(info, V8HTMLAllCollection::hasInstance(info[0], info.GetIsolate()));
 }
 
 void V8InjectedScriptHost::typeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -153,32 +155,31 @@ void V8InjectedScriptHost::typeMethodCustom(const v8::FunctionCallbackInfo<v8::V
         v8SetReturnValue(info, v8AtomicString(isolate, "regexp"));
         return;
     }
-    WrapperWorldType currentWorldType = worldType(isolate);
-    if (V8Node::hasInstance(value, isolate, currentWorldType)) {
+    if (V8Node::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "node"));
         return;
     }
-    if (V8NodeList::hasInstance(value, isolate, currentWorldType)) {
+    if (V8NodeList::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
-    if (V8HTMLCollection::hasInstance(value, isolate, currentWorldType)) {
+    if (V8HTMLCollection::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
-    if (V8Int8Array::hasInstance(value, isolate, currentWorldType) || V8Int16Array::hasInstance(value, isolate, currentWorldType) || V8Int32Array::hasInstance(value, isolate, currentWorldType)) {
+    if (V8Int8Array::hasInstance(value, isolate) || V8Int16Array::hasInstance(value, isolate) || V8Int32Array::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
-    if (V8Uint8Array::hasInstance(value, isolate, currentWorldType) || V8Uint16Array::hasInstance(value, isolate, currentWorldType) || V8Uint32Array::hasInstance(value, isolate, currentWorldType)) {
+    if (V8Uint8Array::hasInstance(value, isolate) || V8Uint16Array::hasInstance(value, isolate) || V8Uint32Array::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
-    if (V8Float32Array::hasInstance(value, isolate, currentWorldType) || V8Float64Array::hasInstance(value, isolate, currentWorldType)) {
+    if (V8Float32Array::hasInstance(value, isolate) || V8Float64Array::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
-    if (V8Uint8ClampedArray::hasInstance(value, isolate, currentWorldType)) {
+    if (V8Uint8ClampedArray::hasInstance(value, isolate)) {
         v8SetReturnValue(info, v8AtomicString(isolate, "array"));
         return;
     }
@@ -207,12 +208,12 @@ void V8InjectedScriptHost::functionDetailsMethodCustom(const v8::FunctionCallbac
     int lineNumber = function->GetScriptLineNumber();
     int columnNumber = function->GetScriptColumnNumber();
 
-    v8::Local<v8::Object> location = v8::Object::New();
-    location->Set(v8AtomicString(isolate, "lineNumber"), v8::Integer::New(lineNumber, isolate));
-    location->Set(v8AtomicString(isolate, "columnNumber"), v8::Integer::New(columnNumber, isolate));
-    location->Set(v8AtomicString(isolate, "scriptId"), v8::Integer::New(function->ScriptId(), isolate)->ToString());
+    v8::Local<v8::Object> location = v8::Object::New(isolate);
+    location->Set(v8AtomicString(isolate, "lineNumber"), v8::Integer::New(isolate, lineNumber));
+    location->Set(v8AtomicString(isolate, "columnNumber"), v8::Integer::New(isolate, columnNumber));
+    location->Set(v8AtomicString(isolate, "scriptId"), v8::Integer::New(isolate, function->ScriptId())->ToString());
 
-    v8::Local<v8::Object> result = v8::Object::New();
+    v8::Local<v8::Object> result = v8::Object::New(isolate);
     result->Set(v8AtomicString(isolate, "location"), location);
 
     if (!setFunctionName(result, function->GetDisplayName(), isolate)
@@ -241,7 +242,7 @@ void V8InjectedScriptHost::getInternalPropertiesMethodCustom(const v8::FunctionC
     v8SetReturnValue(info, debugServer.getInternalProperties(object));
 }
 
-static v8::Handle<v8::Array> getJSListenerFunctions(Document* document, const EventListenerInfo& listenerInfo, v8::Isolate* isolate)
+static v8::Handle<v8::Array> getJSListenerFunctions(ExecutionContext* executionContext, const EventListenerInfo& listenerInfo, v8::Isolate* isolate)
 {
     v8::Local<v8::Array> result = v8::Array::New(isolate);
     size_t handlersCount = listenerInfo.eventListenerVector.size();
@@ -252,7 +253,7 @@ static v8::Handle<v8::Array> getJSListenerFunctions(Document* document, const Ev
             continue;
         }
         V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener.get());
-        v8::Local<v8::Context> context = toV8Context(document, v8Listener->world());
+        v8::Local<v8::Context> context = toV8Context(executionContext, v8Listener->world());
         // Hide listeners from other contexts.
         if (context != isolate->GetCurrentContext())
             continue;
@@ -260,12 +261,12 @@ static v8::Handle<v8::Array> getJSListenerFunctions(Document* document, const Ev
         {
             // getListenerObject() may cause JS in the event attribute to get compiled, potentially unsuccessfully.
             v8::TryCatch block;
-            function = v8Listener->getListenerObject(document);
+            function = v8Listener->getListenerObject(executionContext);
             if (block.HasCaught())
                 continue;
         }
         ASSERT(!function.IsEmpty());
-        v8::Local<v8::Object> listenerEntry = v8::Object::New();
+        v8::Local<v8::Object> listenerEntry = v8::Object::New(isolate);
         listenerEntry->Set(v8AtomicString(isolate, "listener"), function);
         listenerEntry->Set(v8AtomicString(isolate, "useCapture"), v8::Boolean::New(isolate, listenerInfo.eventListenerVector[i].useCapture));
         result->Set(v8::Number::New(isolate, outputIndex++), listenerEntry);
@@ -278,20 +279,26 @@ void V8InjectedScriptHost::getEventListenersMethodCustom(const v8::FunctionCallb
     if (info.Length() < 1)
         return;
 
+    EventTarget* target = 0;
     v8::Local<v8::Value> value = info[0];
-    if (!V8Node::hasInstance(value, info.GetIsolate(), worldType(info.GetIsolate())))
-        return;
-    Node* node = V8Node::toNative(value->ToObject());
-    if (!node)
+
+    if (V8EventTarget::hasInstance(value, info.GetIsolate()))
+        target = V8EventTarget::toNative(value->ToObject());
+
+    // We need to handle a DOMWindow specially, because a DOMWindow wrapper exists on a prototype chain.
+    if (!target)
+        target = toDOMWindow(value, info.GetIsolate());
+
+    if (!target || !target->executionContext())
         return;
 
     InjectedScriptHost* host = V8InjectedScriptHost::toNative(info.Holder());
     Vector<EventListenerInfo> listenersArray;
-    host->getEventListenersImpl(node, listenersArray);
+    host->getEventListenersImpl(target, listenersArray);
 
-    v8::Local<v8::Object> result = v8::Object::New();
+    v8::Local<v8::Object> result = v8::Object::New(info.GetIsolate());
     for (size_t i = 0; i < listenersArray.size(); ++i) {
-        v8::Handle<v8::Array> listeners = getJSListenerFunctions(&node->document(), listenersArray[i], info.GetIsolate());
+        v8::Handle<v8::Array> listeners = getJSListenerFunctions(target->executionContext(), listenersArray[i], info.GetIsolate());
         if (!listeners->Length())
             continue;
         AtomicString eventType = listenersArray[i].eventType;
@@ -310,31 +317,6 @@ void V8InjectedScriptHost::inspectMethodCustom(const v8::FunctionCallbackInfo<v8
     ScriptValue object(info[0], info.GetIsolate());
     ScriptValue hints(info[1], info.GetIsolate());
     host->inspectImpl(object.toJSONValue(ScriptState::current()), hints.toJSONValue(ScriptState::current()));
-}
-
-void V8InjectedScriptHost::databaseIdMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    if (info.Length() > 0 && V8Database::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate()))) {
-        Database* database = V8Database::toNative(v8::Handle<v8::Object>::Cast(info[0]));
-        if (database) {
-            InjectedScriptHost* host = V8InjectedScriptHost::toNative(info.Holder()); {
-                v8SetReturnValueStringOrUndefined(info, host->databaseIdImpl(database), info.GetIsolate());
-                return;
-            }
-        }
-    }
-}
-
-void V8InjectedScriptHost::storageIdMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    if (info.Length() > 0 && V8Storage::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate()))) {
-        Storage* storage = V8Storage::toNative(v8::Handle<v8::Object>::Cast(info[0]));
-        if (storage) {
-            InjectedScriptHost* host = V8InjectedScriptHost::toNative(info.Holder());
-            v8SetReturnValueStringOrUndefined(info, host->storageIdImpl(storage), info.GetIsolate());
-            return;
-        }
-    }
 }
 
 void V8InjectedScriptHost::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "V8HTMLAllCollection.h"
 
-#include "V8Node.h"
+#include "V8Element.h"
 #include "V8NodeList.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/NamedNodesCollection.h"
@@ -43,7 +43,7 @@ namespace WebCore {
 template<class CallbackInfo>
 static v8::Handle<v8::Value> getNamedItems(HTMLAllCollection* collection, AtomicString name, const CallbackInfo& info)
 {
-    Vector<RefPtr<Node> > namedItems;
+    Vector<RefPtr<Element> > namedItems;
     collection->namedItems(name, namedItems);
 
     if (!namedItems.size())
@@ -71,7 +71,7 @@ static v8::Handle<v8::Value> getItem(HTMLAllCollection* collection, v8::Handle<v
         return result;
     }
 
-    RefPtr<Node> result = collection->item(index->Uint32Value());
+    RefPtr<Element> result = collection->item(index->Uint32Value());
     return toV8(result.release(), info.Holder(), info.GetIsolate());
 }
 
@@ -79,21 +79,6 @@ void V8HTMLAllCollection::itemMethodCustom(const v8::FunctionCallbackInfo<v8::Va
 {
     HTMLAllCollection* imp = V8HTMLAllCollection::toNative(info.Holder());
     v8SetReturnValue(info, getItem(imp, info[0], info));
-}
-
-void V8HTMLAllCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, info[0]);
-
-    HTMLAllCollection* imp = V8HTMLAllCollection::toNative(info.Holder());
-    v8::Handle<v8::Value> result = getNamedItems(imp, name, info);
-
-    if (result.IsEmpty()) {
-        v8SetReturnValueNull(info);
-        return;
-    }
-
-    v8SetReturnValue(info, result);
 }
 
 void V8HTMLAllCollection::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& info)

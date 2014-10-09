@@ -59,6 +59,9 @@ RenderLayerRepainter::RenderLayerRepainter(RenderLayerModelObject* renderer)
 
 void RenderLayerRepainter::repaintAfterLayout(RenderGeometryMap* geometryMap, bool shouldCheckForRepaint)
 {
+    // FIXME: really, we're in the repaint phase here, and the following queries are legal.
+    // Until those states are fully fledged, I'll just disable the ASSERTS.
+    DisableCompositingQueryAsserts disabler;
     if (m_renderer->layer()->hasVisibleContent()) {
         RenderView* view = m_renderer->view();
         ASSERT(view);
@@ -191,7 +194,8 @@ void RenderLayerRepainter::setBackingNeedsRepaintInRect(const LayoutRect& r)
             offsetRect.move(-m_renderer->layer()->offsetFromSquashingLayerOrigin());
             m_renderer->groupedMapping()->squashingLayer()->setNeedsDisplayInRect(offsetRect);
         } else {
-            m_renderer->compositedLayerMapping()->setContentsNeedDisplayInRect(pixelSnappedIntRect(r));
+            IntRect repaintRect = pixelSnappedIntRect(r.location() +  m_renderer->compositedLayerMapping()->subpixelAccumulation(), r.size());
+            m_renderer->compositedLayerMapping()->setContentsNeedDisplayInRect(repaintRect);
         }
     }
 }

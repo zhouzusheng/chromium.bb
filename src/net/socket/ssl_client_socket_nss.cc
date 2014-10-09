@@ -271,11 +271,6 @@ BOOL WINAPI ClientCertFindCallback(PCCERT_CONTEXT cert_context,
 
 #endif
 
-void DestroyCertificates(CERTCertificate** certs, size_t len) {
-  for (size_t i = 0; i < len; i++)
-    CERT_DestroyCertificate(certs[i]);
-}
-
 // Helper functions to make it possible to log events from within the
 // SSLClientSocketNSS::Core.
 void AddLogEvent(const base::WeakPtr<BoundNetLog>& net_log,
@@ -613,13 +608,6 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   // underlying memio implementation, to the Core. Returns true if the Core
   // was successfully registered with the socket.
   bool Init(PRFileDesc* socket, memio_Private* buffers);
-
-  // Called on the network task runner.
-  // Sets the predicted certificate chain that the peer will send, for use
-  // with the TLS CachedInfo extension. If called, it must not be called
-  // before Init() or after Connect().
-  void SetPredictedCertificates(
-      const std::vector<std::string>& predicted_certificates);
 
   // Called on the network task runner.
   //
@@ -1015,7 +1003,13 @@ bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
     DCHECK_EQ(dst, wire_protos.get() + wire_length);
     rv = SSL_SetNextProtoNego(nss_fd_, wire_protos.get(), wire_length);
     if (rv != SECSuccess)
-      LogFailedNSSFunction(*weak_net_log_, "SSL_SetNextProtoCallback", "");
+      LogFailedNSSFunction(*weak_net_log_, "SSL_SetNextProtoNego", "");
+    rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_ALPN, PR_TRUE);
+    if (rv != SECSuccess)
+      LogFailedNSSFunction(*weak_net_log_, "SSL_OptionSet", "SSL_ENABLE_ALPN");
+    rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_NPN, PR_TRUE);
+    if (rv != SECSuccess)
+      LogFailedNSSFunction(*weak_net_log_, "SSL_OptionSet", "SSL_ENABLE_NPN");
   }
 
   rv = SSL_AuthCertificateHook(
@@ -1062,57 +1056,6 @@ bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
   }
 
   return true;
-}
-
-void SSLClientSocketNSS::Core::SetPredictedCertificates(
-    const std::vector<std::string>& predicted_certs) {
-  if (predicted_certs.empty())
-    return;
-
-  if (!OnNSSTaskRunner()) {
-    DCHECK(!detached_);
-    nss_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&Core::SetPredictedCertificates, this, predicted_certs));
-    return;
-  }
-
-  DCHECK(nss_fd_);
-
-  predicted_certs_ = predicted_certs;
-
-  scoped_ptr<CERTCertificate*[]> certs(
-      new CERTCertificate*[predicted_certs.size()]);
-
-  for (size_t i = 0; i < predicted_certs.size(); i++) {
-    SECItem derCert;
-    derCert.data = const_cast<uint8*>(reinterpret_cast<const uint8*>(
-        predicted_certs[i].data()));
-    derCert.len = predicted_certs[i].size();
-    certs[i] = CERT_NewTempCertificate(
-        CERT_GetDefaultCertDB(), &derCert, NULL /* no nickname given */,
-        PR_FALSE /* not permanent */, PR_TRUE /* copy DER data */);
-    if (!certs[i]) {
-      DestroyCertificates(&certs[0], i);
-      NOTREACHED();
-      return;
-    }
-  }
-
-  SECStatus rv;
-#ifdef SSL_ENABLE_CACHED_INFO
-  rv = SSL_SetPredictedPeerCertificates(nss_fd_, certs.get(),
-                                        predicted_certs.size());
-  DCHECK_EQ(SECSuccess, rv);
-#else
-  rv = SECFailure;  // Not implemented.
-#endif
-  DestroyCertificates(&certs[0], predicted_certs.size());
-
-  if (rv != SECSuccess) {
-    LOG(WARNING) << "SetPredictedCertificates failed: "
-                 << host_and_port_.ToString();
-  }
 }
 
 int SSLClientSocketNSS::Core::Connect(const CompletionCallback& callback) {
@@ -2884,10 +2827,6 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->connection_status =
       core_->state().ssl_connection_status;
   ssl_info->public_key_hashes = server_cert_verify_result_.public_key_hashes;
-  for (HashValueVector::const_iterator i = side_pinned_public_keys_.begin();
-       i != side_pinned_public_keys_.end(); ++i) {
-    ssl_info->public_key_hashes.push_back(*i);
-  }
   ssl_info->is_issued_by_known_root =
       server_cert_verify_result_.is_issued_by_known_root;
   ssl_info->client_cert_sent =
@@ -2917,8 +2856,7 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
 void SSLClientSocketNSS::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
   EnterFunction("");
-  // TODO(rch): switch SSLCertRequestInfo.host_and_port to a HostPortPair
-  cert_request_info->host_and_port = host_and_port_.ToString();
+  cert_request_info->host_and_port = host_and_port_;
   cert_request_info->cert_authorities = core_->state().cert_authorities;
   LeaveFunction("");
 }
@@ -3272,14 +3210,6 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     LogFailedNSSFunction(net_log_, "SSL_OptionSet",
                          "SSL_ENABLE_SIGNED_CERT_TIMESTAMPS");
   }
-
-// Chromium patch to libssl
-#ifdef SSL_ENABLE_CACHED_INFO
-  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_CACHED_INFO,
-                     ssl_config_.cached_info_enabled);
-  if (rv != SECSuccess)
-    LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_CACHED_INFO");
-#endif
 
   rv = SSL_OptionSet(nss_fd_, SSL_HANDSHAKE_AS_CLIENT, PR_TRUE);
   if (rv != SECSuccess) {

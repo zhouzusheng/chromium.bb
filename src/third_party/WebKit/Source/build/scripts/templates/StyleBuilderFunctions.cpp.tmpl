@@ -12,11 +12,11 @@
 #include "StyleBuilderFunctions.h"
 
 #include "CSSValueKeywords.h"
+#include "core/animation/css/CSSAnimationDataList.h"
 #include "core/css/BasicShapeFunctions.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/Pair.h"
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/platform/animation/CSSAnimationDataList.h"
 
 
 {%- macro declare_initial_function(property_id) -%}
@@ -234,12 +234,12 @@ namespace WebCore {
 {{ apply_value_border_image_source("CSSPropertyBorderImageSource") }}
 {{ apply_value_border_image_source("CSSPropertyWebkitMaskBoxImageSource") }}
 
-{%- macro apply_color(property_id, default_getter="color", initial_color=none, inherit_color=false) %}
+{%- macro apply_color(property_id, initial_color="StyleColor::currentColor") %}
 {%- set property = properties[property_id] %}
 {%- set visited_link_setter = "setVisitedLink" + property.camel_case_name %}
 {{ declare_initial_function(property_id) }}
 {
-    Color color = {{ initial_color or "Color" -}}();
+    StyleColor color = {{initial_color}}();
     if (state.applyPropertyToRegularStyle())
         {{ set_value(property) }}(color);
     if (state.applyPropertyToVisitedLinkStyle())
@@ -249,42 +249,30 @@ namespace WebCore {
 {{ declare_inherit_function(property_id) }}
 {
     // Visited link style can never explicitly inherit from parent visited link style so no separate getters are needed.
-    Color color = state.parentStyle()->{{property.getter}}();
-    if (!color.isValid())
-        color = state.parentStyle()->{{default_getter}}();
+    StyleColor color = state.parentStyle()->{{property.getter}}();
+    Color resolvedColor = color.resolve(state.parentStyle()->color());
     if (state.applyPropertyToRegularStyle())
-        {{ set_value(property) }}(color);
+        {{ set_value(property) }}(resolvedColor);
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(color);
+        state.style()->{{visited_link_setter}}(resolvedColor);
 }
 
 {{ declare_value_function(property_id) }}
 {
-    if (!value->isPrimitiveValue())
-        return;
-
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-
-{%- if inherit_color %}
-    if (primitiveValue->getValueID() == CSSValueCurrentcolor) {
-        applyInherit{{property_id}}(state);
-        return;
-    }
-{%- endif %}
 
     if (state.applyPropertyToRegularStyle())
         {{ set_value(property) }}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color()));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color(), state.element()->isLink() /* forVisitedLink */));
+        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color(), true));
 }
 {%- endmacro %}
 
-{{ apply_color("CSSPropertyBackgroundColor", default_getter="invalidColor") }}
+{{ apply_color("CSSPropertyBackgroundColor", initial_color="RenderStyle::initialBackgroundColor") }}
 {{ apply_color("CSSPropertyBorderBottomColor") }}
 {{ apply_color("CSSPropertyBorderLeftColor") }}
 {{ apply_color("CSSPropertyBorderRightColor") }}
 {{ apply_color("CSSPropertyBorderTopColor") }}
-{{ apply_color("CSSPropertyColor", inherit_color=true, default_getter="invalidColor", initial_color="RenderStyle::initialColor") }}
 {{ apply_color("CSSPropertyOutlineColor") }}
 {{ apply_color("CSSPropertyTextDecorationColor") }}
 {{ apply_color("CSSPropertyWebkitColumnRuleColor") }}
@@ -304,24 +292,26 @@ namespace WebCore {
     typedef CounterDirectiveMap::iterator Iterator;
     Iterator end = parentMap.end();
     for (Iterator it = parentMap.begin(); it != end; ++it) {
-        CounterDirectives& directives = map.add(it->key, CounterDirectives()).iterator->value;
+        CounterDirectives& directives = map.add(it->key, CounterDirectives()).storedValue->value;
         directives.inherit{{action}}(it->value);
     }
 }
 
 {{ declare_value_function(property_id) }}
 {
-    if (!value->isValueList())
-        return;
-
-    CSSValueList* list = toCSSValueList(value);
-
     CounterDirectiveMap& map = state.style()->accessCounterDirectives();
     typedef CounterDirectiveMap::iterator Iterator;
 
     Iterator end = map.end();
     for (Iterator it = map.begin(); it != end; ++it)
         it->value.clear{{action}}();
+
+    if (!value->isValueList()) {
+        ASSERT(value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone);
+        return;
+    }
+
+    CSSValueList* list = toCSSValueList(value);
 
     int length = list ? list->length() : 0;
     for (int i = 0; i < length; ++i) {
@@ -335,7 +325,7 @@ namespace WebCore {
 
         AtomicString identifier(pair->first()->getStringValue());
         int value = pair->second()->getIntValue();
-        CounterDirectives& directives = map.add(identifier, CounterDirectives()).iterator->value;
+        CounterDirectives& directives = map.add(identifier, CounterDirectives()).storedValue->value;
         {%- if action == "Reset" %}
         directives.setResetValue(value);
         {%- else %}
@@ -501,7 +491,7 @@ namespace WebCore {
         else if (primitiveValue->isShape()) {
             {{ set_value(property) }}(ShapeValue::createShapeValue(basicShapeForValue(state, primitiveValue->getShapeValue())));
         }
-    } else if (value->isImageValue()) {
+    } else if (value->isImageValue() || value->isImageSetValue()) {
         {{ set_value(property) }}(ShapeValue::createImageValue(state.styleImage({{property_id}}, value)));
     }
 }

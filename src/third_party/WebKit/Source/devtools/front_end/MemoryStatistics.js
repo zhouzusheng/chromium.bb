@@ -29,55 +29,112 @@
  */
 
 /**
- * @param {!WebInspector.TimelinePanel} timelinePanel
- * @param {!WebInspector.TimelineModel} model
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.SplitView}
+ * @param {!WebInspector.TimelineView} timelineView
+ * @param {!WebInspector.TimelineModel} model
  */
-WebInspector.MemoryStatistics = function(timelinePanel, model)
+WebInspector.MemoryStatistics = function(timelineView, model)
 {
-    WebInspector.View.call(this);
-    this._timelinePanel = timelinePanel;
+    WebInspector.SplitView.call(this, true, false);
 
-    this.element.classList.add("fill");
-    this._counters = [];
+    this.element.id = "memory-graphs-container";
+
+    this._timelineView = timelineView;
 
     model.addEventListener(WebInspector.TimelineModel.Events.RecordAdded, this._onRecordAdded, this);
-    model.addEventListener(WebInspector.TimelineModel.Events.RecordsCleared, this._onRecordsCleared, this);
 
-    this._memorySidebarView = new WebInspector.SidebarView(WebInspector.SidebarView.SidebarPosition.Start, undefined);
-    this._memorySidebarView.element.id = "memory-graphs-container";
-
-    this._memorySidebarView.addEventListener(WebInspector.SidebarView.EventTypes.Resized, this._sidebarResized.bind(this));
-
-    this._canvasContainer = this._memorySidebarView.mainElement;
-    this._canvasContainer.id = "memory-graphs-canvas-container";
+    this._graphsContainer = this.mainElement();
     this._createCurrentValuesBar();
-    this._canvas = this._canvasContainer.createChild("canvas", "fill");
+    this._canvasView = new WebInspector.ViewWithResizeCallback(this._resize.bind(this));
+    this._canvasView.show(this._graphsContainer);
+    this._canvasContainer = this._canvasView.element;
+    this._canvasContainer.id = "memory-graphs-canvas-container";
+    this._canvas = this._canvasContainer.createChild("canvas");
     this._canvas.id = "memory-counters-graph";
-    this._lastMarkerXPosition = 0;
 
-    this._canvas.addEventListener("mouseover", this._onMouseOver.bind(this), true);
-    this._canvas.addEventListener("mousemove", this._onMouseMove.bind(this), true);
-    this._canvas.addEventListener("mouseout", this._onMouseOut.bind(this), true);
-    this._canvas.addEventListener("click", this._onClick.bind(this), true);
+    this._canvasContainer.addEventListener("mouseover", this._onMouseMove.bind(this), true);
+    this._canvasContainer.addEventListener("mousemove", this._onMouseMove.bind(this), true);
+    this._canvasContainer.addEventListener("mouseout", this._onMouseOut.bind(this), true);
+    this._canvasContainer.addEventListener("click", this._onClick.bind(this), true);
     // We create extra timeline grid here to reuse its event dividers.
     this._timelineGrid = new WebInspector.TimelineGrid();
     this._canvasContainer.appendChild(this._timelineGrid.dividersElement);
 
     // Populate sidebar
-    this._memorySidebarView.sidebarElement.createChild("div", "sidebar-tree sidebar-tree-section").textContent = WebInspector.UIString("COUNTERS");
-    this._counterUI = this._createCounterUIList();
-    this._memorySidebarView.show(this.element);
+    this.sidebarElement().createChild("div", "sidebar-tree sidebar-tree-section").textContent = WebInspector.UIString("COUNTERS");
+    this._createAllCounters();
 }
 
 /**
  * @constructor
- * @param {number} time
+ * @param {string} counterName
  */
-WebInspector.MemoryStatistics.Counter = function(time)
+WebInspector.MemoryStatistics.Counter = function(counterName)
 {
-    this.time = time;
+    this.counterName = counterName;
+    this.times = [];
+    this.values = [];
+}
+
+WebInspector.MemoryStatistics.Counter.prototype = {
+    /**
+     * @param {number} time
+     * @param {!TimelineAgent.Counters} counters
+     */
+    appendSample: function(time, counters)
+    {
+        var value = counters[this.counterName];
+        if (value === undefined)
+            return;
+        if (this.values.length && this.values.peekLast() === value)
+            return;
+        this.times.push(time);
+        this.values.push(value);
+    },
+
+    reset: function()
+    {
+        this.times = [];
+        this.values = [];
+    },
+
+    /**
+     * @param {!WebInspector.TimelineCalculator} calculator
+     */
+    _calculateVisibleIndexes: function(calculator)
+    {
+        // FIXME: these 1000 constants shouldn't be here.
+        var start = calculator.minimumBoundary() * 1000;
+        var end = calculator.maximumBoundary() * 1000;
+
+        // Maximum index of element whose time <= start.
+        this._minimumIndex = Number.constrain(this.times.upperBound(start) - 1, 0, this.times.length - 1);
+
+        // Minimum index of element whose time >= end.
+        this._maximumIndex = Number.constrain(this.times.lowerBound(end), 0, this.times.length - 1);
+
+        // Current window bounds.
+        this._minTime = start;
+        this._maxTime = end;
+    },
+
+    /**
+     * @param {number} width
+     */
+    _calculateXValues: function(width)
+    {
+        if (!this.values.length)
+            return;
+
+        var xFactor = width / (this._maxTime - this._minTime);
+
+        this.x = new Array(this.values.length);
+        this.x[this._minimumIndex] = 0;
+        for (var i = this._minimumIndex + 1; i < this._maximumIndex; i++)
+             this.x[i] = xFactor * (this.times[i] - this._minTime);
+        this.x[this._maximumIndex] = width;
+    }
 }
 
 /**
@@ -125,19 +182,23 @@ WebInspector.SwatchCheckbox.prototype = {
 
 /**
  * @constructor
+ * @param {!WebInspector.MemoryStatistics} memoryCountersPane
+ * @param {string} title
+ * @param {string} graphColor
+ * @param {!WebInspector.MemoryStatistics.Counter} counter
  */
-WebInspector.CounterUIBase = function(memoryCountersPane, title, graphColor, valueGetter)
+WebInspector.CounterUIBase = function(memoryCountersPane, title, graphColor, counter)
 {
     this._memoryCountersPane = memoryCountersPane;
-    this.valueGetter = valueGetter;
-    var container = memoryCountersPane._memorySidebarView.sidebarElement.createChild("div", "memory-counter-sidebar-info");
+    this.counter = counter;
+    var container = memoryCountersPane.sidebarElement().createChild("div", "memory-counter-sidebar-info");
     var swatchColor = graphColor;
     this._swatch = new WebInspector.SwatchCheckbox(WebInspector.UIString(title), swatchColor);
     this._swatch.addEventListener(WebInspector.SwatchCheckbox.Events.Changed, this._toggleCounterGraph.bind(this));
     container.appendChild(this._swatch.element);
 
     this._value = null;
-    this.graphColor =graphColor;
+    this.graphColor = graphColor;
     this.strokeColor = graphColor;
     this.graphYValues = [];
 }
@@ -145,21 +206,38 @@ WebInspector.CounterUIBase = function(memoryCountersPane, title, graphColor, val
 WebInspector.CounterUIBase.prototype = {
     _toggleCounterGraph: function(event)
     {
-        if (this._swatch.checked)
-            this._value.classList.remove("hidden");
-        else
-            this._value.classList.add("hidden");
+        this._value.classList.toggle("hidden", !this._swatch.checked);
         this._memoryCountersPane.refresh();
     },
 
-    updateCurrentValue: function(countersEntry)
+    /**
+     * @param {number} x
+     * @return {number}
+     */
+    _recordIndexAt: function(x)
     {
-        this._value.textContent = Number.bytesToString(this.valueGetter(countersEntry));
+        return this.counter.x.upperBound(x, null, this.counter._minimumIndex + 1, this.counter._maximumIndex + 1) - 1;
     },
 
-    clearCurrentValueAndMarker: function(ctx)
+    /**
+     * @param {number} x
+     */
+    updateCurrentValue: function(x)
+    {
+        if (!this.visible || !this.counter.values.length)
+            return;
+        var index = this._recordIndexAt(x);
+        this._value.textContent = WebInspector.UIString(this._currentValueLabel, this.counter.values[index]);
+        var y = this.graphYValues[index];
+        this._marker.style.left = x + "px";
+        this._marker.style.top = y + "px";
+        this._marker.classList.remove("hidden");
+    },
+
+    clearCurrentValueAndMarker: function()
     {
         this._value.textContent = "";
+        this._marker.classList.add("hidden");
     },
 
     get visible()
@@ -174,72 +252,9 @@ WebInspector.MemoryStatistics.prototype = {
         throw new Error("Not implemented");
     },
 
-    _createCounterUIList: function()
+    _createAllCounters: function()
     {
         throw new Error("Not implemented");
-    },
-
-    _onRecordsCleared: function()
-    {
-        this._counters = [];
-    },
-
-    /**
-     * @param {!WebInspector.TimelineGrid} timelineGrid
-     */
-    setMainTimelineGrid: function(timelineGrid)
-    {
-        this._mainTimelineGrid = timelineGrid;
-    },
-
-    /**
-     * @return {number}
-     */
-    height: function()
-    {
-        return this._memorySidebarView.element.offsetHeight;
-    },
-
-    /**
-     * @param {number} width
-     */
-    setSidebarWidth: function(width)
-    {
-        if (this._ignoreSidebarResize)
-            return;
-        this._ignoreSidebarResize = true;
-        this._memorySidebarView.setSidebarWidth(width);
-        this._ignoreSidebarResize = false;
-    },
-
-    /**
-     * @param {!WebInspector.Event} event
-     */
-    _sidebarResized: function(event)
-    {
-        if (this._ignoreSidebarResize)
-            return;
-        this._ignoreSidebarResize = true;
-        this._timelinePanel.setSidebarWidth(/** @type {number} */(event.data));
-        this._ignoreSidebarResize = false;
-    },
-
-    _canvasHeight: function()
-    {
-        throw new Error("Not implemented");
-    },
-
-    onResize: function()
-    {
-        var width = this._mainTimelineGrid.dividersElement.offsetWidth + 1;
-
-        this._canvas.style.width = width + "px";
-        this._timelineGrid.dividersElement.style.width = width + "px";
-        var parentElement = this._canvas.parentElement;
-
-        this._canvas.width = width;
-        this._canvas.height = parentElement.clientHeight - 15;
-        this.draw();
     },
 
     /**
@@ -250,179 +265,138 @@ WebInspector.MemoryStatistics.prototype = {
         throw new Error("Not implemented");
     },
 
+    reset: function()
+    {
+        for (var i = 0; i < this._counters.length; ++i)
+            this._counters[i].reset();
+
+        for (var i = 0; i < this._counterUI.length; ++i)
+            this._counterUI[i].reset();
+
+        this.refresh();
+    },
+
+    _resize: function()
+    {
+        var parentElement = this._canvas.parentElement;
+        this._canvas.width = parentElement.clientWidth;
+        this._canvas.height = parentElement.clientHeight;
+        this.refresh();
+    },
+
+    setWindowTimes: function()
+    {
+        this.scheduleRefresh();
+    },
+
+    scheduleRefresh: function()
+    {
+        if (this._refreshTimer)
+            return;
+        this._refreshTimer = setTimeout(this.refresh.bind(this), 300);
+    },
+
+    /**
+     * @return {boolean}
+     */
+    supportsGlueParentMode: function()
+    {
+        return true;
+    },
+
     draw: function()
     {
-        this._calculateVisibleIndexes();
-        this._calculateXValues();
+        for (var i = 0; i < this._counters.length; ++i) {
+            this._counters[i]._calculateVisibleIndexes(this._timelineView.calculator);
+            this._counters[i]._calculateXValues(this._canvas.width);
+        }
         this._clear();
-
         this._setVerticalClip(10, this._canvas.height - 20);
     },
 
-    _calculateVisibleIndexes: function()
+    /**
+     * @param {?Event} event
+     */
+    _onClick: function(event)
     {
-        var calculator = this._timelinePanel.calculator;
-        var start = calculator.minimumBoundary() * 1000;
-        var end = calculator.maximumBoundary() * 1000;
-        function comparator(value, sample)
-        {
-            return value - sample.time;
+        var x = event.x - this._canvasContainer.offsetParent.totalOffsetLeft();
+        var minDistance = Infinity;
+        var bestTime;
+        for (var i = 0; i < this._counterUI.length; ++i) {
+            var counterUI = this._counterUI[i];
+            if (!counterUI.counter.times.length)
+                continue;
+            var index = counterUI._recordIndexAt(x);
+            var distance = Math.abs(x - counterUI.counter.x[index]);
+            if (distance < minDistance) {
+                minDistance = distance;
+                bestTime = counterUI.counter.times[index];
+            }
         }
-
-        // Maximum index of element whose time <= start.
-        this._minimumIndex = Number.constrain(this._counters.upperBound(start, comparator) - 1, 0, this._counters.length - 1);
-
-        // Minimum index of element whose time >= end.
-        this._maximumIndex = Number.constrain(this._counters.lowerBound(end, comparator), 0, this._counters.length - 1);
-
-        // Current window bounds.
-        this._minTime = start;
-        this._maxTime = end;
+        if (bestTime !== undefined)
+            this._timelineView.revealRecordAt(bestTime / 1000);
     },
 
     /**
-     * @param {!MouseEvent} event
+     * @param {?Event} event
      */
-     _onClick: function(event)
-    {
-        var x = event.x - event.target.offsetParent.offsetLeft;
-        var i = this._recordIndexAt(x);
-        var counter = this._counters[i];
-        if (counter)
-            this._timelinePanel.revealRecordAt(counter.time / 1000);
-    },
-
-    /**
-     * @param {!MouseEvent} event
-     */
-     _onMouseOut: function(event)
+    _onMouseOut: function(event)
     {
         delete this._markerXPosition;
-
-        var ctx = this._canvas.getContext("2d");
-        this._clearCurrentValueAndMarker(ctx);
+        this._clearCurrentValueAndMarker();
     },
 
-    /**
-     * @param {!CanvasRenderingContext2D} ctx
-     */
-    _clearCurrentValueAndMarker: function(ctx)
+    _clearCurrentValueAndMarker: function()
     {
         for (var i = 0; i < this._counterUI.length; i++)
-            this._counterUI[i].clearCurrentValueAndMarker(ctx);
+            this._counterUI[i].clearCurrentValueAndMarker();
     },
 
     /**
-     * @param {!MouseEvent} event
+     * @param {?Event} event
      */
-     _onMouseOver: function(event)
+    _onMouseMove: function(event)
     {
-        this._onMouseMove(event);
-    },
-
-    /**
-     * @param {!MouseEvent} event
-     */
-     _onMouseMove: function(event)
-    {
-        var x = event.x - event.target.offsetParent.offsetLeft
+        var x = event.x - this._canvasContainer.offsetParent.totalOffsetLeft();
         this._markerXPosition = x;
         this._refreshCurrentValues();
     },
 
     _refreshCurrentValues: function()
     {
-        if (!this._counters.length)
-            return;
         if (this._markerXPosition === undefined)
             return;
-        if (this._maximumIndex === -1)
-            return;
-        var i = this._recordIndexAt(this._markerXPosition);
-
-        this._updateCurrentValue(this._counters[i]);
-
-        this._highlightCurrentPositionOnGraphs(this._markerXPosition, i);
-    },
-
-    _updateCurrentValue: function(counterEntry)
-    {
-        for (var j = 0; j < this._counterUI.length; j++)
-            this._counterUI[j].updateCurrentValue(counterEntry);
-    },
-
-    _recordIndexAt: function(x)
-    {
-        var i;
-        for (i = this._minimumIndex + 1; i <= this._maximumIndex; i++) {
-            var statX = this._counters[i].x;
-            if (x < statX)
-                break;
-        }
-        i--;
-        return i;
-    },
-
-    _highlightCurrentPositionOnGraphs: function(x, index)
-    {
-        var ctx = this._canvas.getContext("2d");
-        this._restoreImageUnderMarker(ctx);
-        this._drawMarker(ctx, x, index);
-    },
-
-    _restoreImageUnderMarker: function(ctx)
-    {
-        throw new Error("Not implemented");
-    },
-
-    _drawMarker: function(ctx, x, index)
-    {
-        throw new Error("Not implemented");
+        for (var i = 0; i < this._counterUI.length; ++i)
+            this._counterUI[i].updateCurrentValue(this._markerXPosition);
     },
 
     refresh: function()
     {
-        this._refreshDividers();
+        delete this._refreshTimer;
+        this._timelineGrid.updateDividers(this._timelineView.calculator);
         this.draw();
         this._refreshCurrentValues();
     },
 
-    _refreshDividers: function()
+    refreshRecords: function()
     {
-        this._timelineGrid.updateDividers(this._timelinePanel.calculator);
     },
 
+    /**
+     * @param {number} originY
+     * @param {number} height
+     */
     _setVerticalClip: function(originY, height)
     {
         this._originY = originY;
         this._clippedHeight = height;
     },
 
-    _calculateXValues: function()
-    {
-        if (!this._counters.length)
-            return;
-
-        var width = this._canvas.width;
-        var xFactor = width / (this._maxTime - this._minTime);
-
-        this._counters[this._minimumIndex].x = 0;
-        for (var i = this._minimumIndex + 1; i < this._maximumIndex; i++)
-             this._counters[i].x = xFactor * (this._counters[i].time - this._minTime);
-        this._counters[this._maximumIndex].x = width;
-    },
-
     _clear: function()
     {
         var ctx = this._canvas.getContext("2d");
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        this._discardImageUnderMarker();
     },
 
-    _discardImageUnderMarker: function()
-    {
-        throw new Error("Not implemented");
-    },
-
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.SplitView.prototype
 }

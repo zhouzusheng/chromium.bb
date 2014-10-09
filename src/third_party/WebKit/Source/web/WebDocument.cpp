@@ -35,9 +35,9 @@
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
 #include "WebElement.h"
+#include "WebElementCollection.h"
 #include "WebFormElement.h"
 #include "WebFrameImpl.h"
-#include "WebNodeCollection.h"
 #include "WebNodeList.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
@@ -152,9 +152,9 @@ WebString WebDocument::title() const
     return WebString(constUnwrap<Document>()->title());
 }
 
-WebNodeCollection WebDocument::all()
+WebElementCollection WebDocument::all()
 {
-    return WebNodeCollection(unwrap<Document>()->all());
+    return WebElementCollection(unwrap<Document>()->all());
 }
 
 void WebDocument::images(WebVector<WebElement>& results)
@@ -164,9 +164,9 @@ void WebDocument::images(WebVector<WebElement>& results)
     Vector<WebElement> temp;
     temp.reserveCapacity(sourceLength);
     for (size_t i = 0; i < sourceLength; ++i) {
-        Node* node = images->item(i);
-        if (node && node->isHTMLElement())
-            temp.append(WebElement(toElement(node)));
+        Element* element = images->item(i);
+        if (element && element->isHTMLElement())
+            temp.append(WebElement(element));
     }
     results.assign(temp);
 }
@@ -178,10 +178,10 @@ void WebDocument::forms(WebVector<WebFormElement>& results) const
     Vector<WebFormElement> temp;
     temp.reserveCapacity(sourceLength);
     for (size_t i = 0; i < sourceLength; ++i) {
-        Node* node = forms->item(i);
+        Element* element = forms->item(i);
         // Strange but true, sometimes node can be 0.
-        if (node && node->isHTMLElement())
-            temp.append(WebFormElement(toHTMLFormElement(node)));
+        if (element && element->isHTMLElement())
+            temp.append(WebFormElement(toHTMLFormElement(element)));
     }
     results.assign(temp);
 }
@@ -206,16 +206,11 @@ WebDocumentType WebDocument::doctype() const
     return WebDocumentType(constUnwrap<Document>()->doctype());
 }
 
-void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel)
-{
-    insertStyleSheet(sourceCode);
-}
-
 void WebDocument::insertStyleSheet(const WebString& sourceCode)
 {
     RefPtr<Document> document = unwrap<Document>();
     ASSERT(document);
-    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(*document.get());
+    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(CSSParserContext(*document.get(), 0));
     parsedSheet->parseString(sourceCode);
     document->styleEngine()->addAuthorSheet(parsedSheet);
 }

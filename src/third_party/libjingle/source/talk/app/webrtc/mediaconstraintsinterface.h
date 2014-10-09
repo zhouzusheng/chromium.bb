@@ -79,6 +79,7 @@ class MediaConstraintsInterface {
   static const char kAutoGainControl[];  // googAutoGainControl
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2
   static const char kNoiseSuppression[];  // googNoiseSuppression
+  static const char kExperimentalNoiseSuppression[];  // googNoiseSuppression2
   static const char kHighpassFilter[];  // googHighpassFilter
   static const char kTypingNoiseDetection[];  // googTypingNoiseDetection
   static const char kAudioMirroring[];  // googAudioMirroring
@@ -107,22 +108,14 @@ class MediaConstraintsInterface {
   static const char kEnableDtlsSrtp[];  // Enable DTLS-SRTP
   // Temporary pseudo-constraints used to enable DataChannels
   static const char kEnableRtpDataChannels[];  // Enable RTP DataChannels
-  // TODO(perkj): Remove kEnableSctpDataChannels once Chrome use
-  // PeerConnectionFactory::SetOptions.
-  static const char kEnableSctpDataChannels[];  // Enable SCTP DataChannels
   // Temporary pseudo-constraint for enabling DSCP through JS.
   static const char kEnableDscp[];
+  // Constraint to enable IPv6 through JS.
+  static const char kEnableIPv6[];
 
   // The prefix of internal-only constraints whose JS set values should be
   // stripped by Chrome before passed down to Libjingle.
   static const char kInternalConstraintPrefix[];
-
-  // These constraints are for internal use only, representing Chrome command
-  // line flags. So they are prefixed with "internal" so JS values will be
-  // removed.
-  // Used by a local audio source.
-  // TODO(perkj): Remove once Chrome use PeerConnectionFactory::SetOptions.
-  static const char kInternalAecDump[];  // internalAecDump
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface

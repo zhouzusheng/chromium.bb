@@ -4,22 +4,23 @@
 
 'use strict';
 
-base.requireStylesheet('tracing.tracks.thread_track');
+tvcm.requireStylesheet('tracing.tracks.thread_track');
 
-base.require('tracing.tracks.container_track');
-base.require('tracing.tracks.slice_track');
-base.require('tracing.tracks.slice_group_track');
-base.require('tracing.tracks.async_slice_group_track');
-base.require('tracing.filter');
-base.require('ui');
+tvcm.require('tracing.tracks.container_track');
+tvcm.require('tracing.tracks.slice_track');
+tvcm.require('tracing.tracks.slice_group_track');
+tvcm.require('tracing.tracks.async_slice_group_track');
+tvcm.require('tracing.filter');
+tvcm.require('tvcm.ui');
 
-base.exportTo('tracing.tracks', function() {
+tvcm.exportTo('tracing.tracks', function() {
 
   /**
    * Visualizes a Thread using a series of of SliceTracks.
    * @constructor
    */
-  var ThreadTrack = ui.define('thread-track', tracing.tracks.ContainerTrack);
+  var ThreadTrack = tvcm.ui.define('thread-track',
+                                   tracing.tracks.ContainerTrack);
   ThreadTrack.prototype = {
     __proto__: tracing.tracks.ContainerTrack.prototype,
 
@@ -61,6 +62,15 @@ base.exportTo('tracing.tracks', function() {
         var samplesTrack = new tracing.tracks.SliceTrack(this.viewport);
         samplesTrack.group = this.thread_;
         samplesTrack.slices = this.thread_.samples;
+        samplesTrack.heading = this.thread_.userFriendlyName;
+        samplesTrack.tooltip = this.thread_.userFriendlyDetails;
+        samplesTrack.selectionGenerator = function() {
+          var selection = new tracing.Selection();
+          for (var i = 0; i < samplesTrack.slices.length; i++) {
+            selection.push(samplesTrack.slices[i]);
+          }
+          return selection;
+        };
         this.appendChild(samplesTrack);
       }
 

@@ -21,7 +21,7 @@
 #include "core/css/MediaList.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaFeatureNames.h"
 #include "core/css/MediaQuery.h"
@@ -73,7 +73,7 @@ PassRefPtr<MediaQuerySet> MediaQuerySet::create(const String& mediaString)
     if (mediaString.isEmpty())
         return MediaQuerySet::create();
 
-    CSSParser parser(HTMLStandardMode);
+    BisonCSSParser parser(strictCSSParserContext());
     return parser.parseMediaQueryList(mediaString);
 }
 
@@ -201,7 +201,7 @@ void MediaList::deleteMedium(const String& medium, ExceptionState& exceptionStat
 
     bool success = m_mediaQueries->remove(medium);
     if (!success) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "Failed to delete '" + medium + "'.");
         return;
     }
     if (m_parentStyleSheet)
@@ -214,7 +214,7 @@ void MediaList::appendMedium(const String& medium, ExceptionState& exceptionStat
 
     bool success = m_mediaQueries->add(medium);
     if (!success) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidCharacterError);
+        exceptionState.throwDOMException(InvalidCharacterError, "The value provided ('" + medium + "') is not a valid medium.");
         return;
     }
 
@@ -239,17 +239,17 @@ static void addResolutionWarningMessageToConsole(Document* document, const Strin
     DEFINE_STATIC_LOCAL(String, lengthUnitInch, ("inch"));
     DEFINE_STATIC_LOCAL(String, lengthUnitCentimeter, ("centimeter"));
 
-    String message;
+    StringBuilder message;
     if (value->isDotsPerInch())
-        message = String(mediaQueryMessage).replace("%replacementUnits%", mediaValueDPI).replace("%lengthUnit%", lengthUnitInch);
+        message.append(String(mediaQueryMessage).replace("%replacementUnits%", mediaValueDPI).replace("%lengthUnit%", lengthUnitInch));
     else if (value->isDotsPerCentimeter())
-        message = String(mediaQueryMessage).replace("%replacementUnits%", mediaValueDPCM).replace("%lengthUnit%", lengthUnitCentimeter);
+        message.append(String(mediaQueryMessage).replace("%replacementUnits%", mediaValueDPCM).replace("%lengthUnit%", lengthUnitCentimeter));
     else
         ASSERT_NOT_REACHED();
 
     message.append(serializedExpression);
 
-    document->addConsoleMessage(CSSMessageSource, DebugMessageLevel, message);
+    document->addConsoleMessage(CSSMessageSource, DebugMessageLevel, message.toString());
 }
 
 static inline bool isResolutionMediaFeature(const AtomicString& mediaFeature)

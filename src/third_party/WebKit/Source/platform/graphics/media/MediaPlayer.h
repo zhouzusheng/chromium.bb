@@ -28,25 +28,33 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/graphics/GraphicsTypes3D.h"
+#include "public/platform/WebMediaPlayer.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
+class WebGraphicsContext3D;
+class WebContentDecryptionModule;
 class WebInbandTextTrack;
 class WebLayer;
+class WebMediaSource;
 }
 
 namespace WebCore {
 
 class AudioSourceProvider;
 class GraphicsContext;
-class GraphicsContext3D;
 class IntRect;
 class IntSize;
 class KURL;
 class MediaPlayer;
-class HTMLMediaSource;
 class TimeRanges;
+
+// GL types as defined in OpenGL ES 2.0 header file gl2.h from khronos.org.
+// That header cannot be included directly due to a conflict with NPAPI headers.
+// See crbug.com/328085.
+typedef unsigned GC3Denum;
+typedef int GC3Dint;
 
 class MediaPlayerClient {
 public:
@@ -73,6 +81,10 @@ public:
 
     virtual void mediaPlayerRequestSeek(double) = 0;
 
+    // The URL for video poster image.
+    // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
+    virtual KURL mediaPlayerPosterURL() = 0;
+
 // Presentation-related methods
     // a new frame of video is available
     virtual void mediaPlayerRepaint() = 0;
@@ -84,8 +96,7 @@ public:
     virtual void mediaPlayerKeyAdded(const String& /* keySystem */, const String& /* sessionId */) = 0;
     virtual void mediaPlayerKeyError(const String& /* keySystem */, const String& /* sessionId */, MediaKeyErrorCode, unsigned short /* systemCode */) = 0;
     virtual void mediaPlayerKeyMessage(const String& /* keySystem */, const String& /* sessionId */, const unsigned char* /* message */, unsigned /* messageLength */, const KURL& /* defaultURL */) = 0;
-    virtual bool mediaPlayerKeyNeeded(const String& /* keySystem */, const String& /* sessionId */, const unsigned char* /* initData */, unsigned /* initDataLength */) = 0;
-    virtual bool mediaPlayerKeyNeeded(Uint8Array*) = 0;
+    virtual bool mediaPlayerKeyNeeded(const String& /* contentType */, const unsigned char* /* initData */, unsigned /* initDataLength */) = 0;
 
     virtual CORSMode mediaPlayerCORSMode() const = 0;
 
@@ -94,6 +105,8 @@ public:
 
     virtual void mediaPlayerDidAddTrack(blink::WebInbandTextTrack*) = 0;
     virtual void mediaPlayerDidRemoveTrack(blink::WebInbandTextTrack*) = 0;
+
+    virtual void mediaPlayerMediaSourceOpened(blink::WebMediaSource*) = 0;
 };
 
 typedef PassOwnPtr<MediaPlayer> (*CreateMediaEnginePlayer)(MediaPlayerClient*);
@@ -109,15 +122,13 @@ public:
     MediaPlayer() { }
     virtual ~MediaPlayer() { }
 
-    virtual void load(const String& url) = 0;
-    virtual void load(const String& url, PassRefPtr<HTMLMediaSource>) = 0;
+    virtual void load(blink::WebMediaPlayer::LoadType, const String& url) = 0;
 
     virtual void prepareToPlay() = 0;
 
     virtual void play() = 0;
     virtual void pause() = 0;
 
-    virtual bool supportsFullscreen() const = 0;
     virtual bool supportsSave() const = 0;
     virtual IntSize naturalSize() const = 0;
 
@@ -140,6 +151,8 @@ public:
     virtual void setVolume(double) = 0;
     virtual void setMuted(bool) = 0;
 
+    virtual void setPoster(const KURL&) = 0;
+
     enum NetworkState { Empty, Idle, Loading, Loaded, FormatError, NetworkError, DecodeError };
     virtual NetworkState networkState() const = 0;
 
@@ -152,7 +165,7 @@ public:
     virtual bool didLoadingProgress() const = 0;
 
     virtual void paint(GraphicsContext*, const IntRect&) = 0;
-    virtual bool copyVideoTextureToPlatformTexture(GraphicsContext3D*, Platform3DObject, GC3Dint, GC3Denum, GC3Denum, bool, bool) = 0;
+    virtual bool copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject, GC3Dint, GC3Denum, GC3Denum, bool, bool) = 0;
 
     enum Preload { None, MetaData, Auto };
     virtual void setPreload(Preload) = 0;
@@ -183,6 +196,7 @@ public:
     virtual MediaKeyException addKey(const String&, const unsigned char*, unsigned, const unsigned char*, unsigned, const String&) = 0;
     virtual MediaKeyException generateKeyRequest(const String&, const unsigned char*, unsigned) = 0;
     virtual MediaKeyException cancelKeyRequest(const String&, const String&) = 0;
+    virtual void setContentDecryptionModule(blink::WebContentDecryptionModule*) = 0;
 };
 
 }

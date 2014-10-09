@@ -30,9 +30,9 @@
 #include "WebBlendMode.h"
 #include "WebColor.h"
 #include "WebCommon.h"
-#include "WebCompositingReasons.h"
 #include "WebPoint.h"
 #include "WebRect.h"
+#include "WebSize.h"
 #include "WebString.h"
 #include "WebVector.h"
 
@@ -47,7 +47,6 @@ class WebLayerScrollClient;
 struct WebFloatPoint;
 struct WebFloatRect;
 struct WebLayerPositionConstraint;
-struct WebSize;
 
 class WebLayer {
 public:
@@ -99,9 +98,6 @@ public:
     virtual void setPosition(const WebFloatPoint&) = 0;
     virtual WebFloatPoint position() const = 0;
 
-    virtual void setSublayerTransform(const SkMatrix44&) = 0;
-    virtual SkMatrix44 sublayerTransform() const = 0;
-
     virtual void setTransform(const SkMatrix44&) = 0;
     virtual SkMatrix44 transform() const = 0;
 
@@ -109,7 +105,13 @@ public:
     virtual void setDrawsContent(bool) = 0;
     virtual bool drawsContent() const = 0;
 
-    virtual void setPreserves3D(bool) = 0;
+    // Sets whether the layer's transform should be flattened.
+    virtual void setShouldFlattenTransform(bool) = 0;
+
+    // Sets the id of the layer's 3d rendering context. Layers in the same 3d
+    // rendering context id are sorted with one another according to their 3d
+    // position rather than their tree order.
+    virtual void setRenderingContext(int id) = 0;
 
     // Mark that this layer should use its parent's transform and double-sided
     // properties in determining this layer's backface visibility instead of
@@ -133,9 +135,6 @@ public:
     // ancestor of the background-filtered layer sets certain properties
     // (opacity, transforms), it may conflict and hide the background filters.
     virtual void setBackgroundFilters(const WebFilterOperations&) = 0;
-
-    // Provides a bitfield that describe why this composited layer was created.
-    virtual void setCompositingReasons(WebCompositingReasons) = 0;
 
     // An animation delegate is notified when animations are started and
     // stopped. The WebLayer does not take ownership of the delegate, and it is
@@ -174,12 +173,11 @@ public:
     virtual void setScrollPosition(WebPoint) = 0;
     virtual WebPoint scrollPosition() const = 0;
 
-    virtual void setMaxScrollPosition(WebSize) = 0;
     virtual WebSize maxScrollPosition() const = 0;
 
-    virtual void setScrollable(bool) = 0;
+    // To set a WebLayer as scrollable we must specify the corresponding clip layer.
+    virtual void setScrollClipLayer(WebLayer*) = 0;
     virtual bool scrollable() const = 0;
-
     virtual void setUserScrollable(bool horizontal, bool vertical) = 0;
     virtual bool userScrollableHorizontal() const = 0;
     virtual bool userScrollableVertical() const = 0;

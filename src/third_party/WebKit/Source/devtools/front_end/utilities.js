@@ -80,6 +80,29 @@ String.prototype.lineEndings = function()
 }
 
 /**
+ * @return {number}
+ */
+String.prototype.lineCount = function()
+{
+    var lineEndings = this.lineEndings();
+    return lineEndings.length;
+}
+
+/**
+ * @return {string}
+ */
+String.prototype.lineAt = function(lineNumber)
+{
+    var lineEndings = this.lineEndings();
+    var lineStart = lineNumber > 0 ? lineEndings[lineNumber - 1] + 1 : 0;
+    var lineEnd = lineEndings[lineNumber];
+    var lineContent = this.substring(lineStart, lineEnd);
+    if (lineContent.length > 0 && lineContent.charAt(lineContent.length - 1) === "\r")
+        lineContent = lineContent.substring(0, lineContent.length - 1);
+    return lineContent;
+}
+
+/**
  * @param {string} chars
  * @return {string}
  */
@@ -229,6 +252,17 @@ String.prototype.startsWith = function(substring)
 String.prototype.endsWith = function(substring)
 {
     return this.indexOf(substring, this.length - substring.length) !== -1;
+}
+
+/**
+ * @return {number}
+ */
+String.prototype.hashCode = function()
+{
+    var result = 0;
+    for (var i = 0; i < this.length; ++i)
+        result = result * 3 + this.charCodeAt(i);
+    return result;
 }
 
 /**
@@ -552,24 +586,28 @@ Object.defineProperty(Array.prototype, "lowerBound",
     /**
      * Return index of the leftmost element that is equal or greater
      * than the specimen object. If there's no such element (i.e. all
-     * elements are smaller than the specimen) returns array.length.
+     * elements are smaller than the specimen) returns right bound.
      * The function works for sorted array.
+     * When specified, |left| (inclusive) and |right| (exclusive) indices
+     * define the search window.
      *
      * @param {!T} object
      * @param {function(!T,!S):number=} comparator
+     * @param {number=} left
+     * @param {number=} right
      * @return {number}
      * @this {Array.<!S>}
      * @template T,S
      */
-    value: function(object, comparator)
+    value: function(object, comparator, left, right)
     {
         function defaultComparator(a, b)
         {
             return a < b ? -1 : (a > b ? 1 : 0);
         }
         comparator = comparator || defaultComparator;
-        var l = 0;
-        var r = this.length;
+        var l = left || 0;
+        var r = right !== undefined ? right : this.length;
         while (l < r) {
             var m = (l + r) >> 1;
             if (comparator(object, this[m]) > 0)
@@ -586,24 +624,28 @@ Object.defineProperty(Array.prototype, "upperBound",
     /**
      * Return index of the leftmost element that is greater
      * than the specimen object. If there's no such element (i.e. all
-     * elements are smaller than the specimen) returns array.length.
+     * elements are smaller or equal to the specimen) returns right bound.
      * The function works for sorted array.
+     * When specified, |left| (inclusive) and |right| (exclusive) indices
+     * define the search window.
      *
      * @param {!T} object
      * @param {function(!T,!S):number=} comparator
+     * @param {number=} left
+     * @param {number=} right
      * @return {number}
      * @this {Array.<!S>}
      * @template T,S
      */
-    value: function(object, comparator)
+    value: function(object, comparator, left, right)
     {
         function defaultComparator(a, b)
         {
             return a < b ? -1 : (a > b ? 1 : 0);
         }
         comparator = comparator || defaultComparator;
-        var l = 0;
-        var r = this.length;
+        var l = left || 0;
+        var r = right !== undefined ? right : this.length;
         while (l < r) {
             var m = (l + r) >> 1;
             if (comparator(object, this[m]) >= 0)
@@ -675,29 +717,20 @@ function mergeOrIntersect(array1, array2, comparator, mergeNotIntersect)
     var result = [];
     var i = 0;
     var j = 0;
-    while (i < array1.length || j < array2.length) {
-        if (i === array1.length) {
-            result = result.concat(array2.slice(j));
-            j = array2.length;
-        } else if (j === array2.length) {
-            result = result.concat(array1.slice(i));
-            i = array1.length;
-        } else {
-            var compareValue = comparator(array1[i], array2[j])
-             if (compareValue < 0) {
-                 if (mergeNotIntersect)
-                    result.push(array1[i]);
-                 ++i;
-             } else if (compareValue > 0) {
-                 if (mergeNotIntersect)
-                     result.push(array2[j]);
-                 ++j;
-             } else {
-                 result.push(array1[i]);
-                 ++i;
-                 ++j;
-             }
-        }
+    while (i < array1.length && j < array2.length) {
+        var compareValue = comparator(array1[i], array2[j]);
+        if (mergeNotIntersect || !compareValue)
+            result.push(compareValue <= 0 ? array1[i] : array2[j]);
+        if (compareValue <= 0)
+            i++;
+        if (compareValue >= 0)
+            j++;
+    }
+    if (mergeNotIntersect) {
+        while (i < array1.length)
+            result.push(array1[i++]);
+        while (j < array2.length)
+            result.push(array2[j++]);
     }
     return result;
 }
@@ -831,11 +864,17 @@ String.tokenizeFormatString = function(format, formatters)
 }
 
 String.standardFormatters = {
+    /**
+     * @return {number}
+     */
     d: function(substitution)
     {
         return !isNaN(substitution) ? substitution : 0;
     },
 
+    /**
+     * @return {number}
+     */
     f: function(substitution, token)
     {
         if (substitution && token.precision > -1)
@@ -843,6 +882,9 @@ String.standardFormatters = {
         return !isNaN(substitution) ? substitution : (token.precision > -1 ? Number(0).toFixed(token.precision) : 0);
     },
 
+    /**
+     * @return {string}
+     */
     s: function(substitution)
     {
         return substitution;
@@ -1229,6 +1271,7 @@ StringMap.prototype = {
 
     /**
      * @param {string} key
+     * @return {T|undefined}
      */
     remove: function(key)
     {
@@ -1274,6 +1317,7 @@ StringMap.prototype = {
 
     /**
      * @param {string} key
+     * @return {T|undefined}
      */
     get: function(key)
     {
@@ -1319,9 +1363,9 @@ StringMap.prototype = {
  * @param {function(?string)=} callback
  * @return {?string}
  */
-function loadXHR(url, async, callback) 
+function loadXHR(url, async, callback)
 {
-    function onReadyStateChanged() 
+    function onReadyStateChanged()
     {
         if (xhr.readyState !== XMLHttpRequest.DONE)
             return;
@@ -1331,7 +1375,7 @@ function loadXHR(url, async, callback)
             return;
         }
 
-        callback(null); 
+        callback(null);
    }
 
     var xhr = new XMLHttpRequest();
@@ -1341,7 +1385,7 @@ function loadXHR(url, async, callback)
     xhr.send(null);
 
     if (!async) {
-        if (xhr.status === 200) 
+        if (xhr.status === 200)
             return xhr.responseText;
         return null;
     }
@@ -1427,8 +1471,10 @@ function importScript(scriptName)
     xhr.send(null);
     if (!xhr.responseText)
         throw "empty response arrived for script '" + scriptName + "'";
-    var sourceURL = WebInspector.ParsedURL.completeURL(window.location.href, scriptName); 
-    window.eval(xhr.responseText + "\n//# sourceURL=" + sourceURL);
+    var baseUrl = location.origin + location.pathname;
+    baseUrl = baseUrl.substring(0, baseUrl.lastIndexOf("/"));
+    var sourceURL = baseUrl + "/" + scriptName;
+    self.eval(xhr.responseText + "\n//# sourceURL=" + sourceURL);
 }
 
 var loadScript = importScript;
@@ -1478,4 +1524,11 @@ CallbackBarrier.prototype = {
         if (!--this._pendingIncomingCallbacksCount && this._outgoingCallback)
             this._outgoingCallback();
     }
+}
+
+/**
+ * @param {*} value
+ */
+function suppressUnused(value)
+{
 }

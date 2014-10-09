@@ -49,7 +49,7 @@ static inline const AtomicString& linkAttribute(const Element& element)
 static inline LinkHash linkHashForElement(const Element& element, const AtomicString& attribute = AtomicString())
 {
     ASSERT(attribute.isNull() || linkAttribute(element) == attribute);
-    if (isHTMLAnchorElement(element))
+    if (element.hasTagName(HTMLNames::aTag))
         return toHTMLAnchorElement(element).visitedLinkHash();
     return visitedLinkHash(element.document().baseURL(), attribute.isNull() ? linkAttribute(element) : attribute);
 }
@@ -65,7 +65,7 @@ void VisitedLinkState::invalidateStyleForAllLinks()
         return;
     for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink())
-            element->setNeedsStyleRecalc();
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 
@@ -75,7 +75,7 @@ void VisitedLinkState::invalidateStyleForLink(LinkHash linkHash)
         return;
     for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink() && linkHashForElement(*element) == linkHash)
-            element->setNeedsStyleRecalc();
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 

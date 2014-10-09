@@ -104,14 +104,14 @@ void ProgressTracker::reset()
 
 void ProgressTracker::progressStarted(Frame* frame)
 {
-    WTF_LOG(Progress, "Progress started (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
+    WTF_LOG(Progress, "Progress started (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
 
     if (m_numProgressTrackedFrames == 0 || m_originatingProgressFrame == frame) {
         reset();
         m_progressValue = initialProgressValue;
         m_originatingProgressFrame = frame;
 
-        m_originatingProgressFrame->loader().client()->postProgressStartedNotification();
+        m_originatingProgressFrame->loader().client()->postProgressStartedNotification(NavigationToDifferentDocument);
     }
     m_numProgressTrackedFrames++;
     InspectorInstrumentation::frameStartedLoading(frame);
@@ -119,7 +119,7 @@ void ProgressTracker::progressStarted(Frame* frame)
 
 void ProgressTracker::progressCompleted(Frame* frame)
 {
-    WTF_LOG(Progress, "Progress completed (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
+    WTF_LOG(Progress, "Progress completed (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
 
     if (m_numProgressTrackedFrames <= 0)
         return;

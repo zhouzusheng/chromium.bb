@@ -31,6 +31,7 @@
 #ifndef DeviceMotionDispatcher_h
 #define DeviceMotionDispatcher_h
 
+#include "heap/Handle.h"
 #include "modules/device_orientation/DeviceSensorEventDispatcher.h"
 #include "public/platform/WebDeviceMotionListener.h"
 #include "wtf/RefPtr.h"
@@ -46,7 +47,7 @@ class DeviceMotionData;
 
 // This class listens to device motion data and dispatches it to all
 // listening controllers.
-class DeviceMotionDispatcher : public DeviceSensorEventDispatcher, public blink::WebDeviceMotionListener {
+class DeviceMotionDispatcher FINAL : public DeviceSensorEventDispatcher, public blink::WebDeviceMotionListener {
 public:
     static DeviceMotionDispatcher& instance();
 
@@ -61,12 +62,12 @@ public:
 
 private:
     DeviceMotionDispatcher();
-    ~DeviceMotionDispatcher();
+    virtual ~DeviceMotionDispatcher();
 
     virtual void startListening() OVERRIDE;
     virtual void stopListening() OVERRIDE;
 
-    RefPtr<DeviceMotionData> m_lastDeviceMotionData;
+    RefPtrWillBePersistent<DeviceMotionData> m_lastDeviceMotionData;
 };
 
 } // namespace WebCore

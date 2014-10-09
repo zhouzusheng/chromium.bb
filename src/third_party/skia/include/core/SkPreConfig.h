@@ -91,12 +91,6 @@
 
 //////////////////////////////////////////////////////////////////////
 
-#if !defined(SK_SCALAR_IS_FLOAT) && !defined(SK_SCALAR_IS_FIXED)
-    #define SK_SCALAR_IS_FLOAT
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
 #if !defined(SK_CPU_BENDIAN) && !defined(SK_CPU_LENDIAN)
     #if defined (__ppc__) || defined(__PPC__) || defined(__ppc64__) \
         || defined(__PPC64__)
@@ -133,10 +127,12 @@
 
 // Are we in VisualStudio?
 #ifndef SK_CPU_SSE_LEVEL
-    #if _M_IX86_FP == 1
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE1
-    #elif _M_IX86_FP >= 2
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
+    #if defined (_M_IX86_FP)
+        #if _M_IX86_FP == 1
+            #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE1
+        #elif _M_IX86_FP >= 2
+            #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
+        #endif
     #endif
 #endif
 
@@ -146,6 +142,12 @@
         #undef SK_CPU_SSE_LEVEL
         #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
     #endif
+#endif
+
+// Android x86 NDK ABI requires SSE3 support
+#if defined(SK_BUILD_FOR_ANDROID)
+    #undef SK_CPU_SSE_LEVEL
+    #define SK_CPU_SSE_LEVEL        SK_CPU_SSE_LEVEL_SSE3
 #endif
 
 //////////////////////////////////////////////////////////////////////

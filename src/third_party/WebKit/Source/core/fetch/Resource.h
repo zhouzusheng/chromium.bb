@@ -36,6 +36,7 @@
 
 namespace WebCore {
 
+struct FetchInitiatorInfo;
 class MemoryCache;
 class CachedMetadata;
 class ResourceClient;
@@ -96,6 +97,8 @@ public:
     virtual String encoding() const { return String(); }
     virtual void appendData(const char*, int);
     virtual void error(Resource::Status);
+
+    void setNeedsSynchronousCacheHit(bool needsSynchronousCacheHit) { m_needsSynchronousCacheHit = needsSynchronousCacheHit; }
 
     void setResourceError(const ResourceError& error) { m_error = error; }
     const ResourceError& resourceError() const { return m_error; }
@@ -185,6 +188,7 @@ public:
     void setResourceBuffer(PassRefPtr<SharedBuffer>);
 
     virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
+    virtual void updateRequest(const ResourceRequest&) { }
     virtual void responseReceived(const ResourceResponse&);
     void setResponse(const ResourceResponse& response) { m_response = response; }
     const ResourceResponse& response() const { return m_response; }
@@ -214,10 +218,8 @@ public:
     bool errorOccurred() const { return m_status == LoadError || m_status == DecodeError; }
     bool loadFailedOrCanceled() { return !m_error.isNull(); }
 
-    bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
     DataBufferingPolicy dataBufferingPolicy() const { return m_options.dataBufferingPolicy; }
-
-    virtual void destroyDecodedData() { }
+    void setDataBufferingPolicy(DataBufferingPolicy);
 
     bool isPreloaded() const { return m_preloadCount; }
     void increasePreloadCount() { ++m_preloadCount; }
@@ -234,11 +236,7 @@ public:
 
     bool isPurgeable() const;
     bool wasPurged() const;
-
-    // This is used by the archive machinery to get at a purged resource without
-    // triggering a load. We should make it protected again if we can find a
-    // better way to handle the archive case.
-    bool makePurgeable(bool purgeable);
+    bool lock();
 
     virtual void didSendData(unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
     virtual void didDownloadData(int) { }
@@ -246,6 +244,10 @@ public:
     double loadFinishTime() const { return m_loadFinishTime; }
 
     virtual bool canReuse(const ResourceRequest&) const { return true; }
+
+    void prune();
+
+    static const char* resourceTypeToString(Type, const FetchInitiatorInfo&);
 
 protected:
     virtual void checkNotify();
@@ -281,8 +283,6 @@ protected:
     void setDecodedSize(size_t);
     void didAccessDecodedData(double timeStamp);
 
-    bool isSafeToMakePurgeable() const;
-
     virtual void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
     void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
@@ -306,6 +306,9 @@ protected:
 
     bool hasClient(ResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
 
+    virtual bool isSafeToUnlock() const { return false; }
+    virtual void destroyDecodedDataIfPossible() { }
+
     ResourceRequest m_resourceRequest;
     AtomicString m_accept;
     RefPtr<ResourceLoader> m_loader;
@@ -327,6 +330,7 @@ private:
 
     double currentAge() const;
     double freshnessLifetime() const;
+    bool unlock();
 
     void failBeforeStarting();
 
@@ -360,6 +364,10 @@ private:
 
     unsigned m_type : 4; // Type
     unsigned m_status : 3; // Status
+
+    unsigned m_wasPurged : 1;
+
+    unsigned m_needsSynchronousCacheHit : 1;
 
 #ifndef NDEBUG
     bool m_deleted;

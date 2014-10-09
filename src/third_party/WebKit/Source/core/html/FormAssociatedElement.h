@@ -24,6 +24,7 @@
 #ifndef FormAssociatedElement_h
 #define FormAssociatedElement_h
 
+#include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -46,8 +47,8 @@ public:
     void ref() { refFormAssociatedElement(); }
     void deref() { derefFormAssociatedElement(); }
 
-    static HTMLFormElement* findAssociatedForm(const HTMLElement*, HTMLFormElement*);
-    HTMLFormElement* form() const { return m_form; }
+    static HTMLFormElement* findAssociatedForm(const HTMLElement*);
+    HTMLFormElement* form() const { return m_form.get(); }
     ValidityState* validity();
 
     virtual bool isFormControlElement() const = 0;
@@ -62,8 +63,6 @@ public:
     // Override in derived classes to get the encoded name=value pair for submitting.
     // Return true for a successful control (see HTML4-17.13.2).
     virtual bool appendFormData(FormDataList&, bool) { return false; }
-
-    void formWillBeDestroyed();
 
     void resetFormOwner();
 
@@ -95,7 +94,10 @@ protected:
     void removedFrom(ContainerNode*);
     void didMoveToNewDocument(Document& oldDocument);
 
+    // FIXME: Remove usage of setForm. resetFormOwner should be enough, and
+    // setForm is confusing.
     void setForm(HTMLFormElement*);
+    void associateByParser(HTMLFormElement*);
     void formAttributeChanged();
 
     // If you add an override of willChangeForm() or didChangeForm() to a class
@@ -113,9 +115,11 @@ private:
     void resetFormAttributeTargetObserver();
 
     OwnPtr<FormAttributeTargetObserver> m_formAttributeTargetObserver;
-    HTMLFormElement* m_form;
+    // m_form should be a strong reference in Oilpan.
+    WeakPtr<HTMLFormElement> m_form;
     OwnPtr<ValidityState> m_validityState;
     String m_customValidationMessage;
+    bool m_formWasSetByParser;
 };
 
 HTMLElement* toHTMLElement(FormAssociatedElement*);

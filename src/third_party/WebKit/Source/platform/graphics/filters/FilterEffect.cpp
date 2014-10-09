@@ -62,19 +62,35 @@ inline bool isFilterSizeValid(IntRect rect)
     return true;
 }
 
-void FilterEffect::determineAbsolutePaintRect()
+FloatRect FilterEffect::determineAbsolutePaintRect(const FloatRect& originalRequestedRect)
 {
-    m_absolutePaintRect = IntRect();
-    unsigned size = m_inputEffects.size();
-    for (unsigned i = 0; i < size; ++i)
-        m_absolutePaintRect.unite(m_inputEffects.at(i)->absolutePaintRect());
-
+    FloatRect requestedRect = originalRequestedRect;
     // Filters in SVG clip to primitive subregion, while CSS doesn't.
     if (m_clipsToBounds)
-        m_absolutePaintRect.intersect(enclosingIntRect(m_maxEffectRect));
-    else
-        m_absolutePaintRect.unite(enclosingIntRect(m_maxEffectRect));
+        requestedRect.intersect(maxEffectRect());
 
+    // We may be called multiple times if result is used more than once. Return
+    // quickly if if nothing new is required.
+    if (absolutePaintRect().contains(enclosingIntRect(requestedRect)))
+        return requestedRect;
+
+    FloatRect inputRect = mapPaintRect(requestedRect, false);
+    FloatRect inputUnion;
+    unsigned size = m_inputEffects.size();
+
+    for (unsigned i = 0; i < size; ++i)
+        inputUnion.unite(m_inputEffects.at(i)->determineAbsolutePaintRect(inputRect));
+    inputUnion = mapPaintRect(inputUnion, true);
+
+    if (affectsTransparentPixels() || !size) {
+        inputUnion = requestedRect;
+    } else {
+        // Rect may have inflated. Re-intersect with request.
+        inputUnion.intersect(requestedRect);
+    }
+
+    addAbsolutePaintRect(inputUnion);
+    return inputUnion;
 }
 
 FloatRect FilterEffect::mapRectRecursive(const FloatRect& rect)
@@ -94,7 +110,7 @@ FloatRect FilterEffect::getSourceRect(const FloatRect& destRect, const FloatRect
     FloatRect sourceRect = mapRect(destRect, false);
     FloatRect sourceClipRect = mapRect(destClipRect, false);
 
-    FloatRect boundaries = effectBoundaries();
+    FloatRect boundaries = filter()->mapLocalRectToAbsoluteRect(effectBoundaries());
     if (hasX())
         sourceClipRect.setX(boundaries.x());
     if (hasY())
@@ -136,14 +152,33 @@ FilterEffect* FilterEffect::inputEffect(unsigned number) const
     return m_inputEffects.at(number).get();
 }
 
+void FilterEffect::addAbsolutePaintRect(const FloatRect& paintRect)
+{
+    IntRect intPaintRect(enclosingIntRect(paintRect));
+    if (m_absolutePaintRect.contains(intPaintRect))
+        return;
+    intPaintRect.unite(m_absolutePaintRect);
+    // Make sure we are not holding on to a smaller rendering.
+    clearResult();
+    m_absolutePaintRect = intPaintRect;
+}
+
 void FilterEffect::apply()
+{
+    // Recursively determine paint rects first, so that we don't redraw images
+    // if a smaller section is requested first.
+    determineAbsolutePaintRect(maxEffectRect());
+    applyRecursive();
+}
+
+void FilterEffect::applyRecursive()
 {
     if (hasResult())
         return;
     unsigned size = m_inputEffects.size();
     for (unsigned i = 0; i < size; ++i) {
         FilterEffect* in = m_inputEffects.at(i).get();
-        in->apply();
+        in->applyRecursive();
         if (!in->hasResult())
             return;
 
@@ -151,7 +186,6 @@ void FilterEffect::apply()
         transformResultColorSpace(in, i);
     }
 
-    determineAbsolutePaintRect();
     setResultColorSpace(m_operatingColorSpace);
 
     if (!isFilterSizeValid(m_absolutePaintRect))
@@ -225,6 +259,8 @@ void FilterEffect::clearResult()
         m_unmultipliedImageResult.clear();
     if (m_premultipliedImageResult)
         m_premultipliedImageResult.clear();
+
+    m_absolutePaintRect = IntRect();
 }
 
 void FilterEffect::clearResultsRecursive()
@@ -422,6 +458,12 @@ Uint8ClampedArray* FilterEffect::createPremultipliedImageResult()
     return m_premultipliedImageResult.get();
 }
 
+Color FilterEffect::adaptColorToOperatingColorSpace(const Color& deviceColor)
+{
+    // |deviceColor| is assumed to be DeviceRGB.
+    return ColorSpaceUtilities::convertColor(deviceColor, operatingColorSpace());
+}
+
 void FilterEffect::transformResultColorSpace(ColorSpace dstColorSpace)
 {
     if (!hasResult() || dstColorSpace == m_resultColorSpace)
@@ -448,7 +490,8 @@ TextStream& FilterEffect::externalRepresentation(TextStream& ts, int) const
 
 FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlags flags)
 {
-    ASSERT(filter());
+    Filter* filter = this->filter();
+    ASSERT(filter);
 
     // FETile, FETurbulence, FEFlood don't have input effects, take the filter region as unite rect.
     FloatRect subregion;
@@ -456,15 +499,19 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
         subregion = inputEffect(0)->determineFilterPrimitiveSubregion(flags);
         for (unsigned i = 1; i < numberOfInputEffects; ++i)
             subregion.unite(inputEffect(i)->determineFilterPrimitiveSubregion(flags));
-    } else
-        subregion = filter()->filterRegion();
+    } else {
+        subregion = filter->filterRegion();
+    }
 
     // After calling determineFilterPrimitiveSubregion on the target effect, reset the subregion again for <feTile>.
     if (filterEffectType() == FilterEffectTypeTile)
-        subregion = filter()->filterRegion();
+        subregion = filter->filterRegion();
 
-    if (flags & MapRectForward)
-        subregion = mapRect(subregion);
+    if (flags & MapRectForward) {
+        // mapRect works on absolute rectangles.
+        subregion = filter->mapAbsoluteRectToLocalRect(mapRect(
+            filter->mapLocalRectToAbsoluteRect(subregion)));
+    }
 
     FloatRect boundaries = effectBoundaries();
     if (hasX())
@@ -478,15 +525,11 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
 
     setFilterPrimitiveSubregion(subregion);
 
-    FloatRect absoluteSubregion = filter()->absoluteTransform().mapRect(subregion);
-    FloatSize filterResolution = filter()->filterResolution();
-    absoluteSubregion.scale(filterResolution.width(), filterResolution.height());
+    FloatRect absoluteSubregion = filter->mapLocalRectToAbsoluteRect(subregion);
 
     // Clip every filter effect to the filter region.
     if (flags & ClipToFilterRegion) {
-        FloatRect absoluteScaledFilterRegion = filter()->absoluteFilterRegion();
-        absoluteScaledFilterRegion.scale(filterResolution.width(), filterResolution.height());
-        absoluteSubregion.intersect(absoluteScaledFilterRegion);
+        absoluteSubregion.intersect(filter->absoluteFilterRegion());
     }
 
     setMaxEffectRect(absoluteSubregion);
@@ -500,11 +543,9 @@ PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder
 
 SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) const
 {
-    SkRect rect = SkRect::MakeEmpty();
+    SkRect rect = filter()->filterRegion();
     uint32_t flags = 0;
     FloatRect boundaries = effectBoundaries();
-    FloatSize resolution = filter()->filterResolution();
-    boundaries.scale(resolution.width(), resolution.height());
     boundaries.move(cropOffset);
     if (hasX()) {
         rect.fLeft = boundaries.x();
@@ -522,6 +563,7 @@ SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) c
         rect.fBottom = rect.fTop + boundaries.height();
         flags |= SkImageFilter::CropRect::kHasBottom_CropEdge;
     }
+    rect = filter()->mapLocalRectToAbsoluteRect(rect);
     return SkImageFilter::CropRect(rect, flags);
 }
 

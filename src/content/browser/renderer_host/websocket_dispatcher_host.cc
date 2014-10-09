@@ -125,8 +125,7 @@ WebSocketHostState WebSocketDispatcherHost::SendFlowControl(int routing_id,
 }
 
 WebSocketHostState WebSocketDispatcherHost::SendClosing(int routing_id) {
-  // TODO(ricea): Implement the SendClosing IPC.
-  return WEBSOCKET_HOST_ALIVE;
+  return SendOrDrop(new WebSocketMsg_NotifyClosing(routing_id));
 }
 
 WebSocketHostState WebSocketDispatcherHost::SendStartOpeningHandshake(
@@ -141,11 +140,22 @@ WebSocketHostState WebSocketDispatcherHost::SendFinishOpeningHandshake(
       routing_id, response));
 }
 
+WebSocketHostState WebSocketDispatcherHost::NotifyFailure(
+    int routing_id,
+    const std::string& message) {
+  if (SendOrDrop(new WebSocketMsg_NotifyFailure(
+          routing_id, message)) == WEBSOCKET_HOST_DELETED) {
+    return WEBSOCKET_HOST_DELETED;
+  }
+  DeleteWebSocketHost(routing_id);
+  return WEBSOCKET_HOST_DELETED;
+}
+
 WebSocketHostState WebSocketDispatcherHost::DoDropChannel(
     int routing_id,
+    bool was_clean,
     uint16 code,
     const std::string& reason) {
-  bool was_clean = true;
   if (SendOrDrop(
           new WebSocketMsg_DropChannel(routing_id, was_clean, code, reason)) ==
       WEBSOCKET_HOST_DELETED)

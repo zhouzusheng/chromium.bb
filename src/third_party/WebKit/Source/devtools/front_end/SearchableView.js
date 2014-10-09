@@ -39,9 +39,6 @@ WebInspector.SearchableView = function(searchable)
     WebInspector.View.call(this);
 
     this._searchProvider = searchable;
-
-    this.element.classList.add("vbox");
-    this.element.style.flex = "auto";
     this.element.addEventListener("keydown", this._onKeyDown.bind(this), false);
 
     this._footerElementContainer = this.element.createChild("div", "inspector-footer status-bar hidden");
@@ -149,8 +146,8 @@ WebInspector.SearchableView.findNextShortcut = function()
     if (WebInspector.SearchableView._findNextShortcut)
         return WebInspector.SearchableView._findNextShortcut;
     WebInspector.SearchableView._findNextShortcut = [];
-    if (!WebInspector.isMac())
-        WebInspector.SearchableView._findNextShortcut.push(WebInspector.KeyboardShortcut.makeDescriptor("g", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta));
+    if (WebInspector.isMac())
+        WebInspector.SearchableView._findNextShortcut.push(WebInspector.KeyboardShortcut.makeDescriptor("g", WebInspector.KeyboardShortcut.Modifiers.Meta));
     return WebInspector.SearchableView._findNextShortcut;
 }
 
@@ -159,8 +156,8 @@ WebInspector.SearchableView.findPreviousShortcuts = function()
     if (WebInspector.SearchableView._findPreviousShortcuts)
         return WebInspector.SearchableView._findPreviousShortcuts;
     WebInspector.SearchableView._findPreviousShortcuts = [];
-    if (!WebInspector.isMac())
-        WebInspector.SearchableView._findPreviousShortcuts.push(WebInspector.KeyboardShortcut.makeDescriptor("g", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta | WebInspector.KeyboardShortcut.Modifiers.Shift));
+    if (WebInspector.isMac())
+        WebInspector.SearchableView._findPreviousShortcuts.push(WebInspector.KeyboardShortcut.makeDescriptor("g", WebInspector.KeyboardShortcut.Modifiers.Meta | WebInspector.KeyboardShortcut.Modifiers.Shift));
     return WebInspector.SearchableView._findPreviousShortcuts;
 }
 
@@ -206,11 +203,11 @@ WebInspector.SearchableView.prototype = {
     },
 
     /**
-     * @param {boolean} canReplace
+     * @param {boolean} replaceable
      */
-    setCanReplace: function(canReplace)
+    setReplaceable: function(replaceable)
     {
-        this._canReplace = canReplace;
+        this._replaceable = replaceable;
     },
 
     /**
@@ -230,6 +227,9 @@ WebInspector.SearchableView.prototype = {
         this._updateSearchMatchesCountAndCurrentMatchIndex(this._searchProvider.currentSearchMatches, currentMatchIndex);
     },
 
+    /**
+     * @return {boolean}
+     */
     isSearchVisible: function()
     {
         return this._searchIsVisible;
@@ -238,7 +238,8 @@ WebInspector.SearchableView.prototype = {
     closeSearch: function()
     {
         this.cancelSearch();
-        WebInspector.setCurrentFocusElement(WebInspector.previousFocusElement());
+        if (WebInspector.currentFocusElement().isDescendant(this._footerElementContainer))
+            WebInspector.setCurrentFocusElement(WebInspector.previousFocusElement());
     },
 
     _toggleSearchBar: function(toggled)
@@ -269,8 +270,8 @@ WebInspector.SearchableView.prototype = {
     handleFindNextShortcut: function()
     {
         if (!this._searchIsVisible)
-            return true;
-        this._searchProvider.jumpToPreviousSearchResult();
+            return false;
+        this._searchProvider.jumpToNextSearchResult();
         return true;
     },
 
@@ -280,8 +281,8 @@ WebInspector.SearchableView.prototype = {
     handleFindPreviousShortcut: function()
     {
         if (!this._searchIsVisible)
-            return true;
-        this._searchProvider.jumpToNextSearchResult();
+            return false;
+        this._searchProvider.jumpToPreviousSearchResult();
         return true;
     },
 
@@ -362,8 +363,8 @@ WebInspector.SearchableView.prototype = {
 
     _updateReplaceVisibility: function()
     {
-        this._replaceElement.enableStyleClass("hidden", !this._canReplace);
-        if (!this._canReplace) {
+        this._replaceElement.enableStyleClass("hidden", !this._replaceable);
+        if (!this._replaceable) {
             this._replaceCheckboxElement.checked = false;
             this._updateSecondRowVisibility();
         }
@@ -481,14 +482,14 @@ WebInspector.SearchableView.prototype = {
 
     _replace: function()
     {
-        this._searchProvider.replaceSelectionWith(this._replaceInputElement.value);
+        /** @type {!WebInspector.Replaceable} */ (this._searchProvider).replaceSelectionWith(this._replaceInputElement.value);
         delete this._currentQuery;
         this._performSearch(true, true);
     },
 
     _replaceAll: function()
     {
-        this._searchProvider.replaceAllWith(this._searchInputElement.value, this._replaceInputElement.value);
+        /** @type {!WebInspector.Replaceable} */ (this._searchProvider).replaceAllWith(this._searchInputElement.value, this._replaceInputElement.value);
     },
 
     _onInput: function(event)
@@ -522,5 +523,25 @@ WebInspector.Searchable.prototype = {
 
     jumpToNextSearchResult: function() { },
 
-    jumpToPreviousSearchResult: function() { },
+    jumpToPreviousSearchResult: function() { }
+}
+
+/**
+ * @interface
+ */
+WebInspector.Replaceable = function()
+{
+}
+
+WebInspector.Replaceable.prototype = {
+    /**
+     * @param {string} text
+     */
+    replaceSelectionWith: function(text) { },
+
+    /**
+     * @param {string} query
+     * @param {string} replacement
+     */
+    replaceAllWith: function(query, replacement) { }
 }

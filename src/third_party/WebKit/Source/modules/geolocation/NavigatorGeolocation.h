@@ -21,6 +21,7 @@
 #define NavigatorGeolocation_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
@@ -29,7 +30,7 @@ class Frame;
 class Geolocation;
 class Navigator;
 
-class NavigatorGeolocation : public Supplement<Navigator>, public DOMWindowProperty {
+class NavigatorGeolocation FINAL : public Supplement<Navigator>, public DOMWindowProperty {
 public:
     virtual ~NavigatorGeolocation();
     static NavigatorGeolocation* from(Navigator*);
@@ -41,7 +42,7 @@ private:
     NavigatorGeolocation(Frame*);
     static const char* supplementName();
 
-    mutable RefPtr<Geolocation> m_geolocation;
+    mutable RefPtrWillBePersistent<Geolocation> m_geolocation;
 };
 
 } // namespace WebCore

@@ -8,26 +8,27 @@
  * @fileoverview ProfilingView glues the View control to
  * TracingController.
  */
-base.requireTemplate('about_tracing.profiling_view');
-base.requireStylesheet('ui.trace_viewer');
-base.require('about_tracing.begin_recording');
-base.require('base.promise');
-base.require('base.key_event_manager');
-base.require('tracing.timeline_view');
-base.require('ui');
-base.require('ui.info_bar');
-base.require('ui.overlay');
+tvcm.require('about_tracing.tracing_ui_client');
+tvcm.require('tracing.timeline_view');
+tvcm.require('tvcm.key_event_manager');
+tvcm.require('tvcm.promise');
+tvcm.require('tvcm.ui');
+tvcm.require('tvcm.ui.info_bar');
+tvcm.require('tvcm.ui.overlay');
+
+tvcm.requireTemplate('about_tracing.profiling_view');
+tvcm.requireStylesheet('tvcm.ui.common');
 
 /*
  * Here is where we bring in modules that are used in about:tracing UI only.
  */
-base.require('tracing.importer');
-base.require('cc');
-base.require('tcmalloc');
-base.require('system_stats');
-base.require('gpu');
+tvcm.require('tracing.importer');
+tvcm.require('cc');
+tvcm.require('tcmalloc');
+tvcm.require('system_stats');
+tvcm.require('gpu');
 
-base.exportTo('about_tracing', function() {
+tvcm.exportTo('about_tracing', function() {
   function readFile(file) {
     return new Promise(function(resolver) {
       var reader = new FileReader();
@@ -52,19 +53,19 @@ base.exportTo('about_tracing', function() {
    * @constructor
    * @extends {HTMLUnknownElement}
    */
-  var ProfilingView = ui.define('x-profiling-view');
+  var ProfilingView = tvcm.ui.define('x-profiling-view');
 
   ProfilingView.prototype = {
     __proto__: HTMLUnknownElement.prototype,
 
-    decorate: function() {
-      this.appendChild(base.instantiateTemplate('#profiling-view-template'));
+    decorate: function(tracingRequestImpl) {
+      this.appendChild(tvcm.instantiateTemplate('#profiling-view-template'));
 
       this.timelineView_ = this.querySelector('x-timeline-view');
       this.infoBarGroup_ = this.querySelector('x-info-bar-group');
 
-      ui.decorate(this.infoBarGroup_, ui.InfoBarGroup);
-      ui.decorate(this.timelineView_, tracing.TimelineView);
+      tvcm.ui.decorate(this.infoBarGroup_, tvcm.ui.InfoBarGroup);
+      tvcm.ui.decorate(this.timelineView_, tracing.TimelineView);
 
       // Detach the buttons. We will reattach them to the timeline view.
       // TODO(nduca): Make <timeline-view> have a <content select="x-buttons">
@@ -74,14 +75,22 @@ base.exportTo('about_tracing', function() {
       this.timelineView_.leftControls.appendChild(buttons);
       this.initButtons_(buttons);
 
-      base.KeyEventManager.instance.addListener(
+      tvcm.KeyEventManager.instance.addListener(
           'keypress', this.onKeypress_, this);
 
       this.initDragAndDrop_();
 
-      this.beginRequestImpl_ = about_tracing.beginRequest;
+      this.tracingRequestImpl_ =
+          tracingRequestImpl || about_tracing.tracingRequest;
       this.isRecording_ = false;
+      this.isMonitoring_ = false;
       this.activeTrace_ = undefined;
+
+      window.onMonitoringStateChanged = function(is_monitoring) {
+        this.onMonitoringStateChanged_(is_monitoring);
+      }.bind(this);
+
+      this.getMonitoringStatus();
     },
 
     // Detach all document event listeners. Without this the tests can get
@@ -94,27 +103,119 @@ base.exportTo('about_tracing', function() {
       return this.isRecording_;
     },
 
-    set beginRequestImpl(beginRequestImpl) {
-      this.beginRequestImpl_ = beginRequestImpl;
+    get isMonitoring() {
+      return this.isMonitoring_;
+    },
+
+    set tracingRequestImpl(tracingRequestImpl) {
+      this.tracingRequestImpl_ = tracingRequestImpl;
     },
 
     beginRecording: function() {
       if (this.isRecording_)
         throw new Error('Already recording');
+      if (this.isMonitoring_)
+        throw new Error('Already monitoring');
       this.isRecording_ = true;
-      var resultPromise = about_tracing.beginRecording(this.beginRequestImpl_);
+      var buttons = this.querySelector('x-timeline-view-buttons');
+      buttons.querySelector('#monitor-checkbox').disabled = true;
+      buttons.querySelector('#monitor-checkbox').checked = false;
+      var resultPromise = about_tracing.beginRecording(
+          this.tracingRequestImpl_);
       resultPromise.then(
           function(data) {
             this.isRecording_ = false;
-            this.setActiveTrace('trace.json', data);
+            buttons.querySelector('#monitor-checkbox').disabled = false;
+            this.setActiveTrace('trace.json', data, false);
           }.bind(this),
           function(err) {
             this.isRecording_ = false;
+            buttons.querySelector('#monitor-checkbox').disabled = false;
             if (err instanceof about_tracing.UserCancelledError)
               return;
-            ui.Overlay.showError('Error while recording', err);
+            tvcm.ui.Overlay.showError('Error while recording', err);
           }.bind(this));
       return resultPromise;
+    },
+
+    beginMonitoring: function() {
+      if (this.isRecording_)
+        throw new Error('Already recording');
+      if (this.isMonitoring_)
+        throw new Error('Already monitoring');
+      var buttons = this.querySelector('x-timeline-view-buttons');
+      var resultPromise =
+          about_tracing.beginMonitoring(this.tracingRequestImpl_);
+      resultPromise.then(
+          function() {
+          }.bind(this),
+          function(err) {
+            if (err instanceof about_tracing.UserCancelledError)
+              return;
+            tvcm.ui.Overlay.showError('Error while monitoring', err);
+          }.bind(this));
+      return resultPromise;
+    },
+
+    endMonitoring: function() {
+      if (this.isRecording_)
+        throw new Error('Already recording');
+      if (!this.isMonitoring_)
+        throw new Error('Monitoring is disabled');
+      var buttons = this.querySelector('x-timeline-view-buttons');
+      var resultPromise =
+          about_tracing.endMonitoring(this.tracingRequestImpl_);
+      resultPromise.then(
+          function() {
+          }.bind(this),
+          function(err) {
+            if (err instanceof about_tracing.UserCancelledError)
+              return;
+            tvcm.ui.Overlay.showError('Error while monitoring', err);
+          }.bind(this));
+      return resultPromise;
+    },
+
+    captureMonitoring: function() {
+      if (!this.isMonitoring_)
+        throw new Error('Monitoring is disabled');
+      var resultPromise =
+          about_tracing.captureMonitoring(this.tracingRequestImpl_);
+      resultPromise.then(
+          function(data) {
+            this.setActiveTrace('trace.json', data, true);
+          }.bind(this),
+          function(err) {
+            if (err instanceof about_tracing.UserCancelledError)
+              return;
+            tvcm.ui.Overlay.showError('Error while monitoring', err);
+          }.bind(this));
+      return resultPromise;
+    },
+
+    getMonitoringStatus: function() {
+      var resultPromise =
+          about_tracing.getMonitoringStatus(this.tracingRequestImpl_);
+      resultPromise.then(
+          function(isMonitoring, categoryFilter, useSystemTracing,
+                   useContinuousTracing, useSampling) {
+            this.onMonitoringStateChanged_(isMonitoring);
+          }.bind(this),
+          function(err) {
+            if (err instanceof about_tracing.UserCancelledError)
+              return;
+            tvcm.ui.Overlay.showError('Error while updating tracing states',
+                                      err);
+          }.bind(this));
+      return resultPromise;
+    },
+
+    onMonitoringStateChanged_: function(is_monitoring) {
+      this.isMonitoring_ = is_monitoring;
+      var buttons = this.querySelector('x-timeline-view-buttons');
+      buttons.querySelector('#record-button').disabled = is_monitoring;
+      buttons.querySelector('#capture-button').disabled = !is_monitoring;
+      buttons.querySelector('#monitor-checkbox').checked = is_monitoring;
     },
 
     onKeypress_: function(event) {
@@ -158,7 +259,7 @@ base.exportTo('about_tracing', function() {
             this.timelineView_.model = m;
           }.bind(this),
           function(err) {
-            ui.Overlay.showError('While importing: ', err);
+            tvcm.ui.Overlay.showError('While importing: ', err);
           }.bind(this));
     },
 
@@ -169,6 +270,20 @@ base.exportTo('about_tracing', function() {
           'click', function() {
             this.beginRecording();
           }.bind(this));
+
+      buttons.querySelector('#monitor-checkbox').addEventListener(
+          'click', function() {
+            if (this.isMonitoring_)
+              this.endMonitoring();
+            else
+              this.beginMonitoring();
+          }.bind(this));
+
+      buttons.querySelector('#capture-button').addEventListener(
+          'click', function() {
+            this.captureMonitoring();
+          }.bind(this));
+      buttons.querySelector('#capture-button').disabled = true;
 
       buttons.querySelector('#load-button').addEventListener(
           'click', this.onLoadClicked_.bind(this));
@@ -211,7 +326,7 @@ base.exportTo('about_tracing', function() {
                   this.setActiveTrace(file.name, data);
                 }.bind(this),
                 function(err) {
-                  ui.Overlay.showError('Error while loading file: ' + err);
+                  tvcm.ui.Overlay.showError('Error while loading file: ' + err);
                 });
           }.bind(this), false);
       inputElement.click();
@@ -253,7 +368,7 @@ base.exportTo('about_tracing', function() {
 
       var files = e.dataTransfer.files;
       if (files.length !== 1) {
-        ui.Overlay.showError('1 file supported at a time.');
+        tvcm.ui.Overlay.showError('1 file supported at a time.');
         return;
       }
 
@@ -262,7 +377,7 @@ base.exportTo('about_tracing', function() {
             this.setActiveTrace(files[0].name, data);
           }.bind(this),
           function(err) {
-            ui.Overlay.showError('Error while loading file: ' + err);
+            tvcm.ui.Overlay.showError('Error while loading file: ' + err);
           });
       return false;
     }

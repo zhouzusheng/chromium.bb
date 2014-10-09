@@ -110,9 +110,8 @@ void Scheduler::DidManageTiles() {
 
 void Scheduler::DidLoseOutputSurface() {
   TRACE_EVENT0("cc", "Scheduler::DidLoseOutputSurface");
-  last_set_needs_begin_impl_frame_ = false;
-  begin_impl_frame_deadline_closure_.Cancel();
   state_machine_.DidLoseOutputSurface();
+  last_set_needs_begin_impl_frame_ = false;
   ProcessScheduledActions();
 }
 
@@ -216,6 +215,7 @@ void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
   last_begin_impl_frame_args_ = args;
   last_begin_impl_frame_args_.deadline -= client_->DrawDurationEstimate();
   state_machine_.OnBeginImplFrame(last_begin_impl_frame_args_);
+  devtools_instrumentation::DidBeginFrame(layer_tree_host_id_);
 
   if (settings_.switch_to_low_latency_if_possible) {
     state_machine_.SetSkipBeginMainFrameToReduceLatency(
@@ -229,7 +229,6 @@ void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
     return;
 
   state_machine_.OnBeginImplFrameDeadlinePending();
-  devtools_instrumentation::didBeginFrame(layer_tree_host_id_);
   if (settings_.using_synchronous_renderer_compositor) {
     // The synchronous renderer compositor has to make its GL calls
     // within this call to BeginImplFrame.
@@ -272,19 +271,19 @@ void Scheduler::PostBeginImplFrameDeadline(base::TimeTicks deadline) {
 
 void Scheduler::OnBeginImplFrameDeadline() {
   TRACE_EVENT0("cc", "Scheduler::OnBeginImplFrameDeadline");
-  DCHECK(state_machine_.HasInitializedOutputSurface());
   begin_impl_frame_deadline_closure_.Cancel();
+
+  // We split the deadline actions up into two phases so the state machine
+  // has a chance to trigger actions that should occur durring and after
+  // the deadline separately. For example:
+  // * Sending the BeginMainFrame will not occur after the deadline in
+  //     order to wait for more user-input before starting the next commit.
+  // * Creating a new OuputSurface will not occur during the deadline in
+  //     order to allow the state machine to "settle" first.
   state_machine_.OnBeginImplFrameDeadline();
   ProcessScheduledActions();
-
-  if (state_machine_.HasInitializedOutputSurface()) {
-    // We only transition out of BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE when all
-    // actions that occur back-to-back in response to entering
-    // BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE have completed. This is important
-    // because sending the BeginMainFrame will not occur if we transition to
-    // BEGIN_IMPL_FRAME_STATE_IDLE too early.
-    state_machine_.OnBeginImplFrameIdle();
-  }
+  state_machine_.OnBeginImplFrameIdle();
+  ProcessScheduledActions();
 
   client_->DidBeginImplFrameDeadline();
 }
@@ -300,7 +299,7 @@ void Scheduler::PollForAnticipatedDrawTriggers() {
 void Scheduler::DrawAndSwapIfPossible() {
   DrawSwapReadbackResult result =
       client_->ScheduledActionDrawAndSwapIfPossible();
-  state_machine_.DidDrawIfPossibleCompleted(result.did_draw);
+  state_machine_.DidDrawIfPossibleCompleted(result.draw_result);
 }
 
 void Scheduler::DrawAndSwapForced() {

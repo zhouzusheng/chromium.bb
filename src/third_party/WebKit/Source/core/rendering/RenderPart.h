@@ -34,7 +34,6 @@ public:
     virtual ~RenderPart();
 
     virtual void setWidget(PassRefPtr<Widget>) OVERRIDE FINAL;
-    virtual void viewCleared();
 
     bool requiresAcceleratedCompositing() const;
 
@@ -44,11 +43,11 @@ public:
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
 protected:
-    virtual bool requiresLayer() const;
+    virtual LayerType layerTypeRequired() const OVERRIDE;
 
 private:
     virtual bool isRenderPart() const OVERRIDE FINAL { return true; }
-    virtual const char* renderName() const { return "RenderPart"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderPart"; }
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderPart, isRenderPart());

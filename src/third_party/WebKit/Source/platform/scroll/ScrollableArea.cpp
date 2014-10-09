@@ -34,7 +34,7 @@
 
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/geometry/FloatPoint.h"
-#include "platform/scroll//ScrollbarTheme.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/PassOwnPtr.h"
 
 #include "platform/TraceEvent.h"
@@ -46,6 +46,8 @@ namespace WebCore {
 
 struct SameSizeAsScrollableArea {
     virtual ~SameSizeAsScrollableArea();
+    unsigned damageBits : 2;
+    IntRect scrollbarDamage[2];
     void* pointer;
     unsigned bitfields : 16;
     IntPoint origin;
@@ -70,7 +72,9 @@ int ScrollableArea::maxOverlapBetweenPages()
 }
 
 ScrollableArea::ScrollableArea()
-    : m_constrainsScrollingToContentEdge(true)
+    : m_hasHorizontalBarDamage(false)
+    , m_hasVerticalBarDamage(false)
+    , m_constrainsScrollingToContentEdge(true)
     , m_inLiveResize(false)
     , m_verticalScrollElasticity(ScrollElasticityNone)
     , m_horizontalScrollElasticity(ScrollElasticityNone)
@@ -99,7 +103,7 @@ void ScrollableArea::setScrollOrigin(const IntPoint& origin)
     }
 }
 
-bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
+bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float delta)
 {
     ScrollbarOrientation orientation;
 
@@ -129,9 +133,9 @@ bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granula
     }
 
     if (direction == ScrollUp || direction == ScrollLeft)
-        multiplier = -multiplier;
+        delta = -delta;
 
-    return scrollAnimator()->scroll(orientation, granularity, step, multiplier);
+    return scrollAnimator()->scroll(orientation, granularity, step, delta);
 }
 
 void ScrollableArea::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
@@ -186,6 +190,20 @@ void ScrollableArea::scrollPositionChanged(const IntPoint& position)
 
     if (scrollPosition() != oldPosition)
         scrollAnimator()->notifyContentAreaScrolled(scrollPosition() - oldPosition);
+}
+
+bool ScrollableArea::scrollBehaviorFromString(const String& behaviorString, ScrollBehavior& behavior)
+{
+    if (behaviorString == "auto")
+        behavior = ScrollBehaviorAuto;
+    else if (behaviorString == "instant")
+        behavior = ScrollBehaviorInstant;
+    else if (behaviorString == "smooth")
+        behavior = ScrollBehaviorSmooth;
+    else
+        return false;
+
+    return true;
 }
 
 bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)

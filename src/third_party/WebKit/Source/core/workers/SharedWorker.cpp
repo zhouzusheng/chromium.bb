@@ -37,9 +37,11 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessageChannel.h"
 #include "core/dom/MessagePort.h"
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/Page.h"
+#include "core/frame/Frame.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/FrameLoader.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -57,7 +59,7 @@ PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const S
     ASSERT(isMainThread());
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
 
-    UseCounter::count(toDocument(context)->domWindow(), UseCounter::SharedWorkerStart);
+    UseCounter::count(context, UseCounter::SharedWorkerStart);
 
     RefPtr<SharedWorker> worker = adoptRef(new SharedWorker(context));
 
@@ -79,8 +81,8 @@ PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const S
     if (scriptURL.isEmpty())
         return 0;
 
-    if (document->page() && document->page()->sharedWorkerRepositoryClient())
-        document->page()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, exceptionState);
+    if (document->frame()->loader().client()->sharedWorkerRepositoryClient())
+        document->frame()->loader().client()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, exceptionState);
 
     return worker.release();
 }

@@ -4,13 +4,13 @@
 
 'use strict';
 
-base.requireStylesheet('tracing.tracks.drawing_container');
+tvcm.requireStylesheet('tracing.tracks.drawing_container');
 
-base.require('base.raf');
-base.require('tracing.tracks.track');
-base.require('ui');
+tvcm.require('tracing.tracks.track');
+tvcm.require('tvcm.raf');
+tvcm.require('tvcm.ui');
 
-base.exportTo('tracing.tracks', function() {
+tvcm.exportTo('tracing.tracks', function() {
   var DrawType = {
     SLICE: 1,
     INSTANT_EVENT: 2,
@@ -20,7 +20,8 @@ base.exportTo('tracing.tracks', function() {
     MARKERS: 6
   };
 
-  var DrawingContainer = ui.define('drawing-container', tracing.tracks.Track);
+  var DrawingContainer = tvcm.ui.define('drawing-container',
+                                        tracing.tracks.Track);
 
   DrawingContainer.prototype = {
     __proto__: tracing.tracks.Track.prototype,
@@ -58,11 +59,11 @@ base.exportTo('tracing.tracks', function() {
         return;
       this.rafPending_ = true;
 
-      base.requestPreAnimationFrame(function() {
+      tvcm.requestPreAnimationFrame(function() {
         this.rafPending_ = false;
         this.updateCanvasSizeIfNeeded_();
 
-        base.requestAnimationFrameInThisFrameIfPossible(function() {
+        tvcm.requestAnimationFrameInThisFrameIfPossible(function() {
           this.drawTrackContents_();
         }, this);
       }, this);
@@ -76,10 +77,9 @@ base.exportTo('tracing.tracks', function() {
         DrawType.GRID,
         DrawType.INSTANT_EVENT,
         DrawType.SLICE,
-        DrawType.MARKERS
+        DrawType.MARKERS,
+        DrawType.FLOW_ARROWS
       ];
-      if (this.viewport.showFlowEvents)
-        typesToDraw.push(DrawType.FLOW_ARROWS);
 
       for (var idx in typesToDraw) {
         for (var i = 0; i < this.children.length; ++i) {
@@ -101,7 +101,7 @@ base.exportTo('tracing.tracks', function() {
 
     updateCanvasSizeIfNeeded_: function() {
       var visibleChildTracks =
-          base.asArray(this.children).filter(this.visibleFilter_);
+          tvcm.asArray(this.children).filter(this.visibleFilter_);
 
       var thisBounds = this.getBoundingClientRect();
 

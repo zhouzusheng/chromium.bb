@@ -43,17 +43,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLVideoElement::HTMLVideoElement(Document& document, bool createdByParser)
-    : HTMLMediaElement(videoTag, document, createdByParser)
+inline HTMLVideoElement::HTMLVideoElement(Document& document)
+    : HTMLMediaElement(videoTag, document)
 {
     ScriptWrappable::init(this);
     if (document.settings())
-        m_defaultPosterURL = document.settings()->defaultVideoPosterURL();
+        m_defaultPosterURL = AtomicString(document.settings()->defaultVideoPosterURL());
 }
 
-PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document, bool createdByParser)
+PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document)
 {
-    RefPtr<HTMLVideoElement> videoElement(adoptRef(new HTMLVideoElement(document, createdByParser)));
+    RefPtr<HTMLVideoElement> videoElement(adoptRef(new HTMLVideoElement(document)));
     videoElement->suspendIfNeeded();
     return videoElement.release();
 }
@@ -113,6 +113,9 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
             if (renderer())
                 toRenderImage(renderer())->imageResource()->setImageResource(0);
         }
+        // Notify the player when the poster image URL changes.
+        if (player())
+            player()->setPoster(posterImageURL());
     } else
         HTMLMediaElement::parseAttribute(name, value);
 }
@@ -122,7 +125,7 @@ bool HTMLVideoElement::supportsFullscreen() const
     if (!document().page())
         return false;
 
-    if (!player() || !player()->supportsFullscreen())
+    if (!player())
         return false;
 
     return true;
@@ -189,7 +192,7 @@ void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, cons
     player->paint(context, destRect);
 }
 
-bool HTMLVideoElement::copyVideoTextureToPlatformTexture(GraphicsContext3D* context, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY)
+bool HTMLVideoElement::copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLint level, GLenum type, GLenum internalFormat, bool premultiplyAlpha, bool flipY)
 {
     if (!player())
         return false;
@@ -268,6 +271,11 @@ KURL HTMLVideoElement::posterImageURL() const
     if (url.isEmpty())
         return KURL();
     return document().completeURL(url);
+}
+
+KURL HTMLVideoElement::mediaPlayerPosterURL()
+{
+    return posterImageURL();
 }
 
 }

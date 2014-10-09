@@ -29,6 +29,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/html/MediaControllerInterface.h"
 #include "platform/Timer.h"
 #include "wtf/PassRefPtr.h"
@@ -43,7 +44,7 @@ class ExceptionState;
 class HTMLMediaElement;
 class ExecutionContext;
 
-class MediaController : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
+class MediaController FINAL : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(MediaController);
 public:
     static PassRefPtr<MediaController> create(ExecutionContext*);
@@ -53,54 +54,49 @@ public:
     void removeMediaElement(HTMLMediaElement*);
     bool containsMediaElement(HTMLMediaElement*) const;
 
-    const String& mediaGroup() const { return m_mediaGroup; }
+    PassRefPtr<TimeRanges> buffered() const;
+    PassRefPtr<TimeRanges> seekable() const;
+    PassRefPtr<TimeRanges> played();
 
-    virtual PassRefPtr<TimeRanges> buffered() const;
-    virtual PassRefPtr<TimeRanges> seekable() const;
-    virtual PassRefPtr<TimeRanges> played();
+    virtual double duration() const OVERRIDE;
+    virtual double currentTime() const OVERRIDE;
+    virtual void setCurrentTime(double, ExceptionState&) OVERRIDE;
 
-    virtual double duration() const;
-    virtual double currentTime() const;
-    virtual void setCurrentTime(double, ExceptionState&);
-
-    virtual bool paused() const { return m_paused; }
-    virtual void play();
-    virtual void pause();
+    virtual bool paused() const OVERRIDE { return m_paused; }
+    virtual void play() OVERRIDE;
+    virtual void pause() OVERRIDE;
     void unpause();
 
-    virtual double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
-    virtual void setDefaultPlaybackRate(double);
+    double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
+    void setDefaultPlaybackRate(double);
 
-    virtual double playbackRate() const;
-    virtual void setPlaybackRate(double);
+    double playbackRate() const;
+    void setPlaybackRate(double);
 
-    virtual double volume() const { return m_volume; }
-    virtual void setVolume(double, ExceptionState&);
+    virtual double volume() const OVERRIDE { return m_volume; }
+    virtual void setVolume(double, ExceptionState&) OVERRIDE;
 
-    virtual bool muted() const { return m_muted; }
-    virtual void setMuted(bool);
+    virtual bool muted() const OVERRIDE { return m_muted; }
+    virtual void setMuted(bool) OVERRIDE;
 
-    virtual ReadyState readyState() const { return m_readyState; }
+    typedef HTMLMediaElement::ReadyState ReadyState;
+    ReadyState readyState() const { return m_readyState; }
 
     enum PlaybackState { WAITING, PLAYING, ENDED };
     const AtomicString& playbackState() const;
 
-    virtual bool supportsFullscreen() const { return false; }
-    virtual bool isFullscreen() const { return false; }
-    virtual void enterFullscreen() { }
+    virtual void enterFullscreen() OVERRIDE { }
 
-    virtual bool hasAudio() const;
-    virtual bool hasVideo() const;
-    virtual bool hasClosedCaptions() const;
-    virtual void setClosedCaptionsVisible(bool);
-    virtual bool closedCaptionsVisible() const { return m_closedCaptionsVisible; }
+    virtual bool hasAudio() const OVERRIDE;
+    virtual bool hasVideo() const OVERRIDE;
+    virtual bool hasClosedCaptions() const OVERRIDE;
+    virtual void setClosedCaptionsVisible(bool) OVERRIDE;
+    virtual bool closedCaptionsVisible() const OVERRIDE { return m_closedCaptionsVisible; }
 
-    virtual void beginScrubbing();
-    virtual void endScrubbing();
+    virtual void beginScrubbing() OVERRIDE;
+    virtual void endScrubbing() OVERRIDE;
 
-    virtual bool canPlay() const;
-
-    virtual bool hasCurrentSrc() const;
+    virtual bool canPlay() const OVERRIDE;
 
     bool isBlocked() const;
 
@@ -138,7 +134,6 @@ private:
     Vector<RefPtr<Event> > m_pendingEvents;
     Timer<MediaController> m_asyncEventTimer;
     mutable Timer<MediaController> m_clearPositionTimer;
-    String m_mediaGroup;
     bool m_closedCaptionsVisible;
     OwnPtr<Clock> m_clock;
     ExecutionContext* m_executionContext;

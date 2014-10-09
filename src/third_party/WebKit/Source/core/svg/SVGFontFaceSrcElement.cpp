@@ -44,11 +44,11 @@ PassRefPtr<SVGFontFaceSrcElement> SVGFontFaceSrcElement::create(Document& docume
     return adoptRef(new SVGFontFaceSrcElement(document));
 }
 
-PassRefPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
+PassRefPtrWillBeRawPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
 {
-    RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+    RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        RefPtr<CSSFontFaceSrcValue> srcValue;
+        RefPtrWillBeRawPtr<CSSFontFaceSrcValue> srcValue;
         if (child->hasTagName(font_face_uriTag))
             srcValue = toSVGFontFaceUriElement(child)->srcValue();
         else if (child->hasTagName(font_face_nameTag))

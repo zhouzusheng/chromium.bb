@@ -32,6 +32,7 @@
 #include "platform/fonts/Font.h"
 
 #include "platform/NotImplemented.h"
+#include "platform/fonts/FontPlatformFeatures.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/harfbuzz/HarfBuzzShaper.h"
 #include "platform/fonts/GlyphBuffer.h"
@@ -45,12 +46,12 @@
 
 namespace WebCore {
 
-bool Font::canReturnFallbackFontsForComplexText()
+bool FontPlatformFeatures::canReturnFallbackFontsForComplexText()
 {
     return false;
 }
 
-bool Font::canExpandAroundIdeographsInComplexText()
+bool FontPlatformFeatures::canExpandAroundIdeographsInComplexText()
 {
     return false;
 }
@@ -179,7 +180,7 @@ void Font::drawComplexText(GraphicsContext* gc, const TextRunPaintInfo& runInfo,
     GlyphBuffer glyphBuffer;
     HarfBuzzShaper shaper(this, runInfo.run);
     shaper.setDrawRange(runInfo.from, runInfo.to);
-    if (!shaper.shape(&glyphBuffer))
+    if (!shaper.shape(&glyphBuffer) || glyphBuffer.isEmpty())
         return;
     FloatPoint adjustedPoint = shaper.adjustStartPoint(point);
     drawGlyphBuffer(gc, runInfo, glyphBuffer, adjustedPoint);

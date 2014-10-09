@@ -7,7 +7,8 @@
 #include "base/logging.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_spdy_decompressor.h"
-#include "net/spdy/write_blocked_list.h"
+#include "net/quic/quic_utils.h"
+#include "net/quic/quic_write_blocked_list.h"
 
 using base::StringPiece;
 using std::min;
@@ -56,9 +57,25 @@ QuicDataStream::QuicDataStream(QuicStreamId id,
       decompression_failed_(false),
       priority_parsed_(false) {
   DCHECK_NE(kCryptoStreamId, id);
+  if (version() > QUIC_VERSION_12) {
+    // Don't receive any callbacks from the sequencer until headers
+    // are complete.
+    sequencer()->SetBlockedUntilFlush();
+  }
 }
 
 QuicDataStream::~QuicDataStream() {
+}
+
+size_t QuicDataStream::WriteHeaders(const SpdyHeaderBlock& header_block,
+                                    bool fin) {
+  size_t bytes_written = session()->WriteHeaders(id(), header_block, fin);
+  if (fin) {
+    // TODO(rch): Add test to ensure fin_sent_ is set whenever a fin is sent.
+    set_fin_sent(true);
+    CloseWriteSide();
+  }
+  return bytes_written;
 }
 
 size_t QuicDataStream::Readv(const struct iovec* iov, size_t iov_len) {
@@ -81,6 +98,9 @@ size_t QuicDataStream::Readv(const struct iovec* iov, size_t iov_len) {
     ++iov_index;
   }
   decompressed_headers_.erase(0, bytes_consumed);
+  if (FinishedReadingHeaders()) {
+    sequencer()->FlushBufferedFrames();
+  }
   return bytes_consumed;
 }
 
@@ -118,6 +138,18 @@ QuicPriority QuicDataStream::EffectivePriority() const {
 }
 
 uint32 QuicDataStream::ProcessRawData(const char* data, uint32 data_len) {
+  if (version() <= QUIC_VERSION_12) {
+    return ProcessRawData12(data, data_len);
+  }
+
+  if (!FinishedReadingHeaders()) {
+    LOG(DFATAL) << "ProcessRawData called before headers have been finished";
+    return 0;
+  }
+  return ProcessData(data, data_len);
+}
+
+uint32 QuicDataStream::ProcessRawData12(const char* data, uint32 data_len) {
   DCHECK_NE(0u, data_len);
 
   uint32 total_bytes_consumed = 0;
@@ -237,6 +269,7 @@ uint32 QuicDataStream::ProcessHeaderData() {
 }
 
 void QuicDataStream::OnDecompressorAvailable() {
+  DCHECK_LE(QUIC_VERSION_12, version());
   DCHECK_EQ(headers_id_,
             session()->decompressor()->current_header_id());
   DCHECK(!headers_decompressed_);
@@ -273,14 +306,39 @@ void QuicDataStream::OnDecompressorAvailable() {
 }
 
 bool QuicDataStream::OnDecompressedData(StringPiece data) {
+  DCHECK_GE(QUIC_VERSION_12, version());
   data.AppendToString(&decompressed_headers_);
   return true;
 }
 
 void QuicDataStream::OnDecompressionError() {
+  DCHECK_LE(QUIC_VERSION_12, version());
   DCHECK(!decompression_failed_);
   decompression_failed_ = true;
   session()->connection()->SendConnectionClose(QUIC_DECOMPRESSION_FAILURE);
+}
+
+void QuicDataStream::OnStreamHeaders(StringPiece headers_data) {
+  DCHECK_LT(QUIC_VERSION_12, version());
+  headers_data.AppendToString(&decompressed_headers_);
+  ProcessHeaderData();
+}
+
+void QuicDataStream::OnStreamHeadersPriority(QuicPriority priority) {
+  DCHECK(session()->connection()->is_server());
+  set_priority(priority);
+}
+
+void QuicDataStream::OnStreamHeadersComplete(bool fin, size_t frame_len) {
+  DCHECK_LT(QUIC_VERSION_12, version());
+  headers_decompressed_ = true;
+  if (fin) {
+    sequencer()->OnStreamFrame(QuicStreamFrame(id(), fin, 0, IOVector()));
+  }
+  ProcessHeaderData();
+  if (FinishedReadingHeaders()) {
+    sequencer()->FlushBufferedFrames();
+  }
 }
 
 void QuicDataStream::OnClose() {
@@ -327,7 +385,8 @@ uint32 QuicDataStream::StripPriorityAndHeaderId(
 }
 
 bool QuicDataStream::FinishedReadingHeaders() {
-  return headers_decompressed_ && decompressed_headers_.empty();
+  return (headers_id_ != 0 || version() > QUIC_VERSION_12) &&
+      headers_decompressed_ && decompressed_headers_.empty();
 }
 
 }  // namespace net

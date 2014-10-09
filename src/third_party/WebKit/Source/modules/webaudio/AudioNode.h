@@ -109,17 +109,12 @@ public:
     // Called from context's audio thread.
     virtual void process(size_t framesToProcess) = 0;
 
-    // Resets DSP processing state (clears delay lines, filter memory, etc.)
-    // Called from context's audio thread.
-    virtual void reset() = 0;
-
     // No significant resources should be allocated until initialize() is called.
     // Processing may not occur until a node is initialized.
     virtual void initialize();
     virtual void uninitialize();
 
     bool isInitialized() const { return m_isInitialized; }
-    void lazyInitialize();
 
     unsigned numberOfInputs() const { return m_inputs.size(); }
     unsigned numberOfOutputs() const { return m_outputs.size(); }
@@ -181,8 +176,8 @@ public:
     AudioBus::ChannelInterpretation internalChannelInterpretation() const { return m_channelInterpretation; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const OVERRIDE FINAL;
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
 protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
@@ -220,8 +215,8 @@ private:
     static int s_nodeCount[NodeTypeEnd];
 #endif
 
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+    virtual void refEventTarget() OVERRIDE FINAL { ref(); }
+    virtual void derefEventTarget() OVERRIDE FINAL { deref(); }
 
 protected:
     unsigned m_channelCount;

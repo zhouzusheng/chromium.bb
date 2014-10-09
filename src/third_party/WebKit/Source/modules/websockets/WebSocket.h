@@ -51,7 +51,7 @@ namespace WebCore {
 class Blob;
 class ExceptionState;
 
-class WebSocket : public RefCounted<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+class WebSocket FINAL : public RefCounted<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
     REFCOUNTED_EVENT_TARGET(WebSocket);
 public:
     static const char* subProtocolSeperator();
@@ -126,15 +126,17 @@ public:
     virtual void didClose(unsigned long unhandledBufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
 
 private:
-    class EventQueue : public RefCounted<EventQueue> {
+    class EventQueue FINAL : public RefCounted<EventQueue> {
     public:
         static PassRefPtr<EventQueue> create(EventTarget* target) { return adoptRef(new EventQueue(target)); }
-        virtual ~EventQueue();
+        ~EventQueue();
 
         // Dispatches the event if this queue is active.
         // Queues the event if this queue is suspended.
         // Does nothing otherwise.
         void dispatch(PassRefPtr<Event> /* event */);
+
+        bool isEmpty() const;
 
         void suspend();
         void resume();
@@ -179,6 +181,8 @@ private:
     // Updates m_bufferedAmountAfterClose given the amount of data passed to
     // send() method after the state changed to CLOSING or CLOSED.
     void updateBufferedAmountAfterClose(unsigned long);
+
+    void releaseChannel();
 
     enum BinaryType {
         BinaryTypeBlob,

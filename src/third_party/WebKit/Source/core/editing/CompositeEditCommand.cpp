@@ -31,9 +31,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentMarkerController.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Range.h"
-#include "core/events/ScopedEventQueue.h"
 #include "core/dom/Text.h"
 #include "core/editing/AppendNodeCommand.h"
 #include "core/editing/ApplyStyleCommand.h"
@@ -61,6 +61,7 @@
 #include "core/editing/WrapContentsInDummySpanCommand.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLElement.h"
 #include "core/frame/Frame.h"
 #include "core/rendering/InlineTextBox.h"
@@ -72,24 +73,6 @@ using namespace std;
 namespace WebCore {
 
 using namespace HTMLNames;
-
-namespace {
-class ReentrancyGuard {
-public:
-    static bool isRecursiveCall() { return s_nestingCounter; }
-
-    class Scope {
-    public:
-        Scope() { ++s_nestingCounter; }
-        ~Scope() { --s_nestingCounter; }
-    };
-    friend class Scope;
-
-private:
-    static int s_nestingCounter;
-};
-int ReentrancyGuard::s_nestingCounter;
-}
 
 PassRefPtr<EditCommandComposition> EditCommandComposition::create(Document* document,
     const VisibleSelection& startingSelection, const VisibleSelection& endingSelection, EditAction editAction)
@@ -182,14 +165,6 @@ CompositeEditCommand::~CompositeEditCommand()
 
 void CompositeEditCommand::apply()
 {
-    // We don't allow recusrive |apply()| to protect against attack code.
-    // Recursive call of |apply()| could be happened by moving iframe
-    // with script triggered by insertion, e.g. <iframe src="javascript:...">
-    // <iframe onload="...">. This usage is valid as of the specification
-    // although, it isn't common use case, rather it is used as attack code.
-    if (ReentrancyGuard::isRecursiveCall())
-        return;
-
     if (!endingSelection().isContentRichlyEditable()) {
         switch (editingAction()) {
         case EditActionTyping:
@@ -215,7 +190,6 @@ void CompositeEditCommand::apply()
     ASSERT(frame);
     {
         EventQueueScope eventQueueScope;
-        ReentrancyGuard::Scope reentrancyGuardScope;
         doApply();
     }
 
@@ -236,22 +210,12 @@ EditCommandComposition* CompositeEditCommand::ensureComposition()
     return command->m_composition.get();
 }
 
-bool CompositeEditCommand::isCreateLinkCommand() const
-{
-    return false;
-}
-
 bool CompositeEditCommand::preservesTypingStyle() const
 {
     return false;
 }
 
 bool CompositeEditCommand::isTypingCommand() const
-{
-    return false;
-}
-
-bool CompositeEditCommand::shouldRetainAutocorrectionIndicator() const
 {
     return false;
 }
@@ -311,11 +275,6 @@ void CompositeEditCommand::insertParagraphSeparator(bool useDefaultParagraphElem
     applyCommandToComposite(InsertParagraphSeparatorCommand::create(document(), useDefaultParagraphElement, pasteBlockqutoeIntoUnquotedArea));
 }
 
-void CompositeEditCommand::insertLineBreak()
-{
-    applyCommandToComposite(InsertLineBreakCommand::create(document()));
-}
-
 bool CompositeEditCommand::isRemovableBlock(const Node* node)
 {
     if (!node->hasTagName(divTag))
@@ -355,7 +314,7 @@ void CompositeEditCommand::insertNodeAfter(PassRefPtr<Node> insertChild, PassRef
 
 void CompositeEditCommand::insertNodeAt(PassRefPtr<Node> insertChild, const Position& editingPosition)
 {
-    ASSERT(isEditablePosition(editingPosition));
+    ASSERT(isEditablePosition(editingPosition, ContentIsEditable, DoNotUpdateStyle));
     // For editing positions like [table, 0], insert before the table,
     // likewise for replaced elements, brs, etc.
     Position p = editingPosition.parentAnchoredEquivalent();
@@ -583,16 +542,16 @@ void CompositeEditCommand::insertNodeAtTabSpanPosition(PassRefPtr<Node> node, co
     insertNodeAt(node, positionOutsideTabSpan(pos));
 }
 
-void CompositeEditCommand::deleteSelection(bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool sanitizeMarkup)
+void CompositeEditCommand::deleteSelection(bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool sanitizeMarkup)
 {
     if (endingSelection().isRange())
-        applyCommandToComposite(DeleteSelectionCommand::create(document(), smartDelete, mergeBlocksAfterDelete, replace, expandForSpecialElements, sanitizeMarkup));
+        applyCommandToComposite(DeleteSelectionCommand::create(document(), smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
 }
 
-void CompositeEditCommand::deleteSelection(const VisibleSelection &selection, bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool sanitizeMarkup)
+void CompositeEditCommand::deleteSelection(const VisibleSelection &selection, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool sanitizeMarkup)
 {
     if (selection.isRange())
-        applyCommandToComposite(DeleteSelectionCommand::create(selection, smartDelete, mergeBlocksAfterDelete, replace, expandForSpecialElements, sanitizeMarkup));
+        applyCommandToComposite(DeleteSelectionCommand::create(selection, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
 }
 
 void CompositeEditCommand::removeCSSProperty(PassRefPtr<Element> element, CSSPropertyID property)
@@ -790,7 +749,6 @@ void CompositeEditCommand::deleteInsignificantText(PassRefPtr<Text> textNode, un
         int gapLen = gapEnd - gapStart;
         if (indicesIntersect && gapLen > 0) {
             gapStart = max(gapStart, start);
-            gapEnd = min(gapEnd, end);
             if (str.isNull())
                 str = textNode->data().substring(start, end - start);
             // remove text in the gap
@@ -1001,8 +959,10 @@ void CompositeEditCommand::pushAnchorElementDown(Node* anchorNode)
 // Clone the paragraph between start and end under blockElement,
 // preserving the hierarchy up to outerNode.
 
-void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Position& end, Node* passedOuterNode, Element* blockElement)
+void CompositeEditCommand::cloneParagraphUnderNewElement(const Position& start, const Position& end, Node* passedOuterNode, Element* blockElement)
 {
+    ASSERT(comparePositions(start, end) <= 0);
+
     // First we clone the outerNode
     RefPtr<Node> lastNode;
     RefPtr<Node> outerNode = passedOuterNode;
@@ -1010,7 +970,7 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
     if (outerNode->isRootEditableElement()) {
         lastNode = blockElement;
     } else {
-        lastNode = outerNode->cloneNode(isTableElement(outerNode.get()));
+        lastNode = outerNode->cloneNode(isRenderedTableElement(outerNode.get()));
         appendNode(lastNode, blockElement);
     }
 
@@ -1025,7 +985,7 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
 
         for (size_t i = ancestors.size(); i != 0; --i) {
             Node* item = ancestors[i - 1].get();
-            RefPtr<Node> child = item->cloneNode(isTableElement(item));
+            RefPtr<Node> child = item->cloneNode(isRenderedTableElement(item));
             appendNode(child, toElement(lastNode));
             lastNode = child.release();
         }
@@ -1132,7 +1092,7 @@ void CompositeEditCommand::moveParagraphWithClones(const VisiblePosition& startO
     // We upstream() the end and downstream() the start so that we don't include collapsed whitespace in the move.
     // When we paste a fragment, spaces after the end and before the start are treated as though they were rendered.
     Position start = startOfParagraphToMove.deepEquivalent().downstream();
-    Position end = endOfParagraphToMove.deepEquivalent().upstream();
+    Position end = startOfParagraphToMove == endOfParagraphToMove ? start : endOfParagraphToMove.deepEquivalent().upstream();
 
     cloneParagraphUnderNewElement(start, end, outerNode, blockElement);
 
@@ -1326,8 +1286,8 @@ bool CompositeEditCommand::breakOutOfEmptyListItem()
     if (!newBlock)
         newBlock = createDefaultParagraphElement(document());
 
-    RefPtr<Node> previousListNode = emptyListItem->isElementNode() ? toElement(emptyListItem)->previousElementSibling(): emptyListItem->previousSibling();
-    RefPtr<Node> nextListNode = emptyListItem->isElementNode() ? toElement(emptyListItem)->nextElementSibling(): emptyListItem->nextSibling();
+    RefPtr<Node> previousListNode = emptyListItem->isElementNode() ? ElementTraversal::previousSibling(*emptyListItem): emptyListItem->previousSibling();
+    RefPtr<Node> nextListNode = emptyListItem->isElementNode() ? ElementTraversal::nextSibling(*emptyListItem): emptyListItem->nextSibling();
     if (isListItem(nextListNode.get()) || isListElement(nextListNode.get())) {
         // If emptyListItem follows another list item or nested list, split the list node.
         if (isListItem(previousListNode.get()) || isListElement(previousListNode.get()))

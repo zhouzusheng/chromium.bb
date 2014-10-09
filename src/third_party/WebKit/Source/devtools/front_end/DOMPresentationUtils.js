@@ -164,15 +164,29 @@ WebInspector.DOMPresentationUtils.buildImagePreviewContents = function(imageURL,
  * @param {boolean=} justSelector
  * @return {string}
  */
-WebInspector.DOMPresentationUtils.appropriateSelectorFor = function(node, justSelector)
+WebInspector.DOMPresentationUtils.fullQualifiedSelector = function(node, justSelector)
+{
+    if (node.nodeType() !== Node.ELEMENT_NODE)
+        return node.localName() || node.nodeName().toLowerCase();
+    return WebInspector.DOMPresentationUtils.cssPath(node, justSelector);
+}
+
+/**
+ * @param {!WebInspector.DOMNode} node
+ * @return {string}
+ */
+WebInspector.DOMPresentationUtils.simpleSelector = function(node)
 {
     var lowerCaseName = node.localName() || node.nodeName().toLowerCase();
     if (node.nodeType() !== Node.ELEMENT_NODE)
         return lowerCaseName;
     if (lowerCaseName === "input" && node.getAttribute("type") && !node.getAttribute("id") && !node.getAttribute("class"))
         return lowerCaseName + "[type=\"" + node.getAttribute("type") + "\"]";
-
-    return WebInspector.DOMPresentationUtils.cssPath(node, justSelector);
+    if (node.getAttribute("id"))
+        return lowerCaseName + "#" + node.getAttribute("id");
+    if (node.getAttribute("class"))
+        return lowerCaseName + "." + node.getAttribute("class").trim().replace(/\s+/g, ".");
+    return lowerCaseName;
 }
 
 /**
@@ -188,7 +202,7 @@ WebInspector.DOMPresentationUtils.cssPath = function(node, optimized)
     var steps = [];
     var contextNode = node;
     while (contextNode) {
-        var step = WebInspector.DOMPresentationUtils._cssPathValue(contextNode, optimized);
+        var step = WebInspector.DOMPresentationUtils._cssPathStep(contextNode, !!optimized, contextNode === node);
         if (!step)
             break; // Error - bail out early.
         steps.push(step);
@@ -203,10 +217,11 @@ WebInspector.DOMPresentationUtils.cssPath = function(node, optimized)
 
 /**
  * @param {!WebInspector.DOMNode} node
- * @param {boolean=} optimized
+ * @param {boolean} optimized
+ * @param {boolean} isTargetNode
  * @return {?WebInspector.DOMNodePathStep}
  */
-WebInspector.DOMPresentationUtils._cssPathValue = function(node, optimized)
+WebInspector.DOMPresentationUtils._cssPathStep = function(node, optimized, isTargetNode)
 {
     if (node.nodeType() !== Node.ELEMENT_NODE)
         return null;
@@ -312,11 +327,15 @@ WebInspector.DOMPresentationUtils._cssPathValue = function(node, optimized)
     var needsClassNames = false;
     var needsNthChild = false;
     var ownIndex = -1;
+    var elementIndex = -1;
     var siblings = parent.children();
     for (var i = 0; (ownIndex === -1 || !needsNthChild) && i < siblings.length; ++i) {
         var sibling = siblings[i];
+        if (sibling.nodeType() !== Node.ELEMENT_NODE)
+            continue;
+        elementIndex += 1;
         if (sibling === node) {
-            ownIndex = i;
+            ownIndex = elementIndex;
             continue;
         }
         if (needsNthChild)
@@ -347,6 +366,8 @@ WebInspector.DOMPresentationUtils._cssPathValue = function(node, optimized)
     }
 
     var result = nodeName;
+    if (isTargetNode && nodeName.toLowerCase() === "input" && node.getAttribute("type") && !node.getAttribute("id") && !node.getAttribute("class"))
+        result += "[type=\"" + node.getAttribute("type") + "\"]";
     if (needsNthChild) {
         result += ":nth-child(" + (ownIndex + 1) + ")";
     } else if (needsClassNames) {

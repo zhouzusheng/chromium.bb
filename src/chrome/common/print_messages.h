@@ -10,6 +10,7 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
@@ -74,8 +75,10 @@ struct PrintHostMsg_RequestPrintPreview_Params {
 
 #define IPC_MESSAGE_START PrintMsgStart
 
-IPC_ENUM_TRAITS(printing::MarginType)
-IPC_ENUM_TRAITS(blink::WebPrintScalingOption)
+IPC_ENUM_TRAITS_MAX_VALUE(printing::MarginType,
+                          printing::MARGIN_TYPE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPrintScalingOption,
+                          blink::WebPrintScalingOptionLast)
 
 // Parameters for a render request.
 IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)

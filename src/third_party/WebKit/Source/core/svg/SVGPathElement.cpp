@@ -46,6 +46,7 @@
 #include "core/svg/SVGPathSegMovetoAbs.h"
 #include "core/svg/SVGPathSegMovetoRel.h"
 #include "core/svg/SVGPathUtilities.h"
+#include "core/svg/SVGPointTearOff.h"
 #include "core/svg/properties/SVGPathSegListPropertyTearOff.h"
 
 namespace WebCore {
@@ -66,13 +67,8 @@ const SVGPropertyInfo* SVGPathElement::dPropertyInfo()
 }
 
 // Animated property definitions
-DEFINE_ANIMATED_NUMBER(SVGPathElement, SVGNames::pathLengthAttr, PathLength, pathLength)
-DEFINE_ANIMATED_BOOLEAN(SVGPathElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGPathElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(d)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(pathLength)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
@@ -81,8 +77,11 @@ inline SVGPathElement::SVGPathElement(Document& document)
     , m_pathByteStream(SVGPathByteStream::create())
     , m_pathSegList(PathSegUnalteredRole)
     , m_isAnimValObserved(false)
+    , m_pathLength(SVGAnimatedNumber::create(this, SVGNames::pathLengthAttr, SVGNumber::create()))
 {
     ScriptWrappable::init(this);
+
+    addToPropertyMap(m_pathLength);
     registerAnimatedPropertiesForSVGPathElement();
 }
 
@@ -98,11 +97,11 @@ float SVGPathElement::getTotalLength()
     return totalLength;
 }
 
-SVGPoint SVGPathElement::getPointAtLength(float length)
+PassRefPtr<SVGPointTearOff> SVGPathElement::getPointAtLength(float length)
 {
-    SVGPoint point;
+    FloatPoint point;
     getPointAtLengthOfSVGPathByteStream(pathByteStream(), length, point);
-    return point;
+    return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
 unsigned SVGPathElement::getPathSegAtLength(float length)
@@ -211,7 +210,6 @@ bool SVGPathElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::dAttr);
         supportedAttributes.add(SVGNames::pathLengthAttr);
     }
@@ -231,17 +229,17 @@ void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         return;
     }
 
+    SVGParsingError parseError = NoError;
+
     if (name == SVGNames::pathLengthAttr) {
-        setPathLengthBaseValue(value.toFloat());
-        if (pathLengthBaseValue() < 0)
+        m_pathLength->setBaseValueAsString(value, parseError);
+        if (parseError == NoError && m_pathLength->baseValue()->value() < 0)
             document().accessSVGExtensions()->reportError("A negative value for path attribute <pathLength> is not allowed");
-        return;
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -327,7 +325,7 @@ void SVGPathElement::synchronizeD(SVGElement* contextElement)
     SVGPathElement* ownerType = toSVGPathElement(contextElement);
     if (!ownerType->m_pathSegList.shouldSynchronize)
         return;
-    ownerType->m_pathSegList.synchronize(ownerType, dPropertyInfo()->attributeName, ownerType->m_pathSegList.value.valueAsString());
+    ownerType->m_pathSegList.synchronize(ownerType, dPropertyInfo()->attributeName, AtomicString(ownerType->m_pathSegList.value.valueAsString()));
 }
 
 SVGPathSegListPropertyTearOff* SVGPathElement::pathSegList()
@@ -382,7 +380,7 @@ void SVGPathElement::pathSegListChanged(SVGPathSegRole role, ListModification li
     RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
 }
 
-SVGRect SVGPathElement::getBBox()
+FloatRect SVGPathElement::getBBox()
 {
     // By default, getBBox() returns objectBoundingBox but that will include
     // markers so we override it to return just the path's bounding rect.
@@ -391,16 +389,10 @@ SVGRect SVGPathElement::getBBox()
 
     // FIXME: Eventually we should support getBBox for detached elements.
     if (!renderer())
-        return SVGRect();
+        return FloatRect();
 
     RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
     return renderer->path().boundingRect();
-}
-
-RenderObject* SVGPathElement::createRenderer(RenderStyle*)
-{
-    // By default, any subclass is expected to do path-based drawing
-    return new RenderSVGPath(this);
 }
 
 }

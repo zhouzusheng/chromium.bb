@@ -35,7 +35,7 @@ namespace WebCore {
 struct FileMetadata;
 class KURL;
 
-class File : public Blob {
+class File FINAL : public Blob {
 public:
     // AllContentTypes should only be used when the full path/name are trusted; otherwise, it could
     // allow arbitrary pages to determine what applications an user has installed.
@@ -86,8 +86,12 @@ public:
     }
 
     virtual unsigned long long size() const OVERRIDE;
+    virtual PassRefPtr<Blob> slice(long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const OVERRIDE;
+
     virtual bool isFile() const OVERRIDE { return true; }
     virtual bool hasBackingFile() const OVERRIDE { return m_hasBackingFile; }
+
+    virtual void appendTo(BlobData&) const OVERRIDE;
 
     const String& path() const { ASSERT(m_hasBackingFile); return m_path; }
     const String& name() const { return m_name; }

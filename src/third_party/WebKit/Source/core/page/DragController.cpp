@@ -29,8 +29,9 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Clipboard.h"
-#include "core/dom/ClipboardAccessPolicy.h"
+#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/ClipboardAccessPolicy.h"
+#include "core/clipboard/DataObject.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
@@ -61,13 +62,12 @@
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
-#include "core/platform/DragImage.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/DragImage.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageOrientation.h"
@@ -110,13 +110,11 @@ static bool dragTypeIsValid(DragSourceAction action)
 
 static PlatformMouseEvent createMouseEvent(DragData* dragData)
 {
-    bool shiftKey, ctrlKey, altKey, metaKey;
-    shiftKey = ctrlKey = altKey = metaKey = false;
     int keyState = dragData->modifierKeyState();
-    shiftKey = static_cast<bool>(keyState & PlatformEvent::ShiftKey);
-    ctrlKey = static_cast<bool>(keyState & PlatformEvent::CtrlKey);
-    altKey = static_cast<bool>(keyState & PlatformEvent::AltKey);
-    metaKey = static_cast<bool>(keyState & PlatformEvent::MetaKey);
+    bool shiftKey = static_cast<bool>(keyState & PlatformEvent::ShiftKey);
+    bool ctrlKey = static_cast<bool>(keyState & PlatformEvent::CtrlKey);
+    bool altKey = static_cast<bool>(keyState & PlatformEvent::AltKey);
+    bool metaKey = static_cast<bool>(keyState & PlatformEvent::MetaKey);
 
     return PlatformMouseEvent(dragData->clientPosition(), dragData->globalPosition(),
                               LeftButton, PlatformEvent::MouseMoved, 0, shiftKey, ctrlKey, altKey,
@@ -166,7 +164,7 @@ static PassRefPtr<DocumentFragment> documentFragmentFromDragData(DragData* dragD
             String url = dragData->asURL(DragData::DoNotConvertFilenames, &title);
             if (!url.isEmpty()) {
                 RefPtr<HTMLAnchorElement> anchor = HTMLAnchorElement::create(document);
-                anchor->setHref(url);
+                anchor->setHref(AtomicString(url));
                 if (title.isEmpty()) {
                     // Try the plain text first because the url might be normalized or escaped.
                     if (dragData->containsPlainText())
@@ -656,8 +654,7 @@ Node* DragController::draggableNode(const Frame* src, Node* startNode, const Int
                 return node;
             }
             // Other draggable elements are considered unselectable.
-            if (isHTMLAnchorElement(node)
-                && toHTMLAnchorElement(node)->isLiveLink()) {
+            if (node->hasTagName(HTMLNames::aTag) && toHTMLAnchorElement(node)->isLiveLink()) {
                 candidateDragType = DragSourceActionLink;
                 break;
             }

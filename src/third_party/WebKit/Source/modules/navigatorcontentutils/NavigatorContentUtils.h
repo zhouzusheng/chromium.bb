@@ -27,8 +27,6 @@
 #ifndef NavigatorContentUtils_h
 #define NavigatorContentUtils_h
 
-#if ENABLE(NAVIGATOR_CONTENT_UTILS)
-
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include "platform/RefCountedSupplement.h"
 #include "wtf/PassRefPtr.h"
@@ -40,7 +38,7 @@ class ExceptionState;
 class Navigator;
 class Page;
 
-class NavigatorContentUtils : public RefCountedSupplement<Page, NavigatorContentUtils> {
+class NavigatorContentUtils FINAL : public RefCountedSupplement<Page, NavigatorContentUtils> {
 public:
     virtual ~NavigatorContentUtils();
 
@@ -49,10 +47,8 @@ public:
 
     static void registerProtocolHandler(Navigator*, const String& scheme, const String& url, const String& title, ExceptionState&);
 
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
     static String isProtocolHandlerRegistered(Navigator*, const String& scheme, const String& url, ExceptionState&);
     static void unregisterProtocolHandler(Navigator*, const String& scheme, const String& url, ExceptionState&);
-#endif
 
     static PassRefPtr<NavigatorContentUtils> create(NavigatorContentUtilsClient*);
 
@@ -67,7 +63,5 @@ private:
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(NAVIGATOR_CONTENT_UTILS)
 
 #endif // NavigatorContentUtils_h

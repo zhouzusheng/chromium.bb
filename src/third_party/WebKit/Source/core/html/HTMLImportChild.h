@@ -31,15 +31,19 @@
 #ifndef HTMLImportChild_h
 #define HTMLImportChild_h
 
+#include "core/fetch/RawResource.h"
+#include "core/fetch/ResourceOwner.h"
 #include "core/html/HTMLImport.h"
 #include "core/html/HTMLImportLoaderClient.h"
-#include "core/html/HTMLImportResourceOwner.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class CustomElementMicrotaskImportStep;
 class HTMLImportLoader;
 class HTMLImportChildClient;
+class HTMLLinkElement;
 
 //
 // An import tree node subclas to encapsulate imported document
@@ -47,32 +51,41 @@ class HTMLImportChildClient;
 // is done by HTMLImportLoader, which can be shared among multiple
 // HTMLImportChild of same link URL.
 //
-// HTMLImportChild implements ResourceClient through HTMLImportResourceOwner
+// HTMLImportChild implements ResourceClient through ResourceOwner
 // so that it can speculatively request linked resources while it is unblocked.
 //
-class HTMLImportChild : public HTMLImport, public HTMLImportLoaderClient, public HTMLImportResourceOwner {
+class HTMLImportChild FINAL : public HTMLImport, public HTMLImportLoaderClient, public ResourceOwner<RawResource> {
 public:
-    HTMLImportChild(const KURL&, HTMLImportChildClient*);
+    HTMLImportChild(const KURL&, bool createdByParser);
     virtual ~HTMLImportChild();
 
+    HTMLLinkElement* link() const;
     Document* importedDocument() const;
     const KURL& url() const { return m_url; }
 
-    void wasAlreadyLoadedAs(HTMLImportChild* found);
+    void wasAlreadyLoaded();
     void startLoading(const ResourcePtr<RawResource>&);
     void importDestroyed();
-    bool isLoaded() const;
 
     // HTMLImport
+    virtual bool isChild() const OVERRIDE { return true; }
     virtual HTMLImportRoot* root() OVERRIDE;
     virtual Document* document() const OVERRIDE;
     virtual void wasDetachedFromDocument() OVERRIDE;
     virtual void didFinishParsing() OVERRIDE;
-    virtual bool isProcessing() const OVERRIDE;
     virtual bool isDone() const OVERRIDE;
-    virtual void didUnblockDocument() OVERRIDE;
+    virtual bool hasLoader() const OVERRIDE;
+    virtual bool ownsLoader() const OVERRIDE;
+    virtual CustomElementMicrotaskImportStep* customElementMicrotaskStep() const OVERRIDE FINAL { return m_customElementMicrotaskStep; }
+    virtual void stateDidChange() OVERRIDE;
 
-    void clearClient() { m_client = 0; }
+#if !defined(NDEBUG)
+    virtual void showThis() OVERRIDE;
+#endif
+
+    void setClient(HTMLImportChildClient*);
+    void clearClient();
+    bool loaderHasError() const;
 
 private:
     // RawResourceOwner doing nothing.
@@ -82,15 +95,24 @@ private:
     virtual void notifyFinished(Resource*) OVERRIDE { }
 
     // HTMLImportLoaderClient
-    virtual void didFinish() OVERRIDE;
+    virtual void didFinishLoading() OVERRIDE;
 
+    void didFinish();
     void createLoader();
     void shareLoader(HTMLImportChild*);
+    void ensureLoader();
 
     KURL m_url;
-    HTMLImportChildClient* m_client;
+    CustomElementMicrotaskImportStep* m_customElementMicrotaskStep;
     RefPtr<HTMLImportLoader> m_loader;
+    HTMLImportChildClient* m_client;
 };
+
+inline HTMLImportChild* toHTMLImportChild(HTMLImport* import)
+{
+    ASSERT(!import || import->isChild());
+    return static_cast<HTMLImportChild*>(import);
+}
 
 } // namespace WebCore
 

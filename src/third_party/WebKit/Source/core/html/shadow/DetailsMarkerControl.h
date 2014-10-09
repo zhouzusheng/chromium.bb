@@ -44,8 +44,8 @@ public:
     static PassRefPtr<DetailsMarkerControl> create(Document&);
 
 private:
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
     HTMLSummaryElement* summaryElement();
 };
@@ -53,7 +53,7 @@ private:
 inline PassRefPtr<DetailsMarkerControl> DetailsMarkerControl::create(Document& document)
 {
     RefPtr<DetailsMarkerControl> element = adoptRef(new DetailsMarkerControl(document));
-    element->setPseudo(AtomicString("-webkit-details-marker", AtomicString::ConstructFromLiteral));
+    element->setShadowPseudoId(AtomicString("-webkit-details-marker", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 

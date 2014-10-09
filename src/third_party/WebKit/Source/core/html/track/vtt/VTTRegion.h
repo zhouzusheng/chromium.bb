@@ -43,6 +43,7 @@ namespace WebCore {
 class ExceptionState;
 class HTMLDivElement;
 class VTTCueBox;
+class VTTScanner;
 
 class VTTRegion : public RefCounted<VTTRegion> {
 public:
@@ -112,9 +113,8 @@ private:
         ViewportAnchor,
         Scroll
     };
-    RegionSetting getSettingFromString(const String&);
-    void parseSettingValue(RegionSetting, const String&);
-    void parseSetting(const String&, unsigned*);
+    RegionSetting scanSettingName(VTTScanner&);
+    void parseSettingValue(RegionSetting, VTTScanner&);
 
     static const AtomicString& textTrackCueContainerShadowPseudoId();
     static const AtomicString& textTrackCueContainerScrollingClass();

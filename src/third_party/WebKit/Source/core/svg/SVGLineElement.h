@@ -24,36 +24,37 @@
 #include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGeometryElement.h"
 
 namespace WebCore {
 
-class SVGLineElement FINAL : public SVGGeometryElement,
-                             public SVGExternalResourcesRequired {
+class SVGLineElement FINAL : public SVGGeometryElement {
 public:
     static PassRefPtr<SVGLineElement> create(Document&);
+
+    SVGAnimatedLength* x1() const { return m_x1.get(); }
+    SVGAnimatedLength* y1() const { return m_y1.get(); }
+    SVGAnimatedLength* x2() const { return m_x2.get(); }
+    SVGAnimatedLength* y2() const { return m_y2.get(); }
 
 private:
     explicit SVGLineElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual bool supportsMarkers() const { return true; }
+    virtual bool supportsMarkers() const OVERRIDE { return true; }
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
+    RefPtr<SVGAnimatedLength> m_x1;
+    RefPtr<SVGAnimatedLength> m_y1;
+    RefPtr<SVGAnimatedLength> m_x2;
+    RefPtr<SVGAnimatedLength> m_y2;
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGLineElement)
-        DECLARE_ANIMATED_LENGTH(X1, x1)
-        DECLARE_ANIMATED_LENGTH(Y1, y1)
-        DECLARE_ANIMATED_LENGTH(X2, x2)
-        DECLARE_ANIMATED_LENGTH(Y2, y2)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

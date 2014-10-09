@@ -32,38 +32,39 @@ namespace WTF {
 
     class AtomicString;
 
-    template<bool isPod, typename T>
+    template<typename T>
     struct VectorTraitsBase
     {
-        static const bool needsDestruction = !isPod;
-        static const bool needsInitialization = !isPod;
-        static const bool canInitializeWithMemset = isPod;
-        static const bool canMoveWithMemcpy = isPod;
-        static const bool canCopyWithMemcpy = isPod;
-        static const bool canFillWithMemset = isPod && (sizeof(T) == sizeof(char));
-        static const bool canCompareWithMemcmp = isPod;
+        static const bool needsDestruction = !IsPod<T>::value;
+        static const bool needsInitialization = !IsPod<T>::value;
+        static const bool canInitializeWithMemset = IsPod<T>::value;
+        static const bool canMoveWithMemcpy = IsPod<T>::value;
+        static const bool canCopyWithMemcpy = IsPod<T>::value;
+        static const bool canFillWithMemset = IsPod<T>::value && (sizeof(T) == sizeof(char));
+        static const bool canCompareWithMemcmp = IsPod<T>::value;
+        static const bool needsTracing = NeedsTracing<T>::value;
+        static const bool isWeak = IsWeak<T>::value;
     };
 
     template<typename T>
-    struct VectorTraits : VectorTraitsBase<IsPod<T>::value, T> { };
+    struct VectorTraits : VectorTraitsBase<T> { };
 
-    struct SimpleClassVectorTraits : VectorTraitsBase<false, int>
+    template<typename T>
+    struct SimpleClassVectorTraits : VectorTraitsBase<T>
     {
         static const bool canInitializeWithMemset = true;
         static const bool canMoveWithMemcpy = true;
         static const bool canCompareWithMemcmp = true;
     };
 
-    // we know OwnPtr and RefPtr are simple enough that initializing to 0 and moving with memcpy
-    // (and then not destructing the original) will totally work
+    // We know OwnPtr and RefPtr are simple enough that initializing to 0 and
+    // moving with memcpy (and then not destructing the original) will totally
+    // work.
     template<typename P>
-    struct VectorTraits<RefPtr<P> > : SimpleClassVectorTraits { };
+    struct VectorTraits<RefPtr<P> > : SimpleClassVectorTraits<RefPtr<P> > { };
 
     template<typename P>
-    struct VectorTraits<OwnPtr<P> > : SimpleClassVectorTraits { };
-
-    template<>
-    struct VectorTraits<AtomicString> : SimpleClassVectorTraits { };
+    struct VectorTraits<OwnPtr<P> > : SimpleClassVectorTraits<OwnPtr<P> > { };
 
     template<typename First, typename Second>
     struct VectorTraits<pair<First, Second> >
@@ -78,6 +79,8 @@ namespace WTF {
         static const bool canCopyWithMemcpy = FirstTraits::canCopyWithMemcpy && SecondTraits::canCopyWithMemcpy;
         static const bool canFillWithMemset = false;
         static const bool canCompareWithMemcmp = FirstTraits::canCompareWithMemcmp && SecondTraits::canCompareWithMemcmp;
+        static const bool needsTracing = FirstTraits::needsTracing || SecondTraits::needsTracing;
+        static const bool isWeak = FirstTraits::isWeak || SecondTraits::isWeak;
     };
 
 } // namespace WTF

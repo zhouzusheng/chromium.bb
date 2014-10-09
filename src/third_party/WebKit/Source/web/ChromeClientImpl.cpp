@@ -38,7 +38,6 @@
 #include "ExternalDateTimeChooser.h"
 #include "ExternalPopupMenu.h"
 #include "HTMLNames.h"
-#include "PopupContainer.h"
 #include "PopupMenuChromium.h"
 #include "RuntimeEnabledFeatures.h"
 #include "WebAXObject.h"
@@ -59,7 +58,6 @@
 #include "WebPluginContainerImpl.h"
 #include "WebPopupMenuImpl.h"
 #include "WebPopupMenuInfo.h"
-#include "WebPopupType.h"
 #include "WebSettings.h"
 #include "WebSettingsImpl.h"
 #include "WebTextDirection.h"
@@ -74,6 +72,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFullscreen.h"
 #include "core/dom/Node.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/WheelEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -85,12 +86,12 @@
 #include "core/page/WindowFeatures.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
-#include "modules/geolocation/Geolocation.h"
 #include "platform/ColorChooser.h"
 #include "platform/ColorChooserClient.h"
 #include "platform/Cursor.h"
 #include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
+#include "platform/NotImplemented.h"
 #include "platform/PlatformScreen.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/geometry/FloatRect.h"
@@ -110,20 +111,6 @@
 using namespace WebCore;
 
 namespace blink {
-
-// Converts a WebCore::PopupContainerType to a blink::WebPopupType.
-static WebPopupType convertPopupType(PopupContainer::PopupType type)
-{
-    switch (type) {
-    case PopupContainer::Select:
-        return WebPopupTypeSelect;
-    case PopupContainer::Suggestion:
-        return WebPopupTypeSuggestion;
-    default:
-        ASSERT_NOT_REACHED();
-        return WebPopupTypeNone;
-    }
-}
 
 // Converts a WebCore::AXObjectCache::AXNotification to a blink::WebAXEvent
 static WebAXEvent toWebAXEvent(AXObjectCache::AXNotification notification)
@@ -192,24 +179,18 @@ void ChromeClientImpl::focus()
         m_webView->client()->didFocus();
 }
 
-void ChromeClientImpl::unfocus()
-{
-    if (m_webView->client())
-        m_webView->client()->didBlur();
-}
-
-bool ChromeClientImpl::canTakeFocus(FocusDirection)
+bool ChromeClientImpl::canTakeFocus(FocusType)
 {
     // For now the browser can always take focus if we're not running layout
     // tests.
     return !layoutTestMode();
 }
 
-void ChromeClientImpl::takeFocus(FocusDirection direction)
+void ChromeClientImpl::takeFocus(FocusType type)
 {
     if (!m_webView->client())
         return;
-    if (direction == FocusDirectionBackward)
+    if (type == FocusTypeBackward)
         m_webView->client()->focusPrevious();
     else
         m_webView->client()->focusNext();
@@ -517,18 +498,6 @@ void ChromeClientImpl::scroll(
         m_webView->scrollRootLayerRect(scrollDelta, clipRect);
 }
 
-IntPoint ChromeClientImpl::screenToRootView(const IntPoint& point) const
-{
-    IntPoint windowPoint(point);
-
-    if (m_webView->client()) {
-        WebRect windowRect = m_webView->client()->windowRect();
-        windowPoint.move(-windowRect.x, -windowRect.y);
-    }
-
-    return windowPoint;
-}
-
 IntRect ChromeClientImpl::rootViewToScreen(const IntRect& rect) const
 {
     IntRect screenRect(rect);
@@ -583,7 +552,7 @@ void ChromeClientImpl::mouseDidMoveOverElement(
         if (object && object->isWidget()) {
             Widget* widget = toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer()) {
-                WebPluginContainerImpl* plugin = toPluginContainerImpl(widget);
+                WebPluginContainerImpl* plugin = toWebPluginContainerImpl(widget);
                 url = plugin->plugin()->linkAtPosition(result.roundedPointInInnerNodeFrame());
             }
         }
@@ -676,50 +645,6 @@ void ChromeClientImpl::enumerateChosenDirectory(FileChooser* fileChooser)
         chooserCompletion->didChooseFile(WebVector<WebString>());
 }
 
-void ChromeClientImpl::popupOpened(PopupContainer* popupContainer,
-                                   const IntRect& bounds,
-                                   bool handleExternally)
-{
-    // For Autofill popups, if the popup will not be fully visible, we shouldn't
-    // show it at all. Among other things, this prevents users from being able
-    // to interact via the keyboard with an invisible popup.
-    if (popupContainer->popupType() == PopupContainer::Suggestion) {
-        FrameView* view = m_webView->page()->mainFrame()->view();
-        IntRect visibleRect = view->visibleContentRect(ScrollableArea::IncludeScrollbars);
-        // |bounds| is in screen coordinates, so make sure to convert it to
-        // content coordinates prior to comparing to |visibleRect|.
-        IntRect screenRect = bounds;
-        screenRect.setLocation(view->screenToContents(bounds.location()));
-        if (!visibleRect.contains(screenRect)) {
-            m_webView->hideAutofillPopup();
-            return;
-        }
-    }
-
-    if (!m_webView->client())
-        return;
-
-    WebWidget* webwidget;
-    if (handleExternally) {
-        WebPopupMenuInfo popupInfo;
-        getPopupMenuInfo(popupContainer, &popupInfo);
-        webwidget = m_webView->client()->createPopupMenu(popupInfo);
-    } else {
-        webwidget = m_webView->client()->createPopupMenu(
-            convertPopupType(popupContainer->popupType()));
-        // We only notify when the WebView has to handle the popup, as when
-        // the popup is handled externally, the fact that a popup is showing is
-        // transparent to the WebView.
-        m_webView->popupOpened(popupContainer);
-    }
-    toWebPopupMenuImpl(webwidget)->initialize(popupContainer, bounds);
-}
-
-void ChromeClientImpl::popupClosed(WebCore::PopupContainer* popupContainer)
-{
-    m_webView->popupClosed(popupContainer);
-}
-
 void ChromeClientImpl::setCursor(const WebCore::Cursor& cursor)
 {
     setCursor(WebCursorInfo(cursor));
@@ -751,54 +676,13 @@ void ChromeClientImpl::formStateDidChange(const Node* node)
         webframe->client()->didUpdateCurrentHistoryItem(webframe);
 }
 
-void ChromeClientImpl::getPopupMenuInfo(PopupContainer* popupContainer,
-                                        WebPopupMenuInfo* info)
-{
-    const Vector<PopupItem*>& inputItems = popupContainer->popupData();
-
-    WebVector<WebMenuItemInfo> outputItems(inputItems.size());
-
-    for (size_t i = 0; i < inputItems.size(); ++i) {
-        const PopupItem& inputItem = *inputItems[i];
-        WebMenuItemInfo& outputItem = outputItems[i];
-
-        outputItem.label = inputItem.label;
-        outputItem.enabled = inputItem.enabled;
-        if (inputItem.textDirection == WebCore::RTL)
-            outputItem.textDirection = WebTextDirectionRightToLeft;
-        else
-            outputItem.textDirection = WebTextDirectionLeftToRight;
-        outputItem.hasTextDirectionOverride = inputItem.hasTextDirectionOverride;
-
-        switch (inputItem.type) {
-        case PopupItem::TypeOption:
-            outputItem.type = WebMenuItemInfo::Option;
-            break;
-        case PopupItem::TypeGroup:
-            outputItem.type = WebMenuItemInfo::Group;
-            break;
-        case PopupItem::TypeSeparator:
-            outputItem.type = WebMenuItemInfo::Separator;
-            break;
-        default:
-            ASSERT_NOT_REACHED();
-        }
-    }
-
-    info->itemHeight = popupContainer->menuItemHeight();
-    info->itemFontSize = popupContainer->menuItemFontSize();
-    info->selectedIndex = popupContainer->selectedIndex();
-    info->items.swap(outputItems);
-    info->rightAligned = popupContainer->menuStyle().textDirection() == RTL;
-}
-
 void ChromeClientImpl::postAccessibilityNotification(AXObject* obj, AXObjectCache::AXNotification notification)
 {
     // Alert assistive technology about the accessibility object notification.
     if (!obj)
         return;
-
-    m_webView->client()->postAccessibilityEvent(WebAXObject(obj), toWebAXEvent(notification));
+    if (m_webView->client())
+        m_webView->client()->postAccessibilityEvent(WebAXObject(obj), toWebAXEvent(notification));
 }
 
 String ChromeClientImpl::acceptLanguages()
@@ -823,11 +707,6 @@ GraphicsLayerFactory* ChromeClientImpl::graphicsLayerFactory() const
 void ChromeClientImpl::attachRootGraphicsLayer(Frame* frame, GraphicsLayer* graphicsLayer)
 {
     m_webView->setRootGraphicsLayer(graphicsLayer);
-}
-
-void ChromeClientImpl::scheduleCompositingLayerFlush()
-{
-    m_webView->scheduleCompositingLayerSync();
 }
 
 ChromeClient::CompositingTriggerFlags ChromeClientImpl::allowedCompositingTriggers() const
@@ -873,7 +752,7 @@ bool ChromeClientImpl::hasOpenedPopup() const
 PassRefPtr<PopupMenu> ChromeClientImpl::createPopupMenu(Frame& frame, PopupMenuClient* client) const
 {
     if (WebViewImpl::useExternalPopupMenus())
-        return adoptRef(new ExternalPopupMenu(frame, client, m_webView->client()));
+        return adoptRef(new ExternalPopupMenu(frame, client, *m_webView));
 
     return adoptRef(new PopupMenuChromium(frame, client));
 }
@@ -975,11 +854,6 @@ void ChromeClientImpl::requestPointerUnlock()
     return m_webView->requestPointerUnlock();
 }
 
-bool ChromeClientImpl::isPointerLocked()
-{
-    return m_webView->isPointerLocked();
-}
-
 void ChromeClientImpl::annotatedRegionsChanged()
 {
     WebViewClient* client = m_webView->client();
@@ -1017,6 +891,34 @@ void ChromeClientImpl::handleKeyboardEventOnTextField(HTMLInputElement& inputEle
     m_webView->autofillClient()->textFieldDidReceiveKeyDown(WebInputElement(&inputElement), WebKeyboardEventBuilder(event));
 }
 
+// FIXME: Remove this code once we have input routing in the browser
+// process. See http://crbug.com/339659.
+void ChromeClientImpl::forwardInputEvent(
+    WebCore::Document* document, WebCore::Event* event)
+{
+    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+
+    // This is only called when we have out-of-process iframes, which
+    // need to forward input events across processes.
+    // FIXME: Add a check for out-of-process iframes enabled.
+    if (event->isKeyboardEvent()) {
+        WebKeyboardEventBuilder webEvent(*static_cast<WebCore::KeyboardEvent*>(event));
+        webFrame->client()->forwardInputEvent(&webEvent);
+    } else if (event->isMouseEvent()) {
+        WebMouseEventBuilder webEvent(webFrame->frameView(), document->renderer(), *static_cast<WebCore::MouseEvent*>(event));
+        // Internal Blink events should not be forwarded.
+        if (webEvent.type == WebInputEvent::Undefined)
+            return;
+
+        webFrame->client()->forwardInputEvent(&webEvent);
+    } else if (event->isWheelEvent()) {
+        WebMouseWheelEventBuilder webEvent(webFrame->frameView(), document->renderer(), *static_cast<WebCore::WheelEvent*>(event));
+        if (webEvent.type == WebInputEvent::Undefined)
+            return;
+        webFrame->client()->forwardInputEvent(&webEvent);
+    }
+}
+
 void ChromeClientImpl::didChangeValueInTextField(HTMLInputElement& inputElement)
 {
     if (!m_webView->autofillClient())
@@ -1028,12 +930,6 @@ void ChromeClientImpl::didEndEditingOnTextField(HTMLInputElement& inputElement)
 {
     if (m_webView->autofillClient())
         m_webView->autofillClient()->textFieldDidEndEditing(WebInputElement(&inputElement));
-
-    // Notification that focus was lost. Be careful with this, it's also sent
-    // when the page is being closed.
-
-    // Hide any showing popup.
-    m_webView->hideAutofillPopup();
 }
 
 void ChromeClientImpl::openTextDataListChooser(HTMLInputElement& input)
@@ -1042,7 +938,6 @@ void ChromeClientImpl::openTextDataListChooser(HTMLInputElement& input)
         m_webView->autofillClient()->openTextDataListChooser(WebInputElement(&input));
 }
 
-#if ENABLE(NAVIGATOR_CONTENT_UTILS)
 PassOwnPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebViewImpl* webView)
 {
     return adoptPtr(new NavigatorContentUtilsClientImpl(webView));
@@ -1053,10 +948,19 @@ NavigatorContentUtilsClientImpl::NavigatorContentUtilsClientImpl(WebViewImpl* we
 {
 }
 
-void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title)
+void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url, const String& title)
 {
     m_webView->client()->registerProtocolHandler(scheme, baseURL, url, title);
 }
-#endif
+
+NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientImpl::isProtocolHandlerRegistered(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
+{
+    return static_cast<NavigatorContentUtilsClient::CustomHandlersState>(m_webView->client()->isProtocolHandlerRegistered(scheme, baseURL, url));
+}
+
+void NavigatorContentUtilsClientImpl::unregisterProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
+{
+    m_webView->client()->unregisterProtocolHandler(scheme, baseURL, url);
+}
 
 } // namespace blink

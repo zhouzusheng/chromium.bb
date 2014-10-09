@@ -301,9 +301,9 @@ uint16_t RTPSender::MaxDataPayloadLength() const {
   if (audio_configured_) {
     return max_payload_length_ - RTPHeaderLength();
   } else {
-    return max_payload_length_ - RTPHeaderLength() -
-           video_->FECPacketOverhead() - ((rtx_) ? 2 : 0);
-    // Include the FEC/ULP/RED overhead.
+    return max_payload_length_ - RTPHeaderLength()  // RTP overhead.
+           - video_->FECPacketOverhead()            // FEC/ULP/RED overhead.
+           - ((rtx_) ? 2 : 0);                      // RTX overhead.
   }
 }
 
@@ -842,15 +842,16 @@ void RTPSender::UpdateRtpStats(const uint8_t* buffer,
                                const RTPHeader& header,
                                bool is_rtx,
                                bool is_retransmit) {
-  CriticalSectionScoped lock(statistics_crit_.get());
   StreamDataCounters* counters;
-  uint32_t ssrc;
+  // Get ssrc before taking statistics_crit_ to avoid possible deadlock.
+  uint32_t ssrc = SSRC();
+
+  CriticalSectionScoped lock(statistics_crit_.get());
   if (is_rtx) {
     counters = &rtx_rtp_stats_;
     ssrc = ssrc_rtx_;
   } else {
     counters = &rtp_stats_;
-    ssrc = ssrc_;
   }
 
   bitrate_sent_.Update(size);

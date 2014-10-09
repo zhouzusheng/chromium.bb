@@ -34,7 +34,6 @@ class ChannelStatsObserver;
 class Config;
 class CriticalSectionWrapper;
 class EncodedImageCallback;
-class Encryption;
 class I420FrameCallback;
 class PacedSender;
 class ProcessThread;
@@ -185,6 +184,10 @@ class ViEChannel
                                     uint32_t* jitter_samples,
                                     int32_t* rtt_ms);
 
+  // Called on generation of RTCP stats
+  void RegisterReceiveChannelRtcpStatisticsCallback(
+      RtcpStatisticsCallback* callback);
+
   // Gets sent/received packets statistics.
   int32_t GetRtpStatistics(uint32_t* bytes_sent,
                            uint32_t* packets_sent,
@@ -195,12 +198,18 @@ class ViEChannel
   void RegisterSendChannelRtpStatisticsCallback(
       StreamDataCountersCallback* callback);
 
+  // Called on update of RTP statistics.
+  void RegisterReceiveChannelRtpStatisticsCallback(
+      StreamDataCountersCallback* callback);
+
   void GetBandwidthUsage(uint32_t* total_bitrate_sent,
                          uint32_t* video_bitrate_sent,
                          uint32_t* fec_bitrate_sent,
                          uint32_t* nackBitrateSent) const;
   bool GetSendSideDelay(int* avg_send_delay, int* max_send_delay) const;
   void GetEstimatedReceiveBandwidth(uint32_t* estimated_bandwidth) const;
+  void GetReceiveBandwidthEstimatorStats(
+      ReceiveBandwidthEstimatorStats* output) const;
 
   // Called on any new send bitrate estimate.
   void RegisterSendBitrateObserver(BitrateStatisticsObserver* observer);
@@ -323,9 +332,6 @@ class ViEChannel
   virtual int32_t ResendPackets(const uint16_t* sequence_numbers,
                                 uint16_t length);
 
-  int32_t RegisterExternalEncryption(Encryption* encryption);
-  int32_t DeRegisterExternalEncryption();
-
   int32_t SetVoiceChannel(int32_t ve_channel_id,
                           VoEVideoSync* ve_sync_interface);
   int32_t VoiceChannel();
@@ -396,7 +402,6 @@ class ViEChannel
   scoped_ptr<RtcpBandwidthObserver> bandwidth_observer_;
   int send_timestamp_extension_id_;
   int absolute_send_time_extension_id_;
-  bool using_packet_spread_;
 
   Transport* external_transport_;
 
@@ -405,8 +410,6 @@ class ViEChannel
   VideoCodec receive_codec_;
   bool wait_for_key_frame_;
   ThreadWrapper* decode_thread_;
-
-  Encryption* external_encryption_;
 
   ViEEffectFilter* effect_filter_;
   bool color_enhancement_;

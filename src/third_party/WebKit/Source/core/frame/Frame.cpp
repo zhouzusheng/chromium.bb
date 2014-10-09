@@ -44,9 +44,9 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
-#include "core/frame/animation/AnimationController.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/EmptyClients.h"
@@ -57,12 +57,13 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/DragImage.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/SVGDocument.h"
+#include "platform/DragImage.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "public/platform/WebLayer.h"
@@ -77,13 +78,6 @@ namespace WebCore {
 using namespace HTMLNames;
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
-
-static inline Frame* parentFromOwnerElement(HTMLFrameOwnerElement* ownerElement)
-{
-    if (!ownerElement)
-        return 0;
-    return ownerElement->document().frame();
-}
 
 static inline float parentPageZoomFactor(Frame* frame)
 {
@@ -102,8 +96,8 @@ static inline float parentTextZoomFactor(Frame* frame)
 }
 
 inline Frame::Frame(PassRefPtr<FrameInit> frameInit)
-    : m_page(frameInit->page())
-    , m_treeNode(this, parentFromOwnerElement(frameInit->ownerElement()))
+    : m_host(frameInit->frameHost())
+    , m_treeNode(this)
     , m_loader(this, frameInit->frameLoaderClient())
     , m_navigationScheduler(this)
     , m_script(adoptPtr(new ScriptController(this)))
@@ -111,21 +105,18 @@ inline Frame::Frame(PassRefPtr<FrameInit> frameInit)
     , m_spellChecker(SpellChecker::create(*this))
     , m_selection(adoptPtr(new FrameSelection(this)))
     , m_eventHandler(adoptPtr(new EventHandler(this)))
-    , m_animationController(adoptPtr(new AnimationController(this)))
     , m_inputMethodController(InputMethodController::create(*this))
     , m_frameInit(frameInit)
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
-#if ENABLE(ORIENTATION_EVENTS)
     , m_orientation(0)
-#endif
     , m_inViewSourceMode(false)
     , m_remotePlatformLayer(0)
 {
-    ASSERT(m_page);
+    ASSERT(page());
 
     if (ownerElement()) {
-        m_page->incrementSubframeCount();
+        page()->incrementSubframeCount();
         ownerElement()->setContentFrame(*this);
     }
 
@@ -146,7 +137,8 @@ PassRefPtr<Frame> Frame::create(PassRefPtr<FrameInit> frameInit)
 Frame::~Frame()
 {
     setView(0);
-    loader().clear(ClearScriptObjects | ClearWindowObject);
+    loader().clear();
+    setDOMWindow(0);
 
     // FIXME: We should not be doing all this work inside the destructor
 
@@ -199,32 +191,44 @@ void Frame::setView(PassRefPtr<FrameView> view)
         document()->prepareForDestruction();
     }
 
-    if (m_view)
-        m_view->unscheduleRelayout();
-
     eventHandler().clear();
 
     m_view = view;
 
     if (m_view && isMainFrame())
-        m_view->setVisibleContentScaleFactor(m_page->pageScaleFactor());
+        m_view->setVisibleContentScaleFactor(page()->pageScaleFactor());
 }
 
-#if ENABLE(ORIENTATION_EVENTS)
 void Frame::sendOrientationChangeEvent(int orientation)
 {
+    if (!RuntimeEnabledFeatures::orientationEventEnabled())
+        return;
+
     m_orientation = orientation;
     if (DOMWindow* window = domWindow())
         window->dispatchEvent(Event::create(EventTypeNames::orientationchange));
 }
-#endif // ENABLE(ORIENTATION_EVENTS)
+
+FrameHost* Frame::host() const
+{
+    return m_host;
+}
+
+Page* Frame::page() const
+{
+    if (m_host)
+        return &m_host->page();
+    return 0;
+}
 
 Settings* Frame::settings() const
 {
-    return m_page ? &m_page->settings() : 0;
+    if (m_host)
+        return &m_host->settings();
+    return 0;
 }
 
-void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio, AdjustViewSizeOrNot shouldAdjustViewSize)
+void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio)
 {
     // In setting printing, we should not validate resources already cached for the document.
     // See https://bugs.webkit.org/show_bug.cgi?id=43704
@@ -235,16 +239,15 @@ void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSiz
 
     document()->styleResolverChanged(RecalcStyleImmediately);
     if (shouldUsePrintingLayout()) {
-        view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio, shouldAdjustViewSize);
+        view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio);
     } else {
         view()->forceLayout();
-        if (shouldAdjustViewSize == AdjustViewSize)
-            view()->adjustViewSize();
+        view()->adjustViewSize();
     }
 
     // Subframes of the one we're printing don't lay out to the page size.
     for (RefPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling())
-        child->setPrinting(printing, FloatSize(), FloatSize(), 0, shouldAdjustViewSize);
+        child->setPrinting(printing, FloatSize(), FloatSize(), 0);
 }
 
 bool Frame::shouldUsePrintingLayout() const
@@ -276,6 +279,11 @@ FloatSize Frame::resizePageRectsKeepingRatio(const FloatSize& originalSize, cons
 
 void Frame::setDOMWindow(PassRefPtr<DOMWindow> domWindow)
 {
+    InspectorInstrumentation::frameWindowDiscarded(this, m_domWindow.get());
+    if (m_domWindow)
+        m_domWindow->reset();
+    if (domWindow)
+        script().clearWindowShell();
     m_domWindow = domWindow;
 }
 
@@ -318,31 +326,32 @@ RenderPart* Frame::ownerRenderer() const
     return toRenderPart(object);
 }
 
-void Frame::dispatchVisibilityStateChangeEvent()
+void Frame::didChangeVisibilityState()
 {
     if (document())
-        document()->dispatchVisibilityStateChangeEvent();
+        document()->didChangeVisibilityState();
 
     Vector<RefPtr<Frame> > childFrames;
     for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling())
         childFrames.append(child);
 
     for (size_t i = 0; i < childFrames.size(); ++i)
-        childFrames[i]->dispatchVisibilityStateChangeEvent();
+        childFrames[i]->didChangeVisibilityState();
 }
 
-void Frame::willDetachPage()
+void Frame::willDetachFrameHost()
 {
     // We should never be detatching the page during a Layout.
-    RELEASE_ASSERT(!m_view || !m_view->isInLayout());
+    RELEASE_ASSERT(!m_view || !m_view->isInPerformLayout());
 
     if (Frame* parent = tree().parent())
         parent->loader().checkLoadComplete();
 
     HashSet<FrameDestructionObserver*>::iterator stop = m_destructionObservers.end();
     for (HashSet<FrameDestructionObserver*>::iterator it = m_destructionObservers.begin(); it != stop; ++it)
-        (*it)->willDetachPage();
+        (*it)->willDetachFrameHost();
 
+    // FIXME: Page should take care of updating focus/scrolling instead of Frame.
     // FIXME: It's unclear as to why this is called more than once, but it is,
     // so page() could be NULL.
     if (page() && page()->focusController().focusedFrame() == this)
@@ -354,11 +363,11 @@ void Frame::willDetachPage()
     script().clearScriptObjects();
 }
 
-void Frame::detachFromPage()
+void Frame::detachFromFrameHost()
 {
     // We should never be detatching the page during a Layout.
-    RELEASE_ASSERT(!m_view || !m_view->isInLayout());
-    m_page = 0;
+    RELEASE_ASSERT(!m_view || !m_view->isInPerformLayout());
+    m_host = 0;
 }
 
 void Frame::disconnectOwnerElement()
@@ -367,15 +376,16 @@ void Frame::disconnectOwnerElement()
         if (Document* doc = document())
             doc->topDocument()->clearAXObjectCache();
         ownerElement()->clearContentFrame();
-        if (m_page)
-            m_page->decrementSubframeCount();
+        if (page())
+            page()->decrementSubframeCount();
     }
     m_frameInit->setOwnerElement(0);
 }
 
 bool Frame::isMainFrame() const
 {
-    return m_page && this == m_page->mainFrame();
+    Page* page = this->page();
+    return page && this == page->mainFrame();
 }
 
 String Frame::documentTypeString() const
@@ -453,7 +463,7 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
     ScrollbarMode verticalScrollbarMode, bool verticalLock)
 {
     ASSERT(this);
-    ASSERT(m_page);
+    ASSERT(page());
 
     bool isMainFrame = this->isMainFrame();
 
@@ -475,7 +485,7 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
 
     setView(frameView);
 
-    if (backgroundColor.isValid())
+    if (backgroundColor.alpha())
         frameView->updateBackgroundRecursively(backgroundColor, transparent);
 
     if (isMainFrame)
@@ -486,6 +496,26 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
 
     if (HTMLFrameOwnerElement* owner = ownerElement())
         view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
+}
+
+
+void Frame::countObjectsNeedingLayout(unsigned& needsLayoutObjects, unsigned& totalObjects, bool& isPartial)
+{
+    RenderObject* root = view()->layoutRoot();
+    isPartial = true;
+    if (!root) {
+        isPartial = false;
+        root = contentRenderer();
+    }
+
+    needsLayoutObjects = 0;
+    totalObjects = 0;
+
+    for (RenderObject* o = root; o; o = o->nextInPreOrder(root)) {
+        ++totalObjects;
+        if (o->needsLayout())
+            ++needsLayoutObjects;
+    }
 }
 
 String Frame::layerTreeAsText(unsigned flags) const
@@ -547,15 +577,11 @@ void Frame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor
     m_pageZoomFactor = pageZoomFactor;
     m_textZoomFactor = textZoomFactor;
 
-    document->recalcStyle(Force);
-
     for (RefPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling())
         child->setPageAndTextZoomFactors(m_pageZoomFactor, m_textZoomFactor);
 
-    if (FrameView* view = this->view()) {
-        if (document->renderer() && document->renderer()->needsLayout() && view->didFirstLayout())
-            view->layout();
-    }
+    document->setNeedsStyleRecalc(SubtreeStyleChange);
+    document->updateLayoutIgnorePendingStylesheets();
 }
 
 void Frame::deviceOrPageScaleFactorChanged()
@@ -576,14 +602,14 @@ void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
             count += WheelController::from(frame->document())->wheelEventHandlerCount();
     }
 
-    m_page->chrome().client().numWheelEventHandlersChanged(count);
+    m_host->chrome().client().numWheelEventHandlersChanged(count);
 }
 
 bool Frame::isURLAllowed(const KURL& url) const
 {
     // We allow one level of self-reference because some sites depend on that,
     // but we don't allow more than one.
-    if (m_page->subframeCount() >= Page::maxNumberOfFrames)
+    if (page()->subframeCount() >= Page::maxNumberOfFrames)
         return false;
     bool foundSelfReference = false;
     for (const Frame* frame = this; frame; frame = frame->tree().parent()) {
@@ -645,9 +671,8 @@ PassOwnPtr<DragImage> Frame::nodeImage(Node* node)
     LayoutRect topLevelRect;
     IntRect paintingRect = pixelSnappedIntRect(renderer->paintingRootRect(topLevelRect));
 
-    float deviceScaleFactor = 1;
-    if (m_page)
-        deviceScaleFactor = m_page->deviceScaleFactor();
+    ASSERT(document()->isActive());
+    float deviceScaleFactor = m_host->deviceScaleFactor();
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
@@ -658,6 +683,8 @@ PassOwnPtr<DragImage> Frame::nodeImage(Node* node)
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
     buffer->context()->clip(FloatRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
 
+    // https://code.google.com/p/chromium/issues/detail?id=343755
+    DisableCompositingQueryAsserts disabler;
     m_view->paintContents(buffer->context(), paintingRect);
 
     RefPtr<Image> image = buffer->copyImage();
@@ -675,9 +702,8 @@ PassOwnPtr<DragImage> Frame::dragImageForSelection()
 
     IntRect paintingRect = enclosingIntRect(selection().bounds());
 
-    float deviceScaleFactor = 1;
-    if (m_page)
-        deviceScaleFactor = m_page->deviceScaleFactor();
+    ASSERT(document()->isActive());
+    float deviceScaleFactor = m_host->deviceScaleFactor();
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
@@ -696,12 +722,11 @@ PassOwnPtr<DragImage> Frame::dragImageForSelection()
 
 double Frame::devicePixelRatio() const
 {
-    if (!m_page)
+    if (!m_host)
         return 0;
 
-    double ratio = m_page->deviceScaleFactor();
-    if (RuntimeEnabledFeatures::devicePixelRatioIncludesZoomEnabled())
-        ratio *= pageZoomFactor();
+    double ratio = m_host->deviceScaleFactor();
+    ratio *= pageZoomFactor();
     return ratio;
 }
 

@@ -250,7 +250,7 @@ void RenderDeprecatedFlexibleBox::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
+void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren)
 {
     ASSERT(needsLayout());
 
@@ -260,10 +260,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
 
-    // Regions changing widths can force us to relayout our children.
     RenderFlowThread* flowThread = flowThreadContainingBlock();
-    if (logicalWidthChangedInRegions(flowThread))
-        relayoutChildren = true;
     if (updateRegionsAndShapesLogicalSize(flowThread))
         relayoutChildren = true;
 
@@ -426,7 +423,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
                 RenderLayer* childLayer = child->layer();
-                childLayer->setStaticInlinePosition(xPos); // FIXME: Not right for regions.
+                childLayer->setStaticInlinePosition(xPos);
                 if (childLayer->staticBlockPosition() != yPos) {
                     childLayer->setStaticBlockPosition(yPos);
                     if (child->style()->hasStaticBlockPosition(style()->isHorizontalWritingMode()))
@@ -664,7 +661,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
                 RenderLayer* childLayer = child->layer();
-                childLayer->setStaticInlinePosition(borderStart() + paddingStart()); // FIXME: Not right for regions.
+                childLayer->setStaticInlinePosition(borderStart() + paddingStart());
                 if (childLayer->staticBlockPosition() != height()) {
                     childLayer->setStaticBlockPosition(height());
                     if (child->style()->hasStaticBlockPosition(style()->isHorizontalWritingMode()))
@@ -948,15 +945,15 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         LayoutUnit totalWidth;
         InlineBox* anchorBox = lastLine->lastChild();
         if (anchorBox && anchorBox->renderer()->style()->isLink())
-            totalWidth = anchorBox->logicalWidth() + font.width(RenderBlockFlow::constructTextRun(this, font, ellipsisAndSpace, 2, style()));
+            totalWidth = anchorBox->logicalWidth() + font.width(RenderBlockFlow::constructTextRun(this, font, ellipsisAndSpace, 2, style(), style()->direction()));
         else {
             anchorBox = 0;
-            totalWidth = font.width(RenderBlockFlow::constructTextRun(this, font, &horizontalEllipsis, 1, style()));
+            totalWidth = font.width(RenderBlockFlow::constructTextRun(this, font, &horizontalEllipsis, 1, style(), style()->direction()));
         }
 
         // See if this width can be accommodated on the last visible line
-        RenderBlock* destBlock = toRenderBlock(lastVisibleLine->renderer());
-        RenderBlock* srcBlock = toRenderBlock(lastLine->renderer());
+        RenderBlockFlow* destBlock = lastVisibleLine->block();
+        RenderBlockFlow* srcBlock = lastLine->block();
 
         // FIXME: Directions of src/destBlock could be different from our direction and from one another.
         if (!srcBlock->style()->isLeftToRightDirection())

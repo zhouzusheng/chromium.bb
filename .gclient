@@ -1,6 +1,6 @@
 solutions = [
-      { "name"        : "33.0.1750.154",
-        "url"         : "http://src.chromium.org/chrome/releases/33.0.1750.154",
+      { "name"        : "34.0.1847.137",
+        "url"         : "http://src.chromium.org/chrome/releases/34.0.1847.137",
         "deps_file"   : "DEPS",
         "managed"     : True,
         "custom_deps" : {

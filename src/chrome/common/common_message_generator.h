@@ -8,6 +8,7 @@
 
 // #include "apps/app_shim/app_shim_messages.h"
 // #include "chrome/common/benchmarking_messages.h"
+// #include "chrome/common/cast_messages.h"
 // #include "chrome/common/chrome_utility_messages.h"
 // #include "chrome/common/extensions/extension_messages.h"
 // #include "chrome/common/prerender_messages.h"
@@ -17,12 +18,16 @@
 #include "chrome/common/spellcheck_messages.h"
 // #include "chrome/common/tts_messages.h"
 
+#if defined(ENABLE_AUTOMATION)
+// #include "chrome/common/automation_messages.h"
+#endif
+
 #if defined(ENABLE_MDNS)
 // #include "chrome/common/local_discovery/local_discovery_messages.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
-// #include "chrome/common/print_messages.h"
+#include "chrome/common/print_messages.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)

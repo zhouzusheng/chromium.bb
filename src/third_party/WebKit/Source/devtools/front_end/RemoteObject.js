@@ -629,9 +629,12 @@ WebInspector.RemoteObjectProperty = function(name, value, descriptor)
 }
 
 WebInspector.RemoteObjectProperty.prototype = {
+    /**
+     * @return {boolean}
+     */
     isAccessorProperty: function()
     {
-        return this.getter || this.setter;
+        return !!(this.getter || this.setter);
     }
 };
 
@@ -878,5 +881,7 @@ WebInspector.LocalJSONObject.prototype = {
         }
 
         callback(result);
-    }
+    },
+
+    __proto__: WebInspector.RemoteObject.prototype
 }

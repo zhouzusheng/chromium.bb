@@ -86,6 +86,9 @@ void AddDefaultFieldValue(ModelType datatype,
     case SYNCED_NOTIFICATIONS:
       specifics->mutable_synced_notification();
       break;
+    case SYNCED_NOTIFICATION_APP_INFO:
+      specifics->mutable_synced_notification_app_info();
+      break;
     case DEVICE_INFO:
       specifics->mutable_device_info();
       break;
@@ -109,6 +112,9 @@ void AddDefaultFieldValue(ModelType datatype,
       break;
     case MANAGED_USERS:
       specifics->mutable_managed_user();
+      break;
+    case MANAGED_USER_SHARED_SETTINGS:
+      specifics->mutable_managed_user_shared_setting();
       break;
     case ARTICLES:
       specifics->mutable_article();
@@ -186,6 +192,8 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       return sync_pb::EntitySpecifics::kHistoryDeleteDirectiveFieldNumber;
     case SYNCED_NOTIFICATIONS:
       return sync_pb::EntitySpecifics::kSyncedNotificationFieldNumber;
+    case SYNCED_NOTIFICATION_APP_INFO:
+      return sync_pb::EntitySpecifics::kSyncedNotificationAppInfoFieldNumber;
     case DEVICE_INFO:
       return sync_pb::EntitySpecifics::kDeviceInfoFieldNumber;
       break;
@@ -206,6 +214,8 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       return sync_pb::EntitySpecifics::kManagedUserSettingFieldNumber;
     case MANAGED_USERS:
       return sync_pb::EntitySpecifics::kManagedUserFieldNumber;
+    case MANAGED_USER_SHARED_SETTINGS:
+      return sync_pb::EntitySpecifics::kManagedUserSharedSettingFieldNumber;
     case ARTICLES:
       return sync_pb::EntitySpecifics::kArticleFieldNumber;
     default:
@@ -306,6 +316,9 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
   if (specifics.has_synced_notification())
     return SYNCED_NOTIFICATIONS;
 
+  if (specifics.has_synced_notification_app_info())
+    return SYNCED_NOTIFICATION_APP_INFO;
+
   if (specifics.has_device_info())
     return DEVICE_INFO;
 
@@ -329,6 +342,9 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
 
   if (specifics.has_managed_user())
     return MANAGED_USERS;
+
+  if (specifics.has_managed_user_shared_setting())
+    return MANAGED_USER_SHARED_SETTINGS;
 
   if (specifics.has_article())
     return ARTICLES;
@@ -379,6 +395,9 @@ ModelTypeSet EncryptableUserTypes() {
   encryptable_user_types.Remove(HISTORY_DELETE_DIRECTIVES);
   // Synced notifications are not encrypted since the server must see changes.
   encryptable_user_types.Remove(SYNCED_NOTIFICATIONS);
+  // Synced Notification App Info does not have private data, so it is not
+  // encrypted.
+  encryptable_user_types.Remove(SYNCED_NOTIFICATION_APP_INFO);
   // Priority preferences are not encrypted because they might be synced before
   // encryption is ready.
   encryptable_user_types.Remove(PRIORITY_PREFERENCES);
@@ -386,6 +405,9 @@ ModelTypeSet EncryptableUserTypes() {
   encryptable_user_types.Remove(MANAGED_USER_SETTINGS);
   // Managed users are not encrypted since they are managed server-side.
   encryptable_user_types.Remove(MANAGED_USERS);
+  // Managed user shared settings are not encrypted since they are managed
+  // server-side and shared between manager and supervised user.
+  encryptable_user_types.Remove(MANAGED_USER_SHARED_SETTINGS);
   // Proxy types have no sync representation and are therefore not encrypted.
   // Note however that proxy types map to one or more protocol types, which
   // may or may not be encrypted themselves.
@@ -425,6 +447,9 @@ ModelTypeSet CoreTypes() {
 
   // The following are low priority core types.
   result.Put(SYNCED_NOTIFICATIONS);
+  result.Put(MANAGED_USER_SHARED_SETTINGS);
+  // TODO(petewil): Add synced notification app info once crbug.com/339094 is
+  // fixed.
 
   return result;
 }
@@ -484,6 +509,8 @@ const char* ModelTypeToString(ModelType model_type) {
       return "History Delete Directives";
     case SYNCED_NOTIFICATIONS:
       return "Synced Notifications";
+    case SYNCED_NOTIFICATION_APP_INFO:
+      return "Synced Notification App Info";
     case DEVICE_INFO:
       return "Device Info";
     case EXPERIMENTS:
@@ -500,6 +527,8 @@ const char* ModelTypeToString(ModelType model_type) {
       return "Managed User Settings";
     case MANAGED_USERS:
       return "Managed Users";
+    case MANAGED_USER_SHARED_SETTINGS:
+      return "Managed User Shared Settings";
     case ARTICLES:
       return "Articles";
     case PROXY_TABS:
@@ -577,6 +606,10 @@ int ModelTypeToHistogramInt(ModelType model_type) {
       return 28;
     case APP_LIST:
       return 29;
+    case MANAGED_USER_SHARED_SETTINGS:
+      return 30;
+    case SYNCED_NOTIFICATION_APP_INFO:
+      return 31;
     // Silence a compiler warning.
     case MODEL_TYPE_COUNT:
       return 0;
@@ -648,6 +681,8 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
     return HISTORY_DELETE_DIRECTIVES;
   else if (model_type_string == "Synced Notifications")
     return SYNCED_NOTIFICATIONS;
+  else if (model_type_string == "Synced Notification App Info")
+    return SYNCED_NOTIFICATION_APP_INFO;
   else if (model_type_string == "Device Info")
     return DEVICE_INFO;
   else if (model_type_string == "Experiments")
@@ -664,6 +699,8 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
     return MANAGED_USER_SETTINGS;
   else if (model_type_string == "Managed Users")
     return MANAGED_USERS;
+  else if (model_type_string == "Managed User Shared Settings")
+    return MANAGED_USER_SHARED_SETTINGS;
   else if (model_type_string == "Articles")
     return ARTICLES;
   else if (model_type_string == "Tabs")
@@ -744,6 +781,8 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_history_delete_directives";
     case SYNCED_NOTIFICATIONS:
       return "google_chrome_synced_notifications";
+    case SYNCED_NOTIFICATION_APP_INFO:
+      return "google_chrome_synced_notification_app_info";
     case DEVICE_INFO:
       return "google_chrome_device_info";
     case EXPERIMENTS:
@@ -760,6 +799,8 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_managed_user_settings";
     case MANAGED_USERS:
       return "google_chrome_managed_users";
+    case MANAGED_USER_SHARED_SETTINGS:
+      return "google_chrome_managed_user_shared_settings";
     case ARTICLES:
       return "google_chrome_articles";
     case PROXY_TABS:
@@ -794,6 +835,7 @@ const char kAppNotificationNotificationType[] = "APP_NOTIFICATION";
 const char kHistoryDeleteDirectiveNotificationType[] =
     "HISTORY_DELETE_DIRECTIVE";
 const char kSyncedNotificationType[] = "SYNCED_NOTIFICATION";
+const char kSyncedNotificationAppInfoType[] = "SYNCED_NOTIFICATION_APP_INFO";
 const char kDeviceInfoNotificationType[] = "DEVICE_INFO";
 const char kExperimentsNotificationType[] = "EXPERIMENTS";
 const char kPriorityPreferenceNotificationType[] = "PRIORITY_PREFERENCE";
@@ -802,6 +844,8 @@ const char kFaviconImageNotificationType[] = "FAVICON_IMAGE";
 const char kFaviconTrackingNotificationType[] = "FAVICON_TRACKING";
 const char kManagedUserSettingNotificationType[] = "MANAGED_USER_SETTING";
 const char kManagedUserNotificationType[] = "MANAGED_USER";
+const char kManagedUserSharedSettingNotificationType[] =
+    "MANAGED_USER_SHARED_SETTING";
 const char kArticleNotificationType[] = "ARTICLE";
 }  // namespace
 
@@ -862,6 +906,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
     case SYNCED_NOTIFICATIONS:
       *notification_type = kSyncedNotificationType;
       return true;
+    case SYNCED_NOTIFICATION_APP_INFO:
+      *notification_type = kSyncedNotificationAppInfoType;
+      return true;
     case DEVICE_INFO:
       *notification_type = kDeviceInfoNotificationType;
       return true;
@@ -885,6 +932,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
       return true;
     case MANAGED_USERS:
       *notification_type = kManagedUserNotificationType;
+      return true;
+    case MANAGED_USER_SHARED_SETTINGS:
+      *notification_type = kManagedUserSharedSettingNotificationType;
       return true;
     case ARTICLES:
       *notification_type = kArticleNotificationType;
@@ -952,6 +1002,9 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
   } else if (notification_type == kSyncedNotificationType) {
     *model_type = SYNCED_NOTIFICATIONS;
     return true;
+  } else if (notification_type == kSyncedNotificationAppInfoType) {
+    *model_type = SYNCED_NOTIFICATION_APP_INFO;
+    return true;
   } else if (notification_type == kDeviceInfoNotificationType) {
     *model_type = DEVICE_INFO;
     return true;
@@ -975,6 +1028,9 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
     return true;
   } else if (notification_type == kManagedUserNotificationType) {
     *model_type = MANAGED_USERS;
+    return true;
+  } else if (notification_type == kManagedUserSharedSettingNotificationType) {
+    *model_type = MANAGED_USER_SHARED_SETTINGS;
     return true;
   } else if (notification_type == kArticleNotificationType) {
     *model_type = ARTICLES;

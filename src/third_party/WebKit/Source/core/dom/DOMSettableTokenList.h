@@ -34,7 +34,7 @@ namespace WebCore {
 
 class ExceptionState;
 
-class DOMSettableTokenList : public DOMTokenList, public RefCounted<DOMSettableTokenList> {
+class DOMSettableTokenList FINAL : public DOMTokenList, public RefCounted<DOMSettableTokenList> {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassRefPtr<DOMSettableTokenList> create()
@@ -52,7 +52,7 @@ public:
     virtual void add(const Vector<String>&, ExceptionState&) OVERRIDE;
     virtual void remove(const Vector<String>&, ExceptionState&) OVERRIDE;
 
-    virtual AtomicString value() const OVERRIDE { return m_value; }
+    virtual const AtomicString& value() const OVERRIDE { return m_value; }
     virtual void setValue(const AtomicString&) OVERRIDE;
 
     const SpaceSplitString& tokens() const { return m_tokens; }

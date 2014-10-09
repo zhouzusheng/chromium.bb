@@ -39,11 +39,9 @@ public:
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(focus);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(load);
+    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(resize);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(scroll);
-
-#if ENABLE(ORIENTATION_EVENTS)
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-#endif
 
 private:
     explicit HTMLBodyElement(Document&);
@@ -53,21 +51,20 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 
-    virtual bool supportsFocus() const;
+    virtual bool supportsFocus() const OVERRIDE;
 
-    virtual int scrollLeft();
-    virtual void setScrollLeft(int scrollLeft);
+    virtual int scrollLeft() OVERRIDE;
+    virtual void setScrollLeft(int) OVERRIDE;
 
-    virtual int scrollTop();
-    virtual void setScrollTop(int scrollTop);
+    virtual int scrollTop() OVERRIDE;
+    virtual void setScrollTop(int) OVERRIDE;
 
-    virtual int scrollHeight();
-    virtual int scrollWidth();
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    virtual int scrollHeight() OVERRIDE;
+    virtual int scrollWidth() OVERRIDE;
 };
 
 DEFINE_NODE_TYPE_CASTS(HTMLBodyElement, hasTagName(HTMLNames::bodyTag));

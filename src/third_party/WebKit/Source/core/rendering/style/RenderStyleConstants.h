@@ -31,6 +31,7 @@ namespace WebCore {
 enum StyleRecalcChange {
     NoChange,
     NoInherit,
+    UpdatePseudoElements,
     Inherit,
     Force,
     Reattach,
@@ -81,13 +82,13 @@ enum PseudoId {
     // If you add or remove a public ID, you must update _pseudoBits in RenderStyle.
     NOPSEUDO, FIRST_LINE, FIRST_LETTER, BEFORE, AFTER, BACKDROP, SELECTION, FIRST_LINE_INHERITED, SCROLLBAR,
     // Internal IDs follow:
-    SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER,
-    INPUT_LIST_BUTTON,
+    SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER, INPUT_LIST_BUTTON,
+    // Special values follow:
     AFTER_LAST_INTERNAL_PSEUDOID,
-    FULL_SCREEN, FULL_SCREEN_DOCUMENT, FULL_SCREEN_ANCESTOR,
     FIRST_PUBLIC_PSEUDOID = FIRST_LINE,
     FIRST_INTERNAL_PSEUDOID = SCROLLBAR_THUMB,
-    PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1)
+    PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1),
+    PSEUDO_ELEMENT_MASK = (1 << (BEFORE - 1)) | (1 << (AFTER - 1)) | (1 << (BACKDROP - 1))
 };
 
 enum ColumnFill { ColumnFillBalance, ColumnFillAuto };
@@ -191,7 +192,6 @@ enum EBoxDirection { BNORMAL, BREVERSE };
 // CSS3 Flexbox Properties
 
 enum EAlignContent { AlignContentFlexStart, AlignContentFlexEnd, AlignContentCenter, AlignContentSpaceBetween, AlignContentSpaceAround, AlignContentStretch };
-enum EAlignItems { AlignAuto, AlignFlexStart, AlignFlexEnd, AlignCenter, AlignStretch, AlignBaseline };
 enum EFlexDirection { FlowRow, FlowRowReverse, FlowColumn, FlowColumnReverse };
 enum EFlexWrap { FlexNoWrap, FlexWrap, FlexWrapReverse };
 enum EJustifyContent { JustifyFlexStart, JustifyFlexEnd, JustifyCenter, JustifySpaceBetween, JustifySpaceAround };
@@ -450,7 +450,9 @@ enum EDisplay {
     TABLE_CAPTION, BOX, INLINE_BOX,
     FLEX, INLINE_FLEX,
     GRID, INLINE_GRID,
-    NONE
+    NONE,
+    FIRST_TABLE_DISPLAY = TABLE,
+    LAST_TABLE_DISPLAY = TABLE_CAPTION
 };
 
 enum EInsideLink {
@@ -495,15 +497,9 @@ enum ImageResolutionSnap { ImageResolutionNoSnap = 0, ImageResolutionSnapPixels 
 
 enum Order { LogicalOrder = 0, VisualOrder };
 
-enum RegionFragment { AutoRegionFragment, BreakRegionFragment };
-
 enum ColumnAxis { HorizontalColumnAxis, VerticalColumnAxis, AutoColumnAxis };
 
 enum ColumnProgression { NormalColumnProgression, ReverseColumnProgression };
-
-enum LineSnap { LineSnapNone, LineSnapBaseline, LineSnapContain };
-
-enum LineAlign { LineAlignNone, LineAlignEdges };
 
 enum WrapFlow { WrapFlowAuto, WrapFlowBoth, WrapFlowStart, WrapFlowEnd, WrapFlowMaximum, WrapFlowClear };
 
@@ -531,12 +527,33 @@ enum EIsolation { IsolationAuto, IsolationIsolate };
 
 enum TouchActionDelay { TouchActionDelayNone, TouchActionDelayScript };
 
+enum ItemPosition {
+    ItemPositionAuto,
+    ItemPositionStretch,
+    ItemPositionBaseline,
+    ItemPositionCenter,
+    ItemPositionStart,
+    ItemPositionEnd,
+    ItemPositionSelfStart,
+    ItemPositionSelfEnd,
+    ItemPositionFlexStart,
+    ItemPositionFlexEnd,
+    ItemPositionLeft,
+    ItemPositionRight
+};
+
+enum OverflowAlignment {
+    OverflowAlignmentDefault,
+    OverflowAlignmentTrue,
+    OverflowAlignmentSafe
+};
+
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;
 
 enum TextIndentLine { TextIndentFirstLine, TextIndentEachLine };
 
-enum LayoutBox { MarginBox, BorderBox, PaddingBox, ContentBox };
+enum LayoutBox { BoxMissing = 0, MarginBox, BorderBox, PaddingBox, ContentBox };
 
 } // namespace WebCore
 

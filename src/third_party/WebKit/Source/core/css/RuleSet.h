@@ -37,18 +37,15 @@ enum AddRuleFlags {
     RuleHasNoSpecialState         = 0,
     RuleHasDocumentSecurityOrigin = 1,
     RuleCanUseFastCheckSelector   = 1 << 1,
-    RuleIsInRegionRule            = 1 << 2,
 };
 
 enum PropertyWhitelistType {
     PropertyWhitelistNone   = 0,
-    PropertyWhitelistRegion,
     PropertyWhitelistCue
 };
 
 class CSSSelector;
 class MediaQueryEvaluator;
-class StyleRuleRegion;
 class StyleSheetContents;
 
 struct MinimalRuleData {
@@ -71,7 +68,7 @@ public:
 
     unsigned position() const { return m_position; }
     StyleRule* rule() const { return m_rule; }
-    const CSSSelector* selector() const { return m_rule->selectorList().selectorAt(m_selectorIndex); }
+    const CSSSelector& selector() const { return m_rule->selectorList().selectorAt(m_selectorIndex); }
     unsigned selectorIndex() const { return m_selectorIndex; }
 
     bool isLastInArray() const { return m_isLastInArray; }
@@ -128,10 +125,10 @@ public:
 
     const RuleFeatureSet& features() const { return m_features; }
 
-    const RuleData* idRules(StringImpl* key) const { ASSERT(!m_pendingRules); return m_idRules.get(key); }
-    const RuleData* classRules(StringImpl* key) const { ASSERT(!m_pendingRules); return m_classRules.get(key); }
-    const RuleData* tagRules(StringImpl* key) const { ASSERT(!m_pendingRules); return m_tagRules.get(key); }
-    const RuleData* shadowPseudoElementRules(StringImpl* key) const { ASSERT(!m_pendingRules); return m_shadowPseudoElementRules.get(key); }
+    const RuleData* idRules(const AtomicString& key) const { ASSERT(!m_pendingRules); return m_idRules.get(key); }
+    const RuleData* classRules(const AtomicString& key) const { ASSERT(!m_pendingRules); return m_classRules.get(key); }
+    const RuleData* tagRules(const AtomicString& key) const { ASSERT(!m_pendingRules); return m_tagRules.get(key); }
+    const RuleData* shadowPseudoElementRules(const AtomicString& key) const { ASSERT(!m_pendingRules); return m_shadowPseudoElementRules.get(key); }
     const Vector<RuleData>* linkPseudoClassRules() const { ASSERT(!m_pendingRules); return &m_linkPseudoClassRules; }
     const Vector<RuleData>* cuePseudoRules() const { ASSERT(!m_pendingRules); return &m_cuePseudoRules; }
     const Vector<RuleData>* focusPseudoClassRules() const { ASSERT(!m_pendingRules); return &m_focusPseudoClassRules; }
@@ -153,6 +150,10 @@ public:
         compactRules();
     }
 
+#ifndef NDEBUG
+    void show();
+#endif
+
     struct RuleSetSelectorPair {
         RuleSetSelectorPair(const CSSSelector* selector, PassOwnPtr<RuleSet> ruleSet) : selector(selector), ruleSet(ruleSet) { }
         RuleSetSelectorPair(const RuleSetSelectorPair& rs) : selector(rs.selector), ruleSet(const_cast<RuleSetSelectorPair*>(&rs)->ruleSet.release()) { }
@@ -161,26 +162,23 @@ public:
         OwnPtr<RuleSet> ruleSet;
     };
 
-    Vector<RuleSetSelectorPair> m_regionSelectorsAndRuleSets;
-
 private:
-    typedef HashMap<StringImpl*, OwnPtr<LinkedStack<RuleData> > > PendingRuleMap;
-    typedef HashMap<StringImpl*, OwnPtr<RuleData> > CompactRuleMap;
+    typedef HashMap<AtomicString, OwnPtr<LinkedStack<RuleData> > > PendingRuleMap;
+    typedef HashMap<AtomicString, OwnPtr<RuleData> > CompactRuleMap;
 
     RuleSet()
         : m_ruleCount(0)
     {
     }
 
-    void addToRuleSet(StringImpl* key, PendingRuleMap&, const RuleData&);
+    void addToRuleSet(const AtomicString& key, PendingRuleMap&, const RuleData&);
     void addPageRule(StyleRulePage*);
     void addViewportRule(StyleRuleViewport*);
     void addFontFaceRule(StyleRuleFontFace*);
     void addKeyframesRule(StyleRuleKeyframes*);
-    void addRegionRule(StyleRuleRegion*, bool hasDocumentSecurityOrigin);
 
     void addChildRules(const Vector<RefPtr<StyleRuleBase> >&, const MediaQueryEvaluator& medium, AddRuleFlags);
-    bool findBestRuleSetAndAdd(const CSSSelector*, RuleData&);
+    bool findBestRuleSetAndAdd(const CSSSelector&, RuleData&);
 
     void compactRules();
     static void compactPendingRules(PendingRuleMap&, CompactRuleMap&);
@@ -219,6 +217,10 @@ private:
 
     unsigned m_ruleCount;
     OwnPtr<PendingRuleMaps> m_pendingRules;
+
+#ifndef NDEBUG
+    Vector<RuleData> m_allRules;
+#endif
 };
 
 } // namespace WebCore

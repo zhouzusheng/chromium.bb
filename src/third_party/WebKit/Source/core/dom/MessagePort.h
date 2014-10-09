@@ -56,7 +56,7 @@ typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
 // Not to be confused with blink::WebMessagePortChannelArray; this one uses Vector and OwnPtr instead of WebVector and raw pointers.
 typedef Vector<OwnPtr<blink::WebMessagePortChannel>, 1> MessagePortChannelArray;
 
-class MessagePort : public RefCounted<MessagePort>
+class MessagePort FINAL : public RefCounted<MessagePort>
     , public ActiveDOMObject
     , public EventTargetWithInlineData
     , public ScriptWrappable
@@ -84,18 +84,18 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
-    MessagePort* toMessagePort() OVERRIDE { return this; }
+    virtual MessagePort* toMessagePort() OVERRIDE { return this; }
 
     // ActiveDOMObject implementation.
     virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE { close(); }
 
-    void setOnmessage(PassRefPtr<EventListener> listener, DOMWrapperWorld* world)
+    void setOnmessage(PassRefPtr<EventListener> listener)
     {
-        setAttributeEventListener(EventTypeNames::message, listener, world);
+        setAttributeEventListener(EventTypeNames::message, listener);
         start();
     }
-    EventListener* onmessage(DOMWrapperWorld* world) { return getAttributeEventListener(EventTypeNames::message, world); }
+    EventListener* onmessage() { return getAttributeEventListener(EventTypeNames::message); }
 
     // A port starts out its life entangled, and remains entangled until it is closed or is cloned.
     bool isEntangled() const { return !m_closed && !isNeutered(); }

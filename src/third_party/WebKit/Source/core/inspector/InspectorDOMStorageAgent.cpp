@@ -68,8 +68,8 @@ static bool hadException(ExceptionState& exceptionState, ErrorString* errorStrin
     }
 }
 
-InspectorDOMStorageAgent::InspectorDOMStorageAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorCompositeState* state)
-    : InspectorBaseAgent<InspectorDOMStorageAgent>("DOMStorage", instrumentingAgents, state)
+InspectorDOMStorageAgent::InspectorDOMStorageAgent(InspectorPageAgent* pageAgent)
+    : InspectorBaseAgent<InspectorDOMStorageAgent>("DOMStorage")
     , m_pageAgent(pageAgent)
     , m_frontend(0)
 {
@@ -110,7 +110,7 @@ void InspectorDOMStorageAgent::disable(ErrorString*)
 void InspectorDOMStorageAgent::getDOMStorageItems(ErrorString* errorString, const RefPtr<JSONObject>& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& items)
 {
     Frame* frame;
-    OwnPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
+    OwnPtrWillBeRawPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
     if (!storageArea)
         return;
 
@@ -142,7 +142,7 @@ static String toErrorString(ExceptionState& exceptionState)
 void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key, const String& value)
 {
     Frame* frame;
-    OwnPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
+    OwnPtrWillBeRawPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
     if (!storageArea) {
         *errorString = "Storage not found";
         return;
@@ -156,7 +156,7 @@ void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const
 void InspectorDOMStorageAgent::removeDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key)
 {
     Frame* frame;
-    OwnPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
+    OwnPtrWillBeRawPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
     if (!storageArea) {
         *errorString = "Storage not found";
         return;
@@ -165,18 +165,6 @@ void InspectorDOMStorageAgent::removeDOMStorageItem(ErrorString* errorString, co
     TrackExceptionState exceptionState;
     storageArea->removeItem(key, exceptionState, frame);
     *errorString = toErrorString(exceptionState);
-}
-
-String InspectorDOMStorageAgent::storageId(Storage* storage)
-{
-    ASSERT(storage);
-    Document* document = storage->frame()->document();
-    ASSERT(document);
-    DOMWindow* window = document->domWindow();
-    ASSERT(window);
-    RefPtr<SecurityOrigin> securityOrigin = document->securityOrigin();
-    bool isLocalStorage = window->optionalLocalStorage() == storage;
-    return storageId(securityOrigin.get(), isLocalStorage)->toJSONString();
 }
 
 PassRefPtr<TypeBuilder::DOMStorage::StorageId> InspectorDOMStorageAgent::storageId(SecurityOrigin* securityOrigin, bool isLocalStorage)
@@ -203,7 +191,7 @@ void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, con
         m_frontend->domstorage()->domStorageItemUpdated(id, key, oldValue, newValue);
 }
 
-PassOwnPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, Frame*& targetFrame)
+PassOwnPtrWillBeRawPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, Frame*& targetFrame)
 {
     String securityOrigin;
     bool isLocalStorage = false;

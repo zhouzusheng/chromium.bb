@@ -38,7 +38,8 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_MAC,
   EDITING_BEHAVIOR_WIN,
   EDITING_BEHAVIOR_UNIX,
-  EDITING_BEHAVIOR_ANDROID
+  EDITING_BEHAVIOR_ANDROID,
+  EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
 };
 
 
@@ -95,16 +96,13 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_file_access_from_file_urls;
   bool webaudio_enabled;
   bool experimental_webgl_enabled;
+  bool pepper_3d_enabled;
   bool flash_3d_enabled;
   bool flash_stage3d_enabled;
   bool flash_stage3d_baseline_enabled;
   bool gl_multisampling_enabled;
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
-  bool accelerated_compositing_for_overflow_scroll_enabled;
-  bool universal_accelerated_compositing_for_overflow_scroll_enabled;
-  bool accelerated_compositing_for_scrollable_frames_enabled;
-  bool composited_scrolling_for_frames_enabled;
   bool mock_scrollbars_enabled;
   bool layer_squashing_enabled;
   bool threaded_html_parser;
@@ -121,6 +119,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool antialiased_2d_canvas_disabled;
   int accelerated_2d_canvas_msaa_sample_count;
   bool accelerated_filters_enabled;
+  bool deferred_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
   bool memory_info_enabled;
@@ -165,6 +164,10 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   // define custom getters and setters from within a unique security content
   // without raising a DOM security exception.
   bool cookie_enabled;
+
+  // This flag indicates whether H/W accelerated video decode is enabled for
+  // pepper plugins. Defaults to false.
+  bool pepper_accelerated_video_decode_enabled;
 
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;

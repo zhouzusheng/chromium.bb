@@ -496,9 +496,7 @@ void ApplyStyleCommand::removeEmbeddingUpToEnclosingBlock(Node* node, Node* unsp
     if (!block)
         return;
 
-    Node* parent = 0;
-    for (Node* n = node->parentNode(); n != block && n != unsplitAncestor; n = parent) {
-        parent = n->parentNode();
+    for (Node* n = node->parentNode(); n != block && n != unsplitAncestor; n = n->parentNode()) {
         if (!n->isStyledElement())
             continue;
 
@@ -901,15 +899,12 @@ bool ApplyStyleCommand::removeInlineStyleFromElement(EditingStyle* style, PassRe
     return removed;
 }
 
-void ApplyStyleCommand::replaceWithSpanOrRemoveIfWithoutAttributes(HTMLElement*& elem)
+void ApplyStyleCommand::replaceWithSpanOrRemoveIfWithoutAttributes(HTMLElement* elem)
 {
     if (hasNoAttributeOrOnlyStyleAttribute(elem, StyleAttributeShouldBeEmpty))
         removeNodePreservingChildren(elem);
-    else {
-        HTMLElement* newSpanElement = replaceElementWithSpanPreservingChildrenAndAttributes(elem);
-        ASSERT(newSpanElement && newSpanElement->inDocument());
-        elem = newSpanElement;
-    }
+    else
+        replaceElementWithSpanPreservingChildrenAndAttributes(elem);
 }
 
 bool ApplyStyleCommand::removeImplicitlyStyledElement(EditingStyle* style, HTMLElement* element, InlineStyleRemovalMode mode, EditingStyle* extractedStyle)
@@ -956,10 +951,6 @@ bool ApplyStyleCommand::removeCSSStyle(EditingStyle* style, HTMLElement* element
     // FIXME: We should use a mass-removal function here but we don't have an undoable one yet.
     for (size_t i = 0; i < properties.size(); i++)
         removeCSSProperty(element, properties[i]);
-
-    // No need to serialize <foo style=""> if we just removed the last css property
-    if (element->inlineStyle()->isEmpty())
-        removeNodeAttribute(element, styleAttr);
 
     if (isSpanWithoutAttributesOrUnstyledStyleSpan(element))
         removeNodePreservingChildren(element);
@@ -1166,17 +1157,6 @@ bool ApplyStyleCommand::nodeFullySelected(Node *node, const Position &start, con
         && comparePositions(lastPositionInOrAfterNode(node).upstream(), end) <= 0;
 }
 
-bool ApplyStyleCommand::nodeFullyUnselected(Node *node, const Position &start, const Position &end) const
-{
-    ASSERT(node);
-    ASSERT(node->isElementNode());
-
-    bool isFullyBeforeStart = comparePositions(lastPositionInOrAfterNode(node).upstream(), start) < 0;
-    bool isFullyAfterEnd = comparePositions(firstPositionInOrBeforeNode(node), end) > 0;
-
-    return isFullyBeforeStart || isFullyAfterEnd;
-}
-
 void ApplyStyleCommand::splitTextAtStart(const Position& start, const Position& end)
 {
     ASSERT(start.containerNode()->isTextNode());
@@ -1271,7 +1251,6 @@ bool ApplyStyleCommand::mergeStartWithPreviousIfIdentical(const Position& start,
             return false;
 
         startNode = startNode->parentNode();
-        startOffset = 0;
     }
 
     if (!startNode->isElementNode())
@@ -1337,12 +1316,11 @@ void ApplyStyleCommand::surroundNodeRangeWithElement(PassRefPtr<Node> passedStar
     ASSERT(passedStartNode);
     ASSERT(endNode);
     ASSERT(elementToInsert);
-    RefPtr<Node> startNode = passedStartNode;
+    RefPtr<Node> node = passedStartNode;
     RefPtr<Element> element = elementToInsert;
 
-    insertNodeBefore(element, startNode);
+    insertNodeBefore(element, node);
 
-    RefPtr<Node> node = startNode;
     while (node) {
         RefPtr<Node> next = node->nextSibling();
         if (node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)) {
@@ -1510,6 +1488,7 @@ float ApplyStyleCommand::computedFontSize(Node* node)
     if (!style)
         return 0;
 
+    // FIXME: oilpan: Change to RefPtrWillBeRawPtr when changing CSSValue.
     RefPtr<CSSPrimitiveValue> value = static_pointer_cast<CSSPrimitiveValue>(style->getPropertyCSSValue(CSSPropertyFontSize));
     if (!value)
         return 0;

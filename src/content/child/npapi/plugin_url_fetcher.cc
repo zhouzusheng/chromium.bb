@@ -12,6 +12,7 @@
 #include "content/child/npapi/plugin_stream_url.h"
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
+#include "content/child/request_extra_data.h"
 #include "content/child/resource_dispatcher.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -80,6 +81,7 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
                                    bool notify_redirects,
                                    bool is_plugin_src_load,
                                    int origin_pid,
+                                   int render_frame_id,
                                    int render_view_id,
                                    unsigned long resource_id,
                                    bool copy_stream_data)
@@ -103,6 +105,23 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
   request_info.requestor_pid = origin_pid;
   request_info.request_type = ResourceType::OBJECT;
   request_info.routing_id = render_view_id;
+
+  RequestExtraData extra_data(blink::WebPageVisibilityStateVisible,
+                              base::string16(),
+                              false,
+                              render_frame_id,
+                              false,
+                              -1,
+                              GURL(),
+                              false,
+                              -1,
+                              true,
+                              PAGE_TRANSITION_LINK,
+                              false,
+                              -1,
+                              -1);
+
+  request_info.extra_data = &extra_data;
 
   std::vector<char> body;
   if (method == "POST") {
@@ -322,8 +341,10 @@ void PluginURLFetcher::OnReceivedData(const char* data,
 void PluginURLFetcher::OnCompletedRequest(
     int error_code,
     bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
     const std::string& security_info,
-    const base::TimeTicks& completion_time) {
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
   if (multipart_delegate_) {
     multipart_delegate_->OnCompletedRequest();
     multipart_delegate_.reset();

@@ -70,15 +70,14 @@ static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, 
 {
     NPObject* npObject;
 
-    WrapperWorldType currentWorldType = worldType(info.GetIsolate());
     // These three types are subtypes of HTMLPlugInElement.
-    if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType) || V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType)
-        || V8HTMLObjectElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType)) {
+    if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate()) || V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate())
+        || V8HTMLObjectElement::hasInstance(info.Holder(), info.GetIsolate())) {
         // The holder object is a subtype of HTMLPlugInElement.
         HTMLPlugInElement* element;
-        if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType))
+        if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate()))
             element = V8HTMLAppletElement::toNative(info.Holder());
-        else if (V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType))
+        else if (V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate()))
             element = V8HTMLEmbedElement::toNative(info.Holder());
         else
             element = V8HTMLObjectElement::toNative(info.Holder());
@@ -367,13 +366,22 @@ void npObjectPropertyEnumerator(const v8::PropertyCallbackInfo<v8::Array>& info,
         uint32_t count;
         NPIdentifier* identifiers;
         if (npObject->_class->enumerate(npObject, &identifiers, &count)) {
-            v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), count);
+            uint32_t propertiesCount = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 IdentifierRep* identifier = static_cast<IdentifierRep*>(identifiers[i]);
-                if (namedProperty)
-                    properties->Set(v8::Integer::New(i, info.GetIsolate()), v8AtomicString(info.GetIsolate(), identifier->string()));
-                else
-                    properties->Set(v8::Integer::New(i, info.GetIsolate()), v8::Integer::New(identifier->number(), info.GetIsolate()));
+                if (namedProperty == identifier->m_isString)
+                    ++propertiesCount;
+            }
+            v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), propertiesCount);
+            for (uint32_t i = 0, propertyIndex = 0; i < count; ++i) {
+                IdentifierRep* identifier = static_cast<IdentifierRep*>(identifiers[i]);
+                if (namedProperty == identifier->m_isString) {
+                    ASSERT(propertyIndex < propertiesCount);
+                    if (namedProperty)
+                        properties->Set(v8::Integer::New(info.GetIsolate(), propertyIndex++), v8AtomicString(info.GetIsolate(), identifier->string()));
+                    else
+                        properties->Set(v8::Integer::New(info.GetIsolate(), propertyIndex++), v8::Integer::New(info.GetIsolate(), identifier->number()));
+                }
             }
 
             v8SetReturnValue(info, properties);
@@ -459,7 +467,7 @@ v8::Local<v8::Object> createV8ObjectForNPObject(NPObject* object, NPObject* root
 
     WrapperConfiguration configuration = buildWrapperConfiguration(object, WrapperConfiguration::Dependent);
     staticNPObjectMap().set(object, value, configuration);
-    ASSERT(V8DOMWrapper::maybeDOMWrapper(value));
+    ASSERT(V8DOMWrapper::isDOMWrapper(value));
     return value;
 }
 

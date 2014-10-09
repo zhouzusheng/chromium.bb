@@ -35,8 +35,6 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/html/HTMLHtmlElement.h"
-#include "core/html/HTMLTableElement.h"
 #include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
 #include "platform/Logging.h"
@@ -211,13 +209,13 @@ Position Position::parentAnchoredEquivalent() const
 
     // FIXME: This should only be necessary for legacy positions, but is also needed for positions before and after Tables
     if (m_offset <= 0 && (m_anchorType != PositionIsAfterAnchor && m_anchorType != PositionIsAfterChildren)) {
-        if (m_anchorNode->parentNode() && (editingIgnoresContent(m_anchorNode.get()) || isTableElement(m_anchorNode.get())))
+        if (m_anchorNode->parentNode() && (editingIgnoresContent(m_anchorNode.get()) || isRenderedTableElement(m_anchorNode.get())))
             return positionInParentBeforeNode(m_anchorNode.get());
         return Position(m_anchorNode.get(), 0, PositionIsOffsetInAnchor);
     }
     if (!m_anchorNode->offsetInCharacters()
         && (m_anchorType == PositionIsAfterAnchor || m_anchorType == PositionIsAfterChildren || static_cast<unsigned>(m_offset) == m_anchorNode->childNodeCount())
-        && (editingIgnoresContent(m_anchorNode.get()) || isTableElement(m_anchorNode.get()))
+        && (editingIgnoresContent(m_anchorNode.get()) || isRenderedTableElement(m_anchorNode.get()))
         && containerNode()) {
         return positionInParentAfterNode(m_anchorNode.get());
     }
@@ -546,7 +544,7 @@ static bool endsOfNodeAreVisuallyDistinctPositions(Node* node)
         return true;
 
     // Don't include inline tables.
-    if (isHTMLTableElement(node))
+    if (node->hasTagName(tableTag))
         return false;
 
     // There is a VisiblePosition inside an empty inline-block container.
@@ -635,7 +633,7 @@ Position Position::upstream(EditingBoundaryCrossingRule rule) const
             return lastVisible;
 
         // Return position after tables and nodes which have content that can be ignored.
-        if (editingIgnoresContent(currentNode) || isTableElement(currentNode)) {
+        if (editingIgnoresContent(currentNode) || isRenderedTableElement(currentNode)) {
             if (currentPos.atEndOfNode())
                 return positionAfterNode(currentNode);
             continue;
@@ -763,7 +761,7 @@ Position Position::downstream(EditingBoundaryCrossingRule rule) const
             lastVisible = currentPos;
 
         // Return position before tables and nodes which have content that can be ignored.
-        if (editingIgnoresContent(currentNode) || isTableElement(currentNode)) {
+        if (editingIgnoresContent(currentNode) || isRenderedTableElement(currentNode)) {
             if (currentPos.offsetInLeafNode() <= renderer->caretMinOffset())
                 return createLegacyEditingPosition(currentNode, renderer->caretMinOffset());
             continue;
@@ -889,10 +887,10 @@ bool Position::isCandidate() const
     if (renderer->isText())
         return !nodeIsUserSelectNone(deprecatedNode()) && inRenderedText();
 
-    if (isTableElement(deprecatedNode()) || editingIgnoresContent(deprecatedNode()))
+    if (isRenderedTableElement(deprecatedNode()) || editingIgnoresContent(deprecatedNode()))
         return (atFirstEditingPositionForNode() || atLastEditingPositionForNode()) && !nodeIsUserSelectNone(deprecatedNode()->parentNode());
 
-    if (isHTMLHtmlElement(m_anchorNode.get()))
+    if (m_anchorNode->hasTagName(htmlTag))
         return false;
 
     if (renderer->isRenderBlockFlow()) {
@@ -1048,7 +1046,7 @@ bool Position::rendersInDifferentPosition(const Position &pos) const
 // This assumes that it starts in editable content.
 Position Position::leadingWhitespacePosition(EAffinity affinity, bool considerNonCollapsibleWhitespace) const
 {
-    ASSERT(isEditablePosition(*this));
+    ASSERT(isEditablePosition(*this, ContentIsEditable, DoNotUpdateStyle));
     if (isNull())
         return Position();
 
@@ -1070,7 +1068,7 @@ Position Position::leadingWhitespacePosition(EAffinity affinity, bool considerNo
 // This assumes that it starts in editable content.
 Position Position::trailingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace) const
 {
-    ASSERT(isEditablePosition(*this));
+    ASSERT(isEditablePosition(*this, ContentIsEditable, DoNotUpdateStyle));
     if (isNull())
         return Position();
 

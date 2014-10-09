@@ -34,7 +34,7 @@ class HTMLSelectElement;
 
 class HTMLOptionsCollection FINAL : public HTMLCollection {
 public:
-    static PassRefPtr<HTMLOptionsCollection> create(Node*, CollectionType);
+    static PassRefPtr<HTMLOptionsCollection> create(ContainerNode*, CollectionType);
 
     void add(PassRefPtr<HTMLOptionElement>, ExceptionState&);
     void add(PassRefPtr<HTMLOptionElement>, int index, ExceptionState&);
@@ -45,12 +45,13 @@ public:
     void setSelectedIndex(int);
 
     void setLength(unsigned, ExceptionState&);
-    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtr<NodeList>&, bool&, RefPtr<Node>&);
+    void namedGetter(const AtomicString& name, bool&, RefPtr<NodeList>&, bool&, RefPtr<Element>&);
     bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionState&);
-    bool anonymousIndexedSetterRemove(unsigned, ExceptionState&);
 
 private:
-    explicit HTMLOptionsCollection(Node*);
+    explicit HTMLOptionsCollection(ContainerNode*);
+
+    virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
 };
 
 } //namespace

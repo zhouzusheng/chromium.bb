@@ -14,13 +14,20 @@
 #include "./vpx_config.h"
 
 #include "vp9/common/vp9_onyxc_int.h"
+#include "vp9/decoder/vp9_dthread.h"
 #include "vp9/decoder/vp9_onyxd.h"
 #include "vp9/decoder/vp9_thread.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct VP9Decompressor {
   DECLARE_ALIGNED(16, MACROBLOCKD, mb);
 
   DECLARE_ALIGNED(16, VP9_COMMON, common);
+
+  DECLARE_ALIGNED(16, int16_t,  dqcoeff[MAX_MB_PLANE][64 * 64]);
 
   VP9D_CONFIG oxcf;
 
@@ -43,6 +50,8 @@ typedef struct VP9Decompressor {
   VP9Worker *tile_workers;
   int num_tile_workers;
 
+  VP9LfSync lf_row_sync;
+
   /* Each tile column has its own MODE_INFO stream. This array indexes them by
      tile column index. */
   MODE_INFO **mi_streams;
@@ -50,5 +59,9 @@ typedef struct VP9Decompressor {
   ENTROPY_CONTEXT *above_context[MAX_MB_PLANE];
   PARTITION_CONTEXT *above_seg_context;
 } VP9D_COMP;
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif  // VP9_DECODER_VP9_ONYXD_INT_H_

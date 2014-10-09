@@ -26,6 +26,7 @@
 #include <algorithm>
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RawPtr.h"
 
 namespace WTF {
 
@@ -35,6 +36,7 @@ namespace WTF {
     public:
         ALWAYS_INLINE RefPtr() : m_ptr(0) { }
         ALWAYS_INLINE RefPtr(T* ptr) : m_ptr(ptr) { refIfNotNull(ptr); }
+        template<typename U> RefPtr(const RawPtr<U>& ptr, EnsurePtrConvertibleArgDecl(U, T)) : m_ptr(ptr.get()) { refIfNotNull(m_ptr); }
         ALWAYS_INLINE explicit RefPtr(T& ref) : m_ptr(&ref) { m_ptr->ref(); }
         ALWAYS_INLINE RefPtr(const RefPtr& o) : m_ptr(o.m_ptr) { refIfNotNull(m_ptr); }
         template<typename U> RefPtr(const RefPtr<U>& o, EnsurePtrConvertibleArgDecl(U, T)) : m_ptr(o.get()) { refIfNotNull(m_ptr); }
@@ -48,7 +50,7 @@ namespace WTF {
 
         ALWAYS_INLINE ~RefPtr() { derefIfNotNull(m_ptr); }
 
-        T* get() const { return m_ptr; }
+        ALWAYS_INLINE T* get() const { return m_ptr; }
 
         void clear();
         PassRefPtr<T> release() { PassRefPtr<T> tmp = adoptRef(m_ptr); m_ptr = 0; return tmp; }
@@ -70,6 +72,7 @@ namespace WTF {
 #endif
         template<typename U> RefPtr<T>& operator=(const RefPtr<U>&);
         template<typename U> RefPtr<T>& operator=(const PassRefPtr<U>&);
+        template<typename U> RefPtr<T>& operator=(const RawPtr<U>&);
 
         void swap(RefPtr&);
 
@@ -122,6 +125,13 @@ namespace WTF {
     template<typename T> template<typename U> inline RefPtr<T>& RefPtr<T>::operator=(const PassRefPtr<U>& o)
     {
         RefPtr ptr = o;
+        swap(ptr);
+        return *this;
+    }
+
+    template<typename T> template<typename U> inline RefPtr<T>& RefPtr<T>::operator=(const RawPtr<U>& o)
+    {
+        RefPtr ptr = o.get();
         swap(ptr);
         return *this;
     }

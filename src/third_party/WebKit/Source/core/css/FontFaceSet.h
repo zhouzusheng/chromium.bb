@@ -28,6 +28,7 @@
 
 #include "bindings/v8/ScriptPromise.h"
 #include "core/css/FontFace.h"
+#include "core/css/FontFaceSetForEachCallback.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
@@ -45,16 +46,19 @@
 
 namespace WebCore {
 
+class CSSFontFace;
 class CSSFontFaceSource;
+class CSSFontSelector;
 class Dictionary;
 class Document;
 class ExceptionState;
 class Font;
+class FontFaceCache;
 class FontResource;
 class FontsReadyPromiseResolver;
 class ExecutionContext;
 
-class FontFaceSet : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
+class FontFaceSet FINAL : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(FontFaceSet);
 public:
     virtual ~FontFaceSet();
@@ -63,11 +67,18 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadingdone);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadingerror);
 
-    Vector<RefPtr<FontFace> > match(const String& font, const String& text, ExceptionState&);
     bool check(const String& font, const String& text, ExceptionState&);
     ScriptPromise load(const String& font, const String& text, ExceptionState&);
     ScriptPromise ready();
 
+    void add(FontFace*, ExceptionState&);
+    void clear();
+    bool remove(FontFace*, ExceptionState&);
+    void forEach(PassOwnPtr<FontFaceSetForEachCallback>, ScriptValue& thisArg) const;
+    void forEach(PassOwnPtr<FontFaceSetForEachCallback>) const;
+    bool has(FontFace*, ExceptionState&) const;
+
+    unsigned long size() const;
     AtomicString status() const;
 
     virtual ExecutionContext* executionContext() const OVERRIDE;
@@ -87,6 +98,8 @@ public:
 
     static PassRefPtr<FontFaceSet> from(Document*);
     static void didLayout(Document*);
+
+    void addFontFacesToFontFaceCache(FontFaceCache*, CSSFontSelector*);
 
 private:
     typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
@@ -111,18 +124,24 @@ private:
 
     bool hasLoadedFonts() const { return !m_loadedFonts.isEmpty() || !m_failedFonts.isEmpty(); }
 
-    void queueDoneEvent(FontFace*);
+    bool inActiveDocumentContext() const;
+    void forEachInternal(PassOwnPtr<FontFaceSetForEachCallback>, ScriptValue* thisArg) const;
+    void addToLoadingFonts(PassRefPtr<FontFace>);
+    void removeFromLoadingFonts(PassRefPtr<FontFace>);
     void fireLoadingEvent();
     void fireDoneEventIfPossible();
     bool resolveFontStyle(const String&, Font&);
     void handlePendingEventsAndPromisesSoon();
     void handlePendingEventsAndPromises();
+    const ListHashSet<RefPtr<FontFace> >& cssConnectedFontFaceList() const;
+    bool isCSSConnectedFontFace(FontFace*) const;
 
-    unsigned m_loadingCount;
+    HashSet<RefPtr<FontFace> > m_loadingFonts;
     bool m_shouldFireLoadingEvent;
     Vector<OwnPtr<FontsReadyPromiseResolver> > m_readyResolvers;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
+    ListHashSet<RefPtr<FontFace> > m_nonCSSConnectedFaces;
 
     AsyncMethodRunner<FontFaceSet> m_asyncRunner;
 

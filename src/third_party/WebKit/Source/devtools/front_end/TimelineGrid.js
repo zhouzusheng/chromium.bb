@@ -83,6 +83,9 @@ WebInspector.TimelineGrid.prototype = {
         this._dividersLabelBarElement.removeChildren();
     },
 
+    /**
+     * @return {boolean}
+     */
     updateDividers: function(calculator)
     {
         const minGridSlicePx = 64; // minimal distance between grid lines.
@@ -193,6 +196,16 @@ WebInspector.TimelineGrid.prototype = {
     showEventDividers: function()
     {
         this._eventDividersElement.classList.remove("hidden");
+    },
+
+    hideDividers: function()
+    {
+        this._dividersElement.classList.add("hidden");
+    },
+
+    showDividers: function()
+    {
+        this._dividersElement.classList.remove("hidden");
     },
 
     hideCurtains: function()

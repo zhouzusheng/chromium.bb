@@ -57,7 +57,7 @@ class WebDocumentType;
 class WebElement;
 class WebFormElement;
 class WebFrame;
-class WebNodeCollection;
+class WebElementCollection;
 class WebNodeList;
 class WebString;
 class WebURL;
@@ -65,11 +65,6 @@ class WebURL;
 // Provides readonly access to some properties of a DOM document.
 class WebDocument : public WebNode {
 public:
-    // FIXME: Stop using this from Chromium code and get rid of this enum.
-    enum UserStyleLevel {
-        UserStyleAuthorLevel
-    };
-
     WebDocument() { }
     WebDocument(const WebDocument& e) : WebNode(e) { }
 
@@ -107,7 +102,7 @@ public:
     BLINK_EXPORT WebElement body() const;
     BLINK_EXPORT WebElement head();
     BLINK_EXPORT WebString title() const;
-    BLINK_EXPORT WebNodeCollection all();
+    BLINK_EXPORT WebElementCollection all();
     BLINK_EXPORT void forms(WebVector<WebFormElement>&) const;
     BLINK_EXPORT void images(WebVector<WebElement>&);
     BLINK_EXPORT WebURL completeURL(const WebString&) const;
@@ -130,8 +125,6 @@ public:
     // Gets the accessibility object for an object on this page by ID.
     BLINK_EXPORT WebAXObject accessibilityObjectFromID(int axID) const;
     // Inserts the given CSS source code as a stylesheet in the document.
-    // FIXME: Delete insertUserStyleSheet once Chromium code stops calling it.
-    BLINK_EXPORT void insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel);
     BLINK_EXPORT void insertStyleSheet(const WebString& sourceCode);
 
     // Arranges to call WebFrameClient::didMatchCSS(frame(), ...) when one of

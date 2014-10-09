@@ -32,6 +32,7 @@
 #define DOMWindowCrypto_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
@@ -39,7 +40,7 @@ namespace WebCore {
 class Crypto;
 class DOMWindow;
 
-class DOMWindowCrypto : public Supplement<DOMWindow>, public DOMWindowProperty {
+class DOMWindowCrypto FINAL : public Supplement<DOMWindow>, public DOMWindowProperty {
 public:
     virtual ~DOMWindowCrypto();
     static DOMWindowCrypto* from(DOMWindow*);
@@ -50,7 +51,7 @@ private:
     explicit DOMWindowCrypto(DOMWindow*);
     static const char* supplementName();
 
-    mutable RefPtr<Crypto> m_crypto;
+    mutable RefPtrWillBePersistent<Crypto> m_crypto;
 };
 
 } // namespace WebCore

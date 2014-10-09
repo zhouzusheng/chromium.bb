@@ -29,9 +29,10 @@ class RenderSVGInline : public RenderInline {
 public:
     explicit RenderSVGInline(Element*);
 
-    virtual const char* renderName() const { return "RenderSVGInline"; }
-    virtual bool requiresLayer() const OVERRIDE FINAL { return false; }
+    virtual const char* renderName() const OVERRIDE { return "RenderSVGInline"; }
+    virtual LayerType layerTypeRequired() const OVERRIDE FINAL { return NoLayer; }
     virtual bool isSVGInline() const OVERRIDE FINAL { return true; }
+    virtual bool isSVG() const OVERRIDE FINAL { return true; }
 
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
 

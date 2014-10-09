@@ -23,6 +23,7 @@
 
 #include "SVGNames.h"
 #include "core/rendering/svg/SVGPathData.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGTextPathElement.h"
 
@@ -33,10 +34,24 @@ RenderSVGTextPath::RenderSVGTextPath(Element* element)
 {
 }
 
+bool RenderSVGTextPath::isChildAllowed(RenderObject* child, RenderStyle*) const
+{
+    if (child->isText())
+        return SVGRenderSupport::isRenderableTextNode(child);
+
+#if ENABLE(SVG_FONTS)
+    // 'altGlyph' is supported by the content model for 'textPath', but...
+    if (child->node()->hasTagName(SVGNames::altGlyphTag))
+        return false;
+#endif
+
+    return child->isSVGInline() && !child->isSVGTextPath();
+}
+
 Path RenderSVGTextPath::layoutPath() const
 {
     SVGTextPathElement* textPathElement = toSVGTextPathElement(node());
-    Element* targetElement = SVGURIReference::targetElementFromIRIString(textPathElement->hrefCurrentValue(), textPathElement->document());
+    Element* targetElement = SVGURIReference::targetElementFromIRIString(textPathElement->href()->currentValue()->value(), textPathElement->document());
     if (!targetElement || !targetElement->hasTagName(SVGNames::pathTag))
         return Path();
 
@@ -56,7 +71,7 @@ Path RenderSVGTextPath::layoutPath() const
 
 float RenderSVGTextPath::startOffset() const
 {
-    return toSVGTextPathElement(node())->startOffsetCurrentValue().valueAsPercentage();
+    return toSVGTextPathElement(node())->startOffset()->currentValue()->valueAsPercentage();
 }
 
 }

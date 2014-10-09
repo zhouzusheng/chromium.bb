@@ -72,7 +72,7 @@ WebInspector.JavaScriptSourceFrame = function(scriptsPanel, uiSourceCode)
 WebInspector.JavaScriptSourceFrame.prototype = {
     _registerShortcuts: function()
     {
-        var shortcutKeys = WebInspector.SourcesPanelDescriptor.ShortcutKeys;
+        var shortcutKeys = WebInspector.ShortcutsScreen.SourcesPanelShortcuts;
         for (var i = 0; i < shortcutKeys.EvaluateSelectionInConsole.length; ++i) {
             var keyDescriptor = shortcutKeys.EvaluateSelectionInConsole[i];
             this.addShortcut(keyDescriptor.key, this._evaluateSelectionInConsole.bind(this));
@@ -131,11 +131,10 @@ WebInspector.JavaScriptSourceFrame.prototype = {
     populateLineGutterContextMenu: function(contextMenu, lineNumber)
     {
         contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Continue to here" : "Continue to Here"), this._continueToLine.bind(this, lineNumber));
-
-        var breakpoint = this._breakpointManager.findBreakpoint(this._uiSourceCode, lineNumber);
+        var breakpoint = this._breakpointManager.findBreakpointOnLine(this._uiSourceCode, lineNumber);
         if (!breakpoint) {
             // This row doesn't have a breakpoint: We want to show Add Breakpoint and Add and Edit Breakpoint.
-            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Add breakpoint" : "Add Breakpoint"), this._setBreakpoint.bind(this, lineNumber, "", true));
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Add breakpoint" : "Add Breakpoint"), this._setBreakpoint.bind(this, lineNumber, 0, "", true));
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Add conditional breakpoint…" : "Add Conditional Breakpoint…"), this._editBreakpointCondition.bind(this, lineNumber));
         } else {
             // This row has a breakpoint, we want to show edit and remove breakpoint, and either disable or enable.
@@ -220,7 +219,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             if (!breakpointDecoration)
                 continue;
             this._removeBreakpointDecoration(lineNumber);
-            this._addBreakpointDecoration(lineNumber, breakpointDecoration.condition, breakpointDecoration.enabled, true);
+            this._addBreakpointDecoration(lineNumber, breakpointDecoration.columnNumber, breakpointDecoration.condition, breakpointDecoration.enabled, true);
         }
         this._muted = true;
     },
@@ -252,7 +251,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             if (isNaN(lineNumber))
                 continue;
             var breakpointDecoration = breakpoints[lineNumberString];
-            this._setBreakpoint(lineNumber, breakpointDecoration.condition, breakpointDecoration.enabled);
+            this._setBreakpoint(lineNumber, breakpointDecoration.columnNumber, breakpointDecoration.condition, breakpointDecoration.enabled);
         }
     },
 
@@ -296,7 +295,9 @@ WebInspector.JavaScriptSourceFrame.prototype = {
         var lineNumber = textPosition.startLine;
         var line = this.textEditor.line(lineNumber);
         var tokenContent = line.substring(token.startColumn, token.endColumn + 1);
-        if (token.type !== "javascript-ident" && (token.type !== "javascript-keyword" || tokenContent !== "this"))
+
+        var isIdentifier = token.type.startsWith("js-variable") || token.type.startsWith("js-property") || token.type == "js-def";
+        if (!isIdentifier && (token.type !== "js-keyword" || tokenContent !== "this"))
             return null;
 
         var leftCorner = this.textEditor.cursorPositionToCoordinates(lineNumber, token.startColumn);
@@ -368,15 +369,17 @@ WebInspector.JavaScriptSourceFrame.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {number} columnNumber
      * @param {string} condition
      * @param {boolean} enabled
      * @param {boolean} mutedWhileEditing
      */
-    _addBreakpointDecoration: function(lineNumber, condition, enabled, mutedWhileEditing)
+    _addBreakpointDecoration: function(lineNumber, columnNumber, condition, enabled, mutedWhileEditing)
     {
         var breakpoint = {
             condition: condition,
-            enabled: enabled
+            enabled: enabled,
+            columnNumber: columnNumber
         };
 
         this.textEditor.setAttribute(lineNumber, "breakpoint", breakpoint);
@@ -430,11 +433,11 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             if (breakpoint)
                 breakpoint.setCondition(newText);
             else
-                this._setBreakpoint(lineNumber, newText, true);
+                this._setBreakpoint(lineNumber, 0, newText, true);
         }
 
-        var config = new WebInspector.EditingConfig(finishEditing.bind(this, true), finishEditing.bind(this, false));
-        WebInspector.startEditing(this._conditionEditorElement, config);
+        var config = new WebInspector.InplaceEditor.Config(finishEditing.bind(this, true), finishEditing.bind(this, false));
+        WebInspector.InplaceEditor.startEditing(this._conditionEditorElement, config);
         this._conditionEditorElement.value = breakpoint ? breakpoint.condition() : "";
         this._conditionEditorElement.select();
     },
@@ -563,7 +566,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
 
         var breakpoint = /** @type {!WebInspector.BreakpointManager.Breakpoint} */ (event.data.breakpoint);
         if (this.loaded)
-            this._addBreakpointDecoration(uiLocation.lineNumber, breakpoint.condition(), breakpoint.enabled(), false);
+            this._addBreakpointDecoration(uiLocation.lineNumber, uiLocation.columnNumber, breakpoint.condition(), breakpoint.enabled(), false);
     },
 
     _breakpointRemoved: function(event)
@@ -575,7 +578,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             return;
 
         var breakpoint = /** @type {!WebInspector.BreakpointManager.Breakpoint} */ (event.data.breakpoint);
-        var remainingBreakpoint = this._breakpointManager.findBreakpoint(this._uiSourceCode, uiLocation.lineNumber);
+        var remainingBreakpoint = this._breakpointManager.findBreakpointOnLine(this._uiSourceCode, uiLocation.lineNumber);
         if (!remainingBreakpoint && this.loaded)
             this._removeBreakpointDecoration(uiLocation.lineNumber);
     },
@@ -625,6 +628,11 @@ WebInspector.JavaScriptSourceFrame.prototype = {
         }
     },
 
+    beforeFormattedChange: function()
+    {
+        this.clearExecutionLine();
+    },
+
     onTextEditorContentLoaded: function()
     {
         if (typeof this._executionLineNumber === "number")
@@ -669,14 +677,14 @@ WebInspector.JavaScriptSourceFrame.prototype = {
      */
     _toggleBreakpoint: function(lineNumber, onlyDisable)
     {
-        var breakpoint = this._breakpointManager.findBreakpoint(this._uiSourceCode, lineNumber);
+        var breakpoint = this._breakpointManager.findBreakpointOnLine(this._uiSourceCode, lineNumber);
         if (breakpoint) {
             if (onlyDisable)
                 breakpoint.setEnabled(!breakpoint.enabled());
             else
                 breakpoint.remove();
         } else
-            this._setBreakpoint(lineNumber, "", true);
+            this._setBreakpoint(lineNumber, 0, "", true);
     },
 
     toggleBreakpointOnCurrentLine: function()
@@ -692,12 +700,13 @@ WebInspector.JavaScriptSourceFrame.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {number} columnNumber
      * @param {string} condition
      * @param {boolean} enabled
      */
-    _setBreakpoint: function(lineNumber, condition, enabled)
+    _setBreakpoint: function(lineNumber, columnNumber, condition, enabled)
     {
-        this._breakpointManager.setBreakpoint(this._uiSourceCode, lineNumber, condition, enabled);
+        this._breakpointManager.setBreakpoint(this._uiSourceCode, lineNumber, columnNumber, condition, enabled);
 
         WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
             action: WebInspector.UserMetrics.UserActionNames.SetBreakpoint,

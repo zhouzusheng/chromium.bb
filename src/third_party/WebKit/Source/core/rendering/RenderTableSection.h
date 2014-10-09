@@ -71,7 +71,7 @@ public:
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
 
     virtual int firstLineBoxBaseline() const OVERRIDE;
 
@@ -174,10 +174,10 @@ public:
     void appendColumn(unsigned pos);
     void splitColumn(unsigned pos, unsigned first);
 
-    int calcOuterBorderBefore() const;
-    int calcOuterBorderAfter() const;
-    int calcOuterBorderStart() const;
-    int calcOuterBorderEnd() const;
+    enum BlockBorderSide { BorderBefore, BorderAfter };
+    int calcBlockDirectionOuterBorder(BlockBorderSide) const;
+    enum InlineBorderSide { BorderStart, BorderEnd };
+    int calcInlineDirectionOuterBorder(InlineBorderSide) const;
     void recalcOuterBorder();
 
     int outerBorderBefore() const { return m_outerBorderBefore; }
@@ -218,24 +218,24 @@ public:
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
 private:
-    virtual RenderObjectChildList* virtualChildren() { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const { return children(); }
+    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
 
-    virtual const char* renderName() const { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
+    virtual const char* renderName() const OVERRIDE { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
 
-    virtual bool isTableSection() const { return true; }
+    virtual bool isTableSection() const OVERRIDE { return true; }
 
     virtual void willBeRemovedFromTree() OVERRIDE;
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
-    virtual void paintCell(RenderTableCell*, PaintInfo&, const LayoutPoint&);
-    virtual void paintObject(PaintInfo&, const LayoutPoint&);
+    void paintCell(RenderTableCell*, PaintInfo&, const LayoutPoint&);
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 

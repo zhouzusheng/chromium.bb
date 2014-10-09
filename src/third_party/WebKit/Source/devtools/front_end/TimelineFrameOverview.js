@@ -32,11 +32,13 @@
  * @constructor
  * @extends {WebInspector.TimelineOverviewBase}
  * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.TimelineFrameModel} frameModel
  */
-WebInspector.TimelineFrameOverview = function(model)
+WebInspector.TimelineFrameOverview = function(model, frameModel)
 {
     WebInspector.TimelineOverviewBase.call(this, model);
     this.element.id = "timeline-overview-frames";
+    this._frameModel = frameModel;
     this.reset();
 
     this._outerPadding = 4 * window.devicePixelRatio;
@@ -57,14 +59,19 @@ WebInspector.TimelineFrameOverview = function(model)
 }
 
 WebInspector.TimelineFrameOverview.prototype = {
+    /**
+     * @return {!Object.<string, !CanvasGradient>}
+     */
+    categoryFillStyles: function()
+    {
+        return this._fillStyles;
+    },
+
     reset: function()
     {
         this._recordsPerBar = 1;
-        /** @type {!Array.<{startTime:number, endTime:number}>} */
+        /** @type {!Array.<!{startTime:number, endTime:number}>} */
         this._barTimes = [];
-        this._mainThreadFrames = [];
-        this._backgroundFrames = [];
-        this._framesById = {};
     },
 
     update: function()
@@ -72,61 +79,18 @@ WebInspector.TimelineFrameOverview.prototype = {
         this.resetCanvas();
         this._barTimes = [];
 
-        var backgroundFramesHeight = 15;
-        var mainThreadFramesHeight = this._canvas.height - backgroundFramesHeight;
         const minBarWidth = 4 * window.devicePixelRatio;
-        var frameCount = this._backgroundFrames.length || this._mainThreadFrames.length;
-        var framesPerBar = Math.max(1, frameCount * minBarWidth / this._canvas.width);
-
-        var mainThreadVisibleFrames;
-        var backgroundVisibleFrames;
-        if (this._backgroundFrames.length) {
-            backgroundVisibleFrames = this._aggregateFrames(this._backgroundFrames, framesPerBar);
-            mainThreadVisibleFrames = new Array(backgroundVisibleFrames.length);
-            for (var i = 0; i < backgroundVisibleFrames.length; ++i) {
-                var frameId = backgroundVisibleFrames[i].mainThreadFrameId;
-                mainThreadVisibleFrames[i] = frameId && this._framesById[frameId];
-            }
-        } else {
-            mainThreadVisibleFrames = this._aggregateFrames(this._mainThreadFrames, framesPerBar);
-        }
+        var frames = this._frameModel.frames();
+        var framesPerBar = Math.max(1, frames.length * minBarWidth / this._canvas.width);
+        var visibleFrames = this._aggregateFrames(frames, framesPerBar);
 
         this._context.save();
-        this._setCanvasWindow(0, backgroundFramesHeight, this._canvas.width, mainThreadFramesHeight);
-        var scale = (mainThreadFramesHeight - this._topPadding) / this._computeTargetFrameLength(mainThreadVisibleFrames);
-        this._renderBars(mainThreadVisibleFrames, scale, mainThreadFramesHeight);
+        var scale = (this._canvas.height - this._topPadding) / this._computeTargetFrameLength(visibleFrames);
+        this._renderBars(frames, scale, this._canvas.height);
         this._context.fillStyle = this._frameTopShadeGradient;
         this._context.fillRect(0, 0, this._canvas.width, this._topPadding);
-        this._drawFPSMarks(scale, mainThreadFramesHeight);
+        this._drawFPSMarks(scale, this._canvas.height);
         this._context.restore();
-
-        var bottom = backgroundFramesHeight + 0.5;
-        this._context.strokeStyle = "rgba(120, 120, 120, 0.8)";
-        this._context.beginPath();
-        this._context.moveTo(0, bottom);
-        this._context.lineTo(this._canvas.width, bottom);
-        this._context.stroke();
-
-        if (backgroundVisibleFrames) {
-            const targetFPS = 30.0;
-            scale = (backgroundFramesHeight - this._topPadding) / (1.0 / targetFPS);
-            this._renderBars(backgroundVisibleFrames, scale, backgroundFramesHeight);
-        }
-    },
-
-    /**
-     * @param {!WebInspector.TimelineFrame} frame
-     */
-    addFrame: function(frame)
-    {
-        var frames;
-        if (frame.isBackground) {
-            frames = this._backgroundFrames;
-        } else {
-            frames = this._mainThreadFrames;
-            this._framesById[frame.id] = frame;
-        }
-        frames.push(frame);
     },
 
     /**
@@ -162,7 +126,7 @@ WebInspector.TimelineFrameOverview.prototype = {
 
             for (var lastFrame = Math.min(Math.floor((barNumber + 1) * framesPerBar), frames.length);
                  currentFrame < lastFrame; ++currentFrame) {
-                var duration = this._frameDuration(frames[currentFrame]);
+                var duration = frames[currentFrame].duration;
                 if (!longestFrame || longestDuration < duration) {
                     longestFrame = frames[currentFrame];
                     longestDuration = duration;
@@ -178,15 +142,6 @@ WebInspector.TimelineFrameOverview.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineFrame} frame
-     */
-    _frameDuration: function(frame)
-    {
-        var relatedFrame = frame.mainThreadFrameId && this._framesById[frame.mainThreadFrameId];
-        return frame.duration + (relatedFrame ? relatedFrame.duration : 0);
-    },
-
-    /**
      * @param {!Array.<!WebInspector.TimelineFrame>} frames
      * @return {number}
      */
@@ -199,9 +154,9 @@ WebInspector.TimelineFrameOverview.prototype = {
         }
         var medianFrameLength = durations.qselect(Math.floor(durations.length / 2));
 
-        // Optimize appearance for 30fps. However, if at least half frames won't fit at this scale,
-        // fall back to using autoscale.
-        const targetFPS = 30;
+        // Optimize appearance for 30fps, but leave some space so it's evident when a frame overflows.
+        // However, if at least half frames won't fit at this scale, fall back to using autoscale.
+        const targetFPS = 20;
         var result = 1.0 / targetFPS;
         if (result >= medianFrameLength)
             return result;
@@ -294,18 +249,20 @@ WebInspector.TimelineFrameOverview.prototype = {
     _renderBar: function(left, width, windowHeight, frame, scale)
     {
         var categories = Object.keys(WebInspector.TimelinePresentationModel.categories());
-        if (!categories.length)
-            return;
         var x = Math.floor(left) + 0.5;
         width = Math.floor(width);
+
+        var totalCPUTime = frame.cpuTime;
+        var normalizedScale = scale;
+        if (totalCPUTime > frame.duration)
+            normalizedScale *= frame.duration / totalCPUTime;
 
         for (var i = 0, bottomOffset = windowHeight; i < categories.length; ++i) {
             var category = categories[i];
             var duration = frame.timeByCategory[category];
-
             if (!duration)
                 continue;
-            var height = Math.round(duration * scale);
+            var height = Math.round(duration * normalizedScale);
             var y = Math.floor(bottomOffset - height) + 0.5;
 
             this._context.save();
@@ -338,6 +295,7 @@ WebInspector.TimelineFrameOverview.prototype = {
     /**
      * @param {number} windowLeft
      * @param {number} windowRight
+     * @return {!{startTime: number, endTime: number}}
      */
     windowTimes: function(windowLeft, windowRight)
     {
@@ -361,6 +319,7 @@ WebInspector.TimelineFrameOverview.prototype = {
     /**
      * @param {number} startTime
      * @param {number} endTime
+     * @return {!{left: number, right: number}}
      */
     windowBoundaries: function(startTime, endTime)
     {
@@ -368,7 +327,7 @@ WebInspector.TimelineFrameOverview.prototype = {
             return {left: 0, right: 1};
         /**
          * @param {number} time
-         * @param {{startTime:number, endTime:number}} barTime
+         * @param {!{startTime:number, endTime:number}} barTime
          * @return {number}
          */
         function barStartComparator(time, barTime)
@@ -377,7 +336,7 @@ WebInspector.TimelineFrameOverview.prototype = {
         }
         /**
          * @param {number} time
-         * @param {{startTime:number, endTime:number}} barTime
+         * @param {!{startTime:number, endTime:number}} barTime
          * @return {number}
          */
         function barEndComparator(time, barTime)
@@ -395,7 +354,7 @@ WebInspector.TimelineFrameOverview.prototype = {
 
     /**
      * @param {number} time
-     * @param {function(number, {startTime:number, endTime:number}):number} comparator
+     * @param {function(number, !{startTime:number, endTime:number}):number} comparator
      */
     _windowBoundaryFromTime: function(time, comparator)
     {

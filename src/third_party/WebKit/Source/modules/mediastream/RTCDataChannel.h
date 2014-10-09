@@ -27,11 +27,14 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
-#include "core/platform/mediastream/RTCDataChannelHandlerClient.h"
 #include "platform/Timer.h"
+#include "public/platform/WebRTCDataChannelHandler.h"
+#include "public/platform/WebRTCDataChannelHandlerClient.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
+class WebRTCDataChannelHandler;
+class WebRTCPeerConnectionHandler;
 struct WebRTCDataChannelInit;
 }
 
@@ -39,15 +42,13 @@ namespace WebCore {
 
 class Blob;
 class ExceptionState;
-class RTCDataChannelHandler;
-class RTCPeerConnectionHandler;
 
-class RTCDataChannel : public RefCounted<RTCDataChannel>, public ScriptWrappable, public EventTargetWithInlineData, public RTCDataChannelHandlerClient {
+class RTCDataChannel FINAL : public RefCounted<RTCDataChannel>, public ScriptWrappable, public EventTargetWithInlineData, public blink::WebRTCDataChannelHandlerClient {
     REFCOUNTED_EVENT_TARGET(RTCDataChannel);
 public:
-    static PassRefPtr<RTCDataChannel> create(ExecutionContext*, PassOwnPtr<RTCDataChannelHandler>);
-    static PassRefPtr<RTCDataChannel> create(ExecutionContext*, RTCPeerConnectionHandler*, const String& label, const blink::WebRTCDataChannelInit&, ExceptionState&);
-    ~RTCDataChannel();
+    static PassRefPtr<RTCDataChannel> create(ExecutionContext*, PassOwnPtr<blink::WebRTCDataChannelHandler>);
+    static PassRefPtr<RTCDataChannel> create(ExecutionContext*, blink::WebRTCPeerConnectionHandler*, const String& label, const blink::WebRTCDataChannelInit&, ExceptionState&);
+    virtual ~RTCDataChannel();
 
     String label() const;
 
@@ -85,24 +86,25 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
 private:
-    RTCDataChannel(ExecutionContext*, PassOwnPtr<RTCDataChannelHandler>);
+    RTCDataChannel(ExecutionContext*, PassOwnPtr<blink::WebRTCDataChannelHandler>);
 
     void scheduleDispatchEvent(PassRefPtr<Event>);
     void scheduledEventTimerFired(Timer<RTCDataChannel>*);
 
     ExecutionContext* m_executionContext;
 
-    // RTCDataChannelHandlerClient
-    virtual void didChangeReadyState(ReadyState) OVERRIDE;
-    virtual void didReceiveStringData(const String&) OVERRIDE;
+    // blink::WebRTCDataChannelHandlerClient
+    virtual void didChangeReadyState(blink::WebRTCDataChannelHandlerClient::ReadyState) OVERRIDE;
+    virtual void didReceiveStringData(const blink::WebString&) OVERRIDE;
     virtual void didReceiveRawData(const char*, size_t) OVERRIDE;
     virtual void didDetectError() OVERRIDE;
 
-    OwnPtr<RTCDataChannelHandler> m_handler;
+    OwnPtr<blink::WebRTCDataChannelHandler> m_handler;
 
     bool m_stopped;
 
-    ReadyState m_readyState;
+    blink::WebRTCDataChannelHandlerClient::ReadyState m_readyState;
+
     enum BinaryType {
         BinaryTypeBlob,
         BinaryTypeArrayBuffer

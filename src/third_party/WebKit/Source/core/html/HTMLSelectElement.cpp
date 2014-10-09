@@ -41,7 +41,6 @@
 #include "core/events/ThreadLocalEventNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
-#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/FormController.h"
 #include "core/page/EventHandler.h"
@@ -63,7 +62,7 @@ using namespace HTMLNames;
 // Upper limit agreed upon with representatives of Opera and Mozilla.
 static const unsigned maxSelectItems = 10000;
 
-HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form, bool createdByParser)
+HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(selectTag, document, form)
     , m_typeAhead(this)
     , m_size(0)
@@ -74,19 +73,18 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form, 
     , m_multiple(false)
     , m_activeSelectionState(false)
     , m_shouldRecalcListItems(false)
-    , m_isParsingInProgress(createdByParser)
 {
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document)
 {
-    return adoptRef(new HTMLSelectElement(document, 0, false));
+    return adoptRef(new HTMLSelectElement(document, 0));
 }
 
-PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLSelectElement(document, form, createdByParser));
+    return adoptRef(new HTMLSelectElement(document, form));
 }
 
 const AtomicString& HTMLSelectElement::formControlType() const
@@ -94,12 +92,6 @@ const AtomicString& HTMLSelectElement::formControlType() const
     DEFINE_STATIC_LOCAL(const AtomicString, selectMultiple, ("select-multiple", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, selectOne, ("select-one", AtomicString::ConstructFromLiteral));
     return m_multiple ? selectMultiple : selectOne;
-}
-
-void HTMLSelectElement::deselectItems(HTMLOptionElement* excludeElement)
-{
-    deselectItemsWithoutValidation(excludeElement);
-    setNeedsValidityCheck();
 }
 
 void HTMLSelectElement::optionSelectedByUser(int optionIndex, bool fireOnChangeNow, bool allowMultipleSelection)
@@ -331,15 +323,6 @@ RenderObject* HTMLSelectElement::createRenderer(RenderStyle*)
     return new RenderListBox(this);
 }
 
-bool HTMLSelectElement::childShouldCreateRenderer(const Node& child) const
-{
-    if (!HTMLFormControlElementWithState::childShouldCreateRenderer(child))
-        return false;
-    if (!usesMenuList())
-        return child.hasTagName(HTMLNames::optionTag) || isHTMLOptGroupElement(&child);
-    return false;
-}
-
 PassRefPtr<HTMLCollection> HTMLSelectElement::selectedOptions()
 {
     updateListItemSelectedStates();
@@ -402,12 +385,12 @@ void HTMLSelectElement::setSize(int size)
     setIntegralAttribute(sizeAttr, size);
 }
 
-Node* HTMLSelectElement::namedItem(const AtomicString& name)
+Element* HTMLSelectElement::namedItem(const AtomicString& name)
 {
     return options()->namedItem(name);
 }
 
-Node* HTMLSelectElement::item(unsigned index)
+Element* HTMLSelectElement::item(unsigned index)
 {
     return options()->item(index);
 }
@@ -711,7 +694,7 @@ void HTMLSelectElement::setRecalcListItems()
     // Manual selection anchor is reset when manipulating the select programmatically.
     m_activeSelectionAnchorIndex = -1;
     setOptionsChangedOnRenderer();
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
     if (!inDocument()) {
         if (HTMLCollection* collection = cachedHTMLCollection(SelectOptions))
             collection->invalidateCache();
@@ -743,7 +726,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         // optgroup tags may not nest. However, both FireFox and IE will
         // flatten the tree automatically, so we follow suit.
         // (http://www.w3.org/TR/html401/interact/forms.html#h-17.6)
-        if (isHTMLOptGroupElement(current)) {
+        if (current.hasTagName(optgroupTag)) {
             m_listItems.append(&current);
             if (Element* nextElement = ElementTraversal::firstWithin(current)) {
                 currentElement = nextElement;
@@ -898,13 +881,13 @@ int HTMLSelectElement::listToOptionIndex(int listIndex) const
     return optionIndex;
 }
 
-void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
+void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
 {
     // Save the selection so it can be compared to the new selection when
     // dispatching change events during blur event dispatch.
     if (usesMenuList())
         saveLastSelection();
-    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, direction);
+    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, type);
 }
 
 void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement)
@@ -1054,7 +1037,7 @@ void HTMLSelectElement::resetImpl()
         firstOption->setSelectedState(true);
 
     setOptionsChangedOnRenderer();
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
     setNeedsValidityCheck();
 }
 
@@ -1070,7 +1053,7 @@ bool HTMLSelectElement::platformHandleKeydownEvent(KeyboardEvent* event)
             // Calling focus() may cause us to lose our renderer. Return true so
             // that our caller doesn't process the event further, but don't set
             // the event as handled.
-            if (!renderer())
+            if (!renderer() || !renderer()->isMenuList() || isDisabledFormControl())
                 return true;
 
             // Save the selection so it can be compared to the new selection
@@ -1278,11 +1261,11 @@ void HTMLSelectElement::updateSelectedState(int listIndex, bool multi, bool shif
 void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
 {
     const Vector<HTMLElement*>& listItems = this->listItems();
-
+    bool dragSelection = false;
     if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         focus();
         // Calling focus() may cause us to lose our renderer, in which case do not want to handle the event.
-        if (!renderer())
+        if (!renderer() || !renderer()->isListBox() || isDisabledFormControl())
             return;
 
         // Convert to coords relative to the list box if needed.
@@ -1324,7 +1307,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
                     updateListBoxSelection(true);
                 }
             }
-            event->setDefaultHandled();
+            dragSelection = true;
         }
     } else if (event->type() == EventTypeNames::mouseup && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton && renderer() && !toRenderBox(renderer())->autoscrollInProgress()) {
         // We didn't start this click/drag on any options.
@@ -1333,7 +1316,9 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
         // This makes sure we fire dispatchFormControlChangeEvent for a single
         // click. For drag selection, onChange will fire when the autoscroll
         // timer stops.
-        listBoxOnChange();
+        if (!dragSelection) {
+            listBoxOnChange();
+        }
     } else if (event->type() == EventTypeNames::keydown) {
         if (!event->isKeyboardEvent())
             return;
@@ -1558,27 +1543,25 @@ unsigned HTMLSelectElement::length() const
 void HTMLSelectElement::finishParsingChildren()
 {
     HTMLFormControlElementWithState::finishParsingChildren();
-    m_isParsingInProgress = false;
     updateListItemSelectedStates();
 }
 
 bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionState& exceptionState)
 {
-    if (!value) {
-        exceptionState.throwTypeError(ExceptionMessages::failedToSet(String::number(index), "HTMLSelectElement", "The value provided was not an HTMLOptionElement."));
-        return false;
+    if (!value) { // undefined or null
+        remove(index);
+        return true;
     }
     setOption(index, value.get(), exceptionState);
     return true;
 }
 
-bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionState& exceptionState)
+bool HTMLSelectElement::isInteractiveContent() const
 {
-    remove(index);
     return true;
 }
 
-bool HTMLSelectElement::isInteractiveContent() const
+bool HTMLSelectElement::supportsAutofocus() const
 {
     return true;
 }

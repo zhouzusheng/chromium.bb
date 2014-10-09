@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,7 +37,7 @@ WebInspector.OverridesView = function()
     WebInspector.View.call(this);
     this.registerRequiredCSS("overrides.css");
     this.registerRequiredCSS("helpScreen.css");
-    this.element.classList.add("overrides-view", "fill", "vbox");
+    this.element.classList.add("overrides-view");
 
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.shrinkableTabs = false;
@@ -172,7 +172,7 @@ WebInspector.OverridesView.Tab.prototype = {
      */
     _createSettingCheckbox: function(name, setting, callback)
     {
-        var checkbox = WebInspector.SettingsTab.createCheckbox(name, setting.get.bind(setting), listener, true);
+        var checkbox = WebInspector.SettingsUI.createCheckbox(name, setting.get.bind(setting), listener, true);
 
         function listener(value)
         {
@@ -192,10 +192,10 @@ WebInspector.OverridesView.Tab.prototype = {
                 checkbox.firstChild.checked = setting.get();
         }
         return checkbox;
-    }
-}
+    },
 
-WebInspector.OverridesView.Tab.prototype.__proto__ = WebInspector.View.prototype;
+    __proto__: WebInspector.View.prototype
+}
 
 /**
  * @constructor
@@ -231,7 +231,6 @@ WebInspector.OverridesView.DeviceTab = function()
         this._deviceSelectElement.selectedIndex = devices.length - 1;
 
     this._deviceSelectElement.addEventListener("change", this._deviceSelected.bind(this), false);
-    this._deviceSelectElement.addEventListener("dblclick", this._emulateButtonClicked.bind(this), false);
     this._deviceSelectElement.addEventListener("keypress", this._keyPressed.bind(this), false);
     this._deviceSelectElement.disabled = WebInspector.isInspectingDevice();
 
@@ -240,11 +239,11 @@ WebInspector.OverridesView.DeviceTab = function()
     emulateButton.textContent = WebInspector.UIString("Emulate");
     emulateButton.addEventListener("click", this._emulateButtonClicked.bind(this), false);
     emulateButton.disabled = WebInspector.isInspectingDevice();
-    this._emulateButton = emulateButton;
 
     var resetButton = buttonsBar.createChild("button", "settings-tab-text-button");
     resetButton.textContent = WebInspector.UIString("Reset");
     resetButton.addEventListener("click", this._resetButtonClicked.bind(this), false);
+    this._resetButton = resetButton;
 
     this._viewportValueLabel = this.element.createChild("div", "overrides-device-value-label");
     this._viewportValueLabel.textContent = WebInspector.UIString("Viewport:");
@@ -255,6 +254,8 @@ WebInspector.OverridesView.DeviceTab = function()
     this._userAgentValueElement = this._userAgentLabel.createChild("span", "overrides-device-value");
 
     this._updateValueLabels();
+    WebInspector.overridesSupport.addEventListener(WebInspector.OverridesSupport.Events.HasActiveOverridesChanged, this._hasActiveOverridesChanged, this);
+    this._hasActiveOverridesChanged();
 }
 
 // Third element lists device metrics separated by 'x':
@@ -353,10 +354,10 @@ WebInspector.OverridesView.DeviceTab._phones = [
 ];
 
 WebInspector.OverridesView.DeviceTab._tablets = [
-    ["Amazon Amazon Kindle Fire HD 7\"",
+    ["Amazon Amazon Kindle Fire HD 7\u2033",
      "Mozilla/5.0 (Linux; U; Android 2.3.4; en-us; Kindle Fire HD Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1",
      "1280x800x1.5"],
-    ["Amazon Amazon Kindle Fire HD 8.9\"",
+    ["Amazon Amazon Kindle Fire HD 8.9\u2033",
      "Mozilla/5.0 (Linux; U; Android 2.3.4; en-us; Kindle Fire HD Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1",
      "1920x1200x1.5"],
     ["Amazon Amazon Kindle Fire",
@@ -412,6 +413,11 @@ WebInspector.OverridesView.DeviceTab.prototype = {
         WebInspector.overridesSupport.reset();
     },
 
+    _hasActiveOverridesChanged: function()
+    {
+        this._resetButton.disabled = !WebInspector.overridesSupport.hasActiveOverrides();
+    },
+
     _deviceSelected: function()
     {
         var option = this._deviceSelectElement.options[this._deviceSelectElement.selectedIndex];
@@ -424,14 +430,14 @@ WebInspector.OverridesView.DeviceTab.prototype = {
         var option = this._deviceSelectElement.options[this._deviceSelectElement.selectedIndex];
         var metrics;
         if (option._metrics && (metrics = WebInspector.OverridesSupport.DeviceMetrics.parseSetting(option._metrics)))
-            this._viewportValueElement.textContent = WebInspector.UIString("%s \u00D7 %s, devicePixelRatio = %s", metrics.width, metrics.height, metrics.deviceScaleFactor);
+            this._viewportValueElement.textContent = WebInspector.UIString("%s \xD7 %s, devicePixelRatio = %s", metrics.width, metrics.height, metrics.deviceScaleFactor);
         else
             this._viewportValueElement.textContent = "";
         this._userAgentValueElement.textContent = option._userAgent || "";
-    }
-}
+    },
 
-WebInspector.OverridesView.DeviceTab.prototype.__proto__ = WebInspector.OverridesView.Tab.prototype;
+    __proto__: WebInspector.OverridesView.Tab.prototype
+}
 
 
 /**
@@ -451,7 +457,7 @@ WebInspector.OverridesView.ViewportTab = function()
 
     this.element.appendChild(checkbox);
     this.element.appendChild(this._createDeviceMetricsElement(metrics));
-    this.element.appendChild(this._createMediaEmulationElement());
+    this.element.appendChild(this._createMediaEmulationFragment());
 
     var footnote = this.element.createChild("p", "help-footnote");
     var footnoteLink = footnote.createChild("a");
@@ -529,7 +535,7 @@ WebInspector.OverridesView.ViewportTab.prototype = {
      */
     _createDeviceMetricsElement: function(metrics)
     {
-        var fieldsetElement = WebInspector.SettingsTab.createSettingFieldset(WebInspector.settings.overrideDeviceMetrics);
+        var fieldsetElement = WebInspector.SettingsUI.createSettingFieldset(WebInspector.settings.overrideDeviceMetrics);
         if (WebInspector.isInspectingDevice())
             fieldsetElement.disabled = true;
         fieldsetElement.id = "metrics-override-section";
@@ -567,6 +573,7 @@ WebInspector.OverridesView.ViewportTab.prototype = {
         this._widthRangeInput.min = 100;
         this._widthRangeInput.max = 2000;
         this._widthRangeInput.addEventListener("change", this._rangeValueChanged.bind(this), false);
+        this._widthRangeInput.addEventListener("input", this._rangeValueChanged.bind(this), false);
         this._widthRangeInput.value = this._widthOverrideElement.value;
 
         rowElement = tableElement.createChild("tr");
@@ -610,13 +617,12 @@ WebInspector.OverridesView.ViewportTab.prototype = {
             this._textAutosizingOverrideCheckbox.checked = metrics.textAutosizing || false;
     },
 
-    _createMediaEmulationElement: function()
+    _createMediaEmulationFragment: function()
     {
-        var checkbox = WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("CSS media"), WebInspector.settings.overrideCSSMedia, true);
-        var fieldsetElement = WebInspector.SettingsTab.createSettingFieldset(WebInspector.settings.overrideCSSMedia);
+        var checkbox = WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("CSS media"), WebInspector.settings.overrideCSSMedia, true);
+        var fieldsetElement = WebInspector.SettingsUI.createSettingFieldset(WebInspector.settings.overrideCSSMedia);
         if (WebInspector.isInspectingDevice())
             fieldsetElement.disabled = true;
-        checkbox.appendChild(fieldsetElement);
 
         var mediaSelectElement = fieldsetElement.createChild("select");
         var mediaTypes = WebInspector.CSSStyleModel.MediaTypes;
@@ -636,7 +642,10 @@ WebInspector.OverridesView.ViewportTab.prototype = {
         }
 
         mediaSelectElement.addEventListener("change", this._emulateMediaChanged.bind(this, mediaSelectElement), false);
-        return checkbox;
+        var fragment = document.createDocumentFragment();
+        fragment.appendChild(checkbox);
+        fragment.appendChild(fieldsetElement);
+        return fragment;
     },
 
     _emulateMediaChanged: function(select)
@@ -651,10 +660,10 @@ WebInspector.OverridesView.ViewportTab.prototype = {
             return;
         this._widthOverrideElement.value = this._widthRangeInput.value;
         this._applyDeviceMetricsUserInput();
-    }
-}
+    },
 
-WebInspector.OverridesView.ViewportTab.prototype.__proto__ = WebInspector.OverridesView.Tab.prototype;
+    __proto__: WebInspector.OverridesView.Tab.prototype
+}
 
 
 /**
@@ -672,34 +681,34 @@ WebInspector.OverridesView.UserAgentTab = function()
 }
 
 WebInspector.OverridesView.UserAgentTab._userAgents = [
-    ["Internet Explorer 10", "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"],
-    ["Internet Explorer 9", "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)"],
-    ["Internet Explorer 8", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)"],
-    ["Internet Explorer 7", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)"],
-
-    ["Firefox 7 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"],
-    ["Firefox 7 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"],
-    ["Firefox 4 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1; rv:2.0.1) Gecko/20100101 Firefox/4.0.1"],
-    ["Firefox 4 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:2.0.1) Gecko/20100101 Firefox/4.0.1"],
-    ["Firefox 14 \u2014 Android Mobile", "Mozilla/5.0 (Android; Mobile; rv:14.0) Gecko/14.0 Firefox/14.0"],
-    ["Firefox 14 \u2014 Android Tablet", "Mozilla/5.0 (Android; Tablet; rv:14.0) Gecko/14.0 Firefox/14.0"],
-
-    ["Chrome \u2014 Android Mobile", "Mozilla/5.0 (Linux; Android 4.0.4; Galaxy Nexus Build/IMM76B) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.133 Mobile Safari/535.19"],
-    ["Chrome \u2014 Android Tablet", "Mozilla/5.0 (Linux; Android 4.1.2; Nexus 7 Build/JZ054K) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Safari/535.19"],
-
-    ["iPhone \u2014 iOS 7", "Mozilla/5.0 (iPhone; CPU iPhone OS 7_0_2 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A4449d Safari/9537.53"],
-    ["iPhone \u2014 iOS 6", "Mozilla/5.0 (iPhone; CPU iPhone OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"],
-    ["iPad \u2014 iOS 7", "Mozilla/5.0 (iPad; CPU OS 7_0_2 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A501 Safari/9537.53"],
-    ["iPad \u2014 iOS 6", "Mozilla/5.0 (iPad; CPU OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"],
-
-    ["Android 2.3 \u2014 Nexus S", "Mozilla/5.0 (Linux; U; Android 2.3.6; en-us; Nexus S Build/GRK39F) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1"],
     ["Android 4.0.2 \u2014 Galaxy Nexus", "Mozilla/5.0 (Linux; U; Android 4.0.2; en-us; Galaxy Nexus Build/ICL53F) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30"],
-
+    ["Android 2.3 \u2014 Nexus S", "Mozilla/5.0 (Linux; U; Android 2.3.6; en-us; Nexus S Build/GRK39F) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1"],
+    ["BlackBerry \u2014 BB10", "Mozilla/5.0 (BB10; Touch) AppleWebKit/537.1+ (KHTML, like Gecko) Version/10.0.0.1337 Mobile Safari/537.1+"],
     ["BlackBerry \u2014 PlayBook 2.1", "Mozilla/5.0 (PlayBook; U; RIM Tablet OS 2.1.0; en-US) AppleWebKit/536.2+ (KHTML, like Gecko) Version/7.2.1.0 Safari/536.2+"],
     ["BlackBerry \u2014 9900", "Mozilla/5.0 (BlackBerry; U; BlackBerry 9900; en-US) AppleWebKit/534.11+ (KHTML, like Gecko) Version/7.0.0.187 Mobile Safari/534.11+"],
-    ["BlackBerry \u2014 BB10", "Mozilla/5.0 (BB10; Touch) AppleWebKit/537.1+ (KHTML, like Gecko) Version/10.0.0.1337 Mobile Safari/537.1+"],
-
+    ["Chrome 31 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36"],
+    ["Chrome 31 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.16 Safari/537.36"],
+    ["Chrome \u2014 Android Tablet", "Mozilla/5.0 (Linux; Android 4.1.2; Nexus 7 Build/JZ054K) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Safari/535.19"],
+    ["Chrome \u2014 Android Mobile", "Mozilla/5.0 (Linux; Android 4.0.4; Galaxy Nexus Build/IMM76B) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.133 Mobile Safari/535.19"],
+    ["Firefox 14 \u2014 Android Mobile", "Mozilla/5.0 (Android; Mobile; rv:14.0) Gecko/14.0 Firefox/14.0"],
+    ["Firefox 14 \u2014 Android Tablet", "Mozilla/5.0 (Android; Tablet; rv:14.0) Gecko/14.0 Firefox/14.0"],
+    ["Firefox 4 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:2.0.1) Gecko/20100101 Firefox/4.0.1"],
+    ["Firefox 4 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1; rv:2.0.1) Gecko/20100101 Firefox/4.0.1"],
+    ["Firefox 7 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"],
+    ["Firefox 7 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"],
+    ["Internet Explorer 10", "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"],
+    ["Internet Explorer 7", "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)"],
+    ["Internet Explorer 8", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)"],
+    ["Internet Explorer 9", "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)"],
+    ["iPad \u2014 iOS 7", "Mozilla/5.0 (iPad; CPU OS 7_0_2 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A501 Safari/9537.53"],
+    ["iPad \u2014 iOS 6", "Mozilla/5.0 (iPad; CPU OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"],
+    ["iPhone \u2014 iOS 7", "Mozilla/5.0 (iPhone; CPU iPhone OS 7_0_2 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A4449d Safari/9537.53"],
+    ["iPhone \u2014 iOS 6", "Mozilla/5.0 (iPhone; CPU iPhone OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"],
     ["MeeGo \u2014 Nokia N9", "Mozilla/5.0 (MeeGo; NokiaN9) AppleWebKit/534.13 (KHTML, like Gecko) NokiaBrowser/8.5.0 Mobile Safari/534.13"],
+    ["Opera 18 \u2014 Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36 OPR/18.0.1284.68"],
+    ["Opera 18 \u2014 Windows", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36 OPR/18.0.1284.68"],
+    ["Opera 12 \u2014 Mac", "Opera/9.80 (Macintosh; Intel Mac OS X 10.9.1) Presto/2.12.388 Version/12.16"],
+    ["Opera 12 \u2014 Windows", "Opera/9.80 (Windows NT 6.1) Presto/2.12.388 Version/12.16"],
 ];
 
 WebInspector.OverridesView.UserAgentTab.prototype = {
@@ -711,7 +720,7 @@ WebInspector.OverridesView.UserAgentTab.prototype = {
         var userAgent = WebInspector.settings.userAgent.get();
         var userAgents = WebInspector.OverridesView.UserAgentTab._userAgents.concat([[WebInspector.UIString("Other"), "Other"]]);
 
-        var fieldsetElement = WebInspector.SettingsTab.createSettingFieldset(WebInspector.settings.overrideUserAgent);
+        var fieldsetElement = WebInspector.SettingsUI.createSettingFieldset(WebInspector.settings.overrideUserAgent);
         if (WebInspector.isInspectingDevice())
             fieldsetElement.disabled = true;
 
@@ -807,10 +816,10 @@ WebInspector.OverridesView.UserAgentTab.prototype = {
             this._otherUserAgentElement.value = value;
             this._otherUserAgentElement.title = value;
         }
-    }
-}
+    },
 
-WebInspector.OverridesView.UserAgentTab.prototype.__proto__ = WebInspector.OverridesView.Tab.prototype;
+    __proto__: WebInspector.OverridesView.Tab.prototype
+}
 
 
 /**
@@ -877,7 +886,7 @@ WebInspector.OverridesView.SensorsTab.prototype = {
      */
     _createGeolocationOverrideElement: function(geolocation)
     {
-        var fieldsetElement = WebInspector.SettingsTab.createSettingFieldset(WebInspector.settings.overrideGeolocation);
+        var fieldsetElement = WebInspector.SettingsUI.createSettingFieldset(WebInspector.settings.overrideGeolocation);
         fieldsetElement.id = "geolocation-override-section";
 
         var tableElement = fieldsetElement.createChild("table");
@@ -974,7 +983,7 @@ WebInspector.OverridesView.SensorsTab.prototype = {
      */
     _createDeviceOrientationOverrideElement: function(deviceOrientation)
     {
-        var fieldsetElement = WebInspector.SettingsTab.createSettingFieldset(WebInspector.settings.overrideDeviceOrientation);
+        var fieldsetElement = WebInspector.SettingsUI.createSettingFieldset(WebInspector.settings.overrideDeviceOrientation);
         fieldsetElement.id = "device-orientation-override-section";
         var tableElement = fieldsetElement.createChild("table");
         var rowElement = tableElement.createChild("tr");

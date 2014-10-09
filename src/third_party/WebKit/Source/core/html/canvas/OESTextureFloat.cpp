@@ -26,7 +26,6 @@
 #include "config.h"
 
 #include "core/html/canvas/OESTextureFloat.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
@@ -34,7 +33,11 @@ OESTextureFloat::OESTextureFloat(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_texture_float");
+    if (context->extensionsUtil()->ensureExtensionEnabled("GL_OES_texture_float")) {
+        // Implicitly enable rendering to float textures
+        context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_color_buffer_float_rgba");
+        context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_color_buffer_float_rgb");
+    }
 }
 
 OESTextureFloat::~OESTextureFloat()
@@ -53,8 +56,7 @@ PassRefPtr<OESTextureFloat> OESTextureFloat::create(WebGLRenderingContext* conte
 
 bool OESTextureFloat::supported(WebGLRenderingContext* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_texture_float");
+    return context->extensionsUtil()->supportsExtension("GL_OES_texture_float");
 }
 
 const char* OESTextureFloat::extensionName()

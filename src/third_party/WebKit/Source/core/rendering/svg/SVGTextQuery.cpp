@@ -215,15 +215,11 @@ void SVGTextQuery::modifyStartEndPositionsRespectingLigatures(Data* queryData, i
         return;
 
     if (lastPositionOffset != -1 && lastPositionOffset - positionOffset > 1) {
-        if (alterStartPosition && startPosition > lastPositionOffset && startPosition < static_cast<int>(positionOffset)) {
+        if (alterStartPosition && startPosition > lastPositionOffset && startPosition < static_cast<int>(positionOffset))
             startPosition = lastPositionOffset;
-            alterStartPosition = false;
-        }
 
-        if (alterEndPosition && endPosition > lastPositionOffset && endPosition < static_cast<int>(positionOffset)) {
+        if (alterEndPosition && endPosition > lastPositionOffset && endPosition < static_cast<int>(positionOffset))
             endPosition = positionOffset;
-            alterEndPosition = false;
-        }
     }
 }
 
@@ -499,10 +495,10 @@ bool SVGTextQuery::extentOfCharacterCallback(Data* queryData, const SVGTextFragm
     return true;
 }
 
-SVGRect SVGTextQuery::extentOfCharacter(unsigned position) const
+FloatRect SVGTextQuery::extentOfCharacter(unsigned position) const
 {
     if (m_textBoxes.isEmpty())
-        return SVGRect();
+        return FloatRect();
 
     ExtentOfCharacterData data(position);
     executeQuery(&data, &SVGTextQuery::extentOfCharacterCallback);
@@ -540,7 +536,7 @@ bool SVGTextQuery::characterNumberAtPositionCallback(Data* queryData, const SVGT
     return false;
 }
 
-int SVGTextQuery::characterNumberAtPosition(const SVGPoint& position) const
+int SVGTextQuery::characterNumberAtPosition(const FloatPoint& position) const
 {
     if (m_textBoxes.isEmpty())
         return -1;

@@ -66,7 +66,7 @@ public:
     LayoutSize relativePositionOffset() const;
     LayoutSize relativePositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? relativePositionOffset() : relativePositionOffset().transposedSize(); }
 
-    void computeStickyPositionConstraints(StickyPositionViewportConstraints&, const FloatRect& viewportRect) const;
+    void computeStickyPositionConstraints(StickyPositionViewportConstraints&, const FloatRect& constrainingRect) const;
     LayoutSize stickyPositionOffset() const;
     LayoutSize stickyPositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? stickyPositionOffset() : stickyPositionOffset().transposedSize(); }
 
@@ -86,7 +86,13 @@ public:
 
     virtual void updateFromStyle() OVERRIDE;
 
-    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns(); }
+    virtual LayerType layerTypeRequired() const OVERRIDE
+    {
+        if (isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns())
+            return NormalLayer;
+
+        return NoLayer;
+    }
 
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
@@ -178,25 +184,15 @@ public:
 
     void highQualityRepaintTimerFired(Timer<RenderBoxModelObject>*);
 
-    virtual void setSelectionState(SelectionState s);
-
-    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isRenderBlock() && !isRenderSVGBlock(); }
+    virtual void setSelectionState(SelectionState) OVERRIDE;
 
     void contentChanged(ContentChangeType);
     bool hasAcceleratedCompositing() const;
 
-    bool startTransition(double, CSSPropertyID, const RenderStyle* fromStyle, const RenderStyle* toStyle);
-    void transitionPaused(double timeOffset, CSSPropertyID);
-    void transitionFinished(CSSPropertyID);
-
-    bool startAnimation(double timeOffset, const CSSAnimationData*, const KeyframeList& keyframes);
-    void animationPaused(double timeOffset, const String& name);
-    void animationFinished(const String& name);
-
     virtual void computeLayerHitTestRects(LayerHitTestRects&) const OVERRIDE;
 
 protected:
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
     class BackgroundImageGeometry {
     public:

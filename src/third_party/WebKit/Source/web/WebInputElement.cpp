@@ -33,7 +33,7 @@
 
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebNodeCollection.h"
+#include "WebElementCollection.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
@@ -167,13 +167,11 @@ bool WebInputElement::isMultiple() const
     return constUnwrap<HTMLInputElement>()->multiple();
 }
 
-WebNodeCollection WebInputElement::dataListOptions() const
+WebElementCollection WebInputElement::dataListOptions() const
 {
-    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        if (HTMLDataListElement* dataList = toHTMLDataListElement(constUnwrap<HTMLInputElement>()->list()))
-            return WebNodeCollection(dataList->options());
-    }
-    return WebNodeCollection();
+    if (HTMLDataListElement* dataList = toHTMLDataListElement(constUnwrap<HTMLInputElement>()->list()))
+        return WebElementCollection(dataList->options());
+    return WebElementCollection();
 }
 
 WebString WebInputElement::localizeValue(const WebString& proposedValue) const
@@ -242,6 +240,11 @@ WebElement WebInputElement::decorationElementFor(void*)
 WebElement WebInputElement::passwordGeneratorButtonElement() const
 {
     return WebElement(constUnwrap<HTMLInputElement>()->passwordGeneratorButtonElement());
+}
+
+void WebInputElement::setShouldRevealPassword(bool value)
+{
+    unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
 }
 
 WebInputElement::WebInputElement(const PassRefPtr<HTMLInputElement>& elem)

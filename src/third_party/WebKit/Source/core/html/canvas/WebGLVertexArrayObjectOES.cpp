@@ -28,7 +28,6 @@
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
 
 #include "core/html/canvas/WebGLRenderingContext.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
@@ -46,12 +45,11 @@ WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContext* ctx,
     ScriptWrappable::init(this);
     m_vertexAttribState.resize(ctx->maxVertexAttribs());
 
-    Extensions3D* extensions = context()->graphicsContext3D()->extensions();
     switch (m_type) {
     case VaoTypeDefault:
         break;
     default:
-        setObject(extensions->createVertexArrayOES());
+        setObject(context()->webGraphicsContext3D()->createVertexArrayOES());
         break;
     }
 }
@@ -61,14 +59,13 @@ WebGLVertexArrayObjectOES::~WebGLVertexArrayObjectOES()
     deleteObject(0);
 }
 
-void WebGLVertexArrayObjectOES::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLVertexArrayObjectOES::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
 {
-    Extensions3D* extensions = context3d->extensions();
     switch (m_type) {
     case VaoTypeDefault:
         break;
     default:
-        extensions->deleteVertexArrayOES(object);
+        context()->webGraphicsContext3D()->deleteVertexArrayOES(object);
         break;
     }
 
@@ -87,22 +84,22 @@ void WebGLVertexArrayObjectOES::setElementArrayBuffer(PassRefPtr<WebGLBuffer> bu
     if (buffer)
         buffer->onAttached();
     if (m_boundElementArrayBuffer)
-        m_boundElementArrayBuffer->onDetached(context()->graphicsContext3D());
+        m_boundElementArrayBuffer->onDetached(context()->webGraphicsContext3D());
     m_boundElementArrayBuffer = buffer;
 
 }
 
 void WebGLVertexArrayObjectOES::setVertexAttribState(
-    GC3Duint index, GC3Dsizei bytesPerElement, GC3Dint size, GC3Denum type, GC3Dboolean normalized, GC3Dsizei stride, GC3Dintptr offset, PassRefPtr<WebGLBuffer> buffer)
+    GLuint index, GLsizei bytesPerElement, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLintptr offset, PassRefPtr<WebGLBuffer> buffer)
 {
-    GC3Dsizei validatedStride = stride ? stride : bytesPerElement;
+    GLsizei validatedStride = stride ? stride : bytesPerElement;
 
     VertexAttribState& state = m_vertexAttribState[index];
 
     if (buffer)
         buffer->onAttached();
     if (state.bufferBinding)
-        state.bufferBinding->onDetached(context()->graphicsContext3D());
+        state.bufferBinding->onDetached(context()->webGraphicsContext3D());
 
     state.bufferBinding = buffer;
     state.bytesPerElement = bytesPerElement;
@@ -117,20 +114,20 @@ void WebGLVertexArrayObjectOES::setVertexAttribState(
 void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtr<WebGLBuffer> buffer)
 {
     if (m_boundElementArrayBuffer == buffer) {
-        m_boundElementArrayBuffer->onDetached(context()->graphicsContext3D());
+        m_boundElementArrayBuffer->onDetached(context()->webGraphicsContext3D());
         m_boundElementArrayBuffer = 0;
     }
 
     for (size_t i = 0; i < m_vertexAttribState.size(); ++i) {
         VertexAttribState& state = m_vertexAttribState[i];
         if (state.bufferBinding == buffer) {
-            buffer->onDetached(context()->graphicsContext3D());
+            buffer->onDetached(context()->webGraphicsContext3D());
             state.bufferBinding = 0;
         }
     }
 }
 
-void WebGLVertexArrayObjectOES::setVertexAttribDivisor(GC3Duint index, GC3Duint divisor)
+void WebGLVertexArrayObjectOES::setVertexAttribDivisor(GLuint index, GLuint divisor)
 {
     VertexAttribState& state = m_vertexAttribState[index];
     state.divisor = divisor;

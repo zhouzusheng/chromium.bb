@@ -41,7 +41,7 @@ class KURL;
 class ExecutionContext;
 class ExceptionState;
 
-class History : public ScriptWrappable, public RefCounted<History>, public DOMWindowProperty {
+class History FINAL : public ScriptWrappable, public RefCounted<History>, public DOMWindowProperty {
 public:
     static PassRefPtr<History> create(Frame* frame) { return adoptRef(new History(frame)); }
 
@@ -55,7 +55,7 @@ public:
     bool stateChanged() const;
     bool isSameAsCurrentState(SerializedScriptValue*) const;
 
-    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, SameDocumentNavigationSource, ExceptionState&);
+    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, UpdateBackForwardListPolicy, ExceptionState&);
 
 private:
     explicit History(Frame*);

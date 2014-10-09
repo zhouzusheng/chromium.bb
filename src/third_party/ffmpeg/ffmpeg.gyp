@@ -33,6 +33,11 @@
     },
   },
   'variables': {
+    # Make sure asm_sources is always defined even if an arch doesn't have any
+    # asm sources (e.g. mips or x86 with forcefully disabled asm).
+    'asm_sources': [
+    ],
+
     # Allow overriding the selection of which FFmpeg binaries to copy via an
     # environment variable.  Affects the ffmpeg_binaries target.
     'conditions': [
@@ -42,10 +47,6 @@
       }, {
         'ffmpeg_config%': '<(target_arch)',
       }],
-      ['target_arch == "mipsel"', {
-        'asm_sources': [
-        ],
-      }],
       ['OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
         'os_config%': 'win-vs2013',
       }, {
@@ -53,7 +54,14 @@
           ['OS == "mac" or OS == "win" or OS == "openbsd"', {
             'os_config%': '<(OS)',
           }, {  # all other Unix OS's use the linux config
-            'os_config%': 'linux',
+            'conditions': [
+              ['msan==1', {
+                # MemorySanitizer doesn't like assembly code.
+                'os_config%': 'linux-noasm',
+              }, {
+                'os_config%': 'linux',
+              }]
+            ],
           }],
         ],
       }],
@@ -77,7 +85,7 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['target_arch != "arm"', {
+    ['target_arch != "arm" and os_config != "linux-noasm"', {
       'targets': [
         {
           'target_name': 'ffmpeg_yasm',
@@ -182,7 +190,7 @@
               '<(shared_generated_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).c',
               '-I', '<(platform_config_root)',
             ],
-            'message': 'Converting <(RULE_INPUT_PATH) from C99 to C89.',
+            'message': 'Converting <(RULE_INPUT_PATH) from C99 to C89',
             'process_outputs_as_sources': 1,
           },
         ],
@@ -227,7 +235,7 @@
               'dependencies': ['convert_ffmpeg_sources'],
               'sources': ['<@(converter_outputs)'],
             }],
-            ['target_arch != "arm" and target_arch != "mipsel"', {
+            ['target_arch != "arm" and target_arch != "mipsel" and os_config != "linux-noasm"', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -488,8 +496,7 @@
                              '-m', 'ffmpegsumo.dll',
                              '<@(_inputs)',
                   ],
-                  'message': 'Generating FFmpeg export definitions.',
-                  'msvs_cygwin_shell': 1,
+                  'message': 'Generating FFmpeg export definitions',
                 },
               ],
             }],
@@ -581,7 +588,7 @@
                          '-t', '<(outfile_type)',
                          '<@(RULE_INPUT_PATH)',
               ],
-              'message': 'Generating FFmpeg import libraries.',
+              'message': 'Generating FFmpeg import libraries',
             },
           ],
         }, {  # else OS != "win", use POSIX stub generator
@@ -641,7 +648,7 @@
                          '<@(_inputs)',
               ],
               'process_outputs_as_sources': 1,
-              'message': 'Generating FFmpeg stubs for dynamic loading.',
+              'message': 'Generating FFmpeg stubs for dynamic loading',
             },
           ],
           'conditions': [

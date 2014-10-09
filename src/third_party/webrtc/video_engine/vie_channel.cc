@@ -96,7 +96,6 @@ ViEChannel::ViEChannel(int32_t channel_id,
       decoder_reset_(true),
       wait_for_key_frame_(false),
       decode_thread_(NULL),
-      external_encryption_(NULL),
       effect_filter_(NULL),
       color_enhancement_(false),
       mtu_(0),
@@ -412,7 +411,6 @@ int32_t ViEChannel::SetSendCodec(const VideoCodec& video_codec,
         rtp_rtcp->DeregisterSendRtpHeaderExtension(
             kRtpExtensionAbsoluteSendTime);
       }
-      rtp_rtcp->SetRtcpXrRrtrStatus(rtp_rtcp_->RtcpXrRrtrStatus());
       rtp_rtcp->RegisterSendFrameCountObserver(
           rtp_rtcp_->GetSendFrameCountObserver());
       rtp_rtcp->RegisterSendChannelRtcpStatisticsCallback(
@@ -939,10 +937,6 @@ int ViEChannel::SetReceiveAbsoluteSendTimeStatus(bool enable, int id) {
 void ViEChannel::SetRtcpXrRrtrStatus(bool enable) {
   CriticalSectionScoped cs(rtp_rtcp_cs_.get());
   rtp_rtcp_->SetRtcpXrRrtrStatus(enable);
-  for (std::list<RtpRtcp*>::iterator it = simulcast_rtp_rtcp_.begin();
-       it != simulcast_rtp_rtcp_.end(); it++) {
-    (*it)->SetRtcpXrRrtrStatus(enable);
-  }
 }
 
 void ViEChannel::SetTransmissionSmoothingStatus(bool enable) {
@@ -1297,7 +1291,7 @@ int32_t ViEChannel::GetReceivedRtcpStatistics(uint16_t* fraction_lost,
   uint32_t remote_ssrc = vie_receiver_.GetRemoteSsrc();
   StreamStatistician* statistician =
       vie_receiver_.GetReceiveStatistics()->GetStatistician(remote_ssrc);
-  StreamStatistician::Statistics receive_stats;
+  RtcpStatistics receive_stats;
   if (!statistician || !statistician->GetStatistics(
       &receive_stats, rtp_rtcp_->RTCP() == kRtcpOff)) {
     WEBRTC_TRACE(kTraceError, kTraceVideo, ViEId(engine_id_, channel_id_),
@@ -1317,6 +1311,17 @@ int32_t ViEChannel::GetReceivedRtcpStatistics(uint16_t* fraction_lost,
   }
   *rtt_ms = rtt;
   return 0;
+}
+
+void ViEChannel::RegisterReceiveChannelRtcpStatisticsCallback(
+    RtcpStatisticsCallback* callback) {
+  WEBRTC_TRACE(kTraceInfo,
+               kTraceVideo,
+               ViEId(engine_id_, channel_id_),
+               "%s",
+               __FUNCTION__);
+  vie_receiver_.GetReceiveStatistics()->RegisterRtcpStatisticsCallback(
+      callback);
 }
 
 int32_t ViEChannel::GetRtpStatistics(uint32_t* bytes_sent,
@@ -1364,6 +1369,16 @@ void ViEChannel::RegisterSendChannelRtpStatisticsCallback(
       (*it)->RegisterSendChannelRtpStatisticsCallback(callback);
     }
   }
+}
+
+void ViEChannel::RegisterReceiveChannelRtpStatisticsCallback(
+    StreamDataCountersCallback* callback) {
+  WEBRTC_TRACE(kTraceInfo,
+               kTraceVideo,
+               ViEId(engine_id_, channel_id_),
+               "%s",
+               __FUNCTION__);
+  vie_receiver_.GetReceiveStatistics()->RegisterRtpStatisticsCallback(callback);
 }
 
 void ViEChannel::GetBandwidthUsage(uint32_t* total_bitrate_sent,
@@ -1439,6 +1454,11 @@ void ViEChannel::RegisterSendBitrateObserver(
 void ViEChannel::GetEstimatedReceiveBandwidth(
     uint32_t* estimated_bandwidth) const {
   vie_receiver_.EstimatedReceiveBandwidth(estimated_bandwidth);
+}
+
+void ViEChannel::GetReceiveBandwidthEstimatorStats(
+    ReceiveBandwidthEstimatorStats* output) const {
+  vie_receiver_.GetReceiveBandwidthEstimatorStats(output);
 }
 
 int32_t ViEChannel::StartRTPDump(const char file_nameUTF8[1024],
@@ -1859,48 +1879,6 @@ int32_t ViEChannel::StopDecodeThread() {
     assert(false && "could not stop decode thread");
   }
   decode_thread_ = NULL;
-  return 0;
-}
-
-int32_t ViEChannel::RegisterExternalEncryption(Encryption* encryption) {
-  WEBRTC_TRACE(kTraceInfo, kTraceVideo, ViEId(engine_id_, channel_id_), "%s",
-               __FUNCTION__);
-
-  CriticalSectionScoped cs(callback_cs_.get());
-  if (external_encryption_) {
-    WEBRTC_TRACE(kTraceError, kTraceVideo, ViEId(engine_id_, channel_id_),
-                 "%s: external encryption already registered", __FUNCTION__);
-    return -1;
-  }
-
-  external_encryption_ = encryption;
-
-  vie_receiver_.RegisterExternalDecryption(encryption);
-  vie_sender_.RegisterExternalEncryption(encryption);
-
-  WEBRTC_TRACE(kTraceInfo, kTraceVideo, ViEId(engine_id_, channel_id_),
-               "%s", "external encryption object registerd with channel=%d",
-               channel_id_);
-  return 0;
-}
-
-int32_t ViEChannel::DeRegisterExternalEncryption() {
-  WEBRTC_TRACE(kTraceInfo, kTraceVideo, ViEId(engine_id_, channel_id_), "%s",
-               __FUNCTION__);
-
-  CriticalSectionScoped cs(callback_cs_.get());
-  if (!external_encryption_) {
-    WEBRTC_TRACE(kTraceError, kTraceVideo, ViEId(engine_id_, channel_id_),
-                 "%s: external encryption is not registered", __FUNCTION__);
-    return -1;
-  }
-
-  external_transport_ = NULL;
-  vie_receiver_.DeregisterExternalDecryption();
-  vie_sender_.DeregisterExternalEncryption();
-  WEBRTC_TRACE(kTraceInfo, kTraceVideo, ViEId(engine_id_, channel_id_),
-               "%s external encryption object de-registerd with channel=%d",
-               __FUNCTION__, channel_id_);
   return 0;
 }
 

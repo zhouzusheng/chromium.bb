@@ -39,7 +39,7 @@ class RenderBox;
 class SVGImageChromeClient;
 class SVGImageForContainer;
 
-class SVGImage : public Image {
+class SVGImage FINAL : public Image {
 public:
     static PassRefPtr<SVGImage> create(ImageObserver* observer)
     {
@@ -64,6 +64,9 @@ public:
 
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
 
+    // Returns the SVG image document's frame.
+    FrameView* frameView() const;
+
 private:
     friend class AXRenderObject;
     friend class SVGImageChromeClient;
@@ -71,8 +74,6 @@ private:
 
     virtual ~SVGImage();
 
-    // Returns the SVG image document's frame.
-    FrameView* frameView() const;
 
     virtual String filenameExtension() const OVERRIDE;
 

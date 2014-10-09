@@ -32,7 +32,7 @@ class SVGGlyphRefElement FINAL : public SVGElement,
 public:
     static PassRefPtr<SVGGlyphRefElement> create(Document&);
 
-    bool hasValidGlyphElement(String& glyphName) const;
+    bool hasValidGlyphElement(AtomicString& glyphName) const;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     // DOM interface
@@ -53,10 +53,9 @@ private:
     template<typename CharType>
     void parseAttributeInternal(const QualifiedName&, const AtomicString&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGGlyphRefElement)
-        DECLARE_ANIMATED_STRING(Href, href)
     END_DECLARE_ANIMATED_PROPERTIES
 
     float m_x;

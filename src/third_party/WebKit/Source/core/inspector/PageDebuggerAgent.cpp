@@ -34,23 +34,23 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
+#include "core/frame/Frame.h"
+#include "core/frame/PageConsole.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/PageConsole.h"
 
 namespace WebCore {
 
-PassOwnPtr<PageDebuggerAgent> PageDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PassOwnPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
 {
-    return adoptPtr(new PageDebuggerAgent(instrumentingAgents, inspectorState, pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
+    return adoptPtr(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
 }
 
-PageDebuggerAgent::PageDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
-    : InspectorDebuggerAgent(instrumentingAgents, inspectorState, injectedScriptManager)
+PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+    : InspectorDebuggerAgent(injectedScriptManager)
     , m_pageScriptDebugServer(pageScriptDebugServer)
     , m_pageAgent(pageAgent)
     , m_overlay(overlay)
@@ -128,9 +128,9 @@ void PageDebuggerAgent::setOverlayMessage(ErrorString*, const String* message)
     m_overlay->setPausedInDebuggerMessage(message);
 }
 
-void PageDebuggerAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* world)
+void PageDebuggerAgent::didClearWindowObjectInMainWorld(Frame* frame)
 {
-    if (world != mainThreadNormalWorld() || frame != m_pageAgent->mainFrame())
+    if (frame != m_pageAgent->mainFrame())
         return;
 
     reset();

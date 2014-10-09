@@ -31,35 +31,55 @@
 #ifndef CryptoResultImpl_h
 #define CryptoResultImpl_h
 
+#include "bindings/v8/DOMRequestState.h"
 #include "bindings/v8/ScriptPromise.h"
-#include "core/platform/CryptoResult.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "platform/CryptoResult.h"
 #include "public/platform/WebCrypto.h"
+#include "wtf/Assertions.h"
 #include "wtf/Forward.h"
+#include "wtf/Threading.h"
 
 namespace WebCore {
 
 class ScriptPromiseResolver;
+class ScriptState;
 
 // Wrapper around a Promise to notify completion of the crypto operation.
 // Platform cannot know about Promises which are declared in bindings.
-class CryptoResultImpl : public CryptoResult {
+class CryptoResultImpl FINAL : public CryptoResult, public ContextLifecycleObserver {
 public:
     ~CryptoResultImpl();
 
     static PassRefPtr<CryptoResultImpl> create(ScriptPromise);
 
     virtual void completeWithError() OVERRIDE;
+    virtual void completeWithError(const blink::WebString&) OVERRIDE;
     virtual void completeWithBuffer(const blink::WebArrayBuffer&) OVERRIDE;
     virtual void completeWithBoolean(bool) OVERRIDE;
     virtual void completeWithKey(const blink::WebCryptoKey&) OVERRIDE;
     virtual void completeWithKeyPair(const blink::WebCryptoKey& publicKey, const blink::WebCryptoKey& privateKey) OVERRIDE;
 
 private:
-    explicit CryptoResultImpl(ScriptPromise);
+    CryptoResultImpl(ExecutionContext*, ScriptPromise);
     void finish();
+    void CheckValidThread() const;
+
+    // Override from ContextLifecycleObserver
+    virtual void contextDestroyed() OVERRIDE;
+
+    // Returns true if the ExecutionContext is still alive and running.
+    bool canCompletePromise() const;
+
+    void clearPromiseResolver();
 
     RefPtr<ScriptPromiseResolver> m_promiseResolver;
+    DOMRequestState m_requestState;
+
+#if !ASSERT_DISABLED
+    ThreadIdentifier m_owningThread;
     bool m_finished;
+#endif
 };
 
 } // namespace WebCore

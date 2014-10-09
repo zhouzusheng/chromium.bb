@@ -31,22 +31,19 @@
 #ifndef ElementAnimation_h
 #define ElementAnimation_h
 
-#include "bindings/v8/Dictionary.h"
-#include "core/css/CSSParser.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class Animation;
+class Dictionary;
 class Element;
 
 class ElementAnimation {
 public:
-    static CSSPropertyID camelCaseCSSPropertyNameToID(const String& propertyName);
-    static void animate(Element*, Vector<Dictionary> keyframesDictionaryVector, double duration = 0);
-
-private:
-    static void startAnimation(Element*, Vector<Dictionary> keyframesDictionaryVector, double duration = 0);
-
-    friend class AnimationElementAnimationTest;
+    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector, Dictionary timingInput);
+    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector, double timingInput);
+    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector);
 };
 
 } // namespace WebCore

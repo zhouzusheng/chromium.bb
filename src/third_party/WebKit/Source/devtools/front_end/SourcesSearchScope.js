@@ -29,14 +29,12 @@
 /**
  * @constructor
  * @implements {WebInspector.SearchScope}
- * @param {!WebInspector.Workspace} workspace
  */
-WebInspector.SourcesSearchScope = function(workspace)
+WebInspector.SourcesSearchScope = function()
 {
     // FIXME: Add title once it is used by search controller.
-    WebInspector.SearchScope.call(this)
     this._searchId = 0;
-    this._workspace = workspace;
+    this._workspace = WebInspector.workspace;
 }
 
 WebInspector.SourcesSearchScope.prototype = {
@@ -215,11 +213,10 @@ WebInspector.SourcesSearchScope.prototype = {
 
     /**
      * @param {!WebInspector.SearchConfig} searchConfig
+     * @return {!WebInspector.FileBasedSearchResultsPane}
      */
     createSearchResultsPane: function(searchConfig)
     {
         return new WebInspector.FileBasedSearchResultsPane(searchConfig);
-    },
-
-    __proto__: WebInspector.SearchScope.prototype
+    }
 }

@@ -82,11 +82,14 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         var height = Math.max(relativeToElement.offsetHeight * 2 / 3, minHeight);
 
         this.element.style.width = width + "px";
-
+        var container = WebInspector.Dialog.modalHostView().element;
+        var box = relativeToElement.boxInWindow(window).relativeToElement(container);
         const shadowPadding = 20; // shadow + padding
-        element.positionAt(
-            relativeToElement.totalOffsetLeft() + Math.max((relativeToElement.offsetWidth - width - 2 * shadowPadding) / 2, shadowPadding),
-            relativeToElement.totalOffsetTop() + Math.max((relativeToElement.offsetHeight - height - 2 * shadowPadding) / 2, shadowPadding));
+        var positionX = box.x + Math.max((box.width - width - 2 * shadowPadding) / 2, shadowPadding);
+        positionX = Math.max(shadowPadding, Math.min(container.offsetWidth - width - 2 * shadowPadding, positionX));
+        var positionY = box.y + Math.max((box.height - height - 2 * shadowPadding) / 2, shadowPadding);
+        positionY = Math.max(shadowPadding, Math.min(container.offsetHeight - height - 2 * shadowPadding, positionY));
+        element.positionAt(positionX, positionY, container);
         this._dialogHeight = height;
 
         this._updateShowMatchingItems();
@@ -118,7 +121,8 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     {
         if (!this._delegate.itemCount())
             return;
-        this._delegate.selectItem(this._filteredItems[this._selectedIndexInFiltered], this._promptElement.value.trim());
+        var selectedIndex = this._selectedIndexInFiltered < this._filteredItems.length ? this._filteredItems[this._selectedIndexInFiltered] : null;
+        this._delegate.selectItem(selectedIndex, this._promptElement.value.trim());
     },
 
     _itemsLoaded: function()
@@ -456,7 +460,7 @@ WebInspector.SelectionDialogContentProvider.prototype = {
     },
 
     /**
-     * @param {number} itemIndex
+     * @param {?number} itemIndex
      * @param {string} promptValue
      */
     selectItem: function(itemIndex, promptValue)
@@ -486,48 +490,42 @@ WebInspector.SelectionDialogContentProvider.prototype = {
  * @constructor
  * @extends {WebInspector.SelectionDialogContentProvider}
  * @param {!WebInspector.View} view
- * @param {!WebInspector.ContentProvider} contentProvider
+ * @param {!WebInspector.UISourceCode} uiSourceCode
  * @param {function(number, number)} selectItemCallback
  */
-WebInspector.JavaScriptOutlineDialog = function(view, contentProvider, selectItemCallback)
+WebInspector.JavaScriptOutlineDialog = function(view, uiSourceCode, selectItemCallback)
 {
     WebInspector.SelectionDialogContentProvider.call(this);
 
     this._functionItems = [];
     this._view = view;
     this._selectItemCallback = selectItemCallback;
-    contentProvider.requestContent(this._contentAvailable.bind(this));
+    this._outlineWorker = new Worker("ScriptFormatterWorker.js");
+    this._outlineWorker.onmessage = this._didBuildOutlineChunk.bind(this);
+    this._outlineWorker.postMessage({ method: "javaScriptOutline", params: { content: uiSourceCode.workingCopy() } });
 }
 
 /**
  * @param {!WebInspector.View} view
- * @param {!WebInspector.ContentProvider} contentProvider
+ * @param {!WebInspector.UISourceCode} uiSourceCode
  * @param {function(number, number)} selectItemCallback
  */
-WebInspector.JavaScriptOutlineDialog.show = function(view, contentProvider, selectItemCallback)
+WebInspector.JavaScriptOutlineDialog.show = function(view, uiSourceCode, selectItemCallback)
 {
     if (WebInspector.Dialog.currentInstance())
         return null;
-    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.JavaScriptOutlineDialog(view, contentProvider, selectItemCallback));
+    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.JavaScriptOutlineDialog(view, uiSourceCode, selectItemCallback));
     WebInspector.Dialog.show(view.element, filteredItemSelectionDialog);
 }
 
 WebInspector.JavaScriptOutlineDialog.prototype = {
     /**
-     * @param {?string} content
+     * @param {!MessageEvent} event
      */
-    _contentAvailable: function(content)
-    {
-        this._outlineWorker = new Worker("ScriptFormatterWorker.js");
-        this._outlineWorker.onmessage = this._didBuildOutlineChunk.bind(this);
-        const method = "outline";
-        this._outlineWorker.postMessage({ method: method, params: { content: content } });
-    },
-
     _didBuildOutlineChunk: function(event)
     {
-        var data = event.data;
-        var chunk = data["chunk"];
+        var data = /** @type {!WebInspector.JavaScriptOutlineDialog.MessageEventData} */ (event.data);
+        var chunk = data.chunk;
         for (var i = 0; i < chunk.length; ++i)
             this._functionItems.push(chunk[i]);
 
@@ -580,11 +578,13 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
     },
 
     /**
-     * @param {number} itemIndex
+     * @param {?number} itemIndex
      * @param {string} promptValue
      */
     selectItem: function(itemIndex, promptValue)
     {
+        if (itemIndex === null)
+            return;
         var lineNumber = this._functionItems[itemIndex].line;
         if (!isNaN(lineNumber) && lineNumber >= 0)
             this._selectItemCallback(lineNumber, this._functionItems[itemIndex].column);
@@ -624,14 +624,16 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     /**
      * @param {?WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber
+     * @param {number=} columnNumber
      */
-    uiSourceCodeSelected: function(uiSourceCode, lineNumber)
+    uiSourceCodeSelected: function(uiSourceCode, lineNumber, columnNumber)
     {
         // Overridden by subclasses
     },
 
     /**
      * @param {!WebInspector.Project} project
+     * @return {boolean}
      */
     filterProject: function(project)
     {
@@ -682,12 +684,13 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
      * @param {string} query
      * @param {!Element} titleElement
      * @param {!Element} subtitleElement
+     * @return {!Array.<!Element>}
      */
     renderItem: function(itemIndex, query, titleElement, subtitleElement)
     {
         query = this.rewriteQuery(query);
         var uiSourceCode = this._uiSourceCodes[itemIndex];
-        titleElement.textContent = uiSourceCode.displayName() + (this._queryLineNumber ? this._queryLineNumber : "");
+        titleElement.textContent = uiSourceCode.displayName() + (this._queryLineNumberAndColumnNumber || "");
         subtitleElement.textContent = uiSourceCode.fullDisplayName().trimEnd(100);
 
         var indexes = [];
@@ -706,20 +709,23 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     },
 
     /**
-     * @param {number} itemIndex
+     * @param {?number} itemIndex
      * @param {string} promptValue
      */
     selectItem: function(itemIndex, promptValue)
     {
-        if (/^:\d+$/.test(promptValue.trimRight())) {
-            var lineNumber = parseInt(promptValue.trimRight().substring(1), 10) - 1;
-            if (!isNaN(lineNumber) && lineNumber >= 0)
-                this.uiSourceCodeSelected(null, lineNumber);
+        var parsedExpression = promptValue.trim().match(/^([^:]*)(:\d+)?(:\d+)?$/);
+        if (!parsedExpression)
             return;
-        }
-        var lineNumberMatch = promptValue.match(/[^:]+\:([\d]*)$/);
-        var lineNumber = lineNumberMatch ? Math.max(parseInt(lineNumberMatch[1], 10) - 1, 0) : undefined;
-        this.uiSourceCodeSelected(this._uiSourceCodes[itemIndex], lineNumber);
+
+        var lineNumber;
+        var columnNumber;
+        if (parsedExpression[2])
+            lineNumber = parseInt(parsedExpression[2].substr(1), 10) - 1;
+        if (parsedExpression[3])
+            columnNumber = parseInt(parsedExpression[3].substr(1), 10) - 1;
+        var uiSourceCode = itemIndex !== null ? this._uiSourceCodes[itemIndex] : null;
+        this.uiSourceCodeSelected(uiSourceCode, lineNumber, columnNumber);
     },
 
     /**
@@ -731,8 +737,8 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
         if (!query)
             return query;
         query = query.trim();
-        var lineNumberMatch = query.match(/([^:]+)(\:[\d]*)$/);
-        this._queryLineNumber = lineNumberMatch ? lineNumberMatch[2] : "";
+        var lineNumberMatch = query.match(/^([^:]+)((?::[^:]*){0,2})$/);
+        this._queryLineNumberAndColumnNumber = lineNumberMatch ? lineNumberMatch[2] : "";
         return lineNumberMatch ? lineNumberMatch[1] : query;
     },
 
@@ -773,14 +779,15 @@ WebInspector.OpenResourceDialog.prototype = {
     /**
      * @param {?WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber
+     * @param {number=} columnNumber
      */
-    uiSourceCodeSelected: function(uiSourceCode, lineNumber)
+    uiSourceCodeSelected: function(uiSourceCode, lineNumber, columnNumber)
     {
         if (!uiSourceCode)
             uiSourceCode = this._panel.currentUISourceCode();
         if (!uiSourceCode)
             return;
-        this._panel.showUISourceCode(uiSourceCode, lineNumber);
+        this._panel.showUISourceCode(uiSourceCode, lineNumber, columnNumber);
     },
 
     /**
@@ -794,6 +801,7 @@ WebInspector.OpenResourceDialog.prototype = {
 
     /**
      * @param {!WebInspector.Project} project
+     * @return {boolean}
      */
     filterProject: function(project)
     {
@@ -838,14 +846,16 @@ WebInspector.SelectUISourceCodeForProjectTypeDialog.prototype = {
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number=} lineNumber
+     * @param {number=} columnNumber
      */
-    uiSourceCodeSelected: function(uiSourceCode, lineNumber)
+    uiSourceCodeSelected: function(uiSourceCode, lineNumber, columnNumber)
     {
         this._callback(uiSourceCode);
     },
 
     /**
      * @param {!WebInspector.Project} project
+     * @return {boolean}
      */
     filterProject: function(project)
     {
@@ -870,3 +880,8 @@ WebInspector.SelectUISourceCodeForProjectTypeDialog.show = function(name, type, 
     filteredItemSelectionDialog.renderAsTwoRows();
     WebInspector.Dialog.show(relativeToElement, filteredItemSelectionDialog);
 }
+
+/**
+ * @typedef {{index: number, total: number, chunk: !Array.<!{selectorText: string, lineNumber: number, columnNumber: number}>}}
+ */
+WebInspector.JavaScriptOutlineDialog.MessageEventData;

@@ -40,7 +40,7 @@ public:
     static PassRefPtr<TextControlInnerContainer> create(Document&);
 protected:
     TextControlInnerContainer(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 };
 
 class EditingViewPortElement FINAL : public HTMLDivElement {
@@ -59,11 +59,11 @@ class TextControlInnerTextElement FINAL : public HTMLDivElement {
 public:
     static PassRefPtr<TextControlInnerTextElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
 private:
     TextControlInnerTextElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
@@ -72,12 +72,12 @@ class SearchFieldDecorationElement FINAL : public HTMLDivElement {
 public:
     static PassRefPtr<SearchFieldDecorationElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
     SearchFieldDecorationElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
@@ -85,7 +85,7 @@ class SearchFieldCancelButtonElement FINAL : public HTMLDivElement {
 public:
     static PassRefPtr<SearchFieldCancelButtonElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
@@ -112,23 +112,23 @@ public:
     virtual ~InputFieldSpeechButtonElement();
 
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void defaultEventHandler(Event*);
-    virtual bool willRespondToMouseClickEvents();
-    virtual bool isInputFieldSpeechButtonElement() const { return true; }
+    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    virtual bool isInputFieldSpeechButtonElement() const OVERRIDE { return true; }
     SpeechInputState state() const { return m_state; }
     void startSpeechInput();
     void stopSpeechInput();
 
     // SpeechInputListener methods.
-    void didCompleteRecording(int);
-    void didCompleteRecognition(int);
-    void setRecognitionResult(int, const SpeechInputResultArray&);
+    virtual void didCompleteRecording(int) OVERRIDE;
+    virtual void didCompleteRecognition(int) OVERRIDE;
+    virtual void setRecognitionResult(int, const SpeechInputResultArray&) OVERRIDE;
 
 private:
     InputFieldSpeechButtonElement(Document&);
     SpeechInput* speechInput();
     void setState(SpeechInputState state);
-    virtual bool isMouseFocusable() const { return false; }
+    virtual bool isMouseFocusable() const OVERRIDE { return false; }
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
     bool m_capturing;

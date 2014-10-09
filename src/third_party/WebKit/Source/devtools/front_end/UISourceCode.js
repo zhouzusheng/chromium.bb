@@ -360,7 +360,7 @@ WebInspector.UISourceCode.prototype = {
      */
     _saveURLWithFileManager: function(forceSaveAs, content)
     {
-        WebInspector.fileManager.save(this._url, content, forceSaveAs, callback.bind(this));
+        WebInspector.fileManager.save(this._url, /** @type {string} */ (content), forceSaveAs, callback.bind(this));
         WebInspector.fileManager.close(this._url);
 
         /**
@@ -396,7 +396,7 @@ WebInspector.UISourceCode.prototype = {
     {
         if (this._savedWithFileManager || this.project().canSetFileContent() || !this._isEditable)
             return false;
-        if (WebInspector.extensionServer.hasSubscribers(WebInspector.extensionAPI.Events.ResourceContentCommitted))
+        if (this._project.workspace().hasResourceContentTrackingExtensions())
             return false;
         return !!this._hasCommittedChanges;
     },
@@ -703,6 +703,7 @@ WebInspector.UISourceCode.prototype = {
 
     /**
      * @param {!WebInspector.UILocation} uiLocation
+     * @return {!WebInspector.UILocation}
      */
     overrideLocation: function(uiLocation)
     {
@@ -930,7 +931,7 @@ WebInspector.LiveLocation.prototype = {
      */
     uiLocation: function()
     {
-        // Should be overridden by subclasses.
+        throw "Not implemented";
     },
 
     dispose: function()

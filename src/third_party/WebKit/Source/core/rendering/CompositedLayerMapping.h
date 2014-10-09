@@ -37,7 +37,6 @@ namespace WebCore {
 
 class KeyframeList;
 class RenderLayerCompositor;
-class WebAnimationProvider;
 
 enum CompositingLayerType {
     NormalCompositingLayer, // non-tiled layer with backing store
@@ -50,17 +49,30 @@ enum CompositingLayerType {
 struct GraphicsLayerPaintInfo {
     RenderLayer* renderLayer;
 
-    IntRect compositedBounds;
+    LayoutRect compositedBounds;
 
-    // A temporary offset used for squashing layers, when the origin of the
-    // squashing layer is not yet known.
-    IntSize offsetFromBackingRoot;
+    // At first, the m_squashingLayer's bounds/location are not known. The value offsetFromSquashingCLM is
+    // an intermediate offset for a squashed RenderLayer, described with respect to the CompositedLayerMapping's
+    // owning layer that would eventually have the m_squashingLayer. Once the shared GraphicsLayer's bounds are
+    // known, then we can trivially convert this offset to m_squashingLayer's space.
+    IntSize offsetFromSquashingCLM;
 
+    // Offset describing where this squashed RenderLayer paints into the shared GraphicsLayer backing.
     IntSize offsetFromRenderer;
 
     GraphicsLayerPaintingPhase paintingPhase;
 
     bool isBackgroundLayer;
+
+    bool isEquivalentForSquashing(const GraphicsLayerPaintInfo& other)
+    {
+        // FIXME: offsetFromRenderer and compositedBounds should not be checked here, because
+        // they are not yet fixed at the time this function is used.
+        return renderLayer == other.renderLayer
+            && offsetFromSquashingCLM == other.offsetFromSquashingCLM
+            && paintingPhase == other.paintingPhase
+            && isBackgroundLayer == other.isBackgroundLayer;
+    }
 };
 
 // CompositedLayerMapping keeps track of how RenderLayers of the render tree correspond to
@@ -70,11 +82,11 @@ struct GraphicsLayerPaintInfo {
 //
 // Currently (Oct. 2013) there is one CompositedLayerMapping for each RenderLayer,
 // but this is likely to evolve soon.
-class CompositedLayerMapping : public GraphicsLayerClient {
+class CompositedLayerMapping FINAL : public GraphicsLayerClient {
     WTF_MAKE_NONCOPYABLE(CompositedLayerMapping); WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit CompositedLayerMapping(RenderLayer*);
-    ~CompositedLayerMapping();
+    virtual ~CompositedLayerMapping();
 
     RenderLayer* owningLayer() const { return m_owningLayer; }
 
@@ -114,12 +126,22 @@ public:
     GraphicsLayer* scrollingContentsLayer() const { return m_scrollingContentsLayer.get(); }
 
     bool hasMaskLayer() const { return m_maskLayer; }
+    GraphicsLayer* maskLayer() const { return m_maskLayer.get(); }
+
     bool hasChildClippingMaskLayer() const { return m_childClippingMaskLayer; }
+    GraphicsLayer* childClippingMaskLayer() const { return m_childClippingMaskLayer.get(); }
 
     GraphicsLayer* parentForSublayers() const;
     GraphicsLayer* childForSuperlayers() const;
+    // localRootForOwningLayer does not include the m_squashingContainmentLayer, which is technically not associated with this CLM's owning layer.
+    GraphicsLayer* localRootForOwningLayer() const;
 
+    GraphicsLayer* childTransformLayer() const { return m_childTransformLayer.get(); }
+
+    GraphicsLayer* squashingContainmentLayer() const { return m_squashingContainmentLayer.get(); }
     GraphicsLayer* squashingLayer() const { return m_squashingLayer.get(); }
+    // Contains the bottommost layer in the hierarchy that can contain the children transform.
+    GraphicsLayer* layerForChildrenTransform() const;
 
     // Returns true for a composited layer that has no backing store of its own, so
     // paints into some ancestor layer.
@@ -141,43 +163,35 @@ public:
     // Notification from the renderer that its content changed.
     void contentChanged(ContentChangeType);
 
-    // Interface to start, finish, suspend and resume animations and transitions
-    bool startTransition(double, CSSPropertyID, const RenderStyle* fromStyle, const RenderStyle* toStyle);
-    void transitionPaused(double timeOffset, CSSPropertyID);
-    void transitionFinished(CSSPropertyID);
-
-    bool startAnimation(double timeOffset, const CSSAnimationData*, const KeyframeList& keyframes);
-    void animationPaused(double timeOffset, const String& name);
-    void animationFinished(const String& name);
-
-    IntRect compositedBounds() const;
-    void setCompositedBounds(const IntRect&);
+    LayoutRect compositedBounds() const { return m_compositedBounds; }
+    IntRect pixelSnappedCompositedBounds() const;
+    void setCompositedBounds(const LayoutRect&);
     void updateCompositedBounds();
 
     void updateAfterWidgetResize();
     void positionOverflowControlsLayers(const IntSize& offsetFromRoot);
     bool hasUnpositionedOverflowControlsLayers() const;
 
-    void addRenderLayerToSquashingGraphicsLayer(RenderLayer*, IntSize offsetFromTargetBacking, size_t nextSquashedLayerIndex);
+    // Returns true if the assignment actually changed the assigned squashing layer.
+    bool updateSquashingLayerAssignment(RenderLayer*, IntSize offsetFromSquashingCLM, size_t nextSquashedLayerIndex);
+    void removeRenderLayerFromSquashingGraphicsLayer(const RenderLayer*);
+
     void finishAccumulatingSquashingLayers(size_t nextSquashedLayerIndex);
+    void updateRenderingContext();
+    void updateShouldFlattenTransform();
 
     // GraphicsLayerClient interface
     virtual void notifyAnimationStarted(const GraphicsLayer*, double wallClockTime, double monotonicTime) OVERRIDE;
-
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) OVERRIDE;
-
-    virtual void didCommitChangesForLayer(const GraphicsLayer*) const OVERRIDE;
-    virtual bool getCurrentTransform(const GraphicsLayer*, TransformationMatrix&) const OVERRIDE;
-
     virtual bool isTrackingRepaints() const OVERRIDE;
 
     PassOwnPtr<Vector<FloatRect> > collectTrackedRepaintRects() const;
 
 #ifndef NDEBUG
-    virtual void verifyNotPainting();
+    virtual void verifyNotPainting() OVERRIDE;
 #endif
 
-    IntRect contentsBox() const;
+    LayoutRect contentsBox() const;
     IntRect backgroundBox() const;
 
     // For informative purposes only.
@@ -190,24 +204,24 @@ public:
     void updateFilters(const RenderStyle*);
     bool canCompositeFilters() const { return m_canCompositeFilters; }
 
-    // Return an estimate of the backing store area (in pixels) allocated by this object's GraphicsLayers.
-    double backingStoreMemoryEstimate() const;
-
     void setBlendMode(blink::WebBlendMode);
 
     virtual String debugName(const GraphicsLayer*) OVERRIDE;
 
+    LayoutSize subpixelAccumulation() const { return m_subpixelAccumulation; }
 private:
     void createPrimaryGraphicsLayer();
     void destroyGraphicsLayers();
 
     PassOwnPtr<GraphicsLayer> createGraphicsLayer(CompositingReasons);
+    bool toggleScrollbarLayerIfNeeded(OwnPtr<GraphicsLayer>&, bool needsLayer);
 
     RenderLayerModelObject* renderer() const { return m_owningLayer->renderer(); }
     RenderLayerCompositor* compositor() const { return m_owningLayer->compositor(); }
 
     void updateInternalHierarchy();
     bool updateClippingLayers(bool needsAncestorClip, bool needsDescendantClip);
+    bool updateChildTransformLayer(bool needsChildTransformLayer);
     bool updateOverflowControlsLayers(bool needsHorizontalScrollbarLayer, bool needsVerticalScrollbarLayer, bool needsScrollCornerLayer);
     bool updateForegroundLayer(bool needsForegroundLayer);
     bool updateBackgroundLayer(bool needsBackgroundLayer);
@@ -221,17 +235,22 @@ private:
     void updateClipParent(RenderLayer*);
     bool updateSquashingLayers(bool needsSquashingLayers);
     void updateDrawsContent(bool isSimpleContainer);
+    void updateChildrenTransform();
     void registerScrollingLayers();
+
+    void adjustBoundsForSubPixelAccumulation(const RenderLayer* compositedAncestor, IntRect& localCompositingBounds, IntRect& relativeCompositingBounds, IntPoint& delta);
 
     void setBackgroundLayerPaintsFixedRootBackground(bool);
 
     GraphicsLayerPaintingPhase paintingPhaseForPrimaryLayer() const;
 
-    IntSize contentOffsetInCompostingLayer() const;
+    LayoutSize contentOffsetInCompostingLayer() const;
     // Result is transform origin in pixels.
     FloatPoint3D computeTransformOrigin(const IntRect& borderBox) const;
     // Result is perspective origin in pixels.
     FloatPoint computePerspectiveOrigin(const IntRect& borderBox) const;
+
+    void updateSquashingLayerGeometry(const IntPoint& delta);
 
     void updateOpacity(const RenderStyle*);
     void updateTransform(const RenderStyle*);
@@ -273,7 +292,7 @@ private:
     //
     //  + m_ancestorClippingLayer [OPTIONAL]
     //     + m_graphicsLayer
-    //        + m_childContainmentLayer [OPTIONAL] <-OR-> m_scrollingLayer [OPTIONAL]
+    //        + m_childContainmentLayer [OPTIONAL] <-OR-> m_scrollingLayer [OPTIONAL] <-OR-> m_childTransformLayer
     //                                                     + m_scrollingContentsLayer [OPTIONAL]
     //
     // We need an ancestor clipping layer if our clipping ancestor is not our ancestor in the
@@ -299,6 +318,7 @@ private:
     OwnPtr<GraphicsLayer> m_ancestorClippingLayer; // Only used if we are clipped by an ancestor which is not a stacking context.
     OwnPtr<GraphicsLayer> m_graphicsLayer;
     OwnPtr<GraphicsLayer> m_childContainmentLayer; // Only used if we have clipping on a stacking context with compositing children.
+    OwnPtr<GraphicsLayer> m_childTransformLayer; // Only used if we have perspective and no m_childContainmentLayer.
     OwnPtr<GraphicsLayer> m_scrollingLayer; // Only used if the layer is using composited scrolling.
     OwnPtr<GraphicsLayer> m_scrollingContentsLayer; // Only used if the layer is using composited scrolling.
 
@@ -337,16 +357,14 @@ private:
     OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForScrollCorner;
 
-    OwnPtr<WebAnimationProvider> m_animationProvider;
-
     OwnPtr<GraphicsLayer> m_squashingContainmentLayer; // Only used if any squashed layers exist, to contain the squashed layers as siblings to the rest of the GraphicsLayer tree chunk.
     OwnPtr<GraphicsLayer> m_squashingLayer; // Only used if any squashed layers exist, this is the backing that squashed layers paint into.
     Vector<GraphicsLayerPaintInfo> m_squashedLayers;
 
-    IntRect m_compositedBounds;
+    LayoutRect m_compositedBounds;
+    LayoutSize m_subpixelAccumulation; // The accumulated subpixel offset of the compositedBounds compared to absolute coordinates.
 
     bool m_artificiallyInflatedBounds; // bounds had to be made non-zero to make transform-origin work
-    bool m_boundsConstrainedByClipping;
     bool m_isMainFrameRenderViewLayer;
     bool m_requiresOwnBackingStoreForIntrinsicReasons;
     bool m_requiresOwnBackingStoreForAncestorReasons;

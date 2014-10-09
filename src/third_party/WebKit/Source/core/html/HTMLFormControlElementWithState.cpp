@@ -25,12 +25,12 @@
 #include "config.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 
+#include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/forms/FormController.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/frame/Frame.h"
-#include "core/page/Page.h"
 
 namespace WebCore {
 
@@ -46,14 +46,14 @@ HTMLFormControlElementWithState::~HTMLFormControlElementWithState()
 Node::InsertionNotificationRequest HTMLFormControlElementWithState::insertedInto(ContainerNode* insertionPoint)
 {
     if (insertionPoint->inDocument() && !containingShadowRoot())
-        document().formController()->registerFormElementWithState(this);
+        document().formController()->registerStatefulFormControl(*this);
     return HTMLFormControlElement::insertedInto(insertionPoint);
 }
 
 void HTMLFormControlElementWithState::removedFrom(ContainerNode* insertionPoint)
 {
     if (insertionPoint->inDocument() && !containingShadowRoot() && !insertionPoint->containingShadowRoot())
-        document().formController()->unregisterFormElementWithState(this);
+        document().formController()->unregisterStatefulFormControl(*this);
     HTMLFormControlElement::removedFrom(insertionPoint);
 }
 
@@ -66,12 +66,11 @@ bool HTMLFormControlElementWithState::shouldAutocomplete() const
 
 void HTMLFormControlElementWithState::notifyFormStateChanged()
 {
-    Frame* frame = document().frame();
-    if (!frame)
+    // This can be called during fragment parsing as a result of option
+    // selection before the document is active (or even in a frame).
+    if (!document().isActive())
         return;
-
-    if (Page* page = frame->page())
-        page->chrome().client().formStateDidChange(this);
+    document().frame()->host()->chrome().client().formStateDidChange(this);
 }
 
 bool HTMLFormControlElementWithState::shouldSaveAndRestoreFormControlState() const

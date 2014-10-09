@@ -37,6 +37,7 @@
 #include "core/dom/DOMTokenList.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/vtt/VTTParser.h"
+#include "core/html/track/vtt/VTTScanner.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/Logging.h"
@@ -190,83 +191,102 @@ void VTTRegion::updateParametersFromRegion(VTTRegion* region)
     setScroll(region->scroll(), ASSERT_NO_EXCEPTION);
 }
 
-void VTTRegion::setRegionSettings(const String& input)
+void VTTRegion::setRegionSettings(const String& inputString)
 {
-    m_settings = input;
-    unsigned position = 0;
+    m_settings = inputString;
 
-    while (position < input.length()) {
-        while (position < input.length() && VTTParser::isValidSettingDelimiter(input[position]))
-            position++;
+    VTTScanner input(inputString);
 
-        if (position >= input.length())
+    while (!input.isAtEnd()) {
+        input.skipWhile<VTTParser::isValidSettingDelimiter>();
+
+        if (input.isAtEnd())
             break;
 
-        parseSetting(input, &position);
+        // Scan the name part.
+        RegionSetting name = scanSettingName(input);
+
+        // Verify that we're looking at a '='.
+        if (name == None || !input.scan('=')) {
+            input.skipUntil<VTTParser::isASpace>();
+            continue;
+        }
+
+        // Scan the value part.
+        parseSettingValue(name, input);
     }
 }
 
-VTTRegion::RegionSetting VTTRegion::getSettingFromString(const String& setting)
+VTTRegion::RegionSetting VTTRegion::scanSettingName(VTTScanner& input)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, idKeyword, ("id", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, heightKeyword, ("height", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, widthKeyword, ("width", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, regionAnchorKeyword, ("regionanchor", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, viewportAnchorKeyword, ("viewportanchor", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, scrollKeyword, ("scroll", AtomicString::ConstructFromLiteral));
-
-    if (setting == idKeyword)
+    if (input.scan("id"))
         return Id;
-    if (setting == heightKeyword)
+    if (input.scan("height"))
         return Height;
-    if (setting == widthKeyword)
+    if (input.scan("width"))
         return Width;
-    if (setting == viewportAnchorKeyword)
+    if (input.scan("viewportanchor"))
         return ViewportAnchor;
-    if (setting == regionAnchorKeyword)
+    if (input.scan("regionanchor"))
         return RegionAnchor;
-    if (setting == scrollKeyword)
+    if (input.scan("scroll"))
         return Scroll;
 
     return None;
 }
 
-void VTTRegion::parseSettingValue(RegionSetting setting, const String& value)
+static inline bool parsedEntireRun(const VTTScanner& input, const VTTScanner::Run& run)
+{
+    return input.isAt(run.end());
+}
+
+void VTTRegion::parseSettingValue(RegionSetting setting, VTTScanner& input)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, scrollUpValueKeyword, ("up", AtomicString::ConstructFromLiteral));
 
+    VTTScanner::Run valueRun = input.collectUntil<VTTParser::isASpace>();
+
     switch (setting) {
-    case Id:
-        if (value.find("-->") == kNotFound)
-            m_id = value;
+    case Id: {
+        String stringValue = input.extractString(valueRun);
+        if (stringValue.find("-->") == kNotFound)
+            m_id = stringValue;
         break;
+    }
     case Width: {
         float floatWidth;
-        if (VTTParser::parseFloatPercentageValue(value, floatWidth))
+        if (VTTParser::parseFloatPercentageValue(input, floatWidth) && parsedEntireRun(input, valueRun))
             m_width = floatWidth;
         else
             WTF_LOG(Media, "VTTRegion::parseSettingValue, invalid Width");
         break;
     }
     case Height: {
-        unsigned position = 0;
         int number;
-        if (VTTParser::collectDigitsToInt(value, &position, number) && position == value.length())
+        if (input.scanDigits(number) && parsedEntireRun(input, valueRun))
             m_heightInLines = number;
         else
             WTF_LOG(Media, "VTTRegion::parseSettingValue, invalid Height");
         break;
     }
-    case RegionAnchor:
-        if (!VTTParser::parseFloatPercentageValuePair(value, ',', m_regionAnchor))
+    case RegionAnchor: {
+        FloatPoint anchor;
+        if (VTTParser::parseFloatPercentageValuePair(input, ',', anchor) && parsedEntireRun(input, valueRun))
+            m_regionAnchor = anchor;
+        else
             WTF_LOG(Media, "VTTRegion::parseSettingValue, invalid RegionAnchor");
         break;
-    case ViewportAnchor:
-        if (!VTTParser::parseFloatPercentageValuePair(value, ',', m_viewportAnchor))
+    }
+    case ViewportAnchor: {
+        FloatPoint anchor;
+        if (VTTParser::parseFloatPercentageValuePair(input, ',', anchor) && parsedEntireRun(input, valueRun))
+            m_viewportAnchor = anchor;
+        else
             WTF_LOG(Media, "VTTRegion::parseSettingValue, invalid ViewportAnchor");
         break;
+    }
     case Scroll:
-        if (value == scrollUpValueKeyword)
+        if (input.scanRun(valueRun, scrollUpValueKeyword))
             m_scroll = true;
         else
             WTF_LOG(Media, "VTTRegion::parseSettingValue, invalid Scroll");
@@ -274,20 +294,8 @@ void VTTRegion::parseSettingValue(RegionSetting setting, const String& value)
     case None:
         break;
     }
-}
 
-void VTTRegion::parseSetting(const String& input, unsigned* position)
-{
-    String setting = VTTParser::collectWord(input, position);
-
-    size_t equalOffset = setting.find('=', 1);
-    if (equalOffset == kNotFound || !equalOffset || equalOffset == setting.length() - 1)
-        return;
-
-    RegionSetting name = getSettingFromString(setting.substring(0, equalOffset));
-    String value = setting.substring(equalOffset + 1, setting.length() - 1);
-
-    parseSettingValue(name, value);
+    input.skipRun(valueRun);
 }
 
 const AtomicString& VTTRegion::textTrackCueContainerShadowPseudoId()
@@ -429,11 +437,11 @@ void VTTRegion::prepareRegionDisplayTree()
         0.0,
         CSSPrimitiveValue::CSS_PX);
 
-    m_cueContainer->setPseudo(textTrackCueContainerShadowPseudoId());
+    m_cueContainer->setShadowPseudoId(textTrackCueContainerShadowPseudoId());
     m_regionDisplayTree->appendChild(m_cueContainer);
 
     // 7.5 Every WebVTT region object is initialised with the following CSS
-    m_regionDisplayTree->setPseudo(textTrackRegionShadowPseudoId());
+    m_regionDisplayTree->setShadowPseudoId(textTrackRegionShadowPseudoId());
 }
 
 void VTTRegion::startTimer()

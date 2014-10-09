@@ -4,9 +4,10 @@
 
 #include "net/quic/reliable_quic_stream.h"
 
+#include "base/logging.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_spdy_decompressor.h"
-#include "net/spdy/write_blocked_list.h"
+#include "net/quic/quic_write_blocked_list.h"
 
 using base::StringPiece;
 using std::min;
@@ -38,6 +39,7 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id,
       write_side_closed_(false),
       fin_buffered_(false),
       fin_sent_(false),
+      rst_sent_(false),
       is_server_(session_->is_server()) {
 }
 
@@ -71,8 +73,8 @@ bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   return accepted;
 }
 
-void ReliableQuicStream::OnStreamReset(QuicRstStreamErrorCode error) {
-  stream_error_ = error;
+void ReliableQuicStream::OnStreamReset(const QuicRstStreamFrame& frame) {
+  stream_error_ = frame.error_code;
   CloseWriteSide();
   CloseReadSide();
 }
@@ -100,7 +102,8 @@ void ReliableQuicStream::Reset(QuicRstStreamErrorCode error) {
   DCHECK_NE(QUIC_STREAM_NO_ERROR, error);
   stream_error_ = error;
   // Sending a RstStream results in calling CloseStream.
-  session()->SendRstStream(id(), error);
+  session()->SendRstStream(id(), error, stream_bytes_written_);
+  rst_sent_ = true;
 }
 
 void ReliableQuicStream::CloseConnection(QuicErrorCode error) {
@@ -117,8 +120,15 @@ QuicVersion ReliableQuicStream::version() {
 }
 
 void ReliableQuicStream::WriteOrBufferData(StringPiece data, bool fin) {
-  DCHECK(data.size() > 0 || fin);
-  DCHECK(!fin_buffered_);
+  if (data.empty() && !fin) {
+    LOG(DFATAL) << "data.empty() && !fin";
+    return;
+  }
+
+  if (fin_buffered_) {
+    LOG(DFATAL) << "Fin already buffered";
+    return;
+  }
 
   QuicConsumedData consumed_data(0, false);
   fin_buffered_ = fin;
@@ -220,6 +230,16 @@ bool ReliableQuicStream::HasBufferedData() {
 void ReliableQuicStream::OnClose() {
   CloseReadSide();
   CloseWriteSide();
+
+  if (version() > QUIC_VERSION_13 &&
+      !fin_sent_ && !rst_sent_) {
+    // For flow control accounting, we must tell the peer how many bytes we have
+    // written on this stream before termination. Done here if needed, using a
+    // RST frame.
+    DVLOG(1) << ENDPOINT << "Sending RST in OnClose: " << id();
+    session_->SendRstStream(id(), QUIC_STREAM_NO_ERROR, stream_bytes_written_);
+    rst_sent_ = true;
+  }
 }
 
 }  // namespace net

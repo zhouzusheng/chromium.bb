@@ -39,13 +39,15 @@ namespace WebCore {
 struct SameSizeAsFontDescription {
     FontFamily familyList;
     RefPtr<FontFeatureSettings> m_featureSettings;
-    float sizes[2];
+    float sizes[4];
     // FXIME: Make them fit into one word.
     uint32_t bitfields;
     uint32_t bitfields2 : 8;
 };
 
 COMPILE_ASSERT(sizeof(FontDescription) == sizeof(SameSizeAsFontDescription), FontDescription_should_stay_small);
+
+TypesettingFeatures FontDescription::s_defaultTypesettingFeatures = 0;
 
 bool FontDescription::s_useSubpixelTextPositioning = false;
 
@@ -172,6 +174,56 @@ FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTrait
         static_cast<unsigned>(m_subpixelTextPosition); // bit 1
 
     return FontCacheKey(familyName, effectiveFontSize(), options | traits << 9);
+}
+
+
+void FontDescription::setDefaultTypesettingFeatures(TypesettingFeatures typesettingFeatures)
+{
+    s_defaultTypesettingFeatures = typesettingFeatures;
+}
+
+TypesettingFeatures FontDescription::defaultTypesettingFeatures()
+{
+    return s_defaultTypesettingFeatures;
+}
+
+void FontDescription::updateTypesettingFeatures() const
+{
+    m_typesettingFeatures = s_defaultTypesettingFeatures;
+
+    switch (textRenderingMode()) {
+    case AutoTextRendering:
+        break;
+    case OptimizeSpeed:
+        m_typesettingFeatures &= ~(WebCore::Kerning | Ligatures);
+        break;
+    case GeometricPrecision:
+    case OptimizeLegibility:
+        m_typesettingFeatures |= WebCore::Kerning | Ligatures;
+        break;
+    }
+
+    switch (kerning()) {
+    case FontDescription::NoneKerning:
+        m_typesettingFeatures &= ~WebCore::Kerning;
+        break;
+    case FontDescription::NormalKerning:
+        m_typesettingFeatures |= WebCore::Kerning;
+        break;
+    case FontDescription::AutoKerning:
+        break;
+    }
+
+    switch (commonLigaturesState()) {
+    case FontDescription::DisabledLigaturesState:
+        m_typesettingFeatures &= ~Ligatures;
+        break;
+    case FontDescription::EnabledLigaturesState:
+        m_typesettingFeatures |= Ligatures;
+        break;
+    case FontDescription::NormalLigaturesState:
+        break;
+    }
 }
 
 } // namespace WebCore

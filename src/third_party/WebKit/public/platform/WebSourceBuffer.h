@@ -37,8 +37,13 @@ namespace blink {
 
 class WebSourceBuffer {
 public:
-    virtual ~WebSourceBuffer() { }
+    enum AppendMode {
+        AppendModeSegments,
+        AppendModeSequence
+    };
 
+    virtual ~WebSourceBuffer() { }
+    virtual bool setMode(AppendMode) = 0;
     virtual WebTimeRanges buffered() = 0;
     virtual void append(const unsigned char* data, unsigned length) = 0;
     virtual void abort() = 0;

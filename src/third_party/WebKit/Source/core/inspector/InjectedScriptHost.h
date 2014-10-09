@@ -38,6 +38,7 @@
 namespace WebCore {
 
 class Database;
+class EventTarget;
 class InjectedScript;
 class InstrumentingAgents;
 class JSONValue;
@@ -80,11 +81,9 @@ public:
     InspectableObject* inspectedObject(unsigned int num);
 
     void inspectImpl(PassRefPtr<JSONValue> objectToInspect, PassRefPtr<JSONValue> hints);
-    void getEventListenersImpl(Node*, Vector<EventListenerInfo>& listenersArray);
+    void getEventListenersImpl(EventTarget*, Vector<EventListenerInfo>& listenersArray);
 
     void clearConsoleMessages();
-    String databaseIdImpl(Database*);
-    String storageIdImpl(Storage*);
     void debugFunction(const String& scriptId, int lineNumber, int columnNumber);
     void undebugFunction(const String& scriptId, int lineNumber, int columnNumber);
     void monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName);

@@ -30,7 +30,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/PageConsole.h"
+#include "core/frame/PageConsole.h"
 #include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
@@ -330,12 +330,6 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
     return true;
 }
 
-
-void AudioBufferSourceNode::reset()
-{
-    m_virtualReadIndex = 0;
-    m_lastGain = gain()->value();
-}
 
 void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionState)
 {

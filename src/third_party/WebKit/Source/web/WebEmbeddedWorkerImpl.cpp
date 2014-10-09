@@ -31,6 +31,7 @@
 #include "config.h"
 #include "WebEmbeddedWorkerImpl.h"
 
+#include "ServiceWorkerGlobalScopeClientImpl.h"
 #include "ServiceWorkerGlobalScopeProxy.h"
 #include "WebDataSourceImpl.h"
 #include "WebFrameImpl.h"
@@ -58,14 +59,22 @@ namespace blink {
 // A thin wrapper for one-off script loading.
 class WebEmbeddedWorkerImpl::Loader : public WorkerScriptLoaderClient {
 public:
-    static PassOwnPtr<Loader> create(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& callback)
+    static PassOwnPtr<Loader> create()
     {
-        return adoptPtr(new Loader(loadingContext, scriptURL, callback));
+        return adoptPtr(new Loader());
     }
 
     virtual ~Loader()
     {
         m_scriptLoader->setClient(0);
+    }
+
+    void load(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& callback)
+    {
+        m_callback = callback;
+        m_scriptLoader->setTargetType(ResourceRequest::TargetIsServiceWorker);
+        m_scriptLoader->loadAsynchronously(
+            loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
 
     virtual void notifyFinished() OVERRIDE
@@ -83,13 +92,8 @@ public:
     String script() const { return m_scriptLoader->script(); }
 
 private:
-    Loader(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& callback)
-        : m_scriptLoader(WorkerScriptLoader::create())
-        , m_callback(callback)
+    Loader() : m_scriptLoader(WorkerScriptLoader::create())
     {
-        m_scriptLoader->setTargetType(ResourceRequest::TargetIsServiceWorker);
-        m_scriptLoader->loadAsynchronously(
-            loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
 
     RefPtr<WorkerScriptLoader> m_scriptLoader;
@@ -105,14 +109,14 @@ public:
 
     virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask> task) OVERRIDE
     {
-        m_embeddedWorker.m_loadingContext->postTask(task);
+        toWebFrameImpl(m_embeddedWorker.m_mainFrame)->frame()->document()->postTask(task);
     }
 
-    virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task, const String& mode) OVERRIDE
+    virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task) OVERRIDE
     {
         if (m_embeddedWorker.m_askedToTerminate || !m_embeddedWorker.m_workerThread)
             return false;
-        return m_embeddedWorker.m_workerThread->runLoop().postTaskForMode(task, mode);
+        return m_embeddedWorker.m_workerThread->runLoop().postTask(task);
     }
 
 private:
@@ -137,6 +141,8 @@ WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
     PassOwnPtr<WebWorkerPermissionClientProxy> permissionClient)
     : m_workerContextClient(client)
     , m_permissionClient(permissionClient)
+    , m_webView(0)
+    , m_mainFrame(0)
     , m_askedToTerminate(false)
 {
 }
@@ -160,11 +166,6 @@ void WebEmbeddedWorkerImpl::startWorkerContext(
     m_workerStartData = data;
 
     prepareShadowPageForLoader();
-
-    m_mainScriptLoader = Loader::create(
-        m_loadingContext.get(),
-        data.scriptURL,
-        bind(&WebEmbeddedWorkerImpl::onScriptLoaderFinished, this));
 }
 
 void WebEmbeddedWorkerImpl::terminateWorkerContext()
@@ -199,16 +200,17 @@ void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
     int length = static_cast<int>(content.length());
     RefPtr<SharedBuffer> buffer(SharedBuffer::create(content.data(), length));
     webFrame->frame()->loader().load(FrameLoadRequest(0, ResourceRequest(m_workerStartData.scriptURL), SubstituteData(buffer, "text/html", "UTF-8", KURL())));
-
-    // This document context will be used as 'loading context' for the worker.
-    m_loadingContext = webFrame->frame()->document();
 }
 
-void WebEmbeddedWorkerImpl::didCreateDataSource(WebFrame*, WebDataSource* ds)
+void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
 {
-    // Tell the loader to load the data into the 'shadow page' synchronously,
-    // so we can grab the resulting Document right after load.
-    static_cast<WebDataSourceImpl*>(ds)->setDeferMainResourceDataLoad(false);
+    ASSERT(!m_mainScriptLoader);
+    ASSERT(m_mainFrame);
+    m_mainScriptLoader = Loader::create();
+    m_mainScriptLoader->load(
+        toWebFrameImpl(m_mainFrame)->frame()->document(),
+        m_workerStartData.scriptURL,
+        bind(&WebEmbeddedWorkerImpl::onScriptLoaderFinished, this));
 }
 
 void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
@@ -216,8 +218,9 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
     ASSERT(m_mainScriptLoader);
 
     if (m_mainScriptLoader->failed() || m_askedToTerminate) {
-        m_workerContextClient->workerContextFailedToStart();
         m_mainScriptLoader.clear();
+        // This may delete 'this'.
+        m_workerContextClient->workerContextFailedToStart();
         return;
     }
 
@@ -225,8 +228,13 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
         (m_workerStartData.startMode == WebEmbeddedWorkerStartModePauseOnStart)
         ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
 
+    // This is to be owned by ServiceWorker's WorkerGlobalScope, and is
+    // guaranteed to be around while the WorkerGlobalScope is alive.
+    WebServiceWorkerContextClient* contextClient = m_workerContextClient.get();
+
     OwnPtr<WorkerClients> workerClients = WorkerClients::create();
     providePermissionClientToWorker(workerClients.get(), m_permissionClient.release());
+    provideServiceWorkerGlobalScopeClientToWorker(workerClients.get(), ServiceWorkerGlobalScopeClientImpl::create(m_workerContextClient.release()));
 
     OwnPtr<WorkerThreadStartupData> startupData =
         WorkerThreadStartupData::create(
@@ -241,7 +249,7 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
 
     m_mainScriptLoader.clear();
 
-    m_workerGlobalScopeProxy = ServiceWorkerGlobalScopeProxy::create(*this, *m_loadingContext, m_workerContextClient.release());
+    m_workerGlobalScopeProxy = ServiceWorkerGlobalScopeProxy::create(*this, *toWebFrameImpl(m_mainFrame)->frame()->document(), *contextClient);
     m_loaderProxy = LoaderProxy::create(*this);
 
     m_workerThread = ServiceWorkerThread::create(*m_loaderProxy, *m_workerGlobalScopeProxy, startupData.release());

@@ -34,18 +34,17 @@
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
-#include "core/frame/Settings.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 ShadowTreeStyleSheetCollection::ShadowTreeStyleSheetCollection(ShadowRoot& shadowRoot)
-    : StyleSheetCollection(shadowRoot)
+    : TreeScopeStyleSheetCollection(shadowRoot)
 {
 }
 
-void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollectionBase& collection)
+void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollection& collection)
 {
     DocumentOrderedList::iterator begin = m_styleSheetCandidateNodes.begin();
     DocumentOrderedList::iterator end = m_styleSheetCandidateNodes.end();
@@ -58,7 +57,7 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Sty
             continue;
 
         Element* element = toElement(node);
-        AtomicString title = element->getAttribute(titleAttr);
+        const AtomicString& title = element->fastGetAttribute(titleAttr);
         bool enabledViaScript = false;
 
         sheet = toHTMLStyleElement(node)->sheet();
@@ -68,7 +67,7 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Sty
         // FIXME: clarify how PREFERRED or ALTERNATE works in shadow trees.
         // Should we set preferred/selected stylesheets name in shadow trees and
         // use the name in document?
-        AtomicString rel = element->getAttribute(relAttr);
+        const AtomicString& rel = element->fastGetAttribute(relAttr);
         if (!enabledViaScript && sheet && !title.isEmpty()) {
             if (engine->preferredStylesheetSetName().isEmpty()) {
                 if (element->hasLocalName(styleTag) || !rel.contains("alternate")) {
@@ -92,7 +91,7 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Sty
 
 bool ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
 {
-    StyleSheetCollectionBase collection;
+    StyleSheetCollection collection;
     collectStyleSheets(engine, collection);
 
     StyleSheetChange change;
@@ -113,7 +112,7 @@ bool ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
         }
     }
     if (change.requiresFullStyleRecalc)
-        toShadowRoot(m_treeScope.rootNode())->host()->setNeedsStyleRecalc();
+        toShadowRoot(m_treeScope.rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange);
 
     m_scopingNodesForStyleScoped.didRemoveScopingNodes();
     collection.swap(*this);

@@ -61,7 +61,7 @@ var InspectorFrontendAPI = {
         InspectorFrontendAPI._runOnceLoaded(function() {
             var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
             if (uiSourceCode) {
-                WebInspector.showPanel("sources").showUISourceCode(uiSourceCode, lineNumber, columnNumber);
+                WebInspector.Revealer.reveal(new WebInspector.UILocation(uiSourceCode, lineNumber, columnNumber));
                 return;
             }
 
@@ -72,7 +72,7 @@ var InspectorFrontendAPI = {
             {
                 var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
                 if (uiSourceCode.url === url) {
-                    WebInspector.showPanel("sources").showUISourceCode(uiSourceCode, lineNumber, columnNumber);
+                    WebInspector.Revealer.reveal(new WebInspector.UILocation(uiSourceCode, lineNumber, columnNumber));
                     WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, listener);
                 }
             }
@@ -106,17 +106,6 @@ var InspectorFrontendAPI = {
     setUseSoftMenu: function(useSoftMenu)
     {
         WebInspector.ContextMenu.setUseSoftMenu(useSoftMenu);
-    },
-
-    // FIXME: remove this legacy support.
-    setAttachedWindow: function(side)
-    {
-    },
-
-    // FIXME: remove this legacy support.
-    setDockSide: function(side)
-    {
-        WebInspector.dockController.setDockSide(side);
     },
 
     dispatchMessage: function(messageObject)

@@ -24,7 +24,6 @@
 #include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedNumber.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGPathByteStream.h"
 #include "core/svg/SVGPathSegList.h"
@@ -52,14 +51,15 @@ class SVGPathSegCurvetoQuadraticSmoothAbs;
 class SVGPathSegCurvetoQuadraticSmoothRel;
 class SVGPathSegListPropertyTearOff;
 
-class SVGPathElement FINAL : public SVGGeometryElement,
-                             public SVGExternalResourcesRequired {
+class SVGPathElement FINAL : public SVGGeometryElement {
 public:
     static PassRefPtr<SVGPathElement> create(Document&);
 
     float getTotalLength();
-    SVGPoint getPointAtLength(float distance);
+    PassRefPtr<SVGPointTearOff> getPointAtLength(float distance);
     unsigned getPathSegAtLength(float distance);
+
+    SVGAnimatedNumber* pathLength() { return m_pathLength.get(); }
 
     PassRefPtr<SVGPathSegClosePath> createSVGPathSegClosePath(SVGPathSegRole role = PathSegUndefinedRole);
     PassRefPtr<SVGPathSegMovetoAbs> createSVGPathSegMovetoAbs(float x, float y, SVGPathSegRole role = PathSegUndefinedRole);
@@ -91,7 +91,7 @@ public:
 
     void pathSegListChanged(SVGPathSegRole, ListModification = ListModificationUnknown);
 
-    virtual SVGRect getBBox() OVERRIDE FINAL;
+    virtual FloatRect getBBox() OVERRIDE;
 
     static const SVGPropertyInfo* dPropertyInfo();
 
@@ -100,19 +100,16 @@ public:
 private:
     explicit SVGPathElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual bool supportsMarkers() const { return true; }
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual bool supportsMarkers() const OVERRIDE { return true; }
 
     // Custom 'd' property
     static void synchronizeD(SVGElement* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateDWrapper(SVGElement* contextElement);
-
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -123,9 +120,8 @@ private:
     mutable SVGSynchronizableAnimatedProperty<SVGPathSegList> m_pathSegList;
     bool m_isAnimValObserved;
 
+    RefPtr<SVGAnimatedNumber> m_pathLength;
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPathElement)
-        DECLARE_ANIMATED_NUMBER(PathLength, pathLength)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

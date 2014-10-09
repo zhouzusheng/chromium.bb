@@ -32,10 +32,10 @@
 #define UserMediaClientImpl_h
 
 #include "modules/mediastream/UserMediaClient.h"
-#include "platform/mediastream/MediaStreamSource.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
+class MediaDevicesRequest;
 class UserMediaRequest;
 }
 
@@ -44,13 +44,15 @@ namespace blink {
 class WebUserMediaClient;
 class WebViewImpl;
 
-class UserMediaClientImpl : public WebCore::UserMediaClient {
+class UserMediaClientImpl FINAL : public WebCore::UserMediaClient {
 public:
     UserMediaClientImpl(WebViewImpl*);
 
     // WebCore::UserMediaClient ----------------------------------------------
-    virtual void requestUserMedia(PassRefPtr<WebCore::UserMediaRequest>);
-    virtual void cancelUserMediaRequest(WebCore::UserMediaRequest*);
+    virtual void requestUserMedia(PassRefPtr<WebCore::UserMediaRequest>) OVERRIDE;
+    virtual void cancelUserMediaRequest(WebCore::UserMediaRequest*) OVERRIDE;
+    virtual void requestMediaDevices(PassRefPtr<WebCore::MediaDevicesRequest>) OVERRIDE;
+    virtual void cancelMediaDevicesRequest(WebCore::MediaDevicesRequest*) OVERRIDE;
 
 private:
     UserMediaClientImpl();

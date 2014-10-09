@@ -41,7 +41,7 @@ enum ShouldIncludeTypingStyle {
     IgnoreTypingStyle
 };
 
-class ApplyStyleCommand : public CompositeEditCommand {
+class ApplyStyleCommand FINAL : public CompositeEditCommand {
 public:
     enum EPropertyLevel { PropertyDefault, ForceBlockProperties };
     enum InlineStyleRemovalMode { RemoveIfNeeded, RemoveAlways, RemoveNone };
@@ -71,8 +71,8 @@ private:
     ApplyStyleCommand(PassRefPtr<Element>, bool removeOnly, EditAction);
     ApplyStyleCommand(Document&, const EditingStyle*, bool (*isInlineElementToRemove)(const Element*), EditAction);
 
-    virtual void doApply();
-    virtual EditAction editingAction() const;
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE;
 
     // style-removal helpers
     bool isStyledInlineElementToRemove(Element*) const;
@@ -80,7 +80,7 @@ private:
     void removeConflictingInlineStyleFromRun(EditingStyle*, RefPtr<Node>& runStart, RefPtr<Node>& runEnd, PassRefPtr<Node> pastEndNode);
     bool removeInlineStyleFromElement(EditingStyle*, PassRefPtr<HTMLElement>, InlineStyleRemovalMode = RemoveIfNeeded, EditingStyle* extractedStyle = 0);
     inline bool shouldRemoveInlineStyleFromElement(EditingStyle* style, HTMLElement* element) {return removeInlineStyleFromElement(style, element, RemoveNone);}
-    void replaceWithSpanOrRemoveIfWithoutAttributes(HTMLElement*&);
+    void replaceWithSpanOrRemoveIfWithoutAttributes(HTMLElement*);
     bool removeImplicitlyStyledElement(EditingStyle*, HTMLElement*, InlineStyleRemovalMode, EditingStyle* extractedStyle);
     bool removeCSSStyle(EditingStyle*, HTMLElement*, InlineStyleRemovalMode = RemoveIfNeeded, EditingStyle* extractedStyle = 0);
     HTMLElement* highestAncestorWithConflictingInlineStyle(EditingStyle*, Node*);
@@ -88,7 +88,6 @@ private:
     void pushDownInlineStyleAroundNode(EditingStyle*, Node*);
     void removeInlineStyle(EditingStyle* , const Position& start, const Position& end);
     bool nodeFullySelected(Node*, const Position& start, const Position& end) const;
-    bool nodeFullyUnselected(Node*, const Position& start, const Position& end) const;
 
     // style-application helpers
     void applyBlockStyle(EditingStyle*);

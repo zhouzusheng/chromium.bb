@@ -146,7 +146,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
     if (Chrome* chrome = this->chrome()) {
         FileChooserSettings settings;
         HTMLInputElement& input = element();
-        settings.allowsDirectoryUpload = RuntimeEnabledFeatures::directoryUploadEnabled() && input.fastHasAttribute(webkitdirectoryAttr);
+        settings.allowsDirectoryUpload = input.fastHasAttribute(webkitdirectoryAttr);
         settings.allowsMultipleFiles = settings.allowsDirectoryUpload || input.fastHasAttribute(multipleAttr);
         settings.acceptMIMETypes = input.acceptMIMETypes();
         settings.acceptFileExtensions = input.acceptFileExtensions();
@@ -200,10 +200,14 @@ bool FileInputType::getTypeSpecificValue(String& value)
     return true;
 }
 
-void FileInputType::setValue(const String&, bool, TextFieldEventBehavior)
+void FileInputType::setValue(const String&, bool valueChanged, TextFieldEventBehavior)
 {
+    if (!valueChanged)
+        return;
+
     m_fileList->clear();
-    element().setNeedsStyleRecalc();
+    element().setNeedsStyleRecalc(SubtreeStyleChange);
+    element().setNeedsValidityCheck();
 }
 
 PassRefPtr<FileList> FileInputType::createFileList(const Vector<FileChooserFileInfo>& files) const
@@ -214,7 +218,7 @@ PassRefPtr<FileList> FileInputType::createFileList(const Vector<FileChooserFileI
     // If a directory is being selected, the UI allows a directory to be chosen
     // and the paths provided here share a root directory somewhere up the tree;
     // we want to store only the relative paths from that point.
-    if (size && element().fastHasAttribute(webkitdirectoryAttr) && RuntimeEnabledFeatures::directoryUploadEnabled()) {
+    if (size && element().fastHasAttribute(webkitdirectoryAttr)) {
         // Find the common root path.
         String rootPath = directoryName(files[0].path);
         for (size_t i = 1; i < size; i++) {
@@ -249,8 +253,8 @@ void FileInputType::createShadowSubtree()
     ASSERT(element().shadow());
     RefPtr<HTMLInputElement> button = HTMLInputElement::create(element().document(), 0, false);
     button->setType(InputTypeNames::button);
-    button->setAttribute(valueAttr, locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel));
-    button->setPseudo(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
+    button->setAttribute(valueAttr, AtomicString(locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel)));
+    button->setShadowPseudoId(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
     element().userAgentShadowRoot()->appendChild(button.release());
 }
 
@@ -265,7 +269,7 @@ void FileInputType::multipleAttributeChanged()
 {
     ASSERT(element().shadow());
     if (Element* button = toElement(element().userAgentShadowRoot()->firstChild()))
-        button->setAttribute(valueAttr, locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel));
+        button->setAttribute(valueAttr, AtomicString(locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel)));
 }
 
 void FileInputType::setFiles(PassRefPtr<FileList> files)
@@ -303,7 +307,7 @@ void FileInputType::setFiles(PassRefPtr<FileList> files)
     if (pathsChanged) {
         // This call may cause destruction of this instance.
         // input instance is safe since it is ref-counted.
-        input->HTMLElement::dispatchChangeEvent();
+        input->dispatchChangeEvent();
     }
     input->setChangedSinceLastFormControlChangeEvent(false);
 }
@@ -335,7 +339,7 @@ bool FileInputType::receiveDroppedFiles(const DragData* dragData)
         return false;
 
     HTMLInputElement& input = element();
-    if (input.fastHasAttribute(webkitdirectoryAttr) && RuntimeEnabledFeatures::directoryUploadEnabled()) {
+    if (input.fastHasAttribute(webkitdirectoryAttr)) {
         receiveDropForDirectoryUpload(paths);
         return true;
     }

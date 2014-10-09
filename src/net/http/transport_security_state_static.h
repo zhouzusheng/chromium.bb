@@ -383,6 +383,7 @@ static const char* const kLavabitAcceptableCerts[] = {
 static const struct HSTSPreload kPreloadedSTS[] = {
   {25, true, "\013pinningtest\007appspot\003com", false, kTestPins, DOMAIN_APPSPOT_COM },
   {12, true, "\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
+  {18, true, "\005admin\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006wallet\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {21, true, "\010checkout\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006chrome\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -884,6 +885,27 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {14, true, "\003api\004xero\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, true, "\003eff\003org", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, true, "\004mail\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002ru", true, kNoPins, DOMAIN_NOT_PINNED },
+  {21, false, "\010passport\006yandex\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002ua", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002by", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\010passport\006yandex\002kz", true, kNoPins, DOMAIN_NOT_PINNED },
+  {24, false, "\010passport\006yandex\003com\002tr", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006mnsure\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\010getcloak\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003www\010getcloak\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, true, "\020matteomarescotti\004name", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, true, "\003www\011heliosnet\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, false, "\007opsmate\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\003www\007opsmate\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\007f-droid\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003www\010evernote\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003app\010yinxiang\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011neilwynne\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\016calyxinstitute\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {24, false, "\003www\016calyxinstitute\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\011blacklane\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, true, "\012boxcryptor\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 
@@ -894,6 +916,7 @@ static const struct HSTSPreload kPreloadedSNISTS[] = {
   {20, false, "\003www\012googlemail\003com", true, kGooglePins, DOMAIN_GOOGLEMAIL_COM },
   {22, true, "\020google-analytics\003com", false, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\014googlegroups\003com", false, kGooglePins, DOMAIN_GOOGLEGROUPS_COM },
+  {13, true, "\007mykolab\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 

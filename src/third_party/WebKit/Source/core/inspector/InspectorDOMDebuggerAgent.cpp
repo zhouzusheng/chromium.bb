@@ -32,7 +32,6 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 
 #include "InspectorFrontend.h"
-#include "core/events/Event.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
@@ -63,6 +62,7 @@ static const char animationFrameFiredEventName[] = "animationFrameFired";
 static const char setTimerEventName[] = "setTimer";
 static const char clearTimerEventName[] = "clearTimer";
 static const char timerFiredEventName[] = "timerFired";
+static const char customElementCallbackName[] = "customElementCallback";
 static const char webglErrorFiredEventName[] = "webglErrorFired";
 static const char webglWarningFiredEventName[] = "webglWarningFired";
 static const char webglErrorNameProperty[] = "webglErrorName";
@@ -73,13 +73,13 @@ static const char pauseOnAllXHRs[] = "pauseOnAllXHRs";
 static const char xhrBreakpoints[] = "xhrBreakpoints";
 }
 
-PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
+PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
 {
-    return adoptPtr(new InspectorDOMDebuggerAgent(instrumentingAgents, inspectorState, domAgent, debuggerAgent));
+    return adoptPtr(new InspectorDOMDebuggerAgent(domAgent, debuggerAgent));
 }
 
-InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
-    : InspectorBaseAgent<InspectorDOMDebuggerAgent>("DOMDebugger", instrumentingAgents, inspectorState)
+InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
+    : InspectorBaseAgent<InspectorDOMDebuggerAgent>("DOMDebugger")
     , m_domAgent(domAgent)
     , m_debuggerAgent(debuggerAgent)
     , m_pauseInNextEventListener(false)
@@ -405,39 +405,44 @@ PassRefPtr<JSONObject> InspectorDOMDebuggerAgent::preparePauseOnNativeEventData(
     return eventData.release();
 }
 
-void InspectorDOMDebuggerAgent::didInstallTimer(ExecutionContext* context, int timerId, int timeout, bool singleShot)
+void InspectorDOMDebuggerAgent::didInstallTimer(ExecutionContext*, int, int, bool)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, setTimerEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::didRemoveTimer(ExecutionContext* context, int timerId)
+void InspectorDOMDebuggerAgent::didRemoveTimer(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, clearTimerEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::willFireTimer(ExecutionContext* context, int timerId)
+void InspectorDOMDebuggerAgent::willFireTimer(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, timerFiredEventName), false);
 }
 
-void InspectorDOMDebuggerAgent::didRequestAnimationFrame(Document* document, int callbackId)
+void InspectorDOMDebuggerAgent::didRequestAnimationFrame(Document*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, requestAnimationFrameEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::didCancelAnimationFrame(Document* document, int callbackId)
+void InspectorDOMDebuggerAgent::didCancelAnimationFrame(Document*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, cancelAnimationFrameEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::willFireAnimationFrame(Document* document, int callbackId)
+void InspectorDOMDebuggerAgent::willFireAnimationFrame(Document*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, animationFrameFiredEventName), false);
 }
 
-void InspectorDOMDebuggerAgent::willHandleEvent(Event* event)
+void InspectorDOMDebuggerAgent::willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool)
 {
-    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(true, event->type()), false);
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(true, eventType), false);
+}
+
+void InspectorDOMDebuggerAgent::willExecuteCustomElementCallback(Element*)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, customElementCallbackName), false);
 }
 
 void InspectorDOMDebuggerAgent::didFireWebGLError(const String& errorName)

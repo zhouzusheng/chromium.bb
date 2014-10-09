@@ -123,6 +123,8 @@ bool ShouldShowHttpHeaderValue(const std::string& header_name) {
 
 }  // namespace
 
+const char HttpResponseHeaders::kContentRange[] = "Content-Range";
+
 struct HttpResponseHeaders::ParsedHeader {
   // A header "continuation" contains only a subsequent value for the
   // preceding header.  (Header values are comma separated.)
@@ -827,7 +829,7 @@ void HttpResponseHeaders::AddChallengeHeaders(HeaderSet* result) {
 }
 
 void HttpResponseHeaders::AddHopContentRangeHeaders(HeaderSet* result) {
-  result->insert("content-range");
+  result->insert(kContentRange);
 }
 
 void HttpResponseHeaders::AddSecurityStateHeaders(HeaderSet* result) {
@@ -1207,7 +1209,7 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
   void* iter = NULL;
   std::string content_range_spec;
   *first_byte_position = *last_byte_position = *instance_length = -1;
-  if (!EnumerateHeader(&iter, "content-range", &content_range_spec))
+  if (!EnumerateHeader(&iter, kContentRange, &content_range_spec))
     return false;
 
   // If the header value is empty, we have an invalid header.
@@ -1414,6 +1416,32 @@ bool HttpResponseHeaders::GetChromeProxyInfo(
   // Next, look for 'bypass'.
   if (GetChromeProxyBypassDuration("bypass=", &proxy_info->bypass_duration))
     return true;
+
+  return false;
+}
+
+bool HttpResponseHeaders::IsChromeProxyResponse() const {
+  const size_t kVersionSize = 4;
+  const char kChromeProxyViaValue[] = "Chrome-Compression-Proxy";
+  size_t value_len = strlen(kChromeProxyViaValue);
+  void* iter = NULL;
+  std::string value;
+
+  // Case-sensitive comparison of |value|. Assumes the received protocol and the
+  // space following it are always |kVersionSize| characters. E.g.,
+  // 'Via: 1.1 Chrome-Compression-Proxy'
+  while (EnumerateHeader(&iter, "via", &value)) {
+    if (value.size() >= kVersionSize + value_len &&
+        !value.compare(kVersionSize, value_len, kChromeProxyViaValue))
+      return true;
+  }
+
+  // TODO(bengr): Remove deprecated header value.
+  const char kDeprecatedChromeProxyViaValue[] = "1.1 Chrome Compression Proxy";
+  iter = NULL;
+  while (EnumerateHeader(&iter, "via", &value))
+    if (value == kDeprecatedChromeProxyViaValue)
+      return true;
 
   return false;
 }

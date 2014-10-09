@@ -27,6 +27,7 @@
 #include "HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
+#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
@@ -51,7 +52,7 @@ RenderListItem::RenderListItem(Element* element)
 
 void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(diff, oldStyle);
+    RenderBlockFlow::styleDidChange(diff, oldStyle);
 
     if (style()->listStyleType() != NoneListStyle
         || (style()->listStyleImage() && !style()->listStyleImage()->errorOccurred())) {
@@ -315,6 +316,14 @@ void RenderListItem::updateMarkerLocation()
 void RenderListItem::layout()
 {
     ASSERT(needsLayout());
+
+    // The marker must be autosized before calling updateMarkerLocation.
+    // It cannot be done in the parent's beginLayout because it is not yet in the render tree.
+    if (m_marker) {
+        FastTextAutosizer* textAutosizer = document().fastTextAutosizer();
+        if (textAutosizer)
+            textAutosizer->inflateListItem(this, m_marker);
+    }
 
     LayoutRectRecorder recorder(*this);
     updateMarkerLocation();

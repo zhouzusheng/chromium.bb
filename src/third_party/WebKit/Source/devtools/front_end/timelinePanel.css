@@ -74,9 +74,8 @@
 }
 
 .timeline-frames-view .overview-grid-window,
-.timeline-frames-view .overview-grid-dividers-background,
-.timeline-frames-view .overview-grid-window-resizer {
-    height: 15px;
+.timeline-frames-view .overview-grid-dividers-background {
+    height: 100%;
 }
 
 #timeline-overview-grid #resources-graphs {
@@ -93,8 +92,21 @@
     overflow-x: hidden;
 }
 
+.timeline-records-view {
+    overflow: hidden !important;
+}
+
 .timeline-details-split {
     flex: auto;
+}
+
+.timeline-view {
+    flex: auto;
+}
+
+.timeline-view-stack {
+    flex: auto;
+    display: flex;
 }
 
 #timeline-container .webkit-html-external-link,
@@ -143,7 +155,7 @@
     display: inline-block;
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     width: 10px;
     height: 10px;
     content: "";
@@ -155,7 +167,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .timeline-tree-item-expand-arrow {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -169,7 +181,7 @@
 
 .timeline-expandable-arrow {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     width: 10px;
     height: 10px;
@@ -180,7 +192,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .timeline-expandable-arrow {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -218,7 +230,7 @@
 .timeline-tree-item-warning {
     display: block;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     width: 10px;
     height: 10px;
     float: right;
@@ -233,7 +245,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .timeline-tree-item-warning {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -267,14 +279,17 @@
 }
 
 #timeline-overview-pane {
-    flex: auto;
+    flex: 0 0 80px;
     position: relative;
+    overflow: hidden;
 }
 
 #timeline-overview-container {
+    display: flex;
     flex: auto;
     position: relative;
     height: 80px;
+    overflow: hidden;
 }
 
 #timeline-overview-container canvas {
@@ -410,7 +425,7 @@
 }
 
 #timeline-overview-sidebar .sidebar-tree {
-    height: 100%;
+    flex: auto;
 }
 
 #timeline-overview-sidebar .sidebar-tree-item {
@@ -445,13 +460,13 @@
     height: 24px;
     margin: 0;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     background-color: black;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 #timeline-overview-sidebar .icon {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -483,21 +498,28 @@
     bottom: 5px;
 }
 
-#memory-counters-graph {
-    border-right: 1px solid rgb(196, 196, 196);
-}
-
 #memory-graphs-canvas-container {
     overflow: hidden;
+    flex: auto;
+    position: relative;
 }
 
-#memory-graphs-canvas-container.dom-counters .resources-dividers,
 #memory-counters-graph {
-    top: 17px;
+    flex: auto;
+}
+
+#memory-graphs-canvas-container .memory-counter-marker {
+    position: absolute;
+    border-radius: 3px;
+    width: 5px;
+    height: 5px;
+    margin-left: -3px;
+    margin-top: -2px;
 }
 
 #memory-graphs-container .split-view-contents-first {
     background-color: rgb(236, 236, 236);
+    overflow-y: hidden;
 }
 
 #memory-graphs-container .sidebar-tree-section {
@@ -509,7 +531,7 @@
     white-space: nowrap;
 }
 
-.memory-counter-sidebar-info .swatch{
+.memory-counter-sidebar-info .swatch {
     background-image: none;
     border: 1px solid rgba(0,0,0,0.3);
     opacity: 0.5;
@@ -528,10 +550,11 @@
 }
 
 #counter-values-bar {
+    flex: 0 0 18px;
     border-bottom: solid 1px lightgray;
     width: 100%;
-    height: 17px;
     overflow: hidden;
+    line-height: 18px;
 }
 
 .timeline .resources-event-divider {
@@ -579,7 +602,7 @@
     color: black;
     text-align: center;
     padding-top: 3px;
-    z-index: 350;
+    z-index: 220;
     pointer-events: auto;
 }
 
@@ -595,12 +618,13 @@
 .timeline-utilization-strips {
     height: 19px;
     padding: 1px 0;
+    justify-content: center;
 }
 
 .timeline-utilization-strip {
-    z-index: 350;
+    z-index: 250;
     overflow: hidden;
-    flex: auto;
+    flex: 0 1 12px;
     position: relative;
 }
 
@@ -660,15 +684,6 @@
     float: right;
 }
 
-.highlighted-timeline-record {
-    -webkit-animation: "timeline_record_highlight" 2s 0s;
-}
-
-@-webkit-keyframes timeline_record_highlight {
-    from {background-color: rgba(255, 255, 120, 1); }
-    to { background-color: rgba(255, 255, 120, 0); }
-}
-
 .timeline-filters-header {
     flex: 0 0 23px;
     overflow: hidden;
@@ -710,6 +725,8 @@
     display: flex;
     color: rgb(92, 110, 129);
     text-shadow: rgba(255, 255, 255, 0.75) 0 1px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .timeline-details-view-body {
@@ -810,7 +827,7 @@
     flex: none;
     position: relative;
     margin: 8px 2px;
-    width: 160px;
+    width: 200px;
 }
 
 .timeline-aggregated-info-legend > div {
@@ -821,4 +838,12 @@
 
 .timeline-aggregated-info .pie-chart {
     margin-left: 20px;
+}
+
+.flame-chart-main-pane {
+    overflow: hidden;
+}
+
+.timeline-flamechart-view #timeline-overview-grid {
+    display: none;
 }

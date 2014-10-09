@@ -31,7 +31,6 @@
 #include "SkMatrix44.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
@@ -79,11 +78,12 @@ PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerFactory* factory, G
 GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     : m_client(client)
     , m_anchorPoint(0.5f, 0.5f, 0)
+    , m_backgroundColor(Color::transparent)
     , m_opacity(1)
     , m_zPosition(0)
     , m_blendMode(blink::WebBlendModeNormal)
     , m_contentsOpaque(false)
-    , m_preserves3D(false)
+    , m_shouldFlattenTransform(true)
     , m_backfaceVisibility(true)
     , m_masksToBounds(false)
     , m_drawsContent(false)
@@ -99,11 +99,11 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_replicaLayer(0)
     , m_replicatedLayer(0)
     , m_paintCount(0)
+    , m_contentsSolidColor(Color::transparent)
     , m_contentsLayer(0)
     , m_contentsLayerId(0)
     , m_scrollableArea(0)
-    , m_compositingReasons(blink::CompositingReasonUnknown)
-    , m_debugInfo(0)
+    , m_3dRenderingContext(0)
 {
 #ifndef NDEBUG
     if (m_client)
@@ -344,29 +344,6 @@ void GraphicsLayer::setZPosition(float position)
     m_zPosition = position;
 }
 
-float GraphicsLayer::accumulatedOpacity() const
-{
-    if (!preserves3D())
-        return 1;
-
-    return m_opacity * (parent() ? parent()->accumulatedOpacity() : 1);
-}
-
-void GraphicsLayer::distributeOpacity(float accumulatedOpacity)
-{
-    // If this is a transform layer we need to distribute our opacity to all our children
-
-    // Incoming accumulatedOpacity is the contribution from our parent(s). We mutiply this by our own
-    // opacity to get the total contribution
-    accumulatedOpacity *= m_opacity;
-
-    if (preserves3D()) {
-        size_t numChildren = children().size();
-        for (size_t i = 0; i < numChildren; ++i)
-            children()[i]->distributeOpacity(accumulatedOpacity);
-    }
-}
-
 void GraphicsLayer::updateChildList()
 {
     WebLayer* childHost = m_layer->layer();
@@ -494,6 +471,8 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_layer->layer()->insertChild(m_contentsLayer, 0);
     WebLayer* borderWebLayer = m_contentsClippingMaskLayer ? m_contentsClippingMaskLayer->platformLayer() : 0;
     m_contentsLayer->setMaskLayer(borderWebLayer);
+
+    m_contentsLayer->setRenderingContext(m_3dRenderingContext);
 }
 
 void GraphicsLayer::clearContentsLayerIfUnregistered()
@@ -505,33 +484,22 @@ void GraphicsLayer::clearContentsLayerIfUnregistered()
     m_contentsLayerId = 0;
 }
 
-void GraphicsLayer::setDebugInfo(blink::WebGraphicsLayerDebugInfo* debugInfo)
+GraphicsLayerDebugInfo& GraphicsLayer::debugInfo()
 {
-    if (m_debugInfo)
-        delete m_debugInfo;
-    m_debugInfo = debugInfo;
+    return m_debugInfo;
 }
 
-blink::WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfo()
+blink::WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfoFor(WebLayer* layer)
 {
-    blink::WebGraphicsLayerDebugInfo* tempDebugInfo = m_debugInfo;
-    m_debugInfo = 0;
-    return tempDebugInfo;
+    GraphicsLayerDebugInfo* clone = m_debugInfo.clone();
+    clone->setDebugName(debugName(layer));
+    return clone;
 }
 
 WebLayer* GraphicsLayer::contentsLayerIfRegistered()
 {
     clearContentsLayerIfUnregistered();
     return m_contentsLayer;
-}
-
-double GraphicsLayer::backingStoreMemoryEstimate() const
-{
-    if (!drawsContent())
-        return 0;
-
-    // Effects of page and device scale are ignored; subclasses should override to take these into account.
-    return static_cast<double>(4 * size().width()) * size().height();
 }
 
 void GraphicsLayer::resetTrackedRepaints()
@@ -566,7 +534,7 @@ void GraphicsLayer::collectTrackedRepaintRects(Vector<FloatRect>& rects) const
         rects.append(repaintIt->value);
 }
 
-void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) const
+void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
 {
     writeIndent(ts, indent);
     ts << "(" << "GraphicsLayer";
@@ -577,12 +545,12 @@ void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) 
     }
 
     ts << "\n";
-    dumpProperties(ts, indent, flags);
+    dumpProperties(ts, indent, flags, renderingContextMap);
     writeIndent(ts, indent);
     ts << ")\n";
 }
 
-void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags) const
+void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
 {
     if (m_position != FloatPoint()) {
         writeIndent(ts, indent + 1);
@@ -624,9 +592,21 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "(contentsOpaque " << m_contentsOpaque << ")\n";
     }
 
-    if (m_preserves3D) {
+    if (!m_shouldFlattenTransform) {
         writeIndent(ts, indent + 1);
-        ts << "(preserves3D " << m_preserves3D << ")\n";
+        ts << "(shouldFlattenTransform " << m_shouldFlattenTransform << ")\n";
+    }
+
+    if (m_3dRenderingContext) {
+        RenderingContextMap::const_iterator it = renderingContextMap.find(m_3dRenderingContext);
+        int contextId = renderingContextMap.size() + 1;
+        if (it == renderingContextMap.end())
+            renderingContextMap.set(m_3dRenderingContext, contextId);
+        else
+            contextId = it->value;
+
+        writeIndent(ts, indent + 1);
+        ts << "(3dRenderingContext " << contextId << ")\n";
     }
 
     if (m_drawsContent) {
@@ -654,7 +634,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << ")\n";
     }
 
-    if (m_backgroundColor.isValid() && m_backgroundColor != Color::transparent) {
+    if (m_backgroundColor.alpha()) {
         writeIndent(ts, indent + 1);
         ts << "(backgroundColor " << m_backgroundColor.nameForRenderTreeAsText() << ")\n";
     }
@@ -668,24 +648,13 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "[" << m_transform.m41() << " " << m_transform.m42() << " " << m_transform.m43() << " " << m_transform.m44() << "])\n";
     }
 
-    // Avoid dumping the sublayer transform on the root layer, because it's used for geometry flipping, whose behavior
-    // differs between platforms.
-    if (parent() && !m_childrenTransform.isIdentity()) {
-        writeIndent(ts, indent + 1);
-        ts << "(childrenTransform ";
-        ts << "[" << m_childrenTransform.m11() << " " << m_childrenTransform.m12() << " " << m_childrenTransform.m13() << " " << m_childrenTransform.m14() << "] ";
-        ts << "[" << m_childrenTransform.m21() << " " << m_childrenTransform.m22() << " " << m_childrenTransform.m23() << " " << m_childrenTransform.m24() << "] ";
-        ts << "[" << m_childrenTransform.m31() << " " << m_childrenTransform.m32() << " " << m_childrenTransform.m33() << " " << m_childrenTransform.m34() << "] ";
-        ts << "[" << m_childrenTransform.m41() << " " << m_childrenTransform.m42() << " " << m_childrenTransform.m43() << " " << m_childrenTransform.m44() << "])\n";
-    }
-
     if (m_replicaLayer) {
         writeIndent(ts, indent + 1);
         ts << "(replica layer";
         if (flags & LayerTreeIncludesDebugInfo)
             ts << " " << m_replicaLayer;
         ts << ")\n";
-        m_replicaLayer->dumpLayer(ts, indent + 2, flags);
+        m_replicaLayer->dumpLayer(ts, indent + 2, flags, renderingContextMap);
     }
 
     if (m_replicatedLayer) {
@@ -762,7 +731,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
 
         unsigned i;
         for (i = 0; i < m_children.size(); i++)
-            m_children[i]->dumpLayer(ts, indent + 2, flags);
+            m_children[i]->dumpLayer(ts, indent + 2, flags, renderingContextMap);
         writeIndent(ts, indent + 1);
         ts << ")\n";
     }
@@ -772,11 +741,12 @@ String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
 {
     TextStream ts;
 
-    dumpLayer(ts, 0, flags);
+    RenderingContextMap renderingContextMap;
+    dumpLayer(ts, 0, flags, renderingContextMap);
     return ts.release();
 }
 
-blink::WebString GraphicsLayer::debugName(blink::WebLayer* webLayer)
+String GraphicsLayer::debugName(blink::WebLayer* webLayer) const
 {
     String name;
     if (!m_client)
@@ -802,10 +772,9 @@ blink::WebString GraphicsLayer::debugName(blink::WebLayer* webLayer)
     return name;
 }
 
-void GraphicsLayer::setCompositingReasons(blink::WebCompositingReasons reasons)
+void GraphicsLayer::setCompositingReasons(CompositingReasons reasons)
 {
-    m_compositingReasons = reasons;
-    m_layer->layer()->setCompositingReasons(reasons);
+    m_debugInfo.setCompositingReasons(reasons);
 }
 
 void GraphicsLayer::setPosition(const FloatPoint& point)
@@ -845,19 +814,26 @@ void GraphicsLayer::setTransform(const TransformationMatrix& transform)
     platformLayer()->setTransform(TransformationMatrix::toSkMatrix44(m_transform));
 }
 
-void GraphicsLayer::setChildrenTransform(const TransformationMatrix& transform)
+void GraphicsLayer::setShouldFlattenTransform(bool shouldFlatten)
 {
-    m_childrenTransform = transform;
-    platformLayer()->setSublayerTransform(TransformationMatrix::toSkMatrix44(m_childrenTransform));
-}
-
-void GraphicsLayer::setPreserves3D(bool preserves3D)
-{
-    if (preserves3D == m_preserves3D)
+    if (shouldFlatten == m_shouldFlattenTransform)
         return;
 
-    m_preserves3D = preserves3D;
-    m_layer->layer()->setPreserves3D(m_preserves3D);
+    m_shouldFlattenTransform = shouldFlatten;
+
+    m_layer->layer()->setShouldFlattenTransform(shouldFlatten);
+}
+
+void GraphicsLayer::setRenderingContext(int context)
+{
+    if (m_3dRenderingContext == context)
+        return;
+
+    m_3dRenderingContext = context;
+    m_layer->layer()->setRenderingContext(context);
+
+    if (m_contentsLayer)
+        m_contentsLayer->setRenderingContext(m_3dRenderingContext);
 }
 
 void GraphicsLayer::setMasksToBounds(bool masksToBounds)
@@ -1049,7 +1025,7 @@ void GraphicsLayer::setContentsToSolidColor(const Color& color)
         return;
 
     m_contentsSolidColor = color;
-    if (color.isValid() && color.alpha()) {
+    if (color.alpha()) {
         if (!m_solidColorLayer) {
             m_solidColorLayer = adoptPtr(Platform::current()->compositorSupport()->createSolidColorLayer());
             registerContentsLayer(m_solidColorLayer->layer());

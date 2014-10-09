@@ -138,6 +138,11 @@ bool HTMLLinkElement::shouldLoadLink()
     return continueLoad;
 }
 
+bool HTMLLinkElement::loadLink(const String& type, const KURL& url)
+{
+    return m_linkLoader.loadLink(m_relAttribute, fastGetAttribute(HTMLNames::crossoriginAttr), type, url, document());
+}
+
 LinkResource* HTMLLinkElement::linkResourceToProcess()
 {
     bool visible = inDocument() && !m_isInShadowTree;
@@ -172,6 +177,14 @@ LinkImport* HTMLLinkElement::linkImport() const
     if (!m_link || m_link->type() != LinkResource::Import)
         return 0;
     return static_cast<LinkImport*>(m_link.get());
+}
+
+bool HTMLLinkElement::importOwnsLoader() const
+{
+    LinkImport* import = linkImport();
+    if (!import)
+        return false;
+    return import->ownsLoader();
 }
 
 Document* HTMLLinkElement::import() const
@@ -287,6 +300,11 @@ void HTMLLinkElement::dispatchPendingEvent(LinkEventSender* eventSender)
 {
     ASSERT_UNUSED(eventSender, eventSender == &linkLoadEventSender());
     ASSERT(m_link);
+    dispatchEventImmediately();
+}
+
+void HTMLLinkElement::dispatchEventImmediately()
+{
     if (m_link->hasLoaded())
         linkLoaded();
     else
@@ -319,11 +337,6 @@ const AtomicString& HTMLLinkElement::rel() const
     return getAttribute(relAttr);
 }
 
-String HTMLLinkElement::target() const
-{
-    return getAttribute(targetAttr);
-}
-
 const AtomicString& HTMLLinkElement::type() const
 {
     return getAttribute(typeAttr);
@@ -334,28 +347,9 @@ IconType HTMLLinkElement::iconType() const
     return m_relAttribute.iconType();
 }
 
-String HTMLLinkElement::iconSizes() const
+const AtomicString& HTMLLinkElement::iconSizes() const
 {
     return m_sizes->toString();
-}
-
-void HTMLLinkElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    // Favicons are handled by a special case in LegacyWebArchive::create()
-    if (m_relAttribute.iconType() != InvalidIcon)
-        return;
-
-    if (!m_relAttribute.isStyleSheet())
-        return;
-
-    // Append the URL of this link element.
-    addSubresourceURL(urls, href());
-
-    // Walk the URLs linked by the linked-to stylesheet.
-    if (CSSStyleSheet* styleSheet = const_cast<HTMLLinkElement*>(this)->sheet())
-        styleSheet->contents()->addSubresourceStyleURLs(urls);
 }
 
 DOMSettableTokenList* HTMLLinkElement::sizes() const
@@ -399,7 +393,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
     // Completing the sheet load may cause scripts to execute.
     RefPtr<Node> protector(m_owner);
 
-    CSSParserContext parserContext(m_owner->document(), baseURL, charset);
+    CSSParserContext parserContext(m_owner->document(), 0, baseURL, charset);
 
     if (RefPtr<StyleSheetContents> restoredSheet = const_cast<CSSStyleSheetResource*>(cachedStyleSheet)->restoreParsedStyleSheet(parserContext)) {
         ASSERT(restoredSheet->isCacheable());
@@ -412,8 +406,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
         m_sheet->setTitle(m_owner->title());
 
         m_loading = false;
-        sheetLoaded();
-        notifyLoadedSheetAndAllCriticalSubresources(false);
+        restoredSheet->checkLoaded();
         return;
     }
 
@@ -584,15 +577,17 @@ void LinkStyle::process()
         if (!m_owner->shouldLoadLink())
             return;
 
-        Frame* frame = loadingFrame();
         m_loading = true;
 
         bool mediaQueryMatches = true;
         if (!m_owner->media().isEmpty()) {
-            RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(document());
-            RefPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
-            MediaQueryEvaluator evaluator(frame->view()->mediaType(), frame, documentStyle.get());
-            mediaQueryMatches = evaluator.eval(media.get());
+            Frame* frame = loadingFrame();
+            if (Document* document = loadingFrame()->document()) {
+                RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(*document);
+                RefPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
+                MediaQueryEvaluator evaluator(frame->view()->mediaType(), frame, documentStyle.get());
+                mediaQueryMatches = evaluator.eval(media.get());
+            }
         }
 
         // Don't hold up render tree construction and script execution on stylesheets
@@ -602,6 +597,11 @@ void LinkStyle::process()
 
         // Load stylesheets that are not needed for the rendering immediately with low priority.
         FetchRequest request = builder.build(blocking);
+        AtomicString crossOriginMode = m_owner->fastGetAttribute(HTMLNames::crossoriginAttr);
+        if (!crossOriginMode.isNull()) {
+            StoredCredentials allowCredentials = equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+            request.setCrossOriginAccessControl(document().securityOrigin(), allowCredentials);
+        }
         setResource(document().fetcher()->fetchCSSStyleSheet(request));
 
         if (!resource()) {

@@ -7,12 +7,12 @@
 /**
  * @fileoverview Provides the SliceGroup class.
  */
-base.require('base.range');
-base.require('tracing.trace_model.slice');
-base.require('tracing.color_scheme');
-base.require('tracing.filter');
+tvcm.require('tvcm.range');
+tvcm.require('tracing.trace_model.slice');
+tvcm.require('tracing.color_scheme');
+tvcm.require('tracing.filter');
 
-base.exportTo('tracing.trace_model', function() {
+tvcm.exportTo('tracing.trace_model', function() {
   var Slice = tracing.trace_model.Slice;
 
   /**
@@ -33,7 +33,7 @@ base.exportTo('tracing.trace_model', function() {
     this.openPartialSlices_ = [];
 
     this.slices = [];
-    this.bounds = new base.Range();
+    this.bounds = new tvcm.Range();
     this.topLevelSlices = [];
   }
 
@@ -228,8 +228,9 @@ base.exportTo('tracing.trace_model', function() {
 
     /**
      * Construct subSlices for this group.
-     * Populate the group topLevelSlices, parent slices get a subSlices[]
-     * and a selfTime, child slices get a parentSlice reference.
+     * Populate the group topLevelSlices, parent slices get a subSlices[],
+     * a selfThreadTime and a selfTime, child slices get a parentSlice
+     * reference.
      */
     createSubSlices: function() {
       function addSliceIfBounds(root, child) {
@@ -244,11 +245,15 @@ base.exportTo('tracing.trace_model', function() {
           }
           if (!root.selfTime)
             root.selfTime = root.duration;
+          if (!root.threadSelfTime && root.threadDuration)
+            root.threadSelfTime = root.threadDuration;
           child.parentSlice = root;
           if (!root.subSlices)
             root.subSlices = [];
           root.subSlices.push(child);
           root.selfTime -= child.duration;
+          if (child.threadDuration)
+            root.threadSelfTime -= child.threadDuration;
           return true;
         }
         return false;

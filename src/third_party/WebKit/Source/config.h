@@ -98,27 +98,21 @@
 #if OS(MACOSX)
 #define WTF_USE_CF 1
 #define WTF_USE_RUBBER_BANDING 1
-
-/* We can't override the global operator new and delete on OS(MACOSX) because
- * some object are allocated by WebKit and deallocated by the embedder. */
-#else /* !OS(MACOSX) */
-/* On non-OS(MACOSX), the "system malloc" is actually TCMalloc anyway, so there's
- * no need to use WebKit's copy of TCMalloc. */
-#define WTF_USE_SYSTEM_MALLOC 1
 #endif /* OS(MACOSX) */
 
+// On Mac, the system allocator is the real OS X system allocator.
+// On Android, the system allocator is the libc system allocator.
+// On other platforms, we've overriden the system allocator with tcmalloc.
+// PartitionAlloc seems to be faster than all of these, so on all platforms
+// we use it for a subset of performance sensitive Blink classes (tagged by
+// WTF_MAKE_FAST_ALLOCATED.
+#define WTF_USE_SYSTEM_MALLOC 0
+
 #if OS(POSIX)
-#define HAVE_MMAP 1
 #define HAVE_SIGNAL_H 1
 #define HAVE_SYS_TIME_H 1
 #define WTF_USE_PTHREADS 1
 #endif /* OS(POSIX) */
-
-#if !defined(HAVE_VASPRINTF)
-#if !COMPILER(MSVC)
-#define HAVE_VASPRINTF 1
-#endif
-#endif
 
 #if !OS(WIN) && !OS(ANDROID)
 #define HAVE_TM_GMTOFF 1
@@ -127,7 +121,6 @@
 #endif
 
 #if OS(MACOSX)
-#define HAVE_DISPATCH_H 1
 #define HAVE_PTHREAD_SETNAME_NP 1
 #define WTF_USE_NEW_THEME 1
 #endif /* OS(MACOSX) */
@@ -161,10 +154,6 @@
 #define SKIP_STATIC_CONSTRUCTORS_ON_MSVC 1
 #else
 #define SKIP_STATIC_CONSTRUCTORS_ON_GCC 1
-#endif
-
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS 1
 #endif
 
 #if OS(LINUX) || OS(ANDROID) || ENABLE(HARFBUZZ_ON_WINDOWS)

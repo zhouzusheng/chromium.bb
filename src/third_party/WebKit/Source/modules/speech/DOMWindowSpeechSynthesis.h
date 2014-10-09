@@ -27,6 +27,7 @@
 #define DOMWindowSpeechSynthesis_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "modules/speech/SpeechSynthesis.h"
 #include "platform/Supplementable.h"
 
@@ -34,7 +35,7 @@ namespace WebCore {
 
 class DOMWindow;
 
-class DOMWindowSpeechSynthesis : public Supplement<DOMWindow>, public DOMWindowProperty {
+class DOMWindowSpeechSynthesis FINAL : public Supplement<DOMWindow>, public DOMWindowProperty {
 public:
     virtual ~DOMWindowSpeechSynthesis();
 
@@ -47,7 +48,7 @@ private:
     SpeechSynthesis* speechSynthesis();
     static const char* supplementName();
 
-    RefPtr<SpeechSynthesis> m_speechSynthesis;
+    RefPtrWillBePersistent<SpeechSynthesis> m_speechSynthesis;
 };
 
 } // namespace WebCore

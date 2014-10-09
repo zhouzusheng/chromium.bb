@@ -31,17 +31,16 @@
 /**
  * @constructor
  * @extends {WebInspector.View}
- * @param {!WebInspector.ProfilesPanel} parent
  * @param {!WebInspector.HeapProfileHeader} profile
  */
-WebInspector.HeapSnapshotView = function(parent, profile)
+WebInspector.HeapSnapshotView = function(profile)
 {
     WebInspector.View.call(this);
 
     this.element.classList.add("heap-snapshot-view");
 
-    this.parent = parent;
-    this.parent.addEventListener("profile added", this._onProfileHeaderAdded, this);
+    profile.profileType().addEventListener(WebInspector.HeapSnapshotProfileType.SnapshotReceived, this._onReceivSnapshot, this);
+    profile.profileType().addEventListener(WebInspector.ProfileType.Events.RemoveProfileHeader, this._onProfileHeaderRemoved, this);
 
     if (profile._profileType.id === WebInspector.TrackingHeapSnapshotProfileType.TypeId) {
         this._trackingOverviewGrid = new WebInspector.HeapTrackingOverviewGrid(profile);
@@ -49,85 +48,75 @@ WebInspector.HeapSnapshotView = function(parent, profile)
         this._trackingOverviewGrid.show(this.element);
     }
 
-    this.viewsContainer = document.createElement("div");
-    this.viewsContainer.classList.add("views-container");
-    this.element.appendChild(this.viewsContainer);
+    this.viewsContainer = new WebInspector.SplitView(false, true, "heapSnapshotRetainersViewSize", 200, 200);
+    this.viewsContainer.show(this.element);
+    this.viewsContainer.setMainElementConstraints(50, 50);
+    this.viewsContainer.setSidebarElementConstraints(70, 70);
 
     this.containmentView = new WebInspector.View();
-    this.containmentView.element.classList.add("view");
     this.containmentDataGrid = new WebInspector.HeapSnapshotContainmentDataGrid();
     this.containmentDataGrid.element.addEventListener("mousedown", this._mouseDownInContentsGrid.bind(this), true);
     this.containmentDataGrid.show(this.containmentView.element);
     this.containmentDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
     this.constructorsView = new WebInspector.View();
-    this.constructorsView.element.classList.add("view");
-    this.constructorsView.element.appendChild(this._createToolbarWithClassNameFilter());
 
     this.constructorsDataGrid = new WebInspector.HeapSnapshotConstructorsDataGrid();
-    this.constructorsDataGrid.element.classList.add("class-view-grid");
     this.constructorsDataGrid.element.addEventListener("mousedown", this._mouseDownInContentsGrid.bind(this), true);
     this.constructorsDataGrid.show(this.constructorsView.element);
     this.constructorsDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
     this.dataGrid = /** @type {!WebInspector.HeapSnapshotSortableDataGrid} */ (this.constructorsDataGrid);
     this.currentView = this.constructorsView;
-    this.currentView.show(this.viewsContainer);
+    this.currentView.show(this.viewsContainer.mainElement());
 
     this.diffView = new WebInspector.View();
-    this.diffView.element.classList.add("view");
-    this.diffView.element.appendChild(this._createToolbarWithClassNameFilter());
 
     this.diffDataGrid = new WebInspector.HeapSnapshotDiffDataGrid();
-    this.diffDataGrid.element.classList.add("class-view-grid");
     this.diffDataGrid.show(this.diffView.element);
     this.diffDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
     this.dominatorView = new WebInspector.View();
-    this.dominatorView.element.classList.add("view");
     this.dominatorDataGrid = new WebInspector.HeapSnapshotDominatorsDataGrid();
     this.dominatorDataGrid.element.addEventListener("mousedown", this._mouseDownInContentsGrid.bind(this), true);
     this.dominatorDataGrid.show(this.dominatorView.element);
     this.dominatorDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
-    if (WebInspector.HeapSnapshot.enableAllocationProfiler) {
+    if (WebInspector.experimentsSettings.allocationProfiler.isEnabled() && profile.profileType() === WebInspector.ProfileTypeRegistry.instance.trackingHeapSnapshotProfileType) {
         this.allocationView = new WebInspector.View();
-        this.allocationView.element.classList.add("view");
         this.allocationDataGrid = new WebInspector.AllocationDataGrid();
         this.allocationDataGrid.element.addEventListener("mousedown", this._mouseDownInContentsGrid.bind(this), true);
         this.allocationDataGrid.show(this.allocationView.element);
         this.allocationDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
     }
 
-    this.retainmentViewHeader = document.createElement("div");
-    this.retainmentViewHeader.classList.add("retainers-view-header");
-    WebInspector.installDragHandle(this.retainmentViewHeader, this._startRetainersHeaderDragging.bind(this), this._retainersHeaderDragging.bind(this), this._endRetainersHeaderDragging.bind(this), "row-resize");
-    var retainingPathsTitleDiv = document.createElement("div");
-    retainingPathsTitleDiv.className = "title";
-    var retainingPathsTitle = document.createElement("span");
+    this.retainmentViewHeader = document.createElementWithClass("div", "retainers-view-header");
+    var retainingPathsTitleDiv = this.retainmentViewHeader.createChild("div", "title");
+    var retainingPathsTitle = retainingPathsTitleDiv.createChild("span");
     retainingPathsTitle.textContent = WebInspector.UIString("Object's retaining tree");
-    retainingPathsTitleDiv.appendChild(retainingPathsTitle);
-    this.retainmentViewHeader.appendChild(retainingPathsTitleDiv);
-    this.element.appendChild(this.retainmentViewHeader);
+    this.viewsContainer.hideDefaultResizer();
+    this.viewsContainer.installResizer(this.retainmentViewHeader);
 
     this.retainmentView = new WebInspector.View();
-    this.retainmentView.element.classList.add("view");
     this.retainmentView.element.classList.add("retaining-paths-view");
+    this.retainmentView.element.appendChild(this.retainmentViewHeader);
     this.retainmentDataGrid = new WebInspector.HeapSnapshotRetainmentDataGrid();
     this.retainmentDataGrid.show(this.retainmentView.element);
     this.retainmentDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._inspectedObjectChanged, this);
-    this.retainmentView.show(this.element);
+    this.retainmentView.show(this.viewsContainer.sidebarElement());
     this.retainmentDataGrid.reset();
 
     this.viewSelect = new WebInspector.StatusBarComboBox(this._onSelectedViewChanged.bind(this));
 
-    this.views = [{title: "Summary", view: this.constructorsView, grid: this.constructorsDataGrid},
-                  {title: "Comparison", view: this.diffView, grid: this.diffDataGrid},
-                  {title: "Containment", view: this.containmentView, grid: this.containmentDataGrid}];
+    this.views = [{title: WebInspector.UIString("Summary"), view: this.constructorsView, grid: this.constructorsDataGrid}];
+
+    if (profile.profileType() !== WebInspector.ProfileTypeRegistry.instance.trackingHeapSnapshotProfileType)
+        this.views.push({title: WebInspector.UIString("Comparison"), view: this.diffView, grid: this.diffDataGrid});
+    this.views.push({title: WebInspector.UIString("Containment"), view: this.containmentView, grid: this.containmentDataGrid});
     if (WebInspector.settings.showAdvancedHeapSnapshotProperties.get())
-        this.views.push({title: "Dominators", view: this.dominatorView, grid: this.dominatorDataGrid});
-    if (WebInspector.HeapSnapshot.enableAllocationProfiler)
-        this.views.push({title: "Allocation", view: this.allocationView, grid: this.allocationDataGrid});
+        this.views.push({title: WebInspector.UIString("Dominators"), view: this.dominatorView, grid: this.dominatorDataGrid});
+    if (this.allocationView)
+        this.views.push({title: WebInspector.UIString("Allocation"), view: this.allocationView, grid: this.allocationDataGrid});
     this.views.current = 0;
     for (var i = 0; i < this.views.length; ++i)
         this.viewSelect.createOption(WebInspector.UIString(this.views[i].title));
@@ -135,23 +124,26 @@ WebInspector.HeapSnapshotView = function(parent, profile)
     this._profile = profile;
 
     this.baseSelect = new WebInspector.StatusBarComboBox(this._changeBase.bind(this));
-    this.baseSelect.element.classList.add("hidden");
     this._updateBaseOptions();
 
-    this.filterSelect = new WebInspector.StatusBarComboBox(this._changeFilter.bind(this));
+    this._filterSelect = new WebInspector.StatusBarComboBox(this._changeFilter.bind(this));
     this._updateFilterOptions();
+
+    this._classNameFilter = new WebInspector.StatusBarInput("Class filter");
+    this._classNameFilter.setOnChangeHandler(this._onClassFilterChanged.bind(this));
 
     this.selectedSizeText = new WebInspector.StatusBarText("");
 
     this._popoverHelper = new WebInspector.ObjectPopoverHelper(this.element, this._getHoverAnchor.bind(this), this._resolveObjectForPopover.bind(this), undefined, true);
 
+    this._updateSelectorsVisibility();
     this._refreshView();
 }
 
 WebInspector.HeapSnapshotView.prototype = {
     _refreshView: function()
     {
-        this.profile.load(profileCallback.bind(this));
+        this._profile.load(profileCallback.bind(this));
 
         /**
          * @this {WebInspector.HeapSnapshotView}
@@ -176,46 +168,27 @@ WebInspector.HeapSnapshotView.prototype = {
             this.constructorsDataGrid.setSelectionRange(minId, maxId);
     },
 
-    dispose: function()
-    {
-        this.parent.removeEventListener("profile added", this._onProfileHeaderAdded, this);
-        this.profile.dispose();
-        if (this.baseProfile)
-            this.baseProfile.dispose();
-        this.containmentDataGrid.dispose();
-        this.constructorsDataGrid.dispose();
-        this.diffDataGrid.dispose();
-        this.dominatorDataGrid.dispose();
-        this.retainmentDataGrid.dispose();
-    },
-
     get statusBarItems()
     {
-        return [this.viewSelect.element, this.baseSelect.element, this.filterSelect.element, this.selectedSizeText.element];
-    },
-
-    get profile()
-    {
-        return this._profile;
-    },
-
-    get baseProfile()
-    {
-        return this._profile.profileType().getProfile(this._baseProfileUid);
+        var result = [this.viewSelect.element, this._classNameFilter.element];
+        if (this._profile.profileType() !== WebInspector.ProfileTypeRegistry.instance.trackingHeapSnapshotProfileType)
+            result.push(this.baseSelect.element, this._filterSelect.element);
+        result.push(this.selectedSizeText.element);
+        return result;
     },
 
     wasShown: function()
     {
         // FIXME: load base and current snapshots in parallel
-        this.profile.load(profileCallback.bind(this));
+        this._profile.load(profileCallback.bind(this));
 
         /**
          * @this {WebInspector.HeapSnapshotView}
          */
         function profileCallback() {
-            this.profile._wasShown();
-            if (this.baseProfile)
-                this.baseProfile.load(function() { });
+            this._profile._wasShown();
+            if (this._baseProfile)
+                this._baseProfile.load(function() { });
         }
     },
 
@@ -225,12 +198,6 @@ WebInspector.HeapSnapshotView.prototype = {
         this._popoverHelper.hidePopover();
         if (this.helpPopover && this.helpPopover.isShowing())
             this.helpPopover.hide();
-    },
-
-    onResize: function()
-    {
-        var height = this.retainmentView.element.clientHeight;
-        this._updateRetainmentViewHeight(height);
     },
 
     searchCanceled: function()
@@ -351,16 +318,25 @@ WebInspector.HeapSnapshotView.prototype = {
         this._jumpToSearchResult(this._currentSearchResultIndex);
     },
 
+    /**
+     * @return {boolean}
+     */
     showingFirstSearchResult: function()
     {
         return (this._currentSearchResultIndex === 0);
     },
 
+    /**
+     * @return {boolean}
+     */
     showingLastSearchResult: function()
     {
         return (this._searchResults && this._currentSearchResultIndex === (this._searchResults.length - 1));
     },
 
+    /**
+     * @return {number}
+     */
     currentSearchResultIndex: function() {
         return this._currentSearchResultIndex;
     },
@@ -386,14 +362,14 @@ WebInspector.HeapSnapshotView.prototype = {
 
     _changeBase: function()
     {
-        if (this._baseProfileUid === this._profiles()[this.baseSelect.selectedIndex()].uid)
+        if (this._baseProfile=== this._profiles()[this.baseSelect.selectedIndex()])
             return;
 
-        this._baseProfileUid = this._profiles()[this.baseSelect.selectedIndex()].uid;
+        this._baseProfile = this._profiles()[this.baseSelect.selectedIndex()];
         var dataGrid = /** @type {!WebInspector.HeapSnapshotDiffDataGrid} */ (this.dataGrid);
         // Change set base data source only if main data source is already set.
         if (dataGrid.snapshot)
-            this.baseProfile.load(dataGrid.setBaseDataSource.bind(dataGrid));
+            this._baseProfile.load(dataGrid.setBaseDataSource.bind(dataGrid));
 
         if (!this.currentQuery || !this._searchFinishedCallback || !this._searchResults)
             return;
@@ -407,12 +383,12 @@ WebInspector.HeapSnapshotView.prototype = {
 
     _changeFilter: function()
     {
-        var profileIndex = this.filterSelect.selectedIndex() - 1;
+        var profileIndex = this._filterSelect.selectedIndex() - 1;
         this.dataGrid.filterSelectIndexChanged(this._profiles(), profileIndex);
 
         WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
             action: WebInspector.UserMetrics.UserActionNames.HeapSnapshotFilterChanged,
-            label: this.filterSelect.selectedOption().label
+            label: this._filterSelect.selectedOption().label
         });
 
         if (!this.currentQuery || !this._searchFinishedCallback || !this._searchResults)
@@ -425,22 +401,12 @@ WebInspector.HeapSnapshotView.prototype = {
         this.performSearch(this.currentQuery, this._searchFinishedCallback);
     },
 
-    _createToolbarWithClassNameFilter: function()
+    /**
+     * @param {string} value
+     */
+    _onClassFilterChanged: function(value)
     {
-        var toolbar = document.createElement("div");
-        toolbar.classList.add("class-view-toolbar");
-        var classNameFilter = document.createElement("input");
-        classNameFilter.classList.add("class-name-filter");
-        classNameFilter.setAttribute("placeholder", WebInspector.UIString("Class filter"));
-        classNameFilter.addEventListener("keyup", this._changeNameFilter.bind(this, classNameFilter), false);
-        toolbar.appendChild(classNameFilter);
-        return toolbar;
-    },
-
-    _changeNameFilter: function(classNameInputElement)
-    {
-        var filter = classNameInputElement.value;
-        this.dataGrid.changeNameFilter(filter);
+        this.dataGrid.changeNameFilter(value);
     },
 
     /**
@@ -457,7 +423,7 @@ WebInspector.HeapSnapshotView.prototype = {
      */
     populateContextMenu: function(contextMenu, event)
     {
-        this.dataGrid.populateContextMenu(this.parent, contextMenu, event);
+        this.dataGrid.populateContextMenu(contextMenu, event);
     },
 
     _selectionChanged: function(event)
@@ -470,7 +436,7 @@ WebInspector.HeapSnapshotView.prototype = {
     _inspectedObjectChanged: function(event)
     {
         var selectedNode = event.target.selectedNode;
-        if (!this.profile.fromFile() && selectedNode instanceof WebInspector.HeapSnapshotGenericObjectNode)
+        if (!this._profile.fromFile() && selectedNode instanceof WebInspector.HeapSnapshotGenericObjectNode)
             ConsoleAgent.addInspectedHeapObject(selectedNode.snapshotNodeId);
     },
 
@@ -530,7 +496,7 @@ WebInspector.HeapSnapshotView.prototype = {
         if (dataGrid.snapshot)
             return;
 
-        this.profile.load(didLoadSnapshot.bind(this));
+        this._profile.load(didLoadSnapshot.bind(this));
 
         /**
          * @this {WebInspector.HeapSnapshotView}
@@ -542,9 +508,9 @@ WebInspector.HeapSnapshotView.prototype = {
             if (dataGrid.snapshot !== snapshotProxy)
                 dataGrid.setDataSource(snapshotProxy);
             if (dataGrid === this.diffDataGrid) {
-                if (!this._baseProfileUid)
-                    this._baseProfileUid = this._profiles()[this.baseSelect.selectedIndex()].uid;
-                this.baseProfile.load(didLoadBaseSnaphot.bind(this));
+                if (!this._baseProfile)
+                    this._baseProfile = this._profiles()[this.baseSelect.selectedIndex()];
+                this._baseProfile.load(didLoadBaseSnaphot.bind(this));
             }
         }
 
@@ -565,24 +531,14 @@ WebInspector.HeapSnapshotView.prototype = {
 
     _updateSelectorsVisibility: function()
     {
-        if (this.currentView === this.diffView)
-            this.baseSelect.element.classList.remove("hidden");
-        else
-            this.baseSelect.element.classList.add("hidden");
+        this.baseSelect.visible = (this.currentView === this.diffView);
+        this._filterSelect.visible = (this.currentView === this.constructorsView);
+        this._classNameFilter.visible = (this.currentView === this.constructorsView || this.currentView === this.diffView);
 
-        if (this.currentView === this.constructorsView) {
-            if (this._trackingOverviewGrid) {
-                this._trackingOverviewGrid.element.classList.remove("hidden");
+        if (this._trackingOverviewGrid) {
+            this._trackingOverviewGrid.element.classList.toggle("hidden", this.currentView !== this.constructorsView);
+            if (this.currentView === this.constructorsView)
                 this._trackingOverviewGrid.update();
-                this.viewsContainer.classList.add("reserve-80px-at-top");
-            }
-            this.filterSelect.element.classList.remove("hidden");
-        } else {
-            this.filterSelect.element.classList.add("hidden");
-            if (this._trackingOverviewGrid) {
-                this._trackingOverviewGrid.element.classList.add("hidden");
-                this.viewsContainer.classList.remove("reserve-80px-at-top");
-            }
         }
     },
 
@@ -596,7 +552,7 @@ WebInspector.HeapSnapshotView.prototype = {
         var view = this.views[this.views.current];
         this.currentView = view.view;
         this.dataGrid = view.grid;
-        this.currentView.show(this.viewsContainer);
+        this.currentView.show(this.viewsContainer.mainElement());
         this.refreshVisibleData();
         this.dataGrid.updateWidths();
 
@@ -628,47 +584,9 @@ WebInspector.HeapSnapshotView.prototype = {
 
     _resolveObjectForPopover: function(element, showCallback, objectGroupName)
     {
-        if (this.profile.fromFile())
+        if (this._profile.fromFile())
             return;
         element.node.queryObjectContent(showCallback, objectGroupName);
-    },
-
-    /**
-     * @return {boolean}
-     */
-    _startRetainersHeaderDragging: function(event)
-    {
-        if (!this.isShowing())
-            return false;
-
-        this._previousDragPosition = event.pageY;
-        return true;
-    },
-
-    _retainersHeaderDragging: function(event)
-    {
-        var height = this.retainmentView.element.clientHeight;
-        height += this._previousDragPosition - event.pageY;
-        this._previousDragPosition = event.pageY;
-        this._updateRetainmentViewHeight(height);
-        event.consume(true);
-    },
-
-    _endRetainersHeaderDragging: function(event)
-    {
-        delete this._previousDragPosition;
-        event.consume();
-    },
-
-    _updateRetainmentViewHeight: function(height)
-    {
-        height = Number.constrain(height, Preferences.minConsoleHeight, this.element.clientHeight - Preferences.minConsoleHeight);
-        this.viewsContainer.style.bottom = (height + this.retainmentViewHeader.clientHeight) + "px";
-        if (this._trackingOverviewGrid && this.currentView === this.constructorsView)
-            this.viewsContainer.classList.add("reserve-80px-at-top");
-        this.retainmentView.element.style.height = height + "px";
-        this.retainmentViewHeader.style.bottom = height + "px";
-        this.currentView.doResize();
     },
 
     _updateBaseOptions: function()
@@ -688,31 +606,49 @@ WebInspector.HeapSnapshotView.prototype = {
     {
         var list = this._profiles();
         // We're assuming that snapshots can only be added.
-        if (this.filterSelect.size() - 1 === list.length)
+        if (this._filterSelect.size() - 1 === list.length)
             return;
 
-        if (!this.filterSelect.size())
-            this.filterSelect.createOption(WebInspector.UIString("All objects"));
+        if (!this._filterSelect.size())
+            this._filterSelect.createOption(WebInspector.UIString("All objects"));
 
-        for (var i = this.filterSelect.size() - 1, n = list.length; i < n; ++i) {
+        for (var i = this._filterSelect.size() - 1, n = list.length; i < n; ++i) {
             var title = list[i].title;
             if (!i)
                 title = WebInspector.UIString("Objects allocated before %s", title);
             else
                 title = WebInspector.UIString("Objects allocated between %s and %s", list[i - 1].title, title);
-            this.filterSelect.createOption(title);
+            this._filterSelect.createOption(title);
         }
+    },
+
+    _updateControls: function()
+    {
+        this._updateBaseOptions();
+        this._updateFilterOptions();
     },
 
     /**
      * @param {!WebInspector.Event} event
      */
-    _onProfileHeaderAdded: function(event)
+    _onReceivSnapshot: function(event)
     {
-        if (!event.data || event.data.type !== this._profile.profileType().id)
-            return;
-        this._updateBaseOptions();
-        this._updateFilterOptions();
+        this._updateControls();
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onProfileHeaderRemoved: function(event)
+    {
+        var profile = event.data;
+        if (this._profile === profile) {
+            this.detach();
+            this._profile.profileType().removeEventListener(WebInspector.ProfileType.Events.AddProfileHeader, this._onReceivSnapshot, this);
+            this._profile.profileType().removeEventListener(WebInspector.ProfileType.Events.RemoveProfileHeader, this._onProfileHeaderRemoved, this);
+        } else {
+            this._updateControls();
+        }
     },
 
     __proto__: WebInspector.View.prototype
@@ -764,19 +700,10 @@ WebInspector.HeapProfilerDispatcher.prototype = {
     },
 
     /**
-     * @param {!HeapProfilerAgent.ProfileHeader} profileHeader
-     */
-    addProfileHeader: function(profileHeader)
-    {
-        this._genericCaller("addProfileHeader");
-    },
-
-    /**
      * @override
-     * @param {number} uid
      * @param {string} chunk
      */
-    addHeapSnapshotChunk: function(uid, chunk)
+    addHeapSnapshotChunk: function(chunk)
     {
         this._genericCaller("addHeapSnapshotChunk");
     },
@@ -785,8 +712,9 @@ WebInspector.HeapProfilerDispatcher.prototype = {
      * @override
      * @param {number} done
      * @param {number} total
+     * @param {boolean=} finished
      */
-    reportHeapSnapshotProgress: function(done, total)
+    reportHeapSnapshotProgress: function(done, total, finished)
     {
         this._genericCaller("reportHeapSnapshotProgress");
     },
@@ -806,10 +734,12 @@ WebInspector.HeapProfilerDispatcher._dispatcher = new WebInspector.HeapProfilerD
  * @constructor
  * @extends {WebInspector.ProfileType}
  * @implements {HeapProfilerAgent.Dispatcher}
+ * @param {string=} id
+ * @param {string=} title
  */
-WebInspector.HeapSnapshotProfileType = function()
+WebInspector.HeapSnapshotProfileType = function(id, title)
 {
-    WebInspector.ProfileType.call(this, WebInspector.HeapSnapshotProfileType.TypeId, WebInspector.UIString("Take Heap Snapshot"));
+    WebInspector.ProfileType.call(this, id || WebInspector.HeapSnapshotProfileType.TypeId, title || WebInspector.UIString("Take Heap Snapshot"));
     WebInspector.HeapProfilerDispatcher._dispatcher.register(this);
 }
 
@@ -892,58 +822,51 @@ WebInspector.HeapSnapshotProfileType.prototype = {
     {
         if (this.profileBeingRecorded())
             return;
-        this._profileBeingRecorded = new WebInspector.HeapProfileHeader(this, WebInspector.UIString("Snapshotting\u2026"));
+        this._profileBeingRecorded = new WebInspector.HeapProfileHeader(this);
         this.addProfile(this._profileBeingRecorded);
-        HeapProfilerAgent.takeHeapSnapshot(true, callback);
-    },
+        this._profileBeingRecorded.updateStatus(WebInspector.UIString("Snapshotting\u2026"));
 
-    /**
-     * @param {!HeapProfilerAgent.ProfileHeader} profileHeader
-     */
-    addProfileHeader: function(profileHeader)
-    {
-        var profile = this.profileBeingRecorded();
-        if (!profile)
-            return;
-        profile.title = profileHeader.title;
-        profile.uid = profileHeader.uid;
-        profile.maxJSObjectId = profileHeader.maxJSObjectId || 0;
-
-        profile.sidebarElement.mainTitle = profile.title;
-        profile.sidebarElement.subtitle = "";
-        profile.sidebarElement.wait = false;
-
-        this._profileSamples = null;
-        this._profileBeingRecorded = null;
-
-        WebInspector.panels.profiles._showProfile(profile);
-        profile.existingView()._refreshView();
+        /**
+         * @param {?string} error
+         * @this {WebInspector.HeapSnapshotProfileType}
+         */
+        function didTakeHeapSnapshot(error)
+        {
+            var profile = this._profileBeingRecorded;
+            profile.title = WebInspector.UIString("Snapshot %d", profile.uid);
+            profile._finishLoad();
+            this._profileBeingRecorded = null;
+            WebInspector.panels.profiles.showProfile(profile);
+            callback();
+        }
+        HeapProfilerAgent.takeHeapSnapshot(true, didTakeHeapSnapshot.bind(this));
     },
 
     /**
      * @override
-     * @param {number} uid
      * @param {string} chunk
      */
-    addHeapSnapshotChunk: function(uid, chunk)
+    addHeapSnapshotChunk: function(chunk)
     {
-        var profile = this.getProfile(uid);
-        if (profile)
-            profile.transferChunk(chunk);
+        if (!this.profileBeingRecorded())
+            return;
+        this.profileBeingRecorded().transferChunk(chunk);
     },
 
     /**
      * @override
      * @param {number} done
      * @param {number} total
+     * @param {boolean=} finished
      */
-    reportHeapSnapshotProgress: function(done, total)
+    reportHeapSnapshotProgress: function(done, total, finished)
     {
         var profile = this.profileBeingRecorded();
         if (!profile)
             return;
-        profile.sidebarElement.subtitle = WebInspector.UIString("%.0f%", (done / total) * 100);
-        profile.sidebarElement.wait = true;
+        profile.updateStatus(WebInspector.UIString("%.0f%", (done / total) * 100), true);
+        if (finished)
+            profile._prepareToLoad();
     },
 
     /**
@@ -952,17 +875,6 @@ WebInspector.HeapSnapshotProfileType.prototype = {
     resetProfiles: function()
     {
         this._reset();
-    },
-
-    /**
-     * @override
-     * @param {!WebInspector.ProfileHeader} profile
-     */
-    removeProfile: function(profile)
-    {
-        if (this._profileBeingRecorded !== profile && !profile.fromFile())
-            HeapProfilerAgent.removeProfile(profile.uid);
-        WebInspector.ProfileType.prototype.removeProfile.call(this, profile);
     },
 
     _snapshotReceived: function(profile)
@@ -979,13 +891,10 @@ WebInspector.HeapSnapshotProfileType.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.HeapSnapshotProfileType}
- * @param {!WebInspector.ProfilesPanel} profilesPanel
  */
-WebInspector.TrackingHeapSnapshotProfileType = function(profilesPanel)
+WebInspector.TrackingHeapSnapshotProfileType = function()
 {
-    WebInspector.ProfileType.call(this, WebInspector.TrackingHeapSnapshotProfileType.TypeId, WebInspector.UIString("Record Heap Allocations"));
-    this._profilesPanel = profilesPanel;
-    WebInspector.HeapProfilerDispatcher._dispatcher.register(this);
+    WebInspector.HeapSnapshotProfileType.call(this, WebInspector.TrackingHeapSnapshotProfileType.TypeId, WebInspector.UIString("Record Heap Allocations"));
 }
 
 WebInspector.TrackingHeapSnapshotProfileType.TypeId = "HEAP-RECORD";
@@ -1036,10 +945,7 @@ WebInspector.TrackingHeapSnapshotProfileType.prototype = {
         if (profileSamples.totalTime < timestamp - profileSamples.timestamps[0])
             profileSamples.totalTime *= 2;
         this.dispatchEventToListeners(WebInspector.TrackingHeapSnapshotProfileType.HeapStatsUpdate, this._profileSamples);
-        var profile = this._profileBeingRecorded;
-        profile.sidebarElement.wait = true;
-        if (profile.sidebarElement && !profile.sidebarElement.wait)
-            profile.sidebarElement.wait = true;
+        this._profileBeingRecorded.updateStatus(null, true);
     },
 
     /**
@@ -1078,7 +984,7 @@ WebInspector.TrackingHeapSnapshotProfileType.prototype = {
     {
         if (this.profileBeingRecorded())
             return;
-        this._profileBeingRecorded = new WebInspector.HeapProfileHeader(this, WebInspector.UIString("Recording\u2026"));
+        this._profileBeingRecorded = new WebInspector.HeapProfileHeader(this);
         this._lastSeenIndex = -1;
         this._profileSamples = {
             'sizes': [],
@@ -1090,13 +996,30 @@ WebInspector.TrackingHeapSnapshotProfileType.prototype = {
         this._profileBeingRecorded._profileSamples = this._profileSamples;
         this._recording = true;
         this.addProfile(this._profileBeingRecorded);
-        HeapProfilerAgent.startTrackingHeapObjects();
+        this._profileBeingRecorded.updateStatus(WebInspector.UIString("Recording\u2026"));
+        HeapProfilerAgent.startTrackingHeapObjects(WebInspector.experimentsSettings.allocationProfiler.isEnabled());
         this.dispatchEventToListeners(WebInspector.TrackingHeapSnapshotProfileType.TrackingStarted);
     },
 
     _stopRecordingProfile: function()
     {
-        HeapProfilerAgent.stopTrackingHeapObjects(true);
+        this._profileBeingRecorded.updateStatus(WebInspector.UIString("Snapshotting\u2026"));
+        /**
+         * @param {?string} error
+         * @this {WebInspector.HeapSnapshotProfileType}
+         */
+        function didTakeHeapSnapshot(error)
+        {
+            var profile = this._profileBeingRecorded;
+            if (!profile)
+                return;
+            profile._finishLoad();
+            this._profileSamples = null;
+            this._profileBeingRecorded = null;
+            WebInspector.panels.profiles.showProfile(profile);
+        }
+
+        HeapProfilerAgent.stopTrackingHeapObjects(true, didTakeHeapSnapshot.bind(this));
         this._recording = false;
         this.dispatchEventToListeners(WebInspector.TrackingHeapSnapshotProfileType.TrackingStopped);
     },
@@ -1129,21 +1052,32 @@ WebInspector.TrackingHeapSnapshotProfileType.prototype = {
         this._lastSeenIndex = -1;
     },
 
+    /**
+     * @override
+     */
+    profileBeingRecordedRemoved: function()
+    {
+        this._stopRecordingProfile();
+        this._profileSamples = null;
+    },
+
     __proto__: WebInspector.HeapSnapshotProfileType.prototype
 }
 
 /**
  * @constructor
  * @extends {WebInspector.ProfileHeader}
- * @param {!WebInspector.ProfileType} type
- * @param {string} title
- * @param {number=} uid
- * @param {number=} maxJSObjectId
+ * @param {!WebInspector.HeapSnapshotProfileType} type
+ * @param {string=} title
  */
-WebInspector.HeapProfileHeader = function(type, title, uid, maxJSObjectId)
+WebInspector.HeapProfileHeader = function(type, title)
 {
-    WebInspector.ProfileHeader.call(this, type, title, uid);
-    this.maxJSObjectId = maxJSObjectId;
+    WebInspector.ProfileHeader.call(this, type, title || WebInspector.UIString("Snapshot %d", type._nextProfileUid));
+    this.maxJSObjectId = -1;
+    /**
+     * @type {?WebInspector.HeapSnapshotWorkerProxy}
+     */
+    this._workerProxy = null;
     /**
      * @type {?WebInspector.OutputStream}
      */
@@ -1152,13 +1086,18 @@ WebInspector.HeapProfileHeader = function(type, title, uid, maxJSObjectId)
      * @type {?WebInspector.HeapSnapshotProxy}
      */
     this._snapshotProxy = null;
+    /**
+     * @type {?Array.<function(!WebInspector.HeapSnapshotProxy)>}
+     */
+    this._loadCallbacks = [];
     this._totalNumberOfChunks = 0;
-    this._transferHandler = null;
+    this._bufferedWriter = null;
 }
 
 WebInspector.HeapProfileHeader.prototype = {
     /**
      * @override
+     * @return {!WebInspector.ProfileSidebarTreeElement}
      */
     createSidebarTreeElement: function()
     {
@@ -1167,11 +1106,11 @@ WebInspector.HeapProfileHeader.prototype = {
 
     /**
      * @override
-     * @param {!WebInspector.ProfilesPanel} profilesPanel
+     * @return {!WebInspector.HeapSnapshotView}
      */
-    createView: function(profilesPanel)
+    createView: function()
     {
-        return new WebInspector.HeapSnapshotView(profilesPanel, this);
+        return new WebInspector.HeapSnapshotView(this);
     },
 
     /**
@@ -1186,43 +1125,34 @@ WebInspector.HeapProfileHeader.prototype = {
             callback(this._snapshotProxy);
             return;
         }
+        this._loadCallbacks.push(callback);
+    },
 
-        this._numberOfChunks = 0;
-        if (!this._receiver) {
-            this._setupWorker();
-            this._transferHandler = new WebInspector.BackendSnapshotLoader(this);
-            this.sidebarElement.subtitle = WebInspector.UIString("Loading\u2026");
-            this.sidebarElement.wait = true;
-            this._transferSnapshot();
+    _prepareToLoad: function()
+    {
+        console.assert(!this._receiver, "Already loading");
+        this._setupWorker();
+        this.updateStatus(WebInspector.UIString("Loading\u2026"), true);
+    },
+
+    _finishLoad: function()
+    {
+        this._receiver.close(function() {});
+        if (this._bufferedWriter) {
+            this._bufferedWriter.close(this._didWriteToTempFile.bind(this));
+            this._bufferedWriter = null;
         }
-        var loaderProxy = /** @type {?WebInspector.HeapSnapshotLoaderProxy} */ (this._receiver);
-        console.assert(loaderProxy);
-        loaderProxy.addConsumer(callback);
     },
 
-    _transferSnapshot: function()
+    _didWriteToTempFile: function(tempFile)
     {
-        /**
-         * @this {WebInspector.HeapProfileHeader}
-         */
-        function finishTransfer()
-        {
-            if (this._transferHandler) {
-                this._transferHandler.finishTransfer();
-                this._totalNumberOfChunks = this._transferHandler._totalNumberOfChunks;
-            }
+        this._tempFile = tempFile;
+        if (!tempFile)
+            this._failedToCreateTempFile = true;
+        if (this._onTempFileReady) {
+            this._onTempFileReady();
+            this._onTempFileReady = null;
         }
-        HeapProfilerAgent.getHeapSnapshot(this.uid, finishTransfer.bind(this));
-    },
-
-    snapshotConstructorName: function()
-    {
-        return "JSHeapSnapshot";
-    },
-
-    snapshotProxyConstructor: function()
-    {
-        return WebInspector.HeapSnapshotProxy;
     },
 
     _setupWorker: function()
@@ -1232,13 +1162,12 @@ WebInspector.HeapProfileHeader.prototype = {
          */
         function setProfileWait(event)
         {
-            this.sidebarElement.wait = event.data;
+            this.updateStatus(null, event.data);
         }
-        var worker = new WebInspector.HeapSnapshotWorkerProxy(this._handleWorkerEvent.bind(this));
-        worker.addEventListener("wait", setProfileWait, this);
-        var loaderProxy = worker.createLoader(this.snapshotConstructorName(), this.snapshotProxyConstructor());
-        loaderProxy.addConsumer(this._snapshotReceived.bind(this));
-        this._receiver = loaderProxy;
+        console.assert(!this._workerProxy, "HeapSnapshotWorkerProxy already exists");
+        this._workerProxy = new WebInspector.HeapSnapshotWorkerProxy(this._handleWorkerEvent.bind(this));
+        this._workerProxy.addEventListener("wait", setProfileWait, this);
+        this._receiver = this._workerProxy.createLoader(this.uid, this._snapshotReceived.bind(this));
     },
 
     /**
@@ -1247,9 +1176,10 @@ WebInspector.HeapProfileHeader.prototype = {
      */
     _handleWorkerEvent: function(eventName, data)
     {
-        if (WebInspector.HeapSnapshotProgress.Event.Update !== eventName)
+        if (WebInspector.HeapSnapshotProgressEvent.Update !== eventName)
             return;
-        this._updateSubtitle(data);
+        var subtitle = /** @type {string} */ (data);
+        this.updateStatus(subtitle);
     },
 
     /**
@@ -1257,26 +1187,17 @@ WebInspector.HeapProfileHeader.prototype = {
      */
     dispose: function()
     {
-        if (this._receiver)
-            this._receiver.close();
-        else if (this._snapshotProxy)
-            this._snapshotProxy.dispose();
-        if (this._view) {
-            var view = this._view;
-            this._view = null;
-            view.dispose();
-        }
-    },
-
-    _updateSubtitle: function(value)
-    {
-        this.sidebarElement.subtitle = value;
+        if (this._workerProxy)
+            this._workerProxy.dispose();
+        this.removeTempFile();
+        this._wasDisposed = true;
     },
 
     _didCompleteSnapshotTransfer: function()
     {
-        this.sidebarElement.subtitle = Number.bytesToString(this._snapshotProxy.totalSize);
-        this.sidebarElement.wait = false;
+        if (!this._snapshotProxy)
+            return;
+        this.updateStatus(Number.bytesToString(this._snapshotProxy.totalSize), false);
     },
 
     /**
@@ -1284,34 +1205,34 @@ WebInspector.HeapProfileHeader.prototype = {
      */
     transferChunk: function(chunk)
     {
-        this._transferHandler.transferChunk(chunk);
+        if (!this._bufferedWriter)
+            this._bufferedWriter = new WebInspector.BufferedTempFileWriter("heap-profiler", this.uid);
+        this._bufferedWriter.write(chunk);
+
+        ++this._totalNumberOfChunks;
+        this._receiver.write(chunk, function() {});
     },
 
     _snapshotReceived: function(snapshotProxy)
     {
+        if (this._wasDisposed)
+            return;
         this._receiver = null;
-        if (snapshotProxy)
-            this._snapshotProxy = snapshotProxy;
+        this._snapshotProxy = snapshotProxy;
+        this.maxJSObjectId = snapshotProxy.maxJSObjectId();
         this._didCompleteSnapshotTransfer();
-        var worker = /** @type {!WebInspector.HeapSnapshotWorkerProxy} */ (this._snapshotProxy.worker);
-        worker.startCheckingForLongRunningCalls();
+        this._workerProxy.startCheckingForLongRunningCalls();
         this.notifySnapshotReceived();
-
-        /**
-         * @this {WebInspector.HeapProfileHeader}
-         */
-        function didGetMaxNodeId(id)
-        {
-           this.maxJSObjectId = id;
-        }
-
-        if (this.fromFile())
-            snapshotProxy.maxJsNodeId(didGetMaxNodeId.bind(this));
     },
 
     notifySnapshotReceived: function()
     {
+        for (var i = 0; i < this._loadCallbacks.length; i++)
+            this._loadCallbacks[i](this._snapshotProxy);
+        this._loadCallbacks = null;
         this._profileType._snapshotReceived(this);
+        if (this.canSaveToFile())
+            this.dispatchEventToListeners(WebInspector.ProfileHeader.Events.ProfileReceived);
     },
 
     // Hook point for tests.
@@ -1325,7 +1246,7 @@ WebInspector.HeapProfileHeader.prototype = {
      */
     canSaveToFile: function()
     {
-        return !this.fromFile() && !!this._snapshotProxy && !this._receiver;
+        return !this.fromFile() && this._snapshotProxy;
     },
 
     /**
@@ -1343,12 +1264,26 @@ WebInspector.HeapProfileHeader.prototype = {
         {
             if (!accepted)
                 return;
-            this._receiver = fileOutputStream;
-            this._transferHandler = new WebInspector.SaveSnapshotHandler(this);
-            this._transferSnapshot();
+            if (this._failedToCreateTempFile) {
+                WebInspector.log("Failed to open temp file with heap snapshot",
+                                 WebInspector.ConsoleMessage.MessageLevel.Error);
+                fileOutputStream.close();
+            } else if (this._tempFile) {
+                var delegate = new WebInspector.SaveSnapshotOutputStreamDelegate(this);
+                this._tempFile.writeToOutputSteam(fileOutputStream, delegate);
+            } else {
+                this._onTempFileReady = onOpen.bind(this, accepted);
+                this._updateSaveProgress(0, 1);
+            }
         }
         this._fileName = this._fileName || "Heap-" + new Date().toISO8601Compact() + this._profileType.fileExtension();
         fileOutputStream.open(this._fileName, onOpen.bind(this));
+    },
+
+    _updateSaveProgress: function(value, total)
+    {
+        var percentValue = ((total ? (value / total) : 0) * 100).toFixed(0);
+        this.updateStatus(WebInspector.UIString("Saving\u2026 %d\%", percentValue));
     },
 
     /**
@@ -1357,10 +1292,8 @@ WebInspector.HeapProfileHeader.prototype = {
      */
     loadFromFile: function(file)
     {
-        this.sidebarElement.subtitle = WebInspector.UIString("Loading\u2026");
-        this.sidebarElement.wait = true;
+        this.updateStatus(WebInspector.UIString("Loading\u2026"), true);
         this._setupWorker();
-
         var delegate = new WebInspector.HeapSnapshotLoadFromFileDelegate(this);
         var fileReader = this._createFileReader(file, delegate);
         fileReader.start(this._receiver);
@@ -1373,102 +1306,6 @@ WebInspector.HeapProfileHeader.prototype = {
 
     __proto__: WebInspector.ProfileHeader.prototype
 }
-
-
-/**
- * @constructor
- * @param {!WebInspector.HeapProfileHeader} header
- * @param {string} title
- */
-WebInspector.SnapshotTransferHandler = function(header, title)
-{
-    this._numberOfChunks = 0;
-    this._savedChunks = 0;
-    this._header = header;
-    this._totalNumberOfChunks = 0;
-    this._title = title;
-}
-
-
-WebInspector.SnapshotTransferHandler.prototype = {
-    /**
-     * @param {string} chunk
-     */
-    transferChunk: function(chunk)
-    {
-        ++this._numberOfChunks;
-        this._header._receiver.write(chunk, this._didTransferChunk.bind(this));
-    },
-
-    finishTransfer: function()
-    {
-    },
-
-    _didTransferChunk: function()
-    {
-        this._updateProgress(++this._savedChunks, this._totalNumberOfChunks);
-    },
-
-    _updateProgress: function(value, total)
-    {
-    }
-}
-
-
-/**
- * @constructor
- * @param {!WebInspector.HeapProfileHeader} header
- * @extends {WebInspector.SnapshotTransferHandler}
- */
-WebInspector.SaveSnapshotHandler = function(header)
-{
-    WebInspector.SnapshotTransferHandler.call(this, header, "Saving\u2026 %d\%");
-    this._totalNumberOfChunks = header._totalNumberOfChunks;
-    this._updateProgress(0, this._totalNumberOfChunks);
-}
-
-
-WebInspector.SaveSnapshotHandler.prototype = {
-    _updateProgress: function(value, total)
-    {
-        var percentValue = ((total ? (value / total) : 0) * 100).toFixed(0);
-        this._header._updateSubtitle(WebInspector.UIString(this._title, percentValue));
-        if (value === total) {
-            this._header._receiver.close();
-            this._header._didCompleteSnapshotTransfer();
-        }
-    },
-
-    __proto__: WebInspector.SnapshotTransferHandler.prototype
-}
-
-
-/**
- * @constructor
- * @param {!WebInspector.HeapProfileHeader} header
- * @extends {WebInspector.SnapshotTransferHandler}
- */
-WebInspector.BackendSnapshotLoader = function(header)
-{
-    WebInspector.SnapshotTransferHandler.call(this, header, "Loading\u2026 %d\%");
-}
-
-
-WebInspector.BackendSnapshotLoader.prototype = {
-    finishTransfer: function()
-    {
-        this._header._receiver.close(this._didFinishTransfer.bind(this));
-        this._totalNumberOfChunks = this._numberOfChunks;
-    },
-
-    _didFinishTransfer: function()
-    {
-        console.assert(this._totalNumberOfChunks === this._savedChunks, "Not all chunks were transfered.");
-    },
-
-    __proto__: WebInspector.SnapshotTransferHandler.prototype
-}
-
 
 /**
  * @constructor
@@ -1500,18 +1337,60 @@ WebInspector.HeapSnapshotLoadFromFileDelegate.prototype = {
      */
     onError: function (reader, e)
     {
+        var subtitle;
         switch(e.target.error.code) {
         case e.target.error.NOT_FOUND_ERR:
-            this._snapshotHeader._updateSubtitle(WebInspector.UIString("'%s' not found.", reader.fileName()));
-        break;
-        case e.target.error.NOT_READABLE_ERR:
-            this._snapshotHeader._updateSubtitle(WebInspector.UIString("'%s' is not readable", reader.fileName()));
-        break;
-        case e.target.error.ABORT_ERR:
+            subtitle = WebInspector.UIString("'%s' not found.", reader.fileName());
             break;
+        case e.target.error.NOT_READABLE_ERR:
+            subtitle = WebInspector.UIString("'%s' is not readable", reader.fileName());
+            break;
+        case e.target.error.ABORT_ERR:
+            return;
         default:
-            this._snapshotHeader._updateSubtitle(WebInspector.UIString("'%s' error %d", reader.fileName(), e.target.error.code));
+            subtitle = WebInspector.UIString("'%s' error %d", reader.fileName(), e.target.error.code);
         }
+        this._snapshotHeader.updateStatus(subtitle);
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.OutputStreamDelegate}
+ * @param {!WebInspector.HeapProfileHeader} profileHeader
+ */
+WebInspector.SaveSnapshotOutputStreamDelegate = function(profileHeader)
+{
+    this._profileHeader = profileHeader;
+}
+
+WebInspector.SaveSnapshotOutputStreamDelegate.prototype = {
+    onTransferStarted: function()
+    {
+        this._profileHeader._updateSaveProgress(0, 1);
+    },
+
+    onTransferFinished: function()
+    {
+        this._profileHeader._didCompleteSnapshotTransfer();
+    },
+
+    /**
+     * @param {!WebInspector.ChunkedReader} reader
+     */
+    onChunkTransferred: function(reader)
+    {
+        this._profileHeader._updateSaveProgress(reader.loadedSize(), reader.fileSize());
+    },
+
+    /**
+     * @param {!WebInspector.ChunkedReader} reader
+     */
+    onError: function(reader, event)
+    {
+        WebInspector.log("Failed to read heap snapshot from temp file: " + event.message,
+                         WebInspector.ConsoleMessage.MessageLevel.Error);
+        this.onTransferFinished();
     }
 }
 
@@ -1525,6 +1404,7 @@ WebInspector.HeapTrackingOverviewGrid = function(heapProfileHeader)
     WebInspector.View.call(this);
     this.registerRequiredCSS("flameChart.css");
     this.element.id = "heap-recording-view";
+    this.element.classList.add("heap-tracking-overview");
 
     this._overviewContainer = this.element.createChild("div", "overview-container");
     this._overviewGrid = new WebInspector.OverviewGrid("heap-recording");
@@ -1820,6 +1700,7 @@ WebInspector.HeapTrackingOverviewGrid.OverviewCalculator.prototype = {
 
     /**
      * @param {number} time
+     * @return {number}
      */
     computePosition: function(time)
     {
@@ -1836,21 +1717,33 @@ WebInspector.HeapTrackingOverviewGrid.OverviewCalculator.prototype = {
         return Number.secondsToString((value + this._minimumBoundaries) / 1000, hires);
     },
 
+    /**
+     * @return {number}
+     */
     maximumBoundary: function()
     {
         return this._maximumBoundaries;
     },
 
+    /**
+     * @return {number}
+     */
     minimumBoundary: function()
     {
         return this._minimumBoundaries;
     },
 
+    /**
+     * @return {number}
+     */
     zeroTime: function()
     {
         return this._minimumBoundaries;
     },
 
+    /**
+     * @return {number}
+     */
     boundarySpan: function()
     {
         return this._maximumBoundaries - this._minimumBoundaries;

@@ -87,19 +87,24 @@ public:
     bool hasOneChild() const { return m_firstChild && !m_firstChild->nextSibling(); }
     bool hasOneTextChild() const { return hasOneChild() && m_firstChild->isTextNode(); }
 
-    // ParentNode interface API
     PassRefPtr<HTMLCollection> children();
-    Element* firstElementChild() const;
-    Element* lastElementChild() const;
-    unsigned childElementCount() const;
 
     unsigned childNodeCount() const;
     Node* childNode(unsigned index) const;
+
+    PassRefPtr<Element> querySelector(const AtomicString& selectors, ExceptionState&);
+    PassRefPtr<NodeList> querySelectorAll(const AtomicString& selectors, ExceptionState&);
 
     void insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION);
     void replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& = ASSERT_NO_EXCEPTION);
     void removeChild(Node* child, ExceptionState& = ASSERT_NO_EXCEPTION);
     void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
+
+    PassRefPtr<HTMLCollection> getElementsByTagName(const AtomicString&);
+    PassRefPtr<HTMLCollection> getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName);
+    PassRefPtr<NodeList> getElementsByName(const AtomicString& elementName);
+    PassRefPtr<HTMLCollection> getElementsByClassName(const AtomicString& classNames);
+    PassRefPtr<RadioNodeList> radioNodeList(const AtomicString&, bool onlyMatchImgElements = false);
 
     // These methods are only used during parsing.
     // They don't send DOM mutation events or handle reparenting.
@@ -115,7 +120,7 @@ public:
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual LayoutRect boundingBox() const OVERRIDE;
+    virtual LayoutRect boundingBox() const OVERRIDE FINAL;
     virtual void setFocus(bool) OVERRIDE;
     void focusStateChanged();
     virtual void setActive(bool = true) OVERRIDE;
@@ -129,8 +134,6 @@ public:
     virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     void disconnectDescendantFrames();
-
-    virtual bool childShouldCreateRenderer(const Node& child) const { return true; }
 
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);

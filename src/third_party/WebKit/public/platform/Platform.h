@@ -42,6 +42,7 @@
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
 #include "WebSpeechSynthesizer.h"
+#include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
 #include "WebString.h"
 #include "WebURLError.h"
@@ -82,19 +83,20 @@ class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
+class WebScrollbarBehavior;
 class WebSocketHandle;
 class WebSocketStreamHandle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebStorageNamespace;
-class WebStorageQuotaCallbacks;
-class WebUnitTestSupport;
+struct WebFloatPoint;
 class WebThemeEngine;
 class WebThread;
 class WebURL;
 class WebURLLoader;
+class WebUnitTestSupport;
+class WebWaitableEvent;
 class WebWorkerRunLoop;
-struct WebFloatPoint;
 struct WebLocalizedString;
 struct WebSize;
 
@@ -363,6 +365,18 @@ public:
     virtual WebThread* currentThread() { return 0; }
 
 
+    // WaitableEvent -------------------------------------------------------
+
+    // Creates an embedder-defined waitable event object.
+    virtual WebWaitableEvent* createWaitableEvent() { return 0; }
+
+    // Waits on multiple events and returns the event object that has been
+    // signaled. This may return 0 if it fails to wait events.
+    // Any event objects given to this method must not deleted while this
+    // wait is happening.
+    virtual WebWaitableEvent* waitMultipleEvents(const WebVector<WebWaitableEvent*>& events) { return 0; }
+
+
     // Profiling -----------------------------------------------------------
 
     virtual void decrementStatsCounter(const char* name) { }
@@ -384,6 +398,12 @@ public:
 
     // Supplies the system monitor color profile.
     virtual void screenColorProfile(WebVector<char>* profile) { }
+
+
+    // Scrollbar ----------------------------------------------------------
+
+    // Must return non-null.
+    virtual WebScrollbarBehavior* scrollbarBehavior() { return 0; }
 
 
     // Sudden Termination --------------------------------------------------
@@ -600,12 +620,10 @@ public:
     // with the current usage and quota information for the partition. When
     // an error occurs WebStorageQuotaCallbacks::didFail is called with an
     // error code.
-    // The callbacks object is deleted when the callback method is called
-    // and does not need to be (and should not be) deleted manually.
     virtual void queryStorageUsageAndQuota(
         const WebURL& storagePartition,
         WebStorageQuotaType,
-        WebStorageQuotaCallbacks*) { }
+        WebStorageQuotaCallbacks) { }
 
 
     // WebDatabase --------------------------------------------------------

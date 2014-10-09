@@ -44,6 +44,7 @@ class WebDOMEventListener;
 class WebDOMEventListenerPrivate;
 class WebDocument;
 class WebElement;
+class WebElementCollection;
 class WebFrame;
 class WebNodeList;
 class WebPluginContainer;
@@ -80,15 +81,15 @@ public:
         AttributeNode = 2,
         TextNode = 3,
         CDataSectionNode = 4,
-        // EntityReferenceNodes are deprecated and impossible to create in WebKit.
-        EntityNode = 6,
+        // EntityReferenceNodes are impossible to create in Blink.
+        // EntityNodes are impossible to create in Blink.
         ProcessingInstructionsNode = 7,
         CommentNode = 8,
         DocumentNode = 9,
         DocumentTypeNode = 10,
         DocumentFragmentNode = 11,
-        NotationNode = 12,
-        XPathNamespaceNode = 13,
+        // NotationNodes are impossible to create in Blink.
+        // XPathNamespaceNodes are impossible to create in Blink.
         ShadowRootNode = 14
     };
 
@@ -113,7 +114,7 @@ public:
     BLINK_EXPORT void addEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture);
     BLINK_EXPORT bool dispatchEvent(const WebDOMEvent&);
     BLINK_EXPORT void simulateClick();
-    BLINK_EXPORT WebNodeList getElementsByTagName(const WebString&) const;
+    BLINK_EXPORT WebElementCollection getElementsByTagName(const WebString&) const;
     BLINK_EXPORT WebElement querySelector(const WebString&, WebExceptionCode&) const;
     BLINK_EXPORT WebElement rootEditableElement() const;
     BLINK_EXPORT bool focused() const;

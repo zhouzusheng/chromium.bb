@@ -62,14 +62,16 @@ protected:
 
     static bool interpolateLists(const Vector<RefPtr<AnimatableValue> >& fromValues, const Vector<RefPtr<AnimatableValue> >& toValues, double fraction, Vector<RefPtr<AnimatableValue> >& interpolatedValues);
 
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
+
     Vector<RefPtr<AnimatableValue> > m_values;
 
 private:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE FINAL;
 
     virtual AnimatableType type() const OVERRIDE { return TypeRepeatable; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual bool equalTo(const AnimatableValue*) const OVERRIDE FINAL;
 };
 
 DEFINE_TYPE_CASTS(AnimatableRepeatable, AnimatableValue, value, (value->isRepeatable() || value->isStrokeDasharrayList()), (value.isRepeatable() || value.isStrokeDasharrayList()));

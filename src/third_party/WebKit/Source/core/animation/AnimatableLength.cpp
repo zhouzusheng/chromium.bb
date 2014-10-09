@@ -90,6 +90,13 @@ Length AnimatableLength::toLength(const CSSToLengthConversionData& conversionDat
     return toCSSPrimitiveValue(range)->convertToLength<AnyConversion>(conversionData);
 }
 
+bool AnimatableLength::usesDefaultInterpolationWith(const AnimatableValue* value) const
+{
+    const AnimatableLength* length = toAnimatableLength(value);
+    NumberUnitType type = commonUnitType(length);
+    return type == UnitTypeCalc && (isViewportUnit() || length->isViewportUnit());
+}
+
 PassRefPtr<AnimatableValue> AnimatableLength::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableLength* length = toAnimatableLength(value);
@@ -131,7 +138,7 @@ bool AnimatableLength::equalTo(const AnimatableValue* value) const
     return m_number == length->m_number;
 }
 
-PassRefPtr<CSSCalcExpressionNode> AnimatableLength::toCSSCalcExpressionNode() const
+PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> AnimatableLength::toCSSCalcExpressionNode() const
 {
     if (isCalc())
         return m_calcExpression;
@@ -148,7 +155,7 @@ static bool isCompatibleWithRange(const CSSPrimitiveValue* primitiveValue, Numbe
     return primitiveValue->getDoubleValue() >= 0;
 }
 
-PassRefPtr<CSSPrimitiveValue> AnimatableLength::toCSSPrimitiveValue(NumberRange range) const
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> AnimatableLength::toCSSPrimitiveValue(NumberRange range) const
 {
     if (!m_cachedCSSPrimitiveValue || !isCompatibleWithRange(m_cachedCSSPrimitiveValue.get(), range)) {
         if (isCalc())

@@ -35,7 +35,7 @@ namespace WebCore {
 
     class DocumentFragment;
 
-    class TextEvent : public UIEvent {
+    class TextEvent FINAL : public UIEvent {
     public:
 
         static PassRefPtr<TextEvent> create();
@@ -50,11 +50,10 @@ namespace WebCore {
 
         String data() const { return m_data; }
 
-        virtual const AtomicString& interfaceName() const;
+        virtual const AtomicString& interfaceName() const OVERRIDE;
 
         bool isLineBreak() const { return m_inputType == TextEventInputLineBreak; }
         bool isComposition() const { return m_inputType == TextEventInputComposition; }
-        bool isBackTab() const { return m_inputType == TextEventInputBackTab; }
         bool isPaste() const { return m_inputType == TextEventInputPaste; }
         bool isDrop() const { return m_inputType == TextEventInputDrop; }
 

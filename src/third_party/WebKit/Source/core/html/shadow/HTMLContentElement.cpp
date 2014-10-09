@@ -28,7 +28,7 @@
 #include "core/html/shadow/HTMLContentElement.h"
 
 #include "HTMLNames.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/QualifiedName.h"
@@ -60,7 +60,7 @@ void HTMLContentElement::parseSelect()
 {
     ASSERT(m_shouldParseSelect);
 
-    CSSParser parser(document());
+    BisonCSSParser parser(CSSParserContext(document(), 0));
     parser.parseSelector(m_select, m_selectorList);
     m_shouldParseSelect = false;
     m_isValidSelector = validateSelect();
@@ -91,7 +91,7 @@ bool HTMLContentElement::validateSelect() const
     if (!m_selectorList.isValid())
         return false;
 
-    for (const CSSSelector* selector = m_selectorList.first(); selector; selector = m_selectorList.next(selector)) {
+    for (const CSSSelector* selector = m_selectorList.first(); selector; selector = m_selectorList.next(*selector)) {
         if (!selector->isCompound())
             return false;
     }
@@ -99,7 +99,7 @@ bool HTMLContentElement::validateSelect() const
     return true;
 }
 
-static inline bool checkOneSelector(const CSSSelector* selector, const Vector<Node*, 32>& siblings, int nth)
+static inline bool checkOneSelector(const CSSSelector& selector, const Vector<Node*, 32>& siblings, int nth)
 {
     Element* element = toElement(siblings[nth]);
     SelectorChecker selectorChecker(element->document(), SelectorChecker::CollectingCSSRules);
@@ -110,8 +110,8 @@ static inline bool checkOneSelector(const CSSSelector* selector, const Vector<No
 
 bool HTMLContentElement::matchSelector(const Vector<Node*, 32>& siblings, int nth) const
 {
-    for (const CSSSelector* selector = selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
-        if (checkOneSelector(selector, siblings, nth))
+    for (const CSSSelector* selector = selectorList().first(); selector; selector = CSSSelectorList::next(*selector)) {
+        if (checkOneSelector(*selector, siblings, nth))
             return true;
     }
     return false;

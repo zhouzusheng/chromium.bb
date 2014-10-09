@@ -73,12 +73,12 @@ Node::InsertionNotificationRequest HTMLTextFormControlElement::insertedInto(Cont
     return InsertionDone;
 }
 
-void HTMLTextFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
+void HTMLTextFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
 {
     if (supportsPlaceholder())
         updatePlaceholderVisibility(false);
-    handleFocusEvent(oldFocusedElement, direction);
-    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, direction);
+    handleFocusEvent(oldFocusedElement, type);
+    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, type);
 }
 
 void HTMLTextFormControlElement::dispatchBlurEvent(Element* newFocusedElement)
@@ -182,17 +182,10 @@ void HTMLTextFormControlElement::select()
     setSelectionRange(0, numeric_limits<int>::max(), SelectionHasNoDirection);
 }
 
-String HTMLTextFormControlElement::selectedText() const
-{
-    if (!isTextFormControl())
-        return String();
-    return value().substring(selectionStart(), selectionEnd() - selectionStart());
-}
-
 void HTMLTextFormControlElement::dispatchFormControlChangeEvent()
 {
     if (m_textAsOfLastFormControlChangeEvent != value()) {
-        HTMLElement::dispatchChangeEvent();
+        dispatchChangeEvent();
         setTextAsOfLastFormControlChangeEvent(value());
     }
     setChangedSinceLastFormControlChangeEvent(false);
@@ -216,6 +209,8 @@ void HTMLTextFormControlElement::setRangeText(const String& replacement, unsigne
         exceptionState.throwDOMException(IndexSizeError, "The provided start value (" + String::number(start) + ") is larger than the provided end value (" + String::number(end) + ").");
         return;
     }
+    if (hasAuthorShadowRoot())
+        return;
 
     String text = innerTextValue();
     unsigned textLength = text.length();
@@ -504,7 +499,8 @@ bool HTMLTextFormControlElement::lastChangeWasUserEdit() const
 
 void HTMLTextFormControlElement::setInnerTextValue(const String& value)
 {
-    if (!isTextFormControl())
+    ASSERT(!hasAuthorShadowRoot());
+    if (!isTextFormControl() || hasAuthorShadowRoot())
         return;
 
     bool textIsChanged = value != innerTextValue();
@@ -533,6 +529,7 @@ static String finishText(StringBuilder& result)
 
 String HTMLTextFormControlElement::innerTextValue() const
 {
+    ASSERT(!hasAuthorShadowRoot());
     HTMLElement* innerText = innerTextElement();
     if (!innerText || !isTextFormControl())
         return emptyString();
@@ -618,7 +615,7 @@ HTMLTextFormControlElement* enclosingTextFormControl(const Position& position)
     if (!container)
         return 0;
     Element* ancestor = container->shadowHost();
-    return ancestor && isHTMLTextFormControlElement(ancestor) ? toHTMLTextFormControlElement(ancestor) : 0;
+    return ancestor && isHTMLTextFormControlElement(*ancestor) ? toHTMLTextFormControlElement(ancestor) : 0;
 }
 
 static const HTMLElement* parentHTMLElement(const Element* element)

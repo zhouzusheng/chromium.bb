@@ -30,11 +30,11 @@
 #include "SkImage.h"
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntSize.h"
-#include "platform/graphics/GraphicsContext3D.h"
 #include "platform/graphics/ImageBufferSurface.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "wtf/DoublyLinkedList.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -42,6 +42,7 @@
 
 namespace blink {
 class WebGraphicsContext3D;
+class WebGraphicsContext3DProvider;
 }
 
 class Canvas2DLayerBridgeTest;
@@ -52,6 +53,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public blink::WebExternalTextureLaye
     WTF_MAKE_NONCOPYABLE(Canvas2DLayerBridge);
 public:
     static PassRefPtr<Canvas2DLayerBridge> create(const IntSize&, OpacityMode, int msaaSampleCount);
+
     virtual ~Canvas2DLayerBridge();
 
     // blink::WebExternalTextureLayerClient implementation.
@@ -72,30 +74,39 @@ public:
     blink::WebLayer* layer() const;
     Platform3DObject getBackingTexture();
     bool isAccelerated() const { return true; }
+    void setIsHidden(bool);
 
     // Methods used by Canvas2DLayerManager
     virtual size_t freeMemoryIfPossible(size_t); // virtual for mocking
     virtual void flush(); // virtual for mocking
     virtual size_t storageAllocatedForRecording(); // virtual for faking
-    size_t bytesAllocated() const {return m_bytesAllocated;}
+    size_t bytesAllocated() const { return m_bytesAllocated; }
     void limitPendingFrames();
+    void freeReleasedMailbox();
+    bool hasReleasedMailbox() const;
+    void freeTransientResources();
+    bool hasTransientResources() const;
+    bool isHidden() { return m_isHidden; }
 
     void beginDestruction();
 
 protected:
-    Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, PassOwnPtr<SkDeferredCanvas>, int, OpacityMode);
+    Canvas2DLayerBridge(PassOwnPtr<blink::WebGraphicsContext3DProvider>, PassOwnPtr<SkDeferredCanvas>, int, OpacityMode);
     void setRateLimitingEnabled(bool);
+    bool releasedMailboxHasExpired();
 
     OwnPtr<SkDeferredCanvas> m_canvas;
     OwnPtr<blink::WebExternalTextureLayer> m_layer;
-    RefPtr<GraphicsContext3D> m_context;
+    OwnPtr<blink::WebGraphicsContext3DProvider> m_contextProvider;
     int m_msaaSampleCount;
     size_t m_bytesAllocated;
     bool m_didRecordDrawCommand;
     bool m_surfaceIsValid;
     int m_framesPending;
+    int m_framesSinceMailboxRelease;
     bool m_destructionInProgress;
     bool m_rateLimitingEnabled;
+    bool m_isHidden;
 
     friend class WTF::DoublyLinkedListNode<Canvas2DLayerBridge>;
     friend class ::Canvas2DLayerBridgeTest;
@@ -110,7 +121,7 @@ protected:
 
     struct MailboxInfo {
         blink::WebExternalTextureMailbox m_mailbox;
-        SkAutoTUnref<SkImage> m_image;
+        RefPtr<SkImage> m_image;
         MailboxStatus m_status;
         RefPtr<Canvas2DLayerBridge> m_parentLayerBridge;
 
@@ -118,9 +129,11 @@ protected:
         MailboxInfo() {}
     };
     MailboxInfo* createMailboxInfo();
+    MailboxInfo* releasedMailboxInfo();
 
     uint32_t m_lastImageId;
     Vector<MailboxInfo> m_mailboxes;
+    int m_releasedMailboxInfoIndex;
 };
 }
 #endif

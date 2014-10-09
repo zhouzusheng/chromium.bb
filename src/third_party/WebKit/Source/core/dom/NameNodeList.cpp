@@ -31,7 +31,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-NameNodeList::NameNodeList(PassRefPtr<Node> rootNode, const AtomicString& name)
+NameNodeList::NameNodeList(PassRefPtr<ContainerNode> rootNode, const AtomicString& name)
     : LiveNodeList(rootNode, NameNodeListType, InvalidateOnNameAttrChange)
     , m_name(name)
 {
@@ -39,12 +39,12 @@ NameNodeList::NameNodeList(PassRefPtr<Node> rootNode, const AtomicString& name)
 
 NameNodeList::~NameNodeList()
 {
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, NameNodeListType, m_name);
+    ownerNode()->nodeLists()->removeCache(this, NameNodeListType, m_name);
 }
 
-bool NameNodeList::nodeMatches(Element* testNode) const
+bool NameNodeList::nodeMatches(const Element& testNode) const
 {
-    return testNode->getNameAttribute() == m_name;
+    return testNode.getNameAttribute() == m_name;
 }
 
 } // namespace WebCore

@@ -96,7 +96,11 @@ public:
     template<typename T>
     void resolve(PassRefPtr<T> value, v8::Handle<v8::Object> creationContext) { resolve(value.get(), creationContext); }
     template<typename T>
+    void resolve(RawPtr<T> value, v8::Handle<v8::Object> creationContext) { resolve(value.get(), creationContext); }
+    template<typename T>
     void reject(PassRefPtr<T> value, v8::Handle<v8::Object> creationContext) { reject(value.get(), creationContext); }
+    template<typename T>
+    void reject(RawPtr<T> value, v8::Handle<v8::Object> creationContext) { reject(value.get(), creationContext); }
 
     template<typename T>
     inline void resolve(T* value, ExecutionContext*);
@@ -106,7 +110,11 @@ public:
     template<typename T>
     void resolve(PassRefPtr<T> value, ExecutionContext* context) { resolve(value.get(), context); }
     template<typename T>
+    void resolve(RawPtr<T> value, ExecutionContext* context) { resolve(value.get(), context); }
+    template<typename T>
     void reject(PassRefPtr<T> value, ExecutionContext* context) { reject(value.get(), context); }
+    template<typename T>
+    void reject(RawPtr<T> value, ExecutionContext* context) { reject(value.get(), context); }
 
     template<typename T>
     inline void resolve(T* value);
@@ -116,7 +124,11 @@ public:
     template<typename T>
     void resolve(PassRefPtr<T> value) { resolve(value.get()); }
     template<typename T>
+    void resolve(RawPtr<T> value) { resolve(value.get()); }
+    template<typename T>
     void reject(PassRefPtr<T> value) { reject(value.get()); }
+    template<typename T>
+    void reject(RawPtr<T> value) { reject(value.get()); }
 
     void resolve(ScriptValue);
     void reject(ScriptValue);
@@ -134,7 +146,7 @@ template<typename T>
 void ScriptPromiseResolver::resolve(T* value, ExecutionContext* context)
 {
     ASSERT(m_isolate->InContext());
-    v8::Handle<v8::Context> v8Context = toV8Context(context, DOMWrapperWorld::current());
+    v8::Handle<v8::Context> v8Context = toV8Context(context, DOMWrapperWorld::current(m_isolate));
     resolve(value, v8Context->Global());
 }
 
@@ -142,7 +154,7 @@ template<typename T>
 void ScriptPromiseResolver::reject(T* value, ExecutionContext* context)
 {
     ASSERT(m_isolate->InContext());
-    v8::Handle<v8::Context> v8Context = toV8Context(context, DOMWrapperWorld::current());
+    v8::Handle<v8::Context> v8Context = toV8Context(context, DOMWrapperWorld::current(m_isolate));
     reject(value, v8Context->Global());
 }
 

@@ -18,7 +18,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_checker.h"
 #include "ui/base/clipboard/clipboard_types.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 #if defined(TOOLKIT_GTK)
 #include <gdk/gdk.h>
@@ -64,7 +64,7 @@ class NSString;
 namespace ui {
 class ClipboardTest;
 
-class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
+class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
  public:
   // MIME type constants.
   static const char kMimeTypeText[];
@@ -75,7 +75,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   static const char kMimeTypePNG[];
 
   // Platform neutral holder for native data representation of a clipboard type.
-  struct UI_EXPORT FormatType {
+  struct UI_BASE_EXPORT FormatType {
     FormatType();
     ~FormatType();
 
@@ -83,22 +83,25 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     std::string Serialize() const;
     static FormatType Deserialize(const std::string& serialization);
 
+#if defined(OS_WIN) || defined(USE_AURA)
+    // FormatType can be used in a set on some platforms.
     bool operator<(const FormatType& other) const;
+#endif
 
 #if defined(OS_WIN)
     const FORMATETC& ToFormatEtc() const { return data_; }
+#elif defined(USE_AURA)
+    const std::string& ToString() const { return data_; }
 #elif defined(OS_MACOSX)
     // Custom copy and assignment constructor to handle NSString.
     FormatType(const FormatType& other);
     FormatType& operator=(const FormatType& other);
-#elif defined(USE_AURA)
-    const std::string& ToString() const { return data_; }
 #endif
-
-    bool Equals(const FormatType& other) const;
 
    private:
     friend class Clipboard;
+
+    bool Equals(const FormatType& other) const;
 
     // Platform-specific glue used internally by the Clipboard class. Each
     // plaform should define,at least one of each of the following:
@@ -113,13 +116,14 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     FormatType(UINT native_format, LONG index);
     UINT ToUINT() const { return data_.cfFormat; }
     FORMATETC data_;
+#elif defined(USE_AURA)
+    explicit FormatType(const std::string& native_format);
+    const std::string& data() const { return data_; }
+    std::string data_;
 #elif defined(OS_MACOSX)
     explicit FormatType(NSString* native_format);
     NSString* ToNSString() const { return data_; }
     NSString* data_;
-#elif defined(USE_AURA)
-    explicit FormatType(const std::string& native_format);
-    std::string data_;
 #elif defined(TOOLKIT_GTK)
     explicit FormatType(const std::string& native_format);
     explicit FormatType(const GdkAtom& native_format);
@@ -180,7 +184,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     switch (type) {
       case CLIPBOARD_TYPE_COPY_PASTE:
         return true;
-#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#if !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
       case CLIPBOARD_TYPE_SELECTION:
         return true;
 #endif
@@ -269,9 +273,6 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // limitiations, |format_string| must never be controlled by the user.
   static FormatType GetFormatType(const std::string& format_string);
 
-  // Returns true if the |format| was registered with GetFormatType().
-  static bool IsRegisteredFormatType(const FormatType& format);
-
   // Get format identifiers for various types.
   static const FormatType& GetUrlFormatType();
   static const FormatType& GetUrlWFormatType();
@@ -315,8 +316,6 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
 
   Clipboard();
   ~Clipboard();
-
-  static FormatType GetFormatTypeInternal(const std::string& format_string);
 
   void DispatchObject(ObjectType type, const ObjectMapParams& params);
 

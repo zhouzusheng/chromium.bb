@@ -615,6 +615,7 @@
         'nss/lib/freebl/rijndael.h',
         'nss/lib/freebl/rijndael32.tab',
         'nss/lib/freebl/rsa.c',
+        'nss/lib/freebl/rsapkcs.c',
         'nss/lib/freebl/secmpi.h',
         'nss/lib/freebl/secrng.h',
         'nss/lib/freebl/seed.c',
@@ -884,7 +885,6 @@
         'nss/lib/softoken/pkcs11i.h',
         'nss/lib/softoken/pkcs11ni.h',
         'nss/lib/softoken/pkcs11u.c',
-        'nss/lib/softoken/rsawrapr.c',
         'nss/lib/softoken/sdb.c',
         'nss/lib/softoken/sdb.h',
         'nss/lib/softoken/sftkdb.c',
@@ -1070,6 +1070,23 @@
           ],
           'include_dirs/': [
             ['exclude', '^nss/lib/libpkix/'],
+          ],
+        }, { # else: exclude_nss_libpkix==0
+          # Disable the LDAP code in libpkix.
+          'defines': [
+            'NSS_PKIX_NO_LDAP',
+          ],
+          'sources!': [
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapt.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaptemplates.c',
           ],
         }],
         ['target_arch=="ia32"', {

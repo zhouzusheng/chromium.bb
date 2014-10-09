@@ -48,7 +48,6 @@
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/html/HTMLParagraphElement.h"
-#include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLUListElement.h"
 #include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
@@ -159,7 +158,7 @@ bool isEditablePosition(const Position& p, EditableType editableType, EUpdateSty
     else
         ASSERT(updateStyle == DoNotUpdateStyle);
 
-    if (isTableElement(node))
+    if (isRenderedTableElement(node))
         node = node->parentNode();
 
     return node->rendererIsEditable(editableType);
@@ -178,7 +177,7 @@ bool isRichlyEditablePosition(const Position& p, EditableType editableType)
     if (!node)
         return false;
 
-    if (isTableElement(node))
+    if (isRenderedTableElement(node))
         node = node->parentNode();
 
     return node->rendererIsRichlyEditable(editableType);
@@ -190,7 +189,7 @@ Element* editableRootForPosition(const Position& p, EditableType editableType)
     if (!node)
         return 0;
 
-    if (isTableElement(node))
+    if (isRenderedTableElement(node))
         node = node->parentNode();
 
     return node->rootEditableElement(editableType);
@@ -680,30 +679,6 @@ Node* enclosingListChild(Node *node)
     return 0;
 }
 
-static HTMLElement* embeddedSublist(Node* listItem)
-{
-    // Check the DOM so that we'll find collapsed sublists without renderers.
-    for (Node* n = listItem->firstChild(); n; n = n->nextSibling()) {
-        if (isListElement(n))
-            return toHTMLElement(n);
-    }
-
-    return 0;
-}
-
-static Node* appendedSublist(Node* listItem)
-{
-    // Check the DOM so that we'll find collapsed sublists without renderers.
-    for (Node* n = listItem->nextSibling(); n; n = n->nextSibling()) {
-        if (isListElement(n))
-            return toHTMLElement(n);
-        if (isListItem(listItem))
-            return 0;
-    }
-
-    return 0;
-}
-
 // FIXME: This method should not need to call isStartOfParagraph/isEndOfParagraph
 Node* enclosingEmptyListItem(const VisiblePosition& visiblePos)
 {
@@ -716,9 +691,6 @@ Node* enclosingEmptyListItem(const VisiblePosition& visiblePos)
     VisiblePosition lastInListChild(lastPositionInOrAfterNode(listChildNode));
 
     if (firstInListChild != visiblePos || lastInListChild != visiblePos)
-        return 0;
-
-    if (embeddedSublist(listChildNode) || appendedSublist(listChildNode))
         return 0;
 
     return listChildNode;
@@ -751,12 +723,12 @@ bool canMergeLists(Element* firstList, Element* secondList)
     // Make sure there is no visible content between this li and the previous list
 }
 
-bool isTableElement(const Node* node)
+bool isRenderedTableElement(const Node* node)
 {
     if (!node || !node->isElementNode())
         return false;
 
-    return node->hasTagName(tableTag);
+    return node->renderer() && node->hasTagName(tableTag);
 }
 
 bool isRenderedTable(const Node* node)
@@ -866,20 +838,6 @@ bool isTabSpanTextNode(const Node *node)
 Node* tabSpanNode(const Node *node)
 {
     return isTabSpanTextNode(node) ? node->parentNode() : 0;
-}
-
-Position positionOutsideTabSpan(const Position& pos)
-{
-    Node* node = pos.containerNode();
-    if (isTabSpanTextNode(node))
-        node = tabSpanNode(node);
-    else if (!isTabSpanNode(node))
-        return pos;
-
-    if (node && VisiblePosition(pos) == lastPositionInNode(node))
-        return positionInParentAfterNode(node);
-
-    return positionInParentBeforeNode(node);
 }
 
 PassRefPtr<Element> createTabSpanElement(Document& document, PassRefPtr<Node> prpTabTextNode)
@@ -1131,7 +1089,7 @@ bool isNonTableCellHTMLBlockElement(const Node* node)
     return node->hasTagName(listingTag)
         || node->hasTagName(olTag)
         || node->hasTagName(preTag)
-        || isHTMLTableElement(node)
+        || node->hasTagName(tableTag)
         || node->hasTagName(ulTag)
         || node->hasTagName(xmpTag)
         || node->hasTagName(h1Tag)

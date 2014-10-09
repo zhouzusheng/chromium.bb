@@ -4,15 +4,15 @@
 
 'use strict';
 
-base.requireStylesheet('tracing.analysis.analysis_results');
+tvcm.requireStylesheet('tracing.analysis.analysis_results');
 
-base.require('tracing.analysis.util');
-base.require('tracing.analysis.analysis_link');
-base.require('tracing.analysis.generic_object_view');
-base.require('ui');
+tvcm.require('tracing.analysis.util');
+tvcm.require('tracing.analysis.analysis_link');
+tvcm.require('tracing.analysis.generic_object_view');
+tvcm.require('tvcm.ui');
 
-base.exportTo('tracing.analysis', function() {
-  var AnalysisResults = ui.define('div');
+tvcm.exportTo('tracing.analysis', function() {
+  var AnalysisResults = tvcm.ui.define('div');
 
   AnalysisResults.prototype = {
     __proto__: HTMLDivElement.prototype,
@@ -54,9 +54,15 @@ base.exportTo('tracing.analysis', function() {
       return textNode;
     },
 
-    appendTableCell_: function(table, row, cellnum, text) {
+    appendTableCell_: function(table, row, cellnum, text, opt_warning) {
       var td = this.appendElement_(row, 'td', text);
       td.className = table.className + '-col-' + cellnum;
+      if (opt_warning) {
+        var span = document.createElement('span');
+        span.textContent = ' ' + String.fromCharCode(9888);
+        span.title = opt_warning;
+        td.appendChild(span);
+      }
       return td;
     },
 
@@ -202,14 +208,14 @@ base.exportTo('tracing.analysis', function() {
      * Creates and appends a row to |table| with a left-aligned |label] in the
      * first column and a millisecond |time| value in the second column.
      */
-    appendInfoRowTime: function(table, label, time, opt_inFoot) {
+    appendInfoRowTime: function(table, label, time, opt_inFoot, opt_warning) {
       if (table.tfoot || opt_inFoot)
         var row = this.appendFootRow(table);
       else
         var row = this.appendBodyRow(table);
       this.appendTableCell_(table, row, 0, label);
-      this.appendTableCell_(table, row, 1,
-                            tracing.analysis.tsRound(time) + ' ms');
+      this.appendTableCell_(
+          table, row, 1, tracing.analysis.tsRound(time) + ' ms', opt_warning);
     },
 
     /**
@@ -237,15 +243,17 @@ base.exportTo('tracing.analysis', function() {
         this.appendTableCell(table, row, tracing.analysis.tsRound(start));
       }
 
-      this.appendTableCell(table, row, tracing.analysis.tsRound(duration));
+      if (duration !== null)
+        this.appendTableCell(table, row, tracing.analysis.tsRound(duration));
 
       if (opt_threadDuration)
         this.appendTableCell(table, row,
                              opt_threadDuration != '' ?
-                                 tracing.analysis.tsRound(opt_threadDuration) :
-                                 '');
+                             tracing.analysis.tsRound(opt_threadDuration) :
+                             '');
 
-      this.appendTableCell(table, row, tracing.analysis.tsRound(selfTime));
+      if (selfTime !== null)
+        this.appendTableCell(table, row, tracing.analysis.tsRound(selfTime));
 
       var argsCell = this.appendTableCell(table, row, '');
       var n = 0;
@@ -276,9 +284,10 @@ base.exportTo('tracing.analysis', function() {
      *          contains calculated staistics containing min/max/avg for slices,
      *          or min/max/avg/start/end for counters.
      */
-    appendDataRow: function(
-        table, label, opt_duration, opt_threadDuration, opt_selfTime,
-        opt_occurences, opt_statistics, opt_selectionGenerator, opt_inFoot) {
+    appendDataRow: function(table, label, opt_duration, opt_threadDuration,
+                            opt_selfTime, opt_threadSelfTime, opt_occurences,
+                            opt_percentage, opt_statistics,
+                            opt_selectionGenerator, opt_inFoot) {
 
       var tooltip = undefined;
       if (opt_statistics) {
@@ -312,51 +321,83 @@ base.exportTo('tracing.analysis', function() {
       else
         var row = this.appendBodyRow(table);
 
+      var cellNum = 0;
       if (!opt_selectionGenerator) {
-        this.appendTableCellWithTooltip_(table, row, 0, label, tooltip);
+        this.appendTableCellWithTooltip_(table, row, cellNum, label, tooltip);
       } else {
         var labelEl = this.appendTableCellWithTooltip_(
-            table, row, 0, label, tooltip);
-        labelEl.textContent = '';
-        labelEl.appendChild(
-            this.createSelectionChangingLink(label, opt_selectionGenerator,
-            tooltip));
-      }
-
-      if (opt_duration) {
-        if (opt_duration instanceof Array) {
-          this.appendTableCellWithTooltip_(table, row, 1,
-              '[' + opt_duration.join(', ') + ']', tooltip);
-        } else {
-          this.appendTableCellWithTooltip_(table, row, 1,
-              tracing.analysis.tsRound(opt_duration), tooltip);
+            table, row, cellNum, label, tooltip);
+        if (labelEl) {
+          labelEl.textContent = '';
+          labelEl.appendChild(
+              this.createSelectionChangingLink(label, opt_selectionGenerator,
+                                               tooltip));
         }
-      } else {
-        this.appendTableCell_(table, row, 1, '');
+      }
+      cellNum++;
+
+      if (opt_duration !== null) {
+        if (opt_duration) {
+          if (opt_duration instanceof Array) {
+            this.appendTableCellWithTooltip_(table, row, cellNum,
+                '[' + opt_duration.join(', ') + ']', tooltip);
+          } else {
+            this.appendTableCellWithTooltip_(table, row, cellNum,
+                tracing.analysis.tsRound(opt_duration), tooltip);
+          }
+        } else {
+          this.appendTableCell_(table, row, cellNum, '');
+        }
+        cellNum++;
       }
 
       if (opt_threadDuration !== null) {
         if (opt_threadDuration != '') {
-          this.appendTableCellWithTooltip_(table, row, 2,
+          this.appendTableCellWithTooltip_(table, row, cellNum,
               tracing.analysis.tsRound(opt_threadDuration), tooltip);
         } else {
-          this.appendTableCell_(table, row, 2, '');
+          this.appendTableCell_(table, row, cellNum, '');
         }
+        cellNum++;
       }
 
-      if (opt_selfTime) {
-        this.appendTableCellWithTooltip_(table, row, 2,
-            tracing.analysis.tsRound(opt_selfTime), tooltip);
-      } else {
-        this.appendTableCell_(table, row, 2, '');
+      if (opt_selfTime !== null) {
+        if (opt_selfTime) {
+          this.appendTableCellWithTooltip_(table, row, cellNum,
+              tracing.analysis.tsRound(opt_selfTime), tooltip);
+        } else {
+          this.appendTableCell_(table, row, cellNum, '');
+        }
+        cellNum++;
+      }
+
+      if (opt_threadSelfTime !== null) {
+        if (opt_threadSelfTime) {
+          this.appendTableCellWithTooltip_(table, row, cellNum,
+              tracing.analysis.tsRound(opt_threadSelfTime), tooltip);
+        } else {
+          this.appendTableCell_(table, row, cellNum, '');
+        }
+        cellNum++;
+      }
+
+      if (opt_percentage !== null) {
+        if (opt_percentage) {
+          this.appendTableCellWithTooltip_(table, row, cellNum,
+                                           opt_percentage, tooltip);
+        } else {
+          this.appendTableCell_(table, row, cellNum, '');
+        }
+        cellNum++;
       }
 
       if (opt_occurences) {
-        this.appendTableCellWithTooltip_(table, row, 2,
+        this.appendTableCellWithTooltip_(table, row, cellNum,
             String(opt_occurences), tooltip);
       } else {
-        this.appendTableCell_(table, row, 2, '');
+        this.appendTableCell_(table, row, cellNum, '');
       }
+      cellNum++;
     }
   };
   return {

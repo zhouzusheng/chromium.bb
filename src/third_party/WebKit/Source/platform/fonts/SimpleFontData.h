@@ -136,7 +136,6 @@ public:
     void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
-    virtual bool containsCharacters(const UChar*, int length) const OVERRIDE;
 
     Glyph glyphForCharacter(UChar32) const;
 
@@ -153,7 +152,7 @@ public:
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }
 
 #ifndef NDEBUG
-    virtual String description() const;
+    virtual String description() const OVERRIDE;
 #endif
 
 #if OS(MACOSX)

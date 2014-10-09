@@ -30,10 +30,10 @@
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
-  GPU_OP(DISABLE_FRAMEBUFFER_MULTISAMPLE,                    \
-         disable_framebuffer_multisample)                    \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
+  GPU_OP(DISABLE_MULTISAMPLING,                              \
+         disable_multisampling)                              \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
   GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
@@ -46,6 +46,8 @@
          force_integrated_gpu)                               \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
+  GPU_OP(INIT_VARYINGS_WITHOUT_STATIC_USE,                   \
+         init_varyings_without_static_use)                   \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \

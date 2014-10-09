@@ -17,7 +17,8 @@ ShellRenderViewObserver::ShellRenderViewObserver(RenderView* render_view)
     : RenderViewObserver(render_view) {
 }
 
-void ShellRenderViewObserver::DidClearWindowObject(blink::WebFrame* frame) {
+void ShellRenderViewObserver::DidClearWindowObject(blink::WebFrame* frame,
+                                                   int world_id) {
   // SHEZ: Remove test code.
 #if 0
   if (CommandLine::ForCurrentProcess()->HasSwitch(

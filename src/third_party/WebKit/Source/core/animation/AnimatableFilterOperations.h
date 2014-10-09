@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-class AnimatableFilterOperations : public AnimatableValue {
+class AnimatableFilterOperations FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableFilterOperations() { }
     static PassRefPtr<AnimatableFilterOperations> create(const FilterOperations& operations)
@@ -48,6 +48,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableFilterOperations(const FilterOperations& operations)

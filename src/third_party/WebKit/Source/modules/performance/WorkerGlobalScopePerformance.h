@@ -32,12 +32,12 @@
 #define WorkerGlobalScopePerformance_h
 
 #include "core/workers/WorkerSupplementable.h"
+#include "heap/Handle.h"
+#include "modules/performance/WorkerPerformance.h"
 
 namespace WebCore {
 
-class WorkerPerformance;
-
-class WorkerGlobalScopePerformance : public WorkerSupplement {
+class WorkerGlobalScopePerformance FINAL : public WorkerSupplement {
 public:
     virtual ~WorkerGlobalScopePerformance();
     static WorkerGlobalScopePerformance* from(WorkerGlobalScope*);
@@ -47,10 +47,10 @@ public:
 private:
     WorkerGlobalScopePerformance();
 
-    WorkerPerformance* getPerformance(WorkerGlobalScope*);
+    WorkerPerformance* performance();
     static const char* supplementName();
 
-    RefPtr<WorkerPerformance> m_performance;
+    RefPtrWillBePersistent<WorkerPerformance> m_performance;
 };
 
 } // namespace WebCore

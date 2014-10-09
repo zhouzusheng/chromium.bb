@@ -41,8 +41,6 @@
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/CString.h"
 
-using namespace std;
-
 namespace WebCore {
 
 static MemoryCache* gMemoryCache;
@@ -137,9 +135,10 @@ Resource* MemoryCache::resourceForURL(const KURL& resourceURL)
     ASSERT(WTF::isMainThread());
     KURL url = removeFragmentIdentifierIfNeeded(resourceURL);
     Resource* resource = m_resources.get(url);
-    if (resource && !resource->makePurgeable(false)) {
+    if (resource && !resource->lock()) {
         ASSERT(!resource->hasClients());
-        evict(resource);
+        bool didEvict = evict(resource);
+        ASSERT_UNUSED(didEvict, didEvict);
         return 0;
     }
     return resource;
@@ -148,9 +147,9 @@ Resource* MemoryCache::resourceForURL(const KURL& resourceURL)
 size_t MemoryCache::deadCapacity() const
 {
     // Dead resource capacity is whatever space is not occupied by live resources, bounded by an independent minimum and maximum.
-    size_t capacity = m_capacity - min(m_liveSize, m_capacity); // Start with available capacity.
-    capacity = max(capacity, m_minDeadCapacity); // Make sure it's above the minimum.
-    capacity = min(capacity, m_maxDeadCapacity); // Make sure it's below the maximum.
+    size_t capacity = m_capacity - std::min(m_liveSize, m_capacity); // Start with available capacity.
+    capacity = std::max(capacity, m_minDeadCapacity); // Make sure it's above the minimum.
+    capacity = std::min(capacity, m_maxDeadCapacity); // Make sure it's below the maximum.
     return capacity;
 }
 
@@ -191,10 +190,10 @@ void MemoryCache::pruneLiveResources()
                 if (elapsedTime < m_delayBeforeLiveDecodedPrune)
                     return;
 
-                // Destroy our decoded data. This will remove us from
-                // m_liveDecodedResources, and possibly move us to a different LRU
-                // list in m_allResources.
-                current->destroyDecodedData();
+                // Destroy our decoded data if possible. This will remove us
+                // from m_liveDecodedResources, and possibly move us to a
+                // different LRU list in m_allResources.
+                current->prune();
 
                 if (targetSize && m_liveSize <= targetSize)
                     return;
@@ -241,10 +240,10 @@ void MemoryCache::pruneDeadResources()
             ResourcePtr<Resource> previous = current->m_prevInAllResourcesList;
             ASSERT(!previous || previous->inCache());
             if (!current->hasClients() && !current->isPreloaded() && current->isLoaded()) {
-                // Destroy our decoded data. This will remove us from
-                // m_liveDecodedResources, and possibly move us to a different
-                // LRU list in m_allResources.
-                current->destroyDecodedData();
+                // Destroy our decoded data if possible. This will remove us
+                // from m_liveDecodedResources, and possibly move us to a
+                // different LRU list in m_allResources.
+                current->prune();
 
                 if (targetSize && m_deadSize <= targetSize)
                     return;
@@ -291,7 +290,7 @@ void MemoryCache::setCapacities(size_t minDeadBytes, size_t maxDeadBytes, size_t
     prune();
 }
 
-void MemoryCache::evict(Resource* resource)
+bool MemoryCache::evict(Resource* resource)
 {
     ASSERT(WTF::isMainThread());
     WTF_LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().string().latin1().data());
@@ -310,12 +309,12 @@ void MemoryCache::evict(Resource* resource)
         ASSERT(m_resources.get(resource->url()) != resource);
     }
 
-    resource->deleteIfPossible();
+    return resource->deleteIfPossible();
 }
 
 MemoryCache::LRUList* MemoryCache::lruListFor(Resource* resource)
 {
-    unsigned accessCount = max(resource->accessCount(), 1U);
+    unsigned accessCount = std::max(resource->accessCount(), 1U);
     unsigned queueIndex = WTF::fastLog2(resource->size() / accessCount);
 #ifndef NDEBUG
     resource->m_lruIndex = queueIndex;

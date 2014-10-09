@@ -55,21 +55,18 @@ namespace WebCore {
 using namespace HTMLNames;
 
 // Animated property definitions
-DEFINE_ANIMATED_STRING(SVGAElement, SVGNames::targetAttr, SVGTarget, svgTarget)
-DEFINE_ANIMATED_STRING(SVGAElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGAElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(svgTarget)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGAElement::SVGAElement(Document& document)
     : SVGGraphicsElement(SVGNames::aTag, document)
+    , SVGURIReference(this)
+    , m_svgTarget(SVGAnimatedString::create(this, SVGNames::targetAttr, SVGString::create()))
 {
     ScriptWrappable::init(this);
+    addToPropertyMap(m_svgTarget);
     registerAnimatedPropertiesForSVGAElement();
 }
 
@@ -94,7 +91,6 @@ bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::targetAttr);
     }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
@@ -107,17 +103,16 @@ void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& 
         return;
     }
 
+    SVGParsingError parseError = NoError;
+
     if (name == SVGNames::targetAttr) {
-        setSVGTargetBaseValue(value);
-        return;
+        m_svgTarget->setBaseValueAsString(value, parseError);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGURIReference::parseAttribute(name, value))
-        return;
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -133,10 +128,10 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
     // as none of the other properties changes the linking behaviour for our <a> element.
     if (SVGURIReference::isKnownAttribute(attrName)) {
         bool wasLink = isLink();
-        setIsLink(!hrefCurrentValue().isNull());
+        setIsLink(!hrefString().isNull());
 
         if (wasLink != isLink())
-            setNeedsStyleRecalc();
+            setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 
@@ -158,10 +153,10 @@ void SVGAElement::defaultEventHandler(Event* event)
         }
 
         if (isLinkClick(event)) {
-            String url = stripLeadingAndTrailingHTMLSpaces(hrefCurrentValue());
+            String url = stripLeadingAndTrailingHTMLSpaces(hrefString());
 
             if (url[0] == '#') {
-                Element* targetElement = treeScope().getElementById(url.substring(1));
+                Element* targetElement = treeScope().getElementById(AtomicString(url.substring(1)));
                 if (targetElement && isSVGSMILElement(*targetElement)) {
                     toSVGSMILElement(targetElement)->beginByLinkActivation();
                     event->setDefaultHandled();
@@ -172,9 +167,9 @@ void SVGAElement::defaultEventHandler(Event* event)
                     return;
             }
 
-            String target = this->target();
+            AtomicString target(m_svgTarget->currentValue()->value());
             if (target.isEmpty() && fastGetAttribute(XLinkNames::showAttr) == "new")
-                target = "_blank";
+                target = AtomicString("_blank", AtomicString::ConstructFromLiteral);
             event->setDefaultHandled();
 
             Frame* frame = document().frame();
@@ -197,14 +192,6 @@ bool SVGAElement::supportsFocus() const
     return true;
 }
 
-bool SVGAElement::rendererIsFocusable() const
-{
-    if (renderer() && renderer()->absoluteClippedOverflowRect().isEmpty())
-        return false;
-
-    return SVGElement::rendererIsFocusable();
-}
-
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name().localName() == hrefAttr || SVGGraphicsElement::isURLAttribute(attribute);
@@ -225,16 +212,9 @@ bool SVGAElement::isKeyboardFocusable() const
     return false;
 }
 
-bool SVGAElement::childShouldCreateRenderer(const Node& child) const
+bool SVGAElement::willRespondToMouseClickEvents()
 {
-    // http://www.w3.org/2003/01/REC-SVG11-20030114-errata#linking-text-environment
-    // The 'a' element may contain any element that its parent may contain, except itself.
-    if (child.hasTagName(SVGNames::aTag))
-        return false;
-    if (parentNode() && parentNode()->isSVGElement())
-        return parentNode()->childShouldCreateRenderer(child);
-
-    return SVGGraphicsElement::childShouldCreateRenderer(child);
+    return isLink() || SVGGraphicsElement::willRespondToMouseClickEvents();
 }
 
 } // namespace WebCore

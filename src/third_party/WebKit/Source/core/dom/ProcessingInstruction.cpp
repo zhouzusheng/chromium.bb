@@ -172,7 +172,7 @@ void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& bas
     }
 
     ASSERT(m_isCSS);
-    CSSParserContext parserContext(document(), baseURL, charset);
+    CSSParserContext parserContext(document(), 0, baseURL, charset);
 
     RefPtr<StyleSheetContents> newSheet = StyleSheetContents::create(href, parserContext);
 
@@ -221,14 +221,6 @@ void ProcessingInstruction::setCSSStyleSheet(PassRefPtr<CSSStyleSheet> sheet)
     sheet->setDisabled(m_alternate);
 }
 
-void ProcessingInstruction::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    if (!sheet())
-        return;
-
-    addSubresourceURL(urls, sheet()->baseURL());
-}
-
 Node::InsertionNotificationRequest ProcessingInstruction::insertedInto(ContainerNode* insertionPoint)
 {
     CharacterData::insertedInto(insertionPoint);
@@ -258,12 +250,6 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document().isActive())
         document().removedStyleSheet(removedSheet.get());
-}
-
-void ProcessingInstruction::finishParsingChildren()
-{
-    m_createdByParser = false;
-    CharacterData::finishParsingChildren();
 }
 
 } // namespace

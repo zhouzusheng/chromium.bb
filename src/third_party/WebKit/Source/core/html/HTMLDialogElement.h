@@ -43,8 +43,12 @@ public:
     void closeDialog(const String& returnValue = String());
     void show();
     void showModal(ExceptionState&);
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    enum CenteringMode { Uninitialized, Centered, NotCentered };
+    // NotCentered means do not center the dialog. Centered means the dialog has
+    // been centered and centeredPosition() is set. NeedsCentering means attempt
+    // to center on the next layout, then set to Centered or NotCentered.
+    enum CenteringMode { NotCentered, Centered, NeedsCentering };
     CenteringMode centeringMode() const { return m_centeringMode; }
     LayoutUnit centeredPosition() const
     {
@@ -62,7 +66,6 @@ private:
 
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual bool shouldBeReparentedUnderRenderView(const RenderStyle*) const OVERRIDE;
 
     void forceLayoutForCentering();
 
@@ -71,12 +74,13 @@ private:
     String m_returnValue;
 };
 
-inline HTMLDialogElement* toHTMLDialogElement(Node* node)
+inline bool isHTMLDialogElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::dialogTag));
     ASSERT_WITH_SECURITY_IMPLICATION(RuntimeEnabledFeatures::dialogElementEnabled());
-    return static_cast<HTMLDialogElement*>(node);
+    return node.hasTagName(HTMLNames::dialogTag);
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLDialogElement);
 
 } // namespace WebCore
 

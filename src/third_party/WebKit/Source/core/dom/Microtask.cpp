@@ -31,26 +31,41 @@
 #include "config.h"
 #include "core/dom/Microtask.h"
 
-#include "core/dom/MutationObserver.h"
-#include "core/dom/custom/CustomElementCallbackDispatcher.h"
+#include "bindings/v8/V8PerIsolateData.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+typedef Vector<MicrotaskCallback> MicrotaskQueue;
+
+static MicrotaskQueue& microtaskQueue()
+{
+    DEFINE_STATIC_LOCAL(MicrotaskQueue, microtaskQueue, ());
+    return microtaskQueue;
+}
+
 void Microtask::performCheckpoint()
 {
-    static bool performingCheckpoint = false;
-    if (performingCheckpoint)
+    V8PerIsolateData* isolateData = V8PerIsolateData::current();
+    ASSERT(isolateData);
+    if (isolateData->recursionLevel() || isolateData->performingMicrotaskCheckpoint())
         return;
-    performingCheckpoint = true;
+    isolateData->setPerformingMicrotaskCheckpoint(true);
 
-    bool anyWorkDone;
-    do {
-        MutationObserver::deliverAllMutations();
-        anyWorkDone = CustomElementCallbackDispatcher::instance().dispatch();
-    } while (anyWorkDone);
+    while (!microtaskQueue().isEmpty()) {
+        Vector<MicrotaskCallback> microtasks;
+        microtasks.swap(microtaskQueue());
+        for (size_t i = 0; i < microtasks.size(); ++i) {
+            microtasks[i]();
+        }
+    }
 
-    performingCheckpoint = false;
+    isolateData->setPerformingMicrotaskCheckpoint(false);
+}
+
+void Microtask::enqueueMicrotask(MicrotaskCallback callback)
+{
+    microtaskQueue().append(callback);
 }
 
 } // namespace WebCore

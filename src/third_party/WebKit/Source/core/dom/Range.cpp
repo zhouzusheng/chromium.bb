@@ -25,7 +25,6 @@
 #include "config.h"
 #include "core/dom/Range.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/ClientRectList.h"
@@ -217,7 +216,7 @@ void Range::setStart(PassRefPtr<Node> refNode, int offset, ExceptionState& excep
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
         return;
     }
 
@@ -245,7 +244,7 @@ void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionState& excepti
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
         return;
     }
 
@@ -298,7 +297,7 @@ bool Range::isPointInRange(Node* refNode, int offset, ExceptionState& exceptionS
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+        exceptionState.throwDOMException(HierarchyRequestError, "The node provided was null.");
         return false;
     }
 
@@ -326,12 +325,17 @@ short Range::comparePoint(Node* refNode, int offset, ExceptionState& exceptionSt
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+        exceptionState.throwDOMException(HierarchyRequestError, "The node provided was null.");
         return 0;
     }
 
-    if (!refNode->inActiveDocument() || refNode->document() != m_ownerDocument) {
-        exceptionState.throwUninformativeAndGenericDOMException(WrongDocumentError);
+    if (!refNode->inActiveDocument()) {
+        exceptionState.throwDOMException(WrongDocumentError, "The node provided is not in an active document.");
+        return 0;
+    }
+
+    if (refNode->document() != m_ownerDocument) {
+        exceptionState.throwDOMException(WrongDocumentError, "The node provided is not in this Range's Document.");
         return 0;
     }
 
@@ -361,12 +365,12 @@ Range::CompareResults Range::compareNode(Node* refNode, ExceptionState& exceptio
     // before and after(surrounds), or inside the range, respectively
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
         return NODE_BEFORE;
     }
 
     if (!m_start.container() && refNode->inActiveDocument()) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "This Range is detached, and the provided node is not.");
         return NODE_BEFORE;
     }
 
@@ -386,7 +390,7 @@ Range::CompareResults Range::compareNode(Node* refNode, ExceptionState& exceptio
     if (!parentNode) {
         // if the node is the top document we should return NODE_BEFORE_AND_AFTER
         // but we throw to match firefox behavior
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The provided node has no parent.");
         return NODE_BEFORE;
     }
 
@@ -409,7 +413,7 @@ short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, Exc
     }
 
     if (!sourceRange) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The source range provided was null.");
         return 0;
     }
 
@@ -421,7 +425,7 @@ short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, Exc
         return 0;
 
     if (thisCont->document() != sourceCont->document()) {
-        exceptionState.throwUninformativeAndGenericDOMException(WrongDocumentError);
+        exceptionState.throwDOMException(WrongDocumentError, "The source range is in a different document than this range.");
         return 0;
     }
 
@@ -432,7 +436,7 @@ short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, Exc
     while (sourceTop->parentNode())
         sourceTop = sourceTop->parentNode();
     if (thisTop != sourceTop) { // in different DocumentFragments
-        exceptionState.throwUninformativeAndGenericDOMException(WrongDocumentError);
+        exceptionState.throwDOMException(WrongDocumentError, "The source range is in a different document than this range.");
         return 0;
     }
 
@@ -447,7 +451,7 @@ short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, Exc
             return compareBoundaryPoints(m_start, sourceRange->m_end, exceptionState);
     }
 
-    exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+    exceptionState.throwDOMException(SyntaxError, "The comparison method provided must be one of 'START_TO_START', 'START_TO_END', 'END_TO_END', or 'END_TO_START'.");
     return 0;
 }
 
@@ -513,7 +517,7 @@ short Range::compareBoundaryPoints(Node* containerA, int offsetA, Node* containe
     // ### we need to do a traversal here instead
     Node* commonAncestor = commonAncestorContainer(containerA, containerB);
     if (!commonAncestor) {
-        exceptionState.throwUninformativeAndGenericDOMException(WrongDocumentError);
+        exceptionState.throwDOMException(WrongDocumentError, "The two ranges are in separate documents.");
         return 0;
     }
     Node* childA = containerA;
@@ -575,7 +579,7 @@ bool Range::intersectsNode(Node* refNode, ExceptionState& exceptionState)
         return false;
     }
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return false;
     }
 
@@ -590,7 +594,7 @@ bool Range::intersectsNode(Node* refNode, ExceptionState& exceptionState)
     if (!parentNode) {
         // if the node is the top document we should return NODE_BEFORE_AND_AFTER
         // but we throw to match firefox behavior
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided has no parent.");
         return false;
     }
 
@@ -652,12 +656,9 @@ static inline unsigned lengthOfContentsInNode(Node* node)
         return toProcessingInstruction(node)->data().length();
     case Node::ELEMENT_NODE:
     case Node::ATTRIBUTE_NODE:
-    case Node::ENTITY_NODE:
     case Node::DOCUMENT_NODE:
     case Node::DOCUMENT_TYPE_NODE:
     case Node::DOCUMENT_FRAGMENT_NODE:
-    case Node::NOTATION_NODE:
-    case Node::XPATH_NAMESPACE_NODE:
         return node->childNodeCount();
     }
     ASSERT_NOT_REACHED();
@@ -824,12 +825,9 @@ PassRefPtr<Node> Range::processContentsBetweenOffsets(ActionType action, PassRef
         break;
     case Node::ELEMENT_NODE:
     case Node::ATTRIBUTE_NODE:
-    case Node::ENTITY_NODE:
     case Node::DOCUMENT_NODE:
     case Node::DOCUMENT_TYPE_NODE:
     case Node::DOCUMENT_FRAGMENT_NODE:
-    case Node::NOTATION_NODE:
-    case Node::XPATH_NAMESPACE_NODE:
         // FIXME: Should we assert that some nodes never appear here?
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             if (fragment)
@@ -879,7 +877,7 @@ PassRefPtr<Node> Range::processAncestorsAndTheirSiblings(ActionType action, Node
         ancestors.append(n);
 
     RefPtr<Node> firstChildInAncestorToProcess = direction == ProcessContentsForward ? container->nextSibling() : container->previousSibling();
-    for (Vector<RefPtr<Node> >::const_iterator it = ancestors.begin(); it != ancestors.end(); it++) {
+    for (Vector<RefPtr<Node> >::const_iterator it = ancestors.begin(); it != ancestors.end(); ++it) {
         RefPtr<Node> ancestor = *it;
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             if (RefPtr<Node> clonedAncestor = ancestor->cloneNode(false)) { // Might have been removed already during mutation event.
@@ -898,7 +896,7 @@ PassRefPtr<Node> Range::processAncestorsAndTheirSiblings(ActionType action, Node
             child = (direction == ProcessContentsForward) ? child->nextSibling() : child->previousSibling())
             nodes.append(child);
 
-        for (NodeVector::const_iterator it = nodes.begin(); it != nodes.end(); it++) {
+        for (NodeVector::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
             Node* child = it->get();
             switch (action) {
             case DELETE_CONTENTS:
@@ -953,7 +951,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionState& exceptionSta
     }
 
     if (!newNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return;
     }
 
@@ -963,7 +961,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionState& exceptionSta
     // an extra one here - if a text node is going to split, it must have a parent to insert into
     bool startIsText = m_start.container()->isTextNode();
     if (startIsText && !m_start.container()->parentNode()) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+        exceptionState.throwDOMException(HierarchyRequestError, "This operation would split a text node, but there's no parent into which to insert.");
         return;
     }
 
@@ -982,7 +980,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionState& exceptionSta
         numNewChildren = 0;
         for (Node* c = newNode->firstChild(); c; c = c->nextSibling()) {
             if (!checkAgainst->childTypeAllowed(c->nodeType())) {
-                exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+                exceptionState.throwDOMException(HierarchyRequestError, "The node to be inserted contains a '" + c->nodeName() + "' node, which may not be inserted here.");
                 return;
             }
             ++numNewChildren;
@@ -990,14 +988,14 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionState& exceptionSta
     } else {
         numNewChildren = 1;
         if (!checkAgainst->childTypeAllowed(newNodeType)) {
-            exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+            exceptionState.throwDOMException(HierarchyRequestError, "The node to be inserted is a '" + newNode->nodeName() + "' node, which may not be inserted here.");
             return;
         }
     }
 
     for (Node* n = m_start.container(); n; n = n->parentNode()) {
         if (n == newNode) {
-            exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+            exceptionState.throwDOMException(HierarchyRequestError, "The node to be inserted contains the insertion point; it may not be inserted into itself.");
             return;
         }
     }
@@ -1005,14 +1003,12 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionState& exceptionSta
     // InvalidNodeTypeError: Raised if newNode is an Attr, Entity, Notation, ShadowRoot or Document node.
     switch (newNodeType) {
     case Node::ATTRIBUTE_NODE:
-    case Node::ENTITY_NODE:
-    case Node::NOTATION_NODE:
     case Node::DOCUMENT_NODE:
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node to be inserted is a '" + newNode->nodeName() + "' node, which may not be inserted here.");
         return;
     default:
         if (newNode->isShadowRoot()) {
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node to be inserted is a shadow root, which may not be inserted here.");
             return;
         }
         break;
@@ -1136,30 +1132,27 @@ Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionState& exceptionStat
 {
     switch (n->nodeType()) {
         case Node::DOCUMENT_TYPE_NODE:
-        case Node::ENTITY_NODE:
-        case Node::NOTATION_NODE:
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
             return 0;
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
         case Node::TEXT_NODE:
             if (static_cast<unsigned>(offset) > toCharacterData(n)->length())
-                exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
+                exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to the node's length (" + String::number(toCharacterData(n)->length()) + ").");
             return 0;
         case Node::PROCESSING_INSTRUCTION_NODE:
             if (static_cast<unsigned>(offset) > toProcessingInstruction(n)->data().length())
-                exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
+                exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to than the node's length (" + String::number(toProcessingInstruction(n)->data().length()) + ").");
             return 0;
         case Node::ATTRIBUTE_NODE:
         case Node::DOCUMENT_FRAGMENT_NODE:
         case Node::DOCUMENT_NODE:
-        case Node::ELEMENT_NODE:
-        case Node::XPATH_NAMESPACE_NODE: {
+        case Node::ELEMENT_NODE: {
             if (!offset)
                 return 0;
             Node* childBefore = n->childNode(offset - 1);
             if (!childBefore)
-                exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
+                exceptionState.throwDOMException(IndexSizeError, "There is no child at offset " + String::number(offset) + ".");
             return childBefore;
         }
     }
@@ -1175,7 +1168,7 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
     }
 
     if (!n) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return;
     }
 
@@ -1192,9 +1185,7 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
         case Node::ATTRIBUTE_NODE:
         case Node::DOCUMENT_FRAGMENT_NODE:
         case Node::DOCUMENT_NODE:
-        case Node::ENTITY_NODE:
-        case Node::NOTATION_NODE:
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
             return;
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
@@ -1202,7 +1193,6 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
         case Node::ELEMENT_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
             break;
     }
 
@@ -1219,12 +1209,9 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
         case Node::DOCUMENT_TYPE_NODE:
-        case Node::ENTITY_NODE:
-        case Node::NOTATION_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
             return;
     }
 }
@@ -1274,7 +1261,7 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return;
     }
 
@@ -1296,12 +1283,9 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
             case Node::ELEMENT_NODE:
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
-            case Node::XPATH_NAMESPACE_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
-            case Node::ENTITY_NODE:
-            case Node::NOTATION_NODE:
-                exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+                exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided has an ancestor of type '" + anc->nodeName() + "'.");
                 return;
         }
     }
@@ -1313,14 +1297,11 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
         case Node::ELEMENT_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
             break;
         case Node::ATTRIBUTE_NODE:
         case Node::DOCUMENT_FRAGMENT_NODE:
         case Node::DOCUMENT_NODE:
-        case Node::ENTITY_NODE:
-        case Node::NOTATION_NODE:
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + refNode->nodeName() + "'.");
             return;
     }
 
@@ -1339,7 +1320,7 @@ void Range::selectNodeContents(Node* refNode, ExceptionState& exceptionState)
     }
 
     if (!refNode) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return;
     }
 
@@ -1355,12 +1336,9 @@ void Range::selectNodeContents(Node* refNode, ExceptionState& exceptionState)
             case Node::ELEMENT_NODE:
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
-            case Node::XPATH_NAMESPACE_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
-            case Node::ENTITY_NODE:
-            case Node::NOTATION_NODE:
-                exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+                exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + refNode->nodeName() + "'.");
                 return;
         }
     }
@@ -1382,7 +1360,7 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionState& exc
     }
 
     if (!newParent) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
         return;
     }
 
@@ -1393,16 +1371,13 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionState& exc
         case Node::DOCUMENT_FRAGMENT_NODE:
         case Node::DOCUMENT_NODE:
         case Node::DOCUMENT_TYPE_NODE:
-        case Node::ENTITY_NODE:
-        case Node::NOTATION_NODE:
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidNodeTypeError);
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + newParent->nodeName() + "'.");
             return;
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
         case Node::ELEMENT_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
             break;
     }
 
@@ -1414,13 +1389,19 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionState& exc
     // although this will fail below for another reason).
     if (parentOfNewParent->isCharacterDataNode())
         parentOfNewParent = parentOfNewParent->parentNode();
-    if (!parentOfNewParent || !parentOfNewParent->childTypeAllowed(newParent->nodeType())) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+
+    if (!parentOfNewParent) {
+        exceptionState.throwDOMException(HierarchyRequestError, "The container node is a detached character data node; no parent node is available for insertion.");
+        return;
+    }
+
+    if (!parentOfNewParent->childTypeAllowed(newParent->nodeType())) {
+        exceptionState.throwDOMException(HierarchyRequestError, "The node provided is of type '" + newParent->nodeName() + "', which may not be inserted here.");
         return;
     }
 
     if (newParent->contains(m_start.container())) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+        exceptionState.throwDOMException(HierarchyRequestError, "The node provided contains the insertion point; it may not be inserted into itself.");
         return;
     }
 
@@ -1435,7 +1416,7 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionState& exc
     if (endNonTextContainer->nodeType() == Node::TEXT_NODE)
         endNonTextContainer = endNonTextContainer->parentNode();
     if (startNonTextContainer != endNonTextContainer) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "The Range has partially selected a non-Text node.");
         return;
     }
 
@@ -1477,8 +1458,8 @@ void Range::checkDeleteExtract(ExceptionState& exceptionState)
 
     Node* pastLast = pastLastNode();
     for (Node* n = firstNode(); n != pastLast; n = NodeTraversal::next(*n)) {
-        if (n->nodeType() == Node::DOCUMENT_TYPE_NODE) {
-            exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
+        if (n->isDocumentTypeNode()) {
+            exceptionState.throwDOMException(HierarchyRequestError, "The Range contains a doctype node.");
             return;
         }
     }

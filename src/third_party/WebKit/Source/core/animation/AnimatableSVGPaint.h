@@ -37,7 +37,7 @@
 
 namespace WebCore {
 
-class AnimatableSVGPaint : public AnimatableValue {
+class AnimatableSVGPaint FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableSVGPaint() { }
     static PassRefPtr<AnimatableSVGPaint> create(SVGPaint::SVGPaintType type, const Color& color, const String& uri)
@@ -55,6 +55,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableSVGPaint(SVGPaint::SVGPaintType type, const AnimatableColorImpl& color, const String& uri)

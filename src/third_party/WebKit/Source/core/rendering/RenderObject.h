@@ -31,10 +31,9 @@
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/rendering/CompositingState.h"
-#include "core/rendering/LayoutIndicator.h"
 #include "core/rendering/PaintPhase.h"
 #include "core/rendering/RenderObjectChildList.h"
-#include "core/rendering/ScrollBehavior.h"
+#include "core/rendering/ScrollAlignment.h"
 #include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
@@ -45,7 +44,6 @@
 namespace WebCore {
 
 class AffineTransform;
-class AnimationController;
 class Cursor;
 class Document;
 class HitTestLocation;
@@ -62,7 +60,6 @@ class RenderFlowThread;
 class RenderGeometryMap;
 class RenderLayer;
 class RenderLayerModelObject;
-class RenderNamedFlowThread;
 class RenderSVGResourceContainer;
 class RenderTable;
 class RenderTheme;
@@ -213,8 +210,6 @@ public:
         return locateFlowThreadContainingBlock();
     }
 
-    RenderNamedFlowThread* renderNamedFlowThreadWrapper() const;
-
     virtual bool isEmpty() const { return firstChild() == 0; }
 
 #ifndef NDEBUG
@@ -341,14 +336,12 @@ public:
     virtual bool isProgress() const { return false; }
     virtual bool isRenderBlock() const { return false; }
     virtual bool isRenderBlockFlow() const { return false; }
-    virtual bool isRenderSVGBlock() const { return false; };
     virtual bool isRenderButton() const { return false; }
     virtual bool isRenderIFrame() const { return false; }
     virtual bool isRenderImage() const { return false; }
     virtual bool isRenderInline() const { return false; }
     virtual bool isRenderPart() const { return false; }
     virtual bool isRenderRegion() const { return false; }
-    virtual bool isRenderNamedFlowFragment() const { return false; }
     virtual bool isRenderView() const { return false; }
     virtual bool isReplica() const { return false; }
 
@@ -377,10 +370,8 @@ public:
     virtual bool isRenderGrid() const { return false; }
 
     virtual bool isRenderFlowThread() const { return false; }
-    virtual bool isRenderNamedFlowThread() const { return false; }
     bool isInFlowRenderFlowThread() const { return isRenderFlowThread() && !isOutOfFlowPositioned(); }
     bool isOutOfFlowRenderFlowThread() const { return isRenderFlowThread() && isOutOfFlowPositioned(); }
-    bool isRenderNamedFlowFragmentContainer() const;
 
     virtual bool isRenderMultiColumnBlock() const { return false; }
     virtual bool isRenderMultiColumnSet() const { return false; }
@@ -429,6 +420,7 @@ public:
 
     // FIXME: Until all SVG renders can be subclasses of RenderSVGModelObject we have
     // to add SVG renderer methods to RenderObject with an ASSERT_NOT_REACHED() default implementation.
+    virtual bool isSVG() const { return false; }
     virtual bool isSVGRoot() const { return false; }
     virtual bool isSVGContainer() const { return false; }
     virtual bool isSVGTransformableContainer() const { return false; }
@@ -452,7 +444,6 @@ public:
     // to inherit from RenderSVGObject -> RenderObject (some need RenderBlock inheritance for instance)
     virtual void setNeedsTransformUpdate() { }
     virtual void setNeedsBoundariesUpdate();
-    virtual bool needsBoundariesUpdate() { return false; }
 
     // Per SVG 1.1 objectBoundingBox ignores clipping, masking, filter effects, opacity and stroke-width.
     // This is used for all computation of objectBoundingBox relative units and by SVGLocatable::getBBox().
@@ -591,7 +582,6 @@ public:
 
     Node* nonPseudoNode() const
     {
-        ASSERT(!LayoutIndicator::inLayout());
         return isPseudoElement() ? 0 : node();
     }
 
@@ -614,7 +604,7 @@ public:
     // is true if the renderer returned is an ancestor of repaintContainer.
     RenderObject* container(const RenderLayerModelObject* repaintContainer = 0, bool* repaintContainerSkipped = 0) const;
 
-    virtual RenderObject* hoverAncestor() const;
+    virtual RenderObject* hoverAncestor() const { return parent(); }
 
     Element* offsetParent() const;
 
@@ -665,10 +655,12 @@ public:
 
     virtual void paint(PaintInfo&, const LayoutPoint&);
 
-    // Recursive function that computes the size and position of this object and all its descendants.
-    virtual void layout();
-    virtual void didLayout(ResourceLoadPriorityOptimizer&);
-    virtual void didScroll(ResourceLoadPriorityOptimizer&);
+    // Subclasses must reimplement this method to compute the size and position
+    // of this object and all its descendants.
+    virtual void layout() = 0;
+    virtual bool updateImageLoadingPriorities() { return false; }
+    void setHasPendingResourceUpdate(bool hasPendingResourceUpdate) { m_bitfields.setHasPendingResourceUpdate(hasPendingResourceUpdate); }
+    bool hasPendingResourceUpdate() const { return m_bitfields.hasPendingResourceUpdate(); }
 
     /* This function performs a layout only if one is needed. */
     void layoutIfNeeded() { if (needsLayout()) layout(); }
@@ -687,6 +679,10 @@ public:
     void collectAnnotatedRegions(Vector<AnnotatedRegionValue>&);
 
     CompositingState compositingState() const;
+    bool acceleratedCompositingForOverflowScrollEnabled() const;
+    // FIXME: This is a temporary flag and should be removed once accelerated
+    // overflow scroll is ready (crbug.com/254111).
+    bool compositorDrivenAcceleratedScrollingEnabled() const;
 
     bool hitTest(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestFilter = HitTestAll);
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&);
@@ -697,11 +693,6 @@ public:
     PositionWithAffinity createPositionWithAffinity(const Position&);
 
     virtual void dirtyLinesFromChangedChild(RenderObject*);
-
-    // Called to update a style that is allowed to trigger animations.
-    // FIXME: Right now this will typically be called only when updating happens from the DOM on explicit elements.
-    // We don't yet handle generated content animation such as first-letter or before/after (we'll worry about this later).
-    void setAnimatableStyle(PassRefPtr<RenderStyle>);
 
     // Set the style of the object and update the state of the object accordingly.
     void setStyle(PassRefPtr<RenderStyle>);
@@ -754,8 +745,6 @@ public:
     IntRect absoluteBoundingBoxRect(bool useTransform = true) const;
     IntRect absoluteBoundingBoxRectIgnoringTransforms() const { return absoluteBoundingBoxRect(false); }
 
-    bool isContainedInParentBoundingBox() const;
-
     // Build an array of quads in absolute coords for line boxes
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* /*wasFixed*/ = 0) const { }
 
@@ -781,17 +770,6 @@ public:
     inline Color resolveColor(int colorProperty) const
     {
         return style()->visitedDependentColor(colorProperty);
-    }
-
-    inline Color resolveColor(int colorProperty, Color fallback) const
-    {
-        Color color = resolveColor(colorProperty);
-        return color.isValid() ? color : fallback;
-    }
-
-    inline Color resolveColor(Color color) const
-    {
-        return color;
     }
 
     // Used only by Element::pseudoStyleCacheIsInvalid to get a first line style based off of a
@@ -827,6 +805,7 @@ public:
 
     virtual void repaintOverflow();
 
+    bool checkForRepaint() const;
     bool checkForRepaintDuringLayout() const;
 
     // Returns the rect that should be repainted whenever this object changes.  The rect is in the view's
@@ -916,7 +895,6 @@ public:
 
     // Virtual function helpers for the deprecated Flexible Box Layout (display: -webkit-box).
     virtual bool isDeprecatedFlexibleBox() const { return false; }
-    virtual bool isStretchingChildren() const { return false; }
 
     // Virtual function helper for the new FlexibleBox Layout (display: -webkit-flex).
     virtual bool isFlexibleBox() const { return false; }
@@ -935,15 +913,13 @@ public:
     virtual int previousOffsetForBackwardDeletion(int current) const;
     virtual int nextOffset(int current) const;
 
-    virtual void imageChanged(ImageResource*, const IntRect* = 0);
+    virtual void imageChanged(ImageResource*, const IntRect* = 0) OVERRIDE FINAL;
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) { }
-    virtual bool willRenderImage(ImageResource*);
+    virtual bool willRenderImage(ImageResource*) OVERRIDE FINAL;
 
     void selectionStartEnd(int& spos, int& epos) const;
 
     void remove() { if (parent()) parent()->removeChild(this); }
-
-    AnimationController& animation() const;
 
     bool isInert() const;
     bool visibleToHitTestRequest(const HitTestRequest& request) const { return style()->visibility() == VISIBLE && (request.ignorePointerEventsNone() || style()->pointerEvents() != PE_NONE) && !isInert(); }
@@ -1031,7 +1007,7 @@ protected:
 
     virtual LayoutRect viewRect() const;
 
-    void adjustRectForOutlineAndShadow(LayoutRect&) const;
+    void adjustRectForOutline(LayoutRect&) const;
 
     void clearLayoutRootIfNeeded() const;
     virtual void willBeDestroyed();
@@ -1142,10 +1118,11 @@ private:
             , m_selectionState(SelectionNone)
             , m_flowThreadState(NotInsideFlowThread)
             , m_boxDecorationState(NoBoxDecorations)
+            , m_hasPendingResourceUpdate(false)
         {
         }
 
-        // 32 bits have been used in the first word, and 2 in the second.
+        // 32 bits have been used in the first word, and 3 in the second.
         ADD_BOOLEAN_BITFIELD(selfNeedsLayout, SelfNeedsLayout);
         ADD_BOOLEAN_BITFIELD(shouldDoFullRepaintAfterLayout, ShouldDoFullRepaintAfterLayout);
         ADD_BOOLEAN_BITFIELD(shouldRepaintOverflowIfNeeded, ShouldRepaintOverflowIfNeeded);
@@ -1186,6 +1163,9 @@ private:
         unsigned m_boxDecorationState : 2; // BoxDecorationState
 
     public:
+
+        ADD_BOOLEAN_BITFIELD(hasPendingResourceUpdate, HasPendingResourceUpdate);
+
         bool isOutOfFlowPositioned() const { return m_positionedState == IsOutOfFlowPositioned; }
         bool isRelPositioned() const { return m_positionedState == IsRelativelyPositioned; }
         bool isStickyPositioned() const { return m_positionedState == IsStickyPositioned; }

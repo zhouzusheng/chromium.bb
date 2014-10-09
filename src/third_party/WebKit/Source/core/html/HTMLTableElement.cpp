@@ -271,7 +271,7 @@ static bool setTableCellsChanged(Node* n)
     }
 
     if (cellChanged)
-       n->setNeedsStyleRecalc();
+        n->setNeedsStyleRecalc(SubtreeStyleChange);
 
     return cellChanged;
 }
@@ -318,7 +318,7 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
     else if (name == backgroundAttr) {
         String url = stripLeadingAndTrailingHTMLSpaces(value);
         if (!url.isEmpty())
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(document().completeURL(url).string())));
+            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(document().completeURL(url))));
     } else if (name == valignAttr) {
         if (!value.isEmpty())
             addPropertyToPresentationAttributeStyle(style, CSSPropertyVerticalAlign, value);
@@ -411,7 +411,7 @@ void HTMLTableElement::parseAttribute(const QualifiedName& name, const AtomicStr
         for (Node* child = firstChild(); child; child = child->nextSibling())
             cellChanged |= setTableCellsChanged(child);
         if (cellChanged)
-            setNeedsStyleRecalc();
+            setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 
@@ -571,13 +571,6 @@ const AtomicString& HTMLTableElement::rules() const
 const AtomicString& HTMLTableElement::summary() const
 {
     return getAttribute(summaryAttr);
-}
-
-void HTMLTableElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(getAttribute(backgroundAttr)));
 }
 
 }

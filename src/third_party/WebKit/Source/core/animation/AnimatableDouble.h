@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-class AnimatableDouble : public AnimatableValue {
+class AnimatableDouble FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableDouble() { }
 
@@ -56,6 +56,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableDouble(double number, Constraint constraint)

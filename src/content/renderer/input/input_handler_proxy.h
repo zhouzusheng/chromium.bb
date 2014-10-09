@@ -63,7 +63,7 @@ class CONTENT_EXPORT InputHandlerProxy
   bool TouchpadFlingScroll(const blink::WebFloatSize& increment);
 
   // Returns true if we actually had an active fling to cancel.
-  bool CancelCurrentFling();
+  bool CancelCurrentFling(bool send_fling_stopped_notification);
 
   scoped_ptr<blink::WebGestureCurve> fling_curve_;
   // Parameters for the active fling animation, stored in case we need to
@@ -75,7 +75,6 @@ class CONTENT_EXPORT InputHandlerProxy
 
 #ifndef NDEBUG
   bool expect_scroll_update_end_;
-  bool expect_pinch_update_end_;
 #endif
   bool gesture_scroll_on_impl_thread_;
   bool gesture_pinch_on_impl_thread_;
@@ -83,9 +82,11 @@ class CONTENT_EXPORT InputHandlerProxy
   // conservative in the sense that we might not be actually flinging when it is
   // true.
   bool fling_may_be_active_on_main_thread_;
-  // The axes on which the current fling has overshot the bounds of the content.
-  bool fling_overscrolled_horizontally_;
-  bool fling_overscrolled_vertically_;
+  // The axes on which the current fling is allowed to scroll.  If a given fling
+  // has overscrolled on a particular axis, further fling scrolls on that axis
+  // will be disabled.
+  bool disallow_horizontal_fling_scroll_;
+  bool disallow_vertical_fling_scroll_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandlerProxy);
 };

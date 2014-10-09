@@ -30,20 +30,19 @@
 
 /**
  * @constructor
- * @extends {WebInspector.SidebarView}
+ * @extends {WebInspector.SplitView}
  * @param {!WebInspector.FileSystemModel.FileSystem} fileSystem
  */
 WebInspector.FileSystemView = function(fileSystem)
 {
-    WebInspector.SidebarView.call(this, WebInspector.SidebarView.SidebarPosition.Start, "FileSystemViewSidebarWidth");
+    WebInspector.SplitView.call(this, true, false, "FileSystemViewSidebarWidth");
     this.element.classList.add("file-system-view");
     this.element.classList.add("storage-view");
 
     var directoryTreeElement = this.element.createChild("ol", "filesystem-directory-tree");
     this._directoryTree = new TreeOutline(directoryTreeElement);
-    this.sidebarElement.appendChild(directoryTreeElement);
-    this.sidebarElement.classList.add("outline-disclosure");
-    this.sidebarElement.classList.add("sidebar");
+    this.sidebarElement().appendChild(directoryTreeElement);
+    this.sidebarElement().classList.add("outline-disclosure", "sidebar");
 
     var rootItem = new WebInspector.FileSystemView.EntryTreeElement(this, fileSystem.root);
     rootItem.expanded = true;
@@ -86,7 +85,7 @@ WebInspector.FileSystemView.prototype = {
         if (this._visibleView)
             this._visibleView.detach();
         this._visibleView = view;
-        view.show(this.mainElement);
+        view.show(this.mainElement());
     },
 
     _refresh: function()
@@ -105,7 +104,7 @@ WebInspector.FileSystemView.prototype = {
         this._directoryTree.selectedTreeElement.deleteEntry();
     },
 
-    __proto__: WebInspector.SidebarView.prototype
+    __proto__: WebInspector.SplitView.prototype
 }
 
 /**
@@ -134,6 +133,7 @@ WebInspector.FileSystemView.EntryTreeElement.prototype = {
 
     /**
      * @override
+     * @return {boolean}
      */
     onselect: function()
     {

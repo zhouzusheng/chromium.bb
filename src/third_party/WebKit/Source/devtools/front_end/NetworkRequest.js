@@ -59,11 +59,14 @@ WebInspector.NetworkRequest = function(requestId, url, documentURL, frameId, loa
     this._frames = [];
 
     this._responseHeaderValues = {};
+
+    this._remoteAddress = "";
 }
 
 WebInspector.NetworkRequest.Events = {
     FinishedLoading: "FinishedLoading",
     TimingChanged: "TimingChanged",
+    RemoteAddressChanged: "RemoteAddressChanged",
     RequestHeadersChanged: "RequestHeadersChanged",
     ResponseHeadersChanged: "ResponseHeadersChanged",
 }
@@ -144,6 +147,24 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
+     * @param {string} ip
+     * @param {number} port
+     */
+    setRemoteAddress: function(ip, port)
+    {
+        this._remoteAddress = ip + ":" + port;
+        this.dispatchEventToListeners(WebInspector.NetworkRequest.Events.RemoteAddressChanged, this);
+    },
+
+    /**
+     * @return {string}
+     */
+    remoteAddress: function()
+    {
+        return this._remoteAddress;
+    },
+
+    /**
      * @return {number}
      */
     get startTime()
@@ -188,6 +209,7 @@ WebInspector.NetworkRequest.prototype = {
             if (this._responseReceivedTime > x)
                 this._responseReceivedTime = x;
         }
+        this.dispatchEventToListeners(WebInspector.NetworkRequest.Events.TimingChanged, this);
     },
 
     /**
@@ -228,24 +250,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     get transferSize()
     {
-        if (typeof this._transferSize === "number")
-            return this._transferSize;
-        if (this.statusCode === 304) // Not modified
-            return this.responseHeadersSize;
-        if (this._cached)
-            return 0;
-        // If we did not receive actual transfer size from network
-        // stack, we prefer using Content-Length over resourceSize as
-        // resourceSize may differ from actual transfer size if platform's
-        // network stack performed decoding (e.g. gzip decompression).
-        // The Content-Length, though, is expected to come from raw
-        // response headers and will reflect actual transfer length.
-        // This won't work for chunked content encoding, so fall back to
-        // resourceSize when we don't have Content-Length. This still won't
-        // work for chunks with non-trivial encodings. We need a way to
-        // get actual transfer size from the network stack.
-        var bodySize = Number(this.responseHeaderValue("Content-Length") || this.resourceSize);
-        return this.responseHeadersSize + bodySize;
+        return this._transferSize || 0;
     },
 
     /**
@@ -254,6 +259,14 @@ WebInspector.NetworkRequest.prototype = {
     increaseTransferSize: function(x)
     {
         this._transferSize = (this._transferSize || 0) + x;
+    },
+
+    /**
+     * @param {number} x
+     */
+    setTransferSize: function(x)
+    {
+        this._transferSize = x;
     },
 
     /**
@@ -361,6 +374,9 @@ WebInspector.NetworkRequest.prototype = {
         return this._parsedURL.displayName;
     },
 
+    /**
+     * @return {string}
+     */
     name: function()
     {
         if (this._name)
@@ -369,6 +385,9 @@ WebInspector.NetworkRequest.prototype = {
         return this._name;
     },
 
+    /**
+     * @return {string}
+     */
     path: function()
     {
         if (this._path)

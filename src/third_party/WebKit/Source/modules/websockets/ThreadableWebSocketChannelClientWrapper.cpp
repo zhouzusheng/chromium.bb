@@ -32,68 +32,22 @@
 #include "modules/websockets/ThreadableWebSocketChannelClientWrapper.h"
 
 #include "core/dom/CrossThreadTask.h"
+#include "core/dom/ExecutionContext.h"
 #include "platform/CrossThreadCopier.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-ThreadableWebSocketChannelClientWrapper::ThreadableWebSocketChannelClientWrapper(ExecutionContext* context, WebSocketChannelClient* client)
-    : m_context(context)
-    , m_client(client)
-    , m_peer(0)
-    , m_failedWebSocketChannelCreation(false)
-    , m_syncMethodDone(true)
-    , m_sendRequestResult(WebSocketChannel::SendFail)
-    , m_bufferedAmount(0)
+ThreadableWebSocketChannelClientWrapper::ThreadableWebSocketChannelClientWrapper(WebSocketChannelClient* client)
+    : m_client(client)
     , m_suspended(false)
 {
 }
 
-PassRefPtr<ThreadableWebSocketChannelClientWrapper> ThreadableWebSocketChannelClientWrapper::create(ExecutionContext* context, WebSocketChannelClient* client)
+PassRefPtr<ThreadableWebSocketChannelClientWrapper> ThreadableWebSocketChannelClientWrapper::create(WebSocketChannelClient* client)
 {
-    return adoptRef(new ThreadableWebSocketChannelClientWrapper(context, client));
-}
-
-void ThreadableWebSocketChannelClientWrapper::clearSyncMethodDone()
-{
-    m_syncMethodDone = false;
-}
-
-void ThreadableWebSocketChannelClientWrapper::setSyncMethodDone()
-{
-    m_syncMethodDone = true;
-}
-
-bool ThreadableWebSocketChannelClientWrapper::syncMethodDone() const
-{
-    return m_syncMethodDone;
-}
-
-WorkerThreadableWebSocketChannel::Peer* ThreadableWebSocketChannelClientWrapper::peer() const
-{
-    return m_peer;
-}
-
-void ThreadableWebSocketChannelClientWrapper::didCreateWebSocketChannel(WorkerThreadableWebSocketChannel::Peer* peer)
-{
-    m_peer = peer;
-    m_syncMethodDone = true;
-}
-
-void ThreadableWebSocketChannelClientWrapper::clearPeer()
-{
-    m_peer = 0;
-}
-
-bool ThreadableWebSocketChannelClientWrapper::failedWebSocketChannelCreation() const
-{
-    return m_failedWebSocketChannelCreation;
-}
-
-void ThreadableWebSocketChannelClientWrapper::setFailedWebSocketChannelCreation()
-{
-    m_failedWebSocketChannelCreation = true;
+    return adoptRef(new ThreadableWebSocketChannelClientWrapper(client));
 }
 
 String ThreadableWebSocketChannelClientWrapper::subprotocol() const
@@ -120,28 +74,6 @@ void ThreadableWebSocketChannelClientWrapper::setExtensions(const String& extens
 {
     m_extensions.clear();
     append(m_extensions, extensions);
-}
-
-WebSocketChannel::SendResult ThreadableWebSocketChannelClientWrapper::sendRequestResult() const
-{
-    return m_sendRequestResult;
-}
-
-void ThreadableWebSocketChannelClientWrapper::setSendRequestResult(WebSocketChannel::SendResult sendRequestResult)
-{
-    m_sendRequestResult = sendRequestResult;
-    m_syncMethodDone = true;
-}
-
-unsigned long ThreadableWebSocketChannelClientWrapper::bufferedAmount() const
-{
-    return m_bufferedAmount;
-}
-
-void ThreadableWebSocketChannelClientWrapper::setBufferedAmount(unsigned long bufferedAmount)
-{
-    m_bufferedAmount = bufferedAmount;
-    m_syncMethodDone = true;
 }
 
 void ThreadableWebSocketChannelClientWrapper::clearClient()
@@ -219,12 +151,6 @@ void ThreadableWebSocketChannelClientWrapper::processPendingTasks()
 {
     if (m_suspended)
         return;
-    if (!m_syncMethodDone) {
-        // When a synchronous operation is in progress (i.e. the execution stack contains
-        // WorkerThreadableWebSocketChannel::waitForMethodCompletion()), we cannot invoke callbacks in this run loop.
-        m_context->postTask(createCallbackTask(&ThreadableWebSocketChannelClientWrapper::processPendingTasksCallback, this));
-        return;
-    }
     Vector<OwnPtr<ExecutionContextTask> > tasks;
     tasks.swap(m_pendingTasks);
     for (Vector<OwnPtr<ExecutionContextTask> >::const_iterator iter = tasks.begin(); iter != tasks.end(); ++iter)

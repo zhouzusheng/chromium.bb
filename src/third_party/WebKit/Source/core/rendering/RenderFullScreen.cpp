@@ -39,9 +39,9 @@ public:
         setDocumentForAnonymous(&owner->document());
     }
 private:
-    virtual bool isRenderFullScreenPlaceholder() const { return true; }
+    virtual bool isRenderFullScreenPlaceholder() const OVERRIDE { return true; }
     virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
     RenderFullScreen* m_owner;
 };
 
@@ -95,7 +95,7 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
 
     fullscreenStyle->setDisplay(FLEX);
     fullscreenStyle->setJustifyContent(JustifyCenter);
-    fullscreenStyle->setAlignItems(AlignCenter);
+    fullscreenStyle->setAlignItems(ItemPositionCenter);
     fullscreenStyle->setFlexDirection(FlowColumn);
 
     fullscreenStyle->setPosition(FixedPosition);
@@ -104,7 +104,7 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
     fullscreenStyle->setLeft(Length(0, WebCore::Fixed));
     fullscreenStyle->setTop(Length(0, WebCore::Fixed));
 
-    fullscreenStyle->setBackgroundColor(Color::black);
+    fullscreenStyle->setBackgroundColor(StyleColor(Color::black));
 
     return fullscreenStyle.release();
 }

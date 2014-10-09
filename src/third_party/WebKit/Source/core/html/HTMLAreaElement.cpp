@@ -28,6 +28,7 @@
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderView.h"
+#include "platform/LengthFunctions.h"
 #include "platform/graphics/Path.h"
 #include "platform/transforms/AffineTransform.h"
 
@@ -141,30 +142,29 @@ Path HTMLAreaElement::getRegion(const LayoutSize& size) const
     }
 
     Path path;
-    RenderView* renderView = document().renderView();
     switch (shape) {
         case Poly:
             if (m_coords.size() >= 6) {
                 int numPoints = m_coords.size() / 2;
-                path.moveTo(FloatPoint(minimumValueForLength(m_coords[0], width, renderView), minimumValueForLength(m_coords[1], height, renderView)));
+                path.moveTo(FloatPoint(minimumValueForLength(m_coords[0], width), minimumValueForLength(m_coords[1], height)));
                 for (int i = 1; i < numPoints; ++i)
-                    path.addLineTo(FloatPoint(minimumValueForLength(m_coords[i * 2], width, renderView), minimumValueForLength(m_coords[i * 2 + 1], height, renderView)));
+                    path.addLineTo(FloatPoint(minimumValueForLength(m_coords[i * 2], width), minimumValueForLength(m_coords[i * 2 + 1], height)));
                 path.closeSubpath();
             }
             break;
         case Circle:
             if (m_coords.size() >= 3) {
                 Length radius = m_coords[2];
-                int r = min(minimumValueForLength(radius, width, renderView), minimumValueForLength(radius, height, renderView));
-                path.addEllipse(FloatRect(minimumValueForLength(m_coords[0], width, renderView) - r, minimumValueForLength(m_coords[1], height, renderView) - r, 2 * r, 2 * r));
+                int r = min(minimumValueForLength(radius, width), minimumValueForLength(radius, height));
+                path.addEllipse(FloatRect(minimumValueForLength(m_coords[0], width) - r, minimumValueForLength(m_coords[1], height) - r, 2 * r, 2 * r));
             }
             break;
         case Rect:
             if (m_coords.size() >= 4) {
-                int x0 = minimumValueForLength(m_coords[0], width, renderView);
-                int y0 = minimumValueForLength(m_coords[1], height, renderView);
-                int x1 = minimumValueForLength(m_coords[2], width, renderView);
-                int y1 = minimumValueForLength(m_coords[3], height, renderView);
+                int x0 = minimumValueForLength(m_coords[0], width);
+                int y0 = minimumValueForLength(m_coords[1], height);
+                int x1 = minimumValueForLength(m_coords[2], width);
+                int y1 = minimumValueForLength(m_coords[3], height);
                 path.addRect(FloatRect(x0, y0, x1 - x0, y1 - y0));
             }
             break;
@@ -244,11 +244,6 @@ bool HTMLAreaElement::supportsFocus() const
     // If the AREA element was a link, it should support focus.
     // FIXME: This means that an AREA that is not a link cannot be made focusable through contenteditable or tabindex. Is it correct?
     return isLink();
-}
-
-String HTMLAreaElement::target() const
-{
-    return getAttribute(targetAttr);
 }
 
 }

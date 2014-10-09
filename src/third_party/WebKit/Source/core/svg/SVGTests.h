@@ -21,8 +21,7 @@
 #ifndef SVGTests_h
 #define SVGTests_h
 
-#include "core/svg/SVGStringList.h"
-#include "core/svg/properties/SVGAnimatedPropertyMacros.h"
+#include "core/svg/SVGStaticStringList.h"
 #include "wtf/HashSet.h"
 
 namespace WebCore {
@@ -33,11 +32,11 @@ class SVGElement;
 
 class SVGTests {
 public:
-    SVGStringList& requiredFeatures();
-    SVGStringList& requiredExtensions();
-    SVGStringList& systemLanguage();
+    static SVGStringListTearOff* requiredFeatures(SVGTests* object) { return object->m_requiredFeatures->tearOff(); }
+    static SVGStringListTearOff* requiredExtensions(SVGTests* object) { return object->m_requiredExtensions->tearOff(); }
+    static SVGStringListTearOff* systemLanguage(SVGTests* object) { return object->m_systemLanguage->tearOff(); }
 
-    bool hasExtension(const String&) const;
+    static bool hasExtension(SVGTests*, const String&);
     bool isValid() const;
 
     bool parseAttribute(const QualifiedName&, const AtomicString&);
@@ -45,27 +44,13 @@ public:
 
     void addSupportedAttributes(HashSet<QualifiedName>&);
 
-    static SVGAttributeToPropertyMap& attributeToPropertyMap();
-
 protected:
-    SVGTests();
-
-    void synchronizeRequiredFeatures(SVGElement* contextElement);
-    void synchronizeRequiredExtensions(SVGElement* contextElement);
-    void synchronizeSystemLanguage(SVGElement* contextElement);
+    SVGTests(SVGElement* contextElement);
 
 private:
-    // Custom 'requiredFeatures' property
-    static const SVGPropertyInfo* requiredFeaturesPropertyInfo();
-    SVGSynchronizableAnimatedProperty<SVGStringList> m_requiredFeatures;
-
-    // Custom 'requiredExtensions' property
-    static const SVGPropertyInfo* requiredExtensionsPropertyInfo();
-    SVGSynchronizableAnimatedProperty<SVGStringList> m_requiredExtensions;
-
-    // Custom 'systemLanguage' property
-    static const SVGPropertyInfo* systemLanguagePropertyInfo();
-    SVGSynchronizableAnimatedProperty<SVGStringList> m_systemLanguage;
+    RefPtr<SVGStaticStringList> m_requiredFeatures;
+    RefPtr<SVGStaticStringList> m_requiredExtensions;
+    RefPtr<SVGStaticStringList> m_systemLanguage;
 };
 
 } // namespace WebCore

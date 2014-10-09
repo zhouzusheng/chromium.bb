@@ -37,7 +37,7 @@ namespace WebCore {
 
 class AudioContext;
 
-class MediaStreamAudioDestinationNode : public AudioBasicInspectorNode {
+class MediaStreamAudioDestinationNode FINAL : public AudioBasicInspectorNode {
 public:
     static PassRefPtr<MediaStreamAudioDestinationNode> create(AudioContext*, size_t numberOfChannels);
 
@@ -46,10 +46,7 @@ public:
     MediaStream* stream() { return m_stream.get(); }
 
     // AudioNode.
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
-
-    MediaStreamSource* mediaStreamSource();
+    virtual void process(size_t framesToProcess) OVERRIDE;
 
 private:
     MediaStreamAudioDestinationNode(AudioContext*, size_t numberOfChannels);

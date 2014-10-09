@@ -34,11 +34,11 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsLayerClient.h"
+#include "platform/graphics/GraphicsLayerDebugInfo.h"
 #include "platform/graphics/OpaqueRectTrackingContentLayerDelegate.h"
 #include "platform/graphics/filters/FilterOperations.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebAnimationDelegate.h"
-#include "public/platform/WebCompositingReasons.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebImageLayer.h"
 #include "public/platform/WebLayerClient.h"
@@ -52,7 +52,6 @@
 namespace blink {
 class GraphicsLayerFactoryChromium;
 class WebAnimation;
-class WebGraphicsLayerDebugInfo;
 class WebLayer;
 }
 
@@ -89,11 +88,12 @@ public:
     GraphicsLayerClient* client() const { return m_client; }
 
     // blink::WebLayerClient implementation.
-    virtual blink::WebString debugName(blink::WebLayer*) OVERRIDE;
-    virtual blink::WebGraphicsLayerDebugInfo* takeDebugInfo() OVERRIDE;
+    virtual blink::WebGraphicsLayerDebugInfo* takeDebugInfoFor(blink::WebLayer*) OVERRIDE;
 
-    void setCompositingReasons(blink::WebCompositingReasons);
-    blink::WebCompositingReasons compositingReasons() const { return m_compositingReasons; }
+    GraphicsLayerDebugInfo& debugInfo();
+
+    void setCompositingReasons(CompositingReasons);
+    CompositingReasons compositingReasons() const { return m_debugInfo.compositingReasons(); }
 
     GraphicsLayer* parent() const { return m_parent; };
     void setParent(GraphicsLayer*); // Internal use only.
@@ -162,11 +162,11 @@ public:
     const TransformationMatrix& transform() const { return m_transform; }
     void setTransform(const TransformationMatrix&);
 
-    const TransformationMatrix& childrenTransform() const { return m_childrenTransform; }
-    void setChildrenTransform(const TransformationMatrix&);
+    bool shouldFlattenTransform() const { return m_shouldFlattenTransform; }
+    void setShouldFlattenTransform(bool);
 
-    bool preserves3D() const { return m_preserves3D; }
-    void setPreserves3D(bool);
+    int renderingContext() const { return m_3dRenderingContext; }
+    void setRenderingContext(int id);
 
     bool masksToBounds() const { return m_masksToBounds; }
     void setMasksToBounds(bool);
@@ -179,8 +179,6 @@ public:
 
     void setScrollParent(blink::WebLayer*);
     void setClipParent(blink::WebLayer*);
-
-    void setDebugInfo(blink::WebGraphicsLayerDebugInfo*);
 
     // For special cases, e.g. drawing missing tiles on Android.
     // The compositor should never paint this color in normal cases because the RenderLayer
@@ -234,7 +232,6 @@ public:
     // Layer contents
     void setContentsToImage(Image*);
     void setContentsToNinePatch(Image*, const IntRect& aperture);
-    // Pass an invalid color to remove the contents layer.
     void setContentsToSolidColor(const Color&);
     void setContentsToPlatformLayer(blink::WebLayer* layer) { setContentsTo(layer); }
     bool hasContentsLayer() const { return m_contentsLayer; }
@@ -251,16 +248,14 @@ public:
     void setContentsOrientation(CompositingCoordinatesOrientation orientation) { m_contentsOrientation = orientation; }
     CompositingCoordinatesOrientation contentsOrientation() const { return m_contentsOrientation; }
 
-    void dumpLayer(TextStream&, int indent, LayerTreeFlags) const;
+    typedef HashMap<int, int> RenderingContextMap;
+    void dumpLayer(TextStream&, int indent, LayerTreeFlags, RenderingContextMap&) const;
 
     int paintCount() const { return m_paintCount; }
 
     // z-position is the z-equivalent of position(). It's only used for debugging purposes.
     float zPosition() const { return m_zPosition; }
     void setZPosition(float);
-
-    void distributeOpacity(float);
-    float accumulatedOpacity() const;
 
     // If the exposed rect of this layer changes, returns true if this or descendant layers need a flush,
     // for example to allocate new tiles.
@@ -269,9 +264,7 @@ public:
     // Return a string with a human readable form of the layer tree, If debug is true
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeFlags = LayerTreeNormal) const;
-
-    // Return an estimate of the backing store memory cost (in bytes). May be incorrect for tiled layers.
-    double backingStoreMemoryEstimate() const;
+    String debugName(blink::WebLayer*) const;
 
     void resetTrackedRepaints();
     void addRepaintRect(const FloatRect&);
@@ -324,7 +317,7 @@ private:
 
     int incrementPaintCount() { return ++m_paintCount; }
 
-    void dumpProperties(TextStream&, int indent, LayerTreeFlags) const;
+    void dumpProperties(TextStream&, int indent, LayerTreeFlags, RenderingContextMap&) const;
 
     // Helper functions used by settors to keep layer's the state consistent.
     void updateChildList();
@@ -348,7 +341,6 @@ private:
     FloatPoint m_boundsOrigin;
 
     TransformationMatrix m_transform;
-    TransformationMatrix m_childrenTransform;
 
     Color m_backgroundColor;
     float m_opacity;
@@ -359,7 +351,7 @@ private:
     FilterOperations m_filters;
 
     bool m_contentsOpaque : 1;
-    bool m_preserves3D: 1;
+    bool m_shouldFlattenTransform: 1;
     bool m_backfaceVisibility : 1;
     bool m_masksToBounds : 1;
     bool m_drawsContent : 1;
@@ -404,8 +396,8 @@ private:
     OwnPtr<OpaqueRectTrackingContentLayerDelegate> m_opaqueRectTrackingContentLayerDelegate;
 
     ScrollableArea* m_scrollableArea;
-    blink::WebCompositingReasons m_compositingReasons;
-    blink::WebGraphicsLayerDebugInfo* m_debugInfo;
+    GraphicsLayerDebugInfo m_debugInfo;
+    int m_3dRenderingContext;
 };
 
 
@@ -413,7 +405,7 @@ private:
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showGraphicsLayerTree(const WebCore::GraphicsLayer* layer);
+void PLATFORM_EXPORT showGraphicsLayerTree(const WebCore::GraphicsLayer*);
 #endif
 
 #endif // GraphicsLayer_h

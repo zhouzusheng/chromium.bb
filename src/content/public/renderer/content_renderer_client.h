@@ -64,7 +64,9 @@ class CONTENT_EXPORT ContentRendererClient {
   // Notifies us that the RenderThread has been created.
   virtual void RenderThreadStarted() {}
 
-  // Notifies that a new RenderFrame has been created.
+  // Notifies that a new RenderFrame has been created. Note that at this point,
+  // render_frame->GetWebFrame()->parent() is always NULL. This will change once
+  // the frame tree moves from Blink to content.
   virtual void RenderFrameCreated(RenderFrame* render_frame) {}
 
   // Notifies that a new RenderView has been created.
@@ -106,8 +108,9 @@ class CONTENT_EXPORT ContentRendererClient {
                             std::string* error_domain);
 
   // Returns true if the embedder prefers not to show an error page for a failed
-  // navigation to |url|.
-  virtual bool ShouldSuppressErrorPage(const GURL& url);
+  // navigation to |url| in |render_frame|.
+  virtual bool ShouldSuppressErrorPage(RenderFrame* render_frame,
+                                       const GURL& url);
 
   // Returns the information to display when a navigation error occurs.
   // If |error_html| is not null then it may be set to a HTML page containing
@@ -118,10 +121,10 @@ class CONTENT_EXPORT ContentRendererClient {
   // (lack of information on the error code) so the caller should take care to
   // initialize the string values with safe defaults before the call.
   virtual void GetNavigationErrorStrings(
+      content::RenderView* render_view,
       blink::WebFrame* frame,
       const blink::WebURLRequest& failed_request,
       const blink::WebURLError& error,
-      const std::string& accept_languages,
       std::string* error_html,
       base::string16* error_description) {}
 
@@ -179,7 +182,7 @@ class CONTENT_EXPORT ContentRendererClient {
   //
   // Returns true if the navigation was handled by the embedder and should be
   // ignored by WebKit. This method is used by CEF and android_webview.
-  virtual bool HandleNavigation(RenderView* view,
+  virtual bool HandleNavigation(RenderFrame* render_frame,
                                 DocumentState* document_state,
                                 int opener_id,
                                 blink::WebFrame* frame,
@@ -258,7 +261,7 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Creates a permission client proxy for in-renderer worker.
   virtual blink::WebWorkerPermissionClientProxy*
-      CreateWorkerPermissionClientProxy(RenderView* render_view,
+      CreateWorkerPermissionClientProxy(RenderFrame* render_frame,
                                         blink::WebFrame* frame);
 };
 

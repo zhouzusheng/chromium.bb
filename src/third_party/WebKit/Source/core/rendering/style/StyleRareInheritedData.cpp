@@ -33,11 +33,11 @@ namespace WebCore {
 
 struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareInheritedData> {
     void* styleImage;
-    Color firstColor;
+    StyleColor firstColor;
     float firstFloat;
-    Color colors[5];
+    StyleColor colors[5];
     void* ownPtrs[1];
-    AtomicString atomicStrings[5];
+    AtomicString atomicStrings[4];
     void* refPtrs[2];
     Length lengths[1];
     float secondFloat;
@@ -47,15 +47,19 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     short hyphenationShorts[3];
 
     Color touchColors;
-
-    void* variableDataRefs[1];
 };
 
 COMPILE_ASSERT(sizeof(StyleRareInheritedData) == sizeof(SameSizeAsStyleRareInheritedData), StyleRareInheritedData_should_bit_pack);
 
 StyleRareInheritedData::StyleRareInheritedData()
     : listStyleImage(RenderStyle::initialListStyleImage())
+    , textStrokeColor(StyleColor::currentColor())
     , textStrokeWidth(RenderStyle::initialTextStrokeWidth())
+    , textFillColor(StyleColor::currentColor())
+    , textEmphasisColor(StyleColor::currentColor())
+    , visitedLinkTextStrokeColor(StyleColor::currentColor())
+    , visitedLinkTextFillColor(StyleColor::currentColor())
+    , visitedLinkTextEmphasisColor(StyleColor::currentColor())
     , indent(RenderStyle::initialTextIndent())
     , m_effectiveZoom(RenderStyle::initialZoom())
     , widows(RenderStyle::initialWidows())
@@ -80,19 +84,15 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
     , m_imageRendering(RenderStyle::initialImageRendering())
-    , m_lineSnap(RenderStyle::initialLineSnap())
-    , m_lineAlign(RenderStyle::initialLineAlign())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
     , m_rubyPosition(RenderStyle::initialRubyPosition())
     , m_touchActionDelay(RenderStyle::initialTouchActionDelay())
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
-    , m_lineGrid(RenderStyle::initialLineGrid())
     , m_tabSize(RenderStyle::initialTabSize())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
 {
-    m_variables.init();
 }
 
 StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
@@ -132,8 +132,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_textIndentLine(o.m_textIndentLine)
     , m_lineBoxContain(o.m_lineBoxContain)
     , m_imageRendering(o.m_imageRendering)
-    , m_lineSnap(o.m_lineSnap)
-    , m_lineAlign(o.m_lineAlign)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
     , m_rubyPosition(o.m_rubyPosition)
     , m_touchActionDelay(o.m_touchActionDelay)
@@ -143,10 +141,8 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , hyphenationLimitLines(o.hyphenationLimitLines)
     , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
-    , m_lineGrid(o.m_lineGrid)
     , m_tabSize(o.m_tabSize)
     , tapHighlightColor(o.tapHighlightColor)
-    , m_variables(o.m_variables)
 {
 }
 
@@ -208,13 +204,9 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textEmphasisCustomMark == o.textEmphasisCustomMark
         && QuotesData::equals(quotes.get(), o.quotes.get())
         && m_tabSize == o.m_tabSize
-        && m_lineGrid == o.m_lineGrid
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
-        && m_lineSnap == o.m_lineSnap
-        && m_variables == o.m_variables
-        && m_lineAlign == o.m_lineAlign
         && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());
 }
 

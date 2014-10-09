@@ -42,10 +42,10 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/events/Event.h"
 #include "core/events/MessageEvent.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
@@ -135,7 +135,6 @@ void EventSource::connect()
     SecurityOrigin* origin = executionContext()->securityOrigin();
 
     ThreadableLoaderOptions options;
-    options.sendLoadCallbacks = SendCallbacks;
     options.sniffContent = DoNotSniffContent;
     options.allowCredentials = (origin->canRequest(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
     options.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
@@ -282,8 +281,8 @@ void EventSource::didFinishLoading(unsigned long, double)
         // Discard everything that has not been dispatched by now.
         m_receiveBuf.clear();
         m_data.clear();
-        m_eventName = "";
-        m_currentlyParsedEventId = String();
+        m_eventName = emptyAtom;
+        m_currentlyParsedEventId = nullAtom;
     }
     networkRequestEnded();
 }
@@ -377,13 +376,13 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
         if (!m_data.isEmpty()) {
             m_data.removeLast();
             if (!m_currentlyParsedEventId.isNull()) {
-                m_lastEventId.swap(m_currentlyParsedEventId);
-                m_currentlyParsedEventId = String();
+                m_lastEventId = m_currentlyParsedEventId;
+                m_currentlyParsedEventId = nullAtom;
             }
             dispatchEvent(createMessageEvent());
         }
         if (!m_eventName.isEmpty())
-            m_eventName = "";
+            m_eventName = emptyAtom;
     } else if (fieldLength) {
         bool noValue = fieldLength < 0;
 
@@ -402,11 +401,11 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
             if (valueLength)
                 m_data.append(&m_receiveBuf[bufPos], valueLength);
             m_data.append('\n');
-        } else if (field == "event")
-            m_eventName = valueLength ? String(&m_receiveBuf[bufPos], valueLength) : "";
-        else if (field == "id")
-            m_currentlyParsedEventId = valueLength ? String(&m_receiveBuf[bufPos], valueLength) : "";
-        else if (field == "retry") {
+        } else if (field == "event") {
+            m_eventName = valueLength ? AtomicString(&m_receiveBuf[bufPos], valueLength) : "";
+        } else if (field == "id") {
+            m_currentlyParsedEventId = valueLength ? AtomicString(&m_receiveBuf[bufPos], valueLength) : "";
+        } else if (field == "retry") {
             if (!valueLength)
                 m_reconnectDelay = defaultReconnectDelay;
             else {
@@ -428,7 +427,7 @@ void EventSource::stop()
 PassRefPtr<MessageEvent> EventSource::createMessageEvent()
 {
     RefPtr<MessageEvent> event = MessageEvent::create();
-    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : AtomicString(m_eventName), false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
+    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
     m_data.clear();
     return event.release();
 }

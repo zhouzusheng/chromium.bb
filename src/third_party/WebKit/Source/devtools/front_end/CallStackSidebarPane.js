@@ -34,10 +34,9 @@ WebInspector.CallStackSidebarPane = function()
     this.bodyElement.tabIndex = 0;
 
     if (WebInspector.experimentsSettings.asyncStackTraces.isEnabled()) {
-        var asyncCheckbox = this.titleElement.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Async"), WebInspector.settings.enableAsyncStackTraces, true, undefined, WebInspector.UIString("Capture async stack traces")));
+        var asyncCheckbox = this.titleElement.appendChild(WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Async"), WebInspector.settings.enableAsyncStackTraces, true, undefined, WebInspector.UIString("Capture async stack traces")));
         asyncCheckbox.classList.add("scripts-callstack-async");
         asyncCheckbox.addEventListener("click", consumeEvent, false);
-
         WebInspector.settings.enableAsyncStackTraces.addChangeListener(this._asyncStackTracesStateChanged, this);
     }
 }
@@ -68,8 +67,13 @@ WebInspector.CallStackSidebarPane.prototype = {
         this._appendSidebarPlacards(callFrames);
 
         while (asyncStackTrace) {
-            var title = "[" + (asyncStackTrace.description || WebInspector.UIString("Async Call")) + "]";
+            var title = asyncStackTrace.description;
+            if (title)
+                title += " " + WebInspector.UIString("(async)");
+            else
+                title = WebInspector.UIString("Async Call");
             var asyncPlacard = new WebInspector.Placard(title, "");
+            asyncPlacard.element.classList.add("placard-label");
             this.bodyElement.appendChild(asyncPlacard.element);
             this._appendSidebarPlacards(asyncStackTrace.callFrames, asyncPlacard);
             asyncStackTrace = asyncStackTrace.asyncStackTrace;
@@ -102,7 +106,7 @@ WebInspector.CallStackSidebarPane.prototype = {
     {
         var contextMenu = new WebInspector.ContextMenu(event);
 
-        if (!placard._callFrame.isAsync() && WebInspector.debuggerModel.canSetScriptSource())
+        if (!placard._callFrame.isAsync())
             contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Restart frame" : "Restart Frame"), this._restartFrame.bind(this, placard));
 
         contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Copy stack trace" : "Copy Stack Trace"), this._copyStackTrace.bind(this));
@@ -231,8 +235,8 @@ WebInspector.CallStackSidebarPane.prototype = {
      */
     registerShortcuts: function(registerShortcutDelegate)
     {
-        registerShortcutDelegate(WebInspector.SourcesPanelDescriptor.ShortcutKeys.NextCallFrame, this._selectNextCallFrameOnStack.bind(this));
-        registerShortcutDelegate(WebInspector.SourcesPanelDescriptor.ShortcutKeys.PrevCallFrame, this._selectPreviousCallFrameOnStack.bind(this));
+        registerShortcutDelegate(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.NextCallFrame, this._selectNextCallFrameOnStack.bind(this));
+        registerShortcutDelegate(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.PrevCallFrame, this._selectPreviousCallFrameOnStack.bind(this));
     },
 
     /**

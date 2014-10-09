@@ -34,7 +34,6 @@
 #include "V8HTMLOptionElement.h"
 #include "V8Node.h"
 #include "V8NodeList.h"
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
@@ -45,36 +44,10 @@
 
 namespace WebCore {
 
-template<typename CallbackInfo>
-static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString& name, const CallbackInfo& info)
-{
-    Vector<RefPtr<Node> > namedItems;
-    collection->namedItems(name, namedItems);
-
-    if (!namedItems.size()) {
-        v8SetReturnValueNull(info);
-        return;
-    }
-
-    if (namedItems.size() == 1) {
-        v8SetReturnValueFast(info, namedItems.at(0).release(), collection);
-        return;
-    }
-
-    v8SetReturnValueFast(info, NamedNodesCollection::create(namedItems), collection);
-}
-
-void V8HTMLOptionsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, info[0]);
-    HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
-    getNamedItems(imp, name, info);
-}
-
 void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "add", "HTMLOptionsCollection", info.Holder(), info.GetIsolate());
-    if (!V8HTMLOptionElement::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate()))) {
+    if (!V8HTMLOptionElement::hasInstance(info[0], info.GetIsolate())) {
         exceptionState.throwTypeError("The element provided was not an HTMLOptionElement.");
     } else {
         HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
@@ -83,12 +56,11 @@ void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8:
         if (info.Length() < 2) {
             imp->add(option, exceptionState);
         } else {
-            bool ok;
-            V8TRYCATCH_VOID(int, index, toInt32(info[1], ok));
-            if (!ok)
-                exceptionState.throwTypeError("The index provided could not be interpreted as an integer.");
-            else
-                imp->add(option, index, exceptionState);
+            int index = toInt32(info[1], exceptionState);
+            if (exceptionState.throwIfNeeded())
+                return;
+
+            imp->add(option, index, exceptionState);
         }
     }
 

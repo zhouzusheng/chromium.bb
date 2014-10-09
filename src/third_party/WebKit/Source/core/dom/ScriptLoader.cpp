@@ -65,7 +65,6 @@ ScriptLoader::ScriptLoader(Element* element, bool parserInserted, bool alreadySt
     , m_willExecuteWhenDocumentFinishedParsing(false)
     , m_forceAsync(!parserInserted)
     , m_willExecuteInOrder(false)
-    , m_isPotentiallyCORSEnabled(false)
 {
     ASSERT(m_element);
     if (parserInserted && element->document().scriptableDocumentParser() && !element->document().isInDocumentWrite())
@@ -159,7 +158,7 @@ bool ScriptLoader::isScriptTypeSupported(LegacyTypeSupport supportLegacyTypes) c
         type = "text/" + language.lower();
         if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(type) || isLegacySupportedJavaScriptLanguage(language))
             return true;
-    } else if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(type.stripWhiteSpace().lower()) || (supportLegacyTypes == AllowLegacyTypeInTypeAttribute && isLegacySupportedJavaScriptLanguage(type))) {
+    } else if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(type.stripWhiteSpace()) || (supportLegacyTypes == AllowLegacyTypeInTypeAttribute && isLegacySupportedJavaScriptLanguage(type))) {
         return true;
     }
 
@@ -241,8 +240,7 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         // Reset line numbering for nested writes.
         TextPosition position = elementDocument.isInDocumentWrite() ? TextPosition() : scriptStartPosition;
         KURL scriptURL = (!elementDocument.isInDocumentWrite() && m_parserInserted) ? elementDocument.url() : KURL();
-        if (!executePotentiallyCrossOriginScript(ScriptSourceCode(scriptContent(), scriptURL, position)))
-            return false;
+        executeScript(ScriptSourceCode(scriptContent(), scriptURL, position));
     }
 
     return true;
@@ -262,12 +260,9 @@ bool ScriptLoader::fetchScript(const String& sourceUrl)
     if (!stripLeadingAndTrailingHTMLSpaces(sourceUrl).isEmpty()) {
         FetchRequest request(ResourceRequest(elementDocument->completeURL(sourceUrl)), m_element->localName());
 
-        String crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
-        if (!crossOriginMode.isNull()) {
-            StoredCredentials allowCredentials = equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials;
-            request.setCrossOriginAccessControl(elementDocument->securityOrigin(), allowCredentials);
-            m_isPotentiallyCORSEnabled = true;
-        }
+        AtomicString crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
+        if (!crossOriginMode.isNull())
+            request.setCrossOriginAccessControl(elementDocument->securityOrigin(), crossOriginMode);
         request.setCharset(scriptCharset());
 
         bool isValidScriptNonce = elementDocument->contentSecurityPolicy()->allowScriptNonce(m_element->fastGetAttribute(HTMLNames::nonceAttr));
@@ -363,18 +358,6 @@ void ScriptLoader::execute(ScriptResource* resource)
     resource->removeClient(this);
 }
 
-bool ScriptLoader::executePotentiallyCrossOriginScript(const ScriptSourceCode& sourceCode)
-{
-    if (sourceCode.resource()
-        && isPotentiallyCORSEnabled()
-        && !m_element->document().fetcher()->canAccess(sourceCode.resource(), PotentiallyCORSEnabled)) {
-        dispatchErrorEvent();
-        return false;
-    }
-    executeScript(sourceCode);
-    return true;
-}
-
 void ScriptLoader::notifyFinished(Resource* resource)
 {
     ASSERT(!m_willBeParserExecuted);
@@ -391,13 +374,11 @@ void ScriptLoader::notifyFinished(Resource* resource)
     ASSERT_UNUSED(resource, resource == m_resource);
     if (!m_resource)
         return;
-    CORSEnabled corsEnabled = isPotentiallyCORSEnabled() ? PotentiallyCORSEnabled : NotCORSEnabled;
-    if (!elementDocument->fetcher()->canAccess(m_resource.get(), corsEnabled)) {
+    if (m_resource->errorOccurred()) {
         dispatchErrorEvent();
         contextDocument->scriptRunner()->notifyScriptLoadError(this, m_willExecuteInOrder ? ScriptRunner::IN_ORDER_EXECUTION : ScriptRunner::ASYNC_EXECUTION);
         return;
     }
-
     if (m_willExecuteInOrder)
         contextDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::IN_ORDER_EXECUTION);
     else

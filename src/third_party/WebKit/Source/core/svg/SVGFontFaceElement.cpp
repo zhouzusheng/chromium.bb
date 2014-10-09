@@ -28,7 +28,6 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "core/css/CSSFontFaceSrcValue.h"
-#include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
@@ -274,16 +273,8 @@ void SVGFontFaceElement::rebuildFontFace()
         return;
     }
 
-    // we currently ignore all but the first src element, alternatively we could concat them
-    SVGFontFaceSrcElement* srcElement = 0;
-
-    for (Node* child = firstChild(); child && !srcElement; child = child->nextSibling()) {
-        if (child->hasTagName(font_face_srcTag))
-            srcElement = static_cast<SVGFontFaceSrcElement*>(child);
-    }
-
     bool describesParentFont = parentNode()->hasTagName(SVGNames::fontTag);
-    RefPtr<CSSValueList> list;
+    RefPtrWillBeRawPtr<CSSValueList> list;
 
     if (describesParentFont) {
         m_fontElement = toSVGFontElement(parentNode());
@@ -292,8 +283,13 @@ void SVGFontFaceElement::rebuildFontFace()
         list->append(CSSFontFaceSrcValue::createLocal(fontFamily()));
     } else {
         m_fontElement = 0;
-        if (srcElement)
-            list = srcElement->srcValue();
+        // we currently ignore all but the last src element, alternatively we could concat them
+        for (Node* child = lastChild(); child && !list; child = child->previousSibling()) {
+            if (child->hasTagName(font_face_srcTag)) {
+                list = toSVGFontFaceSrcElement(child)->srcValue();
+                break;
+            }
+        }
     }
 
     if (!list || !list->length())

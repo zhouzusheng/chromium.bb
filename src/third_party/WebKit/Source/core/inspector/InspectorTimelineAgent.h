@@ -33,6 +33,7 @@
 
 
 #include "InspectorFrontend.h"
+#include "InspectorTypeBuilder.h"
 #include "bindings/v8/ScriptGCEvent.h"
 #include "core/events/EventPath.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -56,20 +57,20 @@ class DOMWindow;
 class Document;
 class DocumentLoader;
 class Event;
+class ExecutionContext;
 class FloatQuad;
 class Frame;
+class FrameHost;
 class GraphicsContext;
 class GraphicsLayer;
 class InspectorClient;
 class InspectorDOMAgent;
 class InspectorFrontend;
-class InspectorMemoryAgent;
 class InspectorOverlay;
 class InspectorPageAgent;
 class InstrumentingAgents;
 class KURL;
 class Node;
-class Page;
 class RenderImage;
 class RenderObject;
 class ResourceError;
@@ -78,23 +79,13 @@ class ResourceRequest;
 class ResourceResponse;
 class ScriptArguments;
 class ScriptCallStack;
-class TimelineRecordStack;
-class ExecutionContext;
 class ScriptState;
+class TimelineRecordStack;
 class WebSocketHandshakeRequest;
 class WebSocketHandshakeResponse;
 class XMLHttpRequest;
 
 typedef String ErrorString;
-
-namespace TimelineRecordType {
-extern const char ActivateLayerTree[];
-extern const char BeginFrame[];
-extern const char DecodeImage[];
-extern const char GPUTask[];
-extern const char PaintSetup[];
-extern const char Rasterize[];
-};
 
 class TimelineTimeConverter {
 public:
@@ -109,7 +100,7 @@ private:
     double m_startOffset;
 };
 
-class InspectorTimelineAgent
+class InspectorTimelineAgent FINAL
     : public TraceEventTarget<InspectorTimelineAgent>
     , public InspectorBaseAgent<InspectorTimelineAgent>
     , public ScriptGCEventListener
@@ -133,21 +124,21 @@ public:
         size_t usedGPUMemoryBytes;
     };
 
-    static PassOwnPtr<InspectorTimelineAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorMemoryAgent* memoryAgent, InspectorDOMAgent* domAgent, InspectorOverlay* overlay, InspectorCompositeState* state, InspectorType type, InspectorClient* client)
+    static PassOwnPtr<InspectorTimelineAgent> create(InspectorPageAgent* pageAgent, InspectorDOMAgent* domAgent, InspectorOverlay* overlay, InspectorType type, InspectorClient* client)
     {
-        return adoptPtr(new InspectorTimelineAgent(instrumentingAgents, pageAgent, memoryAgent, domAgent, overlay, state, type, client));
+        return adoptPtr(new InspectorTimelineAgent(pageAgent, domAgent, overlay, type, client));
     }
 
-    ~InspectorTimelineAgent();
+    virtual ~InspectorTimelineAgent();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
+    virtual void restore() OVERRIDE;
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeDomCounters, const bool* includeGPUEvents);
-    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> >& events);
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeCounters, const bool* includeGPUEvents) OVERRIDE;
+    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> >& events) OVERRIDE;
 
     void setLayerTreeId(int layerTreeId) { m_layerTreeId = layerTreeId; }
     int id() const { return m_id; }
@@ -218,8 +209,8 @@ public:
     void didScheduleResourceRequest(Document*, const String& url);
     void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&);
     void didReceiveResourceResponse(Frame*, unsigned long, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
-    void didFinishLoading(unsigned long, DocumentLoader*, double monotonicFinishTime);
-    void didFailLoading(unsigned long identifier, DocumentLoader* loader, const ResourceError& error);
+    void didFinishLoading(unsigned long, DocumentLoader*, double monotonicFinishTime, int64_t);
+    void didFailLoading(unsigned long identifier, const ResourceError&);
     bool willReceiveResourceData(Frame*, unsigned long identifier, int length);
     void didReceiveResourceData();
 
@@ -239,7 +230,7 @@ public:
     void processGPUEvent(const GPUEvent&);
 
     // ScriptGCEventListener methods.
-    virtual void didGC(double, double, size_t);
+    virtual void didGC(double, double, size_t) OVERRIDE;
 
     // PlatformInstrumentationClient methods.
     virtual void willDecodeImage(const String& imageType) OVERRIDE;
@@ -251,7 +242,7 @@ private:
 
     friend class TimelineRecordStack;
 
-    InspectorTimelineAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorMemoryAgent*, InspectorDOMAgent*, InspectorOverlay*, InspectorCompositeState*, InspectorType, InspectorClient*);
+    InspectorTimelineAgent(InspectorPageAgent*, InspectorDOMAgent*, InspectorOverlay*, InspectorType, InspectorClient*);
 
     // Trace event handlers
     void onBeginImplSideFrame(const TraceEventDispatcher::TraceEvent&);
@@ -265,18 +256,20 @@ private:
     void onDrawLazyPixelRef(const TraceEventDispatcher::TraceEvent&);
     void onDecodeLazyPixelRefBegin(const TraceEventDispatcher::TraceEvent&);
     void onDecodeLazyPixelRefEnd(const TraceEventDispatcher::TraceEvent&);
+    void onRequestMainThreadFrame(const TraceEventDispatcher::TraceEvent&);
     void onActivateLayerTree(const TraceEventDispatcher::TraceEvent&);
+    void onDrawFrame(const TraceEventDispatcher::TraceEvent&);
     void onLazyPixelRefDeleted(const TraceEventDispatcher::TraceEvent&);
 
-    void didFinishLoadingResource(unsigned long, bool didFail, double finishTime, Frame*);
+    void didFinishLoadingResource(unsigned long, bool didFail, double finishTime);
 
-    void sendEvent(PassRefPtr<JSONObject>);
+    void sendEvent(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
     void appendRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, Frame*);
-    void pushCurrentRecord(PassRefPtr<JSONObject>, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
+    void pushCurrentRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
     TimelineThreadState& threadState(ThreadIdentifier);
 
-    void setDOMCounters(TypeBuilder::Timeline::TimelineEvent*);
-    void setFrameIdentifier(JSONObject* record, Frame*);
+    void setCounters(TypeBuilder::Timeline::TimelineEvent*);
+    void setFrameIdentifier(TypeBuilder::Timeline::TimelineEvent* record, Frame*);
     void populateImageDetails(JSONObject* data, const RenderImage&);
 
     void pushGCEventRecords();
@@ -286,10 +279,10 @@ private:
 
     void commitFrameRecord();
 
-    void addRecordToTimeline(PassRefPtr<JSONObject>);
-    void innerAddRecordToTimeline(PassRefPtr<JSONObject>);
+    void addRecordToTimeline(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
+    void innerAddRecordToTimeline(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
     void clearRecordStack();
-    PassRefPtr<JSONObject> createRecordForEvent(const TraceEventDispatcher::TraceEvent&, const String& type, PassRefPtr<JSONObject> data = 0);
+    PassRefPtr<TypeBuilder::Timeline::TimelineEvent> createRecordForEvent(const TraceEventDispatcher::TraceEvent&, const String& type, PassRefPtr<JSONObject> data);
 
     void localToPageQuad(const RenderObject& renderer, const LayoutRect&, FloatQuad*);
     long long nodeId(Node*);
@@ -297,14 +290,14 @@ private:
     void releaseNodeIds();
 
     double timestamp();
-    Page* page();
+
+    FrameHost* frameHost() const;
 
     bool isStarted();
     void innerStart();
     void innerStop(bool fromConsole);
 
     InspectorPageAgent* m_pageAgent;
-    InspectorMemoryAgent* m_memoryAgent;
     InspectorDOMAgent* m_domAgent;
     InspectorFrontend::Timeline* m_frontend;
     InspectorClient* m_client;
@@ -324,8 +317,8 @@ private:
     typedef Vector<TimelineGCEvent> GCEvents;
     GCEvents m_gcEvents;
     unsigned m_platformInstrumentationClientInstalledAtStackDepth;
-    RefPtr<JSONObject> m_pendingFrameRecord;
-    RefPtr<JSONObject> m_pendingGPURecord;
+    RefPtr<TypeBuilder::Timeline::TimelineEvent> m_pendingFrameRecord;
+    RefPtr<TypeBuilder::Timeline::TimelineEvent> m_pendingGPURecord;
     typedef HashMap<unsigned long long, TimelineImageInfo> PixelRefToImageInfoMap;
     PixelRefToImageInfoMap m_pixelRefToImageInfo;
     RenderImage* m_imageBeingPainted;

@@ -171,7 +171,7 @@ WebInspector.ProjectDelegate.prototype = {
  */
 WebInspector.Project = function(workspace, projectDelegate)
 {
-    /** @type {!Object.<string, {uiSourceCode: !WebInspector.UISourceCode, index: number}>} */
+    /** @type {!Object.<string, !{uiSourceCode: !WebInspector.UISourceCode, index: number}>} */
     this._uiSourceCodesMap = {};
     /** @type {!Array.<!WebInspector.UISourceCode>} */
     this._uiSourceCodesList = [];
@@ -262,6 +262,14 @@ WebInspector.Project.prototype = {
         this._workspace.dispatchEventToListeners(WebInspector.Workspace.Events.ProjectWillReset, this);
         this._uiSourceCodesMap = {};
         this._uiSourceCodesList = [];
+    },
+
+    /**
+     * @return {!WebInspector.Workspace}
+     */
+    workspace: function()
+    {
+        return this._workspace;
     },
 
     /**
@@ -495,6 +503,7 @@ WebInspector.Workspace = function(fileSystemMapping)
     this._fileSystemMapping = fileSystemMapping;
     /** @type {!Object.<string, !WebInspector.Project>} */
     this._projects = {};
+    this._hasResourceContentTrackingExtensions = false;
 }
 
 WebInspector.Workspace.Events = {
@@ -631,8 +640,6 @@ WebInspector.Workspace.prototype = {
      */
     hasMappingForURL: function(url)
     {
-        if (!InspectorFrontendHost.supportsFileSystems())
-            return false;
         return this._fileSystemMapping.hasMappingForURL(url);
     },
 
@@ -654,8 +661,6 @@ WebInspector.Workspace.prototype = {
      */
     uiSourceCodeForURL: function(url)
     {
-        if (!InspectorFrontendHost.supportsFileSystems())
-            return this._networkUISourceCodeForURL(url);
         var file = this._fileSystemMapping.fileForURL(url);
         if (!file)
             return this._networkUISourceCodeForURL(url);
@@ -696,6 +701,22 @@ WebInspector.Workspace.prototype = {
     {
         this._fileSystemMapping.removeMappingForURL(uiSourceCode.url);
         WebInspector.suggestReload();
+    },
+
+    /**
+     * @param {boolean} hasExtensions
+     */
+    setHasResourceContentTrackingExtensions: function(hasExtensions)
+    {
+        this._hasResourceContentTrackingExtensions = hasExtensions;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    hasResourceContentTrackingExtensions: function()
+    {
+        return this._hasResourceContentTrackingExtensions;
     },
 
     __proto__: WebInspector.Object.prototype

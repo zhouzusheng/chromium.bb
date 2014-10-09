@@ -45,7 +45,7 @@ protected:
     HTMLMeterElement* meterElement() const;
 
 private:
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 };
 
 class MeterInnerElement FINAL : public MeterShadowElement {
@@ -70,7 +70,7 @@ class MeterValueElement FINAL : public MeterShadowElement {
 public:
     static PassRefPtr<MeterValueElement> create(Document&);
     void setWidthPercentage(double);
-    void updatePseudo() { setPseudo(valuePseudoId()); }
+    void updatePseudo() { setShadowPseudoId(valuePseudoId()); }
 
 private:
     MeterValueElement(Document&);

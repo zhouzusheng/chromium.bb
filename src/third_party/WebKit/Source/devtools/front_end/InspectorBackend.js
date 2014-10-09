@@ -234,7 +234,7 @@ InspectorBackendClass.prototype = {
             var domainName = method[0];
             var functionName = method[1];
             if (!(domainName in this._domainDispatchers)) {
-                console.error("Protocol Error: the message is for non-existing domain '" + domainName + "'");
+                console.error("Protocol Error: the message " + messageObject.method + " is for non-existing domain '" + domainName + "'");
                 return;
             }
             var dispatcher = this._domainDispatchers[domainName];
@@ -302,6 +302,36 @@ InspectorBackendClass.prototype = {
         var schema = JSON.parse(xhr.responseText);
         var code = InspectorBackendClass._generateCommands(schema);
         eval(code);
+    },
+
+    /**
+     * @param {function(T)} clientCallback
+     * @param {string} errorPrefix
+     * @param {function(new:T,S)=} constructor
+     * @param {T=} defaultValue
+     * @return {function(?string, S)}
+     * @template T,S
+     */
+    wrapClientCallback: function(clientCallback, errorPrefix, constructor, defaultValue)
+    {
+        /**
+         * @param {?string} error
+         * @param {S} value
+         * @template S
+         */
+        function callbackWrapper(error, value)
+        {
+            if (error) {
+                console.error(errorPrefix + error);
+                clientCallback(defaultValue);
+                return;
+            }
+            if (constructor)
+                clientCallback(new constructor(value));
+            else
+                clientCallback(value);
+        }
+        return callbackWrapper;
     }
 }
 

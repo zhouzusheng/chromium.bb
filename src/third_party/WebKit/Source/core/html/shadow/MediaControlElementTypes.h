@@ -38,17 +38,12 @@
 
 namespace WebCore {
 
-// Must match WebKitSystemInterface.h
 enum MediaControlElementType {
     MediaEnterFullscreenButton = 0,
     MediaMuteButton,
     MediaPlayButton,
-    MediaSeekBackButton,
-    MediaSeekForwardButton,
     MediaSlider,
     MediaSliderThumb,
-    MediaRewindButton,
-    MediaReturnToRealtimeButton,
     MediaShowClosedCaptionsButton,
     MediaHideClosedCaptionsButton,
     MediaUnMuteButton,
@@ -63,7 +58,6 @@ enum MediaControlElementType {
     MediaVolumeSliderThumb,
     MediaFullScreenVolumeSlider,
     MediaFullScreenVolumeSliderThumb,
-    MediaVolumeSliderMuteButton,
     MediaTextTrackDisplayContainer,
     MediaTextTrackDisplay,
     MediaExitFullscreenButton,
@@ -79,22 +73,19 @@ MediaControlElementType mediaControlElementType(Node*);
 
 class MediaControlElement {
 public:
-    virtual void hide();
-    virtual void show();
-    virtual bool isShowing() const;
+    void hide();
+    void show();
 
-    virtual MediaControlElementType displayType() { return m_displayType; }
-    virtual const AtomicString& pseudo() const = 0;
+    MediaControlElementType displayType() { return m_displayType; }
 
-    virtual void setMediaController(MediaControllerInterface* controller) { m_mediaController = controller; }
-    virtual MediaControllerInterface* mediaController() const { return m_mediaController; }
+    void setMediaController(MediaControllerInterface* controller) { m_mediaController = controller; }
+    MediaControllerInterface* mediaController() const { return m_mediaController; }
 
 protected:
     explicit MediaControlElement(MediaControlElementType, HTMLElement*);
     ~MediaControlElement() { }
 
-    virtual void setDisplayType(MediaControlElementType);
-    virtual bool isMediaControlElement() const { return true; }
+    void setDisplayType(MediaControlElementType);
 
 private:
     MediaControllerInterface* m_mediaController;
@@ -106,7 +97,7 @@ private:
 
 class MediaControlDivElement : public HTMLDivElement, public MediaControlElement {
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
+    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
     explicit MediaControlDivElement(Document&, MediaControlElementType);
 };
 
@@ -114,7 +105,7 @@ protected:
 
 class MediaControlInputElement : public HTMLInputElement, public MediaControlElement {
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
+    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
     explicit MediaControlInputElement(Document&, MediaControlElementType);
 
 private:

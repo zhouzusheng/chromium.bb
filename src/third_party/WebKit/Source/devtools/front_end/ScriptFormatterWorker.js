@@ -34,18 +34,44 @@ importScripts("cm/javascript.js");
 importScripts("cm/xml.js");
 importScripts("cm/htmlmixed.js");
 WebInspector = {};
-FormatterWorker = {};
-importScripts("CodeMirrorUtils.js");
-
-var onmessage = function(event) {
-    if (!event.data.method)
-        return;
-
-    FormatterWorker[event.data.method](event.data.params);
+FormatterWorker = {
+    /**
+     * @param {string} mimeType
+     * @return {function(string, function(string, ?string, number, number))}
+     */
+    createTokenizer: function(mimeType)
+    {
+        var mode = CodeMirror.getMode({indentUnit: 2}, mimeType);
+        var state = CodeMirror.startState(mode);
+        function tokenize(line, callback)
+        {
+            var stream = new CodeMirror.StringStream(line);
+            while (!stream.eol()) {
+                var style = mode.token(stream, state);
+                var value = stream.current();
+                callback(value, style, stream.start, stream.start + value.length);
+                stream.start = stream.pos;
+            }
+        }
+        return tokenize;
+    }
 };
 
 /**
- * @param {!Object} params
+ * @typedef {{indentString: string, content: string, mimeType: string}}
+ */
+var FormatterParameters;
+
+var onmessage = function(event) {
+    var data = /** @type !{method: string, params: !FormatterParameters} */ (event.data);
+    if (!data.method)
+        return;
+
+    FormatterWorker[data.method](data.params);
+};
+
+/**
+ * @param {!FormatterParameters} params
  */
 FormatterWorker.format = function(params)
 {
@@ -83,12 +109,12 @@ FormatterWorker._chunkCount = function(totalLength, chunkSize)
 /**
  * @param {!Object} params
  */
-FormatterWorker.outline = function(params)
+FormatterWorker.javaScriptOutline = function(params)
 {
-    const chunkSize = 100000; // characters per data chunk
-    const totalLength = params.content.length;
-    const lines = params.content.split("\n");
-    const chunkCount = FormatterWorker._chunkCount(totalLength, chunkSize);
+    var chunkSize = 100000; // characters per data chunk
+    var totalLength = params.content.length;
+    var lines = params.content.split("\n");
+    var chunkCount = FormatterWorker._chunkCount(totalLength, chunkSize);
     var outlineChunk = [];
     var previousIdentifier = null;
     var previousToken = null;
@@ -99,22 +125,32 @@ FormatterWorker.outline = function(params)
     var isReadingArguments = false;
     var argumentsText = "";
     var currentFunction = null;
-    var tokenizer = WebInspector.CodeMirrorUtils.createTokenizer("text/javascript");
+    var tokenizer = FormatterWorker.createTokenizer("text/javascript");
     for (var i = 0; i < lines.length; ++i) {
         var line = lines[i];
         tokenizer(line, processToken);
     }
 
     /**
+     * @param {?string} tokenType
+     * @return {boolean}
+     */
+    function isJavaScriptIdentifier(tokenType)
+    {
+        if (!tokenType)
+            return false;
+        return tokenType.startsWith("variable") || tokenType.startsWith("property") || tokenType === "def";
+    }
+
+    /**
      * @param {string} tokenValue
-     * @param {string} tokenType
+     * @param {?string} tokenType
      * @param {number} column
      * @param {number} newColumn
      */
     function processToken(tokenValue, tokenType, column, newColumn)
     {
-        tokenType = tokenType ? WebInspector.CodeMirrorUtils.convertTokenType(tokenType) : null;
-        if (tokenType === "javascript-ident") {
+        if (isJavaScriptIdentifier(tokenType)) {
             previousIdentifier = tokenValue;
             if (tokenValue && previousToken === "function") {
                 // A named function: "function f...".
@@ -122,7 +158,7 @@ FormatterWorker.outline = function(params)
                 addedFunction = true;
                 previousIdentifier = null;
             }
-        } else if (tokenType === "javascript-keyword") {
+        } else if (tokenType === "keyword") {
             if (tokenValue === "function") {
                 if (previousIdentifier && (previousToken === "=" || previousToken === ":")) {
                     // Anonymous function assigned to an identifier: "...f = function..."
@@ -132,7 +168,7 @@ FormatterWorker.outline = function(params)
                     previousIdentifier = null;
                 }
             }
-        } else if (tokenValue === "." && previousTokenType === "javascript-ident")
+        } else if (tokenValue === "." && isJavaScriptIdentifier(previousTokenType))
             previousIdentifier += ".";
         else if (tokenValue === "(" && addedFunction)
             isReadingArguments = true;
@@ -162,6 +198,89 @@ FormatterWorker.outline = function(params)
     }
 
     postMessage({ chunk: outlineChunk, total: chunkCount, index: chunkCount });
+}
+
+FormatterWorker.CSSParserStates = {
+    Initial: "Initial",
+    Selector: "Selector",
+    AtRule: "AtRule",
+};
+
+FormatterWorker.cssOutline = function(params)
+{
+    var chunkSize = 100000; // characters per data chunk
+    var totalLength = params.content.length;
+    var lines = params.content.split("\n");
+    var chunkCount = FormatterWorker._chunkCount(totalLength, chunkSize);
+    var rules = [];
+    var processedChunkCharacters = 0;
+    var currentChunk = 0;
+
+    var state = FormatterWorker.CSSParserStates.Initial;
+    var rule;
+    var property;
+
+    /**
+     * @param {string} tokenValue
+     * @param {?string} tokenType
+     * @param {number} column
+     * @param {number} newColumn
+     */
+    function processToken(tokenValue, tokenType, column, newColumn)
+    {
+        switch (state) {
+        case FormatterWorker.CSSParserStates.Initial:
+            if (tokenType === "qualifier" || tokenType === "builtin" || tokenType === "tag") {
+                rule = {
+                    selectorText: tokenValue,
+                    lineNumber: lineNumber,
+                    columNumber: column,
+                };
+                state = FormatterWorker.CSSParserStates.Selector;
+            } else if (tokenType === "def") {
+                rule = {
+                    atRule: tokenValue,
+                    lineNumber: lineNumber,
+                    columNumber: column,
+                };
+                state = FormatterWorker.CSSParserStates.AtRule;
+            }
+            break;
+        case FormatterWorker.CSSParserStates.Selector:
+            if (tokenValue === "{" && tokenType === null) {
+                rule.selectorText = rule.selectorText.trim();
+                rules.push(rule);
+                state = FormatterWorker.CSSParserStates.Initial;
+            } else {
+                rule.selectorText += tokenValue;
+            }
+            break;
+        case FormatterWorker.CSSParserStates.AtRule:
+            if ((tokenValue === ";" || tokenValue === "{") && tokenType === null) {
+                rule.atRule = rule.atRule.trim();
+                rules.push(rule);
+                state = FormatterWorker.CSSParserStates.Initial;
+            } else {
+                rule.atRule += tokenValue;
+            }
+            break;
+        default:
+            console.assert(false, "Unknown CSS parser state.");
+        }
+        processedChunkCharacters += newColumn - column;
+        if (processedChunkCharacters > chunkSize) {
+            postMessage({ chunk: rules, total: chunkCount, index: currentChunk++ });
+            rules = [];
+            processedChunkCharacters = 0;
+        }
+    }
+    var tokenizer = FormatterWorker.createTokenizer("text/css");
+    var lineNumber;
+    for (lineNumber = 0; lineNumber < lines.length; ++lineNumber) {
+        var line = lines[lineNumber];
+        tokenizer(line, processToken);
+    }
+    postMessage({ chunk: rules, total: chunkCount, index: currentChunk++ });
 }
 
 /**
@@ -221,6 +340,7 @@ FormatterWorker.HTMLFormatter = function(indentString)
 FormatterWorker.HTMLFormatter.prototype = {
     /**
      * @param {string} content
+     * @return {!{content: string, mapping: {original: !Array.<number>, formatted: !Array.<number>}}}
      */
     format: function(content)
     {
@@ -232,13 +352,13 @@ FormatterWorker.HTMLFormatter.prototype = {
 
         var scriptOpened = false;
         var styleOpened = false;
-        var tokenizer = WebInspector.CodeMirrorUtils.createTokenizer("text/html");
+        var tokenizer = FormatterWorker.createTokenizer("text/html");
 
         /**
          * @this {FormatterWorker.HTMLFormatter}
          */
         function processToken(tokenValue, tokenType, tokenStart, tokenEnd) {
-            if (tokenType !== "xml-tag")
+            if (tokenType !== "tag")
                 return;
             if (tokenValue.toLowerCase() === "<script") {
                 scriptOpened = true;
@@ -305,7 +425,7 @@ FormatterWorker.HTMLFormatter.prototype = {
     },
 
     /**
-     * @param {function(string, {formatted: !Array.<number>, original: !Array.<number>}, number, number, string)} formatFunction
+     * @param {function(string, !{formatted: !Array.<number>, original: !Array.<number>}, number, number, string)} formatFunction
      * @param {number} cursor
      */
     _handleSubFormatterEnd: function(formatFunction, cursor)
@@ -331,6 +451,9 @@ Array.prototype.keySet = function()
     return keys;
 };
 
+/**
+ * @return {!Object}
+ */
 function require()
 {
     return parse;

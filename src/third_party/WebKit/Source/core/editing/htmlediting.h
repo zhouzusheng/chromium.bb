@@ -102,7 +102,7 @@ bool isTabSpanNode(const Node*);
 bool isTabSpanTextNode(const Node*);
 bool isMailBlockquote(const Node*);
 bool isRenderedTable(const Node*);
-bool isTableElement(const Node*);
+bool isRenderedTableElement(const Node*);
 bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
@@ -127,7 +127,6 @@ Position previousCandidate(const Position&);
 Position nextVisuallyDistinctCandidate(const Position&);
 Position previousVisuallyDistinctCandidate(const Position&);
 
-Position positionOutsideTabSpan(const Position&);
 Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 
@@ -153,6 +152,10 @@ int comparePositions(const PositionWithAffinity&, const PositionWithAffinity&);
 // boolean functions on Position
 
 enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
+// FIXME: Both isEditablePosition and isRichlyEditablePosition rely on up-to-date
+// style to give proper results. They shouldn't update style by default, but
+// should make it clear that that is the contract.
+// FIXME: isRichlyEditablePosition should also take EUpdateStyle.
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool lineBreakExistsAtPosition(const Position&);

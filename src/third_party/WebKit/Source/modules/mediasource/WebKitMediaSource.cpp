@@ -34,6 +34,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/TimeRanges.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
 #include "platform/ContentType.h"
@@ -45,9 +46,9 @@ using blink::WebSourceBuffer;
 
 namespace WebCore {
 
-PassRefPtr<WebKitMediaSource> WebKitMediaSource::create(ExecutionContext* context)
+PassRefPtrWillBeRawPtr<WebKitMediaSource> WebKitMediaSource::create(ExecutionContext* context)
 {
-    RefPtr<WebKitMediaSource> mediaSource(adoptRef(new WebKitMediaSource(context)));
+    RefPtrWillBeRawPtr<WebKitMediaSource> mediaSource(adoptRefCountedWillBeRefCountedGarbageCollected(new WebKitMediaSource(context)));
     mediaSource->suspendIfNeeded();
     return mediaSource.release();
 }
@@ -102,7 +103,7 @@ WebKitSourceBuffer* WebKitMediaSource::addSourceBuffer(const String& type, Excep
     if (!webSourceBuffer)
         return 0;
 
-    RefPtr<WebKitSourceBuffer> buffer = WebKitSourceBuffer::create(webSourceBuffer.release(), this);
+    RefPtrWillBeRawPtr<WebKitSourceBuffer> buffer = WebKitSourceBuffer::create(webSourceBuffer.release(), this);
     // 6. Add the new object to sourceBuffers and fire a addsourcebuffer on that object.
     m_sourceBuffers->add(buffer);
     m_activeSourceBuffers->add(buffer);
@@ -150,6 +151,9 @@ void WebKitMediaSource::removeSourceBuffer(WebKitSourceBuffer* buffer, Exception
 
 void WebKitMediaSource::onReadyStateChange(const AtomicString& oldState, const AtomicString& newState)
 {
+    if (oldState == closedKeyword() && newState == openKeyword())
+        UseCounter::countDeprecation(executionContext(), UseCounter::PrefixedMediaSourceOpen);
+
     if (isClosed()) {
         m_sourceBuffers->clear();
         m_activeSourceBuffers->clear();
@@ -177,6 +181,12 @@ Vector<RefPtr<TimeRanges> > WebKitMediaSource::activeRanges() const
     return activeRanges;
 }
 
+bool WebKitMediaSource::isUpdating() const
+{
+    // Prefixed MSE has no asynchronous append implementation.
+    return false;
+}
+
 bool WebKitMediaSource::isTypeSupported(const String& type)
 {
     // Section 2.1 isTypeSupported() method steps.
@@ -202,6 +212,13 @@ bool WebKitMediaSource::isTypeSupported(const String& type)
 const AtomicString& WebKitMediaSource::interfaceName() const
 {
     return EventTargetNames::WebKitMediaSource;
+}
+
+void WebKitMediaSource::trace(Visitor* visitor)
+{
+    visitor->trace(m_sourceBuffers);
+    visitor->trace(m_activeSourceBuffers);
+    MediaSourceBase::trace(visitor);
 }
 
 } // namespace WebCore

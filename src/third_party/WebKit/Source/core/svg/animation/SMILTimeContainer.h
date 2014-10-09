@@ -53,7 +53,6 @@ public:
 
     SMILTime elapsed() const;
 
-    bool isActive() const;
     bool isPaused() const;
     bool isStarted() const;
 
@@ -67,12 +66,14 @@ public:
 private:
     SMILTimeContainer(SVGSVGElement* owner);
 
+    bool isTimelineRunning() const;
+    void scheduleAnimationFrame(SMILTime fireTime);
+    void scheduleAnimationFrame();
+    void cancelAnimationFrame();
     void timerFired(Timer<SMILTimeContainer>*);
-    void startTimer(SMILTime fireTime, SMILTime minimumDelay = 0);
     void updateAnimations(SMILTime elapsed, bool seekToTime = false);
 
     void updateDocumentOrderIndexes();
-    void sortByPriority(Vector<SVGSMILElement*>& smilElements, SMILTime elapsed);
     double lastResumeTime() const { return m_resumeTime ? m_resumeTime : m_beginTime; }
 
     double m_beginTime;

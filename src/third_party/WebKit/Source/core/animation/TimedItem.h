@@ -31,6 +31,7 @@
 #ifndef TimedItem_h
 #define TimedItem_h
 
+#include "core/animation/TimedItemTiming.h"
 #include "core/animation/Timing.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -76,15 +77,25 @@ public:
     bool isCurrent() const { return ensureCalculated().isCurrent; }
     bool isInEffect() const { return ensureCalculated().isInEffect; }
     bool isInPlay() const { return ensureCalculated().isInPlay; }
-    double timeToEffectChange() const { return ensureCalculated().timeToEffectChange; }
+    double timeToForwardsEffectChange() const { return ensureCalculated().timeToForwardsEffectChange; }
+    double timeToReverseEffectChange() const { return ensureCalculated().timeToReverseEffectChange; }
 
     double currentIteration() const { return ensureCalculated().currentIteration; }
-    double activeDuration() const { return ensureCalculated().activeDuration; }
+    double duration() const { return iterationDuration(); }
+    double activeDuration() const;
     double timeFraction() const { return ensureCalculated().timeFraction; }
     double startTime() const { return m_startTime; }
+    double endTime() const { return startTime() + specifiedTiming().startDelay + activeDuration() + specifiedTiming().endDelay; }
+
     const Player* player() const { return m_player; }
     Player* player() { return m_player; }
-    const Timing& specified() const { return m_specified; }
+    Player* player(bool& isNull) { isNull = !m_player; return m_player; }
+    const Timing& specifiedTiming() const { return m_specified; }
+    PassRefPtr<TimedItemTiming> specified() { return TimedItemTiming::create(this); }
+    void updateSpecifiedTiming(const Timing&);
+
+    double localTime(bool& isNull) const { isNull = !m_player; return ensureCalculated().localTime; }
+    double currentIteration(bool& isNull) const { isNull = !ensureCalculated().isInEffect; return ensureCalculated().currentIteration; }
 
 protected:
     TimedItem(const Timing&, PassOwnPtr<EventDelegate> = nullptr);
@@ -97,10 +108,14 @@ protected:
     void invalidate() const { m_needsUpdate = true; };
 
 private:
+
+    double iterationDuration() const;
+    double repeatedDuration() const;
+
     // Returns whether style recalc was triggered.
     virtual bool updateChildrenAndEffects() const = 0;
     virtual double intrinsicIterationDuration() const { return 0; };
-    virtual double calculateTimeToEffectChange(double localTime, double timeToNextIteration) const = 0;
+    virtual double calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const = 0;
     virtual void didAttach() { };
     virtual void willDetach() { };
 
@@ -124,23 +139,22 @@ private:
     Timing m_specified;
     OwnPtr<EventDelegate> m_eventDelegate;
 
-    // FIXME: Should be versioned by monotonic value on player.
     mutable struct CalculatedTiming {
-        double activeDuration;
         Phase phase;
         double currentIteration;
         double timeFraction;
         bool isCurrent;
         bool isInEffect;
         bool isInPlay;
-        double timeToEffectChange;
+        double localTime;
+        double timeToForwardsEffectChange;
+        double timeToReverseEffectChange;
     } m_calculated;
     mutable bool m_isFirstSample;
     mutable bool m_needsUpdate;
     mutable double m_lastUpdateTime;
 
-    // FIXME: Should check the version and reinherit time if inconsistent.
-    const CalculatedTiming& ensureCalculated() const { return m_calculated; }
+    const CalculatedTiming& ensureCalculated() const;
 };
 
 } // namespace WebCore

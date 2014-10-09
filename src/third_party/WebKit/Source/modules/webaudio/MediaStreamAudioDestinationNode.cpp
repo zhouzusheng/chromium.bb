@@ -28,11 +28,11 @@
 
 #include "modules/webaudio/MediaStreamAudioDestinationNode.h"
 
-#include "core/platform/mediastream/MediaStreamCenter.h"
-#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "platform/UUID.h"
+#include "platform/mediastream/MediaStreamCenter.h"
+#include "public/platform/WebRTCPeerConnectionHandler.h"
 #include "wtf/Locker.h"
 
 namespace WebCore {
@@ -61,11 +61,6 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* c
     initialize();
 }
 
-MediaStreamSource* MediaStreamAudioDestinationNode::mediaStreamSource()
-{
-    return m_source.get();
-}
-
 MediaStreamAudioDestinationNode::~MediaStreamAudioDestinationNode()
 {
     uninitialize();
@@ -75,10 +70,6 @@ void MediaStreamAudioDestinationNode::process(size_t numberOfFrames)
 {
     m_mixBus->copyFrom(*input(0)->bus());
     m_source->consumeAudio(m_mixBus.get(), numberOfFrames);
-}
-
-void MediaStreamAudioDestinationNode::reset()
-{
 }
 
 } // namespace WebCore

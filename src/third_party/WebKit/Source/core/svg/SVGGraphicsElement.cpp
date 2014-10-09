@@ -37,11 +37,11 @@ DEFINE_ANIMATED_TRANSFORM_LIST(SVGGraphicsElement, SVGNames::transformAttr, Tran
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGGraphicsElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(transform)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
 SVGGraphicsElement::SVGGraphicsElement(const QualifiedName& tagName, Document& document, ConstructionType constructionType)
     : SVGElement(tagName, document, constructionType)
+    , SVGTests(this)
 {
     registerAnimatedPropertiesForSVGGraphicsElement();
 }
@@ -57,7 +57,7 @@ AffineTransform SVGGraphicsElement::getTransformToElement(SVGElement* target, Ex
     if (target && target->isSVGGraphicsElement()) {
         AffineTransform targetCTM = toSVGGraphicsElement(target)->getCTM(AllowStyleUpdate);
         if (!targetCTM.isInvertible()) {
-            exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+            exceptionState.throwDOMException(InvalidStateError, "The target transformation is not invertable.");
             return ctm;
         }
         ctm = targetCTM.inverse() * ctm;
@@ -223,26 +223,20 @@ SVGElement* SVGGraphicsElement::farthestViewportElement() const
     return farthest;
 }
 
-SVGRect SVGGraphicsElement::getBBox()
+FloatRect SVGGraphicsElement::getBBox()
 {
     document().updateLayoutIgnorePendingStylesheets();
 
     // FIXME: Eventually we should support getBBox for detached elements.
     if (!renderer())
-        return SVGRect();
+        return FloatRect();
 
     return renderer()->objectBoundingBox();
 }
 
-SVGRect SVGGraphicsElement::getStrokeBBox()
+PassRefPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript()
 {
-    document().updateLayoutIgnorePendingStylesheets();
-
-    // FIXME: Eventually we should support getStrokeBBox for detached elements.
-    if (!renderer())
-        return SVGRect();
-
-    return renderer()->strokeBoundingBox();
+    return SVGRectTearOff::create(SVGRect::create(getBBox()), 0, PropertyIsNotAnimVal);
 }
 
 RenderObject* SVGGraphicsElement::createRenderer(RenderStyle*)

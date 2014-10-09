@@ -29,10 +29,11 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 #include "modules/mediastream/RTCDTMFToneChangeEvent.h"
-#include "platform/mediastream/RTCDTMFSenderHandler.h"
+#include "public/platform/WebMediaStreamTrack.h"
+#include "public/platform/WebRTCDTMFSenderHandler.h"
+#include "public/platform/WebRTCPeerConnectionHandler.h"
 
 namespace WebCore {
 
@@ -42,10 +43,10 @@ static const long maxToneDurationMs = 6000;
 static const long minInterToneGapMs = 50;
 static const long defaultInterToneGapMs = 50;
 
-PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
+PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ExecutionContext* context, blink::WebRTCPeerConnectionHandler* peerConnectionHandler, PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
 {
     RefPtr<MediaStreamTrack> track = prpTrack;
-    OwnPtr<RTCDTMFSenderHandler> handler = peerConnectionHandler->createDTMFSender(track->component());
+    OwnPtr<blink::WebRTCDTMFSenderHandler> handler = adoptPtr(peerConnectionHandler->createDTMFSender(track->component()));
     if (!handler) {
         exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
@@ -56,7 +57,7 @@ PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ExecutionContext* context, RTCPe
     return dtmfSender.release();
 }
 
-RTCDTMFSender::RTCDTMFSender(ExecutionContext* context, PassRefPtr<MediaStreamTrack> track, PassOwnPtr<RTCDTMFSenderHandler> handler)
+RTCDTMFSender::RTCDTMFSender(ExecutionContext* context, PassRefPtr<MediaStreamTrack> track, PassOwnPtr<blink::WebRTCDTMFSenderHandler> handler)
     : ActiveDOMObject(context)
     , m_track(track)
     , m_duration(defaultToneDurationMs)
@@ -122,7 +123,7 @@ void RTCDTMFSender::insertDTMF(const String& tones, long duration, long interTon
         exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
 }
 
-void RTCDTMFSender::didPlayTone(const String& tone)
+void RTCDTMFSender::didPlayTone(const blink::WebString& tone)
 {
     scheduleDispatchEvent(RTCDTMFToneChangeEvent::create(tone));
 }

@@ -30,6 +30,7 @@
 #include "config.h"
 #include "core/rendering/shapes/Shape.h"
 
+#include "core/css/BasicShapeFunctions.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/shapes/BoxShape.h"
 #include "core/rendering/shapes/PolygonShape.h"
@@ -45,7 +46,7 @@
 
 namespace WebCore {
 
-static PassOwnPtr<Shape> createBoxShape(const FloatRoundedRect& bounds)
+static PassOwnPtr<Shape> createInsetShape(const FloatRoundedRect& bounds)
 {
     ASSERT(bounds.rect().width() >= 0 && bounds.rect().height() >= 0);
     return adoptPtr(new BoxShape(bounds));
@@ -138,8 +139,8 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
         break;
     }
 
-    case BasicShape::BasicShapeCircleType: {
-        const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
+    case BasicShape::DeprecatedBasicShapeCircleType: {
+        const DeprecatedBasicShapeCircle* circle = static_cast<const DeprecatedBasicShapeCircle*>(basicShape);
         float centerX = floatValueForLength(circle->centerX(), boxWidth);
         float centerY = floatValueForLength(circle->centerY(), boxHeight);
         // This method of computing the radius is as defined in SVG
@@ -153,8 +154,18 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
         break;
     }
 
-    case BasicShape::BasicShapeEllipseType: {
-        const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(basicShape);
+    case BasicShape::BasicShapeCircleType: {
+        const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
+        FloatPoint center = floatPointForCenterCoordinate(circle->centerX(), circle->centerY(), FloatSize(boxWidth, boxHeight));
+        float radius = circle->floatValueForRadiusInBox(FloatSize(boxWidth, boxHeight));
+        FloatPoint logicalCenter = physicalPointToLogical(center, logicalBoxSize.height(), writingMode);
+
+        shape = createCircleShape(logicalCenter, radius);
+        break;
+    }
+
+    case BasicShape::DeprecatedBasicShapeEllipseType: {
+        const DeprecatedBasicShapeEllipse* ellipse = static_cast<const DeprecatedBasicShapeEllipse*>(basicShape);
         float centerX = floatValueForLength(ellipse->centerX(), boxWidth);
         float centerY = floatValueForLength(ellipse->centerY(), boxHeight);
         float radiusX = floatValueForLength(ellipse->radiusX(), boxWidth);
@@ -163,6 +174,17 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
         FloatSize logicalRadii = physicalSizeToLogical(FloatSize(radiusX, radiusY), writingMode);
 
         shape = createEllipseShape(logicalCenter, logicalRadii);
+        break;
+    }
+
+    case BasicShape::BasicShapeEllipseType: {
+        const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(basicShape);
+        FloatPoint center = floatPointForCenterCoordinate(ellipse->centerX(), ellipse->centerY(), FloatSize(boxWidth, boxHeight));
+        float radiusX = ellipse->floatValueForRadiusInBox(ellipse->radiusX(), center.x(), boxWidth);
+        float radiusY = ellipse->floatValueForRadiusInBox(ellipse->radiusY(), center.y(), boxHeight);
+        FloatPoint logicalCenter = physicalPointToLogical(center, logicalBoxSize.height(), writingMode);
+
+        shape = createEllipseShape(logicalCenter, FloatSize(radiusX, radiusY));
         break;
     }
 
@@ -201,6 +223,26 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
         break;
     }
 
+    case BasicShape::BasicShapeInsetType: {
+        const BasicShapeInset& inset = *static_cast<const BasicShapeInset*>(basicShape);
+        float left = floatValueForLength(inset.left(), boxWidth);
+        float top = floatValueForLength(inset.top(), boxHeight);
+        float right = floatValueForLength(inset.right(), boxWidth);
+        float bottom = floatValueForLength(inset.bottom(), boxHeight);
+        FloatRect rect(left, top, boxWidth - left - right, boxHeight - top - bottom);
+        FloatRect logicalRect = physicalRectToLogical(rect, logicalBoxSize.height(), writingMode);
+
+        FloatSize boxSize(boxWidth, boxHeight);
+        FloatRoundedRect::Radii cornerRadii(
+            floatSizeForLengthSize(inset.topLeftRadius(), boxSize),
+            floatSizeForLengthSize(inset.topRightRadius(), boxSize),
+            floatSizeForLengthSize(inset.bottomLeftRadius(), boxSize),
+            floatSizeForLengthSize(inset.bottomRightRadius(), boxSize));
+
+        shape = createInsetShape(FloatRoundedRect(logicalRect, cornerRadii));
+        break;
+    }
+
     default:
         ASSERT_NOT_REACHED();
     }
@@ -212,52 +254,54 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
     return shape.release();
 }
 
-PassOwnPtr<Shape> Shape::createShape(const StyleImage* styleImage, float threshold, const LayoutSize&, WritingMode writingMode, Length margin, Length padding)
+PassOwnPtr<Shape> Shape::createRasterShape(const StyleImage& styleImage, float threshold, const LayoutRect& imageRect, const LayoutSize&, WritingMode writingMode, Length margin, Length padding)
 {
-    ASSERT(styleImage && styleImage->isImageResource() && styleImage->cachedImage() && styleImage->cachedImage()->image());
+    ASSERT(styleImage.cachedImage());
+    ASSERT(styleImage.cachedImage()->hasImage());
 
-    Image* image = styleImage->cachedImage()->image();
-    const IntSize& imageSize = image->size();
-    OwnPtr<RasterShapeIntervals> intervals = adoptPtr(new RasterShapeIntervals(imageSize.height()));
-    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(imageSize);
+    IntRect toRect = pixelSnappedIntRect(imageRect);
+    IntSize bufferSize = toRect.size();
+    IntSize rasterSize = IntSize(toRect.maxX(), toRect.maxY());
+    OwnPtr<RasterShapeIntervals> intervals = adoptPtr(new RasterShapeIntervals(rasterSize.height()));
+    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(bufferSize);
+
     if (imageBuffer) {
         GraphicsContext* graphicsContext = imageBuffer->context();
-        graphicsContext->drawImage(image, IntPoint());
+        graphicsContext->drawImage(styleImage.cachedImage()->image(), FloatRect(0, 0, bufferSize.width(), bufferSize.height()));
 
-        RefPtr<Uint8ClampedArray> pixelArray = imageBuffer->getUnmultipliedImageData(IntRect(IntPoint(), imageSize));
+        RefPtr<Uint8ClampedArray> pixelArray = imageBuffer->getUnmultipliedImageData(IntRect(IntPoint(), bufferSize));
         unsigned pixelArrayLength = pixelArray->length();
         unsigned pixelArrayOffset = 3; // Each pixel is four bytes: RGBA.
         uint8_t alphaPixelThreshold = threshold * 255;
 
-        ASSERT(static_cast<unsigned>(imageSize.width() * imageSize.height() * 4) == pixelArrayLength);
+        ASSERT(static_cast<unsigned>(bufferSize.width() * bufferSize.height() * 4) == pixelArrayLength);
 
-        for (int y = 0; y < imageSize.height(); ++y) {
+        for (int y = 0; y < bufferSize.height(); ++y) {
             int startX = -1;
-            for (int x = 0; x < imageSize.width() && pixelArrayOffset < pixelArrayLength; ++x, pixelArrayOffset += 4) {
+            for (int x = 0; x < bufferSize.width() && pixelArrayOffset < pixelArrayLength; ++x, pixelArrayOffset += 4) {
                 uint8_t alpha = pixelArray->item(pixelArrayOffset);
                 if ((startX == -1) && alpha > alphaPixelThreshold) {
                     startX = x;
-                } else if (startX != -1 && (alpha <= alphaPixelThreshold || x == imageSize.width() - 1)) {
-                    intervals->appendInterval(y, startX, x);
+                } else if (startX != -1 && (alpha <= alphaPixelThreshold || x == bufferSize.width() - 1)) {
+                    intervals->appendInterval(y + toRect.y(), startX + toRect.x(), x + toRect.x());
                     startX = -1;
                 }
             }
         }
     }
 
-    OwnPtr<RasterShape> rasterShape = adoptPtr(new RasterShape(intervals.release(), imageSize));
+    OwnPtr<RasterShape> rasterShape = adoptPtr(new RasterShape(intervals.release(), rasterSize));
     rasterShape->m_writingMode = writingMode;
     rasterShape->m_margin = floatValueForLength(margin, 0);
     rasterShape->m_padding = floatValueForLength(padding, 0);
     return rasterShape.release();
 }
 
-PassOwnPtr<Shape> Shape::createLayoutBoxShape(const LayoutSize& logicalSize, WritingMode writingMode, const Length& margin, const Length& padding)
+PassOwnPtr<Shape> Shape::createLayoutBoxShape(const RoundedRect& roundedRect, WritingMode writingMode, const Length& margin, const Length& padding)
 {
-    FloatRect rect(0, 0, logicalSize.width(), logicalSize.height());
-    FloatSize radii(0, 0);
-    FloatRoundedRect bounds(rect, radii, radii, radii, radii);
-    OwnPtr<Shape> shape = createBoxShape(bounds);
+    FloatRect rect(0, 0, roundedRect.rect().width(), roundedRect.rect().height());
+    FloatRoundedRect bounds(rect, roundedRect.radii());
+    OwnPtr<Shape> shape = createInsetShape(bounds);
     shape->m_writingMode = writingMode;
     shape->m_margin = floatValueForLength(margin, 0);
     shape->m_padding = floatValueForLength(padding, 0);

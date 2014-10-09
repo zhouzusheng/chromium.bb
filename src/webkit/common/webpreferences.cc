@@ -10,6 +10,7 @@
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 
+using base::ASCIIToWide;
 using blink::WebSettings;
 
 WebPreferences::WebPreferences()
@@ -47,16 +48,13 @@ WebPreferences::WebPreferences()
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
       experimental_webgl_enabled(false),
+      pepper_3d_enabled(false),
       flash_3d_enabled(true),
       flash_stage3d_enabled(false),
       flash_stage3d_baseline_enabled(false),
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
-      accelerated_compositing_for_overflow_scroll_enabled(false),
-      universal_accelerated_compositing_for_overflow_scroll_enabled(false),
-      accelerated_compositing_for_scrollable_frames_enabled(false),
-      composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
       layer_squashing_enabled(false),
       threaded_html_parser(true),
@@ -73,6 +71,7 @@ WebPreferences::WebPreferences()
       antialiased_2d_canvas_disabled(false),
       accelerated_2d_canvas_msaa_sample_count(0),
       accelerated_filters_enabled(false),
+      deferred_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
       memory_info_enabled(false),
@@ -123,7 +122,8 @@ WebPreferences::WebPreferences()
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       compositor_touch_hit_testing(true),
-      cookie_enabled(true)
+      cookie_enabled(true),
+      pepper_accelerated_video_decode_enabled(false)
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),
@@ -147,19 +147,19 @@ WebPreferences::WebPreferences()
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Courier New");
+      base::ASCIIToUTF16("Courier New");
   serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   sans_serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Arial");
+      base::ASCIIToUTF16("Arial");
   cursive_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Script");
+      base::ASCIIToUTF16("Script");
   fantasy_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Impact");
+      base::ASCIIToUTF16("Impact");
   pictograph_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
 }
 
 WebPreferences::~WebPreferences() {

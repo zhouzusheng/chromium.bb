@@ -57,14 +57,19 @@ class MediaSource;
 class Stream;
 class TimeRanges;
 
-class SourceBuffer : public RefCounted<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
-    REFCOUNTED_EVENT_TARGET(SourceBuffer);
+class SourceBuffer FINAL : public RefCountedWillBeRefCountedGarbageCollected<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
+    DECLARE_GC_INFO;
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<SourceBuffer>);
 public:
-    static PassRefPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static PassRefPtrWillBeRawPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static const AtomicString& segmentsKeyword();
+    static const AtomicString& sequenceKeyword();
 
     virtual ~SourceBuffer();
 
     // SourceBuffer.idl methods
+    const AtomicString& mode() const { return m_mode; }
+    void setMode(const AtomicString&, ExceptionState&);
     bool updating() const { return m_updating; }
     PassRefPtr<TimeRanges> buffered(ExceptionState&) const;
     double timestampOffset() const;
@@ -93,6 +98,8 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    void trace(Visitor*);
+
 private:
     SourceBuffer(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
 
@@ -116,9 +123,10 @@ private:
     virtual void didFail(FileError::ErrorCode) OVERRIDE;
 
     OwnPtr<blink::WebSourceBuffer> m_webSourceBuffer;
-    MediaSource* m_source;
+    RawPtrWillBeMember<MediaSource> m_source;
     GenericEventQueue* m_asyncEventQueue;
 
+    AtomicString m_mode;
     bool m_updating;
     double m_timestampOffset;
     double m_appendWindowStart;

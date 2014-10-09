@@ -60,7 +60,7 @@ public:
     double valueRatio() const;
     GaugeRegion gaugeRegion() const;
 
-    bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
 
 private:
     explicit HTMLMeterElement(Document&);
@@ -71,8 +71,7 @@ private:
 
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual bool recalcWillValidate() const { return false; }
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     void didElementStateChange();
@@ -80,11 +79,6 @@ private:
 
     RefPtr<MeterValueElement> m_value;
 };
-
-inline bool isHTMLMeterElement(Node* node)
-{
-    return node->hasTagName(HTMLNames::meterTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLMeterElement, hasTagName(HTMLNames::meterTag));
 

@@ -57,30 +57,35 @@ class WebServiceWorkerContextClient;
 // An instance of this class is supposed to outlive until
 // workerGlobalScopeDestroyed() is called by its corresponding
 // WorkerGlobalScope.
-class ServiceWorkerGlobalScopeProxy :
+class ServiceWorkerGlobalScopeProxy FINAL :
     public WebServiceWorkerContextProxy,
     public WebCore::WorkerReportingProxy {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeProxy);
 public:
-    static PassOwnPtr<ServiceWorkerGlobalScopeProxy> create(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, PassOwnPtr<WebServiceWorkerContextClient>);
+    static PassOwnPtr<ServiceWorkerGlobalScopeProxy> create(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeProxy();
+
+    // WebServiceWorkerContextProxy overrides:
+    virtual void dispatchInstallEvent(int) OVERRIDE;
 
     // WorkerReportingProxy overrides:
     virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) OVERRIDE;
     virtual void reportConsoleMessage(WebCore::MessageSource, WebCore::MessageLevel, const String& message, int lineNumber, const String& sourceURL) OVERRIDE;
     virtual void postMessageToPageInspector(const String&) OVERRIDE;
     virtual void updateInspectorStateCookie(const String&) OVERRIDE;
-    virtual void workerGlobalScopeStarted() OVERRIDE;
+    virtual void workerGlobalScopeStarted(WebCore::WorkerGlobalScope*) OVERRIDE;
     virtual void workerGlobalScopeClosed() OVERRIDE;
     virtual void workerGlobalScopeDestroyed() OVERRIDE;
 
 private:
-    ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, PassOwnPtr<WebServiceWorkerContextClient>);
+    ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, WebServiceWorkerContextClient&);
 
     WebEmbeddedWorkerImpl& m_embeddedWorker;
     WebCore::ExecutionContext& m_executionContext;
 
-    OwnPtr<WebServiceWorkerContextClient> m_client;
+    WebServiceWorkerContextClient& m_client;
+
+    WebCore::WorkerGlobalScope* m_workerGlobalScope;
 };
 
 } // namespace blink

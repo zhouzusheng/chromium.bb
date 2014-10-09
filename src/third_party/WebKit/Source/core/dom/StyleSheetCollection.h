@@ -28,43 +28,31 @@
 #ifndef StyleSheetCollection_h
 #define StyleSheetCollection_h
 
-#include "core/dom/Document.h"
-#include "core/dom/DocumentOrderedList.h"
-#include "core/dom/StyleSheetScopingNodeList.h"
-#include "core/dom/TreeScope.h"
 #include "wtf/FastAllocBase.h"
-#include "wtf/HashMap.h"
-#include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class ContainerNode;
 class CSSStyleSheet;
-class StyleEngine;
-class Node;
 class StyleSheet;
-class StyleSheetContents;
-class StyleSheetList;
 
-// FIXME: Should be in separate file and be renamed like:
-// - StyleSheetCollectionBase -> StyleSheetCollection
-// - StyleSheetCollection -> ScopeStyleSheetCollection
-//
-class StyleSheetCollectionBase {
-    WTF_MAKE_NONCOPYABLE(StyleSheetCollectionBase); WTF_MAKE_FAST_ALLOCATED;
+class StyleSheetCollection {
+    WTF_MAKE_NONCOPYABLE(StyleSheetCollection); WTF_MAKE_FAST_ALLOCATED;
 public:
-    StyleSheetCollectionBase();
-    ~StyleSheetCollectionBase();
+    friend class ActiveDocumentStyleSheetCollector;
+    friend class ImportedDocumentStyleSheetCollector;
+
+    StyleSheetCollection();
+    ~StyleSheetCollection();
 
     Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() { return m_activeAuthorStyleSheets; }
     Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList() { return m_styleSheetsForStyleSheetList; }
     const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
     const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
 
-    void swap(StyleSheetCollectionBase&);
+    void swap(StyleSheetCollection&);
+    void swapSheetsForSheetList(Vector<RefPtr<StyleSheet> >&);
     void appendActiveStyleSheets(const Vector<RefPtr<CSSStyleSheet> >&);
     void appendActiveStyleSheet(CSSStyleSheet*);
     void appendSheetForList(StyleSheet*);
@@ -72,60 +60,6 @@ public:
 protected:
     Vector<RefPtr<StyleSheet> > m_styleSheetsForStyleSheetList;
     Vector<RefPtr<CSSStyleSheet> > m_activeAuthorStyleSheets;
-};
-
-
-class StyleSheetCollection : public StyleSheetCollectionBase {
-public:
-    void addStyleSheetCandidateNode(Node*, bool createdByParser);
-    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode);
-    bool hasStyleSheetCandidateNodes() const { return !m_styleSheetCandidateNodes.isEmpty(); }
-
-
-    bool usesRemUnits() const { return m_usesRemUnits; }
-
-    DocumentOrderedList& styleSheetCandidateNodes() { return m_styleSheetCandidateNodes; }
-    DocumentOrderedList* scopingNodesForStyleScoped() { return m_scopingNodesForStyleScoped.scopingNodes(); }
-    ListHashSet<Node*, 4>* scopingNodesRemoved() { return m_scopingNodesForStyleScoped.scopingNodesRemoved(); }
-
-    void clearMediaQueryRuleSetStyleSheets();
-
-protected:
-    explicit StyleSheetCollection(TreeScope&);
-
-    Document* document() { return m_treeScope.documentScope(); }
-
-    enum StyleResolverUpdateType {
-        Reconstruct,
-        Reset,
-        Additive,
-        ResetStyleResolverAndFontSelector
-    };
-
-    struct StyleSheetChange {
-        StyleResolverUpdateType styleResolverUpdateType;
-        bool requiresFullStyleRecalc;
-
-        StyleSheetChange()
-            : styleResolverUpdateType(Reconstruct)
-            , requiresFullStyleRecalc(true) { }
-    };
-
-    void analyzeStyleSheetChange(StyleResolverUpdateMode, const StyleSheetCollectionBase&, StyleSheetChange&);
-    void resetAllRuleSetsInTreeScope(StyleResolver*);
-    void updateUsesRemUnits();
-
-private:
-    static StyleResolverUpdateType compareStyleSheets(const Vector<RefPtr<CSSStyleSheet> >& oldStyleSheets, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, Vector<StyleSheetContents*>& addedSheets);
-    bool activeLoadingStyleSheetLoaded(const Vector<RefPtr<CSSStyleSheet> >& newStyleSheets);
-
-protected:
-    TreeScope& m_treeScope;
-    bool m_hadActiveLoadingStylesheet;
-    bool m_usesRemUnits;
-
-    DocumentOrderedList m_styleSheetCandidateNodes;
-    StyleSheetScopingNodeList m_scopingNodesForStyleScoped;
 };
 
 }

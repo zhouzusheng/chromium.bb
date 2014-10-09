@@ -39,7 +39,7 @@
 #include "platform/scroll/ScrollbarThemeOverlay.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebRect.h"
-#include "public/platform/default/WebThemeEngine.h"
+#include "public/platform/WebThemeEngine.h"
 
 namespace WebCore {
 
@@ -62,6 +62,9 @@ ScrollbarTheme* ScrollbarTheme::nativeTheme()
 int ScrollbarThemeGtkOrAura::scrollbarThickness(ScrollbarControlSize controlSize)
 {
     // Horiz and Vert scrollbars are the same thickness.
+    // In unit tests we don't have the mock theme engine (because of layering violations), so we hard code the size (see bug 327470).
+    if (useMockTheme())
+        return 15;
     IntSize scrollbarSize = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartScrollbarVerticalTrack);
     return scrollbarSize.width();
 }
@@ -116,7 +119,7 @@ void ScrollbarThemeGtkOrAura::paintButton(GraphicsContext* gc, ScrollbarThemeCli
     if (useMockTheme() && !scrollbar->enabled()) {
         state = blink::WebThemeEngine::StateDisabled;
     } else if (!useMockTheme() && ((checkMin && (scrollbar->currentPos() <= 0))
-        || (checkMax && scrollbar->currentPos() == scrollbar->maximum()))) {
+        || (checkMax && scrollbar->currentPos() >= scrollbar->maximum()))) {
         state = blink::WebThemeEngine::StateDisabled;
     } else {
         if (part == scrollbar->pressedPart())
@@ -138,11 +141,6 @@ void ScrollbarThemeGtkOrAura::paintThumb(GraphicsContext* gc, ScrollbarThemeClie
     else
         state = blink::WebThemeEngine::StateNormal;
     blink::Platform::current()->themeEngine()->paint(canvas, scrollbar->orientation() == HorizontalScrollbar ? blink::WebThemeEngine::PartScrollbarHorizontalThumb : blink::WebThemeEngine::PartScrollbarVerticalThumb, state, blink::WebRect(rect), 0);
-}
-
-bool ScrollbarThemeGtkOrAura::shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent& evt)
-{
-    return (evt.shiftKey() && evt.button() == LeftButton) || (evt.button() == MiddleButton);
 }
 
 IntSize ScrollbarThemeGtkOrAura::buttonSize(ScrollbarThemeClient* scrollbar)

@@ -27,29 +27,22 @@
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
-#include "core/css/CSSShaderValue.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/style/ContentData.h"
 #include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/FillLayer.h"
 #include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleCustomFilterProgram.h"
-#include "core/rendering/style/StyleCustomFilterProgramCache.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StyleFetchedImageSet.h"
-#include "core/rendering/style/StyleFetchedShader.h"
 #include "core/rendering/style/StyleGeneratedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
-#include "core/rendering/style/StylePendingShader.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
-#include "platform/graphics/filters/custom/CustomFilterOperation.h"
 
 namespace WebCore {
 
 StyleResourceLoader::StyleResourceLoader(ResourceFetcher* fetcher)
-    : m_customFilterProgramCache(StyleCustomFilterProgramCache::create())
-    , m_fetcher(fetcher)
+    : m_fetcher(fetcher)
 {
 }
 
@@ -77,33 +70,33 @@ void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, cons
     }
 }
 
-PassRefPtr<StyleImage> StyleResourceLoader::loadPendingImage(StylePendingImage* pendingImage, float deviceScaleFactor)
+static PassRefPtr<StyleImage> doLoadPendingImage(ResourceFetcher* fetcher, StylePendingImage* pendingImage, float deviceScaleFactor, const ResourceLoaderOptions& options)
 {
-    if (pendingImage->cssImageValue()) {
-        CSSImageValue* imageValue = pendingImage->cssImageValue();
-        return imageValue->cachedImage(m_fetcher);
-    }
+    if (CSSImageValue* imageValue = pendingImage->cssImageValue())
+        return imageValue->cachedImage(fetcher, options);
 
-    if (pendingImage->cssImageGeneratorValue()) {
-        CSSImageGeneratorValue* imageGeneratorValue = pendingImage->cssImageGeneratorValue();
-        imageGeneratorValue->loadSubimages(m_fetcher);
+    if (CSSImageGeneratorValue* imageGeneratorValue
+        = pendingImage->cssImageGeneratorValue()) {
+        imageGeneratorValue->loadSubimages(fetcher);
         return StyleGeneratedImage::create(imageGeneratorValue);
     }
 
-    if (pendingImage->cssCursorImageValue()) {
-        CSSCursorImageValue* cursorImageValue = pendingImage->cssCursorImageValue();
-        return cursorImageValue->cachedImage(m_fetcher, deviceScaleFactor);
-    }
+    if (CSSCursorImageValue* cursorImageValue
+        = pendingImage->cssCursorImageValue())
+        return cursorImageValue->cachedImage(fetcher, deviceScaleFactor);
 
-    if (pendingImage->cssImageSetValue()) {
-        CSSImageSetValue* imageSetValue = pendingImage->cssImageSetValue();
-        return imageSetValue->cachedImageSet(m_fetcher, deviceScaleFactor);
-    }
+    if (CSSImageSetValue* imageSetValue = pendingImage->cssImageSetValue())
+        return imageSetValue->cachedImageSet(fetcher, deviceScaleFactor, options);
 
     return 0;
 }
 
-void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeValue* shapeValue)
+PassRefPtr<StyleImage> StyleResourceLoader::loadPendingImage(StylePendingImage* pendingImage, float deviceScaleFactor)
+{
+    return doLoadPendingImage(m_fetcher, pendingImage, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
+}
+
+void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeValue* shapeValue, float deviceScaleFactor)
 {
     if (!shapeValue)
         return;
@@ -112,13 +105,11 @@ void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeV
     if (!image || !image->isPendingImage())
         return;
 
-    StylePendingImage* pendingImage = toStylePendingImage(image);
-    CSSImageValue* cssImageValue =  pendingImage->cssImageValue();
-
     ResourceLoaderOptions options = ResourceFetcher::defaultResourceOptions();
     options.allowCredentials = DoNotAllowStoredCredentials;
+    options.corsEnabled = IsCORSEnabled;
 
-    shapeValue->setImage(cssImageValue->cachedImage(m_fetcher, options, PotentiallyCORSEnabled));
+    shapeValue->setImage(doLoadPendingImage(m_fetcher, toStylePendingImage(image), deviceScaleFactor, options));
 }
 
 void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementStyleResources& elementStyleResources)
@@ -196,48 +187,13 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementSty
             break;
         }
         case CSSPropertyShapeInside:
-            loadPendingShapeImage(style, style->shapeInside());
+            loadPendingShapeImage(style, style->shapeInside(), elementStyleResources.deviceScaleFactor());
             break;
         case CSSPropertyShapeOutside:
-            loadPendingShapeImage(style, style->shapeOutside());
+            loadPendingShapeImage(style, style->shapeOutside(), elementStyleResources.deviceScaleFactor());
             break;
         default:
             ASSERT_NOT_REACHED();
-        }
-    }
-}
-
-void StyleResourceLoader::loadPendingShaders(RenderStyle* style, const ElementStyleResources& elementStyleResources)
-{
-    if (!style->hasFilter() || !elementStyleResources.hasNewCustomFilterProgram())
-        return;
-
-    Vector<RefPtr<FilterOperation> >& filterOperations = style->mutableFilter().operations();
-    for (unsigned i = 0; i < filterOperations.size(); ++i) {
-        RefPtr<FilterOperation> filterOperation = filterOperations.at(i);
-        if (filterOperation->type() == FilterOperation::CUSTOM) {
-            CustomFilterOperation* customFilter = toCustomFilterOperation(filterOperation.get());
-            ASSERT(customFilter->program());
-            StyleCustomFilterProgram* program = static_cast<StyleCustomFilterProgram*>(customFilter->program());
-            // Note that the StylePendingShaders could be already resolved to StyleFetchedShaders. That's because the rule was matched before.
-            // However, the StyleCustomFilterProgram that was initially created could have been removed from the cache in the meanwhile,
-            // meaning that we get a new StyleCustomFilterProgram here that is not yet in the cache, but already has loaded StyleShaders.
-            if (!program->hasPendingShaders() && program->inCache())
-                continue;
-            RefPtr<StyleCustomFilterProgram> styleProgram = m_customFilterProgramCache->lookup(program);
-            if (styleProgram.get()) {
-                customFilter->setProgram(styleProgram.release());
-            } else {
-                if (program->vertexShader() && program->vertexShader()->isPendingShader()) {
-                    CSSShaderValue* shaderValue = static_cast<StylePendingShader*>(program->vertexShader())->cssShaderValue();
-                    program->setVertexShader(shaderValue->resource(m_fetcher));
-                }
-                if (program->fragmentShader() && program->fragmentShader()->isPendingShader()) {
-                    CSSShaderValue* shaderValue = static_cast<StylePendingShader*>(program->fragmentShader())->cssShaderValue();
-                    program->setFragmentShader(shaderValue->resource(m_fetcher));
-                }
-                m_customFilterProgramCache->add(program);
-            }
         }
     }
 }
@@ -246,9 +202,6 @@ void StyleResourceLoader::loadPendingResources(RenderStyle* renderStyle, Element
 {
     // Start loading images referenced by this style.
     loadPendingImages(renderStyle, elementStyleResources);
-
-    // Start loading the shaders referenced by this style.
-    loadPendingShaders(renderStyle, elementStyleResources);
 
     // Start loading the SVG Documents referenced by this style.
     loadPendingSVGDocuments(renderStyle, elementStyleResources);

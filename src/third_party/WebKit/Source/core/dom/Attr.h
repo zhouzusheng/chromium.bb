@@ -30,9 +30,7 @@
 
 namespace WebCore {
 
-class CSSStyleDeclaration;
 class ExceptionState;
-class MutableStylePropertySet;
 
 // Attr can have Text children
 // therefore it has to be a fullblown Node. The plan
@@ -56,16 +54,12 @@ public:
 
     const QualifiedName& qualifiedName() const { return m_name; }
 
-    bool isId() const;
-
     void attachToElement(Element*);
     void detachFromElementWithValue(const AtomicString&);
 
     virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
     virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
-    virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
-
-    virtual void setPrefix(const AtomicString&, ExceptionState&) OVERRIDE;
+    const AtomicString& prefix() const { return m_name.prefix(); }
 
 private:
     Attr(Element&, const QualifiedName&);
@@ -77,13 +71,13 @@ private:
     virtual NodeType nodeType() const OVERRIDE { return ATTRIBUTE_NODE; }
 
     virtual String nodeValue() const OVERRIDE { return value(); }
-    virtual void setNodeValue(const String&);
-    virtual PassRefPtr<Node> cloneNode(bool deep = true);
+    virtual void setNodeValue(const String&) OVERRIDE;
+    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
 
-    virtual bool isAttributeNode() const { return true; }
-    virtual bool childTypeAllowed(NodeType) const;
+    virtual bool isAttributeNode() const OVERRIDE { return true; }
+    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     Attribute& elementAttribute();
 

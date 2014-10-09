@@ -43,7 +43,7 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
 
     var header = this.element.createChild("div", "header");
     var headerText = header.createChild("span");
-    headerText.textContent = "Edit file system";
+    headerText.textContent = WebInspector.UIString("Edit file system");
 
     var closeButton = header.createChild("div", "close-button-gray done-button");
     closeButton.addEventListener("click", this._onDoneClick.bind(this), false);
@@ -56,8 +56,8 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
     WebInspector.isolatedFileSystemManager.mapping().addEventListener(WebInspector.FileSystemMapping.Events.ExcludedFolderRemoved, this._excludedFolderRemoved, this);
 
     var blockHeader = contents.createChild("div", "block-header");
-    blockHeader.textContent = "Mappings";
-    this._fileMappingsSection = contents.createChild("div", "file-mappings-section");
+    blockHeader.textContent = WebInspector.UIString("Mappings");
+    this._fileMappingsSection = contents.createChild("div", "section file-mappings-section");
     this._fileMappingsListContainer = this._fileMappingsSection.createChild("div", "settings-list-container");
     var entries = WebInspector.isolatedFileSystemManager.mapping().mappingEntries(this._fileSystemPath);
 
@@ -72,8 +72,8 @@ WebInspector.EditFileSystemDialog = function(fileSystemPath)
         this._addMappingRow(entries[i]);
 
     blockHeader = contents.createChild("div", "block-header");
-    blockHeader.textContent = "Excluded folders";
-    this._excludedFolderListSection = contents.createChild("div", "excluded-folders-section");
+    blockHeader.textContent = WebInspector.UIString("Excluded folders");
+    this._excludedFolderListSection = contents.createChild("div", "section excluded-folders-section");
     this._excludedFolderListContainer = this._excludedFolderListSection.createChild("div", "settings-list-container");
     var excludedFolderEntries = WebInspector.isolatedFileSystemManager.mapping().excludedFolders(fileSystemPath);
 
@@ -110,15 +110,19 @@ WebInspector.EditFileSystemDialog.prototype = {
 
     _resize: function()
     {
-        if (!this._dialogElement)
+        if (!this._dialogElement || !this._relativeToElement)
             return;
 
-        const width = 540;
+        const minWidth = 200;
         const minHeight = 150;
-        var maxHeight = document.body.offsetHeight - 10;
+        var maxHeight = this._relativeToElement.offsetHeight - 10;
         maxHeight = Math.max(minHeight, maxHeight);
+        var maxWidth = Math.min(540, this._relativeToElement.offsetWidth - 10);
+        maxWidth = Math.max(minWidth, maxWidth);
         this._dialogElement.style.maxHeight = maxHeight + "px";
-        this._dialogElement.style.width = width + "px";
+        this._dialogElement.style.width = maxWidth + "px";
+
+        WebInspector.DialogDelegate.prototype.position(this._dialogElement, this._relativeToElement);
     },
 
     /**
@@ -127,6 +131,7 @@ WebInspector.EditFileSystemDialog.prototype = {
      */
     position: function(element, relativeToElement)
     {
+        this._relativeToElement = relativeToElement;
         this._resize();
     },
 
@@ -338,6 +343,7 @@ WebInspector.EditFileSystemDialog.prototype = {
         var path = entry.path;
         this._excludedFolderEntries.put(path, entry);
         this._excludedFolderList.addItem(path, null);
+        this._resize();
     },
 
     /**

@@ -45,6 +45,9 @@
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_Attach_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
+struct FrameHostMsg_BuffersSwappedACK_Params;
+struct FrameHostMsg_CompositorFrameSwappedACK_Params;
+struct FrameHostMsg_ReclaimCompositorResources_Params;
 struct ViewHostMsg_CreateWindow_Params;
 #if defined(OS_MACOSX)
 struct ViewHostMsg_ShowPopup_Params;
@@ -62,6 +65,10 @@ class WebInputEvent;
 
 namespace gfx {
 class Range;
+}
+
+namespace gpu {
+struct Mailbox;
 }
 
 namespace content {
@@ -88,8 +95,7 @@ struct MediaStreamRequest;
 class CONTENT_EXPORT BrowserPluginGuest
     : public JavaScriptDialogManager,
       public WebContentsDelegate,
-      public WebContentsObserver,
-      public base::SupportsWeakPtr<BrowserPluginGuest> {
+      public WebContentsObserver {
  public:
   typedef base::Callback<void(bool)> GeolocationCallback;
   virtual ~BrowserPluginGuest();
@@ -112,6 +118,9 @@ class CONTENT_EXPORT BrowserPluginGuest
       bool has_render_view,
       WebContentsImpl* web_contents,
       BrowserPluginGuest* opener);
+
+  // Returns a WeakPtr to this BrowserPluginGuest.
+  base::WeakPtr<BrowserPluginGuest> AsWeakPtr();
 
   // Called when the embedder WebContents is destroyed to give the
   // BrowserPluginGuest an opportunity to clean up after itself.
@@ -137,6 +146,8 @@ class CONTENT_EXPORT BrowserPluginGuest
     return embedder_web_contents_;
   }
 
+  // Returns the embedder's RenderWidgetHostView if it is available.
+  // Returns NULL otherwise.
   RenderWidgetHostView* GetEmbedderRenderWidgetHostView();
 
   bool focused() const { return focused_; }
@@ -213,6 +224,9 @@ class CONTENT_EXPORT BrowserPluginGuest
       WebContents* web_contents,
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
+  virtual bool PreHandleGestureEvent(
+      content::WebContents* source,
+      const blink::WebGestureEvent& event) OVERRIDE;
 
   // JavaScriptDialogManager implementation.
   virtual void RunJavaScriptDialog(
@@ -276,7 +290,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   // BrowserPluginGuest is already destroyed.
   static void AcknowledgeBufferPresent(int route_id,
                                        int gpu_host_id,
-                                       const std::string& mailbox_name,
+                                       const gpu::Mailbox& mailbox,
                                        uint32 sync_point);
 
   // Returns whether BrowserPluginGuest is interested in receiving the given
@@ -305,6 +319,8 @@ class CONTENT_EXPORT BrowserPluginGuest
   static void set_factory_for_testing(BrowserPluginHostFactory* factory) {
     BrowserPluginGuest::factory_ = factory;
   }
+
+  void SetZoom(double zoom_factor);
 
  private:
   class EmbedderWebContentsObserver;
@@ -382,11 +398,9 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   // Message handlers for messages from embedder.
 
-  void OnCompositorFrameACK(int instance_id,
-                            int route_id,
-                            uint32 output_surface_id,
-                            int renderer_host_id,
-                            const cc::CompositorFrameAck& ack);
+  void OnCompositorFrameSwappedACK(
+      int instance_id,
+      const FrameHostMsg_CompositorFrameSwappedACK_Params& params);
   void OnCopyFromCompositingSurfaceAck(int instance_id,
                                        int request_id,
                                        const SkBitmap& bitmap);
@@ -405,11 +419,9 @@ class CONTENT_EXPORT BrowserPluginGuest
                             const std::string& command);
 
   // Returns compositor resources reclaimed in the embedder to the guest.
-  void OnReclaimCompositorResources(int instance_id,
-                                    int route_id,
-                                    uint32 output_surface_id,
-                                    int renderer_host_id,
-                                    const cc::CompositorFrameAck& ack);
+  void OnReclaimCompositorResources(
+      int instance_id,
+      const FrameHostMsg_ReclaimCompositorResources_Params& params);
 
   // Overriden in tests.
   virtual void OnHandleInputEvent(int instance_id,
@@ -457,10 +469,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnSetVisibility(int instance_id, bool visible);
   // Message from embedder acknowledging last HW buffer.
   void OnSwapBuffersACK(int instance_id,
-                        int route_id,
-                        int gpu_host_id,
-                        const std::string& mailbox_name,
-                        uint32 sync_point);
+                        const FrameHostMsg_BuffersSwappedACK_Params& params);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
@@ -527,10 +536,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
 
-  // Weak pointer used to ask GeolocationPermissionContext about geolocation
-  // permission.
-  base::WeakPtrFactory<BrowserPluginGuest> weak_ptr_factory_;
-
   // Static factory instance (always NULL for non-test).
   static BrowserPluginHostFactory* factory_;
 
@@ -593,6 +598,11 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   bool is_in_destruction_;
 
+  // Text input type states.
+  ui::TextInputType last_text_input_type_;
+  ui::TextInputMode last_input_mode_;
+  bool last_can_compose_inline_;
+
   // This is a queue of messages that are destined to be sent to the embedder
   // once the guest is attached to a particular embedder.
   std::queue<IPC::Message*> pending_messages_;
@@ -602,6 +612,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   // These are parameters passed from JavaScript on attachment to the content
   // embedder.
   scoped_ptr<base::DictionaryValue> extra_attach_params_;
+
+  // Weak pointer used to ask GeolocationPermissionContext about geolocation
+  // permission.
+  base::WeakPtrFactory<BrowserPluginGuest> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginGuest);
 };

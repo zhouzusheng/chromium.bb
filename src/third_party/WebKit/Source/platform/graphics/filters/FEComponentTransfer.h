@@ -79,7 +79,7 @@ public:
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     FEComponentTransfer(Filter*, const ComponentTransferFunction& redFunc, const ComponentTransferFunction& greenFunc,
@@ -87,6 +87,8 @@ private:
 
     virtual void applySoftware() OVERRIDE;
     virtual bool applySkia() OVERRIDE;
+
+    virtual bool affectsTransparentPixels() OVERRIDE;
 
     void getValues(unsigned char rValues[256], unsigned char gValues[256], unsigned char bValues[256], unsigned char aValues[256]);
 

@@ -32,7 +32,6 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLegendElement.h"
-#include "core/html/HTMLTextAreaElement.h"
 #include "core/html/ValidityState.h"
 #include "core/html/forms/ValidationMessage.h"
 #include "core/frame/UseCounter.h"
@@ -59,10 +58,9 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
     , m_isValid(true)
     , m_wasChangedSinceLastFormControlChangeEvent(false)
     , m_wasFocusedByMouse(false)
-    , m_hasAutofocused(false)
 {
-    setForm(form ? form : findFormAncestor());
     setHasCustomStyleCallbacks();
+    associateByParser(form);
 }
 
 HTMLFormControlElement::~HTMLFormControlElement()
@@ -143,7 +141,7 @@ void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const Ato
         m_isReadOnly = !value.isNull();
         if (wasReadOnly != m_isReadOnly) {
             setNeedsWillValidateCheck();
-            setNeedsStyleRecalc();
+            setNeedsStyleRecalc(SubtreeStyleChange);
             if (renderer() && renderer()->style()->hasAppearance())
                 RenderTheme::theme().stateChanged(renderer(), ReadOnlyState);
         }
@@ -178,33 +176,17 @@ void HTMLFormControlElement::requiredAttributeChanged()
     setNeedsValidityCheck();
     // Style recalculation is needed because style selectors may include
     // :required and :optional pseudo-classes.
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
-static void focusPostAttach(Node* element)
+bool HTMLFormControlElement::supportsAutofocus() const
 {
-    toElement(element)->focus();
-    element->deref();
+    return false;
 }
 
 bool HTMLFormControlElement::isAutofocusable() const
 {
-    if (!fastHasAttribute(autofocusAttr))
-        return false;
-
-    // FIXME: Should this set of hasTagName checks be replaced by a
-    // virtual member function?
-    if (hasTagName(inputTag))
-        return !toHTMLInputElement(this)->isInputTypeHidden();
-    if (hasTagName(selectTag))
-        return true;
-    if (hasTagName(keygenTag))
-        return true;
-    if (hasTagName(buttonTag))
-        return true;
-    if (isHTMLTextAreaElement(this))
-        return true;
-    return false;
+    return fastHasAttribute(autofocusAttr) && supportsAutofocus();
 }
 
 void HTMLFormControlElement::setAutofilled(bool autofilled)
@@ -213,14 +195,12 @@ void HTMLFormControlElement::setAutofilled(bool autofilled)
         return;
 
     m_isAutofilled = autofilled;
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 static bool shouldAutofocusOnAttach(const HTMLFormControlElement* element)
 {
     if (!element->isAutofocusable())
-        return false;
-    if (element->hasAutofocused())
         return false;
     if (element->document().isSandboxed(SandboxAutomaticFeatures)) {
         // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
@@ -243,11 +223,10 @@ void HTMLFormControlElement::attach(const AttachContext& context)
     // on the renderer.
     renderer()->updateFromElement();
 
-    if (shouldAutofocusOnAttach(this)) {
-        setAutofocused();
-        ref();
-        PostAttachCallbacks::queueCallback(focusPostAttach, this);
-    }
+    // FIXME: Autofocus handling should be moved to insertedInto according to
+    // the standard.
+    if (shouldAutofocusOnAttach(this))
+        document().setAutofocusElement(this);
 }
 
 void HTMLFormControlElement::didMoveToNewDocument(Document& oldDocument)
@@ -275,19 +254,19 @@ void HTMLFormControlElement::removedFrom(ContainerNode* insertionPoint)
     FormAssociatedElement::removedFrom(insertionPoint);
 }
 
-bool HTMLFormControlElement::wasChangedSinceLastFormControlChangeEvent() const
-{
-    return m_wasChangedSinceLastFormControlChangeEvent;
-}
-
 void HTMLFormControlElement::setChangedSinceLastFormControlChangeEvent(bool changed)
 {
     m_wasChangedSinceLastFormControlChangeEvent = changed;
 }
 
+void HTMLFormControlElement::dispatchChangeEvent()
+{
+    dispatchScopedEvent(Event::createBubble(EventTypeNames::change));
+}
+
 void HTMLFormControlElement::dispatchFormControlChangeEvent()
 {
-    HTMLElement::dispatchChangeEvent();
+    dispatchChangeEvent();
     setChangedSinceLastFormControlChangeEvent(false);
 }
 
@@ -322,20 +301,10 @@ String HTMLFormControlElement::resultForDialogSubmit()
     return fastGetAttribute(valueAttr);
 }
 
-static void updateFromElementCallback(Node* node)
-{
-    ASSERT_ARG(node, node->isElementNode());
-    ASSERT_ARG(node, toElement(node)->isFormControlElement());
-    if (RenderObject* renderer = node->renderer())
-        renderer->updateFromElement();
-}
-
 void HTMLFormControlElement::didRecalcStyle(StyleRecalcChange)
 {
-    // updateFromElement() can cause the selection to change, and in turn
-    // trigger synchronous layout, so it must not be called during style recalc.
-    if (renderer())
-        PostAttachCallbacks::queueCallback(updateFromElementCallback, this);
+    if (RenderObject* renderer = this->renderer())
+        renderer->updateFromElement();
 }
 
 bool HTMLFormControlElement::supportsFocus() const
@@ -354,11 +323,11 @@ bool HTMLFormControlElement::shouldShowFocusRingOnMouseFocus() const
     return false;
 }
 
-void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
+void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
 {
-    if (direction != FocusDirectionPage)
-        m_wasFocusedByMouse = direction == FocusDirectionMouse;
-    HTMLElement::dispatchFocusEvent(oldFocusedElement, direction);
+    if (type != FocusTypePage)
+        m_wasFocusedByMouse = type == FocusTypeMouse;
+    HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
 }
 
 bool HTMLFormControlElement::shouldHaveFocusAppearance() const
@@ -427,7 +396,7 @@ void HTMLFormControlElement::setNeedsWillValidateCheck()
     m_willValidateInitialized = true;
     m_willValidate = newWillValidate;
     setNeedsValidityCheck();
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
     if (!m_willValidate)
         hideVisibleValidationMessage();
 }
@@ -479,11 +448,11 @@ void HTMLFormControlElement::setNeedsValidityCheck()
     bool newIsValid = valid();
     if (willValidate() && newIsValid != m_isValid) {
         // Update style for pseudo classes such as :valid :invalid.
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
     }
     m_isValid = newIsValid;
 
-    // Updates only if this control already has a validtion message.
+    // Updates only if this control already has a validation message.
     if (m_validationMessage && m_validationMessage->isVisible()) {
         // Calls updateVisibleValidationMessage() even if m_isValid is not
         // changed because a validation message can be chagned.
@@ -531,6 +500,14 @@ String HTMLFormControlElement::nameForAutofill() const
     fullName = getIdAttribute();
     trimmedName = fullName.stripWhiteSpace();
     return trimmedName;
+}
+
+void HTMLFormControlElement::setFocus(bool flag)
+{
+    LabelableElement::setFocus(flag);
+
+    if (!flag && wasChangedSinceLastFormControlChangeEvent())
+        dispatchFormControlChangeEvent();
 }
 
 } // namespace Webcore

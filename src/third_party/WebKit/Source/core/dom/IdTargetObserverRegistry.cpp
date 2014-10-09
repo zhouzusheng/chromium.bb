@@ -42,9 +42,9 @@ void IdTargetObserverRegistry::addObserver(const AtomicString& id, IdTargetObser
 
     IdToObserverSetMap::AddResult result = m_registry.add(id.impl(), nullptr);
     if (result.isNewEntry)
-        result.iterator->value = adoptPtr(new ObserverSet());
+        result.storedValue->value = adoptPtr(new ObserverSet());
 
-    result.iterator->value->add(observer);
+    result.storedValue->value->add(observer);
 }
 
 void IdTargetObserverRegistry::removeObserver(const AtomicString& id, IdTargetObserver* observer)
@@ -80,6 +80,14 @@ void IdTargetObserverRegistry::notifyObserversInternal(const AtomicString& id)
         m_registry.remove(id.impl());
 
     m_notifyingObserversInSet = 0;
+}
+
+bool IdTargetObserverRegistry::hasObservers(const AtomicString& id) const
+{
+    if (id.isEmpty() || m_registry.isEmpty())
+        return false;
+    ObserverSet* set = m_registry.get(id.impl());
+    return set && !set->isEmpty();
 }
 
 } // namespace WebCore

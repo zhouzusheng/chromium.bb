@@ -34,18 +34,33 @@
  */
 WebInspector.DockController = function()
 {
-    this._dockToggleButton = new WebInspector.StatusBarButton("", "dock-status-bar-item", 3);
-    this._dockToggleButtonOption = new WebInspector.StatusBarButton("", "dock-status-bar-item", 3);
-    this._dockToggleButton.addEventListener("click", this._toggleDockState, this);
-    this._dockToggleButtonOption.addEventListener("click", this._toggleDockState, this);
-    this._dockToggleButton.setLongClickOptionsEnabled(this._createDockOptions.bind(this));
+    if (!WebInspector.queryParamsObject["can_dock"]) {
+        this._dockSide = WebInspector.DockController.State.Undocked;
+        this._updateUI();
+        return;
+    }
 
-    this.setDockSide(WebInspector.queryParamsObject["can_dock"] ? (WebInspector.queryParamsObject["dockSide"] || "bottom") : "undocked");
+    WebInspector.settings.currentDockState = WebInspector.settings.createSetting("currentDockState", "");
+    WebInspector.settings.lastDockState = WebInspector.settings.createSetting("lastDockState", "");
+    var states = [WebInspector.DockController.State.DockedToBottom, WebInspector.DockController.State.Undocked, WebInspector.DockController.State.DockedToRight];
+    var titles = [WebInspector.UIString("Dock to main window."), WebInspector.UIString("Undock into separate window."), WebInspector.UIString("Dock to main window.")];
+    if (WebInspector.experimentsSettings.dockToLeft.isEnabled()) {
+        states.push(WebInspector.DockController.State.DockedToLeft);
+        titles.push(WebInspector.UIString("Dock to main window."));
+    }
+    this._dockToggleButton = new WebInspector.StatusBarStatesSettingButton(
+        "dock-status-bar-item",
+        states,
+        titles,
+        WebInspector.settings.currentDockState,
+        WebInspector.settings.lastDockState,
+        this._dockSideChanged.bind(this));
 }
 
 WebInspector.DockController.State = {
     DockedToBottom: "bottom",
     DockedToRight: "right",
+    DockedToLeft: "left",
     Undocked: "undocked"
 }
 
@@ -55,11 +70,11 @@ WebInspector.DockController.Events = {
 
 WebInspector.DockController.prototype = {
     /**
-     * @return {!Element}
+     * @return {?Element}
      */
     get element()
     {
-        return this._dockToggleButton.element;
+        return WebInspector.queryParamsObject["can_dock"] ? this._dockToggleButton.element : null;
     },
 
     /**
@@ -71,21 +86,25 @@ WebInspector.DockController.prototype = {
     },
 
     /**
+     * @return {boolean}
+     */
+    isVertical: function()
+    {
+        return this._dockSide === WebInspector.DockController.State.DockedToRight || this._dockSide === WebInspector.DockController.State.DockedToLeft;
+    },
+
+    /**
      * @param {string} dockSide
      */
-    setDockSide: function(dockSide)
+    _dockSideChanged: function(dockSide)
     {
         if (this._dockSide === dockSide)
             return;
 
-        if (this._dockSide)
-            WebInspector.settings.lastDockState.set(this._dockSide);
-
         this._dockSide = dockSide;
-        if (dockSide === WebInspector.DockController.State.Undocked) 
-            WebInspector.userMetrics.WindowDocked.record();
-        else
-            WebInspector.userMetrics.WindowUndocked.record();
+        if (WebInspector.queryParamsObject["can_dock"])
+            InspectorFrontendHost.setIsDocked(dockSide !== WebInspector.DockController.State.Undocked);
+
         this._updateUI();
         this.dispatchEventToListeners(WebInspector.DockController.Events.DockSideChanged, this._dockSide);
     },
@@ -97,75 +116,28 @@ WebInspector.DockController.prototype = {
         case WebInspector.DockController.State.DockedToBottom:
             body.classList.remove("undocked");
             body.classList.remove("dock-to-right");
+            body.classList.remove("dock-to-left");
             body.classList.add("dock-to-bottom");
             break;
         case WebInspector.DockController.State.DockedToRight: 
             body.classList.remove("undocked");
             body.classList.add("dock-to-right");
+            body.classList.remove("dock-to-left");
             body.classList.remove("dock-to-bottom");
             break;
-        case WebInspector.DockController.State.Undocked: 
+        case WebInspector.DockController.State.DockedToLeft:
+            body.classList.remove("undocked");
+            body.classList.remove("dock-to-right");
+            body.classList.add("dock-to-left");
+            body.classList.remove("dock-to-bottom");
+            break;
+        case WebInspector.DockController.State.Undocked:
             body.classList.add("undocked");
             body.classList.remove("dock-to-right");
+            body.classList.remove("dock-to-left");
             body.classList.remove("dock-to-bottom");
             break;
         }
-
-        this._dockToggleButton.setEnabled(true);
-
-        // Choose different last state based on the current one if missing or if is the same.
-        var sides = [WebInspector.DockController.State.DockedToBottom, WebInspector.DockController.State.Undocked, WebInspector.DockController.State.DockedToRight];
-        sides.remove(this._dockSide);
-        var lastState = WebInspector.settings.lastDockState.get();
-
-        sides.remove(lastState);
-        if (sides.length === 2) { // last state was not from the list of potential values
-            lastState = sides[0];
-            sides.remove(lastState);
-        }
-        this._decorateButtonForTargetState(this._dockToggleButton, lastState);
-        this._decorateButtonForTargetState(this._dockToggleButtonOption, sides[0]);
-    },
-
-    /**
-     * @param {!WebInspector.StatusBarButton} button
-     * @param {string} state
-     */
-    _decorateButtonForTargetState: function(button, state)
-    {
-        switch (state) {
-        case WebInspector.DockController.State.DockedToBottom:
-            button.title = WebInspector.UIString("Dock to main window.");
-            button.state = "bottom";
-            break;
-        case WebInspector.DockController.State.DockedToRight:
-            button.title = WebInspector.UIString("Dock to main window.");
-            button.state = "right";
-            break;
-        case WebInspector.DockController.State.Undocked: 
-            button.title = WebInspector.UIString("Undock into separate window.");
-            button.state = "undock";
-            break;
-        }
-    },
-
-    _createDockOptions: function()
-    {
-        return [this._dockToggleButtonOption];
-    },
-
-    /**
-     * @param {!WebInspector.Event} e
-     */
-    _toggleDockState: function(e)
-    {
-        var action;
-        switch (e.target.state) {
-        case "bottom": action = "bottom"; break;
-        case "right": action = "right"; break;
-        case "undock": action = "undocked"; break;
-        }
-        InspectorFrontendHost.requestSetDockSide(action);
     },
 
     __proto__: WebInspector.Object.prototype

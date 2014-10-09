@@ -60,9 +60,7 @@ public:
 
     static void fillRegionWorker(void*);
 
-    virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
-
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     static const int s_blockSize = 256;

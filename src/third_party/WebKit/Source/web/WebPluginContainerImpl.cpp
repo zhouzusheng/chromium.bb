@@ -47,7 +47,8 @@
 #include "HTMLNames.h"
 #include "WebPrintParams.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Clipboard.h"
+#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataObject.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -63,7 +64,6 @@
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
@@ -174,13 +174,33 @@ void WebPluginContainerImpl::hide()
     Widget::hide();
 }
 
+static bool eventHasUserGesture(const WebInputEvent* webEvent, const Event* event)
+{
+    if (!WebInputEvent::isUserGestureEventType(webEvent->type))
+        return false;
+    if (WebInputEvent::isKeyboardEventType(webEvent->type))
+        return event->isKeyboardEvent();
+    switch (webEvent->type) {
+    case WebInputEvent::MouseDown:
+        return event->type() == EventTypeNames::mousedown;
+    case WebInputEvent::MouseUp:
+        return event->type() == EventTypeNames::mouseup;
+    case WebInputEvent::TouchStart:
+        return event->type() == EventTypeNames::touchstart;
+    case WebInputEvent::TouchEnd:
+        return event->type() == EventTypeNames::touchend;
+    default:
+        return false;
+    }
+}
+
 void WebPluginContainerImpl::handleEvent(Event* event)
 {
     if (!m_webPlugin->acceptsInputEvents())
         return;
 
     const WebInputEvent* currentInputEvent = WebViewImpl::currentInputEvent();
-    UserGestureIndicator gestureIndicator(currentInputEvent && WebInputEvent::isUserGestureEventType(currentInputEvent->type) ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
+    UserGestureIndicator gestureIndicator(currentInputEvent && eventHasUserGesture(currentInputEvent, event) ? DefinitelyProcessingUserGesture : PossiblyProcessingUserGesture);
 
     RefPtr<WebPluginContainerImpl> protector(this);
     // The events we pass are defined at:
@@ -213,11 +233,6 @@ void WebPluginContainerImpl::frameRectsChanged()
 void WebPluginContainerImpl::widgetPositionsUpdated()
 {
     Widget::widgetPositionsUpdated();
-    reportGeometry();
-}
-
-void WebPluginContainerImpl::clipRectChanged()
-{
     reportGeometry();
 }
 
@@ -707,8 +722,7 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     Page* page = parentView->frame().page();
     if (!page)
         return;
-    ChromeClientImpl* chromeClient = toChromeClientImpl(page->chrome().client());
-    chromeClient->setCursorForPlugin(cursorInfo);
+    toChromeClientImpl(page->chrome().client()).setCursorForPlugin(cursorInfo);
 }
 
 void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)

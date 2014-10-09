@@ -43,13 +43,21 @@ WebInspector.TimelineMemoryOverview = function(model)
 }
 
 WebInspector.TimelineMemoryOverview.prototype = {
+    resetHeapSizeLabels: function()
+    {
+        this._maxHeapSizeLabel.textContent = "";
+        this._minHeapSizeLabel.textContent = "";
+    },
+
     update: function()
     {
         this.resetCanvas();
 
         var records = this._model.records;
-        if (!records.length)
+        if (!records.length) {
+            this.resetHeapSizeLabels();
             return;
+        }
 
         const lowerOffset = 3;
         var maxUsedHeapSize = 0;
@@ -57,8 +65,10 @@ WebInspector.TimelineMemoryOverview.prototype = {
         var minTime = this._model.minimumRecordTime();
         var maxTime = this._model.maximumRecordTime();
         WebInspector.TimelinePresentationModel.forAllRecords(records, function(r) {
-            maxUsedHeapSize = Math.max(maxUsedHeapSize, r.usedHeapSize || maxUsedHeapSize);
-            minUsedHeapSize = Math.min(minUsedHeapSize, r.usedHeapSize || minUsedHeapSize);
+            if (!r.counters || !r.counters.jsHeapSizeUsed)
+                return;
+            maxUsedHeapSize = Math.max(maxUsedHeapSize, r.counters.jsHeapSizeUsed);
+            minUsedHeapSize = Math.min(minUsedHeapSize, r.counters.jsHeapSizeUsed);
         });
         minUsedHeapSize = Math.min(minUsedHeapSize, maxUsedHeapSize);
 
@@ -69,27 +79,27 @@ WebInspector.TimelineMemoryOverview.prototype = {
 
         var histogram = new Array(width);
         WebInspector.TimelinePresentationModel.forAllRecords(records, function(r) {
-            if (!r.usedHeapSize)
+            if (!r.counters || !r.counters.jsHeapSizeUsed)
                 return;
             var x = Math.round((WebInspector.TimelineModel.endTimeInSeconds(r) - minTime) * xFactor);
-            var y = Math.round((r.usedHeapSize - minUsedHeapSize) * yFactor);
+            var y = (r.counters.jsHeapSizeUsed - minUsedHeapSize) * yFactor;
             histogram[x] = Math.max(histogram[x] || 0, y);
         });
-
-        height++; // +1 so that the border always fit into the canvas area.
 
         var y = 0;
         var isFirstPoint = true;
         var ctx = this._context;
+        ctx.save();
+        ctx.translate(0.5, 0.5);
         ctx.beginPath();
-        ctx.moveTo(0, this._canvas.height);
+        ctx.moveTo(-1, this._canvas.height);
         for (var x = 0; x < histogram.length; x++) {
             if (typeof histogram[x] === "undefined")
                 continue;
             if (isFirstPoint) {
                 isFirstPoint = false;
                 y = histogram[x];
-                ctx.lineTo(0, height - y);
+                ctx.lineTo(-1, height - y);
             }
             ctx.lineTo(x, height - y);
             y = histogram[x];
@@ -97,15 +107,19 @@ WebInspector.TimelineMemoryOverview.prototype = {
         }
         ctx.lineTo(width, height - y);
         ctx.lineTo(width, this._canvas.height);
-        ctx.lineTo(0, this._canvas.height);
+        ctx.lineTo(-1, this._canvas.height);
         ctx.closePath();
 
-        ctx.lineWidth = 0.5;
-        ctx.strokeStyle = "rgba(20,0,0,0.8)";
-        ctx.stroke();
-
-        ctx.fillStyle = "rgba(214,225,254, 0.8);";
+        var gradient = ctx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, "rgba(192,204,255,1)");
+        gradient.addColorStop(1, "rgba(192,204,255,0.4)");
+        ctx.fillStyle = gradient;
         ctx.fill();
+
+        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = "#666";
+        ctx.stroke();
+        ctx.restore();
 
         this._maxHeapSizeLabel.textContent = Number.bytesToString(maxUsedHeapSize);
         this._minHeapSizeLabel.textContent = Number.bytesToString(minUsedHeapSize);

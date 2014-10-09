@@ -1623,6 +1623,12 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf)
         cpi->oxcf.maximum_buffer_size =
             rescale((int)cpi->oxcf.maximum_buffer_size,
                     cpi->oxcf.target_bandwidth, 1000);
+    // Under a configuration change, where maximum_buffer_size may change,
+    // keep buffer level clipped to the maximum allowed buffer size.
+    if (cpi->bits_off_target > cpi->oxcf.maximum_buffer_size) {
+      cpi->bits_off_target = cpi->oxcf.maximum_buffer_size;
+      cpi->buffer_level = cpi->bits_off_target;
+    }
 
     /* Set up frame rate and related parameters rate control values. */
     vp8_new_framerate(cpi, cpi->framerate);
@@ -3574,7 +3580,8 @@ static void encode_frame_to_data_rate
                 for (i=cpi->current_layer+1; i<cpi->oxcf.number_of_layers; i++)
                 {
                     LAYER_CONTEXT *lc = &cpi->layer_context[i];
-                    lc->bits_off_target += cpi->av_per_frame_bandwidth;
+                    lc->bits_off_target += (int)(lc->target_bandwidth /
+                                                 lc->framerate);
                     if (lc->bits_off_target > lc->maximum_buffer_size)
                         lc->bits_off_target = lc->maximum_buffer_size;
                     lc->buffer_level = lc->bits_off_target;
@@ -3807,7 +3814,7 @@ static void encode_frame_to_data_rate
 
     /* Setup background Q adjustment for error resilient mode.
      * For multi-layer encodes only enable this for the base layer.
-     */
+    */
     if (cpi->cyclic_refresh_mode_enabled)
     {
       if (cpi->current_layer==0)
@@ -4620,45 +4627,43 @@ static void encode_frame_to_data_rate
         vp8_clear_system_state();
 
         if (cpi->twopass.total_left_stats.coded_error != 0.0)
-            fprintf(f, "%10d %10d %10d %10d %10d %10d %10d %10d %10d %6d %6d"
-                       "%6d %6d %6d %5d %5d %5d %8d %8.2f %10d %10.3f"
-                       "%10.3f %8d\n",
+            fprintf(f, "%10d %10d %10d %10d %10d %10"PRId64" %10"PRId64
+                       "%10"PRId64" %10d %6d %6d %6d %6d %5d %5d %5d %8d "
+                       "%8.2lf %"PRId64" %10.3lf %10"PRId64" %8d\n",
                        cpi->common.current_video_frame, cpi->this_frame_target,
                        cpi->projected_frame_size,
                        (cpi->projected_frame_size - cpi->this_frame_target),
-                       (int)cpi->total_target_vs_actual,
+                       cpi->total_target_vs_actual,
                        cpi->buffer_level,
                        (cpi->oxcf.starting_buffer_level-cpi->bits_off_target),
-                       (int)cpi->total_actual_bits, cm->base_qindex,
+                       cpi->total_actual_bits, cm->base_qindex,
                        cpi->active_best_quality, cpi->active_worst_quality,
                        cpi->ni_av_qi, cpi->cq_target_quality,
-                       cpi->zbin_over_quant,
                        cm->refresh_golden_frame, cm->refresh_alt_ref_frame,
                        cm->frame_type, cpi->gfu_boost,
                        cpi->twopass.est_max_qcorrection_factor,
-                       (int)cpi->twopass.bits_left,
+                       cpi->twopass.bits_left,
                        cpi->twopass.total_left_stats.coded_error,
                        (double)cpi->twopass.bits_left /
                            cpi->twopass.total_left_stats.coded_error,
                        cpi->tot_recode_hits);
         else
-            fprintf(f, "%10d %10d %10d %10d %10d %10d %10d %10d %10d %6d %6d"
-                       "%6d %6d %6d %5d %5d %5d %8d %8.2f %10d %10.3f"
-                       "%8d\n",
-                       cpi->common.current_video_frame,
-                       cpi->this_frame_target, cpi->projected_frame_size,
+            fprintf(f, "%10d %10d %10d %10d %10d %10"PRId64" %10"PRId64
+                       "%10"PRId64" %10d %6d %6d %6d %6d %5d %5d %5d %8d "
+                       "%8.2lf %"PRId64" %10.3lf %8d\n",
+                       cpi->common.current_video_frame, cpi->this_frame_target,
+                       cpi->projected_frame_size,
                        (cpi->projected_frame_size - cpi->this_frame_target),
-                       (int)cpi->total_target_vs_actual,
+                       cpi->total_target_vs_actual,
                        cpi->buffer_level,
                        (cpi->oxcf.starting_buffer_level-cpi->bits_off_target),
-                       (int)cpi->total_actual_bits, cm->base_qindex,
+                       cpi->total_actual_bits, cm->base_qindex,
                        cpi->active_best_quality, cpi->active_worst_quality,
                        cpi->ni_av_qi, cpi->cq_target_quality,
-                       cpi->zbin_over_quant,
                        cm->refresh_golden_frame, cm->refresh_alt_ref_frame,
                        cm->frame_type, cpi->gfu_boost,
                        cpi->twopass.est_max_qcorrection_factor,
-                       (int)cpi->twopass.bits_left,
+                       cpi->twopass.bits_left,
                        cpi->twopass.total_left_stats.coded_error,
                        cpi->tot_recode_hits);
 
@@ -4666,7 +4671,6 @@ static void encode_frame_to_data_rate
 
         {
             FILE *fmodes = fopen("Modes.stt", "a");
-            int i;
 
             fprintf(fmodes, "%6d:%1d:%1d:%1d ",
                         cpi->common.current_video_frame,

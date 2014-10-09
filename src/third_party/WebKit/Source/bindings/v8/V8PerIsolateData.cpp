@@ -30,17 +30,19 @@
 #include "bindings/v8/ScriptGCEvent.h"
 #include "bindings/v8/ScriptProfiler.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8ScriptRunner.h"
+#include "gin/public/isolate_holder.h"
+#include "wtf/MainThread.h"
 
 namespace WebCore {
 
+static gin::IsolateHolder* mainIsolateHolder = 0;
+
 V8PerIsolateData::V8PerIsolateData(v8::Isolate* isolate)
     : m_isolate(isolate)
+    , m_isMainThread(WTF::isMainThread())
     , m_stringCache(adoptPtr(new StringCache()))
-    , m_workerDomDataStore(0)
-    , m_hiddenPropertyName(adoptPtr(new V8HiddenPropertyName()))
     , m_constructorMode(ConstructorMode::CreateNewObject)
     , m_recursionLevel(0)
 #ifndef NDEBUG
@@ -48,27 +50,34 @@ V8PerIsolateData::V8PerIsolateData(v8::Isolate* isolate)
 #endif
     , m_gcEventData(adoptPtr(new GCEventData()))
     , m_shouldCollectGarbageSoon(false)
+    , m_performingMicrotaskCheckpoint(false)
 {
+    if (m_isMainThread)
+        mainIsolateHolder = new gin::IsolateHolder(m_isolate);
 }
 
 V8PerIsolateData::~V8PerIsolateData()
 {
+    if (m_isMainThread) {
+        delete mainIsolateHolder;
+        mainIsolateHolder = 0;
+    }
 }
 
-V8PerIsolateData* V8PerIsolateData::create(v8::Isolate* isolate)
+v8::Isolate* V8PerIsolateData::mainThreadIsolate()
 {
-    ASSERT(isolate);
-    ASSERT(!isolate->GetData(gin::kEmbedderBlink));
-    V8PerIsolateData* data = new V8PerIsolateData(isolate);
-    isolate->SetData(gin::kEmbedderBlink, data);
-    return data;
+    ASSERT(WTF::isMainThread());
+    ASSERT(mainIsolateHolder);
+    return mainIsolateHolder->isolate();
 }
 
 void V8PerIsolateData::ensureInitialized(v8::Isolate* isolate)
 {
     ASSERT(isolate);
-    if (!isolate->GetData(gin::kEmbedderBlink))
-        create(isolate);
+    if (!isolate->GetData(gin::kEmbedderBlink)) {
+        V8PerIsolateData* data = new V8PerIsolateData(isolate);
+        isolate->SetData(gin::kEmbedderBlink, data);
+    }
 }
 
 v8::Persistent<v8::Value>& V8PerIsolateData::ensureLiveRoot()
@@ -117,19 +126,6 @@ void V8PerIsolateData::setPrivateTemplate(WrapperWorldType currentWorldType, voi
     templateMap(currentWorldType).add(privatePointer, UnsafePersistent<v8::FunctionTemplate>(m_isolate, templ));
 }
 
-v8::Handle<v8::FunctionTemplate> V8PerIsolateData::rawDOMTemplate(const WrapperTypeInfo* info, WrapperWorldType currentWorldType)
-{
-    TemplateMap& templates = rawDOMTemplateMap(currentWorldType);
-    TemplateMap::iterator result = templates.find(info);
-    if (result != templates.end())
-        return result->value.newLocal(m_isolate);
-
-    v8::EscapableHandleScope handleScope(m_isolate);
-    v8::Local<v8::FunctionTemplate> templ = createRawTemplate(m_isolate);
-    templates.add(info, UnsafePersistent<v8::FunctionTemplate>(m_isolate, templ));
-    return handleScope.Escape(templ);
-}
-
 v8::Local<v8::Context> V8PerIsolateData::ensureRegexContext()
 {
     if (m_regexContext.isEmpty()) {
@@ -139,9 +135,18 @@ v8::Local<v8::Context> V8PerIsolateData::ensureRegexContext()
     return m_regexContext.newLocal(m_isolate);
 }
 
-bool V8PerIsolateData::hasInstance(const WrapperTypeInfo* info, v8::Handle<v8::Value> value, WrapperWorldType currentWorldType)
+bool V8PerIsolateData::hasInstanceInMainWorld(const WrapperTypeInfo* info, v8::Handle<v8::Value> value)
 {
-    TemplateMap& templates = rawDOMTemplateMap(currentWorldType);
+    return hasInstance(info, value, m_templatesForMainWorld);
+}
+
+bool V8PerIsolateData::hasInstanceInNonMainWorld(const WrapperTypeInfo* info, v8::Handle<v8::Value> value)
+{
+    return hasInstance(info, value, m_templatesForNonMainWorld);
+}
+
+bool V8PerIsolateData::hasInstance(const WrapperTypeInfo* info, v8::Handle<v8::Value> value, TemplateMap& templates)
+{
     TemplateMap::iterator result = templates.find(info);
     if (result == templates.end())
         return false;

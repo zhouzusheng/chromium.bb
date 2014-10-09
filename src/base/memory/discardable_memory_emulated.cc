@@ -29,20 +29,36 @@ DiscardableMemoryEmulated::~DiscardableMemoryEmulated() {
   g_provider.Pointer()->Unregister(this);
 }
 
-bool DiscardableMemoryEmulated::Initialize() {
-  return Lock() == DISCARDABLE_MEMORY_PURGED;
+// static
+void DiscardableMemoryEmulated::RegisterMemoryPressureListeners() {
+  g_provider.Pointer()->RegisterMemoryPressureListener();
 }
 
-LockDiscardableMemoryStatus DiscardableMemoryEmulated::Lock() {
+// static
+void DiscardableMemoryEmulated::UnregisterMemoryPressureListeners() {
+  g_provider.Pointer()->UnregisterMemoryPressureListener();
+}
+
+// static
+void DiscardableMemoryEmulated::PurgeForTesting() {
+  g_provider.Pointer()->PurgeAll();
+}
+
+bool DiscardableMemoryEmulated::Initialize() {
+  return Lock() == DISCARDABLE_MEMORY_LOCK_STATUS_PURGED;
+}
+
+DiscardableMemoryLockStatus DiscardableMemoryEmulated::Lock() {
   DCHECK(!is_locked_);
 
   bool purged = false;
   memory_ = g_provider.Pointer()->Acquire(this, &purged);
   if (!memory_)
-    return DISCARDABLE_MEMORY_FAILED;
+    return DISCARDABLE_MEMORY_LOCK_STATUS_FAILED;
 
   is_locked_ = true;
-  return purged ? DISCARDABLE_MEMORY_PURGED : DISCARDABLE_MEMORY_SUCCESS;
+  return purged ? DISCARDABLE_MEMORY_LOCK_STATUS_PURGED
+                : DISCARDABLE_MEMORY_LOCK_STATUS_SUCCESS;
 }
 
 void DiscardableMemoryEmulated::Unlock() {
@@ -54,11 +70,6 @@ void DiscardableMemoryEmulated::Unlock() {
 void* DiscardableMemoryEmulated::Memory() const {
   DCHECK(memory_);
   return memory_.get();
-}
-
-// static
-void DiscardableMemoryEmulated::PurgeForTesting() {
-  g_provider.Pointer()->PurgeAll();
 }
 
 }  // namespace internal

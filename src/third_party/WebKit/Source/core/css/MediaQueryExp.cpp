@@ -32,7 +32,7 @@
 
 #include "CSSValueKeywords.h"
 #include "core/css/CSSAspectRatioValue.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -129,7 +129,6 @@ static inline bool featureWithPositiveNumber(const AtomicString& mediaFeature, c
 
     return mediaFeature == MediaFeatureNames::transform2dMediaFeature
         || mediaFeature == MediaFeatureNames::transform3dMediaFeature
-        || mediaFeature == MediaFeatureNames::deprecatedTransitionMediaFeature
         || mediaFeature == MediaFeatureNames::animationMediaFeature
         || mediaFeature == MediaFeatureNames::devicePixelRatioMediaFeature
         || mediaFeature == MediaFeatureNames::maxDevicePixelRatioMediaFeature
@@ -172,7 +171,6 @@ static inline bool featureWithoutValue(const AtomicString& mediaFeature)
         || mediaFeature == MediaFeatureNames::hoverMediaFeature
         || mediaFeature == MediaFeatureNames::transform2dMediaFeature
         || mediaFeature == MediaFeatureNames::transform3dMediaFeature
-        || mediaFeature == MediaFeatureNames::deprecatedTransitionMediaFeature
         || mediaFeature == MediaFeatureNames::animationMediaFeature
         || mediaFeature == MediaFeatureNames::viewModeMediaFeature
         || mediaFeature == MediaFeatureNames::pointerMediaFeature

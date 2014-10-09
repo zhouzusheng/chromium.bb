@@ -67,20 +67,31 @@ void SimpleFontData::platformInit()
     SkTypeface* face = paint.getTypeface();
     ASSERT(face);
 
-    static const uint32_t vdmxTag = SkSetFourByteTag('V', 'D', 'M', 'X');
-    int pixelSize = m_platformData.size() + 0.5;
-    int vdmxAscent, vdmxDescent;
+    int vdmxAscent = 0, vdmxDescent = 0;
     bool isVDMXValid = false;
 
-    size_t vdmxSize = face->getTableSize(vdmxTag);
-    if (vdmxSize && vdmxSize < maxVDMXTableSize) {
-        uint8_t* vdmxTable = (uint8_t*) fastMalloc(vdmxSize);
-        if (vdmxTable
-            && face->getTableData(vdmxTag, 0, vdmxSize, vdmxTable) == vdmxSize
-            && parseVDMX(&vdmxAscent, &vdmxDescent, vdmxTable, vdmxSize, pixelSize))
-            isVDMXValid = true;
-        fastFree(vdmxTable);
+#if OS(LINUX) || OS(ANDROID)
+    // Manually digging up VDMX metrics is only applicable when bytecode hinting using FreeType.
+    // With GDI, the metrics will already have taken this into account (as needed).
+    // With DirectWrite or CoreText, no bytecode hinting is ever done.
+    // This code should be pushed into FreeType (hinted font metrics).
+    static const uint32_t vdmxTag = SkSetFourByteTag('V', 'D', 'M', 'X');
+    int pixelSize = m_platformData.size() + 0.5;
+    if (!paint.isAutohinted()
+        &&    (paint.getHinting() == SkPaint::kFull_Hinting
+            || paint.getHinting() == SkPaint::kNormal_Hinting))
+    {
+        size_t vdmxSize = face->getTableSize(vdmxTag);
+        if (vdmxSize && vdmxSize < maxVDMXTableSize) {
+            uint8_t* vdmxTable = (uint8_t*) fastMalloc(vdmxSize);
+            if (vdmxTable
+                && face->getTableData(vdmxTag, 0, vdmxSize, vdmxTable) == vdmxSize
+                && parseVDMX(&vdmxAscent, &vdmxDescent, vdmxTable, vdmxSize, pixelSize))
+                isVDMXValid = true;
+            fastFree(vdmxTable);
+        }
     }
+#endif
 
     float ascent;
     float descent;
@@ -91,8 +102,8 @@ void SimpleFontData::platformInit()
         ascent = vdmxAscent;
         descent = -vdmxDescent;
     } else {
-        ascent = SkScalarRound(-metrics.fAscent);
-        descent = SkScalarRound(metrics.fDescent);
+        ascent = SkScalarRoundToInt(-metrics.fAscent);
+        descent = SkScalarRoundToInt(metrics.fDescent);
 #if OS(LINUX) || OS(ANDROID)
         // When subpixel positioning is enabled, if the descent is rounded down, the descent part
         // of the glyph may be truncated when displayed in a 'overflow: hidden' container.
@@ -122,6 +133,12 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setLineSpacing(lroundf(ascent) + lroundf(descent) + lroundf(lineGap));
 
+    // For now Skia does not support underline Thickness, once patch is comitted we can uncomment following
+    // code, till then setting Underline Thickness to Zero so that default calculation is done.
+    // float underlineThickness = SkScalarToFloat(metrics.fUnderlineThickness);
+    // m_fontMetrics.setUnderlineThickness(underlineThickness);
+    m_fontMetrics.setUnderlineThickness(0.f);
+
     if (platformData().orientation() == Vertical && !isTextOrientationFallback()) {
         static const uint32_t vheaTag = SkSetFourByteTag('v', 'h', 'e', 'a');
         static const uint32_t vorgTag = SkSetFourByteTag('V', 'O', 'R', 'G');
@@ -135,16 +152,16 @@ void SimpleFontData::platformInit()
     // calculated for us, but we need to calculate m_maxCharWidth and
     // m_avgCharWidth in order for text entry widgets to be sized correctly.
 #if OS(WIN)
-    m_maxCharWidth = SkScalarRound(metrics.fMaxCharWidth);
+    m_maxCharWidth = SkScalarRoundToInt(metrics.fMaxCharWidth);
 #else
     // FIXME: This seems incorrect and should probably use fMaxCharWidth as
     // the code path above.
     SkScalar xRange = metrics.fXMax - metrics.fXMin;
-    m_maxCharWidth = SkScalarRound(xRange * SkScalarRound(m_platformData.size()));
+    m_maxCharWidth = SkScalarRoundToInt(xRange * SkScalarRoundToInt(m_platformData.size()));
 #endif
 
     if (metrics.fAvgCharWidth)
-        m_avgCharWidth = SkScalarRound(metrics.fAvgCharWidth);
+        m_avgCharWidth = SkScalarRoundToInt(metrics.fAvgCharWidth);
     else {
         m_avgCharWidth = xHeight;
 
@@ -184,32 +201,6 @@ PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const Fo
     return SimpleFontData::create(FontPlatformData(m_platformData, scaledSize), isCustomFont() ? CustomFontData::create(false) : 0);
 }
 
-bool SimpleFontData::containsCharacters(const UChar* characters, int length) const
-{
-    SkPaint paint;
-    static const unsigned maxBufferCount = 64;
-    uint16_t glyphs[maxBufferCount];
-
-    m_platformData.setupPaint(&paint);
-    paint.setTextEncoding(SkPaint::kUTF16_TextEncoding);
-
-    while (length > 0) {
-        int n = SkMin32(length, SK_ARRAY_COUNT(glyphs));
-
-        // textToGlyphs takes a byte count so we double the character count.
-        int count = paint.textToGlyphs(characters, n * 2, glyphs);
-        for (int i = 0; i < count; i++) {
-            if (!glyphs[i])
-                return false; // missing glyph
-        }
-
-        characters += n;
-        length -= n;
-    }
-
-    return true;
-}
-
 void SimpleFontData::determinePitch()
 {
     m_treatAsFixedPitch = platformData().isFixedPitch();
@@ -222,12 +213,6 @@ static inline void getSkiaBoundsForGlyph(SkPaint& paint, Glyph glyph, SkRect& bo
     SkPath path;
     paint.getTextPath(&glyph, sizeof(glyph), 0, 0, &path);
     bounds = path.getBounds();
-
-    // FIXME(eae): getBounds currently returns an empty rect for bitmap
-    // fonts so fall back on the old behavior. Once fixed in Skia this
-    // fallback can go away.
-    if (bounds.isEmpty())
-        paint.measureText(&glyph, 2, &bounds);
 
     if (!paint.isSubpixelText()) {
         SkIRect ir;
@@ -265,7 +250,7 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
     SkScalar width = paint.measureText(&glyph, 2);
     if (!paint.isSubpixelText())
-        width = SkScalarRound(width);
+        width = SkScalarRoundToInt(width);
     return SkScalarToFloat(width);
 }
 
@@ -277,7 +262,7 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
 
     WTF::HashMap<String, bool>::AddResult addResult = m_combiningCharacterSequenceSupport->add(String(characters, length), false);
     if (!addResult.isNewEntry)
-        return addResult.iterator->value;
+        return addResult.storedValue->value;
 
     UErrorCode error = U_ZERO_ERROR;
     Vector<UChar, 4> normalizedCharacters(length);
@@ -290,7 +275,7 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
     m_platformData.setupPaint(&paint);
     paint.setTextEncoding(SkPaint::kUTF16_TextEncoding);
     if (paint.textToGlyphs(&normalizedCharacters[0], normalizedLength * 2, 0)) {
-        addResult.iterator->value = true;
+        addResult.storedValue->value = true;
         return true;
     }
     return false;

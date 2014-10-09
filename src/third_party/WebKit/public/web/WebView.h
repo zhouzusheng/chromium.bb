@@ -44,22 +44,21 @@ class WebAXObject;
 class WebAutofillClient;
 class WebDevToolsAgent;
 class WebDevToolsAgentClient;
+class WebDocument;
 class WebDragData;
 class WebFrame;
 class WebFrameClient;
 class WebGraphicsContext3D;
+class WebHelperPlugin;
 class WebHitTestResult;
 class WebNode;
 class WebPageOverlay;
-class WebPermissionClient;
 class WebPrerendererClient;
 class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
 class WebPasswordGeneratorClient;
-class WebSharedWorkerRepositoryClient;
-class WebValidationMessageClient;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
@@ -93,19 +92,13 @@ public:
     // This WebFrame will receive events for the main frame and must not
     // be null.
     virtual void setMainFrame(WebFrame*) = 0;
-    // FIXME: Remove initializeMainFrame() after clients have migrated to
-    // setMainFrame().
-    virtual void initializeMainFrame(WebFrameClient*) = 0;
 
     // Initializes the various client interfaces.
     virtual void setAutofillClient(WebAutofillClient*) = 0;
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
-    virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
-    virtual void setValidationMessageClient(WebValidationMessageClient*) = 0;
     virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) = 0;
-    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
     // Options -------------------------------------------------------------
 
@@ -320,6 +313,11 @@ public:
     virtual void performMediaPlayerAction(
         const WebMediaPlayerAction&, const WebPoint& location) = 0;
 
+    // Creates a Helper Plugin of |pluginType| for |hostDocument|. Caller owns
+    // the returned object, and must call closeAndDeleteSoon() to free the Plugin.
+    virtual WebHelperPlugin* createHelperPlugin(
+        const WebString& pluginType, const WebDocument& hostDocument) = 0;
+
     // Performs the specified plugin action on the node at the given location.
     virtual void performPluginAction(
         const WebPluginAction&, const WebPoint& location) = 0;
@@ -409,26 +407,6 @@ public:
     virtual WebAXObject accessibilityObject() = 0;
 
 
-    // Autofill  -----------------------------------------------------------
-
-    // Notifies the WebView that Autofill suggestions are available for a node.
-    // |itemIDs| is a vector of IDs for the menu items. A positive itemID is a
-    // unique ID for the Autofill entries. Other MenuItemIDs are defined in
-    // WebAutofillClient.h
-    virtual void applyAutofillSuggestions(
-        const WebNode&,
-        const WebVector<WebString>& names,
-        const WebVector<WebString>& labels,
-        const WebVector<WebString>& icons,
-        const WebVector<int>& itemIDs,
-        int separatorIndex = -1) = 0;
-
-    // Hides any popup (suggestions, selects...) that might be showing.
-    virtual void hidePopups() = 0;
-
-    virtual void selectAutofillSuggestionAtIndex(unsigned listIndex) = 0;
-
-
     // Context menu --------------------------------------------------------
 
     virtual void performCustomContextMenuAction(unsigned action) = 0;
@@ -446,6 +424,9 @@ public:
 
     // Sets whether select popup menus should be rendered by the browser.
     BLINK_EXPORT static void setUseExternalPopupMenus(bool);
+
+    // Hides any popup (suggestions, selects...) that might be showing.
+    virtual void hidePopups() = 0;
 
 
     // Visited link state --------------------------------------------------

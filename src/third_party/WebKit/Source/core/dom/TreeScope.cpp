@@ -33,6 +33,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/IdTargetObserverRegistry.h"
+#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -52,53 +53,34 @@
 
 namespace WebCore {
 
-struct SameSizeAsTreeScope {
-    virtual ~SameSizeAsTreeScope();
-    void* pointers[8];
-    int ints[1];
-};
-
-COMPILE_ASSERT(sizeof(TreeScope) == sizeof(SameSizeAsTreeScope), treescope_should_stay_small);
-
 using namespace HTMLNames;
 
-TreeScope::TreeScope(ContainerNode* rootNode, Document* document)
+TreeScope::TreeScope(ContainerNode& rootNode, Document& document)
     : m_rootNode(rootNode)
-    , m_documentScope(document)
-    , m_parentTreeScope(document)
+    , m_document(&document)
+    , m_parentTreeScope(&document)
     , m_guardRefCount(0)
     , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
-    ASSERT(rootNode);
-    ASSERT(document);
     ASSERT(rootNode != document);
     m_parentTreeScope->guardRef();
-    m_rootNode->setTreeScope(this);
+    m_rootNode.setTreeScope(this);
 }
 
-TreeScope::TreeScope(Document* document)
+TreeScope::TreeScope(Document& document)
     : m_rootNode(document)
-    , m_documentScope(document)
+    , m_document(&document)
     , m_parentTreeScope(0)
     , m_guardRefCount(0)
     , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
-    ASSERT(document);
-    m_rootNode->setTreeScope(this);
-}
-
-TreeScope::TreeScope()
-    : m_rootNode(0)
-    , m_documentScope(0)
-    , m_parentTreeScope(0)
-    , m_guardRefCount(0)
-{
+    m_rootNode.setTreeScope(this);
 }
 
 TreeScope::~TreeScope()
 {
     ASSERT(!m_guardRefCount);
-    m_rootNode->setTreeScope(0);
+    m_rootNode.setTreeScope(0);
 
     if (m_selection) {
         m_selection->clearTreeScope();
@@ -109,9 +91,27 @@ TreeScope::~TreeScope()
         m_parentTreeScope->guardDeref();
 }
 
+TreeScope* TreeScope::olderShadowRootOrParentTreeScope() const
+{
+    if (rootNode().isShadowRoot()) {
+        if (ShadowRoot* olderShadowRoot = toShadowRoot(rootNode()).olderShadowRoot())
+            return olderShadowRoot;
+    }
+    return parentTreeScope();
+}
+
+bool TreeScope::isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(const TreeScope& scope) const
+{
+    for (const TreeScope* current = &scope; current; current = current->olderShadowRootOrParentTreeScope()) {
+        if (current == this)
+            return true;
+    }
+    return false;
+}
+
 bool TreeScope::rootNodeHasTreeSharedParent() const
 {
-    return rootNode()->hasTreeSharedParent();
+    return rootNode().hasTreeSharedParent();
 }
 
 void TreeScope::destroyTreeScopeData()
@@ -121,24 +121,16 @@ void TreeScope::destroyTreeScopeData()
     m_labelsByForAttribute.clear();
 }
 
-void TreeScope::clearDocumentScope()
-{
-    ASSERT(rootNode()->isDocumentNode());
-    m_documentScope = 0;
-}
-
-void TreeScope::setParentTreeScope(TreeScope* newParentScope)
+void TreeScope::setParentTreeScope(TreeScope& newParentScope)
 {
     // A document node cannot be re-parented.
-    ASSERT(!rootNode()->isDocumentNode());
-    // Every scope other than document needs a parent scope.
-    ASSERT(newParentScope);
+    ASSERT(!rootNode().isDocumentNode());
 
-    newParentScope->guardRef();
+    newParentScope.guardRef();
     if (m_parentTreeScope)
         m_parentTreeScope->guardDeref();
-    m_parentTreeScope = newParentScope;
-    setDocumentScope(newParentScope->documentScope());
+    m_parentTreeScope = &newParentScope;
+    setDocument(newParentScope.document());
 }
 
 Element* TreeScope::getElementById(const AtomicString& elementId) const
@@ -148,6 +140,16 @@ Element* TreeScope::getElementById(const AtomicString& elementId) const
     if (!m_elementsById)
         return 0;
     return m_elementsById->getElementById(elementId.impl(), this);
+}
+
+const Vector<Element*>& TreeScope::getAllElementsById(const AtomicString& elementId) const
+{
+    DEFINE_STATIC_LOCAL(Vector<Element*>, emptyVector, ());
+    if (elementId.isEmpty())
+        return emptyVector;
+    if (!m_elementsById)
+        return emptyVector;
+    return m_elementsById->getAllElementsById(elementId.impl(), this);
 }
 
 void TreeScope::addElementById(const AtomicString& elementId, Element* element)
@@ -208,44 +210,38 @@ HTMLMapElement* TreeScope::getImageMap(const String& url) const
         return 0;
     size_t hashPos = url.find('#');
     String name = (hashPos == kNotFound ? url : url.substring(hashPos + 1)).impl();
-    if (rootNode()->document().isHTMLDocument())
+    if (rootNode().document().isHTMLDocument())
         return toHTMLMapElement(m_imageMapsByName->getElementByLowercasedMapName(AtomicString(name.lower()).impl(), this));
     return toHTMLMapElement(m_imageMapsByName->getElementByMapName(AtomicString(name).impl(), this));
 }
 
-RenderObject* rendererFromPoint(Document* document, int x, int y, LayoutPoint* localPoint)
+HitTestResult hitTestInDocument(const Document* document, int x, int y)
 {
     Frame* frame = document->frame();
 
     if (!frame)
-        return 0;
+        return HitTestResult();
     FrameView* frameView = frame->view();
     if (!frameView)
-        return 0;
+        return HitTestResult();
 
     float scaleFactor = frame->pageZoomFactor();
     IntPoint point = roundedIntPoint(FloatPoint(x * scaleFactor  + frameView->scrollX(), y * scaleFactor + frameView->scrollY()));
 
     if (!frameView->visibleContentRect().contains(point))
-        return 0;
+        return HitTestResult();
 
     HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
     HitTestResult result(point);
     document->renderView()->hitTest(request, result);
-
-    if (localPoint)
-        *localPoint = result.localPoint();
-
-    return result.renderer();
+    return result;
 }
 
 Element* TreeScope::elementFromPoint(int x, int y) const
 {
-    RenderObject* renderer = rendererFromPoint(&rootNode()->document(), x, y);
-    if (!renderer)
-        return 0;
-    Node* node = renderer->node();
-    if (!node)
+    HitTestResult result = hitTestInDocument(&rootNode().document(), x, y);
+    Node* node = result.innerNode();
+    if (!node || node->isDocumentNode())
         return 0;
     if (node->isPseudoElement() || node->isTextNode())
         node = node->parentOrShadowHostNode();
@@ -276,9 +272,8 @@ HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeV
     if (!m_labelsByForAttribute) {
         // Populate the map on first access.
         m_labelsByForAttribute = adoptPtr(new DocumentOrderedMap);
-        ASSERT(rootNode());
-        for (Element* element = ElementTraversal::firstWithin(*rootNode()); element; element = ElementTraversal::next(*element)) {
-            if (isHTMLLabelElement(element)) {
+        for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::next(*element)) {
+            if (element->hasTagName(labelTag)) {
                 HTMLLabelElement* label = toHTMLLabelElement(element);
                 const AtomicString& forValue = label->fastGetAttribute(forAttr);
                 if (!forValue.isEmpty())
@@ -292,7 +287,7 @@ HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeV
 
 DOMSelection* TreeScope::getSelection() const
 {
-    if (!rootNode()->document().frame())
+    if (!rootNode().document().frame())
         return 0;
 
     if (m_selection)
@@ -309,13 +304,12 @@ Element* TreeScope::findAnchor(const String& name)
 {
     if (name.isEmpty())
         return 0;
-    if (Element* element = getElementById(name))
+    if (Element* element = getElementById(AtomicString(name)))
         return element;
-    ASSERT(rootNode());
-    for (Element* element = ElementTraversal::firstWithin(*rootNode()); element; element = ElementTraversal::next(*element)) {
-        if (isHTMLAnchorElement(element)) {
+    for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::next(*element)) {
+        if (element->hasTagName(aTag)) {
             HTMLAnchorElement* anchor = toHTMLAnchorElement(element);
-            if (rootNode()->document().inQuirksMode()) {
+            if (rootNode().document().inQuirksMode()) {
                 // Quirks mode, case insensitive comparison of names.
                 if (equalIgnoringCase(anchor->name(), name))
                     return anchor;
@@ -331,7 +325,7 @@ Element* TreeScope::findAnchor(const String& name)
 
 bool TreeScope::applyAuthorStyles() const
 {
-    return !rootNode()->isShadowRoot() || toShadowRoot(rootNode())->applyAuthorStyles();
+    return !rootNode().isShadowRoot() || toShadowRoot(rootNode()).applyAuthorStyles();
 }
 
 void TreeScope::adoptIfNeeded(Node& node)
@@ -355,7 +349,7 @@ static Element* focusedFrameOwnerElement(Frame* focusedFrame, Frame* currentFram
 
 Element* TreeScope::adjustedFocusedElement() const
 {
-    Document& document = rootNode()->document();
+    Document& document = rootNode().document();
     Element* element = document.focusedElement();
     if (!element && document.page())
         element = focusedFrameOwnerElement(document.page()->focusController().focusedFrame(), document.frame());
@@ -398,12 +392,12 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
         const TreeScope* child1 = chain1[--index1];
         const TreeScope* child2 = chain2[--index2];
         if (child1 != child2) {
-            Node* shadowHost1 = child1->rootNode()->parentOrShadowHostNode();
-            Node* shadowHost2 = child2->rootNode()->parentOrShadowHostNode();
+            Node* shadowHost1 = child1->rootNode().parentOrShadowHostNode();
+            Node* shadowHost2 = child2->rootNode().parentOrShadowHostNode();
             if (shadowHost1 != shadowHost2)
                 return shadowHost1->compareDocumentPositionInternal(shadowHost2, Node::TreatShadowTreesAsDisconnected);
 
-            for (const ShadowRoot* child = toShadowRoot(child2->rootNode())->olderShadowRoot(); child; child = child->olderShadowRoot())
+            for (const ShadowRoot* child = toShadowRoot(child2->rootNode()).olderShadowRoot(); child; child = child->olderShadowRoot())
                 if (child == child1)
                     return Node::DOCUMENT_POSITION_FOLLOWING;
 
@@ -454,20 +448,18 @@ TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
 #if SECURITY_ASSERT_ENABLED
 bool TreeScope::deletionHasBegun()
 {
-    return rootNode() && rootNode()->m_deletionHasBegun;
+    return rootNode().m_deletionHasBegun;
 }
 
 void TreeScope::beginDeletion()
 {
-    rootNode()->m_deletionHasBegun = true;
+    rootNode().m_deletionHasBegun = true;
 }
 #endif
 
 int TreeScope::refCount() const
 {
-    if (Node* root = rootNode())
-        return root->refCount();
-    return 0;
+    return rootNode().refCount();
 }
 
 bool TreeScope::isInclusiveAncestorOf(const TreeScope& scope) const
@@ -484,9 +476,8 @@ Element* TreeScope::getElementByAccessKey(const String& key) const
     if (key.isEmpty())
         return 0;
     Element* result = 0;
-    Node* root = rootNode();
-    ASSERT(root);
-    for (Element* element = ElementTraversal::firstWithin(*root); element; element = ElementTraversal::next(*element, root)) {
+    Node& root = rootNode();
+    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(*element, &root)) {
         if (equalIgnoringCase(element->fastGetAttribute(accesskeyAttr), key))
             result = element;
         for (ShadowRoot* shadowRoot = element->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
@@ -495,6 +486,17 @@ Element* TreeScope::getElementByAccessKey(const String& key) const
         }
     }
     return result;
+}
+
+void TreeScope::setNeedsStyleRecalcForViewportUnits()
+{
+    for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::nextIncludingPseudo(*element)) {
+        for (ShadowRoot* root = element->youngestShadowRoot(); root; root = root->olderShadowRoot())
+            root->setNeedsStyleRecalcForViewportUnits();
+        RenderStyle* style = element->renderStyle();
+        if (style && style->hasViewportUnits())
+            element->setNeedsStyleRecalc(LocalStyleChange);
+    }
 }
 
 } // namespace WebCore

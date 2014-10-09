@@ -57,7 +57,7 @@ WebInspector.TimelinePresentationModel.categories = function()
 };
 
 /**
- * @return {!Object.<string, {title: string, category: !WebInspector.TimelineCategory}>}
+ * @return {!Object.<string, !{title: string, category: !WebInspector.TimelineCategory}>}
  */
 WebInspector.TimelinePresentationModel._initRecordStyles = function()
 {
@@ -118,7 +118,7 @@ WebInspector.TimelinePresentationModel._initRecordStyles = function()
 
 /**
  * @param {!Object} record
- * @return {{title: string, category: !WebInspector.TimelineCategory}}
+ * @return {!{title: string, category: !WebInspector.TimelineCategory}}
  */
 WebInspector.TimelinePresentationModel.recordStyle = function(record)
 {
@@ -155,8 +155,8 @@ WebInspector.TimelinePresentationModel.isEventDivider = function(record)
 
 /**
  * @param {!Array.<*>} recordsArray
- * @param {?function(*)} preOrderCallback
- * @param {function(*)=} postOrderCallback
+ * @param {?function(*)|?function(*,number)} preOrderCallback
+ * @param {function(*)|function(*,number)=} postOrderCallback
  */
 WebInspector.TimelinePresentationModel.forAllRecords = function(recordsArray, preOrderCallback, postOrderCallback)
 {
@@ -168,15 +168,15 @@ WebInspector.TimelinePresentationModel.forAllRecords = function(recordsArray, pr
         var records = entry.array;
         if (entry.index < records.length) {
              var record = records[entry.index];
-             if (preOrderCallback && preOrderCallback(record))
+             if (preOrderCallback && preOrderCallback(record, stack.length))
                  return;
              if (record.children)
                  stack.push({array: record.children, index: 0, record: record});
-             else if (postOrderCallback && postOrderCallback(record))
+             else if (postOrderCallback && postOrderCallback(record, stack.length))
                 return;
              ++entry.index;
         } else {
-            if (entry.record && postOrderCallback && postOrderCallback(entry.record))
+            if (entry.record && postOrderCallback && postOrderCallback(entry.record, stack.length))
                 return;
             stack.pop();
         }
@@ -235,10 +235,13 @@ WebInspector.TimelinePresentationModel._hiddenRecords = { }
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.MarkDOMContent] = 1;
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.MarkLoad] = 1;
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.MarkFirstPaint] = 1;
+WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.GPUTask] = 1;
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.ScheduleStyleRecalculation] = 1;
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.InvalidateLayout] = 1;
-WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.GPUTask] = 1;
+WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.RequestMainThreadFrame] = 1;
 WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.ActivateLayerTree] = 1;
+WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.DrawFrame] = 1;
+WebInspector.TimelinePresentationModel._hiddenRecords[WebInspector.TimelineModel.RecordType.BeginFrame] = 1;
 
 WebInspector.TimelinePresentationModel.prototype = {
     /**
@@ -257,14 +260,12 @@ WebInspector.TimelinePresentationModel.prototype = {
         this._searchFilter = filter;
     },
 
+    /**
+     * @return {!WebInspector.TimelinePresentationModel.Record}
+     */
     rootRecord: function()
     {
         return this._rootRecord;
-    },
-
-    frames: function()
-    {
-        return this._frames;
     },
 
     reset: function()
@@ -278,18 +279,12 @@ WebInspector.TimelinePresentationModel.prototype = {
         this._eventDividerRecords = [];
         this._timeRecords = {};
         this._timeRecordStack = [];
-        this._frames = [];
         this._minimumRecordTime = -1;
         this._layoutInvalidateStack = {};
         this._lastScheduleStyleRecalculation = {};
         this._webSocketCreateRecords = {};
         this._coalescingBuckets = {};
-    },
-
-    addFrame: function(frame)
-    {
-        if (!frame.isBackground)
-            this._frames.push(frame);
+        this._mergingBuffer = new WebInspector.TimelineMergingRecordBuffer();
     },
 
     /**
@@ -300,15 +295,15 @@ WebInspector.TimelinePresentationModel.prototype = {
     {
         if (this._minimumRecordTime === -1 || record.startTime < this._minimumRecordTime)
             this._minimumRecordTime = WebInspector.TimelineModel.startTimeInSeconds(record);
-
         var records;
         if (record.type === WebInspector.TimelineModel.RecordType.Program)
             records = this._foldSyncTimeRecords(record.children || []);
         else
             records = [record];
-        var result = Array(records.length);
-        for (var i = 0; i < records.length; ++i)
-            result[i] = this._innerAddRecord(this._rootRecord, records[i]);
+        var mergedRecords = this._mergingBuffer.process(record.thread, records);
+        var result = new Array(mergedRecords.length);
+        for (var i = 0; i < mergedRecords.length; ++i)
+            result[i] = this._innerAddRecord(this._rootRecord, mergedRecords[i]);
         return result;
     },
 
@@ -577,6 +572,9 @@ WebInspector.TimelinePresentationModel.prototype = {
         delete this._filteredRecords;
     },
 
+    /**
+     * @return {!Array.<!WebInspector.TimelinePresentationModel.Record>}
+     */
     filteredRecords: function()
     {
         if (this._filteredRecords)
@@ -636,28 +634,17 @@ WebInspector.TimelinePresentationModel.prototype = {
         return recordsInWindow;
     },
 
-    filteredFrames: function(startTime, endTime)
-    {
-        function compareStartTime(value, object)
-        {
-            return value - object.startTime;
-        }
-        function compareEndTime(value, object)
-        {
-            return value - object.endTime;
-        }
-        var firstFrame = insertionIndexForObjectInListSortedByFunction(startTime, this._frames, compareStartTime);
-        var lastFrame = insertionIndexForObjectInListSortedByFunction(endTime, this._frames, compareEndTime);
-        while (lastFrame < this._frames.length && this._frames[lastFrame].endTime <= endTime)
-            ++lastFrame;
-        return this._frames.slice(firstFrame, lastFrame);
-    },
-
+    /**
+     * @return {!Array.<!WebInspector.TimelinePresentationModel.Record>}
+     */
     eventDividerRecords: function()
     {
         return this._eventDividerRecords;
     },
 
+    /**
+     * @return {boolean}
+     */
     isVisible: function(record)
     {
         for (var i = 0; i < this._filters.length; ++i) {
@@ -668,7 +655,7 @@ WebInspector.TimelinePresentationModel.prototype = {
     },
 
     /**
-     * @param {{tasks: !Array.<{startTime: number, endTime: number}>, firstTaskIndex: number, lastTaskIndex: number}} info
+     * @param {!{name: string, tasks: !Array.<!{startTime: number, endTime: number}>, firstTaskIndex: number, lastTaskIndex: number}} info
      * @return {!Element}
      */
     generateMainThreadBarPopupContent: function(info)
@@ -717,10 +704,7 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
     this._children = [];
     if (!hidden && parentRecord) {
         this.parent = parentRecord;
-        if (this.isBackground)
-            WebInspector.TimelinePresentationModel.insertRetrospectiveRecord(parentRecord, this);
-        else
-            parentRecord.children.push(this);
+        parentRecord.children.push(this);
     }
     if (origin)
         this._origin = origin;
@@ -986,8 +970,11 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
      */
     get title()
     {
-        return this.type === WebInspector.TimelineModel.RecordType.TimeStamp ? this._record.data["message"] :
-            WebInspector.TimelinePresentationModel.recordStyle(this._record).title;
+        if (this.type === WebInspector.TimelineModel.RecordType.TimeStamp)
+            return this._record.data["message"];
+        if (WebInspector.TimelinePresentationModel.isEventDivider(this))
+            return WebInspector.UIString("%s at %s", WebInspector.TimelinePresentationModel.recordStyle(this._record).title, Number.secondsToString(this._startTimeOffset, true));
+        return WebInspector.TimelinePresentationModel.recordStyle(this._record).title;
     },
 
     /**
@@ -1009,7 +996,7 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     /**
      * @return {boolean}
      */
-    get isBackground()
+    isBackground: function()
     {
         return !!this._record.thread;
     },
@@ -1049,9 +1036,9 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     /**
      * @return {number}
      */
-    get usedHeapSize()
+    get jsHeapSizeUsed()
     {
-        return this._record.usedHeapSize;
+        return this._record.counters ? this._record.counters.jsHeapSizeUsed : 0;
     },
 
     /**
@@ -1064,6 +1051,9 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
         return null;
     },
 
+    /**
+     * @return {boolean}
+     */
     containsTime: function(time)
     {
         return this.startTime <= time && time <= this.endTime;
@@ -1136,18 +1126,10 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     _generatePopupContentSynchronously: function()
     {
         var fragment = document.createDocumentFragment();
-        var pie = WebInspector.TimelinePresentationModel.generatePieChart(this._aggregatedStats, this.category.name);
-        // Insert self time.
-        if (!this.coalesced && this._children.length) {
-            pie.pieChart.addSlice(this._selfTime, this.category.fillColorStop1);
-            var rowElement = document.createElement("div");
-            pie.footerElement.insertBefore(rowElement, pie.footerElement.firstChild);
-            rowElement.createChild("div", "timeline-aggregated-category timeline-" + this.category.name);
-            rowElement.createTextChild(WebInspector.UIString("%s %s (Self)", Number.secondsToString(this._selfTime, true), this.category.title));
-        }
-        fragment.appendChild(pie.element);
-
-        var contentHelper = new WebInspector.TimelineDetailsContentHelper(true);
+        if (!this.coalesced && this._children.length)
+            fragment.appendChild(WebInspector.TimelinePresentationModel.generatePieChart(this._aggregatedStats, this.category, this._selfTime));
+        else
+            fragment.appendChild(WebInspector.TimelinePresentationModel.generatePieChart(this._aggregatedStats));
 
         if (this.coalesced)
             return fragment;
@@ -1158,6 +1140,10 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
         var callSiteStackTraceLabel;
         var callStackLabel;
         var relatedNodeLabel;
+
+        var contentHelper = new WebInspector.TimelineDetailsContentHelper(true);
+        contentHelper.appendTextRow(WebInspector.UIString("Self Time"), Number.secondsToString(this._selfTime, true));
+        contentHelper.appendTextRow(WebInspector.UIString("Start Time"), Number.secondsToString(this._startTimeOffset));
 
         switch (this.type) {
             case recordTypes.GCEvent:
@@ -1281,13 +1267,13 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
         if (this.scriptName && this.type !== recordTypes.FunctionCall)
             contentHelper.appendElementRow(WebInspector.UIString("Function Call"), this._linkifyLocation(this.scriptName, this.scriptLine, 0));
 
-        if (this.usedHeapSize) {
+        if (this.jsHeapSizeUsed) {
             if (this.usedHeapSizeDelta) {
                 var sign = this.usedHeapSizeDelta > 0 ? "+" : "-";
-                contentHelper.appendTextRow(WebInspector.UIString("Used Heap Size"),
-                    WebInspector.UIString("%s (%s%s)", Number.bytesToString(this.usedHeapSize), sign, Number.bytesToString(Math.abs(this.usedHeapSizeDelta))));
+                contentHelper.appendTextRow(WebInspector.UIString("Used JavaScript Heap Size"),
+                    WebInspector.UIString("%s (%s%s)", Number.bytesToString(this.jsHeapSizeUsed), sign, Number.bytesToString(Math.abs(this.usedHeapSizeDelta))));
             } else if (this.category === WebInspector.TimelinePresentationModel.categories().scripting)
-                contentHelper.appendTextRow(WebInspector.UIString("Used Heap Size"), Number.bytesToString(this.usedHeapSize));
+                contentHelper.appendTextRow(WebInspector.UIString("Used JavaScript Heap Size"), Number.bytesToString(this.jsHeapSizeUsed));
         }
 
         if (this.callSiteStackTrace)
@@ -1307,18 +1293,14 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     },
 
     /**
-     * @param {!WebInspector.DOMAgent} node
+     * @param {!WebInspector.DOMNode} node
      */
     _createNodeAnchor: function(node)
     {
         var span = document.createElement("span");
         span.classList.add("node-link");
-        span.addEventListener("click", onClick, false);
+        span.addEventListener("click", WebInspector.Revealer.reveal.bind(WebInspector.Revealer, node, undefined), false);
         WebInspector.DOMPresentationUtils.decorateNodeLabel(node, span);
-        function onClick()
-        {
-            WebInspector.showPanel("elements").revealAndSelectNode(node.id);
-        }
         return span;
     },
 
@@ -1538,38 +1520,56 @@ WebInspector.TimelinePresentationModel._generateAggregatedInfo = function(aggreg
 
 /**
  * @param {!Object} aggregatedStats
- * @param {string=} firstCategoryName
- * @return {{pieChart: !WebInspector.PieChart, element: !Element, footerElement: !Element}}
+ * @param {!WebInspector.TimelineCategory=} selfCategory
+ * @param {number=} selfTime
+ * @return {!Element}
  */
-WebInspector.TimelinePresentationModel.generatePieChart = function(aggregatedStats, firstCategoryName)
+WebInspector.TimelinePresentationModel.generatePieChart = function(aggregatedStats, selfCategory, selfTime)
 {
     var element = document.createElement("div");
     element.className = "timeline-aggregated-info";
 
     var total = 0;
-    var categoryNames = [];
-    if (firstCategoryName)
-        categoryNames.push(firstCategoryName);
-    for (var categoryName in WebInspector.TimelinePresentationModel.categories()) {
-        if (aggregatedStats[categoryName]) {
-            total += aggregatedStats[categoryName];
-            if (firstCategoryName !== categoryName)
-                categoryNames.push(categoryName);
-        }
-    }
+    for (var categoryName in aggregatedStats)
+        total += aggregatedStats[categoryName];
 
     var pieChart = new WebInspector.PieChart(total);
     element.appendChild(pieChart.element);
     var footerElement = element.createChild("div", "timeline-aggregated-info-legend");
 
-    for (var i = 0; i < categoryNames.length; ++i) {
-        var category = WebInspector.TimelinePresentationModel.categories()[categoryNames[i]];
-        pieChart.addSlice(aggregatedStats[category.name], category.fillColorStop0);
+    // In case of self time, first add self, then children of the same category.
+    if (selfCategory && selfTime) {
+        // Self.
+        pieChart.addSlice(selfTime, selfCategory.fillColorStop1);
         var rowElement = footerElement.createChild("div");
-        rowElement.createChild("div", "timeline-aggregated-category timeline-" + category.name);
-        rowElement.createTextChild(WebInspector.UIString("%s %s", Number.secondsToString(aggregatedStats[category.name], true), category.title));
+        rowElement.createChild("div", "timeline-aggregated-category timeline-" + selfCategory.name);
+        rowElement.createTextChild(WebInspector.UIString("%s %s (Self)", Number.secondsToString(selfTime, true), selfCategory.title));
+
+        // Children of the same category.
+        var categoryTime = aggregatedStats[selfCategory.name];
+        var value = categoryTime - selfTime;
+        if (value > 0) {
+            pieChart.addSlice(value, selfCategory.fillColorStop0);
+            rowElement = footerElement.createChild("div");
+            rowElement.createChild("div", "timeline-aggregated-category timeline-" + selfCategory.name);
+            rowElement.createTextChild(WebInspector.UIString("%s %s (Children)", Number.secondsToString(value, true), selfCategory.title));
+        }
     }
-    return { pieChart: pieChart, element: element, footerElement: footerElement };
+
+    // Add other categories.
+    for (var categoryName in WebInspector.TimelinePresentationModel.categories()) {
+        var category = WebInspector.TimelinePresentationModel.categories()[categoryName];
+         if (category === selfCategory)
+             continue;
+         var value = aggregatedStats[category.name];
+         if (!value)
+             continue;
+         pieChart.addSlice(value, category.fillColorStop0);
+         var rowElement = footerElement.createChild("div");
+         rowElement.createChild("div", "timeline-aggregated-category timeline-" + category.name);
+         rowElement.createTextChild(WebInspector.UIString("%s %s", Number.secondsToString(value, true), category.title));
+    }
+    return element;
 }
 
 WebInspector.TimelinePresentationModel.generatePopupContentForFrame = function(frame)
@@ -1581,7 +1581,6 @@ WebInspector.TimelinePresentationModel.generatePopupContentForFrame = function(f
     contentHelper.appendTextRow(WebInspector.UIString("Duration"), durationText);
     contentHelper.appendTextRow(WebInspector.UIString("FPS"), Math.floor(1 / durationInSeconds));
     contentHelper.appendTextRow(WebInspector.UIString("CPU time"), Number.secondsToString(frame.cpuTime, true));
-    contentHelper.appendTextRow(WebInspector.UIString("Thread"), frame.isBackground ? WebInspector.UIString("background") : WebInspector.UIString("main"));
     contentHelper.appendElementRow(WebInspector.UIString("Aggregated Time"),
         WebInspector.TimelinePresentationModel._generateAggregatedInfo(frame.timeByCategory));
     return contentHelper.contentTable();
@@ -1649,7 +1648,7 @@ WebInspector.TimelinePresentationModel.createStyleRuleForCategory = function(cat
         ".timeline-details-view .timeline-" + category.name + ", " +
         ".timeline-category-" + category.name + " .timeline-tree-icon"
 
-    return selector + " { background-image: -webkit-linear-gradient(" +
+    return selector + " { background-image: linear-gradient(" +
        category.fillColorStop0 + ", " + category.fillColorStop1 + " 25%, " + category.fillColorStop1 + " 25%, " + category.fillColorStop1 + ");" +
        " border-color: " + category.borderColor +
        "}";
@@ -1778,6 +1777,9 @@ WebInspector.TimelinePopupContentHelper = function(title)
 }
 
 WebInspector.TimelinePopupContentHelper.prototype = {
+    /**
+     * @return {!Element}
+     */
     contentTable: function()
     {
         return this._contentTable;

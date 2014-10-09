@@ -25,7 +25,6 @@
 #include "build/build_config.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
-#include "content/common/browser_rendering_stats.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/browser/event_with_latency_info.h"
@@ -140,6 +139,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+  virtual bool CanCopyFromBackingStore() OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void LockBackingStore() OVERRIDE;
+  virtual void UnlockBackingStore() OVERRIDE;
+#endif
 #if defined(TOOLKIT_GTK)
   virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
                                                GdkWindow* target) OVERRIDE;
@@ -161,10 +165,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual RenderWidgetHostView* GetView() const OVERRIDE;
   virtual bool IsLoading() const OVERRIDE;
   virtual bool IsRenderView() const OVERRIDE;
-  virtual void PaintAtSize(TransportDIB::Handle dib_handle,
-                           int tag,
-                           const gfx::Size& page_size,
-                           const gfx::Size& desired_size) OVERRIDE;
   virtual void Replace(const base::string16& word) OVERRIDE;
   virtual void ReplaceMisspelling(const base::string16& word) OVERRIDE;
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
@@ -296,9 +296,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const blink::WebTouchEvent& touch_event,
       const ui::LatencyInfo& ui_latency);
   void ForwardMouseEventWithLatencyInfo(
-      const MouseEventWithLatencyInfo& mouse_event);
+      const blink::WebMouseEvent& mouse_event,
+      const ui::LatencyInfo& ui_latency);
   void ForwardWheelEventWithLatencyInfo(
-      const MouseWheelEventWithLatencyInfo& wheel_event);
+      const blink::WebMouseWheelEvent& wheel_event,
+      const ui::LatencyInfo& ui_latency);
 
   void CancelUpdateTextDirection();
 
@@ -394,8 +396,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return accessibility_mode_;
   }
 
-  // Send a message to the renderer process to change the accessibility mode.
-  void SetAccessibilityMode(AccessibilityMode mode);
+  // Adds the given accessibility mode to the current accessibility mode bitmap.
+  void AddAccessibilityMode(AccessibilityMode mode);
+
+  // Removes the given accessibility mode from the current accessibility mode
+  // bitmap, managing the bits that are shared with other modes such that a
+  // bit will only be turned off when all modes that depend on it have been
+  // removed.
+  void RemoveAccessibilityMode(AccessibilityMode mode);
+
+  // Resets the accessibility mode to the default setting in
+  // BrowserStateAccessibilityImpl.
+  void ResetAccessibilityMode();
 
   // Relay a request from assistive technology to perform the default action
   // on a given node.
@@ -424,7 +436,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Kill the renderer because we got a fatal accessibility error.
   void FatalAccessibilityTreeError();
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent);
   gfx::NativeViewAccessible GetParentNativeViewAccessible() const;
@@ -487,16 +499,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return is_threaded_compositing_enabled_;
   }
 
-#if defined(USE_AURA)
-  // Called by the view when the parent changes. If a parent isn't available,
-  // NULL is used.
-  void ParentChanged(gfx::NativeViewId new_parent);
-#endif
-
-  // Signals that the compositing surface was updated, e.g. after a lost context
-  // event.
-  void CompositingSurfaceUpdated();
-
   void set_allow_privileged_mouse_lock(bool allow) {
     allow_privileged_mouse_lock_ = allow;
   }
@@ -542,10 +544,22 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // subsystem.
   int64 GetLatencyComponentId();
 
-  static void CompositorFrameDrawn(const ui::LatencyInfo& latency_info);
+  static void CompositorFrameDrawn(
+      const std::vector<ui::LatencyInfo>& latency_info);
 
   // Don't check whether we expected a resize ack during layout tests.
   static void DisableResizeAckCheckForTesting();
+
+  void WindowSnapshotAsyncCallback(
+      int routing_id,
+      int snapshot_id,
+      gfx::Size snapshot_size,
+      scoped_refptr<base::RefCountedBytes> png_data);
+
+  // LatencyComponents generated in the renderer must have component IDs
+  // provided to them by the browser process. This function adds the correct
+  // component ID where necessary.
+  void AddLatencyInfoComponentIds(ui::LatencyInfo* latency_info);
 
  protected:
   virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
@@ -653,7 +667,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnRequestMove(const gfx::Rect& pos);
   void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
-  void OnPaintAtSizeAck(int tag, const gfx::Size& size);
 #if defined(OS_MACOSX)
   void OnCompositorSurfaceBuffersSwapped(
       const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
@@ -661,6 +674,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                       gfx::Vector2dF current_fling_velocity);
+  void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnUpdateIsDelayed();
   void OnQueueSyntheticGesture(const SyntheticGesturePacket& gesture_packet);
@@ -746,6 +760,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void DelayedAutoResized();
 
   void WindowSnapshotReachedScreen(int snapshot_id);
+
+  // Send a message to the renderer process to change the accessibility mode.
+  void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.
@@ -920,8 +937,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   std::queue<base::Callback<void(bool, const SkBitmap&)> > pending_snapshots_;
 
   int64 last_input_number_;
-
-  BrowserRenderingStats rendering_stats_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

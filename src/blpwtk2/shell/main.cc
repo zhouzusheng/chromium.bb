@@ -778,14 +778,17 @@ void runMessageLoop()
 }
 
 struct HostWatcherThreadData {
-    HANDLE d_processHandle;
+    std::vector<HANDLE> d_processHandles;
     int d_mainThreadId;
 };
 
 DWORD hostWatcherThreadFunc(LPVOID lParam)
 {
     HostWatcherThreadData* data = (HostWatcherThreadData*)lParam;
-    ::WaitForSingleObject(data->d_processHandle, INFINITE);
+    ::WaitForMultipleObjects(data->d_processHandles.size(),
+                             data->d_processHandles.data(),
+                             TRUE,
+                             INFINITE);
     ::PostThreadMessage(data->d_mainThreadId, WM_QUIT, 0, 0);
     return 0;
 }
@@ -887,14 +890,15 @@ void runHost()
         }
     }
 
-    HANDLE processHandle = spawnProcess();
-    if (!processHandle) {
-        return;
-    }
-
     HostWatcherThreadData threadData;
     threadData.d_mainThreadId = ::GetCurrentThreadId();
-    threadData.d_processHandle = processHandle;
+    for (size_t i = 0; i < 3; ++i) {
+        HANDLE processHandle = spawnProcess();
+        if (!processHandle) {
+            return;
+        }
+        threadData.d_processHandles.push_back(processHandle);
+    }
 
     HANDLE watcherThread = ::CreateThread(
         NULL,
@@ -907,7 +911,9 @@ void runHost()
     runMessageLoop();
     ::WaitForSingleObject(watcherThread, INFINITE);
     ::CloseHandle(watcherThread);
-    ::CloseHandle(threadData.d_processHandle);
+    for (size_t i = 0; i < threadData.d_processHandles.size(); ++i) {
+        ::CloseHandle(threadData.d_processHandles[i]);
+    }
     ::CloseHandle(g_hJob);
 }
 

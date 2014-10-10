@@ -61,7 +61,17 @@ NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
 
 NativeViewWidget::~NativeViewWidget()
 {
-    DCHECK(!d_impl);
+    if (d_delegate) {
+        // Abnormal termination?  d_delegate should have become 0 in
+        // WindowClosing(), but if the blpwtk2 client process terminates
+        // abnormally, the HWND destruction will destroy the the native
+        // widget without calling WindowClosing().  We should still notify
+        // our delegate though.
+        d_delegate->onDestroyed(this);
+    }
+    else {
+        DCHECK(!d_impl);
+    }
 }
 
 void NativeViewWidget::destroy()
@@ -125,6 +135,7 @@ void NativeViewWidget::WindowClosing()
     d_impl = 0;
     if (d_delegate)
         d_delegate->onDestroyed(this);
+    d_delegate = 0;
 }
 
 views::View* NativeViewWidget::GetContentsView()

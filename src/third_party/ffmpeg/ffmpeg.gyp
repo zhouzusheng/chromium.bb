@@ -209,6 +209,10 @@
           'sources': [
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
+            'ffmpeg.rc',
+          ],
+          'dependencies': [
+            '../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
           ],
           'include_dirs': [
             '<(platform_config_root)',

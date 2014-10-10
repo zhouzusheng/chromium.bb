@@ -588,6 +588,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Is this a fullscreen view?
   bool is_fullscreen_;
 
+  // True if we have capture due to the mouse being down.
+  bool has_capture_from_mouse_down_;
+
   // Our parent host view, if this is a popup.  NULL otherwise.
   RenderWidgetHostViewAura* popup_parent_host_view_;
 

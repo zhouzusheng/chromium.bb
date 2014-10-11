@@ -18,8 +18,8 @@
             'targets':
             [
                 {
-                    'target_name': 'libGLESv2',
-                    'type': 'shared_library',
+                    'target_name': 'libGLESv2_static',
+                    'type': 'static_library',
                     'dependencies': [ 'translator', 'commit_id', 'copy_compiler_dll' ],
                     'include_dirs':
                     [
@@ -28,18 +28,15 @@
                         'libGLESv2',
                         '<(SHARED_INTERMEDIATE_DIR)',
                     ],
-                    'sources': [ '<!@(python enumerate_files.py common libGLESv2 third_party/murmurhash -types *.cpp *.h *.hlsl *.vs *.ps *.bat *.def libGLESv2.rc)' ],
+                    'sources': [ '<!@(python enumerate_files.py common libGLESv2 third_party/murmurhash -exclude common/version.h libGLESv2/dllmain.cpp -types *.cpp *.h *.hlsl *.vs *.ps *.bat)' ],
                     'msvs_disabled_warnings': [ 4267 ],
-                    'msvs_settings':
+                    'link_settings':
                     {
-                        'VCLinkerTool':
-                        {
-                            'AdditionalDependencies':
-                            [
-                                'd3d9.lib',
-                                'dxguid.lib',
-                            ]
-                        }
+                        'libraries':
+                        [
+                            '-ld3d9.lib',
+                            '-ldxguid.lib',
+                        ],
                     },
                     'configurations':
                     {
@@ -51,6 +48,24 @@
                             ],
                         },
                     },
+                },
+                {
+                    'target_name': 'libGLESv2_shared',
+                    'product_name': 'libGLESv2',
+                    'type': 'shared_library',
+                    'dependencies': [ 'libGLESv2_static' ],
+                    'include_dirs':
+                    [
+                        '.',
+                        '../include',
+                    ],
+                    'sources':
+                    [
+                        'common/version.h',
+                        'libGLESv2/dllmain.cpp',
+                        'libGLESv2/libGLESv2.def',
+                        'libGLESv2/libGLESv2.rc',
+                    ],
                 },
             ],
         },

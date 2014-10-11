@@ -84,8 +84,7 @@ BrowserContextKeyedServiceFactory::GetServiceForBrowserContext(
       testing_factories_.find(context);
   if (jt != testing_factories_.end()) {
     if (jt->second) {
-      if (!context->IsOffTheRecord())
-        RegisterUserPrefsOnBrowserContextForTest(context);
+      RegisterUserPrefsOnBrowserContextForTest(context);
       service = jt->second(context);
     }
   } else {

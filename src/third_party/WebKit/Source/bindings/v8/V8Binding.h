@@ -611,6 +611,9 @@ namespace WebCore {
     v8::Isolate* toIsolate(ExecutionContext*);
     v8::Isolate* toIsolate(Frame*);
 
+    bool isNonWindowContextsAllowed();
+    void setNonWindowContextsAllowed(bool allowed);
+
     WrapperWorldType worldType(v8::Isolate*);
     WrapperWorldType worldTypeInMainThread(v8::Isolate*);
 

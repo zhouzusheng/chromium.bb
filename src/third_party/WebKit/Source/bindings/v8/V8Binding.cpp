@@ -479,6 +479,17 @@ PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::I
     return resolver;
 }
 
+static bool s_nonWindowContextsAllowed = false;
+bool isNonWindowContextsAllowed()
+{
+    return s_nonWindowContextsAllowed;
+}
+
+void setNonWindowContextsAllowed(bool allowed)
+{
+    s_nonWindowContextsAllowed = allowed;
+}
+
 DOMWindow* toDOMWindow(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     if (value.IsEmpty() || !value->IsObject())

@@ -54,7 +54,11 @@ class SpellCheckProvider
   // Enables document-wide spellchecking.
   void EnableSpellcheck(bool enabled);
 
+  // Makes a document-wide spellcheck request.
+  void RequestSpellcheck();
+
   // RenderViewObserver implementation.
+  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void FocusedNodeChanged(const blink::WebNode& node) OVERRIDE;
 

@@ -49,6 +49,7 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_client.h"
@@ -458,6 +459,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
       in_shutdown_(false),
       in_bounds_changed_(false),
       is_fullscreen_(false),
+      has_capture_from_mouse_down_(false),
       popup_parent_host_view_(NULL),
       popup_child_host_view_(NULL),
       is_loading_(false),
@@ -850,8 +852,16 @@ void RenderWidgetHostViewAura::Focus() {
   // situations we may not yet be in a valid Window hierarchy (such as reloading
   // after out of memory discarded the tab).
   aura::client::FocusClient* client = aura::client::GetFocusClient(window_);
-  if (client)
+  if (client) {
+    bool should_recapture = false;
+    if (has_capture_from_mouse_down_ && aura::client::GetCaptureWindow(window_) == window_) {
+      should_recapture = true;
+      window_->ReleaseCapture();
+    }
     window_->Focus();
+    if (should_recapture)
+      window_->SetCapture();
+  }
 }
 
 void RenderWidgetHostViewAura::Blur() {
@@ -2596,6 +2606,10 @@ int RenderWidgetHostViewAura::GetNonClientComponent(
   return HTCLIENT;
 }
 
+bool RenderWidgetHostViewAura::ShouldTryFocusOnMouseDown() const {
+  return !host_ || host_->ShouldSetLogicalFocusOnMouseDown();
+}
+
 bool RenderWidgetHostViewAura::ShouldDescendIntoChildForEventHandling(
     aura::Window* child,
     const gfx::Point& location) {
@@ -2861,7 +2875,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         host_->ForwardMouseEvent(mouse_event);
         // Ensure that we get keyboard focus on mouse down as a plugin window
         // may have grabbed keyboard focus.
-        if (event->type() == ui::ET_MOUSE_PRESSED)
+        if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetKeyboardFocusOnMouseDown())
           SetKeyboardFocus();
       }
     }
@@ -2909,18 +2923,20 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
     host_->ForwardMouseEvent(mouse_event);
     // Ensure that we get keyboard focus on mouse down as a plugin window may
     // have grabbed keyboard focus.
-    if (event->type() == ui::ET_MOUSE_PRESSED)
+    if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetKeyboardFocusOnMouseDown())
       SetKeyboardFocus();
   }
 
   switch (event->type()) {
     case ui::ET_MOUSE_PRESSED:
       window_->SetCapture();
+      has_capture_from_mouse_down_ = true;
       // Confirm existing composition text on mouse click events, to make sure
       // the input caret won't be moved with an ongoing composition text.
       FinishImeCompositionSession();
       break;
     case ui::ET_MOUSE_RELEASED:
+      has_capture_from_mouse_down_ = false;
       window_->ReleaseCapture();
       break;
     default:
@@ -3118,7 +3134,7 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
     }
   } else if (window_ == lost_focus) {
     host_->SetActive(false);
-    host_->Blur();
+    host_->LostFocus();
 
     DetachFromInputMethod();
     host_->SetInputMethodActive(false);

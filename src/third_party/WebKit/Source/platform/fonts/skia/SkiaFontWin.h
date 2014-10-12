@@ -46,6 +46,8 @@ class GraphicsContext;
 // per glyph offset (such as returned by ScriptPlace Windows API function).
 void paintSkiaText(GraphicsContext*,
     const FontPlatformData&,
+    int textFlags,
+    bool lcdExplicitlyRequested,
     unsigned numGlyphs,
     const WORD* glyphs,
     const int* advances,

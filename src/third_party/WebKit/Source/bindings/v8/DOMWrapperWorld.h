@@ -66,6 +66,7 @@ public:
     static bool isolatedWorldsExist() { return isolatedWorldCount; }
     static void getAllWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld> >& worlds);
 
+    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
     static DOMWrapperWorld* world(v8::Handle<v8::Context> context)
     {
         ASSERT(contextHasCorrectPrototype(context));
@@ -112,7 +113,6 @@ private:
     static unsigned isolatedWorldCount;
 
     DOMWrapperWorld(int worldId, int extensionGroup);
-    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
 
     const int m_worldId;
     const int m_extensionGroup;

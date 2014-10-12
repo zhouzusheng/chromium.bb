@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/rendering/InlineTextBox.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
@@ -1276,7 +1276,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
 
             if (colorAttr != nullAtom) {
                 RGBA32 rgba;
-                if (CSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
+                if (BisonCSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
                     markerColor.setRGB(rgba);
                 }
             }

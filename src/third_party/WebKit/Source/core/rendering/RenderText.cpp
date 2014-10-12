@@ -1215,10 +1215,27 @@ void RenderText::setSelectionState(SelectionState state)
         containingBlock->setSelectionState(state);
 }
 
+extern bool g_bbNoRelayoutOnSetCharacterData;
+
+bool shouldSkipRelayoutOnSetText(const RenderText* rt)
+{
+    return g_bbNoRelayoutOnSetCharacterData
+        && rt->firstTextBox()
+        && rt->firstTextBox() == rt->lastTextBox();
+}
+
 void RenderText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset, unsigned len, bool force)
 {
     if (!force && equal(m_text.impl(), text.get()))
         return;
+
+    if (shouldSkipRelayoutOnSetText(this)) {
+        firstTextBox()->setStart(0);
+        firstTextBox()->setLen(text->length());
+        m_linesDirty = false;
+        setText(text, force);
+        return;
+    }
 
     unsigned oldLen = textLength();
     unsigned newLen = text->length();
@@ -1411,8 +1428,12 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
     // If preferredLogicalWidthsDirty() of an orphan child is true, RenderObjectChildList::
     // insertChildNode() fails to set true to owner. To avoid that, we call
     // setNeedsLayoutAndPrefWidthsRecalc() only if this RenderText has parent.
-    if (parent())
-        setNeedsLayoutAndPrefWidthsRecalc();
+    if (parent()) {
+        if (shouldSkipRelayoutOnSetText(this))
+            parent()->repaint();
+        else
+            setNeedsLayoutAndPrefWidthsRecalc();
+    }
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;
 
     if (AXObjectCache* cache = document().existingAXObjectCache())

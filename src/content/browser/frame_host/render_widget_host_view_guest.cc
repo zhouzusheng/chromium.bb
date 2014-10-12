@@ -479,12 +479,6 @@ void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
 }
 #endif  // defined(OS_ANDROID)
 
-void RenderWidgetHostViewGuest::SetRubberbandRect(const gfx::Rect& rect) {
-}
-
-void RenderWidgetHostViewGuest::HideRubberbandRect() {
-}
-
 #if defined(TOOLKIT_GTK)
 GdkEventButton* RenderWidgetHostViewGuest::GetLastMouseDown() {
   return NULL;

@@ -3,18 +3,36 @@
 // found in the LICENSE file.
 
 #include "ui/base/win/rubberband_windows.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace ui {
 
-RubberbandWindow::RubberbandWindow() {
+namespace {
+
+class RubberbandWindowImpl : public gfx::WindowImpl {
+ public:
+  RubberbandWindowImpl();
+  virtual ~RubberbandWindowImpl();
+
+  CR_BEGIN_MSG_MAP_EX(RubberbandWindowImpl)
+    CR_MSG_WM_PAINT(OnPaint)
+  CR_END_MSG_MAP()
+
+ private:
+  LRESULT OnPaint(HDC);
+
+  DISALLOW_COPY_AND_ASSIGN(RubberbandWindowImpl);
+};
+
+RubberbandWindowImpl::RubberbandWindowImpl() {
 }
 
-RubberbandWindow::~RubberbandWindow() {
+RubberbandWindowImpl::~RubberbandWindowImpl() {
   DestroyWindow(hwnd());
 }
 
-LRESULT RubberbandWindow::OnPaint(HDC /*_dc*/) {
-  CRect rect;
+LRESULT RubberbandWindowImpl::OnPaint(HDC /*_dc*/) {
+  RECT rect;
   ::GetClientRect(hwnd(), &rect);
 
   PAINTSTRUCT ps;
@@ -22,7 +40,7 @@ LRESULT RubberbandWindow::OnPaint(HDC /*_dc*/) {
 
   COLORREF oldbg = ::SetBkColor(dc, RGB(0,0,0));
   static const char* space = " ";
-  ::ExtTextOutA(dc, rect.left, rect.top, ETO_CLIPPED|ETO_OPAQUE, rect, space, 1, NULL);
+  ::ExtTextOutA(dc, rect.left, rect.top, ETO_CLIPPED|ETO_OPAQUE, &rect, space, 1, NULL);
   ::SetBkColor(dc, oldbg);
 
   LOGBRUSH lb = {BS_SOLID, RGB(255, 255, 255), 0};
@@ -31,7 +49,7 @@ LRESULT RubberbandWindow::OnPaint(HDC /*_dc*/) {
 
   HGDIOBJ oldPen = ::SelectObject(dc, pen);
   ::MoveToEx(dc, rect.left, rect.top, NULL);
-  if (rect.Width() == 1) {
+  if (rect.right - rect.left == 1) {
     ::LineTo(dc, rect.right-1, rect.bottom);
   } else {
     ::LineTo(dc, rect.right, rect.bottom-1);
@@ -42,6 +60,32 @@ LRESULT RubberbandWindow::OnPaint(HDC /*_dc*/) {
   ::EndPaint(hwnd(), &ps);
 
   return S_OK;
+}
+
+static RubberbandWindowImpl* toWindowImpl(void* impl) {
+  return reinterpret_cast<RubberbandWindowImpl*>(impl);
+}
+
+}  // close anonymous namespace
+
+RubberbandWindow::RubberbandWindow()
+: impl_(new RubberbandWindowImpl()) {
+}
+
+RubberbandWindow::~RubberbandWindow() {
+  delete toWindowImpl(impl_);
+}
+
+void RubberbandWindow::Init(HWND parent, const gfx::Rect& bounds) {
+  toWindowImpl(impl_)->Init(parent, bounds);
+}
+
+HWND RubberbandWindow::hwnd() const {
+  return toWindowImpl(impl_)->hwnd();
+}
+
+void RubberbandWindow::set_window_style(DWORD style) {
+  toWindowImpl(impl_)->set_window_style(style);
 }
 
 RubberbandOutline::RubberbandOutline() {

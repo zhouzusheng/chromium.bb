@@ -146,9 +146,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
 #endif  // defined(OS_ANDROID)
 
-  virtual void SetRubberbandRect(const gfx::Rect& rect) OVERRIDE;
-  virtual void HideRubberbandRect() OVERRIDE;
-
 #if defined(TOOLKIT_GTK)
   virtual GdkEventButton* GetLastMouseDown() OVERRIDE;
   virtual gfx::NativeView BuildInputMethodsGtkMenu() OVERRIDE;

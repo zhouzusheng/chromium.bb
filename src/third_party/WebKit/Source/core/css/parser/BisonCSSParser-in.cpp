@@ -6433,6 +6433,11 @@ bool BisonCSSParser::fastParseColor(RGBA32& rgb, const StringType& name, bool st
     return true;
 }
 
+bool BisonCSSParser::fastParseColorAtomicString(RGBA32& rgb, const AtomicString& name, bool strict)
+{
+    return fastParseColor<AtomicString>(rgb, name, strict);
+}
+
 inline double BisonCSSParser::parsedDouble(CSSParserValue *v, ReleaseParsedCalcValueCondition releaseCalc)
 {
     const double result = m_parsedCalculation ? m_parsedCalculation->doubleValue() : v->fValue;

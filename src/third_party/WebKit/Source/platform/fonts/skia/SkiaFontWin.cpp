@@ -88,6 +88,7 @@ static void skiaDrawText(GraphicsContext* context,
 static void paintSkiaText(GraphicsContext* context,
     const FontPlatformData& data,
     SkTypeface* face, float size, uint32_t textFlags,
+    bool lcdExplicitlyRequested,
     unsigned numGlyphs,
     const WORD* glyphs,
     const int* advances,
@@ -97,11 +98,15 @@ static void paintSkiaText(GraphicsContext* context,
 {
     TextDrawingModeFlags textMode = context->textDrawingMode();
 
+    FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
+    fontSmoothingOverride.textFlags = textFlags;
+    fontSmoothingOverride.lcdExplicitlyRequested = lcdExplicitlyRequested;
+
     // Filling (if necessary). This is the common case.
     SkPaint paint;
     context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    data.setupPaint(&paint, context);
+    data.setupPaint(&paint, context, &fontSmoothingOverride);
 
     // FIXME: Only needed to support the HFONT based paintSkiaText
     // version where a new typeface is created from the HFONT.
@@ -147,6 +152,8 @@ static void paintSkiaText(GraphicsContext* context,
 
 void paintSkiaText(GraphicsContext* context,
     const FontPlatformData& data,
+    int textFlags,
+    bool lcdExplicitlyRequested,
     unsigned numGlyphs,
     const WORD* glyphs,
     const int* advances,
@@ -154,7 +161,7 @@ void paintSkiaText(GraphicsContext* context,
     const SkPoint& origin,
     const SkRect& textRect)
 {
-    paintSkiaText(context, data, data.typeface(), data.size(), data.paintTextFlags(),
+    paintSkiaText(context, data, data.typeface(), data.size(), textFlags, lcdExplicitlyRequested,
                   numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 #if !USE(HARFBUZZ)
@@ -176,7 +183,7 @@ void paintSkiaText(GraphicsContext* context,
         FontPlatformData::ensureFontLoaded(hfont);
 
     RefPtr<SkTypeface> face = CreateTypefaceFromHFont(hfont, &size);
-    paintSkiaText(context, data, face.get(), size, paintTextFlags, numGlyphs, glyphs, advances, offsets, origin, textRect);
+    paintSkiaText(context, data, face.get(), size, paintTextFlags, false, numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 #endif
 }  // namespace WebCore

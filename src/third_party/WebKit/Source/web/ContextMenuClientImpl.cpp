@@ -427,12 +427,12 @@ void ContextMenuClientImpl::populateCustomMenuItems(const WebCore::ContextMenu* 
 
 static void exposeInt(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, int value)
 {
-    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Integer::New(value));
+    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Integer::New(isolate, value));
 }
 
 static void exposeBool(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, bool value)
 {
-    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Boolean::New(value));
+    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Boolean::New(isolate, value));
 }
 
 static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const std::string& value)
@@ -442,7 +442,7 @@ static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj
 
 static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const blink::WebVector<blink::WebString>& value)
 {
-    v8::Handle<v8::Array> array = v8::Array::New();
+    v8::Handle<v8::Array> array = v8::Array::New(isolate);
     for (unsigned i = 0; i < value.size(); ++i) {
         std::string item = value[i].utf8();
         array->Set(i, v8::String::NewFromUtf8(isolate, item.data(), v8::String::kNormalString, item.length()));
@@ -455,7 +455,7 @@ static bool fireBbContextMenuEvent(Frame* frame, WebContextMenuData& data)
     v8::Isolate* isolate = toIsolate(frame);
     v8::HandleScope handleScope(isolate);
 
-    v8::Handle<v8::Context> context = ScriptController::mainWorldContext(frame);
+    v8::Handle<v8::Context> context = toV8Context(isolate, frame, DOMWrapperWorld::mainWorld());
     v8::Context::Scope contextScope(context);
 
     v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();

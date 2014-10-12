@@ -1593,6 +1593,16 @@ bool RenderBlock::createsBlockFormattingContext() const
         || style()->specifiesColumns() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isRoot() || style()->columnSpan();
 }
 
+LayoutUnit RenderBlock::additionalMarginStart() const
+{
+    if (isInline() || !parent() || parent()->childrenInline() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
+        return 0;
+    }
+
+    RenderBox *previousBox = previousSiblingBox();
+    return previousBox ? previousBox->additionalMarginStart() : 40;
+}
+
 void RenderBlock::determineLogicalLeftPositionForChild(RenderBox* child, ApplyLayoutDeltaMode applyDelta)
 {
     LayoutUnit startPosition = borderStart() + paddingStart();
@@ -4217,6 +4227,9 @@ void RenderBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
             marginStart += startMarginLength.value();
         if (endMarginLength.isFixed())
             marginEnd += endMarginLength.value();
+        // SHEZ: additionalMarginStart is treated as fixed margin
+        if (child->isBox())
+            marginStart += toRenderBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;

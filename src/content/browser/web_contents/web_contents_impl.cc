@@ -1194,7 +1194,7 @@ bool WebContentsImpl::ShouldSetLogicalFocusOnMouseDown() {
 }
 
 bool WebContentsImpl::ShowTooltip(
-    const string16& tooltip_text,
+    const base::string16& tooltip_text,
     blink::WebTextDirection text_direction_hint) {
   if (delegate_) {
     return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);

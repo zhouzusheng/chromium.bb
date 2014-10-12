@@ -187,8 +187,8 @@ void URLRequestContextGetterImpl::initialize()
                 content::BrowserThread::GetMessageLoopProxyForThread(
                     content::BrowserThread::FILE),
                 true,
-                0,
-                scoped_ptr<content::CookieCryptoDelegate>());
+                (quota::SpecialStoragePolicy*)0,
+                (content::CookieCryptoDelegate*)0);
     }
 
     const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
@@ -275,11 +275,11 @@ void URLRequestContextGetterImpl::initialize()
         installProtocolHandlers(jobFactory.get(), &d_protocolHandlers);
     }
     bool setProtocol = jobFactory->SetProtocolHandler(
-        chrome::kDataScheme,
+        content::kDataScheme,
         new net::DataProtocolHandler);
     DCHECK(setProtocol);
     setProtocol = jobFactory->SetProtocolHandler(
-        chrome::kFileScheme,
+        content::kFileScheme,
         new net::FileProtocolHandler(
             content::BrowserThread::GetBlockingPool()->
                 GetTaskRunnerWithShutdownBehavior(

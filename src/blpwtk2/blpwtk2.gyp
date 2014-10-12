@@ -63,7 +63,6 @@
             '--output-version-cc', '<(version_cc)',
             '--version', '<(bb_version)',
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'Generate angle bindings',
@@ -80,7 +79,6 @@
             '<@(_inputs)',
             '--output-bindings-cc', '<(angle_bindings_cc)',
           ],
-          'msvs_cygwin_shell': 1,
         },
       ],
       'direct_dependent_settings': {
@@ -110,10 +108,12 @@
         '../net/net.gyp:net',
         '../sandbox/sandbox.gyp:sandbox',
         '../skia/skia.gyp:skia',
+        '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/WebKit/Source/platform/blink_platform.gyp:blink_common',
         '../ui/aura/aura.gyp:aura',
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gl/gl.gyp:gl',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../ui/ui.gyp:ui',
@@ -123,7 +123,6 @@
         '../webkit/child/webkit_child.gyp:webkit_child',
         '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '../webkit/common/webkit_common.gyp:webkit_common',
-        '../webkit/glue/webkit_glue.gyp:glue',
         '../webkit/webkit_resources.gyp:webkit_resources',
         'blpangle',
         'blpwtk2_generate_sources',
@@ -387,6 +386,11 @@
       'msvs_settings': {
         'VCLinkerTool': {
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+        },
+        'VCManifestTool': {
+          'AdditionalManifestFiles': [
+            'shell/common_controls.manifest',
+          ],
         },
       },
       'sources': [

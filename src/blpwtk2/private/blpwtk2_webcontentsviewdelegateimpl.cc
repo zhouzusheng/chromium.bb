@@ -101,10 +101,11 @@ WebContentsViewDelegateImpl::GetDragDestDelegate()
 }
 
 void WebContentsViewDelegateImpl::ShowContextMenu(
-            const content::ContextMenuParams& params)
+    content::RenderFrameHost* renderFrameHost,
+    const content::ContextMenuParams& params)
 {
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(d_webContents->GetDelegate());
-    webViewImpl->saveCustomContextMenuContext(params.custom_context);
+    webViewImpl->saveCustomContextMenuContext(renderFrameHost, params.custom_context);
 
     gfx::Point point(params.x, params.y);
     aura::RootWindow* rootWindow = webViewImpl->getNativeView()->GetDispatcher();

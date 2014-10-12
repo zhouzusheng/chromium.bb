@@ -459,7 +459,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // custom tooltip.
   virtual bool ShowTooltip(
       WebContents* web_contents,
-      const string16& tooltip_text,
+      const base::string16& tooltip_text,
       blink::WebTextDirection text_direction_hint);
 
   // Returns the size for the new render view created for the pending entry in

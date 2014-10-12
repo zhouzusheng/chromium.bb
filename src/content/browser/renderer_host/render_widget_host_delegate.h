@@ -62,7 +62,7 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
-  virtual bool ShowTooltip(const string16& tooltip_text,
+  virtual bool ShowTooltip(const base::string16& tooltip_text,
                            blink::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.

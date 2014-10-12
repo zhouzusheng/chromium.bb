@@ -38,11 +38,6 @@ ViewsDelegateImpl::~ViewsDelegateImpl()
     ViewsDelegate::views_delegate = NULL;
 }
 
-bool ViewsDelegateImpl::UseTransparentWindows() const
-{
-    return false;
-}
-
 bool ViewsDelegateImpl::GetSavedWindowPlacement(
     const views::Widget* widget,
     const std::string& window_name,

@@ -509,7 +509,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool ShouldSetKeyboardFocusOnMouseDown() OVERRIDE;
   virtual bool ShouldSetLogicalFocusOnMouseDown() OVERRIDE;
   virtual bool ShowTooltip(
-      const string16& tooltip_text, 
+      const base::string16& tooltip_text,
       blink::WebTextDirection text_direction_hint) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN)

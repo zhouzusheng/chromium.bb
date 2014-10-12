@@ -353,23 +353,37 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
     return GetRequestContext();
 }
 
-void BrowserContextImpl::RequestMIDISysExPermission(
+void BrowserContextImpl::RequestMidiSysExPermission(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame,
-    const MIDISysExPermissionCallback& callback)
+    const MidiSysExPermissionCallback& callback)
 {
-    // Always reject for now.
-    // TODO: implement.  See http://crbug.com/257618 for upstream impl.
-    callback.Run(false);
+    callback.Run(true);
 }
 
-void BrowserContextImpl::CancelMIDISysExPermissionRequest(
+void BrowserContextImpl::CancelMidiSysExPermissionRequest(
     int render_process_id,
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame)
+{
+}
+
+void BrowserContextImpl::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback)
+{
+    callback.Run(true);
+}
+
+void BrowserContextImpl::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id)
 {
 }
 

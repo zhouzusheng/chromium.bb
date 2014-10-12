@@ -311,7 +311,7 @@ class RendererSandboxedProcessLauncherDelegate
 // create.
 static size_t g_max_renderer_count_override = 0;
 
-int RenderProcessHostImpl::kInvalidId = ChildProcessHostImpl::kInvalidChildProcessId;
+int RenderProcessHostImpl::kInvalidId = ChildProcessHost::kInvalidUniqueID;
 
 // static
 size_t RenderProcessHost::GetMaxRendererProcessCount() {
@@ -447,10 +447,6 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
   DCHECK(is_self_deleted_)
       << "RenderProcessHostImpl is destroyed by something other than itself";
 #endif
-
-  // Make sure to clean up the in-process renderer before the channel, otherwise
-  // it may still run and have its IPCs fail, causing asserts.
-  in_process_renderer_.reset();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
 
@@ -958,9 +954,6 @@ void RenderProcessHost::AdjustCommandLineForRenderer(
     command_line->AppendSwitchASCII(switches::kForceFieldTrials,
                                     field_trial_states);
   }
-
-  GetContentClient()->browser()->AppendExtraCommandLineSwitches(
-      command_line, GetID());
 
   if (content::IsPinchToZoomEnabled())
     command_line->AppendSwitch(switches::kEnablePinch);

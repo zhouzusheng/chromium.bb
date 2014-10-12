@@ -31,7 +31,7 @@ bool RenderWidgetHostDelegate::ShouldSetLogicalFocusOnMouseDown() {
 }
 
 bool RenderWidgetHostDelegate::ShowTooltip(
-    const string16& tooltip_text,
+    const base::string16& tooltip_text,
     blink::WebTextDirection text_direction_hint) {
   return false;
 }

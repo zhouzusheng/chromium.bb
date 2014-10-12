@@ -157,7 +157,7 @@ class SpellCheck : public content::RenderProcessObserver,
   CustomDictionaryEngine custom_dictionary_;
 
   // Mapping of bad words to good words for autocorrect.
-  std::map<string16, string16> autocorrect_words_;
+  std::map<base::string16, base::string16> autocorrect_words_;
 
   // Flags for auto-spell-correct behavior.  See spellcheck_common for flags
   // enum.

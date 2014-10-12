@@ -42,6 +42,7 @@
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
+#include <content/public/browser/render_frame_host.h>
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/web_contents.h>
@@ -99,6 +100,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
+, d_rfhForContextMenu(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(browserContext);
@@ -139,6 +141,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
+, d_rfhForContextMenu(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -187,8 +190,11 @@ void WebViewImpl::showContextMenu(const ContextMenuParams& params)
         d_delegate->showContextMenu(this, params);
 }
 
-void WebViewImpl::saveCustomContextMenuContext(const content::CustomContextMenuContext& context)
+void WebViewImpl::saveCustomContextMenuContext(
+    content::RenderFrameHost* rfh,
+    const content::CustomContextMenuContext& context)
 {
+    d_rfhForContextMenu = rfh;
     d_customContext = context;
 }
 
@@ -197,9 +203,8 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
-    content::RenderViewHost* host = d_webContents->GetRenderViewHost();
     if (!request.reqId) {
-        host->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
+        d_webContents->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
         return;
     }
     blink::WebFindOptions options;
@@ -209,7 +214,7 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     blink::WebString textStr =
         blink::WebString::fromUTF8(request.text.data(),
                                    request.text.length());
-    host->Find(request.reqId, textStr, options);
+    d_webContents->Find(request.reqId, textStr, options);
 }
 
 void WebViewImpl::handleExternalProtocol(const GURL& url)
@@ -511,7 +516,9 @@ void WebViewImpl::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->ExecuteCustomContextMenuCommand(actionId, d_customContext);
+    DCHECK(d_rfhForContextMenu);
+    d_rfhForContextMenu->ExecuteCustomContextMenuCommand(actionId, d_customContext);
+    d_rfhForContextMenu = 0;
 }
 
 void WebViewImpl::enableAltDragRubberbanding(bool enabled)
@@ -547,7 +554,7 @@ void WebViewImpl::replaceMisspelledRange(const StringRef& text)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     base::string16 text16;
-    UTF8ToUTF16(text.data(), text.length(), &text16);
+    base::UTF8ToUTF16(text.data(), text.length(), &text16);
     d_webContents->GetRenderViewHost()->ReplaceMisspelling(text16);
 }
 
@@ -723,7 +730,7 @@ void WebViewImpl::WebContentsBlurred(content::WebContents* contents)
 
 void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                      int64 source_frame_id,
-                                     const string16& frame_name,
+                                     const base::string16& frame_name,
                                      const GURL& target_url,
                                      const content::ContentCreatedParams& params,
                                      content::WebContents* new_contents)
@@ -769,7 +776,7 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
 
     for (size_t i = 0; i < params.additional_features.size(); ++i) {
         delegateParams.addAdditionalFeature(
-            UTF16ToUTF8(params.additional_features[i]));
+            base::UTF16ToUTF8(params.additional_features[i]));
     }
 
     d_delegate->didCreateNewView(this,
@@ -930,7 +937,7 @@ bool WebViewImpl::ShouldSetLogicalFocusOnMouseDown()
 }
 
 bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
-                              const string16& tooltip_text,
+                              const base::string16& tooltip_text,
                               blink::WebTextDirection text_direction_hint)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -1013,7 +1020,7 @@ void WebViewImpl::DidFailLoad(int64 frame_id,
                               const GURL& validated_url,
                               bool is_main_frame,
                               int error_code,
-                              const string16& error_description,
+                              const base::string16& error_description,
                               content::RenderViewHost* render_view_host)
 {
     DCHECK(Statics::isInBrowserMainThread());

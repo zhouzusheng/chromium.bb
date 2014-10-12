@@ -501,6 +501,13 @@ static bool executeInsertHTML(Frame& frame, Event*, EditorCommandSource, const S
     return executeInsertFragment(frame, createFragmentFromMarkup(*frame.document(), value, ""));
 }
 
+static bool executeInsertHTMLNested(Frame& frame, Event*, EditorCommandSource, const String& value)
+{
+    ASSERT(frame.document());
+    ReplaceSelectionCommand::create(*frame.document(), createFragmentFromMarkup(*frame.document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified)->apply();
+    return true;
+}
+
 static bool executeInsertImage(Frame& frame, Event*, EditorCommandSource, const String& value)
 {
     // FIXME: If userInterface is true, we should display a dialog box and let the user choose a local image.
@@ -1473,6 +1480,7 @@ static const CommandMap& createCommandMap()
         { "Indent", {31, executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertBacktab", {32, executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHTML", {33, executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertHTMLNested", {9999, executeInsertHTMLNested, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHorizontalRule", {34, executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertImage", {35, executeInsertImage, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertLineBreak", {36, executeInsertLineBreak, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },

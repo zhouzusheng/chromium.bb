@@ -78,6 +78,7 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class DOMWindowCSS;
+    class BBWindowHooks;
 
     struct WindowFeatures;
 
@@ -324,6 +325,9 @@ enum PageshowEventPersistence {
         // FIXME: This shouldn't be public once DOMWindow becomes ExecutionContext.
         void clearEventQueue();
 
+        // Bloomberg specific objects/methods
+        BBWindowHooks* bbWindowHooks() const;
+
     protected:
         DOMWindowLifecycleNotifier& lifecycleNotifier();
 
@@ -357,6 +361,7 @@ enum PageshowEventPersistence {
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
+        mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
 
         String m_status;
         String m_defaultStatus;

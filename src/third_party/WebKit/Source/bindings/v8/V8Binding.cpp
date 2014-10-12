@@ -479,6 +479,17 @@ PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::I
     return resolver;
 }
 
+static bool s_nonWindowContextsAllowed = false;
+bool isNonWindowContextsAllowed()
+{
+    return s_nonWindowContextsAllowed;
+}
+
+void setNonWindowContextsAllowed(bool allowed)
+{
+    s_nonWindowContextsAllowed = allowed;
+}
+
 DOMWindow* toDOMWindow(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     if (value.IsEmpty() || !value->IsObject())
@@ -488,6 +499,7 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Value> value, v8::Isolate* isolate)
     v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, MainWorld));
     if (!windowWrapper.IsEmpty())
         return V8Window::toNative(windowWrapper);
+    if (isNonWindowContextsAllowed() && !DOMWrapperWorld::isolatedWorldsExist()) return 0;
     windowWrapper = global->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, IsolatedWorld));
     if (!windowWrapper.IsEmpty())
         return V8Window::toNative(windowWrapper);
@@ -518,7 +530,9 @@ ExecutionContext* toExecutionContext(v8::Handle<v8::Context> context)
 DOMWindow* activeDOMWindow(v8::Isolate* isolate)
 {
     v8::Handle<v8::Context> context = isolate->GetCallingContext();
-    if (context.IsEmpty()) {
+    if (context.IsEmpty() ||
+            (isNonWindowContextsAllowed() &&
+             !DOMWrapperWorld::contextHasCorrectPrototype(context))) {
         // Unfortunately, when processing script from a plug-in, we might not
         // have a calling context. In those cases, we fall back to the
         // entered context.

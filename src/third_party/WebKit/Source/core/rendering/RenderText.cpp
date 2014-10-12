@@ -940,6 +940,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     int firstGlyphLeftOverflow = -1;
 
     bool breakAll = (styleToUse->wordBreak() == BreakAllWordBreak || styleToUse->wordBreak() == BreakWordBreak) && styleToUse->autoWrap();
+    EWordBreak effectiveWordBreak = styleToUse->autoWrap() ? styleToUse->wordBreak() : NormalWordBreak;
 
     TextRun textRun(text());
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
@@ -1006,7 +1007,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable);
+        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable, effectiveWordBreak);
         bool betweenWords = true;
         int j = i;
         while (c != '\n' && c != ' ' && c != '\t' && (c != softHyphen)) {
@@ -1014,7 +1015,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = uncheckedCharacterAt(j);
-            if (isBreakable(breakIterator, j, nextBreakable) && characterAt(j - 1) != softHyphen)
+            if (isBreakable(breakIterator, j, nextBreakable, effectiveWordBreak) && characterAt(j - 1) != softHyphen)
                 break;
             if (breakAll) {
                 betweenWords = false;

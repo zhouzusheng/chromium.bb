@@ -398,7 +398,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             float childZoom = child->renderer()->style()->zoom();
             float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
             if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
-                child->setNeedsStyleRecalc();
+                child->setNeedsStyleRecalc(SubtreeStyleChange);
             }
         }
     }

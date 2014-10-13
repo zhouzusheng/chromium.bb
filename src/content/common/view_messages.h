@@ -1047,6 +1047,10 @@ IPC_MESSAGE_CONTROL5(ViewMsg_UpdateScrollbarTheme,
 // Tells the renderer to clear unused resources from its global web cache
 IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
 
+// Tells the renderer to enable/disable alt-mousedrag rubberbanding.
+IPC_MESSAGE_ROUTED1(ViewMsg_EnableAltDragRubberbanding,
+                    bool /* enable */)
+
 #if defined(OS_ANDROID)
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
@@ -1904,6 +1908,13 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateFaviconURL,
 // after the page has painted something.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
                     int /* page_id */)
+
+// Instructs the browser to draw the rubberband rect.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_SetRubberbandRect,
+                    gfx::Rect /* rect */)
+
+// Instructs the browser to stop drawing the rubberband rect.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_HideRubberbandRect)
 
 // Sent by the renderer to the browser to start a vibration with the given
 // duration.

@@ -405,6 +405,7 @@ order
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
+-bb-rubberbandable
 -webkit-shape-inside alias_for=shape-inside
 -webkit-shape-outside alias_for=shape-outside
 -webkit-shape-margin alias_for=shape-margin

@@ -69,6 +69,7 @@ class CompositorLock;
 class CompositorVSyncManager;
 class InputMethod;
 class LocatedEvent;
+class RubberbandOutline;
 class Texture;
 }
 
@@ -236,6 +237,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
+  virtual void SetRubberbandRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void HideRubberbandRect() OVERRIDE;
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
@@ -771,6 +774,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       yuv_readback_pipeline_;
 
   TouchEditingClient* touch_editing_client_;
+
+  // The rect to draw the rubberband highlight.
+  scoped_ptr<ui::RubberbandOutline> rubberband_outline_;
 
   std::vector<ui::LatencyInfo> software_latency_info_;
 

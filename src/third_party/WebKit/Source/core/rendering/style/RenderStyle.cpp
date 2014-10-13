@@ -626,6 +626,7 @@ StyleDifference RenderStyle::repaintOnlyDiff(const RenderStyle* other, unsigned&
         || *m_background.get() != *other->m_background.get()
         || rareInheritedData->userModify != other->rareInheritedData->userModify
         || rareInheritedData->userSelect != other->rareInheritedData->userSelect
+        || rareInheritedData->rubberbandable != other->rareInheritedData->rubberbandable
         || rareNonInheritedData->userDrag != other->rareNonInheritedData->userDrag
         || rareNonInheritedData->m_borderFit != other->rareNonInheritedData->m_borderFit
         || rareNonInheritedData->m_objectFit != other->rareNonInheritedData->m_objectFit

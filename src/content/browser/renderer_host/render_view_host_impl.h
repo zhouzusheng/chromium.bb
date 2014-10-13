@@ -419,6 +419,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual bool IsRenderView() const OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
+  virtual void LostFocus() OVERRIDE;
   virtual void LostCapture() OVERRIDE;
   virtual void LostMouseLock() OVERRIDE;
   virtual void ForwardMouseEvent(

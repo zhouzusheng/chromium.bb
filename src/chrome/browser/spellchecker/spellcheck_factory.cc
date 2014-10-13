@@ -78,11 +78,11 @@ void SpellcheckServiceFactory::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   user_prefs->RegisterBooleanPref(
       prefs::kEnableContinuousSpellcheck,
-      true,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(
-      prefs::kEnableAutoSpellCorrect,
       false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  user_prefs->RegisterIntegerPref(
+      prefs::kAutoSpellCorrectBehavior,
+      chrome::spellcheck_common::AUTOCORRECT_NONE,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 

@@ -156,8 +156,8 @@ void WindowFeatures::setWindowFeature(const String& keyString, const String& val
         fullscreen = value;
     else if (keyString == "scrollbars")
         scrollbarsVisible = value;
-    else if (value == 1)
-        additionalFeatures.append(keyString);
+    else
+        additionalFeatures.append(keyString + "=" + valueString);
 }
 
 WindowFeatures::WindowFeatures(const String& dialogFeaturesString, const FloatRect& screenAvailableRect)

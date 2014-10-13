@@ -923,6 +923,13 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
     return toV8Context(V8PerIsolateData::mainThreadIsolate(), frame(), DOMWrapperWorld::mainWorld());
 }
 
+v8::Isolate* WebFrameImpl::scriptIsolate() const
+{
+    if (!frame())
+        return 0;
+    return toIsolate(frame());
+}
+
 v8::Handle<v8::Value> WebFrameImpl::createFileSystem(WebFileSystemType type, const WebString& name, const WebString& path)
 {
     ASSERT(frame());

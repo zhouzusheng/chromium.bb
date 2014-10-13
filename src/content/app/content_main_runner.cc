@@ -311,8 +311,8 @@ class ContentClientInitializer {
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
       // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
-                   switches::kSingleProcess)) {
+               (content_client->browser_ &&
+                   content_client->browser_->SupportsInProcessRenderer())) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)
@@ -412,8 +412,6 @@ static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   UtilityProcessHost::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
-      CreateInProcessRendererThread);
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
 #else
@@ -452,8 +450,6 @@ int RunNamedProcessTypeMain(
     { switches::kGpuProcess,         GpuMain },
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
-
-  RegisterMainThreadFactories();
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {
@@ -660,6 +656,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       SetContentClient(&empty_content_client_);
     ContentClientInitializer::Set(process_type, delegate_);
 
+    RegisterMainThreadFactories();
+
 #if defined(OS_WIN)
     // Route stdio to parent console (if any) or create one.
     if (command_line.HasSwitch(switches::kEnableLogging))
@@ -735,6 +733,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterContentSchemes(true);
 
     CHECK(base::i18n::InitializeICU());
+#if !defined(COMPONENT_BUILD) && defined(USING_V8_SHARED)
+    CHECK(v8::V8::InitializeICU());
+#endif
 
     InitializeStatsTable(command_line);
 

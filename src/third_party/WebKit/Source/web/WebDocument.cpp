@@ -32,6 +32,7 @@
 #include "WebDocument.h"
 
 #include "WebAXObject.h"
+#include "WebBBPrintInfo.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
 #include "WebElement.h"
@@ -60,6 +61,7 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/page/BBPrintInfo.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
@@ -287,6 +289,13 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
     }
     return draggableRegions;
 }
+
+WebBBPrintInfo WebDocument::bbPrintInfo()
+{
+    Document* document = unwrap<Document>();
+    return WebBBPrintInfo(document->bbPrintInfo());
+}
+
 
 v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
 {

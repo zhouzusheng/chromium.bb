@@ -371,7 +371,7 @@ void FocusController::WindowFocusedFromInputEvent(aura::Window* window) {
   // Only focus |window| if it or any of its parents can be focused. Otherwise
   // FocusWindow() will focus the topmost window, which may not be the
   // currently focused one.
-  if (rules_->CanFocusWindow(GetToplevelWindow(window)))
+  if (window->ShouldTryFocusOnMouseDown() && rules_->CanFocusWindow(GetToplevelWindow(window)))
     FocusWindow(window);
 }
 

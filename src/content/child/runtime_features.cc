@@ -162,6 +162,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableHTMLImports))
     WebRuntimeFeatures::enableHTMLImports(true);
 
+  if (command_line.HasSwitch(switches::kEnableCSS3TextDecorations))
+    WebRuntimeFeatures::enableCSS3TextDecorations(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSS3Text))
+    WebRuntimeFeatures::enableCSS3Text(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSSGridLayout))
+    WebRuntimeFeatures::enableCSSGridLayout(true);
+
   if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo))
     WebRuntimeFeatures::enableOverlayFullscreenVideo(true);
 

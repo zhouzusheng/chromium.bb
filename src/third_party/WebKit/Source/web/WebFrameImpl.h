@@ -134,6 +134,7 @@ public:
         int argc,
         v8::Handle<v8::Value> argv[]) OVERRIDE;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
+    virtual v8::Isolate* scriptIsolate() const OVERRIDE;
     virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
         const WebString& name,
         const WebString& path) OVERRIDE;

@@ -394,10 +394,20 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   bool os_modal_loop() const {
     return os_modal_loop_;
   }
+
+  void set_ipc_sync_messages_should_peek(bool ipc_sync_messages_should_peek) {
+    ipc_sync_messages_should_peek_ = ipc_sync_messages_should_peek;
+  }
+
+  bool ipc_sync_messages_should_peek() const {
+    return ipc_sync_messages_should_peek_;
+  }
 #endif  // OS_WIN
 
   // Can only be called from the thread that owns the MessageLoop.
   bool is_running() const;
+
+  void PrepareRunHandler();
 
   // Returns true if the message loop has high resolution timers enabled.
   // Provided for testing.
@@ -407,7 +417,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   bool IsIdleForTesting();
 
   //----------------------------------------------------------------------------
- protected:
 
 #if defined(OS_WIN)
   MessagePumpWin* pump_win() {
@@ -426,6 +435,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 #endif
 #endif
 
+ protected:
   scoped_ptr<MessagePump> pump_;
 
  private:
@@ -512,6 +522,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Should be set to true before calling Windows APIs like TrackPopupMenu, etc
   // which enter a modal message loop.
   bool os_modal_loop_;
+
+  // Should be set to true if IPC sync messages should PeekMessage periodically.
+  bool ipc_sync_messages_should_peek_;
 #endif
 
   std::string thread_name_;

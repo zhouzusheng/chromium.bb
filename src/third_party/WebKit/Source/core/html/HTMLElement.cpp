@@ -39,9 +39,11 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/editing/markup.h"
+#include "core/editing/SpellChecker.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -318,6 +320,17 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
             setTabIndexExplicitly(max(static_cast<int>(std::numeric_limits<short>::min()), min(tabindex, static_cast<int>(std::numeric_limits<short>::max()))));
         }
     } else {
+        if (name == contenteditableAttr) {
+            if (value.isNull() || equalIgnoringCase(value, "false")) {
+                RefPtr<Range> range = Range::create(document());
+
+                TrackExceptionState es;
+                range->selectNode(this, es);
+                if (!es.hadException())
+                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+            }
+        }
+
         const AtomicString& eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())
             setAttributeEventListener(eventName, createAttributeEventListener(this, name, value));

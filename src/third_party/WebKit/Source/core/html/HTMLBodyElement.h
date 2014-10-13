@@ -65,6 +65,14 @@ private:
 
     virtual int scrollHeight() OVERRIDE;
     virtual int scrollWidth() OVERRIDE;
+
+    // Bloomberg-specific extensions
+    virtual int bbScrollLeftNoZoomAdjust();
+    virtual int bbScrollTopNoZoomAdjust();
+    virtual void setBbScrollLeftNoZoomAdjust(int);
+    virtual void setBbScrollTopNoZoomAdjust(int);
+    virtual int bbScrollWidthNoZoomAdjust();
+    virtual int bbScrollHeightNoZoomAdjust();
 };
 
 DEFINE_NODE_TYPE_CASTS(HTMLBodyElement, hasTagName(HTMLNames::bodyTag));

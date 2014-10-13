@@ -37,6 +37,7 @@
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderTheme.h"
@@ -374,6 +375,32 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         // SVG text layout code expects us to be a block-level style element.
         if ((e->hasTagName(SVGNames::foreignObjectTag) || e->hasTagName(SVGNames::textTag)) && style->isDisplayInlineType())
             style->setDisplay(BLOCK);
+    }
+
+    if (e && e->hasTagName(htmlTag)) {
+        if (e->document().frame() &&
+            e->document().frame()->ownerElement() &&
+            e->document().frame()->ownerElement()->renderer()) {
+            float ownerEffectiveZoom
+                = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
+            float childZoom = style->zoom();
+            style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
+        }
+    }
+
+    if (e && e->hasTagName(iframeTag)) {
+        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
+        if (iframe->contentDocument() && iframe->contentDocument()->body() &&
+            iframe->contentDocument()->body()->parentNode() &&
+            iframe->contentDocument()->body()->parentNode()->renderer()) {
+            Node* child = iframe->contentDocument()->body()->parentNode();
+            float ownerEffectiveZoom = style->effectiveZoom();
+            float childZoom = child->renderer()->style()->zoom();
+            float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
+            if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
+                child->setNeedsStyleRecalc();
+            }
+        }
     }
 }
 

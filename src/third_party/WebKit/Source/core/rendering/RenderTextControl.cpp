@@ -57,15 +57,15 @@ void RenderTextControl::addChild(RenderObject* newChild, RenderObject* beforeChi
     // FIXME: This is a terrible hack to get the caret over the placeholder text since it'll
     // make us paint the placeholder first. (See https://trac.webkit.org/changeset/118733)
     Node* node = newChild->node();
-    if (node && node->isElementNode() && toElement(node)->pseudo() == "-webkit-input-placeholder")
-        RenderBlock::addChild(newChild, firstChild());
+    if (node && node->isElementNode() && toElement(node)->shadowPseudoId() == "-webkit-input-placeholder")
+        RenderBlockFlow::addChild(newChild, firstChild());
     else
-        RenderBlock::addChild(newChild, beforeChild);
+        RenderBlockFlow::addChild(newChild, beforeChild);
 }
 
 void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(diff, oldStyle);
+    RenderBlockFlow::styleDidChange(diff, oldStyle);
     Element* innerText = innerTextElement();
     if (!innerText)
         return;
@@ -76,7 +76,7 @@ void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* 
         innerTextRenderer->style()->setHeight(Length());
         innerTextRenderer->style()->setWidth(Length());
         innerTextRenderer->setStyle(createInnerTextStyle(style()));
-        innerText->setNeedsStyleRecalc();
+        innerText->setNeedsStyleRecalc(SubtreeStyleChange);
     }
     textFormControlElement()->updatePlaceholderVisibility(false);
 }
@@ -234,13 +234,13 @@ float RenderTextControl::scaleEmToUnits(int x) const
 {
     // This matches the unitsPerEm value for MS Shell Dlg and Courier New from the "head" font table.
     float unitsPerEm = 2048.0f;
-    return roundf(style()->font().size() * x / unitsPerEm);
+    return roundf(style()->font().fontDescription().computedSize() * x / unitsPerEm);
 }
 
 void RenderTextControl::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
 {
     // Use average character width. Matches IE.
-    AtomicString family = style()->font().family().family();
+    AtomicString family = style()->font().fontDescription().family().family();
     maxLogicalWidth = preferredContentLogicalWidth(const_cast<RenderTextControl*>(this)->getAvgCharWidth(family));
     if (RenderBox* innerTextRenderBox = innerTextElement()->renderBox())
         maxLogicalWidth += innerTextRenderBox->paddingStart() + innerTextRenderBox->paddingEnd();

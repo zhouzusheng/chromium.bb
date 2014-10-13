@@ -28,7 +28,7 @@
 #include "core/css/CSSTokenizer.h"
 
 #include "core/css/CSSKeyframeRule.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSParserValues.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/StyleRule.h"
@@ -719,18 +719,16 @@ inline bool CSSTokenizer::detectFunctionTypeToken(int length)
             m_token = CUEFUNCTION;
             return true;
         }
-        CASE("var") {
-            if (!RuntimeEnabledFeatures::cssVariablesEnabled())
-                return false;
-            m_token = VARFUNCTION;
-            return true;
-        }
         CASE("calc") {
             m_token = CALCFUNCTION;
             return true;
         }
         CASE("host") {
             m_token = HOSTFUNCTION;
+            return true;
+        }
+        CASE("ancestor") {
+            m_token = ANCESTORFUNCTION;
             return true;
         }
         CASE("nth-child") {
@@ -1009,14 +1007,6 @@ inline void CSSTokenizer::detectAtToken(int length, bool hasEscape)
             if (LIKELY(!hasEscape && m_internal))
                 m_token = INTERNAL_RULE_SYM;
         }
-        CASE("-webkit-region") {
-            if (LIKELY(!hasEscape))
-                m_token = WEBKIT_REGION_RULE_SYM;
-        }
-        CASE("-webkit-filter") {
-            if (LIKELY(!hasEscape))
-                m_token = WEBKIT_FILTER_RULE_SYM;
-        }
         CASE("-internal-decls") {
             if (LIKELY(!hasEscape && m_internal))
                 m_token = INTERNAL_DECLS_SYM;
@@ -1073,18 +1063,6 @@ inline void CSSTokenizer::detectSupportsToken(int length)
             m_token = SUPPORTS_NOT;
         }
     }
-}
-
-template <typename CharacterType>
-inline void CSSTokenizer::detectCSSVariableDefinitionToken(int length)
-{
-    static const int prefixLength = static_cast<int>(sizeof("var-") - 1);
-    if (length <= prefixLength)
-        return;
-    CharacterType* name = tokenStart<CharacterType>();
-    COMPILE_ASSERT(prefixLength > 0, CSS_variable_prefix_must_be_nonempty);
-    if (name[prefixLength - 1] == '-' && isIdentifierStartAfterDash(name + prefixLength) && isEqualToCSSCaseSensitiveIdentifier(name, "var"))
-        m_token = VAR_DEFINITION;
 }
 
 template <typename SrcCharacterType>
@@ -1176,8 +1154,6 @@ restartAfterComment:
                     }
                 }
             }
-        } else if (UNLIKELY(RuntimeEnabledFeatures::cssVariablesEnabled())) {
-            detectCSSVariableDefinitionToken<SrcCharacterType>(result - tokenStart<SrcCharacterType>());
         }
         break;
 
@@ -1388,9 +1364,9 @@ restartAfterComment:
         // Ignore comments. They are not even considered as white spaces.
         if (*currentCharacter<SrcCharacterType>() == '*') {
             const CSSParserLocation startLocation = currentLocation();
-            if (m_parser.m_sourceDataHandler) {
+            if (m_parser.m_observer) {
                 unsigned startOffset = currentCharacter<SrcCharacterType>() - dataStart<SrcCharacterType>() - 1; // Start with a slash.
-                m_parser.m_sourceDataHandler->startComment(startOffset - m_parsedTextPrefixLength);
+                m_parser.m_observer->startComment(startOffset - m_parsedTextPrefixLength);
             }
             ++currentCharacter<SrcCharacterType>();
             while (currentCharacter<SrcCharacterType>()[0] != '*' || currentCharacter<SrcCharacterType>()[1] != '/') {
@@ -1399,16 +1375,16 @@ restartAfterComment:
                 if (*currentCharacter<SrcCharacterType>() == '\0') {
                     // Unterminated comments are simply ignored.
                     currentCharacter<SrcCharacterType>() -= 2;
-                    m_parser.reportError(startLocation, CSSParser::UnterminatedCommentError);
+                    m_parser.reportError(startLocation, UnterminatedCommentCSSError);
                     break;
                 }
                 ++currentCharacter<SrcCharacterType>();
             }
             currentCharacter<SrcCharacterType>() += 2;
-            if (m_parser.m_sourceDataHandler) {
+            if (m_parser.m_observer) {
                 unsigned endOffset = currentCharacter<SrcCharacterType>() - dataStart<SrcCharacterType>();
                 unsigned userTextEndOffset = static_cast<unsigned>(m_length - 1 - m_parsedTextSuffixLength);
-                m_parser.m_sourceDataHandler->endComment(std::min(endOffset, userTextEndOffset) - m_parsedTextPrefixLength);
+                m_parser.m_observer->endComment(std::min(endOffset, userTextEndOffset) - m_parsedTextPrefixLength);
             }
             goto restartAfterComment;
         }

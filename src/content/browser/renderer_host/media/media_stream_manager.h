@@ -24,6 +24,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_MANAGER_H_
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -36,10 +37,6 @@
 #include "content/common/media/media_stream_options.h"
 #include "content/public/browser/media_request_state.h"
 #include "content/public/browser/resource_context.h"
-
-namespace base {
-class Thread;
-}
 
 namespace media {
 class AudioManager;
@@ -185,6 +182,16 @@ class CONTENT_EXPORT MediaStreamManager
   // too late. (see http://crbug.com/247525#c14).
   virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
 
+  // Sends log messages to the render process hosts whose corresponding render
+  // processes are making device requests, to be used by the
+  // webrtcLoggingPrivate API if requested.
+  void AddLogMessageOnIOThread(const std::string& message);
+
+  // Adds |message| to native logs for outstanding device requests, for use by
+  // render processes hosts whose corresponding render processes are requesting
+  // logging from webrtcLoggingPrivate API. Safe to call from any thread.
+  static void SendMessageToNativeLog(const std::string& message);
+
  protected:
   // Used for testing.
   MediaStreamManager();
@@ -240,6 +247,12 @@ class CONTENT_EXPORT MediaStreamManager
   DeviceRequest* FindRequest(const std::string& label) const;
   void DeleteRequest(const std::string& label);
   void ClearEnumerationCache(EnumerationCache* cache);
+  // Returns true if the |cache| is invalid, false if it's invalid or if
+  // the |stream_type| is MEDIA_NO_SERVICE.
+  // On Android, this function will always return true for
+  // MEDIA_DEVICE_AUDIO_CAPTURE since we don't have a SystemMonitor to tell
+  // us about audio device changes.
+  bool EnumerationRequired(EnumerationCache* cache, MediaStreamType type);
   // Prepare the request with label |label| by starting device enumeration if
   // needed.
   void SetupRequest(const std::string& label);
@@ -304,6 +317,12 @@ class CONTENT_EXPORT MediaStreamManager
   void TranslateDeviceIdToSourceId(DeviceRequest* request,
                                    MediaStreamDevice* device);
 
+  // Helper method that sends log messages to the render process hosts whose
+  // corresponding render processes are in |render_process_ids|, to be used by
+  // the webrtcLoggingPrivate API if requested.
+  void AddLogMessageOnUIThread(const std::set<int>& render_process_ids,
+                               const std::string& message);
+
   // Finds and returns the device id corresponding to the given
   // |source_id|. Returns true if there was a raw device id that matched the
   // given |source_id|, false if nothing matched it.
@@ -314,8 +333,10 @@ class CONTENT_EXPORT MediaStreamManager
       const std::string& source_id,
       std::string* device_id) const;
 
-  // Device thread shared by VideoCaptureManager and AudioInputDeviceManager.
-  scoped_ptr<base::Thread> device_thread_;
+  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager.
+  // Note: Enumeration tasks may take seconds to complete so must never be run
+  // on any of the BrowserThreads (UI, IO, etc).  See http://crbug.com/256945.
+  scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;
 
   media::AudioManager* const audio_manager_;  // not owned
   scoped_refptr<AudioInputDeviceManager> audio_input_device_manager_;
@@ -333,7 +354,7 @@ class CONTENT_EXPORT MediaStreamManager
   // AudioInputDeviceManager, in order to only enumerate when necessary.
   int active_enumeration_ref_count_[NUM_MEDIA_TYPES];
 
-  // All non-closed request.
+  // All non-closed request. Must be accessed on IO thread.
   DeviceRequests requests_;
 
   // Hold a pointer to the IO loop to check we delete the device thread and

@@ -6,13 +6,15 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event_impl.h"
+#include "base/lazy_instance.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_checker.h"
 #include "cc/animation/animation.h"
 #include "cc/base/region.h"
+#include "cc/base/switches.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_position_constraint.h"
-#include "third_party/WebKit/public/platform/WebCompositingReasons.h"
+#include "cc/trees/layer_tree_host.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebGraphicsLayerDebugInfo.h"
@@ -37,6 +39,18 @@ using blink::WebColor;
 using blink::WebFilterOperations;
 
 namespace webkit {
+namespace {
+
+struct ImplSidePaintingStatus {
+  ImplSidePaintingStatus()
+      : enabled(cc::switches::IsImplSidePaintingEnabled()) {
+  }
+  bool enabled;
+};
+base::LazyInstance<ImplSidePaintingStatus> g_impl_side_painting_status =
+    LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
 
 WebLayerImpl::WebLayerImpl() : layer_(Layer::Create()) {
   web_layer_client_ = NULL;
@@ -52,6 +66,11 @@ WebLayerImpl::~WebLayerImpl() {
   layer_->ClearRenderSurface();
   layer_->set_layer_animation_delegate(NULL);
   web_layer_client_ = NULL;
+}
+
+// static
+bool WebLayerImpl::UsingPictureLayer() {
+  return g_impl_side_painting_status.Get().enabled;
 }
 
 int WebLayerImpl::id() const { return layer_->id(); }
@@ -143,16 +162,6 @@ void WebLayerImpl::setPosition(const WebFloatPoint& position) {
 
 WebFloatPoint WebLayerImpl::position() const { return layer_->position(); }
 
-void WebLayerImpl::setSublayerTransform(const SkMatrix44& matrix) {
-  gfx::Transform sub_layer_transform;
-  sub_layer_transform.matrix() = matrix;
-  layer_->SetSublayerTransform(sub_layer_transform);
-}
-
-SkMatrix44 WebLayerImpl::sublayerTransform() const {
-  return layer_->sublayer_transform().matrix();
-}
-
 void WebLayerImpl::setTransform(const SkMatrix44& matrix) {
   gfx::Transform transform;
   transform.matrix() = matrix;
@@ -169,8 +178,12 @@ void WebLayerImpl::setDrawsContent(bool draws_content) {
 
 bool WebLayerImpl::drawsContent() const { return layer_->DrawsContent(); }
 
-void WebLayerImpl::setPreserves3D(bool preserve3D) {
-  layer_->SetPreserves3d(preserve3D);
+void WebLayerImpl::setShouldFlattenTransform(bool flatten) {
+  layer_->SetShouldFlattenTransform(flatten);
+}
+
+void WebLayerImpl::setRenderingContext(int context) {
+  layer_->SetIs3dSorted(context != 0);
 }
 
 void WebLayerImpl::setUseParentBackfaceVisibility(
@@ -196,11 +209,6 @@ void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters) {
   const WebFilterOperationsImpl& filters_impl =
       static_cast<const WebFilterOperationsImpl&>(filters);
   layer_->SetBackgroundFilters(filters_impl.AsFilterOperations());
-}
-
-void WebLayerImpl::setCompositingReasons(
-    blink::WebCompositingReasons reasons) {
-  layer_->SetCompositingReasons(reasons);
 }
 
 void WebLayerImpl::setAnimationDelegate(
@@ -247,16 +255,14 @@ blink::WebPoint WebLayerImpl::scrollPosition() const {
   return gfx::PointAtOffsetFromOrigin(layer_->scroll_offset());
 }
 
-void WebLayerImpl::setMaxScrollPosition(WebSize max_scroll_position) {
-  layer_->SetMaxScrollOffset(max_scroll_position);
-}
-
 WebSize WebLayerImpl::maxScrollPosition() const {
-  return layer_->max_scroll_offset();
+  return layer_->MaxScrollOffset();
 }
 
-void WebLayerImpl::setScrollable(bool scrollable) {
-  layer_->SetScrollable(scrollable);
+void WebLayerImpl::setScrollClipLayer(WebLayer* clip_layer) {
+  cc::Layer* cc_clip_layer =
+      clip_layer ? static_cast<WebLayerImpl*>(clip_layer)->layer() : 0;
+  layer_->SetScrollClipLayerId(cc_clip_layer->id());
 }
 
 bool WebLayerImpl::scrollable() const { return layer_->scrollable(); }
@@ -392,7 +398,6 @@ void WebLayerImpl::setWebLayerClient(blink::WebLayerClient* client) {
   web_layer_client_ = client;
 }
 
-// TODO(chrishtr): move DebugName into this class.
 class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
  public:
   // This object takes ownership of the debug_info object.
@@ -415,21 +420,12 @@ scoped_refptr<base::debug::ConvertableToTraceFormat>
   if (!web_layer_client_)
     return NULL;
   blink::WebGraphicsLayerDebugInfo* debug_info =
-      web_layer_client_->takeDebugInfo();
+      web_layer_client_->takeDebugInfoFor(this);
 
   if (debug_info)
     return new TracedDebugInfo(debug_info);
   else
     return NULL;
-}
-
-std::string WebLayerImpl::DebugName() {
-  if (!web_layer_client_)
-    return std::string();
-
-  std::string name = web_layer_client_->debugName(this).utf8();
-  DCHECK(IsStringASCII(name));
-  return name;
 }
 
 void WebLayerImpl::setScrollParent(blink::WebLayer* parent) {

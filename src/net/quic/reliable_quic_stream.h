@@ -11,12 +11,12 @@
 
 #include <list>
 
+#include "base/basictypes.h"
 #include "base/strings/string_piece.h"
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_stream_sequencer.h"
 
 namespace net {
@@ -51,7 +51,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual void OnClose();
 
   // Called when we get a stream reset from the peer.
-  virtual void OnStreamReset(QuicRstStreamErrorCode error);
+  virtual void OnStreamReset(const QuicRstStreamFrame& frame);
 
   // Called when we get or send a connection close, and should immediately
   // close the stream.  This is not passed through the sequencer,
@@ -87,6 +87,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   uint64 stream_bytes_written() { return stream_bytes_written_; }
 
   QuicVersion version();
+
+  void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
+  void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
@@ -148,6 +151,10 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   bool fin_buffered_;
   bool fin_sent_;
+
+  // In combination with fin_sent_, used to ensure that a FIN and/or a RST is
+  // always sent before stream termination.
+  bool rst_sent_;
 
   // True if the session this stream is running under is a server session.
   bool is_server_;

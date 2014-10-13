@@ -90,7 +90,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(success);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    void setCursorDetails(IndexedDB::CursorType, IndexedDB::CursorDirection);
+    void setCursorDetails(IndexedDB::CursorType, blink::WebIDBCursor::Direction);
     void setPendingCursor(PassRefPtr<IDBCursor>);
     void abort();
 
@@ -110,13 +110,13 @@ public:
     virtual void onSuccess(PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE FINAL;
+    virtual void stop() OVERRIDE FINAL;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
-    virtual void uncaughtExceptionInEventHandler() OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
+    virtual void uncaughtExceptionInEventHandler() OVERRIDE FINAL;
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
@@ -126,7 +126,7 @@ public:
     // the upcoming "success" or "error").
     void transactionDidFinishAndDispatch();
 
-    virtual void deref() OVERRIDE
+    virtual void deref() OVERRIDE FINAL
     {
         if (derefBase())
             delete this;
@@ -163,7 +163,7 @@ private:
 
     // Only used if the result type will be a cursor.
     IndexedDB::CursorType m_cursorType;
-    IndexedDB::CursorDirection m_cursorDirection;
+    blink::WebIDBCursor::Direction m_cursorDirection;
     // When a cursor is continued/advanced, m_result is cleared and m_pendingCursor holds it.
     RefPtr<IDBCursor> m_pendingCursor;
     // New state is not applied to the cursor object until the event is dispatched.

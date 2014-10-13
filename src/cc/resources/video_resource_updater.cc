@@ -89,7 +89,7 @@ bool VideoResourceUpdater::VerifyFrame(
 // each plane in the frame.
 static gfx::Size SoftwarePlaneDimension(
     media::VideoFrame::Format input_frame_format,
-    gfx::Size coded_size,
+    const gfx::Size& coded_size,
     ResourceFormat output_resource_format,
     int plane_index) {
   if (output_resource_format == kYUVResourceFormat) {
@@ -182,8 +182,13 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 
     // Try recycle a previously-allocated resource.
     for (size_t i = 0; i < recycled_resources_.size(); ++i) {
-      if (recycled_resources_[i].resource_format == output_resource_format &&
-          recycled_resources_[i].resource_size == output_plane_resource_size) {
+      bool resource_matches =
+          recycled_resources_[i].resource_format == output_resource_format &&
+          recycled_resources_[i].resource_size == output_plane_resource_size;
+      bool not_in_use =
+          !software_compositor || !resource_provider_->InUseByConsumer(
+                                       recycled_resources_[i].resource_id);
+      if (resource_matches && not_in_use) {
         resource_id = recycled_resources_[i].resource_id;
         mailbox = recycled_resources_[i].mailbox;
         recycled_resources_.erase(recycled_resources_.begin() + i);
@@ -208,16 +213,11 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
         gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
 
         GLC(gl, gl->GenMailboxCHROMIUM(mailbox.name));
-        if (mailbox.IsZero()) {
-          resource_provider_->DeleteResource(resource_id);
-          resource_id = 0;
-        } else {
-          ResourceProvider::ScopedWriteLockGL lock(
-              resource_provider_, resource_id);
-          GLC(gl, gl->BindTexture(GL_TEXTURE_2D, lock.texture_id()));
-          GLC(gl, gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
-          GLC(gl, gl->BindTexture(GL_TEXTURE_2D, 0));
-        }
+        ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
+                                                 resource_id);
+        GLC(gl, gl->BindTexture(GL_TEXTURE_2D, lock.texture_id()));
+        GLC(gl, gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
+        GLC(gl, gl->BindTexture(GL_TEXTURE_2D, 0));
       }
 
       if (resource_id)
@@ -267,23 +267,11 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
       plane_resources[0].resource_format,
       gpu::Mailbox()
     };
-    base::SharedMemory* shared_memory =
-        resource_provider_->GetSharedMemory(plane_resources[0].resource_id);
-    if (shared_memory) {
-      external_resources.mailboxes.push_back(
-          TextureMailbox(shared_memory, plane_resources[0].resource_size));
-      external_resources.release_callbacks
-          .push_back(base::Bind(&RecycleResource, AsWeakPtr(), recycle_data));
-      external_resources.type = VideoFrameExternalResources::RGB_RESOURCE;
-    } else {
-      // TODO(jbauman): Remove this path once shared memory is available
-      // everywhere.
-      external_resources.software_resources
-          .push_back(plane_resources[0].resource_id);
-      external_resources.software_release_callback =
-          base::Bind(&RecycleResource, AsWeakPtr(), recycle_data);
-      external_resources.type = VideoFrameExternalResources::SOFTWARE_RESOURCE;
-    }
+    external_resources.software_resources.push_back(
+        plane_resources[0].resource_id);
+    external_resources.software_release_callback =
+        base::Bind(&RecycleResource, AsWeakPtr(), recycle_data);
+    external_resources.type = VideoFrameExternalResources::SOFTWARE_RESOURCE;
 
     return external_resources;
   }
@@ -313,7 +301,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     };
 
     external_resources.mailboxes.push_back(
-        TextureMailbox(plane_resources[i].mailbox));
+        TextureMailbox(plane_resources[i].mailbox, GL_TEXTURE_2D, 0));
     external_resources.release_callbacks.push_back(
         base::Bind(&RecycleResource, AsWeakPtr(), recycle_data));
   }
@@ -323,9 +311,9 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 }
 
 static void ReturnTexture(const scoped_refptr<media::VideoFrame>& frame,
-                          unsigned sync_point,
+                          uint32 sync_point,
                           bool lost_resource) {
-  frame->texture_mailbox()->Resync(sync_point);
+  frame->mailbox_holder()->sync_point = sync_point;
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
@@ -339,8 +327,9 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
   if (!context_provider_)
     return VideoFrameExternalResources();
 
+  gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
   VideoFrameExternalResources external_resources;
-  switch (video_frame->texture_target()) {
+  switch (mailbox_holder->texture_target) {
     case GL_TEXTURE_2D:
       external_resources.type = VideoFrameExternalResources::RGB_RESOURCE;
       break;
@@ -356,13 +345,10 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
       return VideoFrameExternalResources();
   }
 
-  media::VideoFrame::MailboxHolder* mailbox_holder =
-      video_frame->texture_mailbox();
-
   external_resources.mailboxes.push_back(
-      TextureMailbox(mailbox_holder->mailbox(),
-                     video_frame->texture_target(),
-                     mailbox_holder->sync_point()));
+      TextureMailbox(mailbox_holder->mailbox,
+                     mailbox_holder->texture_target,
+                     mailbox_holder->sync_point));
   external_resources.release_callbacks.push_back(
       base::Bind(&ReturnTexture, video_frame));
   return external_resources;
@@ -372,7 +358,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
 void VideoResourceUpdater::RecycleResource(
     base::WeakPtr<VideoResourceUpdater> updater,
     RecycleResourceData data,
-    unsigned sync_point,
+    uint32 sync_point,
     bool lost_resource) {
   if (!updater.get()) {
     // Resource was already deleted.

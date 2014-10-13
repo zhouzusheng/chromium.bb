@@ -80,7 +80,7 @@ void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, c
 {
     ASSERT(isMainThread());
 
-    m_inputs.append(MIDIInput::create(this, executionContext(), id, manufacturer, name, version));
+    m_inputs.append(MIDIInput::create(this, id, manufacturer, name, version));
 }
 
 void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version)
@@ -88,7 +88,7 @@ void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, 
     ASSERT(isMainThread());
 
     unsigned portIndex = m_outputs.size();
-    m_outputs.append(MIDIOutput::create(this, portIndex, executionContext(), id, manufacturer, name, version));
+    m_outputs.append(MIDIOutput::create(this, portIndex, id, manufacturer, name, version));
 }
 
 void MIDIAccess::didStartSession(bool success)
@@ -121,7 +121,7 @@ void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* dat
 
 void MIDIAccess::sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds)
 {
-    if (m_hasAccess && portIndex < m_outputs.size() && data && length > 1) {
+    if (m_hasAccess && portIndex < m_outputs.size() && data && length > 0) {
         // Convert from a time in milliseconds (a DOMHighResTimeStamp) according to the same time coordinate system as performance.now()
         // into a time in seconds which is based on the time coordinate system of monotonicallyIncreasingTime().
         double timeStamp;
@@ -152,8 +152,6 @@ void MIDIAccess::stop()
     MIDIController* controller = MIDIController::from(document->page());
     ASSERT(controller);
     controller->cancelSysExPermissionRequest(this);
-
-    m_accessor.clear();
 }
 
 void MIDIAccess::startRequest()

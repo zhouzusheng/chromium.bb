@@ -39,7 +39,6 @@ public:
     PassRefPtr<HTMLCollection> elements();
 
     const Vector<FormAssociatedElement*>& associatedElements() const;
-    unsigned length() const;
 
 protected:
     virtual void disabledAttributeChanged() OVERRIDE;
@@ -47,11 +46,11 @@ protected:
 private:
     HTMLFieldSetElement(Document&, HTMLFormElement*);
 
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool supportsFocus() const;
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual const AtomicString& formControlType() const;
-    virtual bool recalcWillValidate() const { return false; }
+    virtual bool isEnumeratable() const OVERRIDE { return true; }
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual const AtomicString& formControlType() const OVERRIDE;
+    virtual bool recalcWillValidate() const OVERRIDE { return false; }
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 

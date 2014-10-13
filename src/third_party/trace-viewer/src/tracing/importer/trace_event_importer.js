@@ -8,15 +8,15 @@
  * @fileoverview TraceEventImporter imports TraceEvent-formatted data
  * into the provided model.
  */
-base.require('base.quad');
-base.require('tracing.trace_model');
-base.require('tracing.color_scheme');
-base.require('tracing.importer.importer');
-base.require('tracing.trace_model.instant_event');
-base.require('tracing.trace_model.flow_event');
-base.require('tracing.trace_model.counter_series');
+tvcm.require('tvcm.quad');
+tvcm.require('tracing.trace_model');
+tvcm.require('tracing.color_scheme');
+tvcm.require('tracing.importer.importer');
+tvcm.require('tracing.trace_model.instant_event');
+tvcm.require('tracing.trace_model.flow_event');
+tvcm.require('tracing.trace_model.counter_series');
 
-base.exportTo('tracing.importer', function() {
+tvcm.exportTo('tracing.importer', function() {
 
   var Importer = tracing.importer.Importer;
 
@@ -245,6 +245,14 @@ base.exportTo('tracing.importer', function() {
 
         var slice = thread.sliceGroup.endSlice(event.ts / 1000,
                                                event.tts / 1000);
+        if (event.name && slice.title != event.name) {
+          this.model_.importWarning({
+            type: 'title_match_error',
+            message: 'Titles do not match. Title is ' +
+                slice.title + ' in openSlice, and is ' +
+                event.name + ' in endSlice'
+          });
+        }
         for (var arg in event.args) {
           if (slice.args[arg] !== undefined) {
             this.model_.importWarning({
@@ -276,8 +284,9 @@ base.exportTo('tracing.importer', function() {
         process.name = event.args.name;
       } else if (event.name == 'process_labels') {
         var process = this.model_.getOrCreateProcess(event.pid);
-        process.labels.push.apply(
-            process.labels, event.args.labels.split(','));
+        var labels = event.args.labels.split(',');
+        for (var i = 0; i < labels.length; i++)
+          process.addLabelIfNeeded(labels[i]);
       } else if (event.name == 'process_sort_index') {
         var process = this.model_.getOrCreateProcess(event.pid);
         process.sortIndex = event.args.sort_index;
@@ -416,8 +425,8 @@ base.exportTo('tracing.importer', function() {
     },
 
     createSubSlices_: function() {
-      base.iterItems(this.model_.processes, function(pid, process) {
-        base.iterItems(process.threads, function(tid, thread) {
+      tvcm.iterItems(this.model_.processes, function(pid, process) {
+        tvcm.iterItems(process.threads, function(tid, thread) {
           thread.createSubSlices();
         }, this);
       }, this);
@@ -543,7 +552,7 @@ base.exportTo('tracing.importer', function() {
               subSlice.startThread = events[j - 1].thread;
               subSlice.endThread = events[j].thread;
               subSlice.id = id;
-              subSlice.args = base.concatenateObjects(events[0].event.args,
+              subSlice.args = tvcm.concatenateObjects(events[0].event.args,
                                                       targetEvent.event.args);
 
               slice.subSlices.push(subSlice);
@@ -551,7 +560,7 @@ base.exportTo('tracing.importer', function() {
               if (events[j].event.ph == 'F' && stepType == 'T') {
                 // The args for the finish event go in the last subSlice.
                 var lastSlice = slice.subSlices[slice.subSlices.length - 1];
-                lastSlice.args = base.concatenateObjects(lastSlice.args,
+                lastSlice.args = tvcm.concatenateObjects(lastSlice.args,
                                                          event.args);
               }
             }
@@ -762,7 +771,7 @@ base.exportTo('tracing.importer', function() {
     },
 
     createImplicitObjects_: function() {
-      base.iterItems(this.model_.processes, function(pid, process) {
+      tvcm.iterItems(this.model_.processes, function(pid, process) {
         this.createImplicitObjectsForProcess_(process);
       }, this);
     },
@@ -874,7 +883,7 @@ base.exportTo('tracing.importer', function() {
     },
 
     joinObjectRefs_: function() {
-      base.iterItems(this.model_.processes, function(pid, process) {
+      tvcm.iterItems(this.model_.processes, function(pid, process) {
         this.joinObjectRefsForProcess_(process);
       }, this);
     },
@@ -882,7 +891,7 @@ base.exportTo('tracing.importer', function() {
     joinObjectRefsForProcess_: function(process) {
       // Iterate the world, looking for id_refs
       var patchupsToApply = [];
-      base.iterItems(process.threads, function(tid, thread) {
+      tvcm.iterItems(process.threads, function(tid, thread) {
         thread.asyncSliceGroup.slices.forEach(function(item) {
           this.searchItemForIDRefs_(
               patchupsToApply, process.objects, 'start', item);
@@ -934,7 +943,7 @@ base.exportTo('tracing.importer', function() {
 
         if ((object instanceof tracing.trace_model.ObjectSnapshot) ||
             (object instanceof Float32Array) ||
-            (object instanceof base.Quad))
+            (object instanceof tvcm.Quad))
           return;
 
         if (object instanceof Array) {

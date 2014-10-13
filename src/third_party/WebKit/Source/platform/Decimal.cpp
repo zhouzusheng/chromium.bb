@@ -140,7 +140,6 @@ public:
 private:
     static uint32_t highUInt32(uint64_t x) { return static_cast<uint32_t>(x >> 32); }
     static uint32_t lowUInt32(uint64_t x) { return static_cast<uint32_t>(x & ((static_cast<uint64_t>(1) << 32) - 1)); }
-    bool isZero() const { return !m_low && !m_high; }
     static uint64_t makeUInt64(uint32_t low, uint32_t high) { return low | (static_cast<uint64_t>(high) << 32); }
 
     static uint64_t multiplyHigh(uint64_t, uint64_t);
@@ -745,20 +744,6 @@ Decimal Decimal::fromString(const String& str)
             return nan();
 
         case StateDot:
-            if (ch >= '0' && ch <= '9') {
-                if (numberOfDigits < Precision) {
-                    ++numberOfDigits;
-                    ++numberOfDigitsAfterDot;
-                    accumulator *= 10;
-                    accumulator += ch - '0';
-                }
-                state = StateDotDigit;
-                break;
-            }
-
-            HandleTwoCharsAndBreak('E', 'e', StateE);
-            return nan();
-
         case StateDotDigit:
             if (ch >= '0' && ch <= '9') {
                 if (numberOfDigits < Precision) {
@@ -767,6 +752,7 @@ Decimal Decimal::fromString(const String& str)
                     accumulator *= 10;
                     accumulator += ch - '0';
                 }
+                state = StateDotDigit;
                 break;
             }
 

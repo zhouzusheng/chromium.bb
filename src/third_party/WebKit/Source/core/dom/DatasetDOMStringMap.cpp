@@ -107,7 +107,9 @@ static bool isValidPropertyName(const String& name)
     return true;
 }
 
-static String convertPropertyNameToAttributeName(const String& name)
+// This returns an AtomicString because attribute names are always stored
+// as AtomicString types in Element (see setAttribute()).
+static AtomicString convertPropertyNameToAttributeName(const String& name)
 {
     StringBuilder builder;
     builder.append("data-");
@@ -122,7 +124,7 @@ static String convertPropertyNameToAttributeName(const String& name)
             builder.append(character);
     }
 
-    return builder.toString();
+    return builder.toAtomicString();
 }
 
 void DatasetDOMStringMap::ref()
@@ -185,17 +187,19 @@ void DatasetDOMStringMap::setItem(const String& name, const String& value, Excep
         return;
     }
 
-    m_element->setAttribute(convertPropertyNameToAttributeName(name), value, exceptionState);
+    m_element->setAttribute(convertPropertyNameToAttributeName(name), AtomicString(value), exceptionState);
 }
 
-void DatasetDOMStringMap::deleteItem(const String& name, ExceptionState& exceptionState)
+bool DatasetDOMStringMap::deleteItem(const String& name)
 {
-    if (!isValidPropertyName(name)) {
-        exceptionState.throwDOMException(SyntaxError, ExceptionMessages::failedToDelete(name, "DOMStringMap", "'" + name + "' is not a valid property name."));
-        return;
+    if (isValidPropertyName(name)) {
+        AtomicString attributeName = convertPropertyNameToAttributeName(name);
+        if (m_element->hasAttribute(attributeName)) {
+            m_element->removeAttribute(attributeName);
+            return true;
+        }
     }
-
-    m_element->removeAttribute(convertPropertyNameToAttributeName(name));
+    return false;
 }
 
 } // namespace WebCore

@@ -111,6 +111,17 @@ WebInspector.TabbedEditorContainer.prototype = {
     },
 
     /**
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     */
+    closeFile: function(uiSourceCode)
+    {
+        var tabId = this._tabIds.get(uiSourceCode);
+        if (!tabId)
+            return;
+        this._closeTabs([tabId]);
+    },
+
+    /**
      * @return {!Array.<!WebInspector.UISourceCode>}
      */
     historyUISourceCodes: function()
@@ -183,7 +194,8 @@ WebInspector.TabbedEditorContainer.prototype = {
         this._currentView = this.visibleView;
         this._addScrollAndSelectionListeners();
 
-        this.dispatchEventToListeners(WebInspector.TabbedEditorContainer.Events.EditorSelected, this._currentFile);
+        var eventData = { currentFile: this._currentFile, userGesture: userGesture };
+        this.dispatchEventToListeners(WebInspector.TabbedEditorContainer.Events.EditorSelected, eventData);
     },
 
     /**
@@ -539,9 +551,7 @@ WebInspector.TabbedEditorContainer.HistoryItem.prototype = {
         serializedHistoryItem.selectionRange = this.selectionRange;
         serializedHistoryItem.scrollLineNumber = this.scrollLineNumber;
         return serializedHistoryItem;
-    },
-
-    __proto__: WebInspector.Object.prototype
+    }
 }
 
 /**
@@ -698,9 +708,7 @@ WebInspector.TabbedEditorContainer.History.prototype = {
         for (var i = 0; i < this._items.length; ++i)
             result.push(this._items[i].url);
         return result;
-    },
-
-    __proto__: WebInspector.Object.prototype
+    }
 }
 
 /**

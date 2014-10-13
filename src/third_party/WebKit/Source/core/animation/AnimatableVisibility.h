@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-class AnimatableVisibility : public AnimatableValue {
+class AnimatableVisibility FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableVisibility() { }
     static PassRefPtr<AnimatableVisibility> create(EVisibility visibility)
@@ -48,6 +48,7 @@ public:
 
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     explicit AnimatableVisibility(EVisibility visibility)

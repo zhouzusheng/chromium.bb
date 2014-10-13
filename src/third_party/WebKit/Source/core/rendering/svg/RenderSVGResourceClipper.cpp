@@ -258,7 +258,10 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
     ASSERT(context);
     ASSERT(frame());
 
-    context->beginRecording(repaintRectInLocalCoordinates());
+    // Using strokeBoundingBox (instead of repaintRectInLocalCoordinates) to avoid the intersection
+    // with local clips/mask, which may yield incorrect results when mixing objectBoundingBox and
+    // userSpaceOnUse units (http://crbug.com/294900).
+    context->beginRecording(strokeBoundingBox());
 
     // Switch to a paint behavior where all children of this <clipPath> will be rendered using special constraints:
     // - fill-opacity/stroke-opacity/opacity set to 1
@@ -353,7 +356,7 @@ bool RenderSVGResourceClipper::hitTestClipContent(const FloatRect& objectBoundin
     return false;
 }
 
-FloatRect RenderSVGResourceClipper::resourceBoundingBox(RenderObject* object)
+FloatRect RenderSVGResourceClipper::resourceBoundingBox(const RenderObject* object)
 {
     // Resource was not layouted yet. Give back the boundingBox of the object.
     if (selfNeedsLayout())

@@ -69,12 +69,6 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static Color& customFocusRingColor()
-{
-    DEFINE_STATIC_LOCAL(Color, color, ());
-    return color;
-}
-
 static blink::WebFallbackThemeEngine::State getWebFallbackThemeState(const RenderTheme* theme, const RenderObject* o)
 {
     if (!theme->isEnabled(o))
@@ -88,8 +82,9 @@ static blink::WebFallbackThemeEngine::State getWebFallbackThemeState(const Rende
 }
 
 RenderTheme::RenderTheme()
+    : m_hasCustomFocusRingColor(false)
 #if USE(NEW_THEME)
-    : m_platformTheme(platformTheme())
+    , m_platformTheme(platformTheme())
 #endif
 {
 }
@@ -311,22 +306,12 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
         return paintMediaOverlayPlayButton(o, paintInfo, r);
     case MediaMuteButtonPart:
         return paintMediaMuteButton(o, paintInfo, r);
-    case MediaSeekBackButtonPart:
-        return paintMediaSeekBackButton(o, paintInfo, r);
-    case MediaSeekForwardButtonPart:
-        return paintMediaSeekForwardButton(o, paintInfo, r);
-    case MediaRewindButtonPart:
-        return paintMediaRewindButton(o, paintInfo, r);
-    case MediaReturnToRealtimeButtonPart:
-        return paintMediaReturnToRealtimeButton(o, paintInfo, r);
     case MediaToggleClosedCaptionsButtonPart:
         return paintMediaToggleClosedCaptionsButton(o, paintInfo, r);
     case MediaSliderPart:
         return paintMediaSliderTrack(o, paintInfo, r);
     case MediaSliderThumbPart:
         return paintMediaSliderThumb(o, paintInfo, r);
-    case MediaVolumeSliderMuteButtonPart:
-        return paintMediaMuteButton(o, paintInfo, r);
     case MediaVolumeSliderContainerPart:
         return paintMediaVolumeSliderContainer(o, paintInfo, r);
     case MediaVolumeSliderPart:
@@ -455,19 +440,14 @@ bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, 
 
 String RenderTheme::extraDefaultStyleSheet()
 {
-    if (!RuntimeEnabledFeatures::dataListElementEnabled() && !RuntimeEnabledFeatures::dialogElementEnabled())
-        return String();
     StringBuilder runtimeCSS;
 
-    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        runtimeCSS.appendLiteral("datalist {display: none ;}");
+    runtimeCSS.appendLiteral("datalist {display: none ;}");
 
-        if (RuntimeEnabledFeatures::inputTypeColorEnabled()) {
-            runtimeCSS.appendLiteral("input[type=\"color\"][list] { -webkit-appearance: menulist; width: 88px; height: 23px;}");
-            runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch-wrapper { padding-left: 8px; padding-right: 24px;}");
-            runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch { border-color: #000000;}");
-        }
-    }
+    runtimeCSS.appendLiteral("input[type=\"color\"][list] { -webkit-appearance: menulist; width: 88px; height: 23px;}");
+    runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch-wrapper { padding-left: 8px; padding-right: 24px;}");
+    runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch { border-color: #000000;}");
+
     if (RuntimeEnabledFeatures::dialogElementEnabled()) {
         runtimeCSS.appendLiteral("dialog:not([open]) { display: none; }");
         runtimeCSS.appendLiteral("dialog { position: absolute; left: 0; right: 0; width: -webkit-fit-content; height: -webkit-fit-content; margin: auto; border: solid; padding: 1em; background: white; color: black;}");
@@ -502,58 +482,42 @@ String RenderTheme::formatMediaControlsCurrentTime(float currentTime, float /*du
 
 Color RenderTheme::activeSelectionBackgroundColor() const
 {
-    if (!m_activeSelectionBackgroundColor.isValid())
-        m_activeSelectionBackgroundColor = platformActiveSelectionBackgroundColor().blendWithWhite();
-    return m_activeSelectionBackgroundColor;
+    return platformActiveSelectionBackgroundColor().blendWithWhite();
 }
 
 Color RenderTheme::inactiveSelectionBackgroundColor() const
 {
-    if (!m_inactiveSelectionBackgroundColor.isValid())
-        m_inactiveSelectionBackgroundColor = platformInactiveSelectionBackgroundColor().blendWithWhite();
-    return m_inactiveSelectionBackgroundColor;
+    return platformInactiveSelectionBackgroundColor().blendWithWhite();
 }
 
 Color RenderTheme::activeSelectionForegroundColor() const
 {
-    if (!m_activeSelectionForegroundColor.isValid() && supportsSelectionForegroundColors())
-        m_activeSelectionForegroundColor = platformActiveSelectionForegroundColor();
-    return m_activeSelectionForegroundColor;
+    return platformActiveSelectionForegroundColor();
 }
 
 Color RenderTheme::inactiveSelectionForegroundColor() const
 {
-    if (!m_inactiveSelectionForegroundColor.isValid() && supportsSelectionForegroundColors())
-        m_inactiveSelectionForegroundColor = platformInactiveSelectionForegroundColor();
-    return m_inactiveSelectionForegroundColor;
+    return platformInactiveSelectionForegroundColor();
 }
 
 Color RenderTheme::activeListBoxSelectionBackgroundColor() const
 {
-    if (!m_activeListBoxSelectionBackgroundColor.isValid())
-        m_activeListBoxSelectionBackgroundColor = platformActiveListBoxSelectionBackgroundColor();
-    return m_activeListBoxSelectionBackgroundColor;
+    return platformActiveListBoxSelectionBackgroundColor();
 }
 
 Color RenderTheme::inactiveListBoxSelectionBackgroundColor() const
 {
-    if (!m_inactiveListBoxSelectionBackgroundColor.isValid())
-        m_inactiveListBoxSelectionBackgroundColor = platformInactiveListBoxSelectionBackgroundColor();
-    return m_inactiveListBoxSelectionBackgroundColor;
+    return platformInactiveListBoxSelectionBackgroundColor();
 }
 
 Color RenderTheme::activeListBoxSelectionForegroundColor() const
 {
-    if (!m_activeListBoxSelectionForegroundColor.isValid() && supportsListBoxSelectionForegroundColors())
-        m_activeListBoxSelectionForegroundColor = platformActiveListBoxSelectionForegroundColor();
-    return m_activeListBoxSelectionForegroundColor;
+    return platformActiveListBoxSelectionForegroundColor();
 }
 
 Color RenderTheme::inactiveListBoxSelectionForegroundColor() const
 {
-    if (!m_inactiveListBoxSelectionForegroundColor.isValid() && supportsListBoxSelectionForegroundColors())
-        m_inactiveListBoxSelectionForegroundColor = platformInactiveListBoxSelectionForegroundColor();
-    return m_inactiveListBoxSelectionForegroundColor;
+    return platformInactiveListBoxSelectionForegroundColor();
 }
 
 Color RenderTheme::platformActiveSelectionBackgroundColor() const
@@ -963,9 +927,9 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     RefPtr<HTMLCollection> options = dataList->options();
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
     paintInfo.context->setFillColor(o->resolveColor(CSSPropertyColor));
-    for (unsigned i = 0; Node* node = options->item(i); i++) {
-        ASSERT(node->hasTagName(optionTag));
-        HTMLOptionElement* optionElement = toHTMLOptionElement(node);
+    for (unsigned i = 0; Element* element = options->item(i); i++) {
+        ASSERT(element->hasTagName(optionTag));
+        HTMLOptionElement* optionElement = toHTMLOptionElement(element);
         String value = optionElement->value();
         if (!input->isValidValue(value))
             continue;
@@ -1027,16 +991,6 @@ void RenderTheme::adjustSearchFieldResultsDecorationStyle(RenderStyle*, Element*
 
 void RenderTheme::platformColorsDidChange()
 {
-    m_activeSelectionForegroundColor = Color();
-    m_inactiveSelectionForegroundColor = Color();
-    m_activeSelectionBackgroundColor = Color();
-    m_inactiveSelectionBackgroundColor = Color();
-
-    m_activeListBoxSelectionForegroundColor = Color();
-    m_inactiveListBoxSelectionForegroundColor = Color();
-    m_activeListBoxSelectionBackgroundColor = Color();
-    m_inactiveListBoxSelectionForegroundColor = Color();
-
     Page::scheduleForcedStyleRecalcForAllPages();
 }
 
@@ -1116,6 +1070,7 @@ Color RenderTheme::systemColor(CSSValueID cssValueId) const
     default:
         break;
     }
+    ASSERT_NOT_REACHED();
     return Color();
 }
 
@@ -1136,12 +1091,13 @@ Color RenderTheme::tapHighlightColor()
 
 void RenderTheme::setCustomFocusRingColor(const Color& c)
 {
-    customFocusRingColor() = c;
+    m_customFocusRingColor = c;
+    m_hasCustomFocusRingColor = true;
 }
 
-Color RenderTheme::focusRingColor()
+Color RenderTheme::focusRingColor() const
 {
-    return customFocusRingColor().isValid() ? customFocusRingColor() : theme().platformFocusRingColor();
+    return m_hasCustomFocusRingColor ? m_customFocusRingColor : theme().platformFocusRingColor();
 }
 
 String RenderTheme::fileListNameForWidth(Locale& locale, const FileList* fileList, const Font& font, int width) const

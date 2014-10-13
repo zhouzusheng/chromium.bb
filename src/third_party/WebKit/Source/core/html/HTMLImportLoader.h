@@ -31,7 +31,8 @@
 #ifndef HTMLImportLoader_h
 #define HTMLImportLoader_h
 
-#include "core/html/HTMLImportResourceOwner.h"
+#include "core/fetch/RawResource.h"
+#include "core/fetch/ResourceOwner.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -42,12 +43,12 @@ class HTMLImport;
 class HTMLImportLoaderClient;
 
 //
-// Owning imported Document lifetime. It also implements ResourceClient through HTMLImportResourceOwner
+// Owning imported Document lifetime. It also implements ResourceClient through ResourceOwner
 // to feed fetched bytes to the DocumentWriter of the imported document.
 // HTMLImportLoader is owned by and shared between HTMLImportChild.
 //
 //
-class HTMLImportLoader : public RefCounted<HTMLImportLoader>, public HTMLImportResourceOwner {
+class HTMLImportLoader FINAL : public RefCounted<HTMLImportLoader>, public ResourceOwner<RawResource> {
 public:
     enum State {
         StateLoading,
@@ -56,7 +57,10 @@ public:
         StateReady
     };
 
-    static PassRefPtr<HTMLImportLoader> create(HTMLImport*, ResourceFetcher*);
+    static PassRefPtr<HTMLImportLoader> create(HTMLImport* import)
+    {
+        return adoptRef(new HTMLImportLoader(import));
+    }
 
     virtual ~HTMLImportLoader();
 
@@ -66,15 +70,14 @@ public:
     void removeClient(HTMLImportLoaderClient*);
 
     bool isDone() const { return m_state == StateReady || m_state == StateError; }
-    bool isLoaded() const { return m_state == StateReady; }
-    bool isProcessing() const;
+    bool hasError() const { return m_state == StateError; }
 
     void startLoading(const ResourcePtr<RawResource>&);
     void didFinishParsing();
     bool isOwnedBy(const HTMLImport* import) const { return m_import == import; }
 
 private:
-    HTMLImportLoader(HTMLImport*, ResourceFetcher*);
+    HTMLImportLoader(HTMLImport*);
 
     // RawResourceClient
     virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
@@ -89,7 +92,6 @@ private:
     void didFinish();
 
     HTMLImport* m_import;
-    ResourceFetcher* m_fetcher;
     Vector<HTMLImportLoaderClient*> m_clients;
     State m_state;
     RefPtr<Document> m_importedDocument;

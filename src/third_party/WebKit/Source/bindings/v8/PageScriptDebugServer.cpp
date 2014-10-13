@@ -41,6 +41,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptDebugListener.h"
 #include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/page/Page.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -106,7 +107,7 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
     }
     m_listenersMap.set(page, listener);
 
-    V8WindowShell* shell = scriptController.existingWindowShell(mainThreadNormalWorld());
+    V8WindowShell* shell = scriptController.existingWindowShell(DOMWrapperWorld::mainWorld());
     if (!shell || !shell->isContextInitialized())
         return;
     v8::Local<v8::Context> context = shell->context();
@@ -118,7 +119,7 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(i, m_isolate))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(m_isolate, i))));
 }
 
 void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, Page* page)
@@ -247,7 +248,7 @@ bool PageScriptDebugServer::canPreprocess(Frame* frame)
     // Web page to ensure that the debugger's console initialization code has completed.
     if (!m_scriptPreprocessor) {
         TemporaryChange<bool> isPreprocessing(isCreatingPreprocessor, true);
-        m_scriptPreprocessor = adoptPtr(new ScriptPreprocessor(*m_preprocessorSourceCode.get(), frame->script(), frame->page()->console()));
+        m_scriptPreprocessor = adoptPtr(new ScriptPreprocessor(*m_preprocessorSourceCode.get(), frame));
     }
 
     if (m_scriptPreprocessor->isValid())

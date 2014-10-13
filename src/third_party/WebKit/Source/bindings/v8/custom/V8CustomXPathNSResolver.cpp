@@ -37,8 +37,8 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/PageConsole.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/PageConsole.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -71,9 +71,9 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     }
 
     if (lookupNamespaceURIFunc.IsEmpty() && !m_resolver->IsFunction()) {
-        Frame* frame = activeDOMWindow()->frame();
-        if (frame && frame->page())
-            frame->page()->console().addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
+        Frame* frame = activeDOMWindow(m_isolate)->frame();
+        if (frame && frame->host())
+            frame->host()->console().addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
         return nullAtom;
     }
 
@@ -85,7 +85,7 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     v8::Handle<v8::Value> argv[argc] = { v8String(m_isolate, prefix) };
     v8::Handle<v8::Function> function = lookupNamespaceURIFunc.IsEmpty() ? v8::Handle<v8::Function>::Cast(m_resolver) : lookupNamespaceURIFunc;
 
-    v8::Handle<v8::Value> retval = ScriptController::callFunction(activeExecutionContext(), function, m_resolver, argc, argv, m_isolate);
+    v8::Handle<v8::Value> retval = ScriptController::callFunction(activeExecutionContext(m_isolate), function, m_resolver, argc, argv, m_isolate);
 
     // Eat exceptions from namespace resolver and return an empty string. This will most likely cause NamespaceError.
     if (tryCatch.HasCaught())

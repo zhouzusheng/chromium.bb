@@ -40,6 +40,7 @@ namespace webrtc {
 
 class AudioDeviceModule;
 class AudioProcessing;
+class AudioTransport;
 class Config;
 
 const int kVoEDefault = -1;
@@ -182,6 +183,10 @@ public:
 
     // Gets the NetEQ playout mode for a specified |channel| number.
     virtual int GetNetEQPlayoutMode(int channel, NetEqModes& mode) = 0;
+
+    // TODO(xians): Make the interface pure virtual after libjingle
+    // implements the interface in its FakeWebRtcVoiceEngine.
+    virtual AudioTransport* audio_transport() { return NULL; }
 
 protected:
     VoEBase() {}

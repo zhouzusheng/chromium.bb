@@ -96,6 +96,9 @@ WebInspector.TextRange.prototype = {
         return this.endLine - this.startLine;
     },
 
+    /**
+     * @return {!WebInspector.TextRange}
+     */
     collapseToEnd: function()
     {
         return new WebInspector.TextRange(this.endLine, this.endColumn, this.endLine, this.endColumn);
@@ -151,6 +154,16 @@ WebInspector.TextRange.prototype = {
     },
 
     /**
+     * @param {!WebInspector.TextRange} other
+     * @return {boolean}
+     */
+    equal: function(other)
+    {
+        return this.startLine === other.startLine && this.endLine === other.endLine &&
+            this.startColumn === other.startColumn && this.endColumn === other.endColumn;
+    },
+
+    /**
      * @param {number} lineOffset
      * @return {!WebInspector.TextRange}
      */
@@ -159,6 +172,9 @@ WebInspector.TextRange.prototype = {
         return new WebInspector.TextRange(this.startLine + lineOffset, this.startColumn, this.endLine + lineOffset, this.endColumn);
     },
 
+    /**
+     * @return {string}
+     */
     toString: function()
     {
         return JSON.stringify(this);

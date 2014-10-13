@@ -31,11 +31,15 @@
 {
   'variables': {
     'heap_files': [
+      'AddressSanitizer.h',
+      'Handle.h',
       'Heap.cpp',
       'Heap.h',
       'HeapExport.h',
       'ThreadState.cpp',
       'ThreadState.h',
+      'Visitor.cpp',
+      'Visitor.h',
     ],
     'heap_test_files': [
       'HeapTest.cpp',
@@ -44,6 +48,11 @@
       ['target_arch == "arm"', {
         'heap_asm_files': [
           'asm/SaveRegisters_arm.S',
+        ],
+      }],
+      ['target_arch == "a64"', {
+        'heap_asm_files': [
+          'asm/SaveRegisters_a64.S',
         ],
       }],
       ['target_arch == "mipsel"', {

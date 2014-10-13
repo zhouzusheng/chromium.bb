@@ -34,10 +34,10 @@
 
 #include "FetchInitiatorTypeNames.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/fileapi/Stream.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
@@ -102,10 +102,9 @@ void FileReaderLoader::startInternal(ExecutionContext* executionContext, const S
     ResourceRequest request(m_urlForReading);
     request.setHTTPMethod("GET");
     if (m_hasRange)
-        request.setHTTPHeaderField("Range", String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd));
+        request.setHTTPHeaderField("Range", AtomicString(String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd)));
 
     ThreadableLoaderOptions options;
-    options.sendLoadCallbacks = SendCallbacks;
     options.sniffContent = DoNotSniffContent;
     options.preflightPolicy = ConsiderPreflight;
     options.allowCredentials = AllowStoredCredentials;

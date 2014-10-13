@@ -37,7 +37,8 @@ bool ContentRendererClient::HasErrorPage(int http_status_code,
   return false;
 }
 
-bool ContentRendererClient::ShouldSuppressErrorPage(const GURL& url) {
+bool ContentRendererClient::ShouldSuppressErrorPage(RenderFrame* render_frame,
+                                                    const GURL& url) {
   return false;
 }
 
@@ -99,7 +100,7 @@ bool ContentRendererClient::AllowPopup() {
 
 #ifdef OS_ANDROID
 bool ContentRendererClient::HandleNavigation(
-    RenderView* view,
+    RenderFrame* render_frame,
     DocumentState* document_state,
     int opener_id,
     blink::WebFrame* frame,
@@ -183,7 +184,7 @@ bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
 
 blink::WebWorkerPermissionClientProxy*
 ContentRendererClient::CreateWorkerPermissionClientProxy(
-    RenderView* render_view, blink::WebFrame* frame) {
+    RenderFrame* render_frame, blink::WebFrame* frame) {
   return NULL;
 }
 

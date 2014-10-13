@@ -141,11 +141,8 @@ static scoped_refptr<DecoderBuffer> DecryptData(const DecoderBuffer& input,
     return NULL;
   }
 
-  const int data_offset = input.decrypt_config()->data_offset();
-  const char* sample =
-      reinterpret_cast<const char*>(input.data() + data_offset);
-  DCHECK_GT(input.data_size(), data_offset);
-  size_t sample_size = static_cast<size_t>(input.data_size() - data_offset);
+  const char* sample = reinterpret_cast<const char*>(input.data());
+  size_t sample_size = static_cast<size_t>(input.data_size());
 
   DCHECK_GT(sample_size, 0U) << "No sample data to be decrypted.";
   if (sample_size == 0)
@@ -234,7 +231,7 @@ AesDecryptor::~AesDecryptor() {
 }
 
 bool AesDecryptor::CreateSession(uint32 session_id,
-                                 const std::string& type,
+                                 const std::string& content_type,
                                  const uint8* init_data,
                                  int init_data_length) {
   // Validate that this is a new session.
@@ -243,7 +240,7 @@ bool AesDecryptor::CreateSession(uint32 session_id,
 
   std::string web_session_id_string(base::UintToString(next_web_session_id_++));
 
-  // For now, the AesDecryptor does not care about |type|;
+  // For now, the AesDecryptor does not care about |content_type|;
   // just fire the event with the |init_data| as the request.
   std::vector<uint8> message;
   if (init_data && init_data_length)
@@ -252,6 +249,13 @@ bool AesDecryptor::CreateSession(uint32 session_id,
   session_created_cb_.Run(session_id, web_session_id_string);
   session_message_cb_.Run(session_id, message, std::string());
   return true;
+}
+
+void AesDecryptor::LoadSession(uint32 session_id,
+                               const std::string& web_session_id) {
+  // TODO(xhwang): Change this to NOTREACHED() when blink checks for key systems
+  // that do not support loadSession. See http://crbug.com/342481
+  session_error_cb_.Run(session_id, MediaKeys::kUnknownError, 0);
 }
 
 void AesDecryptor::UpdateSession(uint32 session_id,
@@ -288,11 +292,15 @@ void AesDecryptor::UpdateSession(uint32 session_id,
     }
   }
 
-  if (!new_audio_key_cb_.is_null())
-    new_audio_key_cb_.Run();
+  {
+    base::AutoLock auto_lock(new_key_cb_lock_);
 
-  if (!new_video_key_cb_.is_null())
-    new_video_key_cb_.Run();
+    if (!new_audio_key_cb_.is_null())
+      new_audio_key_cb_.Run();
+
+    if (!new_video_key_cb_.is_null())
+      new_video_key_cb_.Run();
+  }
 
   session_ready_cb_.Run(session_id);
 }
@@ -313,6 +321,8 @@ Decryptor* AesDecryptor::GetDecryptor() {
 
 void AesDecryptor::RegisterNewKeyCB(StreamType stream_type,
                                     const NewKeyCB& new_key_cb) {
+  base::AutoLock auto_lock(new_key_cb_lock_);
+
   switch (stream_type) {
     case kAudio:
       new_audio_key_cb_ = new_key_cb;
@@ -333,9 +343,8 @@ void AesDecryptor::Decrypt(StreamType stream_type,
   scoped_refptr<DecoderBuffer> decrypted;
   // An empty iv string signals that the frame is unencrypted.
   if (encrypted->decrypt_config()->iv().empty()) {
-    int data_offset = encrypted->decrypt_config()->data_offset();
-    decrypted = DecoderBuffer::CopyFrom(encrypted->data() + data_offset,
-                                        encrypted->data_size() - data_offset);
+    decrypted = DecoderBuffer::CopyFrom(encrypted->data(),
+                                        encrypted->data_size());
   } else {
     const std::string& key_id = encrypted->decrypt_config()->key_id();
     DecryptionKey* key = GetKey(key_id);

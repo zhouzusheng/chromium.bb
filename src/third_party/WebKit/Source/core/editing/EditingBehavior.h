@@ -24,6 +24,7 @@
 #include "core/editing/EditingBehaviorTypes.h"
 
 namespace WebCore {
+class KeyboardEvent;
 
 class EditingBehavior {
 
@@ -90,6 +91,11 @@ public:
         return m_type != EditingWindowsBehavior && m_type != EditingMacBehavior;
     }
 
+    // Convert a KeyboardEvent to a command name like "Copy", "Undo" and so on.
+    // If nothing, return empty string.
+    const char* interpretKeyEvent(const KeyboardEvent&) const;
+
+    bool shouldInsertCharacter(const KeyboardEvent&) const;
 private:
     EditingBehaviorType m_type;
 };

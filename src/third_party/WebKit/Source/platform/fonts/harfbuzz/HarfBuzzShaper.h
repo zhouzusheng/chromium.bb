@@ -88,7 +88,14 @@ private:
         uint16_t* glyphs() { return &m_glyphs[0]; }
         float* advances() { return &m_advances[0]; }
         FloatPoint* offsets() { return &m_offsets[0]; }
-        uint16_t* glyphToCharacterIndexes() { return &m_glyphToCharacterIndexes[0]; }
+        bool hasGlyphToCharacterIndexes() const
+        {
+            return m_glyphToCharacterIndexes.size() > 0;
+        }
+        uint16_t* glyphToCharacterIndexes()
+        {
+            return &m_glyphToCharacterIndexes[0];
+        }
         float width() { return m_width; }
         bool rtl() { return m_direction == RTL; }
         hb_script_t script() { return m_script; }
@@ -122,11 +129,12 @@ private:
 
     void setFontFeatures();
 
-    bool collectHarfBuzzRuns();
-    bool shapeHarfBuzzRuns(bool shouldSetDirection);
+    bool createHarfBuzzRuns();
+    bool shapeHarfBuzzRuns();
     bool fillGlyphBuffer(GlyphBuffer*);
     void fillGlyphBufferFromHarfBuzzRun(GlyphBuffer*, HarfBuzzRun*, FloatPoint& firstOffsetOfNextRun);
     void setGlyphPositionsForHarfBuzzRun(HarfBuzzRun*, hb_buffer_t*);
+    void addHarfBuzzRun(unsigned startCharacter, unsigned endCharacter, const SimpleFontData*, UScriptCode);
 
     GlyphBufferAdvance createGlyphBufferAdvance(float, float);
 

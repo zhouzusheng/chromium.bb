@@ -159,7 +159,7 @@
           'target_name': 'neteq_unittest_tools',
           'type': 'static_library',
           'dependencies': [
-            '<(webrtc_root)/test/test.gyp:test_support_main',
+            'PCM16B',  # Needed by neteq_performance_test.
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -174,6 +174,8 @@
             'tools/audio_loop.h',
             'tools/input_audio_file.cc',
             'tools/input_audio_file.h',
+            'tools/neteq_performance_test.cc',
+            'tools/neteq_performance_test.h',
             'tools/rtp_generator.cc',
             'tools/rtp_generator.h',
           ],

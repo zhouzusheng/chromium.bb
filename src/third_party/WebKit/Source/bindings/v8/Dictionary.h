@@ -72,6 +72,7 @@ public:
     bool get(const String&, double&, bool& hasValue) const;
     bool get(const String&, double&) const;
     bool get(const String&, String&) const;
+    bool get(const String&, AtomicString&) const;
     bool get(const String&, ScriptValue&) const;
     bool get(const String&, short&) const;
     bool get(const String&, unsigned short&) const;
@@ -79,7 +80,7 @@ public:
     bool get(const String&, unsigned long&) const;
     bool get(const String&, unsigned long long&) const;
     bool get(const String&, RefPtr<DOMWindow>&) const;
-    bool get(const String&, RefPtr<Storage>&) const;
+    bool get(const String&, RefPtrWillBeRawPtr<Storage>&) const;
     bool get(const String&, MessagePortArray&) const;
     bool get(const String&, RefPtr<Uint8Array>&) const;
     bool get(const String&, RefPtr<ArrayBufferView>&) const;
@@ -87,8 +88,8 @@ public:
     bool get(const String&, RefPtr<MediaKeyError>&) const;
     bool get(const String&, RefPtr<TrackBase>&) const;
     bool get(const String&, RefPtr<SpeechRecognitionError>&) const;
-    bool get(const String&, RefPtr<SpeechRecognitionResult>&) const;
-    bool get(const String&, RefPtr<SpeechRecognitionResultList>&) const;
+    bool get(const String&, RefPtrWillBeRawPtr<SpeechRecognitionResult>&) const;
+    bool get(const String&, RefPtrWillBeRawPtr<SpeechRecognitionResultList>&) const;
     bool get(const String&, RefPtr<MediaStream>&) const;
     bool get(const String&, RefPtr<EventTarget>&) const;
     bool get(const String&, HashSet<AtomicString>&) const;
@@ -152,14 +153,17 @@ public:
     bool convert(ConversionContext&, const String&, ScriptValue&) const;
 
     template<typename IntegralType>
-    bool convert(ConversionContext &, const String&, IntegralType&) const;
-    bool convert(ConversionContext &, const String&, MessagePortArray&) const;
-    bool convert(ConversionContext &, const String&, HashSet<AtomicString>&) const;
-    bool convert(ConversionContext &, const String&, Dictionary&) const;
-    bool convert(ConversionContext &, const String&, Vector<String>&) const;
-    bool convert(ConversionContext &, const String&, ArrayValue&) const;
-    template<typename T>
-    bool convert(ConversionContext &, const String&, RefPtr<T>&) const;
+    bool convert(ConversionContext&, const String&, IntegralType&) const;
+    bool convert(ConversionContext&, const String&, MessagePortArray&) const;
+    bool convert(ConversionContext&, const String&, HashSet<AtomicString>&) const;
+    bool convert(ConversionContext&, const String&, Dictionary&) const;
+    bool convert(ConversionContext&, const String&, Vector<String>&) const;
+    bool convert(ConversionContext&, const String&, ArrayValue&) const;
+    template<template <typename> class PointerType, typename T>
+    bool convert(ConversionContext&, const String&, PointerType<T>&) const;
+
+    template<typename StringType>
+    bool getStringType(const String&, StringType&) const;
 
     bool getOwnPropertiesAsStringHashMap(HashMap<String, String>&) const;
     bool getOwnPropertyNames(Vector<String>&) const;
@@ -195,90 +199,90 @@ struct IntegralTypeTraits {
 
 template <>
 struct IntegralTypeTraits<uint8_t> {
-    static inline uint8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline uint8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toUInt8(value, configuration, ok);
+        return toUInt8(value, configuration, exceptionState);
     }
     static const String typeName() { return "UInt8"; }
 };
 
 template <>
 struct IntegralTypeTraits<int8_t> {
-    static inline int8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline int8_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toInt8(value, configuration, ok);
+        return toInt8(value, configuration, exceptionState);
     }
     static const String typeName() { return "Int8"; }
 };
 
 template <>
 struct IntegralTypeTraits<unsigned short> {
-    static inline uint16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline uint16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toUInt16(value, configuration, ok);
+        return toUInt16(value, configuration, exceptionState);
     }
     static const String typeName() { return "UInt16"; }
 };
 
 template <>
 struct IntegralTypeTraits<short> {
-    static inline int16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline int16_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toInt16(value, configuration, ok);
+        return toInt16(value, configuration, exceptionState);
     }
     static const String typeName() { return "Int16"; }
 };
 
 template <>
 struct IntegralTypeTraits<unsigned> {
-    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toUInt32(value, configuration, ok);
+        return toUInt32(value, configuration, exceptionState);
     }
     static const String typeName() { return "UInt32"; }
 };
 
 template <>
 struct IntegralTypeTraits<unsigned long> {
-    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline uint32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toUInt32(value, configuration, ok);
+        return toUInt32(value, configuration, exceptionState);
     }
     static const String typeName() { return "UInt32"; }
 };
 
 template <>
 struct IntegralTypeTraits<int> {
-    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toInt32(value, configuration, ok);
+        return toInt32(value, configuration, exceptionState);
     }
     static const String typeName() { return "Int32"; }
 };
 
 template <>
 struct IntegralTypeTraits<long> {
-    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline int32_t toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toInt32(value, configuration, ok);
+        return toInt32(value, configuration, exceptionState);
     }
     static const String typeName() { return "Int32"; }
 };
 
 template <>
 struct IntegralTypeTraits<unsigned long long> {
-    static inline unsigned long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline unsigned long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toUInt64(value, configuration, ok);
+        return toUInt64(value, configuration, exceptionState);
     }
     static const String typeName() { return "UInt64"; }
 };
 
 template <>
 struct IntegralTypeTraits<long long> {
-    static inline long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+    static inline long long toIntegral(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, ExceptionState& exceptionState)
     {
-        return toInt64(value, configuration, ok);
+        return toInt64(value, configuration, exceptionState);
     }
     static const String typeName() { return "Int64"; }
 };
@@ -291,18 +295,14 @@ template<typename T> bool Dictionary::convert(ConversionContext& context, const 
     if (!getKey(key, v8Value))
         return true;
 
-    bool ok = false;
-    value = IntegralTypeTraits<T>::toIntegral(v8Value, NormalConversion, ok);
-    if (ok)
-        return true;
+    value = IntegralTypeTraits<T>::toIntegral(v8Value, NormalConversion, context.exceptionState());
+    if (context.exceptionState().throwIfNeeded())
+        return false;
 
-    V8TRYCATCH_RETURN(v8::Local<v8::Number>, v8Number, v8Value->ToNumber(), false);
-    ASSERT(v8Number.IsEmpty());
-    context.throwTypeError(ExceptionMessages::incorrectPropertyType(key, "does not have type " + IntegralTypeTraits<T>::typeName() + "."));
-    return false;
+    return true;
 }
 
-template<typename T> bool Dictionary::convert(ConversionContext& context, const String& key, RefPtr<T>& value) const
+template<template <typename> class PointerType, typename T> bool Dictionary::convert(ConversionContext& context, const String& key, PointerType<T>& value) const
 {
     ConversionContextScope scope(context);
 

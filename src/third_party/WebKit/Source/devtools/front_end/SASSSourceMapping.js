@@ -242,7 +242,7 @@ WebInspector.SASSSourceMapping.prototype = {
     {
         var cssUISourceCode = this._workspace.uiSourceCodeForURL(cssURL);
         if (!cssUISourceCode) {
-            WebInspector.log(cssURL + " resource missing. Please reload the page.");
+            WebInspector.log(WebInspector.UIString("%s resource missing. Please reload the page.", cssURL));
             callback(cssURL, sassURL, true);
             return;
         }
@@ -600,7 +600,7 @@ WebInspector.SASSSourceMapping.prototype = {
         this._cssURLsForSASSURL = {};
         /** @type {!Object.<string, !Array.<function(?WebInspector.SourceMap)>>} */
         this._pendingSourceMapLoadingCallbacks = {};
-        /** @type {!Object.<string, {deadlineMs: number, dataByURL: !Object.<string, !{timer: number, previousPoll: number}>}>} */
+        /** @type {!Object.<string, !{deadlineMs: number, dataByURL: !Object.<string, !{timer: number, previousPoll: number}>}>} */
         this._pollDataForSASSURL = {};
         /** @type {!Object.<string, !WebInspector.SourceMap>} */
         this._sourceMapByURL = {};

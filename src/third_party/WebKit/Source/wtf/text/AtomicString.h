@@ -23,15 +23,8 @@
 
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
+#include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
-
-// Define 'NO_IMPLICIT_ATOMICSTRING' before including this header,
-// to disallow (expensive) implicit String-->AtomicString conversions.
-#ifdef NO_IMPLICIT_ATOMICSTRING
-#define ATOMICSTRING_CONVERSION explicit
-#else
-#define ATOMICSTRING_CONVERSION
-#endif
 
 namespace WTF {
 
@@ -55,8 +48,11 @@ public:
     {
     }
 
+    // Constructing an AtomicString from a String / StringImpl can be expensive if
+    // the StringImpl is not already atomic.
     explicit AtomicString(StringImpl* imp) : m_string(add(imp)) { }
-    ATOMICSTRING_CONVERSION AtomicString(const String& s) : m_string(add(s.impl())) { }
+    explicit AtomicString(const String& s) : m_string(add(s.impl())) { }
+
     AtomicString(StringImpl* baseString, unsigned start, unsigned length) : m_string(add(baseString, start, length)) { }
 
     enum ConstructFromLiteralTag { ConstructFromLiteral };
@@ -164,6 +160,10 @@ public:
     static AtomicString fromUTF8(const char*, size_t);
     static AtomicString fromUTF8(const char*);
 
+    CString ascii() const { return m_string.ascii(); }
+    CString latin1() const { return m_string.latin1(); }
+    CString utf8(UTF8ConversionMode mode = LenientUTF8Conversion) const { return m_string.utf8(mode); }
+
 #ifndef NDEBUG
     void show() const;
 #endif
@@ -254,6 +254,8 @@ template<typename T> struct DefaultHash;
 template<> struct DefaultHash<AtomicString> {
     typedef AtomicStringHash Hash;
 };
+
+template<> struct VectorTraits<AtomicString> : SimpleClassVectorTraits<AtomicString> { };
 
 } // namespace WTF
 

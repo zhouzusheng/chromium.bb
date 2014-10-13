@@ -178,6 +178,8 @@ private:
                 m_linkIsStyleSheet = relAttributeIsStyleSheet(attributeValue);
             else if (match(attributeName, mediaAttr))
                 m_mediaAttribute = attributeValue;
+            else if (match(attributeName, crossoriginAttr))
+                setCrossOriginAllowed(attributeValue);
         } else if (match(m_tagImpl, inputTag)) {
             if (match(attributeName, srcAttr))
                 setUrlToLoad(attributeValue, DisallowURLReplacement);
@@ -399,7 +401,7 @@ void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& star
 
     while (m_tokenizer->nextToken(m_source, m_token)) {
         if (m_token.type() == HTMLToken::StartTag)
-            m_tokenizer->updateStateFor(AtomicString(m_token.name()));
+            m_tokenizer->updateStateFor(attemptStaticStringCreation(m_token.name(), Likely8Bit));
         m_scanner.scan(m_token, m_source, requests);
         m_token.clear();
     }

@@ -49,7 +49,6 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/WebKit/public/blink.gyp:blink',
-        '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
       ],
       'include_dirs': [ '..' ],
       'sources': [

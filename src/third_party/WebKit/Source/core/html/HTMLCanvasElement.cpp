@@ -50,6 +50,7 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/gpu/WebGLImageBufferSurface.h"
+#include "platform/transforms/AffineTransform.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -70,6 +71,7 @@ static const int MaxSkiaDim = 32767; // Maximum width/height in CSS pixels.
 
 HTMLCanvasElement::HTMLCanvasElement(Document& document)
     : HTMLElement(canvasTag, document)
+    , DocumentVisibilityObserver(document)
     , m_size(DefaultWidth, DefaultHeight)
     , m_rendererIsCanvas(false)
     , m_ignoreReset(false)
@@ -350,8 +352,7 @@ void HTMLCanvasElement::setSurfaceSize(const IntSize& size)
 {
     m_size = size;
     m_didFailToCreateImageBuffer = false;
-    m_contextStateSaver.clear();
-    m_imageBuffer.clear();
+    discardImageBuffer();
     setExternallyAllocatedMemory(0);
     clearCopiedImage();
 }
@@ -447,6 +448,7 @@ PassOwnPtr<ImageBufferSurface> HTMLCanvasElement::createImageBufferSurface(const
 void HTMLCanvasElement::createImageBuffer()
 {
     ASSERT(!m_imageBuffer);
+    ASSERT(!m_contextStateSaver);
 
     m_didFailToCreateImageBuffer = true;
     m_didClearImageBuffer = true;
@@ -473,7 +475,6 @@ void HTMLCanvasElement::createImageBuffer()
 
     if (is3D()) {
         // Early out for WebGL canvases
-        m_contextStateSaver.clear();
         return;
     }
 
@@ -527,7 +528,7 @@ void HTMLCanvasElement::ensureUnacceleratedImageBuffer()
 {
     if ((hasImageBuffer() && !m_imageBuffer->isAccelerated()) || m_didFailToCreateImageBuffer)
         return;
-    m_imageBuffer.clear();
+    discardImageBuffer();
     OpacityMode opacityMode = !m_context || m_context->hasAlpha() ? NonOpaque : Opaque;
     m_imageBuffer = ImageBuffer::create(size(), opacityMode);
     m_didFailToCreateImageBuffer = !m_imageBuffer;
@@ -558,6 +559,12 @@ void HTMLCanvasElement::clearImageBuffer()
     }
 }
 
+void HTMLCanvasElement::discardImageBuffer()
+{
+    m_contextStateSaver.clear(); // uses context owned by m_imageBuffer
+    m_imageBuffer.clear();
+}
+
 void HTMLCanvasElement::clearCopiedImage()
 {
     m_copiedImage.clear();
@@ -568,6 +575,28 @@ AffineTransform HTMLCanvasElement::baseTransform() const
 {
     ASSERT(hasImageBuffer() && !m_didFailToCreateImageBuffer);
     return m_imageBuffer->baseTransform();
+}
+
+void HTMLCanvasElement::didChangeVisibilityState(PageVisibilityState visibility)
+{
+    if (hasImageBuffer()) {
+        bool hidden = visibility != PageVisibilityStateVisible;
+        if (hidden) {
+            clearCopiedImage();
+            if (is3D()) {
+                discardImageBuffer();
+            }
+        }
+        if (hasImageBuffer()) {
+            m_imageBuffer->setIsHidden(hidden);
+        }
+    }
+}
+
+void HTMLCanvasElement::didMoveToNewDocument(Document& oldDocument)
+{
+    setObservedDocument(document());
+    HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
 }

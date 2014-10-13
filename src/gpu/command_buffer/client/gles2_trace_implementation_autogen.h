@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -306,7 +306,6 @@ virtual void GetMultipleIntegervCHROMIUM(
 virtual void GetProgramInfoCHROMIUM(
     GLuint program, GLsizei bufsize, GLsizei* size, void* info) OVERRIDE;
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
-virtual void DestroyStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
 virtual GLuint CreateImageCHROMIUM(
     GLsizei width, GLsizei height, GLenum internalformat) OVERRIDE;
 virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;

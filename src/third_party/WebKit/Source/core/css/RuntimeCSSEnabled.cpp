@@ -45,15 +45,6 @@ static void setCSSPropertiesEnabled(CSSPropertyID* properties, size_t length, bo
 
 static void setPropertySwitchesFromRuntimeFeatures()
 {
-    CSSPropertyID regionProperites[] = {
-        CSSPropertyWebkitFlowInto,
-        CSSPropertyWebkitFlowFrom,
-        CSSPropertyWebkitRegionFragment,
-        CSSPropertyWebkitRegionBreakAfter,
-        CSSPropertyWebkitRegionBreakBefore,
-        CSSPropertyWebkitRegionBreakInside
-    };
-    setCSSPropertiesEnabled(regionProperites, WTF_ARRAY_LENGTH(regionProperites), RuntimeEnabledFeatures::cssRegionsEnabled());
     CSSPropertyID exclusionProperties[] = {
         CSSPropertyWebkitWrapFlow,
         CSSPropertyWebkitWrapThrough,
@@ -82,8 +73,8 @@ static void setPropertySwitchesFromRuntimeFeatures()
     CSSPropertyID cssGridLayoutProperties[] = {
         CSSPropertyGridAutoColumns,
         CSSPropertyGridAutoRows,
-        CSSPropertyGridDefinitionColumns,
-        CSSPropertyGridDefinitionRows,
+        CSSPropertyGridTemplateColumns,
+        CSSPropertyGridTemplateRows,
         CSSPropertyGridColumnStart,
         CSSPropertyGridColumnEnd,
         CSSPropertyGridRowStart,
@@ -92,7 +83,8 @@ static void setPropertySwitchesFromRuntimeFeatures()
         CSSPropertyGridRow,
         CSSPropertyGridArea,
         CSSPropertyGridAutoFlow,
-        CSSPropertyGridTemplate
+        CSSPropertyGridTemplateAreas,
+        CSSPropertyJustifySelf
     };
     setCSSPropertiesEnabled(cssGridLayoutProperties, WTF_ARRAY_LENGTH(cssGridLayoutProperties), RuntimeEnabledFeatures::cssGridLayoutEnabled());
     CSSPropertyID cssObjectFitPositionProperties[] = {
@@ -118,10 +110,11 @@ static void setPropertySwitchesFromRuntimeFeatures()
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMixBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyIsolation, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchAction, RuntimeEnabledFeatures::cssTouchActionEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchActionDelay, RuntimeEnabledFeatures::cssTouchActionDelayEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyPaintOrder, RuntimeEnabledFeatures::svgPaintOrderEnabled());
-    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyVariable, RuntimeEnabledFeatures::cssVariablesEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMaskSourceType, RuntimeEnabledFeatures::cssMaskSourceTypeEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyColumnFill, RuntimeEnabledFeatures::regionBasedColumnsEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyScrollBehavior, RuntimeEnabledFeatures::cssomSmoothScrollEnabled());
 
     // InternalCallback is an implementation detail, rather than an experimental feature, and should never be exposed to the web.
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyInternalCallback, false);
@@ -132,8 +125,7 @@ static BoolVector& propertySwitches()
     static BoolVector* switches = 0;
     if (!switches) {
         switches = new BoolVector;
-        // Accomodate CSSPropertyIDs that fall outside the firstCSSProperty, lastCSSProperty range (eg. CSSPropertyVariable).
-        switches->fill(true, lastCSSProperty + 1);
+        switches->fill(true, numCSSProperties);
         setPropertySwitchesFromRuntimeFeatures();
     }
     return *switches;
@@ -141,9 +133,9 @@ static BoolVector& propertySwitches()
 
 size_t indexForProperty(CSSPropertyID propertyId)
 {
-    RELEASE_ASSERT(propertyId >= 0 && propertyId <= lastCSSProperty);
-    ASSERT(propertyId != CSSPropertyInvalid);
-    return static_cast<size_t>(propertyId);
+    RELEASE_ASSERT(propertyId >= firstCSSProperty && propertyId <= lastCSSProperty);
+    // Values all start at 0. Vector RELEASE_ASSERTS will catch if we're ever wrong.
+    return static_cast<size_t>(propertyId - firstCSSProperty);
 }
 
 bool RuntimeCSSEnabled::isCSSPropertyEnabled(CSSPropertyID propertyId)

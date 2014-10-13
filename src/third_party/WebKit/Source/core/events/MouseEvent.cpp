@@ -23,10 +23,9 @@
 #include "config.h"
 #include "core/events/MouseEvent.h"
 
-#include "core/dom/Clipboard.h"
+#include "core/clipboard/Clipboard.h"
 #include "core/dom/Element.h"
 #include "core/events/EventDispatcher.h"
-#include "core/events/EventRetargeter.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "platform/PlatformMouseEvent.h"
 
@@ -64,19 +63,6 @@ PassRefPtr<MouseEvent> MouseEvent::create(const AtomicString& eventType, PassRef
         event.movementDelta().x(), event.movementDelta().y(),
         event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(), event.button(),
         relatedTarget, 0, false);
-}
-
-PassRefPtr<MouseEvent> MouseEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view,
-    int detail, int screenX, int screenY, int pageX, int pageY,
-    int movementX, int movementY,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-    PassRefPtr<EventTarget> relatedTarget)
-
-{
-    return MouseEvent::create(type, canBubble, cancelable, view,
-        detail, screenX, screenY, pageX, pageY,
-        movementX, movementY,
-        ctrlKey, altKey, shiftKey, metaKey, button, relatedTarget, 0, false);
 }
 
 PassRefPtr<MouseEvent> MouseEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view,
@@ -251,7 +237,7 @@ MouseEvent* MouseEventDispatchMediator::event() const
 bool MouseEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
 {
     if (isSyntheticMouseEvent()) {
-        EventRetargeter::adjustForMouseEvent(dispatcher->node(), *event());
+        event()->eventPath().adjustForRelatedTarget(dispatcher->node(), event()->relatedTarget());
         return dispatcher->dispatch();
     }
 
@@ -264,7 +250,7 @@ bool MouseEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) cons
     ASSERT(!event()->target() || event()->target() != event()->relatedTarget());
 
     EventTarget* relatedTarget = event()->relatedTarget();
-    EventRetargeter::adjustForMouseEvent(dispatcher->node(), *event());
+    event()->eventPath().adjustForRelatedTarget(dispatcher->node(), relatedTarget);
 
     dispatcher->dispatch();
     bool swallowEvent = event()->defaultHandled() || event()->defaultPrevented();

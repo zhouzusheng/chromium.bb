@@ -71,28 +71,26 @@ protected:
 
     virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE FINAL;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     void paintIntoRect(GraphicsContext*, const LayoutRect&);
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void layout();
-    virtual void didLayout(ResourceLoadPriorityOptimizer&);
-    virtual void didScroll(ResourceLoadPriorityOptimizer&);
-    void updateImageLoadingPriority(ResourceLoadPriorityOptimizer&);
+    virtual void layout() OVERRIDE;
+    virtual bool updateImageLoadingPriorities() OVERRIDE FINAL;
 
-    virtual void intrinsicSizeChanged()
+    virtual void intrinsicSizeChanged() OVERRIDE
     {
         if (m_imageResource)
             imageChanged(m_imageResource->imagePtr());
     }
 
 private:
-    virtual const char* renderName() const { return "RenderImage"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderImage"; }
 
-    virtual bool isImage() const { return true; }
+    virtual bool isImage() const OVERRIDE { return true; }
     virtual bool isRenderImage() const OVERRIDE FINAL { return true; }
 
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&);
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const OVERRIDE FINAL;
     virtual bool computeBackgroundIsKnownToBeObscured() OVERRIDE FINAL;
@@ -115,7 +113,6 @@ private:
     // Text to display as long as the image isn't available.
     String m_altText;
     OwnPtr<RenderImageResource> m_imageResource;
-    bool m_needsToSetSizeForAltText;
     bool m_didIncrementVisuallyNonEmptyPixelCount;
     bool m_isGeneratedContent;
     float m_imageDevicePixelRatio;

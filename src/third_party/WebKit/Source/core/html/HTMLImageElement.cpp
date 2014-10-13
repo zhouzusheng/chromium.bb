@@ -45,13 +45,17 @@ using namespace HTMLNames;
 HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form)
     : HTMLElement(imgTag, document)
     , m_imageLoader(this)
-    , m_form(form)
     , m_compositeOperator(CompositeSourceOver)
     , m_imageDevicePixelRatio(1.0f)
+    , m_formWasSetByParser(false)
 {
     ScriptWrappable::init(this);
-    if (form)
-        form->registerImgElement(this);
+    if (form && form->inDocument()) {
+        m_form = form->createWeakPtr();
+        m_formWasSetByParser = true;
+        m_form->associate(*this);
+        m_form->didAssociateByParser();
+    }
 }
 
 PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
@@ -67,7 +71,7 @@ PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFo
 HTMLImageElement::~HTMLImageElement()
 {
     if (m_form)
-        m_form->removeImgElement(this);
+        m_form->disassociate(*this);
 }
 
 PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
@@ -116,7 +120,31 @@ const AtomicString HTMLImageElement::imageSourceURL() const
 
 HTMLFormElement* HTMLImageElement::formOwner() const
 {
-    return findFormAncestor();
+    return m_form.get();
+}
+
+void HTMLImageElement::formRemovedFromTree(const Node* formRoot)
+{
+    ASSERT(m_form);
+    if (highestAncestor() != formRoot)
+        resetFormOwner();
+}
+
+void HTMLImageElement::resetFormOwner()
+{
+    m_formWasSetByParser = false;
+    HTMLFormElement* nearestForm = findFormAncestor();
+    if (m_form) {
+        if (nearestForm == m_form.get())
+            return;
+        m_form->disassociate(*this);
+    }
+    if (nearestForm) {
+        m_form = nearestForm->createWeakPtr();
+        m_form->associate(*this);
+    } else {
+        m_form = WeakPtr<HTMLFormElement>();
+    }
 }
 
 void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -127,7 +155,7 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
     } else if (name == srcAttr || name == srcsetAttr) {
         if (RuntimeEnabledFeatures::srcsetEnabled()) {
             ImageCandidate candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
-            m_bestFitImageURL = candidate.toString();
+            m_bestFitImageURL = candidate.toAtomicString();
             float candidateScaleFactor = candidate.scaleFactor();
             if (candidateScaleFactor > 0)
                 m_imageDevicePixelRatio = 1 / candidateScaleFactor;
@@ -154,10 +182,11 @@ const AtomicString& HTMLImageElement::altText() const
     // lets figure out the alt text.. magic stuff
     // http://www.w3.org/TR/1998/REC-html40-19980424/appendix/notes.html#altgen
     // also heavily discussed by Hixie on bugzilla
-    if (!getAttribute(altAttr).isNull())
-        return getAttribute(altAttr);
+    const AtomicString& alt = fastGetAttribute(altAttr);
+    if (!alt.isNull())
+        return alt;
     // fall back to title attribute
-    return getAttribute(titleAttr);
+    return fastGetAttribute(titleAttr);
 }
 
 RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
@@ -201,17 +230,8 @@ void HTMLImageElement::attach(const AttachContext& context)
 
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
-    // m_form can be non-null if it was set in constructor.
-    if (m_form && insertionPoint->highestAncestor() != m_form->highestAncestor()) {
-        m_form->removeImgElement(this);
-        m_form = 0;
-    }
-
-    if (!m_form) {
-        m_form = findFormAncestor();
-        if (m_form)
-            m_form->registerImgElement(this);
-    }
+    if (!m_formWasSetByParser || insertionPoint->highestAncestor() != m_form->highestAncestor())
+        resetFormOwner();
 
     // If we have been inserted from a renderer-less document,
     // our loader may have not fetched the image, so do it now.
@@ -223,9 +243,8 @@ Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode*
 
 void HTMLImageElement::removedFrom(ContainerNode* insertionPoint)
 {
-    if (m_form)
-        m_form->removeImgElement(this);
-    m_form = 0;
+    if (!m_form || m_form->highestAncestor() != highestAncestor())
+        resetFormOwner();
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -302,7 +321,7 @@ bool HTMLImageElement::isURLAttribute(const Attribute& attribute) const
 
 const AtomicString& HTMLImageElement::alt() const
 {
-    return getAttribute(altAttr);
+    return fastGetAttribute(altAttr);
 }
 
 bool HTMLImageElement::draggable() const
@@ -356,15 +375,6 @@ int HTMLImageElement::y() const
 bool HTMLImageElement::complete() const
 {
     return m_imageLoader.imageComplete();
-}
-
-void HTMLImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, src());
-    // FIXME: What about when the usemap attribute begins with "#"?
-    addSubresourceURL(urls, document().completeURL(getAttribute(usemapAttr)));
 }
 
 void HTMLImageElement::didMoveToNewDocument(Document& oldDocument)

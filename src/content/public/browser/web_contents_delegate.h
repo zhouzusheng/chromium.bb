@@ -56,6 +56,7 @@ class Size;
 }
 
 namespace blink {
+class WebGestureEvent;
 class WebLayer;
 struct WebWindowFeatures;
 }
@@ -95,10 +96,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // |WebContents::InvalidateTypes| bits.
   virtual void NavigationStateChanged(const WebContents* source,
                                       unsigned changed_flags) {}
-
-  // Adds the navigation request headers to |headers|. Use
-  // net::HttpUtil::AppendHeaderIfMissing to build the set of headers.
-  virtual void AddNavigationHeaders(const GURL& url, std::string* headers) {}
 
   // Creates a new tab with the already-created WebContents 'new_contents'.
   // The window for the added contents should be reparented correctly when this
@@ -170,10 +167,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // delegate.
   virtual void OverscrollUpdate(int delta_y) {}
 
-  // Check whether this contents is permitted to load data URLs in WebUI mode.
-  // This is normally disallowed for security.
-  virtual bool CanLoadDataURLsInWebUI() const;
-
   // Return the rect where to display the resize corner, if any, otherwise
   // an empty rect.
   virtual gfx::Rect GetRootWindowResizerRect() const;
@@ -217,11 +210,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Returns whether the page should be focused when transitioning from crashed
   // to live. Default is true.
   virtual bool ShouldFocusPageAfterCrash();
-
-  // Called when a popup select is about to be displayed. The delegate can use
-  // this to disable inactive rendering for the frame in the window the select
-  // is opened within if necessary.
-  virtual void RenderWidgetShowing() {}
 
   // This is called when WebKit tells us that it is done tabbing through
   // controls on the page. Provides a way for WebContentsDelegates to handle
@@ -282,6 +270,15 @@ class CONTENT_EXPORT WebContentsDelegate {
   // pressed, or a touch-gesture begins).
   virtual void HandlePointerActivate() {}
 
+  // Allows delegates to handle gesture events before sending to the renderer.
+  // Returns true if the |event| was handled and thus shouldn't be processed
+  // by the renderer's event handler. Note that the touch events that create
+  // the gesture are always passed to the renderer since the gesture is created
+  // and dispatched after the touches return without being "preventDefault()"ed.
+  virtual bool PreHandleGestureEvent(
+      WebContents* source,
+      const blink::WebGestureEvent& event);
+
   virtual void HandleGestureBegin() {}
   virtual void HandleGestureEnd() {}
 
@@ -305,6 +302,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Allows delegate to control whether a WebContents will be created. Returns
   // true to allow the creation. Default is to allow it. In cases where the
   // delegate handles the creation/navigation itself, it will use |target_url|.
+  // The embedder has to synchronously adopt |route_id| or else the view will
+  // be destroyed.
   virtual bool ShouldCreateWebContents(
       WebContents* web_contents,
       int route_id,
@@ -405,13 +404,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                    int version,
                                    const std::vector<gfx::RectF>& rects,
                                    const gfx::RectF& active_rect) {}
-
-  // Request permission to access protected media identifier. The callback will
-  // tell whether it's allowed.
-  virtual void RequestProtectedMediaIdentifierPermission(
-      const WebContents* web_contents,
-      const GURL& frame_url,
-      const base::Callback<void(bool)>& callback) {}
 #endif
 
   // Invoked when the preferred size of the contents has been changed.
@@ -467,7 +459,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // custom tooltip.
   virtual bool ShowTooltip(
       WebContents* web_contents,
-      const string16& tooltip_text,
+      const base::string16& tooltip_text,
       blink::WebTextDirection text_direction_hint);
 
   // Returns the size for the new render view created for the pending entry in
@@ -482,8 +474,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // has failed. There can only be one message per |web_contents| at a time.
   virtual void ShowValidationMessage(WebContents* web_contents,
                                      const gfx::Rect& anchor_in_root_view,
-                                     const string16& main_text,
-                                     const string16& sub_text) {}
+                                     const base::string16& main_text,
+                                     const base::string16& sub_text) {}
 
   // Notification that the delegate should hide any showing form validation
   // message.

@@ -33,10 +33,10 @@
 
 #include "DatabaseClientImpl.h"
 #include "LocalFileSystemClient.h"
+#include "RuntimeEnabledFeatures.h"
 #include "WebDataSourceImpl.h"
 #include "WebFrame.h"
 #include "WebFrameImpl.h"
-#include "WebRuntimeFeatures.h"
 #include "WebSettings.h"
 #include "WebView.h"
 #include "WorkerPermissionClient.h"
@@ -44,6 +44,7 @@
 #include "core/dom/Document.h"
 #include "core/events/MessageEvent.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -54,8 +55,10 @@
 #include "core/workers/SharedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebFileError.h"
@@ -69,6 +72,63 @@
 using namespace WebCore;
 
 namespace blink {
+
+// A thin wrapper for one-off script loading.
+class WebSharedWorkerImpl::Loader : public WorkerScriptLoaderClient {
+public:
+    static PassOwnPtr<Loader> create()
+    {
+        return adoptPtr(new Loader());
+    }
+
+    virtual ~Loader()
+    {
+        m_scriptLoader->setClient(0);
+    }
+
+    void load(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& receiveResponseCallback, const Closure& finishCallback)
+    {
+        m_receiveResponseCallback = receiveResponseCallback;
+        m_finishCallback = finishCallback;
+        m_scriptLoader->setTargetType(ResourceRequest::TargetIsSharedWorker);
+        m_scriptLoader->loadAsynchronously(
+            loadingContext, scriptURL, DenyCrossOriginRequests, this);
+    }
+
+    void didReceiveResponse(unsigned long identifier, const ResourceResponse& response) OVERRIDE
+    {
+        m_identifier = identifier;
+        m_appCacheID = response.appCacheID();
+        m_receiveResponseCallback();
+    }
+
+    virtual void notifyFinished() OVERRIDE
+    {
+        m_finishCallback();
+    }
+
+    void cancel()
+    {
+        m_scriptLoader->cancel();
+    }
+
+    bool failed() const { return m_scriptLoader->failed(); }
+    const KURL& url() const { return m_scriptLoader->responseURL(); }
+    String script() const { return m_scriptLoader->script(); }
+    unsigned long identifier() const { return m_identifier; }
+    long long appCacheID() const { return m_appCacheID; }
+
+private:
+    Loader() : m_scriptLoader(WorkerScriptLoader::create()), m_identifier(0), m_appCacheID(0)
+    {
+    }
+
+    RefPtr<WorkerScriptLoader> m_scriptLoader;
+    unsigned long m_identifier;
+    long long m_appCacheID;
+    Closure m_receiveResponseCallback;
+    Closure m_finishCallback;
+};
 
 // This function is called on the main thread to force to initialize some static
 // values used in WebKit before any worker thread is started. This is because in
@@ -95,6 +155,7 @@ WebSharedWorkerImpl::WebSharedWorkerImpl(WebSharedWorkerClient* client)
     , m_client(WeakReference<WebSharedWorkerClient>::create(client))
     , m_clientWeakPtr(WeakPtr<WebSharedWorkerClient>(m_client))
     , m_pauseWorkerContextOnStart(false)
+    , m_attachDevToolsOnStart(false)
 {
     initializeWebKitStaticValues();
 }
@@ -114,6 +175,8 @@ void WebSharedWorkerImpl::stopWorkerThread()
     if (m_askedToTerminate)
         return;
     m_askedToTerminate = true;
+    if (m_mainScriptLoader)
+        m_mainScriptLoader->cancel();
     if (m_workerThread)
         m_workerThread->stop();
 }
@@ -125,7 +188,7 @@ void WebSharedWorkerImpl::initializeLoader(const WebURL& url)
     // infrastructure.
     ASSERT(!m_webView);
     m_webView = WebView::create(0);
-    m_webView->settings()->setOfflineWebApplicationCacheEnabled(WebRuntimeFeatures::isApplicationCacheEnabled());
+    m_webView->settings()->setOfflineWebApplicationCacheEnabled(RuntimeEnabledFeatures::applicationCacheEnabled());
     // FIXME: Settings information should be passed to the Worker process from Browser process when the worker
     // is created (similar to RenderThread::OnCreateNewView).
     m_mainFrame = WebFrame::create(this);
@@ -139,16 +202,6 @@ void WebSharedWorkerImpl::initializeLoader(const WebURL& url)
     int length = static_cast<int>(content.length());
     RefPtr<SharedBuffer> buffer(SharedBuffer::create(content.data(), length));
     webFrame->frame()->loader().load(FrameLoadRequest(0, ResourceRequest(url), SubstituteData(buffer, "text/html", "UTF-8", KURL())));
-
-    // This document will be used as 'loading context' for the worker.
-    m_loadingDocument = webFrame->frame()->document();
-}
-
-void WebSharedWorkerImpl::didCreateDataSource(WebFrame*, WebDataSource* ds)
-{
-    // Tell the loader to load the data into the 'shadow page' synchronously,
-    // so we can grab the resulting Document right after load.
-    static_cast<WebDataSourceImpl*>(ds)->setDeferMainResourceDataLoad(false);
 }
 
 WebApplicationCacheHost* WebSharedWorkerImpl::createApplicationCacheHost(WebFrame*, WebApplicationCacheHostClient* appcacheHostClient)
@@ -156,6 +209,19 @@ WebApplicationCacheHost* WebSharedWorkerImpl::createApplicationCacheHost(WebFram
     if (client())
         return client()->createApplicationCacheHost(appcacheHostClient);
     return 0;
+}
+
+void WebSharedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
+{
+    ASSERT(!m_loadingDocument);
+    ASSERT(!m_mainScriptLoader);
+    m_mainScriptLoader = Loader::create();
+    m_loadingDocument = toWebFrameImpl(frame)->frame()->document();
+    m_mainScriptLoader->load(
+        m_loadingDocument.get(),
+        m_url,
+        bind(&WebSharedWorkerImpl::didReceiveScriptLoaderResponse, this),
+        bind(&WebSharedWorkerImpl::onScriptLoaderFinished, this));
 }
 
 // WorkerReportingProxy --------------------------------------------------------
@@ -193,7 +259,7 @@ void WebSharedWorkerImpl::workerGlobalScopeClosedOnMainThread()
     stopWorkerThread();
 }
 
-void WebSharedWorkerImpl::workerGlobalScopeStarted()
+void WebSharedWorkerImpl::workerGlobalScopeStarted(WorkerGlobalScope*)
 {
 }
 
@@ -214,30 +280,19 @@ void WebSharedWorkerImpl::workerGlobalScopeDestroyedOnMainThread()
 
 void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
-    ASSERT(m_loadingDocument->isDocument());
-    m_loadingDocument->postTask(task);
+    toWebFrameImpl(m_mainFrame)->frame()->document()->postTask(task);
 }
 
-bool WebSharedWorkerImpl::postTaskForModeToWorkerGlobalScope(
-    PassOwnPtr<ExecutionContextTask> task, const String& mode)
+bool WebSharedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
 {
-    m_workerThread->runLoop().postTaskForMode(task, mode);
+    m_workerThread->runLoop().postTask(task);
     return true;
 }
 
-bool WebSharedWorkerImpl::isStarted()
-{
-    // Should not ever be called from the worker thread (this API is only called on WebSharedWorkerProxy on the renderer thread).
-    ASSERT_NOT_REACHED();
-    return workerThread();
-}
-
-void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel, ConnectListener* listener)
+void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel)
 {
     workerThread()->runLoop().postTask(
         createCallbackTask(&connectTask, adoptPtr(webChannel)));
-    if (listener)
-        listener->connected();
 }
 
 void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<WebMessagePortChannel> channel)
@@ -250,20 +305,54 @@ void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<WebM
     workerGlobalScope->dispatchEvent(createConnectEvent(port));
 }
 
-void WebSharedWorkerImpl::startWorkerContext(const WebURL& url, const WebString& name, const WebString& userAgent, const WebString& sourceCode, const WebString& contentSecurityPolicy, WebContentSecurityPolicyType policyType, long long)
+void WebSharedWorkerImpl::startWorkerContext(const WebURL& url, const WebString& name, const WebString& contentSecurityPolicy, WebContentSecurityPolicyType policyType)
 {
+    m_url = url;
+    m_name = name;
+    m_contentSecurityPolicy = contentSecurityPolicy;
+    m_policyType = policyType;
     initializeLoader(url);
+}
 
+void WebSharedWorkerImpl::didReceiveScriptLoaderResponse()
+{
+    InspectorInstrumentation::didReceiveScriptResponse(m_loadingDocument.get(), m_mainScriptLoader->identifier());
+    if (client())
+        client()->selectAppCacheID(m_mainScriptLoader->appCacheID());
+}
+
+static void connectToWorkerContextInspectorTask(ExecutionContext* context, bool)
+{
+    toWorkerGlobalScope(context)->workerInspectorController()->connectFrontend();
+}
+
+void WebSharedWorkerImpl::onScriptLoaderFinished()
+{
+    ASSERT(m_loadingDocument);
+    ASSERT(m_mainScriptLoader);
+    if (m_mainScriptLoader->failed() || m_askedToTerminate) {
+        m_mainScriptLoader.clear();
+        if (client())
+            client()->workerScriptLoadFailed();
+        return;
+    }
     WorkerThreadStartMode startMode = m_pauseWorkerContextOnStart ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
     OwnPtr<WorkerClients> workerClients = WorkerClients::create();
     provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
     provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
     WebSecurityOrigin webSecurityOrigin(m_loadingDocument->securityOrigin());
     providePermissionClientToWorker(workerClients.get(), adoptPtr(client()->createWorkerPermissionClientProxy(webSecurityOrigin)));
-    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(url, userAgent, sourceCode, startMode, contentSecurityPolicy, static_cast<WebCore::ContentSecurityPolicy::HeaderType>(policyType), workerClients.release());
-    setWorkerThread(SharedWorkerThread::create(name, *this, *this, startupData.release()));
+    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(m_url, m_loadingDocument->userAgent(m_url), m_mainScriptLoader->script(), startMode, m_contentSecurityPolicy, static_cast<WebCore::ContentSecurityPolicy::HeaderType>(m_policyType), workerClients.release());
+    setWorkerThread(SharedWorkerThread::create(m_name, *this, *this, startupData.release()));
+    InspectorInstrumentation::scriptImported(m_loadingDocument.get(), m_mainScriptLoader->identifier(), m_mainScriptLoader->script());
+    m_mainScriptLoader.clear();
+
+    if (m_attachDevToolsOnStart)
+        workerThread()->runLoop().postTaskForMode(createCallbackTask(connectToWorkerContextInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
 
     workerThread()->start();
+    if (client())
+        client()->workerScriptLoaded();
 }
 
 void WebSharedWorkerImpl::terminateWorkerContext()
@@ -293,14 +382,12 @@ void WebSharedWorkerImpl::resumeWorkerContext()
         workerThread()->runLoop().postTaskForMode(createCallbackTask(resumeWorkerContextTask, true), WorkerDebuggerAgent::debuggerTaskMode);
 }
 
-static void connectToWorkerContextInspectorTask(ExecutionContext* context, bool)
-{
-    toWorkerGlobalScope(context)->workerInspectorController()->connectFrontend();
-}
-
 void WebSharedWorkerImpl::attachDevTools()
 {
-    workerThread()->runLoop().postTaskForMode(createCallbackTask(connectToWorkerContextInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
+    if (workerThread())
+        workerThread()->runLoop().postTaskForMode(createCallbackTask(connectToWorkerContextInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
+    else
+        m_attachDevToolsOnStart = true;
 }
 
 static void reconnectToWorkerContextInspectorTask(ExecutionContext* context, const String& savedState)
@@ -322,6 +409,7 @@ static void disconnectFromWorkerContextInspectorTask(ExecutionContext* context, 
 
 void WebSharedWorkerImpl::detachDevTools()
 {
+    m_attachDevToolsOnStart = false;
     workerThread()->runLoop().postTaskForMode(createCallbackTask(disconnectFromWorkerContextInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
 }
 

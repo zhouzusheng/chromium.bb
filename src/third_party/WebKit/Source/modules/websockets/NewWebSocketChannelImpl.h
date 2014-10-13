@@ -62,7 +62,7 @@ namespace WebCore {
 class Document;
 
 // This class may replace MainThreadWebSocketChannel.
-class NewWebSocketChannelImpl : public WebSocketChannel, public RefCounted<NewWebSocketChannelImpl>, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
+class NewWebSocketChannelImpl FINAL : public WebSocketChannel, public RefCounted<NewWebSocketChannelImpl>, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     // You can specify the source file and the line number information
@@ -136,6 +136,7 @@ private:
     virtual void didReceiveData(blink::WebSocketHandle*, bool fin, blink::WebSocketHandle::MessageType, const char* data, size_t /* size */) OVERRIDE;
     virtual void didClose(blink::WebSocketHandle*, bool wasClean, unsigned short code, const blink::WebString& reason) OVERRIDE;
     virtual void didReceiveFlowControl(blink::WebSocketHandle*, int64_t quota) OVERRIDE;
+    virtual void didStartClosingHandshake(blink::WebSocketHandle*) OVERRIDE;
 
     // Methods for BlobLoader.
     void didFinishLoadingBlob(PassRefPtr<ArrayBuffer>);

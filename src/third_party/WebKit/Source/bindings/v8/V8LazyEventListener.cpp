@@ -38,7 +38,6 @@
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
@@ -53,7 +52,7 @@
 namespace WebCore {
 
 V8LazyEventListener::V8LazyEventListener(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String sourceURL, const TextPosition& position, Node* node, v8::Isolate* isolate)
-    : V8AbstractEventListener(true, mainThreadNormalWorld(), isolate)
+    : V8AbstractEventListener(true, DOMWrapperWorld::mainWorld(), isolate)
     , m_functionName(functionName)
     , m_eventParameterName(eventParameterName)
     , m_code(code)
@@ -67,10 +66,10 @@ template<typename T>
 v8::Handle<v8::Object> toObjectWrapper(T* domObject, v8::Isolate* isolate)
 {
     if (!domObject)
-        return v8::Object::New();
+        return v8::Object::New(isolate);
     v8::Handle<v8::Value> value = toV8(domObject, v8::Handle<v8::Object>(), isolate);
     if (value.IsEmpty())
-        return v8::Object::New();
+        return v8::Object::New(isolate);
     return v8::Local<v8::Object>::New(isolate, value.As<v8::Object>());
 }
 
@@ -105,7 +104,7 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ExecutionContext*
 
 static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8SetReturnValue(info, info.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(info.GetIsolate())));
+    v8SetReturnValue(info, getHiddenValue(info.GetIsolate(), info.Holder(), "toStringString"));
 }
 
 void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
@@ -177,14 +176,14 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, isolate);
     v8::Handle<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, isolate);
 
-    v8::Local<v8::Object> thisObject = v8::Object::New();
+    v8::Local<v8::Object> thisObject = v8::Object::New(isolate);
     if (thisObject.IsEmpty())
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(0, isolate), nodeWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate, 0), nodeWrapper))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(1, isolate), formWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate, 1), formWrapper))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(2, isolate), documentWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate, 2), documentWrapper))
         return;
 
     // FIXME: Remove this code when we stop doing the 'with' hack above.
@@ -202,19 +201,11 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     // source returned (sometimes a RegExp is applied as well) for some
     // other use. That fails miserably if the actual wrapper source is
     // returned.
-    v8::Handle<v8::FunctionTemplate> toStringTemplate =
-        V8PerIsolateData::current()->lazyEventListenerToStringTemplate();
-    if (toStringTemplate.IsEmpty())
-        toStringTemplate = v8::FunctionTemplate::New(isolate, V8LazyEventListenerToString);
-    v8::Local<v8::Function> toStringFunction;
-    if (!toStringTemplate.IsEmpty())
-        toStringFunction = toStringTemplate->GetFunction();
-    if (!toStringFunction.IsEmpty()) {
-        String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
-        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(isolate, toStringString));
-        wrappedFunction->Set(v8AtomicString(isolate, "toString"), toStringFunction);
-    }
-
+    v8::Local<v8::Function> toStringFunction = v8::Function::New(isolate, V8LazyEventListenerToString);
+    ASSERT(!toStringFunction.IsEmpty());
+    String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
+    setHiddenValue(isolate, wrappedFunction, "toStringString", v8String(isolate, toStringString));
+    wrappedFunction->Set(v8AtomicString(isolate, "toString"), toStringFunction);
     wrappedFunction->SetName(v8String(isolate, m_functionName));
 
     // FIXME: Remove the following comment-outs.

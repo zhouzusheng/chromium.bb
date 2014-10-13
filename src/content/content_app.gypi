@@ -11,6 +11,7 @@
     '../base/base.gyp:base_i18n',
     '../crypto/crypto.gyp:crypto',
     '../ui/gfx/gfx.gyp:gfx',
+    '../ui/gfx/gfx.gyp:gfx_geometry',
     '../ui/ui.gyp:ui',
 
     # SHEZ: Added this so that we can initialize V8's ICU in

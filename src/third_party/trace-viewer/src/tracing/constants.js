@@ -4,11 +4,9 @@
 
 'use strict';
 
-base.exportTo('tracing', function() {
+tvcm.exportTo('tracing', function() {
   var constants = {
-    HEADING_WIDTH: 250,
-    MIN_MOUSE_SELECTION_DISTANCE: 4,
-    LEFT_MOUSE_BUTTON: 0
+    HEADING_WIDTH: 250
   };
 
   return {

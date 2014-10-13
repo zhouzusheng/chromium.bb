@@ -68,6 +68,7 @@ class InProcessResourceLoaderBridge
     scoped_refptr<net::HttpResponseHeaders> d_responseHeaders;
     Peer* d_peer;
     void* d_userData;
+    int64 d_totalTransferSize;
     bool d_started;
     bool d_waitingForCancelLoad;  // waiting for cancelLoad()
     bool d_canceled;

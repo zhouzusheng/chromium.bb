@@ -89,12 +89,28 @@ public:
 
     T* get() const { return m_ref ? m_ref->get() : 0; }
 
+    T* operator->() const
+    {
+        ASSERT(get());
+        return get();
+    }
+
     typedef RefPtr<WeakReference<T> > (WeakPtr::*UnspecifiedBoolType);
     operator UnspecifiedBoolType() const { return get() ? &WeakPtr::m_ref : 0; }
 
 private:
     RefPtr<WeakReference<T> > m_ref;
 };
+
+template<typename T, typename U> inline bool operator==(const WeakPtr<T>& a, const WeakPtr<U>& b)
+{
+    return a.get() == b.get();
+}
+
+template<typename T, typename U> inline bool operator!=(const WeakPtr<T>& a, const WeakPtr<U>& b)
+{
+    return a.get() != b.get();
+}
 
 template<typename T>
 class WeakPtrFactory {

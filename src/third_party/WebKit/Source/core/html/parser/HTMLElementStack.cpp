@@ -31,9 +31,6 @@
 #include "MathMLNames.h"
 #include "SVGNames.h"
 #include "core/dom/Element.h"
-#include "core/html/HTMLHtmlElement.h"
-#include "core/html/HTMLOptGroupElement.h"
-#include "core/html/HTMLTableElement.h"
 
 namespace WebCore {
 
@@ -45,7 +42,7 @@ namespace {
 inline bool isRootNode(HTMLStackItem* item)
 {
     return item->isDocumentFragmentNode()
-        || isHTMLHtmlElement(item->node());
+        || item->hasTagName(htmlTag);
 }
 
 inline bool isScopeMarker(HTMLStackItem* item)
@@ -54,7 +51,7 @@ inline bool isScopeMarker(HTMLStackItem* item)
         || item->hasTagName(captionTag)
         || item->hasTagName(marqueeTag)
         || item->hasTagName(objectTag)
-        || isHTMLTableElement(item->node())
+        || item->hasTagName(tableTag)
         || item->hasTagName(tdTag)
         || item->hasTagName(thTag)
         || item->hasTagName(MathMLNames::miTag)
@@ -79,7 +76,7 @@ inline bool isListItemScopeMarker(HTMLStackItem* item)
 
 inline bool isTableScopeMarker(HTMLStackItem* item)
 {
-    return isHTMLTableElement(item->node())
+    return item->hasTagName(tableTag)
         || item->hasTagName(templateTag)
         || isRootNode(item);
 }
@@ -115,7 +112,7 @@ inline bool isButtonScopeMarker(HTMLStackItem* item)
 
 inline bool isSelectScopeMarker(HTMLStackItem* item)
 {
-    return !isHTMLOptGroupElement(item->node())
+    return !item->hasTagName(optgroupTag)
         && !item->hasTagName(optionTag);
 }
 
@@ -199,7 +196,9 @@ void HTMLElementStack::popAll()
     m_bodyElement = 0;
     m_stackDepth = 0;
     while (m_top) {
-        topNode()->finishParsingChildren();
+        Node& node = *topNode();
+        if (node.isElementNode())
+            toElement(node).finishParsingChildren();
         m_top = m_top->releaseNext();
     }
 }
@@ -309,7 +308,7 @@ void HTMLElementStack::pushRootNode(PassRefPtr<HTMLStackItem> rootItem)
 
 void HTMLElementStack::pushHTMLHtmlElement(PassRefPtr<HTMLStackItem> item)
 {
-    ASSERT(isHTMLHtmlElement(item->node()));
+    ASSERT(item->hasTagName(htmlTag));
     pushRootNodeCommon(item);
 }
 
@@ -339,9 +338,9 @@ void HTMLElementStack::pushHTMLBodyElement(PassRefPtr<HTMLStackItem> item)
 
 void HTMLElementStack::push(PassRefPtr<HTMLStackItem> item)
 {
-    ASSERT(!isHTMLHtmlElement(item->node()));
-    ASSERT(!item->hasTagName(HTMLNames::headTag));
-    ASSERT(!item->hasTagName(HTMLNames::bodyTag));
+    ASSERT(!item->hasTagName(htmlTag));
+    ASSERT(!item->hasTagName(headTag));
+    ASSERT(!item->hasTagName(bodyTag));
     ASSERT(m_rootNode);
     pushCommon(item);
 }
@@ -351,9 +350,9 @@ void HTMLElementStack::insertAbove(PassRefPtr<HTMLStackItem> item, ElementRecord
     ASSERT(item);
     ASSERT(recordBelow);
     ASSERT(m_top);
-    ASSERT(!isHTMLHtmlElement(item->node()));
-    ASSERT(!item->hasTagName(HTMLNames::headTag));
-    ASSERT(!item->hasTagName(HTMLNames::bodyTag));
+    ASSERT(!item->hasTagName(htmlTag));
+    ASSERT(!item->hasTagName(headTag));
+    ASSERT(!item->hasTagName(bodyTag));
     ASSERT(m_rootNode);
     if (recordBelow == m_top) {
         push(item);
@@ -566,9 +565,9 @@ void HTMLElementStack::pushCommon(PassRefPtr<HTMLStackItem> item)
 
 void HTMLElementStack::popCommon()
 {
-    ASSERT(!isHTMLHtmlElement(topStackItem()->node()));
-    ASSERT(!topStackItem()->hasTagName(HTMLNames::headTag) || !m_headElement);
-    ASSERT(!topStackItem()->hasTagName(HTMLNames::bodyTag) || !m_bodyElement);
+    ASSERT(!topStackItem()->hasTagName(htmlTag));
+    ASSERT(!topStackItem()->hasTagName(headTag) || !m_headElement);
+    ASSERT(!topStackItem()->hasTagName(bodyTag) || !m_bodyElement);
     top()->finishParsingChildren();
     m_top = m_top->releaseNext();
 
@@ -577,8 +576,8 @@ void HTMLElementStack::popCommon()
 
 void HTMLElementStack::removeNonTopCommon(Element* element)
 {
-    ASSERT(!isHTMLHtmlElement(element));
-    ASSERT(!element->hasTagName(HTMLNames::bodyTag));
+    ASSERT(!element->hasTagName(htmlTag));
+    ASSERT(!element->hasTagName(bodyTag));
     ASSERT(top() != element);
     for (ElementRecord* pos = m_top.get(); pos; pos = pos->next()) {
         if (pos->next()->element() == element) {

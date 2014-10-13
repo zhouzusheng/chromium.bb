@@ -71,6 +71,11 @@
     # it's handled in build/standalone.gypi.
     'want_separate_host_toolset%': 1,
 
+    # Toolset the d8 binary should be compiled for. Possible values are 'host'
+    # and 'target'. If you want to run v8 tests, it needs to be set to 'target'.
+    # The setting is ignored if want_separate_host_toolset is 0.
+    'v8_toolset_for_d8%': 'target',
+
     'host_os%': '<(OS)',
     'werror%': '-Werror',
     # For a shared library build, results in "libv8-<(soname_version).so".
@@ -93,10 +98,10 @@
             'conditions': [
               ['armcompiler=="yes"', {
                 'conditions': [
-                  [ 'armv7==1', {
+                  [ 'arm_version==7', {
                     'cflags': ['-march=armv7-a',],
                   }],
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
                       [ 'arm_neon==1', {
                         'cflags': ['-mfpu=neon',],
@@ -128,7 +133,7 @@
               }, {
                 # armcompiler=="no"
                 'conditions': [
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'defines': [
                       'CAN_USE_ARMV7_INSTRUCTIONS=1',
                     ],
@@ -181,10 +186,10 @@
             'conditions': [
               ['armcompiler=="yes"', {
                 'conditions': [
-                  [ 'armv7==1', {
+                  [ 'arm_version==7', {
                     'cflags': ['-march=armv7-a',],
                   }],
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
                       [ 'arm_neon==1', {
                         'cflags': ['-mfpu=neon',],
@@ -216,7 +221,7 @@
               }, {
                 # armcompiler=="no"
                 'conditions': [
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'defines': [
                       'CAN_USE_ARMV7_INSTRUCTIONS=1',
                     ],
@@ -358,7 +363,7 @@
         },
       }],
       ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd"', {
+         or OS=="netbsd" or OS=="qnx"', {
         'conditions': [
           [ 'v8_no_strict_aliasing==1', {
             'cflags': [ '-fno-strict-aliasing' ],
@@ -369,7 +374,7 @@
         'defines': [ '__C99FEATURES__=1' ],  # isinf() etc.
       }],
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd" or OS=="mac" or OS=="android") and \
+         or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
         (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
          v8_target_arch=="mipsel")', {
         # Check whether the host compiler and target compiler support the
@@ -391,7 +396,7 @@
               'clang%': 0,
             },
             'conditions': [
-              ['(OS!="android" or clang==1) and \
+              ['((OS!="android" and OS!="qnx") or clang==1) and \
                 nacl_target_arch!="nacl_x64"', {
                 'cflags': [ '<(m32flag)' ],
                 'ldflags': [ '<(m32flag)' ],
@@ -488,7 +493,8 @@
           },
         },
         'conditions': [
-          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd"', {
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
+            OS=="qnx"', {
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                         '-Wnon-virtual-dtor', '-Woverloaded-virtual',
                         '<(wno_array_bounds)' ],

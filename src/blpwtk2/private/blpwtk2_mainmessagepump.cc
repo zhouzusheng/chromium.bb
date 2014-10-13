@@ -203,7 +203,7 @@ void MainMessagePump::init()
 
     d_runLoop.reset(new base::RunLoop());
     d_runLoop->BeforeRun();
-    base::MessageLoop::current()->PrepareRunInternal();
+    base::MessageLoop::current()->PrepareRunHandler();
     PushRunState(&d_runState, base::MessageLoop::current(), 0);
 }
 
@@ -230,22 +230,23 @@ void MainMessagePump::cleanup()
 
 bool MainMessagePump::preHandleMessage(const MSG& msg)
 {
-    bool didHandleMessage;
     if (CallMsgFilter(const_cast<MSG*>(&msg), kMessageFilterCode)) {
         d_didNotifyWillProcessMsg = false;
-        didHandleMessage = true;
+        return true;
     }
     else {
         WillProcessMessage(msg);
         d_didNotifyWillProcessMsg = true;
-        didHandleMessage = message_filter_->ProcessMessage(msg);
-        if (!didHandleMessage && state_->dispatcher) {
-            if (!state_->dispatcher->Dispatch(msg))
+        uint32_t action = base::MessagePumpDispatcher::POST_DISPATCH_PERFORM_DEFAULT;
+        if (state_->dispatcher) {
+            action = state_->dispatcher->Dispatch(msg);
+            if (action & base::MessagePumpDispatcher::POST_DISPATCH_QUIT_LOOP)
                 state_->should_quit = true;
-            didHandleMessage = true;
         }
+
+        // Returning false will make the app perform the default action.
+        return !(action & base::MessagePumpDispatcher::POST_DISPATCH_PERFORM_DEFAULT);
     }
-    return didHandleMessage;
 }
 
 void MainMessagePump::postHandleMessage(const MSG& msg)

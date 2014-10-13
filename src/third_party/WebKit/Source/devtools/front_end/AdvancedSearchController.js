@@ -28,7 +28,6 @@
 
 /**
  * @constructor
- * @implements {WebInspector.ViewFactory}
  */
 WebInspector.AdvancedSearchController = function()
 {
@@ -38,7 +37,6 @@ WebInspector.AdvancedSearchController = function()
     WebInspector.settings.advancedSearchConfig = WebInspector.settings.createSetting("advancedSearchConfig", new WebInspector.SearchConfig("", true, false));
 
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameNavigated, this._frameNavigated, this);
-    WebInspector.inspectorView.registerViewInDrawer("search", WebInspector.UIString("Search"), this);
 }
 
 /**
@@ -53,17 +51,6 @@ WebInspector.AdvancedSearchController.createShortcut = function()
 }
 
 WebInspector.AdvancedSearchController.prototype = {
-    /**
-     * @param {string=} id
-     * @return {?WebInspector.View}
-     */
-    createView: function(id)
-    {
-        if (!this._searchView)
-            this._searchView = new WebInspector.SearchView(this);
-        return this._searchView;
-    },
-
     /**
      * @param {!KeyboardEvent} event
      * @return {boolean}
@@ -85,15 +72,6 @@ WebInspector.AdvancedSearchController.prototype = {
     _frameNavigated: function()
     {
         this.resetSearch();
-    },
-
-    /**
-     * @param {!WebInspector.SearchScope} searchScope
-     */
-    registerSearchScope: function(searchScope)
-    {
-        // FIXME: implement multiple search scopes.
-        this._searchScope = searchScope;
     },
 
     show: function()
@@ -132,7 +110,7 @@ WebInspector.AdvancedSearchController.prototype = {
     {
         this._isIndexing = true;
         // FIXME: this._currentSearchScope should be initialized based on searchConfig
-        this._currentSearchScope = this._searchScope;
+        this._currentSearchScope = this._searchScopes()[0];
         if (this._progressIndicator)
             this._progressIndicator.done();
         this._progressIndicator = new WebInspector.ProgressIndicator();
@@ -190,7 +168,7 @@ WebInspector.AdvancedSearchController.prototype = {
     {
         this._searchConfig = searchConfig;
         // FIXME: this._currentSearchScope should be initialized based on searchConfig
-        this._currentSearchScope = this._searchScope;
+        this._currentSearchScope = this._searchScopes()[0];
 
         if (this._progressIndicator)
             this._progressIndicator.done();
@@ -216,6 +194,35 @@ WebInspector.AdvancedSearchController.prototype = {
         if (this._currentSearchScope)
             this._currentSearchScope.stopSearch();
         delete this._searchConfig;
+    },
+
+    /**
+     * @return {!Array.<!WebInspector.SearchScope>}
+     */
+    _searchScopes: function()
+    {
+        // FIXME: implement multiple search scopes.
+        return /** @type {!Array.<!WebInspector.SearchScope>} */ (WebInspector.moduleManager.instances(WebInspector.SearchScope));
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.Drawer.ViewFactory}
+ */
+WebInspector.AdvancedSearchController.ViewFactory = function()
+{
+}
+
+WebInspector.AdvancedSearchController.ViewFactory.prototype = {
+    /**
+     * @return {!WebInspector.View}
+     */
+    createView: function()
+    {
+        if (!WebInspector.advancedSearchController._searchView)
+            WebInspector.advancedSearchController._searchView = new WebInspector.SearchView(WebInspector.advancedSearchController);
+        return WebInspector.advancedSearchController._searchView;
     }
 }
 
@@ -230,7 +237,7 @@ WebInspector.SearchView = function(controller)
 
     this._controller = controller;
 
-    this.element.className = "search-view vbox";
+    this.element.classList.add("search-view");
 
     this._searchPanelElement = this.element.createChild("div", "search-drawer-header");
     this._searchPanelElement.addEventListener("keydown", this._onKeyDown.bind(this), false);
@@ -381,11 +388,6 @@ WebInspector.SearchView.prototype = {
         this._search.select();
     },
 
-    afterShow: function()
-    {
-        this.focus();
-    },
-
     willHide: function()
     {
         this._controller.stopSearch();
@@ -455,7 +457,14 @@ WebInspector.SearchConfig.prototype = {
         var regexp = new RegExp(pattern, "g");
         var queryParts = this.query.match(regexp) || [];
 
+        /**
+         * @type {!Array.<string>}
+         */
         this._fileQueries = [];
+
+        /**
+         * @type {!Array.<string>}
+         */
         this._queries = [];
 
         for (var i = 0; i < queryParts.length; ++i) {
@@ -476,11 +485,17 @@ WebInspector.SearchConfig.prototype = {
         }
     },
 
+    /**
+     * @return {!Array.<string>}
+     */
     fileQueries: function()
     {
         return this._fileQueries;
     },
 
+    /**
+     * @return {!Array.<string>}
+     */
     queries: function()
     {
         return this._queries;
@@ -534,6 +549,12 @@ WebInspector.SearchScope.prototype = {
      * @param {function(boolean)} searchFinishedCallback
      */
     performSearch: function(searchConfig, progress, searchResultCallback, searchFinishedCallback) { },
+
+    /**
+     * @param {!WebInspector.ProgressIndicator} progressIndicator
+     * @param {function(boolean)} callback
+     */
+    performIndexing: function(progressIndicator, callback) { },
 
     stopSearch: function() { },
 
@@ -602,12 +623,7 @@ WebInspector.FileBasedSearchResultsPane.prototype = {
      */
     _createAnchor: function(uiSourceCode, lineNumber, columnNumber)
     {
-        var anchor = document.createElement("a");
-        anchor.preferredPanel = "sources";
-        anchor.href = sanitizeHref(uiSourceCode.originURL());
-        anchor.uiSourceCode = uiSourceCode;
-        anchor.lineNumber = lineNumber;
-        return anchor;
+        return WebInspector.Linkifier.linkifyUsingRevealer(new WebInspector.UILocation(uiSourceCode, lineNumber, columnNumber), "", uiSourceCode.url, lineNumber);
     },
 
     /**

@@ -27,6 +27,7 @@
 #define StorageEvent_h
 
 #include "core/events/Event.h"
+#include "heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -34,16 +35,19 @@ namespace WebCore {
 class Storage;
 
 struct StorageEventInit : public EventInit {
+    // FIXME: oilpan: Replace this with STACK_ALLOCATED.
+    DISALLOW_ALLOCATION();
+public:
     StorageEventInit();
 
     String key;
     String oldValue;
     String newValue;
     String url;
-    RefPtr<Storage> storageArea;
+    RefPtrWillBeRawPtr<Storage> storageArea;
 };
 
-class StorageEvent : public Event {
+class StorageEvent FINAL : public Event {
 public:
     static PassRefPtr<StorageEvent> create();
     static PassRefPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
@@ -62,7 +66,7 @@ public:
     // Needed once we support init<blank>EventNS
     // void initStorageEventNS(in DOMString namespaceURI, in DOMString typeArg, in boolean canBubbleArg, in boolean cancelableArg, in DOMString keyArg, in DOMString oldValueArg, in DOMString newValueArg, in DOMString urlArg, Storage storageAreaArg);
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
 private:
     StorageEvent();
@@ -73,7 +77,7 @@ private:
     String m_oldValue;
     String m_newValue;
     String m_url;
-    RefPtr<Storage> m_storageArea;
+    RefPtrWillBePersistent<Storage> m_storageArea;
 };
 
 } // namespace WebCore

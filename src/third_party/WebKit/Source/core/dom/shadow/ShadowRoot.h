@@ -54,19 +54,22 @@ public:
         AuthorShadowRoot
     };
 
-    static PassRefPtr<ShadowRoot> create(Document* document, ShadowRootType type)
+    static PassRefPtr<ShadowRoot> create(Document& document, ShadowRootType type)
     {
         return adoptRef(new ShadowRoot(document, type));
     }
 
     void recalcStyle(StyleRecalcChange);
 
+    // Disambiguate between Node and TreeScope hierarchies; TreeScope's implementation is simpler.
+    using TreeScope::document;
+
     Element* host() const { return toElement(parentOrShadowHostNode()); }
     ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
 
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
-    ShadowRoot* bindingsOlderShadowRoot() const;
+    ShadowRoot* olderShadowRootForBindings() const;
     bool shouldExposeToBindings() const { return type() == AuthorShadowRoot; }
 
     bool isYoungest() const { return !youngerShadowRoot(); }
@@ -100,6 +103,10 @@ public:
 
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
 
+    // Make protected methods from base class public here.
+    using TreeScope::setDocument;
+    using TreeScope::setParentTreeScope;
+
 public:
     Element* activeElement() const;
 
@@ -118,13 +125,13 @@ public:
     PassRefPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
 
     StyleSheetList* styleSheets();
+    bool isActiveForStyling() const;
 
 private:
-    ShadowRoot(Document*, ShadowRootType);
+    ShadowRoot(Document&, ShadowRootType);
     virtual ~ShadowRoot();
 
     virtual void dispose() OVERRIDE;
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
 
     ShadowRootRareData* ensureShadowRootRareData();
@@ -138,7 +145,6 @@ private:
 
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
     bool isOrphan() const { return !host(); }
-    bool isActive() const;
 
     ShadowRoot* m_prev;
     ShadowRoot* m_next;
@@ -157,7 +163,7 @@ inline Element* ShadowRoot::activeElement() const
 }
 
 DEFINE_NODE_TYPE_CASTS(ShadowRoot, isShadowRoot());
-DEFINE_TYPE_CASTS(ShadowRoot, TreeScope, treeScope, treeScope->rootNode() && treeScope->rootNode()->isShadowRoot(), treeScope.rootNode() && treeScope.rootNode()->isShadowRoot());
+DEFINE_TYPE_CASTS(ShadowRoot, TreeScope, treeScope, treeScope->rootNode().isShadowRoot(), treeScope.rootNode().isShadowRoot());
 
 } // namespace
 

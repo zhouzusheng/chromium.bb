@@ -100,7 +100,6 @@
             '--output_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
           'message': 'Generating Inspector protocol backend sources from protocol.json',
-          'msvs_cygwin_shell': 1,
         },
       ]
     },
@@ -120,7 +119,6 @@
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorCanvasInstrumentationInl.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorConsoleInstrumentationInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorDatabaseInstrumentationInl.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorInstrumentationInl.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorOverridesInl.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/InstrumentingAgentsInl.h',
@@ -133,7 +131,6 @@
             '--output_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
           'message': 'Generating Inspector instrumentation code from InspectorInstrumentation.idl',
-          'msvs_cygwin_shell': 1,
         }
       ]
     },
@@ -206,20 +203,20 @@
       'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
-      'target_name': 'webcore_derived',
+      'target_name': 'webcore_generated',
       'type': 'static_library',
       'hard_dependency': 1,
       'dependencies': [
         'webcore_prerequisites',
-        '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_core_derived_sources',
+        '../bindings/generated_bindings.gyp:generated_bindings',
+        'core_generated.gyp:make_core_generated',
         'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
         'injected_canvas_script_source',
         'injected_script_source',
         'debugger_script_source',
-        '../platform/platform_derived_sources.gyp:make_platform_derived_sources',
+        '../platform/platform_generated.gyp:make_platform_generated',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/gin/gin.gyp:gin',
         '<(DEPTH)/skia/skia.gyp:skia',
@@ -250,14 +247,14 @@
       'sources': [
         # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
-        '<@(derived_sources_aggregate_files)',
+        '<@(aggregate_generated_bindings_files)',
         '<@(bindings_files)',
 
         # Additional .cpp files for HashTools.h
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSPropertyNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSValueKeywords.cpp',
 
-        # Additional .cpp files from make_core_derived_sources actions.
+        # Additional .cpp files from make_core_generated actions.
         '<(SHARED_INTERMEDIATE_DIR)/blink/Event.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventHeaders.h',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.h',
@@ -290,13 +287,13 @@
         # Generated from CSSTokenizer-in.cpp
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
 
-        # Generated from CSSParser-in.cpp
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSParser.cpp',
+        # Generated from BisonCSSParser-in.cpp
+        '<(SHARED_INTERMEDIATE_DIR)/blink/BisonCSSParser.cpp',
 
         # Generated from HTMLMetaElement-in.cpp
         '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
 
-        # Additional .cpp files from the make_core_derived_sources rules.
+        # Additional .cpp files from the make_core_generated rules.
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSGrammar.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/XPathGrammar.cpp',
 
@@ -355,8 +352,8 @@
         'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
-        '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_core_derived_sources',
+        '../bindings/generated_bindings.gyp:generated_bindings',
+        'core_generated.gyp:make_core_generated',
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
         '../heap/blink_heap.gyp:blink_heap',
@@ -450,6 +447,13 @@
             ['exclude', 'accessibility/'],
           ],
         }],
+        ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags-only-I ipp)',
+            ],
+          },
+        }],
         ['OS=="mac"', {
           'direct_dependent_settings': {
             'defines': [
@@ -472,10 +476,9 @@
               # If this is unhandled, the console will receive log messages
               # such as:
               # com.google.Chrome[] objc[]: Class ScrollbarPrefsObserver is implemented in both .../Google Chrome.app/Contents/Versions/.../Google Chrome Helper.app/Contents/MacOS/../../../Google Chrome Framework.framework/Google Chrome Framework and /System/Library/Frameworks/WebKit.framework/Versions/A/Frameworks/WebCore.framework/Versions/A/WebCore. One of the two will be used. Which one is undefined.
-              'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
               'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
               'WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver',
-             ],
+            ],
             'postbuilds': [
               {
                 # This step ensures that any Objective-C names that aren't
@@ -493,13 +496,6 @@
                   '<(category_whitelist_regex)',
                 ],
               },
-            ],
-          },
-        }],
-        ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(pkg-config --cflags-only-I ipp)',
             ],
           },
         }],
@@ -572,102 +568,6 @@
       ],
     },
     {
-      'target_name': 'webcore_platform',
-      'type': 'static_library',
-      'dependencies': [
-        'webcore_prerequisites',
-      ],
-      # Disable c4267 warnings until we fix size_t to int truncations.
-      # Disable c4724 warnings which is generated in VS2012 due to improper
-      # compiler optimizations, see crbug.com/237063
-      'msvs_disabled_warnings': [ 4267, 4334, 4724 ],
-      'sources': [
-        '<@(webcore_platform_files)',
-      ],
-      'sources/': [
-        # FIXME: Figure out how to store these patterns in a variable.
-        ['exclude', '(cf|cg|harfbuzz|mac|opentype|svg|win)/'],
-        ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
-
-        # Used only by mac.
-        ['exclude', 'platform/Theme\\.cpp$'],
-      ],
-      'conditions': [
-        ['OS!="linux"', {
-          'sources/': [
-            ['exclude', 'Linux\\.cpp$'],
-          ],
-        }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'platform/chromium/KeyCodeConversionGtk\\.cpp$'],
-          ],
-        }],
-        ['OS=="mac"', {
-          'sources': [
-            'editing/SmartReplaceCF.cpp',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
-            ],
-          },
-          'sources/': [
-            # Additional files from the WebCore Mac build that are presently
-            # used in the WebCore Chromium Mac build too.
-
-            # The Mac build is USE(CF).
-            ['include', 'CF\\.cpp$'],
-
-            # Cherry-pick some files that can't be included by broader regexps.
-            # Some of these are used instead of Chromium platform files, see
-            # the specific exclusions in the "exclude" list below.
-            ['include', 'platform/mac/ThemeMac\\.h$'],
-            ['include', 'platform/mac/ThemeMac\\.mm$'],
-            ['include', 'platform/mac/WebCoreSystemInterface\\.h$'],
-            ['include', 'platform/mac/WebCoreTextRenderer\\.mm$'],
-            ['include', 'platform/text/mac/ShapeArabic\\.c$'],
-            ['include', 'platform/text/mac/String(Impl)?Mac\\.mm$'],
-            # Use USE_NEW_THEME on Mac.
-            ['include', 'platform/Theme\\.cpp$'],
-          ],
-        }],
-        ['OS=="win"', {
-          'sources/': [
-            ['exclude', 'Posix\\.cpp$'],
-          ],
-        },{ # OS!="win"
-          'sources/': [
-            ['exclude', 'Win\\.cpp$'],
-          ],
-        }],
-        ['OS=="win" and chromium_win_pch==1', {
-          'sources/': [
-            ['include', '<(DEPTH)/third_party/WebKit/Source/build/win/Precompile.cpp'],
-          ],
-        }],
-        ['OS=="android"', {
-          'sources/': [
-            ['include', 'platform/chromium/ClipboardChromiumLinux\\.cpp$'],
-            ['include', 'platform/chromium/FileSystemChromiumLinux\\.cpp$'],
-          ],
-        }, { # OS!="android"
-          'sources/': [
-            ['exclude', 'Android\\.cpp$'],
-          ],
-        }],
-        ['use_default_render_theme==1', {
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumWin\\.(cpp|h)'],
-          ],
-        }, { # use_default_render_theme==0
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumDefault\\.(cpp|h)'],
-          ],
-        }],
-      ],
-    },
-    {
       'target_name': 'webcore_rendering',
       'type': 'static_library',
       'dependencies': [
@@ -695,11 +595,6 @@
         ['use_default_render_theme==0', {
           'sources/': [
             ['exclude', 'rendering/RenderThemeChromiumDefault.*'],
-          ],
-        }],
-        ['use_default_render_theme==1', {
-          'sources/': [
-            ['exclude', 'RenderThemeChromiumWin.*'],
           ],
         }],
         ['OS=="win"', {
@@ -795,7 +690,33 @@
         }, { # OS!="android"
           'sources/': [['exclude', 'Android\\.cpp$']]
         }],
-        ['OS!="mac"', {
+        ['OS=="mac"', {
+          'sources': [
+            'editing/SmartReplaceCF.cpp',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
+            ],
+          },
+          'sources/': [
+            # Additional files from the WebCore Mac build that are presently
+            # used in the WebCore Chromium Mac build too.
+
+            # The Mac build is USE(CF).
+            ['include', 'CF\\.cpp$'],
+
+            # Cherry-pick some files that can't be included by broader regexps.
+            # Some of these are used instead of Chromium platform files, see
+            # the specific exclusions in the "exclude" list below.
+            ['include', 'platform/mac/WebCoreSystemInterface\\.h$'],
+            ['include', 'platform/mac/WebCoreTextRenderer\\.mm$'],
+            ['include', 'platform/text/mac/ShapeArabic\\.c$'],
+            ['include', 'platform/text/mac/String(Impl)?Mac\\.mm$'],
+            # Use USE_NEW_THEME on Mac.
+            ['include', 'platform/Theme\\.cpp$'],
+          ],
+        }, { # OS!="mac"
           'sources/': [['exclude', 'Mac\\.(cpp|mm?)$']]
         }],
         ['OS=="win" and chromium_win_pch==1', {
@@ -813,12 +734,11 @@
       'dependencies': [
         'webcore_dom',
         'webcore_html',
-        'webcore_platform',
         'webcore_remaining',
         'webcore_rendering',
         'webcore_svg',
         # Exported.
-        'webcore_derived',
+        'webcore_generated',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
@@ -828,7 +748,7 @@
       ],
       'export_dependent_settings': [
         '../wtf/wtf.gyp:wtf',
-        'webcore_derived',
+        'webcore_generated',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',

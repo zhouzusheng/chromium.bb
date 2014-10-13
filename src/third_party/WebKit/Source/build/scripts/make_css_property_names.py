@@ -30,7 +30,6 @@ namespace WebCore {
 
 enum CSSPropertyID {
     CSSPropertyInvalid = 0,
-    CSSPropertyVariable = 1,
 %(property_enums)s
 };
 
@@ -202,7 +201,7 @@ class CSSPropertiesWriter(in_generator.Writer):
         if len(self._properties) > 1024:
             print "ERROR : There is more than 1024 CSS Properties, you need to update CSSProperty.h/StylePropertyMetadata m_propertyID accordingly."
             exit(1)
-        self._first_property_id = 2  # We start after CSSPropertyInvalid and CSSPropertyVariable.
+        self._first_property_id = 1  # We start after CSSPropertyInvalid.
         property_id = self._first_property_id
         for offset, property in enumerate(self._properties):
             property['enum_name'] = self._enum_name_from_property_name(property['name'])
@@ -246,8 +245,8 @@ class CSSPropertiesWriter(in_generator.Writer):
             'internal_properties': '\n'.join(map(self._case_properties, filter(lambda property: property['is_internal'], self._properties))),
         }
         # FIXME: If we could depend on Python 2.7, we would use subprocess.check_output
-        gperf_args = ['gperf', '--key-positions=*', '-P', '-D', '-n', '-s', '2']
-        gperf = subprocess.Popen(gperf_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        gperf_args = [self.gperf_path, '--key-positions=*', '-P', '-D', '-n', '-s', '2']
+        gperf = subprocess.Popen(gperf_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
         return gperf.communicate(gperf_input)[0]
 
 

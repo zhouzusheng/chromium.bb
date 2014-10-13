@@ -32,21 +32,19 @@
 #include "WebSettingsImpl.h"
 
 #include "core/frame/Settings.h"
+#include "core/inspector/InspectorController.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
-#if OS(WIN)
-#include "core/rendering/RenderThemeChromiumWin.h"
-#endif
-
 using namespace WebCore;
 
 namespace blink {
 
-WebSettingsImpl::WebSettingsImpl(Settings* settings)
+WebSettingsImpl::WebSettingsImpl(Settings* settings, InspectorController* inspectorController)
     : m_settings(settings)
+    , m_inspectorController(inspectorController)
     , m_showFPSCounter(false)
     , m_showPaintRects(false)
     , m_renderVSyncNotificationEnabled(false)
@@ -67,46 +65,48 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
 void WebSettingsImpl::setStandardFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setStandard(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setFixedFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setFixed(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setSerifFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setSerif(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setSansSerifFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setSansSerif(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setCursiveFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setCursive(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setFantasyFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setFantasy(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setPictographFontFamily(const WebString& font, UScriptCode script)
 {
     m_settings->genericFontFamilySettings().setPictograph(font, script);
+    m_settings->notifyGenericFontFamilyChange();
 }
 
 void WebSettingsImpl::setDefaultFontSize(int size)
 {
     m_settings->setDefaultFontSize(size);
-#if OS(WIN)
-    // RenderTheme is a singleton that needs to know the default font size to
-    // draw some form controls. We let it know each time the size changes.
-    WebCore::RenderThemeChromiumWin::setDefaultFontSize(size);
-#endif
 }
 
 void WebSettingsImpl::setDefaultFixedFontSize(int size)
@@ -139,11 +139,6 @@ void WebSettingsImpl::setDeviceSupportsMouse(bool deviceSupportsMouse)
     m_settings->setDeviceSupportsMouse(deviceSupportsMouse);
 }
 
-bool WebSettingsImpl::deviceSupportsTouch()
-{
-    return m_settings->deviceSupportsTouch();
-}
-
 void WebSettingsImpl::setAutoZoomFocusedNodeToLegibleScale(bool autoZoomFocusedNodeToLegibleScale)
 {
     m_autoZoomFocusedNodeToLegibleScale = autoZoomFocusedNodeToLegibleScale;
@@ -151,7 +146,7 @@ void WebSettingsImpl::setAutoZoomFocusedNodeToLegibleScale(bool autoZoomFocusedN
 
 void WebSettingsImpl::setTextAutosizingEnabled(bool enabled)
 {
-    m_settings->setTextAutosizingEnabled(enabled);
+    m_inspectorController->setTextAutosizingEnabled(enabled);
 }
 
 void WebSettingsImpl::setAccessibilityFontScaleFactor(float fontScaleFactor)
@@ -161,7 +156,7 @@ void WebSettingsImpl::setAccessibilityFontScaleFactor(float fontScaleFactor)
 
 void WebSettingsImpl::setDeviceScaleAdjustment(float deviceScaleAdjustment)
 {
-    m_settings->setDeviceScaleAdjustment(deviceScaleAdjustment);
+    m_inspectorController->setDeviceScaleAdjustment(deviceScaleAdjustment);
 }
 
 void WebSettingsImpl::setDefaultTextEncodingName(const WebString& encoding)
@@ -528,14 +523,15 @@ void WebSettingsImpl::setAntialiased2dCanvasEnabled(bool enabled)
     m_settings->setAntialiased2dCanvasEnabled(enabled);
 }
 
-void WebSettingsImpl::setDeferred2dCanvasEnabled(bool enabled)
-{
-}
-
 void WebSettingsImpl::setDeferredImageDecodingEnabled(bool enabled)
 {
     DeferredImageDecoder::setEnabled(enabled);
     m_deferredImageDecodingEnabled = enabled;
+}
+
+void WebSettingsImpl::setDeferredFiltersEnabled(bool enabled)
+{
+    m_settings->setDeferredFiltersEnabled(enabled);
 }
 
 void WebSettingsImpl::setAcceleratedCompositingForFixedPositionEnabled(bool enabled)
@@ -666,21 +662,6 @@ bool WebSettingsImpl::viewportMetaEnabled() const
 bool WebSettingsImpl::mainFrameResizesAreOrientationChanges() const
 {
     return m_mainFrameResizesAreOrientationChanges;
-}
-
-void WebSettingsImpl::setShouldDisplaySubtitles(bool enabled)
-{
-    m_settings->setShouldDisplaySubtitles(enabled);
-}
-
-void WebSettingsImpl::setShouldDisplayCaptions(bool enabled)
-{
-    m_settings->setShouldDisplayCaptions(enabled);
-}
-
-void WebSettingsImpl::setShouldDisplayTextDescriptions(bool enabled)
-{
-    m_settings->setShouldDisplayTextDescriptions(enabled);
 }
 
 void WebSettingsImpl::setShouldRespectImageOrientation(bool enabled)

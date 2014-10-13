@@ -129,6 +129,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
                         bool notify_redirects,
                         bool is_plugin_src_load,
                         int origin_pid,
+                        int render_frame_id,
                         int render_view_id) OVERRIDE;
   // End of WebPluginDelegate implementation.
 
@@ -387,13 +388,11 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // GetProcAddress intercepter for windowless plugins.
   static FARPROC WINAPI GetProcAddressPatch(HMODULE module, LPCSTR name);
 
-#if defined(USE_AURA)
   // WindowFromPoint patch for Flash windowless plugins. When flash receives
   // mouse move messages it calls the WindowFromPoint API to eventually convert
   // the mouse coordinates to screen. We need to return the dummy plugin parent
   // window for Aura to ensure that these conversions occur correctly.
   static HWND WINAPI WindowFromPointPatch(POINT point);
-#endif
 
   // The mouse hook proc which handles mouse capture in windowed plugins.
   static LRESULT CALLBACK MouseHookProc(int code, WPARAM wParam,

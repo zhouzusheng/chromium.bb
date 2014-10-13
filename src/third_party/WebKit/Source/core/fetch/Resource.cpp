@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/fetch/Resource.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/fetch/CachedMetadata.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/MemoryCache.h"
@@ -115,6 +116,8 @@ Resource::Resource(const ResourceRequest& request, Type type)
     , m_switchingClientsToRevalidatedResource(false)
     , m_type(type)
     , m_status(Pending)
+    , m_wasPurged(false)
+    , m_needsSynchronousCacheHit(false)
 #ifndef NDEBUG
     , m_deleted(false)
     , m_lruIndex(0)
@@ -225,6 +228,13 @@ void Resource::setResourceBuffer(PassRefPtr<SharedBuffer> resourceBuffer)
     setEncodedSize(m_data->size());
 }
 
+void Resource::setDataBufferingPolicy(DataBufferingPolicy dataBufferingPolicy)
+{
+    m_options.dataBufferingPolicy = dataBufferingPolicy;
+    m_data.clear();
+    setEncodedSize(0);
+}
+
 void Resource::error(Resource::Status status)
 {
     if (m_resourceToRevalidate)
@@ -296,8 +306,9 @@ double Resource::freshnessLifetime() const
         return 0;
 #endif
 
-    // Cache other non-http resources liberally.
-    if (!m_response.url().protocolIsInHTTPFamily())
+    // Cache other non-http / non-filesystem resources liberally.
+    if (!m_response.url().protocolIsInHTTPFamily()
+        && !m_response.url().protocolIs("filesystem"))
         return std::numeric_limits<double>::max();
 
     // RFC2616 13.2.4
@@ -314,6 +325,32 @@ double Resource::freshnessLifetime() const
         return (creationTime - lastModifiedValue) * 0.1;
     // If no cache headers are present, the specification leaves the decision to the UA. Other browsers seem to opt for 0.
     return 0;
+}
+
+bool Resource::unlock()
+{
+    if (hasClients() || m_proxyResource || m_resourceToRevalidate || !m_loadFinishTime || !isSafeToUnlock())
+        return false;
+
+    if (m_purgeableData) {
+        ASSERT(!m_data);
+        return true;
+    }
+    if (!m_data)
+        return false;
+
+    // Should not make buffer purgeable if it has refs other than this since we don't want two copies.
+    if (!m_data->hasOneRef())
+        return false;
+
+    m_data->createPurgeableBuffer();
+    if (!m_data->hasPurgeableBuffer())
+        return false;
+
+    m_purgeableData = m_data->releasePurgeableBuffer();
+    m_purgeableData->unlock();
+    m_data.clear();
+    return true;
 }
 
 void Resource::responseReceived(const ResourceResponse& response)
@@ -424,7 +461,7 @@ bool Resource::addClientToSet(ResourceClient* client)
         memoryCache()->addToLiveResourcesSize(this);
 
     // If we have existing data to send to the new client and the resource type supprts it, send it asynchronously.
-    if (!m_response.isNull() && !m_proxyResource && !shouldSendCachedDataSynchronouslyForType(type())) {
+    if (!m_response.isNull() && !m_proxyResource && !shouldSendCachedDataSynchronouslyForType(type()) && !m_needsSynchronousCacheHit) {
         m_clientsAwaitingCallback.add(client);
         ResourceCallback::callbackHandler()->schedule(this);
         return false;
@@ -580,6 +617,12 @@ void Resource::finishPendingClients()
         m_clients.add(client);
         didAddClient(client);
     }
+}
+
+void Resource::prune()
+{
+    destroyDecodedDataIfPossible();
+    unlock();
 }
 
 void Resource::setResourceToRevalidate(Resource* resource)
@@ -776,58 +819,31 @@ bool Resource::mustRevalidateDueToCacheHeaders() const
     return false;
 }
 
-bool Resource::isSafeToMakePurgeable() const
+bool Resource::isPurgeable() const
 {
-    return !hasClients() && !m_proxyResource && !m_resourceToRevalidate;
+    return m_purgeableData && !m_purgeableData->isLocked();
 }
 
-bool Resource::makePurgeable(bool purgeable)
+bool Resource::wasPurged() const
 {
-    if (purgeable) {
-        ASSERT(isSafeToMakePurgeable());
+    return m_wasPurged;
+}
 
-        if (m_purgeableData) {
-            ASSERT(!m_data);
-            return true;
-        }
-        if (!m_data)
-            return false;
-
-        // Should not make buffer purgeable if it has refs other than this since we don't want two copies.
-        if (!m_data->hasOneRef())
-            return false;
-
-        m_data->createPurgeableBuffer();
-        if (!m_data->hasPurgeableBuffer())
-            return false;
-
-        m_purgeableData = m_data->releasePurgeableBuffer();
-        m_purgeableData->unlock();
-        m_data.clear();
-        return true;
-    }
-
+bool Resource::lock()
+{
     if (!m_purgeableData)
         return true;
 
     ASSERT(!m_data);
     ASSERT(!hasClients());
 
-    if (!m_purgeableData->lock())
+    if (!m_purgeableData->lock()) {
+        m_wasPurged = true;
         return false;
+    }
 
     m_data = SharedBuffer::adoptPurgeableBuffer(m_purgeableData.release());
     return true;
-}
-
-bool Resource::isPurgeable() const
-{
-    return m_purgeableData && m_purgeableData->isPurgeable();
-}
-
-bool Resource::wasPurged() const
-{
-    return m_purgeableData && m_purgeableData->wasPurged();
 }
 
 size_t Resource::overheadSize() const
@@ -876,6 +892,64 @@ void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
     m_resourcesWithPendingClients.clear();
     for (size_t i = 0; i < resources.size(); i++)
         resources[i]->finishPendingClients();
+}
+
+static const char* initatorTypeNameToString(const AtomicString& initiatorTypeName)
+{
+    if (initiatorTypeName == FetchInitiatorTypeNames::css)
+        return "CSS resource";
+    if (initiatorTypeName == FetchInitiatorTypeNames::document)
+        return "Document";
+    if (initiatorTypeName == FetchInitiatorTypeNames::icon)
+        return "Icon";
+    if (initiatorTypeName == FetchInitiatorTypeNames::internal)
+        return "Internal resource";
+    if (initiatorTypeName == FetchInitiatorTypeNames::link)
+        return "Link element resource";
+    if (initiatorTypeName == FetchInitiatorTypeNames::processinginstruction)
+        return "Processing instruction";
+    if (initiatorTypeName == FetchInitiatorTypeNames::texttrack)
+        return "Text track";
+    if (initiatorTypeName == FetchInitiatorTypeNames::xml)
+        return "XML resource";
+    if (initiatorTypeName == FetchInitiatorTypeNames::xmlhttprequest)
+        return "XMLHttpRequest";
+
+    return "Resource";
+}
+
+const char* Resource::resourceTypeToString(Type type, const FetchInitiatorInfo& initiatorInfo)
+{
+    switch (type) {
+    case Resource::MainResource:
+        return "Main resource";
+    case Resource::Image:
+        return "Image";
+    case Resource::CSSStyleSheet:
+        return "CSS stylesheet";
+    case Resource::Script:
+        return "Script";
+    case Resource::Font:
+        return "Font";
+    case Resource::Raw:
+        return initatorTypeNameToString(initiatorInfo.name);
+    case Resource::SVGDocument:
+        return "SVG document";
+    case Resource::XSLStyleSheet:
+        return "XSL stylesheet";
+    case Resource::LinkPrefetch:
+        return "Link prefetch resource";
+    case Resource::LinkSubresource:
+        return "Link subresource";
+    case Resource::TextTrack:
+        return "Text track";
+    case Resource::Shader:
+        return "Shader";
+    case Resource::ImportResource:
+        return "Imported resource";
+    }
+    ASSERT_NOT_REACHED();
+    return initatorTypeNameToString(initiatorInfo.name);
 }
 
 #if !LOG_DISABLED

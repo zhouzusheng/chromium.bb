@@ -46,10 +46,12 @@ enum AnimatedPropertyType {
     AnimatedNumberList,
     AnimatedNumberOptionalNumber,
     AnimatedPath,
+    AnimatedPoint,
     AnimatedPoints,
     AnimatedPreserveAspectRatio,
     AnimatedRect,
     AnimatedString,
+    AnimatedStringList,
     AnimatedTransformList,
     AnimatedUnknown
 };

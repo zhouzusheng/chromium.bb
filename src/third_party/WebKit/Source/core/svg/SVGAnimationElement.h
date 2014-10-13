@@ -26,10 +26,10 @@
 #define SVGAnimationElement_h
 
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGTests.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "platform/animation/UnitBezier.h"
+#include "wtf/Functional.h"
 
 namespace WebCore {
 
@@ -43,11 +43,10 @@ enum AnimationMode {
     PathAnimation // Used by AnimateMotion.
 };
 
-// If we have 'currentColor' or 'inherit' as animation value, we need to grab
-// the value during the animation since the value can be animated itself.
+// If we have 'inherit' as animation value, we need to grab the value
+// during the animation since the value can be animated itself.
 enum AnimatedPropertyValueType {
     RegularPropertyValue,
-    CurrentColorValue,
     InheritValue
 };
 
@@ -63,8 +62,7 @@ class TimeContainer;
 class SVGAnimatedType;
 
 class SVGAnimationElement : public SVGSMILElement,
-                            public SVGTests,
-                            public SVGExternalResourcesRequired {
+                            public SVGTests {
 public:
     // SVGAnimationElement
     float getStartTime() const;
@@ -94,17 +92,24 @@ public:
     AnimatedPropertyValueType fromPropertyValueType() const { return m_fromPropertyValueType; }
     AnimatedPropertyValueType toPropertyValueType() const { return m_toPropertyValueType; }
 
+    // FIXME: In C++11, remove this as we can use default template argument.
     template<typename AnimatedType>
     void adjustForInheritance(AnimatedType (*parseTypeFromString)(SVGAnimationElement*, const String&),
                               AnimatedPropertyValueType valueType, AnimatedType& animatedType, SVGElement* contextElement)
     {
+        ASSERT(parseTypeFromString);
+        adjustForInheritance<AnimatedType, AnimatedType (*)(SVGAnimationElement*, const String&)>(parseTypeFromString, valueType, animatedType, contextElement);
+    }
+
+    template<typename AnimatedType, typename ParseTypeFromStringType>
+    void adjustForInheritance(ParseTypeFromStringType parseTypeFromString, AnimatedPropertyValueType valueType, AnimatedType& animatedType, SVGElement* contextElement)
+    {
         if (valueType != InheritValue)
             return;
         // Replace 'inherit' by its computed property value.
-        ASSERT(parseTypeFromString);
         String typeString;
         adjustForInheritance(contextElement, attributeName(), typeString);
-        animatedType = (*parseTypeFromString)(this, typeString);
+        animatedType = parseTypeFromString(this, typeString);
     }
 
     template<typename AnimatedType>
@@ -165,7 +170,7 @@ protected:
     SVGAnimationElement(const QualifiedName&, Document&);
 
     void computeCSSPropertyValue(SVGElement*, CSSPropertyID, String& value);
-    virtual void determinePropertyValueTypes(const String& from, const String& to);
+    void determinePropertyValueTypes(const String& from, const String& to);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -181,8 +186,6 @@ protected:
     String toValue() const;
     String byValue() const;
     String fromValue() const;
-
-    String targetAttributeBaseValue();
 
     // from SVGSMILElement
     virtual void startedActiveInterval() OVERRIDE;
@@ -219,17 +222,10 @@ private:
     float calculatePercentForFromTo(float percent) const;
     unsigned calculateKeyTimesIndex(float percent) const;
 
-    void applyAnimatedValue(ShouldApplyAnimation, SVGElement* targetElement, const QualifiedName& attributeName, SVGAnimatedType*);
     void adjustForInheritance(SVGElement* targetElement, const QualifiedName& attributeName, String&);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGAnimationElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 
     void setCalcMode(const AtomicString&);
 

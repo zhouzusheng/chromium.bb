@@ -87,9 +87,9 @@ Decimal StepRange::clampValue(const Decimal& value) const
     const Decimal inRangeValue = max(m_minimum, min(value, m_maximum));
     if (!m_hasStep)
         return inRangeValue;
-    // Rounds inRangeValue to minimum + N * step.
-    const Decimal roundedValue = roundByStep(inRangeValue, m_minimum);
-    const Decimal clampedValue = roundedValue > m_maximum ? roundedValue - m_step : roundedValue;
+    // Rounds inRangeValue to stepBase + N * step.
+    const Decimal roundedValue = roundByStep(inRangeValue, m_stepBase);
+    const Decimal clampedValue = roundedValue > m_maximum ? roundedValue - m_step : (roundedValue < m_minimum ? roundedValue + m_step : roundedValue);
     ASSERT(clampedValue >= m_minimum);
     ASSERT(clampedValue <= m_maximum);
     return clampedValue;
@@ -161,7 +161,7 @@ bool StepRange::stepMismatch(const Decimal& valueForCheck) const
     // ... that number subtracted from the step base is not an integral multiple
     // of the allowed value step, the element is suffering from a step mismatch.
     const Decimal remainder = (value - m_step * (value / m_step).round()).abs();
-    // Accepts erros in lower fractional part which IEEE 754 single-precision
+    // Accepts errors in lower fractional part which IEEE 754 single-precision
     // can't represent.
     const Decimal computedAcceptableError = acceptableError();
     return computedAcceptableError < remainder && remainder < (m_step - computedAcceptableError);

@@ -43,6 +43,7 @@
 #include "core/rendering/RenderTableRow.h"
 #include "core/rendering/RenderTextControl.h"
 #include "core/rendering/RenderTextFragment.h"
+#include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
 #include "platform/text/TextBoundaries.h"
 #include "platform/text/TextBreakIteratorInternalICU.h"
@@ -403,11 +404,11 @@ void TextIterator::advance()
                 if (renderer->isText() && m_node->nodeType() == Node::TEXT_NODE) { // FIXME: What about CDATA_SECTION_NODE?
                     handledNode = handleTextNode();
                 } else if (renderer && (renderer->isImage() || renderer->isWidget()
-                    || (renderer->node() && renderer->node()->isElementNode()
-                    && (toElement(renderer->node())->isFormControlElement()
-                    || toElement(renderer->node())->hasTagName(legendTag)
-                    || toElement(renderer->node())->hasTagName(meterTag)
-                    || toElement(renderer->node())->hasTagName(progressTag))))) {
+                    || (m_node && m_node->isElementNode()
+                    && (toElement(m_node)->isFormControlElement()
+                    || toElement(m_node)->hasTagName(legendTag)
+                    || toElement(m_node)->hasTagName(meterTag)
+                    || toElement(m_node)->hasTagName(progressTag))))) {
                     handledNode = handleReplacedElement();
                 } else {
                     handledNode = handleNonTextNode();
@@ -1361,7 +1362,12 @@ RenderText* SimplifiedBackwardsTextIterator::handleFirstLetter(int& startOffset,
 
     m_shouldHandleFirstLetter = false;
     offsetInNode = 0;
-    return firstRenderTextInFirstLetter(fragment->firstLetter());
+    RenderText* firstLetterRenderer = firstRenderTextInFirstLetter(fragment->firstLetter());
+
+    m_offset = firstLetterRenderer->caretMaxOffset();
+    m_offset += collapsedSpaceLength(firstLetterRenderer, m_offset);
+
+    return firstLetterRenderer;
 }
 
 bool SimplifiedBackwardsTextIterator::handleReplacedElement()
@@ -1499,19 +1505,6 @@ void CharacterIterator::advance(int count)
     // ran to the end of the m_textIterator... no more runs left
     m_atBreak = true;
     m_runOffset = 0;
-}
-
-String CharacterIterator::string(int numChars)
-{
-    StringBuilder result;
-    result.reserveCapacity(numChars);
-    while (numChars > 0 && !atEnd()) {
-        int runSize = min(numChars, length());
-        m_textIterator.appendTextToStringBuilder(result, m_runOffset, runSize);
-        numChars -= runSize;
-        advance(runSize);
-    }
-    return result.toString();
 }
 
 static PassRefPtr<Range> characterSubrange(CharacterIterator& it, int offset, int length)
@@ -1902,7 +1895,7 @@ inline bool SearchBuffer::isWordStartMatch(size_t start, size_t length) const
 
     // Chinese and Japanese lack word boundary marks, and there is no clear agreement on what constitutes
     // a word, so treat the position before any CJK character as a word start.
-    if (Font::isCJKIdeographOrSymbol(firstCharacter))
+    if (Character::isCJKIdeographOrSymbol(firstCharacter))
         return true;
 
     size_t wordBreakSearchStart = start + length;

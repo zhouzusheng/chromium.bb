@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-class SubmitInputType : public BaseButtonInputType {
+class SubmitInputType FINAL : public BaseButtonInputType {
 public:
     static PassRefPtr<InputType> create(HTMLInputElement&);
 
@@ -47,7 +47,6 @@ private:
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
     virtual bool canBeSuccessfulSubmitButton() OVERRIDE;
     virtual String defaultValue() const OVERRIDE;
-    virtual bool isSubmitButton() const OVERRIDE;
     virtual bool isTextButton() const OVERRIDE;
 };
 

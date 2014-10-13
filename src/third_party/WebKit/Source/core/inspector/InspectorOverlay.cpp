@@ -38,8 +38,8 @@
 #include "core/dom/PseudoElement.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlayHost.h"
-#include "core/loader/DocumentLoader.h"
 #include "core/loader/EmptyClients.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/frame/Frame.h"
@@ -59,34 +59,29 @@ namespace WebCore {
 
 namespace {
 
-class InspectorOverlayChromeClient: public EmptyChromeClient {
+class InspectorOverlayChromeClient FINAL: public EmptyChromeClient {
 public:
     InspectorOverlayChromeClient(ChromeClient& client, InspectorOverlay* overlay)
         : m_client(client)
         , m_overlay(overlay)
     { }
 
-    virtual void setCursor(const Cursor& cursor)
+    virtual void setCursor(const Cursor& cursor) OVERRIDE
     {
         m_client.setCursor(cursor);
     }
 
-    virtual void setToolTip(const String& tooltip, TextDirection direction)
+    virtual void setToolTip(const String& tooltip, TextDirection direction) OVERRIDE
     {
         m_client.setToolTip(tooltip, direction);
     }
 
-    virtual void invalidateRootView(const IntRect& rect)
+    virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE
     {
         m_overlay->invalidate();
     }
 
-    virtual void invalidateContentsAndRootView(const IntRect& rect)
-    {
-        m_overlay->invalidate();
-    }
-
-    virtual void invalidateContentsForSlowScroll(const IntRect& rect)
+    virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE
     {
         m_overlay->invalidate();
     }
@@ -416,13 +411,12 @@ void InspectorOverlay::update()
     if (!view)
         return;
     IntRect viewRect = view->visibleContentRect();
-    FrameView* overlayView = overlayPage()->mainFrame()->view();
 
     // Include scrollbars to avoid masking them by the gutter.
     IntSize frameViewFullSize = view->visibleContentRect(ScrollableArea::IncludeScrollbars).size();
     IntSize size = m_size.isEmpty() ? frameViewFullSize : m_size;
     size.scale(m_page->pageScaleFactor());
-    overlayView->resize(size);
+    overlayPage()->mainFrame()->view()->resize(size);
 
     // Clear canvas and paint things.
     reset(size, m_size.isEmpty() ? IntSize() : frameViewFullSize, viewRect.x(), viewRect.y());
@@ -434,9 +428,8 @@ void InspectorOverlay::update()
     drawViewSize();
 
     // Position DOM elements.
-    overlayPage()->mainFrame()->document()->recalcStyle(Force);
-    if (overlayView->needsLayout())
-        overlayView->layout();
+    overlayPage()->mainFrame()->document()->setNeedsStyleRecalc(SubtreeStyleChange);
+    overlayPage()->mainFrame()->document()->updateLayout();
 
     // Kick paint.
     m_client->highlight();
@@ -610,19 +603,19 @@ Page* InspectorOverlay::overlayPage()
     overlaySettings.setPluginsEnabled(false);
     overlaySettings.setLoadsImagesAutomatically(true);
 
-    RefPtr<Frame> frame = Frame::create(FrameInit::create(0, m_overlayPage.get(), dummyFrameLoaderClient));
+    RefPtr<Frame> frame = Frame::create(FrameInit::create(0, &m_overlayPage->frameHost(), dummyFrameLoaderClient));
     frame->setView(FrameView::create(frame.get()));
     frame->init();
     FrameLoader& loader = frame->loader();
     frame->view()->setCanHaveScrollbars(false);
     frame->view()->setTransparent(true);
-    ASSERT(loader.activeDocumentLoader());
-    DocumentWriter* writer = loader.activeDocumentLoader()->beginWriting("text/html", "UTF-8");
-    writer->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
-    loader.activeDocumentLoader()->endWriting(writer);
+
+    RefPtr<SharedBuffer> data = SharedBuffer::create(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
+    loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data, "text/html", "UTF-8", KURL(), ForceSynchronousLoad)));
     v8::Isolate* isolate = toIsolate(frame.get());
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> frameContext = frame->script().currentWorldContext();
+    v8::Handle<v8::Context> frameContext = toV8Context(isolate, frame.get(), DOMWrapperWorld::mainWorld());
+    ASSERT(!frameContext.IsEmpty());
     v8::Context::Scope contextScope(frameContext);
     v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), v8::Handle<v8::Object>(), isolate);
     v8::Handle<v8::Object> global = frameContext->Global();
@@ -681,7 +674,12 @@ bool InspectorOverlay::getBoxModel(Node* node, Vector<FloatQuad>* quads)
 
 void InspectorOverlay::freePage()
 {
-    m_overlayPage.clear();
+    if (m_overlayPage) {
+        // FIXME: This logic is duplicated in SVGImage and WebViewImpl. Perhaps it can be combined
+        // into Page's destructor.
+        m_overlayPage->mainFrame()->loader().frameDetached();
+        m_overlayPage.clear();
+    }
     m_overlayChromeClient.clear();
     m_timer.stop();
 }

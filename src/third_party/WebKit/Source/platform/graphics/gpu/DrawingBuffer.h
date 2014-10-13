@@ -33,11 +33,14 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntSize.h"
-#include "platform/graphics/GraphicsContext3D.h"
 #include "platform/graphics/GraphicsTypes3D.h"
-
+#include "platform/graphics/gpu/WebGLImageConversion.h"
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
+#include "public/platform/WebGraphicsContext3D.h"
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -50,8 +53,8 @@ class WebLayer;
 }
 
 namespace WebCore {
-class GraphicsContext3D;
 class ImageData;
+class ImageBuffer;
 
 // Abstract interface to allow basic context eviction management
 class PLATFORM_EXPORT ContextEvictionManager : public RefCounted<ContextEvictionManager> {
@@ -76,9 +79,9 @@ public:
         Discard
     };
 
-    static PassRefPtr<DrawingBuffer> create(GraphicsContext3D*, const IntSize&, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
+    static PassRefPtr<DrawingBuffer> create(blink::WebGraphicsContext3D*, const IntSize&, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
 
-    ~DrawingBuffer();
+    virtual ~DrawingBuffer();
 
     // Clear all resources from this object, as well as context. Called when context is destroyed
     // to prevent invalid accesses to the resources.
@@ -86,7 +89,7 @@ public:
 
     // Issues a glClear() on all framebuffers associated with this DrawingBuffer. The caller is responsible for
     // making the context current and setting the clear values and masks. Modifies the framebuffer binding.
-    void clearFramebuffers(GC3Dbitfield clearMask);
+    void clearFramebuffers(GLbitfield clearMask);
 
     // Given the desired buffer size, provides the largest dimensions that will fit in the pixel budget.
     IntSize adjustSize(const IntSize&);
@@ -113,13 +116,15 @@ public:
 
     // Track the currently active texture unit. Texture unit 0 is used as host for a scratch
     // texture.
-    void setActiveTextureUnit(GC3Dint textureUnit) { m_activeTextureUnit = textureUnit; }
+    void setActiveTextureUnit(GLint textureUnit) { m_activeTextureUnit = textureUnit; }
 
     bool multisample() const;
 
     Platform3DObject framebuffer() const;
 
     void markContentsChanged();
+    void markLayerComposited();
+    bool layerComposited() const;
 
     blink::WebLayer* platformLayer();
     void paintCompositedResultsToCanvas(ImageBuffer*);
@@ -129,24 +134,26 @@ public:
     virtual bool prepareMailbox(blink::WebExternalTextureMailbox*, blink::WebExternalBitmap*) OVERRIDE;
     virtual void mailboxReleased(const blink::WebExternalTextureMailbox&) OVERRIDE;
 
-    bool copyToPlatformTexture(GraphicsContext3D&, Platform3DObject texture, GC3Denum internalFormat,
-        GC3Denum destType, GC3Dint level, bool premultiplyAlpha, bool flipY);
+    bool copyToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject texture, GLenum internalFormat,
+        GLenum destType, GLint level, bool premultiplyAlpha, bool flipY);
+
+    void setPackAlignment(GLint param);
+
+    void paintRenderingResultsToCanvas(ImageBuffer*);
+    PassRefPtr<Uint8ClampedArray> paintRenderingResultsToImageData(int&, int&);
 
 private:
-    DrawingBuffer(GraphicsContext3D*, const IntSize&, bool multisampleExtensionSupported,
+    DrawingBuffer(blink::WebGraphicsContext3D*, const IntSize&, bool multisampleExtensionSupported,
                   bool packedDepthStencilExtensionSupported, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
 
     void initialize(const IntSize&);
-
-    Platform3DObject frontColorBuffer() const;
-    Platform3DObject colorBuffer() const { return m_colorBuffer; }
 
     unsigned createColorTexture(const IntSize& size = IntSize());
     // Create the depth/stencil and multisample buffers, if needed.
     void createSecondaryBuffers();
     bool resizeFramebuffer(const IntSize&);
     bool resizeMultisampleFramebuffer(const IntSize&);
-    void resizeDepthStencil(const IntSize&, int sampleCount);
+    void resizeDepthStencil(const IntSize&);
 
     // Bind to the m_framebufferBinding if it's not 0.
     void restoreFramebufferBinding();
@@ -166,17 +173,37 @@ private:
     // Returns true if the buffer will only fit if the oldest WebGL context is forcibly lost
     IntSize adjustSizeWithContextEviction(const IntSize&, bool& evictContext);
 
+    void paintFramebufferToCanvas(int framebuffer, int width, int height, bool premultiplyAlpha, ImageBuffer*);
+
+    // This is the order of bytes to use when doing a readback.
+    enum ReadbackOrder {
+        ReadbackRGBA,
+        ReadbackSkia
+    };
+
+    // Helper function which does a readback from the currently-bound
+    // framebuffer into a buffer of a certain size with 4-byte pixels.
+    void readBackFramebuffer(unsigned char* pixels, int width, int height, ReadbackOrder, WebGLImageConversion::AlphaOp);
+
+    // Helper function to flip a bitmap vertically.
+    void flipVertically(uint8_t* data, int width, int height);
+
+    // Helper to texImage2D with pixel==0 case: pixels are initialized to 0.
+    // By default, alignment is 4, the OpenGL default setting.
+    void texImage2DResourceSafe(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, GLint alignment = 4);
+
     PreserveDrawingBuffer m_preserveDrawingBuffer;
     bool m_scissorEnabled;
     Platform3DObject m_texture2DBinding;
     Platform3DObject m_framebufferBinding;
-    GC3Denum m_activeTextureUnit;
+    GLenum m_activeTextureUnit;
 
-    RefPtr<GraphicsContext3D> m_context;
+    blink::WebGraphicsContext3D* m_context;
     IntSize m_size;
     bool m_multisampleExtensionSupported;
     bool m_packedDepthStencilExtensionSupported;
     Platform3DObject m_fbo;
+    // DrawingBuffer's output is double-buffered. m_colorBuffer is the back buffer.
     Platform3DObject m_colorBuffer;
     Platform3DObject m_frontColorBuffer;
 
@@ -196,12 +223,15 @@ private:
 
     // True if commit() has been called since the last time markContentsChanged() had been called.
     bool m_contentsChangeCommitted;
+    bool m_layerComposited;
 
-    GraphicsContext3D::Attributes m_attributes;
+    blink::WebGraphicsContext3D::Attributes m_attributes;
     unsigned m_internalColorFormat;
     unsigned m_colorFormat;
     unsigned m_internalRenderbufferFormat;
     int m_maxTextureSize;
+    int m_sampleCount;
+    int m_packAlignment;
 
     OwnPtr<blink::WebExternalTextureLayer> m_layer;
 
@@ -209,9 +239,18 @@ private:
     Vector<RefPtr<MailboxInfo> > m_textureMailboxes;
     // Mailboxes that were released by the compositor and can be used again by this DrawingBuffer.
     Vector<RefPtr<MailboxInfo> > m_recycledMailboxes;
-    RefPtr<MailboxInfo> m_lastColorBuffer;
 
     RefPtr<ContextEvictionManager> m_contextEvictionManager;
+
+    // If the width and height of the Canvas's backing store don't
+    // match those that we were given in the most recent call to
+    // reshape(), then we need an intermediate bitmap to read back the
+    // frame buffer into. This seems to happen when CSS styles are
+    // used to resize the Canvas.
+    SkBitmap m_resizingBitmap;
+
+    // Used to flip a bitmap vertically.
+    Vector<uint8_t> m_scanline;
 };
 
 } // namespace WebCore

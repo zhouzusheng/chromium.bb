@@ -38,6 +38,7 @@
 namespace WebCore {
 
 class Element;
+class Dictionary;
 
 class Animation FINAL : public TimedItem {
 
@@ -45,7 +46,24 @@ public:
     enum Priority { DefaultPriority, TransitionPriority };
 
     static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
-    virtual bool isAnimation() const OVERRIDE FINAL { return true; }
+    // Web Animations API Bindings constructors.
+    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector, Dictionary timingInput);
+    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector, double timingInput);
+    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector);
+
+    // FIXME: Move all of these setter methods out of Animation,
+    // possibly into a new class (TimingInput?).
+    static void setStartDelay(Timing&, double startDelay);
+    static void setEndDelay(Timing&, double endDelay);
+    static void setFillMode(Timing&, String fillMode);
+    static void setIterationStart(Timing&, double iterationStart);
+    static void setIterationCount(Timing&, double iterationCount);
+    static void setIterationDuration(Timing&, double iterationDuration);
+    static void setPlaybackRate(Timing&, double playbackRate);
+    static void setPlaybackDirection(Timing&, String direction);
+    static void setTimingFunction(Timing&, String timingFunctionString);
+
+    virtual bool isAnimation() const OVERRIDE { return true; }
 
     const AnimationEffect::CompositableValueList* compositableValues() const
     {
@@ -68,14 +86,20 @@ public:
 
 protected:
     // Returns whether style recalc was triggered.
-    virtual bool applyEffects(bool previouslyInEffect);
-    virtual void clearEffects();
-    virtual bool updateChildrenAndEffects() const OVERRIDE FINAL;
-    virtual void didAttach() OVERRIDE FINAL;
-    virtual void willDetach() OVERRIDE FINAL;
-    virtual double calculateTimeToEffectChange(double inheritedTime, double timeToNextIteration) const OVERRIDE FINAL;
+    bool applyEffects(bool previouslyInEffect);
+    void clearEffects();
+    virtual bool updateChildrenAndEffects() const OVERRIDE;
+    virtual void didAttach() OVERRIDE;
+    virtual void willDetach() OVERRIDE;
+    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
+    static void populateTiming(Timing&, Dictionary);
+    // createUnsafe should only be directly called from tests.
+    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector, Dictionary timingInput);
+    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector, double timingInput);
+    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector);
+
     Animation(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
 
     RefPtr<Element> m_target;
@@ -89,6 +113,7 @@ private:
     Vector<int> m_compositorAnimationIds;
 
     friend class CSSAnimations;
+    friend class AnimationAnimationTest;
 };
 
 DEFINE_TYPE_CASTS(Animation, TimedItem, timedItem, timedItem->isAnimation(), timedItem.isAnimation());

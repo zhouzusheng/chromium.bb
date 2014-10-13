@@ -66,13 +66,6 @@ enum ObjectContentType {
     ObjectContentOtherPlugin
 };
 
-enum ClearOption {
-    ClearWindowProperties = 1 << 0,
-    ClearScriptObjects = 1 << 1,
-    ClearWindowObject = 1 << 2,
-};
-typedef int ClearOptions;
-
 enum ShouldSendReferrer {
     MaybeSendReferrer,
     NeverSendReferrer
@@ -88,10 +81,14 @@ enum ReloadPolicy {
     EndToEndReload
 };
 
+enum LoadStartType {
+    NavigationToDifferentDocument,
+    NavigationWithinSameDocument
+};
+
 enum SameDocumentNavigationSource {
     SameDocumentNavigationDefault,
-    SameDocumentNavigationPushState,
-    SameDocumentNavigationReplaceState
+    SameDocumentNavigationHistoryApi,
 };
 
 enum ClientRedirectPolicy {
@@ -104,6 +101,17 @@ enum HistoryLoadType {
     HistoryDifferentDocumentLoad
 };
 
+enum HistoryCommitType {
+    StandardCommit,
+    BackForwardCommit,
+    InitialCommitInChildFrame,
+    HistoryInertCommit
+};
+
+enum UpdateBackForwardListPolicy {
+    UpdateBackForwardList,
+    DoNotUpdateBackForwardList
+};
 }
 
 #endif

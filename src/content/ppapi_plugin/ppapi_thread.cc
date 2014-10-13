@@ -52,6 +52,11 @@
 
 #if defined(OS_WIN)
 extern sandbox::TargetServices* g_target_services;
+
+// Used by EnumSystemLocales for warming up.
+static BOOL CALLBACK EnumLocalesProc(LPTSTR lpLocaleString) {
+  return TRUE;
+}
 #else
 extern void* g_target_services;
 #endif
@@ -206,8 +211,7 @@ void PpapiThread::Unregister(uint32 plugin_dispatcher_id) {
 }
 
 void PpapiThread::OnLoadPlugin(const base::FilePath& path,
-                               const ppapi::PpapiPermissions& permissions,
-                               bool supports_dev_channel) {
+                               const ppapi::PpapiPermissions& permissions) {
   // In case of crashes, the crash dump doesn't indicate which plugin
   // it came from.
   base::debug::SetCrashKeyValue("ppapi_path", path.MaybeAsASCII());
@@ -217,7 +221,6 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // This must be set before calling into the plugin so it can get the
   // interfaces it has permission for.
   ppapi::proxy::InterfaceList::SetProcessGlobalPermissions(permissions);
-  ppapi::proxy::InterfaceList::SetSupportsDevChannel(supports_dev_channel);
   permissions_ = permissions;
 
   // Trusted Pepper plugins may be "internal", i.e. built-in to the browser
@@ -298,6 +301,11 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
     // Warm up language subsystems before the sandbox is turned on.
     ::GetUserDefaultLangID();
     ::GetUserDefaultLCID();
+
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
+      // Warm up system locales.
+      EnumSystemLocalesW(EnumLocalesProc, LCID_INSTALLED);
+    }
 
     g_target_services->LowerToken();
   }

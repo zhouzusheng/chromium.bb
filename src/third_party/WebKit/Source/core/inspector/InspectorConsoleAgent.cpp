@@ -62,8 +62,8 @@ static const char consoleMessagesEnabled[] = "consoleMessagesEnabled";
 
 int InspectorConsoleAgent::s_enabledAgentCount = 0;
 
-InspectorConsoleAgent::InspectorConsoleAgent(InstrumentingAgents* instrumentingAgents, InspectorTimelineAgent* timelineAgent, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorConsoleAgent>("Console", instrumentingAgents, state)
+InspectorConsoleAgent::InspectorConsoleAgent(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager)
+    : InspectorBaseAgent<InspectorConsoleAgent>("Console")
     , m_timelineAgent(timelineAgent)
     , m_injectedScriptManager(injectedScriptManager)
     , m_frontend(0)
@@ -71,7 +71,6 @@ InspectorConsoleAgent::InspectorConsoleAgent(InstrumentingAgents* instrumentingA
     , m_expiredConsoleMessageCount(0)
     , m_enabled(false)
 {
-    m_instrumentingAgents->setInspectorConsoleAgent(this);
 }
 
 InspectorConsoleAgent::~InspectorConsoleAgent()
@@ -80,6 +79,11 @@ InspectorConsoleAgent::~InspectorConsoleAgent()
     m_instrumentingAgents = 0;
     m_state = 0;
     m_injectedScriptManager = 0;
+}
+
+void InspectorConsoleAgent::init()
+{
+    m_instrumentingAgents->setInspectorConsoleAgent(this);
 }
 
 void InspectorConsoleAgent::enable(ErrorString*)
@@ -243,7 +247,7 @@ void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptAr
                                         : String(title + '@');
 
     HashCountedSet<String>::AddResult result = m_counts.add(identifier);
-    String message = title + ": " + String::number(result.iterator->value);
+    String message = title + ": " + String::number(result.storedValue->value);
     addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack);
 }
 
@@ -262,10 +266,10 @@ void InspectorConsoleAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
     reset();
 }
 
-void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber)
+void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber)
 {
     if (m_frontend && m_state->getBoolean(ConsoleAgentState::monitoringXHR)) {
-        String message = "XHR finished loading: \"" + url + "\".";
+        String message = "XHR finished loading: " + method + " \"" + url + "\".";
         addMessageToConsole(NetworkMessageSource, LogMessageType, DebugMessageLevel, message, sendURL, sendLineNumber, 0, 0, requestIdentifier);
     }
 }
@@ -280,7 +284,7 @@ void InspectorConsoleAgent::didReceiveResourceResponse(Frame*, unsigned long req
     }
 }
 
-void InspectorConsoleAgent::didFailLoading(unsigned long requestIdentifier, DocumentLoader*, const ResourceError& error)
+void InspectorConsoleAgent::didFailLoading(unsigned long requestIdentifier, const ResourceError& error)
 {
     if (error.isCancellation()) // Report failures only.
         return;
@@ -326,10 +330,10 @@ void InspectorConsoleAgent::addConsoleMessage(PassOwnPtr<ConsoleMessage> console
     }
 }
 
-class InspectableHeapObject : public InjectedScriptHost::InspectableObject {
+class InspectableHeapObject FINAL : public InjectedScriptHost::InspectableObject {
 public:
     explicit InspectableHeapObject(int heapObjectId) : m_heapObjectId(heapObjectId) { }
-    virtual ScriptValue get(ScriptState*)
+    virtual ScriptValue get(ScriptState*) OVERRIDE
     {
         return ScriptProfiler::objectByHeapObjectId(m_heapObjectId);
     }

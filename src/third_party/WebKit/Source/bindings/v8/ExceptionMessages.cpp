@@ -31,6 +31,7 @@
 #include "config.h"
 #include "bindings/v8/ExceptionMessages.h"
 
+#include "platform/Decimal.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -90,10 +91,16 @@ String ExceptionMessages::notEnoughArguments(unsigned expected, unsigned provide
     return String::number(expected) + " argument" + (expected > 1 ? "s" : "") + " required, but only " + String::number(provided) + " present.";
 }
 
-String ExceptionMessages::notAFiniteNumber(double value)
+String ExceptionMessages::notAFiniteNumber(double value, const char* name)
 {
     ASSERT(!std::isfinite(value));
-    return std::isinf(value) ? "The value provided is infinite." : "The value provided is not a number.";
+    return String::format("The %s is %s.", name, std::isinf(value) ? "infinite" : "not a number");
+}
+
+String ExceptionMessages::notAFiniteNumber(const Decimal& value, const char* name)
+{
+    ASSERT(!value.isFinite());
+    return String::format("The %s is %s.", name, value.isInfinity() ? "infinite" : "not a number");
 }
 
 String ExceptionMessages::ordinalNumber(int number)
@@ -114,6 +121,23 @@ String ExceptionMessages::ordinalNumber(int number)
         break;
     }
     return String::number(number) + suffix;
+}
+
+String ExceptionMessages::readOnly(const char* detail)
+{
+    DEFINE_STATIC_LOCAL(String, readOnly, ("This object is read-only."));
+    return detail ? String::format("This object is read-only, because %s.", detail) : readOnly;
+}
+
+String ExceptionMessages::indexExceedsMaximumBound(const char* name, unsigned given, unsigned bound)
+{
+    bool eq = given == bound;
+    return String::format("The %s provided (%u) is greater than %sthe maximum bound (%u).", name, given, eq ? "or equal to " : "", bound);
+}
+
+String ExceptionMessages::indexOutsideRange(const char* name, double given, double lowerBound, BoundType lowerInclusive, double upperBound, BoundType upperInclusive)
+{
+    return String::format("The %s provided (%f) is outside the range %c%f, %f%c.", name, given, lowerBound == ExclusiveBound ? '(' : '[', lowerBound, upperBound, upperBound == ExclusiveBound ? ')' : ']');
 }
 
 } // namespace WebCore

@@ -184,19 +184,8 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
 
     if (d->GetDictionaryFile() != base::kInvalidPlatformFileValue) {
-#if defined(OS_POSIX)
-      file = base::FileDescriptor(d->GetDictionaryFile(),
-                                  false);
-#elif defined(OS_WIN)
-      BOOL ok = ::DuplicateHandle(::GetCurrentProcess(),
-                                  d->GetDictionaryFile(),
-                                  process->GetHandle(),
-                                  &file,
-                                  0,
-                                  false,
-                                  DUPLICATE_SAME_ACCESS);
-      DCHECK(ok) << ::GetLastError();
-#endif
+        file = IPC::GetFileHandleForProcess(
+            d->GetDictionaryFile(), process->GetHandle(), false);
     }
 
     languages.push_back(FileLanguagePair(file, d->GetLanguage()));

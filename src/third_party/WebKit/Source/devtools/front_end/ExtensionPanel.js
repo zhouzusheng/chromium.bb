@@ -51,6 +51,9 @@ WebInspector.ExtensionPanel = function(id, pageURL)
 }
 
 WebInspector.ExtensionPanel.prototype = {
+    /**
+     * @return {!Element}
+     */
     defaultFocusedElement: function()
     {
         return WebInspector.View.prototype.defaultFocusedElement.call(this);
@@ -172,7 +175,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
     setExpression: function(expression, title, evaluateOptions, securityOrigin, callback)
     {
         this._createObjectPropertiesView();
-        return WebInspector.extensionServer.evaluate(expression, true, false, evaluateOptions, securityOrigin, this._onEvaluate.bind(this, title, callback));
+        WebInspector.extensionServer.evaluate(expression, true, false, evaluateOptions, securityOrigin, this._onEvaluate.bind(this, title, callback));
     },
 
     /**

@@ -53,12 +53,12 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     // (lack of information on the error code) so the caller should take care to
     // initialize the string values with safe defaults before the call.
     virtual void GetNavigationErrorStrings(
+        content::RenderView* render_view,
         blink::WebFrame* frame,
         const blink::WebURLRequest& failed_request,
         const blink::WebURLError& error,
-        const std::string& accept_languages,
         std::string* error_html,
-        string16* error_description) OVERRIDE;
+        base::string16* error_description) OVERRIDE;
 
     // Allows the embedder to override the ResourceLoaderBridge used.
     // If it returns NULL, the content layer will provide a bridge.

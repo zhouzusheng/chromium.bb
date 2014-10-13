@@ -17,8 +17,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
-#include "content/renderer/browser_plugin/browser_plugin_compositing_helper.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
+#include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/cursor_utils.h"
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/render_process_impl.h"
@@ -432,15 +432,14 @@ void BrowserPlugin::OnAttachACK(
 }
 
 void BrowserPlugin::OnBuffersSwapped(
-    int guest_instance_id,
-    const BrowserPluginMsg_BuffersSwapped_Params& params) {
-  DCHECK(guest_instance_id == guest_instance_id_);
+    int instance_id,
+    const FrameMsg_BuffersSwapped_Params& params) {
   EnableCompositing(true);
 
   compositing_helper_->OnBuffersSwapped(params.size,
-                                        params.mailbox_name,
-                                        params.route_id,
-                                        params.host_id,
+                                        params.mailbox,
+                                        params.gpu_route_id,
+                                        params.gpu_host_id,
                                         GetDeviceScaleFactor());
 }
 
@@ -449,13 +448,13 @@ void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
   if (!BrowserPluginMsg_CompositorFrameSwapped::Read(&message, &param))
     return;
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
-  param.b.AssignTo(frame.get());
+  param.b.frame.AssignTo(frame.get());
 
   EnableCompositing(true);
   compositing_helper_->OnCompositorFrameSwapped(frame.Pass(),
-                                                param.c /* route_id */,
-                                                param.d /* output_surface_id */,
-                                                param.e /* host_id */);
+                                                param.b.producing_route_id,
+                                                param.b.output_surface_id,
+                                                param.b.producing_host_id);
 }
 
 void BrowserPlugin::OnCopyFromCompositingSurface(int guest_instance_id,
@@ -917,10 +916,8 @@ void BrowserPlugin::EnableCompositing(bool enable) {
     current_damage_buffer_.reset();
     if (!compositing_helper_.get()) {
       compositing_helper_ =
-          new BrowserPluginCompositingHelper(container_,
-                                             browser_plugin_manager(),
-                                             guest_instance_id_,
-                                             render_view_routing_id_);
+          ChildFrameCompositingHelper::CreateCompositingHelperForBrowserPlugin(
+              weak_ptr_factory_.GetWeakPtr());
     }
   } else {
     if (paint_ack_received_) {
@@ -953,9 +950,9 @@ void BrowserPlugin::destroy() {
   // The BrowserPlugin's WebPluginContainer is deleted immediately after this
   // call returns, so let's not keep a reference to it around.
   g_plugin_container_map.Get().erase(container_);
-  container_ = NULL;
   if (compositing_helper_.get())
     compositing_helper_->OnContainerDestroy();
+  container_ = NULL;
   // Will be a no-op if the mouse is not currently locked.
   if (render_view_.get())
     render_view_->mouse_lock_dispatcher()->OnLockTargetDestroyed(this);
@@ -1206,14 +1203,8 @@ base::SharedMemory* BrowserPlugin::CreateDamageBuffer(
 #endif
 
 void BrowserPlugin::updateFocus(bool focused) {
-  if (plugin_focused_ == focused)
-    return;
-
-  bool old_guest_focus_state = ShouldGuestBeFocused();
   plugin_focused_ = focused;
-
-  if (ShouldGuestBeFocused() != old_guest_focus_state)
-    UpdateGuestFocusState();
+  UpdateGuestFocusState();
 }
 
 void BrowserPlugin::updateVisibility(bool visible) {

@@ -52,10 +52,6 @@ void RenderSVGResourceMarker::layout()
     LayoutRectRecorder recorder(*this);
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
 
-    // Invalidate all resources if our layout changed.
-    if (everHadLayout() && selfNeedsLayout())
-        removeAllClientsFromCache();
-
     // RenderSVGHiddenContainer overwrites layout(). We need the
     // layouting of RenderSVGContainer for calculating  local
     // transformations and repaint.
@@ -105,7 +101,7 @@ FloatPoint RenderSVGResourceMarker::referencePoint() const
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);
-    return FloatPoint(marker->refXCurrentValue().value(lengthContext), marker->refYCurrentValue().value(lengthContext));
+    return FloatPoint(marker->refX()->currentValue()->value(lengthContext), marker->refY()->currentValue()->value(lengthContext));
 }
 
 float RenderSVGResourceMarker::angle() const
@@ -142,12 +138,15 @@ void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& 
     // An empty viewBox disables rendering.
     SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
-    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxCurrentValue().isValid() && marker->viewBoxCurrentValue().isEmpty())
+    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBox()->currentValue()->isValid() && marker->viewBox()->currentValue()->value().isEmpty())
         return;
 
     PaintInfo info(paintInfo);
-    GraphicsContextStateSaver stateSaver(*info.context);
-    info.applyTransform(transform);
+    GraphicsContextStateSaver stateSaver(*info.context, false);
+    if (!transform.isIdentity()) {
+        stateSaver.save();
+        info.applyTransform(transform, false);
+    }
     RenderSVGContainer::paint(info, IntPoint());
 }
 
@@ -181,8 +180,8 @@ void RenderSVGResourceMarker::calcViewport()
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);
-    float w = marker->markerWidthCurrentValue().value(lengthContext);
-    float h = marker->markerHeightCurrentValue().value(lengthContext);
+    float w = marker->markerWidth()->currentValue()->value(lengthContext);
+    float h = marker->markerHeight()->currentValue()->value(lengthContext);
     m_viewport = FloatRect(0, 0, w, h);
 }
 

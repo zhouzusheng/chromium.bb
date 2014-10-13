@@ -46,20 +46,20 @@ class ResourceLoader;
 class ResourceResponse;
 class ResourceRequest;
 
-class FrameFetchContext  : public FetchContext {
+class FrameFetchContext FINAL : public FetchContext {
 public:
     static PassOwnPtr<FrameFetchContext> create(Frame* frame) { return adoptPtr(new FrameFetchContext(frame)); }
 
     virtual void reportLocalLoadFailed(const KURL&) OVERRIDE;
-    virtual void addAdditionalRequestHeaders(Document&, ResourceRequest&, Resource::Type) OVERRIDE;
+    virtual void addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType) OVERRIDE;
     virtual CachePolicy cachePolicy(Document*) const OVERRIDE;
-    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority);
+    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority) OVERRIDE;
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) OVERRIDE;
     virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) OVERRIDE;
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) OVERRIDE;
     virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength) OVERRIDE;
     virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)  OVERRIDE;
-    virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime) OVERRIDE;
+    virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime, int64_t encodedDataLength) OVERRIDE;
     virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&) OVERRIDE;
     virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength) OVERRIDE;
 

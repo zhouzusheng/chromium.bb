@@ -38,18 +38,10 @@ private:
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+
+    bool m_ignoreTitleUpdatesWhenChildrenChange;
 };
-
-inline bool isHTMLTitleElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::titleTag);
-}
-
-inline bool isHTMLTitleElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::titleTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLTitleElement, hasTagName(HTMLNames::titleTag));
 

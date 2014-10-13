@@ -41,6 +41,7 @@
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemType.h"
+#include "public/platform/WebStorageQuotaCallbacks.h"
 #include "public/platform/WebStorageQuotaType.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
@@ -56,6 +57,7 @@ class WebDataSource;
 class WebDOMEvent;
 class WebFormElement;
 class WebFrame;
+class WebInputEvent;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebServiceWorkerProvider;
@@ -66,7 +68,6 @@ class WebRTCPeerConnectionHandler;
 class WebSharedWorker;
 class WebSharedWorkerClient;
 class WebSocketStreamHandle;
-class WebStorageQuotaCallbacks;
 class WebString;
 class WebURL;
 class WebURLLoader;
@@ -115,9 +116,9 @@ public:
     // is created and initialized. Takes the name of the new frame, the parent
     // frame and returns a new WebFrame. The WebFrame is considered in-use
     // until frameDetached() is called on it.
+    // Note: If you override this, you should almost certainly be overriding
+    // frameDetached().
     virtual WebFrame* createChildFrame(WebFrame* parent, const WebString& frameName) { return 0; }
-    // FIXME: Remove when all embedders use createChildFrame().
-    virtual void didCreateFrame(WebFrame* parent, WebFrame* child) { }
 
     // This frame set its opener to null, disowning it.
     // See http://html.spec.whatwg.org/#dom-opener.
@@ -184,7 +185,7 @@ public:
     // The window object for the frame has been cleared of any extra
     // properties that may have been set by script from the previously
     // loaded document.
-    virtual void didClearWindowObject(WebFrame*) { }
+    virtual void didClearWindowObject(WebFrame* frame, int worldId) { }
 
     // The document element has been created.
     virtual void didCreateDocumentElement(WebFrame*) { }
@@ -323,12 +324,10 @@ public:
     // is called with an error code otherwise.
     // Note that the requesting quota size may not always be granted and
     // a smaller amount of quota than requested might be returned.
-    // The callbacks object is deleted when the callback method is called
-    // and does not need to be (and should not be) deleted manually.
     virtual void requestStorageQuota(
         WebFrame*, WebStorageQuotaType,
         unsigned long long newQuotaInBytes,
-        WebStorageQuotaCallbacks*) { }
+        WebStorageQuotaCallbacks) { }
 
     // WebSocket -----------------------------------------------------
 
@@ -372,6 +371,13 @@ public:
     // given reason (one of the GL_ARB_robustness status codes; see
     // Extensions3D.h in WebCore/platform/graphics).
     virtual void didLoseWebGLContext(WebFrame*, int) { }
+
+    // FIXME: Remove this method once we have input routing in the browser
+    // process. See http://crbug.com/339659.
+    virtual void forwardInputEvent(const WebInputEvent*) { }
+
+    // Send initial drawing parameters to a child frame that is being rendered out of process.
+    virtual void initializeChildFrame(const WebRect& frameRect, float scaleFactor) { }
 
 protected:
     ~WebFrameClient() { }

@@ -62,6 +62,7 @@ const char IDBDatabase::requestNotFinishedErrorMessage[] = "The request has not 
 const char IDBDatabase::sourceDeletedErrorMessage[] = "The cursor's source or effective object store has been deleted.";
 const char IDBDatabase::transactionInactiveErrorMessage[] = "The transaction is not active.";
 const char IDBDatabase::transactionFinishedErrorMessage[] = "The transaction has finished.";
+const char IDBDatabase::transactionReadOnlyErrorMessage[] = "The transaction is read-only.";
 
 PassRefPtr<IDBDatabase> IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> database, PassRefPtr<IDBDatabaseCallbacks> callbacks)
 {
@@ -268,7 +269,7 @@ PassRefPtr<IDBTransaction> IDBDatabase::transaction(ExecutionContext* context, c
         return 0;
     }
 
-    IndexedDB::TransactionMode mode = IDBTransaction::stringToMode(modeString, exceptionState);
+    blink::WebIDBDatabase::TransactionMode mode = IDBTransaction::stringToMode(modeString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
@@ -331,8 +332,10 @@ void IDBDatabase::closeConnection()
     ASSERT(m_closePending);
     ASSERT(m_transactions.isEmpty());
 
-    m_backend->close();
-    m_backend.clear();
+    if (m_backend) {
+        m_backend->close();
+        m_backend.clear();
+    }
 
     if (m_contextStopped || !executionContext())
         return;
@@ -402,10 +405,15 @@ bool IDBDatabase::hasPendingActivity() const
 
 void IDBDatabase::stop()
 {
-    // Stop fires at a deterministic time, so we need to call close in it.
-    close();
-
     m_contextStopped = true;
+
+    // Immediately close the connection to the back end. Don't attempt a
+    // normal close() since that may wait on transactions which require a
+    // round trip to the back-end to abort.
+    if (m_backend) {
+        m_backend->close();
+        m_backend.clear();
+    }
 }
 
 const AtomicString& IDBDatabase::interfaceName() const

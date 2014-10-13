@@ -30,7 +30,6 @@
 #include "V8MutationRecord.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
 #include "core/dom/ExecutionContext.h"
 #include "wtf/Assertions.h"
 
@@ -39,10 +38,10 @@ namespace WebCore {
 V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, ExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
     : ActiveDOMCallback(context)
     , m_callback(isolate, callback)
-    , m_world(DOMWrapperWorld::current())
+    , m_world(DOMWrapperWorld::current(isolate))
     , m_isolate(isolate)
 {
-    owner->SetHiddenValue(V8HiddenPropertyName::callback(m_isolate), callback);
+    setHiddenValue(m_isolate, owner, "callback", callback);
     m_callback.setWeak(this, &setWeakCallback);
 }
 

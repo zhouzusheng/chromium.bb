@@ -28,24 +28,24 @@
 
 namespace WebCore {
 
-class SVGZoomEvent : public UIEvent {
+class SVGZoomEvent FINAL : public UIEvent {
 public:
     static PassRefPtr<SVGZoomEvent> create() { return adoptRef(new SVGZoomEvent); }
 
     // 'SVGZoomEvent' functions
-    SVGRect zoomRectScreen() const;
+    PassRefPtr<SVGRectTearOff> zoomRectScreen() const;
 
     float previousScale() const;
     void setPreviousScale(float);
 
-    SVGPoint previousTranslate() const;
+    PassRefPtr<SVGPointTearOff> previousTranslate() const;
 
     float newScale() const;
     void setNewScale(float);
 
-    SVGPoint newTranslate() const;
+    PassRefPtr<SVGPointTearOff> newTranslate() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
 private:
     SVGZoomEvent();
@@ -53,10 +53,8 @@ private:
     float m_newScale;
     float m_previousScale;
 
-    SVGRect m_zoomRectScreen;
-
-    SVGPoint m_newTranslate;
-    SVGPoint m_previousTranslate;
+    FloatPoint m_newTranslate;
+    FloatPoint m_previousTranslate;
 };
 
 } // namespace WebCore

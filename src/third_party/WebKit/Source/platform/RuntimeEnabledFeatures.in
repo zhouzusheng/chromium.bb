@@ -15,41 +15,36 @@
 // condition=ENABLE_NAME is used for wrapping features in compile-time
 // #if ENABLE(FEATURE) guards.  These are deprecated and should all be removed.
 
-AnimatedWebP status=stable
 ApplicationCache status=stable
 AuthorShadowDOMForAnyElement
+BeforeLoad status=test
 ClientHintsDpr status=experimental
 Crypto status=experimental
 CSSAnimationUnprefixed status=experimental
 CSSCompositing status=experimental
-CSSCustomFilter status=experimental
 CSSExclusions status=experimental
 CSSGridLayout status=experimental
 CSSMaskSourceType status=experimental
-CSSRegions status=experimental
+CSSOMSmoothScroll status=experimental
 CSSShapes status=experimental
 CSSStickyPosition status=experimental
-CSSTouchAction status=test
-CSSVariables status=experimental
+CSSTouchAction status=experimental
+CSSTouchActionDelay status=test
 CSSViewport status=experimental
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
-CustomElements status=stable
+CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
 Database status=stable
-DataListElement status=stable
 DeviceMotion status=stable
 DeviceOrientation status=stable
-DevicePixelRatioIncludesZoom status=stable
 DialogElement status=experimental
-DirectoryUpload status=stable
 DirectWrite
-// FIXME: Remove this separate feature now that CustomElements are enabled
-EmbedderCustomElements
 EncodingAPI status=experimental
 EncryptedMedia status=experimental
 EncryptedMediaAnyVersion status=stable
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
+ExperimentalWebSocket status=test
 FileConstructor status=experimental
 FileSystem status=stable
 FontLoadEvents status=experimental
@@ -58,13 +53,10 @@ FastTextAutosizing
 Gamepad status=stable
 Geolocation status=stable
 HTMLImports status=test
-HighResolutionTimeInWorkers status=experimental
+HighResolutionTimeInWorkers status=stable
 IMEAPI status=experimental
-IndexedDB status=stable
 IndexedDBExperimental status=experimental
 InputModeAttribute status=test
-InputTypeColor status=stable
-InputTypeWeek status=stable
 LangAttributeAwareFormControlUI
 PrefixedEncryptedMedia status=stable
 LocalStorage status=stable
@@ -75,6 +67,7 @@ MediaStream status=stable
 NavigatorContentUtils
 Notifications status=stable
 ObjectFitPosition status=stable
+OrientationEvent
 // Only enabled on Android, and for certain layout tests on Linux.
 OverlayFullscreenVideo
 PagePopup status=stable
@@ -86,6 +79,7 @@ PeerConnection depends_on=MediaStream, status=stable
 //   http://crbug.com/308649
 PointerEventsMaxTouchPoints status=experimental
 Quota status=stable
+QuotaPromise status=experimental
 OverlayScrollbars
 RegionBasedColumns status=experimental
 
@@ -94,25 +88,28 @@ RegionBasedColumns status=experimental
 RepaintAfterLayout
 
 RequestAutocomplete status=test
-RowSpanLogicalHeightSpreading status=stable
+ScreenOrientation status=test
 ScriptedSpeech status=stable
 
 // Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
 // as per the spec, matching other Web engines.
 ScrollTopLeftInterop status=experimental
 
-SeamlessIFrames status=experimental
 ServiceWorker status=experimental
 SessionStorage status=stable
 ShadowDOM status=experimental
 SharedWorker status=stable
 SpeechInput status=stable
 SpeechSynthesis status=stable
-Srcset status=experimental
+Srcset status=stable
 Stream status=experimental
 StyleScoped status=experimental
 SubpixelFontScaling status=experimental
 SVGPaintOrder status=experimental
+
+// Enable optimizations to recalculate style on the fewest possible number of
+// elements when updating classes, ids or attributes of DOM elements.
+TargetedStyleRecalc
 
 // Many websites disable mouse support when touch APIs are available.  We'd
 // like to enable this always but can't until more websites fix this bug.
@@ -120,12 +117,11 @@ SVGPaintOrder status=experimental
 // touchscreen) in ApplyWebPreferences.
 Touch status=stable
 
+TouchIconLoading
 UserSelectAll status=experimental
-Vibration status=stable
 VideoTrack depends_on=Media, status=stable
-WebAnimationsCSS status=stable
-WebAnimationsSVG depends_on=WebAnimationsCSS
-WebAnimationsAPI depends_on=WebAnimationsCSS, status=experimental
+WebAnimationsSVG
+WebAnimationsAPI status=experimental
 WebAudio condition=WEB_AUDIO, status=stable
 WebGLDraftExtensions status=experimental
 WebMIDI status=test

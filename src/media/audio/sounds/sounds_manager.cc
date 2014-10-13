@@ -9,7 +9,7 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/sounds/audio_stream_handler.h"
 #include "media/base/media_switches.h"
@@ -19,6 +19,7 @@ namespace media {
 namespace {
 
 SoundsManager* g_instance = NULL;
+bool g_initialized_for_testing = false;
 
 // SoundsManagerImpl ---------------------------------------------------
 
@@ -35,13 +36,14 @@ class SoundsManagerImpl : public SoundsManager {
 
  private:
   base::hash_map<SoundKey, linked_ptr<AudioStreamHandler> > handlers_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(SoundsManagerImpl);
 };
 
 SoundsManagerImpl::SoundsManagerImpl()
-    : message_loop_(AudioManager::Get()->GetMessageLoop()) {}
+    : task_runner_(AudioManager::Get()->GetTaskRunner()) {
+}
 
 SoundsManagerImpl::~SoundsManagerImpl() { DCHECK(CalledOnValidThread()); }
 
@@ -74,9 +76,7 @@ base::TimeDelta SoundsManagerImpl::GetDuration(SoundKey key) {
     return base::TimeDelta();
   }
   const WavAudioHandler& wav_audio = handlers_[key]->wav_audio_handler();
-  const int64 size = wav_audio.size();
-  const int64 rate = wav_audio.byte_rate();
-  return base::TimeDelta::FromMicroseconds(size * 1000000 / rate);
+  return wav_audio.params().GetBufferDuration();
 }
 
 // SoundsManagerStub ---------------------------------------------------
@@ -124,7 +124,11 @@ SoundsManager::~SoundsManager() { DCHECK(CalledOnValidThread()); }
 
 // static
 void SoundsManager::Create() {
-  CHECK(!g_instance) << "SoundsManager::Create() is called twice";
+  CHECK(!g_instance || g_initialized_for_testing)
+      << "SoundsManager::Create() is called twice";
+  if (g_initialized_for_testing)
+    return;
+
   const bool enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
                             ::switches::kDisableSystemSoundsManager);
   if (enabled)
@@ -145,6 +149,14 @@ void SoundsManager::Shutdown() {
 SoundsManager* SoundsManager::Get() {
   CHECK(g_instance) << "SoundsManager::Get() is called before Create()";
   return g_instance;
+}
+
+// static
+void SoundsManager::InitializeForTesting(SoundsManager* manager) {
+  CHECK(!g_instance) << "SoundsManager is already initialized.";
+  CHECK(manager);
+  g_instance = manager;
+  g_initialized_for_testing = true;
 }
 
 }  // namespace media

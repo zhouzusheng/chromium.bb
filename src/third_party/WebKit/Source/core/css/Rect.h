@@ -34,10 +34,10 @@ public:
     CSSPrimitiveValue* bottom() const { return m_bottom.get(); }
     CSSPrimitiveValue* left() const { return m_left.get(); }
 
-    void setTop(PassRefPtr<CSSPrimitiveValue> top) { m_top = top; }
-    void setRight(PassRefPtr<CSSPrimitiveValue> right) { m_right = right; }
-    void setBottom(PassRefPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
-    void setLeft(PassRefPtr<CSSPrimitiveValue> left) { m_left = left; }
+    void setTop(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> top) { m_top = top; }
+    void setRight(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> right) { m_right = right; }
+    void setBottom(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
+    void setLeft(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> left) { m_left = left; }
 
     bool equals(const RectBase& other) const
     {
@@ -45,14 +45,6 @@ public:
             && compareCSSValuePtr(m_right, other.m_right)
             && compareCSSValuePtr(m_left, other.m_left)
             && compareCSSValuePtr(m_bottom, other.m_bottom);
-    }
-
-    bool hasVariableReference() const
-    {
-        return m_top->hasVariableReference()
-            || m_right->hasVariableReference()
-            || m_bottom->hasVariableReference()
-            || m_left->hasVariableReference();
     }
 
 protected:
@@ -85,14 +77,6 @@ public:
         return generateCSSString(top()->cssText(), right()->cssText(), bottom()->cssText(), left()->cssText());
     }
 
-    String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-    {
-        return generateCSSString(top()->customSerializeResolvingVariables(variables),
-            right()->customSerializeResolvingVariables(variables),
-            bottom()->customSerializeResolvingVariables(variables),
-            left()->customSerializeResolvingVariables(variables));
-    }
-
 private:
     Rect() { }
     Rect(const Rect& cloneFrom) : RectBase(cloneFrom), RefCounted<Rect>() { }
@@ -111,14 +95,6 @@ public:
     String cssText() const
     {
         return generateCSSString(top()->cssText(), right()->cssText(), bottom()->cssText(), left()->cssText());
-    }
-
-    String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-    {
-        return generateCSSString(top()->customSerializeResolvingVariables(variables),
-            right()->customSerializeResolvingVariables(variables),
-            bottom()->customSerializeResolvingVariables(variables),
-            left()->customSerializeResolvingVariables(variables));
     }
 
 private:

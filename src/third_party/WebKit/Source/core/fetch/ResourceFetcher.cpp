@@ -31,6 +31,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/fetch/CSSStyleSheetResource.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/fetch/FetchContext.h"
 #include "core/fetch/FontResource.h"
@@ -50,6 +51,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/PingLoader.h"
+#include "core/loader/SubstituteData.h"
 #include "core/loader/UniqueIdentifier.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/frame/ContentSecurityPolicy.h"
@@ -157,9 +159,8 @@ static Resource* resourceFromDataURIRequest(const ResourceRequest& request, cons
     Resource* resource = createResource(Resource::Image, request, charset);
     resource->setOptions(resourceOptions);
     resource->responseReceived(response);
-    // FIXME: AppendData causes an unnecessary memcpy.
     if (data->size())
-        resource->appendData(data->data(), data->size());
+        resource->setResourceBuffer(data);
     resource->finish();
     return resource;
 }
@@ -242,12 +243,6 @@ ResourceFetcher::~ResourceFetcher()
     ASSERT(!m_requestCount);
 }
 
-Resource* ResourceFetcher::cachedResource(const String& resourceURL) const
-{
-    KURL url = m_document->completeURL(resourceURL);
-    return cachedResource(url);
-}
-
 Resource* ResourceFetcher::cachedResource(const KURL& resourceURL) const
 {
     KURL url = MemoryCache::removeFragmentIdentifierIfNeeded(resourceURL);
@@ -306,8 +301,10 @@ void ResourceFetcher::preCacheDataURIImage(const FetchRequest& request)
     if (memoryCache()->resourceForURL(url))
         return;
 
-    if (Resource* resource = resourceFromDataURIRequest(request.resourceRequest(), request.options()))
+    if (Resource* resource = resourceFromDataURIRequest(request.resourceRequest(), request.options())) {
         memoryCache()->add(resource);
+        scheduleDocumentResourcesGC();
+    }
 }
 
 ResourcePtr<FontResource> ResourceFetcher::fetchFont(FetchRequest& request)
@@ -340,7 +337,7 @@ ResourcePtr<CSSStyleSheetResource> ResourceFetcher::fetchUserCSSStyleSheet(Fetch
         memoryCache()->remove(existing);
     }
 
-    request.setOptions(ResourceLoaderOptions(DoNotSendCallbacks, SniffContent, BufferData, AllowStoredCredentials, ClientRequestedCredentials, AskClientForCrossOriginCredentials, SkipSecurityCheck, CheckContentSecurityPolicy, DocumentContext));
+    request.setOptions(ResourceLoaderOptions(SniffContent, BufferData, AllowStoredCredentials, ClientRequestedCredentials, CheckContentSecurityPolicy, DocumentContext));
     return toCSSStyleSheetResource(requestResource(Resource::CSSStyleSheet, request));
 }
 
@@ -372,9 +369,29 @@ ResourcePtr<RawResource> ResourceFetcher::fetchRawResource(FetchRequest& request
     return toRawResource(requestResource(Resource::Raw, request));
 }
 
-ResourcePtr<RawResource> ResourceFetcher::fetchMainResource(FetchRequest& request)
+ResourcePtr<RawResource> ResourceFetcher::fetchMainResource(FetchRequest& request, const SubstituteData& substituteData)
 {
+    if (substituteData.isValid())
+        preCacheSubstituteDataForMainResource(request, substituteData);
     return toRawResource(requestResource(Resource::MainResource, request));
+}
+
+void ResourceFetcher::preCacheSubstituteDataForMainResource(const FetchRequest& request, const SubstituteData& substituteData)
+{
+    const KURL& url = request.url();
+    if (Resource* oldResource = memoryCache()->resourceForURL(url))
+        memoryCache()->remove(oldResource);
+
+    ResourceResponse response(url, substituteData.mimeType(), substituteData.content()->size(), substituteData.textEncoding(), emptyString());
+    ResourcePtr<Resource> resource = createResource(Resource::MainResource, request.resourceRequest(), substituteData.textEncoding());
+    resource->setNeedsSynchronousCacheHit(substituteData.forceSynchronousLoad());
+    resource->setOptions(request.options());
+    resource->setDataBufferingPolicy(BufferData);
+    resource->responseReceived(response);
+    if (substituteData.content()->size())
+        resource->setResourceBuffer(substituteData.content());
+    resource->finish();
+    memoryCache()->add(resource.get());
 }
 
 bool ResourceFetcher::checkInsecureContent(Resource::Type type, const KURL& url, MixedContentBlockingTreatment treatment) const
@@ -429,7 +446,7 @@ bool ResourceFetcher::checkInsecureContent(Resource::Type type, const KURL& url,
     return true;
 }
 
-bool ResourceFetcher::canRequest(Resource::Type type, const KURL& url, const ResourceLoaderOptions& options, bool forPreload, FetchRequest::OriginRestriction originRestriction)
+bool ResourceFetcher::canRequest(Resource::Type type, const KURL& url, const ResourceLoaderOptions& options, bool forPreload, FetchRequest::OriginRestriction originRestriction) const
 {
     SecurityOrigin* securityOrigin = options.securityOrigin.get();
     if (!securityOrigin && document())
@@ -490,7 +507,7 @@ bool ResourceFetcher::canRequest(Resource::Type type, const KURL& url, const Res
 
         if (frame()) {
             Settings* settings = frame()->settings();
-            if (!frame()->loader().client()->allowScriptFromSource(!settings || settings->isScriptEnabled(), url)) {
+            if (!frame()->loader().client()->allowScriptFromSource(!settings || settings->scriptEnabled(), url)) {
                 frame()->loader().client()->didNotAllowScript();
                 return false;
             }
@@ -534,42 +551,38 @@ bool ResourceFetcher::canRequest(Resource::Type type, const KURL& url, const Res
     return true;
 }
 
-bool ResourceFetcher::canAccess(Resource* resource, CORSEnabled corsEnabled, FetchRequest::OriginRestriction originRestriction)
+bool ResourceFetcher::canAccessResource(Resource* resource, SecurityOrigin* sourceOrigin, const KURL& url) const
 {
     // Redirects can change the response URL different from one of request.
-    if (!canRequest(resource->type(), resource->response().url(), resource->options(), false, originRestriction))
+    if (!canRequest(resource->type(), url, resource->options(), false, FetchRequest::UseDefaultOriginRestrictionForType))
         return false;
 
-    String error;
-    switch (resource->type()) {
-    case Resource::Script:
-    case Resource::ImportResource:
-        if (corsEnabled == PotentiallyCORSEnabled
-            && !m_document->securityOrigin()->canRequest(resource->response().url())
-            && !resource->passesAccessControlCheck(m_document->securityOrigin(), error)) {
-            if (frame() && frame()->document())
-                frame()->document()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, "Script from origin '" + SecurityOrigin::create(resource->response().url())->toString() + "' has been blocked from loading by Cross-Origin Resource Sharing policy: " + error);
-            return false;
-        }
+    if (!sourceOrigin && document())
+        sourceOrigin = document()->securityOrigin();
 
-        break;
-    default:
-        ASSERT_NOT_REACHED(); // FIXME: generalize to non-script resources
+    if (sourceOrigin->canRequest(url))
+        return true;
+
+    String errorDescription;
+    if (!resource->passesAccessControlCheck(sourceOrigin, errorDescription)) {
+        if (frame() && frame()->document()) {
+            String resourceType = Resource::resourceTypeToString(resource->type(), resource->options().initiatorInfo);
+            frame()->document()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, resourceType + " from origin '" + SecurityOrigin::create(url)->toString() + "' has been blocked from loading by Cross-Origin Resource Sharing policy: " + errorDescription);
+        }
         return false;
     }
-
     return true;
 }
 
-bool ResourceFetcher::shouldLoadNewResource() const
+bool ResourceFetcher::shouldLoadNewResource(Resource::Type type) const
 {
     if (!frame())
         return false;
     if (!m_documentLoader)
         return true;
-    if (m_documentLoader == frame()->loader().activeDocumentLoader())
-        return true;
-    return document() && document()->pageDismissalEventBeingDispatched() != Document::NoDismissal;
+    if (type == Resource::MainResource)
+        return m_documentLoader == frame()->loader().provisionalDocumentLoader();
+    return m_documentLoader == frame()->loader().documentLoader();
 }
 
 bool ResourceFetcher::resourceNeedsLoad(Resource* resource, const FetchRequest& request, RevalidationPolicy policy)
@@ -606,7 +619,7 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
     // See if we can use an existing resource from the cache.
     ResourcePtr<Resource> resource = memoryCache()->resourceForURL(url);
 
-    const RevalidationPolicy policy = determineRevalidationPolicy(type, request.mutableResourceRequest(), request.forPreload(), resource.get(), request.defer());
+    const RevalidationPolicy policy = determineRevalidationPolicy(type, request.mutableResourceRequest(), request.forPreload(), resource.get(), request.defer(), request.options());
     switch (policy) {
     case Reload:
         memoryCache()->remove(resource.get());
@@ -626,6 +639,9 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
     if (!resource)
         return 0;
 
+    if (!resource->hasClients())
+        m_deadStatsRecorder.update(policy);
+
     if (policy != Use)
         resource->setIdentifier(createUniqueIdentifier());
 
@@ -638,7 +654,7 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
     }
 
     if (resourceNeedsLoad(resource.get(), request, policy)) {
-        if (!shouldLoadNewResource()) {
+        if (!shouldLoadNewResource(type)) {
             if (resource->inCache())
                 memoryCache()->remove(resource.get());
             return 0;
@@ -668,14 +684,14 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
     // Ensure main resources aren't preloaded, and other main resource loads
     // are removed from cache to prevent reuse.
     if (type == Resource::MainResource) {
-        ASSERT(policy != Use);
+        ASSERT(policy != Use || m_documentLoader->substituteData().isValid());
         ASSERT(policy != Revalidate);
         memoryCache()->remove(resource.get());
         if (request.forPreload())
             return 0;
     }
 
-    if (!request.resourceRequest().url().protocolIsData()) {
+    if (!request.resourceRequest().url().protocolIsData() && (!m_documentLoader || !m_documentLoader->substituteData().isValid())) {
         if (policy == Use && !m_validatedURLs.contains(request.resourceRequest().url())) {
             // Resources loaded from memory cache should be reported the first time they're used.
             RefPtr<ResourceTimingInfo> info = ResourceTimingInfo::create(request.options().initiatorInfo.name, monotonicallyIncreasingTime());
@@ -754,7 +770,7 @@ void ResourceFetcher::addAdditionalRequestHeaders(ResourceRequest& request, Reso
     if (type == Resource::LinkPrefetch || type == Resource::LinkSubresource)
         request.setHTTPHeaderField("Purpose", "prefetch");
 
-    context().addAdditionalRequestHeaders(*document(), request, type);
+    context().addAdditionalRequestHeaders(document(), request, (type == Resource::MainResource) ? FetchMainResource : FetchSubresource);
 }
 
 ResourcePtr<Resource> ResourceFetcher::revalidateResource(const FetchRequest& request, Resource* resource)
@@ -826,7 +842,7 @@ void ResourceFetcher::storeResourceTimingInitiatorInformation(const ResourcePtr<
     }
 }
 
-ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy(Resource::Type type, ResourceRequest& request, bool forPreload, Resource* existingResource, FetchRequest::DeferOption defer) const
+ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy(Resource::Type type, ResourceRequest& request, bool forPreload, Resource* existingResource, FetchRequest::DeferOption defer, const ResourceLoaderOptions& options) const
 {
     if (!existingResource)
         return Load;
@@ -851,7 +867,15 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
     if (type == Resource::Image && request.url().protocolIsData())
         return Use;
 
+    // If a main resource was populated from a SubstituteData load, use it.
+    if (type == Resource::MainResource && m_documentLoader->substituteData().isValid())
+        return Use;
+
     if (!existingResource->canReuse(request))
+        return Reload;
+
+    // Never use cache entries for downloadToFile requests. The caller expects the resource in a file.
+    if (request.downloadToFile())
         return Reload;
 
     // Certain requests (e.g., XHRs) might have manually set headers that require revalidation.
@@ -864,7 +888,7 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
     if (m_allowStaleResources)
         return Use;
 
-    // Alwaus use preloads.
+    // Always use preloads.
     if (existingResource->isPreloaded())
         return Use;
 
@@ -878,6 +902,10 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
         WTF_LOG(ResourceLoading, "ResourceFetcher::determineRevalidationPolicy reloading due to Cache-control: no-store.");
         return Reload;
     }
+
+    // If fetching a resource with a different 'CORS enabled' flag, reload.
+    if (type != Resource::MainResource && options.corsEnabled != existingResource->options().corsEnabled)
+        return Reload;
 
     // If credentials were sent with the previous request and won't be
     // with this one, or vice versa, re-fetch the resource.
@@ -1012,8 +1040,11 @@ void ResourceFetcher::didLoadResource(Resource* resource)
 
     if (frame())
         frame()->loader().loadDone();
-    performPostLoadActions();
+    scheduleDocumentResourcesGC();
+}
 
+void ResourceFetcher::scheduleDocumentResourcesGC()
+{
     if (!m_garbageCollectDocumentResourcesTimer.isActive())
         m_garbageCollectDocumentResourcesTimer.startOneShot(0);
 }
@@ -1044,23 +1075,16 @@ void ResourceFetcher::garbageCollectDocumentResources()
         m_documentResources.remove(*it);
 }
 
-void ResourceFetcher::performPostLoadActions()
-{
-    checkForPendingPreloads();
-}
-
 void ResourceFetcher::notifyLoadedFromMemoryCache(Resource* resource)
 {
     if (!frame() || !frame()->page() || resource->status() != Resource::Cached || m_validatedURLs.contains(resource->url()))
-        return;
-    if (!resource->shouldSendResourceLoadCallbacks())
         return;
 
     ResourceRequest request(resource->url());
     unsigned long identifier = createUniqueIdentifier();
     context().dispatchDidLoadResourceFromMemoryCache(request, resource->response());
     // FIXME: If willSendRequest changes the request, we don't respect it.
-    willSendRequest(identifier, request, ResourceResponse(), resource->options());
+    willSendRequest(identifier, request, ResourceResponse(), resource->options().initiatorInfo);
     InspectorInstrumentation::markResourceAsCached(frame()->page(), identifier);
     context().sendRemainingDelegateMessages(m_documentLoader, identifier, resource->response(), resource->encodedSize());
 }
@@ -1087,20 +1111,6 @@ void ResourceFetcher::preload(Resource::Type type, FetchRequest& request, const 
     requestPreload(type, request, charset);
 }
 
-void ResourceFetcher::checkForPendingPreloads()
-{
-    // FIXME: It seems wrong to poke body()->renderer() here.
-    if (m_pendingPreloads.isEmpty() || !m_document->body() || !m_document->body()->renderer())
-        return;
-    while (!m_pendingPreloads.isEmpty()) {
-        PendingPreload preload = m_pendingPreloads.takeFirst();
-        // Don't request preload if the resource already loaded normally (this will result in double load if the page is being reloaded with cached results ignored).
-        if (!cachedResource(preload.m_request.resourceRequest().url()))
-            requestPreload(preload.m_type, preload.m_request, preload.m_charset);
-    }
-    m_pendingPreloads.clear();
-}
-
 void ResourceFetcher::requestPreload(Resource::Type type, FetchRequest& request, const String& charset)
 {
     String encoding;
@@ -1121,7 +1131,7 @@ void ResourceFetcher::requestPreload(Resource::Type type, FetchRequest& request,
     m_preloads->add(resource.get());
 
 #if PRELOAD_DEBUG
-    printf("PRELOADING %s\n",  resource->url().latin1().data());
+    printf("PRELOADING %s\n",  resource->url().string().latin1().data());
 #endif
 }
 
@@ -1138,12 +1148,6 @@ bool ResourceFetcher::isPreloaded(const String& urlString) const
         }
     }
 
-    Deque<PendingPreload>::const_iterator dequeEnd = m_pendingPreloads.end();
-    for (Deque<PendingPreload>::const_iterator it = m_pendingPreloads.begin(); it != dequeEnd; ++it) {
-        PendingPreload pendingPreload = *it;
-        if (pendingPreload.m_request.resourceRequest().url() == url)
-            return true;
-    }
     return false;
 }
 
@@ -1166,17 +1170,10 @@ void ResourceFetcher::clearPreloads()
     m_preloads.clear();
 }
 
-void ResourceFetcher::clearPendingPreloads()
-{
-    m_pendingPreloads.clear();
-}
-
-void ResourceFetcher::didFinishLoading(const Resource* resource, double finishTime, const ResourceLoaderOptions& options)
+void ResourceFetcher::didFinishLoading(const Resource* resource, double finishTime, int64_t encodedDataLength)
 {
     TRACE_EVENT_ASYNC_END0("net", "Resource", resource);
-    if (options.sendLoadCallbacks != SendCallbacks)
-        return;
-    context().dispatchDidFinishLoading(m_documentLoader, resource->identifier(), finishTime);
+    context().dispatchDidFinishLoading(m_documentLoader, resource->identifier(), finishTime, encodedDataLength);
 }
 
 void ResourceFetcher::didChangeLoadingPriority(const Resource* resource, ResourceLoadPriority loadPriority)
@@ -1185,44 +1182,33 @@ void ResourceFetcher::didChangeLoadingPriority(const Resource* resource, Resourc
     context().dispatchDidChangeResourcePriority(resource->identifier(), loadPriority);
 }
 
-void ResourceFetcher::didFailLoading(const Resource* resource, const ResourceError& error, const ResourceLoaderOptions& options)
+void ResourceFetcher::didFailLoading(const Resource* resource, const ResourceError& error)
 {
     TRACE_EVENT_ASYNC_END0("net", "Resource", resource);
-    if (options.sendLoadCallbacks != SendCallbacks)
-        return;
     context().dispatchDidFail(m_documentLoader, resource->identifier(), error);
 }
 
-void ResourceFetcher::willSendRequest(unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse, const ResourceLoaderOptions& options)
+void ResourceFetcher::willSendRequest(unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
 {
-    if (options.sendLoadCallbacks == SendCallbacks)
-        context().dispatchWillSendRequest(m_documentLoader, identifier, request, redirectResponse, options.initiatorInfo);
-    else
-        InspectorInstrumentation::willSendRequest(frame(), identifier, m_documentLoader, request, redirectResponse, options.initiatorInfo);
+    context().dispatchWillSendRequest(m_documentLoader, identifier, request, redirectResponse, initiatorInfo);
 }
 
-void ResourceFetcher::didReceiveResponse(const Resource* resource, const ResourceResponse& response, const ResourceLoaderOptions& options)
+void ResourceFetcher::didReceiveResponse(const Resource* resource, const ResourceResponse& response)
 {
-    if (options.sendLoadCallbacks != SendCallbacks)
-        return;
     context().dispatchDidReceiveResponse(m_documentLoader, resource->identifier(), response, resource->loader());
 }
 
-void ResourceFetcher::didReceiveData(const Resource* resource, const char* data, int dataLength, int encodedDataLength, const ResourceLoaderOptions& options)
+void ResourceFetcher::didReceiveData(const Resource* resource, const char* data, int dataLength, int encodedDataLength)
 {
     // FIXME: use frame of master document for imported documents.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(frame(), resource->identifier(), encodedDataLength);
-    if (options.sendLoadCallbacks != SendCallbacks)
-        return;
     context().dispatchDidReceiveData(m_documentLoader, resource->identifier(), data, dataLength, encodedDataLength);
     InspectorInstrumentation::didReceiveResourceData(cookie);
 }
 
-void ResourceFetcher::didDownloadData(const Resource* resource, int dataLength, int encodedDataLength, const ResourceLoaderOptions& options)
+void ResourceFetcher::didDownloadData(const Resource* resource, int dataLength, int encodedDataLength)
 {
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(frame(), resource->identifier(), encodedDataLength);
-    if (options.sendLoadCallbacks != SendCallbacks)
-        return;
     context().dispatchDidDownloadData(m_documentLoader, resource->identifier(), dataLength, encodedDataLength);
     InspectorInstrumentation::didReceiveResourceData(cookie);
 }
@@ -1293,10 +1279,22 @@ bool ResourceFetcher::isLoadedBy(ResourceLoaderHost* possibleOwner) const
     return this == possibleOwner;
 }
 
-bool ResourceFetcher::shouldRequest(Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
+bool ResourceFetcher::canAccessRedirect(Resource* resource, ResourceRequest& request, const ResourceResponse& redirectResponse, ResourceLoaderOptions& options)
 {
     if (!canRequest(resource->type(), request.url(), options, false, FetchRequest::UseDefaultOriginRestrictionForType))
         return false;
+    if (options.corsEnabled == IsCORSEnabled) {
+        SecurityOrigin* sourceOrigin = options.securityOrigin.get();
+        if (!sourceOrigin && document())
+            sourceOrigin = document()->securityOrigin();
+
+        String errorMessage;
+        if (!CrossOriginAccessControl::handleRedirect(resource, sourceOrigin, request, redirectResponse, options, errorMessage)) {
+            if (frame() && frame()->document())
+                frame()->document()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, errorMessage);
+            return false;
+        }
+    }
     if (resource->type() == Resource::Image && shouldDeferImageLoad(request.url()))
         return false;
     return true;
@@ -1315,21 +1313,24 @@ void ResourceFetcher::derefResourceLoaderHost()
 #if PRELOAD_DEBUG
 void ResourceFetcher::printPreloadStats()
 {
+    if (!m_preloads)
+        return;
+
     unsigned scripts = 0;
     unsigned scriptMisses = 0;
     unsigned stylesheets = 0;
     unsigned stylesheetMisses = 0;
     unsigned images = 0;
     unsigned imageMisses = 0;
-    ListHashSet<Resource*>::iterator end = m_preloads.end();
-    for (ListHashSet<Resource*>::iterator it = m_preloads.begin(); it != end; ++it) {
+    ListHashSet<Resource*>::iterator end = m_preloads->end();
+    for (ListHashSet<Resource*>::iterator it = m_preloads->begin(); it != end; ++it) {
         Resource* res = *it;
         if (res->preloadResult() == Resource::PreloadNotReferenced)
-            printf("!! UNREFERENCED PRELOAD %s\n", res->url().latin1().data());
+            printf("!! UNREFERENCED PRELOAD %s\n", res->url().string().latin1().data());
         else if (res->preloadResult() == Resource::PreloadReferencedWhileComplete)
-            printf("HIT COMPLETE PRELOAD %s\n", res->url().latin1().data());
+            printf("HIT COMPLETE PRELOAD %s\n", res->url().string().latin1().data());
         else if (res->preloadResult() == Resource::PreloadReferencedWhileLoading)
-            printf("HIT LOADING PRELOAD %s\n", res->url().latin1().data());
+            printf("HIT LOADING PRELOAD %s\n", res->url().string().latin1().data());
 
         if (res->type() == Resource::Script) {
             scripts++;
@@ -1363,8 +1364,41 @@ void ResourceFetcher::printPreloadStats()
 
 const ResourceLoaderOptions& ResourceFetcher::defaultResourceOptions()
 {
-    DEFINE_STATIC_LOCAL(ResourceLoaderOptions, options, (SendCallbacks, SniffContent, BufferData, AllowStoredCredentials, ClientRequestedCredentials, AskClientForCrossOriginCredentials, DoSecurityCheck, CheckContentSecurityPolicy, DocumentContext));
+    DEFINE_STATIC_LOCAL(ResourceLoaderOptions, options, (SniffContent, BufferData, AllowStoredCredentials, ClientRequestedCredentials, CheckContentSecurityPolicy, DocumentContext));
     return options;
+}
+
+ResourceFetcher::DeadResourceStatsRecorder::DeadResourceStatsRecorder()
+    : m_useCount(0)
+    , m_revalidateCount(0)
+    , m_loadCount(0)
+{
+}
+
+ResourceFetcher::DeadResourceStatsRecorder::~DeadResourceStatsRecorder()
+{
+    blink::Platform::current()->histogramCustomCounts(
+        "WebCore.ResourceFetcher.HitCount", m_useCount, 0, 1000, 50);
+    blink::Platform::current()->histogramCustomCounts(
+        "WebCore.ResourceFetcher.RevalidateCount", m_revalidateCount, 0, 1000, 50);
+    blink::Platform::current()->histogramCustomCounts(
+        "WebCore.ResourceFetcher.LoadCount", m_loadCount, 0, 1000, 50);
+}
+
+void ResourceFetcher::DeadResourceStatsRecorder::update(RevalidationPolicy policy)
+{
+    switch (policy) {
+    case Reload:
+    case Load:
+        ++m_loadCount;
+        return;
+    case Revalidate:
+        ++m_revalidateCount;
+        return;
+    case Use:
+        ++m_useCount;
+        return;
+    }
 }
 
 }

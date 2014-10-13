@@ -31,16 +31,14 @@
 #ifndef ThreadableWebSocketChannelClientWrapper_h
 #define ThreadableWebSocketChannelClientWrapper_h
 
-#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
-#include "modules/websockets/WorkerThreadableWebSocketChannel.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/Threading.h"
+#include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/Vector.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -49,30 +47,13 @@ class WebSocketChannelClient;
 
 class ThreadableWebSocketChannelClientWrapper : public ThreadSafeRefCounted<ThreadableWebSocketChannelClientWrapper> {
 public:
-    static PassRefPtr<ThreadableWebSocketChannelClientWrapper> create(ExecutionContext*, WebSocketChannelClient*);
-
-    void clearSyncMethodDone();
-    void setSyncMethodDone();
-    bool syncMethodDone() const;
-
-    WorkerThreadableWebSocketChannel::Peer* peer() const;
-    void didCreateWebSocketChannel(WorkerThreadableWebSocketChannel::Peer*);
-    void clearPeer();
-
-    bool failedWebSocketChannelCreation() const;
-    void setFailedWebSocketChannelCreation();
+    static PassRefPtr<ThreadableWebSocketChannelClientWrapper> create(WebSocketChannelClient*);
 
     // Subprotocol and extensions will be available when didConnect() callback is invoked.
     String subprotocol() const;
     void setSubprotocol(const String&);
     String extensions() const;
     void setExtensions(const String&);
-
-    WebSocketChannel::SendResult sendRequestResult() const;
-    void setSendRequestResult(WebSocketChannel::SendResult);
-
-    unsigned long bufferedAmount() const;
-    void setBufferedAmount(unsigned long);
 
     void clearClient();
 
@@ -88,7 +69,7 @@ public:
     void resume();
 
 private:
-    ThreadableWebSocketChannelClientWrapper(ExecutionContext*, WebSocketChannelClient*);
+    ThreadableWebSocketChannelClientWrapper(WebSocketChannelClient*);
 
     void processPendingTasks();
 
@@ -101,16 +82,10 @@ private:
     static void processPendingTasksCallback(ExecutionContext*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>);
     static void didReceiveMessageErrorCallback(ExecutionContext*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>);
 
-    ExecutionContext* m_context;
     WebSocketChannelClient* m_client;
-    WorkerThreadableWebSocketChannel::Peer* m_peer;
-    bool m_failedWebSocketChannelCreation;
-    bool m_syncMethodDone;
     // ThreadSafeRefCounted must not have String member variables.
     Vector<UChar> m_subprotocol;
     Vector<UChar> m_extensions;
-    WebSocketChannel::SendResult m_sendRequestResult;
-    unsigned long m_bufferedAmount;
     bool m_suspended;
     Vector<OwnPtr<ExecutionContextTask> > m_pendingTasks;
 };

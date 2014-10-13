@@ -4,7 +4,7 @@
 
 'use strict';
 
-base.exportTo('tracing.analysis', function() {
+tvcm.exportTo('tracing.analysis', function() {
   function StubAnalysisResults() {
     this.headers = [];
     this.info = [];
@@ -81,14 +81,19 @@ base.exportTo('tracing.analysis', function() {
     },
 
     appendDataRow: function(table, label, duration, threadDuration, selfTime,
-                            occurences, details, selectionGenerator) {
-      var row = {label: label,
-                  duration: duration,
-                  threadDuration: threadDuration,
-                  selfTime: selfTime,
-                  occurences: occurences,
-                  details: details,
-                  selectionGenerator: selectionGenerator};
+                            threadSelfTime, occurences, percentage, details,
+                            selectionGenerator) {
+      var row = {
+        label: label,
+        duration: duration,
+        threadDuration: threadDuration,
+        selfTime: selfTime,
+        threadSelfTime: threadSelfTime,
+        occurences: occurences,
+        percentage: percentage,
+        details: details,
+        selectionGenerator: selectionGenerator
+      };
       table.rows.push(row);
       return row;
     }

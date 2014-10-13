@@ -39,6 +39,7 @@ InProcessResourceLoaderBridge::InProcessResourceLoaderBridge(
 : d_url(requestInfo.url)
 , d_peer(0)
 , d_userData(0)
+, d_totalTransferSize(0)
 , d_started(false)
 , d_waitingForCancelLoad(false)
 , d_canceled(false)
@@ -145,6 +146,7 @@ void InProcessResourceLoaderBridge::addResponseData(const char* buffer,
     DCHECK(!d_failed);
 
     if (0 != length) {
+        d_totalTransferSize += length;
         ensureResponseHeadersSent(buffer, length);
         d_peer->OnReceivedData(buffer, length, length);
     }
@@ -177,7 +179,8 @@ void InProcessResourceLoaderBridge::finish()
                                           : net::OK;
 
     // We will get deleted inside this callback.
-    d_peer->OnCompletedRequest(errorCode, false, "", base::TimeTicks::Now());
+    d_peer->OnCompletedRequest(errorCode, false, false, "",
+                               base::TimeTicks::Now(), d_totalTransferSize);
 }
 
 void InProcessResourceLoaderBridge::startLoad()
@@ -210,8 +213,10 @@ void InProcessResourceLoaderBridge::cancelLoad()
         // We will get deleted inside this callback.
         d_peer->OnCompletedRequest(net::ERR_ABORTED,
                                    false,
+                                   false,
                                    "",
-                                   base::TimeTicks::Now());
+                                   base::TimeTicks::Now(),
+                                   d_totalTransferSize);
         return;
     }
 

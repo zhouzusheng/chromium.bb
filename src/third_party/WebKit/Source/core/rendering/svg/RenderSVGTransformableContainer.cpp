@@ -37,6 +37,37 @@ RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGGraphicsElem
 {
 }
 
+static bool hasValidPredecessor(const Node* node)
+{
+    ASSERT(node);
+    while ((node = node->previousSibling())) {
+        if (node->isSVGElement() && toSVGElement(node)->isValid())
+            return true;
+    }
+    return false;
+}
+
+bool RenderSVGTransformableContainer::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    if (element()->hasTagName(SVGNames::switchTag)) {
+        Node* node = child->node();
+        // Reject non-SVG/non-valid elements.
+        if (!node->isSVGElement() || !toSVGElement(node)->isValid())
+            return false;
+        // Reject this child if it isn't the first valid node.
+        if (hasValidPredecessor(node))
+            return false;
+    } else if (element()->hasTagName(SVGNames::aTag)) {
+        // http://www.w3.org/2003/01/REC-SVG11-20030114-errata#linking-text-environment
+        // The 'a' element may contain any element that its parent may contain, except itself.
+        if (child->node()->hasTagName(SVGNames::aTag))
+            return false;
+        if (parent() && parent()->isSVG())
+            return parent()->isChildAllowed(child, style);
+    }
+    return RenderSVGContainer::isChildAllowed(child, style);
+}
+
 bool RenderSVGTransformableContainer::calculateLocalTransform()
 {
     SVGGraphicsElement* element = toSVGGraphicsElement(this->element());
@@ -55,7 +86,9 @@ bool RenderSVGTransformableContainer::calculateLocalTransform()
 
     if (useElement) {
         SVGLengthContext lengthContext(useElement);
-        FloatSize translation(useElement->xCurrentValue().value(lengthContext), useElement->yCurrentValue().value(lengthContext));
+        FloatSize translation(
+            useElement->x()->currentValue()->value(lengthContext),
+            useElement->y()->currentValue()->value(lengthContext));
         if (translation != m_lastTranslation)
             m_needsTransformUpdate = true;
         m_lastTranslation = translation;

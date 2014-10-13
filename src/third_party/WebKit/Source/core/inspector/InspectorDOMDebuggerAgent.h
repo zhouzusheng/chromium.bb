@@ -42,7 +42,8 @@ namespace WebCore {
 
 class Document;
 class Element;
-class Event;
+class EventListener;
+class EventTarget;
 class InspectorDOMAgent;
 class InspectorDebuggerAgent;
 class InspectorFrontend;
@@ -52,22 +53,22 @@ class Node;
 
 typedef String ErrorString;
 
-class InspectorDOMDebuggerAgent : public InspectorBaseAgent<InspectorDOMDebuggerAgent>, public InspectorDebuggerAgent::Listener, public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
+class InspectorDOMDebuggerAgent FINAL : public InspectorBaseAgent<InspectorDOMDebuggerAgent>, public InspectorDebuggerAgent::Listener, public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
 public:
-    static PassOwnPtr<InspectorDOMDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*);
+    static PassOwnPtr<InspectorDOMDebuggerAgent> create(InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     virtual ~InspectorDOMDebuggerAgent();
 
     // DOMDebugger API for InspectorFrontend
-    virtual void setXHRBreakpoint(ErrorString*, const String& url);
-    virtual void removeXHRBreakpoint(ErrorString*, const String& url);
-    virtual void setEventListenerBreakpoint(ErrorString*, const String& eventName);
-    virtual void removeEventListenerBreakpoint(ErrorString*, const String& eventName);
-    virtual void setInstrumentationBreakpoint(ErrorString*, const String& eventName);
-    virtual void removeInstrumentationBreakpoint(ErrorString*, const String& eventName);
-    virtual void setDOMBreakpoint(ErrorString*, int nodeId, const String& type);
-    virtual void removeDOMBreakpoint(ErrorString*, int nodeId, const String& type);
+    virtual void setXHRBreakpoint(ErrorString*, const String& url) OVERRIDE;
+    virtual void removeXHRBreakpoint(ErrorString*, const String& url) OVERRIDE;
+    virtual void setEventListenerBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
+    virtual void removeEventListenerBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
+    virtual void setInstrumentationBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
+    virtual void removeInstrumentationBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
+    virtual void setDOMBreakpoint(ErrorString*, int nodeId, const String& type) OVERRIDE;
+    virtual void removeDOMBreakpoint(ErrorString*, int nodeId, const String& type) OVERRIDE;
 
     // InspectorInstrumentation API
     void willInsertDOMNode(Node* parent);
@@ -83,27 +84,28 @@ public:
     void didRequestAnimationFrame(Document*, int callbackId);
     void didCancelAnimationFrame(Document*, int callbackId);
     void willFireAnimationFrame(Document*, int callbackId);
-    void willHandleEvent(Event*);
+    void willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
     void didFireWebGLError(const String& errorName);
     void didFireWebGLWarning();
     void didFireWebGLErrorOrWarning(const String& message);
+    void willExecuteCustomElementCallback(Element*);
 
     void didProcessTask();
 
-    virtual void clearFrontend();
-    virtual void discardAgent();
+    virtual void clearFrontend() OVERRIDE;
+    virtual void discardAgent() OVERRIDE;
 
 private:
-    InspectorDOMDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*);
+    InspectorDOMDebuggerAgent(InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
     PassRefPtr<JSONObject> preparePauseOnNativeEventData(bool isDOMEvent, const String& eventName);
 
     // InspectorDebuggerAgent::Listener implementation.
-    virtual void debuggerWasEnabled();
-    virtual void debuggerWasDisabled();
-    virtual void stepInto();
-    virtual void didPause();
+    virtual void debuggerWasEnabled() OVERRIDE;
+    virtual void debuggerWasDisabled() OVERRIDE;
+    virtual void stepInto() OVERRIDE;
+    virtual void didPause() OVERRIDE;
     void disable();
 
     void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description);

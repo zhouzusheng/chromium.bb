@@ -6,7 +6,6 @@
 
 #include <iterator>
 #include <limits>
-#include <set>
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -51,14 +50,6 @@ static base::LazyInstance<ClipboardMap> g_clipboard_map =
 // Mutex that controls access to |g_clipboard_map|.
 static base::LazyInstance<base::Lock>::Leaky
     g_clipboard_map_lock = LAZY_INSTANCE_INITIALIZER;
-
-// Set of registered custom formats.
-static base::LazyInstance<std::set<Clipboard::FormatType> >
-    g_registered_formats = LAZY_INSTANCE_INITIALIZER;
-
-// Mutex that controls access to |g_registered_formats|.
-static base::LazyInstance<base::Lock>::Leaky g_registered_formats_lock =
-    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -112,28 +103,6 @@ void Clipboard::DestroyClipboardForCurrentThread() {
     delete it->second;
     clipboard_map->erase(it);
   }
-}
-
-// static
-Clipboard::FormatType Clipboard::GetFormatType(
-    const std::string& format_string) {
-  FormatType format = GetFormatTypeInternal(format_string);
-  {
-    base::AutoLock lock(g_registered_formats_lock.Get());
-    g_registered_formats.Get().insert(format);
-  }
-  return format;
-}
-
-bool Clipboard::IsRegisteredFormatType(const FormatType& format) {
-  // Terrible hack to force web/pepper custom types to be registered.
-  // TODO(dcheng): There's got to a better way...
-  GetWebCustomDataFormatType();
-  GetPepperCustomDataFormatType();
-
-  base::AutoLock lock(g_registered_formats_lock.Get());
-  const std::set<FormatType>& registered_formats = g_registered_formats.Get();
-  return registered_formats.find(format) != registered_formats.end();
 }
 
 void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
@@ -194,7 +163,7 @@ void Clipboard::DispatchObject(ObjectType type, const ObjectMapParams& params) {
       }
       // Make sure the size is representable as a signed 32-bit int, so
       // SkBitmap::getSize() won't be truncated.
-      if (bitmap.getSize64().is64())
+      if (!sk_64_isS32(bitmap.computeSize64()))
         return;
 
       // It's OK to cast away constness here since we map the handle as

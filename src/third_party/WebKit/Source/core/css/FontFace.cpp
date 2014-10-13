@@ -40,21 +40,22 @@
 #include "bindings/v8/ScriptState.h"
 #include "core/css/CSSFontFace.h"
 #include "core/css/CSSFontFaceSrcValue.h"
-#include "core/css/CSSParser.h"
+#include "core/css/CSSFontSelector.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/StyleEngine.h"
 #include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
 #include "core/svg/SVGFontFaceElement.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontTraitsMask.h"
-#include "platform/fonts/SimpleFontData.h"
 
 namespace WebCore {
 
@@ -89,64 +90,65 @@ private:
     RefPtr<ScriptPromiseResolver> m_resolver;
 };
 
-static PassRefPtr<CSSValue> parseCSSValue(const String& s, CSSPropertyID propertyID)
+static PassRefPtr<CSSValue> parseCSSValue(const Document* document, const String& s, CSSPropertyID propertyID)
 {
     if (s.isEmpty())
         return 0;
     RefPtr<MutableStylePropertySet> parsedStyle = MutableStylePropertySet::create();
-    CSSParser::parseValue(parsedStyle.get(), propertyID, s, true, HTMLStandardMode, 0);
+    BisonCSSParser::parseValue(parsedStyle.get(), propertyID, s, true, *document);
     return parsedStyle->getPropertyCSSValue(propertyID);
 }
 
-PassRefPtr<FontFace> FontFace::create(const AtomicString& family, const String& source, const Dictionary& descriptors, ExceptionState& exceptionState)
+PassRefPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, const String& source, const Dictionary& descriptors, ExceptionState& exceptionState)
 {
-    RefPtr<CSSValue> src = parseCSSValue(source, CSSPropertySrc);
+    RefPtr<CSSValue> src = parseCSSValue(toDocument(context), source, CSSPropertySrc);
     if (!src || !src->isValueList()) {
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "The source provided ('" + source + "') could not be parsed as a value list.");
         return 0;
     }
 
     RefPtr<FontFace> fontFace = adoptRef<FontFace>(new FontFace(src));
-    fontFace->setFamily(family, exceptionState);
+    fontFace->setFamily(context, family, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
     String value;
     if (descriptors.get("style", value)) {
-        fontFace->setStyle(value, exceptionState);
+        fontFace->setStyle(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
     if (descriptors.get("weight", value)) {
-        fontFace->setWeight(value, exceptionState);
+        fontFace->setWeight(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
     if (descriptors.get("stretch", value)) {
-        fontFace->setStretch(value, exceptionState);
+        fontFace->setStretch(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
     if (descriptors.get("unicodeRange", value)) {
-        fontFace->setUnicodeRange(value, exceptionState);
+        fontFace->setUnicodeRange(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
     if (descriptors.get("variant", value)) {
-        fontFace->setVariant(value, exceptionState);
+        fontFace->setVariant(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
     if (descriptors.get("featureSettings", value)) {
-        fontFace->setFeatureSettings(value, exceptionState);
+        fontFace->setFeatureSettings(context, value, exceptionState);
         if (exceptionState.hadException())
             return 0;
     }
 
+    fontFace->initCSSFontFace(toDocument(context));
     return fontFace;
 }
 
-PassRefPtr<FontFace> FontFace::create(const StyleRuleFontFace* fontFaceRule)
+PassRefPtr<FontFace> FontFace::create(Document* document, const StyleRuleFontFace* fontFaceRule)
 {
     const StylePropertySet* properties = fontFaceRule->properties();
 
@@ -166,15 +168,18 @@ PassRefPtr<FontFace> FontFace::create(const StyleRuleFontFace* fontFaceRule)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStretch)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyUnicodeRange)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontVariant)
-        && fontFace->setPropertyFromStyle(properties, CSSPropertyWebkitFontFeatureSettings))
+        && fontFace->setPropertyFromStyle(properties, CSSPropertyWebkitFontFeatureSettings)
+        && !fontFace->family().isEmpty()
+        && fontFace->traitsMask()) {
+        fontFace->initCSSFontFace(document);
         return fontFace;
+    }
     return 0;
 }
 
 FontFace::FontFace(PassRefPtr<CSSValue> src)
     : m_src(src)
     , m_status(Unloaded)
-    , m_cssFontFace(0)
 {
 }
 
@@ -212,41 +217,41 @@ String FontFace::featureSettings() const
     return m_featureSettings ? m_featureSettings->cssText() : "normal";
 }
 
-void FontFace::setStyle(const String& s, ExceptionState& exceptionState)
+void FontFace::setStyle(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyFontStyle, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyFontStyle, exceptionState);
 }
 
-void FontFace::setWeight(const String& s, ExceptionState& exceptionState)
+void FontFace::setWeight(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyFontWeight, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyFontWeight, exceptionState);
 }
 
-void FontFace::setStretch(const String& s, ExceptionState& exceptionState)
+void FontFace::setStretch(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyFontStretch, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyFontStretch, exceptionState);
 }
 
-void FontFace::setUnicodeRange(const String& s, ExceptionState& exceptionState)
+void FontFace::setUnicodeRange(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyUnicodeRange, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyUnicodeRange, exceptionState);
 }
 
-void FontFace::setVariant(const String& s, ExceptionState& exceptionState)
+void FontFace::setVariant(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyFontVariant, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyFontVariant, exceptionState);
 }
 
-void FontFace::setFeatureSettings(const String& s, ExceptionState& exceptionState)
+void FontFace::setFeatureSettings(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(s, CSSPropertyWebkitFontFeatureSettings, exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyWebkitFontFeatureSettings, exceptionState);
 }
 
-void FontFace::setPropertyFromString(const String& s, CSSPropertyID propertyID, ExceptionState& exceptionState)
+void FontFace::setPropertyFromString(const Document* document, const String& s, CSSPropertyID propertyID, ExceptionState& exceptionState)
 {
-    RefPtr<CSSValue> value = parseCSSValue(s, propertyID);
+    RefPtr<CSSValue> value = parseCSSValue(document, s, propertyID);
     if (!value || !setPropertyValue(value, propertyID))
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "Failed to set '" + s + "' as a property value.");
 }
 
 bool FontFace::setPropertyFromStyle(const StylePropertySet* properties, CSSPropertyID propertyID)
@@ -348,10 +353,9 @@ void FontFace::setLoadStatus(LoadStatus status)
         resolveReadyPromises();
 }
 
-void FontFace::load()
+void FontFace::load(ExecutionContext* context)
 {
-    // FIXME: This does not load FontFace created by JavaScript, since m_cssFontFace is null.
-    if (m_status != Unloaded || !m_cssFontFace)
+    if (m_status != Unloaded)
         return;
 
     FontDescription fontDescription;
@@ -360,9 +364,9 @@ void FontFace::load()
     fontDescription.setFamily(fontFamily);
     fontDescription.setTraitsMask(static_cast<FontTraitsMask>(traitsMask()));
 
-    RefPtr<SimpleFontData> fontData = m_cssFontFace->getFontData(fontDescription);
-    if (fontData && fontData->customFontData())
-        fontData->customFontData()->beginLoadIfNeeded();
+    CSSFontSelector* fontSelector = toDocument(context)->styleEngine()->fontSelector();
+    m_cssFontFace->load(fontDescription, fontSelector);
+    fontSelector->loadPendingFonts();
 }
 
 ScriptPromise FontFace::ready(ExecutionContext* context)
@@ -437,10 +441,12 @@ unsigned FontFace::traitsMask() const
         case CSSValue200:
             traitsMask |= FontWeight200Mask;
             break;
+        case CSSValueLighter:
         case CSSValue100:
             traitsMask |= FontWeight100Mask;
             break;
         default:
+            ASSERT_NOT_REACHED();
             break;
         }
     } else {
@@ -450,7 +456,7 @@ unsigned FontFace::traitsMask() const
     if (RefPtr<CSSValue> fontVariant = m_variant) {
         // font-variant descriptor can be a value list.
         if (fontVariant->isPrimitiveValue()) {
-            RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+            RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
             list->append(fontVariant);
             fontVariant = list;
         } else if (!fontVariant->isValueList()) {
@@ -480,13 +486,10 @@ unsigned FontFace::traitsMask() const
     return traitsMask;
 }
 
-PassRefPtr<CSSFontFace> FontFace::createCSSFontFace(Document* document)
+void FontFace::initCSSFontFace(Document* document)
 {
-    if (m_cssFontFace)
-        return m_cssFontFace;
-
-    RefPtr<CSSFontFace> cssFontFace = CSSFontFace::create(this);
-    m_cssFontFace = cssFontFace.get();
+    ASSERT(!m_cssFontFace);
+    m_cssFontFace = adoptPtr(new CSSFontFace(this));
 
     // Each item in the src property's list is a single CSSFontFaceSource. Put them all into a CSSFontFace.
     CSSValueList* srcList = toCSSValueList(m_src.get());
@@ -523,7 +526,7 @@ PassRefPtr<CSSFontFace> FontFace::createCSSFontFace(Document* document)
 #if ENABLE(SVG_FONTS)
             source->setSVGFontFaceElement(item->svgFontFaceElement());
 #endif
-            cssFontFace->addSource(source.release());
+            m_cssFontFace->addSource(source.release());
         }
     }
 
@@ -531,10 +534,9 @@ PassRefPtr<CSSFontFace> FontFace::createCSSFontFace(Document* document)
         unsigned numRanges = rangeList->length();
         for (unsigned i = 0; i < numRanges; i++) {
             CSSUnicodeRangeValue* range = toCSSUnicodeRangeValue(rangeList->itemWithoutBoundsCheck(i));
-            cssFontFace->ranges().add(range->from(), range->to());
+            m_cssFontFace->ranges().add(range->from(), range->to());
         }
     }
-    return cssFontFace;
 }
 
 } // namespace WebCore

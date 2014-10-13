@@ -34,12 +34,27 @@ std::string str(int i)
     return buffer;
 }
 
-static rx::D3DWorkaroundType DiscardWorkaround(bool usesDiscard)
+static rx::D3DWorkaroundType DiscardWorkaround(bool usesDiscard, bool nestedBreak)
 {
-    return (usesDiscard ? rx::ANGLE_D3D_WORKAROUND_SM3_OPTIMIZER : rx::ANGLE_D3D_WORKAROUND_NONE);
+    if (usesDiscard)
+    {
+        // ANGLE issue 486:
+        // Work-around a D3D9 compiler bug that presents itself when using conditional discard, by disabling optimization
+        return rx::ANGLE_D3D_WORKAROUND_SKIP_OPTIMIZATION;
+    }
+
+    if (nestedBreak)
+    {
+        // ANGLE issue 603:
+        // Work-around a D3D9 compiler bug that presents itself when using break in a nested loop, by maximizing optimization
+        // We want to keep the use of ANGLE_D3D_WORKAROUND_MAX_OPTIMIZATION minimal to prevent hangs, so usesDiscard takes precedence
+        return rx::ANGLE_D3D_WORKAROUND_MAX_OPTIMIZATION;
+    }
+
+    return rx::ANGLE_D3D_WORKAROUND_NONE;
 }
 
-UniformLocation::UniformLocation(const std::string &name, unsigned int element, unsigned int index) 
+UniformLocation::UniformLocation(const std::string &name, unsigned int element, unsigned int index)
     : name(name), element(element), index(index)
 {
 }
@@ -1627,9 +1642,19 @@ bool ProgramBinary::load(InfoLog &infoLog, const void *binary, GLsizei length)
         return false;
     }
 
-    int version = 0;
-    stream.read(&version);
-    if (version != VERSION_DWORD)
+    int majorVersion = 0;
+    int minorVersion = 0;
+    stream.read(&majorVersion);
+    stream.read(&minorVersion);
+    if (majorVersion != ANGLE_MAJOR_VERSION || minorVersion != ANGLE_MINOR_VERSION)
+    {
+        infoLog.append("Invalid program binary version.");
+        return false;
+    }
+
+    unsigned char commitString[ANGLE_COMMIT_HASH_SIZE];
+    stream.read(commitString, ANGLE_COMMIT_HASH_SIZE);
+    if (memcmp(commitString, ANGLE_COMMIT_HASH, sizeof(unsigned char) * ANGLE_COMMIT_HASH_SIZE) != 0)
     {
         infoLog.append("Invalid program binary version.");
         return false;
@@ -1796,7 +1821,9 @@ bool ProgramBinary::save(void* binary, GLsizei bufSize, GLsizei *length)
     BinaryOutputStream stream;
 
     stream.write(GL_PROGRAM_BINARY_ANGLE);
-    stream.write(VERSION_DWORD);
+    stream.write(ANGLE_MAJOR_VERSION);
+    stream.write(ANGLE_MINOR_VERSION);
+    stream.write(ANGLE_COMMIT_HASH, ANGLE_COMMIT_HASH_SIZE);
     stream.write(ANGLE_COMPILE_OPTIMIZATION_LEVEL);
 
     for (unsigned int i = 0; i < MAX_VERTEX_ATTRIBS; ++i)
@@ -1967,8 +1994,8 @@ bool ProgramBinary::link(InfoLog &infoLog, const AttributeBindings &attributeBin
 
     if (success)
     {
-        mVertexExecutable = mRenderer->compileToExecutable(infoLog, vertexHLSL.c_str(), rx::SHADER_VERTEX, DiscardWorkaround(vertexShader->mUsesDiscardRewriting));
-        mPixelExecutable = mRenderer->compileToExecutable(infoLog, pixelHLSL.c_str(), rx::SHADER_PIXEL, DiscardWorkaround(fragmentShader->mUsesDiscardRewriting));
+        mVertexExecutable = mRenderer->compileToExecutable(infoLog, vertexHLSL.c_str(), rx::SHADER_VERTEX, DiscardWorkaround(vertexShader->mUsesDiscardRewriting, vertexShader->mUsesNestedBreak));
+        mPixelExecutable = mRenderer->compileToExecutable(infoLog, pixelHLSL.c_str(), rx::SHADER_PIXEL, DiscardWorkaround(fragmentShader->mUsesDiscardRewriting, fragmentShader->mUsesNestedBreak));
 
         if (usesGeometryShader())
         {
@@ -2592,7 +2619,9 @@ struct AttributeSorter
 
     bool operator()(int a, int b)
     {
-        return originalIndices[a] == -1 ? false : originalIndices[a] < originalIndices[b];
+        if (originalIndices[a] == -1) return false;
+        if (originalIndices[b] == -1) return true;
+        return (originalIndices[a] < originalIndices[b]);
     }
 
     const int (&originalIndices)[MAX_VERTEX_ATTRIBS];

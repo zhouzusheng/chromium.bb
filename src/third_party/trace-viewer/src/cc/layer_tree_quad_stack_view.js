@@ -9,22 +9,22 @@
  * type of layer content shown and info bar for content-loading warnings.
  */
 
-base.requireStylesheet('cc.layer_tree_quad_stack_view');
+tvcm.requireStylesheet('cc.layer_tree_quad_stack_view');
 
-base.require('base.color');
-base.require('base.properties');
-base.require('base.raf');
-base.require('base.quad');
-base.require('base.range');
-base.require('cc.picture');
-base.require('cc.render_pass');
-base.require('cc.tile');
-base.require('cc.debug_colors');
-base.require('ui.quad_stack_view');
-base.require('ui.info_bar');
+tvcm.require('tvcm.color');
+tvcm.require('tvcm.properties');
+tvcm.require('tvcm.raf');
+tvcm.require('tvcm.quad');
+tvcm.require('tvcm.range');
+tvcm.require('cc.picture');
+tvcm.require('cc.render_pass');
+tvcm.require('cc.tile');
+tvcm.require('cc.debug_colors');
+tvcm.require('tvcm.ui.quad_stack_view');
+tvcm.require('tvcm.ui.info_bar');
 
 
-base.exportTo('cc', function() {
+tvcm.exportTo('cc', function() {
 
   var TILE_HEATMAP_TYPE = {};
   TILE_HEATMAP_TYPE.NONE = 0;
@@ -41,7 +41,7 @@ base.exportTo('cc', function() {
   /**
    * @constructor
    */
-  var LayerTreeQuadStackView = ui.define('layer-tree-quad-stack-view');
+  var LayerTreeQuadStackView = tvcm.ui.define('layer-tree-quad-stack-view');
 
   LayerTreeQuadStackView.prototype = {
     __proto__: HTMLDivElement.prototype,
@@ -51,12 +51,12 @@ base.exportTo('cc', function() {
       this.pictureAsImageData_ = {}; // Maps picture.guid to PictureAsImageData.
       this.messages_ = [];
       this.controls_ = document.createElement('top-controls');
-      this.infoBar_ = new ui.InfoBar();
-      this.quadStackView_ = new ui.QuadStackView();
+      this.infoBar_ = new tvcm.ui.InfoBar();
+      this.quadStackView_ = new tvcm.ui.QuadStackView();
       this.quadStackView_.addEventListener(
           'selectionchange', this.onQuadStackViewSelectionChange_.bind(this));
 
-      var m = ui.MOUSE_SELECTOR_MODE;
+      var m = tvcm.ui.MOUSE_SELECTOR_MODE;
       var mms = this.quadStackView_.mouseModeSelector;
       mms.settingsKey = 'cc.layerTreeQuadStackView.mouseModeSelector';
       mms.setKeyCodeForMode(m.SELECTION, 'Z'.charCodeAt(0));
@@ -68,18 +68,18 @@ base.exportTo('cc', function() {
       this.appendChild(this.infoBar_);
       this.appendChild(this.quadStackView_);
 
-      this.tileRectsSelector_ = ui.createSelector(
+      this.tileRectsSelector_ = tvcm.ui.createSelector(
           this, 'howToShowTiles',
           'layerView.howToShowTiles', 'none',
           createTileRectsSelectorBaseOptions());
       this.controls_.appendChild(this.tileRectsSelector_);
 
-      var tileHeatmapText = ui.createSpan({
+      var tileHeatmapText = tvcm.ui.createSpan({
         textContent: 'Tile heatmap:'
       });
       this.controls_.appendChild(tileHeatmapText);
 
-      var tileHeatmapSelector = ui.createSelector(
+      var tileHeatmapSelector = tvcm.ui.createSelector(
           this, 'tileHeatmapType',
           'layerView.tileHeatmapType', TILE_HEATMAP_TYPE.NONE,
           [{label: 'None',
@@ -95,7 +95,7 @@ base.exportTo('cc', function() {
           ]);
       this.controls_.appendChild(tileHeatmapSelector);
 
-      var showOtherLayersCheckbox = ui.createCheckBox(
+      var showOtherLayersCheckbox = tvcm.ui.createCheckBox(
           this, 'showOtherLayers',
           'layerView.showOtherLayers', true,
           'Other layers/passes');
@@ -103,7 +103,7 @@ base.exportTo('cc', function() {
           'When checked, show all layers, selected or not.';
       this.controls_.appendChild(showOtherLayersCheckbox);
 
-      var showInvalidationsCheckbox = ui.createCheckBox(
+      var showInvalidationsCheckbox = tvcm.ui.createCheckBox(
           this, 'showInvalidations',
           'layerView.showInvalidations', true,
           'Invalidations');
@@ -111,7 +111,7 @@ base.exportTo('cc', function() {
           'When checked, compositing invalidations are highlighted in red';
       this.controls_.appendChild(showInvalidationsCheckbox);
 
-      var showUnrecordedRegionCheckbox = ui.createCheckBox(
+      var showUnrecordedRegionCheckbox = tvcm.ui.createCheckBox(
           this, 'showUnrecordedRegion',
           'layerView.showUnrecordedRegion', true,
           'Unrecorded area');
@@ -119,7 +119,7 @@ base.exportTo('cc', function() {
           'When checked, unrecorded areas are highlighted in yellow';
       this.controls_.appendChild(showUnrecordedRegionCheckbox);
 
-      var showBottlenecksCheckbox = ui.createCheckBox(
+      var showBottlenecksCheckbox = tvcm.ui.createCheckBox(
           this, 'showBottlenecks',
           'layerView.showBottlenecks', true,
           'Bottlenecks');
@@ -127,7 +127,7 @@ base.exportTo('cc', function() {
           'When checked, scroll bottlenecks are highlighted';
       this.controls_.appendChild(showBottlenecksCheckbox);
 
-      var showLayoutRectsCheckbox = ui.createCheckBox(
+      var showLayoutRectsCheckbox = tvcm.ui.createCheckBox(
           this, 'showLayoutRects',
           'layerView.showLayoutRects', false,
           'Layout rects');
@@ -135,7 +135,7 @@ base.exportTo('cc', function() {
           'When checked, shows rects for regions where layout happened';
       this.controls_.appendChild(showLayoutRectsCheckbox);
 
-      var showContentsCheckbox = ui.createCheckBox(
+      var showContentsCheckbox = tvcm.ui.createCheckBox(
           this, 'showContents',
           'layerView.showContents', true,
           'Contents');
@@ -249,7 +249,7 @@ base.exportTo('cc', function() {
     },
 
     set selection(selection) {
-      base.setPropertyAndDispatchChange(this, 'selection', selection);
+      tvcm.setPropertyAndDispatchChange(this, 'selection', selection);
       this.updateContents_();
     },
 
@@ -285,7 +285,7 @@ base.exportTo('cc', function() {
       if (this.updateContentsPending_)
         return;
       this.updateContentsPending_ = true;
-      base.requestAnimationFrameInThisFrameIfPossible(
+      tvcm.requestAnimationFrameInThisFrameIfPossible(
           this.updateContents_, this);
     },
 
@@ -300,7 +300,7 @@ base.exportTo('cc', function() {
 
       var lthi = this.layerTreeImpl_.layerTreeHostImpl;
       var lthiInstance = lthi.objectInstance;
-      var worldViewportRect = base.Rect.fromXYWH(
+      var worldViewportRect = tvcm.Rect.fromXYWH(
           0, 0,
           lthi.deviceViewportSize.width, lthi.deviceViewportSize.height);
       this.quadStackView_.deviceRect = worldViewportRect;
@@ -328,7 +328,7 @@ base.exportTo('cc', function() {
       }
 
       // Then create a new selector and replace the old one.
-      var new_selector = ui.createSelector(
+      var new_selector = tvcm.ui.createSelector(
           this, 'howToShowTiles',
           'layerView.howToShowTiles', 'none',
           data);
@@ -519,11 +519,11 @@ base.exportTo('cc', function() {
       }
 
       processRegion(layer.touchEventHandlerRegion, 'Touch listener',
-                    base.Color.fromString('rgb(228, 226, 27)'));
+                    tvcm.Color.fromString('rgb(228, 226, 27)'));
       processRegion(layer.wheelEventHandlerRegion, 'Wheel listener',
-                    base.Color.fromString('rgb(176, 205, 29)'));
+                    tvcm.Color.fromString('rgb(176, 205, 29)'));
       processRegion(layer.nonFastScrollableRegion, 'Repaints on scroll',
-                    base.Color.fromString('rgb(213, 134, 32)'));
+                    tvcm.Color.fromString('rgb(213, 134, 32)'));
     },
 
     appendTileCoverageRectQuads_: function(
@@ -620,7 +620,7 @@ base.exportTo('cc', function() {
     },
 
     getMinMaxForHeatmap_: function(tiles, heatmapType) {
-      var range = new base.Range();
+      var range = new tvcm.Range();
       if (heatmapType == TILE_HEATMAP_TYPE.USING_GPU_MEMORY) {
         range.addValue(0);
         range.addValue(1);
@@ -719,7 +719,7 @@ base.exportTo('cc', function() {
       var colorId = tracing.getStringColorId(selection.title);
       colorId += tracing.getColorPaletteHighlightIdBoost();
 
-      var color = base.Color.fromString(tracing.getColorPalette()[colorId]);
+      var color = tvcm.Color.fromString(tracing.getColorPalette()[colorId]);
 
       var quadForDrawing = quad.clone();
       quadForDrawing.backgroundColor = color.withAlpha(0.5).toString();
@@ -750,6 +750,18 @@ base.exportTo('cc', function() {
       return quads;
     },
 
+    appendAnimationQuads_: function(quads, layer, layerQuad) {
+      if (!layer.animationBounds)
+        return;
+
+      var abq = tvcm.Quad.fromRect(layer.animationBounds);
+      abq.backgroundColor = 'rgba(164,191,48,0.5)';
+      abq.borderColor = 'rgba(205,255,0,0.75)';
+      abq.borderWidth = 3.0;
+      abq.stackingGroupId = layerQuad.stackingGroupId;
+      quads.push(abq);
+    },
+
     generateLayerQuads: function() {
       this.updateContentsPending_ = false;
 
@@ -774,6 +786,8 @@ base.exportTo('cc', function() {
         if (this.showOtherLayers && this.selectedLayer == layer)
           layerQuad.upperBorderColor = 'rgb(156,189,45)';
 
+        if (this.selectedLayer === layer)
+          this.appendAnimationQuads_(quads, layer, layerQuad);
         this.appendImageQuads_(quads, layer, layerQuad);
         quads.push(layerQuad);
 
@@ -820,7 +834,7 @@ base.exportTo('cc', function() {
         this.infoBar_.removeAllButtons();
         this.infoBar_.message = 'Some problems were encountered...';
         this.infoBar_.addButton('More info...', function(e) {
-          var overlay = new ui.Overlay();
+          var overlay = new tvcm.ui.Overlay();
           overlay.textContent = '';
           infoBarMessages.forEach(function(message) {
             var title = document.createElement('h3');

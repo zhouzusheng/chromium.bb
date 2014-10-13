@@ -54,7 +54,7 @@ int HTMLTableRowElement::rowIndex() const
     if (!table)
         return -1;
     table = table->parentNode();
-    if (!table || !isHTMLTableElement(table))
+    if (!table || !table->hasTagName(tableTag))
         return -1;
 
     // To match Firefox, the row indices work like this:
@@ -142,7 +142,7 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
     if (index == -1)
         index = numCells-1;
     if (index >= 0 && index < numCells) {
-        RefPtr<Node> cell = children->item(index);
+        RefPtr<Element> cell = children->item(index);
         HTMLElement::removeChild(cell.get(), exceptionState);
     } else {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [0, " + String::number(numCells) + ").");

@@ -35,18 +35,22 @@
 namespace WebCore {
 
 SVGDocument::SVGDocument(const DocumentInit& initializer)
-    : Document(initializer, SVGDocumentClass)
+    : XMLDocument(initializer, XMLDocumentClass | SVGDocumentClass)
 {
-    ScriptWrappable::init(this);
 }
 
-SVGSVGElement* SVGDocument::rootElement() const
+SVGSVGElement* SVGDocument::rootElement(const Document* document)
 {
-    Element* elem = documentElement();
+    Element* elem = document->documentElement();
     if (elem && elem->hasTagName(SVGNames::svgTag))
         return toSVGSVGElement(elem);
 
     return 0;
+}
+
+SVGSVGElement* SVGDocument::rootElement() const
+{
+    return rootElement(this);
 }
 
 void SVGDocument::dispatchZoomEvent(float prevScale, float newScale)
@@ -92,13 +96,6 @@ void SVGDocument::updatePan(const FloatPoint& pos) const
         if (renderer())
             renderer()->repaint();
     }
-}
-
-bool SVGDocument::childShouldCreateRenderer(const Node& child) const
-{
-    if (child.hasTagName(SVGNames::svgTag))
-        return toSVGSVGElement(&child)->isValid();
-    return true;
 }
 
 PassRefPtr<Document> SVGDocument::cloneDocumentWithoutChildren()

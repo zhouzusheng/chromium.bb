@@ -59,7 +59,7 @@ static Node* selectionShadowAncestor(Frame* frame)
 }
 
 DOMSelection::DOMSelection(const TreeScope* treeScope)
-    : DOMWindowProperty(treeScope->rootNode()->document().frame())
+    : DOMWindowProperty(treeScope->rootNode().document().frame())
     , m_treeScope(treeScope)
 {
     ScriptWrappable::init(this);
@@ -270,22 +270,6 @@ void DOMSelection::setBaseAndExtent(Node* baseNode, int baseOffset, Node* extent
     VisiblePosition visibleExtent = VisiblePosition(createLegacyEditingPosition(extentNode, extentOffset), DOWNSTREAM);
 
     m_frame->selection().moveTo(visibleBase, visibleExtent);
-}
-
-void DOMSelection::setPosition(Node* node, int offset, ExceptionState& exceptionState)
-{
-    if (!m_frame)
-        return;
-    if (offset < 0) {
-        exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
-        return;
-    }
-
-    if (!isValidForPosition(node))
-        return;
-
-    // FIXME: Eliminate legacy editing positions
-    m_frame->selection().moveTo(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
 }
 
 void DOMSelection::modify(const String& alterString, const String& directionString, const String& granularityString)

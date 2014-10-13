@@ -68,7 +68,7 @@ class SpellCheck : public content::RenderProcessObserver,
   // If the word is spelled correctly, the vector is empty.
   // If optional_suggestions is NULL, suggested words will not be looked up.
   // Note that Doing suggest lookups can be slow.
-  bool SpellCheckWord(const char16* in_word,
+  bool SpellCheckWord(const base::char16* in_word,
                       int in_word_len,
                       int tag,
                       int* misspelling_start,
@@ -157,7 +157,7 @@ class SpellCheck : public content::RenderProcessObserver,
   CustomDictionaryEngine custom_dictionary_;
 
   // Mapping of bad words to good words for autocorrect.
-  std::map<string16, string16> autocorrect_words_;
+  std::map<base::string16, base::string16> autocorrect_words_;
 
   // Flags for auto-spell-correct behavior.  See spellcheck_common for flags
   // enum.

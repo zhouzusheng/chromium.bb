@@ -28,10 +28,8 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_BOOLEAN(SVGDefsElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGDefsElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
@@ -45,11 +43,6 @@ inline SVGDefsElement::SVGDefsElement(Document& document)
 PassRefPtr<SVGDefsElement> SVGDefsElement::create(Document& document)
 {
     return adoptRef(new SVGDefsElement(document));
-}
-
-bool SVGDefsElement::isValid() const
-{
-    return SVGTests::isValid();
 }
 
 RenderObject* SVGDefsElement::createRenderer(RenderStyle*)

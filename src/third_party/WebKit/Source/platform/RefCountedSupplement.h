@@ -40,11 +40,11 @@ public:
     virtual ~RefCountedSupplement() { }
     virtual void hostDestroyed() { }
 
-    class Wrapper : public Supplement<T> {
+    class Wrapper FINAL : public Supplement<T> {
     public:
         explicit Wrapper(PassRefPtr<ThisType> wrapped) : m_wrapped(wrapped) { }
         virtual ~Wrapper() { m_wrapped->hostDestroyed();  }
-#if !ASSERT_DISABLED || defined(ADDRESS_SANITIZER)
+#if SECURITY_ASSERT_ENABLED
         virtual bool isRefCountedWrapper() const OVERRIDE { return true; }
 #endif
         ThisType* wrapped() const { return m_wrapped.get(); }

@@ -28,6 +28,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "core/dom/Document.h"
+#include "core/dom/Node.h"
 #include "core/dom/PostAttachCallbacks.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/Event.h"
@@ -128,6 +129,7 @@ void HTMLPlugInElement::attach(const AttachContext& context)
         && !m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = true;
         document().incrementLoadEventDelayCount();
+        document().loadPluginsSoon();
     }
 }
 
@@ -200,7 +202,7 @@ void HTMLPlugInElement::finishParsingChildren()
 
     setNeedsWidgetUpdate(true);
     if (inDocument())
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void HTMLPlugInElement::resetInstance()
@@ -415,6 +417,8 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
         return false;
 
     KURL completedURL = document().completeURL(url);
+    if (!pluginIsLoadable(completedURL, mimeType))
+        return false;
 
     bool useFallback;
     if (shouldUsePlugin(completedURL, mimeType, renderer->hasFallbackContent(), useFallback))
@@ -432,9 +436,6 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
     Frame* frame = document().frame();
 
     if (!frame->loader().allowPlugins(AboutToInstantiatePlugin))
-        return false;
-
-    if (!pluginIsLoadable(url, mimeType))
         return false;
 
     RenderEmbeddedObject* renderer = renderEmbeddedObject();
@@ -480,6 +481,14 @@ bool HTMLPlugInElement::shouldUsePlugin(const KURL& url, const String& mimeType,
     useFallback = objectType == ObjectContentNone && hasFallback;
     return objectType == ObjectContentNone || objectType == ObjectContentNetscapePlugin || objectType == ObjectContentOtherPlugin;
 
+}
+
+void HTMLPlugInElement::dispatchErrorEvent()
+{
+    if (document().isPluginDocument() && document().ownerElement())
+        document().ownerElement()->dispatchEvent(Event::create(EventTypeNames::error));
+    else
+        dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 bool HTMLPlugInElement::pluginIsLoadable(const KURL& url, const String& mimeType)

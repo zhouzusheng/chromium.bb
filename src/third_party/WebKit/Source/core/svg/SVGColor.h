@@ -23,6 +23,7 @@
 #define SVGColor_h
 
 #include "core/css/CSSValue.h"
+#include "core/css/StyleColor.h"
 #include "platform/graphics/Color.h"
 #include "wtf/PassRefPtr.h"
 
@@ -40,30 +41,32 @@ public:
         SVG_COLORTYPE_CURRENTCOLOR = 3
     };
 
-    static PassRefPtr<SVGColor> createFromString(const String& rgbColor)
+    static PassRefPtrWillBeRawPtr<SVGColor> createFromString(const String& rgbColor)
     {
-        RefPtr<SVGColor> color = adoptRef(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
-        color->setColor(colorFromRGBColorString(rgbColor));
+        RefPtrWillBeRawPtr<SVGColor> color = adoptRefCountedWillBeRefCountedGarbageCollected(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
+        StyleColor styleColor = colorFromRGBColorString(rgbColor);
+        ASSERT(!styleColor.isCurrentColor());
+        color->setColor(styleColor.color());
         return color.release();
     }
 
-    static PassRefPtr<SVGColor> createFromColor(const Color& rgbColor)
+    static PassRefPtrWillBeRawPtr<SVGColor> createFromColor(const Color& rgbColor)
     {
-        RefPtr<SVGColor> color = adoptRef(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
+        RefPtrWillBeRawPtr<SVGColor> color = adoptRefCountedWillBeRefCountedGarbageCollected(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
         color->setColor(rgbColor);
         return color.release();
     }
 
-    static PassRefPtr<SVGColor> createCurrentColor()
+    static PassRefPtrWillBeRawPtr<SVGColor> createCurrentColor()
     {
-        return adoptRef(new SVGColor(SVG_COLORTYPE_CURRENTCOLOR));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new SVGColor(SVG_COLORTYPE_CURRENTCOLOR));
     }
 
     const Color& color() const { return m_color; }
     const SVGColorType& colorType() const { return m_colorType; }
     PassRefPtr<RGBColor> rgbColor() const;
 
-    static Color colorFromRGBColorString(const String&);
+    static StyleColor colorFromRGBColorString(const String&);
 
     void setRGBColor(const String& rgbColor, ExceptionState&);
     void setRGBColorICCColor(const String& rgbColor, const String& iccColor, ExceptionState&);
@@ -73,9 +76,11 @@ public:
 
     ~SVGColor() { }
 
-    PassRefPtr<SVGColor> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<SVGColor> cloneForCSSOM() const;
 
     bool equals(const SVGColor&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 protected:
     friend class CSSComputedStyleDeclaration;
@@ -83,7 +88,11 @@ protected:
     SVGColor(ClassType, const SVGColorType&);
     SVGColor(ClassType, const SVGColor& cloneFrom);
 
-    void setColor(const Color& color) { m_color = color; }
+    void setColor(const Color& color)
+    {
+        m_color = color;
+        setColorType(SVG_COLORTYPE_RGBCOLOR);
+    }
     void setColorType(const SVGColorType& type) { m_colorType = type; }
 
 private:

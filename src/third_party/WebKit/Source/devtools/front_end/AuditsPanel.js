@@ -30,16 +30,14 @@
 
 /**
  * @constructor
- * @extends {WebInspector.Panel}
+ * @extends {WebInspector.PanelWithSidebarTree}
  */
 WebInspector.AuditsPanel = function()
 {
-    WebInspector.Panel.call(this, "audits");
+    WebInspector.PanelWithSidebarTree.call(this, "audits");
     this.registerRequiredCSS("panelEnablerView.css");
     this.registerRequiredCSS("auditsPanel.css");
-
-    this.createSidebarViewWithTree();
-    this.splitView.mainElement.classList.add("vbox");
+    this.setMainElementConstraints(215);
 
     this.auditsTreeElement = new WebInspector.SidebarSectionTreeElement("", {}, true);
     this.sidebarTree.appendChild(this.auditsTreeElement);
@@ -51,8 +49,6 @@ WebInspector.AuditsPanel = function()
     this.auditResultsTreeElement = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("RESULTS"), {}, true);
     this.sidebarTree.appendChild(this.auditResultsTreeElement);
     this.auditResultsTreeElement.expand();
-
-    this.viewsContainerElement = this.splitView.mainElement;
 
     this._constructCategories();
 
@@ -157,7 +153,7 @@ WebInspector.AuditsPanel.prototype = {
         this._visibleView = x;
 
         if (x)
-            x.show(this.viewsContainerElement);
+            x.show(this.mainElement());
     },
 
     wasShown: function()
@@ -173,21 +169,23 @@ WebInspector.AuditsPanel.prototype = {
         this.auditResultsTreeElement.removeChildren();
     },
 
-    __proto__: WebInspector.Panel.prototype
+    __proto__: WebInspector.PanelWithSidebarTree.prototype
 }
 
 /**
  * @constructor
+ * @implements {WebInspector.AuditCategory}
  * @param {string} displayName
  */
-WebInspector.AuditCategory = function(displayName)
+WebInspector.AuditCategoryImpl = function(displayName)
 {
     this._displayName = displayName;
     this._rules = [];
 }
 
-WebInspector.AuditCategory.prototype = {
+WebInspector.AuditCategoryImpl.prototype = {
     /**
+     * @override
      * @return {string}
      */
     get id()
@@ -197,6 +195,7 @@ WebInspector.AuditCategory.prototype = {
     },
 
     /**
+     * @override
      * @return {string}
      */
     get displayName()
@@ -215,6 +214,7 @@ WebInspector.AuditCategory.prototype = {
     },
 
     /**
+     * @override
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
      * @param {function(!WebInspector.AuditRuleResult)} ruleResultCallback
      * @param {function()} categoryDoneCallback
@@ -516,6 +516,7 @@ WebInspector.AuditRules = {};
  */
 WebInspector.AuditCategories = {};
 
+importScript("AuditCategory.js");
 importScript("AuditCategories.js");
 importScript("AuditController.js");
 importScript("AuditFormatters.js");

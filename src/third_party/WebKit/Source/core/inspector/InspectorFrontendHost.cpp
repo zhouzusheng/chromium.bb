@@ -32,21 +32,19 @@
 
 #include "bindings/v8/ScriptFunctionCall.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/clipboard/Pasteboard.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/frame/Frame.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/ContextMenuProvider.h"
 #include "core/page/Page.h"
-#include "core/platform/Pasteboard.h"
 #include "core/rendering/RenderTheme.h"
-#include "modules/filesystem/DOMFileSystem.h"
 #include "platform/ContextMenu.h"
 #include "platform/ContextMenuItem.h"
-#include "platform/JSONValues.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/network/ResourceError.h"
@@ -55,7 +53,7 @@
 
 namespace WebCore {
 
-class FrontendMenuProvider : public ContextMenuProvider {
+class FrontendMenuProvider FINAL : public ContextMenuProvider {
 public:
     static PassRefPtr<FrontendMenuProvider> create(InspectorFrontendHost* frontendHost, ScriptObject frontendApiObject, const Vector<ContextMenuItem>& items)
     {
@@ -81,13 +79,13 @@ private:
         contextMenuCleared();
     }
 
-    virtual void populateContextMenu(ContextMenu* menu)
+    virtual void populateContextMenu(ContextMenu* menu) OVERRIDE
     {
         for (size_t i = 0; i < m_items.size(); ++i)
             menu->appendItem(m_items[i]);
     }
 
-    virtual void contextMenuItemSelected(const ContextMenuItem* item)
+    virtual void contextMenuItemSelected(const ContextMenuItem* item) OVERRIDE
     {
         if (m_frontendHost) {
             UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
@@ -99,7 +97,7 @@ private:
         }
     }
 
-    virtual void contextMenuCleared()
+    virtual void contextMenuCleared() OVERRIDE
     {
         if (m_frontendHost) {
             ScriptFunctionCall function(m_frontendApiObject, "contextMenuCleared");
@@ -139,6 +137,11 @@ void InspectorFrontendHost::disconnectClient()
 void InspectorFrontendHost::setZoomFactor(float zoom)
 {
     m_frontendPage->mainFrame()->setPageAndTextZoomFactors(zoom, 1);
+}
+
+float InspectorFrontendHost::zoomFactor()
+{
+    return m_frontendPage->mainFrame()->pageZoomFactor();
 }
 
 void InspectorFrontendHost::inspectedURLChanged(const String& newURL)
@@ -188,33 +191,12 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
 
 String InspectorFrontendHost::getSelectionBackgroundColor()
 {
-    Color color = RenderTheme::theme().activeSelectionBackgroundColor();
-    return color.isValid() ? color.serialized() : "";
+    return RenderTheme::theme().activeSelectionBackgroundColor().serialized();
 }
 
 String InspectorFrontendHost::getSelectionForegroundColor()
 {
-    Color color = RenderTheme::theme().activeSelectionForegroundColor();
-    return color.isValid() ? color.serialized() : "";
-}
-
-PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String& fileSystemName, const String& rootURL)
-{
-    ExecutionContext* context = m_frontendPage->mainFrame()->document();
-    return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL));
-}
-
-void InspectorFrontendHost::upgradeDraggedFileSystemPermissions(DOMFileSystem* domFileSystem)
-{
-    if (!m_client)
-        return;
-    RefPtr<JSONObject> message = JSONObject::create();
-    message->setNumber("id", 0);
-    message->setString("method", "upgradeDraggedFileSystemPermissions");
-    RefPtr<JSONArray> params = JSONArray::create();
-    message->setArray("params", params);
-    params->pushString(domFileSystem->rootURL().string());
-    sendMessageToEmbedder(message->toJSONString());
+    return RenderTheme::theme().activeSelectionForegroundColor().serialized();
 }
 
 bool InspectorFrontendHost::isUnderTest()

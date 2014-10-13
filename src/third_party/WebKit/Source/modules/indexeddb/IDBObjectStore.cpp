@@ -44,8 +44,9 @@
 #include "public/platform/WebIDBKey.h"
 #include "public/platform/WebIDBKeyRange.h"
 
-using blink::WebIDBDatabase;
 using blink::WebIDBCallbacks;
+using blink::WebIDBCursor;
+using blink::WebIDBDatabase;
 
 namespace WebCore {
 
@@ -163,19 +164,17 @@ PassRefPtr<IDBRequest> IDBObjectStore::put(WebIDBDatabase::PutMode putMode, Pass
         return 0;
     }
     if (m_transaction->isReadOnly()) {
-        exceptionState.throwUninformativeAndGenericDOMException(ReadOnlyError);
+        exceptionState.throwDOMException(ReadOnlyError, IDBDatabase::transactionReadOnlyErrorMessage);
         return 0;
     }
 
-    // FIXME: Make SerializedScriptValue::create etc take an ExceptionState or use ScriptState::setDOMException.
-    bool didThrow = false;
-    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::create(value, didThrow, state);
-    if (didThrow)
+    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::create(value, exceptionState, state);
+    if (exceptionState.hadException())
         return 0;
 
     if (serializedValue->containsBlobs()) {
         // FIXME: Add Blob/File/FileList support
-        exceptionState.throwUninformativeAndGenericDOMException(DataCloneError);
+        exceptionState.throwDOMException(DataCloneError, "The object store currently does not support blob values.");
         return 0;
     }
 
@@ -251,7 +250,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::deleteFunction(ExecutionContext* context,
         return 0;
     }
     if (m_transaction->isReadOnly()) {
-        exceptionState.throwUninformativeAndGenericDOMException(ReadOnlyError);
+        exceptionState.throwDOMException(ReadOnlyError, IDBDatabase::transactionReadOnlyErrorMessage);
         return 0;
     }
 
@@ -284,7 +283,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::clear(ExecutionContext* context, Exceptio
         return 0;
     }
     if (m_transaction->isReadOnly()) {
-        exceptionState.throwUninformativeAndGenericDOMException(ReadOnlyError);
+        exceptionState.throwDOMException(ReadOnlyError, IDBDatabase::transactionReadOnlyErrorMessage);
         return 0;
     }
 
@@ -299,14 +298,14 @@ namespace {
 // the objectStore. It only needs to be kept alive by virtue of being
 // a listener on an IDBRequest object, in the same way that JavaScript
 // cursor success handlers are kept alive.
-class IndexPopulator : public EventListener {
+class IndexPopulator FINAL : public EventListener {
 public:
     static PassRefPtr<IndexPopulator> create(PassRefPtr<IDBDatabase> database, int64_t transactionId, int64_t objectStoreId, const IDBIndexMetadata& indexMetadata)
     {
         return adoptRef(new IndexPopulator(database, transactionId, objectStoreId, indexMetadata));
     }
 
-    virtual bool operator==(const EventListener& other)
+    virtual bool operator==(const EventListener& other) OVERRIDE
     {
         return this == &other;
     }
@@ -321,7 +320,7 @@ private:
     {
     }
 
-    virtual void handleEvent(ExecutionContext* context, Event* event)
+    virtual void handleEvent(ExecutionContext* context, Event* event) OVERRIDE
     {
         ASSERT(event->type() == EventTypeNames::success);
         EventTarget* target = event->target();
@@ -398,7 +397,7 @@ PassRefPtr<IDBIndex> IDBObjectStore::createIndex(ExecutionContext* context, cons
         return 0;
     }
     if (name.isNull()) {
-        exceptionState.throwUninformativeAndGenericTypeError();
+        exceptionState.throwTypeError("The name provided is null.");
         return 0;
     }
     if (containsIndex(name)) {
@@ -426,7 +425,7 @@ PassRefPtr<IDBIndex> IDBObjectStore::createIndex(ExecutionContext* context, cons
     if (exceptionState.hadException())
         return 0;
 
-    RefPtr<IDBRequest> indexRequest = openCursor(context, static_cast<IDBKeyRange*>(0), IndexedDB::CursorNext, WebIDBDatabase::PreemptiveTask);
+    RefPtr<IDBRequest> indexRequest = openCursor(context, static_cast<IDBKeyRange*>(0), blink::WebIDBCursor::Next, WebIDBDatabase::PreemptiveTask);
     indexRequest->preventPropagation();
 
     // This is kept alive by being the success handler of the request, which is in turn kept alive by the owning transaction.
@@ -525,7 +524,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::openCursor(ExecutionContext* context, con
         return 0;
     }
 
-    IndexedDB::CursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
+    WebIDBCursor::Direction direction = IDBCursor::stringToDirection(directionString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
@@ -536,7 +535,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::openCursor(ExecutionContext* context, con
     return openCursor(context, keyRange, direction, WebIDBDatabase::NormalTask);
 }
 
-PassRefPtr<IDBRequest> IDBObjectStore::openCursor(ExecutionContext* context, PassRefPtr<IDBKeyRange> range, IndexedDB::CursorDirection direction, WebIDBDatabase::TaskType taskType)
+PassRefPtr<IDBRequest> IDBObjectStore::openCursor(ExecutionContext* context, PassRefPtr<IDBKeyRange> range, WebIDBCursor::Direction direction, WebIDBDatabase::TaskType taskType)
 {
     RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
     request->setCursorDetails(IndexedDB::CursorKeyAndValue, direction);
@@ -561,7 +560,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::openKeyCursor(ExecutionContext* context, 
         return 0;
     }
 
-    IndexedDB::CursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
+    WebIDBCursor::Direction direction = IDBCursor::stringToDirection(directionString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 

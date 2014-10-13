@@ -69,19 +69,22 @@ class SVGFEColorMatrixElement FINAL : public SVGFilterPrimitiveStandardAttribute
 public:
     static PassRefPtr<SVGFEColorMatrixElement> create(Document&);
 
+    SVGAnimatedNumberList* values() { return m_values.get(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
+
 private:
     explicit SVGFEColorMatrixElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
+    RefPtr<SVGAnimatedNumberList> m_values;
+    RefPtr<SVGAnimatedString> m_in1;
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEColorMatrixElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
         DECLARE_ANIMATED_ENUMERATION(Type, type, ColorMatrixType)
-        DECLARE_ANIMATED_NUMBER_LIST(Values, values)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

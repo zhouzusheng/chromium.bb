@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-class AnimatableLengthBoxAndBool : public AnimatableValue {
+class AnimatableLengthBoxAndBool FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableLengthBoxAndBool() { }
     static PassRefPtr<AnimatableLengthBoxAndBool> create(PassRefPtr<AnimatableValue> box, bool flag)
@@ -48,6 +48,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableLengthBoxAndBool(PassRefPtr<AnimatableValue> box, bool flag)

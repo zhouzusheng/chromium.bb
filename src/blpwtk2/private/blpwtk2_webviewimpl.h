@@ -89,7 +89,9 @@ class WebViewImpl : public WebView,
     void setImplClient(WebViewImplClient* client);
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
-    void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
+    void saveCustomContextMenuContext(
+        content::RenderFrameHost* rfh,
+        const content::CustomContextMenuContext& context);
     void handleFindRequest(const FindOnPageRequest& request);
     void handleExternalProtocol(const GURL& url);
     void overrideWebkitPrefs(WebPreferences* prefs);
@@ -178,7 +180,7 @@ class WebViewImpl : public WebView,
     // typically happens when popups are created.
     virtual void WebContentsCreated(content::WebContents* source_contents,
                                     int64 source_frame_id,
-                                    const string16& frame_name,
+                                    const base::string16& frame_name,
                                     const GURL& target_url,
                                     const content::ContentCreatedParams& params,
                                     content::WebContents* new_contents) OVERRIDE;
@@ -214,7 +216,7 @@ class WebViewImpl : public WebView,
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
     // custom tooltip.
     virtual bool ShowTooltip(content::WebContents* source,
-                             const string16& tooltip_text,
+                             const base::string16& tooltip_text,
                              blink::WebTextDirection text_direction_hint) OVERRIDE;
 
     // Information about current find request
@@ -251,7 +253,7 @@ class WebViewImpl : public WebView,
         const GURL& validated_url,
         bool is_main_frame,
         int error_code,
-        const string16& error_description,
+        const base::string16& error_description,
         content::RenderViewHost* render_view_host) OVERRIDE;
 
   private:
@@ -275,7 +277,10 @@ class WebViewImpl : public WebView,
     bool d_ncHitTestPendingAck;
     int d_lastNCHitTestResult;
     content::FileChooserParams::Mode d_lastFileChooserMode;
-    content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
+
+    // For calling performCustomContextMenuAction().  TODO: clean this
+    content::RenderFrameHost* d_rfhForContextMenu;
+    content::CustomContextMenuContext d_customContext;
 
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);

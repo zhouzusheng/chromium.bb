@@ -34,9 +34,9 @@
 
 namespace WebCore {
 
-class V8ArrayBufferDeallocationObserver: public WTF::ArrayBufferDeallocationObserver {
+class V8ArrayBufferDeallocationObserver FINAL: public WTF::ArrayBufferDeallocationObserver {
 public:
-    virtual void arrayBufferDeallocated(unsigned sizeInBytes)
+    virtual void arrayBufferDeallocated(unsigned sizeInBytes) OVERRIDE
     {
         v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-static_cast<int>(sizeInBytes));
     }
@@ -51,8 +51,7 @@ protected:
 
 class V8ArrayBuffer {
 public:
-    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
-    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
+    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
     static ArrayBuffer* toNative(v8::Handle<v8::Object>);
     static void derefObject(void*);
     static const WrapperTypeInfo wrapperTypeInfo;

@@ -77,6 +77,11 @@ bool IsNonClientMouseEvent(const base::NativeEvent& native_event) {
          native_event.message <= WM_NCXBUTTONDBLCLK);
 }
 
+bool IsMouseEvent(const base::NativeEvent& native_event) {
+  return IsClientMouseEvent(native_event) ||
+         IsNonClientMouseEvent(native_event);
+}
+
 bool IsMouseWheelEvent(const base::NativeEvent& native_event) {
   return native_event.message == WM_MOUSEWHEEL ||
          native_event.message == WM_MOUSEHWHEEL;
@@ -250,11 +255,6 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
   return CodeForWindowsScanCode(scan_code);
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  return IsClientMouseEvent(native_event) ||
-         IsNonClientMouseEvent(native_event);
-}
-
 int GetChangedMouseButtonFlagsFromNative(
     const base::NativeEvent& native_event) {
   switch (GetNativeMouseKey(native_event)) {
@@ -353,16 +353,6 @@ bool IsNaturalScrollEnabled() {
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  return event.message == WM_USER + 310;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  MSG event = { NULL };
-  event.message = WM_USER + 310;
-  return event;
 }
 
 int GetModifiersFromACCEL(const ACCEL& accel) {

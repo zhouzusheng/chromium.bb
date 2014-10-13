@@ -31,7 +31,6 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
- * @implements {WebInspector.ContextMenu.Provider}
  */
 WebInspector.HandlerRegistry = function(setting)
 {
@@ -39,7 +38,8 @@ WebInspector.HandlerRegistry = function(setting)
     this._handlers = {};
     this._setting = setting;
     this._activeHandler = this._setting.get();
-    WebInspector.ContextMenu.registerProvider(this);
+
+    WebInspector.moduleManager.registerModule("handler-registry");
 }
 
 WebInspector.HandlerRegistry.prototype = {
@@ -61,6 +61,7 @@ WebInspector.HandlerRegistry.prototype = {
 
     /**
      * @param {!Object} data
+     * @return {boolean}
      */
     dispatch: function(data)
     {
@@ -70,6 +71,7 @@ WebInspector.HandlerRegistry.prototype = {
     /**
      * @param {string} name
      * @param {!Object} data
+     * @return {boolean}
      */
     dispatchToHandler: function(name, data)
     {
@@ -88,16 +90,6 @@ WebInspector.HandlerRegistry.prototype = {
     {
         delete this._handlers[name];
         this.dispatchEventToListeners(WebInspector.HandlerRegistry.EventTypes.HandlersUpdated);
-    },
-
-    /** 
-     * @param {!WebInspector.ContextMenu} contextMenu
-     * @param {!Object} target
-     */
-    appendApplicableItems: function(event, contextMenu, target)
-    {
-        this._appendContentProviderItems(contextMenu, target);
-        this._appendHrefItems(contextMenu, target);
     },
 
     /** 
@@ -137,7 +129,7 @@ WebInspector.HandlerRegistry.prototype = {
         function doSave(forceSaveAs, content)
         {
             var url = contentProvider.contentURL();
-            WebInspector.fileManager.save(url, content, forceSaveAs);
+            WebInspector.fileManager.save(url, /** @type {string} */ (content), forceSaveAs);
             WebInspector.fileManager.close(url);
         }
 
@@ -229,6 +221,45 @@ WebInspector.HandlerSelector.prototype =
     }
 }
 
+/**
+ * @constructor
+ * @implements {WebInspector.ContextMenu.Provider}
+ */
+WebInspector.HandlerRegistry.ContextMenuProvider = function()
+{
+}
+
+WebInspector.HandlerRegistry.ContextMenuProvider.prototype = {
+    /**
+     * @param {!WebInspector.ContextMenu} contextMenu
+     * @param {!Object} target
+     */
+    appendApplicableItems: function(event, contextMenu, target)
+    {
+        WebInspector.openAnchorLocationRegistry._appendContentProviderItems(contextMenu, target);
+        WebInspector.openAnchorLocationRegistry._appendHrefItems(contextMenu, target);
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.Linkifier.LinkHandler}
+ */
+WebInspector.HandlerRegistry.LinkHandler = function()
+{
+}
+
+WebInspector.HandlerRegistry.LinkHandler.prototype = {
+    /**
+     * @param {string} url
+     * @param {number=} lineNumber
+     * @return {boolean}
+     */
+    handleLink: function(url, lineNumber)
+    {
+        return WebInspector.openAnchorLocationRegistry.dispatch({ url: url, lineNumber: lineNumber});
+    }
+}
 
 /**
  * @type {!WebInspector.HandlerRegistry}

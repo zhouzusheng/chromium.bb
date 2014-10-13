@@ -31,12 +31,12 @@
 
 namespace WebCore {
 
-PassRefPtr<HTMLAllCollection> HTMLAllCollection::create(Node* node, CollectionType type)
+PassRefPtr<HTMLAllCollection> HTMLAllCollection::create(ContainerNode* node, CollectionType type)
 {
     return adoptRef(new HTMLAllCollection(node, type));
 }
 
-HTMLAllCollection::HTMLAllCollection(Node* node, CollectionType type)
+HTMLAllCollection::HTMLAllCollection(ContainerNode* node, CollectionType type)
     : HTMLCollection(node, type, DoesNotOverrideItemAfter)
 {
     ScriptWrappable::init(this);
@@ -46,9 +46,9 @@ HTMLAllCollection::~HTMLAllCollection()
 {
 }
 
-Node* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigned index) const
+Element* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigned index) const
 {
-    updateNameCache();
+    updateIdNameCache();
 
     if (Vector<Element*>* cache = idCache(name)) {
         if (index < cache->size())
@@ -64,9 +64,9 @@ Node* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigned i
     return 0;
 }
 
-void HTMLAllCollection::anonymousNamedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Node>& returnValue1)
+void HTMLAllCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Element>& returnValue1)
 {
-    Vector<RefPtr<Node> > namedItems;
+    Vector<RefPtr<Element> > namedItems;
     this->namedItems(name, namedItems);
 
     if (!namedItems.size())
@@ -82,11 +82,6 @@ void HTMLAllCollection::anonymousNamedGetter(const AtomicString& name, bool& ret
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#htmlallcollection
     returnValue0Enabled = true;
     returnValue0 = NamedNodesCollection::create(namedItems);
-}
-
-PassRefPtr<NodeList> HTMLAllCollection::tags(const String& name)
-{
-    return ownerNode()->getElementsByTagName(name);
 }
 
 } // namespace WebCore

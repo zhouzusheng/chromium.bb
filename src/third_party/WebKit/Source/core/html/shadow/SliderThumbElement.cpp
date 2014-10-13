@@ -64,9 +64,6 @@ inline static bool hasVerticalAppearance(HTMLInputElement* input)
     ASSERT(input->renderer());
     RenderStyle* sliderStyle = input->renderer()->style();
 
-    if (sliderStyle->appearance() == MediaVolumeSliderPart && RenderTheme::theme().usesVerticalVolumeSlider())
-        return true;
-
     return sliderStyle->appearance() == SliderVerticalPart;
 }
 
@@ -305,7 +302,6 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
     input->setValueFromRenderer(valueString);
     if (renderer())
         renderer()->setNeedsLayout();
-    input->dispatchFormControlChangeEvent();
 }
 
 void SliderThumbElement::startDragging()
@@ -326,6 +322,7 @@ void SliderThumbElement::stopDragging()
     m_inDragMode = false;
     if (renderer())
         renderer()->setNeedsLayout();
+    hostInput()->dispatchFormControlChangeEvent();
 }
 
 void SliderThumbElement::defaultEventHandler(Event* event)
@@ -412,7 +409,7 @@ static const AtomicString& mediaSliderThumbShadowPartId()
     return mediaSliderThumb;
 }
 
-const AtomicString& SliderThumbElement::pseudo() const
+const AtomicString& SliderThumbElement::shadowPseudoId() const
 {
     HTMLInputElement* input = hostInput();
     if (!input)
@@ -449,7 +446,7 @@ RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
     return new RenderSliderContainer(this);
 }
 
-const AtomicString& SliderContainerElement::pseudo() const
+const AtomicString& SliderContainerElement::shadowPseudoId() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));

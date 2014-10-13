@@ -33,8 +33,12 @@ def writeBindingCCFile(fCC, symbols):
   for funcSet in generate_bindings.FUNCTION_SETS:
     funcSet = funcSet[0]
     for func in funcSet:
-      for name in func['names']:
+      for name in func.get('names', []):
         symbolMapping[name] = func
+      for version in func.get('versions', []):
+        symbolMapping[version['name']] = func
+      if 'known_as' in func:
+        symbolMapping[func['known_as']] = func
 
   # The following symbol mappings are for symbols that are present in the .def
   # files, but have no corresponding entry in src/ui/gl/generate_bindings.py,

@@ -11,6 +11,7 @@
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
@@ -48,7 +49,8 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
   // creation. If the validation fails, treat it as a bad message and kill the
   // renderer process.
   if (!IsStringUTF8(params.storage_partition_id)) {
-    content::RecordAction(UserMetricsAction("BadMessageTerminate_BPGM"));
+    content::RecordAction(
+        base::UserMetricsAction("BadMessageTerminate_BPGM"));
     base::KillProcess(
         embedder_process_host->GetHandle(),
         content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
@@ -61,8 +63,7 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
   // iframe's URL to determine the extension.
   const GURL& embedder_site_url = embedder_site_instance->GetSiteURL();
   GURL validated_frame_url(params.embedder_frame_url);
-  RenderViewHost::FilterURL(
-      embedder_process_host, false, &validated_frame_url);
+  embedder_process_host->FilterURL(false, &validated_frame_url);
   const std::string& host = content::HasWebUIScheme(embedder_site_url) ?
        validated_frame_url.host() : embedder_site_url.host();
 
@@ -129,7 +130,8 @@ bool BrowserPluginGuestManager::CanEmbedderAccessInstanceIDMaybeKill(
     int instance_id) const {
   if (!CanEmbedderAccessInstanceID(embedder_render_process_id, instance_id)) {
     // The embedder process is trying to access a guest it does not own.
-    content::RecordAction(UserMetricsAction("BadMessageTerminate_BPGM"));
+    content::RecordAction(
+        base::UserMetricsAction("BadMessageTerminate_BPGM"));
     base::KillProcess(
         RenderProcessHost::FromID(embedder_render_process_id)->GetHandle(),
         content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
@@ -216,14 +218,11 @@ SiteInstance* BrowserPluginGuestManager::GetGuestSiteInstance(
 // otherwise the ACK is handled by the guest.
 void BrowserPluginGuestManager::OnUnhandledSwapBuffersACK(
     int instance_id,
-    int route_id,
-    int gpu_host_id,
-    const std::string& mailbox_name,
-    uint32 sync_point) {
-  BrowserPluginGuest::AcknowledgeBufferPresent(route_id,
-                                               gpu_host_id,
-                                               mailbox_name,
-                                               sync_point);
+    const FrameHostMsg_BuffersSwappedACK_Params& params) {
+  BrowserPluginGuest::AcknowledgeBufferPresent(params.gpu_route_id,
+                                               params.gpu_host_id,
+                                               params.mailbox,
+                                               params.sync_point);
 }
 
 bool BrowserPluginGuestManager::ForEachGuest(

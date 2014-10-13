@@ -32,16 +32,16 @@
 
 namespace WebCore {
 
-class WebGLDrawBuffers : public WebGLExtension, public ScriptWrappable {
+class WebGLDrawBuffers FINAL : public WebGLExtension, public ScriptWrappable {
 public:
     static PassRefPtr<WebGLDrawBuffers> create(WebGLRenderingContext*);
     static bool supported(WebGLRenderingContext*);
     static const char* extensionName();
 
     virtual ~WebGLDrawBuffers();
-    virtual ExtensionName name() const;
+    virtual ExtensionName name() const OVERRIDE;
 
-    void drawBuffersWEBGL(const Vector<GC3Denum>& buffers);
+    void drawBuffersWEBGL(const Vector<GLenum>& buffers);
 
 private:
     WebGLDrawBuffers(WebGLRenderingContext*);

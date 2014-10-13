@@ -44,7 +44,6 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/Frame.h"
-#include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -302,12 +301,8 @@ AccessibilityRole AXRenderObject::determineAccessibilityRole()
     if (node && node->hasTagName(canvasTag) && m_renderer->isCanvas())
         return CanvasRole;
 
-    if (cssBox && cssBox->isRenderView()) {
-        // If the iframe is seamless, it should not be announced as a web area to AT clients.
-        if (document() && document()->shouldDisplaySeamlesslyWithParent())
-            return SeamlessWebAreaRole;
+    if (cssBox && cssBox->isRenderView())
         return WebAreaRole;
-    }
 
     if (cssBox && cssBox->isTextField())
         return TextFieldRole;
@@ -362,7 +357,7 @@ AccessibilityRole AXRenderObject::determineAccessibilityRole()
     if (node && node->hasTagName(pTag))
         return ParagraphRole;
 
-    if (node && isHTMLLabelElement(node))
+    if (node && node->hasTagName(labelTag))
         return LabelRole;
 
     if (node && node->hasTagName(divTag))
@@ -393,7 +388,7 @@ AccessibilityRole AXRenderObject::determineAccessibilityRole()
         return DialogRole;
 
     // The HTML element should not be exposed as an element. That's what the RenderView element does.
-    if (node && isHTMLHtmlElement(node))
+    if (node && node->hasTagName(htmlTag))
         return IgnoredRole;
 
     // There should only be one banner/contentInfo per page. If header/footer are being used within an article or section
@@ -475,7 +470,7 @@ bool AXRenderObject::isLinked() const
         return false;
 
     Element* anchor = anchorElement();
-    if (!anchor || !isHTMLAnchorElement(anchor))
+    if (!anchor || !anchor->hasTagName(aTag))
         return false;
 
     return !toHTMLAnchorElement(anchor)->href().isEmpty();
@@ -638,17 +633,21 @@ bool AXRenderObject::computeAccessibilityIsIgnored() const
         if (m_renderer->isBR() || !renderText->firstTextBox())
             return true;
 
-        // static text beneath TextControls is reported along with the text control text so it's ignored.
+        // Don't ignore static text in editable text controls.
         for (AXObject* parent = parentObject(); parent; parent = parent->parentObject()) {
-            if (parent->roleValue() == TextFieldRole)
-                return true;
+            if (parent->roleValue() == TextFieldRole || parent->roleValue() == TextAreaRole)
+                return false;
         }
 
         // text elements that are just empty whitespace should not be returned
+        // FIXME(dmazzoni): we probably shouldn't ignore this if the style is 'pre', or similar...
         return renderText->text().impl()->containsOnlyWhitespace();
     }
 
     if (isHeading())
+        return false;
+
+    if (isLandmarkRelated())
         return false;
 
     if (isLink())
@@ -663,7 +662,7 @@ bool AXRenderObject::computeAccessibilityIsIgnored() const
 
     // don't ignore labels, because they serve as TitleUIElements
     Node* node = m_renderer->node();
-    if (node && isHTMLLabelElement(node))
+    if (node && node->hasTagName(labelTag))
         return false;
 
     // Anything that is content editable should not be ignored.
@@ -737,7 +736,7 @@ bool AXRenderObject::computeAccessibilityIsIgnored() const
         // Otherwise fall through; use presence of help text, title, or description to decide.
     }
 
-    if (isWebArea() || isSeamlessWebArea() || m_renderer->isListMarker())
+    if (isWebArea() || m_renderer->isListMarker())
         return false;
 
     // Using the help text, title or accessibility description (so we
@@ -809,7 +808,7 @@ int AXRenderObject::textLength() const
 
 KURL AXRenderObject::url() const
 {
-    if (isAnchor() && isHTMLAnchorElement(m_renderer->node())) {
+    if (isAnchor() && m_renderer->node()->hasTagName(aTag)) {
         if (HTMLAnchorElement* anchor = toHTMLAnchorElement(anchorElement()))
             return anchor->href();
     }
@@ -1265,7 +1264,7 @@ AXObject* AXRenderObject::accessibilityHitTest(const IntPoint& point) const
         return 0;
     Node* node = hitTestResult.innerNode()->deprecatedShadowAncestorNode();
 
-    if (isHTMLAreaElement(node))
+    if (node->hasTagName(areaTag))
         return accessibilityImageMapHitTest(toHTMLAreaElement(node), point);
 
     if (node->hasTagName(optionTag))
@@ -1327,7 +1326,7 @@ AXObject* AXRenderObject::parentObject() const
         return axObjectCache()->getOrCreate(parentObj);
 
     // WebArea's parent should be the scroll view containing it.
-    if (isWebArea() || isSeamlessWebArea())
+    if (isWebArea())
         return axObjectCache()->getOrCreate(m_renderer->frame()->view());
 
     return 0;
@@ -1336,7 +1335,7 @@ AXObject* AXRenderObject::parentObject() const
 AXObject* AXRenderObject::parentObjectIfExists() const
 {
     // WebArea's parent should be the scroll view containing it.
-    if (isWebArea() || isSeamlessWebArea())
+    if (isWebArea())
         return axObjectCache()->get(m_renderer->frame()->view());
 
     return axObjectCache()->get(renderParentObject());
@@ -1526,7 +1525,7 @@ Element* AXRenderObject::anchorElement() const
     // NOTE: this assumes that any non-image with an anchor is an HTMLAnchorElement
     Node* node = currRenderer->node();
     for ( ; node; node = node->parentNode()) {
-        if (isHTMLAnchorElement(node) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
+        if (node->hasTagName(aTag) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
             return toElement(node);
     }
 
@@ -1566,24 +1565,6 @@ AXObject::PlainTextRange AXRenderObject::selectedTextRange() const
 VisibleSelection AXRenderObject::selection() const
 {
     return m_renderer->frame()->selection().selection();
-}
-
-String AXRenderObject::selectedText() const
-{
-    ASSERT(isTextControl());
-
-    if (isPasswordField())
-        return String(); // need to return something distinct from empty string
-
-    if (isNativeTextControl() && m_renderer->isTextControl()) {
-        HTMLTextFormControlElement* textControl = toRenderTextControl(m_renderer)->textFormControlElement();
-        return textControl->selectedText();
-    }
-
-    if (ariaRoleAttribute() == UnknownRole)
-        return String();
-
-    return stringForRange(ariaSelectedTextRange());
 }
 
 //
@@ -1801,23 +1782,6 @@ void AXRenderObject::lineBreaks(Vector<int>& lineBreaks) const
     }
 }
 
-// A substring of the text associated with this accessibility object that is
-// specified by the given character range.
-String AXRenderObject::stringForRange(const PlainTextRange& range) const
-{
-    if (!range.length)
-        return String();
-
-    if (!isTextControl())
-        return String();
-
-    String elementText = isPasswordField() ? String() : text();
-    if (range.start + range.length > elementText.length())
-        return String();
-
-    return elementText.substring(range.start, range.length);
-}
-
 //
 // Private.
 //
@@ -1937,7 +1901,7 @@ AXObject* AXRenderObject::internalLinkElement() const
         return 0;
 
     // Right now, we do not support ARIA links as internal link elements
-    if (!isHTMLAnchorElement(element))
+    if (!element->hasTagName(aTag))
         return 0;
     HTMLAnchorElement* anchor = toHTMLAnchorElement(element);
 
@@ -2198,7 +2162,7 @@ void AXRenderObject::addImageMapChildren()
 
     for (Element* current = ElementTraversal::firstWithin(*map); current; current = ElementTraversal::next(*current, map)) {
         // add an <area> element for this child if it has a link
-        if (isHTMLAreaElement(current) && current->isLink()) {
+        if (current->hasTagName(areaTag) && current->isLink()) {
             AXImageMapLink* areaObject = toAXImageMapLink(axObjectCache()->getOrCreate(ImageMapLinkRole));
             areaObject->setHTMLAreaElement(toHTMLAreaElement(current));
             areaObject->setHTMLMapElement(map);
@@ -2338,7 +2302,7 @@ LayoutRect AXRenderObject::computeElementRect() const
 
     if (obj->isText())
         toRenderText(obj)->absoluteQuads(quads, 0, RenderText::ClipToEllipsis);
-    else if (isWebArea() || isSeamlessWebArea() || obj->isSVGRoot())
+    else if (isWebArea() || obj->isSVGRoot())
         obj->absoluteQuads(quads);
     else
         obj->absoluteFocusRingQuads(quads);
@@ -2350,7 +2314,7 @@ LayoutRect AXRenderObject::computeElementRect() const
         offsetBoundingBoxForRemoteSVGElement(result);
 
     // The size of the web area should be the content size, not the clipped size.
-    if ((isWebArea() || isSeamlessWebArea()) && obj->frame()->view())
+    if (isWebArea() && obj->frame()->view())
         result.setSize(obj->frame()->view()->contentsSize());
 
     // Checkboxes and radio buttons include their label as part of their rect.

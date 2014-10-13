@@ -40,12 +40,12 @@ public:
 
     static float calculateStdDeviation(float);
 
-    virtual void determineAbsolutePaintRect();
     virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
     static void calculateKernelSize(Filter*, unsigned& kernelSizeX, unsigned& kernelSizeY, float stdX, float stdY);
     static void calculateUnscaledKernelSize(unsigned& kernelSizeX, unsigned& kernelSizeY, float stdX, float stdY);
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     static const int s_minimalRectDimension = 100 * 100; // Empirical data limit for parallel jobs

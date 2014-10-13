@@ -7,15 +7,15 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#ifndef VP8CX_H
-#define VP8CX_H
+#ifndef VPX_VP8CX_H_
+#define VPX_VP8CX_H_
 
 /*!\defgroup vp8_encoder WebM VP8 Encoder
  * \ingroup vp8
  *
  * @{
  */
-#include "vp8.h"
+#include "./vp8.h"
 
 /*!\file
  * \brief Provides definitions for using the VP8 encoder algorithm within the
@@ -38,8 +38,6 @@ extern vpx_codec_iface_t *vpx_codec_vp8_cx(void);
 /* TODO(jkoleszar): These move to VP9 in a later patch set. */
 extern vpx_codec_iface_t  vpx_codec_vp9_cx_algo;
 extern vpx_codec_iface_t *vpx_codec_vp9_cx(void);
-extern vpx_codec_iface_t  vpx_codec_vp9x_cx_algo;
-extern vpx_codec_iface_t *vpx_codec_vp9x_cx(void);
 
 /*!@} - end algorithm interface member group*/
 
@@ -193,14 +191,11 @@ enum vp8e_enc_control_id {
   VP9E_SET_TILE_COLUMNS,
   VP9E_SET_TILE_ROWS,
   VP9E_SET_FRAME_PARALLEL_DECODING,
+  VP9E_SET_AQ_MODE,
 
-  VP9E_SET_WIDTH              = 99,
-  VP9E_SET_HEIGHT,
-  VP9E_SET_LAYER,
   VP9E_SET_SVC,
-
-  VP9E_SET_MAX_Q,
-  VP9E_SET_MIN_Q
+  VP9E_SET_SVC_PARAMETERS,
+  VP9E_SET_SVC_LAYER_ID
 };
 
 /*!\brief vpx 1-D scaling mode
@@ -261,7 +256,7 @@ typedef struct vpx_scaling_mode {
 /*!\brief VP8 token partition mode
  *
  * This defines VP8 partitioning mode for compressed data, i.e., the number of
- * sub-streams in the bitstream. Used for parallelized decoding.
+ * sub-streams in the bitstream. Used for parallelized decoding.
  *
  */
 
@@ -283,6 +278,29 @@ typedef enum {
   VP8_TUNE_SSIM
 } vp8e_tuning;
 
+/*!\brief  vp9 svc parameters
+ *
+ * This defines parameters for svc encoding.
+ *
+ */
+typedef struct vpx_svc_parameters {
+  unsigned int width;         /**< width of current spatial layer */
+  unsigned int height;        /**< height of current spatial layer */
+  int spatial_layer;          /**< current spatial layer number - 0 = base */
+  int temporal_layer;         /**< current temporal layer number - 0 = base */
+  int flags;                  /**< encode frame flags */
+  int max_quantizer;          /**< max quantizer for current layer */
+  int min_quantizer;          /**< min quantizer for current layer */
+  int distance_from_i_frame;  /**< frame number within current gop */
+  int lst_fb_idx;             /**< last frame frame buffer index */
+  int gld_fb_idx;             /**< golden frame frame buffer index */
+  int alt_fb_idx;             /**< alt reference frame frame buffer index */
+} vpx_svc_parameters_t;
+
+typedef struct vpx_svc_layer_id {
+  int spatial_layer_id;
+  int temporal_layer_id;
+} vpx_svc_layer_id_t;
 
 /*!\brief VP8 encoder control function parameter type
  *
@@ -303,11 +321,9 @@ VPX_CTRL_USE_TYPE(VP8E_SET_ROI_MAP,            vpx_roi_map_t *)
 VPX_CTRL_USE_TYPE(VP8E_SET_ACTIVEMAP,          vpx_active_map_t *)
 VPX_CTRL_USE_TYPE(VP8E_SET_SCALEMODE,          vpx_scaling_mode_t *)
 
-VPX_CTRL_USE_TYPE(VP9E_SET_LAYER,              int *)
 VPX_CTRL_USE_TYPE(VP9E_SET_SVC,                int)
-
-VPX_CTRL_USE_TYPE(VP9E_SET_WIDTH,              unsigned int *)
-VPX_CTRL_USE_TYPE(VP9E_SET_HEIGHT,             unsigned int *)
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_PARAMETERS,     vpx_svc_parameters_t *)
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_LAYER_ID,       vpx_svc_layer_id_t *)
 
 VPX_CTRL_USE_TYPE(VP8E_SET_CPUUSED,            int)
 VPX_CTRL_USE_TYPE(VP8E_SET_ENABLEAUTOALTREF,   unsigned int)
@@ -334,11 +350,11 @@ VPX_CTRL_USE_TYPE(VP9E_SET_LOSSLESS, unsigned int)
 
 VPX_CTRL_USE_TYPE(VP9E_SET_FRAME_PARALLEL_DECODING, unsigned int)
 
-VPX_CTRL_USE_TYPE(VP9E_SET_MAX_Q,      unsigned int)
-VPX_CTRL_USE_TYPE(VP9E_SET_MIN_Q,      unsigned int)
+VPX_CTRL_USE_TYPE(VP9E_SET_AQ_MODE, unsigned int)
+
 /*! @} - end defgroup vp8_encoder */
 #ifdef __cplusplus
 }  // extern "C"
 #endif
 
-#endif
+#endif  // VPX_VP8CX_H_

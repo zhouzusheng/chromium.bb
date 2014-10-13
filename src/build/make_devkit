@@ -110,6 +110,7 @@ def copyBin(destDir, version):
     'blpwtk2' + productAppend + '.dll',
     'blpangle' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
+    'd3dcompiler_46.dll',
     'icudt_cr33.dll',
     'libEGL.dll',
     'libGLESv2.dll',
@@ -188,7 +189,7 @@ def addGenFiles():
 
 
 def main(args):
-  version = "bb2"   # SET BB VERSION NUMBER HERE
+  version = "bb1"   # SET BB VERSION NUMBER HERE
 
   outDir = None
   doClean = True

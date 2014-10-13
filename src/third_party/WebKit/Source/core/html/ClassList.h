@@ -38,7 +38,7 @@ class Element;
 
 typedef int ExceptionCode;
 
-class ClassList : public DOMTokenList {
+class ClassList FINAL : public DOMTokenList {
 public:
     static PassOwnPtr<ClassList> create(Element* element)
     {
@@ -62,7 +62,7 @@ private:
 
     const SpaceSplitString& classNames() const;
 
-    virtual AtomicString value() const OVERRIDE { return m_element->getAttribute(HTMLNames::classAttr); }
+    virtual const AtomicString& value() const OVERRIDE { return m_element->getAttribute(HTMLNames::classAttr); }
     virtual void setValue(const AtomicString& value) OVERRIDE { m_element->setAttribute(HTMLNames::classAttr, value); }
 
     Element* m_element;

@@ -79,15 +79,10 @@ WebInspector.ContentProvider.performSearchInContent = function(content, query, c
 {
     var regex = createSearchRegex(query, caseSensitive, isRegex);
 
+    var contentString = new String(content);
     var result = [];
-    var lineEndings = content.lineEndings();
-    for (var i = 0; i < lineEndings.length; ++i) {
-        var lineStart = i > 0 ? lineEndings[i - 1] + 1 : 0;
-        var lineEnd = lineEndings[i];
-        var lineContent = content.substring(lineStart, lineEnd);
-        if (lineContent.length > 0 && lineContent.charAt(lineContent.length - 1) === "\r")
-            lineContent = lineContent.substring(0, lineContent.length - 1)
-
+    for (var i = 0; i < contentString.lineCount(); ++i) {
+        var lineContent = contentString.lineAt(i);
         regex.lastIndex = 0;
         if (regex.exec(lineContent))
             result.push(new WebInspector.ContentProvider.SearchMatch(i, lineContent));

@@ -88,7 +88,7 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor()
     return image;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor, const ResourceLoaderOptions& options)
 {
     ASSERT(loader);
 
@@ -103,7 +103,11 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
         if (Document* document = loader->document()) {
-            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css);
+            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
+
+            if (options.corsEnabled == IsCORSEnabled)
+                request.setCrossOriginAccessControl(loader->document()->securityOrigin(), options.allowCredentials);
+
             if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request)) {
                 m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
                 m_accessedBestFitImage = true;
@@ -112,6 +116,11 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
     }
 
     return (m_imageSet && m_imageSet->isImageResourceSet()) ? toStyleFetchedImageSet(m_imageSet) : 0;
+}
+
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* fetcher, float deviceScaleFactor)
+{
+    return cachedImageSet(fetcher, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
 }
 
 StyleImage* CSSImageSetValue::cachedOrPendingImageSet(float deviceScaleFactor)
@@ -176,9 +185,9 @@ CSSImageSetValue::CSSImageSetValue(const CSSImageSetValue& cloneFrom)
     // Non-CSSValueList data is not accessible through CSS OM, no need to clone.
 }
 
-PassRefPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
 {
-    return adoptRef(new CSSImageSetValue(*this));
+    return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSImageSetValue(*this));
 }
 
 } // namespace WebCore

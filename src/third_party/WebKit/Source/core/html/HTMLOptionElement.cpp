@@ -35,7 +35,6 @@
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
 #include "core/html/HTMLDataListElement.h"
-#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
@@ -82,12 +81,8 @@ PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document
 
 void HTMLOptionElement::attach(const AttachContext& context)
 {
+    updateNonRenderStyle();
     HTMLElement::attach(context);
-    // If after attaching nothing called styleForRenderer() on this node we
-    // manually cache the value. This happens if our parent doesn't have a
-    // renderer like <optgroup> or if it doesn't allow children like <select>.
-    if (!m_style && parentNode()->renderStyle())
-        updateNonRenderStyle();
 }
 
 void HTMLOptionElement::detach(const AttachContext& context)
@@ -146,8 +141,7 @@ void HTMLOptionElement::setText(const String &text, ExceptionState& exceptionSta
 
 void HTMLOptionElement::accessKeyAction(bool)
 {
-    HTMLSelectElement* select = ownerSelectElement();
-    if (select)
+    if (HTMLSelectElement* select = ownerSelectElement())
         select->accessKeySetSelectedIndex(index());
 }
 
@@ -207,17 +201,17 @@ void HTMLOptionElement::setValue(const AtomicString& value)
     setAttribute(valueAttr, value);
 }
 
-bool HTMLOptionElement::selected()
+bool HTMLOptionElement::selected() const
 {
     if (HTMLSelectElement* select = ownerSelectElement()) {
         // If a stylesheet contains option:checked selectors, this function is
         // called during parsing. updateListItemSelectedStates() is O(N) where N
         // is the number of option elements, so the <select> parsing would be
-        // O(N^2) without isParsingInProgress check. Also,
+        // O(N^2) without the isFinishedParsingChildren check. Also,
         // updateListItemSelectedStates() determines default selection, and we'd
         // like to avoid to determine default selection with incomplete option
         // list.
-        if (select->isParsingInProgress())
+        if (!select->isFinishedParsingChildren())
             return m_isSelected;
         select->updateListItemSelectedStates();
     }
@@ -302,10 +296,13 @@ RenderStyle* HTMLOptionElement::nonRendererStyle() const
 
 PassRefPtr<RenderStyle> HTMLOptionElement::customStyleForRenderer()
 {
-    // styleForRenderer is called whenever a new style should be associated
-    // with an Element so now is a good time to update our cached style.
-    updateNonRenderStyle();
     return m_style;
+}
+
+void HTMLOptionElement::willRecalcStyle(StyleRecalcChange change)
+{
+    if (!needsAttach() && (needsStyleRecalc() || change >= Inherit))
+        updateNonRenderStyle();
 }
 
 void HTMLOptionElement::didRecalcStyle(StyleRecalcChange)
@@ -321,7 +318,7 @@ void HTMLOptionElement::didRecalcStyle(StyleRecalcChange)
 String HTMLOptionElement::textIndentedToRespectGroupLabel() const
 {
     ContainerNode* parent = parentNode();
-    if (parent && isHTMLOptGroupElement(parent))
+    if (parent && parent->hasTagName(optgroupTag))
         return "    " + text();
     return text();
 }
@@ -331,7 +328,7 @@ bool HTMLOptionElement::isDisabledFormControl() const
     if (ownElementDisabled())
         return true;
     if (Element* parent = parentElement())
-        return isHTMLOptGroupElement(parent) && parent->isDisabledFormControl();
+        return parent->hasTagName(optgroupTag) && parent->isDisabledFormControl();
     return false;
 }
 
@@ -368,11 +365,10 @@ String HTMLOptionElement::collectOptionInnerText() const
 
 HTMLFormElement* HTMLOptionElement::form() const
 {
-    HTMLSelectElement* selectElement = ownerSelectElement();
-    if (!selectElement)
-        return 0;
+    if (HTMLSelectElement* selectElement = ownerSelectElement())
+        return selectElement->formOwner();
 
-    return selectElement->formOwner();
+    return 0;
 }
 
 } // namespace WebCore

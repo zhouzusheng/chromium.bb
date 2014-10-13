@@ -82,7 +82,6 @@
 #include "base/file_descriptor_posix.h"
 #endif
 #if defined(OS_WIN)
-#include "content/browser/renderer_host/backing_store_win.h"
 #include "content/common/font_cache_dispatcher_win.h"
 #endif
 #if defined(OS_ANDROID)
@@ -464,7 +463,7 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
 #if defined(OS_MACOSX)
   // OSX CoreAudio calls must all happen on the main thread.
   if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
-    return audio_manager_->GetMessageLoop().get();
+    return audio_manager_->GetTaskRunner().get();
 #endif
   return NULL;
 }
@@ -564,7 +563,7 @@ void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
   }
 }
 
-void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
+void RenderMessageFilter::OnSetCookie(int render_frame_id,
                                       const GURL& url,
                                       const GURL& first_party_for_cookies,
                                       const std::string& cookie) {
@@ -575,9 +574,8 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
 
   net::CookieOptions options;
   if (GetContentClient()->browser()->AllowSetCookie(
-          url, first_party_for_cookies, cookie,
-          resource_context_, render_process_id_, message.routing_id(),
-          &options)) {
+          url, first_party_for_cookies, cookie, resource_context_,
+          render_process_id_, render_frame_id, &options)) {
     net::URLRequestContext* context = GetRequestContextForURL(url);
     // Pass a null callback since we don't care about when the 'set' completes.
     context->cookie_store()->SetCookieWithOptionsAsync(
@@ -585,7 +583,8 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
   }
 }
 
-void RenderMessageFilter::OnGetCookies(const GURL& url,
+void RenderMessageFilter::OnGetCookies(int render_frame_id,
+                                       const GURL& url,
                                        const GURL& first_party_for_cookies,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
@@ -605,8 +604,9 @@ void RenderMessageFilter::OnGetCookies(const GURL& url,
   net::CookieMonster* cookie_monster =
       context->cookie_store()->GetCookieMonster();
   cookie_monster->GetAllCookiesForURLAsync(
-      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this, url,
-                      first_party_for_cookies, reply_msg));
+      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this,
+                      render_frame_id, url, first_party_for_cookies,
+                      reply_msg));
 }
 
 void RenderMessageFilter::OnGetRawCookies(
@@ -859,7 +859,14 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (BackingStoreWin::ColorManagementEnabled())
+  static bool enabled = false;
+  static bool checked = false;
+  if (!checked) {
+    checked = true;
+    const CommandLine& command = *CommandLine::ForCurrentProcess();
+    enabled = command.HasSwitch(switches::kEnableMonitorProfile);
+  }
+  if (enabled)
     return;
   *profile = g_color_profile.Get().profile();
 }
@@ -1034,6 +1041,7 @@ void RenderMessageFilter::OnMediaLogEvents(
 }
 
 void RenderMessageFilter::CheckPolicyForCookies(
+    int render_frame_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
     IPC::Message* reply_msg,
@@ -1043,7 +1051,7 @@ void RenderMessageFilter::CheckPolicyForCookies(
   // TabSpecificContentSetting for logging purpose.
   if (GetContentClient()->browser()->AllowGetCookie(
           url, first_party_for_cookies, cookie_list, resource_context_,
-          render_process_id_, reply_msg->routing_id())) {
+          render_process_id_, render_frame_id)) {
     // Gets the cookies from cookie store if allowed.
     context->cookie_store()->GetCookiesWithOptionsAsync(
         url, net::CookieOptions(),

@@ -29,21 +29,17 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_BOOLEAN(SVGSymbolElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-DEFINE_ANIMATED_PRESERVEASPECTRATIO(SVGSymbolElement, SVGNames::preserveAspectRatioAttr, PreserveAspectRatio, preserveAspectRatio)
-DEFINE_ANIMATED_RECT(SVGSymbolElement, SVGNames::viewBoxAttr, ViewBox, viewBox)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGSymbolElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(viewBox)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGSymbolElement::SVGSymbolElement(Document& document)
     : SVGElement(SVGNames::symbolTag, document)
+    , SVGFitToViewBox(this)
 {
     ScriptWrappable::init(this);
+
     registerAnimatedPropertiesForSVGSymbolElement();
 }
 
@@ -55,10 +51,9 @@ PassRefPtr<SVGSymbolElement> SVGSymbolElement::create(Document& document)
 bool SVGSymbolElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
+    if (supportedAttributes.isEmpty())
         SVGFitToViewBox::addSupportedAttributes(supportedAttributes);
-    }
+
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
@@ -69,12 +64,13 @@ void SVGSymbolElement::parseAttribute(const QualifiedName& name, const AtomicStr
         return;
     }
 
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-    if (SVGFitToViewBox::parseAttribute(this, name, value))
-        return;
+    SVGParsingError parseError = NoError;
+    if (SVGFitToViewBox::parseAttribute(name, value, document(), parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
+    }
 
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)

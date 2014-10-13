@@ -34,19 +34,18 @@
 
 namespace WebCore {
 
-String StyleBuilderConverter::convertFragmentIdentifier(StyleResolverState& state, CSSValue* value)
+AtomicString StyleBuilderConverter::convertFragmentIdentifier(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->isURI())
         return SVGURIReference::fragmentIdentifierFromIRIString(primitiveValue->getStringValue(), state.document());
-    return String();
+    return nullAtom;
 }
 
 Length StyleBuilderConverter::convertLength(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Length result = primitiveValue->convertToLength<FixedConversion | PercentConversion>(state.cssToLengthConversionData());
-    ASSERT(!result.isUndefined());
     result.setQuirk(primitiveValue->isQuirkValue());
     return result;
 }
@@ -55,7 +54,6 @@ Length StyleBuilderConverter::convertLengthOrAuto(StyleResolverState& state, CSS
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Length result = primitiveValue->convertToLength<FixedConversion | PercentConversion | AutoConversion>(state.cssToLengthConversionData());
-    ASSERT(!result.isUndefined());
     result.setQuirk(primitiveValue->isQuirkValue());
     return result;
 }
@@ -138,20 +136,17 @@ PassRefPtr<ShadowList> StyleBuilderConverter::convertShadow(StyleResolverState& 
     ShadowDataVector shadows;
     for (size_t i = 0; i < shadowCount; ++i) {
         const CSSShadowValue* item = toCSSShadowValue(valueList->item(i));
-        int x = item->x->computeLength<int>(state.cssToLengthConversionData());
-        int y = item->y->computeLength<int>(state.cssToLengthConversionData());
-        int blur = item->blur ? item->blur->computeLength<int>(state.cssToLengthConversionData()) : 0;
-        int spread = item->spread ? item->spread->computeLength<int>(state.cssToLengthConversionData()) : 0;
+        float x = item->x->computeLength<float>(state.cssToLengthConversionData());
+        float y = item->y->computeLength<float>(state.cssToLengthConversionData());
+        float blur = item->blur ? item->blur->computeLength<float>(state.cssToLengthConversionData()) : 0;
+        float spread = item->spread ? item->spread->computeLength<float>(state.cssToLengthConversionData()) : 0;
         ShadowStyle shadowStyle = item->style && item->style->getValueID() == CSSValueInset ? Inset : Normal;
         Color color;
         if (item->color)
             color = state.document().textLinkColors().colorFromPrimitiveValue(item->color.get(), state.style()->color());
         else
             color = state.style()->color();
-
-        if (!color.isValid())
-            color = Color::transparent;
-        shadows.append(ShadowData(IntPoint(x, y), blur, spread, shadowStyle, color));
+        shadows.append(ShadowData(FloatPoint(x, y), blur, spread, shadowStyle, color));
     }
     return ShadowList::adopt(shadows);
 }
@@ -166,7 +161,7 @@ float StyleBuilderConverter::convertSpacing(StyleResolverState& state, CSSValue*
     return primitiveValue->computeLength<float>(state.cssToLengthConversionData());
 }
 
-SVGLength StyleBuilderConverter::convertSVGLength(StyleResolverState&, CSSValue* value)
+PassRefPtr<SVGLength> StyleBuilderConverter::convertSVGLength(StyleResolverState&, CSSValue* value)
 {
     return SVGLength::fromCSSPrimitiveValue(toCSSPrimitiveValue(value));
 }

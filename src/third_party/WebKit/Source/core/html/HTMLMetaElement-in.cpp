@@ -177,10 +177,10 @@ Length HTMLMetaElement::parseViewportValueAsLength(const String& keyString, cons
     DEFINE_ARRAY_FOR_MATCHING(characters, valueString, 13);
     SWITCH(characters, length) {
         CASE("device-width") {
-            return Length(100, ViewportPercentageWidth);
+            return Length(DeviceWidth);
         }
         CASE("device-height") {
-            return Length(100, ViewportPercentageHeight);
+            return Length(DeviceHeight);
         }
     }
 
@@ -333,6 +333,10 @@ void HTMLMetaElement::processViewportKeyValuePair(const String& keyString, const
             reportViewportWarning(TargetDensityDpiUnsupported, String(), String());
             return;
         }
+        CASE("minimal-ui") {
+            // Ignore vendor-specific argument.
+            return;
+        }
     }
     reportViewportWarning(UnrecognizedViewportArgumentKeyError, keyString, String());
 }
@@ -355,11 +359,10 @@ static MessageLevel viewportErrorMessageLevel(ViewportErrorCode errorCode)
     switch (errorCode) {
     case TruncatedViewportArgumentValueError:
     case TargetDensityDpiUnsupported:
-        return WarningMessageLevel;
     case UnrecognizedViewportArgumentKeyError:
     case UnrecognizedViewportArgumentValueError:
     case MaximumScaleTooLargeError:
-        return ErrorMessageLevel;
+        return WarningMessageLevel;
     }
 
     ASSERT_NOT_REACHED();
@@ -440,6 +443,18 @@ Node::InsertionNotificationRequest HTMLMetaElement::insertedInto(ContainerNode* 
     return InsertionDone;
 }
 
+static bool inDocumentHead(HTMLMetaElement* element)
+{
+    if (!element->inDocument())
+        return false;
+
+    for (Element* current = element; current; current = current->parentElement()) {
+        if (current->hasTagName(HTMLNames::headTag))
+            return true;
+    }
+    return false;
+}
+
 void HTMLMetaElement::process()
 {
     if (!inDocument())
@@ -451,24 +466,24 @@ void HTMLMetaElement::process()
         return;
 
     const AtomicString& nameValue = fastGetAttribute(nameAttr);
-    if (nameValue.isNull()) {
-        // Get the document to process the tag, but only if we're actually part of DOM
-        // tree (changing a meta tag while it's not in the tree shouldn't have any effect
-        // on the document).
-        const AtomicString& httpEquivValue = fastGetAttribute(http_equivAttr);
-        if (!httpEquivValue.isNull())
-            document().processHttpEquiv(httpEquivValue, contentValue);
-        return;
+    if (!nameValue.isEmpty()) {
+        if (equalIgnoringCase(nameValue, "viewport"))
+            processViewportContentAttribute(contentValue, ViewportDescription::ViewportMeta);
+        else if (equalIgnoringCase(nameValue, "referrer"))
+            document().processReferrerPolicy(contentValue);
+        else if (equalIgnoringCase(nameValue, "handheldfriendly") && equalIgnoringCase(contentValue, "true"))
+            processViewportContentAttribute("width=device-width", ViewportDescription::HandheldFriendlyMeta);
+        else if (equalIgnoringCase(nameValue, "mobileoptimized"))
+            processViewportContentAttribute("width=device-width, initial-scale=1", ViewportDescription::MobileOptimizedMeta);
     }
 
-    if (equalIgnoringCase(nameValue, "viewport"))
-        processViewportContentAttribute(contentValue, ViewportDescription::ViewportMeta);
-    else if (equalIgnoringCase(nameValue, "referrer"))
-        document().processReferrerPolicy(contentValue);
-    else if (equalIgnoringCase(nameValue, "handheldfriendly") && equalIgnoringCase(contentValue, "true"))
-        processViewportContentAttribute("width=device-width", ViewportDescription::HandheldFriendlyMeta);
-    else if (equalIgnoringCase(nameValue, "mobileoptimized"))
-        processViewportContentAttribute("width=device-width, initial-scale=1", ViewportDescription::MobileOptimizedMeta);
+    // Get the document to process the tag, but only if we're actually part of DOM
+    // tree (changing a meta tag while it's not in the tree shouldn't have any effect
+    // on the document).
+
+    const AtomicString& httpEquivValue = fastGetAttribute(http_equivAttr);
+    if (!httpEquivValue.isEmpty())
+        document().processHttpEquiv(httpEquivValue, contentValue, inDocumentHead(this));
 }
 
 const AtomicString& HTMLMetaElement::content() const

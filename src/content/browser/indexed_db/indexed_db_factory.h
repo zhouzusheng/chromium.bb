@@ -26,11 +26,13 @@ class IndexedDBContextImpl;
 class CONTENT_EXPORT IndexedDBFactory
     : NON_EXPORTED_BASE(public base::RefCountedThreadSafe<IndexedDBFactory>) {
  public:
+  typedef std::multimap<GURL, IndexedDBDatabase*> OriginDBMap;
+  typedef OriginDBMap::const_iterator OriginDBMapIterator;
+
   explicit IndexedDBFactory(IndexedDBContextImpl* context);
 
   // Notifications from weak pointers.
   void ReleaseDatabase(const IndexedDBDatabase::Identifier& identifier,
-                       const GURL& origin_url,
                        bool forcedClose);
 
   void GetDatabaseNames(scoped_refptr<IndexedDBCallbacks> callbacks,
@@ -51,8 +53,7 @@ class CONTENT_EXPORT IndexedDBFactory
 
   void HandleBackingStoreFailure(const GURL& origin_url);
 
-  // Iterates over all databases; for diagnostics only.
-  std::vector<IndexedDBDatabase*> GetOpenDatabasesForOrigin(
+  std::pair<OriginDBMapIterator, OriginDBMapIterator> GetOpenDatabasesForOrigin(
       const GURL& origin_url) const;
 
   // Called by IndexedDBContext after all connections are closed, to
@@ -61,6 +62,11 @@ class CONTENT_EXPORT IndexedDBFactory
 
   // Called by the IndexedDBContext destructor so the factory can do cleanup.
   void ContextDestroyed();
+
+  // Called by an IndexedDBDatabase when it is actually deleted.
+  void DatabaseDeleted(const IndexedDBDatabase::Identifier& identifier);
+
+  size_t GetConnectionCount(const GURL& origin_url) const;
 
  protected:
   friend class base::RefCountedThreadSafe<IndexedDBFactory>;
@@ -102,12 +108,14 @@ class CONTENT_EXPORT IndexedDBFactory
                       const base::string16& name) const;
   bool IsBackingStoreOpen(const GURL& origin_url) const;
   bool IsBackingStorePendingClose(const GURL& origin_url) const;
+  void RemoveDatabaseFromMaps(const IndexedDBDatabase::Identifier& identifier);
 
   IndexedDBContextImpl* context_;
 
   typedef std::map<IndexedDBDatabase::Identifier,
-                   scoped_refptr<IndexedDBDatabase> > IndexedDBDatabaseMap;
+                   IndexedDBDatabase*> IndexedDBDatabaseMap;
   IndexedDBDatabaseMap database_map_;
+  OriginDBMap origin_dbs_;
 
   typedef std::map<GURL, scoped_refptr<IndexedDBBackingStore> >
       IndexedDBBackingStoreMap;

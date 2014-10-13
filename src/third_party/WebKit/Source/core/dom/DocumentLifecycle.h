@@ -41,20 +41,70 @@ public:
     enum State {
         Uninitialized,
         Inactive,
-        Active,
+
+        // When the document is active, it traverses these states.
+
+        StyleRecalcPending,
+        InStyleRecalc,
+        StyleClean,
+
+        InPreLayout,
+        InPerformLayout,
+        AfterPerformLayout,
+        LayoutClean,
+
+        InCompositingUpdate,
+        CompositingClean,
+
+        // Once the document starts shuting down, we cannot return
+        // to the style/layout/rendering states.
         Stopping,
         Stopped,
         Disposed,
     };
 
+    class Scope {
+        WTF_MAKE_NONCOPYABLE(Scope);
+    public:
+        Scope(DocumentLifecycle&, State finalState);
+        ~Scope();
+
+        void setFinalState(State finalState) { m_finalState = finalState; }
+
+    private:
+        DocumentLifecycle& m_lifecycle;
+        State m_finalState;
+    };
+
+    class DeprecatedTransition {
+        WTF_MAKE_NONCOPYABLE(DeprecatedTransition);
+    public:
+        DeprecatedTransition(State from, State to);
+        ~DeprecatedTransition();
+
+        State from() const { return m_from; }
+        State to() const { return m_to; }
+
+    private:
+        DeprecatedTransition* m_previous;
+        State m_from;
+        State m_to;
+    };
+
     DocumentLifecycle();
     ~DocumentLifecycle();
 
+    bool isActive() const { return m_state > Inactive && m_state < Stopping; }
     State state() const { return m_state; }
 
     void advanceTo(State);
+    void rewindTo(State);
 
 private:
+#if !ASSERT_DISABLED
+    bool canAdvanceTo(State) const;
+#endif
+
     State m_state;
 };
 

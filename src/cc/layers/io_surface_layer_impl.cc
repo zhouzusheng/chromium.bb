@@ -123,7 +123,7 @@ void IOSurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
   quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
 }
 
-void IOSurfaceLayerImpl::DidLoseOutputSurface() {
+void IOSurfaceLayerImpl::ReleaseResources() {
   // We don't have a valid texture ID in the new context; however,
   // the IOSurface is still valid.
   DestroyTexture();
@@ -131,7 +131,7 @@ void IOSurfaceLayerImpl::DidLoseOutputSurface() {
 }
 
 void IOSurfaceLayerImpl::SetIOSurfaceProperties(unsigned io_surface_id,
-                                                gfx::Size size) {
+                                                const gfx::Size& size) {
   if (io_surface_id_ != io_surface_id)
     io_surface_changed_ = true;
 

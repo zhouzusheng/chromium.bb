@@ -31,9 +31,9 @@
 #ifndef V8CustomElementLifecycleCallbacks_h
 #define V8CustomElementLifecycleCallbacks_h
 
-#include "bindings/v8/ActiveDOMCallback.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/custom/CustomElementLifecycleCallbacks.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -46,7 +46,7 @@ class Element;
 class ExecutionContext;
 class V8PerContextData;
 
-class V8CustomElementLifecycleCallbacks : public CustomElementLifecycleCallbacks, ActiveDOMCallback {
+class V8CustomElementLifecycleCallbacks FINAL : public CustomElementLifecycleCallbacks, ContextLifecycleObserver {
 public:
     static PassRefPtr<V8CustomElementLifecycleCallbacks> create(ExecutionContext*, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged);
 
@@ -66,6 +66,7 @@ private:
 
     V8PerContextData* creationContextData();
 
+    v8::Isolate* m_isolate;
     CustomElementDefinition* m_owner;
     RefPtr<DOMWrapperWorld> m_world;
     ScopedPersistent<v8::Object> m_prototype;

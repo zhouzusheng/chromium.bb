@@ -7,19 +7,19 @@
 /**
  * @fileoverview Provides the ProcessBase class.
  */
-base.require('base.guid');
-base.require('base.range');
-base.require('tracing.trace_model.counter');
-base.require('tracing.trace_model.object_collection');
-base.require('tracing.trace_model.thread');
-base.require('tracing.trace_model_settings');
-base.exportTo('tracing.trace_model', function() {
+tvcm.require('tvcm.guid');
+tvcm.require('tvcm.range');
+tvcm.require('tracing.trace_model.counter');
+tvcm.require('tracing.trace_model.object_collection');
+tvcm.require('tracing.trace_model.thread');
+tvcm.require('tracing.trace_model_settings');
+tvcm.exportTo('tracing.trace_model', function() {
 
   var Thread = tracing.trace_model.Thread;
   var Counter = tracing.trace_model.Counter;
 
   /**
-   * The ProcessBase is an partial base class, upon which Kernel
+   * The ProcessBase is a partial base class, upon which Kernel
    * and Process are built.
    *
    * @constructor
@@ -27,12 +27,12 @@ base.exportTo('tracing.trace_model', function() {
   function ProcessBase(model) {
     if (!model)
       throw new Error('Must provide a model');
-    this.guid_ = base.GUID.allocate();
+    this.guid_ = tvcm.GUID.allocate();
     this.model = model;
     this.threads = {};
     this.counters = {};
     this.objects = new tracing.trace_model.ObjectCollection(this);
-    this.bounds = new base.Range();
+    this.bounds = new tvcm.Range();
     this.sortIndex = 0;
     this.ephemeralSettings = {};
   };
@@ -175,7 +175,7 @@ base.exportTo('tracing.trace_model', function() {
     },
 
     /**
-     * @return {TimlineThread} The thread identified by tid on this process,
+     * @return {TimelineThread} The thread identified by tid on this process,
      * creating it if it doesn't exist.
      */
     getOrCreateThread: function(tid) {
@@ -185,7 +185,7 @@ base.exportTo('tracing.trace_model', function() {
     },
 
     /**
-     * @return {TimlineCounter} The counter on this process named 'name',
+     * @return {TimelineCounter} The counter on this process named 'name',
      * creating it if it doesn't exist.
      */
     getOrCreateCounter: function(cat, name) {

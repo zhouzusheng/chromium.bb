@@ -13,10 +13,12 @@
 
 #include <list>
 
+#include "base/basictypes.h"
 #include "base/strings/string_piece.h"
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_ack_notifier.h"
+#include "net/quic/quic_protocol.h"
 #include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/quic_stream_sequencer.h"
@@ -58,18 +60,43 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
 
   // ReliableQuicStream implementation
   virtual void OnClose() OVERRIDE;
+  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
   // By default, this is the same as priority(), however it allows streams
   // to temporarily alter effective priority.   For example if a SPDY stream has
   // compressed but not written headers it can write the headers with a higher
   // priority.
   virtual QuicPriority EffectivePriority() const OVERRIDE;
-  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
 
   // QuicSpdyDecompressor::Visitor implementation.
   virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
   virtual void OnDecompressionError() OVERRIDE;
 
+  // Overridden by subclasses to process data.  For QUIC_VERSION_12 or less,
+  // data will be delivered in order, first the decompressed headers, then
+  // the body.  For later QUIC versions, the headers will be delivered via
+  // OnStreamHeaders, and only the data will be delivered through this method.
   virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
+
+  // Called by the session when decompressed headers data is received
+  // for this stream.  Only called for versions greater than QUIC_VERSION_12.
+  // May be called multiple times, with each call providing additional headers
+  // data until OnStreamHeadersComplete is called.
+  virtual void OnStreamHeaders(base::StringPiece headers_data);
+
+  // Called by the session when headers with a priority have been received
+  // for this stream.  This method will only be called for server streams.
+  virtual void OnStreamHeadersPriority(QuicPriority priority);
+
+  // Called by the session when decompressed headers have been completely
+  // delilvered to this stream.  If |fin| is true, then this stream
+  // should be closed; no more data will be sent by the peer.
+  // Only called for versions greater than QUIC_VERSION_12.
+  virtual void OnStreamHeadersComplete(bool fin, size_t frame_len);
+
+  // Writes the headers contained in |header_block| to the dedicated
+  // headers stream.
+  virtual size_t WriteHeaders(const SpdyHeaderBlock& header_block,
+                              bool fin);
 
   // This block of functions wraps the sequencer's functions of the same
   // name.  These methods return uncompressed data until that has
@@ -107,6 +134,9 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
   friend class test::QuicDataStreamPeer;
   friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
+
+  // Processes raw stream data for QUIC_VERSION_12 and earlier.
+  uint32 ProcessRawData12(const char* data, uint32 data_len);
 
   uint32 ProcessHeaderData();
 

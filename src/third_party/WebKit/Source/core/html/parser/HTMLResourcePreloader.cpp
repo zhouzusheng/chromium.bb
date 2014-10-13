@@ -48,14 +48,14 @@ bool PreloadRequest::isSafeToSendToAnotherThread() const
 
 KURL PreloadRequest::completeURL(Document* document)
 {
-    return document->completeURL(m_resourceURL, m_baseURL.isEmpty() ? document->url() : m_baseURL);
+    return document->completeURLWithOverride(m_resourceURL, m_baseURL.isEmpty() ? document->url() : m_baseURL);
 }
 
 FetchRequest PreloadRequest::resourceRequest(Document* document)
 {
     ASSERT(isMainThread());
     FetchInitiatorInfo initiatorInfo;
-    initiatorInfo.name = m_initiatorName;
+    initiatorInfo.name = AtomicString(m_initiatorName);
     initiatorInfo.position = m_initiatorPosition;
     FetchRequest request(ResourceRequest(completeURL(document)), initiatorInfo);
 

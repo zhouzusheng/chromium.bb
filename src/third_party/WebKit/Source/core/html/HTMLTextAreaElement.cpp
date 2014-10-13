@@ -260,7 +260,7 @@ void HTMLTextAreaElement::defaultEventHandler(Event* event)
     HTMLTextFormControlElement::defaultEventHandler(event);
 }
 
-void HTMLTextAreaElement::handleFocusEvent(Element*, FocusDirection)
+void HTMLTextAreaElement::handleFocusEvent(Element*, FocusType)
 {
     if (Frame* frame = document().frame())
         frame->spellChecker().didBeginEditing(this);
@@ -310,11 +310,6 @@ String HTMLTextAreaElement::sanitizeUserInputValue(const String& proposedValue, 
     if (maxLength > 0 && U16_IS_LEAD(proposedValue[maxLength - 1]))
         --maxLength;
     return proposedValue.left(maxLength);
-}
-
-void HTMLTextAreaElement::rendererWillBeDestroyed()
-{
-    updateValue();
 }
 
 void HTMLTextAreaElement::updateValue() const
@@ -367,8 +362,9 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue)
     setInnerTextValue(m_value);
     setLastChangeWasNotUserEdit();
     updatePlaceholderVisibility(false);
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
     setFormControlValueMatchesRenderer(true);
+    m_suggestedValue = String();
 
     // Set the caret to the end of the text value.
     if (document().focusedElement() == this) {
@@ -431,6 +427,20 @@ void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& exceptionSt
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(newValue) + ") is not positive or 0.");
     else
         setIntegralAttribute(maxlengthAttr, newValue);
+}
+
+String HTMLTextAreaElement::suggestedValue() const
+{
+    return m_suggestedValue;
+}
+
+void HTMLTextAreaElement::setSuggestedValue(const String& value)
+{
+    m_suggestedValue = value;
+    setInnerTextValue(m_suggestedValue);
+    updatePlaceholderVisibility(false);
+    setNeedsStyleRecalc(SubtreeStyleChange);
+    setFormControlValueMatchesRenderer(true);
 }
 
 String HTMLTextAreaElement::validationMessage() const
@@ -520,7 +530,7 @@ void HTMLTextAreaElement::updatePlaceholderText()
     if (!placeholder) {
         RefPtr<HTMLDivElement> newElement = HTMLDivElement::create(document());
         placeholder = newElement.get();
-        placeholder->setPseudo(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         userAgentShadowRoot()->insertBefore(placeholder, innerTextElement()->nextSibling());
     }
@@ -528,6 +538,11 @@ void HTMLTextAreaElement::updatePlaceholderText()
 }
 
 bool HTMLTextAreaElement::isInteractiveContent() const
+{
+    return true;
+}
+
+bool HTMLTextAreaElement::supportsAutofocus() const
 {
     return true;
 }

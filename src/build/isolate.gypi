@@ -38,6 +38,9 @@
 # for more information.
 
 {
+  'includes': [
+    '../chrome/version.gypi',
+  ],
   'rules': [
     {
       'rule_name': 'isolate',
@@ -66,12 +69,34 @@
         'python',
         '<(DEPTH)/tools/swarming_client/isolate.py',
         '<(test_isolation_mode)',
-        # Variables should use the -V FOO=<(FOO) form so frequent values,
-        # like '0' or '1', aren't stripped out by GYP.
-        '--path-variable', 'PRODUCT_DIR', '<(PRODUCT_DIR) ',
-        '--config-variable', 'OS=<(OS)',
         '--result', '<@(_outputs)',
         '--isolate', '<(RULE_INPUT_PATH)',
+
+        # Variables should use the -V FOO=<(FOO) form so frequent values,
+        # like '0' or '1', aren't stripped out by GYP. Run 'isolate.py help' for
+        # more details.
+        #
+        # This list needs to be kept in sync with the cmd line options
+        # in src/build/android/pylib/gtest/setup.py.
+
+        # Path variables are used to replace file paths when loading a .isolate
+        # file
+        '--path-variable', 'PRODUCT_DIR', '<(PRODUCT_DIR) ',
+
+        # Extra variables are replaced on the 'command' entry and on paths in
+        # the .isolate file but are not considered relative paths.
+        '--extra-variable', 'version_full=<(version_full)',
+
+        '--config-variable', 'OS=<(OS)',
+        '--config-variable', 'chromeos=<(chromeos)',
+        '--config-variable', 'component=<(component)',
+        # TODO(kbr): move this to chrome_tests.gypi:gles2_conform_tests_run
+        # once support for user-defined config variables is added.
+        '--config-variable',
+          'internal_gles2_conform_tests=<(internal_gles2_conform_tests)',
+        '--config-variable', 'icu_use_data_file_flag=<(icu_use_data_file_flag)',
+        '--config-variable', 'libpeer_target_type=<(libpeer_target_type)',
+        '--config-variable', 'use_openssl=<(use_openssl)',
       ],
       'conditions': [
         # Note: When gyp merges lists, it appends them to the old value.
@@ -82,24 +107,13 @@
             '--extra-variable', 'mac_product_name', '<(mac_product_name)',
           ],
         }],
-        ["test_isolation_outdir==''", {
-          # GYP will eliminate duplicate arguments so '<(PRODUCT_DIR)' cannot
-          # be provided twice. To work around this behavior, append '/'.
-          #
-          # Also have a space after <(PRODUCT_DIR) or visual studio will
-          # escape the argument wrappping " with the \ and merge it into
-          # the following arguments.
-          'action': [ '--outdir', '<(PRODUCT_DIR)/ ' ],
-        }, {
-          'action': [ '--outdir', '<(test_isolation_outdir)' ],
+        ["test_isolation_outdir!=''", {
+          'action': [ '--isolate-server', '<(test_isolation_outdir)' ],
         }],
         ['test_isolation_fail_on_missing == 0', {
-            'action': ['--ignore_broken_items'],
-          },
-        ],
+          'action': ['--ignore_broken_items'],
+        }],
       ],
-
-      'msvs_cygwin_shell': 0,
     },
   ],
 }

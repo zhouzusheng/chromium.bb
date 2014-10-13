@@ -134,12 +134,12 @@ void setFillSize(FillLayer* fillLayer, const AnimatableValue* value, const Style
         state.styleMap().mapFillSize(property, fillLayer, toAnimatableUnknown(value)->toCSSValue().get());
 }
 
-SVGLength animatableValueToNonNegativeSVGLength(const AnimatableValue* value)
+PassRefPtr<SVGLength> animatableValueToNonNegativeSVGLength(const AnimatableValue* value)
 {
-    SVGLength length = toAnimatableSVGLength(value)->toSVGLength();
-    if (length.valueInSpecifiedUnits() < 0)
-        length.setValueInSpecifiedUnits(0);
-    return length;
+    RefPtr<SVGLength> length = toAnimatableSVGLength(value)->toSVGLength();
+    if (length->valueInSpecifiedUnits() < 0)
+        length->setValueInSpecifiedUnits(0);
+    return length.release();
 }
 
 template <CSSPropertyID property>
@@ -230,6 +230,7 @@ void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleRe
 // FIXME: Generate this function.
 void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverState& state, const AnimatableValue* value)
 {
+    ASSERT(CSSAnimations::isAnimatableProperty(property));
     if (value->isUnknown()) {
         StyleBuilder::applyProperty(property, state, toAnimatableUnknown(value)->toCSSValue().get());
         return;
@@ -443,7 +444,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setStopOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, 1));
         return;
     case CSSPropertyStrokeDasharray:
-        style->setStrokeDashArray(toAnimatableStrokeDasharrayList(value)->toSVGLengthVector());
+        style->setStrokeDashArray(toAnimatableStrokeDasharrayList(value)->toSVGLengthList());
         return;
     case CSSPropertyStrokeDashoffset:
         style->setStrokeDashOffset(toAnimatableSVGLength(value)->toSVGLength());
@@ -589,7 +590,6 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setZoom(clampTo<float>(toAnimatableDouble(value)->toDouble(), std::numeric_limits<float>::denorm_min()));
         return;
     default:
-        ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Unable to apply AnimatableValue to RenderStyle: %s", getPropertyNameString(property).utf8().data());
         ASSERT_NOT_REACHED();
     }
 }

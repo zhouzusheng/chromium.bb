@@ -27,12 +27,23 @@
 #include "config.h"
 #include "core/dom/NodeRenderingTraversal.h"
 
+#include "HTMLNames.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/shadow/ComposedTreeWalker.h"
+#include "core/rendering/RenderObject.h"
 
 namespace WebCore {
 
 namespace NodeRenderingTraversal {
+
+static bool isRendererReparented(const RenderObject* renderer)
+{
+    if (!renderer->node()->isElementNode())
+        return false;
+    if (toElement(renderer->node())->isInTopLayer())
+        return true;
+    return false;
+}
 
 void ParentDetails::didTraverseInsertionPoint(const InsertionPoint* insertionPoint)
 {
@@ -57,6 +68,16 @@ ContainerNode* parent(const Node* node, ParentDetails* details)
         return 0;
     ComposedTreeWalker walker(node, ComposedTreeWalker::CanStartFromShadowBoundary);
     return toContainerNode(walker.traverseParent(walker.get(), details));
+}
+
+bool contains(const ContainerNode* container, const Node* node)
+{
+    while (node) {
+        if (node == container)
+            return true;
+        node = NodeRenderingTraversal::parent(node);
+    }
+    return false;
 }
 
 Node* nextSibling(const Node* node)
@@ -94,6 +115,40 @@ Node* previousSibling(const Node* node)
     if (parent && parent->isElementNode())
         return toElement(parent)->pseudoElement(BEFORE);
 
+    return 0;
+}
+
+RenderObject* nextSiblingRenderer(const Node* node)
+{
+    for (Node* sibling = NodeRenderingTraversal::nextSibling(node); sibling; sibling = NodeRenderingTraversal::nextSibling(sibling)) {
+        RenderObject* renderer = sibling->renderer();
+        if (renderer && !isRendererReparented(renderer))
+            return renderer;
+    }
+    return 0;
+}
+
+RenderObject* previousSiblingRenderer(const Node* node)
+{
+    for (Node* sibling = NodeRenderingTraversal::previousSibling(node); sibling; sibling = NodeRenderingTraversal::previousSibling(sibling)) {
+        RenderObject* renderer = sibling->renderer();
+        if (renderer && !isRendererReparented(renderer))
+            return renderer;
+    }
+    return 0;
+}
+
+RenderObject* nextInTopLayer(const Element* element)
+{
+    if (!element->isInTopLayer())
+        return 0;
+    const Vector<RefPtr<Element> >& topLayerElements = element->document().topLayerElements();
+    size_t position = topLayerElements.find(element);
+    ASSERT(position != kNotFound);
+    for (size_t i = position + 1; i < topLayerElements.size(); ++i) {
+        if (RenderObject* renderer = topLayerElements[i]->renderer())
+            return renderer;
+    }
     return 0;
 }
 

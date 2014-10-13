@@ -50,9 +50,9 @@ class Region;
 class ScrollableArea;
 class ViewportConstraints;
 
-class ScrollingCoordinator : public RefCounted<ScrollingCoordinator> {
+class ScrollingCoordinator {
 public:
-    static PassRefPtr<ScrollingCoordinator> create(Page*);
+    static PassOwnPtr<ScrollingCoordinator> create(Page*);
     ~ScrollingCoordinator();
 
     void pageDestroyed();
@@ -66,7 +66,7 @@ public:
     // Should be called after compositing has been updated.
     void updateAfterCompositingChange();
 
-    bool needsToUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsScrollableIsDirty(); }
+    bool needsToUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsDirty(); }
 
     // Should be called whenever a wheel event handler is added or removed in the
     // frame view's underlying document.
@@ -103,7 +103,7 @@ public:
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
     void updateLayerPositionConstraint(RenderLayer*);
-    void touchEventTargetRectsDidChange(const Document*);
+    void touchEventTargetRectsDidChange();
     void willDestroyRenderLayer(RenderLayer*);
 
     void updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
@@ -136,15 +136,16 @@ protected:
     // Dirty flags used to idenfity what really needs to be computed after compositing is updated.
     bool m_scrollGestureRegionIsDirty;
     bool m_touchEventTargetRectsAreDirty;
+    bool m_shouldScrollOnMainThreadDirty;
 
 private:
     void recomputeWheelEventHandlerCountForFrameView(FrameView*);
     void setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons);
 
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
-    void updateShouldUpdateScrollLayerPositionOnMainThread();
 
     static blink::WebLayer* scrollingWebLayerForScrollableArea(ScrollableArea*);
+    static blink::WebLayer* containerWebLayerForScrollableArea(ScrollableArea*);
 
     bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
@@ -156,7 +157,7 @@ private:
     blink::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
     void removeWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
 
-    bool frameViewIsScrollableIsDirty() const;
+    bool frameViewIsDirty() const;
 
     typedef HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;

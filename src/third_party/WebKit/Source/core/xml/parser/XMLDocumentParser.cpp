@@ -48,11 +48,11 @@
 #include "core/dom/TransformSource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/frame/Frame.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
 #include "core/frame/UseCounter.h"
@@ -471,8 +471,8 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
     if (errorOccurred)
         scriptLoader->dispatchErrorEvent();
     else if (!wasCanceled) {
-        if (scriptLoader->executePotentiallyCrossOriginScript(sourceCode))
-            scriptLoader->dispatchLoadEvent();
+        scriptLoader->executeScript(sourceCode);
+        scriptLoader->dispatchLoadEvent();
     }
 
     m_scriptElement = 0;
@@ -1000,7 +1000,7 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
     else
         pushCurrentNode(newElement.get());
 
-    if (isHTMLHtmlElement(newElement.get()))
+    if (newElement->hasTagName(HTMLNames::htmlTag))
         toHTMLHtmlElement(newElement)->insertedByParser();
 
     if (!m_parsingFragment && isFirstElement && document()->frame())
@@ -1024,7 +1024,8 @@ void XMLDocumentParser::endElementNs()
     exitText();
 
     RefPtr<ContainerNode> n = m_currentNode;
-    n->finishParsingChildren();
+    if (m_currentNode->isElementNode())
+        toElement(n.get())->finishParsingChildren();
 
     if (!scriptingContentIsAllowed(parserContentPolicy()) && n->isElementNode() && toScriptLoaderIfPossible(toElement(n))) {
         popCurrentNode();
@@ -1102,28 +1103,15 @@ void XMLDocumentParser::error(XMLErrors::ErrorType type, const char* message, va
     if (isStopped())
         return;
 
-#if HAVE(VASPRINTF)
-    char* formattedMessage;
-    if (vasprintf(&formattedMessage, message, args) == -1)
-        return;
-#else
     char formattedMessage[1024];
     vsnprintf(formattedMessage, sizeof(formattedMessage) - 1, message, args);
-#endif
 
     if (m_parserPaused) {
         m_pendingCallbacks.append(adoptPtr(new PendingErrorCallback(type, reinterpret_cast<const xmlChar*>(formattedMessage), lineNumber(), columnNumber())));
-#if HAVE(VASPRINTF)
-        free(formattedMessage);
-#endif
         return;
     }
 
     handleError(type, formattedMessage, textPosition());
-
-#if HAVE(VASPRINTF)
-    free(formattedMessage);
-#endif
 }
 
 void XMLDocumentParser::processingInstruction(const String& target, const String& data)
@@ -1148,7 +1136,7 @@ void XMLDocumentParser::processingInstruction(const String& target, const String
 
     m_currentNode->parserAppendChild(pi.get());
 
-    pi->finishParsingChildren();
+    pi->setCreatedByParser(false);
 
     if (pi->isCSS())
         m_sawCSS = true;

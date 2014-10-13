@@ -207,10 +207,13 @@ void PpapiPluginProcessHost::OpenChannelToPlugin(Client* client) {
 PpapiPluginProcessHost::PpapiPluginProcessHost(
     const PepperPluginInfo& info,
     const base::FilePath& profile_data_directory)
-    : permissions_(
-          ppapi::PpapiPermissions::GetForCommandLine(info.permissions)),
-      profile_data_directory_(profile_data_directory),
+    : profile_data_directory_(profile_data_directory),
       is_broker_(false) {
+  uint32 base_permissions = info.permissions;
+  if (GetContentClient()->browser()->IsPluginAllowedToUseDevChannelAPIs())
+    base_permissions |= ppapi::PERMISSION_DEV_CHANNEL;
+  permissions_ = ppapi::PpapiPermissions::GetForCommandLine(base_permissions);
+
   process_.reset(new BrowserChildProcessHostImpl(
       PROCESS_TYPE_PPAPI_PLUGIN, this));
 
@@ -250,7 +253,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   if (info.name.empty()) {
     process_->SetName(plugin_path_.BaseName().LossyDisplayName());
   } else {
-    process_->SetName(UTF8ToUTF16(info.name));
+    process_->SetName(base::UTF8ToUTF16(info.name));
   }
 
   std::string channel_id = process_->GetHost()->CreateChannel();
@@ -337,6 +340,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   process_->Launch(
 #if defined(OS_WIN)
       new PpapiPluginSandboxedProcessLauncherDelegate(is_broker_),
+      false,
 #elif defined(OS_POSIX)
       use_zygote,
       base::EnvironmentMap(),
@@ -388,13 +392,10 @@ bool PpapiPluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
 
 // Called when the browser <--> plugin channel has been established.
 void PpapiPluginProcessHost::OnChannelConnected(int32 peer_pid) {
-  bool supports_dev_channel =
-      GetContentClient()->browser()->IsPluginAllowedToUseDevChannelAPIs();
   // This will actually load the plugin. Errors will actually not be reported
   // back at this point. Instead, the plugin will fail to establish the
   // connections when we request them on behalf of the renderer(s).
-  Send(new PpapiMsg_LoadPlugin(plugin_path_, permissions_,
-                               supports_dev_channel));
+  Send(new PpapiMsg_LoadPlugin(plugin_path_, permissions_));
 
   // Process all pending channel requests from the renderers.
   for (size_t i = 0; i < pending_requests_.size(); i++)

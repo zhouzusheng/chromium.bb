@@ -75,10 +75,11 @@ void CSSParserValueList::deleteValueAt(unsigned i)
     m_values.remove(i);
 }
 
-void CSSParserValueList::extend(CSSParserValueList& valueList)
+void CSSParserValueList::stealValues(CSSParserValueList& valueList)
 {
     for (unsigned int i = 0; i < valueList.size(); ++i)
         m_values.append(*(valueList.valueAt(i)));
+    valueList.clear();
 }
 
 PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
@@ -88,12 +89,13 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
         return CSSPrimitiveValue::createIdentifier(id);
 
     if (unit == CSSParserValue::Operator) {
-        RefPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createParserOperator(iValue);
+        RefPtrWillBeRawPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createParserOperator(iValue);
         primitiveValue->setPrimitiveType(CSSPrimitiveValue::CSS_PARSER_OPERATOR);
         return primitiveValue;
     }
-    if (unit == CSSParserValue::Function)
+    if (unit == CSSParserValue::Function) {
         return CSSFunctionValue::create(function);
+    }
     if (unit == CSSParserValue::ValueList)
         return CSSValueList::createFromParserValueList(valueList);
     if (unit >= CSSParserValue::Q_EMS)
@@ -109,7 +111,6 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
         return CSSPrimitiveValue::create(fValue, isInt ? CSSPrimitiveValue::CSS_PARSER_INTEGER : CSSPrimitiveValue::CSS_NUMBER);
     case CSSPrimitiveValue::CSS_STRING:
     case CSSPrimitiveValue::CSS_URI:
-    case CSSPrimitiveValue::CSS_VARIABLE_NAME:
     case CSSPrimitiveValue::CSS_PARSER_HEXCOLOR:
         return CSSPrimitiveValue::create(string, primitiveUnit);
     case CSSPrimitiveValue::CSS_PERCENTAGE:

@@ -52,6 +52,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "platform/LengthFunctions.h"
 
 using namespace std;
 
@@ -215,7 +216,7 @@ const char* RenderMarquee::renderName() const
 
 void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(difference, oldStyle);
+    RenderBlockFlow::styleDidChange(difference, oldStyle);
 
     RenderStyle* s = style();
 
@@ -259,9 +260,9 @@ void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle
         m_timer.stop();
 }
 
-void RenderMarquee::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight)
+void RenderMarquee::layoutBlock(bool relayoutChildren)
 {
-    RenderBlockFlow::layoutBlock(relayoutChildren, pageLogicalHeight);
+    RenderBlockFlow::layoutBlock(relayoutChildren);
 
     updateMarqueePosition();
 }

@@ -32,6 +32,7 @@
 #define V8Utilities_h
 
 #include "wtf/Forward.h"
+#include "wtf/Vector.h"
 #include <v8.h>
 
 namespace WTF {
@@ -43,30 +44,16 @@ namespace WebCore {
     class EventListener;
     class MessagePort;
     class ExecutionContext;
-
-    // Use an array to hold dependents. It works like a ref-counted scheme. A value can be added more than once to the DOM object.
-    void createHiddenDependency(v8::Handle<v8::Object>, v8::Local<v8::Value>, int cacheIndex, v8::Isolate*);
-    void removeHiddenDependency(v8::Handle<v8::Object>, v8::Local<v8::Value>, int cacheIndex, v8::Isolate*);
-
-    // Combo create/remove, for EventHandler setters in generated bindings:
-    void transferHiddenDependency(v8::Handle<v8::Object>, EventListener* oldValue, v8::Local<v8::Value> newValue, int cacheIndex, v8::Isolate*);
-
-    ExecutionContext* getExecutionContext();
+    class ExceptionState;
 
     typedef WTF::Vector<RefPtr<MessagePort>, 1> MessagePortArray;
     typedef WTF::Vector<RefPtr<ArrayBuffer>, 1> ArrayBufferArray;
 
     // Helper function which pulls the values out of a JS sequence and into a MessagePortArray.
     // Also validates the elements per sections 4.1.13 and 4.1.15 of the WebIDL spec and section 8.3.3
-    // of the HTML5 spec and generates exceptions as appropriate. If the supplied argument's type isn't
-    // a JS sequence, a type error is signalled by setting 'notASequence' to true -- the caller
-    // then being responsible for generating a TypeError having a message that fits the context.
+    // of the HTML5 spec and generates exceptions as appropriate.
     // Returns true if the array was filled, or false if the passed value was not of an appropriate type.
-    bool extractTransferables(v8::Local<v8::Value>, MessagePortArray&, ArrayBufferArray&, bool& notASequence, v8::Isolate*);
-
-    bool getMessagePortArray(v8::Local<v8::Value>, const String& propertyName, MessagePortArray&, v8::Isolate*);
-    bool getMessagePortArray(v8::Local<v8::Value>, int argumentIndex, MessagePortArray&, v8::Isolate*);
-
+    bool extractTransferables(v8::Local<v8::Value>, int, MessagePortArray&, ArrayBufferArray&, ExceptionState&, v8::Isolate*);
 } // namespace WebCore
 
 #endif // V8Utilities_h

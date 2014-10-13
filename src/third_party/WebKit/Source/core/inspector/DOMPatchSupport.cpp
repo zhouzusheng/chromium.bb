@@ -39,6 +39,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Node.h"
+#include "core/dom/XMLDocument.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/inspector/DOMEditor.h"
@@ -88,9 +89,9 @@ void DOMPatchSupport::patchDocument(const String& markup)
     if (m_document.isHTMLDocument())
         newDocument = HTMLDocument::create();
     else if (m_document.isXHTMLDocument())
-        newDocument = HTMLDocument::createXHTML();
-    else if (m_document.isSVGDocument())
-        newDocument = Document::create();
+        newDocument = XMLDocument::createXHTML();
+    else if (m_document.isXMLDocument())
+        newDocument = XMLDocument::create();
 
     ASSERT(newDocument);
     newDocument->setContextFeatures(m_document.contextFeatures());
@@ -243,13 +244,11 @@ DOMPatchSupport::diff(const Vector<OwnPtr<Digest> >& oldList, const Vector<OwnPt
     DiffTable oldTable;
 
     for (size_t i = 0; i < newList.size(); ++i) {
-        DiffTable::iterator it = newTable.add(newList[i]->m_sha1, Vector<size_t>()).iterator;
-        it->value.append(i);
+        newTable.add(newList[i]->m_sha1, Vector<size_t>()).storedValue->value.append(i);
     }
 
     for (size_t i = 0; i < oldList.size(); ++i) {
-        DiffTable::iterator it = oldTable.add(oldList[i]->m_sha1, Vector<size_t>()).iterator;
-        it->value.append(i);
+        oldTable.add(oldList[i]->m_sha1, Vector<size_t>()).storedValue->value.append(i);
     }
 
     for (DiffTable::iterator newIt = newTable.begin(); newIt != newTable.end(); ++newIt) {

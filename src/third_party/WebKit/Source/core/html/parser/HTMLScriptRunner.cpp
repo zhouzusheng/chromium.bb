@@ -137,8 +137,8 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            if (scriptLoader->executePotentiallyCrossOriginScript(sourceCode))
-                element->dispatchEvent(createScriptLoadEvent());
+            scriptLoader->executeScript(sourceCode);
+            element->dispatchEvent(createScriptLoadEvent());
         }
     }
     ASSERT(!isExecutingScript());
@@ -158,8 +158,9 @@ void HTMLScriptRunner::stopWatchingForLoad(PendingScript& pendingScript)
     pendingScript.setWatchingForLoad(false);
 }
 
-// This function should match 10.2.5.11 "An end tag whose tag name is 'script'"
-// Script handling lives outside the tree builder to keep the each class simple.
+// Implements the steps for 'An end tag whose tag name is "script"'
+// http://whatwg.org/html#scriptEndTag
+// Script handling lives outside the tree builder to keep each class simple.
 void HTMLScriptRunner::execute(PassRefPtr<Element> scriptElement, const TextPosition& scriptStartPosition)
 {
     ASSERT(scriptElement);
@@ -268,8 +269,8 @@ bool HTMLScriptRunner::requestPendingScript(PendingScript& pendingScript, Elemen
     return true;
 }
 
-// This method is meant to match the HTML5 definition of "running a script"
-// http://www.whatwg.org/specs/web-apps/current-work/multipage/scripting-1.html#running-a-script
+// Implements the initial steps for 'An end tag whose tag name is "script"'
+// http://whatwg.org/html#scriptEndTag
 void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStartPosition)
 {
     ASSERT(m_document);
@@ -285,10 +286,8 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
         if (!scriptLoader)
             return;
 
-        // FIXME: This may be too agressive as we always deliver mutations at
-        // every script element, even if it's not ready to execute yet. There's
-        // unfortuantely no obvious way to tell if prepareScript is going to
-        // execute the script from out here.
+        ASSERT(scriptLoader->isParserInserted());
+
         if (!isExecutingScript())
             Microtask::performCheckpoint();
 

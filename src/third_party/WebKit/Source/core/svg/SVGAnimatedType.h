@@ -20,15 +20,11 @@
 #ifndef SVGAnimatedType_h
 #define SVGAnimatedType_h
 
+#include "core/css/StyleColor.h"
 #include "core/svg/SVGAngle.h"
 #include "core/svg/SVGColor.h"
-#include "core/svg/SVGLength.h"
-#include "core/svg/SVGLengthList.h"
-#include "core/svg/SVGNumberList.h"
-#include "core/svg/SVGPointList.h"
-#include "core/svg/SVGPreserveAspectRatio.h"
-#include "core/svg/SVGRect.h"
 #include "core/svg/SVGTransformList.h"
+#include "core/svg/properties/NewSVGAnimatedProperty.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
 
 namespace WebCore {
@@ -41,143 +37,23 @@ public:
     ~SVGAnimatedType();
 
     static PassOwnPtr<SVGAnimatedType> createAngleAndEnumeration(std::pair<SVGAngle, unsigned>*);
-    static PassOwnPtr<SVGAnimatedType> createBoolean(bool*);
-    static PassOwnPtr<SVGAnimatedType> createColor(Color*);
+    static PassOwnPtr<SVGAnimatedType> createColor(StyleColor*);
     static PassOwnPtr<SVGAnimatedType> createEnumeration(unsigned*);
-    static PassOwnPtr<SVGAnimatedType> createInteger(int*);
-    static PassOwnPtr<SVGAnimatedType> createIntegerOptionalInteger(std::pair<int, int>*);
-    static PassOwnPtr<SVGAnimatedType> createLength(SVGLength*);
-    static PassOwnPtr<SVGAnimatedType> createLengthList(SVGLengthList*);
-    static PassOwnPtr<SVGAnimatedType> createNumber(float*);
-    static PassOwnPtr<SVGAnimatedType> createNumberList(SVGNumberList*);
-    static PassOwnPtr<SVGAnimatedType> createNumberOptionalNumber(std::pair<float, float>*);
     static PassOwnPtr<SVGAnimatedType> createPath(PassOwnPtr<SVGPathByteStream>);
-    static PassOwnPtr<SVGAnimatedType> createPointList(SVGPointList*);
-    static PassOwnPtr<SVGAnimatedType> createPreserveAspectRatio(SVGPreserveAspectRatio*);
-    static PassOwnPtr<SVGAnimatedType> createRect(SVGRect*);
-    static PassOwnPtr<SVGAnimatedType> createString(String*);
     static PassOwnPtr<SVGAnimatedType> createTransformList(SVGTransformList*);
+    // Temporary compatibility layer. This shouldn't be needed after all properties are switched to NewSVGAnimatedProperty impl.
+    static PassOwnPtr<SVGAnimatedType> createNewProperty(PassRefPtr<NewSVGPropertyBase>);
     static bool supportsAnimVal(AnimatedPropertyType);
 
     AnimatedPropertyType type() const { return m_type; }
 
-    // Non-mutable accessors.
-    const std::pair<SVGAngle, unsigned>& angleAndEnumeration() const
-    {
-        ASSERT(m_type == AnimatedAngle);
-        return *m_data.angleAndEnumeration;
-    }
-
-    const bool& boolean() const
-    {
-        ASSERT(m_type == AnimatedBoolean);
-        return *m_data.boolean;
-    }
-
-    const Color& color() const
-    {
-        ASSERT(m_type == AnimatedColor);
-        return *m_data.color;
-    }
-
-    const unsigned& enumeration() const
-    {
-        ASSERT(m_type == AnimatedEnumeration);
-        return *m_data.enumeration;
-    }
-
-    const int& integer() const
-    {
-        ASSERT(m_type == AnimatedInteger);
-        return *m_data.integer;
-    }
-
-    const pair<int, int>& integerOptionalInteger() const
-    {
-        ASSERT(m_type == AnimatedIntegerOptionalInteger);
-        return *m_data.integerOptionalInteger;
-    }
-
-    const SVGLength& length() const
-    {
-        ASSERT(m_type == AnimatedLength);
-        return *m_data.length;
-    }
-
-    const SVGLengthList& lengthList() const
-    {
-        ASSERT(m_type == AnimatedLengthList);
-        return *m_data.lengthList;
-    }
-
-    const float& number() const
-    {
-        ASSERT(m_type == AnimatedNumber);
-        return *m_data.number;
-    }
-
-    const SVGNumberList& numberList() const
-    {
-        ASSERT(m_type == AnimatedNumberList);
-        return *m_data.numberList;
-    }
-
-    const pair<float, float>& numberOptionalNumber() const
-    {
-        ASSERT(m_type == AnimatedNumberOptionalNumber);
-        return *m_data.numberOptionalNumber;
-    }
-
-    const SVGPathByteStream* path() const
-    {
-        ASSERT(m_type == AnimatedPath);
-        return m_data.path;
-    }
-
-    const SVGPointList& pointList() const
-    {
-        ASSERT(m_type == AnimatedPoints);
-        return *m_data.pointList;
-    }
-
-    const SVGPreserveAspectRatio& preserveAspectRatio() const
-    {
-        ASSERT(m_type == AnimatedPreserveAspectRatio);
-        return *m_data.preserveAspectRatio;
-    }
-
-    const SVGRect& rect() const
-    {
-        ASSERT(m_type == AnimatedRect);
-        return *m_data.rect;
-    }
-
-    const String& string() const
-    {
-        ASSERT(m_type == AnimatedString);
-        return *m_data.string;
-    }
-
-    const SVGTransformList& transformList() const
-    {
-        ASSERT(m_type == AnimatedTransformList);
-        return *m_data.transformList;
-    }
-
-    // Mutable accessors.
     std::pair<SVGAngle, unsigned>& angleAndEnumeration()
     {
         ASSERT(m_type == AnimatedAngle);
         return *m_data.angleAndEnumeration;
     }
 
-    bool& boolean()
-    {
-        ASSERT(m_type == AnimatedBoolean);
-        return *m_data.boolean;
-    }
-
-    Color& color()
+    StyleColor& color()
     {
         ASSERT(m_type == AnimatedColor);
         return *m_data.color;
@@ -189,82 +65,22 @@ public:
         return *m_data.enumeration;
     }
 
-    int& integer()
-    {
-        ASSERT(m_type == AnimatedInteger);
-        return *m_data.integer;
-    }
-
-    pair<int, int>& integerOptionalInteger()
-    {
-        ASSERT(m_type == AnimatedIntegerOptionalInteger);
-        return *m_data.integerOptionalInteger;
-    }
-
-    SVGLength& length()
-    {
-        ASSERT(m_type == AnimatedLength);
-        return *m_data.length;
-    }
-
-    SVGLengthList& lengthList()
-    {
-        ASSERT(m_type == AnimatedLengthList);
-        return *m_data.lengthList;
-    }
-
-    float& number()
-    {
-        ASSERT(m_type == AnimatedNumber);
-        return *m_data.number;
-    }
-
-    SVGNumberList& numberList()
-    {
-        ASSERT(m_type == AnimatedNumberList);
-        return *m_data.numberList;
-    }
-
-    pair<float, float>& numberOptionalNumber()
-    {
-        ASSERT(m_type == AnimatedNumberOptionalNumber);
-        return *m_data.numberOptionalNumber;
-    }
-
     SVGPathByteStream* path()
     {
         ASSERT(m_type == AnimatedPath);
         return m_data.path;
     }
 
-    SVGPointList& pointList()
-    {
-        ASSERT(m_type == AnimatedPoints);
-        return *m_data.pointList;
-    }
-
-    SVGPreserveAspectRatio& preserveAspectRatio()
-    {
-        ASSERT(m_type == AnimatedPreserveAspectRatio);
-        return *m_data.preserveAspectRatio;
-    }
-
-    SVGRect& rect()
-    {
-        ASSERT(m_type == AnimatedRect);
-        return *m_data.rect;
-    }
-
-    String& string()
-    {
-        ASSERT(m_type == AnimatedString);
-        return *m_data.string;
-    }
-
     SVGTransformList& transformList()
     {
         ASSERT(m_type == AnimatedTransformList);
         return *m_data.transformList;
+    }
+
+    RefPtr<NewSVGPropertyBase>& newProperty()
+    {
+        ASSERT(m_newProperty);
+        return m_newProperty;
     }
 
     String valueAsString();
@@ -277,28 +93,16 @@ private:
 
     union DataUnion {
         DataUnion()
-            : length(0)
         {
         }
 
         std::pair<SVGAngle, unsigned>* angleAndEnumeration;
-        bool* boolean;
-        Color* color;
+        StyleColor* color;
         unsigned* enumeration;
-        int* integer;
-        std::pair<int, int>* integerOptionalInteger;
-        SVGLength* length;
-        SVGLengthList* lengthList;
-        float* number;
-        SVGNumberList* numberList;
-        std::pair<float, float>* numberOptionalNumber;
         SVGPathByteStream* path;
-        SVGPreserveAspectRatio* preserveAspectRatio;
-        SVGPointList* pointList;
-        SVGRect* rect;
-        String* string;
         SVGTransformList* transformList;
     } m_data;
+    RefPtr<NewSVGPropertyBase> m_newProperty;
 };
 
 } // namespace WebCore

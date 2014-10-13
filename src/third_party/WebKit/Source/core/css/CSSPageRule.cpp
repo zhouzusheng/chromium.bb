@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/css/CSSPageRule.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
@@ -68,7 +68,8 @@ String CSSPageRule::selectorText() const
 
 void CSSPageRule::setSelectorText(const String& selectorText)
 {
-    CSSParser parser(parserContext());
+    CSSParserContext context(parserContext(), 0);
+    BisonCSSParser parser(context);
     CSSSelectorList selectorList;
     parser.parseSelector(selectorText, selectorList);
     if (!selectorList.isValid())

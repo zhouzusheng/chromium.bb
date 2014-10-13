@@ -35,16 +35,13 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_STRING(SVGScriptElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGScriptElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGScriptElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : SVGElement(SVGNames::scriptTag, document)
+    , SVGURIReference(this)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
@@ -62,7 +59,6 @@ bool SVGScriptElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::typeAttr);
         supportedAttributes.add(HTMLNames::onerrorAttr);
     }
@@ -76,22 +72,18 @@ void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicStr
         return;
     }
 
-    if (name == SVGNames::typeAttr) {
-        setType(value);
+    SVGParsingError parseError = NoError;
+    if (name == SVGNames::typeAttr)
         return;
-    }
 
     if (name == HTMLNames::onerrorAttr) {
         setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value));
-        return;
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGURIReference::parseAttribute(name, value))
-        return;
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -107,12 +99,9 @@ void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
 
     if (SVGURIReference::isKnownAttribute(attrName)) {
-        m_loader->handleSourceAttribute(hrefCurrentValue());
+        m_loader->handleSourceAttribute(hrefString());
         return;
     }
-
-    if (SVGExternalResourcesRequired::handleAttributeChange(this, attrName))
-        return;
 
     ASSERT_NOT_REACHED();
 }
@@ -126,7 +115,11 @@ Node::InsertionNotificationRequest SVGScriptElement::insertedInto(ContainerNode*
 void SVGScriptElement::didNotifySubtreeInsertionsToDocument()
 {
     m_loader->didNotifySubtreeInsertionsToDocument();
-    SVGExternalResourcesRequired::insertedIntoDocument(this);
+
+    if (!m_loader->isParserInserted()) {
+        m_loader->setHaveFiredLoadEvent(true);
+        sendSVGLoadEventIfPossibleAsynchronously();
+    }
 }
 
 void SVGScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -137,35 +130,23 @@ void SVGScriptElement::childrenChanged(bool changedByParser, Node* beforeChange,
 
 bool SVGScriptElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == sourceAttributeValue();
+    return attribute.name() == AtomicString(sourceAttributeValue());
 }
 
 void SVGScriptElement::finishParsingChildren()
 {
     SVGElement::finishParsingChildren();
-    SVGExternalResourcesRequired::finishParsingChildren();
+    m_loader->setHaveFiredLoadEvent(true);
 }
 
-String SVGScriptElement::type() const
+bool SVGScriptElement::haveLoadedRequiredResources()
 {
-    return m_type;
-}
-
-void SVGScriptElement::setType(const String& type)
-{
-    m_type = type;
-}
-
-void SVGScriptElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    SVGElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
+    return m_loader->haveFiredLoadEvent();
 }
 
 String SVGScriptElement::sourceAttributeValue() const
 {
-    return hrefCurrentValue();
+    return hrefString();
 }
 
 String SVGScriptElement::charsetAttributeValue() const
@@ -175,7 +156,7 @@ String SVGScriptElement::charsetAttributeValue() const
 
 String SVGScriptElement::typeAttributeValue() const
 {
-    return type();
+    return getAttribute(SVGNames::typeAttr).string();
 }
 
 String SVGScriptElement::languageAttributeValue() const
@@ -205,7 +186,7 @@ bool SVGScriptElement::deferAttributeValue() const
 
 bool SVGScriptElement::hasSourceAttribute() const
 {
-    return hasAttribute(XLinkNames::hrefAttr);
+    return href()->isSpecified();
 }
 
 PassRefPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
@@ -213,24 +194,19 @@ PassRefPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
     return adoptRef(new SVGScriptElement(document(), false, m_loader->alreadyStarted()));
 }
 
-void SVGScriptElement::setHaveFiredLoadEvent(bool haveFiredLoadEvent)
+void SVGScriptElement::dispatchLoadEvent()
 {
-    m_loader->setHaveFiredLoadEvent(haveFiredLoadEvent);
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
-bool SVGScriptElement::isParserInserted() const
+#ifndef NDEBUG
+bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 {
-    return m_loader->isParserInserted();
-}
+    if (name == SVGNames::typeAttr)
+        return false;
 
-bool SVGScriptElement::haveFiredLoadEvent() const
-{
-    return m_loader->haveFiredLoadEvent();
+    return SVGElement::isAnimatableAttribute(name);
 }
-
-Timer<SVGElement>* SVGScriptElement::svgLoadEventTimer()
-{
-    return &m_svgLoadEventTimer;
-}
+#endif
 
 }

@@ -47,7 +47,7 @@ public:
 
     virtual const char* renderName() const OVERRIDE;
 
-    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0) OVERRIDE;
+    virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
 
     virtual bool avoidsFloats() const OVERRIDE { return true; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
@@ -72,8 +72,8 @@ private:
 
     class GridIterator;
     struct GridSizingData;
-    void computedUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&);
-    void computedUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
+    void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&);
+    void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
     LayoutUnit computeUsedBreadthOfMinLength(GridTrackSizingDirection, const GridLength&) const;
     LayoutUnit computeUsedBreadthOfMaxLength(GridTrackSizingDirection, const GridLength&, LayoutUnit usedBreadth) const;
     LayoutUnit computeUsedBreadthOfSpecifiedLength(GridTrackSizingDirection, const Length&) const;
@@ -102,7 +102,7 @@ private:
     void resolveContentBasedTrackSizingFunctionsForItems(GridTrackSizingDirection, GridSizingData&, RenderBox*, FilterFunction, SizingFunction, AccumulatorGetter, AccumulatorGrowFunction);
     void distributeSpaceToTracks(Vector<GridTrack*>&, Vector<GridTrack*>* tracksForGrowthAboveMaxBreadth, AccumulatorGetter, AccumulatorGrowFunction, GridSizingData&, LayoutUnit& availableLogicalSpace);
 
-    double computeNormalizedFractionBreadth(Vector<GridTrack>&, GridTrackSizingDirection, LayoutUnit availableLogicalSpace) const;
+    double computeNormalizedFractionBreadth(Vector<GridTrack>&, const GridSpan& tracksSpan, GridTrackSizingDirection, LayoutUnit availableLogicalSpace) const;
 
     const GridTrackSize& gridTrackSize(GridTrackSizingDirection, size_t) const;
     size_t explicitGridColumnCount() const;
@@ -112,7 +112,14 @@ private:
     LayoutUnit logicalContentHeightForChild(RenderBox*, Vector<GridTrack>&);
     LayoutUnit minContentForChild(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>& columnTracks);
     LayoutUnit maxContentForChild(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>& columnTracks);
-    LayoutPoint findChildLogicalPosition(RenderBox*, const GridSizingData&);
+    LayoutUnit startOfColumnForChild(const RenderBox* child) const;
+    LayoutUnit endOfColumnForChild(const RenderBox* child) const;
+    LayoutUnit columnPositionAlignedWithGridContainerStart(const RenderBox*) const;
+    LayoutUnit columnPositionAlignedWithGridContainerEnd(const RenderBox*) const;
+    LayoutUnit centeredColumnPositionForChild(const RenderBox*) const;
+    LayoutUnit columnPositionForChild(const RenderBox*) const;
+    LayoutUnit rowPositionForChild(const RenderBox*) const;
+    LayoutPoint findChildLogicalPosition(const RenderBox*) const;
     GridCoordinate cachedGridCoordinate(const RenderBox*) const;
 
     GridSpan resolveGridPositionsFromAutoPlacementPosition(const RenderBox*, GridTrackSizingDirection, size_t) const;
@@ -126,8 +133,7 @@ private:
 
     LayoutUnit gridAreaBreadthForChild(const RenderBox* child, GridTrackSizingDirection, const Vector<GridTrack>&) const;
 
-    virtual void paintChildren(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    void paintChildrenSlowCase(PaintInfo&, const LayoutPoint&);
+    virtual void paintChildren(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     bool gridIsDirty() const { return m_gridIsDirty; }
 
@@ -154,7 +160,9 @@ private:
     Vector<LayoutUnit> m_columnPositions;
     HashMap<const RenderBox*, GridCoordinate> m_gridItemCoordinate;
     OrderIterator m_orderIterator;
-    bool m_gridItemOverflowGridArea;
+    Vector<RenderBox*> m_gridItemsOverflowingGridArea;
+
+    friend class GridCoordinateSorter;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderGrid, isRenderGrid());

@@ -91,6 +91,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
                              blink::WebPluginListBuilder* builder);
   virtual blink::WebPublicSuffixList* publicSuffixList();
   virtual void screenColorProfile(blink::WebVector<char>* to_profile);
+  virtual blink::WebScrollbarBehavior* scrollbarBehavior();
   virtual blink::WebIDBFactory* idbFactory();
   virtual blink::WebFileSystem* fileSystem();
   virtual bool canAccelerate2dCanvas();
@@ -147,7 +148,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks*) OVERRIDE;
+      blink::WebStorageQuotaCallbacks) OVERRIDE;
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
 
@@ -217,6 +218,10 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   webkit::WebCompositorSupportImpl compositor_support_;
 
   scoped_ptr<WebCryptoImpl> web_crypto_;
+
+  scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
+
+  DISALLOW_COPY_AND_ASSIGN(RendererWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

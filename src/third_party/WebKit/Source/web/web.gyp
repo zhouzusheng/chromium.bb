@@ -36,12 +36,13 @@
         '../build/scripts/scripts.gypi',
         '../build/win/precompile.gypi',
         '../modules/modules.gypi',
+        '../platform/blink_platform.gypi',
         '../wtf/wtf.gypi',
         'web.gypi',
     ],
     'targets': [
         {
-            'target_name': 'webkit',
+            'target_name': 'blink_web',
             'type': '<(component)',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
@@ -72,13 +73,12 @@
                 'INSIDE_BLINK',
             ],
             'sources': [
-                '<@(webcore_platform_support_files)',
                 '<@(web_files)',
             ],
             'conditions': [
                 ['component=="shared_library"', {
                     'dependencies': [
-                        '../core/core.gyp:webcore_derived',
+                        '../core/core.gyp:webcore_generated',
                         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
                         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
                         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -114,7 +114,7 @@
                         ['clang==1', {
                             # FIXME: It would be nice to enable this in shared builds too,
                             # but the test files have global constructors from the GTEST macro
-                            # and we pull in the test files into the webkit target in the
+                            # and we pull in the test files into the blink_web target in the
                             # shared build.
                             'cflags!': ['-Wglobal-constructors'],
                             'xcode_settings': {

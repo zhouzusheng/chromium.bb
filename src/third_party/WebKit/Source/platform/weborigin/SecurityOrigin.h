@@ -178,17 +178,12 @@ public:
     // SecurityOrigin might be empty, or we might have explicitly decided that
     // we shouldTreatURLSchemeAsNoAccess.
     String toString() const;
+    AtomicString toAtomicString() const;
 
     // Similar to toString(), but does not take into account any factors that
     // could make the string return "null".
     String toRawString() const;
-
-    // This method checks for equality between SecurityOrigins, not whether
-    // one origin can access another. It is used for hash table keys.
-    // For access checks, use canAccess().
-    // FIXME: If this method is really only useful for hash table keys, it
-    // should be refactored into SecurityOriginHash.
-    bool equal(const SecurityOrigin*) const;
+    AtomicString toRawAtomicString() const;
 
     // This method checks for equality, ignoring the value of document.domain
     // (and whether it was set) but considering the host. It is used for postMessage.
@@ -205,6 +200,7 @@ private:
 
     // FIXME: Rename this function to something more semantic.
     bool passesFileCheck(const SecurityOrigin*) const;
+    void buildRawString(StringBuilder&) const;
 
     String m_protocol;
     String m_host;

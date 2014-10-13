@@ -44,17 +44,14 @@ public:
 
     virtual String title() const OVERRIDE FINAL;
 
-    virtual short tabIndex() const;
+    virtual short tabIndex() const OVERRIDE;
     void setTabIndex(int);
 
     void setInnerText(const String&, ExceptionState&);
     void setOuterText(const String&, ExceptionState&);
 
-    Element* insertAdjacentElement(const String& where, Element* newChild, ExceptionState&);
-    void insertAdjacentText(const String& where, const String& text, ExceptionState&);
-
     virtual bool hasCustomFocusLogic() const;
-    virtual bool supportsFocus() const;
+    virtual bool supportsFocus() const OVERRIDE;
 
     String contentEditable() const;
     void setContentEditable(const String&, ExceptionState&);
@@ -70,12 +67,9 @@ public:
 
     void click();
 
-    virtual void accessKeyAction(bool sendMouseEvents);
+    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
 
     bool ieForbidsInsertHTML() const;
-
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual HTMLFormElement* formOwner() const { return 0; }
 
@@ -91,6 +85,8 @@ public:
     virtual bool isInteractiveContent() const;
     virtual void defaultEventHandler(Event*) OVERRIDE;
 
+    static const AtomicString& eventNameForAttributeName(const QualifiedName& attrName);
+
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
 
@@ -105,7 +101,7 @@ protected:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
     void calculateAndAdjustDirectionality();
 
 private:
@@ -121,8 +117,6 @@ private:
     TextDirection directionality(Node** strongDirectionalityTextNode= 0) const;
 
     TranslateAttributeMode translateAttributeMode() const;
-
-    const AtomicString& eventNameForAttributeName(const QualifiedName& attrName) const;
 
     void handleKeypressEvent(KeyboardEvent*);
     bool supportsSpatialNavigationFocus() const;

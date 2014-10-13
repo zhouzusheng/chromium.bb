@@ -95,10 +95,7 @@ public:
     HRTFDatabaseLoader* hrtfDatabaseLoader() const { return m_hrtfDatabaseLoader.get(); }
 
     // Document notification
-    virtual void stop();
-
-    Document* document() const; // ASSERTs if document no longer exists.
-    bool hasDocument();
+    virtual void stop() OVERRIDE FINAL;
 
     AudioDestinationNode* destination() { return m_destinationNode.get(); }
     size_t currentSampleFrame() const { return m_destinationNode->currentSampleFrame(); }
@@ -234,8 +231,8 @@ public:
     void removeMarkedSummingJunction(AudioSummingJunction*);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const OVERRIDE FINAL;
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
 

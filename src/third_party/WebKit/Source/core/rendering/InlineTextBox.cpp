@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/rendering/InlineTextBox.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
@@ -212,8 +212,6 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     StringBuilder charactersWithHyphen;
     bool respectHyphen = ePos == m_len && hasHyphen();
     TextRun textRun = constructTextRun(styleToUse, font, respectHyphen ? &charactersWithHyphen : 0);
-    if (respectHyphen)
-        endPos = textRun.length();
 
     FloatPoint startingPoint = FloatPoint(logicalLeft(), selTop);
     LayoutRect r;
@@ -308,7 +306,7 @@ float InlineTextBox::placeEllipsisBox(bool flowIsLTR, float visibleLeftEdge, flo
 
         // If we got here that means that we were only partially truncated and we need to return the pixel offset at which
         // to place the ellipsis.
-        float widthOfVisibleText = toRenderText(renderer())->width(m_start, offset, textPos(), isFirstLineStyle());
+        float widthOfVisibleText = toRenderText(renderer())->width(m_start, offset, textPos(), flowIsLTR ? LTR : RTL, isFirstLineStyle());
 
         // The ellipsis needs to be placed just after the last visible character.
         // Where "after" is defined by the flow directionality, not the inline
@@ -403,10 +401,10 @@ static void paintTextWithShadows(GraphicsContext* context,
         DrawLooper drawLooper;
         for (size_t i = shadowList->shadows().size(); i--; ) {
             const ShadowData& shadow = shadowList->shadows()[i];
-            int shadowX = horizontal ? shadow.x() : shadow.y();
-            int shadowY = horizontal ? shadow.y() : -shadow.x();
+            float shadowX = horizontal ? shadow.x() : shadow.y();
+            float shadowY = horizontal ? shadow.y() : -shadow.x();
             FloatSize offset(shadowX, shadowY);
-            drawLooper.addShadow(offset, shadow.blur(), renderer->resolveColor(shadow.color()),
+            drawLooper.addShadow(offset, shadow.blur(), shadow.color(),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowIgnoresAlpha);
         }
         drawLooper.addUnmodifiedContent();
@@ -507,7 +505,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
             // farther to the right.
             // NOTE: WebKit's behavior differs from that of IE which appears to just overlay the ellipsis on top of the
             // truncated string i.e.  |Hello|CBA| -> |...lo|CBA|
-            LayoutUnit widthOfVisibleText = toRenderText(renderer())->width(m_start, m_truncation, textPos(), isFirstLineStyle());
+            LayoutUnit widthOfVisibleText = toRenderText(renderer())->width(m_start, m_truncation, textPos(), isLeftToRightDirection() ? LTR : RTL, isFirstLineStyle());
             LayoutUnit widthOfHiddenText = m_logicalWidth - widthOfVisibleText;
             // FIXME: The hit testing logic also needs to take this translation into account.
             LayoutSize truncationOffset(isLeftToRightDirection() ? widthOfHiddenText : -widthOfHiddenText, 0);
@@ -588,14 +586,14 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     if (haveSelection) {
         // Check foreground color first.
         Color foreground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionForegroundColor();
-        if (foreground.isValid() && foreground != selectionFillColor && foreground != Color::transparent) {
+        if (foreground != selectionFillColor) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionFillColor = foreground;
         }
 
         Color emphasisMarkForeground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionEmphasisMarkColor();
-        if (emphasisMarkForeground.isValid() && emphasisMarkForeground != selectionEmphasisMarkColor) {
+        if (emphasisMarkForeground != selectionEmphasisMarkColor) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionEmphasisMarkColor = emphasisMarkForeground;
@@ -824,7 +822,7 @@ void InlineTextBox::paintSelection(GraphicsContext* context, const FloatPoint& b
         return;
 
     Color c = renderer()->selectionBackgroundColor();
-    if (!c.isValid() || !c.alpha())
+    if (!c.alpha())
         return;
 
     // If the text color ends up being the same as the selection background, invert the selection
@@ -1065,13 +1063,13 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
 
     float width = m_logicalWidth;
     if (m_truncation != cNoTruncation) {
-        width = toRenderText(renderer())->width(m_start, m_truncation, textPos(), isFirstLineStyle());
+        width = toRenderText(renderer())->width(m_start, m_truncation, textPos(), isLeftToRightDirection() ? LTR : RTL, isFirstLineStyle());
         if (!isLeftToRightDirection())
             localOrigin.move(m_logicalWidth - width, 0);
     }
 
     // Get the text decoration colors.
-    Color underline, overline, linethrough;
+    Color underline(Color::transparent), overline(Color::transparent), linethrough(Color::transparent);
     renderer()->getTextDecorationColors(deco, underline, overline, linethrough, true);
     if (isFirstLineStyle())
         renderer()->getTextDecorationColors(deco, underline, overline, linethrough, true, true);
@@ -1087,21 +1085,27 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
     size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
     // Set the thick of the line to be 10% (or something else ?)of the computed font size and not less than 1px.
     // Using computedFontSize should take care of zoom as well.
-    const float textDecorationThickness = std::max(1.f, styleToUse->computedFontSize() / 10.f);
+
+    // Update Underline thickness, in case we have Faulty Font Metrics calculating underline thickness by old method.
+    float textDecorationThickness = styleToUse->fontMetrics().underlineThickness();
+    int fontHeightInt  = (int)(styleToUse->fontMetrics().floatHeight() + 0.5);
+    if ((textDecorationThickness == 0.f) || (textDecorationThickness >= (fontHeightInt >> 1)))
+        textDecorationThickness = std::max(1.f, styleToUse->computedFontSize() / 10.f);
+
     context->setStrokeThickness(textDecorationThickness);
 
-    int extraOffset = 0;
+    float extraOffset = 0;
     if (!linesAreOpaque && shadowCount > 1) {
         FloatRect clipRect(localOrigin, FloatSize(width, baseline + 2));
         for (size_t i = shadowCount; i--; ) {
             const ShadowData& s = shadowList->shadows()[i];
             FloatRect shadowRect(localOrigin, FloatSize(width, baseline + 2));
             shadowRect.inflate(s.blur());
-            int shadowX = isHorizontal() ? s.x() : s.y();
-            int shadowY = isHorizontal() ? s.y() : -s.x();
+            float shadowX = isHorizontal() ? s.x() : s.y();
+            float shadowY = isHorizontal() ? s.y() : -s.x();
             shadowRect.move(shadowX, shadowY);
             clipRect.unite(shadowRect);
-            extraOffset = max(extraOffset, max(0, shadowY) + s.blur());
+            extraOffset = max(extraOffset, max(0.0f, shadowY) + s.blur());
         }
         context->clip(clipRect);
         extraOffset += baseline + 2;
@@ -1117,8 +1121,8 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
                 extraOffset = 0;
             }
             const ShadowData& shadow = shadowList->shadows()[i];
-            int shadowX = isHorizontal() ? shadow.x() : shadow.y();
-            int shadowY = isHorizontal() ? shadow.y() : -shadow.x();
+            float shadowX = isHorizontal() ? shadow.x() : shadow.y();
+            float shadowY = isHorizontal() ? shadow.y() : -shadow.x();
             context->setShadow(FloatSize(shadowX, shadowY - extraOffset), shadow.blur(), shadow.color());
         }
 
@@ -1272,7 +1276,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
 
             if (colorAttr != nullAtom) {
                 RGBA32 rgba;
-                if (CSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
+                if (BisonCSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
                     markerColor.setRGB(rgba);
                 }
             }
@@ -1319,7 +1323,7 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
 
     // Give any document markers that touch this run a chance to draw before the text has been drawn.
     // Note end() points at the last char, not one past it like endOffset and ranges do.
-    for ( ; markerIt != markers.end(); markerIt++) {
+    for ( ; markerIt != markers.end(); ++markerIt) {
         DocumentMarker* marker = *markerIt;
 
         // Paint either the background markers or the foreground markers, but not both
@@ -1377,7 +1381,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
     if (paintStart <= underline.startOffset) {
         paintStart = underline.startOffset;
         useWholeWidth = false;
-        start = toRenderText(renderer())->width(m_start, paintStart - m_start, textPos(), isFirstLineStyle());
+        start = toRenderText(renderer())->width(m_start, paintStart - m_start, textPos(), isLeftToRightDirection() ? LTR : RTL, isFirstLineStyle());
     }
     if (paintEnd != underline.endOffset) {      // end points at the last char, not past it
         paintEnd = min(paintEnd, (unsigned)underline.endOffset);
@@ -1388,7 +1392,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
         useWholeWidth = false;
     }
     if (!useWholeWidth) {
-        width = toRenderText(renderer())->width(paintStart, paintEnd - paintStart, textPos() + start, isFirstLineStyle());
+        width = toRenderText(renderer())->width(paintStart, paintEnd - paintStart, textPos() + start, isLeftToRightDirection() ? LTR : RTL, isFirstLineStyle());
     }
 
     // Thick marked text underlines are 2px thick as long as there is room for the 2px line under the baseline.
@@ -1549,6 +1553,7 @@ TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, St
 
     TextRun run(string, textPos(), expansion(), expansionBehavior(), direction(), dirOverride() || style->rtlOrdering() == VisualOrder, !textRenderer->canUseSimpleFontCodePath());
     run.setTabSize(!style->collapseWhiteSpace(), style->tabSize());
+    run.setCharacterScanForCodePath(!textRenderer->canUseSimpleFontCodePath());
     if (textRunNeedsRenderingContext(font))
         run.setRenderingContext(SVGTextRunRenderingContext::create(textRenderer));
 

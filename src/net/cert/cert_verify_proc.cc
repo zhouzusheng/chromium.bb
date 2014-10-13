@@ -261,19 +261,16 @@ int CertVerifyProc::Verify(X509Certificate* cert,
       rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
-#if !defined(OS_ANDROID)
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
   // the deployment of gTLDs and are being phased out ahead of the hard
   // deadline.
-  //
-  // TODO(ppi): is_issued_by_known_root is incorrect on Android. Once this is
-  // fixed, re-enable this check for Android. crbug.com/116838
   if (verify_result->is_issued_by_known_root && IsHostnameNonUnique(hostname)) {
     verify_result->cert_status |= CERT_STATUS_NON_UNIQUE_NAME;
+    // CERT_STATUS_NON_UNIQUE_NAME will eventually become a hard error. For
+    // now treat it as a warning and do not map it to an error return value.
   }
-#endif
 
   return rv;
 }
@@ -351,7 +348,7 @@ bool CertVerifyProc::IsBlacklisted(X509Certificate* cert) {
 // NOTE: This implementation assumes and enforces that the hashes are SHA1.
 bool CertVerifyProc::IsPublicKeyBlacklisted(
     const HashValueVector& public_key_hashes) {
-  static const unsigned kNumHashes = 11;
+  static const unsigned kNumHashes = 14;
   static const uint8 kHashes[kNumHashes][base::kSHA1Length] = {
     // Subject: CN=DigiNotar Root CA
     // Issuer: CN=Entrust.net x2 and self-signed
@@ -400,6 +397,15 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // Expires: Jul 18 10:05:28 2014 GMT
     {0x3e, 0xcf, 0x4b, 0xbb, 0xe4, 0x60, 0x96, 0xd5, 0x14, 0xbb,
      0x53, 0x9b, 0xb9, 0x13, 0xd7, 0x7a, 0xa4, 0xef, 0x31, 0xbf},
+    // Three retired intermediate certificates from Symantec. No compromise;
+    // just for robustness. All expire May 17 23:59:59 2018.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=966060
+    {0x68, 0x5e, 0xec, 0x0a, 0x39, 0xf6, 0x68, 0xae, 0x8f, 0xd8,
+     0x96, 0x4f, 0x98, 0x74, 0x76, 0xb4, 0x50, 0x4f, 0xd2, 0xbe},
+    {0x0e, 0x50, 0x2d, 0x4d, 0xd1, 0xe1, 0x60, 0x36, 0x8a, 0x31,
+     0xf0, 0x6a, 0x81, 0x04, 0x31, 0xba, 0x6f, 0x72, 0xc0, 0x41},
+    {0x93, 0xd1, 0x53, 0x22, 0x29, 0xcc, 0x2a, 0xbd, 0x21, 0xdf,
+     0xf5, 0x97, 0xee, 0x32, 0x0f, 0xe4, 0x24, 0x6f, 0x3d, 0x0c},
   };
 
   for (unsigned i = 0; i < kNumHashes; i++) {

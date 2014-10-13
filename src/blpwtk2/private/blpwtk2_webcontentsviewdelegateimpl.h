@@ -47,6 +47,7 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
 
     // Shows a context menu.
     virtual void ShowContextMenu(
+        content::RenderFrameHost* renderFrameHost,
         const content::ContextMenuParams& params) OVERRIDE;
 
     // These methods allow the embedder to intercept WebContentsViewWin's

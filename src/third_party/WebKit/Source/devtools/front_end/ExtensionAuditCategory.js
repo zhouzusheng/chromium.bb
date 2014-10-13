@@ -30,7 +30,7 @@
 
 /**
  * @constructor
- * @extends {WebInspector.AuditCategory}
+ * @implements {WebInspector.AuditCategory}
  * @param {string} extensionOrigin
  * @param {string} id
  * @param {string} displayName
@@ -45,18 +45,24 @@ WebInspector.ExtensionAuditCategory = function(extensionOrigin, id, displayName,
 }
 
 WebInspector.ExtensionAuditCategory.prototype = {
-    // AuditCategory interface
+    /**
+     * @override
+     */
     get id()
     {
         return this._id;
     },
 
+    /**
+     * @override
+     */
     get displayName()
     {
         return this._displayName;
     },
 
     /**
+     * @override
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
      * @param {function(!WebInspector.AuditRuleResult)} ruleResultCallback
      * @param {function()} categoryDoneCallback
@@ -165,6 +171,7 @@ WebInspector.ExtensionAuditFormatters = {
      * @param {string} expression
      * @param {string} title
      * @param {?Object} evaluateOptions
+     * @return {!Element}
      */
     object: function(expression, title, evaluateOptions)
     {
@@ -184,6 +191,7 @@ WebInspector.ExtensionAuditFormatters = {
      * @this {WebInspector.ExtensionAuditCategoryResults}
      * @param {string} expression
      * @param {?Object} evaluateOptions
+     * @return {!Element}
      */
     node: function(expression, evaluateOptions)
     {
@@ -195,11 +203,12 @@ WebInspector.ExtensionAuditFormatters = {
         {
             if (!nodeId)
                 return;
-            var treeOutline = new WebInspector.ElementsTreeOutline(false, false);
-            treeOutline.rootDOMNode = WebInspector.domAgent.nodeForId(nodeId);
-            treeOutline.element.classList.add("outline-disclosure");
-            treeOutline.setVisible(true);
-            parentElement.appendChild(treeOutline.element);
+            var node = WebInspector.domAgent.nodeForId(nodeId);
+            var renderer = WebInspector.moduleManager.instance(WebInspector.Renderer, node);
+            if (renderer)
+                parentElement.appendChild(renderer.render(node));
+            else
+                console.error("No renderer for node found");
         }
         /**
          * @param {!WebInspector.RemoteObject} remoteObject

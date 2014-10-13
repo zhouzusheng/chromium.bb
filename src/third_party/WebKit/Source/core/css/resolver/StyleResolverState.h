@@ -24,7 +24,6 @@
 
 #include "CSSPropertyNames.h"
 
-#include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/resolver/CSSToStyleMap.h"
@@ -38,14 +37,15 @@
 
 namespace WebCore {
 
+class CSSAnimationUpdate;
 class FontDescription;
-class RenderRegion;
 class StyleRule;
 
 class StyleResolverState {
 WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
-    StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
+    StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0);
+    ~StyleResolverState();
 
     // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
@@ -66,15 +66,13 @@ public:
 
     const CSSToLengthConversionData& cssToLengthConversionData() const { return m_cssToLengthConversionData; }
 
-    void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate> update) { m_animationUpdate = update; }
+    void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate>);
     const CSSAnimationUpdate* animationUpdate() { return m_animationUpdate.get(); }
-    PassOwnPtr<CSSAnimationUpdate> takeAnimationUpdate() { return m_animationUpdate.release(); }
+    PassOwnPtr<CSSAnimationUpdate> takeAnimationUpdate();
 
     void setParentStyle(PassRefPtr<RenderStyle> parentStyle) { m_parentStyle = parentStyle; }
     const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
     RenderStyle* parentStyle() { return m_parentStyle.get(); }
-
-    const RenderRegion* regionForStyling() const { return m_regionForStyling; }
 
     void setCurrentRule(StyleRule* currentRule) { m_currentRule = currentRule; }
     const StyleRule* currentRule() const { return m_currentRule; }
@@ -148,11 +146,6 @@ private:
     RefPtr<RenderStyle> m_parentStyle;
 
     OwnPtr<CSSAnimationUpdate> m_animationUpdate;
-
-    // Required to ASSERT in applyProperties.
-    // FIXME: Regions should not need special state on StyleResolverState
-    // no other @rule does.
-    RenderRegion* m_regionForStyling;
 
     bool m_applyPropertyToRegularStyle;
     bool m_applyPropertyToVisitedLinkStyle;

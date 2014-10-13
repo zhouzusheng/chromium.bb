@@ -33,6 +33,21 @@
 
 namespace WebCore {
 
+PassRefPtr<StaticNodeList> StaticNodeList::adopt(Vector<RefPtr<Node> >& nodes)
+{
+    RefPtr<StaticNodeList> nodeList = adoptRef(new StaticNodeList);
+    nodeList->m_nodes.swap(nodes);
+    if (nodeList->AllocationSize() > externalMemoryReportSizeLimit)
+        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(nodeList->AllocationSize());
+    return nodeList.release();
+}
+
+StaticNodeList::~StaticNodeList()
+{
+    if (AllocationSize() > externalMemoryReportSizeLimit)
+        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-AllocationSize());
+}
+
 unsigned StaticNodeList::length() const
 {
     return m_nodes.size();
@@ -42,18 +57,6 @@ Node* StaticNodeList::item(unsigned index) const
 {
     if (index < m_nodes.size())
         return m_nodes[index].get();
-    return 0;
-}
-
-Node* StaticNodeList::namedItem(const AtomicString& elementId) const
-{
-    size_t length = m_nodes.size();
-    for (size_t i = 0; i < length; ++i) {
-        Node* node = m_nodes[i].get();
-        if (node->isElementNode() && toElement(node)->getIdAttribute() == elementId)
-            return node;
-    }
-
     return 0;
 }
 

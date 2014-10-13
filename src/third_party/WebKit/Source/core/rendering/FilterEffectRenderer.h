@@ -43,7 +43,6 @@
 namespace WebCore {
 
 class ShaderResource;
-class CustomFilterProgram;
 class Document;
 class GraphicsContext;
 class RenderLayer;
@@ -74,7 +73,7 @@ private:
     bool m_haveFilterEffect;
 };
 
-class FilterEffectRenderer : public Filter
+class FilterEffectRenderer FINAL : public Filter
 {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -83,12 +82,12 @@ public:
         return adoptRef(new FilterEffectRenderer());
     }
 
-    void setSourceImageRect(const FloatRect& sourceImageRect)
+    void setSourceImageRect(const IntRect& sourceImageRect)
     {
         m_sourceDrawingRegion = sourceImageRect;
         m_graphicsBufferAttached = false;
     }
-    virtual FloatRect sourceImageRect() const { return m_sourceDrawingRegion; }
+    virtual IntRect sourceImageRect() const OVERRIDE { return m_sourceDrawingRegion; }
 
     GraphicsContext* inputContext();
     ImageBuffer* output() const { return lastEffect()->asImageBuffer(); }
@@ -114,7 +113,7 @@ private:
     FilterEffectRenderer();
     virtual ~FilterEffectRenderer();
 
-    FloatRect m_sourceDrawingRegion;
+    IntRect m_sourceDrawingRegion;
 
     RefPtr<SourceGraphic> m_sourceGraphic;
     RefPtr<FilterEffect> m_lastEffect;

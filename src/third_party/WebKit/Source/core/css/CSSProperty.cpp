@@ -317,7 +317,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
     case CSSPropertyTouchActionDelay:
-    case CSSPropertyVariable:
     case CSSPropertyVisibility:
     case CSSPropertyWebkitAspectRatio:
     case CSSPropertyWebkitBorderHorizontalSpacing:
@@ -327,15 +326,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitFontFeatureSettings:
     case CSSPropertyFontKerning:
     case CSSPropertyWebkitFontSmoothing:
-    case CSSPropertyWebkitFontVariantLigatures:
+    case CSSPropertyFontVariantLigatures:
     case CSSPropertyWebkitLocale:
     case CSSPropertyWebkitHighlight:
     case CSSPropertyWebkitHyphenateCharacter:
-    case CSSPropertyWebkitLineAlign:
     case CSSPropertyWebkitLineBoxContain:
     case CSSPropertyWebkitLineBreak:
-    case CSSPropertyWebkitLineGrid:
-    case CSSPropertyWebkitLineSnap:
     case CSSPropertyWebkitPrintColorAdjust:
     case CSSPropertyWebkitRtlOrdering:
     case CSSPropertyWebkitRubyPosition:
@@ -441,6 +437,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyFontStretch:
     case CSSPropertyHeight:
     case CSSPropertyIsolation:
+    case CSSPropertyJustifySelf:
     case CSSPropertyLeft:
     case CSSPropertyLightingColor:
     case CSSPropertyMargin:
@@ -480,6 +477,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyPaintOrder:
     case CSSPropertyPosition:
     case CSSPropertyRight:
+    case CSSPropertyScrollBehavior:
     case CSSPropertySize:
     case CSSPropertySrc:
     case CSSPropertyStopColor:
@@ -593,12 +591,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyGridColumn:
     case CSSPropertyGridColumnEnd:
     case CSSPropertyGridColumnStart:
-    case CSSPropertyGridDefinitionColumns:
-    case CSSPropertyGridDefinitionRows:
+    case CSSPropertyGridTemplateColumns:
+    case CSSPropertyGridTemplateRows:
     case CSSPropertyGridRow:
     case CSSPropertyGridRowEnd:
     case CSSPropertyGridRowStart:
-    case CSSPropertyGridTemplate:
+    case CSSPropertyGridTemplateAreas:
     case CSSPropertyJustifyContent:
     case CSSPropertyWebkitLineClamp:
     case CSSPropertyWebkitLogicalHeight:
@@ -660,12 +658,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitTransitionProperty:
     case CSSPropertyWebkitTransitionTimingFunction:
     case CSSPropertyWebkitUserDrag:
-    case CSSPropertyWebkitFlowInto:
-    case CSSPropertyWebkitFlowFrom:
-    case CSSPropertyWebkitRegionBreakAfter:
-    case CSSPropertyWebkitRegionBreakBefore:
-    case CSSPropertyWebkitRegionBreakInside:
-    case CSSPropertyWebkitRegionFragment:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyShapeMargin:
     case CSSPropertyShapeImageThreshold:

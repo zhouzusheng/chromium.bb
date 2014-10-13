@@ -22,8 +22,8 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
-#include "core/animation/KeyframeAnimationEffect.h"
-#include "core/css/InspectorCSSOMWrappers.h"
+#include "core/animation/KeyframeEffectModel.h"
+#include "core/css/CSSFontSelectorClient.h"
 #include "core/css/PseudoStyleRequest.h"
 #include "core/css/RuleFeature.h"
 #include "core/css/RuleSet.h"
@@ -35,7 +35,6 @@
 #include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/css/resolver/ScopedStyleTree.h"
 #include "core/css/resolver/StyleBuilder.h"
-#include "core/css/resolver/StyleResolverIncludes.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
 #include "wtf/Deque.h"
@@ -62,7 +61,6 @@ class KeyframeList;
 class KeyframeValue;
 class MediaQueryEvaluator;
 class MediaQueryResult;
-class RenderRegion;
 class RuleData;
 class Settings;
 class StyleKeyframe;
@@ -102,11 +100,11 @@ struct CSSPropertyValue {
 };
 
 // This class selects a RenderStyle for a given element based on a collection of stylesheets.
-class StyleResolver : public FontSelectorClient {
+class StyleResolver FINAL : public CSSFontSelectorClient {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit StyleResolver(Document&);
-    ~StyleResolver();
+    virtual ~StyleResolver();
 
     // FIXME: StyleResolver should not be keeping tree-walk state.
     // These should move to some global tree-walk state, or should be contained in a
@@ -118,13 +116,10 @@ public:
     void popParentShadowRoot(const ShadowRoot&);
 
     PassRefPtr<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
-        RuleMatchingBehavior = MatchAllRules, RenderRegion* regionForStyling = 0);
+        RuleMatchingBehavior = MatchAllRules);
 
-    // FIXME: keyframeStylesForAnimation is only used in the legacy animations implementation
-    // and should be removed when that is replaced by Web Animations.
-    void keyframeStylesForAnimation(Element*, const RenderStyle&, KeyframeList&);
     PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle&, RenderStyle* parentStyle, const StyleKeyframe*, const AtomicString& animationName);
-    static PassRefPtr<KeyframeAnimationEffect> createKeyframeAnimationEffect(Element&, const Vector<RefPtr<MutableStylePropertySet> >&, KeyframeAnimationEffect::KeyframeVector&);
+    static PassRefPtr<KeyframeEffectModel> createKeyframeEffectModel(Element&, const Vector<RefPtr<MutableStylePropertySet> >&, KeyframeEffectModel::KeyframeVector&);
 
     PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
 
@@ -179,8 +174,8 @@ public:
         AllButEmptyCSSRules = UAAndUserCSSRules | AuthorCSSRules | CrossOriginCSSRules,
         AllCSSRules         = AllButEmptyCSSRules | EmptyCSSRules,
     };
-    PassRefPtr<CSSRuleList> cssRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules, ShouldIncludeStyleSheetInCSSOMWrapper = IncludeStyleSheetInCSSOMWrapper);
-    PassRefPtr<CSSRuleList> pseudoCSSRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules, ShouldIncludeStyleSheetInCSSOMWrapper = IncludeStyleSheetInCSSOMWrapper);
+    PassRefPtr<CSSRuleList> cssRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules);
+    PassRefPtr<CSSRuleList> pseudoCSSRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules);
     PassRefPtr<StyleRuleList> styleRulesForElement(Element*, unsigned rulesToInclude);
 
     // |properties| is an array with |count| elements.
@@ -191,21 +186,17 @@ public:
     void addMediaQueryResults(const MediaQueryResultList&);
     MediaQueryResultList* viewportDependentMediaQueryResults() { return &m_viewportDependentMediaQueryResults; }
     bool hasViewportDependentMediaQueries() const { return !m_viewportDependentMediaQueryResults.isEmpty(); }
-    bool affectedByViewportChange() const;
-
-    // FIXME: Regions should not require special logic in StyleResolver.
-    bool checkRegionStyle(Element* regionElement);
+    bool mediaQueryAffectedByViewportChange() const;
 
     // FIXME: Rename to reflect the purpose, like didChangeFontSize or something.
     void invalidateMatchedPropertiesCache();
 
+    void notifyResizeForViewportUnits();
+
     // Exposed for RenderStyle::isStyleAvilable().
     static RenderStyle* styleNotYetAvailable() { return s_styleNotYetAvailable; }
 
-    // FIXME: StyleResolver should not have this member or method.
-    InspectorCSSOMWrappers& inspectorCSSOMWrappers() { return m_inspectorCSSOMWrappers; }
-
-    const RuleFeatureSet& ensureRuleFeatureSet()
+    RuleFeatureSet& ensureRuleFeatureSet()
     {
         if (hasPendingAuthorStyleSheets())
             appendPendingAuthorStyleSheets();
@@ -229,11 +220,11 @@ public:
     unsigned accessCount() const { return m_accessCount; }
     void didAccess() { ++m_accessCount; }
 
-    PassRefPtr<PseudoElement> createPseudoElementIfNeeded(Element&, PseudoId);
+    PassRefPtr<PseudoElement> createPseudoElementIfNeeded(Element& parent, PseudoId);
 
 private:
-    // FontSelectorClient implementation.
-    virtual void fontsNeedUpdate(FontSelector*);
+    // CSSFontSelectorClient implementation.
+    virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
 
 private:
     void initWatchedSelectorRules(const Vector<RefPtr<StyleRule> >& watchedSelectors);
@@ -263,7 +254,6 @@ private:
     void applyAnimatedProperties(StyleResolverState&, Element* animatingElement);
 
     enum StyleApplicationPass {
-        VariableDefinitions,
         AnimationProperties,
         HighPriorityProperties,
         LowPriorityProperties
@@ -312,7 +302,7 @@ private:
 
     ScopedStyleTree m_styleTree;
 
-    // FIXME: The entire logic of collecting features on StyleResolver, as well astransferring them
+    // FIXME: The entire logic of collecting features on StyleResolver, as well as transferring them
     // between various parts of machinery smells wrong. This needs to be better somehow.
     RuleFeatureSet m_features;
     OwnPtr<RuleSet> m_siblingRuleSet;
@@ -324,8 +314,6 @@ private:
 
     bool m_needCollectFeatures;
 
-    InspectorCSSOMWrappers m_inspectorCSSOMWrappers;
-
     StyleResourceLoader m_styleResourceLoader;
 
     StyleSharingList m_styleSharingList;
@@ -334,22 +322,9 @@ private:
     OwnPtr<StyleResolverStats> m_styleResolverStatsTotals;
     unsigned m_styleResolverStatsSequence;
 
+    // Use only for Internals::updateStyleAndReturnAffectedElementCount.
     unsigned m_accessCount;
 };
-
-inline bool checkRegionSelector(const CSSSelector* regionSelector, Element* regionElement)
-{
-    if (!regionSelector || !regionElement)
-        return false;
-
-    SelectorChecker selectorChecker(regionElement->document(), SelectorChecker::QueryingRules);
-    for (const CSSSelector* s = regionSelector; s; s = CSSSelectorList::next(s)) {
-        SelectorChecker::SelectorCheckingContext selectorCheckingContext(s, regionElement, SelectorChecker::VisitedMatchDisabled);
-        if (selectorChecker.match(selectorCheckingContext, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches)
-            return true;
-    }
-    return false;
-}
 
 } // namespace WebCore
 

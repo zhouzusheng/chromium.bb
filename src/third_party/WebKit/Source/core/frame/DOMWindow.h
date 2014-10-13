@@ -27,6 +27,7 @@
 #ifndef DOMWindow_h
 #define DOMWindow_h
 
+#include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/FrameDestructionObserver.h"
@@ -90,7 +91,7 @@ enum PageshowEventPersistence {
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
-    class DOMWindow : public RefCounted<DOMWindow>, public ScriptWrappable, public EventTargetWithInlineData, public FrameDestructionObserver, public Supplementable<DOMWindow>, public LifecycleContext<DOMWindow> {
+    class DOMWindow FINAL : public RefCounted<DOMWindow>, public ScriptWrappable, public EventTargetWithInlineData, public FrameDestructionObserver, public Supplementable<DOMWindow>, public LifecycleContext<DOMWindow> {
         REFCOUNTED_EVENT_TARGET(DOMWindow);
     public:
         static PassRefPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool forceXHTML);
@@ -102,7 +103,7 @@ enum PageshowEventPersistence {
         virtual const AtomicString& interfaceName() const OVERRIDE;
         virtual ExecutionContext* executionContext() const OVERRIDE;
 
-        virtual DOMWindow* toDOMWindow();
+        virtual DOMWindow* toDOMWindow() OVERRIDE;
 
         void registerProperty(DOMWindowProperty*);
         void unregisterProperty(DOMWindowProperty*);
@@ -113,7 +114,7 @@ enum PageshowEventPersistence {
 
         unsigned pendingUnloadEventListeners() const;
 
-        static FloatRect adjustWindowRect(Page*, const FloatRect& pendingChanges);
+        static FloatRect adjustWindowRect(Frame*, const FloatRect& pendingChanges);
 
         bool allowPopUp(); // Call on first window, not target window.
         static bool allowPopUp(Frame* firstFrame);
@@ -211,7 +212,7 @@ enum PageshowEventPersistence {
 
         // WebKit extensions
 
-        PassRefPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt, bool authorOnly = true) const;
+        PassRefPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const;
         double devicePixelRatio() const;
 
         PassRefPtr<DOMPoint> webkitConvertPointFromPageToNode(Node*, const DOMPoint*) const;
@@ -228,9 +229,9 @@ enum PageshowEventPersistence {
         void postMessageTimerFired(PassOwnPtr<PostMessageTimer>);
         void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtr<Event>, PassRefPtr<ScriptCallStack>);
 
-        void scrollBy(int x, int y) const;
-        void scrollTo(int x, int y) const;
-        void scroll(int x, int y) const { scrollTo(x, y); }
+        void scrollBy(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
+        void scrollTo(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
+        void scroll(int x, int y, const Dictionary& scrollOptions, ExceptionState& exceptionState) const { scrollTo(x, y, scrollOptions, exceptionState); }
 
         void moveBy(float x, float y) const;
         void moveTo(float x, float y) const;
@@ -285,15 +286,12 @@ enum PageshowEventPersistence {
         ApplicationCache* applicationCache() const;
         ApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
 
-#if ENABLE(ORIENTATION_EVENTS)
         // This is the interface orientation in degrees. Some examples are:
         //  0 is straight up; -90 is when the device is rotated 90 clockwise;
         //  90 is when rotated counter clockwise.
         int orientation() const;
 
         DEFINE_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-#endif
-
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
@@ -339,7 +337,7 @@ enum PageshowEventPersistence {
         Page* page();
 
         virtual void frameDestroyed() OVERRIDE;
-        virtual void willDetachPage() OVERRIDE;
+        virtual void willDetachFrameHost() OVERRIDE;
 
         void clearDocument();
         void resetDOMWindowProperties();
@@ -368,8 +366,8 @@ enum PageshowEventPersistence {
         String m_status;
         String m_defaultStatus;
 
-        mutable RefPtr<Storage> m_sessionStorage;
-        mutable RefPtr<Storage> m_localStorage;
+        mutable RefPtrWillBePersistent<Storage> m_sessionStorage;
+        mutable RefPtrWillBePersistent<Storage> m_localStorage;
         mutable RefPtr<ApplicationCache> m_applicationCache;
 
         mutable RefPtr<Performance> m_performance;

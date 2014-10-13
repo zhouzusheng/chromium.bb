@@ -21,18 +21,10 @@
 #define SVGAnimatorFactory_h
 
 #include "core/svg/SVGAnimatedAngle.h"
-#include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedColor.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
-#include "core/svg/SVGAnimatedInteger.h"
-#include "core/svg/SVGAnimatedIntegerOptionalInteger.h"
-#include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGAnimatedLengthList.h"
-#include "core/svg/SVGAnimatedNumber.h"
-#include "core/svg/SVGAnimatedNumberList.h"
-#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
+#include "core/svg/SVGAnimatedNewPropertyAnimator.h"
 #include "core/svg/SVGAnimatedPath.h"
-#include "core/svg/SVGAnimatedPointList.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGAnimatedRect.h"
 #include "core/svg/SVGAnimatedString.h"
@@ -52,38 +44,33 @@ public:
         switch (attributeType) {
         case AnimatedAngle:
             return adoptPtr(new SVGAnimatedAngleAnimator(animationElement, contextElement));
-        case AnimatedBoolean:
-            return adoptPtr(new SVGAnimatedBooleanAnimator(animationElement, contextElement));
-        case AnimatedColor:
-            return adoptPtr(new SVGAnimatedColorAnimator(animationElement, contextElement));
         case AnimatedEnumeration:
             return adoptPtr(new SVGAnimatedEnumerationAnimator(animationElement, contextElement));
-        case AnimatedInteger:
-            return adoptPtr(new SVGAnimatedIntegerAnimator(animationElement, contextElement));
-        case AnimatedIntegerOptionalInteger:
-            return adoptPtr(new SVGAnimatedIntegerOptionalIntegerAnimator(animationElement, contextElement));
-        case AnimatedLength:
-            return adoptPtr(new SVGAnimatedLengthAnimator(animationElement, contextElement));
-        case AnimatedLengthList:
-            return adoptPtr(new SVGAnimatedLengthListAnimator(animationElement, contextElement));
-        case AnimatedNumber:
-            return adoptPtr(new SVGAnimatedNumberAnimator(animationElement, contextElement));
-        case AnimatedNumberList:
-            return adoptPtr(new SVGAnimatedNumberListAnimator(animationElement, contextElement));
-        case AnimatedNumberOptionalNumber:
-            return adoptPtr(new SVGAnimatedNumberOptionalNumberAnimator(animationElement, contextElement));
         case AnimatedPath:
             return adoptPtr(new SVGAnimatedPathAnimator(animationElement, contextElement));
-        case AnimatedPoints:
-            return adoptPtr(new SVGAnimatedPointListAnimator(animationElement, contextElement));
-        case AnimatedPreserveAspectRatio:
-            return adoptPtr(new SVGAnimatedPreserveAspectRatioAnimator(animationElement, contextElement));
-        case AnimatedRect:
-            return adoptPtr(new SVGAnimatedRectAnimator(animationElement, contextElement));
-        case AnimatedString:
-            return adoptPtr(new SVGAnimatedStringAnimator(animationElement, contextElement));
         case AnimatedTransformList:
             return adoptPtr(new SVGAnimatedTransformListAnimator(animationElement, contextElement));
+        // Below properties have migrated to new property implementation.
+        case AnimatedBoolean:
+        case AnimatedColor:
+        case AnimatedInteger:
+        case AnimatedIntegerOptionalInteger:
+        case AnimatedNumber:
+        case AnimatedNumberList:
+        case AnimatedNumberOptionalNumber:
+        case AnimatedLength:
+        case AnimatedLengthList:
+        case AnimatedPoints:
+        case AnimatedPreserveAspectRatio:
+        case AnimatedRect:
+        case AnimatedString:
+            return adoptPtr(new SVGAnimatedNewPropertyAnimator(attributeType, animationElement, contextElement));
+
+        // SVGAnimatedPoint/SVGAnimatedStringList does not exist.
+        case AnimatedPoint:
+        case AnimatedStringList:
+            ASSERT_NOT_REACHED();
+
         case AnimatedUnknown:
             break;
         }

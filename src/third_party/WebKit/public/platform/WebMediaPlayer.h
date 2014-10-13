@@ -40,6 +40,7 @@ namespace blink {
 
 class WebAudioSourceProvider;
 class WebAudioSourceProviderClient;
+class WebContentDecryptionModule;
 class WebMediaPlayerClient;
 class WebString;
 class WebURL;
@@ -101,7 +102,6 @@ public:
     // Playback controls.
     virtual void play() = 0;
     virtual void pause() = 0;
-    virtual bool supportsFullscreen() const = 0;
     virtual bool supportsSave() const = 0;
     virtual void seek(double seconds) = 0;
     virtual void setRate(double) = 0;
@@ -152,6 +152,10 @@ public:
     virtual MediaKeyException generateKeyRequest(const WebString& keySystem, const unsigned char* initData, unsigned initDataLength) { return MediaKeyExceptionKeySystemNotSupported; }
     virtual MediaKeyException addKey(const WebString& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
     virtual MediaKeyException cancelKeyRequest(const WebString& keySystem, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
+    virtual void setContentDecryptionModule(WebContentDecryptionModule* cdm) { }
+
+    // Sets the poster image URL.
+    virtual void setPoster(const WebURL& poster) { }
 
     // Instruct WebMediaPlayer to enter/exit fullscreen.
     virtual void enterFullscreen() { }

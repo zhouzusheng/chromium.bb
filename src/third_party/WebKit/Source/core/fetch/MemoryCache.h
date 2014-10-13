@@ -59,7 +59,7 @@ struct SecurityOriginHash;
 // Enable this macro to periodically log information about the memory cache.
 #undef MEMORY_CACHE_STATS
 
-class MemoryCache : public blink::WebThread::TaskObserver {
+class MemoryCache FINAL : public blink::WebThread::TaskObserver {
     WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED;
 public:
     MemoryCache();
@@ -173,13 +173,12 @@ private:
     void pruneLiveResources();
     void pruneNow(double currentTime);
 
-    void evict(Resource*);
+    bool evict(Resource*);
 
     static void removeURLFromCacheInternal(ExecutionContext*, const KURL&);
 
     bool m_inPruneResources;
     bool m_prunePending;
-    bool m_prePainting;
     double m_maxPruneDeferralDelay;
     double m_pruneTimeStamp;
     double m_pruneFrameTimeStamp;
@@ -189,7 +188,6 @@ private:
     size_t m_maxDeadCapacity;
     size_t m_maxDeferredPruneDeadCapacity;
     double m_delayBeforeLiveDecodedPrune;
-    double m_deadDecodedDataDeletionInterval;
 
     size_t m_liveSize; // The number of bytes currently consumed by "live" resources in the cache.
     size_t m_deadSize; // The number of bytes currently consumed by "dead" resources in the cache.

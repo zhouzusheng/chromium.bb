@@ -61,9 +61,9 @@ PassRefPtr<HTMLElement> HTMLTableSectionElement::insertRow(int index, ExceptionS
     RefPtr<HTMLTableRowElement> row;
     RefPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
-    if (index < -1 || index > numRows)
-        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError); // per the DOM
-    else {
+    if (index < -1 || index > numRows) {
+        exceptionState.throwDOMException(IndexSizeError, "The provided index (" + String::number(index) + " is outside the range [-1, " + String::number(numRows) + "].");
+    } else {
         row = HTMLTableRowElement::create(document());
         if (numRows == index || index == -1)
             appendChild(row, exceptionState);
@@ -86,10 +86,10 @@ void HTMLTableSectionElement::deleteRow(int index, ExceptionState& exceptionStat
     if (index == -1)
         index = numRows - 1;
     if (index >= 0 && index < numRows) {
-        RefPtr<Node> row = children->item(index);
+        RefPtr<Element> row = children->item(index);
         HTMLElement::removeChild(row.get(), exceptionState);
     } else {
-        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The provided index (" + String::number(index) + " is outside the range [-1, " + String::number(numRows) + "].");
     }
 }
 
@@ -104,46 +104,6 @@ int HTMLTableSectionElement::numRows() const
     }
 
     return rows;
-}
-
-const AtomicString& HTMLTableSectionElement::align() const
-{
-    return getAttribute(alignAttr);
-}
-
-void HTMLTableSectionElement::setAlign(const AtomicString& value)
-{
-    setAttribute(alignAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::ch() const
-{
-    return getAttribute(charAttr);
-}
-
-void HTMLTableSectionElement::setCh(const AtomicString& value)
-{
-    setAttribute(charAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::chOff() const
-{
-    return getAttribute(charoffAttr);
-}
-
-void HTMLTableSectionElement::setChOff(const AtomicString& value)
-{
-    setAttribute(charoffAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::vAlign() const
-{
-    return getAttribute(valignAttr);
-}
-
-void HTMLTableSectionElement::setVAlign(const AtomicString& value)
-{
-    setAttribute(valignAttr, value);
 }
 
 PassRefPtr<HTMLCollection> HTMLTableSectionElement::rows()

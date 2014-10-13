@@ -27,8 +27,9 @@
 #define MediaKeySession_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/ContextLifecycleObserver.h"
+#include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
+#include "heap/Handle.h"
 #include "platform/Timer.h"
 #include "platform/drm/ContentDecryptionModuleSession.h"
 #include "wtf/Deque.h"
@@ -50,13 +51,14 @@ class MediaKeys;
 // Because this object controls the lifetime of the ContentDecryptionModuleSession,
 // it may outlive any references to it as long as the MediaKeys object is alive.
 // The ContentDecryptionModuleSession has the same lifetime as this object.
-class MediaKeySession
-    : public RefCounted<MediaKeySession>, public ScriptWrappable, public EventTargetWithInlineData, public ContextLifecycleObserver
+class MediaKeySession FINAL
+    : public RefCountedWillBeRefCountedGarbageCollected<MediaKeySession>, public ActiveDOMObject, public ScriptWrappable, public EventTargetWithInlineData
     , private ContentDecryptionModuleSessionClient {
-    REFCOUNTED_EVENT_TARGET(MediaKeySession);
+    DECLARE_GC_INFO;
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<MediaKeySession>);
 public:
-    static PassRefPtr<MediaKeySession> create(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
-    ~MediaKeySession();
+    static PassRefPtrWillBeRawPtr<MediaKeySession> create(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
+    virtual ~MediaKeySession();
 
     const String& keySystem() const { return m_keySystem; }
     String sessionId() const;
@@ -64,28 +66,31 @@ public:
     void setError(MediaKeyError*);
     MediaKeyError* error() { return m_error.get(); }
 
-    void generateKeyRequest(const String& mimeType, Uint8Array* initData);
-    void update(Uint8Array* key, ExceptionState&);
-    void close();
+    void initializeNewSession(const String& mimeType, const Uint8Array& initData);
+    void update(Uint8Array* response, ExceptionState&);
+    void release(ExceptionState&);
 
     void enqueueEvent(PassRefPtr<Event>);
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyerror);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
-
+    // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
+    // ActiveDOMObject
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() OVERRIDE;
+
+    void trace(Visitor*) { }
+
 private:
     MediaKeySession(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
-    void keyRequestTimerFired(Timer<MediaKeySession>*);
-    void addKeyTimerFired(Timer<MediaKeySession>*);
+    void updateTimerFired(Timer<MediaKeySession>*);
 
     // ContentDecryptionModuleSessionClient
-    virtual void keyAdded() OVERRIDE;
-    virtual void keyError(MediaKeyErrorCode, unsigned long systemCode) OVERRIDE;
-    virtual void keyMessage(const unsigned char* message, size_t messageLength, const KURL& destinationURL) OVERRIDE;
+    virtual void message(const unsigned char* message, size_t messageLength, const KURL& destinationURL) OVERRIDE;
+    virtual void ready() OVERRIDE;
+    virtual void close() OVERRIDE;
+    virtual void error(MediaKeyErrorCode, unsigned long systemCode) OVERRIDE;
 
     String m_keySystem;
     RefPtr<MediaKeyError> m_error;
@@ -94,16 +99,8 @@ private:
     // Used to remove the reference from the parent MediaKeys when close()'d.
     MediaKeys* m_keys;
 
-    struct PendingKeyRequest {
-        PendingKeyRequest(const String& mimeType, Uint8Array* initData) : mimeType(mimeType), initData(initData) { }
-        String mimeType;
-        RefPtr<Uint8Array> initData;
-    };
-    Deque<PendingKeyRequest> m_pendingKeyRequests;
-    Timer<MediaKeySession> m_keyRequestTimer;
-
-    Deque<RefPtr<Uint8Array> > m_pendingKeys;
-    Timer<MediaKeySession> m_addKeyTimer;
+    Deque<RefPtr<Uint8Array> > m_pendingUpdates;
+    Timer<MediaKeySession> m_updateTimer;
 };
 
 }

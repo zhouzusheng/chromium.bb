@@ -33,14 +33,14 @@
 
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/frame/Frame.h"
+#include "core/frame/PageConsole.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/PageConsole.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
@@ -51,19 +51,23 @@ namespace PageRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
 
-PageRuntimeAgent::PageRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
-    : InspectorRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer)
+PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+    : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
     , m_inspectedPage(page)
     , m_pageAgent(pageAgent)
     , m_frontend(0)
     , m_mainWorldContextCreated(false)
 {
-    m_instrumentingAgents->setPageRuntimeAgent(this);
 }
 
 PageRuntimeAgent::~PageRuntimeAgent()
 {
     m_instrumentingAgents->setPageRuntimeAgent(0);
+}
+
+void PageRuntimeAgent::init()
+{
+    m_instrumentingAgents->setPageRuntimeAgent(this);
 }
 
 void PageRuntimeAgent::setFrontend(InspectorFrontend* frontend)
@@ -109,11 +113,8 @@ void PageRuntimeAgent::disable(ErrorString* errorString)
     m_state->setBoolean(PageRuntimeAgentState::runtimeEnabled, false);
 }
 
-void PageRuntimeAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* world)
+void PageRuntimeAgent::didClearWindowObjectInMainWorld(Frame* frame)
 {
-    if (world != mainThreadNormalWorld())
-        return;
-
     m_mainWorldContextCreated = true;
 
     if (!m_enabled)

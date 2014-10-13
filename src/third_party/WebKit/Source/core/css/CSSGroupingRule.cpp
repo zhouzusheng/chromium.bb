@@ -32,10 +32,13 @@
 #include "core/css/CSSGroupingRule.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleSheet.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/UseCounter.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -60,13 +63,23 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
 {
     ASSERT(m_childRuleCSSOMWrappers.size() == m_groupRule->childRules().size());
 
+    CSSStyleSheet* styleSheet = parentStyleSheet();
+    if (styleSheet) {
+        if (Document* document = styleSheet->ownerDocument()) {
+            if (!document->contentSecurityPolicy()->allowStyleEval()) {
+                exceptionState.throwSecurityError(document->contentSecurityPolicy()->styleEvalDisabledErrorMessage());
+                return 0;
+            }
+        }
+    }
+
     if (index > m_groupRule->childRules().size()) {
         exceptionState.throwDOMException(IndexSizeError, "the index " + String::number(index) + " must be less than or equal to the length of the rule list.");
         return 0;
     }
 
-    CSSStyleSheet* styleSheet = parentStyleSheet();
-    CSSParser parser(parserContext(), UseCounter::getFrom(styleSheet));
+    CSSParserContext context(parserContext(), UseCounter::getFrom(styleSheet));
+    BisonCSSParser parser(context);
     RefPtr<StyleRuleBase> newRule = parser.parseRule(styleSheet ? styleSheet->contents() : 0, ruleString);
     if (!newRule) {
         exceptionState.throwDOMException(SyntaxError, "the rule '" + ruleString + "' is invalid and cannot be parsed.");

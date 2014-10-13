@@ -26,8 +26,8 @@
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html/parser/TextResourceDecoder.h"
 
 namespace WebCore {
 
@@ -70,11 +70,6 @@ void HTMLBaseElement::removedFrom(ContainerNode* insertionPoint)
 bool HTMLBaseElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
-}
-
-String HTMLBaseElement::target() const
-{
-    return fastGetAttribute(targetAttr);
 }
 
 KURL HTMLBaseElement::href() const

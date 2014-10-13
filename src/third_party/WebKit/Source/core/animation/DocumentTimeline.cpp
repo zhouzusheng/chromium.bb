@@ -61,13 +61,19 @@ DocumentTimeline::DocumentTimeline(Document* document, PassOwnPtr<PlatformTiming
     ASSERT(document);
 }
 
+DocumentTimeline::~DocumentTimeline()
+{
+    for (HashSet<Player*>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+        (*it)->timelineDestroyed();
+}
+
 Player* DocumentTimeline::createPlayer(TimedItem* child)
 {
     RefPtr<Player> player = Player::create(*this, child);
     Player* result = player.get();
-    m_players.append(player.release());
-    if (m_document->view())
-        m_timing->serviceOnNextFrame();
+    m_players.add(result);
+    m_currentPlayers.append(player.release());
+    setHasPlayerNeedingUpdate();
     return result;
 }
 
@@ -91,23 +97,23 @@ bool DocumentTimeline::serviceAnimations()
 
     double timeToNextEffect = std::numeric_limits<double>::infinity();
     bool didTriggerStyleRecalc = false;
-    for (int i = m_players.size() - 1; i >= 0; --i) {
-        double playerNextEffect;
+    for (int i = m_currentPlayers.size() - 1; i >= 0; --i) {
+        RefPtr<Player> player = m_currentPlayers[i].get();
         bool playerDidTriggerStyleRecalc;
-        if (!m_players[i]->update(&playerNextEffect, &playerDidTriggerStyleRecalc))
-            m_players.remove(i);
+        if (!player->update(&playerDidTriggerStyleRecalc))
+            m_currentPlayers.remove(i);
+        timeToNextEffect = std::min(timeToNextEffect, player->timeToEffectChange());
         didTriggerStyleRecalc |= playerDidTriggerStyleRecalc;
-        if (playerNextEffect < timeToNextEffect)
-            timeToNextEffect = playerNextEffect;
     }
 
-    if (!m_players.isEmpty()) {
+    if (!m_currentPlayers.isEmpty()) {
         if (timeToNextEffect < s_minimumDelay)
             m_timing->serviceOnNextFrame();
         else if (timeToNextEffect != std::numeric_limits<double>::infinity())
             m_timing->wakeAfter(timeToNextEffect - s_minimumDelay);
     }
 
+    m_hasPlayerNeedingUpdate = false;
     return didTriggerStyleRecalc;
 }
 
@@ -116,6 +122,7 @@ void DocumentTimeline::setZeroTime(double zeroTime)
     ASSERT(isNull(m_zeroTime));
     m_zeroTime = zeroTime;
     ASSERT(!isNull(m_zeroTime));
+    serviceAnimations();
 }
 
 void DocumentTimeline::DocumentTimelineTiming::wakeAfter(double duration)
@@ -130,21 +137,29 @@ void DocumentTimeline::DocumentTimelineTiming::cancelWake()
 
 void DocumentTimeline::DocumentTimelineTiming::serviceOnNextFrame()
 {
-    if (m_timeline->m_document->view())
+    if (m_timeline->m_document && m_timeline->m_document->view())
         m_timeline->m_document->view()->scheduleAnimation();
 }
 
 double DocumentTimeline::currentTime()
 {
+    if (!m_document)
+        return std::numeric_limits<double>::quiet_NaN();
     return m_document->animationClock().currentTime() - m_zeroTime;
 }
 
 void DocumentTimeline::pauseAnimationsForTesting(double pauseTime)
 {
-    for (size_t i = 0; i < m_players.size(); i++) {
-        m_players[i]->pauseForTesting();
-        m_players[i]->setCurrentTime(pauseTime);
-    }
+    for (size_t i = 0; i < m_currentPlayers.size(); i++)
+        m_currentPlayers[i]->pauseForTesting(pauseTime);
+    serviceAnimations();
+}
+
+void DocumentTimeline::setHasPlayerNeedingUpdate()
+{
+    m_hasPlayerNeedingUpdate = true;
+    if (m_document && m_document->view() && !m_document->view()->isServicingAnimations())
+        m_timing->serviceOnNextFrame();
 }
 
 void DocumentTimeline::dispatchEvents()
@@ -176,12 +191,16 @@ size_t DocumentTimeline::numberOfActiveAnimationsForTesting() const
     if (isNull(m_zeroTime))
         return 0;
     size_t count = 0;
-    for (size_t i = 0; i < m_players.size(); ++i) {
-        const TimedItem* timedItem = m_players[i]->source();
-        if (m_players[i]->hasStartTime())
+    for (size_t i = 0; i < m_currentPlayers.size(); ++i) {
+        const TimedItem* timedItem = m_currentPlayers[i]->source();
+        if (m_currentPlayers[i]->hasStartTime())
             count += (timedItem && (timedItem->isCurrent() || timedItem->isInEffect()));
     }
     return count;
+}
+
+void DocumentTimeline::detachFromDocument() {
+    m_document = 0;
 }
 
 } // namespace

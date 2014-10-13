@@ -46,20 +46,26 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                  const GURL& pattern);
   void OnProviderCreated(int provider_id);
   void OnProviderDestroyed(int provider_id);
+  void OnWorkerStarted(int thread_id,
+                       int embedded_worker_id);
+  void OnWorkerStopped(int embedded_worker_id);
+  void OnSendMessageToBrowser(int embedded_worker_id,
+                              int request_id,
+                              const IPC::Message& message);
 
   // Callbacks from ServiceWorkerContextCore
   void RegistrationComplete(int32 thread_id,
                             int32 request_id,
-                            ServiceWorkerRegistrationStatus status,
+                            ServiceWorkerStatusCode status,
                             int64 registration_id);
 
   void UnregistrationComplete(int32 thread_id,
                               int32 request_id,
-                              ServiceWorkerRegistrationStatus status);
+                              ServiceWorkerStatusCode status);
 
   void SendRegistrationError(int32 thread_id,
                              int32 request_id,
-                             ServiceWorkerRegistrationStatus status);
+                             ServiceWorkerStatusCode status);
   int render_process_id_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
 };

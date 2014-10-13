@@ -184,7 +184,7 @@ const char *__stdcall eglQueryString(EGLDisplay dpy, EGLint name)
           case EGL_VENDOR:
             return egl::success(display->getVendorString());
           case EGL_VERSION:
-            return egl::success("1.4 (ANGLE " VERSION_STRING ")");
+            return egl::success("1.4 (ANGLE " ANGLE_VERSION_STRING ")");
         }
 
         return egl::error(EGL_BAD_PARAMETER, (const char*)NULL);
@@ -470,6 +470,9 @@ EGLBoolean __stdcall eglQuerySurface(EGLDisplay dpy, EGLSurface surface, EGLint 
             break;
           case EGL_POST_SUB_BUFFER_SUPPORTED_NV:
             *value = eglSurface->isPostSubBufferSupported();
+            break;
+          case EGL_FIXED_SIZE_ANGLE:
+            *value = eglSurface->isFixedSize();
             break;
           default:
             return egl::error(EGL_BAD_ATTRIBUTE, EGL_FALSE);

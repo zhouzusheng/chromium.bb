@@ -28,6 +28,7 @@
 
 #include "core/page/Page.h"
 #include "core/page/PageLifecycleObserver.h"
+#include "heap/Handle.h"
 #include "modules/geolocation/Geolocation.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
@@ -35,15 +36,16 @@
 
 namespace WebCore {
 
+class GeolocationInspectorAgent;
 class GeolocationClient;
 class GeolocationError;
 class GeolocationPosition;
 class Page;
 
-class GeolocationController : public Supplement<Page>, public PageLifecycleObserver {
+class GeolocationController FINAL : public Supplement<Page>, public PageLifecycleObserver {
     WTF_MAKE_NONCOPYABLE(GeolocationController);
 public:
-    ~GeolocationController();
+    virtual ~GeolocationController();
 
     static PassOwnPtr<GeolocationController> create(Page*, GeolocationClient*);
 
@@ -58,6 +60,10 @@ public:
 
     GeolocationPosition* lastPosition();
 
+    void setClientForTest(GeolocationClient*);
+    bool hasClientForTest() { return m_hasClientForTest; }
+    GeolocationClient* client() { return m_client; }
+
     // Inherited from PageLifecycleObserver.
     virtual void pageVisibilityChanged() OVERRIDE;
 
@@ -71,13 +77,15 @@ private:
     void stopUpdatingIfNeeded();
 
     GeolocationClient* m_client;
+    bool m_hasClientForTest;
 
     RefPtr<GeolocationPosition> m_lastPosition;
-    typedef HashSet<RefPtr<Geolocation> > ObserversSet;
+    typedef WillBePersistentHeapHashSet<RefPtrWillBeMember<Geolocation> > ObserversSet;
     // All observers; both those requesting high accuracy and those not.
     ObserversSet m_observers;
     ObserversSet m_highAccuracyObservers;
     bool m_isClientUpdating;
+    GeolocationInspectorAgent* m_inspectorAgent;
 };
 
 } // namespace WebCore

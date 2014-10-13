@@ -82,13 +82,13 @@ Target::Target(content::WebContents* webContents) {
     d_agentHost =
         content::DevToolsAgentHost::GetOrCreateFor(webContents->GetRenderViewHost());
     d_id = d_agentHost->GetId();
-    d_title = UTF16ToUTF8(webContents->GetTitle());
+    d_title = base::UTF16ToUTF8(webContents->GetTitle());
     d_url = webContents->GetURL();
     content::NavigationController& controller = webContents->GetController();
     content::NavigationEntry* entry = controller.GetActiveEntry();
     if (entry != NULL && entry->GetURL().is_valid())
         d_faviconUrl = entry->GetFavicon().url;
-    d_lastActivityTime = webContents->GetLastSelectedTime();
+    d_lastActivityTime = webContents->GetLastActiveTime();
 }
 
 bool Target::Activate() const {

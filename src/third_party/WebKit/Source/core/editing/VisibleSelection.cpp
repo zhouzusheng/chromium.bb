@@ -230,11 +230,6 @@ static PassRefPtr<Range> makeSearchRange(const Position& pos)
     return searchRange.release();
 }
 
-bool VisibleSelection::isAll(EditingBoundaryCrossingRule rule) const
-{
-    return !nonBoundaryShadowTreeRootNode() && visibleStart().previous(rule).isNull() && visibleEnd().next(rule).isNull();
-}
-
 void VisibleSelection::appendTrailingWhitespace()
 {
     RefPtr<Range> searchRange = makeSearchRange(m_end);
@@ -479,7 +474,7 @@ static Position adjustPositionForEnd(const Position& currentPosition, Node* star
         return positionBeforeNode(ancestor);
     }
 
-    if (Node* lastChild = treeScope.rootNode()->lastChild())
+    if (Node* lastChild = treeScope.rootNode().lastChild())
         return positionAfterNode(lastChild);
 
     return Position();
@@ -497,7 +492,7 @@ static Position adjustPositionForStart(const Position& currentPosition, Node* en
         return positionAfterNode(ancestor);
     }
 
-    if (Node* firstChild = treeScope.rootNode()->firstChild())
+    if (Node* firstChild = treeScope.rootNode().firstChild())
         return positionBeforeNode(firstChild);
 
     return Position();

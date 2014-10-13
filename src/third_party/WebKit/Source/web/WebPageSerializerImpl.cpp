@@ -145,7 +145,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
                     *needSkip = true;
                 }
             }
-        } else if (isHTMLHtmlElement(element)) {
+        } else if (element->hasTagName(HTMLNames::htmlTag)) {
             // Check something before processing the open tag of HEAD element.
             // First we add doc type declaration if original document has it.
             if (!param->haveSeenDocType) {
@@ -477,10 +477,9 @@ void WebPageSerializerImpl::collectTargetFrames()
         // Go through sub-frames.
         RefPtr<HTMLCollection> all = currentDoc->all();
 
-        for (unsigned i = 0; Node* node = all->item(i); i++) {
-            if (!node->isHTMLElement())
+        for (unsigned i = 0; Element* element = all->item(i); i++) {
+            if (!element->isHTMLElement())
                 continue;
-            Element* element = toElement(node);
             WebFrameImpl* webFrame =
                 WebFrameImpl::fromFrameOwnerElement(element);
             if (webFrame)

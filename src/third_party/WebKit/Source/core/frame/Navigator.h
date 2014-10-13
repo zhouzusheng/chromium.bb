@@ -23,6 +23,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/frame/NavigatorBase.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -38,13 +39,12 @@ class PluginData;
 
 typedef int ExceptionCode;
 
-class Navigator : public NavigatorBase, public ScriptWrappable, public RefCounted<Navigator>, public DOMWindowProperty, public Supplementable<Navigator> {
+class Navigator FINAL : public NavigatorBase, public ScriptWrappable, public RefCounted<Navigator>, public DOMWindowProperty, public Supplementable<Navigator> {
 public:
     static PassRefPtr<Navigator> create(Frame* frame) { return adoptRef(new Navigator(frame)); }
     virtual ~Navigator();
 
-    String appVersion() const;
-    String language() const;
+    AtomicString language() const;
     DOMPluginArray* plugins() const;
     DOMMimeTypeArray* mimeTypes() const;
     bool cookieEnabled() const;
@@ -62,8 +62,8 @@ public:
 private:
     explicit Navigator(Frame*);
 
-    mutable RefPtr<DOMPluginArray> m_plugins;
-    mutable RefPtr<DOMMimeTypeArray> m_mimeTypes;
+    mutable RefPtrWillBePersistent<DOMPluginArray> m_plugins;
+    mutable RefPtrWillBePersistent<DOMMimeTypeArray> m_mimeTypes;
 };
 
 }

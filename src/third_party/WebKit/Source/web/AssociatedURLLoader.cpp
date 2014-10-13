@@ -124,23 +124,21 @@ const HTTPHeaderSet& HTTPResponseHeaderValidator::blockedHeaders()
 
 // This class bridges the interface differences between WebCore and WebKit loader clients.
 // It forwards its ThreadableLoaderClient notifications to a WebURLLoaderClient.
-class AssociatedURLLoader::ClientAdapter : public DocumentThreadableLoaderClient {
+class AssociatedURLLoader::ClientAdapter FINAL : public DocumentThreadableLoaderClient {
     WTF_MAKE_NONCOPYABLE(ClientAdapter);
 public:
     static PassOwnPtr<ClientAdapter> create(AssociatedURLLoader*, WebURLLoaderClient*, const WebURLLoaderOptions&);
 
-    virtual void didSendData(unsigned long long /*bytesSent*/, unsigned long long /*totalBytesToBeSent*/);
-    virtual void willSendRequest(ResourceRequest& /*newRequest*/, const ResourceResponse& /*redirectResponse*/);
+    virtual void didSendData(unsigned long long /*bytesSent*/, unsigned long long /*totalBytesToBeSent*/) OVERRIDE;
+    virtual void willSendRequest(ResourceRequest& /*newRequest*/, const ResourceResponse& /*redirectResponse*/) OVERRIDE;
 
-    virtual void didReceiveResponse(unsigned long, const ResourceResponse&);
-    virtual void didDownloadData(int /*dataLength*/);
-    virtual void didReceiveData(const char*, int /*dataLength*/);
-    virtual void didReceiveCachedMetadata(const char*, int /*dataLength*/);
-    virtual void didFinishLoading(unsigned long /*identifier*/, double /*finishTime*/);
-    virtual void didFail(const ResourceError&);
-    virtual void didFailRedirectCheck();
-
-    virtual bool isDocumentThreadableLoaderClient() { return true; }
+    virtual void didReceiveResponse(unsigned long, const ResourceResponse&) OVERRIDE;
+    virtual void didDownloadData(int /*dataLength*/) OVERRIDE;
+    virtual void didReceiveData(const char*, int /*dataLength*/) OVERRIDE;
+    virtual void didReceiveCachedMetadata(const char*, int /*dataLength*/) OVERRIDE;
+    virtual void didFinishLoading(unsigned long /*identifier*/, double /*finishTime*/) OVERRIDE;
+    virtual void didFail(const ResourceError&) OVERRIDE;
+    virtual void didFailRedirectCheck() OVERRIDE;
 
     // Sets an error to be reported back to the client, asychronously.
     void setDelayedError(const ResourceError&);
@@ -204,6 +202,9 @@ void AssociatedURLLoader::ClientAdapter::didSendData(unsigned long long bytesSen
 
 void AssociatedURLLoader::ClientAdapter::didReceiveResponse(unsigned long, const ResourceResponse& response)
 {
+    if (!m_client)
+        return;
+
     // Try to use the original ResourceResponse if possible.
     WebURLResponse validatedResponse = WrappedResourceResponse(response);
     HTTPResponseHeaderValidator validator(m_options.crossOriginRequestPolicy == WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl);
@@ -250,7 +251,7 @@ void AssociatedURLLoader::ClientAdapter::didFinishLoading(unsigned long identifi
     if (!m_client)
         return;
 
-    m_client->didFinishLoading(m_loader, finishTime);
+    m_client->didFinishLoading(m_loader, finishTime, WebURLLoaderClient::kUnknownEncodedDataLength);
 }
 
 void AssociatedURLLoader::ClientAdapter::didFail(const ResourceError& error)
@@ -343,7 +344,6 @@ void AssociatedURLLoader::loadAsynchronously(const WebURLRequest& request, WebUR
 
     if (allowLoad) {
         ThreadableLoaderOptions options;
-        options.sendLoadCallbacks = SendCallbacks; // Always send callbacks.
         options.sniffContent = m_options.sniffContent ? SniffContent : DoNotSniffContent;
         options.allowCredentials = m_options.allowCredentials ? AllowStoredCredentials : DoNotAllowStoredCredentials;
         options.preflightPolicy = static_cast<WebCore::PreflightPolicy>(m_options.preflightPolicy);

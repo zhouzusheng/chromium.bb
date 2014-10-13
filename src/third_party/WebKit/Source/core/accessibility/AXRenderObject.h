@@ -64,7 +64,7 @@ public:
     virtual ~AXRenderObject();
 
     // Public, overridden from AXObject.
-    virtual RenderObject* renderer() const OVERRIDE { return m_renderer; }
+    virtual RenderObject* renderer() const OVERRIDE FINAL { return m_renderer; }
     virtual LayoutRect elementRect() const OVERRIDE;
 
     void setRenderer(RenderObject*);
@@ -73,7 +73,7 @@ public:
     Document* topDocument() const;
     bool shouldNotifyActiveDescendant() const;
     bool needsToUpdateChildren() const { return m_childrenDirty; }
-    ScrollableArea* getScrollableAreaIfScrollable() const;
+    virtual ScrollableArea* getScrollableAreaIfScrollable() const OVERRIDE FINAL;
     virtual AccessibilityRole determineAccessibilityRole() OVERRIDE;
     void checkCachedElementRect() const;
     void updateCachedElementRect() const;
@@ -181,7 +181,6 @@ protected:
 
     // Selected text.
     virtual PlainTextRange selectedTextRange() const OVERRIDE;
-    virtual String selectedText() const OVERRIDE;
 
     // Modify or take an action on an object.
     virtual void setSelectedTextRange(const PlainTextRange&) OVERRIDE;
@@ -227,7 +226,6 @@ private:
     bool inheritsPresentationalRole() const;
     LayoutRect computeElementRect() const;
     VisibleSelection selection() const;
-    String stringForRange(const PlainTextRange&) const;
     int indexForVisiblePosition(const VisiblePosition&) const;
 };
 

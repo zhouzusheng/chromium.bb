@@ -39,20 +39,17 @@ namespace WebCore {
 DEFINE_ANIMATED_ENUMERATION(SVGGradientElement, SVGNames::spreadMethodAttr, SpreadMethod, spreadMethod, SVGSpreadMethodType)
 DEFINE_ANIMATED_ENUMERATION(SVGGradientElement, SVGNames::gradientUnitsAttr, GradientUnits, gradientUnits, SVGUnitTypes::SVGUnitType)
 DEFINE_ANIMATED_TRANSFORM_LIST(SVGGradientElement, SVGNames::gradientTransformAttr, GradientTransform, gradientTransform)
-DEFINE_ANIMATED_STRING(SVGGradientElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGGradientElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGGradientElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(spreadMethod)
     REGISTER_LOCAL_ANIMATED_PROPERTY(gradientUnits)
     REGISTER_LOCAL_ANIMATED_PROPERTY(gradientTransform)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 SVGGradientElement::SVGGradientElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
+    , SVGURIReference(this)
     , m_spreadMethod(SVGSpreadMethodPad)
     , m_gradientUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
 {
@@ -65,7 +62,6 @@ bool SVGGradientElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::gradientUnitsAttr);
         supportedAttributes.add(SVGNames::gradientTransformAttr);
         supportedAttributes.add(SVGNames::spreadMethodAttr);
@@ -102,12 +98,14 @@ void SVGGradientElement::parseAttribute(const QualifiedName& name, const AtomicS
         return;
     }
 
-    if (SVGURIReference::parseAttribute(name, value))
-        return;
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
+    SVGParsingError parseError = NoError;
 
-    ASSERT_NOT_REACHED();
+    if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
+    }
+
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGGradientElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -149,7 +147,7 @@ Vector<Gradient::ColorStop> SVGGradientElement::buildStops()
         Color color = stop->stopColorIncludingOpacity();
 
         // Figure out right monotonic offset
-        float offset = stop->offsetCurrentValue();
+        float offset = stop->offset()->currentValue()->value();
         offset = std::min(std::max(previousOffset, offset), 1.0f);
         previousOffset = offset;
 

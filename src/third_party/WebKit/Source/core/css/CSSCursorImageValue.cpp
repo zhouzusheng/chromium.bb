@@ -34,6 +34,7 @@
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/SVGURIReference.h"
 #include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -42,7 +43,7 @@ static inline SVGCursorElement* resourceReferencedByCursorElement(const String& 
 {
     Element* element = SVGURIReference::targetElementFromIRIString(url, document);
     if (element && element->hasTagName(SVGNames::cursorTag))
-        return static_cast<SVGCursorElement*>(element);
+        return toSVGCursorElement(element);
 
     return 0;
 }
@@ -99,13 +100,13 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
         // FIXME: This will override hot spot specified in CSS, which is probably incorrect.
         SVGLengthContext lengthContext(0);
         m_hasHotSpot = true;
-        float x = roundf(cursorElement->xCurrentValue().value(lengthContext));
+        float x = roundf(cursorElement->x()->currentValue()->value(lengthContext));
         m_hotSpot.setX(static_cast<int>(x));
 
-        float y = roundf(cursorElement->yCurrentValue().value(lengthContext));
+        float y = roundf(cursorElement->y()->currentValue()->value(lengthContext));
         m_hotSpot.setY(static_cast<int>(y));
 
-        if (cachedImageURL() != element->document().completeURL(cursorElement->hrefCurrentValue()))
+        if (cachedImageURL() != element->document().completeURL(cursorElement->href()->currentValue()->value()))
             clearImageResource();
 
         SVGElement* svgElement = toSVGElement(element);
@@ -130,10 +131,10 @@ StyleImage* CSSCursorImageValue::cachedImage(ResourceFetcher* loader, float devi
         // to change the URL of the CSSImageValue (which would then change behavior like cssText),
         // we create an alternate CSSImageValue to use.
         if (isSVGCursor() && loader && loader->document()) {
-            RefPtr<CSSImageValue> imageValue = toCSSImageValue(m_imageValue.get());
+            RefPtrWillBeRawPtr<CSSImageValue> imageValue = toCSSImageValue(m_imageValue.get());
             // FIXME: This will fail if the <cursor> element is in a shadow DOM (bug 59827)
             if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(imageValue->url(), *loader->document())) {
-                RefPtr<CSSImageValue> svgImageValue = CSSImageValue::create(cursorElement->hrefCurrentValue());
+                RefPtrWillBeRawPtr<CSSImageValue> svgImageValue = CSSImageValue::create(loader->document()->completeURL(cursorElement->href()->currentValue()->value()));
                 StyleFetchedImage* cachedImage = svgImageValue->cachedImage(loader);
                 m_image = cachedImage;
                 return cachedImage;
@@ -164,7 +165,7 @@ StyleImage* CSSCursorImageValue::cachedOrPendingImage(float deviceScaleFactor)
 bool CSSCursorImageValue::isSVGCursor() const
 {
     if (m_imageValue->isImageValue()) {
-        RefPtr<CSSImageValue> imageValue = toCSSImageValue(m_imageValue.get());
+        RefPtrWillBeRawPtr<CSSImageValue> imageValue = toCSSImageValue(m_imageValue.get());
         KURL kurl(ParsedURLString, imageValue->url());
         return kurl.hasFragmentIdentifier();
     }
@@ -193,6 +194,11 @@ bool CSSCursorImageValue::equals(const CSSCursorImageValue& other) const
 {
     return m_hasHotSpot ? other.m_hasHotSpot && m_hotSpot == other.m_hotSpot : !other.m_hasHotSpot
         && compareCSSValuePtr(m_imageValue, other.m_imageValue);
+}
+
+void CSSCursorImageValue::traceAfterDispatch(Visitor* visitor)
+{
+    CSSValue::traceAfterDispatch(visitor);
 }
 
 } // namespace WebCore

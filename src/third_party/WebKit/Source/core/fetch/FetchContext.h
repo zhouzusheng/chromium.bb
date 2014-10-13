@@ -49,6 +49,11 @@ class ResourceLoader;
 class ResourceResponse;
 class ResourceRequest;
 
+enum FetchResourceType {
+    FetchMainResource,
+    FetchSubresource
+};
+
 class FetchContext {
     WTF_MAKE_NONCOPYABLE(FetchContext);
 public:
@@ -58,7 +63,7 @@ public:
     virtual ~FetchContext() { }
 
     virtual void reportLocalLoadFailed(const KURL&);
-    virtual void addAdditionalRequestHeaders(Document&, ResourceRequest&, Resource::Type);
+    virtual void addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType);
     virtual CachePolicy cachePolicy(Document*) const;
 
     virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority);
@@ -67,7 +72,7 @@ public:
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0);
     virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
     virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength);
-    virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime);
+    virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime, int64_t encodedDataLength);
     virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&);
     virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength);
 };

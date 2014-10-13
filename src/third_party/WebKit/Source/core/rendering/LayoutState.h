@@ -51,7 +51,6 @@ public:
         , m_layoutDeltaYSaturated(false)
 #endif
         , m_columnInfo(0)
-        , m_lineGrid(0)
         , m_next(0)
         , m_shapeInsideInfo(0)
         , m_pageLogicalHeight(0)
@@ -69,36 +68,27 @@ public:
     void operator delete(void*);
 
     void clearPaginationInformation();
-    bool isPaginatingColumns() const { return m_columnInfo && m_columnInfo->paginationUnit() == ColumnInfo::Column; }
+    bool isPaginatingColumns() const { return m_columnInfo; }
     bool isPaginated() const { return m_isPaginated; }
 
     // The page logical offset is the object's offset from the top of the page in the page progression
     // direction (so an x-offset in vertical text and a y-offset for horizontal text).
-    LayoutUnit pageLogicalOffset(RenderBox*, LayoutUnit childLogicalOffset) const;
+    LayoutUnit pageLogicalOffset(const RenderBox*, LayoutUnit childLogicalOffset) const;
 
     void addForcedColumnBreak(RenderBox*, LayoutUnit childLogicalOffset);
 
     LayoutUnit pageLogicalHeight() const { return m_pageLogicalHeight; }
     bool pageLogicalHeightChanged() const { return m_pageLogicalHeightChanged; }
 
-    RenderBlockFlow* lineGrid() const { return m_lineGrid; }
-    LayoutSize lineGridOffset() const { return m_lineGridOffset; }
-    LayoutSize lineGridPaginationOrigin() const { return m_lineGridPaginationOrigin; }
-
     LayoutSize layoutOffset() const { return m_layoutOffset; }
 
-    bool needsBlockDirectionLocationSetBeforeLayout() const { return m_lineGrid || (m_isPaginated && m_pageLogicalHeight); }
+    bool needsBlockDirectionLocationSetBeforeLayout() const { return m_isPaginated && m_pageLogicalHeight; }
 
     ShapeInsideInfo* shapeInsideInfo() const { return m_shapeInsideInfo; }
 
 #ifndef NDEBUG
     RenderObject* renderer() const { return m_renderer; }
 #endif
-private:
-    void propagateLineGridInfo(RenderBox*);
-    void establishLineGrid(RenderBlockFlow*);
-
-    void computeLineGridPaginationOrigin(RenderBox*);
 
 public:
     // Do not add anything apart from bitfields until after m_columnInfo. See https://bugs.webkit.org/show_bug.cgi?id=100173
@@ -112,8 +102,6 @@ public:
 #endif
     // If the enclosing pagination model is a column model, then this will store column information for easy retrieval/manipulation.
     ColumnInfo* m_columnInfo;
-    // The current line grid that we're snapping to and the offset of the start of the grid.
-    RenderBlockFlow* m_lineGrid;
     LayoutState* m_next;
     ShapeInsideInfo* m_shapeInsideInfo;
 
@@ -134,8 +122,6 @@ public:
     LayoutUnit m_pageLogicalHeight;
     // The offset of the start of the first page in the nearest enclosing pagination model.
     LayoutSize m_pageOffset;
-    LayoutSize m_lineGridOffset;
-    LayoutSize m_lineGridPaginationOrigin;
 
 #ifndef NDEBUG
     RenderObject* m_renderer;

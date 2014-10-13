@@ -53,11 +53,11 @@ enum CalculationCategory {
     CalcPercent,
     CalcPercentNumber,
     CalcPercentLength,
-    CalcVariable,
     CalcOther
 };
 
-class CSSCalcExpressionNode : public RefCounted<CSSCalcExpressionNode> {
+class CSSCalcExpressionNode : public RefCountedWillBeGarbageCollected<CSSCalcExpressionNode> {
+    DECLARE_GC_INFO;
 public:
     enum Type {
         CssCalcPrimitiveValue = 1,
@@ -70,14 +70,14 @@ public:
     virtual double doubleValue() const = 0;
     virtual double computeLengthPx(const CSSToLengthConversionData&) const = 0;
     virtual String customCSSText() const = 0;
-    virtual String serializeResolvingVariables(const HashMap<AtomicString, String>&) const = 0;
-    virtual bool hasVariableReference() const = 0;
     virtual bool equals(const CSSCalcExpressionNode& other) const { return m_category == other.m_category && m_isInteger == other.m_isInteger; }
     virtual Type type() const = 0;
 
     CalculationCategory category() const { return m_category; }
     virtual CSSPrimitiveValue::UnitTypes primitiveType() const = 0;
     bool isInteger() const { return m_isInteger; }
+
+    virtual void trace(Visitor*) { }
 
 protected:
     CSSCalcExpressionNode(CalculationCategory category, bool isInteger)
@@ -92,14 +92,14 @@ protected:
 
 class CSSCalcValue : public CSSValue {
 public:
-    static PassRefPtr<CSSCalcValue> create(CSSParserString name, CSSParserValueList*, ValueRange);
-    static PassRefPtr<CSSCalcValue> create(PassRefPtr<CSSCalcExpressionNode>, ValueRange = ValueRangeAll);
-    static PassRefPtr<CSSCalcValue> create(const CalculationValue* value, float zoom) { return adoptRef(new CSSCalcValue(value, zoom)); }
+    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(CSSParserString name, CSSParserValueList*, ValueRange);
+    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, ValueRange = ValueRangeAll);
+    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(const CalculationValue* value, float zoom) { return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSCalcValue(value, zoom)); }
 
-    static PassRefPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtr<CSSPrimitiveValue>, bool isInteger = false);
-    static PassRefPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtr<CSSCalcExpressionNode>, PassRefPtr<CSSCalcExpressionNode>, CalcOperator);
-    static PassRefPtr<CSSCalcExpressionNode> createExpressionNode(const CalcExpressionNode*, float zoom);
-    static PassRefPtr<CSSCalcExpressionNode> createExpressionNode(const Length&, float zoom);
+    static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtrWillBeRawPtr<CSSPrimitiveValue>, bool isInteger = false);
+    static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, CalcOperator);
+    static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(const CalcExpressionNode*, float zoom);
+    static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(const Length&, float zoom);
 
     PassRefPtr<CalculationValue> toCalcValue(const CSSToLengthConversionData& conversionData) const
     {
@@ -115,11 +115,11 @@ public:
 
     String customCSSText() const;
     bool equals(const CSSCalcValue&) const;
-    String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
-    bool hasVariableReference() const;
+
+    void traceAfterDispatch(Visitor*);
 
 private:
-    CSSCalcValue(PassRefPtr<CSSCalcExpressionNode> expression, ValueRange range)
+    CSSCalcValue(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> expression, ValueRange range)
         : CSSValue(CalculationClass)
         , m_expression(expression)
         , m_nonNegative(range == ValueRangeNonNegative)
@@ -134,7 +134,7 @@ private:
 
     double clampToPermittedRange(double) const;
 
-    const RefPtr<CSSCalcExpressionNode> m_expression;
+    const RefPtrWillBeMember<CSSCalcExpressionNode> m_expression;
     const bool m_nonNegative;
 };
 

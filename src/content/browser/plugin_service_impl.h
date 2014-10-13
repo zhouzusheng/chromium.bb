@@ -41,12 +41,6 @@ namespace base {
 class MessageLoopProxy;
 }
 
-namespace webkit {
-namespace npapi {
-class PluginList;
-}
-}
-
 namespace content {
 class BrowserContext;
 class PluginDirWatcherDelegate;
@@ -184,6 +178,12 @@ class CONTENT_EXPORT PluginServiceImpl
   // Run on the blocking pool to load the plugins synchronously.
   void GetPluginsInternal(base::MessageLoopProxy* target_loop,
                           const GetPluginsCallback& callback);
+
+#if defined(OS_POSIX)
+  void GetPluginsOnIOThread(
+      base::MessageLoopProxy* target_loop,
+      const GetPluginsCallback& callback);
+#endif
 
   // Binding directly to GetAllowedPluginForOpenChannelToPlugin() isn't possible
   // because more arity is needed <http://crbug.com/98542>. This just forwards.

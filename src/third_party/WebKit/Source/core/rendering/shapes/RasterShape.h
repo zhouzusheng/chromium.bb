@@ -84,7 +84,7 @@ private:
     unsigned m_shapeMargin;
 };
 
-class RasterShape : public Shape {
+class RasterShape FINAL : public Shape {
     WTF_MAKE_NONCOPYABLE(RasterShape);
 public:
     RasterShape(PassOwnPtr<RasterShapeIntervals> intervals, const IntSize& imageSize)
@@ -99,7 +99,7 @@ public:
     virtual bool isEmpty() const OVERRIDE { return m_intervals->isEmpty(); }
     virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
     virtual void getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
+    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const FloatSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
 
 private:
     const RasterShapeIntervals& marginIntervals() const;

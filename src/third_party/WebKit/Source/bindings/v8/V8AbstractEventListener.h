@@ -69,9 +69,9 @@ namespace WebCore {
 
         // Implementation of EventListener interface.
 
-        virtual bool operator==(const EventListener& other) { return this == &other; }
+        virtual bool operator==(const EventListener& other) OVERRIDE { return this == &other; }
 
-        virtual void handleEvent(ExecutionContext*, Event*);
+        virtual void handleEvent(ExecutionContext*, Event*) OVERRIDE;
 
         virtual bool isLazy() const { return false; }
 
@@ -109,6 +109,7 @@ namespace WebCore {
             m_listener.clear();
         }
 
+        virtual bool belongsToTheCurrentWorld() const OVERRIDE FINAL;
         virtual DOMWrapperWorld* world() const OVERRIDE FINAL { return m_world.get(); }
         v8::Isolate* isolate() const { return m_isolate; }
 
@@ -126,7 +127,7 @@ namespace WebCore {
 
     private:
         // Implementation of EventListener function.
-        virtual bool virtualisAttribute() const { return m_isAttribute; }
+        virtual bool virtualisAttribute() const OVERRIDE { return m_isAttribute; }
 
         virtual v8::Local<v8::Value> callListenerFunction(ExecutionContext*, v8::Handle<v8::Value> jsevent, Event*) = 0;
 

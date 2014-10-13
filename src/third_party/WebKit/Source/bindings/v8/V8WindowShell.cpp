@@ -40,7 +40,6 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8GCForContextDispose.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8Initializer.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8PerContextData.h"
@@ -65,6 +64,8 @@
 #include <v8.h>
 
 namespace WebCore {
+
+static bool contextBeingInitialized = false;
 
 static void checkDocumentWrapper(v8::Handle<v8::Object> wrapper, Document* document)
 {
@@ -185,20 +186,28 @@ bool V8WindowShell::initializeIfNeeded()
     if (m_contextHolder)
         return true;
 
-    TRACE_EVENT0("v8", "V8WindowShell::initializeIfNeeded");
+    ASSERT(!contextBeingInitialized);
+    contextBeingInitialized = true;
+    bool result = initialize();
+    contextBeingInitialized = false;
+    return result;
+}
+
+bool V8WindowShell::initialize()
+{
+    TRACE_EVENT0("v8", "V8WindowShell::initialize");
+    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "InitializeWindow");
 
     v8::HandleScope handleScope(m_isolate);
 
     createContext();
+
     if (!m_contextHolder)
         return false;
 
     v8::Handle<v8::Context> context = m_contextHolder->context();
 
-    V8PerContextDataHolder::install(context);
-
-    m_world->setIsolatedWorldField(context);
-
+    V8PerContextDataHolder::install(context, m_world.get());
     bool isMainWorld = m_world->isMainWorld();
 
     v8::Context::Scope contextScope(context);
@@ -212,7 +221,7 @@ bool V8WindowShell::initializeIfNeeded()
     }
 
     if (!isMainWorld) {
-        V8WindowShell* mainWindow = m_frame->script().existingWindowShell(mainThreadNormalWorld());
+        V8WindowShell* mainWindow = m_frame->script().existingWindowShell(DOMWrapperWorld::mainWorld());
         if (mainWindow && !mainWindow->context().IsEmpty())
             setInjectedScriptContextDebugId(context, m_frame->script().contextDebugId(mainWindow->context()));
     }
@@ -230,10 +239,10 @@ bool V8WindowShell::initializeIfNeeded()
 
     if (isMainWorld) {
         updateDocument();
-        setSecurityToken();
         if (m_frame->document()) {
+            setSecurityToken(m_frame->document()->securityOrigin());
             ContentSecurityPolicy* csp = m_frame->document()->contentSecurityPolicy();
-            context->AllowCodeGenerationFromStrings(csp->allowEval(0, ContentSecurityPolicy::SuppressReport));
+            context->AllowCodeGenerationFromStrings(csp->allowScriptEval(0, ContentSecurityPolicy::SuppressReport));
             context->SetErrorMessageForCodeGenerationFromStrings(v8String(m_isolate, csp->evalDisabledErrorMessage()));
         }
     } else {
@@ -257,14 +266,14 @@ bool V8WindowShell::initializeIfNeeded()
 
 void V8WindowShell::createContext()
 {
-    // The activeDocumentLoader pointer could be 0 during frame shutdown.
+    // The documentLoader pointer could be 0 during frame shutdown.
     // FIXME: Can we remove this check?
-    if (!m_frame->loader().activeDocumentLoader())
+    if (!m_frame->loader().documentLoader())
         return;
 
     // Create a new environment using an empty template for the shadow
     // object. Reuse the global object if one has been created earlier.
-    v8::Handle<v8::ObjectTemplate> globalTemplate = V8Window::GetShadowObjectTemplate(m_isolate, m_world->isMainWorld() ? MainWorld : IsolatedWorld);
+    v8::Handle<v8::ObjectTemplate> globalTemplate = V8Window::getShadowObjectTemplate(m_isolate, m_world->isMainWorld() ? MainWorld : IsolatedWorld);
     if (globalTemplate.IsEmpty())
         return;
 
@@ -284,7 +293,6 @@ void V8WindowShell::createContext()
     }
     v8::ExtensionConfiguration extensionConfiguration(index, extensionNames.get());
 
-    v8::HandleScope handleScope(m_isolate);
     v8::Handle<v8::Context> context = v8::Context::New(m_isolate, &extensionConfiguration, globalTemplate, m_global.newLocal(m_isolate));
     if (!context.IsEmpty()) {
         m_contextHolder = adoptPtr(new gin::ContextHolder(m_isolate));
@@ -298,9 +306,13 @@ void V8WindowShell::createContext()
     blink::Platform::current()->histogramCustomCounts(histogramName, contextCreationDurationInMilliseconds, 0, 10000, 50);
 }
 
+static v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context> context)
+{
+    return v8::Handle<v8::Object>::Cast(context->Global()->GetPrototype());
+}
+
 bool V8WindowShell::installDOMWindow()
 {
-    DOMWrapperWorld::setInitializingWindow(true);
     DOMWindow* window = m_frame->domWindow();
     v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(V8PerContextData::from(m_contextHolder->context())->constructorForType(&V8Window::wrapperTypeInfo));
     if (windowWrapper.IsEmpty())
@@ -327,7 +339,6 @@ bool V8WindowShell::installDOMWindow()
     V8DOMWrapper::setNativeInfo(innerGlobalObject, &V8Window::wrapperTypeInfo, window);
     innerGlobalObject->SetPrototype(windowWrapper);
     V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtr<DOMWindow>(window), &V8Window::wrapperTypeInfo, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
-    DOMWrapperWorld::setInitializingWindow(false);
     return true;
 }
 
@@ -364,7 +375,7 @@ void V8WindowShell::updateDocumentProperty()
     // We also stash a reference to the document on the inner global object so that
     // DOMWindow objects we obtain from JavaScript references are guaranteed to have
     // live Document objects.
-    toInnerGlobalObject(context)->SetHiddenValue(V8HiddenPropertyName::document(m_isolate), documentWrapper);
+    setHiddenValue(m_isolate, toInnerGlobalObject(context), "document", documentWrapper);
 }
 
 void V8WindowShell::clearDocumentProperty()
@@ -376,24 +387,19 @@ void V8WindowShell::clearDocumentProperty()
     m_contextHolder->context()->Global()->ForceDelete(v8AtomicString(m_isolate, "document"));
 }
 
-void V8WindowShell::setSecurityToken()
+void V8WindowShell::setSecurityToken(SecurityOrigin* origin)
 {
     ASSERT(m_world->isMainWorld());
-
-    Document* document = m_frame->document();
-
-    // Ask the document's SecurityOrigin to generate a security token.
     // If two tokens are equal, then the SecurityOrigins canAccess each other.
     // If two tokens are not equal, then we have to call canAccess.
     // Note: we can't use the HTTPOrigin if it was set from the DOM.
-    SecurityOrigin* origin = document->securityOrigin();
     String token;
     // We stick with an empty token if document.domain was modified or if we
     // are in the initial empty document, so that we can do a full canAccess
     // check in those cases.
     if (!origin->domainWasSetInDOM()
         && !m_frame->loader().stateMachine()->isDisplayingInitialEmptyDocument())
-        token = document->securityOrigin()->toString();
+        token = origin->toString();
 
     // An empty or "null" token means we always have to call
     // canAccess. The toString method on securityOrigins returns the
@@ -422,7 +428,7 @@ void V8WindowShell::updateDocument()
     if (!m_contextHolder)
         return;
     updateDocumentProperty();
-    updateSecurityOrigin();
+    updateSecurityOrigin(m_frame->document()->securityOrigin());
 }
 
 static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const AtomicString& key, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -435,11 +441,11 @@ static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const 
         return v8Undefined();
 
     if (items->hasExactlyOneItem()) {
-        Node* node = items->item(0);
+        Element* element = items->item(0);
         Frame* frame = 0;
-        if (node->hasTagName(HTMLNames::iframeTag) && (frame = toHTMLIFrameElement(node)->contentFrame()))
+        if (element->hasTagName(HTMLNames::iframeTag) && (frame = toHTMLIFrameElement(element)->contentFrame()))
             return toV8(frame->domWindow(), creationContext, isolate);
-        return toV8(node, creationContext, isolate);
+        return toV8(element, creationContext, isolate);
     }
     return toV8(items.release(), creationContext, isolate);
 }
@@ -497,13 +503,24 @@ void V8WindowShell::namedItemRemoved(HTMLDocument* document, const AtomicString&
     documentHandle->Delete(v8String(m_isolate, name));
 }
 
-void V8WindowShell::updateSecurityOrigin()
+void V8WindowShell::updateSecurityOrigin(SecurityOrigin* origin)
 {
     ASSERT(m_world->isMainWorld());
     if (!m_contextHolder)
         return;
     v8::HandleScope handleScope(m_isolate);
-    setSecurityToken();
+    setSecurityToken(origin);
+}
+
+bool V8WindowShell::contextHasCorrectPrototype(v8::Handle<v8::Context> context)
+{
+    if (!isMainThread())
+        return true;
+    // We're initializing the context, so it is not yet in a status where we can
+    // validate the context.
+    if (contextBeingInitialized)
+        return true;
+    return !!toDOMWindow(context);
 }
 
 } // WebCore

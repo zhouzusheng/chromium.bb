@@ -26,14 +26,12 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/DOMTimeStamp.h"
-#include "core/events/EventContext.h"
 #include "core/events/EventPath.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-class Clipboard;
 class EventTarget;
 class EventDispatcher;
 class HTMLIFrameElement;
@@ -132,8 +130,6 @@ public:
     bool legacyReturnValue() const { return !defaultPrevented(); }
     void setLegacyReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
 
-    Clipboard* clipboardData() const { return isClipboardEvent() ? clipboard() : 0; }
-
     virtual const AtomicString& interfaceName() const;
     bool hasInterface(const AtomicString&) const;
 
@@ -175,10 +171,10 @@ public:
     Event* underlyingEvent() const { return m_underlyingEvent.get(); }
     void setUnderlyingEvent(PassRefPtr<Event>);
 
-    EventPath& eventPath() { return m_eventPath; }
-    PassRefPtr<NodeList> path() const;
+    EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
+    EventPath& ensureEventPath();
 
-    virtual Clipboard* clipboard() const { return 0; }
+    PassRefPtr<NodeList> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
 
@@ -206,7 +202,7 @@ private:
     RefPtr<EventTarget> m_target;
     DOMTimeStamp m_createTime;
     RefPtr<Event> m_underlyingEvent;
-    EventPath m_eventPath;
+    OwnPtr<EventPath> m_eventPath;
 };
 
 #define DEFINE_EVENT_TYPE_CASTS(typeName) \

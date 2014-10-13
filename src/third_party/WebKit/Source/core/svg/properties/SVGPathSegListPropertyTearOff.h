@@ -28,7 +28,7 @@ namespace WebCore {
 
 class SVGPathElement;
 
-class SVGPathSegListPropertyTearOff : public SVGListProperty<SVGPathSegList> {
+class SVGPathSegListPropertyTearOff FINAL : public SVGListProperty<SVGPathSegList> {
 public:
     typedef SVGListProperty<SVGPathSegList> Base;
     typedef SVGAnimatedListPropertyTearOff<SVGPathSegList> AnimatedListPropertyTearOff;
@@ -75,7 +75,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            exceptionState.throwUninformativeAndGenericTypeError();
+            exceptionState.throwTypeError("The PassListItemType provided is invalid.");
             return 0;
         }
 
@@ -90,7 +90,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            exceptionState.throwUninformativeAndGenericTypeError();
+            exceptionState.throwTypeError("The PassListItemType provided is invalid.");
             return 0;
         }
 
@@ -106,7 +106,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            exceptionState.throwUninformativeAndGenericTypeError();
+            exceptionState.throwTypeError("The PassListItemType provided is invalid.");
             return 0;
         }
 
@@ -126,29 +126,20 @@ private:
 
     using Base::m_role;
 
-    virtual bool isReadOnly() const
-    {
-        if (m_role == AnimValRole)
-            return true;
-        if (m_animatedProperty && m_animatedProperty->isReadOnly())
-            return true;
-        return false;
-    }
-
-    virtual void commitChange()
+    virtual void commitChange() OVERRIDE
     {
         ASSERT(m_values);
         m_values->commitChange(m_animatedProperty->contextElement(), ListModificationUnknown);
     }
 
-    virtual void commitChange(ListModification listModification)
+    virtual void commitChange(ListModification listModification) OVERRIDE
     {
         ASSERT(m_values);
         m_values->commitChange(m_animatedProperty->contextElement(), listModification);
     }
 
     virtual bool processIncomingListItemValue(const ListItemType& newItem, unsigned* indexToModify) OVERRIDE;
-    virtual bool processIncomingListItemWrapper(RefPtr<ListItemTearOff>&, unsigned*)
+    virtual bool processIncomingListItemWrapper(RefPtr<ListItemTearOff>&, unsigned*) OVERRIDE
     {
         ASSERT_NOT_REACHED();
         return true;

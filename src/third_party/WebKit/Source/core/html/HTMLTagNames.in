@@ -11,7 +11,7 @@ applet constructorNeedsCreatedByParser
 area
 article interfaceName=HTMLElement
 aside interfaceName=HTMLElement
-audio runtimeEnabled=media, constructorNeedsCreatedByParser
+audio runtimeEnabled=media
 b interfaceName=HTMLElement
 base
 basefont interfaceName=HTMLElement
@@ -87,7 +87,7 @@ meta
 meter interfaceName=HTMLMeterElement
 nav interfaceName=HTMLElement
 nobr interfaceName=HTMLElement
-noembed interfaceName=HTMLElement
+noembed interfaceName=HTMLNoEmbedElement, JSInterfaceName=HTMLElement
 noframes interfaceName=HTMLElement
 nolayer interfaceName=HTMLElement
 object constructorNeedsFormElement, constructorNeedsCreatedByParser
@@ -103,13 +103,13 @@ pre
 progress interfaceName=HTMLProgressElement
 q interfaceName=HTMLQuoteElement
 rp interfaceName=HTMLElement
-rt interfaceName=HTMLElement
-ruby interfaceName=HTMLElement
+rt interfaceName=HTMLRTElement, JSInterfaceName=HTMLElement
+ruby interfaceName=HTMLRubyElement, JSInterfaceName=HTMLElement
 s interfaceName=HTMLElement
 samp interfaceName=HTMLElement
 script constructorNeedsCreatedByParser
 section interfaceName=HTMLElement
-select constructorNeedsFormElement, constructorNeedsCreatedByParser
+select constructorNeedsFormElement
 small interfaceName=HTMLElement
 source runtimeEnabled=media
 span
@@ -134,7 +134,7 @@ tt interfaceName=HTMLElement
 u interfaceName=HTMLElement
 ul interfaceName=HTMLUListElement
 var interfaceName=HTMLElement
-video runtimeEnabled=media, constructorNeedsCreatedByParser
-wbr interfaceName=HTMLElement
+video runtimeEnabled=media
+wbr interfaceName=HTMLWBRElement, JSInterfaceName=HTMLElement
 xmp interfaceName=HTMLPreElement
-noscript interfaceName=HTMLElement
+noscript interfaceName=HTMLNoScriptElement, JSInterfaceName=HTMLElement

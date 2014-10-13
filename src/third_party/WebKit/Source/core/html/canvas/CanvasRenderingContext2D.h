@@ -26,6 +26,7 @@
 #ifndef CanvasRenderingContext2D_h
 #define CanvasRenderingContext2D_h
 
+#include "core/css/CSSFontSelectorClient.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
 #include "core/html/canvas/CanvasPathMethods.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
@@ -62,7 +63,7 @@ class TextMetrics;
 
 typedef HashMap<String, RefPtr<MutableStylePropertySet> > MutableStylePropertyMap;
 
-class CanvasRenderingContext2D : public CanvasRenderingContext, public CanvasPathMethods {
+class CanvasRenderingContext2D FINAL : public CanvasRenderingContext, public CanvasPathMethods {
 public:
     static PassOwnPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
     {
@@ -90,12 +91,9 @@ public:
 
     const Vector<float>& getLineDash() const;
     void setLineDash(const Vector<float>&);
-    void setWebkitLineDash(const Vector<float>&);
 
     float lineDashOffset() const;
     void setLineDashOffset(float);
-    float webkitLineDashOffset() const;
-    void setWebkitLineDashOffset(float);
 
     float shadowOffsetX() const;
     void setShadowOffsetX(float);
@@ -115,7 +113,7 @@ public:
     String globalCompositeOperation() const;
     void setGlobalCompositeOperation(const String&);
 
-    void save() { ++m_unrealizedSaveCount; }
+    void save() { ++m_stateStack.last().m_unrealizedSaveCount; }
     void restore();
 
     SVGMatrix currentTransform() const
@@ -240,14 +238,17 @@ public:
     bool drawCustomFocusRing(Element*);
 
 private:
-    struct State : FontSelectorClient {
+    struct State FINAL : CSSFontSelectorClient {
         State();
         virtual ~State();
 
         State(const State&);
         State& operator=(const State&);
 
-        virtual void fontsNeedUpdate(FontSelector*) OVERRIDE;
+        // CSSFontSelectorClient implementation
+        virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
+
+        unsigned m_unrealizedSaveCount;
 
         String m_unparsedStrokeColor;
         String m_unparsedFillColor;
@@ -280,7 +281,7 @@ private:
 
     CanvasRenderingContext2D(HTMLCanvasElement*, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode);
 
-    State& modifiableState() { ASSERT(!m_unrealizedSaveCount); return m_stateStack.last(); }
+    State& modifiableState() { ASSERT(!state().m_unrealizedSaveCount); return m_stateStack.last(); }
     const State& state() const { return m_stateStack.last(); }
 
     void applyLineDash() const;
@@ -296,12 +297,7 @@ private:
     GraphicsContext* drawingContext() const;
 
     void unwindStateStack();
-    void realizeSaves()
-    {
-        if (m_unrealizedSaveCount)
-            realizeSavesLoop();
-    }
-    void realizeSavesLoop();
+    void realizeSaves();
 
     void applyStrokePattern();
     void applyFillPattern();
@@ -326,12 +322,11 @@ private:
     virtual bool isAccelerated() const OVERRIDE;
     virtual bool hasAlpha() const OVERRIDE { return m_hasAlpha; }
 
-    virtual bool isTransformInvertible() const { return state().m_invertibleCTM; }
+    virtual bool isTransformInvertible() const OVERRIDE { return state().m_invertibleCTM; }
 
     virtual blink::WebLayer* platformLayer() const OVERRIDE;
 
     Vector<State, 1> m_stateStack;
-    unsigned m_unrealizedSaveCount;
     bool m_usesCSSCompatibilityParseMode;
     bool m_hasAlpha;
     MutableStylePropertyMap m_fetchedFonts;

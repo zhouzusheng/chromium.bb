@@ -112,7 +112,7 @@ bool InputTypeView::hasCustomFocusLogic() const
     return false;
 }
 
-void InputTypeView::handleFocusEvent(Element*, FocusDirection)
+void InputTypeView::handleFocusEvent(Element*, FocusType)
 {
 }
 
@@ -206,6 +206,10 @@ void InputTypeView::listAttributeTargetChanged()
 }
 
 void InputTypeView::updateClearButtonVisibility()
+{
+}
+
+void InputTypeView::updatePlaceholderText()
 {
 }
 

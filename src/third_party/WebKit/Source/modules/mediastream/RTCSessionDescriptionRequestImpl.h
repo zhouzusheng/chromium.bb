@@ -33,6 +33,8 @@
 
 #include "core/dom/ActiveDOMObject.h"
 #include "platform/mediastream/RTCSessionDescriptionRequest.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 
 namespace blink {
 class WebRTCSessionDescription;
@@ -44,7 +46,7 @@ class RTCErrorCallback;
 class RTCPeerConnection;
 class RTCSessionDescriptionCallback;
 
-class RTCSessionDescriptionRequestImpl : public RTCSessionDescriptionRequest, public ActiveDOMObject {
+class RTCSessionDescriptionRequestImpl FINAL : public RTCSessionDescriptionRequest, public ActiveDOMObject {
 public:
     static PassRefPtr<RTCSessionDescriptionRequestImpl> create(ExecutionContext*, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
     virtual ~RTCSessionDescriptionRequestImpl();

@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/common_types.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -31,6 +32,15 @@ struct RtpStatistics {
   int cumulative_loss;
   int extended_max_sequence_number;
   std::string c_name;
+};
+
+struct StreamStats {
+  StreamStats() : key_frames(0), delta_frames(0), bitrate_bps(0) {}
+  uint32_t key_frames;
+  uint32_t delta_frames;
+  int32_t bitrate_bps;
+  StreamDataCounters rtp_stats;
+  RtcpStatistics rtcp_stats;
 };
 
 // Settings for NACK, see RFC 4585 for details.
@@ -52,19 +62,6 @@ struct FecConfig {
 
   // Payload type used for RED packets.
   int red_payload_type;
-};
-
-// Settings for RTP retransmission payload format, see RFC 4588 for details.
-struct RtxConfig {
-  RtxConfig() : rtx_payload_type(0), video_payload_type(0) {}
-  // SSRCs to use for the RTX streams.
-  std::vector<uint32_t> ssrcs;
-
-  // Payload type to use for the RTX stream.
-  int rtx_payload_type;
-
-  // Original video payload this RTX stream is used for.
-  int video_payload_type;
 };
 
 // RTP header extension to use for the video stream, see RFC 5285.

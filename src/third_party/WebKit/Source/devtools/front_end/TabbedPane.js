@@ -94,11 +94,13 @@ WebInspector.TabbedPane.prototype = {
     },
 
     /**
-     * @param {boolean} retainTabsOrder
+     * @param {boolean} retainTabOrder
+     * @param {function(string, string):number=} tabOrderComparator
      */
-    setRetainTabsOrder: function(retainTabsOrder)
+    setRetainTabOrder: function(retainTabOrder, tabOrderComparator)
     {
-        this._retainTabsOrder = retainTabsOrder;
+        this._retainTabOrder = retainTabOrder;
+        this._tabOrderComparator = tabOrderComparator;
     },
 
     /**
@@ -107,6 +109,14 @@ WebInspector.TabbedPane.prototype = {
     defaultFocusedElement: function()
     {
         return this.visibleView ? this.visibleView.defaultFocusedElement() : null;
+    },
+
+    focus: function()
+    {
+        if (this.visibleView)
+            this.visibleView.focus();
+        else
+            WebInspector.View.prototype.focus.call(this);
     },
 
     /**
@@ -153,10 +163,25 @@ WebInspector.TabbedPane.prototype = {
         tab.setDelegate(this._delegate);
         this._tabsById[id] = tab;
 
-        this._tabs.push(tab);
+        /**
+         * @param {!WebInspector.TabbedPaneTab} tab1
+         * @param {!WebInspector.TabbedPaneTab} tab2
+         * @this {WebInspector.TabbedPane}
+         * @return {number}
+         */
+        function comparator(tab1, tab2)
+        {
+            return this._tabOrderComparator(tab1.id, tab2.id);
+        }
+
+        if (this._retainTabOrder && this._tabOrderComparator)
+            this._tabs.splice(insertionIndexForObjectInListSortedByFunction(tab, this._tabs, comparator.bind(this)), 0, tab);
+        else
+            this._tabs.push(tab);
+
         this._tabsHistory.push(tab);
 
-        if (this._tabsHistory[0] === tab)
+        if (this._tabsHistory[0] === tab && this.isShowing())
             this.selectTab(tab.id, userGesture);
 
         this._updateTabElements();
@@ -269,7 +294,6 @@ WebInspector.TabbedPane.prototype = {
 
         var eventData = { tabId: id, view: tab.view, isUserGesture: userGesture };
         this.dispatchEventToListeners(WebInspector.TabbedPane.EventTypes.TabSelected, eventData);
-        return true;
     },
 
     /**
@@ -346,6 +370,13 @@ WebInspector.TabbedPane.prototype = {
         this._updateTabElements();
     },
 
+    wasShown: function()
+    {
+        var effectiveTab = this._currentTab || this._tabsHistory[0];
+        if (effectiveTab)
+            this.selectTab(effectiveTab.id);
+    },
+
     _updateTabElements: function()
     {
         WebInspector.invokeOnceAfterBatchUpdate(this, this._innerUpdateTabElements);
@@ -415,6 +446,7 @@ WebInspector.TabbedPane.prototype = {
         dropDownButton.appendChild(document.createTextNode("\u00bb"));
         this._tabsSelect = dropDownButton.createChild("select", "tabbed-pane-header-tabs-drop-down-select");
         this._tabsSelect.addEventListener("change", this._tabsSelectChanged.bind(this), false);
+        this._tabsSelect.addEventListener("mousedown", consumeEvent, false);
         return dropDownContainer;
     },
 
@@ -457,7 +489,7 @@ WebInspector.TabbedPane.prototype = {
         {
             return tab1.title.localeCompare(tab2.title);
         }
-        if (!this._retainTabsOrder)
+        if (!this._retainTabOrder)
             tabsToShow.sort(compareFunction);
 
         var selectedIndex = -1;
@@ -578,7 +610,7 @@ WebInspector.TabbedPane.prototype = {
         var totalTabsWidth = 0;
         var tabCount = tabsOrdered.length;
         for (var i = 0; i < tabCount; ++i) {
-            var tab = this._retainTabsOrder ? tabsOrdered[i] : tabsHistory[i];
+            var tab = this._retainTabOrder ? tabsOrdered[i] : tabsHistory[i];
             totalTabsWidth += tab.width();
             var minimalRequiredWidth = totalTabsWidth;
             if (i !== tabCount - 1)
@@ -622,10 +654,11 @@ WebInspector.TabbedPane.prototype = {
 
     /**
      * @override
+     * @return {boolean}
      */
     canHighlightPosition: function()
     {
-        return this._currentTab && this._currentTab.view && this._currentTab.view.canHighlightPosition();
+        return !!(this._currentTab && this._currentTab.view && this._currentTab.view.canHighlightPosition());
     },
 
     /**

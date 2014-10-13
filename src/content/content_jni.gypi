@@ -10,7 +10,6 @@
   'sources': [
     'public/android/java/src/org/chromium/content/app/ChildProcessService.java',
     'public/android/java/src/org/chromium/content/app/ContentMain.java',
-    'public/android/java/src/org/chromium/content/app/LibraryLoader.java',
     'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java',
     'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java',
     'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java',
@@ -31,14 +30,12 @@
     'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java',
     'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java',
     'public/android/java/src/org/chromium/content/browser/TouchEventSynthesizer.java',
-    'public/android/java/src/org/chromium/content/browser/TouchPoint.java',
     'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java',
     'public/android/java/src/org/chromium/content/browser/VibrationProvider.java',
     'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java',
     'public/android/java/src/org/chromium/content/browser/framehost/NavigationControllerImpl.java',
     'public/android/java/src/org/chromium/content/browser/webcontents/WebContentsImpl.java',
     'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java',
-    'public/android/java/src/org/chromium/content/common/TraceEvent.java',
    ],
   'variables': {
     'jni_gen_package': 'content',

@@ -181,6 +181,8 @@ void RenderTextControlSingleLine::layout()
     HTMLElement* placeholderElement = inputElement()->placeholderElement();
     if (RenderBox* placeholderBox = placeholderElement ? placeholderElement->renderBox() : 0) {
         LayoutSize innerTextSize;
+        LayoutRectRecorder placeholderBoxRecorder(*placeholderBox);
+
         if (innerTextRenderer)
             innerTextSize = innerTextRenderer->size();
         placeholderBox->style()->setWidth(Length(innerTextSize.width() - placeholderBox->borderAndPaddingWidth(), Fixed));
@@ -199,7 +201,7 @@ void RenderTextControlSingleLine::layout()
 
         if (!placeholderBoxHadLayout && placeholderBox->checkForRepaintDuringLayout()) {
             // This assumes a shadow tree without floats. If floats are added, the
-            // logic should be shared with RenderBlock::layoutBlockChild.
+            // logic should be shared with RenderBlockFlow::layoutBlockChild.
             placeholderBox->repaint();
         }
         // The placeholder gets layout last, after the parent text control and its other children,
@@ -316,7 +318,7 @@ LayoutUnit RenderTextControlSingleLine::preferredContentLogicalWidth(float charW
     LayoutUnit result = LayoutUnit::fromFloatCeil(charWidth * factor);
 
     float maxCharWidth = 0.f;
-    AtomicString family = style()->font().family().family();
+    AtomicString family = style()->font().fontDescription().family().family();
     // Since Lucida Grande is the default font, we want this to match the width
     // of MS Shell Dlg, the default font for textareas in Firefox, Safari Win and
     // IE for some encodings (in IE, the default font is encoding specific).
@@ -374,6 +376,9 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
     textBlockStyle->setDisplay(BLOCK);
     textBlockStyle->setUnique();
 
+    if (inputElement()->shouldRevealPassword())
+        textBlockStyle->setTextSecurity(TSNONE);
+
     return textBlockStyle.release();
 }
 
@@ -395,28 +400,28 @@ int RenderTextControlSingleLine::scrollWidth() const
 {
     if (innerTextElement())
         return innerTextElement()->scrollWidth();
-    return RenderBlock::scrollWidth();
+    return RenderBlockFlow::scrollWidth();
 }
 
 int RenderTextControlSingleLine::scrollHeight() const
 {
     if (innerTextElement())
         return innerTextElement()->scrollHeight();
-    return RenderBlock::scrollHeight();
+    return RenderBlockFlow::scrollHeight();
 }
 
 int RenderTextControlSingleLine::scrollLeft() const
 {
     if (innerTextElement())
         return innerTextElement()->scrollLeft();
-    return RenderBlock::scrollLeft();
+    return RenderBlockFlow::scrollLeft();
 }
 
 int RenderTextControlSingleLine::scrollTop() const
 {
     if (innerTextElement())
         return innerTextElement()->scrollTop();
-    return RenderBlock::scrollTop();
+    return RenderBlockFlow::scrollTop();
 }
 
 void RenderTextControlSingleLine::setScrollLeft(int newLeft)

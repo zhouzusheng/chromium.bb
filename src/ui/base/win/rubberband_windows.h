@@ -5,33 +5,33 @@
 #ifndef UI_BASE_WIN_RUBBERBAND_WINDOWS_H_
 #define UI_BASE_WIN_RUBBERBAND_WINDOWS_H_
 
-#include <atlbase.h>
-#include <atlapp.h>
-#include <atlmisc.h>
-#include <atlcrack.h>
+#include "base/macros.h"
+#include "ui/base/ui_base_export.h"
 
-#include "base/logging.h"
-#include "ui/base/ui_export.h"
-#include "ui/gfx/win/window_impl.h"
+#include <windows.h>
+
+namespace gfx {
+class Rect;
+}  // namespace gfx
 
 namespace ui {
 
-class RubberbandWindow : public gfx::WindowImpl {
+class RubberbandWindow {
  public:
   RubberbandWindow();
-  virtual ~RubberbandWindow();
+  ~RubberbandWindow();
 
-  BEGIN_MSG_MAP_EX(RubberbandWindow)
-    MSG_WM_PAINT(OnPaint)
-  END_MSG_MAP()
+  void Init(HWND parent, const gfx::Rect& bounds);
+  HWND hwnd() const;
+  void set_window_style(DWORD style);
 
  private:
-  LRESULT OnPaint(HDC);
+  void* impl_;
 
   DISALLOW_COPY_AND_ASSIGN(RubberbandWindow);
 };
 
-class UI_EXPORT RubberbandOutline {
+class UI_BASE_EXPORT RubberbandOutline {
  public:
   RubberbandOutline();
   ~RubberbandOutline();

@@ -56,6 +56,7 @@
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/CompositedLayerMapping.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderScrollbar.h"
@@ -191,7 +192,27 @@ void RenderLayerScrollableArea::invalidateScrollbarRect(Scrollbar* scrollbar, co
         scrollRect.move(verticalScrollbarStart(0, m_box->width()), m_box->borderTop());
     else
         scrollRect.move(horizontalScrollbarStart(0), m_box->height() - m_box->borderBottom() - scrollbar->height());
-    m_box->repaintRectangle(scrollRect);
+
+    if (scrollRect.isEmpty())
+        return;
+
+    LayoutRect repaintRect = scrollRect;
+    m_box->flipForWritingMode(repaintRect);
+
+    IntRect intRect = pixelSnappedIntRect(repaintRect);
+
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && m_box->frameView()->isInPerformLayout()) {
+        if (scrollbar == m_vBar.get()) {
+            m_verticalBarDamage = intRect;
+            m_hasVerticalBarDamage = true;
+        } else {
+            m_horizontalBarDamage = intRect;
+            m_hasHorizontalBarDamage = true;
+        }
+
+    } else {
+        m_box->repaintRectangle(intRect);
+    }
 }
 
 void RenderLayerScrollableArea::invalidateScrollCornerRect(const IntRect& rect)
@@ -330,38 +351,34 @@ void RenderLayerScrollableArea::setScrollOffset(const IntPoint& newScrollOffset)
     setScrollOffset(toIntSize(newScrollOffset));
 
     Frame* frame = m_box->frame();
+    ASSERT(frame);
+
+    RefPtr<FrameView> frameView = m_box->frameView();
+
     InspectorInstrumentation::willScrollLayer(m_box);
-
-    RenderView* view = m_box->view();
-
-    // We should have a RenderView if we're trying to scroll.
-    ASSERT(view);
 
     // Update the positions of our child layers (if needed as only fixed layers should be impacted by a scroll).
     // We don't update compositing layers, because we need to do a deep update from the compositing ancestor.
-    bool inLayout = view ? view->frameView()->isInLayout() : false;
-    if (!inLayout) {
+    if (!frameView->isInPerformLayout()) {
         // If we're in the middle of layout, we'll just update layers once layout has finished.
         layer()->updateLayerPositionsAfterOverflowScroll();
-        if (view) {
-            // Update regions, scrolling may change the clip of a particular region.
-            view->frameView()->updateAnnotatedRegions();
-            view->updateWidgetPositions();
-        }
-
+        // Update regions, scrolling may change the clip of a particular region.
+        frameView->updateAnnotatedRegions();
+        // FIXME: We shouldn't call updateWidgetPositions() here since it might tear down the render tree,
+        // for now we just crash to avoid allowing an attacker to use after free.
+        frameView->updateWidgetPositions();
+        RELEASE_ASSERT(frameView->renderView());
         updateCompositingLayersAfterScroll();
     }
 
     RenderLayerModelObject* repaintContainer = m_box->containerForRepaint();
-    if (frame) {
-        // The caret rect needs to be invalidated after scrolling
-        frame->selection().setCaretRectNeedsUpdate();
+    // The caret rect needs to be invalidated after scrolling
+    frame->selection().setCaretRectNeedsUpdate();
 
-        FloatQuad quadForFakeMouseMoveEvent = FloatQuad(layer()->repainter().repaintRect());
-        if (repaintContainer)
-            quadForFakeMouseMoveEvent = repaintContainer->localToAbsoluteQuad(quadForFakeMouseMoveEvent);
-        frame->eventHandler().dispatchFakeMouseMoveEventSoonInQuad(quadForFakeMouseMoveEvent);
-    }
+    FloatQuad quadForFakeMouseMoveEvent = FloatQuad(layer()->repainter().repaintRect());
+    if (repaintContainer)
+        quadForFakeMouseMoveEvent = repaintContainer->localToAbsoluteQuad(quadForFakeMouseMoveEvent);
+    frame->eventHandler().dispatchFakeMouseMoveEventSoonInQuad(quadForFakeMouseMoveEvent);
 
     bool requiresRepaint = true;
 
@@ -377,8 +394,12 @@ void RenderLayerScrollableArea::setScrollOffset(const IntPoint& newScrollOffset)
     }
 
     // Just schedule a full repaint of our object.
-    if (view && requiresRepaint)
-        m_box->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(layer()->repainter().repaintRect()));
+    if (requiresRepaint) {
+        if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && m_box->frameView()->isInPerformLayout())
+            m_box->setShouldDoFullRepaintAfterLayout(true);
+        else
+            m_box->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(layer()->repainter().repaintRect()));
+    }
 
     // Schedule the scroll DOM event.
     if (m_box->node())
@@ -533,6 +554,8 @@ void RenderLayerScrollableArea::updateAfterLayout()
     if (m_box->style()->appearance() == ListboxPart)
         return;
 
+    LayoutRectRecorder recorder(*m_box);
+
     m_scrollDimensionsDirty = true;
     IntSize originalScrollOffset = adjustedScrollOffset();
 
@@ -574,7 +597,8 @@ void RenderLayerScrollableArea::updateAfterLayout()
         if (m_box->document().hasAnnotatedRegions())
             m_box->document().setAnnotatedRegionsDirty(true);
 
-        m_box->repaint();
+        if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+            m_box->repaint();
 
         if (m_box->style()->overflowX() == OAUTO || m_box->style()->overflowY() == OAUTO) {
             if (!m_inOverflowRelayout) {
@@ -606,9 +630,15 @@ void RenderLayerScrollableArea::updateAfterLayout()
 
     updateScrollableAreaSet(hasScrollableHorizontalOverflow() || hasScrollableVerticalOverflow());
 
-    // Composited scrolling may need to be enabled or disabled if the amount of overflow changed.
-    if (m_box->view() && m_box->view()->compositor()->updateLayerCompositingState(m_box->layer()))
-        m_box->view()->compositor()->setCompositingLayersNeedRebuild();
+    {
+        // FIXME: We should not be allowing repaint during layout. crbug.com/336251
+        AllowRepaintScope scoper(m_box->view()->frameView());
+
+        // FIXME: Remove incremental compositing updates after fixing the chicken/egg issues
+        // https://code.google.com/p/chromium/issues/detail?id=343756
+        DisableCompositingQueryAsserts disabler;
+        m_box->view()->compositor()->updateLayerCompositingState(m_box->layer());
+    }
 }
 
 bool RenderLayerScrollableArea::hasHorizontalOverflow() const
@@ -649,6 +679,10 @@ void RenderLayerScrollableArea::updateAfterStyleChange(const RenderStyle* oldSty
 {
     // List box parts handle the scrollbars by themselves so we have nothing to do.
     if (m_box->style()->appearance() == ListboxPart)
+        return;
+
+    // RenderView shouldn't provide scrollbars on its own.
+    if (m_box->isRenderView())
         return;
 
     if (!m_scrollDimensionsDirty)
@@ -1346,14 +1380,14 @@ void RenderLayerScrollableArea::updateScrollableAreaSet(bool hasOverflow)
         // Count the total number of RenderLayers that are scrollable areas for
         // any period. We only want to record this at most once per RenderLayer.
         if (requiresScrollableArea && !m_isScrollableAreaHasBeenRecorded) {
-            blink::Platform::current()->histogramEnumeration("Renderer.CompositedScrolling", RenderLayer::IsScrollableAreaBucket, RenderLayer::CompositedScrollingHistogramMax);
+            blink::Platform::current()->histogramEnumeration("Renderer.CompositedScrolling", IsScrollableAreaBucket, CompositedScrollingHistogramMax);
             m_isScrollableAreaHasBeenRecorded = true;
         }
 
         // We always want composited scrolling if compositor driven accelerated
         // scrolling is enabled. Since we will not update needs composited scrolling
         // in this case, we must force our state to update.
-        if (layer()->compositorDrivenAcceleratedScrollingEnabled())
+        if (m_box->compositorDrivenAcceleratedScrollingEnabled())
             layer()->didUpdateNeedsCompositedScrolling();
         else if (requiresScrollableArea)
             m_box->view()->compositor()->setNeedsUpdateCompositingRequirementsState();
@@ -1370,20 +1404,20 @@ void RenderLayerScrollableArea::updateNeedsCompositedScrolling()
     layer()->updateDescendantDependentFlags();
 
     ASSERT(scrollsOverflow());
-    const bool needsToBeStackingContainer = layer()->acceleratedCompositingForOverflowScrollEnabled()
+    const bool needsToBeStackingContainer = m_box->acceleratedCompositingForOverflowScrollEnabled()
         && layer()->stackingNode()->descendantsAreContiguousInStackingOrder()
         && !layer()->hasUnclippedDescendant();
 
     const bool needsToBeStackingContainerDidChange = layer()->stackingNode()->setNeedsToBeStackingContainer(needsToBeStackingContainer);
 
     const bool needsCompositedScrolling = needsToBeStackingContainer
-        || layer()->compositorDrivenAcceleratedScrollingEnabled();
+        || m_box->compositorDrivenAcceleratedScrollingEnabled();
 
     // We gather a boolean value for use with Google UMA histograms to
     // quantify the actual effects of a set of patches attempting to
     // relax composited scrolling requirements, thereby increasing the
     // number of composited overflow divs.
-    if (layer()->acceleratedCompositingForOverflowScrollEnabled())
+    if (m_box->acceleratedCompositingForOverflowScrollEnabled())
         blink::Platform::current()->histogramEnumeration("Renderer.NeedsCompositedScrolling", needsCompositedScrolling, 2);
 
     const bool needsCompositedScrollingDidChange = setNeedsCompositedScrolling(needsCompositedScrolling);
@@ -1405,8 +1439,8 @@ bool RenderLayerScrollableArea::setNeedsCompositedScrolling(bool needsComposited
     // Count the total number of RenderLayers which need composited scrolling at
     // some point. This should be recorded at most once per RenderLayer, so we
     // check m_willUseCompositedScrollingHasBeenRecorded.
-    if (layer()->acceleratedCompositingForOverflowScrollEnabled() && !m_willUseCompositedScrollingHasBeenRecorded) {
-        blink::Platform::current()->histogramEnumeration("Renderer.CompositedScrolling", RenderLayer::WillUseCompositedScrollingBucket, RenderLayer::CompositedScrollingHistogramMax);
+    if (m_box->acceleratedCompositingForOverflowScrollEnabled() && !m_willUseCompositedScrollingHasBeenRecorded) {
+        blink::Platform::current()->histogramEnumeration("Renderer.CompositedScrolling", WillUseCompositedScrollingBucket, CompositedScrollingHistogramMax);
         m_willUseCompositedScrollingHasBeenRecorded = true;
     }
 
@@ -1428,9 +1462,9 @@ void RenderLayerScrollableArea::updateCompositingLayersAfterScroll()
         // repositioning, so we should be able to enqueue a partial update compositing layers from there.
         // this feature was overridden for now by deferred compositing updates.
         if (usesCompositedScrolling())
-            compositor->updateCompositingLayers(CompositingUpdateOnCompositedScroll);
+            compositor->setNeedsCompositingUpdate(CompositingUpdateOnCompositedScroll);
         else
-            compositor->updateCompositingLayers(CompositingUpdateOnScroll);
+            compositor->setNeedsCompositingUpdate(CompositingUpdateOnScroll);
     }
 }
 

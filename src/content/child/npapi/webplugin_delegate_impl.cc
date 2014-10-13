@@ -316,6 +316,7 @@ void WebPluginDelegateImpl::FetchURL(unsigned long resource_id,
                                      bool notify_redirects,
                                      bool is_plugin_src_load,
                                      int origin_pid,
+                                     int render_frame_id,
                                      int render_view_id) {
   // TODO(jam): once we switch over to resource loading always happening in this
   // code path, remove WebPluginResourceClient abstraction.
@@ -326,7 +327,7 @@ void WebPluginDelegateImpl::FetchURL(unsigned long resource_id,
   plugin_stream->SetPluginURLFetcher(new PluginURLFetcher(
       plugin_stream, url, first_party_for_cookies, method, buf, len,
       referrer, notify_redirects, is_plugin_src_load, origin_pid,
-      render_view_id, resource_id, copy_stream_data));
+      render_frame_id, render_view_id, resource_id, copy_stream_data));
 }
 
 }  // namespace content

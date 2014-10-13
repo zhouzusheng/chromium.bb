@@ -120,7 +120,10 @@ void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
         SVGSVGElement* outerSVG = (*it).get();
         if (!outerSVG->isOutermostSVGSVGElement())
             continue;
-        outerSVG->sendSVGLoadEventIfPossible();
+
+        // don't dispatch the load event document is not wellformed (for XML/standalone svg)
+        if (outerSVG->document().wellFormed() || !outerSVG->document().isSVGDocument())
+            outerSVG->sendSVGLoadEventIfPossible();
     }
 }
 
@@ -150,8 +153,8 @@ void SVGDocumentExtensions::addPendingResource(const AtomicString& id, Element* 
 
     HashMap<AtomicString, OwnPtr<SVGPendingElements> >::AddResult result = m_pendingResources.add(id, nullptr);
     if (result.isNewEntry)
-        result.iterator->value = adoptPtr(new SVGPendingElements);
-    result.iterator->value->add(element);
+        result.storedValue->value = adoptPtr(new SVGPendingElements);
+    result.storedValue->value->add(element);
 
     element->setHasPendingResources();
 }

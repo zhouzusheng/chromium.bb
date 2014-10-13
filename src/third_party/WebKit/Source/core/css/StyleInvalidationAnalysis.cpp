@@ -46,7 +46,7 @@ StyleInvalidationAnalysis::StyleInvalidationAnalysis(const Vector<StyleSheetCont
 
 static bool determineSelectorScopes(const CSSSelectorList& selectorList, HashSet<StringImpl*>& idScopes, HashSet<StringImpl*>& classScopes)
 {
-    for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector)) {
+    for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector)) {
         const CSSSelector* scopeSelector = 0;
         // This picks the widest scope, not the narrowest, to minimize the number of found scopes.
         for (const CSSSelector* current = selector; current; current = current->tagHistory()) {
@@ -56,6 +56,10 @@ static bool determineSelectorScopes(const CSSSelectorList& selectorList, HashSet
             else if (current->m_match == CSSSelector::Class && (!scopeSelector || scopeSelector->m_match != CSSSelector::Id))
                 scopeSelector = current;
             CSSSelector::Relation relation = current->relation();
+            // FIXME: it would be better to use setNeedsStyleRecalc for all shadow hosts matching
+            // scopeSelector. Currently requests full style recalc.
+            if (relation == CSSSelector::DescendantTree || relation == CSSSelector::ChildTree)
+                return false;
             if (relation != CSSSelector::Descendant && relation != CSSSelector::Child && relation != CSSSelector::SubSelector)
                 break;
         }
@@ -123,7 +127,6 @@ static bool ruleAdditionMightRequireDocumentStyleRecalc(StyleRuleBase* rule)
     case StyleRule::Supports: // If we evaluated the supports-clause we could avoid recalc.
     case StyleRule::Viewport: // If the viewport doesn't match, we could avoid recalcing.
     // FIXME: Unclear if any of the rest need to cause style recalc:
-    case StyleRule::Region:
     case StyleRule::Filter:
         return true;
 
@@ -198,7 +201,7 @@ void StyleInvalidationAnalysis::invalidateStyle(Document& document)
 
     if (!m_scopingNodes.isEmpty()) {
         for (unsigned i = 0; i < m_scopingNodes.size(); ++i)
-            m_scopingNodes.at(i)->setNeedsStyleRecalc();
+            m_scopingNodes.at(i)->setNeedsStyleRecalc(SubtreeStyleChange);
     }
 
     if (m_idScopes.isEmpty() && m_classScopes.isEmpty())
@@ -206,7 +209,7 @@ void StyleInvalidationAnalysis::invalidateStyle(Document& document)
     Element* element = ElementTraversal::firstWithin(document);
     while (element) {
         if (elementMatchesSelectorScopes(element, m_idScopes, m_classScopes)) {
-            element->setNeedsStyleRecalc();
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
             // The whole subtree is now invalidated, we can skip to the next sibling.
             element = ElementTraversal::nextSkippingChildren(*element);
             continue;

@@ -90,6 +90,14 @@ void RawResource::willSendRequest(ResourceRequest& request, const ResourceRespon
     Resource::willSendRequest(request, response);
 }
 
+void RawResource::updateRequest(const ResourceRequest& request)
+{
+    ResourcePtr<RawResource> protect(this);
+    ResourceClientWalker<RawResourceClient> w(m_clients);
+    while (RawResourceClient* c = w.next())
+        c->updateRequest(this, request);
+}
+
 void RawResource::responseReceived(const ResourceResponse& response)
 {
     InternalResourcePtr protect(this);
@@ -117,12 +125,6 @@ void RawResource::setDefersLoading(bool defers)
 {
     if (m_loader)
         m_loader->setDefersLoading(defers);
-}
-
-void RawResource::setDataBufferingPolicy(DataBufferingPolicy dataBufferingPolicy)
-{
-    m_options.dataBufferingPolicy = dataBufferingPolicy;
-    clear();
 }
 
 static bool shouldIgnoreHeaderForCacheReuse(AtomicString headerName)
@@ -183,12 +185,6 @@ bool RawResource::canReuse(const ResourceRequest& newRequest) const
     }
 
     return true;
-}
-
-void RawResource::clear()
-{
-    m_data.clear();
-    setEncodedSize(0);
 }
 
 } // namespace WebCore

@@ -214,7 +214,10 @@ bool ViEEncoder::Init() {
                  "%s Codec failure", __FUNCTION__);
     return false;
   }
-  send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+  {
+    CriticalSectionScoped cs(data_cs_.get());
+    send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+  }
   if (vcm_.RegisterSendCodec(&video_codec, number_of_cores_,
                              default_rtp_rtcp_->MaxDataPayloadLength()) != 0) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo,
@@ -231,7 +234,10 @@ bool ViEEncoder::Init() {
 #else
   VideoCodec video_codec;
   if (vcm_.Codec(webrtc::kVideoCodecI420, &video_codec) == VCM_OK) {
-    send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+    {
+      CriticalSectionScoped cs(data_cs_.get());
+      send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+    }
     vcm_.RegisterSendCodec(&video_codec, number_of_cores_,
                            default_rtp_rtcp_->MaxDataPayloadLength());
     default_rtp_rtcp_->RegisterSendPayload(video_codec);
@@ -375,7 +381,15 @@ int32_t ViEEncoder::DeRegisterExternalEncoder(uint8_t pl_type) {
   if (current_send_codec.plType == pl_type) {
     uint16_t max_data_payload_length =
         default_rtp_rtcp_->MaxDataPayloadLength();
-    send_padding_ = current_send_codec.numberOfSimulcastStreams > 1;
+    {
+      CriticalSectionScoped cs(data_cs_.get());
+      send_padding_ = current_send_codec.numberOfSimulcastStreams > 1;
+    }
+    // TODO(mflodman): Unfortunately the VideoCodec that VCM has cached a
+    // raw pointer to an |extra_options| that's long gone.  Clearing it here is
+    // a hack to prevent the following code from crashing.  This should be fixed
+    // for realz.  https://code.google.com/p/chromium/issues/detail?id=348222
+    current_send_codec.extra_options = NULL;
     if (vcm_.RegisterSendCodec(&current_send_codec, number_of_cores_,
                                max_data_payload_length) != VCM_OK) {
       WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo,
@@ -417,7 +431,10 @@ int32_t ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec) {
   uint16_t max_data_payload_length =
       default_rtp_rtcp_->MaxDataPayloadLength();
 
-  send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+  {
+    CriticalSectionScoped cs(data_cs_.get());
+    send_padding_ = video_codec.numberOfSimulcastStreams > 1;
+  }
   if (vcm_.RegisterSendCodec(&video_codec, number_of_cores_,
                              max_data_payload_length) != VCM_OK) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo,
@@ -442,6 +459,9 @@ int32_t ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec) {
                                           kTransmissionMaxBitrateMultiplier *
                                           video_codec.maxBitrate * 1000);
 
+  paced_sender_->UpdateBitrate(video_codec.startBitrate,
+                               video_codec.startBitrate,
+                               video_codec.startBitrate);
   return 0;
 }
 

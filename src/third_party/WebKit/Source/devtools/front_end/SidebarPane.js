@@ -50,6 +50,9 @@ WebInspector.SidebarPane.EventTypes = {
 }
 
 WebInspector.SidebarPane.prototype = {
+    /**
+     * @return {string}
+     */
     title: function()
     {
         return this._title;
@@ -157,7 +160,7 @@ WebInspector.SidebarPaneTitle.prototype = {
 WebInspector.SidebarPaneStack = function()
 {
     WebInspector.View.call(this);
-    this.element.className = "sidebar-pane-stack fill";
+    this.element.className = "sidebar-pane-stack";
     this.registerRequiredCSS("sidebarPane.css");
 }
 
@@ -180,7 +183,7 @@ WebInspector.SidebarPaneStack.prototype = {
 WebInspector.SidebarTabbedPane = function()
 {
     WebInspector.TabbedPane.call(this);
-    this.setRetainTabsOrder(true);
+    this.setRetainTabOrder(true);
     this.element.classList.add("sidebar-tabbed-pane");
     this.registerRequiredCSS("sidebarPane.css");
 }

@@ -29,7 +29,7 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/TransformBuilder.h"
@@ -58,7 +58,7 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionSt
         return;
 
     RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create();
-    if (CSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, HTMLStandardMode, 0)) {
+    if (BisonCSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, HTMLStandardMode, 0)) {
         // Convert to TransformOperations. This can fail if a property
         // requires style (i.e., param uses 'ems' or 'exs')
         RefPtr<CSSValue> value = styleDeclaration->getPropertyCSSValue(CSSPropertyWebkitTransform);
@@ -69,22 +69,22 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionSt
 
         DEFINE_STATIC_REF(RenderStyle, defaultStyle, RenderStyle::createDefaultStyle());
         TransformOperations operations;
-        if (!TransformBuilder::createTransformOperations(value.get(), CSSToLengthConversionData(defaultStyle, defaultStyle), operations)) {
-            exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        if (!TransformBuilder::createTransformOperations(value.get(), CSSToLengthConversionData(defaultStyle, defaultStyle, 0, 0, 1.0f), operations)) {
+            exceptionState.throwDOMException(SyntaxError, "Failed to interpret '" + string + "' as a transformation operation.");
             return;
         }
 
         // Convert transform operations to a TransformationMatrix. This can fail
         // if a param has a percentage ('%')
         if (operations.dependsOnBoxSize())
-            exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+            exceptionState.throwDOMException(SyntaxError, "The transformation depends on the box size, which is not supported.");
         TransformationMatrix t;
         operations.apply(FloatSize(0, 0), t);
 
         // set the matrix
         m_matrix = t;
     } else { // There is something there but parsing failed.
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "Failed to parse '" + string + "'.");
     }
 }
 
@@ -100,7 +100,7 @@ PassRefPtr<CSSMatrix> CSSMatrix::multiply(CSSMatrix* secondMatrix) const
 PassRefPtr<CSSMatrix> CSSMatrix::inverse(ExceptionState& exceptionState) const
 {
     if (!m_matrix.isInvertible()) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, "The matrix is not invertable.");
         return 0;
     }
 

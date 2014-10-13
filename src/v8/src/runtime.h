@@ -64,7 +64,6 @@ namespace internal {
   F(ToFastProperties, 1, 1) \
   F(FinishArrayPrototypeSetup, 1, 1) \
   F(SpecialArrayFunctions, 1, 1) \
-  F(IsCallable, 1, 1) \
   F(IsClassicModeFunction, 1, 1) \
   F(GetDefaultReceiver, 1, 1) \
   \
@@ -86,10 +85,9 @@ namespace internal {
   F(GetConstructorDelegate, 1, 1) \
   F(NewArgumentsFast, 3, 1) \
   F(NewStrictArgumentsFast, 3, 1) \
-  F(LazyCompile, 1, 1) \
-  F(LazyRecompile, 1, 1) \
-  F(ConcurrentRecompile, 1, 1) \
-  F(TryInstallRecompiledCode, 1, 1) \
+  F(CompileUnoptimized, 1, 1) \
+  F(CompileOptimized, 2, 1) \
+  F(TryInstallOptimizedCode, 1, 1) \
   F(NotifyDeoptimized, 1, 1) \
   F(NotifyStubFailure, 0, 1) \
   F(DeoptimizeFunction, 1, 1) \
@@ -101,8 +99,8 @@ namespace internal {
   F(GetOptimizationStatus, -1, 1) \
   F(GetOptimizationCount, 1, 1) \
   F(UnblockConcurrentRecompilation, 0, 1) \
-  F(CompileForOnStackReplacement, 2, 1) \
-  F(SetAllocationTimeout, 2, 1) \
+  F(CompileForOnStackReplacement, 1, 1) \
+  F(SetAllocationTimeout, -1 /* 2 || 3 */, 1) \
   F(AllocateInNewSpace, 1, 1) \
   F(AllocateInTargetSpace, 2, 1) \
   F(SetNativeFlag, 1, 1) \
@@ -111,7 +109,7 @@ namespace internal {
   F(DebugCallbackSupportsStepping, 1, 1) \
   F(DebugPrepareStepInIfStepping, 1, 1) \
   F(FlattenString, 1, 1) \
-  F(MigrateInstance, 1, 1) \
+  F(TryMigrateInstance, 1, 1) \
   F(NotifyContextDisposed, 0, 1) \
   F(MaxSmi, 0, 1) \
   \
@@ -180,16 +178,13 @@ namespace internal {
   F(Math_asin, 1, 1) \
   F(Math_atan, 1, 1) \
   F(Math_atan2, 2, 1) \
-  F(Math_cos, 1, 1) \
   F(Math_exp, 1, 1) \
   F(Math_floor, 1, 1) \
   F(Math_log, 1, 1) \
   F(Math_pow, 2, 1) \
   F(Math_pow_cfunction, 2, 1) \
   F(RoundNumber, 1, 1) \
-  F(Math_sin, 1, 1) \
   F(Math_sqrt, 1, 1) \
-  F(Math_tan, 1, 1) \
   \
   /* Regular expressions */ \
   F(RegExpCompile, 3, 1) \
@@ -370,6 +365,7 @@ namespace internal {
   F(ArrayBufferGetByteLength, 1, 1)\
   F(ArrayBufferSliceImpl, 3, 1) \
   F(ArrayBufferIsView, 1, 1) \
+  F(ArrayBufferNeuter, 1, 1) \
   \
   F(TypedArrayInitialize, 5, 1) \
   F(TypedArrayInitializeFromArrayLike, 4, 1) \
@@ -466,16 +462,16 @@ namespace internal {
   F(HasFastHoleyElements, 1, 1) \
   F(HasDictionaryElements, 1, 1) \
   F(HasNonStrictArgumentsElements, 1, 1) \
-  F(HasExternalPixelElements, 1, 1) \
+  F(HasExternalUint8ClampedElements, 1, 1) \
   F(HasExternalArrayElements, 1, 1) \
-  F(HasExternalByteElements, 1, 1) \
-  F(HasExternalUnsignedByteElements, 1, 1) \
-  F(HasExternalShortElements, 1, 1) \
-  F(HasExternalUnsignedShortElements, 1, 1) \
-  F(HasExternalIntElements, 1, 1) \
-  F(HasExternalUnsignedIntElements, 1, 1) \
-  F(HasExternalFloatElements, 1, 1) \
-  F(HasExternalDoubleElements, 1, 1) \
+  F(HasExternalInt8Elements, 1, 1) \
+  F(HasExternalUint8Elements, 1, 1) \
+  F(HasExternalInt16Elements, 1, 1) \
+  F(HasExternalUint16Elements, 1, 1) \
+  F(HasExternalInt32Elements, 1, 1) \
+  F(HasExternalUint32Elements, 1, 1) \
+  F(HasExternalFloat32Elements, 1, 1) \
+  F(HasExternalFloat64Elements, 1, 1) \
   F(HasFastProperties, 1, 1) \
   F(TransitionElementsKind, 2, 1) \
   F(HaveSameMap, 2, 1) \
@@ -558,6 +554,10 @@ namespace internal {
   F(AvailableLocalesOf, 1, 1) \
   F(GetDefaultICULocale, 0, 1) \
   F(GetLanguageTagVariants, 1, 1) \
+  F(IsInitializedIntlObject, 1, 1) \
+  F(IsInitializedIntlObjectOfType, 2, 1) \
+  F(MarkAsInitializedIntlObjectOfType, 3, 1) \
+  F(GetImplFromInitializedIntlObject, 1, 1) \
   \
   /* Date format and parse. */ \
   F(CreateDateTimeFormat, 3, 1) \
@@ -572,6 +572,9 @@ namespace internal {
   /* Collator. */ \
   F(CreateCollator, 3, 1) \
   F(InternalCompare, 3, 1) \
+  \
+  /* String.prototype.normalize. */ \
+  F(StringNormalize, 2, 1) \
   \
   /* Break iterator. */ \
   F(CreateBreakIterator, 3, 1) \
@@ -636,7 +639,6 @@ namespace internal {
   F(MathSqrt, 1, 1)                                                          \
   F(MathLog, 1, 1)                                                           \
   F(IsMinusZero, 1, 1)                                                       \
-  F(IsRegExpEquivalent, 2, 1)                                                \
   F(HasCachedArrayIndex, 1, 1)                                               \
   F(GetCachedArrayIndex, 1, 1)                                               \
   F(FastAsciiArrayJoin, 2, 1)                                                \
@@ -830,6 +832,8 @@ class Runtime : public AllStatic {
       size_t allocated_length,
       bool initialize = true);
 
+  static void NeuterArrayBuffer(Handle<JSArrayBuffer> array_buffer);
+
   static void FreeArrayBuffer(
       Isolate* isolate,
       JSArrayBuffer* phantom_array_buffer);
@@ -844,7 +848,7 @@ class Runtime : public AllStatic {
     ARRAY_ID_INT32 = 6,
     ARRAY_ID_FLOAT32 = 7,
     ARRAY_ID_FLOAT64 = 8,
-    ARRAY_ID_UINT8C = 9
+    ARRAY_ID_UINT8_CLAMPED = 9
   };
 
   static void ArrayIdToTypeAndSize(int array_id,

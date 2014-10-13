@@ -113,6 +113,16 @@ void ScriptCallArgumentHandler::appendArgument(bool argument)
     m_arguments.append(ScriptValue(v8Boolean(argument, isolate), isolate));
 }
 
+void ScriptCallArgumentHandler::appendArgument(const Vector<ScriptValue>& argument)
+{
+    v8::Isolate* isolate = m_scriptState->isolate();
+    ScriptScope scope(m_scriptState);
+    v8::Handle<v8::Array> result = v8::Array::New(isolate, argument.size());
+    for (size_t i = 0; i < argument.size(); ++i)
+        result->Set(v8::Integer::New(isolate, i), argument[i].v8Value());
+    m_arguments.append(ScriptValue(result, isolate));
+}
+
 ScriptFunctionCall::ScriptFunctionCall(const ScriptObject& thisObject, const String& name)
     : ScriptCallArgumentHandler(thisObject.scriptState())
     , m_thisObject(thisObject)
@@ -140,7 +150,7 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
         ASSERT(!info[i].IsEmpty());
     }
 
-    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, getExecutionContext(), thisObject, m_arguments.size(), info.get(), m_scriptState->isolate());
+    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, currentExecutionContext(m_scriptState->isolate()), thisObject, m_arguments.size(), info.get(), m_scriptState->isolate());
     if (!scope.success()) {
         hadException = true;
         return ScriptValue();

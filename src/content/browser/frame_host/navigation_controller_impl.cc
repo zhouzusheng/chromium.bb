@@ -20,6 +20,7 @@
 #include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"  // Temporary
 #include "content/browser/site_instance_impl.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -308,6 +309,7 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     // POST wasn't involved; the latter case avoids issues with sending data to
     // the wrong page.
     entry->SetURL(entry->GetOriginalRequestURL());
+    entry->SetReferrer(Referrer());
   }
 
   if (g_check_for_repost && check_for_repost &&
@@ -663,7 +665,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
       }
       break;
     case LOAD_TYPE_DATA:
-      if (!params.url.SchemeIs(chrome::kDataScheme)) {
+      if (!params.url.SchemeIs(kDataScheme)) {
         NOTREACHED() << "Data load must use data scheme.";
         return;
       }
@@ -734,7 +736,8 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
 }
 
 bool NavigationControllerImpl::RendererDidNavigate(
-    const ViewHostMsg_FrameNavigate_Params& params,
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
     LoadCommittedDetails* details) {
   is_initial_navigation_ = false;
 
@@ -761,7 +764,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
       pending_entry_ && pending_entry_->should_replace_entry();
 
   // Do navigation-type specific actions. These will make and commit an entry.
-  details->type = ClassifyNavigation(params);
+  details->type = ClassifyNavigation(rvh, params);
 
   // is_in_page must be computed before the entry gets committed.
   details->is_in_page = IsURLInPageNavigation(
@@ -769,22 +772,22 @@ bool NavigationControllerImpl::RendererDidNavigate(
 
   switch (details->type) {
     case NAVIGATION_TYPE_NEW_PAGE:
-      RendererDidNavigateToNewPage(params, details->did_replace_entry);
+      RendererDidNavigateToNewPage(rvh, params, details->did_replace_entry);
       break;
     case NAVIGATION_TYPE_EXISTING_PAGE:
-      RendererDidNavigateToExistingPage(params);
+      RendererDidNavigateToExistingPage(rvh, params);
       break;
     case NAVIGATION_TYPE_SAME_PAGE:
-      RendererDidNavigateToSamePage(params);
+      RendererDidNavigateToSamePage(rvh, params);
       break;
     case NAVIGATION_TYPE_IN_PAGE:
-      RendererDidNavigateInPage(params, &details->did_replace_entry);
+      RendererDidNavigateInPage(rvh, params, &details->did_replace_entry);
       break;
     case NAVIGATION_TYPE_NEW_SUBFRAME:
-      RendererDidNavigateNewSubframe(params);
+      RendererDidNavigateNewSubframe(rvh, params);
       break;
     case NAVIGATION_TYPE_AUTO_SUBFRAME:
-      if (!RendererDidNavigateAutoSubframe(params))
+      if (!RendererDidNavigateAutoSubframe(rvh, params))
         return false;
       break;
     case NAVIGATION_TYPE_NAV_IGNORE:
@@ -829,12 +832,14 @@ bool NavigationControllerImpl::RendererDidNavigate(
   active_entry->ResetForCommit();
 
   // The active entry's SiteInstance should match our SiteInstance.
-  CHECK(active_entry->site_instance() == delegate_->GetSiteInstance());
+  // TODO(creis): This check won't pass for subframes until we create entries
+  // for subframe navigations.
+  if (PageTransitionIsMainFrame(params.transition))
+    CHECK(active_entry->site_instance() == rvh->GetSiteInstance());
 
   // Remember the bindings the renderer process has at this point, so that
   // we do not grant this entry additional bindings if we come back to it.
-  active_entry->SetBindings(
-      delegate_->GetRenderViewHost()->GetEnabledBindings());
+  active_entry->SetBindings(rvh->GetEnabledBindings());
 
   // Now prep the rest of the details for the notification and broadcast.
   details->entry = active_entry;
@@ -848,7 +853,8 @@ bool NavigationControllerImpl::RendererDidNavigate(
 }
 
 NavigationType NavigationControllerImpl::ClassifyNavigation(
-    const ViewHostMsg_FrameNavigate_Params& params) const {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const {
   if (params.page_id == -1) {
     // The renderer generates the page IDs, and so if it gives us the invalid
     // page ID (-1) we know it didn't actually navigate. This happens in a few
@@ -871,7 +877,8 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     return NAVIGATION_TYPE_NAV_IGNORE;
   }
 
-  if (params.page_id > delegate_->GetMaxPageID()) {
+  if (params.page_id > delegate_->GetMaxPageIDForSiteInstance(
+          rvh->GetSiteInstance())) {
     // Greater page IDs than we've ever seen before are new pages. We may or may
     // not have a pending entry for the page, and this may or may not be the
     // main frame.
@@ -895,7 +902,7 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
 
   // Now we know that the notification is for an existing page. Find that entry.
   int existing_entry_index = GetEntryIndexWithPageID(
-      delegate_->GetSiteInstance(),
+      rvh->GetSiteInstance(),
       params.page_id);
   if (existing_entry_index == -1) {
     // The page was not found. It could have been pruned because of the limit on
@@ -906,7 +913,7 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     // Because the unknown entry has committed, we risk showing the wrong URL in
     // release builds. Instead, we'll kill the renderer process to be safe.
     LOG(ERROR) << "terminating renderer for bad navigation: " << params.url;
-    RecordAction(UserMetricsAction("BadMessageTerminate_NC"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_NC"));
 
     // Temporary code so we can get more information.  Format:
     //  http://url/foo.html#page1#max3#frame1#ids:2_Nx,1_1x,3_2
@@ -929,14 +936,13 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
         temp.append(base::IntToString(entries_[i]->site_instance()->GetId()));
       else
         temp.append("N");
-      if (entries_[i]->site_instance() != delegate_->GetSiteInstance())
+      if (entries_[i]->site_instance() != rvh->GetSiteInstance())
         temp.append("x");
       temp.append(",");
     }
     GURL url(temp);
-    static_cast<RenderViewHostImpl*>(
-        delegate_->GetRenderViewHost())->Send(
-            new ViewMsg_TempCrashWithData(url));
+    static_cast<RenderViewHostImpl*>(rvh)->Send(
+        new ViewMsg_TempCrashWithData(url));
     return NAVIGATION_TYPE_NAV_IGNORE;
   }
   NavigationEntryImpl* existing_entry = entries_[existing_entry_index].get();
@@ -982,7 +988,9 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
 }
 
 void NavigationControllerImpl::RendererDidNavigateToNewPage(
-    const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+    bool replace_entry) {
   NavigationEntryImpl* new_entry;
   bool update_virtual_url;
   // Only make a copy of the pending entry if it is appropriate for the new page
@@ -990,7 +998,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   // the SiteInstance hasn't been assigned to something else.
   if (pending_entry_ &&
       (!pending_entry_->site_instance() ||
-       pending_entry_->site_instance() == delegate_->GetSiteInstance())) {
+       pending_entry_->site_instance() == rvh->GetSiteInstance())) {
     new_entry = new NavigationEntryImpl(*pending_entry_);
 
     // Don't use the page type from the pending entry. Some interstitial page
@@ -1024,7 +1032,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetPageID(params.page_id);
   new_entry->SetTransitionType(params.transition);
   new_entry->set_site_instance(
-      static_cast<SiteInstanceImpl*>(delegate_->GetSiteInstance()));
+      static_cast<SiteInstanceImpl*>(rvh->GetSiteInstance()));
   new_entry->SetHasPostData(params.is_post);
   new_entry->SetPostID(params.post_id);
   new_entry->SetOriginalRequestURL(params.original_request_url);
@@ -1044,14 +1052,15 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
 }
 
 void NavigationControllerImpl::RendererDidNavigateToExistingPage(
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   // We should only get here for main frame navigations.
   DCHECK(PageTransitionIsMainFrame(params.transition));
 
   // This is a back/forward navigation. The existing page for the ID is
   // guaranteed to exist by ClassifyNavigation, and we just need to update it
   // with new information from the renderer.
-  int entry_index = GetEntryIndexWithPageID(delegate_->GetSiteInstance(),
+  int entry_index = GetEntryIndexWithPageID(rvh->GetSiteInstance(),
                                             params.page_id);
   DCHECK(entry_index >= 0 &&
          entry_index < static_cast<int>(entries_.size()));
@@ -1059,6 +1068,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
 
   // The URL may have changed due to redirects.
   entry->SetURL(params.url);
+  entry->SetReferrer(params.referrer);
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
 
@@ -1070,9 +1080,9 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   // The site instance will normally be the same except during session restore,
   // when no site instance will be assigned.
   DCHECK(entry->site_instance() == NULL ||
-         entry->site_instance() == delegate_->GetSiteInstance());
+         entry->site_instance() == rvh->GetSiteInstance());
   entry->set_site_instance(
-      static_cast<SiteInstanceImpl*>(delegate_->GetSiteInstance()));
+      static_cast<SiteInstanceImpl*>(rvh->GetSiteInstance()));
 
   entry->SetHasPostData(params.is_post);
   entry->SetPostID(params.post_id);
@@ -1091,16 +1101,17 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   // If a transient entry was removed, the indices might have changed, so we
   // have to query the entry index again.
   last_committed_entry_index_ =
-      GetEntryIndexWithPageID(delegate_->GetSiteInstance(), params.page_id);
+      GetEntryIndexWithPageID(rvh->GetSiteInstance(), params.page_id);
 }
 
 void NavigationControllerImpl::RendererDidNavigateToSamePage(
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   // This mode implies we have a pending entry that's the same as an existing
   // entry for this page ID. This entry is guaranteed to exist by
   // ClassifyNavigation. All we need to do is update the existing entry.
   NavigationEntryImpl* existing_entry = GetEntryWithPageID(
-      delegate_->GetSiteInstance(), params.page_id);
+      rvh->GetSiteInstance(), params.page_id);
 
   // We assign the entry's unique ID to be that of the new one. Since this is
   // always the result of a user action, we want to dismiss infobars, etc. like
@@ -1111,6 +1122,7 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
   if (existing_entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(existing_entry, params.url);
   existing_entry->SetURL(params.url);
+  existing_entry->SetReferrer(params.referrer);
 
   // The page may have been requested with a different HTTP method.
   existing_entry->SetHasPostData(params.is_post);
@@ -1120,12 +1132,14 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
 }
 
 void NavigationControllerImpl::RendererDidNavigateInPage(
-    const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+    bool* did_replace_entry) {
   DCHECK(PageTransitionIsMainFrame(params.transition)) <<
       "WebKit should only tell us about in-page navs for the main frame.";
   // We're guaranteed to have an entry for this one.
   NavigationEntryImpl* existing_entry = GetEntryWithPageID(
-      delegate_->GetSiteInstance(), params.page_id);
+      rvh->GetSiteInstance(), params.page_id);
 
   // Reference fragment navigation. We're guaranteed to have the last_committed
   // entry and it will be the same page as the new navigation (minus the
@@ -1143,11 +1157,12 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
   // If a transient entry was removed, the indices might have changed, so we
   // have to query the entry index again.
   last_committed_entry_index_ =
-      GetEntryIndexWithPageID(delegate_->GetSiteInstance(), params.page_id);
+      GetEntryIndexWithPageID(rvh->GetSiteInstance(), params.page_id);
 }
 
 void NavigationControllerImpl::RendererDidNavigateNewSubframe(
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   if (PageTransitionCoreTypeIs(params.transition,
                                PAGE_TRANSITION_AUTO_SUBFRAME)) {
     // This is not user-initiated. Ignore.
@@ -1168,7 +1183,8 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
 }
 
 bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    RenderViewHost* rvh,
+    const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
   // We're guaranteed to have a previously committed entry, and we now need to
   // handle navigation inside of a subframe in it without creating a new entry.
   DCHECK(GetLastCommittedEntry());
@@ -1177,7 +1193,7 @@ bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
   // navigation entry. This is case "2." in NAV_AUTO_SUBFRAME comment in the
   // header file. In case "1." this will be a NOP.
   int entry_index = GetEntryIndexWithPageID(
-      delegate_->GetSiteInstance(),
+      rvh->GetSiteInstance(),
       params.page_id);
   if (entry_index < 0 ||
       entry_index >= static_cast<int>(entries_.size())) {

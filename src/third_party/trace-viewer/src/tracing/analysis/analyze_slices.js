@@ -4,13 +4,13 @@
 
 'use strict';
 
-base.requireStylesheet('tracing.analysis.analyze_slices');
+tvcm.requireStylesheet('tracing.analysis.analyze_slices');
 
-base.require('tracing.analysis.util');
-base.require('ui');
-base.require('ui.sortable_table');
+tvcm.require('tracing.analysis.util');
+tvcm.require('tvcm.ui');
+tvcm.require('tvcm.ui.sortable_table');
 
-base.exportTo('tracing.analysis', function() {
+tvcm.exportTo('tracing.analysis', function() {
 
   function analyzeSingleSlice(results, slice, type) {
     results.appendHeader('Selected ' + type + ':');
@@ -29,6 +29,19 @@ base.exportTo('tracing.analysis', function() {
 
     if (slice.selfTime)
       results.appendInfoRowTime(table, 'SelfTime', slice.selfTime);
+
+    if (slice.threadSelfTime) {
+      var warning;
+      if (slice.threadSelfTime > slice.selfTime) {
+        warning =
+            'Note that ThreadSelfTime is larger than SelfTime. ' +
+            'This is a known limitation of this system, which occurs ' +
+            'due to several subslices, rounding issues, and inprecise ' +
+            'time at which we get thread- and real-time.';
+      }
+      results.appendInfoRowTime(table, 'ThreadSelfTime', slice.threadSelfTime,
+                                false, warning);
+    }
 
     if (slice.durationInUserTime) {
       results.appendInfoRowTime(table, 'Duration (U)',
@@ -64,7 +77,7 @@ base.exportTo('tracing.analysis', function() {
     results.appendTableCell(table, row, 'Args');
 
     var numSlices = 0;
-    base.iterItems(sliceGroup, function(title, slice) {
+    tvcm.iterItems(sliceGroup, function(title, slice) {
       numSlices++;
       results.appendDetailsRow(table, slice.start, slice.duration,
           slice.selfTime ? slice.selfTime : slice.duration, slice.args,
@@ -73,7 +86,7 @@ base.exportTo('tracing.analysis', function() {
           }, slice.threadDuration);
     });
     if (numSlices > 1)
-      ui.SortableTable.decorate(table);
+      tvcm.ui.SortableTable.decorate(table);
   }
 
   function analyzeMultipleSlices(results, slices, type) {
@@ -81,20 +94,20 @@ base.exportTo('tracing.analysis', function() {
     var tsHi = slices.bounds.max;
 
     var numTitles = 0;
-    var slicesByTitle = {};
+    var sliceGroups = {};
     var hasThreadDuration = false;
 
     for (var i = 0; i < slices.length; i++) {
       var slice = slices[i];
-      if (slicesByTitle[slice.title] === undefined) {
-        slicesByTitle[slice.title] = [];
+      if (sliceGroups[slice.title] === undefined) {
+        sliceGroups[slice.title] = [];
         numTitles++;
       }
 
       if (slice.threadDuration)
         hasThreadDuration = true;
 
-      var sliceGroup = slicesByTitle[slice.title];
+      var sliceGroup = sliceGroups[slice.title];
       sliceGroup.push(slices[i]);
     }
 
@@ -107,15 +120,19 @@ base.exportTo('tracing.analysis', function() {
     if (hasThreadDuration)
       results.appendTableCell(table, row, 'ThreadDuration (ms)');
     results.appendTableCell(table, row, 'SelfTime (ms)');
+    if (hasThreadDuration)
+      results.appendTableCell(table, row, 'ThreadSelfTime (ms)');
     results.appendTableCell(table, row, 'Occurrences');
 
     var totalDuration = 0;
     var totalthreadDuration = 0;
     var totalSelfTime = 0;
-    base.iterItems(slicesByTitle, function(sliceGroupTitle, sliceGroup) {
+    var totalThreadSelfTime = 0;
+    tvcm.iterItems(sliceGroups, function(sliceGroupTitle, sliceGroup) {
       var duration = 0;
       var threadDuration = 0;
       var selfTime = 0;
+      var threadSelfTime = 0;
       var avg = 0;
       var startOfFirstOccurrence = Number.MAX_VALUE;
       var startOfLastOccurrence = -Number.MAX_VALUE;
@@ -124,8 +141,11 @@ base.exportTo('tracing.analysis', function() {
       for (var i = 0; i < sliceGroup.length; i++) {
         var slice = sliceGroup[i];
         duration += slice.duration;
-        if (slice.threadDuration)
+        if (slice.threadDuration) {
           threadDuration += slice.threadDuration;
+          threadSelfTime += slice.threadSelfTime ? slice.threadSelfTime :
+                                                   slice.threadDuration;
+        }
         selfTime += slice.selfTime ? slice.selfTime : slice.duration;
         startOfFirstOccurrence = Math.min(slice.start, startOfFirstOccurrence);
         startOfLastOccurrence = Math.max(slice.start, startOfLastOccurrence);
@@ -136,6 +156,7 @@ base.exportTo('tracing.analysis', function() {
       totalDuration += duration;
       totalthreadDuration += threadDuration;
       totalSelfTime += selfTime;
+      totalThreadSelfTime += threadSelfTime;
 
       if (sliceGroup.length == 0)
         avg = 0;
@@ -181,8 +202,8 @@ base.exportTo('tracing.analysis', function() {
       results.appendDataRow(table, sliceGroupTitle, duration,
                             hasThreadDuration ? (threadDuration > 0 ?
                                 threadDuration : '') : null,
-                            selfTime, sliceGroup.length, statistics,
-                            function() {
+                            selfTime, threadSelfTime, sliceGroup.length, null,
+                            statistics, function() {
                               return new tracing.Selection(sliceGroup);
                             });
 
@@ -196,9 +217,104 @@ base.exportTo('tracing.analysis', function() {
     if (numTitles !== 1) {
       results.appendDataRow(table, 'Totals', totalDuration,
                             hasThreadDuration ? totalthreadDuration : null,
-                            totalSelfTime, slices.length, null, null, true);
+                            totalSelfTime, totalThreadSelfTime, slices.length,
+                            null, null, null, true);
       results.appendSpacingRow(table, true);
-      ui.SortableTable.decorate(table);
+      tvcm.ui.SortableTable.decorate(table);
+    }
+
+    results.appendInfoRowTime(table, 'Selection start', tsLo, true);
+    results.appendInfoRowTime(table, 'Selection extent', tsHi - tsLo, true);
+  }
+
+  function analyzeSingleTypeSampleEvents_(results, sliceGroup) {
+    results.appendInfo('Title: ', sliceGroup[0].title);
+    results.appendInfo('Category: ', sliceGroup[0].category);
+
+    var table = results.appendTable('analysis-slice-table', 2);
+    var row = results.appendHeadRow(table);
+    results.appendTableCell(table, row, 'Start');
+    results.appendTableCell(table, row, 'Args');
+
+    var numSlices = 0;
+    tvcm.iterItems(sliceGroup, function(title, slice) {
+      numSlices++;
+      results.appendDetailsRow(table, slice.start, null, null, slice.args,
+          function() {
+            return new tracing.Selection([slice]);
+          });
+    });
+    if (numSlices > 1)
+      tvcm.ui.SortableTable.decorate(table);
+  }
+
+  function analyzeMultipleSampleEvents(results, slices, type) {
+    var tsLo = slices.bounds.min;
+    var tsHi = slices.bounds.max;
+
+    var numTitles = 0;
+    var sliceGroups = {};
+    for (var i = 0; i < slices.length; i++) {
+      var slice = slices[i];
+      if (sliceGroups[slice.title] === undefined) {
+        sliceGroups[slice.title] = [];
+        numTitles++;
+      }
+      sliceGroups[slice.title].push(slices[i]);
+    }
+
+    // Sort slice groups in the descending order of occurrences.
+    // We treat the occurrence of the 'Sleeping' event as 0.
+    var sortedSlices = [];
+    var totalOccurrence = 0;
+    for (var title in sliceGroups) {
+      var occurrence;
+      if (title === 'Sleeping') {
+        occurrence = 0;
+      } else {
+        occurrence = sliceGroups[title].length;
+        totalOccurrence += occurrence;
+      }
+      sortedSlices.push({
+        title: title, sliceGroup: sliceGroups[title],
+        occurrence: occurrence});
+    }
+    sortedSlices = sortedSlices.sort(function(a, b) {
+      return b.occurrence - a.occurrence;
+    });
+
+    results.appendHeader(type + ':');
+    var table = results.appendTable('analysis-slice-table', 3);
+    var row = results.appendHeadRow(table);
+    results.appendTableCell(table, row, 'Name');
+    results.appendTableCell(table, row, 'Percentage');
+    results.appendTableCell(table, row, 'Occurrences');
+
+    for (var i = 0; i < sortedSlices.length; i++) {
+      var title = sortedSlices[i].title;
+      var sliceGroup = sortedSlices[i].sliceGroup;
+      results.appendDataRow(table, title, null, null,
+          null, null, sliceGroup.length,
+          (title === 'Sleeping' ? '-' :
+           tracing.analysis.tsRound(
+               sliceGroup.length / totalOccurrence * 100) + '%'),
+          null,
+          function() {
+            return new tracing.Selection(sliceGroup);
+          });
+
+      // The whole selection is a single type so list out the information
+      // for each sub slice.
+      if (numTitles === 1)
+        analyzeSingleTypeSampleEvents_(results, sliceGroup);
+    }
+
+    // Only one row so we already know the totals.
+    if (numTitles !== 1) {
+      results.appendDataRow(table, 'Totals', null, null, null, null,
+                            slices.length, '100%', null, null, true);
+      results.appendSpacingRow(table, true);
+      tvcm.ui.SortableTable.decorate(table);
     }
 
     results.appendInfoRowTime(table, 'Selection start', tsLo, true);
@@ -207,6 +323,7 @@ base.exportTo('tracing.analysis', function() {
 
   return {
     analyzeSingleSlice: analyzeSingleSlice,
-    analyzeMultipleSlices: analyzeMultipleSlices
+    analyzeMultipleSlices: analyzeMultipleSlices,
+    analyzeMultipleSampleEvents: analyzeMultipleSampleEvents
   };
 });

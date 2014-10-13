@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-class OffsetPolygonEdge : public VertexPair {
+class OffsetPolygonEdge FINAL : public VertexPair {
 public:
     enum Basis {
         Edge,
@@ -79,7 +79,7 @@ private:
     Basis m_basis;
 };
 
-class PolygonShape : public Shape {
+class PolygonShape FINAL : public Shape {
     WTF_MAKE_NONCOPYABLE(PolygonShape);
 public:
     PolygonShape(PassOwnPtr<Vector<FloatPoint> > vertices, WindRule fillRule)
@@ -95,7 +95,7 @@ public:
     virtual bool isEmpty() const OVERRIDE { return m_polygon.isEmpty(); }
     virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
     virtual void getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
+    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const FloatSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
 
 private:
     const FloatPolygon& shapeMarginBounds() const;

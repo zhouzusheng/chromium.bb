@@ -28,67 +28,34 @@
 
 namespace WebCore {
 
-Node& LiveNodeListBase::rootNode() const
+ContainerNode& LiveNodeListBase::rootNode() const
 {
     if (isRootedAtDocument() && m_ownerNode->inDocument())
         return m_ownerNode->document();
     return *m_ownerNode;
 }
 
-ContainerNode* LiveNodeListBase::rootContainerNode() const
+void LiveNodeListBase::didMoveToDocument(Document& oldDocument, Document& newDocument)
 {
-    Node& rootNode = this->rootNode();
-    if (!rootNode.isContainerNode())
-        return 0;
-    return toContainerNode(&rootNode);
-}
-
-void LiveNodeListBase::invalidateCache() const
-{
-    m_cachedItem = 0;
-    m_isLengthCacheValid = false;
-    m_isItemCacheValid = false;
-    m_isNameCacheValid = false;
-    m_isItemRefElementsCacheValid = false;
-    if (isNodeList(type()))
-        return;
-
-    const HTMLCollection* cacheBase = static_cast<const HTMLCollection*>(this);
-    cacheBase->m_idCache.clear();
-    cacheBase->m_nameCache.clear();
-    cacheBase->m_cachedElementsArrayOffset = 0;
+    invalidateCache(&oldDocument);
+    oldDocument.unregisterNodeList(this);
+    newDocument.registerNodeList(this);
 }
 
 void LiveNodeListBase::invalidateIdNameCacheMaps() const
 {
     ASSERT(hasIdNameCache());
-    const HTMLCollection* cacheBase = static_cast<const HTMLCollection*>(this);
-    cacheBase->m_idCache.clear();
-    cacheBase->m_nameCache.clear();
+    static_cast<const HTMLCollection*>(this)->invalidateIdNameCacheMaps();
 }
 
-Node* LiveNodeList::namedItem(const AtomicString& elementId) const
+Node* LiveNodeList::virtualOwnerNode() const
 {
-    Node& rootNode = this->rootNode();
+    return ownerNode();
+}
 
-    if (rootNode.inDocument()) {
-        Element* element = rootNode.treeScope().getElementById(elementId);
-        if (element && nodeMatches(element) && element->isDescendantOf(&rootNode))
-            return element;
-        if (!element)
-            return 0;
-        // In the case of multiple nodes with the same name, just fall through.
-    }
-
-    unsigned length = this->length();
-    for (unsigned i = 0; i < length; i++) {
-        Node* node = item(i);
-        // FIXME: This should probably be using getIdAttribute instead of idForStyleResolution.
-        if (node->hasID() && toElement(node)->idForStyleResolution() == elementId)
-            return node;
-    }
-
-    return 0;
+void LiveNodeList::invalidateCache(Document*) const
+{
+    m_collectionIndexCache.invalidate();
 }
 
 } // namespace WebCore

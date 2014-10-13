@@ -54,7 +54,7 @@ bool BBWindowHooks::matchSelector(Node *node, const String& selector)
 {
     if (node->isElementNode() && !selector.isEmpty()) {
         Element *e = toElement(node);
-        return e->webkitMatchesSelector(selector, IGNORE_EXCEPTION);
+        return e->matches(selector, IGNORE_EXCEPTION);
     }
     return false;
 }

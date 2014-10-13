@@ -50,12 +50,11 @@ private:
     explicit HTMLAreaElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool supportsFocus() const;
-    virtual String target() const;
+    virtual bool supportsFocus() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isMouseFocusable() const;
+    virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual void updateFocusAppearance(bool /*restorePreviousSelection*/);
+    virtual void updateFocusAppearance(bool /*restorePreviousSelection*/) OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
 
     enum Shape { Default, Poly, Rect, Circle, Unknown };
@@ -67,16 +66,6 @@ private:
     LayoutSize m_lastSize;
     Shape m_shape;
 };
-
-inline bool isHTMLAreaElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::areaTag);
-}
-
-inline bool isHTMLAreaElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::areaTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLAreaElement, hasTagName(HTMLNames::areaTag));
 

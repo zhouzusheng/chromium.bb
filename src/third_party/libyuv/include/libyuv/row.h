@@ -11,6 +11,8 @@
 #ifndef INCLUDE_LIBYUV_ROW_H_  // NOLINT
 #define INCLUDE_LIBYUV_ROW_H_
 
+#include <stdlib.h>  // For malloc.
+
 #include "libyuv/basic_types.h"
 
 #ifdef __cplusplus
@@ -18,15 +20,24 @@ namespace libyuv {
 extern "C" {
 #endif
 
-// TODO(fbarchard): Remove kMaxStride.
-#ifdef __arm__
-#define kMaxStride (1920 * 4)
-#else
-#define kMaxStride (4096 * 4)
-#endif
 #define IS_ALIGNED(p, a) (!((uintptr_t)(p) & ((a) - 1)))
 
-#if defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
+#ifdef __cplusplus
+#define align_buffer_64(var, size)                                             \
+  uint8* var##_mem = reinterpret_cast<uint8*>(malloc((size) + 63));            \
+  uint8* var = reinterpret_cast<uint8*>                                        \
+      ((reinterpret_cast<intptr_t>(var##_mem) + 63) & ~63)
+#else
+#define align_buffer_64(var, size)                                             \
+  uint8* var##_mem = (uint8*)(malloc((size) + 63));               /* NOLINT */ \
+  uint8* var = (uint8*)(((intptr_t)(var##_mem) + 63) & ~63)       /* NOLINT */
+#endif
+
+#define free_aligned_buffer_64(var) \
+  free(var##_mem);  \
+  var = 0
+
+#if defined(__pnacl__) || defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
     defined(TARGET_IPHONE_SIMULATOR)
 #define LIBYUV_DISABLE_X86
 #endif
@@ -34,6 +45,9 @@ extern "C" {
 #if defined(__SSSE3__) || (defined(_M_IX86_FP) && (_M_IX86_FP >= 3))
 #define LIBYUV_SSSE3_ONLY
 #endif
+
+// Enable for NaCL pepper 33 for bundle and AVX2 support.
+//  #define NEW_BINUTILS
 
 // The following are available on all x86 platforms:
 #if !defined(LIBYUV_DISABLE_X86) && \
@@ -93,7 +107,6 @@ extern "C" {
 #define HAS_COPYROW_ERMS
 #define HAS_COPYROW_SSE2
 #define HAS_COPYROW_X86
-#define HAS_FIXEDDIV_X86
 #define HAS_HALFROW_SSE2
 #define HAS_I400TOARGBROW_SSE2
 #define HAS_I411TOARGBROW_SSSE3
@@ -369,12 +382,66 @@ typedef uint8 uvec8[16];
 #define OMITFP __attribute__((optimize("omit-frame-pointer")))
 #endif
 
-// For functions that use rowbuffer and have runtime checks for overflow,
-// use SAFEBUFFERS to avoid additional check.
-#if defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
-#define SAFEBUFFERS __declspec(safebuffers)
+// NaCL macros for GCC x86 and x64.
+
+// TODO(nfullagar): When pepper_33 toolchain is distributed, default to
+// NEW_BINUTILS and remove all BUNDLEALIGN occurances.
+#if defined(__native_client__)
+#define LABELALIGN ".p2align 5\n"
 #else
-#define SAFEBUFFERS
+#define LABELALIGN ".p2align 2\n"
+#endif
+#if defined(__native_client__) && defined(__x86_64__)
+#if defined(NEW_BINUTILS)
+#define BUNDLELOCK ".bundle_lock\n"
+#define BUNDLEUNLOCK ".bundle_unlock\n"
+#define BUNDLEALIGN "\n"
+#else
+#define BUNDLELOCK "\n"
+#define BUNDLEUNLOCK "\n"
+#define BUNDLEALIGN ".p2align 5\n"
+#endif
+#define MEMACCESS(base) "%%nacl:(%%r15,%q" #base ")"
+#define MEMACCESS2(offset, base) "%%nacl:" #offset "(%%r15,%q" #base ")"
+#define MEMLEA(offset, base) #offset "(%q" #base ")"
+#define MEMLEA3(offset, index, scale) \
+    #offset "(,%q" #index "," #scale ")"
+#define MEMLEA4(offset, base, index, scale) \
+    #offset "(%q" #base ",%q" #index "," #scale ")"
+#define MEMMOVESTRING(s, d) "%%nacl:(%q" #s "),%%nacl:(%q" #d "), %%r15"
+#define MEMSTORESTRING(reg, d) "%%" #reg ",%%nacl:(%q" #d "), %%r15"
+#define MEMOPREG(opcode, offset, base, index, scale, reg) \
+    BUNDLELOCK \
+    "lea " #offset "(%q" #base ",%q" #index "," #scale "),%%r14d\n" \
+    #opcode " (%%r15,%%r14),%%" #reg "\n" \
+    BUNDLEUNLOCK
+#define MEMOPMEM(opcode, reg, offset, base, index, scale) \
+    BUNDLELOCK \
+    "lea " #offset "(%q" #base ",%q" #index "," #scale "),%%r14d\n" \
+    #opcode " %%" #reg ",(%%r15,%%r14)\n" \
+    BUNDLEUNLOCK
+#define MEMOPARG(opcode, offset, base, index, scale, arg) \
+    BUNDLELOCK \
+    "lea " #offset "(%q" #base ",%q" #index "," #scale "),%%r14d\n" \
+    #opcode " (%%r15,%%r14),%" #arg "\n" \
+    BUNDLEUNLOCK
+#else
+#define BUNDLEALIGN "\n"
+#define MEMACCESS(base) "(%" #base ")"
+#define MEMACCESS2(offset, base) #offset "(%" #base ")"
+#define MEMLEA(offset, base) #offset "(%" #base ")"
+#define MEMLEA3(offset, index, scale) \
+    #offset "(,%" #index "," #scale ")"
+#define MEMLEA4(offset, base, index, scale) \
+    #offset "(%" #base ",%" #index "," #scale ")"
+#define MEMMOVESTRING(s, d)
+#define MEMSTORESTRING(reg, d)
+#define MEMOPREG(opcode, offset, base, index, scale, reg) \
+    #opcode " " #offset "(%" #base ",%" #index "," #scale "),%%" #reg "\n"
+#define MEMOPMEM(opcode, reg, offset, base, index, scale) \
+    #opcode " %%" #reg ","#offset "(%" #base ",%" #index "," #scale ")\n"
+#define MEMOPARG(opcode, offset, base, index, scale, arg) \
+    #opcode " " #offset "(%" #base ",%" #index "," #scale "),%" #arg "\n"
 #endif
 
 void I444ToARGBRow_NEON(const uint8* src_y,
@@ -1614,19 +1681,10 @@ void ARGBPolynomialRow_AVX2(const uint8* src_argb,
                             int width);
 
 void ARGBLumaColorTableRow_C(const uint8* src_argb, uint8* dst_argb, int width,
-                             const uint8* luma, const uint32 lumacoeff);
+                             const uint8* luma, uint32 lumacoeff);
 void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
-                                 int width, const uint8* luma,
-                                 const uint32 lumacoeff);
-
-// Divide num by div and return as 16.16 fixed point result.
-int FixedDiv_C(int num, int div);
-int FixedDiv_X86(int num, int div);
-#ifdef HAS_FIXEDDIV_X86
-#define FixedDiv FixedDiv_X86
-#else
-#define FixedDiv FixedDiv_C
-#endif
+                                 int width,
+                                 const uint8* luma, uint32 lumacoeff);
 
 #ifdef __cplusplus
 }  // extern "C"

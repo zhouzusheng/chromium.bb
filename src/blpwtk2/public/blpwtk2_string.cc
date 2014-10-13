@@ -50,7 +50,7 @@ String::Impl String::make(const wchar_t* str, size_t length)
     // TODO: We should optimize this to do:
     // TODO:     wchar_t* -> blpwtk2::String
     std::string tmp;
-    WideToUTF8(str, length, &tmp);
+    base::WideToUTF8(str, length, &tmp);
     return make(tmp.data(), tmp.length());
 }
 

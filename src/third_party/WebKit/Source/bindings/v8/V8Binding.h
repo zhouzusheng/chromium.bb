@@ -39,6 +39,7 @@
 #include "bindings/v8/V8StringResource.h"
 #include "bindings/v8/V8ThrowException.h"
 #include "bindings/v8/V8ValueCache.h"
+#include "heap/Heap.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/AtomicString.h"
 #include <v8.h>
@@ -47,6 +48,8 @@ namespace WebCore {
 
     class DOMWindow;
     class Document;
+    class EventListener;
+    class ExceptionState;
     class Frame;
     class NodeFilter;
     class ExecutionContext;
@@ -69,12 +72,7 @@ namespace WebCore {
     // A helper for throwing JavaScript TypeError.
     v8::Handle<v8::Value> throwTypeError(const String&, v8::Isolate*);
 
-    // FIXME: Remove this once we kill its callers.
-    v8::Handle<v8::Value> throwUninformativeAndGenericTypeError(v8::Isolate*);
-
     v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator();
-
-    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, v8::Isolate*);
 
     inline v8::Handle<v8::Value> argumentOrNull(const v8::FunctionCallbackInfo<v8::Value>& info, int index)
     {
@@ -202,6 +200,18 @@ namespace WebCore {
         return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), isolate);
     }
 
+    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str)
+    {
+        ASSERT(isolate);
+        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, strlen(str));
+    }
+
+    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str, size_t length)
+    {
+        ASSERT(isolate);
+        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, length);
+    }
+
     inline v8::Handle<v8::Value> v8Undefined()
     {
         return v8::Handle<v8::Value>();
@@ -224,10 +234,18 @@ namespace WebCore {
     };
 
     template<>
+    struct V8ValueTraits<AtomicString> {
+        static inline v8::Handle<v8::Value> arrayV8Value(const AtomicString& value, v8::Isolate* isolate)
+        {
+            return v8String(isolate, value);
+        }
+    };
+
+    template<>
     struct V8ValueTraits<unsigned> {
         static inline v8::Handle<v8::Value> arrayV8Value(const unsigned& value, v8::Isolate* isolate)
         {
-            return v8::Integer::NewFromUnsigned(value, isolate);
+            return v8::Integer::NewFromUnsigned(isolate, value);
         }
     };
 
@@ -235,7 +253,7 @@ namespace WebCore {
     struct V8ValueTraits<unsigned long> {
         static inline v8::Handle<v8::Value> arrayV8Value(const unsigned long& value, v8::Isolate* isolate)
         {
-            return v8::Integer::NewFromUnsigned(value, isolate);
+            return v8::Integer::NewFromUnsigned(isolate, value);
         }
     };
 
@@ -263,7 +281,19 @@ namespace WebCore {
         typename Vector<T, inlineCapacity>::const_iterator end = iterator.end();
         typedef V8ValueTraits<T> TraitsType;
         for (typename Vector<T, inlineCapacity>::const_iterator iter = iterator.begin(); iter != end; ++iter)
-            result->Set(v8::Integer::New(index++, isolate), TraitsType::arrayV8Value(*iter, isolate));
+            result->Set(v8::Integer::New(isolate, index++), TraitsType::arrayV8Value(*iter, isolate));
+        return result;
+    }
+
+    template<typename T, size_t inlineCapacity>
+    v8::Handle<v8::Value> v8Array(const HeapVector<T, inlineCapacity>& iterator, v8::Isolate* isolate)
+    {
+        v8::Local<v8::Array> result = v8::Array::New(isolate, iterator.size());
+        int index = 0;
+        typename HeapVector<T, inlineCapacity>::const_iterator end = iterator.end();
+        typedef V8ValueTraits<T> TraitsType;
+        for (typename HeapVector<T, inlineCapacity>::const_iterator iter = iterator.begin(); iter != end; ++iter)
+            result->Set(v8::Integer::New(isolate, index++), TraitsType::arrayV8Value(*iter, isolate));
         return result;
     }
 
@@ -277,114 +307,131 @@ namespace WebCore {
     // Convert a value to a 8-bit signed integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-byte
-    int8_t toInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline int8_t toInt8(v8::Handle<v8::Value> value, bool& ok) { return toInt8(value, NormalConversion, ok); }
+    int8_t toInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline int8_t toInt8(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toInt8(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 8-bit integer assuming the conversion cannot fail.
-    inline int8_t toInt8(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toInt8(value, NormalConversion, ok);
-    }
+    int8_t toInt8(v8::Handle<v8::Value>);
 
     // Convert a value to a 8-bit unsigned integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-octet
-    uint8_t toUInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline uint8_t toUInt8(v8::Handle<v8::Value> value, bool& ok) { return toUInt8(value, NormalConversion, ok); }
+    uint8_t toUInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline uint8_t toUInt8(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toUInt8(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 8-bit unsigned integer assuming the conversion cannot fail.
-    inline uint8_t toUInt8(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toUInt8(value, NormalConversion, ok);
-    }
+    uint8_t toUInt8(v8::Handle<v8::Value>);
 
     // Convert a value to a 16-bit signed integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-short
-    int16_t toInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline int16_t toInt16(v8::Handle<v8::Value> value, bool& ok) { return toInt16(value, NormalConversion, ok); }
+    int16_t toInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline int16_t toInt16(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toInt16(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 16-bit integer assuming the conversion cannot fail.
-    inline int16_t toInt16(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toInt16(value, NormalConversion, ok);
-    }
+    int16_t toInt16(v8::Handle<v8::Value>);
 
     // Convert a value to a 16-bit unsigned integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-unsigned-short
-    uint16_t toUInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline uint16_t toUInt16(v8::Handle<v8::Value> value, bool& ok) { return toUInt16(value, NormalConversion, ok); }
+    uint16_t toUInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline uint16_t toUInt16(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toUInt16(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 16-bit unsigned integer assuming the conversion cannot fail.
-    inline uint16_t toUInt16(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toUInt16(value, NormalConversion, ok);
-    }
+    uint16_t toUInt16(v8::Handle<v8::Value>);
 
     // Convert a value to a 32-bit signed integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-long
-    int32_t toInt32(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline int32_t toInt32(v8::Handle<v8::Value> value, bool& ok) { return toInt32(value, NormalConversion, ok); }
+    int32_t toInt32(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline int32_t toInt32(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toInt32(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 32-bit integer assuming the conversion cannot fail.
-    inline int32_t toInt32(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toInt32(value, NormalConversion, ok);
-    }
+    int32_t toInt32(v8::Handle<v8::Value>);
 
     // Convert a value to a 32-bit unsigned integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-unsigned-long
-    uint32_t toUInt32(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-    inline uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok) { return toUInt32(value, NormalConversion, ok); }
+    uint32_t toUInt32(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline uint32_t toUInt32(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toUInt32(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 32-bit unsigned integer assuming the conversion cannot fail.
-    inline uint32_t toUInt32(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toUInt32(value, NormalConversion, ok);
-    }
+    uint32_t toUInt32(v8::Handle<v8::Value>);
 
     // Convert a value to a 64-bit signed integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-long-long
-    int64_t toInt64(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
+    int64_t toInt64(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline int64_t toInt64(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+    {
+        return toInt64(value, NormalConversion, exceptionState);
+    }
 
     // Convert a value to a 64-bit integer assuming the conversion cannot fail.
-    inline int64_t toInt64(v8::Handle<v8::Value> value)
-    {
-        bool ok;
-        return toInt64(value, NormalConversion, ok);
-    }
+    int64_t toInt64(v8::Handle<v8::Value>);
 
     // Convert a value to a 64-bit unsigned integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
     // http://www.w3.org/TR/WebIDL/#es-unsigned-long-long
-    uint64_t toUInt64(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
-
-    // Convert a value to a 64-bit unsigned integer assuming the conversion cannot fail.
-    inline uint64_t toUInt64(v8::Handle<v8::Value> value)
+    uint64_t toUInt64(v8::Handle<v8::Value>, IntegerConversionConfiguration, ExceptionState&);
+    inline uint64_t toUInt64(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
     {
-        bool ok;
-        return toUInt64(value, NormalConversion, ok);
+        return toUInt64(value, NormalConversion, exceptionState);
     }
 
+    // Convert a value to a 64-bit unsigned integer assuming the conversion cannot fail.
+    uint64_t toUInt64(v8::Handle<v8::Value>);
+
+    // Convert a value to a single precision float, which might fail.
+    float toFloat(v8::Handle<v8::Value>, ExceptionState&);
+
+    // Convert a value to a single precision float assuming the conversion cannot fail.
     inline float toFloat(v8::Local<v8::Value> value)
     {
         return static_cast<float>(value->NumberValue());
     }
 
-    WrapperWorldType worldType(v8::Isolate*);
-    WrapperWorldType worldTypeInMainThread(v8::Isolate*);
+    inline v8::Handle<v8::Boolean> v8Boolean(bool value, v8::Isolate* isolate)
+    {
+        return value ? v8::True(isolate) : v8::False(isolate);
+    }
 
-    DOMWrapperWorld* isolatedWorldForIsolate(v8::Isolate*);
+    inline double toCoreDate(v8::Handle<v8::Value> object)
+    {
+        if (object->IsDate())
+            return v8::Handle<v8::Date>::Cast(object)->ValueOf();
+        if (object->IsNumber())
+            return object->NumberValue();
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    inline v8::Handle<v8::Value> v8DateOrNull(double value, v8::Isolate* isolate)
+    {
+        ASSERT(isolate);
+        return std::isfinite(value) ? v8::Date::New(isolate, value) : v8::Handle<v8::Value>::Cast(v8::Null(isolate));
+    }
+
+    // FIXME: Remove the special casing for NodeFilter and XPathNSResolver.
+    PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value>, v8::Isolate*);
+    PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);
 
     template<class T> struct NativeValueTraits;
 
@@ -440,7 +487,7 @@ namespace WebCore {
         for (uint32_t i = 0; i < length; ++i) {
             v8::Handle<v8::Value> element = object->Get(i);
 
-            if (V8T::hasInstance(element, isolate, worldType(isolate))) {
+            if (V8T::hasInstance(element, isolate)) {
                 v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
                 result.uncheckedAppend(V8T::toNative(elementObject));
             } else {
@@ -452,6 +499,8 @@ namespace WebCore {
         }
         return result;
     }
+
+    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, v8::Isolate*);
 
     template <class T, class V8T>
     Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, bool* success = 0)
@@ -541,7 +590,7 @@ namespace WebCore {
 
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
-        v8::Local<v8::String> lengthSymbol = v8::String::NewFromUtf8(isolate, "length", v8::String::kInternalizedString, 6);
+        v8::Local<v8::String> lengthSymbol = v8AtomicString(isolate, "length");
 
         // FIXME: The specification states that the length property should be used as fallback, if value
         // is not a platform object that supports indexed properties. If it supports indexed properties,
@@ -559,99 +608,52 @@ namespace WebCore {
         return v8Value;
     }
 
-    PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value>, v8::Isolate*);
-
-    inline bool isUndefinedOrNull(v8::Handle<v8::Value> value)
-    {
-        return value->IsNull() || value->IsUndefined();
-    }
-
-    // Returns true if the provided object is to be considered a 'host object', as used in the
-    // HTML5 structured clone algorithm.
-    inline bool isHostObject(v8::Handle<v8::Object> object)
-    {
-        // If the object has any internal fields, then we won't be able to serialize or deserialize
-        // them; conveniently, this is also a quick way to detect DOM wrapper objects, because
-        // the mechanism for these relies on data stored in these fields. We should
-        // catch external array data as a special case.
-        return object->InternalFieldCount() || object->HasIndexedPropertiesInExternalArrayData();
-    }
-
-    inline v8::Handle<v8::Boolean> v8Boolean(bool value, v8::Isolate* isolate)
-    {
-        return value ? v8::True(isolate) : v8::False(isolate);
-    }
-
-    // Since v8Boolean(value, isolate) crashes if we pass a null isolate,
-    // we need to use v8BooleanWithCheck(value, isolate) if an isolate can be null.
-    //
-    // FIXME: Remove all null isolates from V8 bindings, and remove v8BooleanWithCheck(value, isolate).
-    inline v8::Handle<v8::Boolean> v8BooleanWithCheck(bool value, v8::Isolate* isolate)
-    {
-        return isolate ? v8Boolean(value, isolate) : v8Boolean(value, v8::Isolate::GetCurrent());
-    }
-
-    inline double toWebCoreDate(v8::Handle<v8::Value> object)
-    {
-        if (object->IsDate())
-            return v8::Handle<v8::Date>::Cast(object)->ValueOf();
-        if (object->IsNumber())
-            return object->NumberValue();
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-
-    inline v8::Handle<v8::Value> v8DateOrNull(double value, v8::Isolate* isolate)
-    {
-        ASSERT(isolate);
-        return std::isfinite(value) ? v8::Date::New(isolate, value) : v8::Handle<v8::Value>::Cast(v8::Null(isolate));
-    }
-
-    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str)
-    {
-        ASSERT(isolate);
-        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, strlen(str));
-    }
-
-    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str, size_t length)
-    {
-        ASSERT(isolate);
-        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, length);
-    }
+    v8::Isolate* toIsolate(ExecutionContext*);
+    v8::Isolate* toIsolate(Frame*);
 
     bool isNonWindowContextsAllowed();
     void setNonWindowContextsAllowed(bool allowed);
 
-    bool isNonWindowContextsAllowed();
-    void setNonWindowContextsAllowed(bool allowed);
+    WrapperWorldType worldType(v8::Isolate*);
+    WrapperWorldType worldTypeInMainThread(v8::Isolate*);
 
-    v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
-
-    PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);
-
-    v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context>);
+    DOMWindow* toDOMWindow(v8::Handle<v8::Value>, v8::Isolate*);
     DOMWindow* toDOMWindow(v8::Handle<v8::Context>);
     ExecutionContext* toExecutionContext(v8::Handle<v8::Context>);
 
-    DOMWindow* activeDOMWindow();
-    ExecutionContext* activeExecutionContext();
-    DOMWindow* firstDOMWindow();
-    Document* currentDocument();
+    DOMWindow* activeDOMWindow(v8::Isolate*);
+    ExecutionContext* activeExecutionContext(v8::Isolate*);
+    DOMWindow* firstDOMWindow(v8::Isolate*);
+    Document* currentDocument(v8::Isolate*);
+    ExecutionContext* currentExecutionContext(v8::Isolate*);
 
-    // Returns the context associated with a ExecutionContext.
+    // Returns a V8 context associated with a ExecutionContext and a DOMWrapperWorld.
+    // This method returns an empty context if there is no frame or the frame is already detached.
     v8::Local<v8::Context> toV8Context(ExecutionContext*, DOMWrapperWorld*);
+    // Returns a V8 context associated with a Frame and a DOMWrapperWorld.
+    // This method returns an empty context if the frame is already detached.
+    v8::Local<v8::Context> toV8Context(v8::Isolate*, Frame*, DOMWrapperWorld*);
 
     // Returns the frame object of the window object associated with
     // a context, if the window is currently being displayed in the Frame.
     Frame* toFrameIfNotDetached(v8::Handle<v8::Context>);
 
-    inline DOMWrapperWorld* isolatedWorldForEnteredContext(v8::Isolate* isolate)
+    // If the current context causes out of memory, JavaScript setting
+    // is disabled and it returns true.
+    bool handleOutOfMemory();
+    v8::Local<v8::Value> handleMaxRecursionDepthExceeded(v8::Isolate*);
+    void crashIfV8IsDead();
+
+    inline bool isUndefinedOrNull(v8::Handle<v8::Value> value)
     {
-        v8::Handle<v8::Context> context = isolate->GetEnteredContext();
-        if (context.IsEmpty())
-            return 0;
-        if (isNonWindowContextsAllowed() && !DOMWrapperWorld::contextHasCorrectPrototype(context))
-            return 0;
-        return DOMWrapperWorld::isolatedWorld(context);
+        return value->IsNull() || value->IsUndefined();
+    }
+    v8::Handle<v8::Function> getBoundFunction(v8::Handle<v8::Function>);
+
+    // Attaches |environment| to |function| and returns it.
+    inline v8::Local<v8::Function> createClosure(v8::FunctionCallback function, v8::Handle<v8::Value> environment, v8::Isolate* isolate)
+    {
+        return v8::Function::New(isolate, function, environment);
     }
 
     // FIXME: This will be soon embedded in the generated code.
@@ -662,40 +664,25 @@ namespace WebCore {
         v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), length);
         for (int i = 0; i < length; ++i) {
             // FIXME: Do we need to check that the item function returns a non-null value for this index?
-            v8::Handle<v8::Integer> integer = v8::Integer::New(i, info.GetIsolate());
+            v8::Handle<v8::Integer> integer = v8::Integer::New(info.GetIsolate(), i);
             properties->Set(integer, integer);
         }
         v8SetReturnValue(info, properties);
     }
 
-    // If the current context causes out of memory, JavaScript setting
-    // is disabled and it returns true.
-    bool handleOutOfMemory();
-    v8::Local<v8::Value> handleMaxRecursionDepthExceeded(v8::Isolate*);
+    v8::Local<v8::Value> getHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, const char*);
+    v8::Local<v8::Value> getHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, v8::Handle<v8::String>);
+    bool setHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, const char*, v8::Handle<v8::Value>);
+    bool setHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, v8::Handle<v8::String>, v8::Handle<v8::Value>);
+    bool deleteHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, const char*);
+    bool deleteHiddenValue(v8::Isolate*, v8::Handle<v8::Object>, v8::Handle<v8::String>);
+    v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, const char*);
+    v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, v8::Handle<v8::String>);
 
-    void crashIfV8IsDead();
-
-    template <class T>
-    v8::Handle<T> unsafeHandleFromRawValue(const T* value)
-    {
-        const v8::Handle<T>* handle = reinterpret_cast<const v8::Handle<T>*>(&value);
-        return *handle;
-    }
-
-    // Attaches |environment| to |function| and returns it.
-    inline v8::Local<v8::Function> createClosure(v8::FunctionCallback function, v8::Handle<v8::Value> environment, v8::Isolate* isolate)
-    {
-        return v8::Function::New(isolate, function, environment);
-    }
-
-    v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, v8::Handle<v8::String> key);
-
-    v8::Isolate* mainThreadIsolate();
-    v8::Isolate* toIsolate(ExecutionContext*);
-    v8::Isolate* toIsolate(Frame*);
-
-    // Can only be called by blink::initialize
-    void setMainThreadIsolate(v8::Isolate*);
+    // These methods store hidden values into an array that is stored in the internal field of a DOM wrapper.
+    void addHiddenValueToArray(v8::Handle<v8::Object>, v8::Local<v8::Value>, int cacheIndex, v8::Isolate*);
+    void removeHiddenValueFromArray(v8::Handle<v8::Object>, v8::Local<v8::Value>, int cacheIndex, v8::Isolate*);
+    void moveEventListenerToNewWrapper(v8::Handle<v8::Object>, EventListener* oldValue, v8::Local<v8::Value> newValue, int cacheIndex, v8::Isolate*);
 
     // Converts a DOM object to a v8 value.
     // This is a no-inline version of toV8(). If you want to call toV8()
@@ -703,6 +690,38 @@ namespace WebCore {
     // Each specialized implementation will be generated.
     template<typename T>
     v8::Handle<v8::Value> toV8NoInline(T* impl, v8::Handle<v8::Object> creationContext, v8::Isolate*);
+
+    // Result values for platform object 'deleter' methods,
+    // http://www.w3.org/TR/WebIDL/#delete
+    enum DeleteResult {
+        DeleteSuccess,
+        DeleteReject,
+        DeleteUnknownProperty
+    };
+
+    class V8IsolateInterruptor : public ThreadState::Interruptor {
+    public:
+        explicit V8IsolateInterruptor(v8::Isolate* isolate) : m_isolate(isolate) { }
+
+        static void onInterruptCallback(v8::Isolate* isolate, void* data)
+        {
+            reinterpret_cast<V8IsolateInterruptor*>(data)->onInterrupted();
+        }
+
+        virtual void requestInterrupt() OVERRIDE
+        {
+            m_isolate->RequestInterrupt(&onInterruptCallback, this);
+        }
+
+        virtual void clearInterrupt() OVERRIDE
+        {
+            m_isolate->ClearInterrupt();
+        }
+
+    private:
+        v8::Isolate* m_isolate;
+    };
+
 } // namespace WebCore
 
 #endif // V8Binding_h

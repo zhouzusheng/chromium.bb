@@ -41,21 +41,23 @@ class Document;
 class Node;
 class SecurityOrigin;
 class StyleRuleBase;
+class StyleRuleFontFace;
 class StyleRuleImport;
 
-class StyleSheetContents : public RefCounted<StyleSheetContents> {
+class StyleSheetContents : public RefCountedWillBeRefCountedGarbageCollected<StyleSheetContents> {
+    DECLARE_GC_INFO
 public:
-    static PassRefPtr<StyleSheetContents> create(const CSSParserContext& context = CSSParserContext(HTMLStandardMode))
+    static PassRefPtrWillBeRawPtr<StyleSheetContents> create(const CSSParserContext& context)
     {
-        return adoptRef(new StyleSheetContents(0, String(), context));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new StyleSheetContents(0, String(), context));
     }
-    static PassRefPtr<StyleSheetContents> create(const String& originalURL, const CSSParserContext& context)
+    static PassRefPtrWillBeRawPtr<StyleSheetContents> create(const String& originalURL, const CSSParserContext& context)
     {
-        return adoptRef(new StyleSheetContents(0, originalURL, context));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new StyleSheetContents(0, originalURL, context));
     }
-    static PassRefPtr<StyleSheetContents> create(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext& context)
+    static PassRefPtrWillBeRawPtr<StyleSheetContents> create(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext& context)
     {
-        return adoptRef(new StyleSheetContents(ownerRule, originalURL, context));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new StyleSheetContents(ownerRule, originalURL, context));
     }
 
     ~StyleSheetContents();
@@ -69,6 +71,7 @@ public:
     bool parseStringAtPosition(const String&, const TextPosition&, bool);
 
     bool isCacheable() const;
+    bool maybeCacheable() const;
 
     bool isLoading() const;
 
@@ -82,17 +85,17 @@ public:
 
     const String& charset() const { return m_parserContext.charset(); }
 
-    bool loadCompleted() const { return m_loadCompleted; }
+    bool loadCompleted() const;
     bool hasFailedOrCanceledSubresources() const;
 
     KURL completeURL(const String& url) const;
-    void addSubresourceStyleURLs(ListHashSet<KURL>&);
 
-    void setHasSyntacticallyValidCSSHeader(bool b) { m_hasSyntacticallyValidCSSHeader = b; }
+    void setHasSyntacticallyValidCSSHeader(bool isValidCss);
     bool hasSyntacticallyValidCSSHeader() const { return m_hasSyntacticallyValidCSSHeader; }
 
     void setHasFontFaceRule(bool b) { m_hasFontFaceRule = b; }
     bool hasFontFaceRule() const { return m_hasFontFaceRule; }
+    void findFontFaceRules(Vector<const StyleRuleFontFace*>& fontFaceRules);
 
     void parserAddNamespace(const AtomicString& prefix, const AtomicString& uri);
     void parserAppendRule(PassRefPtr<StyleRuleBase>);
@@ -150,9 +153,12 @@ public:
     RuleSet& ensureRuleSet(const MediaQueryEvaluator&, AddRuleFlags);
     void clearRuleSet();
 
+    void trace(Visitor*);
+
 private:
     StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext&);
     StyleSheetContents(const StyleSheetContents&);
+    void notifyRemoveFontFaceRule(const StyleRuleFontFace*);
 
     void clearCharsetRule();
 
@@ -166,7 +172,6 @@ private:
     typedef HashMap<AtomicString, AtomicString> PrefixNamespaceURIMap;
     PrefixNamespaceURIMap m_namespaces;
 
-    bool m_loadCompleted : 1;
     bool m_hasSyntacticallyValidCSSHeader : 1;
     bool m_didLoadErrorOccur : 1;
     bool m_usesRemUnits : 1;

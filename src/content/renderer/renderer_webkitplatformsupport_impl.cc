@@ -10,19 +10,22 @@
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/platform_file.h"
-#include "base/safe_numerics.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/child/blink_glue.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/indexed_db/webidbfactory_impl.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
+#include "content/child/simple_webmimeregistry_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
 #include "content/child/webblobregistry_impl.h"
+#include "content/child/webfileutilities_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -48,6 +51,7 @@
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webcrypto/webcrypto_impl.h"
+#include "content/renderer/webgraphicscontext3d_provider_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -66,28 +70,25 @@
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
-#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
+#include "webkit/common/gpu/context_provider_web_context.h"
 #include "webkit/common/quota/quota_types.h"
-#include "webkit/glue/simple_webmimeregistry_impl.h"
-#include "webkit/glue/webfileutilities_impl.h"
-#include "webkit/glue/webkit_glue.h"
 
-#if defined(OS_WIN)
-#include "content/common/child_process_messages.h"
-#include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
+#if defined(OS_ANDROID)
+#include "content/renderer/media/android/audio_decoder_android.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
+#include "content/renderer/webscrollbarbehavior_impl_mac.h"
 #include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if defined(OS_POSIX)
+#include "base/file_descriptor_posix.h"
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include <map>
 #include <string>
 
@@ -97,13 +98,18 @@
 #include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
 #include "third_party/icu/source/common/unicode/utf16.h"
 #endif
-
-#if defined(OS_POSIX)
-#include "base/file_descriptor_posix.h"
 #endif
 
-#if defined(OS_ANDROID)
-#include "content/renderer/media/android/audio_decoder_android.h"
+#if defined(OS_WIN)
+#include "content/common/child_process_messages.h"
+#include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
+#endif
+
+#if defined(TOOLKIT_GTK) || defined(USE_AURA)
+#include "content/renderer/webscrollbarbehavior_impl_gtkoraura.h"
+#elif !defined(OS_MACOSX)
+#include "third_party/WebKit/public/platform/WebScrollbarBehavior.h"
+#define WebScrollbarBehaviorImpl blink::WebScrollbarBehavior
 #endif
 
 using blink::Platform;
@@ -112,7 +118,6 @@ using blink::WebBlobRegistry;
 using blink::WebDatabaseObserver;
 using blink::WebFileInfo;
 using blink::WebFileSystem;
-using blink::WebFrame;
 using blink::WebGamepads;
 using blink::WebIDBFactory;
 using blink::WebMIDIAccessor;
@@ -139,7 +144,7 @@ base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
 //------------------------------------------------------------------------------
 
 class RendererWebKitPlatformSupportImpl::MimeRegistry
-    : public webkit_glue::SimpleWebMimeRegistryImpl {
+    : public SimpleWebMimeRegistryImpl {
  public:
   virtual blink::WebMimeRegistry::SupportsType supportsMediaMIMEType(
       const blink::WebString& mime_type,
@@ -154,7 +159,7 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
 };
 
 class RendererWebKitPlatformSupportImpl::FileUtilities
-    : public webkit_glue::WebFileUtilitiesImpl {
+    : public WebFileUtilitiesImpl {
  public:
   explicit FileUtilities(ThreadSafeSender* sender)
       : thread_safe_sender_(sender) {}
@@ -208,7 +213,8 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
-      child_thread_loop_(base::MessageLoopProxy::current()) {
+      child_thread_loop_(base::MessageLoopProxy::current()),
+      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl) {
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(
         new RendererWebKitPlatformSupportImpl::SandboxSupport);
@@ -338,7 +344,7 @@ void RendererWebKitPlatformSupportImpl::cacheMetadata(
 }
 
 WebString RendererWebKitPlatformSupportImpl::defaultLocale() {
-  return ASCIIToUTF16(RenderThread::Get()->GetLocale());
+  return base::ASCIIToUTF16(RenderThread::Get()->GetLocale());
 }
 
 void RendererWebKitPlatformSupportImpl::suddenTerminationChanged(bool enabled) {
@@ -456,7 +462,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
   RenderThread::Get()->Send(
       new MimeRegistryMsg_GetMimeTypeFromExtension(
           base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
@@ -470,7 +476,7 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
   RenderThread::Get()->Send(new MimeRegistryMsg_GetMimeTypeFromFile(
       base::FilePath::FromUTF16Unsafe(file_path),
       &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 //------------------------------------------------------------------------------
@@ -478,14 +484,14 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
 bool RendererWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
     const WebString& path,
     WebFileInfo& web_file_info) {
-  base::PlatformFileInfo file_info;
-  base::PlatformFileError status;
+  base::File::Info file_info;
+  base::File::Error status;
   if (!SendSyncMessageFromAnyThread(new FileUtilitiesMsg_GetFileInfo(
            base::FilePath::FromUTF16Unsafe(path), &file_info, &status)) ||
-      status != base::PLATFORM_FILE_OK) {
+      status != base::File::FILE_OK) {
     return false;
   }
-  webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
+  FileInfoToWebFileInfo(file_info, &web_file_info);
   web_file_info.platformPath = path;
   return true;
 }
@@ -716,7 +722,7 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
 
   int session_id = 0;
   if (input_device_id.isNull() ||
-      !base::StringToInt(UTF16ToUTF8(input_device_id), &session_id)) {
+      !base::StringToInt(base::UTF16ToUTF8(input_device_id), &session_id)) {
     if (input_channels > 0)
       DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
 
@@ -845,6 +851,13 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 
 //------------------------------------------------------------------------------
 
+blink::WebScrollbarBehavior*
+    RendererWebKitPlatformSupportImpl::scrollbarBehavior() {
+  return web_scrollbar_behavior_.get();
+}
+
+//------------------------------------------------------------------------------
+
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
   // blob_registry_ can be NULL when running some tests.
   return blob_registry_.get();
@@ -968,11 +981,11 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
 
 blink::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
-  scoped_refptr<cc::ContextProvider> provider =
+  scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider();
   if (!provider)
     return NULL;
-  return new webkit::gpu::WebGraphicsContext3DProviderImpl(provider);
+  return new WebGraphicsContext3DProviderImpl(provider);
 }
 
 //------------------------------------------------------------------------------
@@ -1056,7 +1069,7 @@ blink::WebCrypto* RendererWebKitPlatformSupportImpl::crypto() {
 
 void RendererWebKitPlatformSupportImpl::vibrate(unsigned int milliseconds) {
   RenderThread::Get()->Send(
-      new ViewHostMsg_Vibrate(base::checked_numeric_cast<int64>(milliseconds)));
+      new ViewHostMsg_Vibrate(base::checked_cast<int64>(milliseconds)));
 }
 
 void RendererWebKitPlatformSupportImpl::cancelVibration() {
@@ -1068,7 +1081,7 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
     const blink::WebURL& storage_partition,
     blink::WebStorageQuotaType type,
-    blink::WebStorageQuotaCallbacks* callbacks) {
+    blink::WebStorageQuotaCallbacks callbacks) {
   if (!thread_safe_sender_.get() || !quota_message_filter_.get())
     return;
   QuotaDispatcher::ThreadSpecificInstance(

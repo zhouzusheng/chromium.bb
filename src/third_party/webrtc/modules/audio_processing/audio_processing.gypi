@@ -12,6 +12,7 @@
       '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
       '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
     ],
+    'shared_generated_dir': '<(SHARED_INTERMEDIATE_DIR)/audio_processing/asm_offsets',
   },
   'targets': [
     {
@@ -67,10 +68,10 @@
         'level_estimator_impl.h',
         'noise_suppression_impl.cc',
         'noise_suppression_impl.h',
-        'splitting_filter.cc',
-        'splitting_filter.h',
         'processing_component.cc',
         'processing_component.h',
+        'typing_detection.cc',
+        'typing_detection.h',
         'utility/delay_estimator.c',
         'utility/delay_estimator.h',
         'utility/delay_estimator_internal.h',
@@ -102,6 +103,17 @@
             'ns/nsx_core.c',
             'ns/nsx_core.h',
             'ns/nsx_defines.h',
+          ],
+          'conditions': [
+            ['target_arch=="mipsel"', {
+              'sources': [
+                'ns/nsx_core_mips.c',
+              ],
+            }, {
+              'sources': [
+                'ns/nsx_core_c.c',
+              ],
+            }],
           ],
         }, {
           'defines': ['WEBRTC_NS_FLOAT'],
@@ -183,11 +195,14 @@
         'conditions': [
           ['OS=="android" or OS=="ios"', {
             'dependencies': [
-              'audio_processing_offsets',
+              '<(gen_core_neon_offsets_gyp):*',
             ],
             'sources': [
               'aecm/aecm_core_neon.S',
               'ns/nsx_core_neon.S',
+            ],
+            'include_dirs': [
+              '<(shared_generated_dir)',
             ],
             'sources!': [
               'aecm/aecm_core_neon.c',
@@ -197,22 +212,6 @@
           }],
         ],
       }],
-      'conditions': [
-        ['OS=="android" or OS=="ios"', {
-          'targets': [{
-            'target_name': 'audio_processing_offsets',
-            'type': 'none',
-            'sources': [
-              'aecm/aecm_core_neon_offsets.c',
-              'ns/nsx_core_neon_offsets.c',
-            ],
-            'variables': {
-              'asm_header_dir': 'asm_offsets',
-            },
-            'includes': ['../../build/generate_asm_header.gypi',],
-          }],
-        }],
-      ],
     }],
   ],
 }

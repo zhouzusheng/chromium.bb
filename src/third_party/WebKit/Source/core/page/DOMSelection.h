@@ -47,7 +47,7 @@ class Range;
 class TreeScope;
 class VisibleSelection;
 
-class DOMSelection : public RefCounted<DOMSelection>, public ScriptWrappable, public DOMWindowProperty {
+class DOMSelection FINAL : public RefCounted<DOMSelection>, public ScriptWrappable, public DOMWindowProperty {
 public:
     static PassRefPtr<DOMSelection> create(const TreeScope* treeScope) { return adoptRef(new DOMSelection(treeScope)); }
 
@@ -61,7 +61,6 @@ public:
     int extentOffset() const;
     String type() const;
     void setBaseAndExtent(Node* baseNode, int baseOffset, Node* extentNode, int extentOffset, ExceptionState&);
-    void setPosition(Node*, int offset, ExceptionState&);
     void modify(const String& alter, const String& direction, const String& granularity);
 
     // Mozilla Selection Object API

@@ -34,22 +34,21 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/events/BeforeTextInsertedEvent.h"
-#include "core/events/KeyboardEvent.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/events/TextEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
+#include "core/events/BeforeTextInsertedEvent.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/TextEvent.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/frame/Frame.h"
-#include "core/frame/Settings.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
 #include "core/rendering/RenderDetailsMarker.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTextControlSingleLine.h"
@@ -83,25 +82,26 @@ private:
 
     virtual void defaultEventHandler(Event* event) OVERRIDE
     {
+        ASSERT(document().isActive());
         if (event->type() != EventTypeNames::click)
             return;
         HTMLInputElement* host = hostInput();
-        if (host && !host->isDisabledOrReadOnly() && document().page()) {
-            document().page()->chrome().openTextDataListChooser(*host);
+        if (host && !host->isDisabledOrReadOnly()) {
+            document().frameHost()->chrome().openTextDataListChooser(*host);
             event->setDefaultHandled();
         }
     }
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE
     {
-        return hostInput() && !hostInput()->isDisabledOrReadOnly() && document().page();
+        return hostInput() && !hostInput()->isDisabledOrReadOnly() && document().isActive();
     }
 
 public:
     static PassRefPtr<DataListIndicatorElement> create(Document& document)
     {
         RefPtr<DataListIndicatorElement> element = adoptRef(new DataListIndicatorElement(document));
-        element->setPseudo(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
+        element->setShadowPseudoId(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
         element->setAttribute(idAttr, ShadowElementNames::pickerIndicator());
         return element.release();
     }
@@ -134,18 +134,9 @@ bool TextFieldInputType::isTextField() const
     return true;
 }
 
-static inline bool shouldIgnoreRequiredAttribute(const HTMLInputElement& input)
-{
-    if (!input.document().settings() || !input.document().settings()->needsSiteSpecificQuirks())
-        return false;
-    if (!equalIgnoringCase(input.document().url().host(), "egov.uscis.gov"))
-        return false;
-    return input.fastGetAttribute(requiredAttr) == "no";
-}
-
 bool TextFieldInputType::valueMissing(const String& value) const
 {
-    return !shouldIgnoreRequiredAttribute(element()) && element().isRequired() && value.isEmpty();
+    return element().isRequired() && value.isEmpty();
 }
 
 bool TextFieldInputType::canSetSuggestedValue()
@@ -164,7 +155,7 @@ void TextFieldInputType::setValue(const String& sanitizedValue, bool valueChange
     InputType::setValue(sanitizedValue, valueChanged, DispatchNoEvent);
 
     if (valueChanged)
-        updateView();
+        input->updateView();
 
     unsigned max = visibleValue().length();
     if (input->focused())
@@ -253,9 +244,9 @@ void TextFieldInputType::forwardEvent(Event* event)
     }
 }
 
-void TextFieldInputType::handleFocusEvent(Element* oldFocusedNode, FocusDirection focusDirection)
+void TextFieldInputType::handleFocusEvent(Element* oldFocusedNode, FocusType focusType)
 {
-    InputType::handleFocusEvent(oldFocusedNode, focusDirection);
+    InputType::handleFocusEvent(oldFocusedNode, focusType);
     element().beginEditing();
 }
 
@@ -307,7 +298,7 @@ void TextFieldInputType::createShadowSubtree()
     }
 
     RefPtr<TextControlInnerContainer> container = TextControlInnerContainer::create(document);
-    container->setPseudo(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
+    container->setShadowPseudoId(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
     shadowRoot->appendChild(container);
 
     RefPtr<EditingViewPortElement> editingViewPort = EditingViewPortElement::create(document);
@@ -358,13 +349,15 @@ void TextFieldInputType::listAttributeTargetChanged()
             // but they are different. We should simplify the code by making
             // containerElement mandatory.
             RefPtr<Element> rpContainer = TextControlInnerContainer::create(document);
-            rpContainer->setPseudo(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
+            rpContainer->setShadowPseudoId(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
             RefPtr<Element> innerEditor = element().innerTextElement();
             innerEditor->parentNode()->replaceChild(rpContainer.get(), innerEditor.get());
             RefPtr<Element> editingViewPort = EditingViewPortElement::create(document);
             editingViewPort->appendChild(innerEditor.release());
             rpContainer->appendChild(editingViewPort.release());
             rpContainer->appendChild(DataListIndicatorElement::create(document));
+            if (element().document().focusedElement() == element())
+                element().updateFocusAppearance(true /* restore selection */);
         }
     } else {
         picker->remove(ASSERT_NO_EXCEPTION);
@@ -483,7 +476,7 @@ void TextFieldInputType::updatePlaceholderText()
     if (!placeholder) {
         RefPtr<HTMLElement> newElement = HTMLDivElement::create(element().document());
         placeholder = newElement.get();
-        placeholder->setPseudo(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         Element* container = containerElement();
         Node* previous = container ? container : element().innerTextElement();
@@ -521,7 +514,7 @@ void TextFieldInputType::subtreeHasChanged()
     element().setValueFromRenderer(sanitizeValue(convertFromVisibleValue(element().innerTextValue())));
     element().updatePlaceholderVisibility(false);
     // Recalc for :invalid change.
-    element().setNeedsStyleRecalc();
+    element().setNeedsStyleRecalc(SubtreeStyleChange);
 
     didSetValueByUserEdit(wasChanged ? ValueChangeStateChanged : ValueChangeStateNone);
 }

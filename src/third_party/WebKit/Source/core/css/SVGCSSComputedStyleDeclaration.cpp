@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-static PassRefPtr<CSSPrimitiveValue> glyphOrientationToCSSPrimitiveValue(EGlyphOrientation orientation)
+static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> glyphOrientationToCSSPrimitiveValue(EGlyphOrientation orientation)
 {
     switch (orientation) {
         case GO_0DEG:
@@ -46,14 +46,17 @@ static PassRefPtr<CSSPrimitiveValue> glyphOrientationToCSSPrimitiveValue(EGlyphO
     }
 }
 
-static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(const Vector<SVGLength>& dashes)
+static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(PassRefPtr<SVGLengthList> passDashes)
 {
-    if (dashes.isEmpty())
+    RefPtr<SVGLengthList> dashes = passDashes;
+
+    if (dashes->isEmpty())
         return CSSPrimitiveValue::createIdentifier(CSSValueNone);
 
-    RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
-    const Vector<SVGLength>::const_iterator end = dashes.end();
-    for (Vector<SVGLength>::const_iterator it = dashes.begin(); it != end; ++it)
+    RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+    SVGLengthList::ConstIterator it = dashes->begin();
+    SVGLengthList::ConstIterator itEnd = dashes->end();
+    for (; it != itEnd; ++it)
         list->append(SVGLength::toCSSPrimitiveValue(*it));
 
     return list.release();
@@ -61,7 +64,7 @@ static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(const Vector<SVGLength
 
 static PassRefPtr<CSSValue> paintOrderToCSSValueList(EPaintOrder paintorder)
 {
-    RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
+    RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
     do {
         EPaintOrderType paintOrderType = (EPaintOrderType)(paintorder & ((1 << kPaintOrderBitwidth) - 1));
         switch (paintOrderType) {
@@ -80,9 +83,9 @@ static PassRefPtr<CSSValue> paintOrderToCSSValueList(EPaintOrder paintorder)
     return list.release();
 }
 
-PassRefPtr<SVGPaint> CSSComputedStyleDeclaration::adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint> newPaint, RenderStyle& style) const
+PassRefPtrWillBeRawPtr<SVGPaint> CSSComputedStyleDeclaration::adjustSVGPaintForCurrentColor(PassRefPtrWillBeRawPtr<SVGPaint> newPaint, RenderStyle& style) const
 {
-    RefPtr<SVGPaint> paint = newPaint;
+    RefPtrWillBeRawPtr<SVGPaint> paint = newPaint;
     if (paint->paintType() == SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR || paint->paintType() == SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR)
         paint->setColor(style.color());
     return paint.release();
@@ -202,7 +205,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
         case CSSPropertyGlyphOrientationHorizontal:
             return glyphOrientationToCSSPrimitiveValue(svgStyle->glyphOrientationHorizontal());
         case CSSPropertyGlyphOrientationVertical: {
-            if (RefPtr<CSSPrimitiveValue> value = glyphOrientationToCSSPrimitiveValue(svgStyle->glyphOrientationVertical()))
+            if (RefPtrWillBeRawPtr<CSSPrimitiveValue> value = glyphOrientationToCSSPrimitiveValue(svgStyle->glyphOrientationVertical()))
                 return value.release();
 
             if (svgStyle->glyphOrientationVertical() == GO_AUTO)

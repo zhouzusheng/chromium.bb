@@ -26,7 +26,7 @@
 #ifndef Editor_h
 #define Editor_h
 
-#include "core/dom/ClipboardAccessPolicy.h"
+#include "core/clipboard/ClipboardAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
@@ -112,14 +112,6 @@ public:
 
     TriState selectionUnorderedListState() const;
     TriState selectionOrderedListState() const;
-    PassRefPtr<Node> insertOrderedList();
-    PassRefPtr<Node> insertUnorderedList();
-    bool canIncreaseSelectionListLevel();
-    bool canDecreaseSelectionListLevel();
-    PassRefPtr<Node> increaseSelectionListLevel();
-    PassRefPtr<Node> increaseSelectionListLevelOrdered();
-    PassRefPtr<Node> increaseSelectionListLevelUnordered();
-    void decreaseSelectionListLevel();
 
     void removeFormattingAndStyle();
 
@@ -163,7 +155,6 @@ public:
     };
     Command command(const String& commandName); // Command source is CommandFromMenuOrKeyBinding.
     Command command(const String& commandName, EditorCommandSource);
-    static bool commandIsSupportedFromMenuOrKeyBinding(const String& commandName); // Works without a frame.
 
     bool insertText(const String&, Event* triggeringEvent);
     bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, TextEvent* triggeringEvent);
@@ -239,9 +230,6 @@ public:
         Editor* m_editor;
     };
     friend class RevealSelectionScope;
-
-    // Export interpretKeyEvent only for testing
-    static const char* interpretKeyEvent(const WebCore::KeyboardEvent*);
 
 private:
     Frame& m_frame;

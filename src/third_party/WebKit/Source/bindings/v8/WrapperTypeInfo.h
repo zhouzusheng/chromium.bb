@@ -32,13 +32,13 @@
 #define WrapperTypeInfo_h
 
 #include "gin/public/wrapper_info.h"
+#include "heap/Handle.h"
 #include "wtf/Assertions.h"
 #include <v8.h>
 
 namespace WebCore {
 
     class ActiveDOMObject;
-    class DOMDataStore;
     class EventTarget;
     class Node;
 
@@ -66,7 +66,7 @@ namespace WebCore {
 
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
-        WrapperTypeErrorPrototype
+        WrapperTypeExceptionPrototype
     };
 
     inline void setObjectGroup(void* object, const v8::Persistent<v8::Object>& wrapper, v8::Isolate* isolate)
@@ -101,12 +101,6 @@ namespace WebCore {
         }
 
         v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate* isolate, WrapperWorldType worldType) const { return domTemplateFunction(isolate, worldType); }
-
-        void derefObject(void* object) const
-        {
-            if (derefObjectFunction)
-                derefObjectFunction(object);
-        }
 
         void installPerContextEnabledMethods(v8::Handle<v8::Object> prototypeTemplate, v8::Isolate* isolate) const
         {
@@ -147,6 +141,7 @@ namespace WebCore {
         const InstallPerContextEnabledPrototypePropertiesFunction installPerContextEnabledMethodsFunction;
         const WrapperTypeInfo* parentClass;
         const WrapperTypePrototype wrapperTypePrototype;
+        const bool isGarbageCollected;
     };
 
 
@@ -162,30 +157,54 @@ namespace WebCore {
     }
 
     template<typename T, int offset>
-    inline T* getInternalField(v8::Handle<v8::Object> object)
+    inline T* getInternalField(v8::Handle<v8::Object> wrapper)
     {
-        ASSERT(offset < object->InternalFieldCount());
-        return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
+        ASSERT(offset < wrapper->InternalFieldCount());
+        return static_cast<T*>(wrapper->GetAlignedPointerFromInternalField(offset));
     }
 
-    inline void* toNative(const v8::Persistent<v8::Object>& object)
+    inline void* toNative(const v8::Persistent<v8::Object>& wrapper)
     {
-        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
+        return getInternalField<void, v8DOMWrapperObjectIndex>(wrapper);
     }
 
-    inline void* toNative(v8::Handle<v8::Object> object)
+    inline void* toNative(v8::Handle<v8::Object> wrapper)
     {
-        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
+        return getInternalField<void, v8DOMWrapperObjectIndex>(wrapper);
     }
 
-    inline const WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& wrapper)
     {
-        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(wrapper);
     }
 
-    inline const WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> wrapper)
     {
-        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(wrapper);
+    }
+
+    inline const PersistentNode* toPersistentHandle(const v8::Handle<v8::Object>& wrapper)
+    {
+        // Persistent handle is stored in the last internal field.
+        return static_cast<PersistentNode*>(wrapper->GetAlignedPointerFromInternalField(wrapper->InternalFieldCount() - 1));
+    }
+
+    inline void releaseObject(v8::Handle<v8::Object> wrapper)
+    {
+        const WrapperTypeInfo* typeInfo = toWrapperTypeInfo(wrapper);
+#if ENABLE(OILPAN)
+        if (typeInfo->isGarbageCollected) {
+            const PersistentNode* handle = toPersistentHandle(wrapper);
+            ASSERT(handle);
+            delete handle;
+        } else {
+            ASSERT(typeInfo->derefObjectFunction);
+            typeInfo->derefObjectFunction(toNative(wrapper));
+        }
+#else
+        ASSERT(typeInfo->derefObjectFunction);
+        typeInfo->derefObjectFunction(toNative(wrapper));
+#endif
     }
 
     struct WrapperConfiguration {

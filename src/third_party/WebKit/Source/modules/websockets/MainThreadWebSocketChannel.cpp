@@ -128,7 +128,7 @@ String MainThreadWebSocketChannel::extensions()
 WebSocketChannel::SendResult MainThreadWebSocketChannel::send(const String& message)
 {
     WTF_LOG(Network, "MainThreadWebSocketChannel %p send() Sending String '%s'", this, message.utf8().data());
-    CString utf8 = message.utf8(String::StrictConversionReplacingUnpairedSurrogatesWithFFFD);
+    CString utf8 = message.utf8(StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD);
     enqueueTextFrame(utf8);
     processOutgoingFrameQueue();
     // m_channel->send() may happen later, thus it's not always possible to know whether
@@ -180,6 +180,13 @@ void MainThreadWebSocketChannel::close(int code, const String& reason)
         m_closingTimer.startOneShot(2 * TCPMaximumSegmentLifetime);
 }
 
+void MainThreadWebSocketChannel::clearDocument()
+{
+    if (m_handshake)
+        m_handshake->clearDocument();
+    m_document = 0;
+}
+
 void MainThreadWebSocketChannel::disconnectHandle()
 {
     if (!m_handle)
@@ -220,10 +227,10 @@ void MainThreadWebSocketChannel::disconnect()
     WTF_LOG(Network, "MainThreadWebSocketChannel %p disconnect()", this);
     if (m_identifier && m_document)
         InspectorInstrumentation::didCloseWebSocket(m_document, m_identifier);
-    if (m_handshake)
-        m_handshake->clearExecutionContext();
+
+    clearDocument();
+
     m_client = 0;
-    m_document = 0;
     disconnectHandle();
 }
 
@@ -283,7 +290,7 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
         m_unhandledBufferedAmount = m_handle->bufferedAmount();
         WebSocketChannelClient* client = m_client;
         m_client = 0;
-        m_document = 0;
+        clearDocument();
         m_handle = 0;
         if (client)
             client->didClose(m_unhandledBufferedAmount, m_receivedClosingHandshake ? WebSocketChannelClient::ClosingHandshakeComplete : WebSocketChannelClient::ClosingHandshakeIncomplete, m_closeEventCode, m_closeEventReason);
@@ -567,11 +574,11 @@ bool MainThreadWebSocketChannel::processFrame()
     // A new data frame is received before the previous continuous frame finishes.
     // Note that control frames are allowed to come in the middle of continuous frames.
     if (m_hasContinuousFrame && frame.opCode != WebSocketFrame::OpCodeContinuation && !WebSocketFrame::isControlOpCode(frame.opCode)) {
-        failAsError("Received new data frame but previous continuous frame is unfinished.");
+        failAsError("Received start of new message but previous message is unfinished.");
         return false;
     }
 
-    InspectorInstrumentation::didReceiveWebSocketFrame(m_document, m_identifier, frame);
+    InspectorInstrumentation::didReceiveWebSocketFrame(m_document, m_identifier, frame.opCode, frame.masked, frame.payload, frame.payloadLength);
 
     switch (frame.opCode) {
     case WebSocketFrame::OpCodeContinuation:
@@ -800,7 +807,7 @@ bool MainThreadWebSocketChannel::sendFrame(WebSocketFrame::OpCode opCode, const 
     ASSERT(!m_suspended);
 
     WebSocketFrame frame(opCode, data, dataLength, WebSocketFrame::Final | WebSocketFrame::Masked);
-    InspectorInstrumentation::didSendWebSocketFrame(m_document, m_identifier, frame);
+    InspectorInstrumentation::didSendWebSocketFrame(m_document, m_identifier, frame.opCode, frame.masked, frame.payload, frame.payloadLength);
 
     OwnPtr<DeflateResultHolder> deflateResult = m_deflateFramer.deflate(frame);
     if (!deflateResult->succeeded()) {

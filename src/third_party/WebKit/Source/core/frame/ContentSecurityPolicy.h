@@ -27,7 +27,9 @@
 #define ContentSecurityPolicy_h
 
 #include "bindings/v8/ScriptState.h"
+#include "core/dom/Document.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/weborigin/ReferrerPolicy.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -68,6 +70,11 @@ public:
         Enforce,
     };
 
+    enum HeaderSource {
+        HeaderSourceHTTP,
+        HeaderSourceMeta
+    };
+
     enum ReportingStatus {
         SendReport,
         SuppressReport
@@ -80,7 +87,7 @@ public:
     };
 
     void didReceiveHeaders(const ContentSecurityPolicyResponseHeaders&);
-    void didReceiveHeader(const String&, HeaderType);
+    void didReceiveHeader(const String&, HeaderType, HeaderSource);
 
     // These functions are wrong because they assume that there is only one header.
     // FIXME: Replace them with functions that return vectors.
@@ -91,7 +98,8 @@ public:
     bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
-    bool allowEval(ScriptState* = 0, ReportingStatus = SendReport) const;
+    bool allowScriptEval(ScriptState* = 0, ReportingStatus = SendReport) const;
+    bool allowStyleEval(ScriptState* = 0, ReportingStatus = SendReport) const;
     bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ReportingStatus = SendReport) const;
 
     bool allowScriptFromSource(const KURL&, ReportingStatus = SendReport) const;
@@ -104,20 +112,28 @@ public:
     bool allowConnectToSource(const KURL&, ReportingStatus = SendReport) const;
     bool allowFormAction(const KURL&, ReportingStatus = SendReport) const;
     bool allowBaseURI(const KURL&, ReportingStatus = SendReport) const;
+    bool allowAncestors(Frame*, ReportingStatus = SendReport) const;
+    bool allowChildContextFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowWorkerContextFromSource(const KURL&, ReportingStatus = SendReport) const;
+
     // The nonce and hash allow functions are guaranteed to not have any side
     // effects, including reporting.
     bool allowScriptNonce(const String& nonce) const;
     bool allowStyleNonce(const String& nonce) const;
     bool allowScriptHash(const String& source) const;
+    bool allowStyleHash(const String& source) const;
 
     void usesScriptHashAlgorithms(uint8_t HashAlgorithms);
+    void usesStyleHashAlgorithms(uint8_t HashAlgorithms);
 
     ReflectedXSSDisposition reflectedXSSDisposition() const;
+
+    ReferrerPolicy referrerPolicy() const;
+    bool didSetReferrerPolicy() const;
 
     void setOverrideAllowInlineStyle(bool);
 
     bool isActive() const;
-    void gatherReportURIs(DOMStringList&) const;
 
     void reportDirectiveAsSourceExpression(const String& directiveName, const String& sourceExpression) const;
     void reportDuplicateDirective(const String&) const;
@@ -129,6 +145,10 @@ public:
     void reportInvalidReflectedXSS(const String&) const;
     void reportMissingReportURI(const String&) const;
     void reportUnsupportedDirective(const String&) const;
+    void reportInvalidInReportOnly(const String&) const;
+    void reportInvalidReferrer(const String&) const;
+    void reportReportOnlyInMeta(const String&) const;
+    void reportMetaOutsideHead(const String&) const;
     void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header);
 
     void reportBlockedScriptExecutionToInspector(const String& directiveText) const;
@@ -138,18 +158,20 @@ public:
     SecurityOrigin* securityOrigin() const;
     void enforceSandboxFlags(SandboxFlags) const;
     String evalDisabledErrorMessage() const;
+    String styleEvalDisabledErrorMessage() const;
 
     bool experimentalFeaturesEnabled() const;
 
     static bool shouldBypassMainWorld(ExecutionContext*);
 
-    ExecutionContextClient* client() { return m_client; }
+    ExecutionContextClient* client() const { return m_client; }
+    Document* document() const { return client()->isDocument() ? toDocument(client()) : 0; }
 
 private:
     explicit ContentSecurityPolicy(ExecutionContextClient*);
 
     void logToConsole(const String& message) const;
-    void addPolicyFromHeaderValue(const String&, HeaderType);
+    void addPolicyFromHeaderValue(const String&, HeaderType, HeaderSource);
 
     bool shouldSendViolationReport(const String&) const;
     void didSendViolationReport(const String&);
@@ -161,9 +183,10 @@ private:
     HashSet<unsigned, AlreadyHashed> m_violationReportsSent;
 
     // We put the hash functions used on the policy object so that we only need
-    // to calculate a script hash once and then distribute it to all of the
-    // directives for validation.
-    uint8_t m_sourceHashAlgorithmsUsed;
+    // to calculate a hash once and then distribute it to all of the directives
+    // for validation.
+    uint8_t m_scriptHashAlgorithmsUsed;
+    uint8_t m_styleHashAlgorithmsUsed;
 };
 
 }

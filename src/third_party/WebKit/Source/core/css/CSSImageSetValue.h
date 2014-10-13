@@ -27,6 +27,7 @@
 #define CSSImageSetValue_h
 
 #include "core/css/CSSValueList.h"
+#include "core/fetch/ResourceFetcher.h"
 
 namespace WebCore {
 
@@ -37,12 +38,13 @@ class StyleImage;
 class CSSImageSetValue : public CSSValueList {
 public:
 
-    static PassRefPtr<CSSImageSetValue> create()
+    static PassRefPtrWillBeRawPtr<CSSImageSetValue> create()
     {
-        return adoptRef(new CSSImageSetValue());
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSImageSetValue());
     }
     ~CSSImageSetValue();
 
+    StyleFetchedImageSet* cachedImageSet(ResourceFetcher*, float deviceScaleFactor, const ResourceLoaderOptions&);
     StyleFetchedImageSet* cachedImageSet(ResourceFetcher*, float deviceScaleFactor);
 
     // Returns a StyleFetchedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
@@ -59,7 +61,9 @@ public:
 
     bool hasFailedOrCanceledSubresources() const;
 
-    PassRefPtr<CSSImageSetValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSImageSetValue> cloneForCSSOM() const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValueList::traceAfterDispatch(visitor); }
 
 protected:
     ImageWithScale bestImageForScaleFactor();

@@ -60,16 +60,18 @@ public:
     explicit RenderSVGResourceFilter(SVGFilterElement*);
     virtual ~RenderSVGResourceFilter();
 
-    virtual const char* renderName() const { return "RenderSVGResourceFilter"; }
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+
+    virtual const char* renderName() const OVERRIDE { return "RenderSVGResourceFilter"; }
     virtual bool isSVGResourceFilter() const OVERRIDE { return true; }
 
-    virtual void removeAllClientsFromCache(bool markForInvalidation = true);
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true);
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) OVERRIDE;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) OVERRIDE;
 
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode);
-    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*);
+    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE;
+    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*) OVERRIDE;
 
-    FloatRect resourceBoundingBox(RenderObject*);
+    FloatRect resourceBoundingBox(const RenderObject*);
 
     PassRefPtr<SVGFilterBuilder> buildPrimitives(SVGFilter*);
 
@@ -78,7 +80,7 @@ public:
 
     void primitiveAttributeChanged(RenderObject*, const QualifiedName&);
 
-    virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
+    virtual RenderSVGResourceType resourceType() const OVERRIDE { return s_resourceType; }
     static const RenderSVGResourceType s_resourceType;
 
     FloatRect drawingRegion(RenderObject*) const;
@@ -87,6 +89,10 @@ private:
 
     typedef HashMap<RenderObject*, OwnPtr<FilterData> > FilterMap;
     FilterMap m_filter;
+
+    HashMap<RenderObject*, FloatRect> m_objects;
+
+    static bool s_deferredFilterRendering;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGResourceFilter, isSVGResourceFilter());

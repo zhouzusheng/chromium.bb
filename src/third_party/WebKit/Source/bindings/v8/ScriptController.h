@@ -122,15 +122,7 @@ public:
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
-    // Returns V8 Context. If none exists, creates a new context.
-    // It is potentially slow and consumes memory.
-    static v8::Local<v8::Context> mainWorldContext(Frame*);
-    v8::Local<v8::Context> mainWorldContext();
-    v8::Local<v8::Context> currentWorldContext();
-
     TextPosition eventHandlerPosition() const;
-
-    const String* sourceURL() const { return m_sourceURL; } // 0 if we are not evaluating any script.
 
     void clearWindowShell();
     void updateDocument();
@@ -138,7 +130,7 @@ public:
     void namedItemAdded(HTMLDocument*, const AtomicString&);
     void namedItemRemoved(HTMLDocument*, const AtomicString&);
 
-    void updateSecurityOrigin();
+    void updateSecurityOrigin(SecurityOrigin*);
     void clearScriptObjects();
     void cleanupScriptObjectsForPlugin(Widget*);
 

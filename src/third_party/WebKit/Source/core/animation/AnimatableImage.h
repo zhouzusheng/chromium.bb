@@ -37,7 +37,7 @@
 
 namespace WebCore {
 
-class AnimatableImage : public AnimatableValue {
+class AnimatableImage FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableImage() { }
     static PassRefPtr<AnimatableImage> create(StyleImage* image)
@@ -50,6 +50,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableImage(StyleImage* image)

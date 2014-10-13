@@ -37,6 +37,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRootRareData.h"
 #include "core/editing/markup.h"
+#include "core/html/shadow/HTMLShadowElement.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -54,9 +55,9 @@ enum ShadowRootUsageOriginType {
     ShadowRootUsageOriginMax
 };
 
-ShadowRoot::ShadowRoot(Document* document, ShadowRootType type)
+ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     : DocumentFragment(0, CreateShadowRoot)
-    , TreeScope(this, document)
+    , TreeScope(*this, document)
     , m_prev(0)
     , m_next(0)
     , m_numberOfStyles(0)
@@ -66,11 +67,10 @@ ShadowRoot::ShadowRoot(Document* document, ShadowRootType type)
     , m_registeredWithParentShadowRoot(false)
     , m_descendantInsertionPointsIsValid(false)
 {
-    ASSERT(document);
     ScriptWrappable::init(this);
 
     if (type == ShadowRoot::AuthorShadowRoot) {
-        ShadowRootUsageOriginType usageType = document->url().protocolIsInHTTPFamily() ? ShadowRootUsageOriginWeb : ShadowRootUsageOriginNotWeb;
+        ShadowRootUsageOriginType usageType = document.url().protocolIsInHTTPFamily() ? ShadowRootUsageOriginWeb : ShadowRootUsageOriginNotWeb;
         blink::Platform::current()->histogramEnumeration("WebCore.ShadowRoot.constructor", usageType, ShadowRootUsageOriginMax);
     }
 }
@@ -83,7 +83,7 @@ ShadowRoot::~ShadowRoot()
     if (m_shadowRootRareData && m_shadowRootRareData->styleSheets())
         m_shadowRootRareData->styleSheets()->detachFromDocument();
 
-    documentInternal()->styleEngine()->didRemoveShadowRoot(this);
+    document().styleEngine()->didRemoveShadowRoot(this);
 
     // We cannot let ContainerNode destructor call willBeDeletedFromDocument()
     // for this ShadowRoot instance because TreeScope destructor
@@ -107,7 +107,7 @@ void ShadowRoot::dispose()
     removeDetachedChildren();
 }
 
-ShadowRoot* ShadowRoot::bindingsOlderShadowRoot() const
+ShadowRoot* ShadowRoot::olderShadowRootForBindings() const
 {
     ShadowRoot* older = olderShadowRoot();
     while (older && !older->shouldExposeToBindings())
@@ -147,24 +147,15 @@ void ShadowRoot::setInnerHTML(const String& markup, ExceptionState& exceptionSta
         replaceChildrenWithFragment(this, fragment.release(), exceptionState);
 }
 
-bool ShadowRoot::childTypeAllowed(NodeType type) const
-{
-    switch (type) {
-    case ELEMENT_NODE:
-    case PROCESSING_INSTRUCTION_NODE:
-    case COMMENT_NODE:
-    case TEXT_NODE:
-    case CDATA_SECTION_NODE:
-        return true;
-    default:
-        return false;
-    }
-}
-
 void ShadowRoot::recalcStyle(StyleRecalcChange change)
 {
     // ShadowRoot doesn't support custom callbacks.
     ASSERT(!hasCustomStyleCallbacks());
+
+    // If we're propagating an Inherit change and this ShadowRoot resets
+    // inheritance we don't need to look at the children.
+    if (change <= Inherit && resetStyleInheritance() && !needsStyleRecalc() && !childNeedsStyleRecalc())
+        return;
 
     StyleResolver& styleResolver = document().ensureStyleResolver();
     styleResolver.pushParentShadowRoot(*this);
@@ -182,7 +173,7 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
             toText(child)->recalcTextStyle(change, lastTextNode);
             lastTextNode = toText(child);
         } else if (child->isElementNode()) {
-            if (shouldRecalcStyle(change, child))
+            if (child->shouldCallRecalcStyle(change))
                 toElement(child)->recalcStyle(change, lastTextNode);
             if (child->renderer())
                 lastTextNode = 0;
@@ -194,12 +185,16 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
     clearChildNeedsStyleRecalc();
 }
 
-bool ShadowRoot::isActive() const
+bool ShadowRoot::isActiveForStyling() const
 {
-    for (ShadowRoot* shadowRoot = youngerShadowRoot(); shadowRoot; shadowRoot = shadowRoot->youngerShadowRoot())
-        if (!shadowRoot->containsShadowElements())
-            return false;
-    return true;
+    if (!youngerShadowRoot())
+        return true;
+
+    if (InsertionPoint* point = shadowInsertionPointOfYoungerShadowRoot()) {
+        if (point->containingShadowRoot())
+            return true;
+    }
+    return false;
 }
 
 void ShadowRoot::setApplyAuthorStyles(bool value)
@@ -211,13 +206,13 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
         return;
 
     m_applyAuthorStyles = value;
-    if (!isActive())
+    if (!isActiveForStyling())
         return;
 
     ASSERT(host());
     ASSERT(host()->shadow());
     if (host()->shadow()->didAffectApplyAuthorStyles())
-        host()->setNeedsStyleRecalc();
+        host()->setNeedsStyleRecalc(SubtreeStyleChange);
 
     // Since styles in shadow trees can select shadow hosts, set shadow host's needs-recalc flag true.
     // FIXME: host->setNeedsStyleRecalc() should take care of all elements in its shadow tree.
@@ -225,7 +220,7 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
     // no recalc style is invoked for any elements in its shadow tree.
     // This problem occurs when using getComputedStyle() API.
     // So currently host and shadow root's needsStyleRecalc flags are set to be true.
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void ShadowRoot::setResetStyleInheritance(bool value)
@@ -237,10 +232,10 @@ void ShadowRoot::setResetStyleInheritance(bool value)
         return;
 
     m_resetStyleInheritance = value;
-    if (!isActive())
+    if (!isActiveForStyling())
         return;
 
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void ShadowRoot::attach(const AttachContext& context)

@@ -144,7 +144,7 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
     AtomicString emptyFontFamily = "";
     FontCacheKey key = fontDescription.cacheKey(emptyFontFamily);
 
-    RefPtr<SimpleFontData>& fontData = m_fontDataTable.add(key.hash(), 0).iterator->value;
+    RefPtr<SimpleFontData>& fontData = m_fontDataTable.add(key.hash(), 0).storedValue->value;
     if (fontData)
         return fontData; // No release, because fontData is a reference to a RefPtr that is held in the m_fontDataTable.
 
@@ -219,6 +219,10 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
         // This temporary font is not retained and should not be returned.
         FontCachePurgePreventer fontCachePurgePreventer;
         SimpleFontData* temporaryFont = FontCache::fontCache()->getNonRetainedLastResortFallbackFont(fontDescription);
+        if (!temporaryFont) {
+            ASSERT_NOT_REACHED();
+            return 0;
+        }
         RefPtr<CSSCustomFontData> cssFontData = CSSCustomFontData::create(true);
         cssFontData->setCSSFontFaceSource(this);
         fontData = SimpleFontData::create(temporaryFont->platformData(), cssFontData);

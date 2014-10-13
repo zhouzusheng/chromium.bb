@@ -17,7 +17,7 @@
         'target_arch_full': 'arm-neon',
       }, {
         'conditions': [
-          ['OS=="android"', {
+          ['OS=="android" and ((target_arch=="arm" or target_arch=="armv7") and arm_neon==0)', {
             'target_arch_full': 'arm-neon-cpu-detect',
           }, {
            'target_arch_full': '<(target_arch)',
@@ -49,6 +49,11 @@
     ['target_arch=="x64"', {
       'includes': ['libvpx_srcs_x86_64_intrinsics.gypi', ],
     }],
+    [ '(target_arch=="arm" or target_arch=="armv7") and arm_neon==0 and OS=="android"', {
+      # When building for targets which may not have NEON (but may!), include
+      # support for neon and hide it behind Android cpu-features.
+      'includes': ['libvpx_srcs_arm_neon_cpu_detect_intrinsics.gypi', ],
+    }],
     [ '(target_arch != "arm" and target_arch != "armv7") and target_arch != "mipsel"', {
       'targets': [
         {
@@ -61,7 +66,7 @@
             'OS_CATEGORY%': '<(OS_CATEGORY)',
             'yasm_flags': [
               '-D', 'CHROMIUM',
-              '-I', 'source/config/<(OS_CATEGORY)/<(target_arch)',
+              '-I', 'source/config/<(OS_CATEGORY)/<(target_arch_full)',
               '-I', 'source/config',
               '-I', '<(libvpx_source)',
               '-I', '<(shared_generated_dir)', # Generated assembly offsets
@@ -74,7 +79,7 @@
             '../yasm/yasm_compile.gypi'
           ],
           'include_dirs': [
-            'source/config/<(OS_CATEGORY)/<(target_arch)',
+            'source/config/<(OS_CATEGORY)/<(target_arch_full)',
             'source/config',
             '<(libvpx_source)',
             '<(libvpx_source)/vp8/common',
@@ -104,6 +109,10 @@
                 'libvpx_intrinsics_ssse3',
                 # Currently no sse4_1 intrinsic functions
                 #'libvpx_intrinsics_sse4_1',
+                # Currently no avx intrinsic functions
+                #'libvpx_intrinsics_avx',
+                # Add avx2 support when VS2013 lands: crbug.com/328981
+                #'libvpx_intrinsics_avx2',
               ],
             }],
             ['target_arch=="x64"', {
@@ -118,6 +127,10 @@
                 'libvpx_intrinsics_ssse3',
                 # Currently no sse4_1 intrinsic functions
                 #'libvpx_intrinsics_sse4_1',
+                # Currently no avx intrinsic functions
+                #'libvpx_intrinsics_avx',
+                # Add avx2 support when VS2013 lands: crbug.com/328981
+                #'libvpx_intrinsics_avx2',
               ],
             }],
             ['clang == 1', {
@@ -166,7 +179,7 @@
             '-EL -static -mips32',
           ],
           'include_dirs': [
-            'source/config/<(OS_CATEGORY)/<(target_arch)',
+            'source/config/<(OS_CATEGORY)/<(target_arch_full)',
             'source/config',
             '<(libvpx_source)',
             '<(libvpx_source)/vp8/common',
@@ -179,7 +192,7 @@
             ],
           },
           'sources': [
-            'source/config/<(OS_CATEGORY)/<(target_arch)/vpx_config.c',
+            'source/config/<(OS_CATEGORY)/<(target_arch_full)/vpx_config.c',
           ],
         },
       ],
@@ -223,10 +236,10 @@
               'action': [
                 'bash',
                 '-c',
-                'cat <(RULE_INPUT_PATH) | perl <(shared_generated_dir)/<(ads2gas_script) > <(shared_generated_dir)/<(RULE_INPUT_ROOT).S',
+                'cat <(RULE_INPUT_PATH) | perl <(shared_generated_dir)/<(ads2gas_script) -chromium > <(shared_generated_dir)/<(RULE_INPUT_ROOT).S',
               ],
               'process_outputs_as_sources': 1,
-              'message': 'Convert libvpx asm file for ARM <(RULE_INPUT_PATH).',
+              'message': 'Convert libvpx asm file for ARM <(RULE_INPUT_PATH)',
             },
           ],
 
@@ -278,6 +291,9 @@
                   'includes': [
                     'libvpx_srcs_arm_neon_cpu_detect.gypi',
                   ],
+                  'dependencies': [
+                    'libvpx_intrinsics_neon',
+		  ],
                   'cflags': [
                     '-Wa,-mfpu=neon',
                   ],
@@ -295,9 +311,8 @@
               ],
             }],
             ['OS == "android"', {
-              'include_dirs': [
-                '<(android_ndk_include)',
-                '<(android_ndk_root)/sources/android/cpufeatures',
+              'includes': [
+                '../../build/android/cpufeatures.gypi',
               ],
             }],
             ['chromeos == 1', {
@@ -388,6 +403,21 @@
         'libvpx_asm_offsets_vp8',
         'libvpx_obj_int_extract#host',
       ],
+      'variables' : {
+        'lib_intermediate_name' : '',
+        'output_format':'',
+        'output_dir': '<(shared_generated_dir)',
+        'conditions' : [
+          ['android_webview_build==1', {
+            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vp8)/libvpx_asm_offsets_vp8.a',
+          }],
+          ['(target_arch=="arm" or target_arch=="armv7")', {
+            'output_format': 'gas',
+          }, {
+            'output_format': 'rvds',
+          }],
+        ],
+      },
       'conditions': [
         ['OS=="win"', {
           'variables': {
@@ -396,83 +426,41 @@
           'actions': [
             {
               'action_name': 'copy_enc_offsets_obj',
-              'inputs': [ 'copy_obj.sh' ],
+              'inputs': [ 'copy_obj.py' ],
               'outputs': [ '<(INTERMEDIATE_DIR)/vp8_asm_enc_offsets.obj' ],
               'action': [
-                '<(DEPTH)/third_party/libvpx/copy_obj.sh',
+                'python',
+                '<(DEPTH)/third_party/libvpx/copy_obj.py',
                 '-d', '<@(_outputs)',
                 '-s', '<(PRODUCT_DIR)/obj/libvpx_asm_offsets_vp8/vp8_asm_enc_offsets.obj',
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vp8/encoder/libvpx_asm_offsets_vp8.vp8_asm_enc_offsets.obj',
               ],
               'process_output_as_sources': 1,
-              'msvs_cygwin_shell': 1,
             },
           ],
           'sources': [
             '<(INTERMEDIATE_DIR)/vp8_asm_enc_offsets.obj',
           ],
         }, {
-          'actions': [
-            {
-              # Take archived .a file and unpack it unto .o files.
-              'action_name': 'unpack_lib_posix',
-              'inputs': [
-                'unpack_lib_posix.sh',
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/vp8_asm_enc_offsets.o',
-              ],
-              'action': [
-                '<(DEPTH)/third_party/libvpx/unpack_lib_posix.sh',
-                '-d', '<(INTERMEDIATE_DIR)',
-                '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vp8.a',
-                '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vp8.a',
-                '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vp8.a',
-                '-f', 'vp8_asm_enc_offsets.o',
-              ],
-              'process_output_as_sources': 1,
-              'msvs_cygwin_shell': 1,
-            },
-          ],
+          'variables': {
+            'unpack_lib_search_path_list': [
+              '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vp8.a',
+              '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vp8.a',
+              '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vp8.a',
+              '-a', '<(lib_intermediate_name)',
+            ],
+            'unpack_lib_output_dir':'<(INTERMEDIATE_DIR)',
+            'unpack_lib_name':'vp8_asm_enc_offsets.o'
+          },
+          'includes': ['unpack_lib_posix.gypi'],
           # Need this otherwise gyp won't run the rule on them.
           'sources': [
             '<(INTERMEDIATE_DIR)/vp8_asm_enc_offsets.o',
           ],
         }],
       ],
-      'rules': [
-        {
-          # Rule to extract integer values for each symbol from an object file.
-          'rule_name': 'obj_int_extract',
-          'extension': '<(asm_obj_extension)',
-          'inputs': [
-            '<(PRODUCT_DIR)/libvpx_obj_int_extract',
-            'obj_int_extract.sh',
-          ],
-          'outputs': [
-            '<(shared_generated_dir)/<(RULE_INPUT_ROOT).asm',
-          ],
-          'variables': {
-            'conditions': [
-              ['(target_arch=="arm" or target_arch=="armv7")', {
-                'asm_format': 'gas',
-              }, {
-                'asm_format': 'rvds',
-              }],
-            ],
-          },
-          'action': [
-            '<(DEPTH)/third_party/libvpx/obj_int_extract.sh',
-            '-e', '<(PRODUCT_DIR)/libvpx_obj_int_extract',
-            '-f', '<(asm_format)',
-            '-b', '<(RULE_INPUT_PATH)',
-            '-o', '<(shared_generated_dir)/<(RULE_INPUT_ROOT).asm',
-          ],
-          'message': 'Generate assembly offsets <(RULE_INPUT_PATH).',
-          'msvs_cygwin_shell': 1,
-        },
-      ],
+      'includes': ['obj_int_extract.gypi'],
     },
     {
       # A target that takes assembly offsets library and generate the
@@ -486,6 +474,21 @@
         'libvpx_asm_offsets_vpx_scale',
         'libvpx_obj_int_extract#host',
       ],
+      'variables' : {
+        'lib_intermediate_name' : '',
+        'output_format':'',
+        'output_dir': '<(shared_generated_dir)',
+        'conditions' : [
+          ['android_webview_build==1', {
+            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vpx_scale)/libvpx_asm_offsets_vpx_scale.a',
+          }],
+          ['(target_arch=="arm" or target_arch=="armv7")', {
+            'output_format': 'gas',
+          }, {
+            'output_format': 'rvds',
+          }],
+        ],
+      },
       'conditions': [
         ['OS=="win"', {
           'variables': {
@@ -494,158 +497,41 @@
           'actions': [
             {
               'action_name': 'copy_enc_offsets_obj',
-              'inputs': [ 'copy_obj.sh' ],
+              'inputs': [ 'copy_obj.py' ],
               'outputs': [ '<(INTERMEDIATE_DIR)/vpx_scale_asm_offsets.obj' ],
               'action': [
-                '<(DEPTH)/third_party/libvpx/copy_obj.sh',
+                'python',
+                '<(DEPTH)/third_party/libvpx/copy_obj.py',
                 '-d', '<@(_outputs)',
                 '-s', '<(PRODUCT_DIR)/obj/libvpx_asm_offsets_vpx_scale/vpx_scale_asm_offsets.obj',
                 '-s', '<(ninja_obj_dir)/encoder/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
                 '-s', '<(PRODUCT_DIR)/obj/Source/WebKit/chromium/third_party/libvpx/<(libvpx_source)/vpx_scale/libvpx_asm_offsets_vpx_scale.vpx_scale_asm_offsets.obj',
               ],
               'process_output_as_sources': 1,
-              'msvs_cygwin_shell': 1,
             },
           ],
           'sources': [
             '<(INTERMEDIATE_DIR)/vpx_scale_asm_offsets.obj',
           ],
         }, {
-          'actions': [
-            {
-              # Take archived .a file and unpack it unto .o files.
-              'action_name': 'unpack_lib_posix',
-              'inputs': [
-                'unpack_lib_posix.sh',
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/vpx_scale_asm_offsets.o',
-              ],
-              'action': [
-                '<(DEPTH)/third_party/libvpx/unpack_lib_posix.sh',
-                '-d', '<(INTERMEDIATE_DIR)',
-                '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vpx_scale.a',
-                '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
-                '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
-                '-f', 'vpx_scale_asm_offsets.o',
-              ],
-              'process_output_as_sources': 1,
-            },
-          ],
-          # Need this otherwise gyp won't run the rule on them.
+          'variables': {
+            'unpack_lib_search_path_list': [
+              '-a', '<(PRODUCT_DIR)/libvpx_asm_offsets_vpx_scale.a',
+              '-a', '<(LIB_DIR)/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
+              '-a', '<(LIB_DIR)/Source/WebKit/chromium/third_party/libvpx/libvpx_asm_offsets_vpx_scale.a',
+              '-a', '<(lib_intermediate_name)',
+            ],
+            'unpack_lib_output_dir':'<(INTERMEDIATE_DIR)',
+            'unpack_lib_name':'vpx_scale_asm_offsets.o'
+          },
+          'includes': ['unpack_lib_posix.gypi'],
+         # Need this otherwise gyp won't run the rule on them.
           'sources': [
             '<(INTERMEDIATE_DIR)/vpx_scale_asm_offsets.o',
           ],
         }],
       ],
-      'rules': [
-        {
-          # Rule to extract integer values for each symbol from an object file.
-          'rule_name': 'obj_int_extract',
-          'extension': '<(asm_obj_extension)',
-          'inputs': [
-            '<(PRODUCT_DIR)/libvpx_obj_int_extract',
-            'obj_int_extract.sh',
-          ],
-          'outputs': [
-            '<(shared_generated_dir)/<(RULE_INPUT_ROOT).asm',
-          ],
-          'variables': {
-            'conditions': [
-              ['(target_arch=="arm" or target_arch=="armv7")', {
-                'asm_format': 'gas',
-              }, {
-                'asm_format': 'rvds',
-              }],
-            ],
-          },
-          'action': [
-            '<(DEPTH)/third_party/libvpx/obj_int_extract.sh',
-            '-e', '<(PRODUCT_DIR)/libvpx_obj_int_extract',
-            '-f', '<(asm_format)',
-            '-b', '<(RULE_INPUT_PATH)',
-            '-o', '<(shared_generated_dir)/<(RULE_INPUT_ROOT).asm',
-          ],
-          'message': 'Generate assembly offsets <(RULE_INPUT_PATH).',
-          'msvs_cygwin_shell': 1,
-        },
-      ],
-    },
-    {
-      'target_name': 'simple_encoder',
-      'type': 'executable',
-      'dependencies': [
-        'libvpx',
-      ],
-
-      # Copy the script to the output folder so that we can use it with
-      # absolute path.
-      'copies': [{
-        'destination': '<(shared_generated_dir)/simple_encoder',
-        'files': [
-          '<(libvpx_source)/examples/gen_example_code.sh',
-        ],
-      }],
-
-      # Rule to convert .txt files to .c files.
-      'rules': [
-        {
-          'rule_name': 'generate_example',
-          'extension': 'txt',
-          'inputs': [ '<(shared_generated_dir)/simple_encoder/gen_example_code.sh', ],
-          'outputs': [
-            '<(shared_generated_dir)/<(RULE_INPUT_ROOT).c',
-          ],
-          'action': [
-            'bash',
-            '-c',
-            '<(shared_generated_dir)/simple_encoder/gen_example_code.sh <(RULE_INPUT_PATH) > <(shared_generated_dir)/<(RULE_INPUT_ROOT).c',
-          ],
-          'process_outputs_as_sources': 1,
-          'message': 'Generate libvpx example code <(RULE_INPUT_PATH).',
-        },
-      ],
-      'sources': [
-        '<(libvpx_source)/examples/simple_encoder.txt',
-      ]
-    },
-    {
-      'target_name': 'simple_decoder',
-      'type': 'executable',
-      'dependencies': [
-        'libvpx',
-      ],
-
-      # Copy the script to the output folder so that we can use it with
-      # absolute path.
-      'copies': [{
-        'destination': '<(shared_generated_dir)/simple_decoder',
-        'files': [
-          '<(libvpx_source)/examples/gen_example_code.sh',
-        ],
-      }],
-
-      # Rule to convert .txt files to .c files.
-      'rules': [
-        {
-          'rule_name': 'generate_example',
-          'extension': 'txt',
-          'inputs': [ '<(shared_generated_dir)/simple_decoder/gen_example_code.sh', ],
-          'outputs': [
-            '<(shared_generated_dir)/<(RULE_INPUT_ROOT).c',
-          ],
-          'action': [
-            'bash',
-            '-c',
-            '<(shared_generated_dir)/simple_decoder/gen_example_code.sh <(RULE_INPUT_PATH) > <(shared_generated_dir)/<(RULE_INPUT_ROOT).c',
-          ],
-          'process_outputs_as_sources': 1,
-          'message': 'Generate libvpx example code <(RULE_INPUT_PATH).',
-        },
-      ],
-      'sources': [
-        '<(libvpx_source)/examples/simple_decoder.txt',
-      ]
+      'includes': ['obj_int_extract.gypi'],
     },
   ],
 }

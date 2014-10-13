@@ -31,7 +31,6 @@
 #include "config.h"
 #include "core/dom/ElementRareData.h"
 
-#include "core/rendering/RegionOversetState.h"
 #include "core/rendering/style/RenderStyle.h"
 
 namespace WebCore {
@@ -39,11 +38,18 @@ namespace WebCore {
 struct SameSizeAsElementRareData : NodeRareData {
     short indices[2];
     unsigned bitfields;
-    RegionOversetState regionOversetState;
     LayoutSize sizeForResizing;
     IntSize scrollOffset;
-    void* pointers[10];
+    void* pointers[11];
 };
+
+CSSStyleDeclaration* ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
+{
+    if (!m_cssomWrapper)
+        m_cssomWrapper = adoptPtr(new InlineCSSStyleDeclaration(ownerElement));
+    return m_cssomWrapper.get();
+}
+
 
 COMPILE_ASSERT(sizeof(ElementRareData) == sizeof(SameSizeAsElementRareData), ElementRareDataShouldStaySmall);
 

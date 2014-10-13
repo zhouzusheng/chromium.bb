@@ -41,6 +41,9 @@ WebInspector.ResourceView = function(resource)
 }
 
 WebInspector.ResourceView.prototype = {
+    /**
+     * @return {boolean}
+     */
     hasContent: function()
     {
         return false;
@@ -51,13 +54,14 @@ WebInspector.ResourceView.prototype = {
 
 /**
  * @param {!WebInspector.Resource} resource
+ * @return {boolean}
  */
 WebInspector.ResourceView.hasTextContent = function(resource)
 {
     if (resource.type.isTextType())
         return true; 
     if (resource.type === WebInspector.resourceTypes.Other)
-        return resource.content && !resource.contentEncoded;
+        return !!resource.content && !resource.contentEncoded;
     return false;
 }
 
@@ -110,7 +114,6 @@ WebInspector.ResourceSourceFrameFallback = function(resource)
 {
     WebInspector.View.call(this);
     this._resource = resource;
-    this.element.classList.add("fill");
     this.element.classList.add("script-view");
     this._content = this.element.createChild("div", "script-view-fallback monospace");
 }

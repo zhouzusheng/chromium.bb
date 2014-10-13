@@ -27,8 +27,6 @@ bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
   return false;
 }
 
-bool WebContentsDelegate::CanLoadDataURLsInWebUI() const { return false; }
-
 bool WebContentsDelegate::CanOverscrollContent() const { return false; }
 
 gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
@@ -110,6 +108,12 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
   return false;
 }
 
+bool WebContentsDelegate::PreHandleGestureEvent(
+    WebContents* source,
+    const blink::WebGestureEvent& event) {
+  return false;
+}
+
 bool WebContentsDelegate::CanDragEnter(
     WebContents* source,
     const DropData& data,
@@ -177,7 +181,7 @@ bool WebContentsDelegate::ShouldSetLogicalFocusOnMouseDown() {
 
 bool WebContentsDelegate::ShowTooltip(
     WebContents* web_contents,
-    const string16& tooltip_text,
+    const base::string16& tooltip_text,
     blink::WebTextDirection text_direction_hint) {
   return false;
 }

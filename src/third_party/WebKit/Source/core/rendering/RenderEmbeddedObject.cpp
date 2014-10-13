@@ -64,12 +64,13 @@ RenderEmbeddedObject::~RenderEmbeddedObject()
 {
 }
 
-bool RenderEmbeddedObject::requiresLayer() const
+LayerType RenderEmbeddedObject::layerTypeRequired() const
 {
-    if (RenderPart::requiresLayer())
-        return true;
+    LayerType type = RenderPart::layerTypeRequired();
+    if (type != NoLayer)
+        return type;
 
-    return allowsAcceleratedCompositing();
+    return allowsAcceleratedCompositing() ? NormalLayer : NoLayer;
 }
 
 bool RenderEmbeddedObject::allowsAcceleratedCompositing() const
@@ -174,7 +175,7 @@ bool RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumul
     if (!settings)
         return false;
     fontDescription.setComputedSize(fontDescription.specifiedSize());
-    font = Font(fontDescription, 0, 0);
+    font = Font(fontDescription);
     font.update(0);
 
     run = TextRun(m_unavailablePluginReplacementText);
@@ -242,25 +243,6 @@ void RenderEmbeddedObject::layout()
     clearNeedsLayout();
 
     statePusher.pop();
-}
-
-void RenderEmbeddedObject::viewCleared()
-{
-    // This is required for <object> elements whose contents are rendered by WebCore (e.g. src="foo.html").
-    if (node() && widget() && widget()->isFrameView()) {
-        FrameView* view = toFrameView(widget());
-        int marginWidth = -1;
-        int marginHeight = -1;
-        if (node()->hasTagName(iframeTag)) {
-            HTMLIFrameElement* frame = toHTMLIFrameElement(node());
-            marginWidth = frame->marginWidth();
-            marginHeight = frame->marginHeight();
-        }
-        if (marginWidth != -1)
-            view->setMarginWidth(marginWidth);
-        if (marginHeight != -1)
-            view->setMarginHeight(marginHeight);
-    }
 }
 
 bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float)

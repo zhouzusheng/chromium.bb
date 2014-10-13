@@ -7,7 +7,6 @@
 #ifndef BASE_PROCESS_LAUNCH_H_
 #define BASE_PROCESS_LAUNCH_H_
 
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -102,7 +101,7 @@ struct BASE_EXPORT LaunchOptions {
   // Each element is an RLIMIT_* constant that should be raised to its
   // rlim_max.  This pointer is owned by the caller and must live through
   // the call to LaunchProcess().
-  const std::set<int>* maximize_rlimits;
+  const std::vector<int>* maximize_rlimits;
 
   // If true, start the process in a new process group, instead of
   // inheriting the parent's process group.  The pgid of the child process
@@ -159,6 +158,16 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
 BASE_EXPORT bool LaunchProcess(const string16& cmdline,
                                const LaunchOptions& options,
                                win::ScopedHandle* process_handle);
+
+// Launches a process with elevated privileges.  This does not behave exactly
+// like LaunchProcess as it uses ShellExecuteEx instead of CreateProcess to
+// create the process.  This means the process will have elevated privileges
+// and thus some common operations like OpenProcess will fail. The process will
+// be available through the |process_handle| argument.  Currently the only
+// supported LaunchOptions are |start_hidden| and |wait|.
+BASE_EXPORT bool LaunchElevatedProcess(const CommandLine& cmdline,
+                                       const LaunchOptions& options,
+                                       ProcessHandle* process_handle);
 
 #elif defined(OS_POSIX)
 // A POSIX-specific version of LaunchProcess that takes an argv array

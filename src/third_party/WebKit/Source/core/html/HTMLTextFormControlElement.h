@@ -70,11 +70,9 @@ public:
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
     PassRefPtr<Range> selection() const;
-    String selectedText() const;
 
-    virtual void dispatchFormControlChangeEvent();
+    virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
 
-    virtual int maxLength() const = 0;
     virtual String value() const = 0;
 
     HTMLElement* innerTextElement() const;
@@ -105,7 +103,7 @@ protected:
     void restoreCachedSelection();
     bool hasCachedSelection() const { return m_cachedSelectionStart >= 0; }
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual void subtreeHasChanged() = 0;
 
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
@@ -117,15 +115,15 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE FINAL;
+    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE FINAL;
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;
     // Returns true if suggested value is empty. Used to check placeholder visibility.
     virtual bool isEmptySuggestedValue() const { return true; }
     // Called in dispatchFocusEvent(), after placeholder process, before calling parent's dispatchFocusEvent().
-    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusDirection) { }
+    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusType) { }
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
 
@@ -136,11 +134,6 @@ private:
     int m_cachedSelectionEnd;
     TextFieldSelectionDirection m_cachedSelectionDirection;
 };
-
-inline bool isHTMLTextFormControlElement(const Node* node)
-{
-    return node->isElementNode() && toElement(node)->isTextFormControl();
-}
 
 inline bool isHTMLTextFormControlElement(const Node& node)
 {

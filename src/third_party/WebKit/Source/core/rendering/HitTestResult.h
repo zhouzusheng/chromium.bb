@@ -42,7 +42,6 @@ class Image;
 class KURL;
 class Node;
 class RenderObject;
-class RenderRegion;
 class Scrollbar;
 
 class HitTestResult {
@@ -96,7 +95,6 @@ public:
     void setIsFirstLetter(bool b) { m_isFirstLetter = b; }
     void setIsOverWidget(bool b) { m_isOverWidget = b; }
 
-    Frame* targetFrame() const;
     bool isSelected() const;
     String spellingToolTip(TextDirection&) const;
     String title(TextDirection&) const;

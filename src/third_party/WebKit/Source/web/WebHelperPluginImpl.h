@@ -33,7 +33,6 @@
 
 #include "WebHelperPlugin.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace WebCore {
 class Page;
@@ -50,24 +49,27 @@ class WebWidgetClient;
 
 // Hosts a simple page that instantiates a plugin using an <object> tag.
 // The widget is offscreen, and the plugin will not receive painting, resize, etc. events.
-class WebHelperPluginImpl : public WebHelperPlugin,
-                            public RefCounted<WebHelperPluginImpl> {
+class WebHelperPluginImpl FINAL : public WebHelperPlugin {
     WTF_MAKE_NONCOPYABLE(WebHelperPluginImpl);
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    virtual ~WebHelperPluginImpl();
-    bool initialize(const String& pluginType, const WebDocument& hostDocument, WebViewImpl*);
-    void closeHelperPlugin();
-
     // WebHelperPlugin methods:
     virtual void initializeFrame(WebFrameClient*) OVERRIDE;
     virtual WebPlugin* getPlugin() OVERRIDE;
+    virtual void closeAndDeleteSoon() OVERRIDE;
+
+    bool initialize(const String& pluginType, const WebDocument& hostDocument, WebViewImpl*);
+    // Called asynchronously and only by WebViewImpl.
+    void closeAndDelete();
 
 private:
     explicit WebHelperPluginImpl(WebWidgetClient*);
-    bool initializePage(const String& pluginType, const WebDocument& hostDocument);
+    bool initializePage(const WebString& pluginType, const WebDocument& hostDocument);
     void destroyPage();
+
+    // This object needs to be destroyed by calling closeAndDelete().
+    virtual ~WebHelperPluginImpl();
 
     // WebWidget methods:
     virtual void layout() OVERRIDE;
@@ -86,11 +88,7 @@ private:
     friend class HelperPluginChromeClient;
 };
 
-inline WebHelperPluginImpl* toWebHelperPluginImpl(WebWidget* widget)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isHelperPlugin());
-    return static_cast<WebHelperPluginImpl*>(widget);
-}
+DEFINE_TYPE_CASTS(WebHelperPluginImpl, WebWidget, widget, widget->isHelperPlugin(), widget.isHelperPlugin());
 
 } // namespace blink
 

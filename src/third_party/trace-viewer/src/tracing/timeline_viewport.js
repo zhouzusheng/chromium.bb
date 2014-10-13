@@ -7,13 +7,13 @@
 /**
  * @fileoverview Code for the viewport.
  */
-base.require('base.events');
-base.require('tracing.draw_helpers');
-base.require('tracing.timeline_display_transform');
-base.require('ui.animation');
-base.require('ui.animation_controller');
+tvcm.require('tvcm.events');
+tvcm.require('tracing.draw_helpers');
+tvcm.require('tracing.timeline_display_transform');
+tvcm.require('tvcm.ui.animation');
+tvcm.require('tvcm.ui.animation_controller');
 
-base.exportTo('tracing', function() {
+tvcm.exportTo('tracing', function() {
 
   var TimelineDisplayTransform = tracing.TimelineDisplayTransform;
 
@@ -28,16 +28,13 @@ base.exportTo('tracing', function() {
    * ways.
    *
    * @constructor
-   * @extends {base.EventTarget}
+   * @extends {tvcm.EventTarget}
    */
   function TimelineViewport(parentEl) {
     this.parentEl_ = parentEl;
     this.modelTrackContainer_ = undefined;
     this.currentDisplayTransform_ = new TimelineDisplayTransform();
     this.initAnimationController_();
-
-    // Flow events
-    this.showFlowEvents_ = false;
 
     // Grid system.
     this.gridTimebase_ = 0;
@@ -64,7 +61,7 @@ base.exportTo('tracing', function() {
   }
 
   TimelineViewport.prototype = {
-    __proto__: base.EventTarget.prototype,
+    __proto__: tvcm.EventTarget.prototype,
 
     /**
      * Allows initialization of the viewport when the viewport's parent element
@@ -134,11 +131,11 @@ base.exportTo('tracing', function() {
      * to redraw when the underlying model has been mutated.
      */
     dispatchChangeEvent: function() {
-      base.dispatchSimpleEvent(this, 'change');
+      tvcm.dispatchSimpleEvent(this, 'change');
     },
 
     dispatchMarkersChangeEvent_: function() {
-      base.dispatchSimpleEvent(this, 'markersChange');
+      tvcm.dispatchSimpleEvent(this, 'markersChange');
     },
 
     detach: function() {
@@ -153,7 +150,7 @@ base.exportTo('tracing', function() {
     },
 
     initAnimationController_: function() {
-      this.dtAnimationController_ = new ui.AnimationController();
+      this.dtAnimationController_ = new tvcm.ui.AnimationController();
       this.dtAnimationController_.addEventListener(
           'didtick', function(e) {
             this.onCurentDisplayTransformChange_(e.oldTargetState);
@@ -210,15 +207,15 @@ base.exportTo('tracing', function() {
     },
 
     queueDisplayTransformAnimation: function(animation) {
-      if (!(animation instanceof ui.Animation))
-        throw new Error('animation must be instanceof ui.Animation');
+      if (!(animation instanceof tvcm.ui.Animation))
+        throw new Error('animation must be instanceof tvcm.ui.Animation');
       this.dtAnimationController_.queueAnimation(animation);
     },
 
     onCurentDisplayTransformChange_: function(oldDisplayTransform) {
       // Ensure panY stays clamped in the track container's scroll range.
       if (this.modelTrackContainer_) {
-        this.currentDisplayTransform.panY = base.clamp(
+        this.currentDisplayTransform.panY = tvcm.clamp(
             this.currentDisplayTransform.panY,
             0,
             this.modelTrackContainer_.scrollHeight -
@@ -254,15 +251,6 @@ base.exportTo('tracing', function() {
       this.modelTrackContainer_ = m;
       this.modelTrackContainer_.addEventListener('scroll',
           this.onModelTrackControllerScroll_);
-    },
-
-    get showFlowEvents() {
-      return this.showFlowEvents_;
-    },
-
-    set showFlowEvents(showFlowEvents) {
-      this.showFlowEvents_ = showFlowEvents;
-      this.dispatchChangeEvent();
     },
 
     get gridEnabled() {
@@ -312,7 +300,7 @@ base.exportTo('tracing', function() {
     },
 
     getMarkerBounds: function() {
-      var bounds = new base.Range();
+      var bounds = new tvcm.Range();
       for (var i = 0; i < this.markers.length; ++i)
         bounds.addValue(this.markers[i].positionWorld);
       return bounds;

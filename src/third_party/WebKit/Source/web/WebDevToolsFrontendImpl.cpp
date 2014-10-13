@@ -43,9 +43,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8Utilities.h"
+#include "core/clipboard/Pasteboard.h"
 #include "core/dom/Document.h"
-#include "core/events/Event.h"
 #include "core/dom/Node.h"
+#include "core/events/Event.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/ContextMenuController.h"
@@ -53,7 +54,6 @@
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
-#include "core/platform/Pasteboard.h"
 #include "platform/ContextMenuItem.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
@@ -139,7 +139,9 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
         return;
     v8::Isolate* isolate = toIsolate(frame->frame());
     v8::HandleScope scope(isolate);
-    v8::Handle<v8::Context> frameContext = frame->frame()->script().currentWorldContext();
+    v8::Handle<v8::Context> frameContext = toV8Context(isolate, frame->frame(), DOMWrapperWorld::mainWorld());
+    if (frameContext.IsEmpty())
+        return;
     v8::Context::Scope contextScope(frameContext);
     v8::Handle<v8::Value> inspectorFrontendApiValue = frameContext->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorFrontendAPI"));
     if (!inspectorFrontendApiValue->IsObject())

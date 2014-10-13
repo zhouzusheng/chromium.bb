@@ -69,12 +69,12 @@ void ContentRendererClientImpl::RenderViewCreated(
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(
+    content::RenderView* render_view,
     blink::WebFrame* frame,
     const blink::WebURLRequest& failed_request,
     const blink::WebURLError& error,
-    const std::string& accept_languages,
     std::string* error_html,
-    string16* error_description)
+    base::string16* error_description)
 {
     GURL gurl = failed_request.url();
 
@@ -121,7 +121,7 @@ void ContentRendererClientImpl::GetNavigationErrorStrings(
         if (localdesc.length()) {
             tmp += " -- " + localdesc;
         }
-        *error_description = UTF8ToUTF16(tmp);
+        *error_description = base::UTF8ToUTF16(tmp);
     }
 }
 

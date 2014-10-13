@@ -26,7 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
-#include "core/css/CSSSegmentedFontFaceCache.h"
+#include "core/css/FontFaceCache.h"
 #include "core/fetch/ResourcePtr.h"
 #include "platform/Timer.h"
 #include "platform/fonts/FontSelector.h"
@@ -39,6 +39,7 @@ namespace WebCore {
 
 class CSSFontFace;
 class CSSFontFaceRule;
+class CSSFontSelectorClient;
 class CSSSegmentedFontFace;
 class FontResource;
 class Document;
@@ -62,7 +63,7 @@ private:
     ResourceFetcher* m_resourceFetcher;
 };
 
-class CSSFontSelector : public FontSelector {
+class CSSFontSelector FINAL : public FontSelector {
 public:
     static PassRefPtr<CSSFontSelector> create(Document* document)
     {
@@ -70,26 +71,26 @@ public:
     }
     virtual ~CSSFontSelector();
 
-    virtual unsigned version() const OVERRIDE { return m_cssSegmentedFontFaceCache.version(); }
+    virtual unsigned version() const OVERRIDE { return m_fontFaceCache.version(); }
 
-    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&);
-    CSSSegmentedFontFace* getFontFace(const FontDescription&, const AtomicString& family);
+    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
     virtual void willUseFontData(const FontDescription&, const AtomicString& family) OVERRIDE;
 
     void clearDocument();
 
-    void addFontFaceRule(const StyleRuleFontFace*, PassRefPtr<CSSFontFace>);
-    void removeFontFaceRule(const StyleRuleFontFace*);
-
     void fontLoaded();
-    virtual void fontCacheInvalidated();
 
-    virtual void registerForInvalidationCallbacks(FontSelectorClient*);
-    virtual void unregisterForInvalidationCallbacks(FontSelectorClient*);
+    // FontCacheClient implementation
+    virtual void fontCacheInvalidated() OVERRIDE;
+
+    void registerForInvalidationCallbacks(CSSFontSelectorClient*);
+    void unregisterForInvalidationCallbacks(CSSFontSelectorClient*);
 
     Document* document() const { return m_document; }
+    FontFaceCache* fontFaceCache() { return &m_fontFaceCache; }
 
     const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
+    void updateGenericFontFamilySettings(Document&);
 
     void beginLoadingFontSoon(FontResource*);
     void loadPendingFonts();
@@ -101,8 +102,8 @@ private:
 
     Document* m_document;
     // FIXME: Move to Document or StyleEngine.
-    CSSSegmentedFontFaceCache m_cssSegmentedFontFaceCache;
-    HashSet<FontSelectorClient*> m_clients;
+    FontFaceCache m_fontFaceCache;
+    HashSet<CSSFontSelectorClient*> m_clients;
 
     FontLoader m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;

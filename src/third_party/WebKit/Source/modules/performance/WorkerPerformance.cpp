@@ -37,19 +37,21 @@
 
 namespace WebCore {
 
-WorkerPerformance::WorkerPerformance(ExecutionContext* context)
-    : ContextLifecycleObserver(context)
+DEFINE_GC_INFO(WorkerPerformance);
+
+WorkerPerformance::WorkerPerformance()
 {
+    ScriptWrappable::init(this);
 }
 
 WorkerPerformance::~WorkerPerformance()
 {
 }
 
-double WorkerPerformance::now() const
+double WorkerPerformance::now(ExecutionContext* context) const
 {
-    ExecutionContext* context = executionContext();
     ASSERT(context);
+    ASSERT(context->isWorkerGlobalScope());
     WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
     return 1000.0 * (monotonicallyIncreasingTime() - workerGlobalScope->timeOrigin());
 }

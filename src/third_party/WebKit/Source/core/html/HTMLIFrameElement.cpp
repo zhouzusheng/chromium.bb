@@ -39,7 +39,6 @@ inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     , m_didLoadNonEmptyDocument(false)
 {
     ScriptWrappable::init(this);
-    setHasCustomStyleCallbacks();
 }
 
 PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(Document& document)
@@ -49,7 +48,7 @@ PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(Document& document)
 
 bool HTMLIFrameElement::isPresentationAttribute(const QualifiedName& name) const
 {
-    if (name == widthAttr || name == heightAttr || name == alignAttr || name == frameborderAttr || name == seamlessAttr)
+    if (name == widthAttr || name == heightAttr || name == alignAttr || name == frameborderAttr)
         return true;
     return HTMLFrameElementBase::isPresentationAttribute(name);
 }
@@ -87,12 +86,9 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
             document().addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
-    } else if (name == seamlessAttr) {
-        // If we're adding or removing the seamless attribute, we need to force the content document to recalculate its StyleResolver.
-        if (contentDocument())
-            contentDocument()->styleResolverChanged(RecalcStyleDeferred);
-    } else
+    } else {
         HTMLFrameElementBase::parseAttribute(name, value);
+    }
 }
 
 bool HTMLIFrameElement::rendererIsNeeded(const RenderStyle& style)
@@ -118,20 +114,6 @@ void HTMLIFrameElement::removedFrom(ContainerNode* insertionPoint)
     HTMLFrameElementBase::removedFrom(insertionPoint);
     if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
         toHTMLDocument(document()).removeExtraNamedItem(m_name);
-}
-
-bool HTMLIFrameElement::shouldDisplaySeamlessly() const
-{
-    return contentDocument() && contentDocument()->shouldDisplaySeamlesslyWithParent();
-}
-
-void HTMLIFrameElement::didRecalcStyle(StyleRecalcChange styleChange)
-{
-    if (!shouldDisplaySeamlessly())
-        return;
-    Document* childDocument = contentDocument();
-    if (shouldRecalcStyle(styleChange, childDocument))
-        contentDocument()->recalcStyle(styleChange);
 }
 
 bool HTMLIFrameElement::isInteractiveContent() const

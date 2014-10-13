@@ -63,12 +63,6 @@ void BrowserPluginEmbedder::StartDrag(BrowserPluginGuest* guest) {
   guest_started_drag_ = guest->AsWeakPtr();
 }
 
-void BrowserPluginEmbedder::StopDrag(BrowserPluginGuest* guest) {
-  if (guest_started_drag_.get() == guest) {
-    guest_started_drag_.reset();
-  }
-}
-
 void BrowserPluginEmbedder::GetRenderViewHostAtPosition(
     int x, int y, const WebContents::GetRenderViewHostCallback& callback) {
   // Store the callback so we can call it later when we have the response.
@@ -81,6 +75,10 @@ void BrowserPluginEmbedder::GetRenderViewHostAtPosition(
   ++next_get_render_view_request_id_;
 }
 
+WebContentsImpl* BrowserPluginEmbedder::GetWebContents() {
+  return static_cast<WebContentsImpl*>(web_contents());
+}
+
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
    BrowserPluginGuest* guest) {
   static_cast<RenderViewHostImpl*>(
@@ -90,9 +88,7 @@ bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
 }
 
 void BrowserPluginEmbedder::DidSendScreenRects() {
-  WebContentsImpl* embedder =
-      static_cast<WebContentsImpl*>(web_contents());
-  GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
+  GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(), base::Bind(
       &BrowserPluginEmbedder::DidSendScreenRectsCallback,
       base::Unretained(this)));
 }
@@ -111,25 +107,22 @@ bool BrowserPluginEmbedder::HandleKeyboardEvent(
     return false;
   }
 
-  WebContentsImpl* embedder =
-      static_cast<WebContentsImpl*>(web_contents());
-  return GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
-      &BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
-      base::Unretained(this),
-      event));
+  return GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(),
+      base::Bind(&BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
+                 base::Unretained(this),
+                 event));
 }
 
 bool BrowserPluginEmbedder::SetZoomLevelCallback(
     double level, BrowserPluginGuest* guest) {
-  guest->GetWebContents()->SetZoomLevel(level);
+  double zoom_factor = content::ZoomLevelToZoomFactor(level);
+  guest->SetZoom(zoom_factor);
   // Not handled => Iterate over all guests.
   return false;
 }
 
 void BrowserPluginEmbedder::SetZoomLevel(double level) {
-  WebContentsImpl* embedder =
-      static_cast<WebContentsImpl*>(web_contents());
-  GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
+  GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(), base::Bind(
       &BrowserPluginEmbedder::SetZoomLevelCallback,
       base::Unretained(this),
       level));
@@ -175,8 +168,10 @@ void BrowserPluginEmbedder::DragSourceMovedTo(int client_x, int client_y,
 }
 
 void BrowserPluginEmbedder::SystemDragEnded() {
-  if (guest_started_drag_.get() &&
-      (guest_started_drag_.get() != guest_dragging_over_.get()))
+  // When the embedder's drag/drop operation ends, we need to pass the message
+  // to the guest that initiated the drag/drop operation. This will ensure that
+  // the guest's RVH state is reset properly.
+  if (guest_started_drag_.get())
     guest_started_drag_->EndSystemDrag();
   guest_started_drag_.reset();
   guest_dragging_over_.reset();
@@ -195,11 +190,11 @@ void BrowserPluginEmbedder::CleanUp() {
 
 BrowserPluginGuestManager*
     BrowserPluginEmbedder::GetBrowserPluginGuestManager() {
-  BrowserPluginGuestManager* guest_manager = static_cast<WebContentsImpl*>(
-      web_contents())->GetBrowserPluginGuestManager();
+  BrowserPluginGuestManager* guest_manager =
+      GetWebContents()->GetBrowserPluginGuestManager();
   if (!guest_manager) {
     guest_manager = BrowserPluginGuestManager::Create();
-    web_contents()->GetBrowserContext()->SetUserData(
+    GetWebContents()->GetBrowserContext()->SetUserData(
         browser_plugin::kBrowserPluginGuestManagerKeyName, guest_manager);
   }
   return guest_manager;
@@ -216,12 +211,12 @@ void BrowserPluginEmbedder::OnAttach(
     const BrowserPluginHostMsg_Attach_Params& params,
     const base::DictionaryValue& extra_params) {
   if (!GetBrowserPluginGuestManager()->CanEmbedderAccessInstanceIDMaybeKill(
-          web_contents()->GetRenderProcessHost()->GetID(), instance_id))
+          GetWebContents()->GetRenderProcessHost()->GetID(), instance_id))
     return;
 
   BrowserPluginGuest* guest =
       GetBrowserPluginGuestManager()->GetGuestByInstanceID(
-          instance_id, web_contents()->GetRenderProcessHost()->GetID());
+          instance_id, GetWebContents()->GetRenderProcessHost()->GetID());
 
   if (guest) {
     // There is an implicit order expectation here:
@@ -231,24 +226,23 @@ void BrowserPluginEmbedder::OnAttach(
     //    prior to attachment.
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
-        web_contents(),
+        GetWebContents(),
         extra_params);
-    guest->Attach(
-        static_cast<WebContentsImpl*>(web_contents()), params, extra_params);
+    guest->Attach(GetWebContents(), params, extra_params);
     return;
   }
 
   scoped_ptr<base::DictionaryValue> copy_extra_params(extra_params.DeepCopy());
   guest = GetBrowserPluginGuestManager()->CreateGuest(
-      web_contents()->GetSiteInstance(),
+      GetWebContents()->GetSiteInstance(),
       instance_id, params,
       copy_extra_params.Pass());
   if (guest) {
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
-        web_contents(),
+        GetWebContents(),
         extra_params);
-    guest->Initialize(params, static_cast<WebContentsImpl*>(web_contents()));
+    guest->Initialize(params, GetWebContents());
   }
 }
 
@@ -263,13 +257,13 @@ void BrowserPluginEmbedder::OnPluginAtPositionResponse(
   BrowserPluginGuest* guest = NULL;
   if (instance_id != browser_plugin::kInstanceIDNone) {
     guest = GetBrowserPluginGuestManager()->GetGuestByInstanceID(
-                instance_id, web_contents()->GetRenderProcessHost()->GetID());
+        instance_id, GetWebContents()->GetRenderProcessHost()->GetID());
   }
 
   if (guest)
     render_view_host = guest->GetWebContents()->GetRenderViewHost();
   else  // No plugin, use embedder's RenderViewHost.
-    render_view_host = web_contents()->GetRenderViewHost();
+    render_view_host = GetWebContents()->GetRenderViewHost();
 
   callback_iter->second.Run(render_view_host, position.x(), position.y());
   pending_get_render_view_callbacks_.erase(callback_iter);

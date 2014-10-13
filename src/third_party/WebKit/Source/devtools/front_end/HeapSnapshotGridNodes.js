@@ -52,6 +52,15 @@ WebInspector.HeapSnapshotGridNode.Events = {
     PopulateComplete: "PopulateComplete"
 }
 
+/**
+ * @param {!Array.<string>} fieldNames
+ * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+ */
+WebInspector.HeapSnapshotGridNode.createComparator = function(fieldNames)
+{
+    return /** @type {!WebInspector.HeapSnapshotCommon.ComparatorConfig} */ ({fieldName1: fieldNames[0], ascending1: fieldNames[1], fieldName2: fieldNames[2], ascending2: fieldNames[3]});
+}
+
 WebInspector.HeapSnapshotGridNode.prototype = {
     /**
      * @return {!WebInspector.HeapSnapshotProviderProxy}
@@ -71,6 +80,10 @@ WebInspector.HeapSnapshotGridNode.prototype = {
         return this._providerObject;
     },
 
+    /**
+     * @param {string} columnIdentifier
+     * @return {!Element}
+     */
     createCell: function(columnIdentifier)
     {
         var cell = WebInspector.DataGridNode.prototype.createCell.call(this, columnIdentifier);
@@ -87,8 +100,8 @@ WebInspector.HeapSnapshotGridNode.prototype = {
 
     dispose: function()
     {
-        if (this._provider())
-            this._provider().dispose();
+        if (this._providerObject)
+            this._providerObject.dispose();
         for (var node = this.children[0]; node; node = node.traverseNextNode(true, this, true))
             if (node.dispose)
                 node.dispose();
@@ -115,6 +128,7 @@ WebInspector.HeapSnapshotGridNode.prototype = {
 
     /**
      * @param {number} nodePosition
+     * @return {?WebInspector.DataGridNode}
      */
     childForPosition: function(nodePosition)
     {
@@ -224,24 +238,26 @@ WebInspector.HeapSnapshotGridNode.prototype = {
         }
 
         /**
+         * @param {!WebInspector.HeapSnapshotCommon.ItemsRange} itemsRange
          * @this {WebInspector.HeapSnapshotGridNode}
          */
-        function childrenRetrieved(items)
+        function childrenRetrieved(itemsRange)
         {
             var itemIndex = 0;
-            var itemPosition = items.startPosition;
+            var itemPosition = itemsRange.startPosition;
+            var items = itemsRange.items;
             var insertionIndex = 0;
 
             if (!this._retrievedChildrenRanges.length) {
-                if (items.startPosition > 0) {
+                if (itemsRange.startPosition > 0) {
                     this._retrievedChildrenRanges.push({from: 0, to: 0});
-                    insertShowMoreButton.call(this, 0, items.startPosition, insertionIndex++);
+                    insertShowMoreButton.call(this, 0, itemsRange.startPosition, insertionIndex++);
                 }
-                this._retrievedChildrenRanges.push({from: items.startPosition, to: items.endPosition});
+                this._retrievedChildrenRanges.push({from: itemsRange.startPosition, to: itemsRange.endPosition});
                 for (var i = 0, l = items.length; i < l; ++i)
                     insertRetrievedChild.call(this, items[i], insertionIndex++);
-                if (items.endPosition < items.totalLength)
-                    insertShowMoreButton.call(this, items.endPosition, items.totalLength, insertionIndex++);
+                if (itemsRange.endPosition < itemsRange.totalLength)
+                    insertShowMoreButton.call(this, itemsRange.endPosition, itemsRange.totalLength, insertionIndex++);
             } else {
                 var rangeIndex = 0;
                 var found = false;
@@ -254,16 +270,16 @@ WebInspector.HeapSnapshotGridNode.prototype = {
                     }
                     insertionIndex += range.to - range.from;
                     // Skip the button if there is one.
-                    if (range.to < items.totalLength)
+                    if (range.to < itemsRange.totalLength)
                         insertionIndex += 1;
                     ++rangeIndex;
                 }
 
-                if (!found || items.startPosition < range.from) {
+                if (!found || itemsRange.startPosition < range.from) {
                     // Update previous button.
-                    this.children[insertionIndex - 1].setEndPosition(items.startPosition);
-                    insertShowMoreButton.call(this, items.startPosition, found ? range.from : items.totalLength, insertionIndex);
-                    range = {from: items.startPosition, to: items.startPosition};
+                    this.children[insertionIndex - 1].setEndPosition(itemsRange.startPosition);
+                    insertShowMoreButton.call(this, itemsRange.startPosition, found ? range.from : itemsRange.totalLength, insertionIndex);
+                    range = {from: itemsRange.startPosition, to: itemsRange.startPosition};
                     if (!found)
                         rangeIndex = this._retrievedChildrenRanges.length;
                     this._retrievedChildrenRanges.splice(rangeIndex, 0, range);
@@ -274,7 +290,7 @@ WebInspector.HeapSnapshotGridNode.prototype = {
                 // Also it is always true here that range.from <= itemPosition <= range.to
 
                 // Stretch the range right bound to include all new items.
-                while (range.to < items.endPosition) {
+                while (range.to < itemsRange.endPosition) {
                     // Skip already added nodes.
                     var skipCount = range.to - itemPosition;
                     insertionIndex += skipCount;
@@ -283,9 +299,9 @@ WebInspector.HeapSnapshotGridNode.prototype = {
 
                     // We're at the position before button: ...<?node>x<button>
                     var nextRange = this._retrievedChildrenRanges[rangeIndex + 1];
-                    var newEndOfRange = nextRange ? nextRange.from : items.totalLength;
-                    if (newEndOfRange > items.endPosition)
-                        newEndOfRange = items.endPosition;
+                    var newEndOfRange = nextRange ? nextRange.from : itemsRange.totalLength;
+                    if (newEndOfRange > itemsRange.endPosition)
+                        newEndOfRange = itemsRange.endPosition;
                     while (itemPosition < newEndOfRange) {
                         insertRetrievedChild.call(this, items[itemIndex++], insertionIndex++);
                         ++itemPosition;
@@ -299,10 +315,10 @@ WebInspector.HeapSnapshotGridNode.prototype = {
                     } else {
                         range.to = newEndOfRange;
                         // Remove or update next button.
-                        if (newEndOfRange === items.totalLength)
+                        if (newEndOfRange === itemsRange.totalLength)
                             this.removeChild(this.children[insertionIndex]);
                         else
-                            this.children[insertionIndex].setStartPosition(items.endPosition);
+                            this.children[insertionIndex].setStartPosition(itemsRange.endPosition);
                     }
                 }
             }
@@ -402,6 +418,10 @@ WebInspector.HeapSnapshotGenericObjectNode = function(tree, node)
 };
 
 WebInspector.HeapSnapshotGenericObjectNode.prototype = {
+    /**
+     * @param {string} columnIdentifier
+     * @return {!Element}
+     */
     createCell: function(columnIdentifier)
     {
         var cell = columnIdentifier !== "object" ? this._createValueCell(columnIdentifier) : this._createObjectCell();
@@ -535,6 +555,11 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
         this._provider().isEmpty(isEmptyCallback.bind(this));
     },
 
+    /**
+     * @param {string} fullName
+     * @param {boolean} hasObjectId
+     * @return {string}
+     */
     shortenWindowURL: function(fullName, hasObjectId)
     {
         var startPos = fullName.indexOf("/");
@@ -616,6 +641,9 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
         return prefix + childNode._referenceType + "#" + childNode._referenceName;
     },
 
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+     */
     comparator: function()
     {
         var sortAscending = this._dataGrid.isSortOrderAscending();
@@ -627,7 +655,7 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
             retainedSize: ["retainedSize", sortAscending, "!edgeName", true],
             distance: ["distance", sortAscending, "_name", true]
         }[sortColumnIdentifier] || ["!edgeName", true, "retainedSize", false];
-        return WebInspector.HeapSnapshotFilteredOrderedIterator.prototype.createComparator(sortFields);
+        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
     },
 
     _emptyData: function()
@@ -646,6 +674,7 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
             break;
         case "internal":
         case "hidden":
+        case "weak":
             nameClass = "console-formatted-null";
             break;
         case "element":
@@ -690,6 +719,9 @@ WebInspector.HeapSnapshotInstanceNode = function(tree, baseSnapshot, snapshot, n
 };
 
 WebInspector.HeapSnapshotInstanceNode.prototype = {
+    /**
+     * @return {!WebInspector.HeapSnapshotProviderProxy}
+     */
     createProvider: function()
     {
         var showHiddenData = WebInspector.settings.showAdvancedHeapSnapshotProperties.get();
@@ -713,6 +745,9 @@ WebInspector.HeapSnapshotInstanceNode.prototype = {
         return childNode._referenceType + "#" + childNode._referenceName;
     },
 
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+     */
     comparator: function()
     {
         var sortAscending = this._dataGrid.isSortOrderAscending();
@@ -726,7 +761,7 @@ WebInspector.HeapSnapshotInstanceNode.prototype = {
             shallowSize: ["selfSize", sortAscending, "!edgeName", true],
             retainedSize: ["retainedSize", sortAscending, "!edgeName", true]
         }[sortColumnIdentifier] || ["!edgeName", true, "retainedSize", false];
-        return WebInspector.HeapSnapshotFilteredOrderedIterator.prototype.createComparator(sortFields);
+        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
     },
 
     _emptyData: function()
@@ -760,6 +795,9 @@ WebInspector.HeapSnapshotInstanceNode.prototype = {
 
 /**
  * @constructor
+ * @param {string} className
+ * @param {!WebInspector.HeapSnapshotCommon.Aggregate} aggregate
+ * @param {string} aggregatesKey
  * @extends {WebInspector.HeapSnapshotGridNode}
  */
 WebInspector.HeapSnapshotConstructorNode = function(tree, className, aggregate, aggregatesKey)
@@ -833,6 +871,10 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
         this.expandWithoutPopulate(didExpand.bind(this));
     },
 
+    /**
+     * @param {string} columnIdentifier
+     * @return {!Element}
+     */
     createCell: function(columnIdentifier)
     {
         var cell = columnIdentifier !== "object" ? this._createValueCell(columnIdentifier) : WebInspector.HeapSnapshotGridNode.prototype.createCell.call(this, columnIdentifier);
@@ -846,6 +888,9 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
         return new WebInspector.HeapSnapshotInstanceNode(this._dataGrid, null, this._dataGrid.snapshot, item);
     },
 
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+     */
     comparator: function()
     {
         var sortAscending = this._dataGrid.isSortOrderAscending();
@@ -857,7 +902,7 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
             shallowSize: ["selfSize", sortAscending, "id", true],
             retainedSize: ["retainedSize", sortAscending, "id", true]
         }[sortColumnIdentifier];
-        return WebInspector.HeapSnapshotFilteredOrderedIterator.prototype.createComparator(sortFields);
+        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
     },
 
     _childHashForEntity: function(node)
@@ -928,9 +973,15 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
         callback(false);
     },
 
+    /**
+     * @param {number} beginPosition
+     * @param {number} endPosition
+     * @param {!function(!WebInspector.HeapSnapshotCommon.ItemsRange)} callback
+     */
     serializeItemsRange: function(beginPosition, endPosition, callback)
     {
         /**
+         * @param {!WebInspector.HeapSnapshotCommon.ItemsRange} items
          * @this {WebInspector.HeapSnapshotDiffNodesProvider}
          */
         function didReceiveAllItems(items)
@@ -940,38 +991,45 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
         }
 
         /**
+         * @param {!WebInspector.HeapSnapshotCommon.ItemsRange} addedItems
+         * @param {!WebInspector.HeapSnapshotCommon.ItemsRange} itemsRange
          * @this {WebInspector.HeapSnapshotDiffNodesProvider}
          */
-        function didReceiveDeletedItems(addedItems, items)
+        function didReceiveDeletedItems(addedItems, itemsRange)
         {
-            if (!addedItems.length)
-                addedItems.startPosition = this._addedCount + items.startPosition;
+            var items = itemsRange.items;
+            if (!addedItems.items.length)
+                addedItems.startPosition = this._addedCount + itemsRange.startPosition;
             for (var i = 0; i < items.length; i++) {
                 items[i].isAddedNotRemoved = false;
-                addedItems.push(items[i]);
+                addedItems.items.push(items[i]);
             }
-            addedItems.endPosition = this._addedCount + items.endPosition;
+            addedItems.endPosition = this._addedCount + itemsRange.endPosition;
             didReceiveAllItems.call(this, addedItems);
         }
 
         /**
+         * @param {!WebInspector.HeapSnapshotCommon.ItemsRange} itemsRange
          * @this {WebInspector.HeapSnapshotDiffNodesProvider}
          */
-        function didReceiveAddedItems(items)
+        function didReceiveAddedItems(itemsRange)
         {
+            var items = itemsRange.items;
             for (var i = 0; i < items.length; i++)
                 items[i].isAddedNotRemoved = true;
-            if (items.endPosition < endPosition)
-                return this._deletedNodesProvider.serializeItemsRange(0, endPosition - items.endPosition, didReceiveDeletedItems.bind(this, items));
+            if (itemsRange.endPosition < endPosition)
+                return this._deletedNodesProvider.serializeItemsRange(0, endPosition - itemsRange.endPosition, didReceiveDeletedItems.bind(this, itemsRange));
 
-            items.totalLength = this._addedCount + this._removedCount;
-            didReceiveAllItems.call(this, items);
+            itemsRange.totalLength = this._addedCount + this._removedCount;
+            didReceiveAllItems.call(this, itemsRange);
         }
 
-        if (beginPosition < this._addedCount)
+        if (beginPosition < this._addedCount) {
             this._addedNodesProvider.serializeItemsRange(beginPosition, endPosition, didReceiveAddedItems.bind(this));
-        else
-            this._deletedNodesProvider.serializeItemsRange(beginPosition - this._addedCount, endPosition - this._addedCount, didReceiveDeletedItems.bind(this, []));
+        } else {
+            var emptyRange = new WebInspector.HeapSnapshotCommon.ItemsRange(0, 0, 0, []);
+            this._deletedNodesProvider.serializeItemsRange(beginPosition - this._addedCount, endPosition - this._addedCount, didReceiveDeletedItems.bind(this, emptyRange));
+        }
     },
 
     sortAndRewind: function(comparator, callback)
@@ -984,11 +1042,15 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
             this._deletedNodesProvider.sortAndRewind(comparator, callback);
         }
         this._addedNodesProvider.sortAndRewind(comparator, afterSort.bind(this));
-    }
+    },
+
+    __proto__: WebInspector.HeapSnapshotProviderProxy.prototype
 };
 
 /**
  * @constructor
+ * @param {string} className
+ * @param {!WebInspector.HeapSnapshotCommon.DiffForClass} diffForClass
  * @extends {WebInspector.HeapSnapshotGridNode}
  */
 WebInspector.HeapSnapshotDiffNode = function(tree, className, diffForClass)
@@ -1038,6 +1100,9 @@ WebInspector.HeapSnapshotDiffNode.prototype = {
         return childNode.snapshotNodeId;
     },
 
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+     */
     comparator: function()
     {
         var sortAscending = this._dataGrid.isSortOrderAscending();
@@ -1051,7 +1116,7 @@ WebInspector.HeapSnapshotDiffNode.prototype = {
             removedSize: ["selfSize", sortAscending, "id", true],
             sizeDelta: ["selfSize", sortAscending, "id", true]
         }[sortColumnIdentifier];
-        return WebInspector.HeapSnapshotFilteredOrderedIterator.prototype.createComparator(sortFields);
+        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
     },
 
     _signForDelta: function(delta)
@@ -1104,7 +1169,7 @@ WebInspector.HeapSnapshotDominatorObjectNode.prototype = {
 
     /**
      * @param {number} snapshotObjectId
-     * @param {function(?WebInspector.HeapSnapshotDominatorObjectNode)} callback
+     * @param {function(?WebInspector.DataGridNode)} callback
      */
     retrieveChildBySnapshotObjectId: function(snapshotObjectId, callback)
     {
@@ -1158,6 +1223,9 @@ WebInspector.HeapSnapshotDominatorObjectNode.prototype = {
         return childNode.snapshotNodeId;
     },
 
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.ComparatorConfig}
+     */
     comparator: function()
     {
         var sortAscending = this._dataGrid.isSortOrderAscending();
@@ -1167,7 +1235,7 @@ WebInspector.HeapSnapshotDominatorObjectNode.prototype = {
             shallowSize: ["selfSize", sortAscending, "id", true],
             retainedSize: ["retainedSize", sortAscending, "id", true]
         }[sortColumnIdentifier];
-        return WebInspector.HeapSnapshotFilteredOrderedIterator.prototype.createComparator(sortFields);
+        return WebInspector.HeapSnapshotGridNode.createComparator(sortFields);
     },
 
     _emptyData: function()

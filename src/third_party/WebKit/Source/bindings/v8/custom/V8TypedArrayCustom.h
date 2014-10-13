@@ -47,12 +47,7 @@ class TypedArrayTraits
 template<typename TypedArray>
 class V8TypedArray {
 public:
-    static bool hasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
-    {
-        return TypedArrayTraits<TypedArray>::IsInstance(value);
-    }
-
-    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
+    static bool hasInstance(v8::Handle<v8::Value> value, v8::Isolate*)
     {
         return TypedArrayTraits<TypedArray>::IsInstance(value);
     }
@@ -179,7 +174,7 @@ template <typename TypedArray>
 const WrapperTypeInfo V8TypedArray<TypedArray>::wrapperTypeInfo = {
     gin::kEmbedderBlink,
     0, V8TypedArray<TypedArray>::derefObject,
-    0, 0, 0, 0, 0, WrapperTypeObjectPrototype
+    0, 0, 0, 0, 0, WrapperTypeObjectPrototype, false
 };
 
 template <typename TypedArray>

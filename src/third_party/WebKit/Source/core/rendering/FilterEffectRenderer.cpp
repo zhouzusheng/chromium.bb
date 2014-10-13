@@ -45,10 +45,6 @@
 #include "platform/graphics/filters/FEComponentTransfer.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
-#include "platform/graphics/filters/custom/CustomFilterGlobalContext.h"
-#include "platform/graphics/filters/custom/CustomFilterValidatedProgram.h"
-#include "platform/graphics/filters/custom/FECustomFilter.h"
-#include "platform/graphics/filters/custom/ValidatedCustomFilterOperation.h"
 #include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
@@ -78,27 +74,12 @@ inline bool isFilterSizeValid(FloatRect rect)
     return true;
 }
 
-static PassRefPtr<FECustomFilter> createCustomFilterEffect(Filter* filter, Document* document, ValidatedCustomFilterOperation* operation)
-{
-    if (!document)
-        return 0;
-
-    CustomFilterGlobalContext* globalContext = document->renderView()->customFilterGlobalContext();
-    globalContext->prepareContextIfNeeded();
-    if (!globalContext->context())
-        return 0;
-
-    return FECustomFilter::create(filter, globalContext->context(), operation->validatedProgram(), operation->parameters(),
-        operation->meshRows(), operation->meshColumns(),  operation->meshType());
-}
-
 FilterEffectRenderer::FilterEffectRenderer()
     : Filter(AffineTransform())
     , m_graphicsBufferAttached(false)
     , m_hasFilterThatMovesPixels(false)
     , m_hasCustomShaderFilter(false)
 {
-    setFilterResolution(FloatSize(1, 1));
     m_sourceGraphic = SourceGraphic::create(this);
 }
 
@@ -256,18 +237,6 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             effect = FEDropShadow::create(this, stdDeviation, stdDeviation, x, y, dropShadowOperation->color(), 1);
             break;
         }
-        case FilterOperation::CUSTOM:
-            // CUSTOM operations are always converted to VALIDATED_CUSTOM before getting here.
-            // The conversion happens in RenderLayer::computeFilterOperations.
-            ASSERT_NOT_REACHED();
-            break;
-        case FilterOperation::VALIDATED_CUSTOM: {
-            Document* document = renderer ? &renderer->document() : 0;
-            effect = createCustomFilterEffect(this, document, toValidatedCustomFilterOperation(filterOperation));
-            if (effect)
-                m_hasCustomShaderFilter = true;
-            break;
-        }
         default:
             break;
         }
@@ -283,7 +252,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
         }
     }
 
-    // We need to keep the old effects alive until this point, so that filters like FECustomFilter
+    // We need to keep the old effects alive until this point, so that SVG reference filters
     // can share cached resources across frames.
     m_lastEffect = previousEffect;
 
@@ -294,9 +263,10 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
     return true;
 }
 
-bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& filterRect)
+bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& floatFilterRect)
 {
-    if (!filterRect.isZero() && isFilterSizeValid(filterRect)) {
+    IntRect filterRect = enclosingIntRect(floatFilterRect);
+    if (!filterRect.isEmpty() && isFilterSizeValid(filterRect)) {
         FloatRect currentSourceRect = sourceImageRect();
         if (filterRect != currentSourceRect) {
             setSourceImageRect(filterRect);
@@ -349,11 +319,9 @@ LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const Layout
     }
     // The result of this function is the area in the "filterBoxRect" that needs to be repainted, so that we fully cover the "dirtyRect".
     FloatRect rectForRepaint = dirtyRect;
-    rectForRepaint.move(-filterBoxRect.location().x(), -filterBoxRect.location().y());
     float inf = std::numeric_limits<float>::infinity();
     FloatRect clipRect = FloatRect(FloatPoint(-inf, -inf), FloatSize(inf, inf));
     rectForRepaint = lastEffect()->getSourceRect(rectForRepaint, clipRect);
-    rectForRepaint.move(filterBoxRect.location().x(), filterBoxRect.location().y());
     rectForRepaint.intersect(filterBoxRect);
     return LayoutRect(rectForRepaint);
 }
@@ -364,8 +332,21 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
     m_renderLayer = renderLayer;
     m_repaintRect = dirtyRect;
 
+    // Get the zoom factor to scale the filterSourceRect input
+    const RenderLayerModelObject* renderer = renderLayer->renderer();
+    const RenderStyle* style = renderer ? renderer->style() : 0;
+    float zoom = style ? style->effectiveZoom() : 1.0f;
+
+    // Prepare a transformation that brings the coordinates into the space
+    // filter coordinates are defined in.
+    AffineTransform absoluteTransform;
+    absoluteTransform.translate(filterBoxRect.x(), filterBoxRect.y());
+    absoluteTransform.scale(zoom, zoom);
+
     FilterEffectRenderer* filter = renderLayer->filterRenderer();
-    LayoutRect filterSourceRect = filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect);
+    filter->setAbsoluteTransform(absoluteTransform);
+
+    IntRect filterSourceRect = pixelSnappedIntRect(filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect));
 
     if (filterSourceRect.isEmpty()) {
         // The dirty rect is not in view, just bail out.
@@ -373,16 +354,7 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
         return false;
     }
 
-    // Get the zoom factor to scale the filterSourceRect input
-    const RenderLayerModelObject* renderer = renderLayer->renderer();
-    const RenderStyle* style = renderer ? renderer->style() : 0;
-    float zoom = style ? style->effectiveZoom() : 1.0f;
-
-    AffineTransform absoluteTransform;
-    absoluteTransform.translate(filterBoxRect.x(), filterBoxRect.y());
-    filter->setAbsoluteTransform(absoluteTransform);
-    filter->setAbsoluteFilterRegion(AffineTransform().scale(zoom).mapRect(filterSourceRect));
-    filter->setFilterRegion(absoluteTransform.inverse().mapRect(filterSourceRect));
+    filter->setFilterRegion(filter->mapAbsoluteRectToLocalRect(filterSourceRect));
     filter->lastEffect()->determineFilterPrimitiveSubregion(MapRectForward);
 
     bool hasUpdatedBackingStore = filter->updateBackingStoreRect(filterSourceRect);

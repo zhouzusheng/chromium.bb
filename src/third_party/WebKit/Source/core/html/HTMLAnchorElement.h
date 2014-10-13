@@ -66,20 +66,20 @@ public:
 
     const AtomicString& name() const;
 
-    virtual KURL url() const OVERRIDE;
-    virtual void setURL(const KURL&) OVERRIDE;
+    virtual KURL url() const OVERRIDE FINAL;
+    virtual void setURL(const KURL&) OVERRIDE FINAL;
 
-    virtual String input() const OVERRIDE;
-    virtual void setInput(const String&) OVERRIDE;
+    virtual String input() const OVERRIDE FINAL;
+    virtual void setInput(const String&) OVERRIDE FINAL;
 
     String text();
 
     bool isLiveLink() const;
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE FINAL;
 
     bool hasRel(uint32_t relation) const;
-    void setRel(const String&);
+    void setRel(const AtomicString&);
 
     LinkHash visitedLinkHash() const;
     void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
@@ -90,21 +90,20 @@ protected:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
 private:
-    virtual bool supportsFocus() const;
-    virtual bool isMouseFocusable() const;
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE FINAL;
     virtual void setActive(bool = true) OVERRIDE FINAL;
-    virtual void accessKeyAction(bool sendMouseEvents);
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool canStartSelection() const;
-    virtual String target() const;
-    virtual short tabIndex() const;
-    virtual bool draggable() const;
-    virtual bool isInteractiveContent() const OVERRIDE;
+    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE FINAL;
+    virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
+    virtual bool canStartSelection() const OVERRIDE FINAL;
+    virtual short tabIndex() const OVERRIDE FINAL;
+    virtual bool draggable() const OVERRIDE FINAL;
+    virtual bool isInteractiveContent() const OVERRIDE FINAL;
 
     void sendPings(const KURL& destinationURL);
-
+    AtomicString target() const;
     void handleClick(Event*);
 
     enum EventType {
@@ -140,21 +139,6 @@ inline LinkHash HTMLAnchorElement::visitedLinkHash() const
 
 bool isEnterKeyKeydownEvent(Event*);
 bool isLinkClick(Event*);
-
-inline bool isHTMLAnchorElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::aTag);
-}
-
-inline bool isHTMLAnchorElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::aTag);
-}
-
-inline bool isHTMLAnchorElement(const Element& element)
-{
-    return element.hasTagName(HTMLNames::aTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLAnchorElement, hasTagName(HTMLNames::aTag));
 

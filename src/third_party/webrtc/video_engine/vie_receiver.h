@@ -24,7 +24,6 @@
 namespace webrtc {
 
 class CriticalSectionWrapper;
-class Encryption;
 class FecReceiver;
 class ReceiveStatistics;
 class RemoteBitrateEstimator;
@@ -34,6 +33,7 @@ class RTPPayloadRegistry;
 class RtpReceiver;
 class RtpRtcp;
 class VideoCodingModule;
+struct ReceiveBandwidthEstimatorStats;
 
 class ViEReceiver : public RtpData {
  public:
@@ -51,9 +51,6 @@ class ViEReceiver : public RtpData {
 
   uint32_t GetRemoteSsrc() const;
   int GetCsrcs(uint32_t* csrcs) const;
-
-  int RegisterExternalDecryption(Encryption* decryption);
-  int DeregisterExternalDecryption();
 
   void SetRtpRtcpModule(RtpRtcp* module);
 
@@ -85,19 +82,24 @@ class ViEReceiver : public RtpData {
 
   void EstimatedReceiveBandwidth(unsigned int* available_bandwidth) const;
 
+  void GetReceiveBandwidthEstimatorStats(
+      ReceiveBandwidthEstimatorStats* output) const;
+
   ReceiveStatistics* GetReceiveStatistics() const;
 
  private:
-  int InsertRTPPacket(const int8_t* rtp_packet, int rtp_packet_length,
+  int InsertRTPPacket(const uint8_t* rtp_packet, int rtp_packet_length,
                       const PacketTime& packet_time);
-  bool ReceivePacket(const uint8_t* packet, int packet_length,
-                     const RTPHeader& header, bool in_order);
+  bool ReceivePacket(const uint8_t* packet,
+                     int packet_length,
+                     const RTPHeader& header,
+                     bool in_order);
   // Parses and handles for instance RTX and RED headers.
   // This function assumes that it's being called from only one thread.
   bool ParseAndHandleEncapsulatingHeader(const uint8_t* packet,
                                          int packet_length,
                                          const RTPHeader& header);
-  int InsertRTCPPacket(const int8_t* rtcp_packet, int rtcp_packet_length);
+  int InsertRTCPPacket(const uint8_t* rtcp_packet, int rtcp_packet_length);
   bool IsPacketInOrder(const RTPHeader& header) const;
   bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
 
@@ -113,8 +115,6 @@ class ViEReceiver : public RtpData {
   VideoCodingModule* vcm_;
   RemoteBitrateEstimator* remote_bitrate_estimator_;
 
-  Encryption* external_decryption_;
-  uint8_t* decryption_buffer_;
   RtpDump* rtp_dump_;
   bool receiving_;
   uint8_t restored_packet_[kViEMaxMtu];

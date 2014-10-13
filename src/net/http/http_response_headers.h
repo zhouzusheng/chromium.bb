@@ -41,6 +41,8 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
   static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
 
+  static const char kContentRange[];
+
   // Parses the given raw_headers.  raw_headers should be formatted thus:
   // includes the http status response line, each line is \0-terminated, and
   // it's terminated by an empty line (ie, 2 \0s in a row).
@@ -270,6 +272,9 @@ class NET_EXPORT HttpResponseHeaders
   // If all available Chrome proxies should by bypassed, |bypass_all| is set to
   // true. |proxy_info| must be non-NULL.
   bool GetChromeProxyInfo(ChromeProxyInfo* proxy_info) const;
+
+  // Returns true if response headers contain the Chrome proxy Via header value.
+  bool IsChromeProxyResponse() const;
 #endif
 
   // Creates a Value for use with the NetLog containing the response headers.

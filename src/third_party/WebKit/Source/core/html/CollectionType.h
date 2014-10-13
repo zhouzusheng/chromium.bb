@@ -52,21 +52,22 @@ enum CollectionType {
     MapAreas,
     FormControls,
 
+    ClassCollectionType,
+    TagCollectionType,
+    HTMLTagCollectionType,
+
     // Live NodeList.
-    ChildNodeListType,
-    ClassNodeListType,
     NameNodeListType,
-    TagNodeListType,
-    HTMLTagNodeListType,
     RadioNodeListType,
+    RadioImgNodeListType,
     LabelsNodeListType,
 };
 
-static const CollectionType FirstNodeListType = ChildNodeListType;
+static const CollectionType FirstLiveNodeListType = NameNodeListType;
 
-inline bool isNodeList(CollectionType type)
+inline bool isLiveNodeListType(CollectionType type)
 {
-    return type >= FirstNodeListType;
+    return type >= FirstLiveNodeListType;
 }
 
 } // namespace

@@ -28,12 +28,12 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
+#include "core/html/HTMLCollection.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
@@ -53,8 +53,8 @@ inline HTMLObjectElement::HTMLObjectElement(Document& document, HTMLFormElement*
     : HTMLPlugInElement(objectTag, document, createdByParser, ShouldNotPreferPlugInsForImages)
     , m_useFallbackContent(false)
 {
-    setForm(form ? form : findFormAncestor());
     ScriptWrappable::init(this);
+    associateByParser(form);
 }
 
 inline HTMLObjectElement::~HTMLObjectElement()
@@ -98,22 +98,20 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
-        if (renderer())
-            setNeedsWidgetUpdate(true);
+        reloadPluginOnAttributeChange(name);
     } else if (name == dataAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (renderer()) {
+        if (renderer() && isImageType()) {
             setNeedsWidgetUpdate(true);
-            if (isImageType()) {
-                if (!m_imageLoader)
-                    m_imageLoader = adoptPtr(new HTMLImageLoader(this));
-                m_imageLoader->updateFromElementIgnoringPreviousError();
-            }
+            if (!m_imageLoader)
+                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+            m_imageLoader->updateFromElementIgnoringPreviousError();
+        } else {
+            reloadPluginOnAttributeChange(name);
         }
     } else if (name == classidAttr) {
         m_classId = value;
-        if (renderer())
-            setNeedsWidgetUpdate(true);
+        reloadPluginOnAttributeChange(name);
     } else if (name == onbeforeloadAttr) {
         setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     } else {
@@ -237,7 +235,7 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
         || !equalIgnoringCase(classId(), "clsid:02BF25D5-8C17-4B23-BC80-D3488ABDDC6B"))
         return false;
 
-    RefPtr<NodeList> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
+    RefPtr<HTMLCollection> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
     unsigned length = metaElements->length();
     for (unsigned i = 0; i < length; ++i) {
         ASSERT(metaElements->item(i)->isHTMLElement());
@@ -262,6 +260,30 @@ bool HTMLObjectElement::hasValidClassId()
     return classId().isEmpty();
 }
 
+void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
+{
+    // Following,
+    //   http://www.whatwg.org/specs/web-apps/current-work/#the-object-element
+    //   (Enumerated list below "Whenever one of the following conditions occur:")
+    //
+    // the updating of certain attributes should bring about "redetermination"
+    // of what the element contains.
+    bool needsInvalidation;
+    if (name == typeAttr) {
+        needsInvalidation = !fastHasAttribute(classidAttr) && !fastHasAttribute(dataAttr);
+    } else if (name == dataAttr) {
+        needsInvalidation = !fastHasAttribute(classidAttr);
+    } else if (name == classidAttr) {
+        needsInvalidation = true;
+    } else {
+        ASSERT_NOT_REACHED();
+        needsInvalidation = false;
+    }
+    setNeedsWidgetUpdate(true);
+    if (needsInvalidation)
+        setNeedsStyleRecalc(SubtreeStyleChange);
+}
+
 // FIXME: This should be unified with HTMLEmbedElement::updateWidget and
 // moved down into HTMLPluginElement.cpp
 void HTMLObjectElement::updateWidgetInternal()
@@ -270,14 +292,18 @@ void HTMLObjectElement::updateWidgetInternal()
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
-    if (!isFinishedParsingChildren())
+    if (!isFinishedParsingChildren()) {
+        dispatchErrorEvent();
         return;
+    }
 
     // FIXME: I'm not sure it's ever possible to get into updateWidget during a
     // removal, but just in case we should avoid loading the frame to prevent
     // security bugs.
-    if (!SubframeLoadingDisabler::canLoadFrame(*this))
+    if (!SubframeLoadingDisabler::canLoadFrame(*this)) {
+        dispatchErrorEvent();
         return;
+    }
 
     String url = this->url();
     String serviceType = m_serviceType;
@@ -288,8 +314,10 @@ void HTMLObjectElement::updateWidgetInternal()
     parametersForPlugin(paramNames, paramValues, url, serviceType);
 
     // Note: url is modified above by parametersForPlugin.
-    if (!allowedToLoadFrameURL(url))
+    if (!allowedToLoadFrameURL(url)) {
+        dispatchErrorEvent();
         return;
+    }
 
     bool fallbackContent = hasFallbackContent();
     renderEmbeddedObject()->setHasFallbackContent(fallbackContent);
@@ -299,9 +327,12 @@ void HTMLObjectElement::updateWidgetInternal()
     if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
         return;
 
-    bool success = beforeLoadAllowedLoad && hasValidClassId() && requestObject(url, serviceType, paramNames, paramValues);
-    if (!success && fallbackContent)
-        renderFallbackContent();
+    if (!beforeLoadAllowedLoad || !hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
+        if (!url.isEmpty())
+            dispatchErrorEvent();
+        if (fallbackContent)
+            renderFallbackContent();
+    }
 }
 
 bool HTMLObjectElement::rendererIsNeeded(const RenderStyle& style)
@@ -329,7 +360,7 @@ void HTMLObjectElement::childrenChanged(bool changedByParser, Node* beforeChange
 {
     if (inDocument() && !useFallbackContent()) {
         setNeedsWidgetUpdate(true);
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
     }
     HTMLPlugInElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
@@ -413,19 +444,6 @@ bool HTMLObjectElement::containsJavaApplet() const
     }
 
     return false;
-}
-
-void HTMLObjectElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLPlugInElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(getAttribute(dataAttr)));
-
-    // FIXME: Passing a string that starts with "#" to the completeURL function does
-    // not seem like it would work. The image element has similar but not identical code.
-    const AtomicString& useMap = getAttribute(usemapAttr);
-    if (useMap.startsWith('#'))
-        addSubresourceURL(urls, document().completeURL(useMap));
 }
 
 void HTMLObjectElement::didMoveToNewDocument(Document& oldDocument)

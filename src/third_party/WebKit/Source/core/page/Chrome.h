@@ -23,7 +23,7 @@
 #define Chrome_h
 
 #include "core/loader/NavigationPolicy.h"
-#include "core/page/FocusDirection.h"
+#include "core/page/FocusType.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "wtf/Forward.h"
@@ -38,7 +38,6 @@ class DateTimeChooserClient;
 class FileChooser;
 class FloatRect;
 class Frame;
-class Geolocation;
 class HTMLInputElement;
 class HitTestResult;
 class IntRect;
@@ -53,9 +52,9 @@ struct DateTimeChooserParameters;
 struct ViewportDescription;
 struct WindowFeatures;
 
-class Chrome : public HostWindow {
+class Chrome FINAL : public HostWindow {
 public:
-    ~Chrome();
+    virtual ~Chrome();
 
     static PassOwnPtr<Chrome> create(Page*, ChromeClient*);
 
@@ -65,14 +64,12 @@ public:
     virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE;
     virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE;
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE;
-    virtual IntPoint screenToRootView(const IntPoint&) const OVERRIDE;
     virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
     virtual blink::WebScreenInfo screenInfo() const OVERRIDE;
 
     virtual void scheduleAnimation() OVERRIDE;
 
     void contentsSizeChanged(Frame*, const IntSize&) const;
-    void layoutUpdated(Frame*) const;
 
     void setCursor(const Cursor&);
 
@@ -82,10 +79,9 @@ public:
     FloatRect pageRect() const;
 
     void focus() const;
-    void unfocus() const;
 
-    bool canTakeFocus(FocusDirection) const;
-    void takeFocus(FocusDirection) const;
+    bool canTakeFocus(FocusType) const;
+    void takeFocus(FocusType) const;
 
     void focusedNodeChanged(Node*) const;
 

@@ -22,6 +22,7 @@
 #define HTMLFrameOwnerElement_h
 
 #include "core/html/HTMLElement.h"
+#include "core/svg/SVGDocument.h"
 #include "wtf/HashCountedSet.h"
 
 namespace WebCore {
@@ -30,7 +31,6 @@ class DOMWindow;
 class ExceptionState;
 class Frame;
 class RenderPart;
-class SVGDocument;
 
 class HTMLFrameOwnerElement : public HTMLElement {
 public:
@@ -71,7 +71,7 @@ protected:
 
 private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isFrameOwnerElement() const OVERRIDE { return true; }
+    virtual bool isFrameOwnerElement() const OVERRIDE FINAL { return true; }
 
     Frame* m_contentFrame;
     SandboxFlags m_sandboxFlags;
@@ -94,6 +94,8 @@ public:
 
     static bool canLoadFrame(HTMLFrameOwnerElement& owner)
     {
+        if (owner.document().unloadStarted())
+            return false;
         for (Node* node = &owner; node; node = node->parentOrShadowHostNode()) {
             if (disabledSubtreeRoots().contains(node))
                 return false;

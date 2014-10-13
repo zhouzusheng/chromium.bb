@@ -42,11 +42,11 @@ namespace WebCore {
 class WorkerGlobalScope;
 class WorkerThread;
 
-class WorkerScriptDebugServer : public ScriptDebugServer {
+class WorkerScriptDebugServer FINAL : public ScriptDebugServer {
     WTF_MAKE_NONCOPYABLE(WorkerScriptDebugServer);
 public:
     WorkerScriptDebugServer(WorkerGlobalScope*, const String&);
-    ~WorkerScriptDebugServer() { }
+    virtual ~WorkerScriptDebugServer() { }
 
     void addListener(ScriptDebugListener*);
     void removeListener(ScriptDebugListener*);
@@ -54,9 +54,9 @@ public:
     void interruptAndRunTask(PassOwnPtr<Task>);
 
 private:
-    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>);
-    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>);
-    virtual void quitMessageLoopOnPause();
+    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void quitMessageLoopOnPause() OVERRIDE;
 
     typedef HashMap<WorkerGlobalScope*, ScriptDebugListener*> ListenersMap;
     ScriptDebugListener* m_listener;

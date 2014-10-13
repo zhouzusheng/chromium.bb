@@ -14,7 +14,9 @@
 #include "libGLESv2/angletypes.h"
 
 #if !defined(ANGLE_COMPILE_OPTIMIZATION_LEVEL)
-#define ANGLE_COMPILE_OPTIMIZATION_LEVEL D3DCOMPILE_OPTIMIZATION_LEVEL3
+// WARNING: D3DCOMPILE_OPTIMIZATION_LEVEL3 may lead to a DX9 shader compiler hang.
+// It should only be used selectively to work around specific bugs.
+#define ANGLE_COMPILE_OPTIMIZATION_LEVEL D3DCOMPILE_OPTIMIZATION_LEVEL1
 #endif
 
 const int versionWindowsVista = MAKEWORD(0x00, 0x06);
@@ -96,7 +98,8 @@ enum ShaderType
 enum D3DWorkaroundType
 {
     ANGLE_D3D_WORKAROUND_NONE,
-    ANGLE_D3D_WORKAROUND_SM3_OPTIMIZER
+    ANGLE_D3D_WORKAROUND_SKIP_OPTIMIZATION,
+    ANGLE_D3D_WORKAROUND_MAX_OPTIMIZATION
 };
 
 class Renderer
@@ -119,7 +122,7 @@ class Renderer
     virtual void setTexture(gl::SamplerType type, int index, gl::Texture *texture) = 0;
 
     virtual void setRasterizerState(const gl::RasterizerState &rasterState) = 0;
-    virtual void setBlendState(const gl::BlendState &blendState, const gl::Color &blendColor,
+    virtual void setBlendState(gl::Framebuffer *framebuffer, const gl::BlendState &blendState, const gl::Color &blendColor,
                                unsigned int sampleMask) = 0;
     virtual void setDepthStencilState(const gl::DepthStencilState &depthStencilState, int stencilRef,
                                       int stencilBackRef, bool frontFaceCCW) = 0;

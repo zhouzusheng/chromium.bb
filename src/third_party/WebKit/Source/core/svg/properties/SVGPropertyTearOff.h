@@ -27,6 +27,8 @@
 
 namespace WebCore {
 
+class SVGTransform;
+
 class SVGPropertyTearOffBase : public SVGProperty {
 public:
     virtual void setValueForMatrixIfNeeded(SVGTransform*) { }
@@ -116,7 +118,7 @@ public:
         m_animatedProperty->commitChange();
     }
 
-    virtual bool isReadOnly() const
+    bool isReadOnly() const
     {
         if (m_role == AnimValRole)
             return true;

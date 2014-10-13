@@ -10,12 +10,16 @@
 #include "content/common/input/synthetic_gesture_params.h"
 
 namespace aura {
-class RootWindowHostDelegate;
+class RootWindow;
+typedef RootWindow WindowEventDispatcher;
+class Window;
+
+namespace client {
+class ScreenPositionClient;
 }
+}  // namespace aura
 
 namespace content {
-
-class InputEvent;
 
 // SyntheticGestureTarget implementation for aura
 class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
@@ -43,7 +47,9 @@ class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
   virtual int GetTouchSlopInDips() const OVERRIDE;
 
  private:
-  aura::RootWindowHostDelegate* GetRootWindowHostDelegate() const;
+  aura::Window* GetWindow() const;
+  aura::WindowEventDispatcher* GetWindowEventDispatcher() const;
+  aura::client::ScreenPositionClient* GetScreenPositionClient() const;
 
   DISALLOW_COPY_AND_ASSIGN(SyntheticGestureTargetAura);
 };

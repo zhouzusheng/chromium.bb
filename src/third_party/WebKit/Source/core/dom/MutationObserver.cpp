@@ -36,10 +36,12 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/Microtask.h"
 #include "core/dom/MutationCallback.h"
 #include "core/dom/MutationObserverRegistration.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/Node.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -69,6 +71,8 @@ MutationObserver::MutationObserver(PassOwnPtr<MutationCallback> callback)
 MutationObserver::~MutationObserver()
 {
     ASSERT(m_registrations.isEmpty());
+    if (!m_records.isEmpty())
+        InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
 }
 
 void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, ExceptionState& exceptionState)
@@ -140,12 +144,14 @@ Vector<RefPtr<MutationRecord> > MutationObserver::takeRecords()
 {
     Vector<RefPtr<MutationRecord> > records;
     records.swap(m_records);
+    InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
     return records;
 }
 
 void MutationObserver::disconnect()
 {
     m_records.clear();
+    InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
     HashSet<MutationObserverRegistration*> registrations(m_registrations);
     for (HashSet<MutationObserverRegistration*>::iterator iter = registrations.begin(); iter != registrations.end(); ++iter)
         (*iter)->unregister();
@@ -177,17 +183,26 @@ static MutationObserverSet& suspendedMutationObservers()
     return suspendedObservers;
 }
 
+static void activateObserver(PassRefPtr<MutationObserver> observer)
+{
+    if (activeMutationObservers().isEmpty())
+        Microtask::enqueueMicrotask(&MutationObserver::deliverMutations);
+
+    activeMutationObservers().add(observer);
+}
+
 void MutationObserver::enqueueMutationRecord(PassRefPtr<MutationRecord> mutation)
 {
     ASSERT(isMainThread());
     m_records.append(mutation);
-    activeMutationObservers().add(this);
+    activateObserver(this);
+    InspectorInstrumentation::didEnqueueMutationRecord(m_callback->executionContext(), this);
 }
 
 void MutationObserver::setHasTransientRegistration()
 {
     ASSERT(isMainThread());
-    activeMutationObservers().add(this);
+    activateObserver(this);
 }
 
 HashSet<Node*> MutationObserver::getObservedNodes() const
@@ -223,43 +238,40 @@ void MutationObserver::deliver()
     Vector<RefPtr<MutationRecord> > records;
     records.swap(m_records);
 
+    InspectorInstrumentation::willDeliverMutationRecords(m_callback->executionContext(), this);
     m_callback->call(records, this);
+    InspectorInstrumentation::didDeliverMutationRecords(m_callback->executionContext());
 }
 
-void MutationObserver::deliverAllMutations()
+void MutationObserver::resumeSuspendedObservers()
 {
     ASSERT(isMainThread());
-    static bool deliveryInProgress = false;
-    if (deliveryInProgress)
+    if (suspendedMutationObservers().isEmpty())
         return;
-    deliveryInProgress = true;
 
-    if (!suspendedMutationObservers().isEmpty()) {
-        Vector<RefPtr<MutationObserver> > suspended;
-        copyToVector(suspendedMutationObservers(), suspended);
-        for (size_t i = 0; i < suspended.size(); ++i) {
-            if (!suspended[i]->canDeliver())
-                continue;
-
+    Vector<RefPtr<MutationObserver> > suspended;
+    copyToVector(suspendedMutationObservers(), suspended);
+    for (size_t i = 0; i < suspended.size(); ++i) {
+        if (suspended[i]->canDeliver()) {
             suspendedMutationObservers().remove(suspended[i]);
-            activeMutationObservers().add(suspended[i]);
+            activateObserver(suspended[i]);
         }
     }
+}
 
-    while (!activeMutationObservers().isEmpty()) {
-        Vector<RefPtr<MutationObserver> > observers;
-        copyToVector(activeMutationObservers(), observers);
-        activeMutationObservers().clear();
-        std::sort(observers.begin(), observers.end(), ObserverLessThan());
-        for (size_t i = 0; i < observers.size(); ++i) {
-            if (observers[i]->canDeliver())
-                observers[i]->deliver();
-            else
-                suspendedMutationObservers().add(observers[i]);
-        }
+void MutationObserver::deliverMutations()
+{
+    ASSERT(isMainThread());
+    Vector<RefPtr<MutationObserver> > observers;
+    copyToVector(activeMutationObservers(), observers);
+    activeMutationObservers().clear();
+    std::sort(observers.begin(), observers.end(), ObserverLessThan());
+    for (size_t i = 0; i < observers.size(); ++i) {
+        if (observers[i]->canDeliver())
+            observers[i]->deliver();
+        else
+            suspendedMutationObservers().add(observers[i]);
     }
-
-    deliveryInProgress = false;
 }
 
 } // namespace WebCore

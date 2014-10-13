@@ -32,6 +32,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormState.h"
 #include "core/frame/Frame.h"
+#include "core/storage/StorageNamespace.h"
 #include "platform/ColorChooser.h"
 #include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
@@ -62,6 +63,9 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
     static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
     pageClients.spellCheckerClient = dummySpellCheckerClient;
+
+    static StorageClient* dummyStorageClient = adoptPtr(new EmptyStorageClient).leakPtr();
+    pageClients.storageClient = dummyStorageClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -113,12 +117,12 @@ void EmptyFrameLoaderClient::dispatchWillSubmitForm(PassRefPtr<FormState>)
 {
 }
 
-PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(const ResourceRequest& request, const SubstituteData& substituteData)
+PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(Frame* frame, const ResourceRequest& request, const SubstituteData& substituteData)
 {
-    return DocumentLoader::create(request, substituteData);
+    return DocumentLoader::create(frame, request, substituteData);
 }
 
-PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const String&, const String&, HTMLFrameOwnerElement*)
+PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*)
 {
     return 0;
 }
@@ -142,6 +146,11 @@ void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)
 }
 
 PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>)
+{
+    return nullptr;
+}
+
+PassOwnPtr<StorageNamespace> EmptyStorageClient::createSessionStorageNamespace()
 {
     return nullptr;
 }

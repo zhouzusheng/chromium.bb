@@ -22,15 +22,20 @@
 #ifndef RuleFeature_h
 #define RuleFeature_h
 
+#include "core/css/analyzer/DescendantInvalidationSet.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
+class Document;
+class ShadowRoot;
 class StyleRule;
 class CSSSelector;
 class CSSSelectorList;
+class RuleData;
+class SpaceSplitString;
 
 struct RuleFeature {
     RuleFeature(StyleRule* rule, unsigned selectorIndex, bool hasDocumentSecurityOrigin)
@@ -46,50 +51,103 @@ struct RuleFeature {
 
 class RuleFeatureSet {
 public:
-    RuleFeatureSet()
-        : m_usesFirstLineRules(false)
-        , m_maxDirectAdjacentSelectors(0)
-    { }
+    RuleFeatureSet();
 
     void add(const RuleFeatureSet&);
     void clear();
 
-    void collectFeaturesFromSelector(const CSSSelector*);
+    void collectFeaturesFromSelector(const CSSSelector&);
+    void collectFeaturesFromRuleData(const RuleData&);
 
     bool usesSiblingRules() const { return !siblingRules.isEmpty(); }
-    bool usesFirstLineRules() const { return m_usesFirstLineRules; }
+    bool usesFirstLineRules() const { return m_metadata.usesFirstLineRules; }
 
-    unsigned maxDirectAdjacentSelectors() const { return m_maxDirectAdjacentSelectors; }
-    void setMaxDirectAdjacentSelectors(unsigned value)  { m_maxDirectAdjacentSelectors = std::max(value, m_maxDirectAdjacentSelectors); }
+    unsigned maxDirectAdjacentSelectors() const { return m_metadata.maxDirectAdjacentSelectors; }
+    void setMaxDirectAdjacentSelectors(unsigned value)  { m_metadata.maxDirectAdjacentSelectors = std::max(value, m_metadata.maxDirectAdjacentSelectors); }
 
     inline bool hasSelectorForAttribute(const AtomicString& attributeName) const
     {
         ASSERT(!attributeName.isEmpty());
-        return attrsInRules.contains(attributeName);
+        return m_metadata.attrsInRules.contains(attributeName);
     }
 
     inline bool hasSelectorForClass(const AtomicString& classValue) const
     {
         ASSERT(!classValue.isEmpty());
-        return classesInRules.contains(classValue);
+        return m_classInvalidationSets.get(classValue);
+
     }
 
     inline bool hasSelectorForId(const AtomicString& idValue) const
     {
-        ASSERT(!idValue.isEmpty());
-        return idsInRules.contains(idValue);
+        return m_metadata.idsInRules.contains(idValue);
     }
 
-    HashSet<AtomicString> idsInRules;
-    HashSet<AtomicString> classesInRules;
-    HashSet<AtomicString> attrsInRules;
+    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& changedClasses, Element*);
+    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element*);
+
+    void computeStyleInvalidation(Document&);
+
+    int hasIdsInSelectors() const
+    {
+        return m_metadata.idsInRules.size() > 0;
+    }
+
+    // Marks the given attribute name as "appearing in a selector". Used for
+    // CSS properties such as content: ... attr(...) ...
+    void addAttributeInASelector(const AtomicString& attributeName);
+
     Vector<RuleFeature> siblingRules;
     Vector<RuleFeature> uncommonAttributeRules;
-private:
-    void collectFeaturesFromSelectorList(const CSSSelectorList*);
 
-    bool m_usesFirstLineRules;
-    unsigned m_maxDirectAdjacentSelectors;
+private:
+    typedef HashMap<AtomicString, RefPtr<DescendantInvalidationSet> > InvalidationSetMap;
+    typedef Vector<DescendantInvalidationSet*> InvalidationList;
+    typedef HashMap<Element*, InvalidationList*> PendingInvalidationMap;
+    struct FeatureMetadata {
+        FeatureMetadata()
+            : usesFirstLineRules(false)
+            , foundSiblingSelector(false)
+            , maxDirectAdjacentSelectors(0)
+        { }
+        void add(const FeatureMetadata& other);
+        void clear();
+
+        bool usesFirstLineRules;
+        bool foundSiblingSelector;
+        unsigned maxDirectAdjacentSelectors;
+        HashSet<AtomicString> idsInRules;
+        HashSet<AtomicString> attrsInRules;
+    };
+
+    // These return true if setNeedsStyleRecalc() should be run on the Element, as a fallback.
+    bool computeInvalidationSetsForClassChange(const SpaceSplitString& changedClasses, Element*);
+    bool computeInvalidationSetsForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element*);
+
+    enum SelectorFeatureCollectionMode {
+        ProcessClasses,
+        DontProcessClasses
+    };
+
+    void collectFeaturesFromSelector(const CSSSelector&, FeatureMetadata&, SelectorFeatureCollectionMode processClasses);
+    void collectFeaturesFromSelectorList(const CSSSelectorList*, FeatureMetadata&, SelectorFeatureCollectionMode processClasses);
+
+    bool classInvalidationRequiresSubtreeRecalc(const AtomicString& className);
+    DescendantInvalidationSet& ensureClassInvalidationSet(const AtomicString& className);
+    bool updateClassInvalidationSets(const CSSSelector&);
+
+    void addClassToInvalidationSet(const AtomicString& className, Element*);
+
+    bool invalidateStyleForClassChange(Element*, Vector<AtomicString>&, bool foundInvalidationSet);
+    bool invalidateStyleForClassChangeOnChildren(Element*, Vector<AtomicString>& invalidationClasses, bool foundInvalidationSet);
+
+    InvalidationList& ensurePendingInvalidationList(Element*);
+
+    FeatureMetadata m_metadata;
+    InvalidationSetMap m_classInvalidationSets;
+    PendingInvalidationMap m_pendingInvalidationMap;
+
+    bool m_targetedStyleRecalcEnabled;
 };
 
 } // namespace WebCore

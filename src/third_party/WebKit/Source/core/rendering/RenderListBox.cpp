@@ -57,6 +57,7 @@
 #include "platform/fonts/FontCache.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/Scrollbar.h"
+#include "platform/text/BidiTextRun.h"
 
 using namespace std;
 
@@ -103,6 +104,13 @@ RenderListBox::~RenderListBox()
         frameView->removeScrollableArea(this);
 }
 
+// FIXME: Instead of this hack we should add a ShadowRoot to <select> with no insertion point
+// to prevent children from rendering.
+bool RenderListBox::isChildAllowed(RenderObject* object, RenderStyle*) const
+{
+    return object->isAnonymous() && !object->isRenderFullScreen();
+}
+
 inline HTMLSelectElement* RenderListBox::selectElement() const
 {
     return toHTMLSelectElement(node());
@@ -123,18 +131,22 @@ void RenderListBox::updateFromElement()
             Font itemFont = style()->font();
             if (element->hasTagName(optionTag)) {
                 text = toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
-            } else if (isHTMLOptGroupElement(element)) {
+            } else if (element->hasTagName(optgroupTag)) {
                 text = toHTMLOptGroupElement(element)->groupLabelText();
                 FontDescription d = itemFont.fontDescription();
                 d.setWeight(d.bolderWeight());
-                itemFont = Font(d, itemFont.letterSpacing(), itemFont.wordSpacing());
+                itemFont = Font(d);
                 itemFont.update(document().styleEngine()->fontSelector());
             }
 
             if (!text.isEmpty()) {
                 applyTextTransform(style(), text, ' ');
-                // FIXME: Why is this always LTR? Can't text direction affect the width?
+
+                bool hasStrongDirectionality;
+                TextDirection direction = determineDirectionality(text, hasStrongDirectionality);
                 TextRun textRun = constructTextRun(this, itemFont, text, style(), TextRun::AllowTrailingExpansion);
+                if (hasStrongDirectionality)
+                    textRun.setDirection(direction);
                 textRun.disableRoundingHacks();
                 float textWidth = itemFont.width(textRun);
                 width = max(width, textWidth);
@@ -294,7 +306,7 @@ void RenderListBox::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOf
     }
 
     // Paint the children.
-    RenderBlock::paintObject(paintInfo, paintOffset);
+    RenderBlockFlow::paintObject(paintInfo, paintOffset);
 
     switch (paintInfo.phase) {
     // Depending on whether we have overlay scrollbars they
@@ -324,7 +336,7 @@ void RenderListBox::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOf
 void RenderListBox::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer)
 {
     if (!isSpatialNavigationEnabled(frame()))
-        return RenderBlock::addFocusRingRects(rects, additionalOffset, paintContainer);
+        return RenderBlockFlow::addFocusRingRects(rects, additionalOffset, paintContainer);
 
     HTMLSelectElement* select = selectElement();
 
@@ -409,7 +421,7 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
     bool isOptionElement = element->hasTagName(optionTag);
     if (isOptionElement)
         itemText = toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
-    else if (isHTMLOptGroupElement(element))
+    else if (element->hasTagName(optgroupTag))
         itemText = toHTMLOptGroupElement(element)->groupLabelText();
     applyTextTransform(style(), itemText, ' ');
 
@@ -429,10 +441,10 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
     LayoutRect r = itemBoundingBoxRect(paintOffset, listIndex);
     r.move(itemOffsetForAlignment(textRun, itemStyle, itemFont, r));
 
-    if (isHTMLOptGroupElement(element)) {
+    if (element->hasTagName(optgroupTag)) {
         FontDescription d = itemFont.fontDescription();
         d.setWeight(d.bolderWeight());
-        itemFont = Font(d, itemFont.letterSpacing(), itemFont.wordSpacing());
+        itemFont = Font(d);
         itemFont.update(document().styleEngine()->fontSelector());
     }
 
@@ -648,7 +660,12 @@ void RenderListBox::scrollTo(int newOffset)
         return;
 
     m_indexOffset = newOffset;
-    repaint();
+
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && frameView()->isInPerformLayout())
+        setShouldDoFullRepaintAfterLayout(true);
+    else
+        repaint();
+
     node()->document().enqueueScrollEventForNode(node());
 }
 
@@ -701,7 +718,7 @@ void RenderListBox::setScrollTop(int newTop)
 
 bool RenderListBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    if (!RenderBlock::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
+    if (!RenderBlockFlow::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
         return false;
     const Vector<HTMLElement*>& listItems = selectElement()->listItems();
     int size = numItems();
@@ -745,7 +762,22 @@ void RenderListBox::invalidateScrollbarRect(Scrollbar* scrollbar, const IntRect&
         scrollRect.move(borderLeft(), borderTop());
     else
         scrollRect.move(width() - borderRight() - scrollbar->width(), borderTop());
-    repaintRectangle(scrollRect);
+
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && frameView()->isInPerformLayout()) {
+        m_verticalBarDamage = scrollRect;
+        m_hasVerticalBarDamage = true;
+    } else {
+        repaintRectangle(scrollRect);
+    }
+}
+
+void RenderListBox::repaintScrollbarIfNeeded()
+{
+    if (!hasVerticalBarDamage())
+        return;
+    repaintRectangle(verticalBarDamage());
+
+    resetScrollbarDamage();
 }
 
 IntRect RenderListBox::convertFromScrollbarToContainingView(const Scrollbar* scrollbar, const IntRect& scrollbarRect) const
@@ -848,7 +880,7 @@ IntPoint RenderListBox::minimumScrollPosition() const
 
 IntPoint RenderListBox::maximumScrollPosition() const
 {
-    return IntPoint(0, numItems() - numVisibleItems());
+    return IntPoint(0, std::max(numItems() - numVisibleItems(), 0));
 }
 
 bool RenderListBox::userInputScrollable(ScrollbarOrientation orientation) const

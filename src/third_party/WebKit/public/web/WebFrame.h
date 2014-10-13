@@ -31,15 +31,16 @@
 #ifndef WebFrame_h
 #define WebFrame_h
 
-#include "../platform/WebCanvas.h"
-#include "../platform/WebFileSystem.h"
-#include "../platform/WebFileSystemType.h"
-#include "../platform/WebMessagePortChannel.h"
-#include "../platform/WebReferrerPolicy.h"
-#include "../platform/WebURL.h"
 #include "WebIconURL.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebFileSystem.h"
+#include "public/platform/WebFileSystemType.h"
+#include "public/platform/WebMessagePortChannel.h"
+#include "public/platform/WebReferrerPolicy.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
 
 struct NPObject;
 
@@ -68,6 +69,7 @@ class WebPerformance;
 class WebPermissionClient;
 class WebRange;
 class WebSecurityOrigin;
+class WebSharedWorkerRepositoryClient;
 class WebString;
 class WebURL;
 class WebURLLoader;
@@ -158,6 +160,10 @@ public:
     // URLs
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const = 0;
 
+    // Notify the WebFrame as to whether its frame will be rendered in a
+    // separate renderer process.
+    virtual void setIsRemote(bool) = 0;
+
     // For a WebFrame with contents being rendered in another process, this
     // sets a layer for use by the in-process compositor. WebLayer should be
     // null if the content is being rendered in the current process.
@@ -165,6 +171,7 @@ public:
 
     // Initializes the various client interfaces.
     virtual void setPermissionClient(WebPermissionClient*) = 0;
+    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
 
     // Geometry -----------------------------------------------------------
@@ -210,6 +217,12 @@ public:
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
     void clearOpener() { setOpener(0); }
+
+    // Adds the given frame as a child of this frame.
+    virtual void appendChild(WebFrame*) = 0;
+
+    // Removes the given child from this frame.
+    virtual void removeChild(WebFrame*) = 0;
 
     // Returns the parent frame or 0 if this is a top-most frame.
     virtual WebFrame* parent() const = 0;
@@ -358,7 +371,9 @@ public:
 
     // Load the given history state, corresponding to a back/forward
     // navigation.
-    virtual void loadHistoryItem(const WebHistoryItem&) = 0;
+    virtual void loadHistoryItem(
+        const WebHistoryItem&,
+        WebURLRequest::CachePolicy = WebURLRequest::UseProtocolCachePolicy) = 0;
 
     // Loads the given data with specific mime type and optional text
     // encoding.  For HTML data, baseURL indicates the security origin of

@@ -32,6 +32,7 @@
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "platform/LengthFunctions.h"
 #include "platform/graphics/GraphicsContext.h"
 
 using namespace std;
@@ -196,9 +197,9 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, const LayoutPoint& paintO
     // Early exit if the element touches the edges.
     LayoutUnit top = adjustedPaintOffset.y() + visualOverflowRect().y();
     LayoutUnit bottom = adjustedPaintOffset.y() + visualOverflowRect().maxY();
-    if (isSelected() && m_inlineBoxWrapper) {
-        LayoutUnit selTop = paintOffset.y() + m_inlineBoxWrapper->root()->selectionTop();
-        LayoutUnit selBottom = paintOffset.y() + selTop + m_inlineBoxWrapper->root()->selectionHeight();
+    if (isSelected() && inlineBoxWrapper()) {
+        LayoutUnit selTop = paintOffset.y() + inlineBoxWrapper()->root()->selectionTop();
+        LayoutUnit selBottom = paintOffset.y() + selTop + inlineBoxWrapper()->root()->selectionHeight();
         top = min(selTop, top);
         bottom = max(selBottom, bottom);
     }
@@ -358,8 +359,8 @@ LayoutRect RenderReplaced::replacedContentRect(const LayoutSize* overriddenIntri
         ASSERT_NOT_REACHED();
     }
 
-    LayoutUnit xOffset = minimumValueForLength(style()->objectPosition().x(), contentRect.width() - finalRect.width(), view());
-    LayoutUnit yOffset = minimumValueForLength(style()->objectPosition().y(), contentRect.height() - finalRect.height(), view());
+    LayoutUnit xOffset = minimumValueForLength(style()->objectPosition().x(), contentRect.width() - finalRect.width());
+    LayoutUnit yOffset = minimumValueForLength(style()->objectPosition().y(), contentRect.height() - finalRect.height());
     finalRect.move(xOffset, yOffset);
 
     return finalRect;
@@ -566,12 +567,12 @@ LayoutRect RenderReplaced::localSelectionRect(bool checkWhetherSelected) const
     if (checkWhetherSelected && !isSelected())
         return LayoutRect();
 
-    if (!m_inlineBoxWrapper)
+    if (!inlineBoxWrapper())
         // We're a block-level replaced element.  Just return our own dimensions.
         return LayoutRect(LayoutPoint(), size());
 
-    RootInlineBox* root = m_inlineBoxWrapper->root();
-    LayoutUnit newLogicalTop = root->block()->style()->isFlippedBlocksWritingMode() ? m_inlineBoxWrapper->logicalBottom() - root->selectionBottom() : root->selectionTop() - m_inlineBoxWrapper->logicalTop();
+    RootInlineBox* root = inlineBoxWrapper()->root();
+    LayoutUnit newLogicalTop = root->block()->style()->isFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root->selectionBottom() : root->selectionTop() - inlineBoxWrapper()->logicalTop();
     if (root->block()->style()->isHorizontalWritingMode())
         return LayoutRect(0, newLogicalTop, width(), root->selectionHeight());
     return LayoutRect(newLogicalTop, 0, root->selectionHeight(), height());
@@ -582,8 +583,8 @@ void RenderReplaced::setSelectionState(SelectionState state)
     // The selection state for our containing block hierarchy is updated by the base class call.
     RenderBox::setSelectionState(state);
 
-    if (m_inlineBoxWrapper && canUpdateSelectionOnRootLineBoxes())
-        if (RootInlineBox* root = m_inlineBoxWrapper->root())
+    if (inlineBoxWrapper() && canUpdateSelectionOnRootLineBoxes())
+        if (RootInlineBox* root = inlineBoxWrapper()->root())
             root->setHasSelectedChildren(isSelected());
 }
 
@@ -620,7 +621,7 @@ LayoutRect RenderReplaced::clippedOverflowRectForRepaint(const RenderLayerModelO
     LayoutRect r = unionRect(localSelectionRect(false), visualOverflowRect());
 
     RenderView* v = view();
-    if (v) {
+    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && v) {
         // FIXME: layoutDelta needs to be applied in parts before/after transforms and
         // repaint containers. https://bugs.webkit.org/show_bug.cgi?id=23308
         r.move(v->layoutDelta());

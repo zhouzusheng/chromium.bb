@@ -22,25 +22,20 @@
 #define SVGDefsElement_h
 
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
 
-class SVGDefsElement FINAL : public SVGGraphicsElement,
-                             public SVGExternalResourcesRequired {
+class SVGDefsElement FINAL : public SVGGraphicsElement {
 public:
     static PassRefPtr<SVGDefsElement> create(Document&);
 
 private:
     explicit SVGDefsElement(Document&);
 
-    virtual bool isValid() const;
-
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGDefsElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

@@ -81,25 +81,34 @@ WebInspector.RuntimeModel.prototype = {
         return this._frameIdToContextList[frame.id];
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
     _frameAdded: function(event)
     {
-        var frame = event.data;
+        var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
         var context = new WebInspector.FrameExecutionContextList(frame);
         this._frameIdToContextList[frame.id] = context;
         this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.FrameExecutionContextListAdded, context);
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
     _frameNavigated: function(event)
     {
-        var frame = event.data;
+        var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
         var context = this._frameIdToContextList[frame.id];
         if (context)
             context._frameNavigated(frame);
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
     _frameDetached: function(event)
     {
-        var frame = event.data;
+        var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
         var context = this._frameIdToContextList[frame.id];
         if (!context)
             return;
@@ -116,9 +125,7 @@ WebInspector.RuntimeModel.prototype = {
     _executionContextCreated: function(context)
     {
         var contextList = this._frameIdToContextList[context.frameId];
-        // FIXME(85708): this should never happen
-        if (!contextList)
-            return;
+        console.assert(contextList);
         contextList._addExecutionContext(new WebInspector.ExecutionContext(context.id, context.name, context.isPageContext));
     },
 
@@ -365,7 +372,6 @@ WebInspector.RuntimeDispatcher.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.Object}
  */
 WebInspector.ExecutionContext = function(id, name, isPageContext)
 {
@@ -392,6 +398,7 @@ WebInspector.ExecutionContext.comparator = function(a, b)
 /**
  * @constructor
  * @extends {WebInspector.Object}
+ * @param {!WebInspector.ResourceTreeFrame} frame
  */
 WebInspector.FrameExecutionContextList = function(frame)
 {
@@ -406,6 +413,9 @@ WebInspector.FrameExecutionContextList.EventTypes = {
 
 WebInspector.FrameExecutionContextList.prototype =
 {
+    /**
+     * @param {!WebInspector.ResourceTreeFrame} frame
+     */
     _frameNavigated: function(frame)
     {
         this._frame = frame;
@@ -423,11 +433,17 @@ WebInspector.FrameExecutionContextList.prototype =
         this.dispatchEventToListeners(WebInspector.FrameExecutionContextList.EventTypes.ContextAdded, this);
     },
 
+    /**
+     * @return {!Array.<!WebInspector.ExecutionContext>}
+     */
     executionContexts: function()
     {
         return this._executionContexts;
     },
 
+    /**
+     * @return {!WebInspector.ExecutionContext}
+     */
     mainWorldContext: function() 
     {
         return this._executionContexts[0];
@@ -435,6 +451,7 @@ WebInspector.FrameExecutionContextList.prototype =
 
     /**
      * @param {string} securityOrigin
+     * @return {?WebInspector.ExecutionContext}
      */
     contextBySecurityOrigin: function(securityOrigin)
     {
@@ -443,30 +460,31 @@ WebInspector.FrameExecutionContextList.prototype =
             if (!context.isMainWorldContext && context.name === securityOrigin)
                 return context; 
         }
+        return null;
     },
 
+    /**
+     * @return {string}
+     */
     get frameId()
     {
         return this._frame.id;
     },
 
+    /**
+     * @return {string}
+     */
     get url()
     {
         return this._frame.url;
     },
 
+    /**
+     * @return {string}
+     */
     get displayName()
     {
-        if (!this._frame.parentFrame)
-            return "<top frame>";
-        var name = this._frame.name || "";
-        var subtitle = new WebInspector.ParsedURL(this._frame.url).displayName;
-        if (subtitle) {
-            if (!name)
-                return subtitle;
-            return name + "( " + subtitle + " )";
-        }
-        return "<iframe>";
+        return this._frame.displayName();
     },
 
     __proto__: WebInspector.Object.prototype

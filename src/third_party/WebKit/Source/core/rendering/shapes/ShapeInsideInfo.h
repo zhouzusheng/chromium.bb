@@ -89,7 +89,7 @@ public:
     }
     void clearSegments() { m_segments.clear(); }
     bool adjustLogicalLineTop(float minSegmentWidth);
-    LayoutUnit computeFirstFitPositionForFloat(const LayoutSize) const;
+    LayoutUnit computeFirstFitPositionForFloat(const FloatSize&) const;
 
     void setNeedsLayout(bool value) { m_needsLayout = value; }
     bool needsLayout() { return m_needsLayout; }
@@ -100,6 +100,12 @@ public:
     }
 
 protected:
+    virtual LayoutBox resolvedLayoutBox() const OVERRIDE
+    {
+        if (shapeValue()->layoutBox() == BoxMissing)
+            return ContentBox;
+        return shapeValue()->layoutBox();
+    }
     virtual LayoutRect computedShapeLogicalBoundingBox() const OVERRIDE { return computedShape()->shapePaddingLogicalBoundingBox(); }
     virtual ShapeValue* shapeValue() const OVERRIDE;
     virtual void getIntervals(LayoutUnit lineTop, LayoutUnit lineHeight, SegmentList& segments) const OVERRIDE

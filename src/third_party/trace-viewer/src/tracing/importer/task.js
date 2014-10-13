@@ -4,10 +4,10 @@
 
 'use strict';
 
-base.require('base.raf');
-base.require('base.promise');
+tvcm.require('tvcm.raf');
+tvcm.require('tvcm.promise');
 
-base.exportTo('tracing.importer', function() {
+tvcm.exportTo('tracing.importer', function() {
   /**
    * A task is a combination of a run callback, a set of subtasks, and an after
    * task.
@@ -102,24 +102,25 @@ base.exportTo('tracing.importer', function() {
    * a promise for its completion.
    */
   Task.RunWhenIdle = function(task) {
-    return new base.Promise(function(resolver) {
+    return new tvcm.Promise(function(resolver) {
       var curTask = task;
       function runAnother() {
         try {
           curTask = curTask.run();
         } catch (e) {
           resolver.reject(e);
+          console.log(e);
           return;
         }
 
         if (curTask) {
-          base.requestIdleCallback(runAnother);
+          tvcm.requestIdleCallback(runAnother);
           return;
         }
 
         resolver.resolve();
       }
-      base.requestIdleCallback(runAnother);
+      tvcm.requestIdleCallback(runAnother);
     });
   }
 

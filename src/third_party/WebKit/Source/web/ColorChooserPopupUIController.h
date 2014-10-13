@@ -37,7 +37,7 @@ class PagePopup;
 
 namespace blink {
 
-class ColorChooserPopupUIController : public ColorChooserUIController, public WebCore::PagePopupClient  {
+class ColorChooserPopupUIController FINAL : public ColorChooserUIController, public WebCore::PagePopupClient  {
 
 public:
     ColorChooserPopupUIController(ChromeClientImpl*, WebCore::ColorChooserClient*);
@@ -51,7 +51,7 @@ public:
 
     // PagePopupClient functions:
     virtual WebCore::IntSize contentSize() OVERRIDE;
-    virtual void writeDocument(WebCore::DocumentWriter&) OVERRIDE;
+    virtual void writeDocument(WebCore::SharedBuffer*) OVERRIDE;
     virtual WebCore::Locale& locale() OVERRIDE;
     virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
     virtual void setValue(const String&) OVERRIDE;

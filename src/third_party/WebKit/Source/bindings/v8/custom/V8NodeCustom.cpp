@@ -38,7 +38,6 @@
 #include "V8DocumentFragment.h"
 #include "V8DocumentType.h"
 #include "V8Element.h"
-#include "V8Entity.h"
 #include "V8HTMLElement.h"
 #include "V8Notation.h"
 #include "V8ProcessingInstruction.h"
@@ -67,8 +66,8 @@ void V8Node::insertBeforeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
 
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "insertBefore", "Node", info.Holder(), info.GetIsolate());
-    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
-    Node* refChild = V8Node::hasInstance(info[1], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1])) : 0;
+    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
+    Node* refChild = V8Node::hasInstance(info[1], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1])) : 0;
     imp->insertBefore(newChild, refChild, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
@@ -83,8 +82,8 @@ void V8Node::replaceChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
 
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "replaceChild", "Node", info.Holder(), info.GetIsolate());
-    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
-    Node* oldChild = V8Node::hasInstance(info[1], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1])) : 0;
+    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
+    Node* oldChild = V8Node::hasInstance(info[1], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1])) : 0;
     imp->replaceChild(newChild, oldChild, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
@@ -99,7 +98,7 @@ void V8Node::removeChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& 
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
 
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "removeChild", "Node", info.Holder(), info.GetIsolate());
-    Node* oldChild = V8Node::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
+    Node* oldChild = V8Node::hasInstance(info[0], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
     imp->removeChild(oldChild, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
@@ -114,7 +113,7 @@ void V8Node::appendChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& 
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
 
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "appendChild", "Node", info.Holder(), info.GetIsolate());
-    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
+    Node* newChild = V8Node::hasInstance(info[0], info.GetIsolate()) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(info[0])) : 0;
     imp->appendChild(newChild, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
@@ -150,14 +149,8 @@ v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, 
         if (impl->isShadowRoot())
             return wrap(toShadowRoot(impl), creationContext, isolate);
         return wrap(toDocumentFragment(impl), creationContext, isolate);
-    case Node::ENTITY_NODE:
-    case Node::NOTATION_NODE:
-        // We never create objects of Entity and Notation.
-        ASSERT_NOT_REACHED();
-        break;
-    default:
-        break; // ENTITY_REFERENCE_NODE or XPATH_NAMESPACE_NODE
     }
+    ASSERT_NOT_REACHED();
     return V8Node::createWrapper(impl, creationContext, isolate);
 }
 } // namespace WebCore

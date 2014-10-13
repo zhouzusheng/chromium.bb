@@ -33,9 +33,9 @@ namespace WebCore {
 
 class CSSCubicBezierTimingFunctionValue : public CSSValue {
 public:
-    static PassRefPtr<CSSCubicBezierTimingFunctionValue> create(double x1, double y1, double x2, double y2)
+    static PassRefPtrWillBeRawPtr<CSSCubicBezierTimingFunctionValue> create(double x1, double y1, double x2, double y2)
     {
-        return adoptRef(new CSSCubicBezierTimingFunctionValue(x1, y1, x2, y2));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSCubicBezierTimingFunctionValue(x1, y1, x2, y2));
     }
 
     String customCSSText() const;
@@ -46,6 +46,8 @@ public:
     double y2() const { return m_y2; }
 
     bool equals(const CSSCubicBezierTimingFunctionValue&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSCubicBezierTimingFunctionValue(double x1, double y1, double x2, double y2)
@@ -67,9 +69,9 @@ DEFINE_CSS_VALUE_TYPE_CASTS(CSSCubicBezierTimingFunctionValue, isCubicBezierTimi
 
 class CSSStepsTimingFunctionValue : public CSSValue {
 public:
-    static PassRefPtr<CSSStepsTimingFunctionValue> create(int steps, bool stepAtStart)
+    static PassRefPtrWillBeRawPtr<CSSStepsTimingFunctionValue> create(int steps, bool stepAtStart)
     {
-        return adoptRef(new CSSStepsTimingFunctionValue(steps, stepAtStart));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSStepsTimingFunctionValue(steps, stepAtStart));
     }
 
     int numberOfSteps() const { return m_steps; }
@@ -78,6 +80,8 @@ public:
     String customCSSText() const;
 
     bool equals(const CSSStepsTimingFunctionValue&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSStepsTimingFunctionValue(int steps, bool stepAtStart)

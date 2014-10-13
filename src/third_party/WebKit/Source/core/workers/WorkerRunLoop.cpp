@@ -34,12 +34,18 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "heap/ThreadState.h"
 #include "platform/PlatformThreadData.h"
 #include "platform/SharedTimer.h"
 #include "platform/ThreadTimers.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
+
+static String defaultMode()
+{
+    return String();
+}
 
 class WorkerRunLoop::Task {
     WTF_MAKE_NONCOPYABLE(Task); WTF_MAKE_FAST_ALLOCATED;
@@ -93,7 +99,7 @@ class ModePredicate {
 public:
     ModePredicate(const String& mode)
         : m_mode(mode)
-        , m_defaultMode(mode == WorkerRunLoop::defaultMode())
+        , m_defaultMode(mode == defaultMode())
     {
     }
 
@@ -122,11 +128,6 @@ WorkerRunLoop::WorkerRunLoop()
 WorkerRunLoop::~WorkerRunLoop()
 {
     ASSERT(!m_nestedCount);
-}
-
-String WorkerRunLoop::defaultMode()
-{
-    return String();
 }
 
 class RunLoopSetup {
@@ -160,6 +161,7 @@ void WorkerRunLoop::run(WorkerGlobalScope* context)
     ModePredicate modePredicate(defaultMode());
     MessageQueueWaitResult result;
     do {
+        ThreadState::current()->safePoint(ThreadState::NoHeapPointersOnStack);
         result = runInMode(context, modePredicate, WaitForMessage);
     } while (result != MessageQueueTerminated);
     runCleanupTasks(context);
@@ -204,7 +206,11 @@ MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerGlobalScope* context, cons
                 }
             }
         }
-        task = m_messageQueue.waitForMessageFilteredWithTimeout(result, predicate, absoluteTime);
+
+        {
+            ThreadState::SafePointScope safePointScope(ThreadState::NoHeapPointersOnStack);
+            task = m_messageQueue.waitForMessageFilteredWithTimeout(result, predicate, absoluteTime);
+        }
     } while (result == MessageQueueTimeout && nextTimeoutEventIsIdleWatchdog);
 
     // If the context is closing, don't execute any further JavaScript tasks (per section 4.1.1 of the Web Workers spec).
@@ -267,11 +273,6 @@ void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ExecutionContextTask> task)
 bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ExecutionContextTask> task, const String& mode)
 {
     return m_messageQueue.append(Task::create(task, mode.isolatedCopy()));
-}
-
-bool WorkerRunLoop::postTaskForMode(const Closure& closure, const String& mode)
-{
-    return postTaskForMode(CallClosureTask::create(closure), mode);
 }
 
 } // namespace WebCore

@@ -44,7 +44,7 @@ class ResourceError;
 class ResourceResponse;
 class ResourceLoaderHost;
 
-class ResourceLoader : public RefCounted<ResourceLoader>, protected blink::WebURLLoaderClient {
+class ResourceLoader FINAL : public RefCounted<ResourceLoader>, protected blink::WebURLLoaderClient {
 public:
     static PassRefPtr<ResourceLoader> create(ResourceLoaderHost*, Resource*, const ResourceRequest&, const ResourceLoaderOptions&);
     virtual ~ResourceLoader();
@@ -72,12 +72,11 @@ public:
     virtual void didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&) OVERRIDE;
     virtual void didReceiveData(blink::WebURLLoader*, const char*, int, int encodedDataLength) OVERRIDE;
     virtual void didReceiveCachedMetadata(blink::WebURLLoader*, const char* data, int length) OVERRIDE;
-    virtual void didFinishLoading(blink::WebURLLoader*, double finishTime) OVERRIDE;
+    virtual void didFinishLoading(blink::WebURLLoader*, double finishTime, int64 encodedDataLength) OVERRIDE;
     virtual void didFail(blink::WebURLLoader*, const blink::WebURLError&) OVERRIDE;
     virtual void didDownloadData(blink::WebURLLoader*, int, int) OVERRIDE;
 
     const KURL& url() const { return m_request.url(); }
-    bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
     bool shouldSniffContent() const { return m_options.sniffContent == SniffContent; }
     bool isLoadedBy(ResourceLoaderHost*) const;
 
@@ -90,7 +89,9 @@ private:
     void init(const ResourceRequest&);
     void requestSynchronously();
 
-    void didFinishLoadingOnePart(double finishTime);
+    void didFinishLoadingOnePart(double finishTime, int64_t encodedDataLength);
+
+    bool responseNeedsAccessControlCheck() const;
 
     OwnPtr<blink::WebURLLoader> m_loader;
     RefPtr<ResourceLoaderHost> m_host;

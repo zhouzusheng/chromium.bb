@@ -112,16 +112,16 @@ class VideoCaptureController::VideoCaptureDeviceClient
       const gfx::Size& size) OVERRIDE;
   virtual void OnIncomingCapturedFrame(const uint8* data,
                                        int length,
-                                       base::Time timestamp,
+                                       base::TimeTicks timestamp,
                                        int rotation,
                                        const VideoCaptureFormat& frame_format)
       OVERRIDE;
   virtual void OnIncomingCapturedBuffer(const scoped_refptr<Buffer>& buffer,
                                         media::VideoFrame::Format format,
                                         const gfx::Size& dimensions,
-                                        base::Time timestamp,
+                                        base::TimeTicks timestamp,
                                         int frame_rate) OVERRIDE;
-  virtual void OnError() OVERRIDE;
+  virtual void OnError(const std::string& reason) OVERRIDE;
 
  private:
   scoped_refptr<Buffer> DoReserveOutputBuffer(media::VideoFrame::Format format,
@@ -267,7 +267,7 @@ VideoCaptureController::VideoCaptureDeviceClient::ReserveOutputBuffer(
 void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedFrame(
     const uint8* data,
     int length,
-    base::Time timestamp,
+    base::TimeTicks timestamp,
     int rotation,
     const VideoCaptureFormat& frame_format) {
   TRACE_EVENT0("video", "VideoCaptureController::OnIncomingCapturedFrame");
@@ -304,6 +304,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedFrame(
   if (!buffer)
     return;
 #if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
+  bool flip = false;
   uint8* yplane = reinterpret_cast<uint8*>(buffer->data());
   uint8* uplane =
       yplane +
@@ -351,7 +352,14 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedFrame(
       origin_colorspace = libyuv::FOURCC_UYVY;
       break;
     case media::PIXEL_FORMAT_RGB24:
-      origin_colorspace = libyuv::FOURCC_RAW;
+      origin_colorspace = libyuv::FOURCC_24BG;
+#if defined(OS_WIN)
+      // TODO(wjia): Currently, for RGB24 on WIN, capture device always
+      // passes in positive src_width and src_height. Remove this hardcoded
+      // value when nagative src_height is supported. The negative src_height
+      // indicates that vertical flipping is needed.
+      flip = true;
+#endif
       break;
     case media::PIXEL_FORMAT_ARGB:
       origin_colorspace = libyuv::FOURCC_ARGB;
@@ -363,48 +371,23 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedFrame(
       NOTREACHED();
   }
 
-  int need_convert_rgb24_on_win = false;
-#if defined(OS_WIN)
-  // TODO(wjia): Use libyuv::ConvertToI420 since support for image inversion
-  // (vertical flipping) has been added. Use negative src_height as indicator.
-  if (frame_format.pixel_format == media::PIXEL_FORMAT_RGB24) {
-    // Rotation is not supported in kRGB24 and OS_WIN case.
-    DCHECK(!rotation);
-    need_convert_rgb24_on_win = true;
-  }
-#endif
-  if (need_convert_rgb24_on_win) {
-    int rgb_stride = -3 * (new_unrotated_width + chopped_width);
-    const uint8* rgb_src =
-        data + 3 * (new_unrotated_width + chopped_width) *
-                   (new_unrotated_height - 1 + chopped_height);
-    media::ConvertRGB24ToYUV(rgb_src,
-                             yplane,
-                             uplane,
-                             vplane,
-                             new_unrotated_width,
-                             new_unrotated_height,
-                             rgb_stride,
-                             yplane_stride,
-                             uv_plane_stride);
-  } else {
-    libyuv::ConvertToI420(data,
-                          length,
-                          yplane,
-                          yplane_stride,
-                          uplane,
-                          uv_plane_stride,
-                          vplane,
-                          uv_plane_stride,
-                          crop_x,
-                          crop_y,
-                          new_unrotated_width + chopped_width,
-                          new_unrotated_height,
-                          new_unrotated_width,
-                          new_unrotated_height,
-                          rotation_mode,
-                          origin_colorspace);
-  }
+  libyuv::ConvertToI420(data,
+                        length,
+                        yplane,
+                        yplane_stride,
+                        uplane,
+                        uv_plane_stride,
+                        vplane,
+                        uv_plane_stride,
+                        crop_x,
+                        crop_y,
+                        frame_format.frame_size.width(),
+                        (flip ? -frame_format.frame_size.height() :
+                                frame_format.frame_size.height()),
+                        new_unrotated_width,
+                        new_unrotated_height,
+                        rotation_mode,
+                        origin_colorspace);
 #else
   // Libyuv is not linked in for Android WebView builds, but video capture is
   // not used in those builds either. Whenever libyuv is added in that build,
@@ -427,7 +410,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedBuffer(
     const scoped_refptr<Buffer>& buffer,
     media::VideoFrame::Format format,
     const gfx::Size& dimensions,
-    base::Time timestamp,
+    base::TimeTicks timestamp,
     int frame_rate) {
   // The capture pipeline expects I420 for now.
   DCHECK_EQ(format, media::VideoFrame::I420)
@@ -445,7 +428,10 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedBuffer(
           timestamp));
 }
 
-void VideoCaptureController::VideoCaptureDeviceClient::OnError() {
+void VideoCaptureController::VideoCaptureDeviceClient::OnError(
+    const std::string& reason) {
+  MediaStreamManager::SendMessageToNativeLog(
+      "Error on video capture: " + reason);
   BrowserThread::PostTask(BrowserThread::IO,
       FROM_HERE,
       base::Bind(&VideoCaptureController::DoErrorOnIOThread, controller_));
@@ -493,7 +479,7 @@ void VideoCaptureController::DoIncomingCapturedI420BufferOnIOThread(
     scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer,
     const gfx::Size& dimensions,
     int frame_rate,
-    base::Time timestamp) {
+    base::TimeTicks timestamp) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_NE(buffer->id(), VideoCaptureBufferPool::kInvalidId);
 

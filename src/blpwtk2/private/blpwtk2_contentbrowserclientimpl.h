@@ -47,11 +47,10 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     explicit ContentBrowserClientImpl(RendererInfoMap* rendererInfoMap);
     virtual ~ContentBrowserClientImpl();
 
-    // Notifies that a RenderProcessHost has been created. This is called before
+    // Notifies that a render process will be created. This is called before
     // the content layer adds its own BrowserMessageFilters, so that the
     // embedder's IPC filters have priority.
-    virtual void RenderProcessHostCreated(
-        content::RenderProcessHost* host) OVERRIDE;
+    virtual void RenderProcessWillLaunch(content::RenderProcessHost* host) OVERRIDE;
 
     // Called by WebContents to override the WebKit preferences that are used by
     // the renderer. The content layer will add its own settings, and then it's up

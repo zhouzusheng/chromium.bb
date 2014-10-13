@@ -31,15 +31,12 @@
 #include "config.h"
 #include "core/animation/ActiveAnimations.h"
 
-#include "core/frame/animation/AnimationController.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
 
 bool shouldCompositeForActiveAnimations(const RenderObject& renderer)
 {
-    ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled());
-
     if (!renderer.node() || !renderer.node()->isElementNode())
         return false;
 
@@ -56,8 +53,6 @@ bool shouldCompositeForActiveAnimations(const RenderObject& renderer)
 
 bool hasActiveAnimations(const RenderObject& renderer, CSSPropertyID property)
 {
-    ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled());
-
     if (!renderer.node() || !renderer.node()->isElementNode())
         return false;
 
@@ -70,8 +65,6 @@ bool hasActiveAnimations(const RenderObject& renderer, CSSPropertyID property)
 
 bool hasActiveAnimationsOnCompositor(const RenderObject& renderer, CSSPropertyID property)
 {
-    ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled());
-
     if (!renderer.node() || !renderer.node()->isElementNode())
         return false;
 

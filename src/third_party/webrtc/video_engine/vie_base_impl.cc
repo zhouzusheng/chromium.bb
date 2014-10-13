@@ -154,9 +154,15 @@ int ViEBaseImpl::CpuOveruseMeasures(int video_channel,
 }
 
 int ViEBaseImpl::CreateChannel(int& video_channel) {  // NOLINT
+  return CreateChannel(video_channel, static_cast<const Config*>(NULL));
+}
+
+int ViEBaseImpl::CreateChannel(int& video_channel,  // NOLINT
+                               const Config* config) {
   WEBRTC_TRACE(kTraceApiCall, kTraceVideo, ViEId(shared_data_.instance_id()),
                "%s", __FUNCTION__);
-  if (shared_data_.channel_manager()->CreateChannel(&video_channel) == -1) {
+  if (shared_data_.channel_manager()->CreateChannel(&video_channel,
+                                                    config) == -1) {
     WEBRTC_TRACE(kTraceError, kTraceVideo, ViEId(shared_data_.instance_id()),
                  "%s: Could not create channel", __FUNCTION__);
     video_channel = -1;
@@ -383,7 +389,7 @@ int ViEBaseImpl::GetVersion(char version[1024]) {
 
   // Add WebRTC Version.
   std::stringstream version_stream;
-  version_stream << "VideoEngine 3.47.0" << std::endl;
+  version_stream << "VideoEngine 3.49.0" << std::endl;
 
   // Add build info.
   version_stream << "Build: " << BUILDINFO << std::endl;

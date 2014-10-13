@@ -33,7 +33,6 @@
 #include "core/html/canvas/ANGLEInstancedArrays.h"
 
 #include "core/html/canvas/WebGLRenderingContext.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
@@ -41,7 +40,7 @@ ANGLEInstancedArrays::ANGLEInstancedArrays(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_ANGLE_instanced_arrays");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_ANGLE_instanced_arrays");
 }
 
 ANGLEInstancedArrays::~ANGLEInstancedArrays()
@@ -60,8 +59,7 @@ PassRefPtr<ANGLEInstancedArrays> ANGLEInstancedArrays::create(WebGLRenderingCont
 
 bool ANGLEInstancedArrays::supported(WebGLRenderingContext* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_ANGLE_instanced_arrays");
+    return context->extensionsUtil()->supportsExtension("GL_ANGLE_instanced_arrays");
 }
 
 const char* ANGLEInstancedArrays::extensionName()
@@ -69,7 +67,7 @@ const char* ANGLEInstancedArrays::extensionName()
     return "ANGLE_instanced_arrays";
 }
 
-void ANGLEInstancedArrays::drawArraysInstancedANGLE(GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount)
+void ANGLEInstancedArrays::drawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount)
 {
     if (isLost())
         return;
@@ -77,7 +75,7 @@ void ANGLEInstancedArrays::drawArraysInstancedANGLE(GC3Denum mode, GC3Dint first
     m_context->drawArraysInstancedANGLE(mode, first, count, primcount);
 }
 
-void ANGLEInstancedArrays::drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei count, GC3Denum type, GC3Dintptr offset, GC3Dsizei primcount)
+void ANGLEInstancedArrays::drawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, GLintptr offset, GLsizei primcount)
 {
     if (isLost())
         return;
@@ -85,7 +83,7 @@ void ANGLEInstancedArrays::drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei c
     m_context->drawElementsInstancedANGLE(mode, count, type, offset, primcount);
 }
 
-void ANGLEInstancedArrays::vertexAttribDivisorANGLE(GC3Duint index, GC3Duint divisor)
+void ANGLEInstancedArrays::vertexAttribDivisorANGLE(GLuint index, GLuint divisor)
 {
     if (isLost())
         return;

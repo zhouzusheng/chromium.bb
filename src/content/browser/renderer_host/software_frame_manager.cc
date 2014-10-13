@@ -13,7 +13,7 @@
 namespace {
 
 void ReleaseMailbox(scoped_refptr<content::SoftwareFrame> frame,
-                    unsigned sync_point,
+                    uint32 sync_point,
                     bool lost_resource) {}
 
 }  // namespace
@@ -101,21 +101,21 @@ bool SoftwareFrameManager::SwapToNewFrame(
     if (!shared_memory->Map(0)) {
       DLOG(ERROR) << "Unable to map renderer memory.";
       RecordAction(
-          UserMetricsAction("BadMessageTerminate_SharedMemoryManager1"));
+          base::UserMetricsAction("BadMessageTerminate_SharedMemoryManager1"));
       return false;
     }
 
     if (shared_memory->mapped_size() < size_in_bytes) {
       DLOG(ERROR) << "Shared memory too small for given rectangle";
       RecordAction(
-          UserMetricsAction("BadMessageTerminate_SharedMemoryManager2"));
+          base::UserMetricsAction("BadMessageTerminate_SharedMemoryManager2"));
       return false;
     }
 #else
     if (!shared_memory->Map(size_in_bytes)) {
       DLOG(ERROR) << "Unable to map renderer memory.";
       RecordAction(
-          UserMetricsAction("BadMessageTerminate_SharedMemoryManager1"));
+          base::UserMetricsAction("BadMessageTerminate_SharedMemoryManager1"));
       return false;
     }
 #endif
@@ -150,7 +150,11 @@ void SoftwareFrameManager::SwapToNewFrameComplete(bool visible) {
 
 void SoftwareFrameManager::SetVisibility(bool visible) {
   if (HasCurrentFrame()) {
-    RendererFrameManager::GetInstance()->SetFrameVisibility(this, visible);
+    if (visible) {
+      RendererFrameManager::GetInstance()->LockFrame(this);
+    } else {
+      RendererFrameManager::GetInstance()->UnlockFrame(this);
+    }
   }
 }
 

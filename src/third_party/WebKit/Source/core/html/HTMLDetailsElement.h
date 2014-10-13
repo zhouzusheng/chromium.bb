@@ -35,24 +35,13 @@ public:
 private:
     explicit HTMLDetailsElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     virtual bool isInteractiveContent() const OVERRIDE;
 
     bool m_isOpen;
 };
-
-inline bool isHTMLDetailsElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::detailsTag);
-}
-
-inline bool isHTMLDetailsElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::detailsTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLDetailsElement, hasTagName(HTMLNames::detailsTag));
 

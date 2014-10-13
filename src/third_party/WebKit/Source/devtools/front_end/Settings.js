@@ -31,12 +31,9 @@
 
 var Preferences = {
     maxInlineTextChildLength: 80,
-    minConsoleHeight: 25,
+    minDrawerHeight: 24,
     minSidebarWidth: 100,
     minSidebarHeight: 75,
-    minElementsSidebarWidth: 200,
-    minElementsSidebarHeight: 200,
-    minScriptsSidebarWidth: 200,
     applicationTitle: "Developer Tools - %s",
     experimentsEnabled: false
 }
@@ -82,7 +79,6 @@ WebInspector.Settings = function()
     this.emulateViewport = this.createSetting("emulateViewport", false);
     this.emulateTouchEvents = this.createSetting("emulateTouchEvents", false);
     this.showShadowDOM = this.createSetting("showShadowDOM", false);
-    this.zoomLevel = this.createSetting("zoomLevel", 0);
     this.savedURLs = this.createSetting("savedURLs", {});
     this.javaScriptDisabled = this.createSetting("javaScriptDisabled", false);
     this.overrideGeolocation = this.createSetting("overrideGeolocation", false);
@@ -96,7 +92,6 @@ WebInspector.Settings = function()
     this.textEditorAutoDetectIndent = this.createSetting("textEditorAutoIndentIndent", true);
     this.textEditorAutocompletion = this.createSetting("textEditorAutocompletion", true);
     this.textEditorBracketMatching = this.createSetting("textEditorBracketMatching", true);
-    this.lastDockState = this.createSetting("lastDockState", "");
     this.cssReloadEnabled = this.createSetting("cssReloadEnabled", false);
     this.timelineCaptureStacks = this.createSetting("timelineCaptureStacks", true);
     this.showMetricsRulers = this.createSetting("showMetricsRulers", false);
@@ -113,10 +108,10 @@ WebInspector.Settings = function()
     this.showWhitespacesInEditor = this.createSetting("showWhitespacesInEditor", false);
     this.skipStackFramesSwitch = this.createSetting("skipStackFramesSwitch", false);
     this.skipStackFramesPattern = this.createSetting("skipStackFramesPattern", "");
-    this.screencastEnabled = this.createSetting("screencastEnabled", false);
-    this.screencastSidebarWidth = this.createSetting("screencastSidebarWidth", 300);
     this.showEmulationViewInDrawer = this.createSetting("showEmulationViewInDrawer", true);
     this.showRenderingViewInDrawer = this.createSetting("showRenderingViewInDrawer", true);
+    this.pauseOnExceptionEnabled = this.createSetting("pauseOnExceptionEnabled", false);
+    this.pauseOnCaughtException = this.createSetting("pauseOnCaughtException", false);
     this.enableAsyncStackTraces = this.createSetting("enableAsyncStackTraces", false);
 }
 
@@ -144,15 +139,25 @@ WebInspector.Settings.prototype = {
         if (!this._registry[key])
             this._registry[key] = new WebInspector.BackendSetting(key, defaultValue, this._eventSupport, window.localStorage, setterCallback);
         return this._registry[key];
+    },
+
+    initializeBackendSettings: function()
+    {
+        this.showPaintRects = WebInspector.settings.createBackendSetting("showPaintRects", false, PageAgent.setShowPaintRects.bind(PageAgent));
+        this.showDebugBorders = WebInspector.settings.createBackendSetting("showDebugBorders", false, PageAgent.setShowDebugBorders.bind(PageAgent));
+        this.continuousPainting = WebInspector.settings.createBackendSetting("continuousPainting", false, PageAgent.setContinuousPaintingEnabled.bind(PageAgent));
+        this.showFPSCounter = WebInspector.settings.createBackendSetting("showFPSCounter", false, PageAgent.setShowFPSCounter.bind(PageAgent));
+        this.showScrollBottleneckRects = WebInspector.settings.createBackendSetting("showScrollBottleneckRects", false, PageAgent.setShowScrollBottleneckRects.bind(PageAgent));
     }
 }
 
 /**
  * @constructor
  * @param {string} name
- * @param {*} defaultValue
+ * @param {V} defaultValue
  * @param {!WebInspector.Object} eventSupport
  * @param {?Storage} storage
+ * @template V
  */
 WebInspector.Setting = function(name, defaultValue, eventSupport, storage)
 {
@@ -186,6 +191,9 @@ WebInspector.Setting.prototype = {
         return this._name;
     },
 
+    /**
+     * @return {V}
+     */
     get: function()
     {
         if (typeof this._value !== "undefined")
@@ -269,7 +277,6 @@ WebInspector.ExperimentsSettings = function()
     this.asyncStackTraces = this._createExperiment("asyncStackTraces", "Enable support for async stack traces");
     this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
     this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
-    this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
     this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "Enable frameworks debugging support");
     this.layersPanel = this._createExperiment("layersPanel", "Show Layers panel");
     this.stepIntoSelection = this._createExperiment("stepIntoSelection", "Show step-in candidates while debugging.");
@@ -277,6 +284,10 @@ WebInspector.ExperimentsSettings = function()
     this.showEditorInDrawer = this._createExperiment("showEditorInDrawer", "Show editor in drawer");
     this.gpuTimeline = this._createExperiment("gpuTimeline", "Show GPU data on timeline");
     this.applyCustomStylesheet = this._createExperiment("applyCustomStylesheet", "Allow custom UI themes");
+    this.workersInMainWindow = this._createExperiment("workersInMainWindow", "Show workers in main window");
+    this.dockToLeft = this._createExperiment("dockToLeft", "Enable dock to left mode");
+    this.allocationProfiler = this._createExperiment("allocationProfiler", "Enable JavaScript heap allocation profiler");
+    this.timelineFlameChart = this._createExperiment("timelineFlameChart", "Enable FlameChart mode in Timeline");
 
     this._cleanUpSetting();
 }
@@ -401,7 +412,7 @@ WebInspector.Experiment.prototype = {
      */
     setEnabled: function(enabled)
     {
-        return this._experimentsSettings.setEnabled(this._name, enabled);
+        this._experimentsSettings.setEnabled(this._name, enabled);
     },
 
     enableForTest: function()

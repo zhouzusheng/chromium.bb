@@ -39,13 +39,9 @@ public:
         return adoptRef(new SVGTransformListPropertyTearOff(animatedProperty, role, values, wrappers));
     }
 
-    PassRefPtr<SVGPropertyTearOff<SVGTransform> > createSVGTransformFromMatrix(SVGPropertyTearOff<SVGMatrix>* matrix, ExceptionState& exceptionState)
+    PassRefPtr<SVGPropertyTearOff<SVGTransform> > createSVGTransformFromMatrix(SVGPropertyTearOff<SVGMatrix>* matrix)
     {
         ASSERT(m_values);
-        if (!matrix) {
-            exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-            return 0;
-        }
         return SVGPropertyTearOff<SVGTransform>::create(m_values->createSVGTransformFromMatrix(matrix->propertyReference()));
     }
 

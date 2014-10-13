@@ -173,13 +173,13 @@ void SpellCheck::OnAutocorrectWordsChanged(
     const std::map<std::string, std::string>& words_added,
     const std::vector<std::string>& words_removed) {
   typedef std::map<std::string, std::string>::const_iterator SrcIterator;
-  typedef std::map<string16, string16>::iterator DestIterator;
+  typedef std::map<base::string16, base::string16>::iterator DestIterator;
   for (SrcIterator it = words_added.begin(); it != words_added.end(); ++it) {
-    string16 badWord = UTF8ToUTF16(it->first);
-    autocorrect_words_[badWord] = UTF8ToUTF16(it->second);
+    base::string16 badWord = base::UTF8ToUTF16(it->first);
+    autocorrect_words_[badWord] = base::UTF8ToUTF16(it->second);
   }
   for (size_t i = 0; i < words_removed.size(); ++i) {
-    DestIterator it = autocorrect_words_.find(UTF8ToUTF16(words_removed[i]));
+    DestIterator it = autocorrect_words_.find(base::UTF8ToUTF16(words_removed[i]));
     if (it != autocorrect_words_.end()) {
       autocorrect_words_.erase(it);
     }
@@ -225,13 +225,13 @@ void SpellCheck::Init(const std::vector<FileLanguagePair>& languages,
   autocorrect_words_.clear();
   for (MapIterator it = autocorrect_words.begin();
                    it != autocorrect_words.end(); ++it) {
-    string16 badWord = UTF8ToUTF16(it->first);
-    autocorrect_words_[badWord] = UTF8ToUTF16(it->second);
+    base::string16 badWord = base::UTF8ToUTF16(it->first);
+    autocorrect_words_[badWord] = base::UTF8ToUTF16(it->second);
   }
 }
 
 bool SpellCheck::SpellCheckWord(
-    const char16* in_word,
+    const base::char16* in_word,
     int in_word_len,
     int tag,
     int* misspelling_start,
@@ -256,8 +256,8 @@ bool SpellCheck::SpellCheckWord(
     // Find the first misspelled word in the first language.
 
     SpellcheckLanguage *firstLang = spellcheck_[0];
-    std::vector<string16> suggestions_vector;
-    std::set<string16> suggestions_set;
+    std::vector<base::string16> suggestions_vector;
+    std::set<base::string16> suggestions_set;
     int segment_misspelling_start;
     int segment_misspelling_len;
 
@@ -312,7 +312,7 @@ bool SpellCheck::SpellCheckWord(
 
     if (!alternativeFound) {
       if (optional_suggestions) {
-        for (std::set<string16>::const_iterator it = suggestions_set.begin();
+        for (std::set<base::string16>::const_iterator it = suggestions_set.begin();
             it != suggestions_set.end();
             ++it) {
           optional_suggestions->push_back(*it);
@@ -383,7 +383,7 @@ bool SpellCheck::SpellCheckParagraph(
 base::string16 SpellCheck::GetAutoCorrectionWord(const base::string16& word,
                                                  int tag) {
   if (auto_spell_correct_behavior_ & chrome::spellcheck_common::AUTOCORRECT_WORD_MAP) {
-    typedef std::map<base::string16, string16> WordMap;
+    typedef std::map<base::string16, base::string16> WordMap;
     WordMap::const_iterator it = autocorrect_words_.find(word);
     if (it != autocorrect_words_.end()) {
       return it->second;  // Return the configured correction for 'word'.
@@ -402,9 +402,9 @@ base::string16 SpellCheck::GetAutoCorrectionWord(const base::string16& word,
   if (InitializeIfNeeded())
     return autocorrect_word;
 
-  char16 misspelled_word[
+  base::char16 misspelled_word[
       chrome::spellcheck_common::kMaxAutoCorrectWordSize + 1];
-  const char16* word_char = word.c_str();
+  const base::char16* word_char = word.c_str();
   for (int i = 0; i <= chrome::spellcheck_common::kMaxAutoCorrectWordSize;
        ++i) {
     if (i >= word_length)
@@ -511,7 +511,7 @@ void SpellCheck::CreateTextCheckingResults(
   // Double-check misspelled words with our spellchecker and attach grammar
   // markers to them if our spellchecker tells they are correct words, i.e. they
   // are probably contextually-misspelled words.
-  const char16* text = line_text.c_str();
+  const base::char16* text = line_text.c_str();
   std::vector<WebTextCheckingResult> list;
   for (size_t i = 0; i < spellcheck_results.size(); ++i) {
     SpellCheckResult::Decoration decoration = spellcheck_results[i].decoration;

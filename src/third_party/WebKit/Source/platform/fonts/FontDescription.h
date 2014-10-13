@@ -34,6 +34,7 @@
 #include "platform/fonts/FontTraitsMask.h"
 #include "platform/fonts/FontWidthVariant.h"
 #include "platform/fonts/TextRenderingMode.h"
+#include "platform/fonts/TypesettingFeatures.h"
 #include "platform/text/NonCJKGlyphOrientation.h"
 #include "wtf/MathExtras.h"
 
@@ -77,6 +78,8 @@ public:
     FontDescription()
         : m_specifiedSize(0)
         , m_computedSize(0)
+        , m_letterSpacing(0)
+        , m_wordSpacing(0)
         , m_orientation(Horizontal)
         , m_nonCJKGlyphOrientation(NonCJKGlyphOrientationVerticalRight)
         , m_widthVariant(RegularWidth)
@@ -98,6 +101,7 @@ public:
         , m_syntheticBold(false)
         , m_syntheticItalic(false)
         , m_subpixelTextPosition(s_useSubpixelTextPositioning)
+        , m_typesettingFeatures(s_defaultTypesettingFeatures)
     {
     }
 
@@ -116,7 +120,11 @@ public:
     FontWeight lighterWeight() const;
     FontWeight bolderWeight() const;
     GenericFamilyType genericFamily() const { return static_cast<GenericFamilyType>(m_genericFamily); }
+#if OS(MACOSX)
+    bool usePrinterFont() const { return false; }
+#else
     bool usePrinterFont() const { return m_usePrinterFont; }
+#endif
     // only use fixed default size when there is only one font family, and that family is "monospace"
     bool useFixedDefaultSize() const { return genericFamily() == MonospaceFamily && !family().next() && family().family() == FontFamilyNames::webkit_monospace; }
     Kerning kerning() const { return static_cast<Kerning>(m_kerning); }
@@ -132,6 +140,8 @@ public:
     bool useSubpixelPositioning() const { return m_subpixelTextPosition; }
 
     FontTraitsMask traitsMask() const;
+    float wordSpacing() const { return m_wordSpacing; }
+    float letterSpacing() const { return m_letterSpacing; }
     bool isSpecifiedFont() const { return m_isSpecifiedFont; }
     FontOrientation orientation() const { return static_cast<FontOrientation>(m_orientation); }
     NonCJKGlyphOrientation nonCJKGlyphOrientation() const { return static_cast<NonCJKGlyphOrientation>(m_nonCJKGlyphOrientation); }
@@ -152,18 +162,14 @@ public:
     void setIsAbsoluteSize(bool s) { m_isAbsoluteSize = s; }
     void setWeight(FontWeight w) { m_weight = w; }
     void setGenericFamily(GenericFamilyType genericFamily) { m_genericFamily = genericFamily; }
-#if OS(MACOSX)
-    void setUsePrinterFont(bool) { }
-#else
     void setUsePrinterFont(bool p) { m_usePrinterFont = p; }
-#endif
-    void setKerning(Kerning kerning) { m_kerning = kerning; }
-    void setCommonLigaturesState(LigaturesState commonLigaturesState) { m_commonLigaturesState = commonLigaturesState; }
+    void setKerning(Kerning kerning) { m_kerning = kerning; updateTypesettingFeatures(); }
+    void setCommonLigaturesState(LigaturesState commonLigaturesState) { m_commonLigaturesState = commonLigaturesState; updateTypesettingFeatures(); }
     void setDiscretionaryLigaturesState(LigaturesState discretionaryLigaturesState) { m_discretionaryLigaturesState = discretionaryLigaturesState; }
     void setHistoricalLigaturesState(LigaturesState historicalLigaturesState) { m_historicalLigaturesState = historicalLigaturesState; }
     void setKeywordSize(unsigned s) { m_keywordSize = s; }
     void setFontSmoothing(FontSmoothingMode smoothing) { m_fontSmoothing = smoothing; }
-    void setTextRenderingMode(TextRenderingMode rendering) { m_textRendering = rendering; }
+    void setTextRenderingMode(TextRenderingMode rendering) { m_textRendering = rendering; updateTypesettingFeatures(); }
     void setIsSpecifiedFont(bool isSpecifiedFont) { m_isSpecifiedFont = isSpecifiedFont; }
     void setOrientation(FontOrientation orientation) { m_orientation = orientation; }
     void setNonCJKGlyphOrientation(NonCJKGlyphOrientation orientation) { m_nonCJKGlyphOrientation = orientation; }
@@ -173,17 +179,29 @@ public:
     void setSyntheticItalic(bool syntheticItalic) { m_syntheticItalic = syntheticItalic; }
     void setFeatureSettings(PassRefPtr<FontFeatureSettings> settings) { m_featureSettings = settings; }
     void setTraitsMask(FontTraitsMask);
+    void setWordSpacing(float s) { m_wordSpacing = s; }
+    void setLetterSpacing(float s) { m_letterSpacing = s; }
+
+    TypesettingFeatures typesettingFeatures() const { return static_cast<TypesettingFeatures>(m_typesettingFeatures); }
 
     static void setSubpixelPositioning(bool b) { s_useSubpixelTextPositioning = b; }
     static bool subpixelPositioning() { return s_useSubpixelTextPositioning; }
+
+    static void setDefaultTypesettingFeatures(TypesettingFeatures);
+    static TypesettingFeatures defaultTypesettingFeatures();
 
 private:
     FontFamily m_familyList; // The list of font families to be used.
     RefPtr<FontFeatureSettings> m_featureSettings;
 
+    void updateTypesettingFeatures() const;
+
     float m_specifiedSize;   // Specified CSS value. Independent of rendering issues such as integer
                              // rounding, minimum font sizes, and zooming.
     float m_computedSize;    // Computed size adjusted for the minimum font size and the zoom factor.
+
+    float m_letterSpacing;
+    float m_wordSpacing;
 
     unsigned m_orientation : 1; // FontOrientation - Whether the font is rendering on a horizontal line or a vertical line.
     unsigned m_nonCJKGlyphOrientation : 1; // NonCJKGlyphOrientation - Only used by vertical text. Determines the default orientation for non-ideograph glyphs.
@@ -216,6 +234,10 @@ private:
     unsigned m_syntheticItalic : 1;
     unsigned m_subpixelTextPosition : 1;
 
+    mutable unsigned m_typesettingFeatures : 2; // TypesettingFeatures
+
+    static TypesettingFeatures s_defaultTypesettingFeatures;
+
     static bool s_useSubpixelTextPositioning;
 };
 
@@ -224,6 +246,8 @@ inline bool FontDescription::operator==(const FontDescription& other) const
     return m_familyList == other.m_familyList
         && m_specifiedSize == other.m_specifiedSize
         && m_computedSize == other.m_computedSize
+        && m_letterSpacing == other.m_letterSpacing
+        && m_wordSpacing == other.m_wordSpacing
         && m_italic == other.m_italic
         && m_smallCaps == other.m_smallCaps
         && m_isAbsoluteSize == other.m_isAbsoluteSize

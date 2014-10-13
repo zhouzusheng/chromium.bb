@@ -80,15 +80,25 @@ WebLayer* ScrollingCoordinator::scrollingWebLayerForScrollableArea(ScrollableAre
     return graphicsLayer ? scrollingWebLayerForGraphicsLayer(graphicsLayer) : 0;
 }
 
-PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
+WebLayer* ScrollingCoordinator::containerWebLayerForScrollableArea(ScrollableArea* scrollableArea)
 {
-    return adoptRef(new ScrollingCoordinator(page));
+    GraphicsLayer* graphicsLayer = scrollLayerForScrollableArea(scrollableArea);
+    if (!graphicsLayer)
+        return 0;
+    graphicsLayer = graphicsLayer->parent();
+    return graphicsLayer ? graphicsLayer->platformLayer() : 0;
+}
+
+PassOwnPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
+{
+    return adoptPtr(new ScrollingCoordinator(page));
 }
 
 ScrollingCoordinator::ScrollingCoordinator(Page* page)
     : m_page(page)
     , m_scrollGestureRegionIsDirty(false)
     , m_touchEventTargetRectsAreDirty(false)
+    , m_shouldScrollOnMainThreadDirty(false)
     , m_wasFrameScrollable(false)
     , m_lastMainThreadScrollingReasons(0)
 {
@@ -124,9 +134,9 @@ void ScrollingCoordinator::setShouldHandleScrollGestureOnMainThreadRegion(const 
 
 void ScrollingCoordinator::notifyLayoutUpdated()
 {
-    // These computations need to happen after compositing is updated.
     m_scrollGestureRegionIsDirty = true;
     m_touchEventTargetRectsAreDirty = true;
+    m_shouldScrollOnMainThreadDirty = true;
 }
 
 void ScrollingCoordinator::updateAfterCompositingChange()
@@ -154,9 +164,16 @@ void ScrollingCoordinator::updateAfterCompositingChange()
 
     FrameView* frameView = m_page->mainFrame()->view();
     bool frameIsScrollable = frameView && frameView->isScrollable();
-    if (m_wasFrameScrollable != frameIsScrollable)
-        updateShouldUpdateScrollLayerPositionOnMainThread();
+    if (m_shouldScrollOnMainThreadDirty || m_wasFrameScrollable != frameIsScrollable) {
+        setShouldUpdateScrollLayerPositionOnMainThread(mainThreadScrollingReasons());
+        m_shouldScrollOnMainThreadDirty = false;
+    }
     m_wasFrameScrollable = frameIsScrollable;
+
+    // The mainFrame view doesn't get included in the FrameTree below, so we
+    // update its size separately.
+    if (WebLayer* scrollingWebLayer = frameView ? scrollingWebLayerForScrollableArea(frameView) : 0)
+        scrollingWebLayer->setBounds(frameView->contentsSize());
 
     const FrameTree& tree = m_page->mainFrame()->tree();
     for (const Frame* child = tree.firstChild(); child; child = child->tree().nextSibling()) {
@@ -200,7 +217,7 @@ void ScrollingCoordinator::updateLayerPositionConstraint(RenderLayer* layer)
 {
     ASSERT(layer->hasCompositedLayerMapping());
     CompositedLayerMappingPtr compositedLayerMapping = layer->compositedLayerMapping();
-    GraphicsLayer* mainLayer = compositedLayerMapping->childForSuperlayers();
+    GraphicsLayer* mainLayer = compositedLayerMapping->localRootForOwningLayer();
 
     // Avoid unnecessary commits
     clearPositionConstraintExceptForLayer(compositedLayerMapping->ancestorClippingLayer(), mainLayer);
@@ -250,7 +267,7 @@ static void detachScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer)
     scrollbarGraphicsLayer->setDrawsContent(true);
 }
 
-static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScrollbarLayer* scrollbarLayer, WebLayer* scrollLayer)
+static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScrollbarLayer* scrollbarLayer, WebLayer* scrollLayer, WebLayer* containerLayer)
 {
     ASSERT(scrollbarGraphicsLayer);
     ASSERT(scrollbarLayer);
@@ -260,6 +277,7 @@ static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScroll
         return;
     }
     scrollbarLayer->setScrollLayer(scrollLayer);
+    scrollbarLayer->setClipLayer(containerLayer);
     scrollbarGraphicsLayer->setContentsToPlatformLayer(scrollbarLayer->layer());
     scrollbarGraphicsLayer->setDrawsContent(false);
 }
@@ -267,7 +285,7 @@ static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScroll
 WebScrollbarLayer* ScrollingCoordinator::addWebScrollbarLayer(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, PassOwnPtr<blink::WebScrollbarLayer> scrollbarLayer)
 {
     ScrollbarMap& scrollbars = orientation == HorizontalScrollbar ? m_horizontalScrollbars : m_verticalScrollbars;
-    return scrollbars.add(scrollableArea, scrollbarLayer).iterator->value.get();
+    return scrollbars.add(scrollableArea, scrollbarLayer).storedValue->value.get();
 }
 
 WebScrollbarLayer* ScrollingCoordinator::getWebScrollbarLayer(ScrollableArea* scrollableArea, ScrollbarOrientation orientation)
@@ -325,7 +343,9 @@ void ScrollingCoordinator::scrollableAreaScrollbarLayerDidChange(ScrollableArea*
             scrollbarGraphicsLayer->setContentsOpaque(isMainFrame && isOpaqueScrollbar);
         scrollbarLayer->layer()->setOpaque(scrollbarGraphicsLayer->contentsOpaque());
 
-        setupScrollbarLayer(scrollbarGraphicsLayer, scrollbarLayer, scrollingWebLayerForScrollableArea(scrollableArea));
+        WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(scrollableArea);
+        WebLayer* containerLayer = containerWebLayerForScrollableArea(scrollableArea);
+        setupScrollbarLayer(scrollbarGraphicsLayer, scrollbarLayer, scrollLayer, containerLayer);
     } else
         removeWebScrollbarLayer(scrollableArea, orientation);
 }
@@ -339,10 +359,11 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
     }
 
     WebLayer* webLayer = scrollingWebLayerForScrollableArea(scrollableArea);
+    WebLayer* containerLayer = containerWebLayerForScrollableArea(scrollableArea);
     if (webLayer) {
-        webLayer->setScrollable(true);
+        webLayer->setScrollClipLayer(containerLayer);
         webLayer->setScrollPosition(IntPoint(scrollableArea->scrollPosition() - scrollableArea->minimumScrollPosition()));
-        webLayer->setMaxScrollPosition(IntSize(scrollableArea->scrollSize(HorizontalScrollbar), scrollableArea->scrollSize(VerticalScrollbar)));
+        webLayer->setBounds(scrollableArea->contentsSize());
         bool canScrollX = scrollableArea->userInputScrollable(HorizontalScrollbar);
         bool canScrollY = scrollableArea->userInputScrollable(VerticalScrollbar);
         webLayer->setUserScrollable(canScrollX, canScrollY);
@@ -350,12 +371,12 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
     if (WebScrollbarLayer* scrollbarLayer = getWebScrollbarLayer(scrollableArea, HorizontalScrollbar)) {
         GraphicsLayer* horizontalScrollbarLayer = horizontalScrollbarLayerForScrollableArea(scrollableArea);
         if (horizontalScrollbarLayer)
-            setupScrollbarLayer(horizontalScrollbarLayer, scrollbarLayer, webLayer);
+            setupScrollbarLayer(horizontalScrollbarLayer, scrollbarLayer, webLayer, containerLayer);
     }
     if (WebScrollbarLayer* scrollbarLayer = getWebScrollbarLayer(scrollableArea, VerticalScrollbar)) {
         GraphicsLayer* verticalScrollbarLayer = verticalScrollbarLayerForScrollableArea(scrollableArea);
         if (verticalScrollbarLayer)
-            setupScrollbarLayer(verticalScrollbarLayer, scrollbarLayer, webLayer);
+            setupScrollbarLayer(verticalScrollbarLayer, scrollbarLayer, webLayer, containerLayer);
     }
 
     return !!webLayer;
@@ -374,8 +395,9 @@ static void makeLayerChildFrameMap(const Frame* currentFrame, LayerFrameMap* map
         const RenderLayer* containingLayer = child->ownerRenderer()->enclosingLayer();
         LayerFrameMap::iterator iter = map->find(containingLayer);
         if (iter == map->end())
-            iter = map->add(containingLayer, Vector<const Frame*>()).iterator;
-        iter->value.append(child);
+            map->add(containingLayer, Vector<const Frame*>()).storedValue->value.append(child);
+        else
+            iter->value.append(child);
     }
 }
 
@@ -409,8 +431,11 @@ static void convertLayerRectsToEnclosingCompositedLayerRecursive(
         }
 
         LayerHitTestRects::iterator compIter = compositorRects.find(compositedLayer);
+        Vector<LayoutRect>* compIterValue;
         if (compIter == compositorRects.end())
-            compIter = compositorRects.add(compositedLayer, Vector<LayoutRect>()).iterator;
+            compIterValue = &compositorRects.add(compositedLayer, Vector<LayoutRect>()).storedValue->value;
+        else
+            compIterValue = &compIter->value;
         // Transform each rect to the co-ordinate space of it's enclosing composited layer.
         for (size_t i = 0; i < layerIter->value.size(); ++i) {
             LayoutRect rect = layerIter->value[i];
@@ -423,7 +448,7 @@ static void convertLayerRectsToEnclosingCompositedLayerRecursive(
                 if (compositedLayer->renderer()->hasOverflowClip())
                     rect.move(compositedLayer->renderBox()->scrolledContentOffset());
             }
-            compIter->value.append(rect);
+            compIterValue->append(rect);
         }
     }
 
@@ -482,10 +507,12 @@ static void convertLayerRectsToEnclosingCompositedLayer(Frame* mainFrame, const 
     MapCoordinatesFlags flags = UseTransforms;
     if (touchHandlerInChildFrame)
         flags |= TraverseDocumentBoundaries;
+    RenderLayer* rootLayer = mainFrame->contentRenderer()->layer();
     RenderGeometryMap geometryMap(flags);
+    geometryMap.pushMappingsToAncestor(rootLayer, 0);
     LayerFrameMap layerChildFrameMap;
     makeLayerChildFrameMap(mainFrame, &layerChildFrameMap);
-    convertLayerRectsToEnclosingCompositedLayerRecursive(mainFrame->contentRenderer()->layer(), layerRects, compositorRects, geometryMap, layersWithRects, layerChildFrameMap);
+    convertLayerRectsToEnclosingCompositedLayerRecursive(rootLayer, layerRects, compositorRects, geometryMap, layersWithRects, layerChildFrameMap);
 }
 
 void ScrollingCoordinator::updateTouchEventTargetRectsIfNeeded()
@@ -557,7 +584,7 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
     }
 }
 
-void ScrollingCoordinator::touchEventTargetRectsDidChange(const Document*)
+void ScrollingCoordinator::touchEventTargetRectsDidChange()
 {
     if (!touchHitTestingEnabled())
         return;
@@ -731,8 +758,24 @@ static void accumulateDocumentTouchEventTargetRects(LayerHitTestRects& rects, co
                 if (targets->contains(ancestor))
                     hasTouchEventTargetAncestor = true;
             }
-            if (!hasTouchEventTargetAncestor)
+            if (!hasTouchEventTargetAncestor) {
+                // Walk up the tree to the outermost non-composited scrollable layer.
+                RenderLayer* enclosingNonCompositedScrollLayer = 0;
+                for (RenderLayer* parent = renderer->enclosingLayer(); parent && parent->compositingState() == NotComposited; parent = parent->parent()) {
+                    if (parent->scrollsOverflow())
+                        enclosingNonCompositedScrollLayer = parent;
+                }
+
+                // Report the whole non-composited scroll layer as a touch hit rect because any
+                // rects inside of it may move around relative to their enclosing composited layer
+                // without causing the rects to be recomputed. Non-composited scrolling occurs on
+                // the main thread, so we're not getting much benefit from compositor touch hit
+                // testing in this case anyway.
+                if (enclosingNonCompositedScrollLayer)
+                    enclosingNonCompositedScrollLayer->computeSelfHitTestRects(rects);
+
                 renderer->computeLayerHitTestRects(rects);
+            }
         }
     }
 
@@ -778,7 +821,7 @@ void ScrollingCoordinator::frameViewHasSlowRepaintObjectsDidChange(FrameView* fr
     if (!coordinatesScrollingForFrameView(frameView))
         return;
 
-    updateShouldUpdateScrollLayerPositionOnMainThread();
+    m_shouldScrollOnMainThreadDirty = true;
 }
 
 void ScrollingCoordinator::frameViewFixedObjectsDidChange(FrameView* frameView)
@@ -789,7 +832,7 @@ void ScrollingCoordinator::frameViewFixedObjectsDidChange(FrameView* frameView)
     if (!coordinatesScrollingForFrameView(frameView))
         return;
 
-    updateShouldUpdateScrollLayerPositionOnMainThread();
+    m_shouldScrollOnMainThreadDirty = true;
 }
 
 GraphicsLayer* ScrollingCoordinator::scrollLayerForScrollableArea(ScrollableArea* scrollableArea)
@@ -835,7 +878,6 @@ void ScrollingCoordinator::frameViewRootLayerDidChange(FrameView* frameView)
 
     notifyLayoutUpdated();
     recomputeWheelEventHandlerCountForFrameView(frameView);
-    updateShouldUpdateScrollLayerPositionOnMainThread();
 }
 
 #if OS(MACOSX)
@@ -896,11 +938,6 @@ MainThreadScrollingReasons ScrollingCoordinator::mainThreadScrollingReasons() co
     return mainThreadScrollingReasons;
 }
 
-void ScrollingCoordinator::updateShouldUpdateScrollLayerPositionOnMainThread()
-{
-    setShouldUpdateScrollLayerPositionOnMainThread(mainThreadScrollingReasons());
-}
-
 String ScrollingCoordinator::mainThreadScrollingReasonsAsText(MainThreadScrollingReasons reasons)
 {
     StringBuilder stringBuilder;
@@ -919,14 +956,20 @@ String ScrollingCoordinator::mainThreadScrollingReasonsAsText(MainThreadScrollin
 
 String ScrollingCoordinator::mainThreadScrollingReasonsAsText() const
 {
+    ASSERT(m_page->mainFrame()->document()->lifecycle().state() >= DocumentLifecycle::CompositingClean);
     return mainThreadScrollingReasonsAsText(m_lastMainThreadScrollingReasons);
 }
 
-bool ScrollingCoordinator::frameViewIsScrollableIsDirty() const
+bool ScrollingCoordinator::frameViewIsDirty() const
 {
     FrameView* frameView = m_page->mainFrame()->view();
     bool frameIsScrollable = frameView && frameView->isScrollable();
-    return frameIsScrollable != m_wasFrameScrollable;
+    if (frameIsScrollable != m_wasFrameScrollable)
+        return true;
+
+    if (WebLayer* scrollLayer = frameView ? scrollingWebLayerForScrollableArea(frameView) : 0)
+        return blink::WebSize(frameView->contentsSize()) != scrollLayer->bounds();
+    return false;
 }
 
 } // namespace WebCore

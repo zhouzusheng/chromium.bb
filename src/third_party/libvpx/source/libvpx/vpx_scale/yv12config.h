@@ -8,19 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef YV12_CONFIG_H
-#define YV12_CONFIG_H
+#ifndef VPX_SCALE_YV12CONFIG_H_
+#define VPX_SCALE_YV12CONFIG_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include "vpx/vpx_frame_buffer.h"
 #include "vpx/vpx_integer.h"
 
-#define VP8BORDERINPIXELS       32
-#define VP9INNERBORDERINPIXELS  96
-#define VP9BORDERINPIXELS      160
-#define VP9_INTERP_EXTEND        4
+#define VP8BORDERINPIXELS           32
+#define VP9INNERBORDERINPIXELS      96
+#define VP9_INTERP_EXTEND           4
+#define VP9_ENC_BORDER_IN_PIXELS    160
+#define VP9_DEC_BORDER_IN_PIXELS    32
 
   typedef struct yv12_buffer_config {
     int   y_width;
@@ -64,13 +66,23 @@ extern "C" {
   int vp9_alloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
                              int width, int height, int ss_x, int ss_y,
                              int border);
+
+  // Updates the yv12 buffer config with the frame buffer. If cb is not
+  // NULL, then libvpx is using the frame buffer callbacks to handle memory.
+  // If cb is not NULL, libvpx will call cb with minimum size in bytes needed
+  // to decode the current frame. If cb is NULL, libvpx will allocate memory
+  // internally to decode the current frame. Returns 0 on success. Returns < 0
+  // on failure.
   int vp9_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf,
                                int width, int height, int ss_x, int ss_y,
-                               int border);
+                               int border,
+                               vpx_codec_frame_buffer_t *fb,
+                               vpx_get_frame_buffer_cb_fn_t cb,
+                               void *cb_priv);
   int vp9_free_frame_buffer(YV12_BUFFER_CONFIG *ybf);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // YV12_CONFIG_H
+#endif  // VPX_SCALE_YV12CONFIG_H_

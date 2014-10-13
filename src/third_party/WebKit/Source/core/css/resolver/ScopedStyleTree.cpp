@@ -58,12 +58,12 @@ ScopedStyleResolver* ScopedStyleTree::addScopedStyleResolver(ContainerNode& scop
     HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::AddResult addResult = m_authorStyles.add(&scopingNode, nullptr);
 
     if (addResult.isNewEntry) {
-        addResult.iterator->value = ScopedStyleResolver::create(scopingNode);
+        addResult.storedValue->value = ScopedStyleResolver::create(scopingNode);
         if (scopingNode.isDocumentNode())
-            m_scopedResolverForDocument = addResult.iterator->value.get();
+            m_scopedResolverForDocument = addResult.storedValue->value.get();
     }
     isNewEntry = addResult.isNewEntry;
-    return addResult.iterator->value.get();
+    return addResult.storedValue->value.get();
 }
 
 void ScopedStyleTree::setupScopedStylesTree(ScopedStyleResolver* target)
@@ -138,6 +138,10 @@ void ScopedStyleTree::resolveScopedKeyframesRules(const Element* element, Vector
     TreeScope& treeScope = element->treeScope();
     bool applyAuthorStyles = treeScope.applyAuthorStyles();
 
+    // Add resolvers for shadow roots hosted by the given element.
+    collectScopedResolversForHostedShadowTrees(element, resolvers);
+
+    // Add resolvers while walking up DOM tree from the given element.
     for (ScopedStyleResolver* scopedResolver = scopedResolverFor(element); scopedResolver; scopedResolver = scopedResolver->parent()) {
         if (scopedResolver->treeScope() == treeScope || (applyAuthorStyles && scopedResolver->treeScope() == document))
             resolvers.append(scopedResolver);

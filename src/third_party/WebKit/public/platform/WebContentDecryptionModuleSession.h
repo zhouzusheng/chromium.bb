@@ -47,9 +47,10 @@ public:
             MediaKeyErrorCodeClient,
         };
 
-        virtual void keyAdded() = 0;
-        virtual void keyError(MediaKeyErrorCode, unsigned long systemCode) = 0;
-        virtual void keyMessage(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL) = 0;
+        virtual void message(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL) = 0;
+        virtual void ready() = 0;
+        virtual void close() = 0;
+        virtual void error(MediaKeyErrorCode, unsigned long systemCode) = 0;
 
     protected:
         virtual ~Client();
@@ -58,9 +59,9 @@ public:
     virtual ~WebContentDecryptionModuleSession();
 
     virtual WebString sessionId() const = 0;
-    virtual void generateKeyRequest(const WebString& mimeType, const unsigned char* initData, size_t initDataLength) = 0;
-    virtual void update(const unsigned char* key, size_t keyLength) = 0;
-    virtual void close() = 0;
+    virtual void initializeNewSession(const WebString& mimeType, const unsigned char* initData, size_t initDataLength) = 0;
+    virtual void update(const unsigned char* response, size_t responseLength) = 0;
+    virtual void release() = 0;
 };
 
 } // namespace blink

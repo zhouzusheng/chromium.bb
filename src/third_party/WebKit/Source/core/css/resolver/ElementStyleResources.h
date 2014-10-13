@@ -24,6 +24,7 @@
 #define ElementStyleResources_h
 
 #include "CSSPropertyNames.h"
+#include "heap/Handle.h"
 #include "platform/graphics/Color.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -40,7 +41,7 @@ class FilterOperation;
 class StyleImage;
 class TextLinkColors;
 
-typedef HashMap<FilterOperation*, RefPtr<CSSSVGDocumentValue> > PendingSVGDocumentMap;
+typedef WillBePersistentHeapHashMap<FilterOperation*, RefPtrWillBeMember<CSSSVGDocumentValue> > PendingSVGDocumentMap;
 typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
 
 // Holds information about resources, requested by stylesheets.
@@ -60,9 +61,6 @@ public:
     const PendingImagePropertyMap& pendingImageProperties() const { return m_pendingImageProperties; }
     const PendingSVGDocumentMap& pendingSVGDocuments() const { return m_pendingSVGDocuments; }
 
-    void setHasNewCustomFilterProgram(bool hasNewCustomFilterProgram) { m_hasNewCustomFilterProgram = hasNewCustomFilterProgram; }
-    bool hasNewCustomFilterProgram() const { return m_hasNewCustomFilterProgram; }
-
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float deviceScaleFactor) { m_deviceScaleFactor = deviceScaleFactor; }
 
@@ -71,7 +69,6 @@ public:
 private:
     PendingImagePropertyMap m_pendingImageProperties;
     PendingSVGDocumentMap m_pendingSVGDocuments;
-    bool m_hasNewCustomFilterProgram;
     float m_deviceScaleFactor;
 };
 

@@ -30,16 +30,13 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_STRING(SVGMPathElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGMPathElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMPathElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGMPathElement::SVGMPathElement(Document& document)
     : SVGElement(SVGNames::mpathTag, document)
+    , SVGURIReference(this)
 {
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGMPathElement();
@@ -61,8 +58,8 @@ void SVGMPathElement::buildPendingResource()
     if (!inDocument())
         return;
 
-    String id;
-    Element* target = SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
+    AtomicString id;
+    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), document(), &id);
     if (!target) {
         // Do not register as pending if we are already pending this resource.
         if (document().accessSVGExtensions()->isElementPendingResource(this, id))
@@ -107,24 +104,22 @@ bool SVGMPathElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
     }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGMPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
+    SVGParsingError parseError = NoError;
+
     if (!isSupportedAttribute(name)) {
         SVGElement::parseAttribute(name, value);
-        return;
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGURIReference::parseAttribute(name, value))
-        return;
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -141,15 +136,12 @@ void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (SVGExternalResourcesRequired::isKnownAttribute(attrName))
-        return;
-
     ASSERT_NOT_REACHED();
 }
 
 SVGPathElement* SVGMPathElement::pathElement()
 {
-    Element* target = targetElementFromIRIString(hrefCurrentValue(), document());
+    Element* target = targetElementFromIRIString(hrefString(), document());
     if (target && target->hasTagName(SVGNames::pathTag))
         return toSVGPathElement(target);
     return 0;
@@ -163,7 +155,7 @@ void SVGMPathElement::targetPathChanged()
 void SVGMPathElement::notifyParentOfPathChange(ContainerNode* parent)
 {
     if (parent && parent->hasTagName(SVGNames::animateMotionTag))
-        static_cast<SVGAnimateMotionElement*>(parent)->updateAnimationPath();
+        toSVGAnimateMotionElement(parent)->updateAnimationPath();
 }
 
 } // namespace WebCore

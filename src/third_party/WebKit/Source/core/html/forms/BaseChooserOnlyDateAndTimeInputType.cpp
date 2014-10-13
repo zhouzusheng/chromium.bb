@@ -29,10 +29,10 @@
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/FrameHost.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/Chrome.h"
-#include "core/page/Page.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace WebCore {
@@ -54,7 +54,7 @@ void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
     DateTimeChooserParameters parameters;
     if (!element().setupDateTimeChooserParameters(parameters))
         return;
-    m_dateTimeChooser = element().document().page()->chrome().openDateTimeChooser(this, parameters);
+    m_dateTimeChooser = element().document().frameHost()->chrome().openDateTimeChooser(this, parameters);
 }
 
 void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()
@@ -62,7 +62,7 @@ void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()
     DEFINE_STATIC_LOCAL(AtomicString, valueContainerPseudo, ("-webkit-date-and-time-value", AtomicString::ConstructFromLiteral));
 
     RefPtr<HTMLDivElement> valueContainer = HTMLDivElement::create(element().document());
-    valueContainer->setPseudo(valueContainerPseudo);
+    valueContainer->setShadowPseudoId(valueContainerPseudo);
     element().userAgentShadowRoot()->appendChild(valueContainer.get());
     updateAppearance();
 }

@@ -36,13 +36,13 @@ public:
 
     virtual ~SVGFontFaceUriElement();
 
-    PassRefPtr<CSSFontFaceSrcValue> srcValue() const;
+    PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> srcValue() const;
 
 private:
     explicit SVGFontFaceUriElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }

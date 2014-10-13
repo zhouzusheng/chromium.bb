@@ -52,7 +52,6 @@ public:
 
     virtual bool isSimpleEditCommand() const { return false; }
     virtual bool isCompositeEditCommand() const { return false; }
-    virtual bool isEditCommandComposition() const { return false; }
     bool isTopLevelCommand() const { return !m_parent; }
 
     virtual void doApply() = 0;
@@ -87,7 +86,7 @@ protected:
     explicit SimpleEditCommand(Document& document) : EditCommand(document) { }
 
 private:
-    virtual bool isSimpleEditCommand() const OVERRIDE { return true; }
+    virtual bool isSimpleEditCommand() const OVERRIDE FINAL { return true; }
 };
 
 DEFINE_TYPE_CASTS(SimpleEditCommand, EditCommand, command, command->isSimpleEditCommand(), command.isSimpleEditCommand());

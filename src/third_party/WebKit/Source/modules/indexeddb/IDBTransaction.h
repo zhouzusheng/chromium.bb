@@ -49,11 +49,11 @@ class IDBObjectStore;
 class IDBOpenDBRequest;
 struct IDBObjectStoreMetadata;
 
-class IDBTransaction : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTargetWithInlineData, public ActiveDOMObject {
+class IDBTransaction FINAL : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTargetWithInlineData, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(IDBTransaction);
 
 public:
-    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode, IDBDatabase*);
+    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, const Vector<String>& objectStoreNames, blink::WebIDBDatabase::TransactionMode, IDBDatabase*);
     static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
     virtual ~IDBTransaction();
 
@@ -61,16 +61,16 @@ public:
     static const AtomicString& modeReadWrite();
     static const AtomicString& modeVersionChange();
 
-    static IndexedDB::TransactionMode stringToMode(const String&, ExceptionState&);
-    static const AtomicString& modeToString(IndexedDB::TransactionMode);
+    static blink::WebIDBDatabase::TransactionMode stringToMode(const String&, ExceptionState&);
+    static const AtomicString& modeToString(blink::WebIDBDatabase::TransactionMode);
 
     blink::WebIDBDatabase* backendDB() const;
 
     int64_t id() const { return m_id; }
     bool isActive() const { return m_state == Active; }
     bool isFinished() const { return m_state == Finished; }
-    bool isReadOnly() const { return m_mode == IndexedDB::TransactionReadOnly; }
-    bool isVersionChange() const { return m_mode == IndexedDB::TransactionVersionChange; }
+    bool isReadOnly() const { return m_mode == blink::WebIDBDatabase::TransactionReadOnly; }
+    bool isVersionChange() const { return m_mode == blink::WebIDBDatabase::TransactionVersionChange; }
 
     // Implement the IDBTransaction IDL
     const String& mode() const;
@@ -90,8 +90,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    virtual void onAbort(PassRefPtr<DOMError>);
-    virtual void onComplete();
+    void onAbort(PassRefPtr<DOMError>);
+    void onComplete();
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -105,7 +105,7 @@ public:
     virtual void stop() OVERRIDE;
 
 private:
-    IDBTransaction(ExecutionContext*, int64_t, const Vector<String>&, IndexedDB::TransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
+    IDBTransaction(ExecutionContext*, int64_t, const Vector<String>&, blink::WebIDBDatabase::TransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
 
     void enqueueEvent(PassRefPtr<Event>);
 
@@ -120,7 +120,7 @@ private:
     RefPtr<IDBDatabase> m_database;
     const Vector<String> m_objectStoreNames;
     IDBOpenDBRequest* m_openDBRequest;
-    const IndexedDB::TransactionMode m_mode;
+    const blink::WebIDBDatabase::TransactionMode m_mode;
     State m_state;
     bool m_hasPendingActivity;
     bool m_contextStopped;

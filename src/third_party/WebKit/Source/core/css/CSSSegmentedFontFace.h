@@ -28,6 +28,7 @@
 
 #include "platform/fonts/FontTraitsMask.h"
 #include "wtf/HashMap.h"
+#include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -52,8 +53,8 @@ public:
 
     void fontLoaded(CSSFontFace*);
 
-    void appendFontFace(PassRefPtr<CSSFontFace>);
-    void removeFontFace(PassRefPtr<CSSFontFace>);
+    void addFontFace(PassRefPtr<FontFace>, bool cssConnected);
+    void removeFontFace(PassRefPtr<FontFace>);
     bool isEmpty() const { return m_fontFaces.isEmpty(); }
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
@@ -67,7 +68,6 @@ public:
 
     bool checkFont(const String&) const;
     void loadFont(const FontDescription&, const String&, PassRefPtr<LoadFontCallback>);
-    Vector<RefPtr<FontFace> > fontFaces(const String& text) const;
     void willUseFontData(const FontDescription&);
 
 private:
@@ -78,10 +78,14 @@ private:
     bool isLoading() const;
     bool isLoaded() const;
 
+    typedef ListHashSet<RefPtr<FontFace> > FontFaceList;
+
     CSSFontSelector* m_fontSelector;
     FontTraitsMask m_traitsMask;
     HashMap<unsigned, RefPtr<SegmentedFontData> > m_fontDataTable;
-    Vector<RefPtr<CSSFontFace>, 1> m_fontFaces;
+    // All non-CSS-connected FontFaces are stored after the CSS-connected ones.
+    FontFaceList m_fontFaces;
+    FontFaceList::iterator m_firstNonCssConnectedFace;
     Vector<RefPtr<LoadFontCallback> > m_callbacks;
 };
 

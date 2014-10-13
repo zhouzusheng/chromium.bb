@@ -31,12 +31,13 @@
 #ifndef AnimatableValue_h
 #define AnimatableValue_h
 
+#include "core/animation/AnimationEffect.h"
 #include "core/css/CSSValue.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class AnimatableValue : public RefCounted<AnimatableValue> {
+class AnimatableValue : public AnimationEffect::CompositableValue {
 public:
     virtual ~AnimatableValue() { }
 
@@ -45,6 +46,10 @@ public:
     static PassRefPtr<AnimatableValue> interpolate(const AnimatableValue*, const AnimatableValue*, double fraction);
     // For noncommutative values read add(A, B) to mean the value A with B composed onto it.
     static PassRefPtr<AnimatableValue> add(const AnimatableValue*, const AnimatableValue*);
+    static bool usesDefaultInterpolation(const AnimatableValue* from, const AnimatableValue* to)
+    {
+        return !from->isSameType(to) || from->usesDefaultInterpolationWith(to);
+    }
 
     bool equals(const AnimatableValue* value) const
     {
@@ -54,6 +59,9 @@ public:
     {
         return equals(&value);
     }
+
+    virtual bool dependsOnUnderlyingValue() const OVERRIDE FINAL { return false; }
+    virtual PassRefPtr<AnimatableValue> compositeOnto(const AnimatableValue*) const OVERRIDE FINAL { return takeConstRef(this); }
 
     bool isClipPathOperation() const { return type() == TypeClipPathOperation; }
     bool isColor() const { return type() == TypeColor; }
@@ -82,11 +90,6 @@ public:
         return value->type() == type();
     }
 
-    bool usesNonDefaultInterpolationWith(const AnimatableValue* value) const
-    {
-        return isSameType(value) && !isUnknown();
-    }
-
 protected:
     enum AnimatableType {
         TypeClipPathOperation,
@@ -111,12 +114,15 @@ protected:
         TypeVisibility,
     };
 
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue* value) const { return false; }
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const = 0;
     static PassRefPtr<AnimatableValue> defaultInterpolateTo(const AnimatableValue* left, const AnimatableValue* right, double fraction) { return takeConstRef((fraction < 0.5) ? left : right); }
 
     // For noncommutative values read A->addWith(B) to mean the value A with B composed onto it.
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const;
     static PassRefPtr<AnimatableValue> defaultAddWith(const AnimatableValue* left, const AnimatableValue* right) { return takeConstRef(right); }
+
+
 
     template <class T>
     static PassRefPtr<T> takeConstRef(const T* value) { return PassRefPtr<T>(const_cast<T*>(value)); }
@@ -125,6 +131,8 @@ private:
     virtual AnimatableType type() const = 0;
     // Implementations can assume that the object being compared has the same type as the object this is called on
     virtual bool equalTo(const AnimatableValue*) const = 0;
+
+    friend class KeyframeEffectModel;
 };
 
 #define DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(thisType, predicate) \

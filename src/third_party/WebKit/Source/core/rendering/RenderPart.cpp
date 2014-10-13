@@ -55,22 +55,15 @@ void RenderPart::setWidget(PassRefPtr<Widget> widget)
         return;
 
     RenderWidget::setWidget(widget);
-
-    // make sure the scrollbars are set correctly for restore
-    // ### find better fix
-    viewCleared();
 }
 
-void RenderPart::viewCleared()
+LayerType RenderPart::layerTypeRequired() const
 {
-}
+    LayerType type = RenderWidget::layerTypeRequired();
+    if (type != NoLayer)
+        return type;
 
-bool RenderPart::requiresLayer() const
-{
-    if (RenderWidget::requiresLayer())
-        return true;
-
-    return requiresAcceleratedCompositing();
+    return requiresAcceleratedCompositing() ? NormalLayer : NoLayer;
 }
 
 bool RenderPart::requiresAcceleratedCompositing() const

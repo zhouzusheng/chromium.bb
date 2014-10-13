@@ -46,7 +46,7 @@ enum NumberRange {
 // Handles animation of CSS length and percentage values including CSS calc.
 // See primitiveUnitToNumberType() for the list of supported units.
 // If created from a CSSPrimitiveValue this class will cache it to be returned in toCSSValue().
-class AnimatableLength : public AnimatableValue {
+class AnimatableLength FINAL : public AnimatableValue {
 public:
     enum NumberUnitType {
         UnitTypeCalc,
@@ -68,7 +68,7 @@ public:
     {
         return adoptRef(new AnimatableLength(number, unitType, cssPrimitiveValue));
     }
-    static PassRefPtr<AnimatableLength> create(PassRefPtr<CSSCalcExpressionNode> calcExpression, CSSPrimitiveValue* cssPrimitiveValue = 0)
+    static PassRefPtr<AnimatableLength> create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> calcExpression, CSSPrimitiveValue* cssPrimitiveValue = 0)
     {
         return adoptRef(new AnimatableLength(calcExpression, cssPrimitiveValue));
     }
@@ -78,6 +78,7 @@ public:
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
     virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableLength(double number, NumberUnitType unitType, CSSPrimitiveValue* cssPrimitiveValue)
@@ -87,7 +88,7 @@ private:
     {
         ASSERT(m_unitType != UnitTypeCalc);
     }
-    AnimatableLength(PassRefPtr<CSSCalcExpressionNode> calcExpression, CSSPrimitiveValue* cssPrimitiveValue)
+    AnimatableLength(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> calcExpression, CSSPrimitiveValue* cssPrimitiveValue)
         : m_unitType(UnitTypeCalc)
         , m_calcExpression(calcExpression)
         , m_cachedCSSPrimitiveValue(cssPrimitiveValue)
@@ -113,8 +114,8 @@ private:
         return create(CSSCalcValue::createExpressionNode(leftAddend->toCSSCalcExpressionNode(), rightAddend->toCSSCalcExpressionNode(), CalcAdd));
     }
 
-    PassRefPtr<CSSPrimitiveValue> toCSSPrimitiveValue(NumberRange) const;
-    PassRefPtr<CSSCalcExpressionNode> toCSSCalcExpressionNode() const;
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> toCSSPrimitiveValue(NumberRange) const;
+    PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> toCSSCalcExpressionNode() const;
 
     PassRefPtr<AnimatableLength> scale(double) const;
     double clampedNumber(NumberRange range) const
@@ -152,9 +153,9 @@ private:
     double m_number;
     const NumberUnitType m_unitType;
 
-    RefPtr<CSSCalcExpressionNode> m_calcExpression;
+    RefPtrWillBePersistent<CSSCalcExpressionNode> m_calcExpression;
 
-    mutable RefPtr<CSSPrimitiveValue> m_cachedCSSPrimitiveValue;
+    mutable RefPtrWillBePersistent<CSSPrimitiveValue> m_cachedCSSPrimitiveValue;
 
     friend class AnimationAnimatableLengthTest;
 };

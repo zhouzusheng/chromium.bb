@@ -35,8 +35,8 @@
 #include "core/animation/AnimatableFilterOperations.h"
 #include "core/animation/AnimatableTransform.h"
 #include "core/animation/AnimatableValue.h"
+#include "core/animation/AnimationTranslationUtil.h"
 #include "core/animation/CompositorAnimationsImpl.h"
-#include "core/platform/animation/AnimationTranslationUtil.h"
 #include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderLayer.h"
@@ -58,7 +58,7 @@ namespace WebCore {
 
 namespace {
 
-void getKeyframeValuesForProperty(const KeyframeAnimationEffect* effect, CSSPropertyID id, double scale, bool reverse, KeyframeVector& values)
+void getKeyframeValuesForProperty(const KeyframeEffectModel* effect, CSSPropertyID id, double scale, bool reverse, KeyframeVector& values)
 {
     ASSERT(values.isEmpty());
     const KeyframeVector& group = effect->getPropertySpecificKeyframes(id);
@@ -147,10 +147,10 @@ PassRefPtr<TimingFunction> CompositorAnimationsTimingFunctionReverser::reverse(c
 
 bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const AnimationEffect& effect)
 {
-    const KeyframeAnimationEffect& keyframeEffect = *toKeyframeAnimationEffect(&effect);
+    const KeyframeEffectModel& keyframeEffect = *toKeyframeEffectModel(&effect);
 
     // Are the keyframes convertible?
-    const KeyframeAnimationEffect::KeyframeVector frames = keyframeEffect.getFrames();
+    const KeyframeEffectModel::KeyframeVector frames = keyframeEffect.getFrames();
     for (size_t i = 0; i < frames.size(); ++i) {
         // Only replace mode can be accelerated
         if (frames[i]->composite() != AnimationEffect::CompositeReplace)
@@ -258,7 +258,7 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, co
     ASSERT(isCandidateForAnimationOnCompositor(timing, effect));
     ASSERT(canStartAnimationOnCompositor(element));
 
-    const KeyframeAnimationEffect& keyframeEffect = *toKeyframeAnimationEffect(&effect);
+    const KeyframeEffectModel& keyframeEffect = *toKeyframeEffectModel(&effect);
 
     RenderLayer* layer = toRenderBoxModelObject(element.renderer())->layer();
     ASSERT(layer);
@@ -292,6 +292,10 @@ void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, i
 
 void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& element, int id, double pauseTime)
 {
+    // FIXME: canStartAnimationOnCompositor queries compositingState, which is not necessarily up to date.
+    // https://code.google.com/p/chromium/issues/detail?id=339847
+    DisableCompositingQueryAsserts disabler;
+
     if (!canStartAnimationOnCompositor(element)) {
         ASSERT_NOT_REACHED();
         return;
@@ -318,7 +322,7 @@ bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, 
     if ((std::floor(timing.iterationCount) != timing.iterationCount) || timing.iterationCount <= 0)
         return false;
 
-    if (!timing.iterationDuration)
+    if (std::isnan(timing.iterationDuration) || !timing.iterationDuration)
         return false;
 
     // FIXME: Support other playback rates
@@ -459,7 +463,7 @@ void CompositorAnimationsImpl::addKeyframesToCurve(blink::WebAnimationCurve& cur
         }
         case blink::WebAnimationCurve::AnimationCurveTypeTransform: {
             OwnPtr<blink::WebTransformOperations> ops = adoptPtr(blink::Platform::current()->compositorSupport()->createTransformOperations());
-            toWebTransformOperations(toAnimatableTransform(value.get())->transformOperations(), FloatSize(), ops.get());
+            toWebTransformOperations(toAnimatableTransform(value.get())->transformOperations(), ops.get());
 
             blink::WebTransformKeyframe transformKeyframe(keyframes[i]->offset(), ops.release());
             blink::WebTransformAnimationCurve* transformCurve = static_cast<blink::WebTransformAnimationCurve*>(&curve);
@@ -472,8 +476,7 @@ void CompositorAnimationsImpl::addKeyframesToCurve(blink::WebAnimationCurve& cur
     }
 }
 
-void CompositorAnimationsImpl::getAnimationOnCompositor(
-    const Timing& timing, const KeyframeAnimationEffect& effect, Vector<OwnPtr<blink::WebAnimation> >& animations)
+void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, const KeyframeEffectModel& effect, Vector<OwnPtr<blink::WebAnimation> >& animations)
 {
     ASSERT(animations.isEmpty());
     CompositorTiming compositorTiming;

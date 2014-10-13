@@ -24,6 +24,7 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGAnimatedNumberList.h"
+#include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
 
 namespace WebCore {
@@ -73,24 +74,32 @@ class SVGComponentTransferFunctionElement : public SVGElement {
 public:
     ComponentTransferFunction transferFunction() const;
 
+    SVGAnimatedNumberList* tableValues() { return m_tableValues.get(); }
+    SVGAnimatedNumber* slope() { return m_slope.get(); }
+    SVGAnimatedNumber* intercept() { return m_intercept.get(); }
+    SVGAnimatedNumber* amplitude() { return m_amplitude.get(); }
+    SVGAnimatedNumber* exponent() { return m_exponent.get(); }
+    SVGAnimatedNumber* offset() { return m_offset.get(); }
+
 protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL { return false; }
 
 private:
+    RefPtr<SVGAnimatedNumberList> m_tableValues;
+    RefPtr<SVGAnimatedNumber> m_slope;
+    RefPtr<SVGAnimatedNumber> m_intercept;
+    RefPtr<SVGAnimatedNumber> m_amplitude;
+    RefPtr<SVGAnimatedNumber> m_exponent;
+    RefPtr<SVGAnimatedNumber> m_offset;
+
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGComponentTransferFunctionElement)
         DECLARE_ANIMATED_ENUMERATION(Type, type, ComponentTransferType)
-        DECLARE_ANIMATED_NUMBER_LIST(TableValues, tableValues)
-        DECLARE_ANIMATED_NUMBER(Slope, slope)
-        DECLARE_ANIMATED_NUMBER(Intercept, intercept)
-        DECLARE_ANIMATED_NUMBER(Amplitude, amplitude)
-        DECLARE_ANIMATED_NUMBER(Exponent, exponent)
-        DECLARE_ANIMATED_NUMBER(Offset, offset)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

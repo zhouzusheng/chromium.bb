@@ -34,6 +34,7 @@
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
 #include "platform/network/ResourceLoadPriority.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 
@@ -46,6 +47,7 @@ template<class T> class Handle;
 
 namespace blink {
 class WebCookieJar;
+class WebRTCPeerConnectionHandler;
 class WebServiceWorkerProvider;
 class WebServiceWorkerProviderClient;
 }
@@ -76,26 +78,25 @@ class FetchRequest;
     class ResourceHandle;
     class ResourceRequest;
     class ResourceResponse;
-    class RTCPeerConnectionHandler;
     class SecurityOrigin;
     class SharedBuffer;
+    class SharedWorkerRepositoryClient;
     class SocketStreamHandle;
     class SubstituteData;
     class Widget;
-
-    enum NavigationHistoryPolicy {
-        NavigationCreatedHistoryEntry,
-        NavigationReusedHistoryEntry
-    };
 
     class FrameLoaderClient {
     public:
         virtual ~FrameLoaderClient() { }
 
-        virtual void frameLoaderDestroyed() = 0;
-
         virtual bool hasWebView() const = 0; // mainly for assertions
 
+        virtual Frame* parent() const = 0;
+        virtual Frame* top() const = 0;
+        virtual Frame* previousSibling() const = 0;
+        virtual Frame* nextSibling() const = 0;
+        virtual Frame* firstChild() const = 0;
+        virtual Frame* lastChild() const = 0;
         virtual void detachedFromParent() = 0;
 
         virtual void dispatchWillRequestAfterPreconnect(ResourceRequest&) { }
@@ -106,12 +107,12 @@ class FetchRequest;
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
-        virtual void dispatchDidNavigateWithinPage(NavigationHistoryPolicy, HistoryItem*) { }
+        virtual void dispatchDidNavigateWithinPage(HistoryItem*, HistoryCommitType) { }
         virtual void dispatchWillClose() = 0;
         virtual void dispatchDidStartProvisionalLoad() = 0;
         virtual void dispatchDidReceiveTitle(const String&) = 0;
         virtual void dispatchDidChangeIcons(IconType) = 0;
-        virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, NavigationHistoryPolicy) = 0;
+        virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, HistoryCommitType) = 0;
         virtual void dispatchDidFailProvisionalLoad(const ResourceError&) = 0;
         virtual void dispatchDidFailLoad(const ResourceError&) = 0;
         virtual void dispatchDidFinishDocumentLoad() = 0;
@@ -126,7 +127,7 @@ class FetchRequest;
         virtual void dispatchWillSubmitForm(PassRefPtr<FormState>) = 0;
 
         // Maybe these should go into a ProgressTrackerClient some day
-        virtual void postProgressStartedNotification() = 0;
+        virtual void postProgressStartedNotification(LoadStartType) = 0;
         virtual void postProgressEstimateChangedNotification() = 0;
         virtual void postProgressFinishedNotification() = 0;
 
@@ -159,7 +160,7 @@ class FetchRequest;
         // that match any element on the frame.
         virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) = 0;
 
-        virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) = 0;
+        virtual PassRefPtr<DocumentLoader> createDocumentLoader(Frame*, const ResourceRequest&, const SubstituteData&) = 0;
 
         virtual String userAgent(const KURL&) = 0;
 
@@ -167,7 +168,7 @@ class FetchRequest;
 
         virtual void transitionToCommittedForNewPage() = 0;
 
-        virtual PassRefPtr<Frame> createFrame(const KURL&, const String& name, const String& referrer, HTMLFrameOwnerElement*) = 0;
+        virtual PassRefPtr<Frame> createFrame(const KURL&, const AtomicString& name, const Referrer&, HTMLFrameOwnerElement*) = 0;
         virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually) = 0;
 
         virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
@@ -210,7 +211,7 @@ class FetchRequest;
 
         virtual void dispatchWillOpenSocketStream(SocketStreamHandle*) { }
 
-        virtual void dispatchWillStartUsingPeerConnectionHandler(RTCPeerConnectionHandler*) { }
+        virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) { }
 
         virtual void didRequestAutocomplete(PassRefPtr<FormState>) = 0;
 
@@ -219,15 +220,14 @@ class FetchRequest;
         // notification with the given GL_ARB_robustness guilt/innocence code (see Extensions3D.h).
         virtual void didLoseWebGLContext(int) { }
 
-        // Returns true if WebGL extension WEBGL_debug_renderer_info is allowed.
-        virtual bool allowWebGLDebugRendererInfo() { return false; }
-
         // If an HTML document is being loaded, informs the embedder that the document will have its <body> attached soon.
         virtual void dispatchWillInsertBody() { }
 
         virtual void dispatchDidChangeResourcePriority(unsigned long /*identifier*/, ResourceLoadPriority) { }
 
         virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>) = 0;
+
+        virtual SharedWorkerRepositoryClient* sharedWorkerRepositoryClient() { return 0; }
 
         virtual void didStopAllLoaders() { }
 

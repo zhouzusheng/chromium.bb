@@ -31,14 +31,16 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechGrammar> SpeechGrammar::create()
+DEFINE_GC_INFO(SpeechGrammar);
+
+PassRefPtrWillBeRawPtr<SpeechGrammar> SpeechGrammar::create()
 {
-    return adoptRef(new SpeechGrammar);
+    return adoptRefCountedWillBeRefCountedGarbageCollected(new SpeechGrammar);
 }
 
-PassRefPtr<SpeechGrammar> SpeechGrammar::create(const KURL& src, double weight)
+PassRefPtrWillBeRawPtr<SpeechGrammar> SpeechGrammar::create(const KURL& src, double weight)
 {
-    return adoptRef(new SpeechGrammar(src, weight));
+    return adoptRefCountedWillBeRefCountedGarbageCollected(new SpeechGrammar(src, weight));
 }
 
 void SpeechGrammar::setSrc(ExecutionContext* executionContext, const String& src)

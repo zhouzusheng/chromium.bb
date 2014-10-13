@@ -27,8 +27,9 @@
 #include "core/rendering/svg/SVGRenderingContext.h"
 
 #include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/svg/RenderSVGImage.h"
 #include "core/rendering/svg/RenderSVGResource.h"
@@ -114,22 +115,26 @@ void SVGRenderingContext::prepareToRenderSVGContent(RenderObject* object, PaintI
     // Setup transparency layers before setting up SVG resources!
     bool isRenderingMask = isRenderingMaskImage(m_object);
     float opacity = isRenderingMask ? 1 : style->opacity();
-    blink::WebBlendMode blendMode = isRenderingMask ? blink::WebBlendModeNormal : style->blendMode();
-    if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
-        FloatRect repaintRect = m_object->repaintRectInLocalCoordinates();
+    bool hasBlendMode = style->hasBlendMode() && !isRenderingMask;
 
-        if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
-            m_paintInfo->context->clip(repaintRect);
-            if (blendMode != blink::WebBlendModeNormal) {
-                if (!(m_renderingFlags & RestoreGraphicsContext)) {
-                    m_paintInfo->context->save();
-                    m_renderingFlags |= RestoreGraphicsContext;
-                }
-                m_paintInfo->context->setCompositeOperation(CompositeSourceOver, blendMode);
+    if (opacity < 1 || hasBlendMode || style->hasIsolation()) {
+        FloatRect repaintRect = m_object->repaintRectInLocalCoordinates();
+        m_paintInfo->context->clip(repaintRect);
+
+        if (hasBlendMode) {
+            if (!(m_renderingFlags & RestoreGraphicsContext)) {
+                m_paintInfo->context->save();
+                m_renderingFlags |= RestoreGraphicsContext;
             }
-            m_paintInfo->context->beginTransparencyLayer(opacity);
-            m_renderingFlags |= EndOpacityLayer;
+            m_paintInfo->context->setCompositeOperation(CompositeSourceOver, style->blendMode());
         }
+
+        m_paintInfo->context->beginTransparencyLayer(opacity);
+
+        if (hasBlendMode)
+            m_paintInfo->context->setCompositeOperation(CompositeSourceOver, blink::WebBlendModeNormal);
+
+        m_renderingFlags |= EndOpacityLayer;
     }
 
     ClipPathOperation* clipPathOperation = style->clipPath();
@@ -179,7 +184,8 @@ void SVGRenderingContext::prepareToRenderSVGContent(RenderObject* object, PaintI
             // changes, we need to paint the whole filter region. Otherwise, elements not visible
             // at the time of the initial paint (due to scrolling, window size, etc.) will never
             // be drawn.
-            m_paintInfo->rect = IntRect(m_filter->drawingRegion(m_object));
+            if (!m_object->document().settings()->deferredFiltersEnabled())
+                m_paintInfo->rect = IntRect(m_filter->drawingRegion(m_object));
         }
     }
 
@@ -204,13 +210,11 @@ float SVGRenderingContext::calculateScreenFontSizeScalingFactor(const RenderObje
 void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(const RenderObject* renderer, AffineTransform& absoluteTransform)
 {
     ASSERT(renderer);
-    absoluteTransform = currentContentTransformation();
-
-    float deviceScaleFactor = 1;
-    if (Page* page = renderer->document().page())
-        deviceScaleFactor = page->deviceScaleFactor();
+    // We're about to possibly clear renderer, so save the deviceScaleFactor now.
+    float deviceScaleFactor = renderer->document().frameHost()->deviceScaleFactor();
 
     // Walk up the render tree, accumulating SVG transforms.
+    absoluteTransform = currentContentTransformation();
     while (renderer) {
         absoluteTransform = renderer->localToParentTransform() * absoluteTransform;
         if (renderer->isSVGRoot())
@@ -235,8 +239,7 @@ void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(con
         layer = layer->parent();
     }
 
-    if (deviceScaleFactor != 1)
-        absoluteTransform.scale(deviceScaleFactor);
+    absoluteTransform.scale(deviceScaleFactor);
 }
 
 void SVGRenderingContext::renderSubtree(GraphicsContext* context, RenderObject* item, const AffineTransform& subtreeContentTransformation)

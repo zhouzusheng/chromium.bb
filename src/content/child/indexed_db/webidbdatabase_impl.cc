@@ -17,6 +17,8 @@
 #include "webkit/child/worker_task_runner.h"
 
 using blink::WebIDBCallbacks;
+using blink::WebIDBCursor;
+using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseCallbacks;
 using blink::WebIDBMetadata;
 using blink::WebIDBKey;
@@ -74,7 +76,7 @@ void WebIDBDatabaseImpl::createTransaction(
     long long transaction_id,
     WebIDBDatabaseCallbacks* callbacks,
     const WebVector<long long>& object_store_ids,
-    unsigned short mode) {
+    WebIDBDatabase::TransactionMode mode) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBDatabaseCreateTransaction(
@@ -137,18 +139,18 @@ void WebIDBDatabaseImpl::setIndexKeys(
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
   params.primary_key = IndexedDBKeyBuilder::Build(primary_key);
-  COMPILE_ASSERT(sizeof(params.index_ids[0]) == sizeof(index_ids[0]),
-                 Cant_copy);
-  params.index_ids.assign(index_ids.data(),
-                          index_ids.data() + index_ids.size());
 
-  params.index_keys.resize(index_keys.size());
-  for (size_t i = 0; i < index_keys.size(); ++i) {
-    params.index_keys[i].resize(index_keys[i].size());
+  DCHECK_EQ(index_ids.size(), index_keys.size());
+  params.index_keys.resize(index_ids.size());
+  for (size_t i = 0, len = index_ids.size(); i < len; ++i) {
+    params.index_keys[i].first = index_ids[i];
+    params.index_keys[i].second.resize(index_keys[i].size());
     for (size_t j = 0; j < index_keys[i].size(); ++j) {
-      params.index_keys[i][j] = IndexedDBKeyBuilder::Build(index_keys[i][j]);
+      params.index_keys[i].second[j] =
+          IndexedDBKey(IndexedDBKeyBuilder::Build(index_keys[i][j]));
     }
   }
+
   thread_safe_sender_->Send(new IndexedDBHostMsg_DatabaseSetIndexKeys(params));
 }
 
@@ -166,7 +168,7 @@ void WebIDBDatabaseImpl::openCursor(long long transaction_id,
                                     long long object_store_id,
                                     long long index_id,
                                     const WebIDBKeyRange& key_range,
-                                    unsigned short direction,
+                                    WebIDBCursor::Direction direction,
                                     bool key_only,
                                     TaskType task_type,
                                     WebIDBCallbacks* callbacks) {

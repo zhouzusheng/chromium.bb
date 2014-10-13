@@ -37,6 +37,7 @@
 namespace WebCore {
 
 class DocumentTimeline;
+class ExceptionState;
 
 class Player FINAL : public RefCounted<Player> {
 
@@ -45,33 +46,51 @@ public:
     static PassRefPtr<Player> create(DocumentTimeline&, TimedItem*);
 
     // Returns whether this player is still current or in effect.
+    bool update(bool* didTriggerStyleRecalc = 0);
+
     // timeToEffectChange returns:
     //  infinity  - if this player is no longer in effect
     //  0         - if this player requires an update on the next frame
     //  n         - if this player requires an update after 'n' units of time
-    bool update(double* timeToEffectChange = 0, bool* didTriggerStyleRecalc = 0);
+    double timeToEffectChange();
+
     void cancel();
 
-    double currentTime() const;
-    void setCurrentTime(double);
+    double currentTime();
+    void setCurrentTime(double newCurrentTime);
 
-    bool paused() const { return !m_isPausedForTesting && pausedInternal(); }
-    void setPaused(bool);
+    bool paused() const { return m_paused && !m_isPausedForTesting; }
+    void pause();
+    void play();
+    void reverse();
+    void finish(ExceptionState&);
+    bool finished() { return limited(currentTime()); }
 
     double playbackRate() const { return m_playbackRate; }
     void setPlaybackRate(double);
-    double timeDrift() const;
-    DocumentTimeline& timeline() { return m_timeline; }
+    const DocumentTimeline* timeline() const { return m_timeline; }
+    DocumentTimeline* timeline() { return m_timeline; }
+
+    void timelineDestroyed() { m_timeline = 0; }
 
     bool hasStartTime() const { return !isNull(m_startTime); }
     double startTime() const { return m_startTime; }
     void setStartTime(double);
 
     TimedItem* source() { return m_content.get(); }
+    TimedItem* source(bool& isNull) { isNull = !m_content; return m_content.get(); }
+    void setSource(TimedItem*);
+
+    double timeLag() { return currentTimeWithoutLag() - currentTime(); }
 
     // Pausing via this method is not reflected in the value returned by
-    // paused() and must never overlap with pausing via setPaused().
-    void pauseForTesting();
+    // paused() and must never overlap with pausing via pause().
+    void pauseForTesting(double pauseTime);
+    // This should only be used for CSS
+    void unpause();
+
+    void setNeedsUpdate();
+    bool needsUpdate() { return m_needsUpdate; }
 
     bool maybeStartAnimationOnCompositor();
     void cancelAnimationOnCompositor();
@@ -79,22 +98,28 @@ public:
 
 private:
     Player(DocumentTimeline&, TimedItem*);
-    inline double pausedTimeDrift() const;
-    inline double currentTimeBeforeDrift() const;
+    double sourceEnd() const;
+    bool limited(double currentTime) const;
+    double currentTimeWithoutLag() const;
+    double currentTimeWithLag() const;
+    void updateTimingState(double newCurrentTime);
+    void updateCurrentTimingState();
 
-
-    void setPausedImpl(bool);
-    // Reflects all pausing, including via pauseForTesting().
-    bool pausedInternal() const { return !isNull(m_pauseStartTime); }
-
-    double m_pauseStartTime;
     double m_playbackRate;
-    double m_timeDrift;
     double m_startTime;
+    double m_holdTime;
+    double m_storedTimeLag;
 
     RefPtr<TimedItem> m_content;
-    DocumentTimeline& m_timeline;
+    // FIXME: We should keep the timeline alive and have this as non-null
+    // but this is tricky to do without Oilpan
+    DocumentTimeline* m_timeline;
+    // Reflects all pausing, including via pauseForTesting().
+    bool m_paused;
+    bool m_held;
     bool m_isPausedForTesting;
+
+    bool m_needsUpdate;
 };
 
 } // namespace

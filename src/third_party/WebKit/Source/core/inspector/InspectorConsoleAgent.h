@@ -62,18 +62,19 @@ typedef String ErrorString;
 class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent>, public InspectorBackendDispatcher::ConsoleCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorConsoleAgent);
 public:
-    InspectorConsoleAgent(InstrumentingAgents*, InspectorTimelineAgent*, InspectorCompositeState*, InjectedScriptManager*);
+    InspectorConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void clearMessages(ErrorString*);
+    virtual void init() OVERRIDE;
+    virtual void enable(ErrorString*) OVERRIDE FINAL;
+    virtual void disable(ErrorString*) OVERRIDE FINAL;
+    virtual void clearMessages(ErrorString*) OVERRIDE;
     bool enabled() { return m_enabled; }
     void reset();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE FINAL;
+    virtual void clearFrontend() OVERRIDE FINAL;
+    virtual void restore() OVERRIDE FINAL;
 
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
@@ -93,14 +94,14 @@ public:
     void frameWindowDiscarded(DOMWindow*);
     void didCommitLoad(Frame*, DocumentLoader*);
 
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber);
+    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber);
     void didReceiveResourceResponse(Frame*, unsigned long requestIdentifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
-    void didFailLoading(unsigned long requestIdentifier, DocumentLoader*, const ResourceError&);
+    void didFailLoading(unsigned long requestIdentifier, const ResourceError&);
     void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
     void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
-    virtual void setMonitoringXHREnabled(ErrorString*, bool enabled);
+    virtual void setMonitoringXHREnabled(ErrorString*, bool enabled) OVERRIDE;
     virtual void addInspectedNode(ErrorString*, int nodeId) = 0;
-    virtual void addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId);
+    virtual void addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId) OVERRIDE;
 
     virtual bool isWorkerAgent() = 0;
 

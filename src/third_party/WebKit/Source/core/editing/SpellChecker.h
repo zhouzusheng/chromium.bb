@@ -26,7 +26,7 @@
 #ifndef SpellChecker_h
 #define SpellChecker_h
 
-#include "core/dom/ClipboardAccessPolicy.h"
+#include "core/clipboard/ClipboardAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleSelection.h"
@@ -56,7 +56,6 @@ public:
     void toggleContinuousSpellChecking();
     bool isGrammarCheckingEnabled();
     void ignoreSpelling();
-    String misspelledWordAtCaretOrRange(Node* clickedNode) const;
     bool isSpellCheckingEnabledInFocusedNode() const;
     bool isSpellCheckingEnabledFor(Node*) const;
     void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping);

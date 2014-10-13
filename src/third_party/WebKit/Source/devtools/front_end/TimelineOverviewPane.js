@@ -38,8 +38,6 @@ WebInspector.TimelineOverviewPane = function(model)
     WebInspector.View.call(this);
     this.element.id = "timeline-overview-pane";
 
-    this._windowStartTime = 0;
-    this._windowEndTime = Infinity;
     this._eventDividers = [];
 
     this._model = model;
@@ -72,39 +70,33 @@ WebInspector.TimelineOverviewPane.prototype = {
     /**
      * @param {!WebInspector.TimelineOverviewBase} overviewControl
      */
-    willSetOverviewControl: function(overviewControl)
+    setOverviewControl: function(overviewControl)
     {
-        this._sameOverviewControl = this._overviewControl === overviewControl;
-        if (this._sameOverviewControl)
+        if (this._overviewControl === overviewControl)
             return;
-        this._windowTimes = null;
+
+        var windowTimes = null;
+
         if (this._overviewControl) {
-            this._windowTimes = this._overviewControl.windowTimes(this.windowLeft(), this.windowRight());
+            windowTimes = this._overviewControl.windowTimes(this._overviewGrid.windowLeft(), this._overviewGrid.windowRight());
             this._overviewControl.detach();
         }
         this._overviewControl = overviewControl;
         this._overviewControl.show(this._overviewGrid.element);
         this._update();
-    },
-
-    didSetOverviewControl: function()
-    {
-        if (this._sameOverviewControl)
-            return;
-        if (this._windowTimes && this._windowTimes.startTime >= 0)
-            this.setWindowTimes(this._windowTimes.startTime, this._windowTimes.endTime);
-        this._update();
+        if (windowTimes)
+            this.setWindowTimes(windowTimes.startTime, windowTimes.endTime);
     },
 
     _update: function()
     {
         delete this._refreshTimeout;
 
-        this._updateWindow();
         this._overviewCalculator.setWindow(this._model.minimumRecordTime(), this._model.maximumRecordTime());
         this._overviewCalculator.setDisplayWindow(0, this._overviewGrid.clientWidth());
-
-        this._overviewControl.update();
+        this._updateWindow();
+        if (this._overviewControl)
+            this._overviewControl.update();
         this._overviewGrid.updateDividers(this._overviewCalculator);
         this._updateEventDividers();
     },
@@ -127,15 +119,6 @@ WebInspector.TimelineOverviewPane.prototype = {
         this._overviewGrid.addEventDividers(dividers);
     },
 
-    /**
-     * @param {!WebInspector.TimelineFrame} frame
-     */
-    zoomToFrame: function(frame)
-    {
-        this.setWindowTimes(frame.startTime, frame.endTime);
-        this.dispatchEventToListeners(WebInspector.TimelineOverviewPane.Events.WindowChanged);
-    },
-
     _onRecordAdded: function(event)
     {
         var record = event.data;
@@ -151,50 +134,32 @@ WebInspector.TimelineOverviewPane.prototype = {
 
     _reset: function()
     {
-        this._windowStartTime = 0;
-        this._windowEndTime = Infinity;
         this._overviewCalculator.reset();
         this._overviewGrid.reset();
         this._overviewGrid.setResizeEnabled(false);
         this._eventDividers = [];
         this._overviewGrid.updateDividers(this._overviewCalculator);
-        this._overviewControl.reset();
+        if (this._overviewControl)
+            this._overviewControl.reset();
         this._update();
     },
 
-    windowStartTime: function()
-    {
-        return this._windowStartTime || this._model.minimumRecordTime();
-    },
-
-    windowEndTime: function()
-    {
-        return this._windowEndTime < Infinity ? this._windowEndTime : this._model.maximumRecordTime();
-    },
-
-    windowLeft: function()
-    {
-        return this._overviewGrid.windowLeft();
-    },
-
-    windowRight: function()
-    {
-        return this._overviewGrid.windowRight();
-    },
-
-    _onWindowChanged: function()
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onWindowChanged: function(event)
     {
         if (this._ignoreWindowChangedEvent)
             return;
-        var times = this._overviewControl.windowTimes(this.windowLeft(), this.windowRight());
-        this._windowStartTime = times.startTime;
-        this._windowEndTime = times.endTime;
-        this.dispatchEventToListeners(WebInspector.TimelineOverviewPane.Events.WindowChanged);
+        var windowTimes = this._overviewControl.windowTimes(this._overviewGrid.windowLeft(), this._overviewGrid.windowRight());
+        this._windowStartTime = windowTimes.startTime;
+        this._windowEndTime = windowTimes.endTime;
+        this.dispatchEventToListeners(WebInspector.TimelineOverviewPane.Events.WindowChanged, windowTimes);
     },
 
     /**
-     * @param {!Number} startTime
-     * @param {!Number} endTime
+     * @param {number} startTime
+     * @param {number} endTime
      */
     setWindowTimes: function(startTime, endTime)
     {
@@ -235,12 +200,16 @@ WebInspector.TimelineOverviewCalculator = function()
 WebInspector.TimelineOverviewCalculator.prototype = {
     /**
      * @param {number} time
+     * @return {number}
      */
     computePosition: function(time)
     {
         return (time - this._minimumBoundary) / this.boundarySpan() * this._workingArea + this.paddingLeft;
     },
 
+    /**
+     * @return {!{start: number, end: number}}
+     */
     computeBarGraphPercentages: function(record)
     {
         var start = (WebInspector.TimelineModel.startTimeInSeconds(record) - this._minimumBoundary) / this.boundarySpan() * 100;
@@ -283,21 +252,33 @@ WebInspector.TimelineOverviewCalculator.prototype = {
         return Number.secondsToString(value, hires);
     },
 
+    /**
+     * @return {number}
+     */
     maximumBoundary: function()
     {
         return this._maximumBoundary;
     },
 
+    /**
+     * @return {number}
+     */
     minimumBoundary: function()
     {
         return this._minimumBoundary;
     },
 
+    /**
+     * @return {number}
+     */
     zeroTime: function()
     {
         return this._minimumBoundary;
     },
 
+    /**
+     * @return {number}
+     */
     boundarySpan: function()
     {
         return this._maximumBoundary - this._minimumBoundary;
@@ -312,7 +293,6 @@ WebInspector.TimelineOverviewCalculator.prototype = {
 WebInspector.TimelineOverviewBase = function(model)
 {
     WebInspector.View.call(this);
-    this.element.classList.add("fill");
 
     this._model = model;
     this._canvas = this.element.createChild("canvas", "fill");
@@ -326,6 +306,7 @@ WebInspector.TimelineOverviewBase.prototype = {
     /**
      * @param {number} windowLeft
      * @param {number} windowRight
+     * @return {!{startTime: number, endTime: number}}
      */
     windowTimes: function(windowLeft, windowRight)
     {
@@ -340,6 +321,7 @@ WebInspector.TimelineOverviewBase.prototype = {
     /**
      * @param {number} startTime
      * @param {number} endTime
+     * @return {!{left: number, right: number}}
      */
     windowBoundaries: function(startTime, endTime)
     {

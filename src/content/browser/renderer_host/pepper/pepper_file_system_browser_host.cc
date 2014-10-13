@@ -23,7 +23,7 @@
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/common/quota/quota_types.h"
 
@@ -48,16 +48,6 @@ GetFileSystemContextFromRenderId(int render_process_id) {
 
 }  // namespace
 
-PepperFileSystemBrowserHost::QuotaRequest::QuotaRequest(
-    int32_t amount_arg,
-    const RequestQuotaCallback& callback_arg)
-    : amount(amount_arg),
-      callback(callback_arg) {
-}
-
-PepperFileSystemBrowserHost::QuotaRequest::~QuotaRequest() {
-}
-
 PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
                                                          PP_Instance instance,
                                                          PP_Resource resource,
@@ -74,6 +64,14 @@ PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
 }
 
 PepperFileSystemBrowserHost::~PepperFileSystemBrowserHost() {
+  // If |files_| is not empty, the plugin failed to close some files. It must
+  // have crashed.
+  if (!files_.empty()) {
+    file_system_context_->default_file_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&QuotaReservation::OnClientCrash, quota_reservation_));
+  }
+
   // All FileRefs and FileIOs that reference us must have been destroyed. Cancel
   // all pending file system operations.
   if (file_system_operation_runner_)
@@ -85,7 +83,7 @@ void PepperFileSystemBrowserHost::OpenExisting(const GURL& root_url,
   root_url_ = root_url;
   int render_process_id = 0;
   int unused;
-  if (!browser_ppapi_host_->GetRenderViewIDsForInstance(
+  if (!browser_ppapi_host_->GetRenderFrameIDsForInstance(
            pp_instance(), &render_process_id, &unused)) {
     NOTREACHED();
   }
@@ -110,6 +108,9 @@ int32_t PepperFileSystemBrowserHost::OnResourceMessageReceived(
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(
         PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
         OnHostMsgInitIsolatedFileSystem)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
+        PpapiHostMsg_FileSystem_ReserveQuota,
+        OnHostMsgReserveQuota)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -140,12 +141,11 @@ void PepperFileSystemBrowserHost::OpenQuotaFile(
 }
 
 void PepperFileSystemBrowserHost::CloseQuotaFile(
-    PepperFileIOHost* file_io_host) {
+    PepperFileIOHost* file_io_host,
+    const ppapi::FileGrowth& file_growth) {
   int32_t id = file_io_host->pp_resource();
-  int64_t max_written_offset = 0;
   FileMap::iterator it = files_.find(id);
   if (it != files_.end()) {
-    max_written_offset = file_io_host->max_written_offset();
     files_.erase(it);
   } else {
     NOTREACHED();
@@ -157,26 +157,7 @@ void PepperFileSystemBrowserHost::CloseQuotaFile(
       base::Bind(&QuotaReservation::CloseFile,
                  quota_reservation_,
                  id,
-                 max_written_offset));
-}
-
-int32_t PepperFileSystemBrowserHost::RequestQuota(
-    int32_t amount,
-    const RequestQuotaCallback& callback) {
-  DCHECK(amount >= 0);
-  if (!reserving_quota_ && reserved_quota_ >= amount) {
-    reserved_quota_ -= amount;
-    return amount;
-  }
-
-  // Queue up a pending quota request.
-  pending_quota_requests_.push(QuotaRequest(amount, callback));
-
-  // Reserve more quota if we haven't already.
-  if (!reserving_quota_)
-    ReserveQuota(amount);
-
-  return PP_OK_COMPLETIONPENDING;
+                 file_growth));
 }
 
 int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
@@ -197,9 +178,9 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
 
   int render_process_id = 0;
   int unused;
-  if (!browser_ppapi_host_->GetRenderViewIDsForInstance(pp_instance(),
-                                                        &render_process_id,
-                                                        &unused)) {
+  if (!browser_ppapi_host_->GetRenderFrameIDsForInstance(pp_instance(),
+                                                         &render_process_id,
+                                                         &unused)) {
       return PP_ERROR_FAILED;
   }
 
@@ -239,7 +220,7 @@ void PepperFileSystemBrowserHost::OpenFileSystem(
     scoped_refptr<fileapi::FileSystemContext> file_system_context) {
   if (!file_system_context.get()) {
     OpenFileSystemComplete(
-        reply_context, GURL(), std::string(), base::PLATFORM_FILE_ERROR_FAILED);
+        reply_context, GURL(), std::string(), base::File::FILE_ERROR_FAILED);
     return;
   }
 
@@ -258,8 +239,8 @@ void PepperFileSystemBrowserHost::OpenFileSystemComplete(
     ppapi::host::ReplyMessageContext reply_context,
     const GURL& root,
     const std::string& /* unused */,
-    base::PlatformFileError error) {
-  int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
+    base::File::Error error) {
+  int32 pp_error = ppapi::FileErrorToPepperError(error);
   if (pp_error == PP_OK) {
     opened_ = true;
     root_url_ = root;
@@ -338,8 +319,8 @@ void PepperFileSystemBrowserHost::OpenPluginPrivateFileSystem(
 void PepperFileSystemBrowserHost::OpenPluginPrivateFileSystemComplete(
     ppapi::host::ReplyMessageContext reply_context,
     const std::string& fsid,
-    base::PlatformFileError error) {
-  int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
+    base::File::Error error) {
+  int32 pp_error = ppapi::FileErrorToPepperError(error);
   if (pp_error == PP_OK)
     opened_ = true;
   SendReplyForIsolatedFileSystem(reply_context, fsid, pp_error);
@@ -360,9 +341,9 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
 
   int render_process_id = 0;
   int unused;
-  if (!browser_ppapi_host_->GetRenderViewIDsForInstance(pp_instance(),
-                                                        &render_process_id,
-                                                        &unused)) {
+  if (!browser_ppapi_host_->GetRenderFrameIDsForInstance(pp_instance(),
+                                                         &render_process_id,
+                                                         &unused)) {
     fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
     return PP_ERROR_FAILED;
   }
@@ -378,6 +359,33 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
       base::Bind(&PepperFileSystemBrowserHost::OpenIsolatedFileSystem,
                  weak_factory_.GetWeakPtr(),
                  context->MakeReplyMessageContext(), fsid, type));
+  return PP_OK_COMPLETIONPENDING;
+}
+
+int32_t PepperFileSystemBrowserHost::OnHostMsgReserveQuota(
+    ppapi::host::HostMessageContext* context,
+    int64_t amount,
+    const ppapi::FileGrowthMap& file_growths) {
+  DCHECK(ChecksQuota());
+  DCHECK(amount > 0);
+
+  if (reserving_quota_)
+    return PP_ERROR_INPROGRESS;
+  reserving_quota_ = true;
+
+  int64_t reservation_amount = std::max<int64_t>(kMinimumQuotaReservationSize,
+                                                 amount);
+  file_system_context_->default_file_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&QuotaReservation::ReserveQuota,
+                 quota_reservation_,
+                 reservation_amount,
+                 file_growths,
+                 base::Bind(&PepperFileSystemBrowserHost::GotReservedQuota,
+                            weak_factory_.GetWeakPtr(),
+                            context->MakeReplyMessageContext())));
+
+
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -413,7 +421,7 @@ bool PepperFileSystemBrowserHost::ShouldCreateQuotaReservation() const {
   if (!ppapi::FileSystemTypeHasQuota(type_))
     return false;
 
-  // For file system types with quota, ome origins have unlimited storage.
+  // For file system types with quota, some origins have unlimited storage.
   quota::QuotaManagerProxy* quota_manager_proxy =
       file_system_context_->quota_manager_proxy();
   CHECK(quota_manager_proxy);
@@ -447,67 +455,18 @@ void PepperFileSystemBrowserHost::GotQuotaReservation(
   callback.Run();
 }
 
-void PepperFileSystemBrowserHost::ReserveQuota(int32_t amount) {
-  DCHECK(!reserving_quota_);
-  reserving_quota_ = true;
-
-  // Get the max_written_offset for each open file.
-  QuotaReservation::OffsetMap max_written_offsets;
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    max_written_offsets.insert(
-        std::make_pair(it->first, it->second->max_written_offset()));
-  }
-
-  int64_t reservation_amount = std::max<int64_t>(kMinimumQuotaReservationSize,
-                                                 amount);
-  file_system_context_->default_file_task_runner()->PostTask(
-      FROM_HERE,
-      base::Bind(&QuotaReservation::ReserveQuota,
-                 quota_reservation_,
-                 reservation_amount,
-                 max_written_offsets,
-                 base::Bind(&PepperFileSystemBrowserHost::GotReservedQuota,
-                            weak_factory_.GetWeakPtr())));
-}
-
 void PepperFileSystemBrowserHost::GotReservedQuota(
+    ppapi::host::ReplyMessageContext reply_context,
     int64_t amount,
-    const QuotaReservation::OffsetMap& max_written_offsets) {
+    const ppapi::FileSizeMap& file_sizes) {
   DCHECK(reserving_quota_);
   reserving_quota_ = false;
   reserved_quota_ = amount;
 
-  // Update open files with their new base sizes. This won't write over any
-  // updates since the files are waiting for quota and can't write.
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    QuotaReservation::OffsetMap::const_iterator offset_it =
-        max_written_offsets.find(it->first);
-    if (offset_it != max_written_offsets.end())
-      it->second->set_max_written_offset(offset_it->second);
-    else
-      NOTREACHED();
-  }
-
-  DCHECK(!pending_quota_requests_.empty());
-  // If we can't grant the first request after refreshing reserved_quota_, then
-  // fail all pending quota requests to avoid an infinite refresh/fail loop.
-  bool fail_all = reserved_quota_ < pending_quota_requests_.front().amount;
-  while (!pending_quota_requests_.empty()) {
-    QuotaRequest& request = pending_quota_requests_.front();
-    if (fail_all) {
-      request.callback.Run(0);
-      pending_quota_requests_.pop();
-    } else if (reserved_quota_ >= request.amount) {
-      reserved_quota_ -= request.amount;
-      request.callback.Run(request.amount);
-      pending_quota_requests_.pop();
-    } else {
-      // Refresh the quota reservation for the first pending request that we
-      // can't satisfy.
-      ReserveQuota(request.amount);
-      break;
-    }
-  }
+  reply_context.params.set_result(PP_OK);
+  host()->SendReply(
+      reply_context,
+      PpapiPluginMsg_FileSystem_ReserveQuotaReply(amount, file_sizes));
 }
 
 std::string PepperFileSystemBrowserHost::GetPluginMimeType() const {

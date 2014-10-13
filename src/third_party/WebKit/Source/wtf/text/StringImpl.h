@@ -204,8 +204,7 @@ public:
 
     // Reallocate the StringImpl. The originalString must be only owned by the PassRefPtr.
     // Just like the input pointer of realloc(), the originalString can't be used after this function.
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, LChar*& data);
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, UChar*& data);
+    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length);
 
     // If this StringImpl has only one reference, we can truncate the string by updating
     // its m_length property without actually re-allocating its buffer.
@@ -435,6 +434,12 @@ public:
 #endif
 
 private:
+    template<typename CharType> static size_t allocationSize(unsigned length)
+    {
+        RELEASE_ASSERT(length <= ((std::numeric_limits<unsigned>::max() - sizeof(StringImpl)) / sizeof(CharType)));
+        return sizeof(StringImpl) + length * sizeof(CharType);
+    }
+
     // This number must be at least 2 to avoid sharing empty, null as well as 1 character strings from SmallStrings.
     static const unsigned s_copyCharsInlineCutOff = 20;
 

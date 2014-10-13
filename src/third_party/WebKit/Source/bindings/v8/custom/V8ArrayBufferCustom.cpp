@@ -31,7 +31,6 @@
 #include "config.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 
-#include "bindings/v8/ScriptPromiseResolver.h"
 #include "bindings/v8/V8Binding.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/StdLibExtras.h"
@@ -49,15 +48,10 @@ V8ArrayBufferDeallocationObserver* V8ArrayBufferDeallocationObserver::instanceTe
 const WrapperTypeInfo V8ArrayBuffer::wrapperTypeInfo = {
     gin::kEmbedderBlink,
     0, V8ArrayBuffer::derefObject,
-    0, 0, 0, 0, 0, WrapperTypeObjectPrototype
+    0, 0, 0, 0, 0, WrapperTypeObjectPrototype, false
 };
 
-bool V8ArrayBuffer::hasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
-{
-    return value->IsArrayBuffer();
-}
-
-bool V8ArrayBuffer::hasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
+bool V8ArrayBuffer::hasInstance(v8::Handle<v8::Value> value, v8::Isolate*)
 {
     return value->IsArrayBuffer();
 }

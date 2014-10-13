@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1751,23 +1751,6 @@
         GetCmdSpace<gles2::cmds::GetProgramInfoCHROMIUM>();
     if (c) {
       c->Init(program, bucket_id);
-    }
-  }
-
-  void CreateStreamTextureCHROMIUM(
-      GLuint client_id, uint32 result_shm_id, uint32 result_shm_offset) {
-    gles2::cmds::CreateStreamTextureCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::CreateStreamTextureCHROMIUM>();
-    if (c) {
-      c->Init(client_id, result_shm_id, result_shm_offset);
-    }
-  }
-
-  void DestroyStreamTextureCHROMIUM(GLuint texture) {
-    gles2::cmds::DestroyStreamTextureCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::DestroyStreamTextureCHROMIUM>();
-    if (c) {
-      c->Init(texture);
     }
   }
 

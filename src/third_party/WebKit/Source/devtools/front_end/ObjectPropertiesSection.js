@@ -161,11 +161,12 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
     {
         var propertyValue = /** @type {!WebInspector.RemoteObject} */ (this.property.value);
         console.assert(propertyValue);
-        return WebInspector.ObjectPropertyTreeElement.populate(this, propertyValue);
+        WebInspector.ObjectPropertyTreeElement.populate(this, propertyValue);
     },
 
     /**
      * @override
+     * @return {boolean}
      */
     ondblclick: function(event)
     {
@@ -284,6 +285,9 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
             this.parent.shouldRefreshChildren = true;
     },
 
+    /**
+     * @return {boolean}
+     */
     renderPromptAsBlock: function()
     {
         return false;
@@ -291,12 +295,16 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
 
     /**
      * @param {!Event=} event
+     * @return {!Array.<!Element|undefined>}
      */
     elementAndValueToEdit: function(event)
     {
         return [this.valueElement, (typeof this.valueElement._originalTextContent === "string") ? this.valueElement._originalTextContent : undefined];
     },
 
+    /**
+     * @param {!Event=} event
+     */
     startEditing: function(event)
     {
         var elementAndValueToEdit = this.elementAndValueToEdit(event);
@@ -359,8 +367,10 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
 
     editingCommitted: function(element, userInput, previousContent, context)
     {
-        if (userInput === previousContent)
-            return this.editingCancelled(element, context); // nothing changed, so cancel
+        if (userInput === previousContent) {
+            this.editingCancelled(element, context); // nothing changed, so cancel
+            return;
+        }
 
         this.editingEnded(context);
         this.applyExpression(userInput, true);
@@ -370,11 +380,13 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
     {
         if (isEnterKey(event)) {
             event.consume(true);
-            return this.editingCommitted(null, context.elementToEdit.textContent, context.previousContent, context);
+            this.editingCommitted(null, context.elementToEdit.textContent, context.previousContent, context);
+            return;
         }
         if (event.keyIdentifier === "U+001B") { // Esc
             event.consume();
-            return this.editingCancelled(null, context);
+            this.editingCancelled(null, context);
+            return;
         }
     },
 
@@ -406,6 +418,9 @@ WebInspector.ObjectPropertyTreeElement.prototype = {
         this.property.parentObject.setPropertyValue(this.property.name, expression.trim(), callback.bind(this));
     },
 
+    /**
+     * @return {string|undefined}
+     */
     propertyPath: function()
     {
         if ("_cachedPropertyPath" in this)
@@ -671,7 +686,7 @@ WebInspector.ScopeTreeElement = function(title, subtitle, remoteObject)
 WebInspector.ScopeTreeElement.prototype = {
     onpopulate: function()
     {
-        return WebInspector.ObjectPropertyTreeElement.populate(this, this._remoteObject);
+        WebInspector.ObjectPropertyTreeElement.populate(this, this._remoteObject);
     },
 
     __proto__: TreeElement.prototype

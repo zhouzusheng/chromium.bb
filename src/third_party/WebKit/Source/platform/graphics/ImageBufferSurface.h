@@ -61,6 +61,11 @@ public:
     virtual blink::WebLayer* layer() const { return 0; };
     virtual bool isAccelerated() const { return false; }
     virtual Platform3DObject getBackingTexture() const { return 0; }
+    virtual bool cachedBitmapEnabled() const { return false; }
+    virtual const SkBitmap& cachedBitmap() const;
+    virtual void invalidateCachedBitmap() { }
+    virtual void updateCachedBitmapIfNeeded() { }
+    virtual void setIsHidden(bool) { }
 
     OpacityMode opacityMode() const { return m_opacityMode; }
     const IntSize& size() const { return m_size; }
@@ -71,7 +76,9 @@ protected:
     ImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
         : m_opacityMode(opacityMode)
         , m_size(size)
-    { }
+    {
+        setIsHidden(false);
+    }
 
 private:
     OpacityMode m_opacityMode;

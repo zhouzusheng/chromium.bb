@@ -9,6 +9,10 @@ from grit.format.policy_templates.writers import plist_helper
 from grit.format.policy_templates.writers import xml_formatted_writer
 
 
+# This writer outputs a Preferences Manifest file as documented at
+# https://developer.apple.com/library/mac/documentation/MacOSXServer/Conceptual/Preference_Manifest_Files
+
+
 def GetWriter(config):
   '''Factory method for creating PListWriter objects.
   See the constructor of TemplateWriter for description of
@@ -103,6 +107,11 @@ class PListWriter(xml_formatted_writer.XMLFormattedWriter):
         else:
           element_type = 'string'
         self.AddElement(range_list, element_type, {}, str(item['value']))
+    elif policy_type == 'list':
+      subkeys = self._AddKeyValuePair(dict, 'pfm_subkeys', 'array')
+      subkeys_dict = self.AddElement(subkeys, 'dict')
+      subkeys_type = self._AddKeyValuePair(subkeys_dict, 'pfm_type', 'string')
+      self.AddText(subkeys_type, 'string')
 
   def BeginTemplate(self):
     self._plist.attributes['version'] = '1'

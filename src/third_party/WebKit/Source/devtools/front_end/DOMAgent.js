@@ -83,6 +83,11 @@ WebInspector.DOMNode = function(domAgent, doc, isInShadowTree, payload) {
         this._templateContent.parentNode = this;
     }
 
+    if (payload.importedDocument) {
+        this._importedDocument = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, true, payload.importedDocument);
+        this._importedDocument.parentNode = this;
+    }
+
     if (payload.children)
         this._setChildrenPayload(payload.children);
 
@@ -162,11 +167,19 @@ WebInspector.DOMNode.prototype = {
     },
 
     /**
-     * @return {!WebInspector.DOMNode}
+     * @return {?WebInspector.DOMNode}
      */
     templateContent: function()
     {
         return this._templateContent;
+    },
+
+    /**
+     * @return {?WebInspector.DOMNode}
+     */
+    importedDocument: function()
+    {
+        return this._importedDocument;
     },
 
     /**
@@ -683,11 +696,20 @@ WebInspector.DOMNode.prototype = {
             this.parentNode._updateDescendantUserPropertyCount(name, -1);
     },
 
+    /**
+     * @param {string} name
+     * @return {?T}
+     * @template T
+     */
     getUserProperty: function(name)
     {
-        return this._userProperties ? this._userProperties[name] : null;
+        return (this._userProperties && this._userProperties[name]) || null;
     },
 
+    /**
+     * @param {string} name
+     * @return {number}
+     */
     descendantUserPropertyCount: function(name)
     {
         return this._descendantUserPropertyCounters && this._descendantUserPropertyCounters[name] ? this._descendantUserPropertyCounters[name] : 0;
@@ -915,7 +937,7 @@ WebInspector.DOMAgent.prototype = {
             this._attributeLoadNodeIds[nodeIds[i]] = true;
         if ("_loadNodeAttributesTimeout" in this)
             return;
-        this._loadNodeAttributesTimeout = setTimeout(this._loadNodeAttributes.bind(this), 0);
+        this._loadNodeAttributesTimeout = setTimeout(this._loadNodeAttributes.bind(this), 20);
     },
 
     _loadNodeAttributes: function()

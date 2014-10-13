@@ -30,9 +30,9 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/events/EventTarget.h"
 #include "core/html/URLRegistry.h"
-#include "core/platform/mediastream/MediaStreamDescriptor.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 #include "platform/Timer.h"
+#include "platform/mediastream/MediaStreamDescriptor.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
@@ -40,7 +40,7 @@ namespace WebCore {
 
 class ExceptionState;
 
-class MediaStream : public RefCounted<MediaStream>, public ScriptWrappable, public URLRegistrable, public MediaStreamDescriptorClient, public EventTargetWithInlineData, public ContextLifecycleObserver {
+class MediaStream FINAL : public RefCounted<MediaStream>, public ScriptWrappable, public URLRegistrable, public MediaStreamDescriptorClient, public EventTargetWithInlineData, public ContextLifecycleObserver {
     REFCOUNTED_EVENT_TARGET(MediaStream);
 public:
     static PassRefPtr<MediaStream> create(ExecutionContext*);
@@ -85,7 +85,7 @@ protected:
     MediaStream(ExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
 
     // ContextLifecycleObserver
-    virtual void contextDestroyed();
+    virtual void contextDestroyed() OVERRIDE;
 
 private:
     // MediaStreamDescriptorClient

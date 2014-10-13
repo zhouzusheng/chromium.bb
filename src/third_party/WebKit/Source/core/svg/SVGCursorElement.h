@@ -21,11 +21,11 @@
 #ifndef SVGCursorElement_h
 #define SVGCursorElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGTests.h"
 #include "core/svg/SVGURIReference.h"
 
@@ -33,7 +33,6 @@ namespace WebCore {
 
 class SVGCursorElement FINAL : public SVGElement,
                                public SVGTests,
-                               public SVGExternalResourcesRequired,
                                public SVGURIReference {
 public:
     static PassRefPtr<SVGCursorElement> create(Document&);
@@ -44,31 +43,28 @@ public:
     void removeClient(SVGElement*);
     void removeReferencedElement(SVGElement*);
 
+    SVGAnimatedLength* x() const { return m_x.get(); }
+    SVGAnimatedLength* y() const { return m_y.get(); }
 private:
     explicit SVGCursorElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
+    virtual bool isValid() const OVERRIDE { return SVGTests::isValid(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
+    RefPtr<SVGAnimatedLength> m_x;
+    RefPtr<SVGAnimatedLength> m_y;
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGCursorElement)
-        DECLARE_ANIMATED_LENGTH(X, x)
-        DECLARE_ANIMATED_LENGTH(Y, y)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 
     HashSet<SVGElement*> m_clients;
 };
+
+DEFINE_NODE_TYPE_CASTS(SVGCursorElement, hasTagName(SVGNames::cursorTag));
 
 } // namespace WebCore
 

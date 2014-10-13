@@ -32,7 +32,6 @@
 #include "core/html/HTMLImportLoader.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/ContentSecurityPolicyResponseHeaders.h"
 #include "core/html/HTMLDocument.h"
@@ -43,15 +42,8 @@
 
 namespace WebCore {
 
-PassRefPtr<HTMLImportLoader> HTMLImportLoader::create(HTMLImport* import, ResourceFetcher* fetcher)
-{
-    RefPtr<HTMLImportLoader> self = adoptRef(new HTMLImportLoader(import, fetcher));
-    return self.release();
-}
-
-HTMLImportLoader::HTMLImportLoader(HTMLImport* import, ResourceFetcher* fetcher)
+HTMLImportLoader::HTMLImportLoader(HTMLImport* import)
     : m_import(import)
-    , m_fetcher(fetcher)
     , m_state(StateLoading)
 {
 }
@@ -69,12 +61,12 @@ void HTMLImportLoader::startLoading(const ResourcePtr<RawResource>& resource)
 
 void HTMLImportLoader::responseReceived(Resource* resource, const ResourceResponse& response)
 {
-    // Current canAccess() implementation isn't sufficient for catching cross-domain redirects: http://crbug.com/256976
-    if (!m_fetcher->canAccess(resource, PotentiallyCORSEnabled)) {
+    // Resource may already have been loaded with the import loader
+    // being added as a client later & now being notified. Fail early.
+    if (resource->loadFailedOrCanceled() || response.httpStatusCode() >= 400) {
         setState(StateError);
         return;
     }
-
     setState(startWritingAndParsing(response));
 }
 
@@ -146,17 +138,10 @@ Document* HTMLImportLoader::importedDocument() const
     return m_importedDocument.get();
 }
 
-bool HTMLImportLoader::isProcessing() const
-{
-    if (!m_importedDocument)
-        return !isDone();
-    return m_importedDocument->parsing();
-}
-
 void HTMLImportLoader::didFinish()
 {
     for (size_t i = 0; i < m_clients.size(); ++i)
-        m_clients[i]->didFinish();
+        m_clients[i]->didFinishLoading();
 
     clearResource();
 
@@ -168,7 +153,7 @@ void HTMLImportLoader::addClient(HTMLImportLoaderClient* client)
     ASSERT(kNotFound == m_clients.find(client));
     m_clients.append(client);
     if (isDone())
-        client->didFinish();
+        client->didFinishLoading();
 }
 
 void HTMLImportLoader::removeClient(HTMLImportLoaderClient* client)
@@ -176,6 +161,5 @@ void HTMLImportLoader::removeClient(HTMLImportLoaderClient* client)
     ASSERT(kNotFound != m_clients.find(client));
     m_clients.remove(m_clients.find(client));
 }
-
 
 } // namespace WebCore

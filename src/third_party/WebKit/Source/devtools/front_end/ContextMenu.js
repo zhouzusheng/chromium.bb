@@ -48,11 +48,17 @@ WebInspector.ContextMenuItem = function(topLevelMenu, type, label, disabled, che
 }
 
 WebInspector.ContextMenuItem.prototype = {
+    /**
+     * @return {number}
+     */
     id: function()
     {
         return this._id;
     },
 
+    /**
+     * @return {string}
+     */
     type: function()
     {
         return this._type;
@@ -130,6 +136,7 @@ WebInspector.ContextSubMenuItem.prototype = {
 
     /**
      * @param {boolean=} disabled
+     * @return {!WebInspector.ContextMenuItem}
      */
     appendCheckboxItem: function(label, handler, checked, disabled)
     {
@@ -196,6 +203,9 @@ WebInspector.ContextMenu.setUseSoftMenu = function(useSoftMenu)
 }
 
 WebInspector.ContextMenu.prototype = {
+    /**
+     * @return {number}
+     */
     nextId: function()
     {
         return this._id++;
@@ -242,8 +252,15 @@ WebInspector.ContextMenu.prototype = {
      */
     appendApplicableItems: function(target)
     {
-        for (var i = 0; i < WebInspector.ContextMenu._providers.length; ++i) {
-            var provider = WebInspector.ContextMenu._providers[i];
+        WebInspector.moduleManager.extensions(WebInspector.ContextMenu.Provider, target).forEach(processProviders.bind(this));
+
+        /**
+         * @param {!WebInspector.ModuleManager.Extension} extension
+         * @this {WebInspector.ContextMenu}
+         */
+        function processProviders(extension)
+        {
+            var provider = /** @type {!WebInspector.ContextMenu.Provider} */ (extension.instance());
             this.appendSeparator();
             provider.appendApplicableItems(this._event, this, target);
             this.appendSeparator();
@@ -266,16 +283,6 @@ WebInspector.ContextMenu.Provider.prototype = {
      */
     appendApplicableItems: function(event, contextMenu, target) { }
 }
-
-/**
- * @param {!WebInspector.ContextMenu.Provider} provider
- */
-WebInspector.ContextMenu.registerProvider = function(provider)
-{
-    WebInspector.ContextMenu._providers.push(provider);
-}
-
-WebInspector.ContextMenu._providers = [];
 
 WebInspector.contextMenuItemSelected = function(id)
 {

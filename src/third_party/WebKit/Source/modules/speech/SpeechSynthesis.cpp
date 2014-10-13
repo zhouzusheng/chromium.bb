@@ -34,9 +34,11 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
+DEFINE_GC_INFO(SpeechSynthesis);
+
+PassRefPtrWillBeRawPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
 {
-    return adoptRef(new SpeechSynthesis(context));
+    return adoptRefCountedWillBeRefCountedGarbageCollected(new SpeechSynthesis(context));
 }
 
 SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
@@ -64,7 +66,7 @@ void SpeechSynthesis::voicesDidChange()
         dispatchEvent(Event::create(EventTypeNames::voiceschanged));
 }
 
-const Vector<RefPtr<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
+const WillBeHeapVector<RefPtrWillBeMember<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
 {
     if (m_voiceList.size())
         return m_voiceList;
@@ -116,14 +118,16 @@ void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance, ExceptionState&
 
     m_utteranceQueue.append(utterance);
 
-    // If the queue was empty, speak this immediately and add it to the queue.
+    // If the queue was empty, speak this immediately.
     if (m_utteranceQueue.size() == 1)
         startSpeakingImmediately();
 }
 
 void SpeechSynthesis::cancel()
 {
-    // Remove all the items from the utterance queue.
+    // Remove all the items from the utterance queue. The platform
+    // may still have references to some of these utterances and may
+    // fire events on them asynchronously.
     m_utteranceQueue.clear();
     m_platformSpeechSynthesizer->cancel();
 }
@@ -151,6 +155,10 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
 {
     ASSERT(utterance);
 
+    // Keep the utterance around long enough to fire an event on it in case m_utteranceQueue
+    // is holding the last reference to it.
+    RefPtrWillBeRawPtr<SpeechSynthesisUtterance> protect(utterance);
+
     bool didJustFinishCurrentUtterance = false;
     // If the utterance that completed was the one we're currently speaking,
     // remove it from the queue and start speaking the next one.
@@ -163,7 +171,6 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
     // sent an event on an utterance before it got the message that we
     // canceled it, and we should always report to the user what actually
     // happened.
-
     fireEvent(errorOccurred ? EventTypeNames::error : EventTypeNames::end, utterance, 0, String());
 
     // Start the next utterance if we just finished one and one was pending.
@@ -230,6 +237,12 @@ SpeechSynthesisUtterance* SpeechSynthesis::currentSpeechUtterance() const
 const AtomicString& SpeechSynthesis::interfaceName() const
 {
     return EventTargetNames::SpeechSynthesisUtterance;
+}
+
+void SpeechSynthesis::trace(Visitor* visitor)
+{
+    visitor->trace(m_voiceList);
+    visitor->trace(m_utteranceQueue);
 }
 
 } // namespace WebCore

@@ -105,9 +105,9 @@ double RangeInputType::valueAsDouble() const
     return parseToDoubleForNumberType(element().value());
 }
 
-void RangeInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState&) const
+void RangeInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    element().setValue(serialize(newValue), eventBehavior);
+    setValueAsDecimal(Decimal::fromDouble(newValue), eventBehavior, exceptionState);
 }
 
 bool RangeInputType::typeMismatchFor(const String& value) const
@@ -124,17 +124,18 @@ StepRange RangeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (rangeDefaultStep, rangeDefaultStepBase, rangeStepScaleFactor));
 
+    const Decimal stepBase = findStepBase(rangeDefaultStepBase);
     const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), rangeDefaultMinimum);
     const Decimal maximum = ensureMaximum(parseToNumber(element().fastGetAttribute(maxAttr), rangeDefaultMaximum), minimum, rangeDefaultMaximum);
 
     const AtomicString& precisionValue = element().fastGetAttribute(precisionAttr);
     if (!precisionValue.isNull()) {
         const Decimal step = equalIgnoringCase(precisionValue, "float") ? Decimal::nan() : 1;
-        return StepRange(minimum, minimum, maximum, step, stepDescription);
+        return StepRange(stepBase, minimum, maximum, step, stepDescription);
     }
 
     const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
-    return StepRange(minimum, minimum, maximum, step, stepDescription);
+    return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
 bool RangeInputType::isSteppable() const
@@ -246,7 +247,7 @@ void RangeInputType::createShadowSubtree()
 
     Document& document = element().document();
     RefPtr<HTMLDivElement> track = HTMLDivElement::create(document);
-    track->setPseudo(AtomicString("-webkit-slider-runnable-track", AtomicString::ConstructFromLiteral));
+    track->setShadowPseudoId(AtomicString("-webkit-slider-runnable-track", AtomicString::ConstructFromLiteral));
     track->setAttribute(idAttr, ShadowElementNames::sliderTrack());
     track->appendChild(SliderThumbElement::create(document));
     RefPtr<HTMLElement> container = SliderContainerElement::create(document);
@@ -355,10 +356,10 @@ void RangeInputType::updateTickMarkValues()
     RefPtr<HTMLCollection> options = dataList->options();
     m_tickMarkValues.reserveCapacity(options->length());
     for (unsigned i = 0; i < options->length(); ++i) {
-        Node* node = options->item(i);
-        HTMLOptionElement* optionElement = toHTMLOptionElement(node);
+        Element* element = options->item(i);
+        HTMLOptionElement* optionElement = toHTMLOptionElement(element);
         String optionValue = optionElement->value();
-        if (!element().isValidValue(optionValue))
+        if (!this->element().isValidValue(optionValue))
             continue;
         m_tickMarkValues.append(parseToNumber(optionValue, Decimal::nan()));
     }

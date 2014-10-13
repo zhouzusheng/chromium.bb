@@ -47,7 +47,7 @@ class AudioProcessingImpl : public AudioProcessing {
     kSampleRate32kHz = 32000
   };
 
-  explicit AudioProcessingImpl(int id);
+  explicit AudioProcessingImpl(const Config& config);
   virtual ~AudioProcessingImpl();
 
   CriticalSectionWrapper* crit() const;
@@ -57,7 +57,6 @@ class AudioProcessingImpl : public AudioProcessing {
 
   // AudioProcessing methods.
   virtual int Initialize() OVERRIDE;
-  virtual int InitializeLocked();
   virtual void SetExtraOptions(const Config& config) OVERRIDE;
   virtual int EnableExperimentalNs(bool enable) OVERRIDE;
   virtual bool experimental_ns_enabled() const OVERRIDE {
@@ -71,12 +70,16 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual int num_output_channels() const OVERRIDE;
   virtual int set_num_reverse_channels(int channels) OVERRIDE;
   virtual int num_reverse_channels() const OVERRIDE;
+  virtual void set_output_will_be_muted(bool muted) OVERRIDE;
+  virtual bool output_will_be_muted() const OVERRIDE;
   virtual int ProcessStream(AudioFrame* frame) OVERRIDE;
   virtual int AnalyzeReverseStream(AudioFrame* frame) OVERRIDE;
   virtual int set_stream_delay_ms(int delay) OVERRIDE;
   virtual int stream_delay_ms() const OVERRIDE;
   virtual void set_delay_offset_ms(int offset) OVERRIDE;
   virtual int delay_offset_ms() const OVERRIDE;
+  virtual void set_stream_key_pressed(bool key_pressed) OVERRIDE;
+  virtual bool stream_key_pressed() const OVERRIDE;
   virtual int StartDebugRecording(
       const char filename[kMaxFilenameSize]) OVERRIDE;
   virtual int StartDebugRecording(FILE* handle) OVERRIDE;
@@ -89,16 +92,16 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual NoiseSuppression* noise_suppression() const OVERRIDE;
   virtual VoiceDetection* voice_detection() const OVERRIDE;
 
-  // Module methods.
-  virtual int32_t ChangeUniqueId(const int32_t id) OVERRIDE;
+ protected:
+  virtual int InitializeLocked();
 
  private:
+  int MaybeInitializeLocked(int sample_rate_hz, int num_input_channels,
+                            int num_output_channels, int num_reverse_channels);
   bool is_data_processed() const;
   bool interleave_needed(bool is_data_processed) const;
   bool synthesis_needed(bool is_data_processed) const;
   bool analysis_needed(bool is_data_processed) const;
-
-  int id_;
 
   EchoCancellationImplWrapper* echo_cancellation_;
   EchoControlMobileImpl* echo_control_mobile_;
@@ -118,8 +121,8 @@ class AudioProcessingImpl : public AudioProcessing {
   int WriteMessageToDebugFile();
   int WriteInitMessage();
   scoped_ptr<FileWrapper> debug_file_;
-  scoped_ptr<audioproc::Event> event_msg_; // Protobuf message.
-  std::string event_str_; // Memory for protobuf serialization.
+  scoped_ptr<audioproc::Event> event_msg_;  // Protobuf message.
+  std::string event_str_;  // Memory for protobuf serialization.
 #endif
 
   int sample_rate_hz_;
@@ -132,6 +135,9 @@ class AudioProcessingImpl : public AudioProcessing {
   int num_reverse_channels_;
   int num_input_channels_;
   int num_output_channels_;
+  bool output_will_be_muted_;
+
+  bool key_pressed_;
 };
 }  // namespace webrtc
 

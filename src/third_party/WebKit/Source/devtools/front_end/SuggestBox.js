@@ -63,11 +63,6 @@ WebInspector.SuggestBox = function(suggestBoxDelegate, anchorElement, className,
     this._selectedIndex = -1;
     this._selectedElement = null;
     this._maxItemsHeight = maxItemsHeight;
-    this._boundOnScroll = this._onScrollOrResize.bind(this, true);
-    this._boundOnResize = this._onScrollOrResize.bind(this, false);
-    window.addEventListener("scroll", this._boundOnScroll, true);
-    window.addEventListener("resize", this._boundOnResize, true);
-
     this._bodyElement = anchorElement.ownerDocument.body;
     this._element = anchorElement.ownerDocument.createElement("div");
     this._element.className = "suggest-box " + (className || "");
@@ -86,17 +81,6 @@ WebInspector.SuggestBox.prototype = {
     },
 
     /**
-     * @param {boolean} isScroll
-     * @param {?Event} event
-     */
-    _onScrollOrResize: function(isScroll, event)
-    {
-        if (isScroll && this._element.isAncestor(event.target) || !this.visible())
-            return;
-        this._updateBoxPosition(this._anchorBox);
-    },
-
-    /**
      * @param {!AnchorBox} anchorBox
      */
     setPosition: function(anchorBox)
@@ -112,6 +96,12 @@ WebInspector.SuggestBox.prototype = {
         this._anchorBox = anchorBox;
         anchorBox = anchorBox || this._anchorElement.boxInWindow(window);
 
+        // Position relative to main DevTools element.
+        var container = WebInspector.Dialog.modalHostView().element;
+        anchorBox = anchorBox.relativeToElement(container);
+        var totalWidth = container.offsetWidth;
+        var totalHeight = container.offsetHeight;
+
         // Measure the content element box.
         this.contentElement.style.display = "inline-block";
         document.body.appendChild(this.contentElement);
@@ -125,20 +115,20 @@ WebInspector.SuggestBox.prototype = {
         const suggestBoxPaddingX = 21;
         const suggestBoxPaddingY = 2;
 
-        var maxWidth = document.body.offsetWidth - anchorBox.x - spacer;
+        var maxWidth = totalWidth - anchorBox.x - spacer;
         var width = Math.min(contentWidth, maxWidth - suggestBoxPaddingX) + suggestBoxPaddingX;
         var paddedWidth = contentWidth + suggestBoxPaddingX;
         var boxX = anchorBox.x;
         if (width < paddedWidth) {
-            // Shift the suggest box to the left to accommodate the content without trimming to the BODY edge.
-            maxWidth = document.body.offsetWidth - spacer;
+            // Shift the suggest box to the left to accommodate the content without trimming to the container edge.
+            maxWidth = totalWidth - spacer;
             width = Math.min(contentWidth, maxWidth - suggestBoxPaddingX) + suggestBoxPaddingX;
-            boxX = document.body.offsetWidth - width;
+            boxX = totalWidth - width;
         }
 
         var boxY;
         var aboveHeight = anchorBox.y;
-        var underHeight = document.body.offsetHeight - anchorBox.y - anchorBox.height;
+        var underHeight = totalHeight - anchorBox.y - anchorBox.height;
 
         var maxHeight = this._maxItemsHeight ? contentHeight * this._maxItemsHeight / this._length : Math.max(underHeight, aboveHeight) - spacer;
         var height = Math.min(contentHeight, maxHeight - suggestBoxPaddingY) + suggestBoxPaddingY;
@@ -154,7 +144,7 @@ WebInspector.SuggestBox.prototype = {
             this._element.classList.add("above-anchor");
         }
 
-        this._element.positionAt(boxX, boxY);
+        this._element.positionAt(boxX, boxY, container);
         this._element.style.width = width + "px";
         this._element.style.height = height + "px";
     },
@@ -179,8 +169,6 @@ WebInspector.SuggestBox.prototype = {
 
     removeFromElement: function()
     {
-        window.removeEventListener("scroll", this._boundOnScroll, true);
-        window.removeEventListener("resize", this._boundOnResize, true);
         this.hide();
     },
 

@@ -48,21 +48,24 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_shapePadding(RenderStyle::initialShapePadding())
     , m_shapeImageThreshold(RenderStyle::initialShapeImageThreshold())
     , m_clipPath(RenderStyle::initialClipPath())
+    , m_textDecorationColor(StyleColor::currentColor())
+    , m_visitedLinkTextDecorationColor(StyleColor::currentColor())
     , m_visitedLinkBackgroundColor(RenderStyle::initialBackgroundColor())
+    , m_visitedLinkOutlineColor(StyleColor::currentColor())
+    , m_visitedLinkBorderLeftColor(StyleColor::currentColor())
+    , m_visitedLinkBorderRightColor(StyleColor::currentColor())
+    , m_visitedLinkBorderTopColor(StyleColor::currentColor())
+    , m_visitedLinkBorderBottomColor(StyleColor::currentColor())
     , m_order(RenderStyle::initialOrder())
     , m_objectPosition(RenderStyle::initialObjectPosition())
-    , m_flowThread(RenderStyle::initialFlowThread())
-    , m_regionThread(RenderStyle::initialRegionThread())
-    , m_regionFragment(RenderStyle::initialRegionFragment())
-    , m_regionBreakAfter(RenderStyle::initialPageBreak())
-    , m_regionBreakBefore(RenderStyle::initialPageBreak())
-    , m_regionBreakInside(RenderStyle::initialPageBreak())
     , m_pageSizeType(PAGE_SIZE_AUTO)
     , m_transformStyle3D(RenderStyle::initialTransformStyle3D())
     , m_backfaceVisibility(RenderStyle::initialBackfaceVisibility())
     , m_alignContent(RenderStyle::initialAlignContent())
     , m_alignItems(RenderStyle::initialAlignItems())
+    , m_alignItemsOverflowAlignment(RenderStyle::initialAlignItemsOverflowAlignment())
     , m_alignSelf(RenderStyle::initialAlignSelf())
+    , m_alignSelfOverflowAlignment(RenderStyle::initialAlignSelfOverflowAlignment())
     , m_justifyContent(RenderStyle::initialJustifyContent())
     , userDrag(RenderStyle::initialUserDrag())
     , textOverflow(RenderStyle::initialTextOverflow())
@@ -80,6 +83,9 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_touchAction(RenderStyle::initialTouchAction())
     , m_objectFit(RenderStyle::initialObjectFit())
     , m_isolation(RenderStyle::initialIsolation())
+    , m_justifySelf(RenderStyle::initialJustifySelf())
+    , m_justifySelfOverflowAlignment(RenderStyle::initialJustifySelfOverflowAlignment())
+    , m_scrollBehavior(RenderStyle::initialScrollBehavior())
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -127,18 +133,14 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_visitedLinkBorderBottomColor(o.m_visitedLinkBorderBottomColor)
     , m_order(o.m_order)
     , m_objectPosition(o.m_objectPosition)
-    , m_flowThread(o.m_flowThread)
-    , m_regionThread(o.m_regionThread)
-    , m_regionFragment(o.m_regionFragment)
-    , m_regionBreakAfter(o.m_regionBreakAfter)
-    , m_regionBreakBefore(o.m_regionBreakBefore)
-    , m_regionBreakInside(o.m_regionBreakInside)
     , m_pageSizeType(o.m_pageSizeType)
     , m_transformStyle3D(o.m_transformStyle3D)
     , m_backfaceVisibility(o.m_backfaceVisibility)
     , m_alignContent(o.m_alignContent)
     , m_alignItems(o.m_alignItems)
+    , m_alignItemsOverflowAlignment(o.m_alignItemsOverflowAlignment)
     , m_alignSelf(o.m_alignSelf)
+    , m_alignSelfOverflowAlignment(o.m_alignSelfOverflowAlignment)
     , m_justifyContent(o.m_justifyContent)
     , userDrag(o.userDrag)
     , textOverflow(o.textOverflow)
@@ -156,6 +158,9 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_touchAction(o.m_touchAction)
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
+    , m_justifySelf(o.m_justifySelf)
+    , m_justifySelfOverflowAlignment(o.m_justifySelfOverflowAlignment)
+    , m_scrollBehavior(o.m_scrollBehavior)
 {
 }
 
@@ -210,18 +215,14 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_order == o.m_order
         && m_objectPosition == o.m_objectPosition
         && m_callbackSelectors == o.m_callbackSelectors
-        && m_flowThread == o.m_flowThread
-        && m_regionThread == o.m_regionThread
-        && m_regionFragment == o.m_regionFragment
-        && m_regionBreakAfter == o.m_regionBreakAfter
-        && m_regionBreakBefore == o.m_regionBreakBefore
-        && m_regionBreakInside == o.m_regionBreakInside
         && m_pageSizeType == o.m_pageSizeType
         && m_transformStyle3D == o.m_transformStyle3D
         && m_backfaceVisibility == o.m_backfaceVisibility
         && m_alignContent == o.m_alignContent
         && m_alignItems == o.m_alignItems
+        && m_alignItemsOverflowAlignment == o.m_alignItemsOverflowAlignment
         && m_alignSelf == o.m_alignSelf
+        && m_alignSelfOverflowAlignment == o.m_alignSelfOverflowAlignment
         && m_justifyContent == o.m_justifyContent
         && userDrag == o.userDrag
         && textOverflow == o.textOverflow
@@ -238,7 +239,10 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_hasAspectRatio == o.m_hasAspectRatio
         && m_touchAction == o.m_touchAction
         && m_objectFit == o.m_objectFit
-        && m_isolation == o.m_isolation;
+        && m_isolation == o.m_isolation
+        && m_justifySelf == o.m_justifySelf
+        && m_justifySelfOverflowAlignment == o.m_justifySelfOverflowAlignment
+        && m_scrollBehavior == o.m_scrollBehavior;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const

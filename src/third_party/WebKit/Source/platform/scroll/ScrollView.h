@@ -43,7 +43,7 @@ class Scrollbar;
 
 class PLATFORM_EXPORT ScrollView : public Widget, public ScrollableArea {
 public:
-    ~ScrollView();
+    virtual ~ScrollView();
 
     // ScrollableArea functions.
     virtual int scrollSize(ScrollbarOrientation) const OVERRIDE;
@@ -185,13 +185,8 @@ public:
     IntRect windowToContents(const IntRect&) const;
     IntRect contentsToWindow(const IntRect&) const;
 
-    // Functions for converting to and from screen coordinates.
+    // Functions for converting to screen coordinates.
     IntRect contentsToScreen(const IntRect&) const;
-    IntPoint screenToContents(const IntPoint&) const;
-
-    // The purpose of this function is to answer whether or not the scroll view is currently visible. Animations and painting updates can be suspended if
-    // we know that we are either not in a window right now or if that window is not visible.
-    bool isOffscreen() const;
 
     // These functions are used to enable scrollbars to avoid window resizer controls that overlap the scroll view. This happens on Mac
     // for example.
@@ -203,18 +198,15 @@ public:
     virtual void setParent(Widget*) OVERRIDE; // Overridden to update the overlapping scrollbar count.
 
     // Called when our frame rect changes (or the rect/scroll position of an ancestor changes).
-    virtual void frameRectsChanged();
+    virtual void frameRectsChanged() OVERRIDE;
 
     // Widget override to update our scrollbars and notify our contents of the resize.
-    virtual void setFrameRect(const IntRect&);
-
-    // Widget override to notify our contents of a cliprect change.
-    virtual void clipRectChanged() OVERRIDE;
+    virtual void setFrameRect(const IntRect&) OVERRIDE;
 
     // For platforms that need to hit test scrollbars from within the engine's event handlers (like Win32).
     Scrollbar* scrollbarAtPoint(const IntPoint& windowPoint);
 
-    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint& point) const
+    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint& point) const OVERRIDE
     {
         IntPoint newPoint = point;
         if (!isScrollViewScrollbar(child))
@@ -223,7 +215,7 @@ public:
         return newPoint;
     }
 
-    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint& point) const
+    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint& point) const OVERRIDE
     {
         IntPoint newPoint = point;
         if (!isScrollViewScrollbar(child))
@@ -233,13 +225,13 @@ public:
     }
 
     // Widget override. Handles painting of the contents of the view as well as the scrollbars.
-    virtual void paint(GraphicsContext*, const IntRect&);
+    virtual void paint(GraphicsContext*, const IntRect&) OVERRIDE;
     void paintScrollbars(GraphicsContext*, const IntRect&);
 
     // Widget overrides to ensure that our children's visibility status is kept up to date when we get shown and hidden.
-    virtual void show();
-    virtual void hide();
-    virtual void setParentVisible(bool);
+    virtual void show() OVERRIDE;
+    virtual void hide() OVERRIDE;
+    virtual void setParentVisible(bool) OVERRIDE;
 
     // Pan scrolling.
     static const int noPanScrollRadius = 15;
@@ -249,7 +241,7 @@ public:
 
     virtual bool isPointInScrollbarCorner(const IntPoint&);
     virtual bool scrollbarCornerPresent() const;
-    virtual IntRect scrollCornerRect() const;
+    virtual IntRect scrollCornerRect() const OVERRIDE;
     virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect);
     virtual void paintScrollbar(GraphicsContext*, Scrollbar*, const IntRect&);
 
@@ -261,7 +253,7 @@ public:
     void calculateAndPaintOverhangAreas(GraphicsContext*, const IntRect& dirtyRect);
     void calculateAndPaintOverhangBackground(GraphicsContext*, const IntRect& dirtyRect);
 
-    virtual bool isScrollView() const OVERRIDE { return true; }
+    virtual bool isScrollView() const OVERRIDE FINAL { return true; }
 
 protected:
     ScrollView();
@@ -338,23 +330,10 @@ private:
     void calculateOverhangAreasForPainting(IntRect& horizontalOverhangRect, IntRect& verticalOverhangRect);
     void updateOverhangAreas();
 
-    int pageStep(ScrollbarOrientation) const;
+    virtual int pageStep(ScrollbarOrientation) const OVERRIDE;
 }; // class ScrollView
 
-inline ScrollView* toScrollView(Widget* widget)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isScrollView());
-    return static_cast<ScrollView*>(widget);
-}
-
-inline const ScrollView* toScrollView(const Widget* widget)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isScrollView());
-    return static_cast<const ScrollView*>(widget);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toScrollView(const ScrollView*);
+DEFINE_TYPE_CASTS(ScrollView, Widget, widget, widget->isScrollView(), widget.isScrollView());
 
 } // namespace WebCore
 

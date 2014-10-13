@@ -38,14 +38,13 @@
 #include "core/dom/CharacterData.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/EventContext.h"
+#include "core/events/NodeEventContext.h"
 #include "core/frame/Frame.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/storage/StorageArea.h"
-#include "modules/websockets/WebSocketFrame.h"
 #include "platform/network/FormData.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
@@ -56,14 +55,13 @@ namespace WebCore {
 struct CSSParserString;
 class Document;
 class Element;
-class DeviceOrientationData;
-class GeolocationPosition;
+class EventTarget;
+class ExecutionContext;
 class GraphicsContext;
 class GraphicsLayer;
 class InspectorTimelineAgent;
 class InstrumentingAgents;
 class RenderLayer;
-class ExecutionContext;
 class ThreadableLoaderClient;
 class WorkerGlobalScope;
 class WorkerGlobalScopeProxy;
@@ -109,6 +107,7 @@ InspectorTimelineAgent* retrieveTimelineAgent(const InspectorInstrumentationCook
 // Called from generated instrumentation code.
 InstrumentingAgents* instrumentingAgentsFor(Page*);
 InstrumentingAgents* instrumentingAgentsFor(Frame*);
+InstrumentingAgents* instrumentingAgentsFor(EventTarget*);
 InstrumentingAgents* instrumentingAgentsFor(ExecutionContext*);
 InstrumentingAgents* instrumentingAgentsFor(Document&);
 InstrumentingAgents* instrumentingAgentsFor(Document*);
@@ -126,7 +125,9 @@ extern const char PaintSetup[];
 extern const char RasterTask[];
 extern const char Paint[];
 extern const char Layer[];
+extern const char RequestMainThreadFrame[];
 extern const char BeginFrame[];
+extern const char DrawFrame[];
 extern const char ActivateLayerTree[];
 };
 

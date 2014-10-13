@@ -8,8 +8,8 @@
 #include "base/timer/timer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
-#include "content/browser/aura/image_transport_factory.h"
-#include "content/browser/renderer_host/media/video_capture_device_impl.h"
+#include "content/browser/compositor/image_transport_factory.h"
+#include "content/browser/renderer_host/media/content_video_capture_device_core.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/browser_thread.h"
 #include "media/base/video_util.h"
@@ -97,7 +97,7 @@ class DesktopVideoCaptureMachine
   // VideoCaptureFrameSource overrides.
   virtual bool Start(
       const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  virtual void Stop(const base::Closure& callback) OVERRIDE;
 
   // Implements aura::WindowObserver.
   virtual void OnWindowBoundsChanged(aura::Window* window,
@@ -113,9 +113,6 @@ class DesktopVideoCaptureMachine
   virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE {}
   virtual void OnCompositingLockStateChanged(
       ui::Compositor* compositor) OVERRIDE {}
-  virtual void OnUpdateVSyncParameters(ui::Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE {}
 
  private:
   // Captures a frame.
@@ -128,7 +125,7 @@ class DesktopVideoCaptureMachine
   // Response callback for cc::Layer::RequestCopyOfOutput().
   void DidCopyOutput(
       scoped_refptr<media::VideoFrame> video_frame,
-      base::Time start_time,
+      base::TimeTicks start_time,
       const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
       scoped_ptr<cc::CopyOutputResult> result);
 
@@ -213,24 +210,29 @@ bool DesktopVideoCaptureMachine::Start(
   return true;
 }
 
-void DesktopVideoCaptureMachine::Stop() {
+void DesktopVideoCaptureMachine::Stop(const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Stop observing window events.
-  if (desktop_window_)
+  if (desktop_window_) {
     desktop_window_->RemoveObserver(this);
+    desktop_window_ = NULL;
+  }
 
   // Stop observing compositor updates.
   if (desktop_layer_) {
     ui::Compositor* compositor = desktop_layer_->GetCompositor();
     if (compositor)
       compositor->RemoveObserver(this);
+    desktop_layer_ = NULL;
   }
 
   // Stop timer.
   timer_.Stop();
 
   started_ = false;
+
+  callback.Run();
 }
 
 void DesktopVideoCaptureMachine::UpdateCaptureSize() {
@@ -252,7 +254,7 @@ void DesktopVideoCaptureMachine::Capture(bool dirty) {
   scoped_refptr<media::VideoFrame> frame;
   ThreadSafeCaptureOracle::CaptureFrameCallback capture_frame_cb;
 
-  const base::Time start_time = base::Time::Now();
+  const base::TimeTicks start_time = base::TimeTicks::Now();
   const VideoCaptureOracle::Event event =
       dirty ? VideoCaptureOracle::kCompositorUpdate
             : VideoCaptureOracle::kTimerPoll;
@@ -272,7 +274,7 @@ void DesktopVideoCaptureMachine::Capture(bool dirty) {
 }
 
 void CopyOutputFinishedForVideo(
-    base::Time start_time,
+    base::TimeTicks start_time,
     const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
     const scoped_refptr<media::VideoFrame>& target,
     const SkBitmap& cursor_bitmap,
@@ -287,10 +289,10 @@ void CopyOutputFinishedForVideo(
 
 void DesktopVideoCaptureMachine::DidCopyOutput(
     scoped_refptr<media::VideoFrame> video_frame,
-    base::Time start_time,
+    base::TimeTicks start_time,
     const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
     scoped_ptr<cc::CopyOutputResult> result) {
-  if (result->IsEmpty() || result->size().IsEmpty())
+  if (result->IsEmpty() || result->size().IsEmpty() || !desktop_layer_)
     return;
 
   // Compute the dest size we want after the letterboxing resize. Make the
@@ -338,16 +340,23 @@ void DesktopVideoCaptureMachine::DidCopyOutput(
 
   gfx::Point cursor_position_in_frame = UpdateCursorState(region_in_frame);
   yuv_readback_pipeline_->ReadbackYUV(
-      texture_mailbox.name(), texture_mailbox.sync_point(), video_frame.get(),
-      base::Bind(&CopyOutputFinishedForVideo, start_time, capture_frame_cb,
-                 video_frame, scaled_cursor_bitmap_, cursor_position_in_frame,
+      texture_mailbox.mailbox(),
+      texture_mailbox.sync_point(),
+      video_frame.get(),
+      base::Bind(&CopyOutputFinishedForVideo,
+                 start_time,
+                 capture_frame_cb,
+                 video_frame,
+                 scaled_cursor_bitmap_,
+                 cursor_position_in_frame,
                  base::Passed(&release_callback)));
 }
 
 gfx::Point DesktopVideoCaptureMachine::UpdateCursorState(
     const gfx::Rect& region_in_frame) {
   const gfx::Rect desktop_bounds = desktop_layer_->bounds();
-  gfx::NativeCursor cursor = desktop_window_->GetDispatcher()->last_cursor();
+  gfx::NativeCursor cursor =
+      desktop_window_->GetDispatcher()->host()->last_cursor();
   if (last_cursor_ != cursor) {
     SkBitmap cursor_bitmap;
     if (ui::GetCursorBitmap(cursor, &cursor_bitmap, &cursor_hot_point_)) {
@@ -396,13 +405,11 @@ void DesktopVideoCaptureMachine::OnWindowBoundsChanged(
 }
 
 void DesktopVideoCaptureMachine::OnWindowDestroyed(aura::Window* window) {
-  DCHECK(desktop_window_ && window == desktop_window_);
-  desktop_window_ = NULL;
-  desktop_layer_ = NULL;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Post task to stop capture on UI thread.
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-      &DesktopVideoCaptureMachine::Stop, AsWeakPtr()));
+  Stop(base::Bind(&base::DoNothing));
+
+  oracle_proxy_->ReportError("OnWindowDestroyed()");
 }
 
 void DesktopVideoCaptureMachine::OnCompositingEnded(
@@ -415,7 +422,7 @@ void DesktopVideoCaptureMachine::OnCompositingEnded(
 
 DesktopCaptureDeviceAura::DesktopCaptureDeviceAura(
     const DesktopMediaID& source)
-    : impl_(new VideoCaptureDeviceImpl(scoped_ptr<VideoCaptureMachine>(
+    : core_(new ContentVideoCaptureDeviceCore(scoped_ptr<VideoCaptureMachine>(
         new DesktopVideoCaptureMachine(source)))) {}
 
 DesktopCaptureDeviceAura::~DesktopCaptureDeviceAura() {
@@ -432,11 +439,11 @@ void DesktopCaptureDeviceAura::AllocateAndStart(
     const media::VideoCaptureParams& params,
     scoped_ptr<Client> client) {
   DVLOG(1) << "Allocating " << params.requested_format.frame_size.ToString();
-  impl_->AllocateAndStart(params, client.Pass());
+  core_->AllocateAndStart(params, client.Pass());
 }
 
 void DesktopCaptureDeviceAura::StopAndDeAllocate() {
-  impl_->StopAndDeAllocate();
+  core_->StopAndDeAllocate();
 }
 
 }  // namespace content

@@ -40,11 +40,11 @@
 #include "core/css/MediaQuery.h"
 #include "core/css/resolver/MediaQueryResult.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -317,6 +317,8 @@ static bool evalResolution(CSSValue* value, Frame* frame, MediaFeaturePrefix op)
 
 static bool devicePixelRatioMediaFeatureEval(CSSValue *value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedDevicePixelRatioMediaFeature);
+
     return (!value || toCSSPrimitiveValue(value)->isNumber()) && evalResolution(value, frame, op);
 }
 
@@ -350,7 +352,8 @@ static bool computeLength(CSSValue* value, bool strict, RenderStyle* initialStyl
     if (primitiveValue->isLength()) {
         // Relative (like EM) and root relative (like REM) units are always resolved against
         // the initial values for media queries, hence the two initialStyle parameters.
-        result = primitiveValue->computeLength<int>(CSSToLengthConversionData(initialStyle, initialStyle, 1.0 /* zoom */, true /* computingFontSize */));
+        // FIXME: We need to plumb viewport unit support down to here.
+        result = primitiveValue->computeLength<int>(CSSToLengthConversionData(initialStyle, initialStyle, 0, 1.0 /* zoom */, true /* computingFontSize */));
         return true;
     }
 
@@ -365,7 +368,7 @@ static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Fr
             return false;
         int height = static_cast<int>(screenRect(frame->view()).height());
         if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
-            height = lroundf(height * frame->page()->deviceScaleFactor());
+            height = lroundf(height * frame->host()->deviceScaleFactor());
         return compareValue(height, length, op);
     }
     // ({,min-,max-}device-height)
@@ -381,7 +384,7 @@ static bool deviceWidthMediaFeatureEval(CSSValue* value, RenderStyle* style, Fra
             return false;
         int width = static_cast<int>(screenRect(frame->view()).width());
         if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
-            width = lroundf(width * frame->page()->deviceScaleFactor());
+            width = lroundf(width * frame->host()->deviceScaleFactor());
         return compareValue(width, length, op);
     }
     // ({,min-,max-}device-width)
@@ -473,11 +476,15 @@ static bool maxDeviceAspectRatioMediaFeatureEval(CSSValue* value, RenderStyle* s
 
 static bool minDevicePixelRatioMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedMinDevicePixelRatioMediaFeature);
+
     return devicePixelRatioMediaFeatureEval(value, style, frame, MinPrefix);
 }
 
 static bool maxDevicePixelRatioMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedMaxDevicePixelRatioMediaFeature);
+
     return devicePixelRatioMediaFeatureEval(value, style, frame, MaxPrefix);
 }
 
@@ -531,18 +538,9 @@ static bool maxResolutionMediaFeatureEval(CSSValue* value, RenderStyle* style, F
     return resolutionMediaFeatureEval(value, style, frame, MaxPrefix);
 }
 
-static bool animationMediaFeatureEval(CSSValue* value, RenderStyle*, Frame*, MediaFeaturePrefix op)
+static bool animationMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
-    if (value) {
-        float number;
-        return numberValue(value, number) && compareValue(1, static_cast<int>(number), op);
-    }
-    return true;
-}
-
-static bool deprecatedTransitionMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
-{
-    UseCounter::countDeprecation(frame->document(), UseCounter::PrefixedTransitionMediaFeature);
+    UseCounter::count(frame->document(), UseCounter::PrefixedAnimationMediaFeature);
 
     if (value) {
         float number;
@@ -551,8 +549,10 @@ static bool deprecatedTransitionMediaFeatureEval(CSSValue* value, RenderStyle*, 
     return true;
 }
 
-static bool transform2dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame*, MediaFeaturePrefix op)
+static bool transform2dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedTransform2dMediaFeature);
+
     if (value) {
         float number;
         return numberValue(value, number) && compareValue(1, static_cast<int>(number), op);
@@ -562,6 +562,8 @@ static bool transform2dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame*, M
 
 static bool transform3dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedTransform3dMediaFeature);
+
     bool returnValueIfNoParameter;
     int have3dRendering;
 
@@ -581,6 +583,8 @@ static bool transform3dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* fr
 
 static bool viewModeMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix)
 {
+    UseCounter::count(frame->document(), UseCounter::PrefixedViewModeMediaFeature);
+
     if (!value)
         return true;
 

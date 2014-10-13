@@ -41,7 +41,8 @@ class WebServiceWorkerContextProxy {
 public:
     virtual ~WebServiceWorkerContextProxy() { }
 
-    // FIXME: Add service-worker specific methods.
+    // FIXME: This needs to pass the active service worker info.
+    virtual void dispatchInstallEvent(int installEventID) = 0;
 
     virtual void resumeWorkerContext() { }
     virtual void attachDevTools() { }

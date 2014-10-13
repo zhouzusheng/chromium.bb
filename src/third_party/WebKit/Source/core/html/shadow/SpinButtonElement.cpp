@@ -56,7 +56,7 @@ inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner&
 PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
 {
     RefPtr<SpinButtonElement> element = adoptRef(new SpinButtonElement(document, spinButtonOwner));
-    element->setPseudo(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
+    element->setShadowPseudoId(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::spinButton());
     return element.release();
 }
@@ -111,9 +111,9 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             }
             event->setDefaultHandled();
         }
-    } else if (mouseEvent->type() == EventTypeNames::mouseup && mouseEvent->button() == LeftButton)
+    } else if (mouseEvent->type() == EventTypeNames::mouseup && mouseEvent->button() == LeftButton) {
         stopRepeatingTimer();
-    else if (event->type() == EventTypeNames::mousemove) {
+    } else if (event->type() == EventTypeNames::mousemove) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
             if (!m_capturing) {
                 if (Frame* frame = document().frame()) {

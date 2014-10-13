@@ -120,7 +120,7 @@ ContentBrowserClientImpl::~ContentBrowserClientImpl()
 {
 }
 
-void ContentBrowserClientImpl::RenderProcessHostCreated(
+void ContentBrowserClientImpl::RenderProcessWillLaunch(
     content::RenderProcessHost* host)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -182,11 +182,11 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
     // URLRequestContextGetterImpl::GetURLRequestContext().
     static const char* const kProtocolList[] = {
         chrome::kBlobScheme,
-        chrome::kFileSystemScheme,
-        chrome::kChromeUIScheme,
-        chrome::kChromeDevToolsScheme,
-        chrome::kDataScheme,
-        chrome::kFileScheme,
+        content::kFileSystemScheme,
+        content::kChromeUIScheme,
+        content::kChromeDevToolsScheme,
+        content::kDataScheme,
+        content::kFileScheme,
     };
     for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
         if (url.scheme() == kProtocolList[i])

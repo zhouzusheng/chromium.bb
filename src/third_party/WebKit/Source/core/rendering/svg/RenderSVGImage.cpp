@@ -64,12 +64,12 @@ bool RenderSVGImage::updateImageViewport()
     bool updatedViewport = false;
 
     SVGLengthContext lengthContext(image);
-    m_objectBoundingBox = FloatRect(image->xCurrentValue().value(lengthContext), image->yCurrentValue().value(lengthContext), image->widthCurrentValue().value(lengthContext), image->heightCurrentValue().value(lengthContext));
+    m_objectBoundingBox = FloatRect(image->x()->currentValue()->value(lengthContext), image->y()->currentValue()->value(lengthContext), image->width()->currentValue()->value(lengthContext), image->height()->currentValue()->value(lengthContext));
 
     // Images with preserveAspectRatio=none should force non-uniform scaling. This can be achieved
     // by setting the image's container size to its intrinsic size.
     // See: http://www.w3.org/TR/SVG/single-page.html, 7.8 The ‘preserveAspectRatio’ attribute.
-    if (image->preserveAspectRatioCurrentValue().align() == SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE) {
+    if (image->preserveAspectRatio()->currentValue()->align() == SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE) {
         if (ImageResource* cachedImage = m_imageResource->cachedImage()) {
             LayoutSize intrinsicSize = cachedImage->imageSizeForRenderer(0, style()->effectiveZoom());
             if (intrinsicSize != m_imageResource->imageSize(style()->effectiveZoom())) {
@@ -136,11 +136,15 @@ void RenderSVGImage::paint(PaintInfo& paintInfo, const LayoutPoint&)
     PaintInfo childPaintInfo(paintInfo);
     bool drawsOutline = style()->outlineWidth() && (childPaintInfo.phase == PaintPhaseOutline || childPaintInfo.phase == PaintPhaseSelfOutline);
     if (drawsOutline || childPaintInfo.phase == PaintPhaseForeground) {
-        GraphicsContextStateSaver stateSaver(*childPaintInfo.context);
-        childPaintInfo.applyTransform(m_localTransform);
-
+        GraphicsContextStateSaver stateSaver(*childPaintInfo.context, false);
+        if (!m_localTransform.isIdentity()) {
+            stateSaver.save();
+            childPaintInfo.applyTransform(m_localTransform, false);
+        }
         if (childPaintInfo.phase == PaintPhaseForeground && !m_objectBoundingBox.isEmpty()) {
-            SVGRenderingContext renderingContext(this, childPaintInfo);
+            // SVGRenderingContext may taint the state - make sure we're always saving.
+            SVGRenderingContext renderingContext(this, childPaintInfo, stateSaver.saved() ?
+                SVGRenderingContext::DontSaveGraphicsContext : SVGRenderingContext::SaveGraphicsContext);
 
             if (renderingContext.isRenderingPrepared()) {
                 if (style()->svgStyle()->bufferedRendering() == BR_STATIC && renderingContext.bufferForeground(m_bufferedForeground))
@@ -162,7 +166,7 @@ void RenderSVGImage::paintForeground(PaintInfo& paintInfo)
     FloatRect srcRect(0, 0, image->width(), image->height());
 
     SVGImageElement* imageElement = toSVGImageElement(element());
-    imageElement->preserveAspectRatioCurrentValue().transformRect(destRect, srcRect);
+    imageElement->preserveAspectRatio()->currentValue()->transformRect(destRect, srcRect);
 
     bool useLowQualityScaling = false;
     if (style()->svgStyle()->bufferedRendering() != BR_STATIC)

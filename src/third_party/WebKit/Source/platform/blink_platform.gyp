@@ -94,6 +94,9 @@
             'WebScrollbarPainterControllerDelegate=ChromiumWebCoreObjCWebScrollbarPainterControllerDelegate',
             'WebScrollbarPainterDelegate=ChromiumWebCoreObjCWebScrollbarPainterDelegate',
             'WebScrollbarPartAnimation=ChromiumWebCoreObjCWebScrollbarPartAnimation',
+            'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
+            'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
+            'WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver',
           ],
           'postbuilds': [
             {
@@ -127,9 +130,6 @@
       'blink_prerequisites',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
       '<(DEPTH)/skia/skia.gyp:skia',
-      # FIXME: This dependency exists for CSS Custom Filters, via the file ANGLEPlatformBridge
-      # The code touching ANGLE should really be moved into the ANGLE directory.
-      '<(angle_path)/src/build_angle.gyp:translator',
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -138,7 +138,7 @@
       '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
       '<(DEPTH)/url/url.gyp:url_lib',
       '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      'platform_derived_sources.gyp:make_platform_derived_sources',
+      'platform_generated.gyp:make_platform_generated',
       '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(libjpeg_gyp_path):libjpeg',
     ],
@@ -150,9 +150,6 @@
       '<(DEPTH)/third_party/ots/ots.gyp:ots',
       '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
       '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      # FIXME: This dependency exists for CSS Custom Filters, via the file ANGLEPlatformBridge
-      # The code touching ANGLE should really be moved into the ANGLE directory.
-      '<(angle_path)/src/build_angle.gyp:translator',
       '<(DEPTH)/url/url.gyp:url_lib',
       '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(libjpeg_gyp_path):libjpeg',
@@ -174,7 +171,7 @@
     'sources': [
       '<@(platform_files)',
 
-      # Additional .cpp files from platform_derived_sources.gyp:make_platform_derived_sources actions.
+      # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
       '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
       '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.cpp',
       '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.h',
@@ -256,6 +253,8 @@
           ['include', 'mac/NSScrollerImpDetails\\.mm$'],
           ['include', 'mac/ScrollAnimatorMac\\.mm$'],
           ['include', 'mac/ScrollElasticityController\\.mm$'],
+          ['include', 'mac/ThemeMac\\.h$'],
+          ['include', 'mac/ThemeMac\\.mm$'],
  
           # Mac uses only ScrollAnimatorMac.
           ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
@@ -325,10 +324,6 @@
           ['include', 'fonts/win/UniscribeHelper\\.(cpp|h)$'],
           ['include', 'fonts/win/UniscribeHelperTextRun\\.(cpp|h)$'],
 
-          ['include', 'scroll/ScrollbarThemeWin\\.(cpp|h)$'],
-
-          ['include', 'graphics/win/TransparencyWin\\.(cpp|h)$'],
-
           # SystemInfo.cpp is useful and we don't want to copy it.
           ['include', 'win/SystemInfo\\.cpp$'],
         ],
@@ -349,10 +344,10 @@
               ['include', 'fonts/skia/FontCacheSkiaWin\\.cpp$'],
               ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
               ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
+              ['exclude', 'fonts/win/FontCustomPlatformDataWin\\.cpp$'],
               ['exclude', 'fonts/win/SimpleFontDataWin\\.cpp$'],
               ['exclude', 'fonts/GlyphPageTreeNodeWin\\.cpp$'],
               ['exclude', 'fonts/FontCacheWin\\.cpp$'],
-              ['exclude', 'fonts/FontCustomPlatformDataWin\\.cpp$'],
             ],
           }],
           ['"ENABLE_HARFBUZZ_ON_WINDOWS=1" in feature_defines', {
@@ -391,7 +386,7 @@
           ['exclude', 'Android\\.cpp$'],
         ],
       }],
-      ['use_x11 == 1', {
+      ['OS=="linux"', {
         'dependencies': [
           '<(DEPTH)/build/linux/system.gyp:fontconfig',
         ],
@@ -399,11 +394,7 @@
           '<(DEPTH)/build/linux/system.gyp:fontconfig',
         ],
       }],
-      ['use_default_render_theme==1', {
-        'sources/': [
-          ['exclude', 'scroll/ScrollbarThemeWin\\.(cpp|h)'],
-        ],
-      }, { # use_default_render_theme==0
+      ['use_default_render_theme==0', {
         'sources/': [
           ['exclude', 'scroll/ScrollbarThemeGtkOrAura\\.(cpp|h)'],
         ],

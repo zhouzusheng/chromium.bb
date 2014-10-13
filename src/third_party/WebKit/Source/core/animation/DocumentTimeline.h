@@ -60,12 +60,19 @@ public:
     };
 
     static PassRefPtr<DocumentTimeline> create(Document*, PassOwnPtr<PlatformTiming> = nullptr);
+    ~DocumentTimeline();
     // Returns whether style recalc was triggered.
     bool serviceAnimations();
 
     // Creates a player attached to this timeline, but without a start time.
     Player* createPlayer(TimedItem*);
     Player* play(TimedItem*);
+
+    void playerDestroyed(Player* player)
+    {
+        ASSERT(m_players.contains(player));
+        m_players.remove(player);
+    }
 
     // Called from setReadyState() in Document.cpp to set m_zeroTime to
     // performance.timing.domInteractive
@@ -75,7 +82,10 @@ public:
     double currentTime();
     void pauseAnimationsForTesting(double);
     size_t numberOfActiveAnimationsForTesting() const;
-    const Vector<RefPtr<Player> >& players() const { return m_players; }
+    const Vector<RefPtr<Player> >& currentPlayers() const { return m_currentPlayers; }
+
+    void setHasPlayerNeedingUpdate();
+    bool hasPlayerNeedingUpdate() const { return m_hasPlayerNeedingUpdate; }
 
     void addEventToDispatch(EventTarget* target, PassRefPtr<Event> event)
     {
@@ -85,6 +95,8 @@ public:
     void dispatchEvents();
     void dispatchEventsAsync();
 
+    void detachFromDocument();
+
 protected:
     DocumentTimeline(Document*, PassOwnPtr<PlatformTiming>);
 
@@ -92,7 +104,9 @@ private:
     double m_zeroTime;
     Document* m_document;
     Timer<DocumentTimeline> m_eventDistpachTimer;
-    Vector<RefPtr<Player> > m_players;
+    Vector<RefPtr<Player> > m_currentPlayers;
+    HashSet<Player*> m_players;
+    bool m_hasPlayerNeedingUpdate;
 
     void eventDispatchTimerFired(Timer<DocumentTimeline>*);
     void wake();
@@ -112,7 +126,7 @@ private:
 
     OwnPtr<PlatformTiming> m_timing;
 
-    class DocumentTimelineTiming : public PlatformTiming {
+    class DocumentTimelineTiming FINAL : public PlatformTiming {
     public:
         DocumentTimelineTiming(DocumentTimeline* documentTimeline)
             : m_timeline(documentTimeline)

@@ -67,35 +67,32 @@ class ThreadableLoaderClient;
 class XHRReplayData;
 class XMLHttpRequest;
 
-struct WebSocketFrame;
 class WebSocketHandshakeRequest;
 class WebSocketHandshakeResponse;
 
 typedef String ErrorString;
 
-class InspectorResourceAgent : public InspectorBaseAgent<InspectorResourceAgent>, public InspectorBackendDispatcher::NetworkCommandHandler {
+class InspectorResourceAgent FINAL : public InspectorBaseAgent<InspectorResourceAgent>, public InspectorBackendDispatcher::NetworkCommandHandler {
 public:
-    static PassOwnPtr<InspectorResourceAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)
+    static PassOwnPtr<InspectorResourceAgent> create(InspectorPageAgent* pageAgent, InspectorClient* client)
     {
-        return adoptPtr(new InspectorResourceAgent(instrumentingAgents, pageAgent, client, state));
+        return adoptPtr(new InspectorResourceAgent(pageAgent, client));
     }
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
+    virtual void restore() OVERRIDE;
 
-    static PassRefPtr<InspectorResourceAgent> restore(Page*, InspectorCompositeState*, InspectorFrontend*);
-
-    ~InspectorResourceAgent();
+    virtual ~InspectorResourceAgent();
 
     // Called from instrumentation.
     void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
     void didReceiveResourceResponse(Frame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
-    void didFinishLoading(unsigned long identifier, DocumentLoader*, double monotonicFinishTime);
+    void didFinishLoading(unsigned long identifier, DocumentLoader*, double monotonicFinishTime, int64_t encodedDataLength);
     void didReceiveCORSRedirectResponse(Frame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
-    void didFailLoading(unsigned long identifier, DocumentLoader*, const ResourceError&);
+    void didFailLoading(unsigned long identifier, const ResourceError&);
     void didCommitLoad(Frame*, DocumentLoader*);
     void scriptImported(unsigned long identifier, const String& sourceString);
     void didReceiveScriptResponse(unsigned long identifier);
@@ -103,7 +100,7 @@ public:
     void documentThreadableLoaderStartedLoadingForClient(unsigned long identifier, ThreadableLoaderClient*);
     void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didFailXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*);
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned);
+    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&, const String&, unsigned);
 
     void willDestroyResource(Resource*);
 
@@ -123,35 +120,35 @@ public:
     void willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest&);
     void didReceiveWebSocketHandshakeResponse(Document*, unsigned long identifier, const WebSocketHandshakeResponse&);
     void didCloseWebSocket(Document*, unsigned long identifier);
-    void didReceiveWebSocketFrame(unsigned long identifier, const WebSocketFrame&);
-    void didSendWebSocketFrame(unsigned long identifier, const WebSocketFrame&);
+    void didReceiveWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
+    void didSendWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
     void didReceiveWebSocketFrameError(unsigned long identifier, const String&);
 
     // called from Internals for layout test purposes.
     void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
 
     // Called from frontend
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void setUserAgentOverride(ErrorString*, const String& userAgent);
-    virtual void setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>&);
-    virtual void getResponseBody(ErrorString*, const String& requestId, String* content, bool* base64Encoded);
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void setUserAgentOverride(ErrorString*, const String& userAgent) OVERRIDE;
+    virtual void setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>&) OVERRIDE;
+    virtual void getResponseBody(ErrorString*, const String& requestId, String* content, bool* base64Encoded) OVERRIDE;
 
-    virtual void replayXHR(ErrorString*, const String& requestId);
+    virtual void replayXHR(ErrorString*, const String& requestId) OVERRIDE;
 
-    virtual void canClearBrowserCache(ErrorString*, bool*);
-    virtual void clearBrowserCache(ErrorString*);
-    virtual void canClearBrowserCookies(ErrorString*, bool*);
-    virtual void clearBrowserCookies(ErrorString*);
-    virtual void setCacheDisabled(ErrorString*, bool cacheDisabled);
+    virtual void canClearBrowserCache(ErrorString*, bool*) OVERRIDE;
+    virtual void clearBrowserCache(ErrorString*) OVERRIDE;
+    virtual void canClearBrowserCookies(ErrorString*, bool*) OVERRIDE;
+    virtual void clearBrowserCookies(ErrorString*) OVERRIDE;
+    virtual void setCacheDisabled(ErrorString*, bool cacheDisabled) OVERRIDE;
 
-    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>);
+    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>) OVERRIDE;
 
     // Called from other agents.
     bool fetchResourceContent(Frame*, const KURL&, String* content, bool* base64Encoded);
 
 private:
-    InspectorResourceAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorClient*, InspectorCompositeState*);
+    InspectorResourceAgent(InspectorPageAgent*, InspectorClient*);
 
     void enable();
 

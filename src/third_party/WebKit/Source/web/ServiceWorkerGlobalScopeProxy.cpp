@@ -33,7 +33,12 @@
 
 #include "WebEmbeddedWorkerImpl.h"
 #include "WebServiceWorkerContextClient.h"
+#include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "modules/serviceworkers/InstallEvent.h"
+#include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
@@ -42,7 +47,7 @@ using namespace WebCore;
 
 namespace blink {
 
-PassOwnPtr<ServiceWorkerGlobalScopeProxy> ServiceWorkerGlobalScopeProxy::create(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, PassOwnPtr<WebServiceWorkerContextClient> client)
+PassOwnPtr<ServiceWorkerGlobalScopeProxy> ServiceWorkerGlobalScopeProxy::create(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, WebServiceWorkerContextClient& client)
 {
     return adoptPtr(new ServiceWorkerGlobalScopeProxy(embeddedWorker, executionContext, client));
 }
@@ -51,9 +56,18 @@ ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 {
 }
 
+void ServiceWorkerGlobalScopeProxy::dispatchInstallEvent(int eventID)
+{
+    ASSERT(m_workerGlobalScope);
+    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, eventID);
+    observer->willDispatchEvent();
+    m_workerGlobalScope->dispatchEvent(InstallEvent::create(EventTypeNames::install, EventInit(), observer));
+    observer->didDispatchEvent();
+}
+
 void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL)
 {
-    notImplemented();
+    m_client.reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
 void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL)
@@ -63,17 +77,19 @@ void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource, MessageL
 
 void ServiceWorkerGlobalScopeProxy::postMessageToPageInspector(const String& message)
 {
-    m_client->dispatchDevToolsMessage(message);
+    m_client.dispatchDevToolsMessage(message);
 }
 
 void ServiceWorkerGlobalScopeProxy::updateInspectorStateCookie(const String& message)
 {
-    m_client->saveDevToolsAgentState(message);
+    m_client.saveDevToolsAgentState(message);
 }
 
-void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted()
+void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted(WorkerGlobalScope* workerGlobalScope)
 {
-    m_client->workerContextStarted(this);
+    ASSERT(!m_workerGlobalScope);
+    m_workerGlobalScope = workerGlobalScope;
+    m_client.workerContextStarted(this);
 }
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
@@ -83,15 +99,16 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeDestroyed()
 {
-    m_client->workerContextDestroyed();
+    m_workerGlobalScope = 0;
+    m_client.workerContextDestroyed();
 }
 
-ServiceWorkerGlobalScopeProxy::ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, PassOwnPtr<WebServiceWorkerContextClient> client)
+ServiceWorkerGlobalScopeProxy::ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, WebServiceWorkerContextClient& client)
     : m_embeddedWorker(embeddedWorker)
     , m_executionContext(executionContext)
     , m_client(client)
+    , m_workerGlobalScope(0)
 {
-    ASSERT(m_client);
 }
 
 } // namespace blink

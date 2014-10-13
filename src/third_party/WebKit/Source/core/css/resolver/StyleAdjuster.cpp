@@ -34,15 +34,12 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
-#include "core/rendering/Pagination.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/style/GridPosition.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -178,7 +175,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             if (e->hasTagName(tdTag)) {
                 style->setDisplay(TABLE_CELL);
                 style->setFloating(NoFloat);
-            } else if (isHTMLTableElement(e)) {
+            } else if (e->hasTagName(tableTag)) {
                 style->setDisplay(style->isDisplayInlineType() ? INLINE_TABLE : TABLE);
             }
         }
@@ -196,7 +193,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         }
 
         // Tables never support the -webkit-* values for text-align and will reset back to the default.
-        if (e && isHTMLTableElement(e) && (style->textAlign() == WEBKIT_LEFT || style->textAlign() == WEBKIT_CENTER || style->textAlign() == WEBKIT_RIGHT))
+        if (e && e->hasTagName(tableTag) && (style->textAlign() == WEBKIT_LEFT || style->textAlign() == WEBKIT_CENTER || style->textAlign() == WEBKIT_RIGHT))
             style->setTextAlign(TASTART);
 
         // Frames and framesets never honor position:relative or position:absolute. This is necessary to
@@ -238,7 +235,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         // on some sites).
         if ((style->display() == TABLE_HEADER_GROUP || style->display() == TABLE_ROW_GROUP
             || style->display() == TABLE_FOOTER_GROUP || style->display() == TABLE_ROW)
-            && style->hasInFlowPosition())
+            && style->position() == RelativePosition)
             style->setPosition(StaticPosition);
 
         // writing-mode does not apply to table row groups, table column groups, table rows, and table columns.
@@ -279,12 +276,11 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->position() == StickyPosition
         || (style->position() == FixedPosition && e && e->document().settings() && e->document().settings()->fixedPositionCreatesStackingContext())
         || isInTopLayer(e, style)
-        || style->hasFlowFrom()
         ))
         style->setZIndex(0);
 
     // Textarea considers overflow visible as auto.
-    if (e && isHTMLTextAreaElement(e)) {
+    if (e && e->hasTagName(textareaTag)) {
         style->setOverflowX(style->overflowX() == OVISIBLE ? OAUTO : style->overflowX());
         style->setOverflowY(style->overflowY() == OVISIBLE ? OAUTO : style->overflowY());
     }
@@ -309,12 +305,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     } else if (style->overflowY() == OVISIBLE && style->overflowX() != OVISIBLE) {
         style->setOverflowY(OAUTO);
     }
-
-    // Call setStylesForPaginationMode() if a pagination mode is set for any non-root elements. If these
-    // styles are specified on a root element, then they will be incorporated in
-    // StyleAdjuster::styleForDocument().
-    if ((style->overflowY() == OPAGEDX || style->overflowY() == OPAGEDY) && !(e && (isHTMLHtmlElement(e) || e->hasTagName(bodyTag))))
-        Pagination::setStylesForPaginationMode(WebCore::paginationModeForRenderStyle(style), style);
 
     // Table rows, sections and the table itself will support overflow:hidden and will ignore scroll/auto.
     // FIXME: Eventually table sections will support auto and scroll.
@@ -349,8 +339,8 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     if (style->hasAppearance())
         RenderTheme::theme().adjustStyle(style, e, m_cachedUAStyle);
 
-    // If we have first-letter pseudo style, do not share this style.
-    if (style->hasPseudoStyle(FIRST_LETTER))
+    // If we have first-letter pseudo style, transitions, or animations, do not share this style.
+    if (style->hasPseudoStyle(FIRST_LETTER) || style->transitions() || style->animations())
         style->setUnique();
 
     // FIXME: when dropping the -webkit prefix on transform-style, we should also have opacity < 1 cause flattening.
@@ -358,10 +348,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->overflowY() != OVISIBLE
         || style->hasFilter()))
         style->setTransformStyle3D(TransformStyle3DFlat);
-
-    // Seamless iframes behave like blocks. Map their display to inline-block when marked inline.
-    if (e && e->hasTagName(iframeTag) && style->display() == INLINE && toHTMLIFrameElement(e)->shouldDisplaySeamlessly())
-        style->setDisplay(INLINE_BLOCK);
 
     adjustGridItemPosition(style, parentStyle);
 
@@ -412,7 +398,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             float childZoom = child->renderer()->style()->zoom();
             float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
             if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
-                child->setNeedsStyleRecalc();
+                child->setNeedsStyleRecalc(SubtreeStyleChange);
             }
         }
     }

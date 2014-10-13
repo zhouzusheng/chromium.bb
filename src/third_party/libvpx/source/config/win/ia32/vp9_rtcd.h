@@ -7,6 +7,10 @@
 #define RTCD_EXTERN extern
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * VP9
  */
@@ -21,6 +25,7 @@ struct macroblock;
 struct vp9_variance_vtable;
 
 #define DEC_MVCOSTS int *mvjcost, int *mvcost[2]
+struct mv;
 union int_mv;
 struct yv12_buffer_config;
 
@@ -178,7 +183,8 @@ void vp9_d63_predictor_32x32_ssse3(uint8_t *dst, ptrdiff_t y_stride, const uint8
 RTCD_EXTERN void (*vp9_d63_predictor_32x32)(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 
 void vp9_h_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
-#define vp9_h_predictor_32x32 vp9_h_predictor_32x32_c
+void vp9_h_predictor_32x32_ssse3(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+RTCD_EXTERN void (*vp9_h_predictor_32x32)(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 
 void vp9_d117_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 #define vp9_d117_predictor_32x32 vp9_d117_predictor_32x32_c
@@ -209,29 +215,49 @@ void vp9_dc_left_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8
 void vp9_dc_128_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 #define vp9_dc_128_predictor_32x32 vp9_dc_128_predictor_32x32_c
 
-void vp9_mb_lpf_vertical_edge_w_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
-void vp9_mb_lpf_vertical_edge_w_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
-RTCD_EXTERN void (*vp9_mb_lpf_vertical_edge_w)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+void vp9_lpf_vertical_16_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+void vp9_lpf_vertical_16_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+RTCD_EXTERN void (*vp9_lpf_vertical_16)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
 
-void vp9_mbloop_filter_vertical_edge_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-void vp9_mbloop_filter_vertical_edge_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-RTCD_EXTERN void (*vp9_mbloop_filter_vertical_edge)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_16_dual_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+void vp9_lpf_vertical_16_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+RTCD_EXTERN void (*vp9_lpf_vertical_16_dual)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
 
-void vp9_loop_filter_vertical_edge_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-void vp9_loop_filter_vertical_edge_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-RTCD_EXTERN void (*vp9_loop_filter_vertical_edge)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_8_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_8_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_vertical_8)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
 
-void vp9_mb_lpf_horizontal_edge_w_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-void vp9_mb_lpf_horizontal_edge_w_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-RTCD_EXTERN void (*vp9_mb_lpf_horizontal_edge_w)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_8_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_vertical_8_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_vertical_8_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
 
-void vp9_mbloop_filter_horizontal_edge_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-void vp9_mbloop_filter_horizontal_edge_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-RTCD_EXTERN void (*vp9_mbloop_filter_horizontal_edge)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_4_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_4_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_vertical_4)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
 
-void vp9_loop_filter_horizontal_edge_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-void vp9_loop_filter_horizontal_edge_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
-RTCD_EXTERN void (*vp9_loop_filter_horizontal_edge)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_4_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_vertical_4_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_vertical_4_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+void vp9_lpf_horizontal_16_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_16_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_16)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_8_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_8_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_8)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_8_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_horizontal_8_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_horizontal_8_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+void vp9_lpf_horizontal_4_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_4_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_4)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_4_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_horizontal_4_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_horizontal_4_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
 
 void vp9_blend_mb_inner_c(uint8_t *y, uint8_t *u, uint8_t *v, int y1, int u1, int v1, int alpha, int stride);
 #define vp9_blend_mb_inner vp9_blend_mb_inner_c
@@ -448,6 +474,8 @@ static void setup_rtcd_internal(void)
     vp9_d63_predictor_32x32 = vp9_d63_predictor_32x32_c;
     if (flags & HAS_SSSE3) vp9_d63_predictor_32x32 = vp9_d63_predictor_32x32_ssse3;
 
+    vp9_h_predictor_32x32 = vp9_h_predictor_32x32_c;
+    if (flags & HAS_SSSE3) vp9_h_predictor_32x32 = vp9_h_predictor_32x32_ssse3;
 
 
 
@@ -462,23 +490,38 @@ static void setup_rtcd_internal(void)
 
 
 
-    vp9_mb_lpf_vertical_edge_w = vp9_mb_lpf_vertical_edge_w_c;
-    if (flags & HAS_SSE2) vp9_mb_lpf_vertical_edge_w = vp9_mb_lpf_vertical_edge_w_sse2;
+    vp9_lpf_vertical_16 = vp9_lpf_vertical_16_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_16 = vp9_lpf_vertical_16_sse2;
 
-    vp9_mbloop_filter_vertical_edge = vp9_mbloop_filter_vertical_edge_c;
-    if (flags & HAS_SSE2) vp9_mbloop_filter_vertical_edge = vp9_mbloop_filter_vertical_edge_sse2;
+    vp9_lpf_vertical_16_dual = vp9_lpf_vertical_16_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_16_dual = vp9_lpf_vertical_16_dual_sse2;
 
-    vp9_loop_filter_vertical_edge = vp9_loop_filter_vertical_edge_c;
-    if (flags & HAS_MMX) vp9_loop_filter_vertical_edge = vp9_loop_filter_vertical_edge_mmx;
+    vp9_lpf_vertical_8 = vp9_lpf_vertical_8_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_8 = vp9_lpf_vertical_8_sse2;
 
-    vp9_mb_lpf_horizontal_edge_w = vp9_mb_lpf_horizontal_edge_w_c;
-    if (flags & HAS_SSE2) vp9_mb_lpf_horizontal_edge_w = vp9_mb_lpf_horizontal_edge_w_sse2;
+    vp9_lpf_vertical_8_dual = vp9_lpf_vertical_8_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_8_dual = vp9_lpf_vertical_8_dual_sse2;
 
-    vp9_mbloop_filter_horizontal_edge = vp9_mbloop_filter_horizontal_edge_c;
-    if (flags & HAS_SSE2) vp9_mbloop_filter_horizontal_edge = vp9_mbloop_filter_horizontal_edge_sse2;
+    vp9_lpf_vertical_4 = vp9_lpf_vertical_4_c;
+    if (flags & HAS_MMX) vp9_lpf_vertical_4 = vp9_lpf_vertical_4_mmx;
 
-    vp9_loop_filter_horizontal_edge = vp9_loop_filter_horizontal_edge_c;
-    if (flags & HAS_MMX) vp9_loop_filter_horizontal_edge = vp9_loop_filter_horizontal_edge_mmx;
+    vp9_lpf_vertical_4_dual = vp9_lpf_vertical_4_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_4_dual = vp9_lpf_vertical_4_dual_sse2;
+
+    vp9_lpf_horizontal_16 = vp9_lpf_horizontal_16_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_16 = vp9_lpf_horizontal_16_sse2;
+
+    vp9_lpf_horizontal_8 = vp9_lpf_horizontal_8_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_8 = vp9_lpf_horizontal_8_sse2;
+
+    vp9_lpf_horizontal_8_dual = vp9_lpf_horizontal_8_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_8_dual = vp9_lpf_horizontal_8_dual_sse2;
+
+    vp9_lpf_horizontal_4 = vp9_lpf_horizontal_4_c;
+    if (flags & HAS_MMX) vp9_lpf_horizontal_4 = vp9_lpf_horizontal_4_mmx;
+
+    vp9_lpf_horizontal_4_dual = vp9_lpf_horizontal_4_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_4_dual = vp9_lpf_horizontal_4_dual_sse2;
 
 
 
@@ -556,4 +599,9 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_SSE2) vp9_iht16x16_256_add = vp9_iht16x16_256_add_sse2;
 }
 #endif
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
 #endif

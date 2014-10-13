@@ -59,12 +59,6 @@ public:
         int detail, int screenX, int screenY, int pageX, int pageY,
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-        PassRefPtr<EventTarget> relatedTarget);
-
-    static PassRefPtr<MouseEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>,
-        int detail, int screenX, int screenY, int pageX, int pageY,
-        int movementX, int movementY,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
         PassRefPtr<EventTarget> relatedTarget, PassRefPtr<Clipboard>, bool isSimulated = false);
 
     static PassRefPtr<MouseEvent> create(const AtomicString& eventType, PassRefPtr<AbstractView>, const PlatformMouseEvent&, int detail, PassRefPtr<Node> relatedTarget);
@@ -86,18 +80,16 @@ public:
     EventTarget* relatedTarget(bool& isNull) const { isNull = !m_relatedTarget; return m_relatedTarget.get(); }
     void setRelatedTarget(PassRefPtr<EventTarget> relatedTarget) { m_relatedTarget = relatedTarget; }
 
-    Clipboard* clipboard() const { return m_clipboard.get(); }
-
     Node* toElement() const;
     Node* fromElement() const;
 
     Clipboard* dataTransfer() const { return isDragEvent() ? m_clipboard.get() : 0; }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
-    virtual bool isMouseEvent() const;
-    virtual bool isDragEvent() const;
-    virtual int which() const;
+    virtual bool isMouseEvent() const OVERRIDE;
+    virtual bool isDragEvent() const OVERRIDE FINAL;
+    virtual int which() const OVERRIDE FINAL;
 
 protected:
     MouseEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>,
@@ -117,7 +109,7 @@ private:
     RefPtr<Clipboard> m_clipboard;
 };
 
-class SimulatedMouseEvent : public MouseEvent {
+class SimulatedMouseEvent FINAL : public MouseEvent {
 public:
     static PassRefPtr<SimulatedMouseEvent> create(const AtomicString& eventType, PassRefPtr<AbstractView>, PassRefPtr<Event> underlyingEvent);
     virtual ~SimulatedMouseEvent();
@@ -126,7 +118,7 @@ private:
     SimulatedMouseEvent(const AtomicString& eventType, PassRefPtr<AbstractView>, PassRefPtr<Event> underlyingEvent);
 };
 
-class MouseEventDispatchMediator : public EventDispatchMediator {
+class MouseEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
     enum MouseEventType { SyntheticMouseEvent, NonSyntheticMouseEvent};
     static PassRefPtr<MouseEventDispatchMediator> create(PassRefPtr<MouseEvent>, MouseEventType = NonSyntheticMouseEvent);

@@ -35,21 +35,18 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_PRESERVEASPECTRATIO(SVGFEImageElement, SVGNames::preserveAspectRatioAttr, PreserveAspectRatio, preserveAspectRatio)
-DEFINE_ANIMATED_STRING(SVGFEImageElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGFEImageElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEImageElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGFEImageElement::SVGFEImageElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feImageTag, document)
+    , SVGURIReference(this)
+    , m_preserveAspectRatio(SVGAnimatedPreserveAspectRatio::create(this, SVGNames::preserveAspectRatioAttr, SVGPreserveAspectRatio::create()))
 {
     ScriptWrappable::init(this);
+    addToPropertyMap(m_preserveAspectRatio);
     registerAnimatedPropertiesForSVGFEImageElement();
 }
 
@@ -83,7 +80,7 @@ void SVGFEImageElement::clearResourceReferences()
 
 void SVGFEImageElement::fetchImageResource()
 {
-    FetchRequest request(ResourceRequest(ownerDocument()->completeURL(hrefCurrentValue())), localName());
+    FetchRequest request(ResourceRequest(ownerDocument()->completeURL(hrefString())), localName());
     m_cachedImage = document().fetcher()->fetchImage(request);
 
     if (m_cachedImage)
@@ -96,8 +93,8 @@ void SVGFEImageElement::buildPendingResource()
     if (!inDocument())
         return;
 
-    String id;
-    Element* target = SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
+    AtomicString id;
+    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), document(), &id);
     if (!target) {
         if (id.isEmpty())
             fetchImageResource();
@@ -119,7 +116,6 @@ bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::preserveAspectRatioAttr);
     }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
@@ -132,19 +128,16 @@ void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicSt
         return;
     }
 
+    SVGParsingError parseError = NoError;
+
     if (name == SVGNames::preserveAspectRatioAttr) {
-        SVGPreserveAspectRatio preserveAspectRatio;
-        preserveAspectRatio.parse(value);
-        setPreserveAspectRatioBaseValue(preserveAspectRatio);
-        return;
+        m_preserveAspectRatio->setBaseValueAsString(value, parseError);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGURIReference::parseAttribute(name, value))
-        return;
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -165,9 +158,6 @@ void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
         buildPendingResource();
         return;
     }
-
-    if (SVGExternalResourcesRequired::isKnownAttribute(attrName))
-        return;
 
     ASSERT_NOT_REACHED();
 }
@@ -204,15 +194,8 @@ void SVGFEImageElement::notifyFinished(Resource*)
 PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
 {
     if (m_cachedImage)
-        return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), preserveAspectRatioCurrentValue());
-    return FEImage::createWithIRIReference(filter, document(), hrefCurrentValue(), preserveAspectRatioCurrentValue());
-}
-
-void SVGFEImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    SVGFilterPrimitiveStandardAttributes::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
+        return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), m_preserveAspectRatio->currentValue());
+    return FEImage::createWithIRIReference(filter, document(), hrefString(), m_preserveAspectRatio->currentValue());
 }
 
 }

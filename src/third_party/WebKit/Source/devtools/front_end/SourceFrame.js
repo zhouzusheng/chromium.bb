@@ -31,20 +31,20 @@
 /**
  * @extends {WebInspector.View}
  * @constructor
+ * @implements {WebInspector.Replaceable}
  * @param {!WebInspector.ContentProvider} contentProvider
  */
 WebInspector.SourceFrame = function(contentProvider)
 {
     WebInspector.View.call(this);
     this.element.classList.add("script-view");
-    this.element.classList.add("fill");
 
     this._url = contentProvider.contentURL();
     this._contentProvider = contentProvider;
 
     var textEditorDelegate = new WebInspector.TextEditorDelegateForSourceFrame(this);
 
-    loadScript("CodeMirrorTextEditor.js");
+    WebInspector.moduleManager.loadModule("codemirror");
     this._textEditor = new WebInspector.CodeMirrorTextEditor(this._url, textEditorDelegate);
 
     this._currentSearchResultIndex = -1;
@@ -57,7 +57,6 @@ WebInspector.SourceFrame = function(contentProvider)
     this._textEditor.setReadOnly(!this.canEditSource());
 
     this._shortcuts = {};
-    this.addShortcut(WebInspector.KeyboardShortcut.makeKey("s", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta), this._commitEditing.bind(this));
     this.element.addEventListener("keydown", this._handleKeyDown.bind(this), false);
 
     this._sourcePosition = new WebInspector.StatusBarText("", "source-frame-cursor-position");
@@ -92,7 +91,8 @@ WebInspector.SourceFrame.createSearchRegex = function(query, modifiers)
 
 WebInspector.SourceFrame.Events = {
     ScrollChanged: "ScrollChanged",
-    SelectionChanged: "SelectionChanged"
+    SelectionChanged: "SelectionChanged",
+    JumpHappened: "JumpHappened"
 }
 
 WebInspector.SourceFrame.prototype = {
@@ -145,6 +145,9 @@ WebInspector.SourceFrame.prototype = {
         return [];
     },
 
+    /**
+     * @return {!Element}
+     */
     defaultFocusedElement: function()
     {
         return this._textEditor.defaultFocusedElement();
@@ -155,6 +158,9 @@ WebInspector.SourceFrame.prototype = {
         return this._loaded;
     },
 
+    /**
+     * @return {boolean}
+     */
     hasContent: function()
     {
         return true;
@@ -195,6 +201,7 @@ WebInspector.SourceFrame.prototype = {
 
     /**
      * @override
+     * @return {boolean}
      */
     canHighlightPosition: function()
     {
@@ -484,6 +491,9 @@ WebInspector.SourceFrame.prototype = {
             this._textEditor.setSelection(range);
     },
 
+    /**
+     * @return {boolean}
+     */
     hasSearchResults: function()
     {
         return this._searchResults.length > 0;
@@ -512,11 +522,17 @@ WebInspector.SourceFrame.prototype = {
         this.jumpToSearchResult(currentIndex - 1);
     },
 
+    /**
+     * @return {boolean}
+     */
     showingFirstSearchResult: function()
     {
         return this._searchResults.length &&  this._currentSearchResultIndex === 0;
     },
 
+    /**
+     * @return {boolean}
+     */
     showingLastSearchResult: function()
     {
         return this._searchResults.length && this._currentSearchResultIndex === (this._searchResults.length - 1);
@@ -540,7 +556,7 @@ WebInspector.SourceFrame.prototype = {
     /**
      * @param {string} text
      */
-    replaceSearchMatchWith: function(text)
+    replaceSelectionWith: function(text)
     {
         var range = this._searchResults[this._currentSearchResultIndex];
         if (!range)
@@ -717,6 +733,18 @@ WebInspector.SourceFrame.prototype = {
     {
     },
 
+    /**
+     * @param {?WebInspector.TextRange} from
+     * @param {?WebInspector.TextRange} to
+     */
+    onJumpToPosition: function(from, to)
+    {
+        this.dispatchEventToListeners(WebInspector.SourceFrame.Events.JumpHappened, {
+            from: from,
+            to: to
+        });
+    },
+
     inheritScrollPositions: function(sourceFrame)
     {
         this._textEditor.inheritScrollPositions(sourceFrame._textEditor);
@@ -728,13 +756,6 @@ WebInspector.SourceFrame.prototype = {
     canEditSource: function()
     {
         return false;
-    },
-
-    /**
-     * @param {string} text
-     */
-    commitEditing: function(text)
-    {
     },
 
     /**
@@ -782,16 +803,6 @@ WebInspector.SourceFrame.prototype = {
         var handler = this._shortcuts[shortcutKey];
         if (handler && handler())
             e.consume(true);
-    },
-
-    _commitEditing: function()
-    {
-        if (this._textEditor.readOnly())
-            return false;
-
-        var content = this._textEditor.text();
-        this.commitEditing(content);
-        return true;
     },
 
     __proto__: WebInspector.View.prototype
@@ -855,5 +866,12 @@ WebInspector.TextEditorDelegateForSourceFrame.prototype = {
         return WebInspector.linkifyURLAsNode(targetLocation || hrefValue, hrefValue, undefined, isExternal);
     },
 
-    __proto__: WebInspector.TextEditorDelegate.prototype
+    /**
+     * @param {?WebInspector.TextRange} from
+     * @param {?WebInspector.TextRange} to
+     */
+    onJumpToPosition: function(from, to)
+    {
+        this._sourceFrame.onJumpToPosition(from, to);
+    }
 }

@@ -9,7 +9,8 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
-#include "content/common/service_worker_messages.h"
+#include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/common/service_worker/service_worker_messages.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "url/gurl.h"
@@ -61,9 +62,6 @@ void ServiceWorkerDispatcherHost::OnDestruct() const {
 bool ServiceWorkerDispatcherHost::OnMessageReceived(
     const IPC::Message& message,
     bool* message_was_ok) {
-  if (IPC_MESSAGE_CLASS(message) != ServiceWorkerMsgStart)
-    return false;
-
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(
     ServiceWorkerDispatcherHost, message, *message_was_ok)
@@ -75,6 +73,12 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnProviderCreated)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
                         OnProviderDestroyed)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
+                        OnWorkerStarted)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
+                        OnWorkerStopped)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_SendMessageToBrowser,
+                        OnSendMessageToBrowser)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -91,7 +95,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
         thread_id,
         request_id,
         WebServiceWorkerError::DisabledError,
-        ASCIIToUTF16(kDisabledErrorMessage)));
+        base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
 
@@ -103,13 +107,14 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
         thread_id,
         request_id,
         WebServiceWorkerError::SecurityError,
-        ASCIIToUTF16(kDomainMismatchErrorMessage)));
+        base::ASCIIToUTF16(kDomainMismatchErrorMessage)));
     return;
   }
 
   context_->RegisterServiceWorker(
       pattern,
       script_url,
+      render_process_id_,
       base::Bind(&ServiceWorkerDispatcherHost::RegistrationComplete,
                  this,
                  thread_id,
@@ -128,12 +133,13 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
         thread_id,
         request_id,
         blink::WebServiceWorkerError::DisabledError,
-        ASCIIToUTF16(kDisabledErrorMessage)));
+        base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
 
   context_->UnregisterServiceWorker(
       pattern,
+      render_process_id_,
       base::Bind(&ServiceWorkerDispatcherHost::UnregistrationComplete,
                  this,
                  thread_id,
@@ -165,9 +171,9 @@ void ServiceWorkerDispatcherHost::OnProviderDestroyed(int provider_id) {
 void ServiceWorkerDispatcherHost::RegistrationComplete(
     int32 thread_id,
     int32 request_id,
-    ServiceWorkerRegistrationStatus status,
+    ServiceWorkerStatusCode status,
     int64 registration_id) {
-  if (status != REGISTRATION_OK) {
+  if (status != SERVICE_WORKER_OK) {
     SendRegistrationError(thread_id, request_id, status);
     return;
   }
@@ -176,11 +182,36 @@ void ServiceWorkerDispatcherHost::RegistrationComplete(
       thread_id, request_id, registration_id));
 }
 
+void ServiceWorkerDispatcherHost::OnWorkerStarted(
+    int thread_id, int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerStarted(
+      render_process_id_, thread_id, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerStopped(int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerStopped(
+      render_process_id_, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnSendMessageToBrowser(
+    int embedded_worker_id,
+    int request_id,
+    const IPC::Message& message) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnSendMessageToBrowser(
+      embedded_worker_id, request_id, message);
+}
+
 void ServiceWorkerDispatcherHost::UnregistrationComplete(
     int32 thread_id,
     int32 request_id,
-    ServiceWorkerRegistrationStatus status) {
-  if (status != REGISTRATION_OK) {
+    ServiceWorkerStatusCode status) {
+  if (status != SERVICE_WORKER_OK) {
     SendRegistrationError(thread_id, request_id, status);
     return;
   }
@@ -191,7 +222,7 @@ void ServiceWorkerDispatcherHost::UnregistrationComplete(
 void ServiceWorkerDispatcherHost::SendRegistrationError(
     int32 thread_id,
     int32 request_id,
-    ServiceWorkerRegistrationStatus status) {
+    ServiceWorkerStatusCode status) {
   base::string16 error_message;
   blink::WebServiceWorkerError::ErrorType error_type;
   GetServiceWorkerRegistrationStatusResponse(

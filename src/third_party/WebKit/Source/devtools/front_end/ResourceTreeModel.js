@@ -96,6 +96,9 @@ WebInspector.ResourceTreeModel.prototype = {
         this._cachedResourcesProcessed = true;
     },
 
+    /**
+     * @return {boolean}
+     */
     cachedResourcesLoaded: function()
     {
         return this._cachedResourcesProcessed;
@@ -397,7 +400,7 @@ WebInspector.ResourceTreeModel.prototype = {
 
     /**
      * @param {string} url
-     * @return {!WebInspector.Resource}
+     * @return {?WebInspector.Resource}
      */
     resourceForURL: function(url)
     {
@@ -663,7 +666,7 @@ WebInspector.ResourceTreeFrame.prototype = {
             }
         }
         this._callForFrameResources(filter);
-        return result;
+        return result || null;
     },
 
     /**
@@ -682,6 +685,22 @@ WebInspector.ResourceTreeFrame.prototype = {
                 return true;
         }
         return false;
+    },
+
+    /**
+     * @return {string}
+     */
+    displayName: function()
+    {
+        if (!this._parentFrame)
+            return WebInspector.UIString("<top frame>");
+        var subtitle = new WebInspector.ParsedURL(this._url).displayName;
+        if (subtitle) {
+            if (!this._name)
+                return subtitle;
+            return this._name + "( " + subtitle + " )";
+        }
+        return WebInspector.UIString("<iframe>");
     }
 }
 

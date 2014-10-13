@@ -68,14 +68,6 @@ static PassRefPtr<AnimatableValue> createFromLength(const Length& length, const 
         return AnimatableLength::create(adjustFloatForAbsoluteZoom(length.value(), style), AnimatableLength::UnitTypePixels);
     case Percent:
         return AnimatableLength::create(length.value(), AnimatableLength::UnitTypePercentage);
-    case ViewportPercentageWidth:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportWidth);
-    case ViewportPercentageHeight:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportHeight);
-    case ViewportPercentageMin:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportMin);
-    case ViewportPercentageMax:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportMax);
     case Calculated:
         return AnimatableLength::create(CSSCalcValue::createExpressionNode(length.calculationValue()->expression(), style.effectiveZoom()));
     case Auto:
@@ -89,6 +81,8 @@ static PassRefPtr<AnimatableValue> createFromLength(const Length& length, const 
     case Undefined:
         return AnimatableUnknown::create(CSSValueNone);
     case ExtendToZoom: // Does not apply to elements.
+    case DeviceWidth:
+    case DeviceHeight:
         ASSERT_NOT_REACHED();
         return 0;
     }
@@ -181,6 +175,17 @@ inline static PassRefPtr<AnimatableValue> createFromFillSize(const FillSize& fil
     }
 }
 
+inline static PassRefPtr<AnimatableValue> createFromBackgroundPosition(const Length& length, bool originIsSet, BackgroundEdgeOrigin origin, const RenderStyle& style)
+{
+    if (!originIsSet || origin == LeftEdge || origin == TopEdge)
+        return createFromLength(length, style);
+
+    return AnimatableLength::create(CSSCalcValue::createExpressionNode(
+        CSSCalcValue::createExpressionNode(CSSPrimitiveValue::create(100, CSSPrimitiveValue::CSS_PERCENTAGE), true),
+        CSSCalcValue::createExpressionNode(length, style.effectiveZoom()),
+        CalcSubtract));
+}
+
 template<CSSPropertyID property>
 inline static PassRefPtr<AnimatableValue> createFromFillLayers(const FillLayer* fillLayer, const RenderStyle& style)
 {
@@ -194,11 +199,11 @@ inline static PassRefPtr<AnimatableValue> createFromFillLayers(const FillLayer* 
         } else if (property == CSSPropertyBackgroundPositionX || property == CSSPropertyWebkitMaskPositionX) {
             if (!fillLayer->isXPositionSet())
                 break;
-            values.append(createFromLength(fillLayer->xPosition(), style));
+            values.append(createFromBackgroundPosition(fillLayer->xPosition(), fillLayer->isBackgroundXOriginSet(), fillLayer->backgroundXOrigin(), style));
         } else if (property == CSSPropertyBackgroundPositionY || property == CSSPropertyWebkitMaskPositionY) {
             if (!fillLayer->isYPositionSet())
                 break;
-            values.append(createFromLength(fillLayer->yPosition(), style));
+            values.append(createFromBackgroundPosition(fillLayer->yPosition(), fillLayer->isBackgroundYOriginSet(), fillLayer->backgroundYOrigin(), style));
         } else if (property == CSSPropertyBackgroundSize || property == CSSPropertyWebkitMaskSize) {
             if (!fillLayer->isSizeSet())
                 break;
@@ -215,26 +220,7 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::createFromColor(CSSProper
 {
     Color color = style.colorIncludingFallback(property, false);
     Color visitedLinkColor = style.colorIncludingFallback(property, true);
-    Color fallbackColor = style.color();
-    Color fallbackVisitedLinkColor = style.visitedLinkColor();
-    Color resolvedColor;
-
-    if (property == CSSPropertyBackgroundColor) {
-        // For background-color, invalid color means transparent and not currentColor.
-        fallbackColor = Color::transparent;
-        fallbackVisitedLinkColor = Color::transparent;
-    }
-
-    if (color.isValid())
-        resolvedColor = color;
-    else
-        resolvedColor = fallbackColor;
-    Color resolvedVisitedLinkColor;
-    if (visitedLinkColor.isValid())
-        resolvedVisitedLinkColor = visitedLinkColor;
-    else
-        resolvedVisitedLinkColor = fallbackVisitedLinkColor;
-    return AnimatableColor::create(resolvedColor, resolvedVisitedLinkColor);
+    return AnimatableColor::create(color, visitedLinkColor);
 }
 
 inline static PassRefPtr<AnimatableValue> createFromShapeValue(ShapeValue* value)
@@ -247,6 +233,7 @@ inline static PassRefPtr<AnimatableValue> createFromShapeValue(ShapeValue* value
 // FIXME: Generate this function.
 PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID property, const RenderStyle& style)
 {
+    ASSERT(CSSAnimations::isAnimatableProperty(property));
     switch (property) {
     case CSSPropertyBackgroundColor:
         return createFromColor(property, style);
@@ -393,7 +380,7 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyStroke:
         return AnimatableSVGPaint::create(style.svgStyle()->strokePaintType(), style.svgStyle()->strokePaintColor(), style.svgStyle()->strokePaintUri());
     case CSSPropertyTextDecorationColor:
-        return createFromColor(property, style);
+        return AnimatableColor::create(style.textDecorationColor().resolve(style.color()), style.visitedLinkTextDecorationColor().resolve(style.visitedLinkColor()));
     case CSSPropertyTextIndent:
         return createFromLength(style.textIndent(), style);
     case CSSPropertyTextShadow:
@@ -473,7 +460,6 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyZoom:
         return createFromDouble(style.zoom());
     default:
-        ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Create AnimatableValue from render style: %s", getPropertyNameString(property).utf8().data());
         ASSERT_NOT_REACHED();
         // This return value is to avoid a release crash if possible.
         return AnimatableUnknown::create(0);

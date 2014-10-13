@@ -55,6 +55,10 @@ WebInspector.FileSystemProjectDelegate._scriptExtensions = ["js", "java", "coffe
 WebInspector.FileSystemProjectDelegate._styleSheetExtensions = ["css", "scss", "sass", "less"].keySet();
 WebInspector.FileSystemProjectDelegate._documentExtensions = ["htm", "html", "asp", "aspx", "phtml", "jsp"].keySet();
 
+/**
+ * @param {string} fileSystemPath
+ * @return {string}
+ */
 WebInspector.FileSystemProjectDelegate.projectId = function(fileSystemPath)
 {
     return "filesystem:" + fileSystemPath;
@@ -219,7 +223,7 @@ WebInspector.FileSystemProjectDelegate.prototype = {
      */
     findFilesMatchingSearchRequest: function(queries, fileQueries, caseSensitive, isRegex, progress, callback)
     {
-        var result = [];
+        var result = null;
         var queriesToRun = queries.slice();
         if (!queriesToRun.length)
             queriesToRun.push("");
@@ -527,7 +531,7 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     {
         this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.Reset, null);
     },
-    
+
     __proto__: WebInspector.Object.prototype
 }
 
@@ -578,6 +582,7 @@ WebInspector.FileSystemWorkspaceProvider.prototype = {
 
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @return {string}
      */
     fileSystemPath: function(uiSourceCode)
     {
@@ -586,7 +591,8 @@ WebInspector.FileSystemWorkspaceProvider.prototype = {
     },
 
     /**
-     * @param {!WebInspector.FileSystemProjectDelegate} fileSystemPath
+     * @param {string} fileSystemPath
+     * @return {!WebInspector.FileSystemProjectDelegate}
      */
     delegate: function(fileSystemPath)
     {

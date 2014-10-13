@@ -30,35 +30,28 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::xAttr, X, x)
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::yAttr, Y, y)
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::widthAttr, Width, width)
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::heightAttr, Height, height)
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::rxAttr, Rx, rx)
-DEFINE_ANIMATED_LENGTH(SVGRectElement, SVGNames::ryAttr, Ry, ry)
-DEFINE_ANIMATED_BOOLEAN(SVGRectElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGRectElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(width)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(height)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(rx)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(ry)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGRectElement::SVGRectElement(Document& document)
     : SVGGeometryElement(SVGNames::rectTag, document)
-    , m_x(LengthModeWidth)
-    , m_y(LengthModeHeight)
-    , m_width(LengthModeWidth)
-    , m_height(LengthModeHeight)
-    , m_rx(LengthModeWidth)
-    , m_ry(LengthModeHeight)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth)))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight)))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth)))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight)))
+    , m_rx(SVGAnimatedLength::create(this, SVGNames::rxAttr, SVGLength::create(LengthModeWidth)))
+    , m_ry(SVGAnimatedLength::create(this, SVGNames::ryAttr, SVGLength::create(LengthModeHeight)))
 {
     ScriptWrappable::init(this);
+
+    addToPropertyMap(m_x);
+    addToPropertyMap(m_y);
+    addToPropertyMap(m_width);
+    addToPropertyMap(m_height);
+    addToPropertyMap(m_rx);
+    addToPropertyMap(m_ry);
+
     registerAnimatedPropertiesForSVGRectElement();
 }
 
@@ -71,7 +64,6 @@ bool SVGRectElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::xAttr);
         supportedAttributes.add(SVGNames::yAttr);
         supportedAttributes.add(SVGNames::widthAttr);
@@ -89,19 +81,18 @@ void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     if (!isSupportedAttribute(name))
         SVGGeometryElement::parseAttribute(name, value);
     else if (name == SVGNames::xAttr)
-        setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
+        m_x->setBaseValueAsString(value, AllowNegativeLengths, parseError);
     else if (name == SVGNames::yAttr)
-        setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
+        m_y->setBaseValueAsString(value, AllowNegativeLengths, parseError);
     else if (name == SVGNames::rxAttr)
-        setRxBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
+        m_rx->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
     else if (name == SVGNames::ryAttr)
-        setRyBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
+        m_ry->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
     else if (name == SVGNames::widthAttr)
-        setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
+        m_width->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
     else if (name == SVGNames::heightAttr)
-        setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
-    else if (SVGExternalResourcesRequired::parseAttribute(name, value)) {
-    } else
+        m_height->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+    else
         ASSERT_NOT_REACHED();
 
     reportAttributeParsingError(parseError, name, value);
@@ -136,22 +127,17 @@ void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
-        return;
-    }
-
     ASSERT_NOT_REACHED();
 }
 
 bool SVGRectElement::selfHasRelativeLengths() const
 {
-    return xCurrentValue().isRelative()
-        || yCurrentValue().isRelative()
-        || widthCurrentValue().isRelative()
-        || heightCurrentValue().isRelative()
-        || rxCurrentValue().isRelative()
-        || ryCurrentValue().isRelative();
+    return m_x->currentValue()->isRelative()
+        || m_y->currentValue()->isRelative()
+        || m_width->currentValue()->isRelative()
+        || m_height->currentValue()->isRelative()
+        || m_rx->currentValue()->isRelative()
+        || m_ry->currentValue()->isRelative();
 }
 
 RenderObject* SVGRectElement::createRenderer(RenderStyle*)

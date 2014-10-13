@@ -78,12 +78,6 @@ class PolicyTemplateGenerator:
     for supported_on_item in supported_on:
       product_platform_part, version_part = supported_on_item.split(':')
 
-      # TODO(joaodasilva): enable parsing 'android' as a platform and including
-      # that platform in the generated documentation. Just skip it for now to
-      # prevent build failures.
-      if product_platform_part == 'android':
-        continue
-
       if '.' in product_platform_part:
         product, platform = product_platform_part.split('.')
         if platform == '*':
@@ -94,11 +88,12 @@ class PolicyTemplateGenerator:
           platforms = [platform]
       else:
         # e.g.: 'chrome_frame:7-'
-        product = product_platform_part
-        platform = {
-          'chrome_os': 'chrome_os',
-          'chrome_frame': 'win'
-        }[product]
+        product, platform = {
+          'android':      ('chrome',        'android'),
+          'chrome_os':    ('chrome_os',     'chrome_os'),
+          'chrome_frame': ('chrome_frame',  'win'),
+          'ios':          ('chrome',        'ios'),
+        }[product_platform_part]
         platforms = [platform]
       since_version, until_version = version_part.split('-')
       result.append({

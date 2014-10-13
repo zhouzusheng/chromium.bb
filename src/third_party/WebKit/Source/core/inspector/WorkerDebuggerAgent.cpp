@@ -55,13 +55,13 @@ WorkerDebuggerAgents& workerDebuggerAgents()
 }
 
 
-class RunInspectorCommandsTask : public ScriptDebugServer::Task {
+class RunInspectorCommandsTask FINAL : public ScriptDebugServer::Task {
 public:
     RunInspectorCommandsTask(WorkerThread* thread, WorkerGlobalScope* workerGlobalScope)
         : m_thread(thread)
         , m_workerGlobalScope(workerGlobalScope) { }
     virtual ~RunInspectorCommandsTask() { }
-    virtual void run()
+    virtual void run() OVERRIDE
     {
         // Process all queued debugger commands. It is safe to use m_workerGlobalScope here
         // because it is alive if RunWorkerLoop is not terminated, otherwise it will
@@ -78,13 +78,13 @@ private:
 
 const char WorkerDebuggerAgent::debuggerTaskMode[] = "debugger";
 
-PassOwnPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+PassOwnPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
 {
-    return adoptPtr(new WorkerDebuggerAgent(instrumentingAgents, inspectorState, scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
+    return adoptPtr(new WorkerDebuggerAgent(scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
 }
 
-WorkerDebuggerAgent::WorkerDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
-    : InspectorDebuggerAgent(instrumentingAgents, inspectorState, injectedScriptManager)
+WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+    : InspectorDebuggerAgent(injectedScriptManager)
     , m_scriptDebugServer(scriptDebugServer)
     , m_inspectedWorkerGlobalScope(inspectedWorkerGlobalScope)
 {

@@ -23,14 +23,11 @@
 #include "config.h"
 #include "core/dom/Attr.h"
 
-#include "XMLNSNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/Text.h"
 #include "core/events/ScopedEventQueue.h"
-#include "core/frame/UseCounter.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -90,31 +87,6 @@ void Attr::createTextChild()
     }
 }
 
-void Attr::setPrefix(const AtomicString& prefix, ExceptionState& exceptionState)
-{
-    UseCounter::count(document(), UseCounter::AttributeSetPrefix);
-
-    checkSetPrefix(prefix, exceptionState);
-    if (exceptionState.hadException())
-        return;
-
-    if (prefix == xmlnsAtom && namespaceURI() != XMLNSNames::xmlnsNamespaceURI) {
-        exceptionState.throwDOMException(NamespaceError, "The prefix '" + xmlnsAtom + "' may not be used on the namespace '" + namespaceURI() + "'.");
-        return;
-    }
-
-    if (this->qualifiedName() == xmlnsAtom) {
-        exceptionState.throwDOMException(NamespaceError, "The prefix '" + prefix + "' may not be used as a namespace prefix for attributes whose qualified name is '" + xmlnsAtom + "'.");
-        return;
-    }
-
-    const AtomicString& newPrefix = prefix.isEmpty() ? nullAtom : prefix;
-
-    if (m_element)
-        elementAttribute().setPrefix(newPrefix);
-    m_name.setPrefix(newPrefix);
-}
-
 void Attr::setValue(const AtomicString& value)
 {
     EventQueueScope scope;
@@ -143,7 +115,9 @@ void Attr::setValue(const AtomicString& value, ExceptionState&)
 
 void Attr::setNodeValue(const String& v)
 {
-    setValue(v, IGNORE_EXCEPTION);
+    // Attr uses AtomicString type for its value to save memory as there
+    // is duplication among Elements' attributes values.
+    setValue(AtomicString(v), IGNORE_EXCEPTION);
 }
 
 PassRefPtr<Node> Attr::cloneNode(bool /*deep*/)
@@ -183,11 +157,6 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
 
     if (m_element)
         m_element->attributeChanged(qualifiedName(), newValue);
-}
-
-bool Attr::isId() const
-{
-    return qualifiedName().matches(document().idAttributeName());
 }
 
 const AtomicString& Attr::value() const

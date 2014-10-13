@@ -36,7 +36,6 @@
 WebInspector.Layers3DView = function(model)
 {
     WebInspector.View.call(this);
-    this.element.classList.add("fill");
     this.element.classList.add("layers-3d-view");
     this._emptyView = new WebInspector.EmptyView(WebInspector.UIString("Not in the composited mode.\nConsider forcing composited mode in Settings."));
     this._model = model;
@@ -78,9 +77,9 @@ WebInspector.Layers3DView.Events = {
 }
 
 WebInspector.Layers3DView.PaintRectColors = [
-    WebInspector.Color.fromRGBA([0xFF, 0, 0]),
-    WebInspector.Color.fromRGBA([0xFF, 0, 0xFF]),
-    WebInspector.Color.fromRGBA([0, 0, 0xFF])
+    WebInspector.Color.fromRGBA([0, 0x5F, 0, 0x3F]),
+    WebInspector.Color.fromRGBA([0, 0xAF, 0, 0x3F]),
+    WebInspector.Color.fromRGBA([0, 0xFF, 0, 0x3F])
 ]
 
 WebInspector.Layers3DView.prototype = {

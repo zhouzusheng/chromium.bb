@@ -40,7 +40,7 @@ namespace WebCore {
 
 class StyleBuilderConverter {
 public:
-    static String convertFragmentIdentifier(StyleResolverState&, CSSValue*);
+    static AtomicString convertFragmentIdentifier(StyleResolverState&, CSSValue*);
     template <typename T> static T convertComputedLength(StyleResolverState&, CSSValue*);
     template <typename T> static T convertLineWidth(StyleResolverState&, CSSValue*);
     static Length convertLength(StyleResolverState&, CSSValue*);
@@ -53,7 +53,7 @@ public:
     static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, CSSValue*);
     static float convertSpacing(StyleResolverState&, CSSValue*);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, CSSValue*);
-    static SVGLength convertSVGLength(StyleResolverState&, CSSValue*);
+    static PassRefPtr<SVGLength> convertSVGLength(StyleResolverState&, CSSValue*);
 };
 
 template <typename T>
@@ -73,8 +73,6 @@ T StyleBuilderConverter::convertLineWidth(StyleResolverState& state, CSSValue* v
         return 3;
     if (valueID == CSSValueThick)
         return 5;
-    if (primitiveValue->isViewportPercentageLength())
-        return intValueForLength(primitiveValue->viewportPercentageLength(), 0, state.document().renderView());
     if (valueID == CSSValueInvalid) {
         // Any original result that was >= 1 should not be allowed to fall below 1.
         // This keeps border lines from vanishing.
@@ -96,7 +94,7 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == IdForNone)
         return nullAtom;
-    return primitiveValue->getStringValue();
+    return AtomicString(primitiveValue->getStringValue());
 }
 
 } // namespace WebCore

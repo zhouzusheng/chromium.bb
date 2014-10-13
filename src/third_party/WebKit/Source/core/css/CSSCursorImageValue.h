@@ -32,9 +32,9 @@ class SVGElement;
 
 class CSSCursorImageValue : public CSSValue {
 public:
-    static PassRefPtr<CSSCursorImageValue> create(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
+    static PassRefPtrWillBeRawPtr<CSSCursorImageValue> create(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
     {
-        return adoptRef(new CSSCursorImageValue(imageValue, hasHotSpot, hotSpot));
+        return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSCursorImageValue(imageValue, hasHotSpot, hotSpot));
     }
 
     ~CSSCursorImageValue();
@@ -57,6 +57,8 @@ public:
     void removeReferencedElement(SVGElement*);
 
     bool equals(const CSSCursorImageValue&) const;
+
+    void traceAfterDispatch(Visitor*);
 
 private:
     CSSCursorImageValue(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot);

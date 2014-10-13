@@ -22,6 +22,7 @@
 #define SVGURIReference_h
 
 #include "core/dom/Document.h"
+#include "core/svg/SVGAnimatedString.h"
 
 namespace WebCore {
 
@@ -32,12 +33,11 @@ class SVGURIReference {
 public:
     virtual ~SVGURIReference() { }
 
-    bool parseAttribute(const QualifiedName&, const AtomicString&);
     bool isKnownAttribute(const QualifiedName&);
     void addSupportedAttributes(HashSet<QualifiedName>&);
 
-    static String fragmentIdentifierFromIRIString(const String&, const Document&);
-    static Element* targetElementFromIRIString(const String&, const Document&, String* = 0, Document* = 0);
+    static AtomicString fragmentIdentifierFromIRIString(const String&, const Document&);
+    static Element* targetElementFromIRIString(const String&, const Document&, AtomicString* = 0, Document* = 0);
 
     static inline bool isExternalURIReference(const String& uri, const Document& document)
     {
@@ -50,8 +50,19 @@ public:
         return !equalIgnoringFragmentIdentifier(url, document.url());
     }
 
+    // SVGURIReference JS API.
+    static SVGAnimatedString* href(SVGURIReference* object) { return object->href(); }
+
+    SVGAnimatedString* href() const { return m_href.get(); }
+    const String& hrefString() const { return m_href->currentValue()->value(); }
+
+    bool parseAttribute(const QualifiedName&, const AtomicString& value, SVGParsingError&);
+
 protected:
-    virtual void setHrefBaseValue(const String&) = 0;
+    explicit SVGURIReference(SVGElement*);
+
+private:
+    RefPtr<SVGAnimatedString> m_href;
 };
 
 } // namespace WebCore

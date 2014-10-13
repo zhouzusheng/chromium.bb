@@ -57,12 +57,12 @@ using namespace HTMLNames;
 
 RenderImage::RenderImage(Element* element)
     : RenderReplaced(element, IntSize())
-    , m_needsToSetSizeForAltText(false)
     , m_didIncrementVisuallyNonEmptyPixelCount(false)
     , m_isGeneratedContent(false)
     , m_imageDevicePixelRatio(1.0f)
 {
     updateAltText();
+    ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()->addRenderObject(this);
 }
 
 RenderImage* RenderImage::createAnonymous(Document* document)
@@ -144,11 +144,6 @@ bool RenderImage::setImageSizeForAltText(ImageResource* newImage /* = 0 */)
 void RenderImage::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     RenderReplaced::styleDidChange(diff, oldStyle);
-    if (m_needsToSetSizeForAltText) {
-        if (!m_altText.isEmpty() && setImageSizeForAltText(m_imageResource->cachedImage()))
-            imageDimensionsChanged(true /* imageSizeChanged */);
-        m_needsToSetSizeForAltText = false;
-    }
 }
 
 void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
@@ -179,17 +174,8 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     bool imageSizeChanged = false;
 
     // Set image dimensions, taking into account the size of the alt text.
-    if (m_imageResource->errorOccurred() || !newImage) {
-        if (!m_altText.isEmpty() && document().hasPendingStyleRecalc()) {
-            ASSERT(node());
-            if (node()) {
-                m_needsToSetSizeForAltText = true;
-                node()->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
-            }
-            return;
-        }
+    if (m_imageResource->errorOccurred() || !newImage)
         imageSizeChanged = setImageSizeForAltText(m_imageResource->cachedImage());
-    }
 
     imageDimensionsChanged(imageSizeChanged, rect);
 }
@@ -232,7 +218,7 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
         bool hasOverrideSize = hasOverrideHeight() || hasOverrideWidth();
         if (!hasOverrideSize && !imageSizeChanged) {
             LogicalExtentComputedValues computedValues;
-            computeLogicalWidthInRegion(computedValues);
+            computeLogicalWidth(computedValues);
             LayoutUnit newWidth = computedValues.m_extent;
             computeLogicalHeight(height(), 0, computedValues);
             LayoutUnit newHeight = computedValues.m_extent;
@@ -274,7 +260,11 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
         } else
             repaintRect = contentBoxRect();
 
-        repaintRectangle(repaintRect);
+        {
+            // FIXME: We should not be allowing repaint during layout. crbug.com/339584
+            AllowRepaintScope scoper(frameView());
+            repaintRectangle(repaintRect);
+        }
 
         // Tell any potential compositing layers that the image needs updating.
         contentChanged(ImageChanged);
@@ -365,11 +355,16 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
                 TextRunPaintInfo textRunPaintInfo(textRun);
                 textRunPaintInfo.bounds = FloatRect(textRectOrigin, FloatSize(textWidth, fontMetrics.height()));
                 context->setFillColor(resolveColor(CSSPropertyColor));
+                if (textRun.direction() == RTL) {
+                    int availableWidth = cWidth - static_cast<int>(paddingWidth);
+                    textOrigin.move(availableWidth - ceilf(textWidth), 0);
+                }
                 if (errorPictureDrawn) {
                     if (usableWidth >= textWidth && fontMetrics.height() <= imageOffset.height())
-                        context->drawText(font, textRunPaintInfo, textOrigin);
-                } else if (usableWidth >= textWidth && usableHeight >= fontMetrics.height())
-                    context->drawText(font, textRunPaintInfo, textOrigin);
+                        context->drawBidiText(font, textRunPaintInfo, textOrigin);
+                } else if (usableWidth >= textWidth && usableHeight >= fontMetrics.height()) {
+                    context->drawBidiText(font, textRunPaintInfo, textOrigin);
+                }
             }
         }
     } else if (m_imageResource->hasImage() && cWidth > 0 && cHeight > 0) {
@@ -413,7 +408,7 @@ void RenderImage::paintAreaElementFocusRing(PaintInfo& paintInfo)
         return;
 
     Element* focusedElement = document.focusedElement();
-    if (!focusedElement || !isHTMLAreaElement(focusedElement))
+    if (!focusedElement || !focusedElement->hasTagName(areaTag))
         return;
 
     HTMLAreaElement* areaElement = toHTMLAreaElement(focusedElement);
@@ -573,22 +568,10 @@ void RenderImage::layout()
     updateInnerContentRect();
 }
 
-void RenderImage::didLayout(ResourceLoadPriorityOptimizer& optimizer)
-{
-    RenderReplaced::didLayout(optimizer);
-    updateImageLoadingPriority(optimizer);
-}
-
-void RenderImage::didScroll(ResourceLoadPriorityOptimizer& optimizer)
-{
-    RenderReplaced::didScroll(optimizer);
-    updateImageLoadingPriority(optimizer);
-}
-
-void RenderImage::updateImageLoadingPriority(ResourceLoadPriorityOptimizer& optimizer)
+bool RenderImage::updateImageLoadingPriorities()
 {
     if (!m_imageResource || !m_imageResource->cachedImage() || m_imageResource->cachedImage()->isLoaded())
-        return;
+        return false;
 
     LayoutRect viewBounds = viewRect();
     LayoutRect objectBounds = absoluteContentBox();
@@ -604,7 +587,9 @@ void RenderImage::updateImageLoadingPriority(ResourceLoadPriorityOptimizer& opti
     ResourceLoadPriorityOptimizer::VisibilityStatus status = isVisible ?
         ResourceLoadPriorityOptimizer::Visible : ResourceLoadPriorityOptimizer::NotVisible;
 
-    optimizer.notifyImageResourceVisibility(m_imageResource->cachedImage(), status);
+    ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()->notifyImageResourceVisibility(m_imageResource->cachedImage(), status);
+
+    return true;
 }
 
 void RenderImage::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const

@@ -139,9 +139,9 @@ public:
     virtual Color platformActiveTextSearchHighlightColor() const;
     virtual Color platformInactiveTextSearchHighlightColor() const;
 
-    static Color focusRingColor();
+    Color focusRingColor() const;
     virtual Color platformFocusRingColor() const { return Color(0, 0, 0); }
-    static void setCustomFocusRingColor(const Color&);
+    void setCustomFocusRingColor(const Color&);
     static Color tapHighlightColor();
     virtual Color platformTapHighlightColor() const { return RenderTheme::defaultTapHighlightColor; }
     virtual void platformColorsDidChange();
@@ -173,9 +173,6 @@ public:
     virtual double animationDurationForProgressBar(RenderProgress*) const;
 
     // Media controls
-    virtual bool supportsClosedCaptioning() const { return false; }
-    virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return false; }
-    virtual bool usesVerticalVolumeSlider() const { return true; }
     virtual String formatMediaControlsTime(float time) const;
     virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
@@ -201,6 +198,8 @@ public:
 
     virtual bool shouldOpenPickerWithF4Key() const;
 
+    virtual bool supportsSelectionForegroundColors() const { return true; }
+
 protected:
     // The platform selection color.
     virtual Color platformActiveSelectionBackgroundColor() const;
@@ -215,8 +214,6 @@ protected:
 
     // A method asking if the theme is able to draw the focus ring.
     virtual bool supportsFocusRing(const RenderStyle*) const;
-    virtual bool supportsSelectionForegroundColors() const { return true; }
-    virtual bool supportsListBoxSelectionForegroundColors() const { return true; }
 
 #if !USE(NEW_THEME)
     // Methods for each appearance value.
@@ -275,15 +272,11 @@ protected:
     virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaOverlayPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderContainer(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaRewindButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaReturnToRealtimeButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaToggleClosedCaptionsButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaControlsBackground(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaCurrentTime(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
@@ -314,15 +307,8 @@ public:
     bool isReadOnlyControl(const RenderObject*) const;
 
 private:
-    mutable Color m_activeSelectionBackgroundColor;
-    mutable Color m_inactiveSelectionBackgroundColor;
-    mutable Color m_activeSelectionForegroundColor;
-    mutable Color m_inactiveSelectionForegroundColor;
-
-    mutable Color m_activeListBoxSelectionBackgroundColor;
-    mutable Color m_inactiveListBoxSelectionBackgroundColor;
-    mutable Color m_activeListBoxSelectionForegroundColor;
-    mutable Color m_inactiveListBoxSelectionForegroundColor;
+    Color m_customFocusRingColor;
+    bool m_hasCustomFocusRingColor;
 
     // This color is expected to be drawn on a semi-transparent overlay,
     // making it more transparent than its alpha value indicates.

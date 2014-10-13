@@ -53,64 +53,57 @@ enum EntityMask {
     EntityMaskInCDATA = 0,
     EntityMaskInPCDATA = EntityAmp | EntityLt | EntityGt,
     EntityMaskInHTMLPCDATA = EntityMaskInPCDATA | EntityNbsp,
-    EntityMaskInAttributeValue = EntityAmp | EntityLt | EntityGt | EntityQuot,
-    EntityMaskInHTMLAttributeValue = EntityMaskInAttributeValue | EntityNbsp,
+    EntityMaskInAttributeValue = EntityAmp | EntityQuot | EntityLt | EntityGt,
+    EntityMaskInHTMLAttributeValue = EntityAmp | EntityQuot | EntityNbsp,
 };
 
-struct EntityDescription {
-    UChar entity;
-    const String& reference;
-    EntityMask mask;
-};
-
-// FIXME: Noncopyable?
 class MarkupAccumulator {
+    WTF_MAKE_NONCOPYABLE(MarkupAccumulator);
+
 public:
     MarkupAccumulator(Vector<Node*>*, EAbsoluteURLs, const Range* = 0);
     virtual ~MarkupAccumulator();
 
-    String serializeNodes(Node* targetNode, EChildrenOnly);
-    String serializeNodes(Node* targetNode, EChildrenOnly, Vector<QualifiedName>* tagNamesToSkip);
+    String serializeNodes(Node& targetNode, EChildrenOnly, Vector<QualifiedName>* tagNamesToSkip = 0);
 
     static void appendComment(StringBuilder&, const String&);
 
     static void appendCharactersReplacingEntities(StringBuilder&, const String&, unsigned, unsigned, EntityMask);
 
 protected:
-    virtual void appendString(const String&);
-    void appendStartTag(Node*, Namespaces* = 0);
-    virtual void appendEndTag(Node*);
+    void appendString(const String&);
+    void appendStartTag(Node&, Namespaces* = 0);
+    virtual void appendEndTag(const Node&);
     static size_t totalLength(const Vector<String>&);
     size_t length() const { return m_markup.length(); }
     void concatenateMarkup(StringBuilder&);
     void appendAttributeValue(StringBuilder&, const String&, bool);
-    virtual void appendCustomAttributes(StringBuilder&, Element*, Namespaces*);
-    void appendNodeValue(StringBuilder&, const Node*, const Range*, EntityMask);
-    bool shouldAddNamespaceElement(const Element*);
+    virtual void appendCustomAttributes(StringBuilder&, const Element&, Namespaces*);
+    bool shouldAddNamespaceElement(const Element&);
     bool shouldAddNamespaceAttribute(const Attribute&, Namespaces&);
     void appendNamespace(StringBuilder&, const AtomicString& prefix, const AtomicString& namespaceURI, Namespaces&);
-    EntityMask entityMaskForText(Text*) const;
-    virtual void appendText(StringBuilder&, Text*);
-    void appendXMLDeclaration(StringBuilder&, const Document*);
-    void appendDocumentType(StringBuilder&, const DocumentType*);
+    EntityMask entityMaskForText(const Text&) const;
+    virtual void appendText(StringBuilder&, Text&);
+    void appendXMLDeclaration(StringBuilder&, const Document&);
+    void appendDocumentType(StringBuilder&, const DocumentType&);
     void appendProcessingInstruction(StringBuilder&, const String& target, const String& data);
-    virtual void appendElement(StringBuilder&, Element*, Namespaces*);
-    void appendOpenTag(StringBuilder&, Element*, Namespaces*);
-    void appendCloseTag(StringBuilder&, Element*);
-    void appendAttribute(StringBuilder&, Element*, const Attribute&, Namespaces*);
+    virtual void appendElement(StringBuilder&, Element&, Namespaces*);
+    void appendOpenTag(StringBuilder&, const Element&, Namespaces*);
+    void appendCloseTag(StringBuilder&, const Element&);
+    void appendAttribute(StringBuilder&, const Element&, const Attribute&, Namespaces*);
     void appendCDATASection(StringBuilder&, const String&);
-    void appendStartMarkup(StringBuilder&, const Node*, Namespaces*);
-    bool shouldSelfClose(const Node*);
-    bool elementCannotHaveEndTag(const Node*);
-    void appendEndMarkup(StringBuilder&, const Node*);
+    void appendStartMarkup(StringBuilder&, Node&, Namespaces*);
+    bool shouldSelfClose(const Node&);
+    bool elementCannotHaveEndTag(const Node&);
+    void appendEndMarkup(StringBuilder&, const Node&);
 
     Vector<Node*>* const m_nodes;
     const Range* const m_range;
 
 private:
-    String resolveURLIfNeeded(const Element*, const String&) const;
-    void appendQuotedURLAttributeValue(StringBuilder&, const Element*, const Attribute&);
-    void serializeNodesWithNamespaces(Node* targetNode, EChildrenOnly, const Namespaces*, Vector<QualifiedName>* tagNamesToSkip);
+    String resolveURLIfNeeded(const Element&, const String&) const;
+    void appendQuotedURLAttributeValue(StringBuilder&, const Element&, const Attribute&);
+    void serializeNodesWithNamespaces(Node& targetNode, EChildrenOnly, const Namespaces*, Vector<QualifiedName>* tagNamesToSkip);
 
     StringBuilder m_markup;
     const EAbsoluteURLs m_resolveURLsMethod;

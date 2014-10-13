@@ -21,43 +21,11 @@
 #include "core/svg/SVGViewSpec.h"
 
 #include "SVGNames.h"
-#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
-
-// Define custom animated property 'viewBox'.
-const SVGPropertyInfo* SVGViewSpec::viewBoxPropertyInfo()
-{
-    static const SVGPropertyInfo* s_propertyInfo = 0;
-    if (!s_propertyInfo) {
-        s_propertyInfo = new SVGPropertyInfo(AnimatedRect,
-                                             PropertyIsReadOnly,
-                                             SVGNames::viewBoxAttr,
-                                             viewBoxIdentifier(),
-                                             0,
-                                             0);
-    }
-    return s_propertyInfo;
-}
-
-// Define custom animated property 'preserveAspectRatio'.
-const SVGPropertyInfo* SVGViewSpec::preserveAspectRatioPropertyInfo()
-{
-    static const SVGPropertyInfo* s_propertyInfo = 0;
-    if (!s_propertyInfo) {
-        s_propertyInfo = new SVGPropertyInfo(AnimatedPreserveAspectRatio,
-                                             PropertyIsReadOnly,
-                                             SVGNames::preserveAspectRatioAttr,
-                                             preserveAspectRatioIdentifier(),
-                                             0,
-                                             0);
-    }
-    return s_propertyInfo;
-}
-
 
 // Define custom non-animated property 'transform'.
 const SVGPropertyInfo* SVGViewSpec::transformPropertyInfo()
@@ -74,24 +42,19 @@ const SVGPropertyInfo* SVGViewSpec::transformPropertyInfo()
     return s_propertyInfo;
 }
 
-SVGViewSpec::SVGViewSpec(WeakPtr<SVGSVGElement> contextElement)
-    : m_contextElement(contextElement)
-    , m_zoomAndPan(SVGZoomAndPanMagnify)
+SVGViewSpec::SVGViewSpec(SVGSVGElement* contextElement)
+    // Note: We make |viewBox| and |preserveAspectRatio|'s contextElement the target element of SVGViewSpec.
+    // This contextElement will be only used for keeping this alive from the tearoff.
+    // SVGSVGElement holds a strong-ref to this SVGViewSpec, so this is kept alive as:
+    // AnimatedProperty tearoff -(contextElement)-> SVGSVGElement -(RefPtr)-> SVGViewSpec.
+    : SVGFitToViewBox(contextElement, PropertyMapPolicySkip) // Note: addToPropertyMap is not needed, as SVGViewSpec do not correspond to an element.
+    , m_contextElement(contextElement)
 {
     ASSERT(m_contextElement);
     ScriptWrappable::init(this);
-}
 
-const AtomicString& SVGViewSpec::viewBoxIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGViewSpecViewBoxAttribute", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
-
-const AtomicString& SVGViewSpec::preserveAspectRatioIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGViewSpecPreserveAspectRatioAttribute", AtomicString::ConstructFromLiteral));
-    return s_identifier;
+    viewBox()->setReadOnly();
+    preserveAspectRatio()->setReadOnly();
 }
 
 const AtomicString& SVGViewSpec::transformIdentifier()
@@ -100,10 +63,9 @@ const AtomicString& SVGViewSpec::transformIdentifier()
     return s_identifier;
 }
 
-void SVGViewSpec::setZoomAndPan(unsigned short, ExceptionState& exceptionState)
+String SVGViewSpec::preserveAspectRatioString() const
 {
-    // SVGViewSpec and all of its content is read-only.
-    exceptionState.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
+    return preserveAspectRatio()->baseValue()->valueAsString();
 }
 
 void SVGViewSpec::setTransformString(const String& transform)
@@ -114,7 +76,7 @@ void SVGViewSpec::setTransformString(const String& transform)
     SVGTransformList newList;
     newList.parse(transform);
 
-    if (SVGAnimatedProperty* wrapper = SVGAnimatedProperty::lookupWrapper<SVGElement, SVGAnimatedTransformList>(m_contextElement.get(), transformPropertyInfo()))
+    if (SVGAnimatedProperty* wrapper = SVGAnimatedProperty::lookupWrapper<SVGElement, SVGAnimatedTransformList>(m_contextElement, transformPropertyInfo()))
         static_cast<SVGAnimatedTransformList*>(wrapper)->detachListWrappers(newList.size());
 
     m_transform = newList;
@@ -127,19 +89,14 @@ String SVGViewSpec::transformString() const
 
 String SVGViewSpec::viewBoxString() const
 {
-    return SVGPropertyTraits<SVGRect>::toString(viewBoxBaseValue());
-}
-
-String SVGViewSpec::preserveAspectRatioString() const
-{
-    return SVGPropertyTraits<SVGPreserveAspectRatio>::toString(preserveAspectRatioBaseValue());
+    return viewBox()->currentValue()->valueAsString();
 }
 
 SVGElement* SVGViewSpec::viewTarget() const
 {
     if (!m_contextElement)
         return 0;
-    Element* element = m_contextElement.get()->treeScope().getElementById(m_viewTargetString);
+    Element* element = m_contextElement->treeScope().getElementById(AtomicString(m_viewTargetString));
     if (!element || !element->isSVGElement())
         return 0;
     return toSVGElement(element);
@@ -153,34 +110,6 @@ SVGTransformListPropertyTearOff* SVGViewSpec::transform()
     return static_cast<SVGTransformListPropertyTearOff*>(static_pointer_cast<SVGAnimatedTransformList>(lookupOrCreateTransformWrapper(this))->animVal());
 }
 
-PassRefPtr<SVGAnimatedRect> SVGViewSpec::viewBox()
-{
-    if (!m_contextElement)
-        return 0;
-    return static_pointer_cast<SVGAnimatedRect>(lookupOrCreateViewBoxWrapper(this));
-}
-
-PassRefPtr<SVGAnimatedPreserveAspectRatio> SVGViewSpec::preserveAspectRatio()
-{
-    if (!m_contextElement)
-        return 0;
-    return static_pointer_cast<SVGAnimatedPreserveAspectRatio>(lookupOrCreatePreserveAspectRatioWrapper(this));
-}
-
-PassRefPtr<SVGAnimatedProperty> SVGViewSpec::lookupOrCreateViewBoxWrapper(SVGViewSpec* ownerType)
-{
-    ASSERT(ownerType);
-    ASSERT(ownerType->contextElement());
-    return SVGAnimatedProperty::lookupOrCreateWrapper<SVGElement, SVGAnimatedRect, SVGRect>(ownerType->contextElement(), viewBoxPropertyInfo(), ownerType->m_viewBox);
-}
-
-PassRefPtr<SVGAnimatedProperty> SVGViewSpec::lookupOrCreatePreserveAspectRatioWrapper(SVGViewSpec* ownerType)
-{
-    ASSERT(ownerType);
-    ASSERT(ownerType->contextElement());
-    return SVGAnimatedProperty::lookupOrCreateWrapper<SVGElement, SVGAnimatedPreserveAspectRatio, SVGPreserveAspectRatio>(ownerType->contextElement(), preserveAspectRatioPropertyInfo(), ownerType->m_preserveAspectRatio);
-}
-
 PassRefPtr<SVGAnimatedProperty> SVGViewSpec::lookupOrCreateTransformWrapper(SVGViewSpec* ownerType)
 {
     ASSERT(ownerType);
@@ -188,12 +117,21 @@ PassRefPtr<SVGAnimatedProperty> SVGViewSpec::lookupOrCreateTransformWrapper(SVGV
     return SVGAnimatedProperty::lookupOrCreateWrapper<SVGElement, SVGAnimatedTransformList, SVGTransformList>(ownerType->contextElement(), transformPropertyInfo(), ownerType->m_transform);
 }
 
+void SVGViewSpec::detachContextElement()
+{
+    clearViewBox();
+    clearPreserveAspectRatio();
+    m_contextElement = 0;
+}
+
 void SVGViewSpec::reset()
 {
-    m_zoomAndPan = SVGZoomAndPanMagnify;
+    resetZoomAndPan();
     m_transform.clear();
-    m_viewBox = SVGRect();
-    m_preserveAspectRatio = SVGPreserveAspectRatio();
+    updateViewBox(FloatRect());
+    ASSERT(preserveAspectRatio());
+    preserveAspectRatio()->baseValue()->setAlign(SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMIDYMID);
+    preserveAspectRatio()->baseValue()->setMeetOrSlice(SVGPreserveAspectRatio::SVG_MEETORSLICE_MEET);
     m_viewTargetString = emptyString();
 }
 
@@ -220,10 +158,13 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
                 if (ptr >= end || *ptr != '(')
                     return false;
                 ptr++;
-                SVGRect viewBox;
-                if (!SVGFitToViewBox::parseViewBox(&m_contextElement.get()->document(), ptr, end, viewBox, false))
+                float x = 0.0f;
+                float y = 0.0f;
+                float width = 0.0f;
+                float height = 0.0f;
+                if (!(parseNumber(ptr, end, x) && parseNumber(ptr, end, y) && parseNumber(ptr, end, width) && parseNumber(ptr, end, height, false)))
                     return false;
-                setViewBoxBaseValue(viewBox);
+                updateViewBox(FloatRect(x, y, width, height));
                 if (ptr >= end || *ptr != ')')
                     return false;
                 ptr++;
@@ -245,7 +186,7 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
             if (ptr >= end || *ptr != '(')
                 return false;
             ptr++;
-            if (!parseZoomAndPan(ptr, end, m_zoomAndPan))
+            if (!parseZoomAndPan(ptr, end))
                 return false;
             if (ptr >= end || *ptr != ')')
                 return false;
@@ -256,10 +197,8 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
             if (ptr >= end || *ptr != '(')
                 return false;
             ptr++;
-            SVGPreserveAspectRatio preserveAspectRatio;
-            if (!preserveAspectRatio.parse(ptr, end, false))
+            if (!preserveAspectRatio()->baseValue()->parse(ptr, end, false))
                 return false;
-            setPreserveAspectRatioBaseValue(preserveAspectRatio);
             if (ptr >= end || *ptr != ')')
                 return false;
             ptr++;

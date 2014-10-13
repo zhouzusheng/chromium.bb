@@ -88,9 +88,6 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     setClient(this);
     setSecurityOrigin(SecurityOrigin::create(url));
     m_workerClients->reattachThread();
-
-    // Notify proxy that a new WorkerGlobalScope has been created and started.
-    this->thread()->workerReportingProxy().workerGlobalScopeStarted();
 }
 
 WorkerGlobalScope::~WorkerGlobalScope()
@@ -109,7 +106,7 @@ WorkerGlobalScope::~WorkerGlobalScope()
 void WorkerGlobalScope::applyContentSecurityPolicyFromString(const String& policy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType)
 {
     setContentSecurityPolicy(ContentSecurityPolicy::create(this));
-    contentSecurityPolicy()->didReceiveHeader(policy, contentSecurityPolicyType);
+    contentSecurityPolicy()->didReceiveHeader(policy, contentSecurityPolicyType, ContentSecurityPolicy::HeaderSourceHTTP);
 }
 
 ExecutionContext* WorkerGlobalScope::executionContext() const

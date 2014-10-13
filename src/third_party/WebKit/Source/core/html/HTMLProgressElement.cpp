@@ -101,7 +101,7 @@ double HTMLProgressElement::value() const
 void HTMLProgressElement::setValue(double value, ExceptionState& exceptionState)
 {
     if (!std::isfinite(value)) {
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(value));
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(value));
         return;
     }
     setFloatingPointAttribute(valueAttr, std::max(value, 0.));
@@ -116,7 +116,7 @@ double HTMLProgressElement::max() const
 void HTMLProgressElement::setMax(double max, ExceptionState& exceptionState)
 {
     if (!std::isfinite(max)) {
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(max));
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(max));
         return;
     }
     // FIXME: The specification says we should ignore the input value if it is inferior or equal to 0.
@@ -151,14 +151,14 @@ void HTMLProgressElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     ASSERT(!m_value);
 
     RefPtr<ProgressInnerElement> inner = ProgressInnerElement::create(document());
-    inner->setPseudo(AtomicString("-webkit-progress-inner-element", AtomicString::ConstructFromLiteral));
+    inner->setShadowPseudoId(AtomicString("-webkit-progress-inner-element", AtomicString::ConstructFromLiteral));
     root.appendChild(inner);
 
     RefPtr<ProgressBarElement> bar = ProgressBarElement::create(document());
-    bar->setPseudo(AtomicString("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
+    bar->setShadowPseudoId(AtomicString("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
     RefPtr<ProgressValueElement> value = ProgressValueElement::create(document());
     m_value = value.get();
-    m_value->setPseudo(AtomicString("-webkit-progress-value", AtomicString::ConstructFromLiteral));
+    m_value->setShadowPseudoId(AtomicString("-webkit-progress-value", AtomicString::ConstructFromLiteral));
     m_value->setWidthPercentage(HTMLProgressElement::IndeterminatePosition * 100);
     bar->appendChild(m_value);
 

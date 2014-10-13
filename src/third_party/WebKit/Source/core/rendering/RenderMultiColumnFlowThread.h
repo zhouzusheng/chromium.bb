@@ -33,7 +33,7 @@ namespace WebCore {
 
 class RenderMultiColumnFlowThread FINAL : public RenderFlowThread {
 public:
-    ~RenderMultiColumnFlowThread();
+    virtual ~RenderMultiColumnFlowThread();
 
     static RenderMultiColumnFlowThread* createAnonymous(Document*);
 
@@ -46,6 +46,7 @@ private:
     virtual LayoutUnit initialLogicalWidth() const OVERRIDE;
     virtual void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage) OVERRIDE;
     virtual void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight) OVERRIDE;
+    virtual bool addForcedRegionBreak(LayoutUnit, RenderObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = 0) OVERRIDE;
 };
 
 } // namespace WebCore

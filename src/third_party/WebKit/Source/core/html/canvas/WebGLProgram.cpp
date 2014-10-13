@@ -43,7 +43,7 @@ WebGLProgram::WebGLProgram(WebGLRenderingContext* ctx)
     , m_infoValid(true)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createProgram());
+    setObject(ctx->webGraphicsContext3D()->createProgram());
 }
 
 WebGLProgram::~WebGLProgram()
@@ -51,7 +51,7 @@ WebGLProgram::~WebGLProgram()
     deleteObject(0);
 }
 
-void WebGLProgram::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject obj)
+void WebGLProgram::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject obj)
 {
     context3d->deleteProgram(obj);
     if (m_vertexShader) {
@@ -70,7 +70,7 @@ unsigned WebGLProgram::numActiveAttribLocations()
     return m_activeAttribLocations.size();
 }
 
-GC3Dint WebGLProgram::getActiveAttribLocation(GC3Duint index)
+GLint WebGLProgram::getActiveAttribLocation(GLuint index)
 {
     cacheInfoIfNeeded();
     if (index >= numActiveAttribLocations())
@@ -106,7 +106,7 @@ void WebGLProgram::increaseLinkCount()
     m_infoValid = false;
 }
 
-WebGLShader* WebGLProgram::getAttachedShader(GC3Denum type)
+WebGLShader* WebGLProgram::getAttachedShader(GLenum type)
 {
     switch (type) {
     case GL_VERTEX_SHADER:
@@ -158,17 +158,17 @@ bool WebGLProgram::detachShader(WebGLShader* shader)
     }
 }
 
-void WebGLProgram::cacheActiveAttribLocations(GraphicsContext3D* context3d)
+void WebGLProgram::cacheActiveAttribLocations(blink::WebGraphicsContext3D* context3d)
 {
     m_activeAttribLocations.clear();
 
-    GC3Dint numAttribs = 0;
+    GLint numAttribs = 0;
     context3d->getProgramiv(object(), GL_ACTIVE_ATTRIBUTES, &numAttribs);
     m_activeAttribLocations.resize(static_cast<size_t>(numAttribs));
     for (int i = 0; i < numAttribs; ++i) {
-        ActiveInfo info;
+        blink::WebGraphicsContext3D::ActiveInfo info;
         context3d->getActiveAttrib(object(), i, info);
-        m_activeAttribLocations[i] = context3d->getAttribLocation(object(), info.name);
+        m_activeAttribLocations[i] = context3d->getAttribLocation(object(), info.name.utf8().data());
     }
 }
 
@@ -180,10 +180,10 @@ void WebGLProgram::cacheInfoIfNeeded()
     if (!object())
         return;
 
-    GraphicsContext3D* context = getAGraphicsContext3D();
+    blink::WebGraphicsContext3D* context = getAWebGraphicsContext3D();
     if (!context)
         return;
-    GC3Dint linkStatus = 0;
+    GLint linkStatus = 0;
     context->getProgramiv(object(), GL_LINK_STATUS, &linkStatus);
     m_linkStatus = linkStatus;
     if (m_linkStatus)

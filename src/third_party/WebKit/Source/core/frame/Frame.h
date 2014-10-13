@@ -30,7 +30,6 @@
 
 #include "core/loader/FrameLoader.h"
 #include "core/loader/NavigationScheduler.h"
-#include "core/frame/AdjustViewSizeOrNot.h"
 #include "core/page/FrameTree.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/scroll/ScrollTypes.h"
@@ -43,7 +42,6 @@ class WebLayer;
 
 namespace WebCore {
 
-    class AnimationController;
     class ChromeClient;
     class Color;
     class DOMWindow;
@@ -55,6 +53,7 @@ namespace WebCore {
     class FetchContext;
     class FloatSize;
     class FrameDestructionObserver;
+    class FrameHost;
     class FrameSelection;
     class FrameView;
     class HTMLFrameOwnerElement;
@@ -62,6 +61,7 @@ namespace WebCore {
     class InputMethodController;
     class IntPoint;
     class Node;
+    class Page;
     class Range;
     class RenderPart;
     class RenderView;
@@ -76,27 +76,27 @@ namespace WebCore {
     class FrameInit : public RefCounted<FrameInit> {
     public:
         // For creating a dummy Frame
-        static PassRefPtr<FrameInit> create(int64_t frameID, Page* page, FrameLoaderClient* client)
+        static PassRefPtr<FrameInit> create(int64_t frameID, FrameHost* host, FrameLoaderClient* client)
         {
-            return adoptRef(new FrameInit(frameID, page, client));
+            return adoptRef(new FrameInit(frameID, host, client));
         }
-
-        void setFrameLoaderClient(FrameLoaderClient* client) { m_client = client; }
-        FrameLoaderClient* frameLoaderClient() const { return m_client; }
 
         int64_t frameID() const { return m_frameID; }
 
-        void setPage(Page* page) { m_page = page; }
-        Page* page() const { return m_page; }
+        void setFrameHost(FrameHost* host) { m_frameHost = host; }
+        FrameHost* frameHost() const { return m_frameHost; }
+
+        void setFrameLoaderClient(FrameLoaderClient* client) { m_client = client; }
+        FrameLoaderClient* frameLoaderClient() const { return m_client; }
 
         void setOwnerElement(HTMLFrameOwnerElement* ownerElement) { m_ownerElement = ownerElement; }
         HTMLFrameOwnerElement* ownerElement() const { return m_ownerElement; }
 
     protected:
-        FrameInit(int64_t frameID, Page* page = 0, FrameLoaderClient* client = 0)
+        FrameInit(int64_t frameID, FrameHost* host = 0, FrameLoaderClient* client = 0)
             : m_frameID(frameID)
             , m_client(client)
-            , m_page(page)
+            , m_frameHost(host)
             , m_ownerElement(0)
         {
         }
@@ -104,7 +104,7 @@ namespace WebCore {
     private:
         int64_t m_frameID;
         FrameLoaderClient* m_client;
-        Page* m_page;
+        FrameHost* m_frameHost;
         HTMLFrameOwnerElement* m_ownerElement;
     };
 
@@ -123,11 +123,16 @@ namespace WebCore {
         void addDestructionObserver(FrameDestructionObserver*);
         void removeDestructionObserver(FrameDestructionObserver*);
 
-        void willDetachPage();
-        void detachFromPage();
+        void willDetachFrameHost();
+        void detachFromFrameHost();
         void disconnectOwnerElement();
 
+        // NOTE: Page is moving out of Blink up into the browser process as
+        // part of the site-isolation (out of process iframes) work.
+        // FrameHost should be used instead where possible.
         Page* page() const;
+        FrameHost* host() const; // Null when the frame is detached.
+
         HTMLFrameOwnerElement* ownerElement() const;
         bool isMainFrame() const;
 
@@ -143,7 +148,6 @@ namespace WebCore {
         NavigationScheduler& navigationScheduler() const;
         FrameSelection& selection() const;
         FrameTree& tree() const;
-        AnimationController& animation() const;
         InputMethodController& inputMethodController() const;
         FetchContext& fetchContext() const { return loader().fetchContext(); }
         ScriptController& script();
@@ -152,10 +156,12 @@ namespace WebCore {
         RenderView* contentRenderer() const; // Root of the render tree for the document contained in this frame.
         RenderPart* ownerRenderer() const; // Renderer for the element that contains this frame.
 
-        void dispatchVisibilityStateChangeEvent();
+        void didChangeVisibilityState();
 
         int64_t frameID() const { return m_frameInit->frameID(); }
 
+        // FIXME: These should move to RemoteFrame once that exists.
+        // RemotePlatformLayer is only ever set for Frames which exist in another process.
         void setRemotePlatformLayer(blink::WebLayer* remotePlatformLayer) { m_remotePlatformLayer = remotePlatformLayer; }
         blink::WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
 
@@ -163,13 +169,15 @@ namespace WebCore {
 
         bool inScope(TreeScope*) const;
 
+        void countObjectsNeedingLayout(unsigned& needsLayoutObjects, unsigned& totalObjects, bool& isPartial);
+
         // See GraphicsLayerClient.h for accepted flags.
         String layerTreeAsText(unsigned flags = 0) const;
         String trackedRepaintRectsAsText() const;
 
         Settings* settings() const; // can be NULL
 
-        void setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio, AdjustViewSizeOrNot);
+        void setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio);
         bool shouldUsePrintingLayout() const;
         FloatSize resizePageRectsKeepingRatio(const FloatSize& originalSize, const FloatSize& expectedSize);
 
@@ -185,13 +193,11 @@ namespace WebCore {
         void deviceOrPageScaleFactorChanged();
         double devicePixelRatio() const;
 
-#if ENABLE(ORIENTATION_EVENTS)
         // Orientation is the interface orientation in degrees. Some examples are:
         //  0 is straight up; -90 is when the device is rotated 90 clockwise;
         //  90 is when rotated counter clockwise.
         void sendOrientationChangeEvent(int orientation);
         int orientation() const { return m_orientation; }
-#endif
 
         String documentTypeString() const;
 
@@ -217,7 +223,7 @@ namespace WebCore {
 
         HashSet<FrameDestructionObserver*> m_destructionObservers;
 
-        Page* m_page;
+        FrameHost* m_host;
         mutable FrameTree m_treeNode;
         mutable FrameLoader m_loader;
         mutable NavigationScheduler m_navigationScheduler;
@@ -230,7 +236,6 @@ namespace WebCore {
         const OwnPtr<SpellChecker> m_spellChecker;
         const OwnPtr<FrameSelection> m_selection;
         const OwnPtr<EventHandler> m_eventHandler;
-        OwnPtr<AnimationController> m_animationController;
         OwnPtr<InputMethodController> m_inputMethodController;
 
         RefPtr<FrameInit> m_frameInit;
@@ -238,9 +243,7 @@ namespace WebCore {
         float m_pageZoomFactor;
         float m_textZoomFactor;
 
-#if ENABLE(ORIENTATION_EVENTS)
         int m_orientation;
-#endif
 
         bool m_inViewSourceMode;
 
@@ -292,11 +295,6 @@ namespace WebCore {
         return *m_spellChecker;
     }
 
-    inline AnimationController& Frame::animation() const
-    {
-        return *m_animationController;
-    }
-
     inline InputMethodController& Frame::inputMethodController() const
     {
         return *m_inputMethodController;
@@ -320,11 +318,6 @@ namespace WebCore {
     inline FrameTree& Frame::tree() const
     {
         return m_treeNode;
-    }
-
-    inline Page* Frame::page() const
-    {
-        return m_page;
     }
 
     inline EventHandler& Frame::eventHandler() const

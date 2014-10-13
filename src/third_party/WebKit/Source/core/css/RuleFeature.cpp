@@ -30,69 +30,399 @@
 #include "core/css/RuleFeature.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
+#include "core/css/RuleSet.h"
+#include "core/dom/Document.h"
+#include "core/dom/Element.h"
+#include "core/dom/Node.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
+#include "wtf/BitVector.h"
 
 namespace WebCore {
 
-void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector* selector)
+static bool isSkippableComponentForInvalidation(const CSSSelector& selector)
 {
-    if (selector->m_match == CSSSelector::Id)
-        idsInRules.add(selector->value());
-    else if (selector->m_match == CSSSelector::Class)
-        classesInRules.add(selector->value());
-    else if (selector->isAttributeSelector())
-        attrsInRules.add(selector->attribute().localName());
-    switch (selector->pseudoType()) {
-    case CSSSelector::PseudoFirstLine:
-        m_usesFirstLineRules = true;
-        break;
-        break;
-    case CSSSelector::PseudoHost:
-        collectFeaturesFromSelectorList(selector->selectorList());
-        break;
-    default:
-        break;
-    }
+    if (selector.matchesPseudoElement() || selector.pseudoType() == CSSSelector::PseudoHost)
+        return false;
+    return true;
 }
 
-void RuleFeatureSet::collectFeaturesFromSelectorList(const CSSSelectorList* selectorList)
+// This method is somewhat conservative in what it acceptss.
+static bool supportsClassDescendantInvalidation(const CSSSelector& selector)
+{
+    bool foundDescendantRelation = false;
+    bool foundAncestorIdent = false;
+    bool foundIdent = false;
+    for (const CSSSelector* component = &selector; component; component = component->tagHistory()) {
+
+        // FIXME: We should allow pseudo elements, but we need to change how they hook
+        // into recalcStyle by moving them to recalcOwnStyle instead of recalcChildStyle.
+
+        // FIXME: next up: Tag and Id.
+        if (component->m_match == CSSSelector::Class) {
+            if (!foundDescendantRelation)
+                foundIdent = true;
+            else
+                foundAncestorIdent = true;
+        } else if (!isSkippableComponentForInvalidation(*component)) {
+            return false;
+        }
+        // FIXME: We can probably support ChildTree and DescendantTree.
+        switch (component->relation()) {
+        case CSSSelector::Descendant:
+        case CSSSelector::Child:
+            foundDescendantRelation = true;
+            // Fall through!
+        case CSSSelector::SubSelector:
+            continue;
+        default:
+            return false;
+        }
+    }
+    return foundDescendantRelation && foundAncestorIdent && foundIdent;
+}
+
+void extractClassIdOrTag(const CSSSelector& selector, Vector<AtomicString>& classes, AtomicString& id, AtomicString& tagName)
+{
+    if (selector.m_match == CSSSelector::Tag)
+        tagName = selector.tagQName().localName();
+    else if (selector.m_match == CSSSelector::Id)
+        id = selector.value();
+    else if (selector.m_match == CSSSelector::Class)
+        classes.append(selector.value());
+}
+
+RuleFeatureSet::RuleFeatureSet()
+    : m_targetedStyleRecalcEnabled(RuntimeEnabledFeatures::targetedStyleRecalcEnabled())
+{
+}
+
+bool RuleFeatureSet::updateClassInvalidationSets(const CSSSelector& selector)
+{
+    if (!supportsClassDescendantInvalidation(selector))
+        return false;
+
+    Vector<AtomicString> classes;
+    AtomicString id;
+    AtomicString tagName;
+
+    const CSSSelector* lastSelector = &selector;
+    for (; lastSelector->relation() == CSSSelector::SubSelector; lastSelector = lastSelector->tagHistory()) {
+        extractClassIdOrTag(*lastSelector, classes, id, tagName);
+    }
+    extractClassIdOrTag(*lastSelector, classes, id, tagName);
+
+    for (const CSSSelector* current = &selector ; current; current = current->tagHistory()) {
+        if (current->m_match == CSSSelector::Class) {
+            DescendantInvalidationSet& invalidationSet = ensureClassInvalidationSet(current->value());
+            if (!id.isEmpty())
+                invalidationSet.addId(id);
+            if (!tagName.isEmpty())
+                invalidationSet.addTagName(tagName);
+            for (Vector<AtomicString>::const_iterator it = classes.begin(); it != classes.end(); ++it) {
+                invalidationSet.addClass(*it);
+            }
+        }
+    }
+    return true;
+}
+
+void RuleFeatureSet::addAttributeInASelector(const AtomicString& attributeName)
+{
+    m_metadata.attrsInRules.add(attributeName);
+}
+
+void RuleFeatureSet::collectFeaturesFromRuleData(const RuleData& ruleData)
+{
+    FeatureMetadata metadata;
+    bool selectorUsesClassInvalidationSet = false;
+    if (m_targetedStyleRecalcEnabled)
+        selectorUsesClassInvalidationSet = updateClassInvalidationSets(ruleData.selector());
+
+    SelectorFeatureCollectionMode collectionMode;
+    if (selectorUsesClassInvalidationSet)
+        collectionMode = DontProcessClasses;
+    else
+        collectionMode = ProcessClasses;
+    collectFeaturesFromSelector(ruleData.selector(), metadata, collectionMode);
+    m_metadata.add(metadata);
+
+    if (metadata.foundSiblingSelector)
+        siblingRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
+    if (ruleData.containsUncommonAttributeSelector())
+        uncommonAttributeRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
+}
+
+bool RuleFeatureSet::classInvalidationRequiresSubtreeRecalc(const AtomicString& className)
+{
+    DescendantInvalidationSet* set = m_classInvalidationSets.get(className);
+    return set && set->wholeSubtreeInvalid();
+}
+
+DescendantInvalidationSet& RuleFeatureSet::ensureClassInvalidationSet(const AtomicString& className)
+{
+    InvalidationSetMap::AddResult addResult = m_classInvalidationSets.add(className, 0);
+    if (addResult.isNewEntry)
+        addResult.storedValue->value = DescendantInvalidationSet::create();
+    return *addResult.storedValue->value;
+}
+
+void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector& selector)
+{
+    collectFeaturesFromSelector(selector, m_metadata, ProcessClasses);
+}
+
+void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector& selector, RuleFeatureSet::FeatureMetadata& metadata, SelectorFeatureCollectionMode collectionMode)
+{
+    unsigned maxDirectAdjacentSelectors = 0;
+
+    for (const CSSSelector* current = &selector; current; current = current->tagHistory()) {
+        if (current->m_match == CSSSelector::Id) {
+            metadata.idsInRules.add(current->value());
+        } else if (current->m_match == CSSSelector::Class && collectionMode == ProcessClasses) {
+            DescendantInvalidationSet& invalidationSet = ensureClassInvalidationSet(current->value());
+            invalidationSet.setWholeSubtreeInvalid();
+        } else if (current->isAttributeSelector()) {
+            metadata.attrsInRules.add(current->attribute().localName());
+        }
+        if (current->pseudoType() == CSSSelector::PseudoFirstLine)
+            metadata.usesFirstLineRules = true;
+        if (current->isDirectAdjacentSelector()) {
+            maxDirectAdjacentSelectors++;
+        } else if (maxDirectAdjacentSelectors) {
+            if (maxDirectAdjacentSelectors > metadata.maxDirectAdjacentSelectors)
+                metadata.maxDirectAdjacentSelectors = maxDirectAdjacentSelectors;
+            maxDirectAdjacentSelectors = 0;
+        }
+        if (current->isSiblingSelector())
+            metadata.foundSiblingSelector = true;
+
+        collectFeaturesFromSelectorList(current->selectorList(), metadata, collectionMode);
+    }
+
+    ASSERT(!maxDirectAdjacentSelectors);
+}
+
+void RuleFeatureSet::collectFeaturesFromSelectorList(const CSSSelectorList* selectorList, RuleFeatureSet::FeatureMetadata& metadata, SelectorFeatureCollectionMode collectionMode)
 {
     if (!selectorList)
         return;
 
-    for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(selector)) {
+    for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(*selector)) {
         for (const CSSSelector* subSelector = selector; subSelector; subSelector = subSelector->tagHistory())
-            collectFeaturesFromSelector(subSelector);
+            collectFeaturesFromSelector(*subSelector, metadata, collectionMode);
     }
+}
+
+void RuleFeatureSet::FeatureMetadata::add(const FeatureMetadata& other)
+{
+    usesFirstLineRules = usesFirstLineRules || other.usesFirstLineRules;
+    maxDirectAdjacentSelectors = std::max(maxDirectAdjacentSelectors, other.maxDirectAdjacentSelectors);
+
+    HashSet<AtomicString>::const_iterator end = other.idsInRules.end();
+    for (HashSet<AtomicString>::const_iterator it = other.idsInRules.begin(); it != end; ++it)
+        idsInRules.add(*it);
+    end = other.attrsInRules.end();
+    for (HashSet<AtomicString>::const_iterator it = other.attrsInRules.begin(); it != end; ++it)
+        attrsInRules.add(*it);
+}
+
+void RuleFeatureSet::FeatureMetadata::clear()
+{
+
+    idsInRules.clear();
+    attrsInRules.clear();
+    usesFirstLineRules = false;
+    foundSiblingSelector = false;
+    maxDirectAdjacentSelectors = 0;
 }
 
 void RuleFeatureSet::add(const RuleFeatureSet& other)
 {
-    HashSet<AtomicString>::const_iterator end = other.idsInRules.end();
-    for (HashSet<AtomicString>::const_iterator it = other.idsInRules.begin(); it != end; ++it)
-        idsInRules.add(*it);
-    end = other.classesInRules.end();
-    for (HashSet<AtomicString>::const_iterator it = other.classesInRules.begin(); it != end; ++it)
-        classesInRules.add(*it);
-    end = other.attrsInRules.end();
-    for (HashSet<AtomicString>::const_iterator it = other.attrsInRules.begin(); it != end; ++it)
-        attrsInRules.add(*it);
+    for (InvalidationSetMap::const_iterator it = other.m_classInvalidationSets.begin(); it != other.m_classInvalidationSets.end(); ++it) {
+        ensureClassInvalidationSet(it->key).combine(*it->value);
+    }
+
+    m_metadata.add(other.m_metadata);
+
     siblingRules.append(other.siblingRules);
     uncommonAttributeRules.append(other.uncommonAttributeRules);
-    m_usesFirstLineRules = m_usesFirstLineRules || other.m_usesFirstLineRules;
-    m_maxDirectAdjacentSelectors = std::max(m_maxDirectAdjacentSelectors, other.maxDirectAdjacentSelectors());
 }
 
 void RuleFeatureSet::clear()
 {
-    idsInRules.clear();
-    classesInRules.clear();
-    attrsInRules.clear();
+    m_metadata.clear();
     siblingRules.clear();
     uncommonAttributeRules.clear();
-    m_usesFirstLineRules = false;
-    m_maxDirectAdjacentSelectors = 0;
+}
+
+void RuleFeatureSet::scheduleStyleInvalidationForClassChange(const SpaceSplitString& changedClasses, Element* element)
+{
+    if (computeInvalidationSetsForClassChange(changedClasses, element)) {
+        // FIXME: remove eager calls to setNeedsStyleRecalc here, and instead reuse the invalidation tree walk.
+        // This code remains for now out of conservatism about avoiding performance regressions before TargetedStyleRecalc is launched.
+        element->setNeedsStyleRecalc(SubtreeStyleChange);
+    }
+}
+
+void RuleFeatureSet::scheduleStyleInvalidationForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element* element)
+{
+    if (computeInvalidationSetsForClassChange(oldClasses, newClasses, element)) {
+        // FIXME: remove eager calls to setNeedsStyleRecalc here, and instead reuse the invalidation tree walk.
+        // This code remains for now out of conservatism about avoiding performance regressions before TargetedStyleRecalc is launched.
+        element->setNeedsStyleRecalc(SubtreeStyleChange);
+    }
+}
+
+bool RuleFeatureSet::computeInvalidationSetsForClassChange(const SpaceSplitString& changedClasses, Element* element)
+{
+    unsigned changedSize = changedClasses.size();
+    for (unsigned i = 0; i < changedSize; ++i) {
+        if (classInvalidationRequiresSubtreeRecalc(changedClasses[i]))
+            return true;
+        addClassToInvalidationSet(changedClasses[i], element);
+    }
+    return false;
+}
+
+bool RuleFeatureSet::computeInvalidationSetsForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element* element)
+{
+    if (!oldClasses.size())
+        return computeInvalidationSetsForClassChange(newClasses, element);
+
+    // Class vectors tend to be very short. This is faster than using a hash table.
+    BitVector remainingClassBits;
+    remainingClassBits.ensureSize(oldClasses.size());
+
+    for (unsigned i = 0; i < newClasses.size(); ++i) {
+        bool found = false;
+        for (unsigned j = 0; j < oldClasses.size(); ++j) {
+            if (newClasses[i] == oldClasses[j]) {
+                // Mark each class that is still in the newClasses so we can skip doing
+                // an n^2 search below when looking for removals. We can't break from
+                // this loop early since a class can appear more than once.
+                remainingClassBits.quickSet(j);
+                found = true;
+            }
+        }
+        // Class was added.
+        if (!found) {
+            if (classInvalidationRequiresSubtreeRecalc(newClasses[i]))
+                return true;
+            addClassToInvalidationSet(newClasses[i], element);
+        }
+    }
+
+    for (unsigned i = 0; i < oldClasses.size(); ++i) {
+        if (remainingClassBits.quickGet(i))
+            continue;
+
+        // Class was removed.
+        if (classInvalidationRequiresSubtreeRecalc(oldClasses[i]))
+            return true;
+        addClassToInvalidationSet(oldClasses[i], element);
+    }
+    return false;
+}
+
+void RuleFeatureSet::addClassToInvalidationSet(const AtomicString& className, Element* element)
+{
+    if (DescendantInvalidationSet* invalidationSet = m_classInvalidationSets.get(className)) {
+        ensurePendingInvalidationList(element).append(invalidationSet);
+        element->setNeedsStyleInvalidation();
+    }
+}
+
+RuleFeatureSet::InvalidationList& RuleFeatureSet::ensurePendingInvalidationList(Element* element)
+{
+    PendingInvalidationMap::AddResult addResult = m_pendingInvalidationMap.add(element, 0);
+    if (addResult.isNewEntry)
+        addResult.storedValue->value = new InvalidationList;
+    return *addResult.storedValue->value;
+}
+
+void RuleFeatureSet::computeStyleInvalidation(Document& document)
+{
+    Vector<AtomicString> invalidationClasses;
+    if (Element* documentElement = document.documentElement()) {
+        if (documentElement->childNeedsStyleInvalidation()) {
+            invalidateStyleForClassChange(documentElement, invalidationClasses, false);
+        }
+    }
+    document.clearChildNeedsStyleInvalidation();
+    m_pendingInvalidationMap.clear();
+}
+
+bool RuleFeatureSet::invalidateStyleForClassChangeOnChildren(Element* element, Vector<AtomicString>& invalidationClasses, bool foundInvalidationSet)
+{
+    bool someChildrenNeedStyleRecalc = false;
+    for (ShadowRoot* root = element->youngestShadowRoot(); root; root = root->olderShadowRoot()) {
+        for (Node* child = root->firstChild(); child; child = child->nextSibling()) {
+            if (child->isElementNode()) {
+                Element* childElement = toElement(child);
+                bool childRecalced = invalidateStyleForClassChange(childElement, invalidationClasses, foundInvalidationSet);
+                someChildrenNeedStyleRecalc = someChildrenNeedStyleRecalc || childRecalced;
+            }
+        }
+    }
+    for (Node* child = element->firstChild(); child; child = child->nextSibling()) {
+        if (child->isElementNode()) {
+            Element* childElement = toElement(child);
+            bool childRecalced = invalidateStyleForClassChange(childElement, invalidationClasses, foundInvalidationSet);
+            someChildrenNeedStyleRecalc = someChildrenNeedStyleRecalc || childRecalced;
+        }
+    }
+    return someChildrenNeedStyleRecalc;
+}
+
+bool RuleFeatureSet::invalidateStyleForClassChange(Element* element, Vector<AtomicString>& invalidationClasses, bool foundInvalidationSet)
+{
+    int oldSize = invalidationClasses.size();
+    if (element->needsStyleInvalidation()) {
+        if (InvalidationList* invalidationList = m_pendingInvalidationMap.get(element)) {
+            foundInvalidationSet = true;
+            for (InvalidationList::const_iterator it = invalidationList->begin(); it != invalidationList->end(); ++it) {
+                if ((*it)->wholeSubtreeInvalid()) {
+                    element->setNeedsStyleRecalc(SubtreeStyleChange);
+                    invalidationClasses.remove(oldSize, invalidationClasses.size() - oldSize);
+                    element->clearChildNeedsStyleInvalidation();
+                    return true;
+                }
+                (*it)->getClasses(invalidationClasses);
+            }
+        }
+    }
+
+    bool thisElementNeedsStyleRecalc = false;
+
+    if (element->hasClass()) {
+        const SpaceSplitString& classNames = element->classNames();
+        for (Vector<AtomicString>::const_iterator it = invalidationClasses.begin(); it != invalidationClasses.end(); ++it) {
+            if (classNames.contains(*it)) {
+                thisElementNeedsStyleRecalc = true;
+                break;
+            }
+        }
+    }
+
+    // foundInvalidationSet will be true if we are in a subtree of a node with a DescendantInvalidationSet on it.
+    // We need to check all nodes in the subtree of such a node.
+    if (foundInvalidationSet || element->childNeedsStyleInvalidation()) {
+        bool someChildrenNeedStyleRecalc = invalidateStyleForClassChangeOnChildren(element, invalidationClasses, foundInvalidationSet);
+        // We only need to possibly recalc style if this node is in the subtree of a node with a DescendantInvalidationSet on it.
+        if (foundInvalidationSet)
+            thisElementNeedsStyleRecalc = thisElementNeedsStyleRecalc || someChildrenNeedStyleRecalc;
+    }
+
+    if (thisElementNeedsStyleRecalc)
+        element->setNeedsStyleRecalc(LocalStyleChange);
+
+    invalidationClasses.remove(oldSize, invalidationClasses.size() - oldSize);
+    element->clearChildNeedsStyleInvalidation();
+    return thisElementNeedsStyleRecalc;
 }
 
 } // namespace WebCore

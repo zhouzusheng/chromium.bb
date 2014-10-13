@@ -260,21 +260,22 @@ static void writeStyle(TextStream& ts, const RenderObject& object)
         const RenderSVGShape& shape = static_cast<const RenderSVGShape&>(object);
         ASSERT(shape.element());
 
-        Color fallbackColor;
-        if (RenderSVGResource* strokePaintingResource = RenderSVGResource::strokePaintingResource(const_cast<RenderSVGShape*>(&shape), shape.style(), fallbackColor)) {
+        bool hasFallback;
+        if (RenderSVGResource* strokePaintingResource = RenderSVGResource::strokePaintingResource(const_cast<RenderSVGShape*>(&shape), shape.style(), hasFallback)) {
             TextStreamSeparator s(" ");
             ts << " [stroke={" << s;
             writeSVGPaintingResource(ts, strokePaintingResource);
 
             SVGLengthContext lengthContext(shape.element());
-            double dashOffset = svgStyle->strokeDashOffset().value(lengthContext);
-            double strokeWidth = svgStyle->strokeWidth().value(lengthContext);
-            const Vector<SVGLength>& dashes = svgStyle->strokeDashArray();
+            double dashOffset = svgStyle->strokeDashOffset()->value(lengthContext);
+            double strokeWidth = svgStyle->strokeWidth()->value(lengthContext);
+            RefPtr<SVGLengthList> dashes = svgStyle->strokeDashArray();
 
             DashArray dashArray;
-            const Vector<SVGLength>::const_iterator end = dashes.end();
-            for (Vector<SVGLength>::const_iterator it = dashes.begin(); it != end; ++it)
-                dashArray.append((*it).value(lengthContext));
+            SVGLengthList::ConstIterator it = dashes->begin();
+            SVGLengthList::ConstIterator itEnd = dashes->end();
+            for (; it != itEnd; ++it)
+                dashArray.append(it->value(lengthContext));
 
             writeIfNotDefault(ts, "opacity", svgStyle->strokeOpacity(), 1.0f);
             writeIfNotDefault(ts, "stroke width", strokeWidth, 1.0);
@@ -288,7 +289,7 @@ static void writeStyle(TextStream& ts, const RenderObject& object)
             ts << "}]";
         }
 
-        if (RenderSVGResource* fillPaintingResource = RenderSVGResource::fillPaintingResource(const_cast<RenderSVGShape*>(&shape), shape.style(), fallbackColor)) {
+        if (RenderSVGResource* fillPaintingResource = RenderSVGResource::fillPaintingResource(const_cast<RenderSVGShape*>(&shape), shape.style(), hasFallback)) {
             TextStreamSeparator s(" ");
             ts << " [fill={" << s;
             writeSVGPaintingResource(ts, fillPaintingResource);
@@ -321,29 +322,29 @@ static TextStream& operator<<(TextStream& ts, const RenderSVGShape& shape)
 
     if (svgElement->hasTagName(SVGNames::rectTag)) {
         SVGRectElement* element = toSVGRectElement(svgElement);
-        writeNameValuePair(ts, "x", element->xCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "y", element->yCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "width", element->widthCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "height", element->heightCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "x", element->x()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "y", element->y()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "width", element->width()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "height", element->height()->currentValue()->value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::lineTag)) {
         SVGLineElement* element = toSVGLineElement(svgElement);
-        writeNameValuePair(ts, "x1", element->x1CurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "y1", element->y1CurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "x2", element->x2CurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "y2", element->y2CurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "x1", element->x1()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "y1", element->y1()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "x2", element->x2()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "y2", element->y2()->currentValue()->value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::ellipseTag)) {
         SVGEllipseElement* element = toSVGEllipseElement(svgElement);
-        writeNameValuePair(ts, "cx", element->cxCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "cy", element->cyCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "rx", element->rxCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "ry", element->ryCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "cx", element->cx()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "cy", element->cy()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "rx", element->rx()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "ry", element->ry()->currentValue()->value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::circleTag)) {
         SVGCircleElement* element = toSVGCircleElement(svgElement);
-        writeNameValuePair(ts, "cx", element->cxCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "cy", element->cyCurrentValue().value(lengthContext));
-        writeNameValuePair(ts, "r", element->rCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "cx", element->cx()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "cy", element->cy()->currentValue()->value(lengthContext));
+        writeNameValuePair(ts, "r", element->r()->currentValue()->value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::polygonTag) || svgElement->hasTagName(SVGNames::polylineTag)) {
-        writeNameAndQuotedValue(ts, "points", toSVGPolyElement(svgElement)->pointsCurrentValue().valueAsString());
+        writeNameAndQuotedValue(ts, "points", toSVGPolyElement(svgElement)->points()->currentValue()->valueAsString());
     } else if (svgElement->hasTagName(SVGNames::pathTag)) {
         String pathString;
         // FIXME: We should switch to UnalteredParsing here - this will affect the path dumping output of dozens of tests.
@@ -490,7 +491,8 @@ void writeSVGResourceContainer(TextStream& ts, const RenderObject& object, int i
         ts << "\n";
         // Creating a placeholder filter which is passed to the builder.
         FloatRect dummyRect;
-        RefPtr<SVGFilter> dummyFilter = SVGFilter::create(AffineTransform(), dummyRect, dummyRect, dummyRect, true);
+        IntRect dummyIntRect;
+        RefPtr<SVGFilter> dummyFilter = SVGFilter::create(AffineTransform(), dummyIntRect, dummyRect, dummyRect, true);
         if (RefPtr<SVGFilterBuilder> builder = filter->buildPrimitives(dummyFilter.get())) {
             if (FilterEffect* lastEffect = builder->lastEffect())
                 lastEffect->externalRepresentation(ts, indent + 1);
@@ -614,7 +616,7 @@ void writeSVGGradientStop(TextStream& ts, const RenderSVGGradientStop& stop, int
     if (!style)
         return;
 
-    ts << " [offset=" << stopElement->offsetCurrentValue() << "] [color=" << stopElement->stopColorIncludingOpacity() << "]\n";
+    ts << " [offset=" << stopElement->offset()->currentValue()->value() << "] [color=" << stopElement->stopColorIncludingOpacity() << "]\n";
 }
 
 void writeResources(TextStream& ts, const RenderObject& object, int indent)

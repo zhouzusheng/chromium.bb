@@ -30,7 +30,6 @@
 
 namespace WebCore {
 
-class GraphicsContext3D;
 class WebGLContextGroup;
 class WebGLRenderingContext;
 
@@ -43,13 +42,12 @@ public:
     WebGLContextGroup* contextGroup() const { return m_contextGroup; }
 
     virtual bool isBuffer() const { return false; }
-    virtual bool isFramebuffer() const { return false; }
     virtual bool isProgram() const { return false; }
     virtual bool isRenderbuffer() const { return false; }
     virtual bool isShader() const { return false; }
     virtual bool isTexture() const { return false; }
 
-    virtual bool validate(const WebGLContextGroup* contextGroup, const WebGLRenderingContext*) const
+    virtual bool validate(const WebGLContextGroup* contextGroup, const WebGLRenderingContext*) const OVERRIDE FINAL
     {
         return contextGroup == m_contextGroup;
     }
@@ -59,12 +57,12 @@ public:
 protected:
     WebGLSharedObject(WebGLRenderingContext*);
 
-    virtual bool hasGroupOrContext() const
+    virtual bool hasGroupOrContext() const OVERRIDE FINAL
     {
         return m_contextGroup;
     }
 
-    virtual GraphicsContext3D* getAGraphicsContext3D() const;
+    virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const OVERRIDE FINAL;
 
 private:
     WebGLContextGroup* m_contextGroup;

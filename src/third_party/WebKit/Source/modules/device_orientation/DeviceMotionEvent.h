@@ -27,6 +27,7 @@
 #define DeviceMotionEvent_h
 
 #include "core/events/Event.h"
+#include "heap/Handle.h"
 
 namespace WebCore {
 
@@ -34,9 +35,9 @@ class DeviceAcceleration;
 class DeviceMotionData;
 class DeviceRotationRate;
 
-class DeviceMotionEvent : public Event {
+class DeviceMotionEvent FINAL : public Event {
 public:
-    ~DeviceMotionEvent();
+    virtual ~DeviceMotionEvent();
     static PassRefPtr<DeviceMotionEvent> create()
     {
         return adoptRef(new DeviceMotionEvent);
@@ -55,24 +56,20 @@ public:
     DeviceRotationRate* rotationRate();
     double interval(bool& isNull) const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
 private:
     DeviceMotionEvent();
     DeviceMotionEvent(const AtomicString& eventType, DeviceMotionData*);
 
-    RefPtr<DeviceMotionData> m_deviceMotionData;
+    RefPtrWillBePersistent<DeviceMotionData> m_deviceMotionData;
 
-    RefPtr<DeviceAcceleration> m_acceleration;
-    RefPtr<DeviceAcceleration> m_accelerationIncludingGravity;
-    RefPtr<DeviceRotationRate> m_rotationRate;
+    RefPtrWillBePersistent<DeviceAcceleration> m_acceleration;
+    RefPtrWillBePersistent<DeviceAcceleration> m_accelerationIncludingGravity;
+    RefPtrWillBePersistent<DeviceRotationRate> m_rotationRate;
 };
 
-inline DeviceMotionEvent* toDeviceMotionEvent(Event* event)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!event || event->interfaceName() == EventNames::DeviceMotionEvent);
-    return static_cast<DeviceMotionEvent*>(event);
-}
+DEFINE_TYPE_CASTS(DeviceMotionEvent, Event, event, event->interfaceName() == EventNames::DeviceMotionEvent, event.interfaceName() == EventNames::DeviceMotionEvent);
 
 } // namespace WebCore
 

@@ -37,7 +37,6 @@
         '../interface/event_wrapper.h',
         '../interface/file_wrapper.h',
         '../interface/fix_interlocked_exchange_pointer_win.h',
-        '../interface/list_wrapper.h',
         '../interface/logcat_trace_context.h',
         '../interface/logging.h',
         '../interface/ref_count.h',
@@ -48,6 +47,7 @@
         '../interface/sort.h',
         '../interface/static_instance.h',
         '../interface/stringize_macros.h',
+        '../interface/thread_annotations.h',
         '../interface/thread_wrapper.h',
         '../interface/tick_util.h',
         '../interface/trace.h',
@@ -82,7 +82,6 @@
         'event_win.h',
         'file_impl.cc',
         'file_impl.h',
-        'list_no_stl.cc',
         'logcat_trace_context.cc',
         'logging.cc',
         'rw_lock.cc',
@@ -191,34 +190,19 @@
     ['OS=="android"', {
       'targets': [
         {
-          'variables': {
-            # Treat this as third-party code.
-            'chromium_code': 0,
-          },
           'target_name': 'cpu_features_android',
           'type': 'static_library',
           'sources': [
-            # TODO(leozwang): Ideally we want to audomatically exclude .c files
-            # as with .cc files, gyp currently only excludes .cc files.
             'cpu_features_android.c',
           ],
           'conditions': [
-            ['include_ndk_cpu_features==1', {
-              'conditions': [
-                ['android_webview_build == 1', {
-                  'libraries': [
-                    'cpufeatures.a'
-                  ],
-                }, {
-                  'dependencies': [
-                    '<(android_ndk_root)/android_tools_ndk.gyp:cpu_features',
-                  ],
-                }],
+            ['android_webview_build == 1', {
+              'libraries': [
+                'cpufeatures.a'
               ],
             }, {
-              'sources': [
-                'android/cpu-features.c',
-                'android/cpu-features.h',
+              'dependencies': [
+                '<(android_ndk_root)/android_tools_ndk.gyp:cpu_features',
               ],
             }],
           ],

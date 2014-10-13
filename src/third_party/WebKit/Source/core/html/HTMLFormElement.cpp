@@ -32,7 +32,7 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NamedNodesCollection.h"
+#include "core/dom/IdTargetObserverRegistry.h"
 #include "core/events/AutocompleteErrorEvent.h"
 #include "core/events/Event.h"
 #include "core/events/ScopedEventQueue.h"
@@ -42,7 +42,7 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/html/HTMLTableElement.h"
+#include "core/html/RadioNodeList.h"
 #include "core/html/forms/FormController.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -61,8 +61,11 @@ using namespace HTMLNames;
 
 HTMLFormElement::HTMLFormElement(Document& document)
     : HTMLElement(formTag, document)
-    , m_associatedElementsBeforeIndex(0)
-    , m_associatedElementsAfterIndex(0)
+    , m_weakPtrFactory(this)
+    , m_associatedElementsAreDirty(false)
+    , m_imageElementsAreDirty(false)
+    , m_hasElementsAssociatedByParser(false)
+    , m_didFinishParsingChildren(false)
     , m_wasUserSubmitted(false)
     , m_isSubmittingOrPreparingForSubmission(false)
     , m_shouldSubmit(false)
@@ -82,16 +85,6 @@ PassRefPtr<HTMLFormElement> HTMLFormElement::create(Document& document)
 HTMLFormElement::~HTMLFormElement()
 {
     document().formController()->willDeleteForm(this);
-
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i)
-        m_associatedElements[i]->formWillBeDestroyed();
-    for (unsigned i = 0; i < m_imageElements.size(); ++i)
-        m_imageElements[i]->m_form = 0;
-}
-
-bool HTMLFormElement::formWouldHaveSecureSubmission(const String& url)
-{
-    return document().completeURL(url).protocolIs("https");
 }
 
 bool HTMLFormElement::rendererIsNeeded(const RenderStyle& style)
@@ -103,7 +96,7 @@ bool HTMLFormElement::rendererIsNeeded(const RenderStyle& style)
     RenderObject* parentRenderer = node->renderer();
     // FIXME: Shouldn't we also check for table caption (see |formIsTablePart| below).
     // FIXME: This check is not correct for Shadow DOM.
-    bool parentIsTableElementPart = (parentRenderer->isTable() && isHTMLTableElement(node))
+    bool parentIsTableElementPart = (parentRenderer->isTable() && node->hasTagName(tableTag))
         || (parentRenderer->isTableRow() && node->hasTagName(trTag))
         || (parentRenderer->isTableSection() && node->hasTagName(tbodyTag))
         || (parentRenderer->isRenderTableCol() && node->hasTagName(colTag))
@@ -129,20 +122,43 @@ Node::InsertionNotificationRequest HTMLFormElement::insertedInto(ContainerNode* 
     return InsertionDone;
 }
 
-static inline Node* findRoot(Node* n)
+template<class T>
+void notifyFormRemovedFromTree(const Vector<T*>& elements, Node* root)
 {
-    Node* root = n;
-    for (; n; n = n->parentNode())
-        root = n;
-    return root;
+    size_t size = elements.size();
+    for (size_t i = 0; i < size; ++i)
+        elements[i]->formRemovedFromTree(root);
+    ASSERT(elements.size() == size);
 }
 
 void HTMLFormElement::removedFrom(ContainerNode* insertionPoint)
 {
-    Node* root = findRoot(this);
-    Vector<FormAssociatedElement*> associatedElements(m_associatedElements);
-    for (unsigned i = 0; i < associatedElements.size(); ++i)
-        associatedElements[i]->formRemovedFromTree(root);
+    // We don't need to take care of form association by 'form' content
+    // attribute becuse IdTargetObserver handles it.
+    if (m_hasElementsAssociatedByParser) {
+        Node* root = highestAncestor();
+        if (!m_associatedElementsAreDirty) {
+            Vector<FormAssociatedElement*> elements(associatedElements());
+            notifyFormRemovedFromTree(elements, root);
+        } else {
+            Vector<FormAssociatedElement*> elements;
+            collectAssociatedElements(insertionPoint->highestAncestor(), elements);
+            notifyFormRemovedFromTree(elements, root);
+            collectAssociatedElements(root, elements);
+            notifyFormRemovedFromTree(elements, root);
+        }
+
+        if (!m_imageElementsAreDirty) {
+            Vector<HTMLImageElement*> images(imageElements());
+            notifyFormRemovedFromTree(images, root);
+        } else {
+            Vector<HTMLImageElement*> images;
+            collectImageElements(insertionPoint->highestAncestor(), images);
+            notifyFormRemovedFromTree(images, root);
+            collectImageElements(root, images);
+            notifyFormRemovedFromTree(images, root);
+        }
+    }
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -158,14 +174,16 @@ void HTMLFormElement::handleLocalEvents(Event* event)
 
 unsigned HTMLFormElement::length() const
 {
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
     unsigned len = 0;
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i)
-        if (m_associatedElements[i]->isEnumeratable())
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (elements[i]->isEnumeratable())
             ++len;
+    }
     return len;
 }
 
-Node* HTMLFormElement::item(unsigned index)
+Element* HTMLFormElement::item(unsigned index)
 {
     return elements()->item(index);
 }
@@ -174,8 +192,9 @@ void HTMLFormElement::submitImplicitly(Event* event, bool fromImplicitSubmission
 {
     int submissionTriggerCount = 0;
     bool seenDefaultButton = false;
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        FormAssociatedElement* formAssociatedElement = m_associatedElements[i];
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        FormAssociatedElement* formAssociatedElement = elements[i];
         if (!formAssociatedElement->isFormControlElement())
             continue;
         HTMLFormControlElement* control = toHTMLFormControlElement(formAssociatedElement);
@@ -219,9 +238,10 @@ bool HTMLFormElement::validateInteractively(Event* event)
     if (submitElement && submitElement->formNoValidate())
         return true;
 
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        if (m_associatedElements[i]->isFormControlElement())
-            toHTMLFormControlElement(m_associatedElements[i])->hideVisibleValidationMessage();
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (elements[i]->isFormControlElement())
+            toHTMLFormControlElement(elements[i])->hideVisibleValidationMessage();
     }
 
     Vector<RefPtr<FormAssociatedElement> > unhandledInvalidControls;
@@ -308,9 +328,10 @@ void HTMLFormElement::getTextFieldValues(StringPairVector& fieldNamesAndValues) 
 {
     ASSERT_ARG(fieldNamesAndValues, fieldNamesAndValues.isEmpty());
 
-    fieldNamesAndValues.reserveCapacity(m_associatedElements.size());
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        FormAssociatedElement* control = m_associatedElements[i];
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    fieldNamesAndValues.reserveCapacity(elements.size());
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        FormAssociatedElement* control = elements[i];
         HTMLElement* element = toHTMLElement(control);
         if (!element->hasTagName(inputTag))
             continue;
@@ -351,8 +372,9 @@ void HTMLFormElement::submit(Event* event, bool activateSubmitButton, bool proce
     RefPtr<HTMLFormControlElement> firstSuccessfulSubmitButton;
     bool needButtonActivation = activateSubmitButton; // do we need to activate a submit button?
 
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        FormAssociatedElement* associatedElement = m_associatedElements[i];
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        FormAssociatedElement* associatedElement = elements[i];
         if (!associatedElement->isFormControlElement())
             continue;
         if (needButtonActivation) {
@@ -412,7 +434,7 @@ void HTMLFormElement::scheduleFormSubmission(PassRefPtr<FormSubmission> submissi
     if (!targetFrame->page())
         return;
 
-    submission->setReferrer(document().outgoingReferrer());
+    submission->setReferrer(Referrer(document().outgoingReferrer(), document().referrerPolicy()));
     submission->setOrigin(document().outgoingOrigin());
 
     targetFrame->navigationScheduler().scheduleFormSubmission(submission);
@@ -431,9 +453,10 @@ void HTMLFormElement::reset()
         return;
     }
 
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        if (m_associatedElements[i]->isFormControlElement())
-            toHTMLFormControlElement(m_associatedElements[i])->reset();
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (elements[i]->isFormControlElement())
+            toHTMLFormControlElement(elements[i])->reset();
     }
 
     m_isInResetFunction = false;
@@ -504,105 +527,17 @@ void HTMLFormElement::parseAttribute(const QualifiedName& name, const AtomicStri
         HTMLElement::parseAttribute(name, value);
 }
 
-template<class T, size_t n> static void removeFromVector(Vector<T*, n> & vec, T* item)
+void HTMLFormElement::associate(FormAssociatedElement& e)
 {
-    size_t size = vec.size();
-    for (size_t i = 0; i != size; ++i)
-        if (vec[i] == item) {
-            vec.remove(i);
-            break;
-        }
+    m_associatedElementsAreDirty = true;
+    m_associatedElements.clear();
 }
 
-unsigned HTMLFormElement::formElementIndexWithFormAttribute(Element* element, unsigned rangeStart, unsigned rangeEnd)
+void HTMLFormElement::disassociate(FormAssociatedElement& e)
 {
-    if (m_associatedElements.isEmpty())
-        return 0;
-
-    ASSERT(rangeStart <= rangeEnd);
-
-    if (rangeStart == rangeEnd)
-        return rangeStart;
-
-    unsigned left = rangeStart;
-    unsigned right = rangeEnd - 1;
-    unsigned short position;
-
-    // Does binary search on m_associatedElements in order to find the index
-    // to be inserted.
-    while (left != right) {
-        unsigned middle = left + ((right - left) / 2);
-        ASSERT(middle < m_associatedElementsBeforeIndex || middle >= m_associatedElementsAfterIndex);
-        position = element->compareDocumentPosition(toHTMLElement(m_associatedElements[middle]));
-        if (position & DOCUMENT_POSITION_FOLLOWING)
-            right = middle;
-        else
-            left = middle + 1;
-    }
-
-    ASSERT(left < m_associatedElementsBeforeIndex || left >= m_associatedElementsAfterIndex);
-    position = element->compareDocumentPosition(toHTMLElement(m_associatedElements[left]));
-    if (position & DOCUMENT_POSITION_FOLLOWING)
-        return left;
-    return left + 1;
-}
-
-unsigned HTMLFormElement::formElementIndex(FormAssociatedElement& associatedElement)
-{
-    HTMLElement& associatedHTMLElement = toHTMLElement(associatedElement);
-    // Treats separately the case where this element has the form attribute
-    // for performance consideration.
-    if (associatedHTMLElement.fastHasAttribute(formAttr)) {
-        unsigned short position = compareDocumentPosition(&associatedHTMLElement);
-        if (position & DOCUMENT_POSITION_PRECEDING) {
-            ++m_associatedElementsBeforeIndex;
-            ++m_associatedElementsAfterIndex;
-            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, 0, m_associatedElementsBeforeIndex - 1);
-        }
-        if (position & DOCUMENT_POSITION_FOLLOWING && !(position & DOCUMENT_POSITION_CONTAINED_BY))
-            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, m_associatedElementsAfterIndex, m_associatedElements.size());
-    }
-
-    // Check for the special case where this element is the very last thing in
-    // the form's tree of children; we don't want to walk the entire tree in that
-    // common case that occurs during parsing; instead we'll just return a value
-    // that says "add this form element to the end of the array".
-    if (ElementTraversal::next(associatedHTMLElement, this)) {
-        unsigned i = m_associatedElementsBeforeIndex;
-        for (Element* element = this; element; element = ElementTraversal::next(*element, this)) {
-            if (element == associatedHTMLElement) {
-                ++m_associatedElementsAfterIndex;
-                return i;
-            }
-            if (!element->isFormControlElement() && !element->hasTagName(objectTag))
-                continue;
-            if (!element->isHTMLElement() || toHTMLElement(element)->formOwner() != this)
-                continue;
-            ++i;
-        }
-    }
-    return m_associatedElementsAfterIndex++;
-}
-
-void HTMLFormElement::registerFormElement(FormAssociatedElement& e)
-{
-    m_associatedElements.insert(formElementIndex(e), &e);
-}
-
-void HTMLFormElement::removeFormElement(FormAssociatedElement* e)
-{
-    unsigned index;
-    for (index = 0; index < m_associatedElements.size(); ++index) {
-        if (m_associatedElements[index] == e)
-            break;
-    }
-    ASSERT_WITH_SECURITY_IMPLICATION(index < m_associatedElements.size());
-    if (index < m_associatedElementsBeforeIndex)
-        --m_associatedElementsBeforeIndex;
-    if (index < m_associatedElementsAfterIndex)
-        --m_associatedElementsAfterIndex;
-    removeFromPastNamesMap(*toHTMLElement(e));
-    removeFromVector(m_associatedElements, e);
+    m_associatedElementsAreDirty = true;
+    m_associatedElements.clear();
+    removeFromPastNamesMap(toHTMLElement(e));
 }
 
 bool HTMLFormElement::isURLAttribute(const Attribute& attribute) const
@@ -610,22 +545,88 @@ bool HTMLFormElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == actionAttr || HTMLElement::isURLAttribute(attribute);
 }
 
-void HTMLFormElement::registerImgElement(HTMLImageElement* e)
+void HTMLFormElement::associate(HTMLImageElement& e)
 {
-    ASSERT(m_imageElements.find(e) == kNotFound);
-    m_imageElements.append(e);
+    m_imageElementsAreDirty = true;
+    m_imageElements.clear();
 }
 
-void HTMLFormElement::removeImgElement(HTMLImageElement* e)
+void HTMLFormElement::disassociate(HTMLImageElement& e)
 {
-    ASSERT(m_imageElements.find(e) != kNotFound);
-    removeFromPastNamesMap(*e);
-    removeFromVector(m_imageElements, e);
+    m_imageElementsAreDirty = true;
+    m_imageElements.clear();
+    removeFromPastNamesMap(e);
+}
+
+WeakPtr<HTMLFormElement> HTMLFormElement::createWeakPtr()
+{
+    return m_weakPtrFactory.createWeakPtr();
+}
+
+void HTMLFormElement::didAssociateByParser()
+{
+    if (!m_didFinishParsingChildren)
+        return;
+    m_hasElementsAssociatedByParser = true;
+    UseCounter::count(document(), UseCounter::FormAssociationByParser);
 }
 
 PassRefPtr<HTMLCollection> HTMLFormElement::elements()
 {
     return ensureCachedHTMLCollection(FormControls);
+}
+
+void HTMLFormElement::collectAssociatedElements(Node* root, Vector<FormAssociatedElement*>& elements) const
+{
+    elements.clear();
+    for (Node* node = root; node; node = NodeTraversal::next(*node)) {
+        if (!node->isHTMLElement())
+            continue;
+        FormAssociatedElement* element = 0;
+        if (toElement(node)->isFormControlElement())
+            element = toHTMLFormControlElement(node);
+        else if (node->hasTagName(objectTag))
+            element = toHTMLObjectElement(node);
+        else
+            continue;
+        if (element->form()== this)
+            elements.append(element);
+    }
+}
+
+// This function should be const conceptually. However we update some fields
+// because of lazy evaluation.
+const Vector<FormAssociatedElement*>& HTMLFormElement::associatedElements() const
+{
+    if (!m_associatedElementsAreDirty)
+        return m_associatedElements;
+    HTMLFormElement* mutableThis = const_cast<HTMLFormElement*>(this);
+    Node* scope = mutableThis;
+    if (m_hasElementsAssociatedByParser)
+        scope = highestAncestor();
+    if (inDocument() && treeScope().idTargetObserverRegistry().hasObservers(fastGetAttribute(idAttr)))
+        scope = &treeScope().rootNode();
+    collectAssociatedElements(scope, mutableThis->m_associatedElements);
+    mutableThis->m_associatedElementsAreDirty = false;
+    return m_associatedElements;
+}
+
+void HTMLFormElement::collectImageElements(Node* root, Vector<HTMLImageElement*>& elements)
+{
+    elements.clear();
+    for (Node* node = root; node; node = NodeTraversal::next(*node)) {
+        if (node->isHTMLElement() && node->hasTagName(imgTag) && toHTMLElement(node)->formOwner() == this)
+            elements.append(toHTMLImageElement(node));
+    }
+}
+
+const Vector<HTMLImageElement*>& HTMLFormElement::imageElements()
+{
+    if (!m_imageElementsAreDirty)
+        return m_imageElements;
+    collectImageElements(m_hasElementsAssociatedByParser ? highestAncestor() : this, m_imageElements);
+    m_imageElementsAreDirty = false;
+    return m_imageElements;
 }
 
 String HTMLFormElement::name() const
@@ -646,11 +647,6 @@ const AtomicString& HTMLFormElement::action() const
     return getAttribute(actionAttr);
 }
 
-void HTMLFormElement::setAction(const AtomicString& value)
-{
-    setAttribute(actionAttr, value);
-}
-
 void HTMLFormElement::setEnctype(const AtomicString& value)
 {
     setAttribute(enctypeAttr, value);
@@ -666,11 +662,6 @@ void HTMLFormElement::setMethod(const AtomicString& value)
     setAttribute(methodAttr, value);
 }
 
-String HTMLFormElement::target() const
-{
-    return getAttribute(targetAttr);
-}
-
 bool HTMLFormElement::wasUserSubmitted() const
 {
     return m_wasUserSubmitted;
@@ -678,10 +669,11 @@ bool HTMLFormElement::wasUserSubmitted() const
 
 HTMLFormControlElement* HTMLFormElement::defaultButton() const
 {
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
-        if (!m_associatedElements[i]->isFormControlElement())
+    const Vector<FormAssociatedElement*>& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (!elements[i]->isFormControlElement())
             continue;
-        HTMLFormControlElement* control = toHTMLFormControlElement(m_associatedElements[i]);
+        HTMLFormControlElement* control = toHTMLFormControlElement(elements[i]);
         if (control->isSuccessfulSubmitButton())
             return control;
     }
@@ -703,12 +695,13 @@ bool HTMLFormElement::checkValidityWithoutDispatchingEvents()
 bool HTMLFormElement::checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls, HTMLFormControlElement::CheckValidityDispatchEvents dispatchEvents)
 {
     RefPtr<HTMLFormElement> protector(this);
-    // Copy m_associatedElements because event handlers called from
-    // HTMLFormControlElement::checkValidity() might change m_associatedElements.
+    // Copy associatedElements because event handlers called from
+    // HTMLFormControlElement::checkValidity() might change associatedElements.
+    const Vector<FormAssociatedElement*>& associatedElements = this->associatedElements();
     Vector<RefPtr<FormAssociatedElement> > elements;
-    elements.reserveCapacity(m_associatedElements.size());
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i)
-        elements.append(m_associatedElements[i]);
+    elements.reserveCapacity(associatedElements.size());
+    for (unsigned i = 0; i < associatedElements.size(); ++i)
+        elements.append(associatedElements[i]);
     bool hasInvalidControls = false;
     for (unsigned i = 0; i < elements.size(); ++i) {
         if (elements[i]->form() == this && elements[i]->isFormControlElement()) {
@@ -720,27 +713,27 @@ bool HTMLFormElement::checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<Form
     return hasInvalidControls;
 }
 
-Node* HTMLFormElement::elementFromPastNamesMap(const AtomicString& pastName) const
+Element* HTMLFormElement::elementFromPastNamesMap(const AtomicString& pastName)
 {
     if (pastName.isEmpty() || !m_pastNamesMap)
         return 0;
-    Node* node = m_pastNamesMap->get(pastName);
+    Element* element = m_pastNamesMap->get(pastName);
 #if !ASSERT_DISABLED
-    if (!node)
+    if (!element)
         return 0;
-    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(node)->formOwner() == this);
-    if (node->hasTagName(imgTag)) {
-        ASSERT_WITH_SECURITY_IMPLICATION(m_imageElements.find(node) != kNotFound);
-    } else if (node->hasTagName(objectTag)) {
-        ASSERT_WITH_SECURITY_IMPLICATION(m_associatedElements.find(toHTMLObjectElement(node)) != kNotFound);
+    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(element)->formOwner() == this);
+    if (element->hasTagName(imgTag)) {
+        ASSERT_WITH_SECURITY_IMPLICATION(imageElements().find(element) != kNotFound);
+    } else if (element->hasTagName(objectTag)) {
+        ASSERT_WITH_SECURITY_IMPLICATION(associatedElements().find(toHTMLObjectElement(element)) != kNotFound);
     } else {
-        ASSERT_WITH_SECURITY_IMPLICATION(m_associatedElements.find(toHTMLFormControlElement(node)) != kNotFound);
+        ASSERT_WITH_SECURITY_IMPLICATION(associatedElements().find(toHTMLFormControlElement(element)) != kNotFound);
     }
 #endif
-    return node;
+    return element;
 }
 
-void HTMLFormElement::addToPastNamesMap(Node* element, const AtomicString& pastName)
+void HTMLFormElement::addToPastNamesMap(Element* element, const AtomicString& pastName)
 {
     if (pastName.isEmpty())
         return;
@@ -762,16 +755,18 @@ void HTMLFormElement::removeFromPastNamesMap(HTMLElement& element)
     }
 }
 
-void HTMLFormElement::getNamedElements(const AtomicString& name, Vector<RefPtr<Node> >& namedItems)
+void HTMLFormElement::getNamedElements(const AtomicString& name, Vector<RefPtr<Element> >& namedItems)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/forms.html#dom-form-nameditem
     elements()->namedItems(name, namedItems);
 
-    Node* elementFromPast = elementFromPastNamesMap(name);
-    if (namedItems.size() && namedItems.first() != elementFromPast)
+    Element* elementFromPast = elementFromPastNamesMap(name);
+    if (namedItems.size() && namedItems.first() != elementFromPast) {
         addToPastNamesMap(namedItems.first().get(), name);
-    else if (elementFromPast && namedItems.isEmpty())
+    } else if (elementFromPast && namedItems.isEmpty()) {
         namedItems.append(elementFromPast);
+        UseCounter::count(document(), UseCounter::FormNameAccessForPastNamesMap);
+    }
 }
 
 bool HTMLFormElement::shouldAutocomplete() const
@@ -783,6 +778,7 @@ void HTMLFormElement::finishParsingChildren()
 {
     HTMLElement::finishParsingChildren();
     document().formController()->restoreControlStateIn(*this);
+    m_didFinishParsingChildren = true;
 }
 
 void HTMLFormElement::copyNonAttributePropertiesFromElement(const Element& source)
@@ -791,13 +787,13 @@ void HTMLFormElement::copyNonAttributePropertiesFromElement(const Element& sourc
     HTMLElement::copyNonAttributePropertiesFromElement(source);
 }
 
-void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Node>& returnValue1)
+void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<RadioNodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Element>& returnValue1)
 {
     // Call getNamedElements twice, first time check if it has a value
     // and let HTMLFormElement update its cache.
     // See issue: 867404
     {
-        Vector<RefPtr<Node> > elements;
+        Vector<RefPtr<Element> > elements;
         getNamedElements(name, elements);
         if (elements.isEmpty())
             return;
@@ -805,7 +801,7 @@ void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, bool& retur
 
     // Second call may return different results from the first call,
     // but if the first the size cannot be zero.
-    Vector<RefPtr<Node> > elements;
+    Vector<RefPtr<Element> > elements;
     getNamedElements(name, elements);
     ASSERT(!elements.isEmpty());
 
@@ -815,8 +811,9 @@ void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, bool& retur
         return;
     }
 
+    bool onlyMatchImg = elements.size() && elements.at(0)->hasTagName(imgTag);
     returnValue0Enabled = true;
-    returnValue0 = NamedNodesCollection::create(elements);
+    returnValue0 = radioNodeList(name, onlyMatchImg);
 }
 
 void HTMLFormElement::setDemoted(bool demoted)

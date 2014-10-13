@@ -36,21 +36,30 @@
 
 namespace WebCore {
 
-AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(const Vector<SVGLength>& lengths)
+AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(PassRefPtr<SVGLengthList> passLengths)
 {
-    for (size_t i = 0; i < lengths.size(); ++i)
-        m_values.append(AnimatableSVGLength::create(lengths[i]));
+    RefPtr<SVGLengthList> lengths = passLengths;
+    SVGLengthList::ConstIterator it = lengths->begin();
+    SVGLengthList::ConstIterator itEnd = lengths->end();
+    for (; it != itEnd; ++it)
+        m_values.append(AnimatableSVGLength::create(*it));
 }
 
-Vector<SVGLength> AnimatableStrokeDasharrayList::toSVGLengthVector() const
+PassRefPtr<SVGLengthList> AnimatableStrokeDasharrayList::toSVGLengthList() const
 {
-    Vector<SVGLength> lengths(m_values.size());
+    RefPtr<SVGLengthList> lengths = SVGLengthList::create();
     for (size_t i = 0; i < m_values.size(); ++i) {
-        lengths[i] = toAnimatableSVGLength(m_values[i].get())->toSVGLength();
-        if (lengths[i].valueInSpecifiedUnits() < 0)
-            lengths[i].setValueInSpecifiedUnits(0);
+        RefPtr<SVGLength> length = toAnimatableSVGLength(m_values[i].get())->toSVGLength()->clone();
+        if (length->valueInSpecifiedUnits() < 0)
+            length->setValueInSpecifiedUnits(0);
+        lengths->append(length);
     }
-    return lengths;
+    return lengths.release();
+}
+
+bool AnimatableStrokeDasharrayList::usesDefaultInterpolationWith(const AnimatableValue* value) const
+{
+    return false;
 }
 
 PassRefPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const AnimatableValue* value, double fraction) const
@@ -66,12 +75,7 @@ PassRefPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const A
     if (from.isEmpty() && to.isEmpty())
         return takeConstRef(this);
     if (from.isEmpty() || to.isEmpty()) {
-        DEFINE_STATIC_REF(AnimatableSVGLength, zeroPixels, 0);
-        if (!zeroPixels) {
-            SVGLength length;
-            length.newValueSpecifiedUnits(LengthTypePX, 0, IGNORE_EXCEPTION);
-            zeroPixels = AnimatableSVGLength::create(length).leakRef();
-        }
+        DEFINE_STATIC_REF(AnimatableSVGLength, zeroPixels, AnimatableSVGLength::create(SVGLength::create()).leakRef());
         if (from.isEmpty()) {
             from.append(zeroPixels);
             from.append(zeroPixels);

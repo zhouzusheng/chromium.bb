@@ -25,7 +25,7 @@
 
 namespace WebCore {
 
-struct LengthSize {
+class LengthSize {
 public:
     LengthSize()
     {

@@ -18,26 +18,26 @@
  */
 'use strict';
 
-base.require('tracing.trace_model');
-base.require('tracing.color_scheme');
-base.require('tracing.importer.importer');
-base.require('tracing.importer.linux_perf.bus_parser');
-base.require('tracing.importer.linux_perf.clock_parser');
-base.require('tracing.importer.linux_perf.cpufreq_parser');
-base.require('tracing.importer.linux_perf.disk_parser');
-base.require('tracing.importer.linux_perf.drm_parser');
-base.require('tracing.importer.linux_perf.exynos_parser');
-base.require('tracing.importer.linux_perf.gesture_parser');
-base.require('tracing.importer.linux_perf.i915_parser');
-base.require('tracing.importer.linux_perf.mali_parser');
-base.require('tracing.importer.linux_perf.power_parser');
-base.require('tracing.importer.linux_perf.sched_parser');
-base.require('tracing.importer.linux_perf.sync_parser');
-base.require('tracing.importer.linux_perf.workqueue_parser');
-base.require('tracing.importer.linux_perf.android_parser');
-base.require('tracing.importer.linux_perf.kfunc_parser');
+tvcm.require('tracing.trace_model');
+tvcm.require('tracing.color_scheme');
+tvcm.require('tracing.importer.importer');
+tvcm.require('tracing.importer.linux_perf.bus_parser');
+tvcm.require('tracing.importer.linux_perf.clock_parser');
+tvcm.require('tracing.importer.linux_perf.cpufreq_parser');
+tvcm.require('tracing.importer.linux_perf.disk_parser');
+tvcm.require('tracing.importer.linux_perf.drm_parser');
+tvcm.require('tracing.importer.linux_perf.exynos_parser');
+tvcm.require('tracing.importer.linux_perf.gesture_parser');
+tvcm.require('tracing.importer.linux_perf.i915_parser');
+tvcm.require('tracing.importer.linux_perf.mali_parser');
+tvcm.require('tracing.importer.linux_perf.power_parser');
+tvcm.require('tracing.importer.linux_perf.sched_parser');
+tvcm.require('tracing.importer.linux_perf.sync_parser');
+tvcm.require('tracing.importer.linux_perf.workqueue_parser');
+tvcm.require('tracing.importer.linux_perf.android_parser');
+tvcm.require('tracing.importer.linux_perf.kfunc_parser');
 
-base.exportTo('tracing.importer', function() {
+tvcm.exportTo('tracing.importer', function() {
 
   var Importer = tracing.importer.Importer;
 
@@ -195,7 +195,7 @@ base.exportTo('tracing.importer', function() {
   var pseudoKernelPID = 0;
 
   /**
-   * Deduce the format of trace data. Linix kernels prior to 3.3 used one
+   * Deduce the format of trace data. Linux kernels prior to 3.3 used one
    * format (by default); 3.4 and later used another.  Additionally, newer
    * kernels can optionally trace the TGID.
    *
@@ -300,7 +300,7 @@ base.exportTo('tracing.importer', function() {
     }
 
     // Last event ends differently. Strip that off too,
-    // treating absence of that trailing stirng as a failure.
+    // treating absence of that trailing string as a failure.
     var oldLastEvent = events[events.length - 1];
     var newLastEvent = stripSuffix(oldLastEvent, '\\n";');
     if (newLastEvent == oldLastEvent)
@@ -345,7 +345,7 @@ base.exportTo('tracing.importer', function() {
     },
 
     /**
-     * @return {TimelinThread} A thread corresponding to the kernelThreadName.
+     * @return {TimelineThread} A thread corresponding to the kernelThreadName.
      */
     getOrCreateKernelThread: function(kernelThreadName, pid, tid) {
       if (!this.kernelThreadStates_[kernelThreadName]) {
@@ -363,7 +363,7 @@ base.exportTo('tracing.importer', function() {
     },
 
     /**
-     * @return {TimelinThread} A pseudo thread corresponding to the
+     * @return {TimelineThread} A pseudo thread corresponding to the
      * threadName.  Pseudo threads are for events that we want to break
      * out to a separate timeline but would not otherwise happen.
      * These threads are assigned to pseudoKernelPID and given a

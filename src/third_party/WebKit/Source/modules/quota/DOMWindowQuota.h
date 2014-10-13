@@ -32,25 +32,26 @@
 #define DOMWindowQuota_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
 
+class DeprecatedStorageInfo;
 class DOMWindow;
-class StorageInfo;
 
-class DOMWindowQuota : public Supplement<DOMWindow>, public DOMWindowProperty {
+class DOMWindowQuota FINAL : public Supplement<DOMWindow>, public DOMWindowProperty {
 public:
     virtual ~DOMWindowQuota();
     static DOMWindowQuota* from(DOMWindow*);
-    static StorageInfo* webkitStorageInfo(DOMWindow*);
-    StorageInfo* webkitStorageInfo() const;
+    static DeprecatedStorageInfo* webkitStorageInfo(DOMWindow*);
+    DeprecatedStorageInfo* webkitStorageInfo() const;
 
 private:
     explicit DOMWindowQuota(DOMWindow*);
     static const char* supplementName();
 
-    mutable RefPtr<StorageInfo> m_storageInfo;
+    mutable RefPtrWillBePersistent<DeprecatedStorageInfo> m_storageInfo;
 };
 
 } // namespace WebCore

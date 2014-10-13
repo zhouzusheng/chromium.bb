@@ -46,7 +46,7 @@ namespace blink {
 class ServiceWorkerGlobalScopeProxy;
 class WebView;
 
-class WebEmbeddedWorkerImpl :
+class WebEmbeddedWorkerImpl FINAL :
     public WebEmbeddedWorker,
     public WebFrameClient {
     WTF_MAKE_NONCOPYABLE(WebEmbeddedWorkerImpl);
@@ -65,10 +65,11 @@ private:
     class LoaderProxy;
 
     void prepareShadowPageForLoader();
-    void onScriptLoaderFinished();
 
-    // WebFrameClient overrides, for 'shadow page' loading.
-    virtual void didCreateDataSource(WebFrame*, WebDataSource*) OVERRIDE;
+    // WebFrameClient overrides.
+    virtual void didFinishDocumentLoad(WebFrame*) OVERRIDE;
+
+    void onScriptLoaderFinished();
 
     WebEmbeddedWorkerStartData m_workerStartData;
 
@@ -90,7 +91,6 @@ private:
     // are guaranteed to exist while this object is around.
     WebView* m_webView;
     WebFrame* m_mainFrame;
-    RefPtr<WebCore::ExecutionContext> m_loadingContext;
 
     bool m_askedToTerminate;
 };

@@ -45,7 +45,7 @@ class HTMLImportChild;
 //
 // A LinkResource subclasss used for @rel=import.
 //
-class LinkImport : public LinkResource, public HTMLImportChildClient {
+class LinkImport FINAL : public LinkResource, public HTMLImportChildClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
 
@@ -62,14 +62,17 @@ public:
 
     // HTMLImportChildClient
     virtual void didFinish() OVERRIDE;
-    virtual void loaderWillBeDestroyed() OVERRIDE;
+    virtual void importChildWasDestroyed(HTMLImportChild*) OVERRIDE;
+    virtual bool isCreatedByParser() const OVERRIDE;
+    virtual HTMLLinkElement* link() OVERRIDE;
 
     Document* importedDocument() const;
+    bool ownsLoader() const;
 
 private:
     void clear();
 
-    HTMLImportChild* m_loader;
+    HTMLImportChild* m_child;
 };
 
 } // namespace WebCore

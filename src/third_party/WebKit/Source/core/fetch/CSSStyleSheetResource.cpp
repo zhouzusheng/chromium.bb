@@ -30,7 +30,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/StyleSheetResourceClient.h"
-#include "core/fetch/TextResourceDecoder.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/HTTPParsers.h"
 #include "wtf/CurrentTime.h"
@@ -89,7 +89,7 @@ const String CSSStyleSheetResource::sheetText(bool enforceMIMEType, bool* hasVal
 
     // Don't cache the decoded text, regenerating is cheap and it can use quite a bit of memory
     String sheetText = m_decoder->decode(m_data->data(), m_data->size());
-    sheetText.append(m_decoder->flush());
+    sheetText = sheetText + m_decoder->flush();
     return sheetText;
 }
 
@@ -98,7 +98,7 @@ void CSSStyleSheetResource::checkNotify()
     // Decode the data to find out the encoding and keep the sheet text around during checkNotify()
     if (m_data) {
         m_decodedSheetText = m_decoder->decode(m_data->data(), m_data->size());
-        m_decodedSheetText.append(m_decoder->flush());
+        m_decodedSheetText = m_decodedSheetText + m_decoder->flush();
     }
 
     ResourceClientWalker<StyleSheetResourceClient> w(m_clients);
@@ -106,6 +106,22 @@ void CSSStyleSheetResource::checkNotify()
         c->setCSSStyleSheet(m_resourceRequest.url(), m_response.url(), m_decoder->encoding().name(), this);
     // Clear the decoded text as it is unlikely to be needed immediately again and is cheap to regenerate.
     m_decodedSheetText = String();
+}
+
+bool CSSStyleSheetResource::isSafeToUnlock() const
+{
+    return m_parsedStyleSheetCache;
+}
+
+void CSSStyleSheetResource::destroyDecodedDataIfPossible()
+{
+    if (!isSafeToUnlock())
+        return;
+
+    m_parsedStyleSheetCache->removedFromMemoryCache();
+    m_parsedStyleSheetCache.clear();
+
+    setDecodedSize(0);
 }
 
 bool CSSStyleSheetResource::canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const
@@ -130,20 +146,6 @@ bool CSSStyleSheetResource::canUseSheet(bool enforceMIMEType, bool* hasValidMIME
     if (!enforceMIMEType)
         return true;
     return typeOK;
-}
-
-void CSSStyleSheetResource::destroyDecodedData()
-{
-    if (!m_parsedStyleSheetCache)
-        return;
-
-    m_parsedStyleSheetCache->removedFromMemoryCache();
-    m_parsedStyleSheetCache.clear();
-
-    setDecodedSize(0);
-
-    if (isSafeToMakePurgeable())
-        makePurgeable(true);
 }
 
 PassRefPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedStyleSheet(const CSSParserContext& context)

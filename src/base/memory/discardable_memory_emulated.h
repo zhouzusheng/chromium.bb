@@ -15,12 +15,15 @@ class DiscardableMemoryEmulated : public DiscardableMemory {
   explicit DiscardableMemoryEmulated(size_t size);
   virtual ~DiscardableMemoryEmulated();
 
+  static void RegisterMemoryPressureListeners();
+  static void UnregisterMemoryPressureListeners();
+
   static void PurgeForTesting();
 
   bool Initialize();
 
   // Overridden from DiscardableMemory:
-  virtual LockDiscardableMemoryStatus Lock() OVERRIDE;
+  virtual DiscardableMemoryLockStatus Lock() OVERRIDE;
   virtual void Unlock() OVERRIDE;
   virtual void* Memory() const OVERRIDE;
 

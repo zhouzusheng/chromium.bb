@@ -68,8 +68,8 @@ static bool isValidColorString(const String& value)
     // We don't accept #rgb and #aarrggbb formats.
     if (value.length() != 7)
         return false;
-    Color color(value);
-    return color.isValid() && !color.hasAlpha();
+    Color color;
+    return color.setFromString(value) && !color.hasAlpha();
 }
 
 PassRefPtr<InputType> ColorInputType::create(HTMLInputElement& element)
@@ -117,7 +117,10 @@ String ColorInputType::sanitizeValue(const String& proposedValue) const
 
 Color ColorInputType::valueAsColor() const
 {
-    return Color(element().value());
+    Color color;
+    bool success = color.setFromString(element().value());
+    ASSERT_UNUSED(success, success);
+    return color;
 }
 
 void ColorInputType::createShadowSubtree()
@@ -126,9 +129,9 @@ void ColorInputType::createShadowSubtree()
 
     Document& document = element().document();
     RefPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
-    wrapperElement->setPseudo(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
+    wrapperElement->setShadowPseudoId(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
     RefPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
-    colorSwatch->setPseudo(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
+    colorSwatch->setShadowPseudoId(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
     wrapperElement->appendChild(colorSwatch.release());
     element().userAgentShadowRoot()->appendChild(wrapperElement.release());
 
@@ -224,30 +227,25 @@ Color ColorInputType::currentColor()
 
 bool ColorInputType::shouldShowSuggestions() const
 {
-    if (RuntimeEnabledFeatures::dataListElementEnabled())
-        return element().fastHasAttribute(listAttr);
-
-    return false;
+    return element().fastHasAttribute(listAttr);
 }
 
 Vector<ColorSuggestion> ColorInputType::suggestions() const
 {
     Vector<ColorSuggestion> suggestions;
-    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        HTMLDataListElement* dataList = element().dataList();
-        if (dataList) {
-            RefPtr<HTMLCollection> options = dataList->options();
-            for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
-                if (!element().isValidValue(option->value()))
-                    continue;
-                Color color(option->value());
-                if (!color.isValid())
-                    continue;
-                ColorSuggestion suggestion(color, option->label().left(maxSuggestionLabelLength));
-                suggestions.append(suggestion);
-                if (suggestions.size() >= maxSuggestions)
-                    break;
-            }
+    HTMLDataListElement* dataList = element().dataList();
+    if (dataList) {
+        RefPtr<HTMLCollection> options = dataList->options();
+        for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
+            if (!element().isValidValue(option->value()))
+                continue;
+            Color color;
+            if (!color.setFromString(option->value()))
+                continue;
+            ColorSuggestion suggestion(color, option->label().left(maxSuggestionLabelLength));
+            suggestions.append(suggestion);
+            if (suggestions.size() >= maxSuggestions)
+                break;
         }
     }
     return suggestions;

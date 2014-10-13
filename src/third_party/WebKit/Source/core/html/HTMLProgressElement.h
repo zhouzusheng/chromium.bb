@@ -44,7 +44,7 @@ public:
 
     double position() const;
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
 
 private:
     explicit HTMLProgressElement(Document&);
@@ -54,7 +54,7 @@ private:
     virtual bool shouldAppearIndeterminate() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -67,12 +67,6 @@ private:
 
     ProgressValueElement* m_value;
 };
-
-inline bool isHTMLProgressElement(Node* node)
-{
-    ASSERT(node);
-    return node->hasTagName(HTMLNames::progressTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLProgressElement, hasTagName(HTMLNames::progressTag));
 

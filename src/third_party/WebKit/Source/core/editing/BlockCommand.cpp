@@ -109,7 +109,7 @@ void BlockCommand::formatSelection(const VisiblePosition& startOfSelection, cons
         if (startEnclosingCell && (!endEnclosingCell || !endEnclosingCell->isDescendantOf(startEnclosingCell))) {
             VisiblePosition newEnd = lastPositionInNode(startEnclosingCell);
             VisiblePosition nextStart = newEnd.next();
-            while (isTableElement(nextStart.deepEquivalent().anchorNode()))
+            while (isRenderedTableElement(nextStart.deepEquivalent().anchorNode()))
                 nextStart = nextStart.next();
             // TODO: fix recursion!
             formatSelection(startOfSelection, newEnd);
@@ -121,7 +121,7 @@ void BlockCommand::formatSelection(const VisiblePosition& startOfSelection, cons
 
         VisiblePosition nextStart = firstPositionInNode(endEnclosingCell);
         VisiblePosition newEnd = nextStart.previous();
-        while (isTableElement(newEnd.deepEquivalent().anchorNode()))
+        while (isRenderedTableElement(newEnd.deepEquivalent().anchorNode()))
             newEnd = newEnd.previous();
         // TODO: fix recursion!
         formatSelection(startOfSelection, newEnd);

@@ -25,10 +25,10 @@
 
 #include <vector>
 
+#include "core/clipboard/Pasteboard.h"
 #include "core/events/Event.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/platform/Pasteboard.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/ColumnInfo.h"
 #include "core/rendering/RenderBlock.h"
@@ -440,7 +440,8 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
                 {
                     const Font& font = renderer->style()->font();
                     UChar space = ' ';
-                    candidate.m_spaceWidth = font.width(RenderBlockFlow::constructTextRun(renderer, font, &space, 1, renderer->style()));
+                    candidate.m_spaceWidth = font.width(
+                        RenderBlockFlow::constructTextRun(renderer, font, &space, 1, renderer->style(), candidate.m_isLTR ? LTR : RTL));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }

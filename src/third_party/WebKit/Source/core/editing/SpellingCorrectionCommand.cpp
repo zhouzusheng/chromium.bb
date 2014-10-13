@@ -52,9 +52,4 @@ void SpellingCorrectionCommand::doApply()
     applyCommandToComposite(InsertTextCommand::create(document(), m_correction));
 }
 
-bool SpellingCorrectionCommand::shouldRetainAutocorrectionIndicator() const
-{
-    return true;
-}
-
 } // namespace WebCore

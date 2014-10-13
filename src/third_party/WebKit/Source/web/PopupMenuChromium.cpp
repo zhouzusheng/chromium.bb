@@ -37,19 +37,9 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 
-namespace WebCore {
+namespace blink {
 
-int PopupMenuChromium::s_minimumRowHeight = 0;
-int PopupMenuChromium::s_optionRowHeightForTouch = 28;
-
-// The settings used for the drop down menu.
-// This is the delegate used if none is provided.
-static const PopupContainerSettings dropDownSettings = {
-    true, // setTextOnIndexChange
-    true, // acceptOnAbandon
-    false, // loopSelectionNavigation
-    false // restrictWidthOfListBox
-};
+using namespace WebCore;
 
 PopupMenuChromium::PopupMenuChromium(Frame& frame, PopupMenuClient* client)
     : m_popupClient(client)
@@ -59,8 +49,7 @@ PopupMenuChromium::PopupMenuChromium(Frame& frame, PopupMenuClient* client)
 
 PopupMenuChromium::~PopupMenuChromium()
 {
-    // When the PopupMenuChromium is destroyed, the client could already have been
-    // deleted.
+    // When the PopupMenuChromium is destroyed, the client could already have been deleted.
     if (m_popup)
         m_popup->listBox()->disconnectClient();
     hide();
@@ -69,9 +58,8 @@ PopupMenuChromium::~PopupMenuChromium()
 void PopupMenuChromium::show(const FloatQuad& controlPosition, const IntSize& controlSize, int index)
 {
     if (!m_popup) {
-        PopupContainerSettings popupSettings = dropDownSettings;
-        popupSettings.deviceSupportsTouch = m_frameView->frame().settings()->deviceSupportsTouch();
-        m_popup = PopupContainer::create(client(), PopupContainer::Select, popupSettings);
+        bool deviceSupportsTouch = m_frameView->frame().settings()->deviceSupportsTouch();
+        m_popup = PopupContainer::create(m_popupClient, deviceSupportsTouch);
     }
     m_popup->showInRect(controlPosition, controlSize, m_frameView.get(), index);
 }
@@ -93,4 +81,4 @@ void PopupMenuChromium::disconnectClient()
     m_popupClient = 0;
 }
 
-} // namespace WebCore
+} // namespace blink

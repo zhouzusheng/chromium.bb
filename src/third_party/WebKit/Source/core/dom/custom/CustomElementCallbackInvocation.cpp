@@ -32,28 +32,9 @@
 #include "core/dom/custom/CustomElementCallbackInvocation.h"
 
 #include "core/dom/Element.h"
-#include "core/dom/custom/CustomElementCallbackScheduler.h"
+#include "core/dom/custom/CustomElementScheduler.h"
 
 namespace WebCore {
-
-class CreatedInvocation : public CustomElementCallbackInvocation {
-public:
-    CreatedInvocation(PassRefPtr<CustomElementLifecycleCallbacks> callbacks)
-        : CustomElementCallbackInvocation(callbacks)
-    {
-    }
-
-private:
-    virtual void dispatch(Element*) OVERRIDE;
-    virtual bool isCreated() const OVERRIDE { return true; }
-};
-
-void CreatedInvocation::dispatch(Element* element)
-{
-    if (element->inDocument() && element->document().domWindow())
-        CustomElementCallbackScheduler::scheduleAttachedCallback(callbacks(), element);
-    callbacks()->created(element);
-}
 
 class AttachedDetachedInvocation : public CustomElementCallbackInvocation {
 public:
@@ -111,6 +92,25 @@ void AttributeChangedInvocation::dispatch(Element* element)
     callbacks()->attributeChanged(element, m_name, m_oldValue, m_newValue);
 }
 
+class CreatedInvocation : public CustomElementCallbackInvocation {
+public:
+    CreatedInvocation(PassRefPtr<CustomElementLifecycleCallbacks> callbacks)
+        : CustomElementCallbackInvocation(callbacks)
+    {
+    }
+
+private:
+    virtual void dispatch(Element*) OVERRIDE;
+    virtual bool isCreated() const OVERRIDE { return true; }
+};
+
+void CreatedInvocation::dispatch(Element* element)
+{
+    if (element->inDocument() && element->document().domWindow())
+        CustomElementScheduler::scheduleAttachedCallback(callbacks(), element);
+    callbacks()->created(element);
+}
+
 PassOwnPtr<CustomElementCallbackInvocation> CustomElementCallbackInvocation::createInvocation(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, CustomElementLifecycleCallbacks::CallbackType which)
 {
     switch (which) {
@@ -120,7 +120,6 @@ PassOwnPtr<CustomElementCallbackInvocation> CustomElementCallbackInvocation::cre
     case CustomElementLifecycleCallbacks::Attached:
     case CustomElementLifecycleCallbacks::Detached:
         return adoptPtr(new AttachedDetachedInvocation(callbacks, which));
-
     default:
         ASSERT_NOT_REACHED();
         return PassOwnPtr<CustomElementCallbackInvocation>();

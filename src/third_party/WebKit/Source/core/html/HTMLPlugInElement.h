@@ -61,7 +61,7 @@ protected:
 
     // Node functions:
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
-    virtual bool dispatchBeforeLoadEvent(const String& sourceURL) OVERRIDE;
+    virtual bool dispatchBeforeLoadEvent(const String& sourceURL) OVERRIDE FINAL;
 
     // Element functions:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -79,6 +79,8 @@ protected:
     bool requestObject(const String& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues);
     bool shouldUsePlugin(const KURL&, const String& mimeType, bool hasFallback, bool& useFallback);
 
+    void dispatchErrorEvent();
+
     String m_serviceType;
     String m_url;
     KURL m_loadedUrl;
@@ -91,21 +93,21 @@ private:
 
     // Node functions:
     virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void finishParsingChildren() OVERRIDE;
-    virtual bool isPluginElement() const OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE FINAL;
+    virtual void defaultEventHandler(Event*) OVERRIDE FINAL;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
+    virtual void finishParsingChildren() OVERRIDE FINAL;
+    virtual bool isPluginElement() const OVERRIDE FINAL;
 
     // Element functions:
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE FINAL;
-    virtual bool supportsFocus() const OVERRIDE { return true; };
-    virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
-    virtual void didAddShadowRoot(ShadowRoot&) OVERRIDE;
+    virtual bool supportsFocus() const OVERRIDE FINAL { return true; }
+    virtual bool rendererIsFocusable() const OVERRIDE FINAL;
+    virtual bool isKeyboardFocusable() const OVERRIDE FINAL;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE FINAL;
+    virtual void didAddShadowRoot(ShadowRoot&) OVERRIDE FINAL;
 
     // HTMLElement function:
     virtual bool hasCustomFocusLogic() const OVERRIDE;

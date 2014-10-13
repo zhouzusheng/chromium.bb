@@ -104,7 +104,7 @@ private:
     virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
 
     // Corresponds to ProxyResolverJSBindings::OnError.
-    virtual void OnPACScriptError(int line_number, const string16& error) OVERRIDE;
+    virtual void OnPACScriptError(int line_number, const base::string16& error) OVERRIDE;
 
     // Called when a request receives an authentication challenge
     // specified by |auth_info|, and is unable to respond using cached
@@ -157,13 +157,6 @@ private:
     virtual int OnBeforeSocketStreamConnect(
         net::SocketStream* socket,
         const net::CompletionCallback& callback) OVERRIDE;
-
-    // Called when the completion of a URLRequest is blocking on a cache
-    // action or a network action, or when that is no longer the case.
-    // REQUEST_WAIT_STATE_RESET indicates for a given URLRequest
-    // cancellation of any pending waits for this request.
-    virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                          RequestWaitState state) OVERRIDE;
 
     DISALLOW_COPY_AND_ASSIGN(NetworkDelegateImpl);
 };

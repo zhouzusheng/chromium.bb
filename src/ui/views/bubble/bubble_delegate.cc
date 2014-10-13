@@ -102,7 +102,7 @@ Widget* BubbleDelegateView::CreateBubble(BubbleDelegateView* bubble_delegate) {
   bubble_delegate->SetAnchorView(bubble_delegate->GetAnchorView());
   Widget* bubble_widget = CreateBubbleWidget(bubble_delegate);
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   // If glass is enabled, the bubble is allowed to extend outside the bounds of
   // the parent frame and let DWM handle compositing.  If not, then we don't
   // want to allow the bubble to extend the frame because it will be clipped.
@@ -136,7 +136,8 @@ NonClientFrameView* BubbleDelegateView::CreateNonClientFrameView(
   BubbleBorder::Arrow adjusted_arrow = arrow();
   if (base::i18n::IsRTL())
     adjusted_arrow = BubbleBorder::horizontal_mirror(adjusted_arrow);
-  frame->SetBubbleBorder(new BubbleBorder(adjusted_arrow, shadow(), color()));
+  frame->SetBubbleBorder(scoped_ptr<BubbleBorder>(
+      new BubbleBorder(adjusted_arrow, shadow(), color())));
   return frame;
 }
 
@@ -341,9 +342,12 @@ void BubbleDelegateView::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
 }
 
 void BubbleDelegateView::HandleVisibilityChanged(Widget* widget, bool visible) {
-  if (widget == GetWidget() && visible && anchor_widget() &&
+  if (widget == GetWidget() && anchor_widget() &&
       anchor_widget()->GetTopLevelWidget()) {
-    anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
+    if (visible)
+      anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
+    else
+      anchor_widget()->GetTopLevelWidget()->EnableInactiveRendering();
   }
 }
 

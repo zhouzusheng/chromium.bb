@@ -32,7 +32,6 @@
 #include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -88,19 +87,18 @@ static void moveWidgetToParentSoon(Widget* child, FrameView* parent)
 RenderWidget::RenderWidget(Element* element)
     : RenderReplaced(element)
     , m_widget(0)
-    , m_frameView(element->document().view())
     // Reference counting is used to prevent the widget from being
     // destroyed while inside the Widget code, which might not be
     // able to handle that.
     , m_refCount(1)
 {
-    view()->addWidget(this);
+    ASSERT(element);
+    frameView()->addWidget(this);
 }
 
 void RenderWidget::willBeDestroyed()
 {
-    if (RenderView* v = view())
-        v->removeWidget(this);
+    frameView()->removeWidget(this);
 
     if (AXObjectCache* cache = document().existingAXObjectCache()) {
         cache->childrenChanged(this->parent());
@@ -138,28 +136,24 @@ bool RenderWidget::setWidgetGeometry(const LayoutRect& frame)
     if (!node())
         return false;
 
-    IntRect clipRect = roundedIntRect(enclosingLayer()->childrenClipRect());
     IntRect newFrame = roundedIntRect(frame);
-    bool clipChanged = m_clipRect != clipRect;
-    bool frameRectChanged = m_widget->frameRect() != newFrame;
 
-    if (!frameRectChanged && !clipChanged)
+    if (m_widget->frameRect() == newFrame)
         return false;
-
-    m_clipRect = clipRect;
 
     RefPtr<RenderWidget> protector(this);
     RefPtr<Node> protectedNode(node());
     m_widget->setFrameRect(newFrame);
 
-    if (clipChanged && !frameRectChanged)
-        m_widget->clipRectChanged();
+    {
+        // FIXME: Remove incremental compositing updates after fixing the chicken/egg issues
+        // https://code.google.com/p/chromium/issues/detail?id=343756
+        DisableCompositingQueryAsserts disabler;
+        if (hasLayer() && layer()->compositingState() == PaintsIntoOwnBacking)
+            layer()->compositedLayerMapping()->updateAfterWidgetResize();
+    }
 
-    if (hasLayer() && layer()->compositingState() == PaintsIntoOwnBacking)
-        layer()->compositedLayerMapping()->updateAfterWidgetResize();
-
-    bool boundsChanged = m_widget->frameRect().size() != newFrame.size();
-    return boundsChanged;
+    return m_widget->frameRect().size() != newFrame.size();
 }
 
 bool RenderWidget::updateWidgetGeometry()
@@ -199,7 +193,7 @@ void RenderWidget::setWidget(PassRefPtr<Widget> widget)
                 repaint();
             }
         }
-        moveWidgetToParentSoon(m_widget.get(), m_frameView);
+        moveWidgetToParentSoon(m_widget.get(), frameView());
     }
 
     if (AXObjectCache* cache = document().existingAXObjectCache())
@@ -278,7 +272,7 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && hasOutline())
         paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, size()));
 
-    if (!m_frameView || paintInfo.phase != PaintPhaseForeground)
+    if (paintInfo.phase != PaintPhaseForeground)
         return;
 
     if (style()->hasBorderRadius()) {

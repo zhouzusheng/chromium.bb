@@ -63,12 +63,6 @@ public:
     bool isInCanvasSubtree() const { return m_isInCanvasSubtree; }
     void setIsInCanvasSubtree(bool value) { m_isInCanvasSubtree = value; }
 
-    bool isInsideRegion() const { return m_isInsideRegion; }
-    void setIsInsideRegion(bool value) { m_isInsideRegion = value; }
-
-    RegionOversetState regionOversetState() const { return m_regionOversetState; }
-    void setRegionOversetState(RegionOversetState state) { m_regionOversetState = state; }
-
     bool containsFullScreenElement() { return m_containsFullScreenElement; }
     void setContainsFullScreenElement(bool value) { m_containsFullScreenElement = value; }
 
@@ -96,6 +90,8 @@ public:
     void setChildrenAffectedByBackwardPositionalRules(bool value) { m_childrenAffectedByBackwardPositionalRules = value; }
     unsigned childIndex() const { return m_childIndex; }
     void setChildIndex(unsigned index) { m_childIndex = index; }
+
+    CSSStyleDeclaration* ensureInlineCSSStyleDeclaration(Element* ownerElement);
 
     void clearShadow() { m_shadow = nullptr; }
     ElementShadow* shadow() const { return m_shadow.get(); }
@@ -149,6 +145,7 @@ public:
     }
 
     bool hasPseudoElements() const;
+    void clearPseudoElements();
 
 private:
     short m_tabIndex;
@@ -173,9 +170,6 @@ private:
     unsigned m_childrenAffectedByForwardPositionalRules : 1;
     unsigned m_childrenAffectedByBackwardPositionalRules : 1;
 
-    unsigned m_isInsideRegion : 1;
-    RegionOversetState m_regionOversetState;
-
     LayoutSize m_minimumSizeForResizing;
     IntSize m_savedLayerScrollOffset;
     RefPtr<RenderStyle> m_computedStyle;
@@ -186,6 +180,7 @@ private:
     OwnPtr<NamedNodeMap> m_attributeMap;
     OwnPtr<InputMethodContext> m_inputMethodContext;
     OwnPtr<ActiveAnimations> m_activeAnimations;
+    OwnPtr<InlineCSSStyleDeclaration> m_cssomWrapper;
 
     RefPtr<PseudoElement> m_generatedBefore;
     RefPtr<PseudoElement> m_generatedAfter;
@@ -219,8 +214,6 @@ inline ElementRareData::ElementRareData(RenderObject* renderer)
     , m_childrenAffectedByDirectAdjacentRules(false)
     , m_childrenAffectedByForwardPositionalRules(false)
     , m_childrenAffectedByBackwardPositionalRules(false)
-    , m_isInsideRegion(false)
-    , m_regionOversetState(RegionUndefined)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {
 }
@@ -236,6 +229,13 @@ inline ElementRareData::~ElementRareData()
 inline bool ElementRareData::hasPseudoElements() const
 {
     return m_generatedBefore || m_generatedAfter || m_backdrop;
+}
+
+inline void ElementRareData::clearPseudoElements()
+{
+    setPseudoElement(BEFORE, 0);
+    setPseudoElement(AFTER, 0);
+    setPseudoElement(BACKDROP, 0);
 }
 
 inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> element)

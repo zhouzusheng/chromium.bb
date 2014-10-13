@@ -33,6 +33,7 @@
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioParam.h"
 #include "platform/geometry/FloatPoint3D.h"
+#include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -44,7 +45,7 @@ namespace WebCore {
 // A cone effect will attenuate the gain as the orientation moves away from the listener.
 // All of these effects follow the OpenAL specification very closely.
 
-class PannerNode : public AudioNode {
+class PannerNode FINAL : public AudioNode {
 public:
     // These must be defined as in the .idl file and must match those in the Panner class.
     enum {
@@ -69,11 +70,10 @@ public:
     virtual ~PannerNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void pullInputs(size_t framesToProcess);
-    virtual void reset();
-    virtual void initialize();
-    virtual void uninitialize();
+    virtual void process(size_t framesToProcess) OVERRIDE;
+    virtual void pullInputs(size_t framesToProcess) OVERRIDE;
+    virtual void initialize() OVERRIDE;
+    virtual void uninitialize() OVERRIDE;
 
     // Listener
     AudioListener* listener();
@@ -84,15 +84,12 @@ public:
     void setPanningModel(const String&);
 
     // Position
-    FloatPoint3D position() const { return m_position; }
     void setPosition(float x, float y, float z) { m_position = FloatPoint3D(x, y, z); }
 
     // Orientation
-    FloatPoint3D orientation() const { return m_position; }
     void setOrientation(float x, float y, float z) { m_orientation = FloatPoint3D(x, y, z); }
 
     // Velocity
-    FloatPoint3D velocity() const { return m_velocity; }
     void setVelocity(float x, float y, float z) { m_velocity = FloatPoint3D(x, y, z); }
 
     // Distance parameters
@@ -122,10 +119,6 @@ public:
     void getAzimuthElevation(double* outAzimuth, double* outElevation);
     float dopplerRate();
 
-    // Accessors for dynamically calculated gain values.
-    AudioParam* distanceGain() { return m_distanceGain.get(); }
-    AudioParam* coneGain() { return m_coneGain.get(); }
-
     virtual double tailTime() const OVERRIDE { return m_panner ? m_panner->tailTime() : 0; }
     virtual double latencyTime() const OVERRIDE { return m_panner ? m_panner->latencyTime() : 0; }
 
@@ -137,7 +130,7 @@ private:
 
     // Notifies any AudioBufferSourceNodes connected to us either directly or indirectly about our existence.
     // This is in order to handle the pitch change necessary for the doppler shift.
-    void notifyAudioSourcesConnectedToNode(AudioNode*);
+    void notifyAudioSourcesConnectedToNode(AudioNode*, HashMap<AudioNode*, bool> &visitedNodes);
 
     OwnPtr<Panner> m_panner;
     unsigned m_panningModel;

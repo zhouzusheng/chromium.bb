@@ -28,6 +28,10 @@
 
 #include "core/html/HTMLMediaElement.h"
 
+namespace blink {
+class WebGraphicsContext3D;
+}
+
 namespace WebCore {
 
 class ExceptionState;
@@ -35,7 +39,7 @@ class HTMLImageLoader;
 
 class HTMLVideoElement FINAL : public HTMLMediaElement {
 public:
-    static PassRefPtr<HTMLVideoElement> create(Document&, bool createdByParser = false);
+    static PassRefPtr<HTMLVideoElement> create(Document&);
 
     unsigned videoWidth() const;
     unsigned videoHeight() const;
@@ -55,14 +59,17 @@ public:
 
     // Used by WebGL to do GPU-GPU textures copy if possible.
     // See more details at MediaPlayer::copyVideoTextureToPlatformTexture() defined in Source/WebCore/platform/graphics/MediaPlayer.h.
-    bool copyVideoTextureToPlatformTexture(GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
+    bool copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
 
     bool shouldDisplayPosterImage() const { return displayMode() == Poster || displayMode() == PosterWaitingForVideo; }
 
     KURL posterImageURL() const;
 
+    // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
+    virtual KURL mediaPlayerPosterURL() OVERRIDE;
+
 private:
-    HTMLVideoElement(Document&, bool);
+    HTMLVideoElement(Document&);
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
@@ -72,7 +79,7 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual bool isVideo() const OVERRIDE { return true; }
     virtual bool hasVideo() const OVERRIDE { return player() && player()->hasVideo(); }
-    virtual bool supportsFullscreen() const OVERRIDE;
+    bool supportsFullscreen() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
@@ -85,16 +92,6 @@ private:
 
     AtomicString m_defaultPosterURL;
 };
-
-inline bool isHTMLVideoElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::videoTag);
-}
-
-inline bool isHTMLVideoElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::videoTag);
-}
 
 DEFINE_NODE_TYPE_CASTS(HTMLVideoElement, hasTagName(HTMLNames::videoTag));
 

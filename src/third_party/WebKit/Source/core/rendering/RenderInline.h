@@ -40,7 +40,7 @@ public:
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
-    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0);
+    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
 
     Element* node() const { return toElement(RenderBoxModelObject::node()); }
 
@@ -54,7 +54,7 @@ public:
     virtual LayoutUnit marginEnd(const RenderStyle* otherStyle = 0) const OVERRIDE FINAL;
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE FINAL;
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const;
+    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE;
 
     virtual LayoutSize offsetFromContainer(RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const OVERRIDE FINAL;
 
@@ -96,7 +96,7 @@ public:
     bool hitTestCulledInline(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset);
 
 protected:
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
@@ -108,7 +108,7 @@ private:
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
-    virtual const char* renderName() const;
+    virtual const char* renderName() const OVERRIDE;
 
     virtual bool isRenderInline() const OVERRIDE FINAL { return true; }
 
@@ -135,7 +135,7 @@ private:
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
 
-    virtual bool requiresLayer() const { return isInFlowPositioned() || createsGroup() || hasClipPath(); }
+    virtual LayerType layerTypeRequired() const OVERRIDE { return isInFlowPositioned() || createsGroup() || hasClipPath() ? NormalLayer : NoLayer; }
 
     virtual LayoutUnit offsetLeft() const OVERRIDE FINAL;
     virtual LayoutUnit offsetTop() const OVERRIDE FINAL;

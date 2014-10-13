@@ -83,7 +83,7 @@ void NetworkDelegateImpl::OnURLRequestDestroyed(net::URLRequest* request)
 {
 }
 
-void NetworkDelegateImpl::OnPACScriptError(int line_number, const string16& error)
+void NetworkDelegateImpl::OnPACScriptError(int line_number, const base::string16& error)
 {
 }
 
@@ -126,11 +126,6 @@ int NetworkDelegateImpl::OnBeforeSocketStreamConnect(
     const net::CompletionCallback& callback)
 {
     return net::OK;
-}
-
-void NetworkDelegateImpl::OnRequestWaitStateChange(const net::URLRequest& request,
-                                                   RequestWaitState state)
-{
 }
 
 }  // close namespace blpwtk2

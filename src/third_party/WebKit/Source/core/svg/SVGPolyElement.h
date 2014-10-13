@@ -23,44 +23,34 @@
 
 #include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
+#include "core/svg/SVGAnimatedPointList.h"
 #include "core/svg/SVGGeometryElement.h"
-#include "core/svg/SVGPointList.h"
 
 namespace WebCore {
 
-class SVGPolyElement : public SVGGeometryElement
-                     , public SVGExternalResourcesRequired {
+class SVGPolyElement : public SVGGeometryElement {
 public:
-    SVGListPropertyTearOff<SVGPointList>* points();
-    SVGListPropertyTearOff<SVGPointList>* animatedPoints();
+    SVGAnimatedPointList* points() { return m_points.get(); }
 
-    SVGPointList& pointsCurrentValue();
-
-    static const SVGPropertyInfo* pointsPropertyInfo();
+    PassRefPtr<SVGPointListTearOff> pointsFromJavascript() { return m_points->baseVal(); }
+    PassRefPtr<SVGPointListTearOff> animatedPoints() { return m_points->animVal(); }
 
 protected:
     SVGPolyElement(const QualifiedName&, Document&);
 
 private:
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
+    virtual bool supportsFocus() const OVERRIDE FINAL { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
 
-    virtual bool supportsMarkers() const { return true; }
-
-    // Custom 'points' property
-    static void synchronizePoints(SVGElement* contextElement);
-    static PassRefPtr<SVGAnimatedProperty> lookupOrCreatePointsWrapper(SVGElement* contextElement);
-
-    mutable SVGSynchronizableAnimatedProperty<SVGPointList> m_points;
+    virtual bool supportsMarkers() const OVERRIDE FINAL { return true; }
 
 private:
+    RefPtr<SVGAnimatedPointList> m_points;
+
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPolyElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

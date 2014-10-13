@@ -27,14 +27,13 @@
 #include "config.h"
 #include "core/frame/UseCounter.h"
 
-#include "bindings/v8/V8Binding.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/DOMWindow.h"
-#include "core/page/Page.h"
-#include "core/page/PageConsole.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/PageConsole.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -65,7 +64,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitFontFeatureSettings: return 12;
     case CSSPropertyFontKerning: return 13;
     case CSSPropertyWebkitFontSmoothing: return 14;
-    case CSSPropertyWebkitFontVariantLigatures: return 15;
+    case CSSPropertyFontVariantLigatures: return 15;
     case CSSPropertyWebkitLocale: return 16;
     case CSSPropertyWebkitTextOrientation: return 17;
     case CSSPropertyWebkitWritingMode: return 18;
@@ -295,8 +294,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyFlexWrap: return 239;
     case CSSPropertyJustifyContent: return 240;
     case CSSPropertyWebkitFontSizeDelta: return 241;
-    case CSSPropertyGridDefinitionColumns: return 242;
-    case CSSPropertyGridDefinitionRows: return 243;
+    case CSSPropertyGridTemplateColumns: return 242;
+    case CSSPropertyGridTemplateRows: return 243;
     case CSSPropertyGridColumnStart: return 244;
     case CSSPropertyGridColumnEnd: return 245;
     case CSSPropertyGridRowStart: return 246;
@@ -307,11 +306,11 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitHighlight: return 251;
     case CSSPropertyWebkitHyphenateCharacter: return 252;
     case CSSPropertyWebkitLineBoxContain: return 257;
-    case CSSPropertyWebkitLineAlign: return 258;
+    // case CSSPropertyWebkitLineAlign: return 258;
     case CSSPropertyWebkitLineBreak: return 259;
     case CSSPropertyWebkitLineClamp: return 260;
-    case CSSPropertyWebkitLineGrid: return 261;
-    case CSSPropertyWebkitLineSnap: return 262;
+    // case CSSPropertyWebkitLineGrid: return 261;
+    // case CSSPropertyWebkitLineSnap: return 262;
     case CSSPropertyWebkitLogicalWidth: return 263;
     case CSSPropertyWebkitLogicalHeight: return 264;
     case CSSPropertyWebkitMarginAfterCollapse: return 265;
@@ -385,12 +384,12 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitUserDrag: return 337;
     case CSSPropertyWebkitUserModify: return 338;
     case CSSPropertyWebkitUserSelect: return 339;
-    case CSSPropertyWebkitFlowInto: return 340;
-    case CSSPropertyWebkitFlowFrom: return 341;
-    case CSSPropertyWebkitRegionFragment: return 342;
-    case CSSPropertyWebkitRegionBreakAfter: return 343;
-    case CSSPropertyWebkitRegionBreakBefore: return 344;
-    case CSSPropertyWebkitRegionBreakInside: return 345;
+    // case CSSPropertyWebkitFlowInto: return 340;
+    // case CSSPropertyWebkitFlowFrom: return 341;
+    // case CSSPropertyWebkitRegionFragment: return 342;
+    // case CSSPropertyWebkitRegionBreakAfter: return 343;
+    // case CSSPropertyWebkitRegionBreakBefore: return 344;
+    // case CSSPropertyWebkitRegionBreakInside: return 345;
     case CSSPropertyShapeInside: return 346;
     case CSSPropertyShapeOutside: return 347;
     case CSSPropertyShapeMargin: return 348;
@@ -476,7 +475,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyMixBlendMode: return 420;
     case CSSPropertyTouchAction: return 421;
     case CSSPropertyGridArea: return 422;
-    case CSSPropertyGridTemplate: return 423;
+    case CSSPropertyGridTemplateAreas: return 423;
     case CSSPropertyAnimation: return 424;
     case CSSPropertyAnimationDelay: return 425;
     case CSSPropertyAnimationDirection: return 426;
@@ -496,6 +495,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyColumnFill: return 440;
     case CSSPropertyTextJustify: return 441;
     case CSSPropertyTouchActionDelay: return 442;
+    case CSSPropertyJustifySelf: return 443;
+    case CSSPropertyScrollBehavior: return 444;
 
     // Add new features above this line (don't change the assigned numbers of the existing
     // items) and update maximumCSSSampleId() with the new maximum value.
@@ -507,7 +508,6 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyInternalMarqueeSpeed:
     case CSSPropertyInternalMarqueeStyle:
     case CSSPropertyInvalid:
-    case CSSPropertyVariable:
         ASSERT_NOT_REACHED();
         return 0;
     }
@@ -515,7 +515,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 442; }
+static int maximumCSSSampleId() { return 444; }
 
 UseCounter::UseCounter()
 {
@@ -569,22 +569,19 @@ void UseCounter::didCommitLoad()
 
 void UseCounter::count(const Document& document, Feature feature)
 {
-    Page* page = document.page();
-    if (!page)
+    FrameHost* host = document.frameHost();
+    if (!host)
         return;
 
-    ASSERT(page->useCounter().deprecationMessage(feature).isEmpty());
-    page->useCounter().recordMeasurement(feature);
+    ASSERT(host->useCounter().deprecationMessage(feature).isEmpty());
+    host->useCounter().recordMeasurement(feature);
 }
 
-void UseCounter::count(const DOMWindow* domWindow, Feature feature)
+void UseCounter::count(const ExecutionContext* context, Feature feature)
 {
-    if (isNonWindowContextsAllowed() && !domWindow)
+    if (!context || !context->isDocument())
         return;
-    ASSERT(domWindow);
-    if (!domWindow->document())
-        return;
-    count(*domWindow->document(), feature);
+    count(*toDocument(context), feature);
 }
 
 void UseCounter::countDeprecation(ExecutionContext* context, Feature feature)
@@ -603,47 +600,29 @@ void UseCounter::countDeprecation(const DOMWindow* window, Feature feature)
 
 void UseCounter::countDeprecation(const Document& document, Feature feature)
 {
-    Page* page = document.page();
-    if (!page)
+    FrameHost* host = document.frameHost();
+    if (!host)
         return;
 
-    if (page->useCounter().recordMeasurement(feature)) {
-        ASSERT(!page->useCounter().deprecationMessage(feature).isEmpty());
-        page->console().addMessage(DeprecationMessageSource, WarningMessageLevel, page->useCounter().deprecationMessage(feature));
+    if (host->useCounter().recordMeasurement(feature)) {
+        ASSERT(!host->useCounter().deprecationMessage(feature).isEmpty());
+        host->console().addMessage(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature));
     }
 }
 
 String UseCounter::deprecationMessage(Feature feature)
 {
     switch (feature) {
-    // Content Security Policy
-    case PrefixedContentSecurityPolicy:
-    case PrefixedContentSecurityPolicyReportOnly:
-        return "The 'X-WebKit-CSP' headers are no longer supported. Please consider using the canonical 'Content-Security-Policy' header instead.";
-
-    // HTMLMediaElement
-    case PrefixedMediaGenerateKeyRequest:
-        return "'HTMLMediaElement.webkitGenerateKeyRequest()' is deprecated. Please use 'MediaKeys.createSession()' instead.";
-
     // Quota
-    case StorageInfo:
+    case PrefixedStorageInfo:
         return "'window.webkitStorageInfo' is deprecated. Please use 'navigator.webkitTemporaryStorage' or 'navigator.webkitPersistentStorage' instead.";
 
     // Performance
     case PrefixedPerformanceTimeline:
         return "'window.performance.webkitGet*' methods have been deprecated. Please use the unprefixed 'performance.get*' methods instead.";
-    case PrefixedUserTiming:
-        return "'window.performance.webkit*' methods have been deprecated. Please use the unprefixed 'window.performance.*' methods instead.";
-
-    // Web Audio
-    case WebAudioLooping:
-        return "AudioBufferSourceNode 'looping' attribute is deprecated.  Use 'loop' instead.";
 
     case DocumentClear:
         return "document.clear() is deprecated. This method doesn't do anything.";
-
-    case PrefixedTransitionMediaFeature:
-        return "The '(-webkit-transition)' media query feature is deprecated; please consider using the more exact conditional \"@supports('(transition-property: prop_name)')\" instead.";
 
     // Web Components
     case HTMLShadowElementOlderShadowRoot:
@@ -655,7 +634,7 @@ String UseCounter::deprecationMessage(Feature feature)
 
     // Keyboard Event (DOM Level 3)
     case KeyboardEventKeyLocation:
-        return "'KeyboardEvent.keyLocation'' is deprecated. Please use 'KeyboardEvent.location' instead.";
+        return "'KeyboardEvent.keyLocation' is deprecated. Please use 'KeyboardEvent.location' instead.";
 
     case CaptureEvents:
         return "captureEvents() is deprecated. This method doesn't do anything.";
@@ -684,6 +663,57 @@ String UseCounter::deprecationMessage(Feature feature)
     case CSSStyleSheetInsertRuleOptionalArg:
         return "Calling CSSStyleSheet.insertRule() with one argument is deprecated. Please pass the index argument as well: insertRule(x, 0).";
 
+    case AttributeSpecified:
+        return "Attr.specified is deprecated. Its value is always true.";
+
+    case SVGElementGetPresentationAttribute:
+        return "CSSValue and SVGElement.getPresentationAttribute are deprecated. Please use getPropertyValue and parse the return value instead.";
+
+    case TextTrackCueConstructor:
+        return "The 'TextTrackCue' constructor is deprecated. Please use 'VTTCue' instead.";
+
+    case PrefixedVideoSupportsFullscreen:
+        return "'HTMLVideoElement.webkitSupportsFullscreen' is deprecated. Its value is true if the video is loaded.";
+
+    case PrefixedVideoDisplayingFullscreen:
+        return "'HTMLVideoElement.webkitDisplayingFullscreen' is deprecated. Please use the 'fullscreenchange' and 'webkitfullscreenchange' events instead.";
+
+    case PrefixedVideoEnterFullscreen:
+        return "'HTMLVideoElement.webkitEnterFullscreen()' is deprecated. Please use 'Element.requestFullscreen()' and 'Element.webkitRequestFullscreen()' instead.";
+
+    case PrefixedVideoExitFullscreen:
+        return "'HTMLVideoElement.webkitExitFullscreen()' is deprecated. Please use 'Document.exitFullscreen()' and 'Document.webkitExitFullscreen()' instead.";
+
+    case PrefixedVideoEnterFullScreen:
+        return "'HTMLVideoElement.webkitEnterFullScreen()' is deprecated. Please use 'Element.requestFullscreen()' and 'Element.webkitRequestFullscreen()' instead.";
+
+    case PrefixedVideoExitFullScreen:
+        return "'HTMLVideoElement.webkitExitFullScreen()' is deprecated. Please use 'Document.exitFullscreen()' and 'Document.webkitExitFullscreen()' instead.";
+
+    case PrefixedMediaSourceOpen:
+        return "'WebKitMediaSource' is deprecated. Please use 'MediaSource' instead.";
+
+    case DOMImplementationCreateCSSStyleSheet:
+        return "'DOMImplementation.createCSSStyleSheet()' is deprecated.";
+
+    case MediaErrorEncrypted:
+        return "'MediaError.MEDIA_ERR_ENCRYPTED' is deprecated. This error code is never used.";
+
+    case HTMLSourceElementMedia:
+        return "'HTMLSourceElement.media' is deprecated. This attribute doesn't do anything.";
+
+    case PrefixedGetImageDataHD:
+        return "'CanvasRenderingContext2D.webkitGetImageDataHD' is deprecated. Please use getImageData instead.";
+
+    case PrefixedPutImageDataHD:
+        return "'CanvasRenderingContext2D.webkitPutImageDataHD' is deprecated. Please use putImageData instead.";
+
+    case ShadowRootApplyAuthorStyles:
+        return "'ShadowRoot.applyAuthorStyles' is deprecated.";
+
+    case PrefixedSpeechAttribute:
+        return "The 'x-webkit-speech' input field attribute is deprecated. Please use the JavaScript API instead.";
+
     // Features that aren't deprecated don't have a deprecation message.
     default:
         return String();
@@ -710,8 +740,8 @@ void UseCounter::count(Feature feature)
 
 UseCounter* UseCounter::getFrom(const Document* document)
 {
-    if (document && document->page())
-        return &document->page()->useCounter();
+    if (document && document->frameHost())
+        return &document->frameHost()->useCounter();
     return 0;
 }
 

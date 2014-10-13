@@ -418,23 +418,46 @@ String SecurityOrigin::toString() const
     return toRawString();
 }
 
+AtomicString SecurityOrigin::toAtomicString() const
+{
+    if (isUnique())
+        return AtomicString("null", AtomicString::ConstructFromLiteral);
+    if (m_protocol == "file" && m_enforceFilePathSeparation)
+        return AtomicString("null", AtomicString::ConstructFromLiteral);
+    return toRawAtomicString();
+}
+
 String SecurityOrigin::toRawString() const
 {
     if (m_protocol == "file")
         return "file://";
 
     StringBuilder result;
-    result.reserveCapacity(m_protocol.length() + m_host.length() + 10);
-    result.append(m_protocol);
-    result.append("://");
-    result.append(m_host);
+    buildRawString(result);
+    return result.toString();
+}
+
+AtomicString SecurityOrigin::toRawAtomicString() const
+{
+    if (m_protocol == "file")
+        return AtomicString("file://", AtomicString::ConstructFromLiteral);
+
+    StringBuilder result;
+    buildRawString(result);
+    return result.toAtomicString();
+}
+
+inline void SecurityOrigin::buildRawString(StringBuilder& builder) const
+{
+    builder.reserveCapacity(m_protocol.length() + m_host.length() + 10);
+    builder.append(m_protocol);
+    builder.appendLiteral("://");
+    builder.append(m_host);
 
     if (m_port) {
-        result.append(':');
-        result.appendNumber(m_port);
+        builder.append(':');
+        builder.appendNumber(m_port);
     }
-
-    return result.toString();
 }
 
 PassRefPtr<SecurityOrigin> SecurityOrigin::createFromString(const String& originString)
@@ -448,23 +471,6 @@ PassRefPtr<SecurityOrigin> SecurityOrigin::create(const String& protocol, const 
         return createUnique();
     String decodedHost = decodeURLEscapeSequences(host);
     return create(KURL(KURL(), protocol + "://" + host + ":" + String::number(port) + "/"));
-}
-
-bool SecurityOrigin::equal(const SecurityOrigin* other) const
-{
-    if (other == this)
-        return true;
-
-    if (!isSameSchemeHostPort(other))
-        return false;
-
-    if (m_domainWasSetInDOM != other->m_domainWasSetInDOM)
-        return false;
-
-    if (m_domainWasSetInDOM && m_domain != other->m_domain)
-        return false;
-
-    return true;
 }
 
 bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const

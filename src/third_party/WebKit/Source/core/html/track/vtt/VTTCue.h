@@ -38,6 +38,7 @@ namespace WebCore {
 class Document;
 class ExecutionContext;
 class VTTCue;
+class VTTScanner;
 
 class VTTCueBox FINAL : public HTMLDivElement {
 public:
@@ -162,7 +163,7 @@ private:
         Align,
         RegionId
     };
-    CueSetting settingName(const String&);
+    CueSetting settingName(VTTScanner&);
 
     String m_text;
     int m_linePosition;
@@ -186,11 +187,8 @@ private:
     bool m_notifyRegion : 1;
 };
 
-inline VTTCue* toVTTCue(TextTrackCue* cue)
-{
-    // VTTCue is currently the only TextTrackCue subclass.
-    return static_cast<VTTCue*>(cue);
-}
+// VTTCue is currently the only TextTrackCue subclass.
+DEFINE_TYPE_CASTS(VTTCue, TextTrackCue, cue, true, true);
 
 } // namespace WebCore
 

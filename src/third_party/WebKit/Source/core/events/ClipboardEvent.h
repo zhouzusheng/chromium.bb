@@ -30,14 +30,10 @@ namespace WebCore {
 
     class Clipboard;
 
-    class ClipboardEvent : public Event {
+    class ClipboardEvent FINAL : public Event {
     public:
         virtual ~ClipboardEvent();
 
-        static PassRefPtr<ClipboardEvent> create()
-        {
-            return adoptRef(new ClipboardEvent);
-        }
         static PassRefPtr<ClipboardEvent> create(const AtomicString& type, bool canBubbleArg, bool cancelableArg, PassRefPtr<Clipboard> clipboardArg)
         {
             return adoptRef(new ClipboardEvent(type, canBubbleArg, cancelableArg, clipboardArg));

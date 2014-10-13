@@ -53,8 +53,10 @@ WebInspector.TimelineModel.RecordType = {
 
     GPUTask: "GPUTask",
 
+    RequestMainThreadFrame: "RequestMainThreadFrame",
     BeginFrame: "BeginFrame",
     ActivateLayerTree: "ActivateLayerTree",
+    DrawFrame: "DrawFrame",
     ScheduleStyleRecalculation: "ScheduleStyleRecalculation",
     RecalculateStyles: "RecalculateStyles",
     InvalidateLayout: "InvalidateLayout",
@@ -156,15 +158,15 @@ WebInspector.TimelineModel.aggregateTimeByCategory = function(total, addend)
 
 WebInspector.TimelineModel.prototype = {
     /**
-     * @param {boolean=} includeDomCounters
+     * @param {boolean=} includeCounters
      */
-    startRecording: function(includeDomCounters)
+    startRecording: function(includeCounters)
     {
         this._clientInitiatedRecording = true;
         this.reset();
         var maxStackFrames = WebInspector.settings.timelineCaptureStacks.get() ? 30 : 0;
         var includeGPUEvents = WebInspector.experimentsSettings.gpuTimeline.isEnabled();
-        WebInspector.timelineManager.start(maxStackFrames, includeDomCounters, includeGPUEvents, this._fireRecordingStarted.bind(this));
+        WebInspector.timelineManager.start(maxStackFrames, includeCounters, includeGPUEvents, this._fireRecordingStarted.bind(this));
     },
 
     stopRecording: function()
@@ -309,11 +311,17 @@ WebInspector.TimelineModel.prototype = {
         this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordsCleared);
     },
 
+    /**
+     * @return {number}
+     */
     minimumRecordTime: function()
     {
         return this._minimumRecordTime;
     },
 
+    /**
+     * @return {number}
+     */
     maximumRecordTime: function()
     {
         return this._maximumRecordTime;
@@ -335,6 +343,7 @@ WebInspector.TimelineModel.prototype = {
 
     /**
      * @param {!Object} rawRecord
+     * @return {number}
      */
     recordOffsetInSeconds: function(rawRecord)
     {
@@ -371,7 +380,7 @@ WebInspector.TimelineModelLoader.prototype = {
         var index;
         do {
             index = lastIndex;
-            lastIndex = WebInspector.findBalancedCurlyBrackets(data, index);
+            lastIndex = WebInspector.TextUtils.findBalancedCurlyBrackets(data, index);
         } while (lastIndex !== -1)
 
         var json = data.slice(0, index) + "]";
@@ -526,3 +535,45 @@ WebInspector.TimelineSaver.prototype = {
         stream.write(data.join(separator), this._writeNextChunk.bind(this));
     }
 }
+
+/**
+ * @constructor
+ */
+WebInspector.TimelineMergingRecordBuffer = function()
+{
+    this._backgroundRecordsBuffer = [];
+}
+
+/**
+ * @constructor
+ */
+WebInspector.TimelineMergingRecordBuffer.prototype = {
+    /**
+     * @param {string} thread
+     * @param {!Array.<!TimelineAgent.TimelineEvent>} records
+     * @return {!Array.<!TimelineAgent.TimelineEvent>}
+     */
+    process: function(thread, records)
+    {
+        if (thread) {
+            this._backgroundRecordsBuffer = this._backgroundRecordsBuffer.concat(records);
+            return [];
+        }
+        var outputIndex = 0;
+        var result = new Array(this._backgroundRecordsBuffer.length + records.length);
+        var mainThreadRecord = 0;
+        var backgroundRecord = 0;
+        while  (backgroundRecord < this._backgroundRecordsBuffer.length && mainThreadRecord < records.length) {
+            if (this._backgroundRecordsBuffer[backgroundRecord].startTime < records[mainThreadRecord].startTime)
+                result[outputIndex++] = this._backgroundRecordsBuffer[backgroundRecord++];
+            else
+                result[outputIndex++] = records[mainThreadRecord++];
+        }
+        for (;mainThreadRecord < records.length; ++mainThreadRecord)
+            result[outputIndex++] = records[mainThreadRecord];
+        for (;backgroundRecord < this._backgroundRecordsBuffer.length; ++backgroundRecord)
+            result[outputIndex++] = this._backgroundRecordsBuffer[backgroundRecord];
+        this._backgroundRecordsBuffer = [];
+        return result;
+    }
+};

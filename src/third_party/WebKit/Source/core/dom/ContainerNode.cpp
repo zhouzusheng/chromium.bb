@@ -25,17 +25,21 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ChildListMutationScope.h"
+#include "core/dom/ClassCollection.h"
 #include "core/dom/ContainerNodeAlgorithms.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/FullscreenElementStack.h"
+#include "core/dom/NameNodeList.h"
 #include "core/dom/NodeChildRemovalTracker.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/dom/SelectorQuery.h"
 #include "core/events/MutationEvent.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/RadioNodeList.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
@@ -45,6 +49,8 @@
 using namespace std;
 
 namespace WebCore {
+
+using namespace HTMLNames;
 
 static void dispatchChildInsertionEvents(Node&);
 static void dispatchChildRemovalEvents(Node&);
@@ -106,7 +112,7 @@ bool ContainerNode::isChildTypeAllowed(const Node& child) const
 
 bool ContainerNode::containsConsideringHostElements(const Node& newChild) const
 {
-    if (isInShadowTree() || document() == document().templateDocument())
+    if (isInShadowTree() || document().isTemplateDocument())
         return newChild.containsIncludingHostElements(*this);
     return newChild.contains(this);
 }
@@ -262,7 +268,7 @@ void ContainerNode::parserInsertBefore(PassRefPtr<Node> newChild, Node& nextChil
     ASSERT(newChild);
     ASSERT(nextChild.parentNode() == this);
     ASSERT(!newChild->isDocumentFragment());
-    ASSERT(!hasTagName(HTMLNames::templateTag));
+    ASSERT(!hasTagName(templateTag));
 
     if (nextChild.previousSibling() == newChild || nextChild == newChild) // nothing to do
         return;
@@ -382,7 +388,7 @@ void ContainerNode::willRemoveChildren()
     getChildNodes(*this, children);
 
     ChildListMutationScope mutation(*this);
-    for (NodeVector::const_iterator it = children.begin(); it != children.end(); it++) {
+    for (NodeVector::const_iterator it = children.begin(); it != children.end(); ++it) {
         ASSERT(*it);
         Node& child = **it;
         mutation.willRemoveChild(child);
@@ -407,7 +413,10 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
     RefPtr<Node> protect(this);
 
     // NotFoundError: Raised if oldChild is not a child of this node.
-    if (!oldChild || oldChild->parentNode() != this) {
+    // FIXME: We should never really get PseudoElements in here, but editing will sometimes
+    // attempt to remove them still. We should fix that and enable this ASSERT.
+    // ASSERT(!oldChild->isPseudoElement())
+    if (!oldChild || oldChild->parentNode() != this || oldChild->isPseudoElement()) {
         exceptionState.throwDOMException(NotFoundError, "The node to be removed is not a child of this node.");
         return;
     }
@@ -605,7 +614,7 @@ void ContainerNode::parserAppendChild(PassRefPtr<Node> newChild)
     ASSERT(newChild);
     ASSERT(!newChild->parentNode()); // Use appendChild if you need to handle reparenting (and want DOM mutation events).
     ASSERT(!newChild->isDocumentFragment());
-    ASSERT(!hasTagName(HTMLNames::templateTag));
+    ASSERT(!hasTagName(templateTag));
 
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
@@ -666,7 +675,6 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         return false;
     // What is this code really trying to do?
     RenderObject* o = renderer();
-    RenderObject* p = o;
 
     if (!o->isInline() || o->isReplaced()) {
         point = o->localToAbsolute(FloatPoint(), UseTransforms);
@@ -675,7 +683,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 
     // find the next text/image child, to get a position
     while (o) {
-        p = o;
+        RenderObject* p = o;
         if (o->firstChild()) {
             o = o->firstChild();
         } else if (o->nextSibling()) {
@@ -803,7 +811,7 @@ void ContainerNode::focusStateChanged()
     // FIXME: This could probably setNeedsStyleRecalc(LocalStyleChange) in the affectedByFocus case
     // and only setNeedsStyleRecalc(SubtreeStyleChange) in the childrenAffectedByFocus case.
     if (renderStyle()->affectedByFocus() || (isElementNode() && toElement(this)->childrenAffectedByFocus()))
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
     if (renderer() && renderer()->style()->hasAppearance())
         RenderTheme::theme().stateChanged(renderer(), FocusState);
 }
@@ -818,7 +826,7 @@ void ContainerNode::setFocus(bool received)
     focusStateChanged();
     // If :focus sets display: none, we lose focus but still need to recalc our style.
     if (!renderer() && !received)
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void ContainerNode::setActive(bool down)
@@ -830,8 +838,11 @@ void ContainerNode::setActive(bool down)
 
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
     if (renderer()) {
-        if (renderStyle()->affectedByActive() || (isElementNode() && toElement(this)->childrenAffectedByActive()))
-            setNeedsStyleRecalc();
+        if (isElementNode() && toElement(this)->childrenAffectedByActive())
+            setNeedsStyleRecalc(SubtreeStyleChange);
+        else if (renderStyle()->affectedByActive())
+            setNeedsStyleRecalc(LocalStyleChange);
+
         if (renderStyle()->hasAppearance())
             RenderTheme::theme().stateChanged(renderer(), PressedState);
     }
@@ -846,46 +857,27 @@ void ContainerNode::setHovered(bool over)
 
     // If :hover sets display: none we lose our hover but still need to recalc our style.
     if (!renderer()) {
-        if (!over)
-            setNeedsStyleRecalc();
+        if (over)
+            return;
+        if (isElementNode() && toElement(this)->childrenAffectedByHover())
+            setNeedsStyleRecalc(SubtreeStyleChange);
+        else
+            setNeedsStyleRecalc(LocalStyleChange);
         return;
     }
 
-    if (renderer()) {
-        if (renderStyle()->affectedByHover() || (isElementNode() && toElement(this)->childrenAffectedByHover()))
-            setNeedsStyleRecalc();
-        if (renderer() && renderer()->style()->hasAppearance())
-            RenderTheme::theme().stateChanged(renderer(), HoverState);
-    }
+    if (isElementNode() && toElement(this)->childrenAffectedByHover())
+        setNeedsStyleRecalc(SubtreeStyleChange);
+    else if (renderStyle()->affectedByHover())
+        setNeedsStyleRecalc(LocalStyleChange);
+
+    if (renderer()->style()->hasAppearance())
+        RenderTheme::theme().stateChanged(renderer(), HoverState);
 }
 
 PassRefPtr<HTMLCollection> ContainerNode::children()
 {
-    return ensureRareData().ensureNodeLists().addCacheWithAtomicName<HTMLCollection>(this, NodeChildren);
-}
-
-Element* ContainerNode::firstElementChild() const
-{
-    return ElementTraversal::firstWithin(*this);
-}
-
-Element* ContainerNode::lastElementChild() const
-{
-    Node* n = lastChild();
-    while (n && !n->isElementNode())
-        n = n->previousSibling();
-    return toElement(n);
-}
-
-unsigned ContainerNode::childElementCount() const
-{
-    unsigned count = 0;
-    Node* n = firstChild();
-    while (n) {
-        count += n->isElementNode();
-        n = n->nextSibling();
-    }
-    return count;
+    return ensureRareData().ensureNodeLists().addCache<HTMLCollection>(this, NodeChildren);
 }
 
 unsigned ContainerNode::childNodeCount() const
@@ -904,6 +896,32 @@ Node *ContainerNode::childNode(unsigned index) const
     for (i = 0; n != 0 && i < index; i++)
         n = n->nextSibling();
     return n;
+}
+
+PassRefPtr<Element> ContainerNode::querySelector(const AtomicString& selectors, ExceptionState& exceptionState)
+{
+    if (selectors.isEmpty()) {
+        exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
+        return 0;
+    }
+
+    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
+    if (!selectorQuery)
+        return 0;
+    return selectorQuery->queryFirst(*this);
+}
+
+PassRefPtr<NodeList> ContainerNode::querySelectorAll(const AtomicString& selectors, ExceptionState& exceptionState)
+{
+    if (selectors.isEmpty()) {
+        exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
+        return 0;
+    }
+
+    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
+    if (!selectorQuery)
+        return 0;
+    return selectorQuery->queryAll(*this);
 }
 
 static void dispatchChildInsertionEvents(Node& child)
@@ -966,6 +984,48 @@ void ContainerNode::updateTreeAfterInsertion(Node& child)
     ChildNodeInsertionNotifier(*this).notify(child);
 
     dispatchChildInsertionEvents(child);
+}
+
+PassRefPtr<HTMLCollection> ContainerNode::getElementsByTagName(const AtomicString& localName)
+{
+    if (localName.isNull())
+        return 0;
+
+    if (document().isHTMLDocument())
+        return ensureRareData().ensureNodeLists().addCache<HTMLTagCollection>(this, HTMLTagCollectionType, localName);
+    return ensureRareData().ensureNodeLists().addCache<TagCollection>(this, TagCollectionType, localName);
+}
+
+PassRefPtr<HTMLCollection> ContainerNode::getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName)
+{
+    if (localName.isNull())
+        return 0;
+
+    if (namespaceURI == starAtom)
+        return getElementsByTagName(localName);
+
+    return ensureRareData().ensureNodeLists().addCache(this, namespaceURI.isEmpty() ? nullAtom : namespaceURI, localName);
+}
+
+// Takes an AtomicString in argument because it is common for elements to share the same name attribute.
+// Therefore, the NameNodeList factory function expects an AtomicString type.
+PassRefPtr<NodeList> ContainerNode::getElementsByName(const AtomicString& elementName)
+{
+    return ensureRareData().ensureNodeLists().addCache<NameNodeList>(this, NameNodeListType, elementName);
+}
+
+// Takes an AtomicString in argument because it is common for elements to share the same set of class names.
+// Therefore, the ClassNodeList factory function expects an AtomicString type.
+PassRefPtr<HTMLCollection> ContainerNode::getElementsByClassName(const AtomicString& classNames)
+{
+    return ensureRareData().ensureNodeLists().addCache<ClassCollection>(this, ClassCollectionType, classNames);
+}
+
+PassRefPtr<RadioNodeList> ContainerNode::radioNodeList(const AtomicString& name, bool onlyMatchImgElements)
+{
+    ASSERT(hasTagName(formTag) || hasTagName(fieldsetTag));
+    CollectionType type = onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType;
+    return ensureRareData().ensureNodeLists().addCache<RadioNodeList>(this, type, name);
 }
 
 #ifndef NDEBUG

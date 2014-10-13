@@ -34,7 +34,7 @@ namespace WebCore {
 
 class ExceptionState;
 
-class WaveShaperNode : public AudioBasicProcessorNode {
+class WaveShaperNode FINAL : public AudioBasicProcessorNode {
 public:
     static PassRefPtr<WaveShaperNode> create(AudioContext* context)
     {
@@ -47,8 +47,6 @@ public:
 
     void setOversample(const String& , ExceptionState&);
     String oversample() const;
-
-    double latency() const { return latencyTime(); }
 
 private:
     explicit WaveShaperNode(AudioContext*);

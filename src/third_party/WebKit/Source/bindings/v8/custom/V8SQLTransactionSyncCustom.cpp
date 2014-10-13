@@ -71,7 +71,7 @@ void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo
             sqlArgsLength = length->Uint32Value();
 
         for (unsigned int i = 0; i < sqlArgsLength; ++i) {
-            v8::Handle<v8::Integer> key = v8::Integer::New(i, info.GetIsolate());
+            v8::Handle<v8::Integer> key = v8::Integer::New(info.GetIsolate(), i);
             V8TRYCATCH_VOID(v8::Local<v8::Value>, value, sqlArgsObject->Get(key));
 
             if (value.IsEmpty() || value->IsNull())
@@ -88,7 +88,7 @@ void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo
 
     SQLTransactionSync* transaction = V8SQLTransactionSync::toNative(info.Holder());
 
-    ExceptionState exceptionState(info.Holder(), info.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "executeSql", "SQLTransactionSync", info.Holder(), info.GetIsolate());
     v8::Handle<v8::Value> result = toV8(transaction->executeSQL(statement, sqlValues, exceptionState), info.Holder(), info.GetIsolate());
     if (exceptionState.throwIfNeeded())
         return;

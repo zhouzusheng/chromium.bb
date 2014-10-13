@@ -17,6 +17,11 @@ bool RenderWidgetHostDelegate::PreHandleWheelEvent(
   return false;
 }
 
+bool RenderWidgetHostDelegate::PreHandleGestureEvent(
+    const blink::WebGestureEvent& event) {
+  return false;
+}
+
 bool RenderWidgetHostDelegate::ShouldSetKeyboardFocusOnMouseDown() {
   return true;
 }
@@ -26,12 +31,12 @@ bool RenderWidgetHostDelegate::ShouldSetLogicalFocusOnMouseDown() {
 }
 
 bool RenderWidgetHostDelegate::ShowTooltip(
-    const string16& tooltip_text,
+    const base::string16& tooltip_text,
     blink::WebTextDirection text_direction_hint) {
   return false;
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
 gfx::NativeViewAccessible
 RenderWidgetHostDelegate::GetParentNativeViewAccessible() {
   return NULL;

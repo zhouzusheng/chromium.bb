@@ -54,10 +54,10 @@ class SkTypeface;
 
 namespace WebCore {
 
+class FontCacheClient;
 class FontPlatformData;
 class FontData;
 class FontDescription;
-class FontSelector;
 class OpenTypeVerticalData;
 class SimpleFontData;
 
@@ -75,7 +75,7 @@ public:
 
     // This method is implemented by the plaform and used by
     // FontFastPath to lookup the font for a given character.
-    PassRefPtr<SimpleFontData> platformFallbackForCharacter(const FontDescription&, UChar32, const SimpleFontData* fontDataToSubstitute, bool disallowSynthetics);
+    PassRefPtr<SimpleFontData> platformFallbackForCharacter(const FontDescription&, UChar32, const SimpleFontData* fontDataToSubstitute);
 
     // Also implemented by the platform.
     void platformInit();
@@ -85,8 +85,8 @@ public:
     SimpleFontData* getNonRetainedLastResortFallbackFont(const FontDescription&);
     bool isPlatformFontAvailable(const FontDescription&, const AtomicString&);
 
-    void addClient(FontSelector*);
-    void removeClient(FontSelector*);
+    void addClient(FontCacheClient*);
+    void removeClient(FontCacheClient*);
 
     unsigned short generation();
     void invalidate();

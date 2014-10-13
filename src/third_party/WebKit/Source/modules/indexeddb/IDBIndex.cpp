@@ -37,8 +37,9 @@
 #include "modules/indexeddb/WebIDBCallbacksImpl.h"
 #include "public/platform/WebIDBKeyRange.h"
 
-using blink::WebIDBDatabase;
 using blink::WebIDBCallbacks;
+using blink::WebIDBCursor;
+using blink::WebIDBDatabase;
 
 namespace WebCore {
 
@@ -79,7 +80,7 @@ PassRefPtr<IDBRequest> IDBIndex::openCursor(ExecutionContext* context, const Scr
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return 0;
     }
-    IndexedDB::CursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
+    WebIDBCursor::Direction direction = IDBCursor::stringToDirection(directionString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
@@ -90,7 +91,7 @@ PassRefPtr<IDBRequest> IDBIndex::openCursor(ExecutionContext* context, const Scr
     return openCursor(context, keyRange.release(), direction);
 }
 
-PassRefPtr<IDBRequest> IDBIndex::openCursor(ExecutionContext* context, PassRefPtr<IDBKeyRange> keyRange, IndexedDB::CursorDirection direction)
+PassRefPtr<IDBRequest> IDBIndex::openCursor(ExecutionContext* context, PassRefPtr<IDBKeyRange> keyRange, WebIDBCursor::Direction direction)
 {
     RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
     request->setCursorDetails(IndexedDB::CursorKeyAndValue, direction);
@@ -138,7 +139,7 @@ PassRefPtr<IDBRequest> IDBIndex::openKeyCursor(ExecutionContext* context, const 
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return 0;
     }
-    IndexedDB::CursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
+    WebIDBCursor::Direction direction = IDBCursor::stringToDirection(directionString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
@@ -155,35 +156,17 @@ PassRefPtr<IDBRequest> IDBIndex::openKeyCursor(ExecutionContext* context, const 
 PassRefPtr<IDBRequest> IDBIndex::get(ExecutionContext* context, const ScriptValue& key, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBIndex::get");
-    if (isDeleted()) {
-        exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
-        return 0;
-    }
-    if (m_transaction->isFinished()) {
-        exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
-    }
-    if (!m_transaction->isActive()) {
-        exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
-    }
-
-    RefPtr<IDBKeyRange> keyRange = IDBKeyRange::fromScriptValue(context, key, exceptionState);
-    if (exceptionState.hadException())
-        return 0;
-    if (!keyRange) {
-        exceptionState.throwDOMException(DataError, IDBDatabase::noKeyOrKeyRangeErrorMessage);
-        return 0;
-    }
-
-    RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
-    backendDB()->get(m_transaction->id(), m_objectStore->id(), m_metadata.id, keyRange.release(), false, WebIDBCallbacksImpl::create(request).leakPtr());
-    return request;
+    return getInternal(context, key, exceptionState, false);
 }
 
 PassRefPtr<IDBRequest> IDBIndex::getKey(ExecutionContext* context, const ScriptValue& key, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBIndex::getKey");
+    return getInternal(context, key, exceptionState, true);
+}
+
+PassRefPtr<IDBRequest> IDBIndex::getInternal(ExecutionContext* context, const ScriptValue& key, ExceptionState& exceptionState, bool keyOnly)
+{
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
         return 0;
@@ -206,7 +189,7 @@ PassRefPtr<IDBRequest> IDBIndex::getKey(ExecutionContext* context, const ScriptV
     }
 
     RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
-    backendDB()->get(m_transaction->id(), m_objectStore->id(), m_metadata.id, keyRange.release(), true, WebIDBCallbacksImpl::create(request).leakPtr());
+    backendDB()->get(m_transaction->id(), m_objectStore->id(), m_metadata.id, keyRange.release(), keyOnly, WebIDBCallbacksImpl::create(request).leakPtr());
     return request;
 }
 

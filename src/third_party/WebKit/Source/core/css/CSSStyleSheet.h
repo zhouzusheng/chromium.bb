@@ -30,7 +30,7 @@ namespace WebCore {
 
 class CSSCharsetRule;
 class CSSImportRule;
-class CSSParser;
+class BisonCSSParser;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleSheet;
@@ -46,11 +46,12 @@ enum StyleSheetUpdateType {
     EntireStyleSheetUpdate
 };
 
-class CSSStyleSheet : public StyleSheet {
+class CSSStyleSheet FINAL : public StyleSheet {
 public:
     static PassRefPtr<CSSStyleSheet> create(PassRefPtr<StyleSheetContents>, CSSImportRule* ownerRule = 0);
     static PassRefPtr<CSSStyleSheet> create(PassRefPtr<StyleSheetContents>, Node* ownerNode);
     static PassRefPtr<CSSStyleSheet> createInline(Node*, const KURL&, const TextPosition& startPosition = TextPosition::minimumPosition(), const String& encoding = String());
+    static PassRefPtr<CSSStyleSheet> createInline(PassRefPtr<StyleSheetContents>, Node* ownerNode, const TextPosition& startPosition = TextPosition::minimumPosition());
 
     virtual ~CSSStyleSheet();
 
@@ -105,22 +106,23 @@ public:
 
     void clearChildRuleCSSOMWrappers();
 
-    void registerExtraChildRuleCSSOMWrapper(PassRefPtr<CSSRule>);
-
     StyleSheetContents* contents() const { return m_contents.get(); }
 
     bool isInline() const { return m_isInlineStylesheet; }
     TextPosition startPositionInSource() const { return m_startPosition; }
 
+    bool sheetLoaded();
+    bool loadCompleted() const { return m_loadCompleted; }
+    void startLoadingDynamicSheet();
+
 private:
     CSSStyleSheet(PassRefPtr<StyleSheetContents>, CSSImportRule* ownerRule);
     CSSStyleSheet(PassRefPtr<StyleSheetContents>, Node* ownerNode, bool isInlineStylesheet, const TextPosition& startPosition);
 
-    virtual bool isCSSStyleSheet() const { return true; }
-    virtual String type() const { return "text/css"; }
+    virtual bool isCSSStyleSheet() const OVERRIDE { return true; }
+    virtual String type() const OVERRIDE { return "text/css"; }
 
-    void extraCSSOMWrapperIndices(Vector<unsigned>& indices);
-    void reattachChildRuleCSSOMWrappers(const Vector<unsigned>& extraCSSOMWrapperIndices);
+    void reattachChildRuleCSSOMWrappers();
 
     bool canAccessRules() const;
 
@@ -134,12 +136,10 @@ private:
     CSSRule* m_ownerRule;
 
     TextPosition m_startPosition;
+    bool m_loadCompleted;
 
     mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
     mutable Vector<RefPtr<CSSRule> > m_childRuleCSSOMWrappers;
-    // These are CSSOMWrappers that come from getMatchedCSSRules and thus don't map 1-1 to
-    // the StyleRules in the StyleSheetContents.
-    mutable Vector<RefPtr<CSSRule> > m_extraChildRuleCSSOMWrappers;
     mutable OwnPtr<CSSRuleList> m_ruleListCSSOMWrapper;
 };
 

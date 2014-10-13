@@ -36,18 +36,19 @@
 #include "platform/MIMETypeRegistry.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/BitmapImage.h"
-#include "platform/graphics/Extensions3D.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/GraphicsContext3D.h"
+#include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/gpu/DrawingBuffer.h"
-#include "platform/graphics/gpu/SharedGraphicsContext3D.h"
+#include "platform/graphics/gpu/Extensions3DUtil.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/image-encoders/skia/JPEGImageEncoder.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
 #include "platform/image-encoders/skia/WEBPImageEncoder.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebGraphicsContext3D.h"
+#include "public/platform/WebGraphicsContext3DProvider.h"
 #include "third_party/skia/include/effects/SkTableColorFilter.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/Base64.h"
@@ -132,29 +133,27 @@ blink::WebLayer* ImageBuffer::platformLayer() const
     return m_surface->layer();
 }
 
-bool ImageBuffer::copyToPlatformTexture(GraphicsContext3D& context, Platform3DObject texture, GC3Denum internalFormat, GC3Denum destType, GC3Dint level, bool premultiplyAlpha, bool flipY)
+bool ImageBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY)
 {
     if (!m_surface->isAccelerated() || !platformLayer() || !isValid())
         return false;
 
-    if (!context.makeContextCurrent())
+    if (!context->makeContextCurrent())
         return false;
 
-    Extensions3D* extensions = context.extensions();
-    if (!extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
-        || !extensions->canUseCopyTextureCHROMIUM(internalFormat, destType, level))
+    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, destType, level))
         return false;
 
     // The canvas is stored in a premultiplied format, so unpremultiply if necessary.
-    context.pixelStorei(Extensions3D::UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, !premultiplyAlpha);
+    context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, !premultiplyAlpha);
 
     // The canvas is stored in an inverted position, so the flip semantics are reversed.
-    context.pixelStorei(Extensions3D::UNPACK_FLIP_Y_CHROMIUM, !flipY);
-    extensions->copyTextureCHROMIUM(GL_TEXTURE_2D, getBackingTexture(), texture, level, internalFormat, destType);
+    context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, !flipY);
+    context->copyTextureCHROMIUM(GL_TEXTURE_2D, getBackingTexture(), texture, level, internalFormat, destType);
 
-    context.pixelStorei(Extensions3D::UNPACK_FLIP_Y_CHROMIUM, false);
-    context.pixelStorei(Extensions3D::UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
-    context.flush();
+    context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, false);
+    context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
+    context->flush();
     return true;
 }
 
@@ -173,12 +172,15 @@ bool ImageBuffer::copyRenderingResultsFromDrawingBuffer(DrawingBuffer* drawingBu
 {
     if (!drawingBuffer)
         return false;
-    RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
+    OwnPtr<blink::WebGraphicsContext3DProvider> provider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    if (!provider)
+        return false;
+    blink::WebGraphicsContext3D* context3D = provider->context3d();
     Platform3DObject tex = m_surface->getBackingTexture();
     if (!context3D || !tex)
         return false;
-
-    return drawingBuffer->copyToPlatformTexture(*(context3D.get()), tex, GL_RGBA,
+    m_surface->invalidateCachedBitmap();
+    return drawingBuffer->copyToPlatformTexture(context3D, tex, GL_RGBA,
         GL_UNSIGNED_BYTE, 0, true, false);
 }
 
@@ -188,8 +190,16 @@ void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, cons
     if (!isValid())
         return;
 
-    const SkBitmap& bitmap = m_surface->bitmap();
+    SkBitmap bitmap = m_surface->bitmap();
+    // For ImageBufferSurface that enables cachedBitmap, Use the cached Bitmap for CPU side usage
+    // if it is available, otherwise generate and use it.
+    if (!context->isAccelerated() && m_surface->isAccelerated() && m_surface->cachedBitmapEnabled() && m_surface->isValid()) {
+        m_surface->updateCachedBitmapIfNeeded();
+        bitmap = m_surface->cachedBitmap();
+    }
+
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
+
     context->drawImage(image.get(), destRect, srcRect, op, blendMode, DoNotRespectImageOrientation, useLowQualityScale);
 }
 
@@ -211,46 +221,10 @@ void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect
     image->drawPattern(context, srcRect, scale, phase, op, destRect, blendMode, repeatSpacing);
 }
 
-static const Vector<uint8_t>& getLinearRgbLUT()
-{
-    DEFINE_STATIC_LOCAL(Vector<uint8_t>, linearRgbLUT, ());
-    if (linearRgbLUT.isEmpty()) {
-        linearRgbLUT.reserveCapacity(256);
-        for (unsigned i = 0; i < 256; i++) {
-            float color = i  / 255.0f;
-            color = (color <= 0.04045f ? color / 12.92f : pow((color + 0.055f) / 1.055f, 2.4f));
-            color = std::max(0.0f, color);
-            color = std::min(1.0f, color);
-            linearRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
-        }
-    }
-    return linearRgbLUT;
-}
-
-static const Vector<uint8_t>& getDeviceRgbLUT()
-{
-    DEFINE_STATIC_LOCAL(Vector<uint8_t>, deviceRgbLUT, ());
-    if (deviceRgbLUT.isEmpty()) {
-        deviceRgbLUT.reserveCapacity(256);
-        for (unsigned i = 0; i < 256; i++) {
-            float color = i / 255.0f;
-            color = (powf(color, 1.0f / 2.4f) * 1.055f) - 0.055f;
-            color = std::max(0.0f, color);
-            color = std::min(1.0f, color);
-            deviceRgbLUT.append(static_cast<uint8_t>(round(color * 255)));
-        }
-    }
-    return deviceRgbLUT;
-}
-
 void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace)
 {
-    if (srcColorSpace == dstColorSpace)
-        return;
-
-    // only sRGB <-> linearRGB are supported at the moment
-    if ((srcColorSpace != ColorSpaceLinearRGB && srcColorSpace != ColorSpaceDeviceRGB)
-        || (dstColorSpace != ColorSpaceLinearRGB && dstColorSpace != ColorSpaceDeviceRGB))
+    const uint8_t* lookUpTable = ColorSpaceUtilities::getConversionLUT(dstColorSpace, srcColorSpace);
+    if (!lookUpTable)
         return;
 
     // FIXME: Disable color space conversions on accelerated canvases (for now).
@@ -260,9 +234,6 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
     const SkBitmap& bitmap = m_surface->bitmap();
     if (bitmap.isNull())
         return;
-
-    const Vector<uint8_t>& lookUpTable = dstColorSpace == ColorSpaceLinearRGB ?
-        getLinearRgbLUT() : getDeviceRgbLUT();
 
     ASSERT(bitmap.config() == SkBitmap::kARGB_8888_Config);
     IntSize size = m_surface->size();
@@ -283,17 +254,8 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
 PassRefPtr<SkColorFilter> ImageBuffer::createColorSpaceFilter(ColorSpace srcColorSpace,
     ColorSpace dstColorSpace)
 {
-    if ((srcColorSpace == dstColorSpace)
-        || (srcColorSpace != ColorSpaceLinearRGB && srcColorSpace != ColorSpaceDeviceRGB)
-        || (dstColorSpace != ColorSpaceLinearRGB && dstColorSpace != ColorSpaceDeviceRGB))
-        return 0;
-
-    const uint8_t* lut = 0;
-    if (dstColorSpace == ColorSpaceLinearRGB)
-        lut = &getLinearRgbLUT()[0];
-    else if (dstColorSpace == ColorSpaceDeviceRGB)
-        lut = &getDeviceRgbLUT()[0];
-    else
+    const uint8_t* lut = ColorSpaceUtilities::getConversionLUT(dstColorSpace, srcColorSpace);
+    if (!lut)
         return 0;
 
     return adoptRef(SkTableColorFilter::CreateARGB(0, lut, lut, lut));

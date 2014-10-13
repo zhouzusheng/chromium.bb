@@ -37,6 +37,7 @@
 #include "WebDOMEventListener.h"
 #include "WebDocument.h"
 #include "WebElement.h"
+#include "WebElementCollection.h"
 #include "WebFrameImpl.h"
 #include "WebNodeList.h"
 #include "WebPluginContainer.h"
@@ -44,10 +45,11 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/events/Event.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "core/editing/markup.h"
+#include "core/events/Event.h"
+#include "core/html/HTMLCollection.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
 #include "platform/Widget.h"
@@ -190,15 +192,19 @@ void WebNode::simulateClick()
     m_private->dispatchSimulatedClick(0);
 }
 
-WebNodeList WebNode::getElementsByTagName(const WebString& tag) const
+WebElementCollection WebNode::getElementsByTagName(const WebString& tag) const
 {
-    return WebNodeList(m_private->getElementsByTagName(tag));
+    if (m_private->isContainerNode())
+        return WebElementCollection(toContainerNode(m_private.get())->getElementsByTagName(tag));
+    return WebElementCollection();
 }
 
 WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) const
 {
     TrackExceptionState exceptionState;
-    WebElement element(m_private->querySelector(tag, exceptionState));
+    WebElement element;
+    if (m_private->isContainerNode())
+        element = toContainerNode(m_private.get())->querySelector(tag, exceptionState);
     ec = exceptionState.code();
     return element;
 }
@@ -236,7 +242,7 @@ WebPluginContainer* WebNode::pluginContainer() const
         if (object && object->isWidget()) {
             Widget* widget = WebCore::toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer())
-                return toPluginContainerImpl(widget);
+                return toWebPluginContainerImpl(widget);
         }
     }
     return 0;

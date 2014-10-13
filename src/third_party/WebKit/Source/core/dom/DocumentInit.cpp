@@ -68,6 +68,7 @@ DocumentInit::DocumentInit(const KURL& url, Frame* frame, WeakPtr<Document> cont
     , m_owner(ownerDocument(frame))
     , m_contextDocument(contextDocument)
     , m_import(import)
+    , m_createNewRegistrationContext(false)
 {
 }
 
@@ -79,6 +80,7 @@ DocumentInit::DocumentInit(const DocumentInit& other)
     , m_contextDocument(other.m_contextDocument)
     , m_import(other.m_import)
     , m_registrationContext(other.m_registrationContext)
+    , m_createNewRegistrationContext(other.m_createNewRegistrationContext)
 {
 }
 
@@ -95,19 +97,6 @@ bool DocumentInit::shouldSetURL() const
 bool DocumentInit::shouldTreatURLAsSrcdocDocument() const
 {
     return m_parent && m_frame->loader().shouldTreatURLAsSrcdocDocument(m_url);
-}
-
-bool DocumentInit::isSeamlessAllowedFor(Document* child) const
-{
-    if (!m_parent)
-        return false;
-    if (m_parent->isSandboxed(SandboxSeamlessIframes))
-        return false;
-    if (child->isSrcdocDocument())
-        return true;
-    if (m_parent->securityOrigin()->canAccess(child->securityOrigin()))
-        return true;
-    return m_parent->securityOrigin()->canRequest(child->url());
 }
 
 Frame* DocumentInit::frameForSecurityContext() const
@@ -138,23 +127,27 @@ KURL DocumentInit::parentBaseURL() const
 
 DocumentInit& DocumentInit::withRegistrationContext(CustomElementRegistrationContext* registrationContext)
 {
-    ASSERT(!m_registrationContext);
+    ASSERT(!m_createNewRegistrationContext && !m_registrationContext);
     m_registrationContext = registrationContext;
+    return *this;
+}
+
+DocumentInit& DocumentInit::withNewRegistrationContext()
+{
+    ASSERT(!m_createNewRegistrationContext && !m_registrationContext);
+    m_createNewRegistrationContext = true;
     return *this;
 }
 
 PassRefPtr<CustomElementRegistrationContext> DocumentInit::registrationContext(Document* document) const
 {
-    if (!RuntimeEnabledFeatures::customElementsEnabled() && !RuntimeEnabledFeatures::embedderCustomElementsEnabled())
-        return 0;
-
     if (!document->isHTMLDocument() && !document->isXHTMLDocument())
         return 0;
 
-    if (m_registrationContext)
-        return m_registrationContext.get();
+    if (m_createNewRegistrationContext)
+        return CustomElementRegistrationContext::create();
 
-    return CustomElementRegistrationContext::create();
+    return m_registrationContext.get();
 }
 
 WeakPtr<Document> DocumentInit::contextDocument() const

@@ -12,7 +12,6 @@
 #include "content/renderer/render_view_impl.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
-#include "gin/per_isolate_data.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -85,21 +84,6 @@ void StatsCollectionController::Install(blink::WebFrame* frame) {
 
   v8::Context::Scope context_scope(context);
 
-  gin::PerIsolateData* data = gin::PerIsolateData::From(isolate);
-  if (data->GetObjectTemplate(&StatsCollectionController::kWrapperInfo)
-          .IsEmpty()) {
-    v8::Handle<v8::ObjectTemplate> templ =
-        gin::ObjectTemplateBuilder(isolate)
-            .SetMethod("getHistogram", &StatsCollectionController::GetHistogram)
-            .SetMethod("getBrowserHistogram",
-                       &StatsCollectionController::GetBrowserHistogram)
-            .SetMethod("tabLoadTiming",
-                       &StatsCollectionController::GetTabLoadTiming)
-            .Build();
-    templ->SetInternalFieldCount(gin::kNumberOfInternalFields);
-    data->SetObjectTemplate(&StatsCollectionController::kWrapperInfo, templ);
-  }
-
   gin::Handle<StatsCollectionController> controller =
       gin::CreateHandle(isolate, new StatsCollectionController());
   v8::Handle<v8::Object> global = context->Global();
@@ -110,6 +94,16 @@ void StatsCollectionController::Install(blink::WebFrame* frame) {
 StatsCollectionController::StatsCollectionController() {}
 
 StatsCollectionController::~StatsCollectionController() {}
+
+gin::ObjectTemplateBuilder StatsCollectionController::GetObjectTemplateBuilder(
+    v8::Isolate* isolate) {
+  return gin::Wrappable<StatsCollectionController>::GetObjectTemplateBuilder(
+      isolate)
+      .SetMethod("getHistogram", &StatsCollectionController::GetHistogram)
+      .SetMethod("getBrowserHistogram",
+                 &StatsCollectionController::GetBrowserHistogram)
+      .SetMethod("tabLoadTiming", &StatsCollectionController::GetTabLoadTiming);
+}
 
 std::string StatsCollectionController::GetHistogram(
     const std::string& histogram_name) {

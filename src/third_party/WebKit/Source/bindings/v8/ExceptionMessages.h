@@ -35,8 +35,15 @@
 
 namespace WebCore {
 
+class Decimal;
+
 class ExceptionMessages {
 public:
+    enum BoundType {
+        InclusiveBound,
+        ExclusiveBound,
+    };
+
     static String failedToConstruct(const String& type, const String& detail = String());
     static String failedToExecute(const String& method, const String& type, const String& detail = String());
     static String failedToGet(const String& property, const String& type, const String& detail);
@@ -50,9 +57,15 @@ public:
     // If == 0, a (non-argument) value (e.g., a setter) failed the same check.
     static String notAnArrayTypeArgumentOrValue(int argumentIndex);
     static String notASequenceTypeProperty(const String& propertyName);
-    static String notAFiniteNumber(double value);
+    static String notAFiniteNumber(double value, const char* name = "value provided");
+    static String notAFiniteNumber(const Decimal& value, const char* name = "value provided");
 
     static String notEnoughArguments(unsigned expected, unsigned providedleastNumMandatoryParams);
+
+    static String readOnly(const char* detail = 0);
+
+    static String indexExceedsMaximumBound(const char* name, unsigned given, unsigned bound);
+    static String indexOutsideRange(const char* name, double given, double lowerBound, BoundType lowerType, double upperBound, BoundType upperType);
 
 private:
     static String ordinalNumber(int number);

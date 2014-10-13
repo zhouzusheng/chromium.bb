@@ -32,8 +32,6 @@ class HTMLIFrameElement FINAL : public HTMLFrameElementBase {
 public:
     static PassRefPtr<HTMLIFrameElement> create(Document&);
 
-    bool shouldDisplaySeamlessly() const;
-
 private:
     explicit HTMLIFrameElement(Document&);
 
@@ -44,10 +42,8 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
-
-    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     virtual bool loadedNonEmptyDocument() const OVERRIDE { return m_didLoadNonEmptyDocument; }
     virtual void didLoadNonEmptyDocument() OVERRIDE { m_didLoadNonEmptyDocument = true; }

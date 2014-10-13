@@ -58,7 +58,6 @@ public:
         : m_metadata(propertyID, isSetFromShorthand, indexInShorthandsVector, important, implicit, isInheritedProperty(propertyID))
         , m_value(value)
     {
-    ASSERT((propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
     }
 
     // FIXME: Remove this.
@@ -66,7 +65,6 @@ public:
         : m_metadata(metadata)
         , m_value(value)
     {
-    ASSERT((metadata.m_propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
     }
 
     CSSPropertyID id() const { return static_cast<CSSPropertyID>(m_metadata.m_propertyID); }
@@ -190,7 +188,7 @@ inline CSSPropertyID prefixingVariantForPropertyId(CSSPropertyID propId)
 } // namespace WebCore
 
 namespace WTF {
-template <> struct VectorTraits<WebCore::CSSProperty> : VectorTraitsBase<false, WebCore::CSSProperty> {
+template <> struct VectorTraits<WebCore::CSSProperty> : VectorTraitsBase<WebCore::CSSProperty> {
     static const bool canInitializeWithMemset = true;
     static const bool canMoveWithMemcpy = true;
 };

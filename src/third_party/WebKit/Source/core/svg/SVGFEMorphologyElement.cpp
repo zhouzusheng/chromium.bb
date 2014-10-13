@@ -30,24 +30,23 @@
 namespace WebCore {
 
 // Animated property definitions
-DEFINE_ANIMATED_STRING(SVGFEMorphologyElement, SVGNames::inAttr, In1, in1)
 DEFINE_ANIMATED_ENUMERATION(SVGFEMorphologyElement, SVGNames::operatorAttr, SVGOperator, svgOperator, MorphologyOperatorType)
-DEFINE_ANIMATED_NUMBER_MULTIPLE_WRAPPERS(SVGFEMorphologyElement, SVGNames::radiusAttr, radiusXIdentifier(), RadiusX, radiusX)
-DEFINE_ANIMATED_NUMBER_MULTIPLE_WRAPPERS(SVGFEMorphologyElement, SVGNames::radiusAttr, radiusYIdentifier(), RadiusY, radiusY)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEMorphologyElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(in1)
     REGISTER_LOCAL_ANIMATED_PROPERTY(svgOperator)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(radiusX)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(radiusY)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGFEMorphologyElement::SVGFEMorphologyElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feMorphologyTag, document)
+    , m_radius(SVGAnimatedNumberOptionalNumber::create(this, SVGNames::radiusAttr))
+    , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
     , m_svgOperator(FEMORPHOLOGY_OPERATOR_ERODE)
 {
     ScriptWrappable::init(this);
+
+    addToPropertyMap(m_radius);
+    addToPropertyMap(m_in1);
     registerAnimatedPropertiesForSVGFEMorphologyElement();
 }
 
@@ -56,22 +55,10 @@ PassRefPtr<SVGFEMorphologyElement> SVGFEMorphologyElement::create(Document& docu
     return adoptRef(new SVGFEMorphologyElement(document));
 }
 
-const AtomicString& SVGFEMorphologyElement::radiusXIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGRadiusX", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
-
-const AtomicString& SVGFEMorphologyElement::radiusYIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGRadiusY", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
-
 void SVGFEMorphologyElement::setRadius(float x, float y)
 {
-    setRadiusXBaseValue(x);
-    setRadiusYBaseValue(y);
+    radiusX()->baseValue()->setValue(x);
+    radiusY()->baseValue()->setValue(y);
     invalidate();
 }
 
@@ -100,21 +87,16 @@ void SVGFEMorphologyElement::parseAttribute(const QualifiedName& name, const Ato
         return;
     }
 
-    if (name == SVGNames::inAttr) {
-        setIn1BaseValue(value);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    if (name == SVGNames::radiusAttr) {
-        float x, y;
-        if (parseNumberOptionalNumber(value, x, y)) {
-            setRadiusXBaseValue(x);
-            setRadiusYBaseValue(y);
-        }
-        return;
-    }
+    if (name == SVGNames::inAttr)
+        m_in1->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::radiusAttr)
+        m_radius->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
 
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 bool SVGFEMorphologyElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
@@ -124,8 +106,8 @@ bool SVGFEMorphologyElement::setFilterEffectAttribute(FilterEffect* effect, cons
         return morphology->setMorphologyOperator(svgOperatorCurrentValue());
     if (attrName == SVGNames::radiusAttr) {
         // Both setRadius functions should be evaluated separately.
-        bool isRadiusXChanged = morphology->setRadiusX(radiusXCurrentValue());
-        bool isRadiusYChanged = morphology->setRadiusY(radiusYCurrentValue());
+        bool isRadiusXChanged = morphology->setRadiusX(radiusX()->currentValue()->value());
+        bool isRadiusYChanged = morphology->setRadiusY(radiusY()->currentValue()->value());
         return isRadiusXChanged || isRadiusYChanged;
     }
 
@@ -157,9 +139,9 @@ void SVGFEMorphologyElement::svgAttributeChanged(const QualifiedName& attrName)
 
 PassRefPtr<FilterEffect> SVGFEMorphologyElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
-    FilterEffect* input1 = filterBuilder->getEffectById(in1CurrentValue());
-    float xRadius = radiusXCurrentValue();
-    float yRadius = radiusYCurrentValue();
+    FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
+    float xRadius = radiusX()->currentValue()->value();
+    float yRadius = radiusY()->currentValue()->value();
 
     if (!input1)
         return 0;

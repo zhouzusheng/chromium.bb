@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-class TypingCommand : public TextInsertionBaseCommand {
+class TypingCommand FINAL : public TextInsertionBaseCommand {
 public:
     enum ETypingCommand {
         DeleteSelection,
@@ -90,24 +90,18 @@ private:
 
     TypingCommand(Document&, ETypingCommand, const String& text, Options, TextGranularity, TextCompositionType);
 
-    bool smartDelete() const { return m_smartDelete; }
     void setSmartDelete(bool smartDelete) { m_smartDelete = smartDelete; }
     bool isOpenForMoreTyping() const { return m_openForMoreTyping; }
     void closeTyping() { m_openForMoreTyping = false; }
 
     static PassRefPtr<TypingCommand> lastTypingCommandIfStillOpenForTyping(Frame*);
 
-    virtual void doApply();
-    virtual EditAction editingAction() const;
-    virtual bool isTypingCommand() const;
-    virtual bool preservesTypingStyle() const { return m_preservesTypingStyle; }
-    virtual bool shouldRetainAutocorrectionIndicator() const
-    {
-        ASSERT(isTopLevelCommand());
-        return m_shouldRetainAutocorrectionIndicator;
-    }
-    virtual void setShouldRetainAutocorrectionIndicator(bool retain) { m_shouldRetainAutocorrectionIndicator = retain; }
-    virtual bool shouldStopCaretBlinking() const { return true; }
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE;
+    virtual bool isTypingCommand() const OVERRIDE;
+    virtual bool preservesTypingStyle() const OVERRIDE { return m_preservesTypingStyle; }
+    virtual void setShouldRetainAutocorrectionIndicator(bool retain) OVERRIDE { m_shouldRetainAutocorrectionIndicator = retain; }
+    virtual bool shouldStopCaretBlinking() const OVERRIDE { return true; }
     void setShouldPreventSpellChecking(bool prevent) { m_shouldPreventSpellChecking = prevent; }
 
     static void updateSelectionIfDifferentFromCurrentSelection(TypingCommand*, Frame*);

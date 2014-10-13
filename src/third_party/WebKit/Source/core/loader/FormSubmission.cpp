@@ -45,6 +45,7 @@
 #include "platform/network/FormData.h"
 #include "platform/network/FormDataBuilder.h"
 #include "wtf/CurrentTime.h"
+#include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
@@ -73,11 +74,12 @@ static void appendMailtoPostFormDataToURL(KURL& url, const FormData& data, const
     FormDataBuilder::encodeStringAsFormData(bodyData, body.utf8());
     body = String(bodyData.data(), bodyData.size()).replaceWithLiteral('+', "%20");
 
-    String query = url.query();
+    StringBuilder query;
+    query.append(url.query());
     if (!query.isEmpty())
         query.append('&');
     query.append(body);
-    url.setQuery(query);
+    url.setQuery(query.toString());
 }
 
 void FormSubmission::Attributes::parseAction(const String& action)
@@ -86,13 +88,13 @@ void FormSubmission::Attributes::parseAction(const String& action)
     m_action = stripLeadingAndTrailingHTMLSpaces(action);
 }
 
-String FormSubmission::Attributes::parseEncodingType(const String& type)
+AtomicString FormSubmission::Attributes::parseEncodingType(const String& type)
 {
     if (equalIgnoringCase(type, "multipart/form-data"))
-        return "multipart/form-data";
+        return AtomicString("multipart/form-data", AtomicString::ConstructFromLiteral);
     if (equalIgnoringCase(type, "text/plain"))
-        return "text/plain";
-    return "application/x-www-form-urlencoded";
+        return AtomicString("text/plain", AtomicString::ConstructFromLiteral);
+    return AtomicString("application/x-www-form-urlencoded", AtomicString::ConstructFromLiteral);
 }
 
 void FormSubmission::Attributes::updateEncodingType(const String& type)
@@ -140,7 +142,7 @@ void FormSubmission::Attributes::copyFrom(const Attributes& other)
     m_acceptCharset = other.m_acceptCharset;
 }
 
-inline FormSubmission::FormSubmission(Method method, const KURL& action, const String& target, const String& contentType, PassRefPtr<FormState> state, PassRefPtr<FormData> data, const String& boundary, PassRefPtr<Event> event)
+inline FormSubmission::FormSubmission(Method method, const KURL& action, const AtomicString& target, const AtomicString& contentType, PassRefPtr<FormState> state, PassRefPtr<FormData> data, const String& boundary, PassRefPtr<Event> event)
     : m_method(method)
     , m_action(action)
     , m_target(target)
@@ -175,7 +177,7 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
     FormSubmission::Attributes copiedAttributes;
     copiedAttributes.copyFrom(attributes);
     if (submitButton) {
-        String attributeValue;
+        AtomicString attributeValue;
         if (!(attributeValue = submitButton->fastGetAttribute(formactionAttr)).isNull())
             copiedAttributes.parseAction(attributeValue);
         if (!(attributeValue = submitButton->fastGetAttribute(formenctypeAttr)).isNull())
@@ -193,12 +195,12 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
     KURL actionURL = document.completeURL(copiedAttributes.action().isEmpty() ? document.url().string() : copiedAttributes.action());
     bool isMailtoForm = actionURL.protocolIs("mailto");
     bool isMultiPartForm = false;
-    String encodingType = copiedAttributes.encodingType();
+    AtomicString encodingType = copiedAttributes.encodingType();
 
     if (copiedAttributes.method() == PostMethod) {
         isMultiPartForm = copiedAttributes.isMultiPartForm();
         if (isMultiPartForm && isMailtoForm) {
-            encodingType = "application/x-www-form-urlencoded";
+            encodingType = AtomicString("application/x-www-form-urlencoded", AtomicString::ConstructFromLiteral);
             isMultiPartForm = false;
         }
     }
@@ -238,7 +240,7 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
 
     formData->setIdentifier(generateFormDataIdentifier());
     formData->setContainsPasswordData(containsPasswordData);
-    String targetOrBaseTarget = copiedAttributes.target().isEmpty() ? document.baseTarget() : copiedAttributes.target();
+    AtomicString targetOrBaseTarget = copiedAttributes.target().isEmpty() ? document.baseTarget() : copiedAttributes.target();
     RefPtr<FormState> formState = FormState::create(form, formValues, &document, trigger);
     return adoptRef(new FormSubmission(copiedAttributes.method(), actionURL, targetOrBaseTarget, encodingType, formState.release(), formData.release(), boundary, event));
 }
@@ -258,7 +260,7 @@ void FormSubmission::populateFrameLoadRequest(FrameLoadRequest& frameRequest)
     if (!m_target.isEmpty())
         frameRequest.setFrameName(m_target);
 
-    if (!m_referrer.isEmpty())
+    if (!m_referrer.referrer.isEmpty())
         frameRequest.resourceRequest().setHTTPReferrer(m_referrer);
 
     if (m_method == FormSubmission::PostMethod) {
@@ -273,7 +275,7 @@ void FormSubmission::populateFrameLoadRequest(FrameLoadRequest& frameRequest)
     }
 
     frameRequest.resourceRequest().setURL(requestURL());
-    FrameLoader::addHTTPOriginIfNeeded(frameRequest.resourceRequest(), m_origin);
+    FrameLoader::addHTTPOriginIfNeeded(frameRequest.resourceRequest(), AtomicString(m_origin));
 }
 
 }

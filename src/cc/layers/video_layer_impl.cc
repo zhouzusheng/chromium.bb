@@ -297,12 +297,12 @@ void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   provider_client_impl_->ReleaseLock();
 }
 
-void VideoLayerImpl::DidLoseOutputSurface() {
+void VideoLayerImpl::ReleaseResources() {
   updater_.reset();
 }
 
 void VideoLayerImpl::SetNeedsRedraw() {
-  set_update_rect(gfx::UnionRects(update_rect(), gfx::RectF(bounds())));
+  SetUpdateRect(gfx::UnionRects(update_rect(), gfx::RectF(bounds())));
   layer_tree_impl()->SetNeedsRedraw();
 }
 

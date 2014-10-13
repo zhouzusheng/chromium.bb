@@ -4,7 +4,7 @@
 
 'use strict';
 
-base.exportTo('about_tracing', function() {
+tvcm.exportTo('about_tracing', function() {
   function MockRequestHandler() {
     this.requests = [];
     this.nextRequestIndex = 0;
@@ -28,7 +28,7 @@ base.exportTo('about_tracing', function() {
         generateResponseCb: generateResponseCb});
     },
 
-    beginRequest: function(method, path, data) {
+    tracingRequest: function(method, path, data) {
       return new Promise(function(resolver) {
         var requestIndex = this.nextRequestIndex;
         if (requestIndex >= this.requests.length)

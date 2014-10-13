@@ -53,10 +53,10 @@ void RenderLayerModelObject::destroyLayer()
     m_layer = nullptr;
 }
 
-void RenderLayerModelObject::createLayer()
+void RenderLayerModelObject::createLayer(LayerType type)
 {
     ASSERT(!m_layer);
-    m_layer = adoptPtr(new RenderLayer(this));
+    m_layer = adoptPtr(new RenderLayer(this, type));
     setHasLayer(true);
     m_layer->insertOnlyThisLayer();
 }
@@ -141,11 +141,12 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
     RenderObject::styleDidChange(diff, oldStyle);
     updateFromStyle();
 
-    if (requiresLayer()) {
+    LayerType type = layerTypeRequired();
+    if (type != NoLayer) {
         if (!layer() && layerCreationAllowedForSubtree()) {
             if (s_wasFloating && isFloating())
                 setChildNeedsLayout();
-            createLayer();
+            createLayer(type);
             if (parent() && !needsLayout() && containingBlock()) {
                 layer()->repainter().setRepaintStatus(NeedsFullRepaint);
                 // There is only one layer to update, it is not worth using |cachedOffset| since
@@ -164,6 +165,10 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
     }
 
     if (layer()) {
+        // FIXME: Ideally we shouldn't need this setter but we can't easily infer an overflow-only layer
+        // from the style.
+        layer()->setLayerType(type);
+
         layer()->styleChanged(diff, oldStyle);
         if (hadLayer && layer()->isSelfPaintingLayer() != layerWasSelfPainting)
             setChildNeedsLayout();

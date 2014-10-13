@@ -51,11 +51,9 @@ public:
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(focus);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(load);
+    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(resize);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(scroll);
-
-#if ENABLE(ORIENTATION_EVENTS)
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-#endif
 
 private:
     explicit HTMLFrameSetElement(Document&);
@@ -65,10 +63,10 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;

@@ -93,10 +93,6 @@ bool ChannelProxy::Context::OnMessageReceived(const Message& message) {
 
 // Called on the IPC::Channel thread
 bool ChannelProxy::Context::OnMessageReceivedNoFilter(const Message& message) {
-  // NOTE: This code relies on the listener's message loop not going away while
-  // this thread is active.  That should be a reasonable assumption, but it
-  // feels risky.  We may want to invent some more indirect way of referring to
-  // a MessageLoop if this becomes a problem.
   listener_task_runner_->PostTask(
       FROM_HERE, base::Bind(&Context::OnDispatchMessage, this, message));
   return true;
@@ -234,10 +230,10 @@ void ChannelProxy::Context::OnDispatchMessage(const Message& message) {
   Logging* logger = Logging::GetInstance();
   std::string name;
   logger->GetMessageText(message.type(), &name, &message, NULL);
-  TRACE_EVENT1("task", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT1("toplevel", "ChannelProxy::Context::OnDispatchMessage",
                "name", name);
 #else
-  TRACE_EVENT2("task", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT2("toplevel", "ChannelProxy::Context::OnDispatchMessage",
                "class", IPC_MESSAGE_ID_CLASS(message.type()),
                "line", IPC_MESSAGE_ID_LINE(message.type()));
 #endif

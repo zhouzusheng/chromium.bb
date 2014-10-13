@@ -13,7 +13,8 @@
 #ifdef _MSC_VER
 #include <intrin.h>  // For __cpuidex()
 #endif
-#if !defined(__CLR_VER) && !defined(__native_client__) && defined(_M_X64) && \
+#if !defined(__pnacl__) && !defined(__CLR_VER) && \
+    !defined(__native_client__) && defined(_M_X64) && \
     defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
 #include <immintrin.h>  // For _xgetbv()
 #endif
@@ -33,7 +34,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
-// For functions that use rowbuffer and have runtime checks for overflow,
+// For functions that use the stack and have runtime checks for overflow,
 // use SAFEBUFFERS to avoid additional check.
 #if defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
 #define SAFEBUFFERS __declspec(safebuffers)
@@ -42,13 +43,14 @@ extern "C" {
 #endif
 
 // Low level cpuid for X86. Returns zeros on other CPUs.
-#if !defined(__CLR_VER) && (defined(_M_IX86) || defined(_M_X64) || \
+#if !defined(__pnacl__) && !defined(__CLR_VER) && \
+    (defined(_M_IX86) || defined(_M_X64) || \
     defined(__i386__) || defined(__x86_64__))
 LIBYUV_API
 void CpuId(uint32 info_eax, uint32 info_ecx, uint32* cpu_info) {
 #if defined(_MSC_VER)
 #if (_MSC_FULL_VER >= 160040219)
-  __cpuidex(reinterpret_cast<int*>(cpu_info), info_eax, info_ecx);
+  __cpuidex((int*)(cpu_info), info_eax, info_ecx);
 #elif defined(_M_IX86)
   __asm {
     mov        eax, info_eax
@@ -62,7 +64,7 @@ void CpuId(uint32 info_eax, uint32 info_ecx, uint32* cpu_info) {
   }
 #else
   if (info_ecx == 0) {
-    __cpuid(reinterpret_cast<int*>(cpu_info), info_eax);
+    __cpuid((int*)(cpu_info), info_eax);
   } else {
     cpu_info[3] = cpu_info[2] = cpu_info[1] = cpu_info[0] = 0;
   }
@@ -94,7 +96,7 @@ void CpuId(uint32 info_eax, uint32 info_ecx, uint32* cpu_info) {
 int TestOsSaveYmm() {
   uint32 xcr0 = 0u;
 #if defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
-  xcr0 = static_cast<uint32>(_xgetbv(0));  // VS2010 SP1 required.
+  xcr0 = (uint32)(_xgetbv(0));  // VS2010 SP1 required.
 #elif defined(_M_IX86)
   __asm {
     xor        ecx, ecx    // xcr 0
@@ -162,24 +164,25 @@ int cpu_info_ = kCpuInit;  // cpu_info is not initialized yet.
 // to disable. Zero ignored to make it easy to set the variable on/off.
 #if !defined(__native_client__) && !defined(_M_ARM)
 
-static bool TestEnv(const char* name) {
+static LIBYUV_BOOL TestEnv(const char* name) {
   const char* var = getenv(name);
   if (var) {
     if (var[0] != '0') {
-      return true;
+      return LIBYUV_TRUE;
     }
   }
-  return false;
+  return LIBYUV_FALSE;
 }
 #else  // nacl does not support getenv().
-static bool TestEnv(const char*) {
-  return false;
+static LIBYUV_BOOL TestEnv(const char*) {
+  return LIBYUV_FALSE;
 }
 #endif
 
 LIBYUV_API SAFEBUFFERS
 int InitCpuFlags(void) {
-#if !defined(__CLR_VER) && defined(CPU_X86)
+#if !defined(__pnacl__) && !defined(__CLR_VER) && defined(CPU_X86)
+
   uint32 cpu_info1[4] = { 0, 0, 0, 0 };
   uint32 cpu_info7[4] = { 0, 0, 0, 0 };
   CpuId(1, 0, cpu_info1);

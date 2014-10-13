@@ -35,6 +35,32 @@
 
 namespace WebCore {
 
+static DocumentLifecycle::DeprecatedTransition* s_deprecatedTransitionStack = 0;
+
+DocumentLifecycle::Scope::Scope(DocumentLifecycle& lifecycle, State finalState)
+    : m_lifecycle(lifecycle)
+    , m_finalState(finalState)
+{
+}
+
+DocumentLifecycle::Scope::~Scope()
+{
+    m_lifecycle.advanceTo(m_finalState);
+}
+
+DocumentLifecycle::DeprecatedTransition::DeprecatedTransition(State from, State to)
+    : m_previous(s_deprecatedTransitionStack)
+    , m_from(from)
+    , m_to(to)
+{
+    s_deprecatedTransitionStack = this;
+}
+
+DocumentLifecycle::DeprecatedTransition::~DeprecatedTransition()
+{
+    s_deprecatedTransitionStack = m_previous;
+}
+
 DocumentLifecycle::DocumentLifecycle()
     : m_state(Uninitialized)
 {
@@ -44,11 +70,92 @@ DocumentLifecycle::~DocumentLifecycle()
 {
 }
 
+#if !ASSERT_DISABLED
+
+bool DocumentLifecycle::canAdvanceTo(State state) const
+{
+    // This transition is bogus, but we've whitelisted it anyway.
+    if (s_deprecatedTransitionStack && m_state == s_deprecatedTransitionStack->from() && state == s_deprecatedTransitionStack->to())
+        return true;
+    if (state > m_state)
+        return true;
+    if (m_state == Disposed) {
+        // FIXME: We can dispose a document multiple times. This seems wrong.
+        // See https://code.google.com/p/chromium/issues/detail?id=301668.
+        return state == Disposed;
+    }
+    if (m_state == StyleClean) {
+        if (state == StyleRecalcPending)
+            return true;
+        // We can synchronously recalc style.
+        if (state == InStyleRecalc)
+            return true;
+        // We can synchronously perform layout.
+        if (state == InPreLayout)
+            return true;
+        if (state == InPerformLayout)
+            return true;
+        // We can redundant arrive in the style clean state.
+        if (state == StyleClean)
+            return true;
+        return false;
+    }
+    if (m_state == InPreLayout) {
+        if (state == InStyleRecalc)
+            return true;
+        if (state == StyleClean)
+            return true;
+        if (state == InPreLayout)
+            return true;
+        return false;
+    }
+    if (m_state == AfterPerformLayout) {
+        if (state == InPreLayout)
+            return true;
+        // If we're doing a partial layout, we won't actually end up cleaning
+        // out all the layout dirty bits. Instead, we'll return to StyleClean.
+        if (state == StyleClean)
+            return true;
+        return false;
+    }
+    if (m_state == LayoutClean) {
+        if (state == StyleRecalcPending)
+            return true;
+        // We can synchronously recalc style.
+        if (state == InStyleRecalc)
+            return true;
+        // We can synchronously perform layout.
+        if (state == InPreLayout)
+            return true;
+        if (state == InPerformLayout)
+            return true;
+        // We can redundant arrive in the layout clean state. This situation
+        // can happen when we call layout recursively and we unwind the stack.
+        if (state == LayoutClean)
+            return true;
+        if (state == StyleClean)
+            return true;
+        return false;
+    }
+    if (m_state == CompositingClean) {
+        if (state == StyleRecalcPending)
+            return true;
+        if (state == InStyleRecalc)
+            return true;
+        if (state == InPreLayout)
+            return true;
+        if (state == InCompositingUpdate)
+            return true;
+        return false;
+    }
+    return false;
+}
+
+#endif
+
 void DocumentLifecycle::advanceTo(State state)
 {
-    // FIXME: We can dispose a document multiple times. This seems wrong.
-    // See https://code.google.com/p/chromium/issues/detail?id=301668.
-    ASSERT(state > m_state || (state == Disposed && m_state == Disposed));
+    ASSERT(canAdvanceTo(state));
     m_state = state;
 }
 

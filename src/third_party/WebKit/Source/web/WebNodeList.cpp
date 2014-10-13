@@ -31,11 +31,10 @@
 #include "config.h"
 #include "WebNodeList.h"
 
+#include "WebNode.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "wtf/PassRefPtr.h"
-
-#include "WebNode.h"
 
 using namespace WebCore;
 

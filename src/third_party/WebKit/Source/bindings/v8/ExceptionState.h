@@ -83,7 +83,6 @@ public:
 
     // Please don't use these methods. Use ::throwDOMException and ::throwTypeError, and pass in a useful exception message.
     virtual void throwUninformativeAndGenericDOMException(const ExceptionCode& ec) { throwDOMException(ec, String()); }
-    virtual void throwUninformativeAndGenericTypeError() { throwTypeError(String()); }
 
     bool hadException() const { return !m_exception.isEmpty() || m_code; }
     void clearException();
@@ -106,6 +105,11 @@ public:
     const char* propertyName() const { return m_propertyName; }
     const char* interfaceName() const { return m_interfaceName; }
 
+    void rethrowV8Exception(v8::Handle<v8::Value> value)
+    {
+        setException(value);
+    }
+
 protected:
     ExceptionCode m_code;
     Context m_context;
@@ -122,12 +126,22 @@ private:
     v8::Isolate* m_isolate;
 };
 
-class TrackExceptionState : public ExceptionState {
+// Used if exceptions can/should not be directly thrown.
+class NonThrowableExceptionState FINAL : public ExceptionState {
 public:
-    TrackExceptionState(): ExceptionState(v8::Handle<v8::Object>(), 0) { }
-    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE FINAL;
-    virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL;
-    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL;
+    NonThrowableExceptionState(): ExceptionState(v8::Handle<v8::Object>(), v8::Isolate::GetCurrent()) { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE;
+    virtual void throwTypeError(const String& message = String()) OVERRIDE;
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE;
+};
+
+// Used if any exceptions thrown are ignorable.
+class TrackExceptionState FINAL : public ExceptionState {
+public:
+    TrackExceptionState(): ExceptionState(v8::Handle<v8::Object>(), v8::Isolate::GetCurrent()) { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE;
+    virtual void throwTypeError(const String& message = String()) OVERRIDE;
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE;
 };
 
 } // namespace WebCore

@@ -50,6 +50,7 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThread.h"
+#include "heap/ThreadState.h"
 #include <v8.h>
 
 #include "public/platform/Platform.h"
@@ -67,14 +68,44 @@ WorkerScriptController::WorkerScriptController(WorkerGlobalScope& workerGlobalSc
     V8Initializer::initializeWorker(isolate);
     v8::V8::Initialize();
     m_isolateHolder = adoptPtr(new gin::IsolateHolder(isolate));
-    V8PerIsolateData* data = V8PerIsolateData::create(isolate);
-    m_domDataStore = adoptPtr(new DOMDataStore(WorkerWorld));
-    data->setWorkerDOMDataStore(m_domDataStore.get());
+    V8PerIsolateData::ensureInitialized(isolate);
+    m_world = DOMWrapperWorld::create(WorkerWorldId, -1);
+    m_interruptor = adoptPtr(new V8IsolateInterruptor(isolate));
+    ThreadState::current()->addInterruptor(m_interruptor.get());
 }
+
+// We need to postpone V8 Isolate destruction until the very end of
+// worker thread finalization when all objects on the worker heap
+// are destroyed.
+class IsolateCleanupTask : public ThreadState::CleanupTask {
+public:
+    static PassOwnPtr<IsolateCleanupTask> create(PassOwnPtr<gin::IsolateHolder> isolateHolder)
+    {
+        return adoptPtr(new IsolateCleanupTask(isolateHolder));
+    }
+
+    virtual void postCleanup()
+    {
+        v8::Isolate* isolate = m_isolateHolder->isolate();
+        V8PerIsolateData::dispose(isolate);
+        isolate->Exit();
+        m_isolateHolder.clear();
+        isolate->Dispose();
+    }
+
+private:
+    explicit IsolateCleanupTask(PassOwnPtr<gin::IsolateHolder> isolateHolder) : m_isolateHolder(isolateHolder)  { }
+
+    OwnPtr<gin::IsolateHolder> m_isolateHolder;
+};
 
 WorkerScriptController::~WorkerScriptController()
 {
-    m_domDataStore.clear();
+    ThreadState::current()->removeInterruptor(m_interruptor.get());
+
+    RELEASE_ASSERT(m_world->hasOneRef());
+    // ~DOMWrapperWorld() must be called before disposing the isolate.
+    m_world = 0;
 
     // The corresponding call to didStartWorkerRunLoop is in
     // WorkerThread::workerThread().
@@ -82,11 +113,8 @@ WorkerScriptController::~WorkerScriptController()
     blink::Platform::current()->didStopWorkerRunLoop(blink::WebWorkerRunLoop(&m_workerGlobalScope.thread()->runLoop()));
 
     disposeContext();
-    V8PerIsolateData::dispose(isolate());
-    v8::Isolate* v8Isolate = isolate();
-    v8Isolate->Exit();
-    m_isolateHolder.clear();
-    v8Isolate->Dispose();
+
+    ThreadState::current()->addCleanupTask(IsolateCleanupTask::create(m_isolateHolder.release()));
 }
 
 void WorkerScriptController::disposeContext()
@@ -109,7 +137,7 @@ bool WorkerScriptController::initializeContextIfNeeded()
 
     v8::Context::Scope scope(context);
 
-    V8PerContextDataHolder::install(context);
+    V8PerContextDataHolder::install(context, m_world.get());
 
     m_perContextData = V8PerContextData::create(context);
     if (!m_perContextData->init()) {
@@ -250,9 +278,8 @@ void WorkerScriptController::rethrowExceptionFromImportedScript(PassRefPtr<Error
     throwError(V8ThrowException::createError(v8GeneralError, m_errorEventFromImportedScript->message(), isolate()), isolate());
 }
 
-WorkerScriptController* WorkerScriptController::controllerForContext()
+WorkerScriptController* WorkerScriptController::controllerForContext(v8::Isolate* isolate)
 {
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     // Happens on frame destruction, check otherwise GetCurrent() will crash.
     if (!isolate || !isolate->InContext())
         return 0;

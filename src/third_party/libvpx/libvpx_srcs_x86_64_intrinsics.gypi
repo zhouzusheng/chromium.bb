@@ -9,7 +9,7 @@
       'target_name': 'libvpx_intrinsics_mmx',
       'type': 'static_library',
       'include_dirs': [
-        'source/config/<(OS_CATEGORY)/<(target_arch)',
+        'source/config/<(OS_CATEGORY)/<(target_arch_full)',
         '<(libvpx_source)',
       ],
       'sources': [
@@ -19,6 +19,7 @@
       ],
       'conditions': [
         ['os_posix==1 and OS!="mac"', {
+          'cflags!': [ '-mfpu=vfpv3-d16' ],
           'cflags': [ '-mmmx', ],
         }],
         ['OS=="mac"', {
@@ -32,7 +33,7 @@
       'target_name': 'libvpx_intrinsics_sse2',
       'type': 'static_library',
       'include_dirs': [
-        'source/config/<(OS_CATEGORY)/<(target_arch)',
+        'source/config/<(OS_CATEGORY)/<(target_arch_full)',
         '<(libvpx_source)',
       ],
       'sources': [
@@ -47,6 +48,7 @@
       ],
       'conditions': [
         ['os_posix==1 and OS!="mac"', {
+          'cflags!': [ '-mfpu=vfpv3-d16' ],
           'cflags': [ '-msse2', ],
         }],
         ['OS=="mac"', {
@@ -60,7 +62,7 @@
       'target_name': 'libvpx_intrinsics_ssse3',
       'type': 'static_library',
       'include_dirs': [
-        'source/config/<(OS_CATEGORY)/<(target_arch)',
+        'source/config/<(OS_CATEGORY)/<(target_arch_full)',
         '<(libvpx_source)',
       ],
       'sources': [
@@ -68,6 +70,7 @@
       ],
       'conditions': [
         ['os_posix==1 and OS!="mac"', {
+          'cflags!': [ '-mfpu=vfpv3-d16' ],
           'cflags': [ '-mssse3', ],
         }],
         ['OS=="mac"', {

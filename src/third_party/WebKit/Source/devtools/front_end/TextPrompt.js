@@ -29,7 +29,7 @@
 
 /**
  * @constructor
- * @extends WebInspector.Object
+ * @extends {WebInspector.Object}
  * @implements {WebInspector.SuggestBoxDelegate}
  * @param {function(!Element, !Range, boolean, function(!Array.<string>, number=))} completions
  * @param {string=} stopCharacters
@@ -74,6 +74,7 @@ WebInspector.TextPrompt.prototype = {
      * they should use the result of this method to attach listeners for bubbling events.
      *
      * @param {!Element} element
+     * @return {!Element}
      */
     attach: function(element)
     {
@@ -88,6 +89,7 @@ WebInspector.TextPrompt.prototype = {
      *
      * @param {!Element} element
      * @param {function(!Event)} blurListener
+     * @return {!Element}
      */
     attachAndStartEditing: function(element, blurListener)
     {
@@ -98,6 +100,7 @@ WebInspector.TextPrompt.prototype = {
 
     /**
      * @param {!Element} element
+     * @return {!Element}
      */
     _attachInternal: function(element)
     {
@@ -108,6 +111,7 @@ WebInspector.TextPrompt.prototype = {
         this._boundOnKeyDown = this.onKeyDown.bind(this);
         this._boundOnMouseWheel = this.onMouseWheel.bind(this);
         this._boundSelectStart = this._selectStart.bind(this);
+        this._boundHideSuggestBox = this.hideSuggestBox.bind(this);
         this._proxyElement = element.ownerDocument.createElement("span");
         this._proxyElement.style.display = this._proxyElementDisplay;
         element.parentElement.insertBefore(this.proxyElement, element);
@@ -116,6 +120,7 @@ WebInspector.TextPrompt.prototype = {
         this._element.addEventListener("keydown", this._boundOnKeyDown, false);
         this._element.addEventListener("mousewheel", this._boundOnMouseWheel, false);
         this._element.addEventListener("selectstart", this._boundSelectStart, false);
+        this._element.addEventListener("blur", this._boundHideSuggestBox, false);
 
         if (typeof this._suggestBoxClassName === "string")
             this._suggestBox = new WebInspector.SuggestBox(this, this._element, this._suggestBoxClassName);
@@ -166,6 +171,7 @@ WebInspector.TextPrompt.prototype = {
         this.clearAutoComplete(true);
         this._element.removeEventListener("keydown", this._boundOnKeyDown, false);
         this._element.removeEventListener("selectstart", this._boundSelectStart, false);
+        this._element.removeEventListener("blur", this._boundHideSuggestBox, false);
         if (this._isEditing)
             this._stopEditing();
         if (this._suggestBox)
@@ -257,6 +263,7 @@ WebInspector.TextPrompt.prototype = {
 
     /**
      * @param {?Event} event
+     * @return {boolean}
      */
     onKeyDown: function(event)
     {
@@ -508,6 +515,7 @@ WebInspector.TextPrompt.prototype = {
             finalSelectionRange.setEnd(prefixTextNode, wordPrefixLength);
             selection.removeAllRanges();
             selection.addRange(finalSelectionRange);
+            this.dispatchEventToListeners(WebInspector.TextPrompt.Events.ItemApplied);
         }
     },
 
@@ -863,6 +871,7 @@ WebInspector.TextPromptWithHistory.prototype = {
 
     /**
      * @override
+     * @return {boolean}
      */
     defaultKeyHandler: function(event, force)
     {

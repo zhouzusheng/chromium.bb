@@ -154,7 +154,7 @@ void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
 
   // Run the abort tasks, if any.
   while (!abort_task_stack_.empty())
-    abort_task_stack_.pop().Run(0);
+    abort_task_stack_.pop().Run(NULL);
 
   preemptive_task_queue_.clear();
   task_queue_.clear();
@@ -173,12 +173,11 @@ void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
 #ifndef NDEBUG
   DCHECK(!database_->transaction_coordinator().IsActive(this));
 #endif
-  database_->TransactionFinished(this);
 
   if (callbacks_.get())
     callbacks_->OnAbort(id_, error);
 
-  database_->TransactionFinishedAndAbortFired(this);
+  database_->TransactionFinished(this, false);
 
   database_ = NULL;
 }
@@ -203,7 +202,6 @@ void IndexedDBTransaction::Start() {
   // TransactionCoordinator has started this transaction.
   DCHECK_EQ(CREATED, state_);
   state_ = STARTED;
-  database_->TransactionStarted(this);
   diagnostics_.start_time = base::Time::Now();
 
   if (!used_)
@@ -252,21 +250,20 @@ void IndexedDBTransaction::Commit() {
   // front-end is notified, as the transaction completion unblocks
   // operations like closing connections.
   database_->transaction_coordinator().DidFinishTransaction(this);
-  database_->TransactionFinished(this);
 
   if (committed) {
     abort_task_stack_.clear();
     callbacks_->OnComplete(id_);
-    database_->TransactionFinishedAndCompleteFired(this);
+    database_->TransactionFinished(this, true);
   } else {
     while (!abort_task_stack_.empty())
-      abort_task_stack_.pop().Run(0);
+      abort_task_stack_.pop().Run(NULL);
 
     callbacks_->OnAbort(
         id_,
         IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error committing transaction."));
-    database_->TransactionFinishedAndAbortFired(this);
+    database_->TransactionFinished(this, false);
     database_->TransactionCommitFailed();
   }
 
@@ -331,7 +328,7 @@ void IndexedDBTransaction::ProcessTaskQueue() {
 void IndexedDBTransaction::Timeout() {
   Abort(IndexedDBDatabaseError(
       blink::WebIDBDatabaseExceptionTimeoutError,
-      ASCIIToUTF16("Transaction timed out due to inactivity.")));
+      base::ASCIIToUTF16("Transaction timed out due to inactivity.")));
 }
 
 void IndexedDBTransaction::CloseOpenCursors() {

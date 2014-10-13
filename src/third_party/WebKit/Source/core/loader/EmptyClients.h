@@ -37,10 +37,11 @@
 #include "core/page/ContextMenuClient.h"
 #include "core/page/DragClient.h"
 #include "core/page/EditorClient.h"
-#include "core/page/FocusDirection.h"
+#include "core/page/FocusType.h"
 #include "core/page/Page.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/platform/DragImage.h"
+#include "core/page/StorageClient.h"
+#include "platform/DragImage.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/ResourceError.h"
 #include "platform/text/TextCheckerClient.h"
@@ -64,8 +65,6 @@
 
 namespace WebCore {
 
-class GraphicsContext3D;
-
 class EmptyChromeClient : public ChromeClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -79,10 +78,9 @@ public:
     virtual FloatRect pageRect() OVERRIDE { return FloatRect(); }
 
     virtual void focus() OVERRIDE { }
-    virtual void unfocus() OVERRIDE { }
 
-    virtual bool canTakeFocus(FocusDirection) OVERRIDE { return false; }
-    virtual void takeFocus(FocusDirection) OVERRIDE { }
+    virtual bool canTakeFocus(FocusType) OVERRIDE { return false; }
+    virtual void takeFocus(FocusType) OVERRIDE { }
 
     virtual void focusedNodeChanged(Node*) OVERRIDE { }
     virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) OVERRIDE { return 0; }
@@ -119,8 +117,6 @@ public:
 
     virtual bool hasOpenedPopup() const OVERRIDE { return false; }
     virtual PassRefPtr<PopupMenu> createPopupMenu(Frame&, PopupMenuClient*) const OVERRIDE;
-    virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect&) OVERRIDE { return 0; }
-    virtual void closePagePopup(PagePopup*) OVERRIDE { }
     virtual void setPagePopupDriver(PagePopupDriver*) OVERRIDE { }
     virtual void resetPagePopupDriver() OVERRIDE { }
 
@@ -137,7 +133,6 @@ public:
 
     virtual bool isCompositorFramePending() const OVERRIDE { return false; }
 
-    virtual IntPoint screenToRootView(const IntPoint& p) const OVERRIDE { return p; }
     virtual IntRect rootViewToScreen(const IntRect& r) const OVERRIDE { return r; }
     virtual blink::WebScreenInfo screenInfo() const OVERRIDE { return blink::WebScreenInfo(); }
     virtual void contentsSizeChanged(Frame*, const IntSize&) const OVERRIDE { }
@@ -161,7 +156,6 @@ public:
     virtual void setCursor(const Cursor&) OVERRIDE { }
 
     virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) OVERRIDE { }
-    virtual void scheduleCompositingLayerFlush() OVERRIDE { }
 
     virtual void needTouchEvents(bool) OVERRIDE { }
     virtual void setTouchAction(TouchAction touchAction) OVERRIDE { };
@@ -170,28 +164,27 @@ public:
 
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const OVERRIDE { return false; }
 
-    virtual bool isEmptyChromeClient() const OVERRIDE { return true; }
-
     virtual void didAssociateFormControls(const Vector<RefPtr<Element> >&) OVERRIDE { }
-
-    virtual void popupOpened(PopupContainer* popupContainer, const IntRect& bounds,
-                             bool handleExternal) { }
-    virtual void popupClosed(PopupContainer* popupContainer) OVERRIDE { }
 
     virtual void annotatedRegionsChanged() OVERRIDE { }
     virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) OVERRIDE { return false; }
     virtual String acceptLanguages() OVERRIDE;
 };
 
-class EmptyFrameLoaderClient : public FrameLoaderClient {
+class EmptyFrameLoaderClient FINAL : public FrameLoaderClient {
     WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptyFrameLoaderClient() { }
     virtual ~EmptyFrameLoaderClient() {  }
-    virtual void frameLoaderDestroyed() OVERRIDE { }
 
     virtual bool hasWebView() const OVERRIDE { return true; } // mainly for assertions
 
+    virtual Frame* parent() const OVERRIDE { return 0; }
+    virtual Frame* top() const OVERRIDE { return 0; }
+    virtual Frame* previousSibling() const OVERRIDE { return 0; }
+    virtual Frame* nextSibling() const OVERRIDE { return 0; }
+    virtual Frame* firstChild() const OVERRIDE { return 0; }
+    virtual Frame* lastChild() const OVERRIDE { return 0; }
     virtual void detachedFromParent() OVERRIDE { }
 
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&) OVERRIDE { }
@@ -205,7 +198,7 @@ public:
     virtual void dispatchDidStartProvisionalLoad() OVERRIDE { }
     virtual void dispatchDidReceiveTitle(const String&) OVERRIDE { }
     virtual void dispatchDidChangeIcons(IconType) OVERRIDE { }
-    virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, NavigationHistoryPolicy) OVERRIDE { }
+    virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, HistoryCommitType) OVERRIDE { }
     virtual void dispatchDidFailProvisionalLoad(const ResourceError&) OVERRIDE { }
     virtual void dispatchDidFailLoad(const ResourceError&) OVERRIDE { }
     virtual void dispatchDidFinishDocumentLoad() OVERRIDE { }
@@ -217,13 +210,13 @@ public:
     virtual void dispatchWillSendSubmitEvent(PassRefPtr<FormState>) OVERRIDE;
     virtual void dispatchWillSubmitForm(PassRefPtr<FormState>) OVERRIDE;
 
-    virtual void postProgressStartedNotification() OVERRIDE { }
+    virtual void postProgressStartedNotification(LoadStartType) OVERRIDE { }
     virtual void postProgressEstimateChangedNotification() OVERRIDE { }
     virtual void postProgressFinishedNotification() OVERRIDE { }
 
     virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& = String()) OVERRIDE { }
 
-    virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) OVERRIDE;
+    virtual PassRefPtr<DocumentLoader> createDocumentLoader(Frame*, const ResourceRequest&, const SubstituteData&) OVERRIDE;
 
     virtual String userAgent(const KURL&) OVERRIDE { return ""; }
 
@@ -237,7 +230,7 @@ public:
     virtual void didDetectXSS(const KURL&, bool) OVERRIDE { }
     virtual void didDispatchPingLoader(const KURL&) OVERRIDE { }
     virtual void selectorMatchChanged(const Vector<String>&, const Vector<String>&) OVERRIDE { }
-    virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, const String&, HTMLFrameOwnerElement*) OVERRIDE;
+    virtual PassRefPtr<Frame> createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*) OVERRIDE;
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) OVERRIDE;
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) OVERRIDE;
 
@@ -250,13 +243,13 @@ public:
     virtual void willReleaseScriptContext(v8::Handle<v8::Context>, int worldId) OVERRIDE { }
     virtual bool allowScriptExtension(const String& extensionName, int extensionGroup, int worldId) OVERRIDE { return false; }
 
-    virtual blink::WebCookieJar* cookieJar() const { return 0; }
+    virtual blink::WebCookieJar* cookieJar() const OVERRIDE { return 0; }
 
     virtual void didRequestAutocomplete(PassRefPtr<FormState>) OVERRIDE;
     virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>) OVERRIDE;
 };
 
-class EmptyTextCheckerClient : public TextCheckerClient {
+class EmptyTextCheckerClient FINAL : public TextCheckerClient {
 public:
     virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const OVERRIDE { return true; }
     virtual void checkSpellingOfString(const String&, int*, int*) OVERRIDE { }
@@ -265,7 +258,7 @@ public:
     virtual void requestCheckingOfString(PassRefPtr<TextCheckingRequest>) OVERRIDE;
 };
 
-class EmptySpellCheckerClient : public SpellCheckerClient {
+class EmptySpellCheckerClient FINAL : public SpellCheckerClient {
     WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptySpellCheckerClient() { }
@@ -275,7 +268,7 @@ public:
     virtual void toggleContinuousSpellChecking() OVERRIDE { }
     virtual bool isGrammarCheckingEnabled() OVERRIDE { return false; }
 
-    TextCheckerClient& textChecker() { return m_textCheckerClient; }
+    virtual TextCheckerClient& textChecker() OVERRIDE { return m_textCheckerClient; }
 
     virtual void updateSpellingUIWithMisspelledWord(const String&) OVERRIDE { }
     virtual void showSpellingUI(bool) OVERRIDE { }
@@ -285,7 +278,7 @@ private:
     EmptyTextCheckerClient m_textCheckerClient;
 };
 
-class EmptyEditorClient : public EditorClient {
+class EmptyEditorClient FINAL : public EditorClient {
     WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptyEditorClient() { }
@@ -301,7 +294,7 @@ public:
     virtual bool handleKeyboardEvent() OVERRIDE { return false; }
 };
 
-class EmptyContextMenuClient : public ContextMenuClient {
+class EmptyContextMenuClient FINAL : public ContextMenuClient {
     WTF_MAKE_NONCOPYABLE(EmptyContextMenuClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptyContextMenuClient() { }
@@ -310,7 +303,7 @@ public:
     virtual void clearContextMenu() OVERRIDE { }
 };
 
-class EmptyDragClient : public DragClient {
+class EmptyDragClient FINAL : public DragClient {
     WTF_MAKE_NONCOPYABLE(EmptyDragClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptyDragClient() { }
@@ -319,7 +312,7 @@ public:
     virtual void startDrag(DragImage*, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool) OVERRIDE { }
 };
 
-class EmptyInspectorClient : public InspectorClient {
+class EmptyInspectorClient FINAL : public InspectorClient {
     WTF_MAKE_NONCOPYABLE(EmptyInspectorClient); WTF_MAKE_FAST_ALLOCATED;
 public:
     EmptyInspectorClient() { }
@@ -329,11 +322,17 @@ public:
     virtual void hideHighlight() OVERRIDE { }
 };
 
-class EmptyBackForwardClient : public BackForwardClient {
+class EmptyBackForwardClient FINAL : public BackForwardClient {
 public:
     virtual int backListCount() OVERRIDE { return 0; }
     virtual int forwardListCount() OVERRIDE { return 0; }
     virtual int backForwardListCount() OVERRIDE { return 0; }
+};
+
+class EmptyStorageClient FINAL : public StorageClient {
+public:
+    virtual PassOwnPtr<StorageNamespace> createSessionStorageNamespace() OVERRIDE;
+    virtual bool canAccessStorage(Frame*, StorageType) const OVERRIDE { return false; }
 };
 
 void fillWithEmptyClients(Page::PageClients&);

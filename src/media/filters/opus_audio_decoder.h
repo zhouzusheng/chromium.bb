@@ -15,7 +15,7 @@
 struct OpusMSDecoder;
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -28,7 +28,7 @@ struct QueuedAudioBuffer;
 class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
  public:
   explicit OpusAudioDecoder(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
   virtual ~OpusAudioDecoder();
 
   // AudioDecoder implementation.
@@ -40,13 +40,16 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   virtual ChannelLayout channel_layout() OVERRIDE;
   virtual int samples_per_second() OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
+  virtual void Stop(const base::Closure& closure) OVERRIDE;
 
  private:
+  void DoReset();
+  void DoStop();
+
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
   void BufferReady(DemuxerStream::Status status,
                    const scoped_refptr<DecoderBuffer>& input);
-
 
   bool ConfigureDecoder();
   void CloseDecoder();
@@ -54,7 +57,7 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   bool Decode(const scoped_refptr<DecoderBuffer>& input,
               scoped_refptr<AudioBuffer>* output_buffer);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtrFactory<OpusAudioDecoder> weak_factory_;
   base::WeakPtr<OpusAudioDecoder> weak_this_;
 
@@ -73,6 +76,8 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   base::TimeDelta last_input_timestamp_;
 
   ReadCB read_cb_;
+  base::Closure reset_cb_;
+  base::Closure stop_cb_;
 
   // Number of frames to be discarded from the start of the packet. This value
   // is respected for all packets except for the first one in the stream. For

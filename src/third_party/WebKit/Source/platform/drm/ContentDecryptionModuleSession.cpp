@@ -55,34 +55,39 @@ String ContentDecryptionModuleSession::sessionId() const
     return m_session->sessionId();
 }
 
-void ContentDecryptionModuleSession::generateKeyRequest(const String& mimeType, const Uint8Array& initData)
+void ContentDecryptionModuleSession::initializeNewSession(const String& mimeType, const Uint8Array& initData)
 {
-    m_session->generateKeyRequest(mimeType, initData.data(), initData.length());
+    m_session->initializeNewSession(mimeType, initData.data(), initData.length());
 }
 
-void ContentDecryptionModuleSession::update(const Uint8Array& key)
+void ContentDecryptionModuleSession::update(const Uint8Array& response)
 {
-    m_session->update(key.data(), key.length());
+    m_session->update(response.data(), response.length());
+}
+
+void ContentDecryptionModuleSession::release()
+{
+    m_session->release();
+}
+
+void ContentDecryptionModuleSession::message(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL)
+{
+    m_client->message(message, messageLength, destinationURL);
+}
+
+void ContentDecryptionModuleSession::ready()
+{
+    m_client->ready();
 }
 
 void ContentDecryptionModuleSession::close()
 {
-    m_session->close();
+    m_client->close();
 }
 
-void ContentDecryptionModuleSession::keyAdded()
+void ContentDecryptionModuleSession::error(MediaKeyErrorCode errorCode, unsigned long systemCode)
 {
-    m_client->keyAdded();
-}
-
-void ContentDecryptionModuleSession::keyError(MediaKeyErrorCode errorCode, unsigned long systemCode)
-{
-    m_client->keyError(static_cast<ContentDecryptionModuleSessionClient::MediaKeyErrorCode>(errorCode), systemCode);
-}
-
-void ContentDecryptionModuleSession::keyMessage(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL)
-{
-    m_client->keyMessage(message, messageLength, destinationURL);
+    m_client->error(static_cast<ContentDecryptionModuleSessionClient::MediaKeyErrorCode>(errorCode), systemCode);
 }
 
 } // namespace WebCore

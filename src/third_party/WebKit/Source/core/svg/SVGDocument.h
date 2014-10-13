@@ -21,20 +21,21 @@
 #ifndef SVGDocument_h
 #define SVGDocument_h
 
-#include "core/dom/Document.h"
+#include "core/dom/XMLDocument.h"
 #include "platform/geometry/FloatPoint.h"
 
 namespace WebCore {
 
 class SVGSVGElement;
 
-class SVGDocument FINAL : public Document {
+class SVGDocument FINAL : public XMLDocument {
 public:
     static PassRefPtr<SVGDocument> create(const DocumentInit& initializer = DocumentInit())
     {
         return adoptRef(new SVGDocument(initializer));
     }
 
+    static SVGSVGElement* rootElement(const Document*);
     SVGSVGElement* rootElement() const;
 
     void dispatchZoomEvent(float prevScale, float newScale);
@@ -45,12 +46,10 @@ public:
     void startPan(const FloatPoint& start);
     void updatePan(const FloatPoint& pos) const;
 
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
+    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE;
 
 private:
     explicit SVGDocument(const DocumentInit&);
-
-    virtual bool childShouldCreateRenderer(const Node& child) const;
 
     FloatPoint m_translate;
 };

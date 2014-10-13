@@ -39,13 +39,15 @@ public:
 private:
     explicit SVGAnimateTransformElement(Document&);
 
-    virtual bool hasValidAttributeType();
+    virtual bool hasValidAttributeType() OVERRIDE;
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     SVGTransform::SVGTransformType m_type;
 };
+
+DEFINE_NODE_TYPE_CASTS(SVGAnimateTransformElement, hasTagName(SVGNames::animateTransformTag));
 
 } // namespace WebCore
 

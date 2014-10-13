@@ -131,7 +131,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setDefaultFixedFontSize(prefs.default_fixed_font_size);
   settings->setMinimumFontSize(prefs.minimum_font_size);
   settings->setMinimumLogicalFontSize(prefs.minimum_logical_font_size);
-  settings->setDefaultTextEncodingName(ASCIIToUTF16(prefs.default_encoding));
+  settings->setDefaultTextEncodingName(
+      base::ASCIIToUTF16(prefs.default_encoding));
   settings->setJavaScriptEnabled(prefs.javascript_enabled);
   settings->setWebSecurityEnabled(prefs.web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
@@ -196,19 +197,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setWebGLErrorsToConsoleEnabled(
       prefs.webgl_errors_to_console_enabled);
 
-  // Enables accelerated compositing for overflow scroll.
-  settings->setAcceleratedCompositingForOverflowScrollEnabled(
-      prefs.accelerated_compositing_for_overflow_scroll_enabled);
-
-  // Enables accelerated compositing for scrollable frames if requested on
-  // command line.
-  settings->setAcceleratedCompositingForScrollableFramesEnabled(
-      prefs.accelerated_compositing_for_scrollable_frames_enabled);
-
-  // Enables composited scrolling for frames if requested on command line.
-  settings->setCompositedScrollingForFramesEnabled(
-      prefs.composited_scrolling_for_frames_enabled);
-
   // Uses the mock theme engine for scrollbars.
   settings->setMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
 
@@ -241,6 +229,9 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(prefs.accelerated_filters_enabled);
+
+  // Enable deferred filter rendering if requested on the command line.
+  settings->setDeferredFiltersEnabled(prefs.deferred_filters_enabled);
 
   // Enable gesture tap highlight if requested on the command line.
   settings->setGestureTapHighlightEnabled(prefs.gesture_tap_highlight_enabled);
@@ -341,7 +332,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setMediaFullscreenRequiresUserGesture(
       prefs.user_gesture_required_for_media_fullscreen);
   settings->setDefaultVideoPosterURL(
-        ASCIIToUTF16(prefs.default_video_poster_url.spec()));
+        base::ASCIIToUTF16(prefs.default_video_poster_url.spec()));
   settings->setSupportDeprecatedTargetDensityDPI(
       prefs.support_deprecated_target_density_dpi);
   settings->setUseLegacyBackgroundSizeShorthandBehavior(

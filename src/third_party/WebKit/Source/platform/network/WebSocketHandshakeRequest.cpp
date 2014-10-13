@@ -47,4 +47,13 @@ WebSocketHandshakeRequest::~WebSocketHandshakeRequest()
 {
 }
 
+void WebSocketHandshakeRequest::addAndMergeHeader(HTTPHeaderMap* map, const AtomicString& name, const AtomicString& value)
+{
+    HTTPHeaderMap::AddResult result = map->add(name, value);
+    if (!result.isNewEntry) {
+        // Inspector expects the "\n" separated format.
+        result.storedValue->value = result.storedValue->value + "\n" + String(value);
+    }
+}
+
 } // namespace WebCore

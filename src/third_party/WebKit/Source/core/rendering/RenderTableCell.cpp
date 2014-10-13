@@ -66,7 +66,7 @@ RenderTableCell::RenderTableCell(Element* element)
 
 void RenderTableCell::willBeRemovedFromTree()
 {
-    RenderBlock::willBeRemovedFromTree();
+    RenderBlockFlow::willBeRemovedFromTree();
 
     section()->setNeedsCellRecalc();
     section()->removeCachedCollapsedBorders(this);
@@ -149,7 +149,7 @@ void RenderTableCell::computePreferredLogicalWidths()
     // grids.  We must refresh those grids before the child cells try to use them.
     table()->recalcSectionsIfNeeded();
 
-    RenderBlock::computePreferredLogicalWidths();
+    RenderBlockFlow::computePreferredLogicalWidths();
     if (node() && style()->autoWrap()) {
         // See if nowrap was set.
         Length w = styleOrColLogicalWidth();
@@ -311,7 +311,7 @@ LayoutSize RenderTableCell::offsetFromContainer(RenderObject* o, const LayoutPoi
 {
     ASSERT(o == container());
 
-    LayoutSize offset = RenderBlock::offsetFromContainer(o, point, offsetDependsOnPoint);
+    LayoutSize offset = RenderBlockFlow::offsetFromContainer(o, point, offsetDependsOnPoint);
     if (parent())
         offset -= parentBox()->locationOffset();
 
@@ -325,7 +325,7 @@ LayoutRect RenderTableCell::clippedOverflowRectForRepaint(const RenderLayerModel
     // the table is going to recalculate the grid, relayout and repaint its current rect, which
     // includes any outside borders of this cell.
     if (!table()->collapseBorders() || table()->needsSectionRecalc())
-        return RenderBlock::clippedOverflowRectForRepaint(repaintContainer);
+        return RenderBlockFlow::clippedOverflowRectForRepaint(repaintContainer);
 
     bool rtl = !styleForCellFlow()->isLeftToRightDirection();
     int outlineSize = style()->outlineSize();
@@ -360,10 +360,12 @@ LayoutRect RenderTableCell::clippedOverflowRectForRepaint(const RenderLayerModel
     LayoutPoint location(max<LayoutUnit>(left, -visualOverflowRect().x()), max<LayoutUnit>(top, -visualOverflowRect().y()));
     LayoutRect r(-location.x(), -location.y(), location.x() + max(width() + right, visualOverflowRect().maxX()), location.y() + max(height() + bottom, visualOverflowRect().maxY()));
 
-    if (RenderView* v = view()) {
-        // FIXME: layoutDelta needs to be applied in parts before/after transforms and
-        // repaint containers. https://bugs.webkit.org/show_bug.cgi?id=23308
-        r.move(v->layoutDelta());
+    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
+        if (RenderView* v = view()) {
+            // FIXME: layoutDelta needs to be applied in parts before/after transforms and
+            // repaint containers. https://bugs.webkit.org/show_bug.cgi?id=23308
+            r.move(v->layoutDelta());
+        }
     }
     computeRectForRepaint(repaintContainer, r);
     return r;
@@ -377,7 +379,7 @@ void RenderTableCell::computeRectForRepaint(const RenderLayerModelObject* repain
     RenderView* v = view();
     if ((!v || !v->layoutStateEnabled() || repaintContainer) && parent())
         r.moveBy(-parentBox()->location()); // Rows are in the same coordinate space, so don't add their offset in.
-    RenderBlock::computeRectForRepaint(repaintContainer, r, fixed);
+    RenderBlockFlow::computeRectForRepaint(repaintContainer, r, fixed);
 }
 
 LayoutUnit RenderTableCell::cellBaselinePosition() const
@@ -396,7 +398,7 @@ void RenderTableCell::styleDidChange(StyleDifference diff, const RenderStyle* ol
     ASSERT(style()->display() == TABLE_CELL);
     ASSERT(!row() || row()->rowIndexWasSet());
 
-    RenderBlock::styleDidChange(diff, oldStyle);
+    RenderBlockFlow::styleDidChange(diff, oldStyle);
     setHasBoxDecorations(true);
 
     if (parent() && section() && oldStyle && style()->height() != oldStyle->height())
@@ -894,44 +896,44 @@ inline CollapsedBorderValue RenderTableCell::cachedCollapsedBottomBorder(const R
 
 int RenderTableCell::borderLeft() const
 {
-    return table()->collapseBorders() ? borderHalfLeft(false) : RenderBlock::borderLeft();
+    return table()->collapseBorders() ? borderHalfLeft(false) : RenderBlockFlow::borderLeft();
 }
 
 int RenderTableCell::borderRight() const
 {
-    return table()->collapseBorders() ? borderHalfRight(false) : RenderBlock::borderRight();
+    return table()->collapseBorders() ? borderHalfRight(false) : RenderBlockFlow::borderRight();
 }
 
 int RenderTableCell::borderTop() const
 {
-    return table()->collapseBorders() ? borderHalfTop(false) : RenderBlock::borderTop();
+    return table()->collapseBorders() ? borderHalfTop(false) : RenderBlockFlow::borderTop();
 }
 
 int RenderTableCell::borderBottom() const
 {
-    return table()->collapseBorders() ? borderHalfBottom(false) : RenderBlock::borderBottom();
+    return table()->collapseBorders() ? borderHalfBottom(false) : RenderBlockFlow::borderBottom();
 }
 
 // FIXME: https://bugs.webkit.org/show_bug.cgi?id=46191, make the collapsed border drawing
 // work with different block flow values instead of being hard-coded to top-to-bottom.
 int RenderTableCell::borderStart() const
 {
-    return table()->collapseBorders() ? borderHalfStart(false) : RenderBlock::borderStart();
+    return table()->collapseBorders() ? borderHalfStart(false) : RenderBlockFlow::borderStart();
 }
 
 int RenderTableCell::borderEnd() const
 {
-    return table()->collapseBorders() ? borderHalfEnd(false) : RenderBlock::borderEnd();
+    return table()->collapseBorders() ? borderHalfEnd(false) : RenderBlockFlow::borderEnd();
 }
 
 int RenderTableCell::borderBefore() const
 {
-    return table()->collapseBorders() ? borderHalfBefore(false) : RenderBlock::borderBefore();
+    return table()->collapseBorders() ? borderHalfBefore(false) : RenderBlockFlow::borderBefore();
 }
 
 int RenderTableCell::borderAfter() const
 {
-    return table()->collapseBorders() ? borderHalfAfter(false) : RenderBlock::borderAfter();
+    return table()->collapseBorders() ? borderHalfAfter(false) : RenderBlockFlow::borderAfter();
 }
 
 int RenderTableCell::borderHalfLeft(bool outer) const
@@ -1001,7 +1003,7 @@ int RenderTableCell::borderHalfAfter(bool outer) const
 void RenderTableCell::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     ASSERT(paintInfo.phase != PaintPhaseCollapsedTableBorders);
-    RenderBlock::paint(paintInfo, paintOffset);
+    RenderBlockFlow::paint(paintInfo, paintOffset);
 }
 
 static EBorderStyle collapsedBorderStyle(EBorderStyle style)
@@ -1159,7 +1161,7 @@ void RenderTableCell::paintCollapsedBorders(PaintInfo& paintInfo, const LayoutPo
     for (CollapsedBorder* border = borders.nextBorder(); border; border = borders.nextBorder()) {
         if (border->borderValue.isSameIgnoringColor(*table()->currentBorderValue())) {
             drawLineForBoxSide(graphicsContext, border->x1, border->y1, border->x2, border->y2, border->side,
-                resolveColor(border->borderValue.color()), border->style, 0, 0, antialias);
+                border->borderValue.color().resolve(style()->visitedDependentColor(CSSPropertyColor)), border->style, 0, 0, antialias);
         }
     }
 }
@@ -1186,7 +1188,7 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, const Lay
     Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
     const FillLayer* bgLayer = backgroundObject->style()->backgroundLayers();
 
-    if (bgLayer->hasImage() || c.isValid()) {
+    if (bgLayer->hasImage() || c.alpha()) {
         // We have to clip here because the background would paint
         // on top of the borders otherwise.  This only matters for cells and rows.
         bool shouldClip = backgroundObject->hasLayer() && (backgroundObject == this || backgroundObject == parent()) && tableElt->collapseBorders();

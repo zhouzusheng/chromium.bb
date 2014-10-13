@@ -24,7 +24,6 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
@@ -32,8 +31,7 @@ namespace WebCore {
 class SVGPathElement;
 
 class SVGMPathElement FINAL : public SVGElement,
-                              public SVGURIReference,
-                              public SVGExternalResourcesRequired {
+                              public SVGURIReference {
 public:
     static PassRefPtr<SVGMPathElement> create(Document&);
 
@@ -46,10 +44,10 @@ public:
 private:
     explicit SVGMPathElement(Document&);
 
-    void buildPendingResource();
+    virtual void buildPendingResource() OVERRIDE;
     void clearResourceReferences();
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    void removedFrom(ContainerNode*);
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -59,8 +57,6 @@ private:
     void notifyParentOfPathChange(ContainerNode*);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGMPathElement)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 };
 

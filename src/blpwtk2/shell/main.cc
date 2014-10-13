@@ -24,13 +24,6 @@
 #include <shellapi.h>
 #include <commdlg.h>
 
-// This pragma makes us use the version 6.0 of ComCtl32.dll, which is necessary
-// to make tooltips appear correctly.  See:
-// http://msdn.microsoft.com/en-us/library/windows/desktop/bb773175%28v=vs.85%29.aspx
-#pragma comment(linker,"\"/manifestdependency:type='win32' \
- name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
- processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
 #include <algorithm>
 #include <fstream>
 #include <string>

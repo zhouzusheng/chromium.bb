@@ -25,12 +25,14 @@
 
 /**
  * @constructor
+ * @param {!WebInspector.DebuggerModel} debuggerModel
  * @param {!WebInspector.BreakpointManager} breakpointManager
  * @extends {WebInspector.SidebarPane}
  */
-WebInspector.JavaScriptBreakpointsSidebarPane = function(breakpointManager, showSourceLineDelegate)
+WebInspector.JavaScriptBreakpointsSidebarPane = function(debuggerModel, breakpointManager, showSourceLineDelegate)
 {
     WebInspector.SidebarPane.call(this, WebInspector.UIString("Breakpoints"));
+    this._debuggerModel = debuggerModel;
     this.registerRequiredCSS("breakpointsList.css");
 
     this._breakpointManager = breakpointManager;
@@ -61,11 +63,11 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
     _emptyElementContextMenu: function(event)
     {
         var contextMenu = new WebInspector.ContextMenu(event);
-        var breakpointActive = WebInspector.debuggerModel.breakpointsActive();
+        var breakpointActive = this._debuggerModel.breakpointsActive();
         var breakpointActiveTitle = breakpointActive ?
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Deactivate breakpoints" : "Deactivate Breakpoints") :
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Activate breakpoints" : "Activate Breakpoints");
-        contextMenu.appendItem(breakpointActiveTitle, WebInspector.debuggerModel.setBreakpointsActive.bind(WebInspector.debuggerModel, !breakpointActive));
+        contextMenu.appendItem(breakpointActiveTitle, this._debuggerModel.setBreakpointsActive.bind(this._debuggerModel, !breakpointActive));
         contextMenu.show();
     },
 
@@ -111,10 +113,16 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
          */
         function didRequestContent(content)
         {
-            var lineEndings = content.lineEndings();
-            if (uiLocation.lineNumber < lineEndings.length)
-                snippetElement.textContent = content.substring(lineEndings[uiLocation.lineNumber - 1], lineEndings[uiLocation.lineNumber]);
+            var lineNumber = uiLocation.lineNumber
+            var columnNumber = uiLocation.columnNumber;
+            var contentString = new String(content);
+            if (lineNumber < contentString.lineCount()) {
+                var lineText = contentString.lineAt(lineNumber);
+                var maxSnippetLength = 200;
+                snippetElement.textContent = lineText.substr(columnNumber).trimEnd(maxSnippetLength);
+            }
         }
+
         uiLocation.uiSourceCode.requestContent(didRequestContent.bind(this));
 
         element._data = uiLocation;
@@ -197,11 +205,11 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
         }
 
         contextMenu.appendSeparator();
-        var breakpointActive = WebInspector.debuggerModel.breakpointsActive();
+        var breakpointActive = this._debuggerModel.breakpointsActive();
         var breakpointActiveTitle = breakpointActive ?
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Deactivate breakpoints" : "Deactivate Breakpoints") :
             WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Activate breakpoints" : "Activate Breakpoints");
-        contextMenu.appendItem(breakpointActiveTitle, WebInspector.debuggerModel.setBreakpointsActive.bind(WebInspector.debuggerModel, !breakpointActive));
+        contextMenu.appendItem(breakpointActiveTitle, this._debuggerModel.setBreakpointsActive.bind(this._debuggerModel, !breakpointActive));
 
         function enabledBreakpointCount(breakpoints)
         {
@@ -333,8 +341,8 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
             }
         }
 
-        var config = new WebInspector.EditingConfig(finishEditing.bind(this, true), finishEditing.bind(this, false));
-        WebInspector.startEditing(inputElement, config);
+        var config = new WebInspector.InplaceEditor.Config(finishEditing.bind(this, true), finishEditing.bind(this, false));
+        WebInspector.InplaceEditor.startEditing(inputElement, config);
     },
 
     _setBreakpoint: function(url, enabled)
@@ -452,7 +460,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
                 element.classList.remove("hidden");
         }
 
-        WebInspector.startEditing(inputElement, new WebInspector.EditingConfig(finishEditing.bind(this, true), finishEditing.bind(this, false)));
+        WebInspector.InplaceEditor.startEditing(inputElement, new WebInspector.InplaceEditor.Config(finishEditing.bind(this, true), finishEditing.bind(this, false)));
     },
 
     highlightBreakpoint: function(url)

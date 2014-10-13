@@ -119,6 +119,7 @@ mouseover
 mouseup
 mousewheel
 mute
+needkey
 negotiationneeded
 nomatch
 noupdate
@@ -137,6 +138,7 @@ playing
 popstate
 progress
 ratechange
+ready
 readystatechange
 removesourcebuffer
 removestream
@@ -214,8 +216,6 @@ webkitprerenderdomcontentloaded
 webkitprerenderload
 webkitprerenderstart
 webkitprerenderstop
-webkitregionlayoutupdate
-webkitregionoversetchange
 webkitremovesourcebuffer
 webkitresourcetimingbufferfull
 webkitsourceclose

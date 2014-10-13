@@ -14,6 +14,10 @@
 #include "./vpx_config.h"
 #include "vpx/vpx_integer.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FILTER_BITS 7
 
 #define SUBPEL_BITS 4
@@ -27,26 +31,24 @@ typedef enum {
   EIGHTTAP_SHARP = 2,
   BILINEAR = 3,
   SWITCHABLE = 4  /* should be the last one */
-} INTERPOLATION_TYPE;
+} INTERP_FILTER;
 
-typedef int16_t subpel_kernel[SUBPEL_TAPS];
+typedef int16_t InterpKernel[SUBPEL_TAPS];
 
-struct subpix_fn_table {
-  const subpel_kernel *filter_x;
-  const subpel_kernel *filter_y;
-};
+const InterpKernel *vp9_get_interp_kernel(INTERP_FILTER filter);
 
-const subpel_kernel *vp9_get_filter_kernel(INTERPOLATION_TYPE type);
-
-extern const subpel_kernel vp9_bilinear_filters[SUBPEL_SHIFTS];
-extern const subpel_kernel vp9_sub_pel_filters_6[SUBPEL_SHIFTS];
-extern const subpel_kernel vp9_sub_pel_filters_8[SUBPEL_SHIFTS];
-extern const subpel_kernel vp9_sub_pel_filters_8s[SUBPEL_SHIFTS];
-extern const subpel_kernel vp9_sub_pel_filters_8lp[SUBPEL_SHIFTS];
+extern const InterpKernel vp9_bilinear_filters[SUBPEL_SHIFTS];
+extern const InterpKernel vp9_sub_pel_filters_8[SUBPEL_SHIFTS];
+extern const InterpKernel vp9_sub_pel_filters_8s[SUBPEL_SHIFTS];
+extern const InterpKernel vp9_sub_pel_filters_8lp[SUBPEL_SHIFTS];
 
 // The VP9_BILINEAR_FILTERS_2TAP macro returns a pointer to the bilinear
 // filter kernel as a 2 tap filter.
 #define BILINEAR_FILTERS_2TAP(x) \
   (vp9_bilinear_filters[(x)] + SUBPEL_TAPS/2 - 1)
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif  // VP9_COMMON_VP9_FILTER_H_

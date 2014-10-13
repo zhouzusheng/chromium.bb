@@ -56,7 +56,7 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
     HTMLAreaElement* defaultArea = 0;
     Element* element = this;
     while ((element = ElementTraversal::next(*element, this))) {
-        if (isHTMLAreaElement(element)) {
+        if (element->hasTagName(areaTag)) {
             HTMLAreaElement* areaElt = toHTMLAreaElement(element);
             if (areaElt->isDefault()) {
                 if (!defaultArea)
@@ -76,7 +76,7 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
 HTMLImageElement* HTMLMapElement::imageElement()
 {
     RefPtr<HTMLCollection> images = document().images();
-    for (unsigned i = 0; Node* curr = images->item(i); i++) {
+    for (unsigned i = 0; Element* curr = images->item(i); i++) {
         if (!curr->hasTagName(imgTag))
             continue;
 
@@ -108,7 +108,7 @@ void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         String mapName = value;
         if (mapName[0] == '#')
             mapName = mapName.substring(1);
-        m_name = document().isHTMLDocument() ? mapName.lower() : mapName;
+        m_name = AtomicString(document().isHTMLDocument() ? mapName.lower() : mapName);
         if (inDocument())
             treeScope().addImageMap(this);
 

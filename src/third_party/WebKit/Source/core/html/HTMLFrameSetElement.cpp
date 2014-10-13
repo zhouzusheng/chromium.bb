@@ -79,12 +79,12 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
     if (name == rowsAttr) {
         if (!value.isNull()) {
             m_rowLengths = parseListOfDimensions(value.string());
-            setNeedsStyleRecalc();
+            setNeedsStyleRecalc(SubtreeStyleChange);
         }
     } else if (name == colsAttr) {
         if (!value.isNull()) {
             m_colLengths = parseListOfDimensions(value.string());
-            setNeedsStyleRecalc();
+            setNeedsStyleRecalc(SubtreeStyleChange);
         }
     } else if (name == frameborderAttr) {
         if (!value.isNull()) {
@@ -128,10 +128,8 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
         document().setWindowAttributeEventListener(EventTypeNames::focusin, createAttributeEventListener(document().frame(), name, value));
     else if (name == onfocusoutAttr)
         document().setWindowAttributeEventListener(EventTypeNames::focusout, createAttributeEventListener(document().frame(), name, value));
-#if ENABLE(ORIENTATION_EVENTS)
-    else if (name == onorientationchangeAttr)
+    else if (RuntimeEnabledFeatures::orientationEventEnabled() && name == onorientationchangeAttr)
         document().setWindowAttributeEventListener(EventTypeNames::orientationchange, createAttributeEventListener(document().frame(), name, value));
-#endif
     else if (name == onhashchangeAttr)
         document().setWindowAttributeEventListener(EventTypeNames::hashchange, createAttributeEventListener(document().frame(), name, value));
     else if (name == onmessageAttr)
@@ -221,10 +219,10 @@ void HTMLFrameSetElement::willRecalcStyle(StyleRecalcChange)
 
 DOMWindow* HTMLFrameSetElement::anonymousNamedGetter(const AtomicString& name)
 {
-    Node* frameNode = children()->namedItem(name);
-    if (!frameNode || !frameNode->hasTagName(HTMLNames::frameTag))
+    Element* frameElement = children()->namedItem(name);
+    if (!frameElement || !frameElement->hasTagName(HTMLNames::frameTag))
         return 0;
-    Document* document = toHTMLFrameElement(frameNode)->contentDocument();
+    Document* document = toHTMLFrameElement(frameElement)->contentDocument();
     if (!document || !document->frame())
         return 0;
     return document->domWindow();

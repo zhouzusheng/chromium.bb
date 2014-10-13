@@ -22,26 +22,27 @@
 #include "core/css/CSSImageValue.h"
 
 #include "FetchInitiatorTypeNames.h"
-#include "core/css/CSSParser.h"
+#include "core/css/CSSMarkup.h"
 #include "core/dom/Document.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
+#include "platform/weborigin/KURL.h"
 
 namespace WebCore {
 
-CSSImageValue::CSSImageValue(const String& url)
+CSSImageValue::CSSImageValue(const KURL& url)
     : CSSValue(ImageClass)
-    , m_url(url)
+    , m_url(url.string())
     , m_accessedImage(false)
 {
 }
 
-CSSImageValue::CSSImageValue(const String& url, StyleImage* image)
+CSSImageValue::CSSImageValue(const KURL& url, StyleImage* image)
     : CSSValue(ImageClass)
-    , m_url(url)
+    , m_url(url.string())
     , m_image(image)
     , m_accessedImage(true)
 {
@@ -59,17 +60,17 @@ StyleImage* CSSImageValue::cachedOrPendingImage()
     return m_image.get();
 }
 
-StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const ResourceLoaderOptions& options, CORSEnabled corsEnabled)
+StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const ResourceLoaderOptions& options)
 {
     ASSERT(fetcher);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
 
-        FetchRequest request(ResourceRequest(fetcher->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
+        FetchRequest request(ResourceRequest(m_url), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
 
-        if (corsEnabled == PotentiallyCORSEnabled)
-            updateRequestForAccessControl(request.mutableResourceRequest(), fetcher->document()->securityOrigin(), options.allowCredentials);
+        if (options.corsEnabled == IsCORSEnabled)
+            request.setCrossOriginAccessControl(fetcher->document()->securityOrigin(), options.allowCredentials);
 
         if (ResourcePtr<ImageResource> cachedImage = fetcher->fetchImage(request))
             m_image = StyleFetchedImage::create(cachedImage.get());
@@ -100,7 +101,7 @@ String CSSImageValue::customCSSText() const
 PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
 {
     // NOTE: We expose CSSImageValues as URI primitive values in CSSOM to maintain old behavior.
-    RefPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_url, CSSPrimitiveValue::CSS_URI);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_url, CSSPrimitiveValue::CSS_URI);
     uriValue->setCSSOMSafe();
     return uriValue.release();
 }
@@ -108,6 +109,11 @@ PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
 bool CSSImageValue::knownToBeOpaque(const RenderObject* renderer) const
 {
     return m_image ? m_image->knownToBeOpaque(renderer) : false;
+}
+
+void CSSImageValue::traceAfterDispatch(Visitor* visitor)
+{
+    CSSValue::traceAfterDispatch(visitor);
 }
 
 } // namespace WebCore

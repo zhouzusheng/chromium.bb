@@ -40,6 +40,8 @@
 #include "modules/indexeddb/IDBTracing.h"
 #include "platform/SharedBuffer.h"
 
+using blink::WebIDBCursor;
+
 namespace WebCore {
 
 PassRefPtr<IDBRequest> IDBRequest::create(ExecutionContext* context, PassRefPtr<IDBAny> source, IDBTransaction* transaction)
@@ -61,7 +63,7 @@ IDBRequest::IDBRequest(ExecutionContext* context, PassRefPtr<IDBAny> source, IDB
     , m_source(source)
     , m_hasPendingActivity(true)
     , m_cursorType(IndexedDB::CursorKeyAndValue)
-    , m_cursorDirection(IndexedDB::CursorNext)
+    , m_cursorDirection(blink::WebIDBCursor::Next)
     , m_pendingCursor(0)
     , m_didFireUpgradeNeededEvent(false)
     , m_preventPropagation(false)
@@ -138,7 +140,7 @@ void IDBRequest::abort()
     m_requestAborted = true;
 }
 
-void IDBRequest::setCursorDetails(IndexedDB::CursorType cursorType, IndexedDB::CursorDirection direction)
+void IDBRequest::setCursorDetails(IndexedDB::CursorType cursorType, WebIDBCursor::Direction direction)
 {
     ASSERT(m_readyState == PENDING);
     ASSERT(!m_pendingCursor);
@@ -156,7 +158,7 @@ void IDBRequest::setPendingCursor(PassRefPtr<IDBCursor> cursor)
 
     m_hasPendingActivity = true;
     m_pendingCursor = cursor;
-    m_result.clear();
+    setResult(PassRefPtr<IDBAny>(0));
     m_readyState = PENDING;
     m_error.clear();
     m_transaction->registerRequest(this);
@@ -435,7 +437,7 @@ bool IDBRequest::dispatchEvent(PassRefPtr<Event> event)
     }
 
     // FIXME: When we allow custom event dispatching, this will probably need to change.
-    ASSERT_WITH_MESSAGE(event->type() == EventTypeNames::success || event->type() == EventTypeNames::error || event->type() == EventTypeNames::blocked || event->type() == EventTypeNames::upgradeneeded, "event type was %s", event->type().string().utf8().data());
+    ASSERT_WITH_MESSAGE(event->type() == EventTypeNames::success || event->type() == EventTypeNames::error || event->type() == EventTypeNames::blocked || event->type() == EventTypeNames::upgradeneeded, "event type was %s", event->type().utf8().data());
     const bool setTransactionActive = m_transaction && (event->type() == EventTypeNames::success || event->type() == EventTypeNames::upgradeneeded || (event->type() == EventTypeNames::error && !m_requestAborted));
 
     if (setTransactionActive)
@@ -500,7 +502,7 @@ void IDBRequest::enqueueEvent(PassRefPtr<Event> event)
     if (m_contextStopped || !executionContext())
         return;
 
-    ASSERT_WITH_MESSAGE(m_readyState == PENDING || m_didFireUpgradeNeededEvent, "When queueing event %s, m_readyState was %d", event->type().string().utf8().data(), m_readyState);
+    ASSERT_WITH_MESSAGE(m_readyState == PENDING || m_didFireUpgradeNeededEvent, "When queueing event %s, m_readyState was %d", event->type().utf8().data(), m_readyState);
 
     EventQueue* eventQueue = executionContext()->eventQueue();
     event->setTarget(this);

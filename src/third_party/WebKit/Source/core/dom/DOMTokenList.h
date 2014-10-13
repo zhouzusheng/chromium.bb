@@ -57,24 +57,24 @@ public:
     bool toggle(const AtomicString&, ExceptionState&);
     bool toggle(const AtomicString&, bool force, ExceptionState&);
 
-    AtomicString toString() const { return value(); }
+    const AtomicString& toString() const { return value(); }
 
     virtual Element* element() { return 0; }
 
 protected:
-    virtual AtomicString value() const = 0;
+    virtual const AtomicString& value() const = 0;
     virtual void setValue(const AtomicString&) = 0;
 
     virtual void addInternal(const AtomicString&);
     virtual bool containsInternal(const AtomicString&) const = 0;
     virtual void removeInternal(const AtomicString&);
 
-    static bool validateToken(const AtomicString&, ExceptionState&);
+    static bool validateToken(const String&, ExceptionState&);
     static bool validateTokens(const Vector<String>&, ExceptionState&);
-    static String addToken(const AtomicString&, const AtomicString&);
-    static String addTokens(const AtomicString&, const Vector<String>&);
-    static String removeToken(const AtomicString&, const AtomicString&);
-    static String removeTokens(const AtomicString&, const Vector<String>&);
+    static AtomicString addToken(const AtomicString&, const AtomicString&);
+    static AtomicString addTokens(const AtomicString&, const Vector<String>&);
+    static AtomicString removeToken(const AtomicString&, const AtomicString&);
+    static AtomicString removeTokens(const AtomicString&, const Vector<String>&);
 };
 
 } // namespace WebCore

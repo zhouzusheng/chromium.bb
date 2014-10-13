@@ -13,6 +13,7 @@
 
 namespace blink {
 class WebMouseWheelEvent;
+class WebGestureEvent;
 }
 
 namespace content {
@@ -48,6 +49,11 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if the |event| was handled.
   virtual bool PreHandleWheelEvent(const blink::WebMouseWheelEvent& event);
 
+  // Callback to give the browser a chance to handle the specified gesture
+  // event before sending it to the renderer.
+  // Returns true if the |event| was handled.
+  virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
+
   // Returns true if RWHV should take focus on mouse-down.
   virtual bool ShouldSetKeyboardFocusOnMouseDown();
   virtual bool ShouldSetLogicalFocusOnMouseDown();
@@ -56,13 +62,13 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
-  virtual bool ShowTooltip(const string16& tooltip_text,
+  virtual bool ShowTooltip(const base::string16& tooltip_text,
                            blink::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   // Returns the widget's parent's NativeViewAccessible.
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();
 #endif

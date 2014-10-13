@@ -54,23 +54,23 @@ bool PrefStore::IsInitializationComplete() const
     return true;
 }
 
-bool PrefStore::GetValue(const std::string& key, const Value** result) const
+bool PrefStore::GetValue(const std::string& key, const base::Value** result) const
 {
     return d_prefs.GetValue(key, result);
 }
 
-bool PrefStore::GetMutableValue(const std::string& key, Value** result)
+bool PrefStore::GetMutableValue(const std::string& key, base::Value** result)
 {
     return d_prefs.GetValue(key, result);
 }
 
-void PrefStore::SetValue(const std::string& key, Value* value)
+void PrefStore::SetValue(const std::string& key, base::Value* value)
 {
     if (d_prefs.SetValue(key, value))
         ReportValueChanged(key);
 }
 
-void PrefStore::SetValueSilently(const std::string& key, Value* value)
+void PrefStore::SetValueSilently(const std::string& key, base::Value* value)
 {
     d_prefs.SetValue(key, value);
 }

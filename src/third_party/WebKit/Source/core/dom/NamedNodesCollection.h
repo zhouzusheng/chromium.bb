@@ -41,20 +41,19 @@ namespace WebCore {
 
 class NamedNodesCollection FINAL : public NodeList {
 public:
-    static PassRefPtr<NodeList> create(const Vector<RefPtr<Node> >& nodes)
+    static PassRefPtr<NodeList> create(const Vector<RefPtr<Element> >& nodes)
     {
         return adoptRef(new NamedNodesCollection(nodes));
     }
 
     virtual unsigned length() const OVERRIDE { return m_nodes.size(); }
     virtual Node* item(unsigned) const OVERRIDE;
-    virtual Node* namedItem(const AtomicString&) const OVERRIDE;
 
 private:
-    explicit NamedNodesCollection(const Vector<RefPtr<Node> >& nodes)
+    explicit NamedNodesCollection(const Vector<RefPtr<Element> >& nodes)
         : m_nodes(nodes) { }
 
-    Vector<RefPtr<Node> > m_nodes;
+    Vector<RefPtr<Element> > m_nodes;
 };
 
 } // namespace WebCore

@@ -21,7 +21,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/dragdrop/download_file_interface.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 class GURL;
 class Pickle;
@@ -47,7 +47,7 @@ namespace ui {
 // TabContentsViewGtk uses a different class to handle drag support that does
 // not use OSExchangeData. As such, file contents and html support is only
 // compiled on windows.
-class UI_EXPORT OSExchangeData {
+class UI_BASE_EXPORT OSExchangeData {
  public:
   // CustomFormats are used for non-standard data types. For example, bookmark
   // nodes are written using a CustomFormat.
@@ -73,7 +73,7 @@ class UI_EXPORT OSExchangeData {
   enum FilenameToURLPolicy { CONVERT_FILENAMES, DO_NOT_CONVERT_FILENAMES, };
 
   // Encapsulates the info about a file to be downloaded.
-  struct UI_EXPORT DownloadFileInfo {
+  struct UI_BASE_EXPORT DownloadFileInfo {
     DownloadFileInfo(const base::FilePath& filename,
                      DownloadFileProvider* downloader);
     ~DownloadFileInfo();
@@ -83,7 +83,7 @@ class UI_EXPORT OSExchangeData {
   };
 
   // Encapsulates the info about a file.
-  struct UI_EXPORT FileInfo {
+  struct UI_BASE_EXPORT FileInfo {
     FileInfo(const base::FilePath& path, const base::FilePath& display_name);
     ~FileInfo();
 
@@ -95,12 +95,15 @@ class UI_EXPORT OSExchangeData {
 
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
-  class UI_EXPORT Provider {
+  class UI_BASE_EXPORT Provider {
    public:
     Provider() {}
     virtual ~Provider() {}
 
     virtual Provider* Clone() const = 0;
+
+    virtual void MarkOriginatedFromRenderer() = 0;
+    virtual bool DidOriginateFromRenderer() const = 0;
 
     virtual void SetString(const base::string16& data) = 0;
     virtual void SetURL(const GURL& url, const base::string16& title) = 0;
@@ -162,6 +165,12 @@ class UI_EXPORT OSExchangeData {
   // Returns the Provider, which actually stores and manages the data.
   const Provider& provider() const { return *provider_; }
   Provider& provider() { return *provider_; }
+
+  // Marks drag data as tainted if it originates from the renderer. This is used
+  // to avoid granting privileges to a renderer when dragging in tainted data,
+  // since it could allow potential escalation of privileges.
+  void MarkOriginatedFromRenderer();
+  bool DidOriginateFromRenderer() const;
 
   // These functions add data to the OSExchangeData object of various Chrome
   // types. The OSExchangeData object takes care of translating the data into

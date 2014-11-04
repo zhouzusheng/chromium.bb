@@ -56,6 +56,7 @@ class RubberbandCandidate {
     int m_start;
     int m_len;
     bool m_isLTR;
+    bool m_useLeadingTab;
 
     bool isAllWhitespaces() const
     {
@@ -224,7 +225,15 @@ static bool isSupportedTransform(const TransformationMatrix& matrix)
 
 static bool isTextRubberbandable(RenderObject* renderer)
 {
-    return !renderer->style() || RUBBERBANDABLE_TEXT == renderer->style()->rubberbandable();
+    return !renderer->style()
+        || RUBBERBANDABLE_TEXT == renderer->style()->rubberbandable()
+        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
+}
+
+static bool isTextWithLeadingTab(RenderObject* renderer)
+{
+    return !renderer->style()
+        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
 }
 
 template <typename CHAR_TYPE>
@@ -424,6 +433,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
                 candidate.m_clipRect.intersect(localContext.m_layerContext->m_clipRect);
                 candidate.m_text = text;
                 candidate.m_isLTR = textBox->isLeftToRightDirection();
+                candidate.m_useLeadingTab = isTextWithLeadingTab(renderText);
                 candidate.m_start = textBox->start();
                 candidate.m_len = textBox->len();
                 int end = candidate.m_start + candidate.m_len;
@@ -577,7 +587,12 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
 
         ASSERT(lastX <= hit.m_clipRect.x() || hit.isAllWhitespaces() || lastHitWasAllWhitespaces);
 
-        if (hit.m_clipRect.x() > lastX) {
+        if (hit.m_useLeadingTab) {
+            if (hit.m_clipRect.x() > rc.x()) {
+                builder.append('\t');
+            }
+        }
+        else if (hit.m_clipRect.x() > lastX) {
             LayoutUnit x = lastX + hit.m_spaceWidth;
             while (x <= hit.m_clipRect.x()) {
                 builder.append(' ');

@@ -785,8 +785,8 @@ static inline bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int 
         if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll)
             return true;
         break;
-    case CSSPropertyBbRubberbandable: // auto | none | text
-        if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText)
+    case CSSPropertyBbRubberbandable: // auto | none | text | text-with-leading-tab
+        if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueTextWithLeadingTab)
             return true;
         break;
     case CSSPropertyWebkitWrapFlow:

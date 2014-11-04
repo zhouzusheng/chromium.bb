@@ -2638,6 +2638,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ERubberbandable e)
         case RUBBERBANDABLE_TEXT:
             m_value.valueID = CSSValueText;
             break;
+        case RUBBERBANDABLE_TEXT_WITH_LEADING_TAB:
+            m_value.valueID = CSSValueTextWithLeadingTab;
+            break;
     }
 }
 
@@ -2651,6 +2654,8 @@ template<> inline CSSPrimitiveValue::operator ERubberbandable() const
             return RUBBERBANDABLE_NONE;
         case CSSValueText:
             return RUBBERBANDABLE_TEXT;
+        case CSSValueTextWithLeadingTab:
+            return RUBBERBANDABLE_TEXT_WITH_LEADING_TAB;
     }
 
     ASSERT_NOT_REACHED();

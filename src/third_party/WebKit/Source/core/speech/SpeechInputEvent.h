@@ -30,26 +30,28 @@
 
 #include "core/events/Event.h"
 #include "core/speech/SpeechInputResultList.h"
-
+#include "heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
 class SpeechInputEvent FINAL : public Event {
 public:
-    static PassRefPtr<SpeechInputEvent> create();
-    static PassRefPtr<SpeechInputEvent> create(const AtomicString& eventType, const SpeechInputResultArray& results);
+    static PassRefPtrWillBeRawPtr<SpeechInputEvent> create();
+    static PassRefPtrWillBeRawPtr<SpeechInputEvent> create(const AtomicString& eventType, const SpeechInputResultArray& results);
     virtual ~SpeechInputEvent();
 
     SpeechInputResultList* results() const { return m_results.get(); }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     SpeechInputEvent();
     SpeechInputEvent(const AtomicString& eventType, const SpeechInputResultArray& results);
 
-    RefPtr<SpeechInputResultList> m_results;
+    RefPtrWillBeMember<SpeechInputResultList> m_results;
 };
 
 } // namespace WebCore

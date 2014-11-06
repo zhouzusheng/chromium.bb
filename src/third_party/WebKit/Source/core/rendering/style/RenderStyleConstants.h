@@ -35,6 +35,7 @@ enum StyleRecalcChange {
     Inherit,
     Force,
     Reattach,
+    ReattachNoRenderer
 };
 
 static const size_t PrintColorAdjustBits = 1;
@@ -497,10 +498,6 @@ enum ImageResolutionSnap { ImageResolutionNoSnap = 0, ImageResolutionSnapPixels 
 
 enum Order { LogicalOrder = 0, VisualOrder };
 
-enum ColumnAxis { HorizontalColumnAxis, VerticalColumnAxis, AutoColumnAxis };
-
-enum ColumnProgression { NormalColumnProgression, ReverseColumnProgression };
-
 enum WrapFlow { WrapFlowAuto, WrapFlowBoth, WrapFlowStart, WrapFlowEnd, WrapFlowMaximum, WrapFlowClear };
 
 enum WrapThrough { WrapThroughWrap, WrapThroughNone };
@@ -511,12 +508,13 @@ enum GridAutoFlow { AutoFlowNone, AutoFlowColumn, AutoFlowRow };
 
 enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRegionNoDrag };
 
-static const size_t TouchActionBits = 3;
+static const size_t TouchActionBits = 4;
 enum TouchAction {
     TouchActionAuto = 0x0,
     TouchActionNone = 0x1,
     TouchActionPanX = 0x2,
-    TouchActionPanY = 0x4
+    TouchActionPanY = 0x4,
+    TouchActionPinchZoom = 0x8,
 };
 inline TouchAction operator| (TouchAction a, TouchAction b) { return TouchAction(int(a) | int(b)); }
 inline TouchAction& operator|= (TouchAction& a, TouchAction b) { return a = a | b; }

@@ -18,6 +18,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/appcache/view_appcache_internals_job.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/histogram_internals_request_job.h"
 #include "content/browser/net/view_blob_internals_job_factory.h"
@@ -41,7 +42,6 @@
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "url/url_util.h"
-#include "webkit/browser/appcache/view_appcache_internals_job.h"
 
 using appcache::AppCacheService;
 
@@ -55,6 +55,8 @@ const char kChromeURLContentSecurityPolicyHeaderBase[] =
     "'self' 'unsafe-eval'; ";
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
+
+const int kNoRenderProcessId = -1;
 
 bool SchemeIsInSchemes(const std::string& scheme,
                        const std::vector<std::string>& schemes) {
@@ -237,8 +239,10 @@ URLRequestChromeJob::~URLRequestChromeJob() {
 
 void URLRequestChromeJob::Start() {
   int render_process_id, unused;
-  ResourceRequestInfo::GetRenderFrameForRequest(
+  bool is_renderer_request = ResourceRequestInfo::GetRenderFrameForRequest(
       request_, &render_process_id, &unused);
+  if (!is_renderer_request)
+    render_process_id = kNoRenderProcessId;
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -356,17 +360,16 @@ void URLRequestChromeJob::CheckStoragePartitionMatches(
   // being in the same process. We do an extra check to guard against an
   // exploited renderer pretending to add them as a subframe. We skip this check
   // for resources.
-  // TODO(guohui): move URL constants for favicon, theme, thumb, thumb and
-  // thumbnails from chrome/common/url_constants.h to
-  // content/public/common/url_constants.h, so that they could be reused here.
   bool allowed = false;
+  std::vector<std::string> hosts;
+  GetContentClient()->
+      browser()->GetAdditionalWebUIHostsToIgnoreParititionCheck(&hosts);
   if (url.SchemeIs(kChromeUIScheme) &&
-      (url.host() == kChromeUIResourcesHost ||
-       url.host() == "favicon" ||
-       url.host() == "theme" ||
-       url.host() == "thumb" ||
-       url.host() == "thumb2" ||
-       url.host() == "thumbnails")) {
+      (url.SchemeIs(kChromeUIScheme) ||
+       std::find(hosts.begin(), hosts.end(), url.host()) != hosts.end())) {
+    allowed = true;
+  } else if (render_process_id == kNoRenderProcessId) {
+    // Request was not issued by renderer.
     allowed = true;
   } else {
     RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
@@ -440,7 +443,7 @@ class ChromeProtocolHandler
     // Next check for chrome://appcache-internals/, which uses its own job type.
     if (request->url().SchemeIs(kChromeUIScheme) &&
         request->url().host() == kChromeUIAppCacheInternalsHost) {
-      return appcache::ViewAppCacheInternalsJobFactory::CreateJobForRequest(
+      return ViewAppCacheInternalsJobFactory::CreateJobForRequest(
           request, network_delegate, appcache_service_);
     }
 

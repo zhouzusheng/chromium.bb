@@ -12,6 +12,7 @@
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
+#include "cc/layers/layer_iterator.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
 #include "cc/resources/ui_resource_request.h"
@@ -254,8 +255,8 @@ void LayerTreeImpl::SetCurrentlyScrollingLayer(LayerImpl* layer) {
 
   if (currently_scrolling_layer_ &&
       currently_scrolling_layer_->scrollbar_animation_controller())
-    currently_scrolling_layer_->scrollbar_animation_controller()->
-        DidScrollGestureEnd(CurrentPhysicalTimeTicks());
+    currently_scrolling_layer_->scrollbar_animation_controller()
+        ->DidScrollGestureEnd(CurrentFrameTimeTicks());
   currently_scrolling_layer_ = layer;
   if (layer && layer->scrollbar_animation_controller())
     layer->scrollbar_animation_controller()->DidScrollGestureBegin();
@@ -266,9 +267,9 @@ void LayerTreeImpl::ClearCurrentlyScrollingLayer() {
   scrolling_layer_id_from_previous_tree_ = 0;
 }
 
-float LayerTreeImpl::VerticalAdjust(const LayerImpl* layer) const {
-  DCHECK(layer);
-  if (layer->parent() != InnerViewportContainerLayer())
+float LayerTreeImpl::VerticalAdjust(const int clip_layer_id) const {
+  LayerImpl* container_layer = InnerViewportContainerLayer();
+  if (!container_layer || clip_layer_id != container_layer->id())
     return 0.f;
 
   return layer_tree_host_impl_->VerticalAdjust();
@@ -679,14 +680,6 @@ bool LayerTreeImpl::PinchGestureActive() const {
 
 base::TimeTicks LayerTreeImpl::CurrentFrameTimeTicks() const {
   return layer_tree_host_impl_->CurrentFrameTimeTicks();
-}
-
-base::Time LayerTreeImpl::CurrentFrameTime() const {
-  return layer_tree_host_impl_->CurrentFrameTime();
-}
-
-base::TimeTicks LayerTreeImpl::CurrentPhysicalTimeTicks() const {
-  return layer_tree_host_impl_->CurrentPhysicalTimeTicks();
 }
 
 void LayerTreeImpl::SetNeedsCommit() {

@@ -30,25 +30,15 @@
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_ENUMERATION(SVGMaskElement, SVGNames::maskUnitsAttr, MaskUnits, maskUnits, SVGUnitTypes::SVGUnitType)
-DEFINE_ANIMATED_ENUMERATION(SVGMaskElement, SVGNames::maskContentUnitsAttr, MaskContentUnits, maskContentUnits, SVGUnitTypes::SVGUnitType)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMaskElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(maskUnits)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(maskContentUnits)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGMaskElement::SVGMaskElement(Document& document)
     : SVGElement(SVGNames::maskTag, document)
     , SVGTests(this)
-    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth)))
-    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight)))
-    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth)))
-    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight)))
-    , m_maskUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
-    , m_maskContentUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , m_maskUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::maskUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
+    , m_maskContentUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::maskContentUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
     ScriptWrappable::init(this);
 
@@ -64,7 +54,8 @@ inline SVGMaskElement::SVGMaskElement(Document& document)
     addToPropertyMap(m_y);
     addToPropertyMap(m_width);
     addToPropertyMap(m_height);
-    registerAnimatedPropertiesForSVGMaskElement();
+    addToPropertyMap(m_maskUnits);
+    addToPropertyMap(m_maskContentUnits);
 }
 
 PassRefPtr<SVGMaskElement> SVGMaskElement::create(Document& document)
@@ -93,24 +84,18 @@ void SVGMaskElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 
     if (!isSupportedAttribute(name))
         SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::maskUnitsAttr) {
-        SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
-        if (propertyValue > 0)
-            setMaskUnitsBaseValue(propertyValue);
-        return;
-    } else if (name == SVGNames::maskContentUnitsAttr) {
-        SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
-        if (propertyValue > 0)
-            setMaskContentUnitsBaseValue(propertyValue);
-        return;
-    } else if (name == SVGNames::xAttr)
-        m_x->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+    else if (name == SVGNames::maskUnitsAttr)
+        m_maskUnits->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::maskContentUnitsAttr)
+        m_maskContentUnits->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::xAttr)
+        m_x->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::yAttr)
-        m_y->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_y->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::widthAttr)
-        m_width->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+        m_width->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::heightAttr)
-        m_height->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+        m_height->setBaseValueAsString(value, parseError);
     else if (SVGTests::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();

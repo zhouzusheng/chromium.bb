@@ -99,14 +99,14 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
 
     if (!m_accessedBestFitImage) {
         // FIXME: In the future, we want to take much more than deviceScaleFactor into acount here.
-        // All forms of scale should be included: Page::pageScaleFactor(), Frame::pageZoomFactor(),
+        // All forms of scale should be included: Page::pageScaleFactor(), LocalFrame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
         if (Document* document = loader->document()) {
             FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
 
             if (options.corsEnabled == IsCORSEnabled)
-                request.setCrossOriginAccessControl(loader->document()->securityOrigin(), options.allowCredentials);
+                request.setCrossOriginAccessControl(loader->document()->securityOrigin(), options.allowCredentials, options.credentialsRequested);
 
             if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request)) {
                 m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
@@ -187,7 +187,7 @@ CSSImageSetValue::CSSImageSetValue(const CSSImageSetValue& cloneFrom)
 
 PassRefPtrWillBeRawPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
 {
-    return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSImageSetValue(*this));
+    return adoptRefWillBeRefCountedGarbageCollected(new CSSImageSetValue(*this));
 }
 
 } // namespace WebCore

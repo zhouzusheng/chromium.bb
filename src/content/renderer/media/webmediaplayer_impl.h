@@ -2,21 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Delegate calls from WebCore::MediaPlayerPrivate to Chrome's video player.
-// It contains Pipeline which is the actual media player pipeline, it glues
-// the media player pipeline, data source, audio renderer and renderer.
-// Pipeline would creates multiple threads and access some public methods
-// of this class, so we need to be extra careful about concurrent access of
-// methods and members.
-//
-// Other issues:
-// During tear down of the whole browser or a tab, the DOM tree may not be
-// destructed nicely, and there will be some dangling media threads trying to
-// the main thread, so we need this class to listen to destruction event of the
-// main thread and cleanup the media threads when the even is received. Also
-// at destruction of this class we will need to unhook it from destruction event
-// list of the main thread.
-
 #ifndef CONTENT_RENDERER_MEDIA_WEBMEDIAPLAYER_IMPL_H_
 #define CONTENT_RENDERER_MEDIA_WEBMEDIAPLAYER_IMPL_H_
 
@@ -28,16 +13,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
-#include "cc/layers/video_frame_provider.h"
-#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
+#include "content/renderer/media/video_frame_compositor.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
 #include "media/base/media_keys.h"
 #include "media/base/pipeline.h"
 #include "media/base/text_track.h"
 #include "media/filters/skcanvas_video_renderer.h"
-#include "media/filters/video_frame_painter.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -68,16 +51,18 @@ class WebLayerImpl;
 
 namespace content {
 class BufferedDataSource;
+class VideoFrameCompositor;
 class WebAudioSourceProviderImpl;
 class WebContentDecryptionModuleImpl;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerParams;
 class WebTextTrackImpl;
 
+// The canonical implementation of blink::WebMediaPlayer that's backed by
+// media::Pipeline. Handles normal resource loading, Media Source, and
+// Encrypted Media.
 class WebMediaPlayerImpl
     : public blink::WebMediaPlayer,
-      public cc::VideoFrameProvider,
-      public content::RenderFrameObserver,
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
@@ -140,13 +125,6 @@ class WebMediaPlayerImpl
   virtual unsigned audioDecodedByteCount() const;
   virtual unsigned videoDecodedByteCount() const;
 
-  // cc::VideoFrameProvider implementation.
-  virtual void SetVideoFrameProviderClient(
-      cc::VideoFrameProvider::Client* client) OVERRIDE;
-  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
-  virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
-      OVERRIDE;
-
   virtual bool copyVideoTextureToPlatformTexture(
       blink::WebGraphicsContext3D* web_graphics_context,
       unsigned int texture,
@@ -177,9 +155,6 @@ class WebMediaPlayerImpl
   virtual void setContentDecryptionModule(
       blink::WebContentDecryptionModule* cdm);
 
-  // RenderFrameObserver implementation.
-  virtual void OnDestruct() OVERRIDE;
-
   // Notifies blink that the entire media element region has been invalidated.
   // This path is slower than notifying the compositor directly as it performs
   // more work and can trigger layouts. It should only be used in two cases:
@@ -191,13 +166,13 @@ class WebMediaPlayerImpl
   void OnPipelineSeek(media::PipelineStatus status);
   void OnPipelineEnded();
   void OnPipelineError(media::PipelineStatus error);
-  void OnPipelineBufferingState(
-      media::Pipeline::BufferingState buffering_state);
+  void OnPipelineMetadata(media::PipelineMetadata metadata);
+  void OnPipelinePrerollCompleted();
   void OnDemuxerOpened();
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
                   media::MediaKeys::KeyError error_code,
-                  int system_code);
+                  uint32 system_code);
   void OnKeyMessage(const std::string& session_id,
                     const std::vector<uint8>& message,
                     const std::string& default_url);
@@ -228,34 +203,22 @@ class WebMediaPlayerImpl
   void SetNetworkState(blink::WebMediaPlayer::NetworkState state);
   void SetReadyState(blink::WebMediaPlayer::ReadyState state);
 
-  // Destroy resources held.
-  //
-  // TODO(scherkus): Remove |reason| after tracking down cause for crashes
-  // http://crbug.com/341184 http://crbug.com/341186
-  enum DestroyReason {
-    WEBMEDIAPLAYER_DESTROYED = 1 << 0,
-    RENDERFRAME_DESTROYED = 1 << 1,
-  };
-  void Destroy(DestroyReason reason);
-
   // Lets V8 know that player uses extra resources not managed by V8.
   void IncrementExternallyAllocatedMemory();
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
   // report results to UMA.
-  MediaKeyException GenerateKeyRequestInternal(
-      const blink::WebString& key_system,
-      const unsigned char* init_data,
-      unsigned init_data_length);
-  MediaKeyException AddKeyInternal(const blink::WebString& key_system,
+  MediaKeyException GenerateKeyRequestInternal(const std::string& key_system,
+                                               const unsigned char* init_data,
+                                               unsigned init_data_length);
+  MediaKeyException AddKeyInternal(const std::string& key_system,
                                    const unsigned char* key,
                                    unsigned key_length,
                                    const unsigned char* init_data,
                                    unsigned init_data_length,
-                                   const blink::WebString& session_id);
-  MediaKeyException CancelKeyRequestInternal(
-      const blink::WebString& key_system,
-      const blink::WebString& session_id);
+                                   const std::string& session_id);
+  MediaKeyException CancelKeyRequestInternal(const std::string& key_system,
+                                             const std::string& session_id);
 
   // Gets the duration value reported by the pipeline.
   double GetPipelineDuration() const;
@@ -287,15 +250,19 @@ class WebMediaPlayerImpl
   // for DCHECKs so methods calls won't execute in the wrong thread.
   const scoped_refptr<base::MessageLoopProxy> main_loop_;
 
-  scoped_ptr<media::Pipeline> pipeline_;
   scoped_refptr<base::MessageLoopProxy> media_loop_;
+  scoped_refptr<media::MediaLog> media_log_;
+  media::Pipeline pipeline_;
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
-  blink::WebString current_key_system_;
+  std::string current_key_system_;
 
   // The LoadType passed in the |load_type| parameter of the load() call.
   LoadType load_type_;
+
+  // Cache of metadata for answering hasAudio(), hasVideo(), and naturalSize().
+  media::PipelineMetadata pipeline_metadata_;
 
   // Playback state.
   //
@@ -324,8 +291,6 @@ class WebMediaPlayerImpl
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
   base::Callback<void(const base::Closure&)> defer_load_cb_;
-
-  scoped_refptr<media::MediaLog> media_log_;
 
   // Since accelerated compositing status is only known after the first layout,
   // we delay reporting it to UMA until that time.
@@ -359,17 +324,12 @@ class WebMediaPlayerImpl
   std::string init_data_type_;
 
   // Video rendering members.
-  media::VideoFramePainter painter_;
+  VideoFrameCompositor compositor_;
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
-  gfx::Size natural_size_;
 
   // The compositor layer for displaying the video content when using composited
   // playback.
   scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
-
-  // A pointer back to the compositor to inform it about state changes. This is
-  // not NULL while the compositor is actively using this webmediaplayer.
-  cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
   // Text track objects get a unique index value when they're created.
   int text_track_index_;
@@ -382,10 +342,6 @@ class WebMediaPlayerImpl
   WebContentDecryptionModuleImpl* web_cdm_;
 
   media::DecryptorReadyCB decryptor_ready_cb_;
-
-  // TODO(scherkus): Remove after tracking down cause for crashes
-  // http://crbug.com/341184 http://crbug.com/341186
-  uint32 destroy_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

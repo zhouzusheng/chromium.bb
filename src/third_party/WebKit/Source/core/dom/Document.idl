@@ -20,6 +20,8 @@
 
 callback CustomElementConstructor = Element ();
 
+typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
+
 [
     SpecialWrapFor=HTMLDocument|XMLDocument
 ] interface Document : Node {
@@ -42,6 +44,8 @@ callback CustomElementConstructor = Element ();
 
     [CustomElementCallbacks, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] Node importNode(Node node, optional boolean deep);
     [CustomElementCallbacks, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] Element createElementNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString qualifiedName);
+    [RaisesException, DeprecateAs=DocumentCreateAttributeNS] Attr createAttributeNS([TreatNullAs=NullString,Default=Undefined] optional DOMString namespaceURI,
+                                                                                  [TreatNullAs=NullString,Default=Undefined] optional DOMString qualifiedName); // Removed from DOM4.
     HTMLCollection getElementsByTagNameNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString localName);
     [PerWorldBindings] Element getElementById(DOMString elementId);
 
@@ -139,9 +143,9 @@ callback CustomElementConstructor = Element ();
     // WebKit extensions
 
     [TreatReturnedNullStringAs=Null] readonly attribute DOMString preferredStylesheetSet;
-             [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString selectedStylesheetSet;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString selectedStylesheetSet;
 
-    CanvasRenderingContext getCSSCanvasContext(DOMString contextId, DOMString name, long width, long height);
+    RenderingContext getCSSCanvasContext(DOMString contextId, DOMString name, long width, long height);
 
     // HTML 5
     HTMLCollection getElementsByClassName(DOMString classNames);

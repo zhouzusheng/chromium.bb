@@ -96,7 +96,8 @@
       'conditions': [
         ['os_posix==1 and OS!="mac" and OS!="ios"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -114,23 +115,5 @@
     },
   ],
   'conditions': [
-    # Special target to wrap a gtest_target_type==shared_library
-    # sql_unittests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-          'target_name': 'sql_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'sql_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'sql_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)sql_unittests<(SHARED_LIB_SUFFIX)',
-          },
-          'includes': [ '../build/apk_test.gypi' ],
-        },
-      ],
-    }],
   ],
 }

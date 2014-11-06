@@ -33,9 +33,9 @@ namespace WebCore {
 class HTMLStyleElement;
 class StyleSheet;
 
-class StyleSheetList : public RefCounted<StyleSheetList> {
+class StyleSheetList : public RefCountedWillBeGarbageCollectedFinalized<StyleSheetList> {
 public:
-    static PassRefPtr<StyleSheetList> create(TreeScope* treeScope) { return adoptRef(new StyleSheetList(treeScope)); }
+    static PassRefPtrWillBeRawPtr<StyleSheetList> create(TreeScope* treeScope) { return adoptRefWillBeNoop(new StyleSheetList(treeScope)); }
     ~StyleSheetList();
 
     unsigned length();
@@ -43,18 +43,19 @@ public:
 
     HTMLStyleElement* getNamedItem(const AtomicString&) const;
 
-    // FIXME: Should return a reference.
-    Document* document() { return &m_treeScope->document(); }
+    Document* document() { return m_treeScope ? &m_treeScope->document() : 0; }
 
     void detachFromDocument();
     CSSStyleSheet* anonymousNamedGetter(const AtomicString&);
 
+    void trace(Visitor*);
+
 private:
     StyleSheetList(TreeScope*);
-    const Vector<RefPtr<StyleSheet> >& styleSheets();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheets();
 
     TreeScope* m_treeScope;
-    Vector<RefPtr<StyleSheet> > m_detachedStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > m_detachedStyleSheets;
 };
 
 } // namespace WebCore

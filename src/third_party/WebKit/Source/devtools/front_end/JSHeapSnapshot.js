@@ -31,9 +31,10 @@
 /**
  * @constructor
  * @param {!WebInspector.HeapSnapshotProgress} progress
+ * @param {boolean} showHiddenData
  * @extends {WebInspector.HeapSnapshot}
  */
-WebInspector.JSHeapSnapshot = function(profile, progress)
+WebInspector.JSHeapSnapshot = function(profile, progress, showHiddenData)
 {
     this._nodeFlags = { // bit flags
         canBeQueried: 1,
@@ -44,7 +45,7 @@ WebInspector.JSHeapSnapshot = function(profile, progress)
         visitedMarker:     0x10000  // bits: 1,0000,0000,0000,0000
     };
     this._lazyStringCache = { };
-    WebInspector.HeapSnapshot.call(this, profile, progress);
+    WebInspector.HeapSnapshot.call(this, profile, progress, showHiddenData);
 }
 
 WebInspector.JSHeapSnapshot.prototype = {
@@ -58,43 +59,48 @@ WebInspector.JSHeapSnapshot.prototype = {
     },
 
     /**
-     * @param {!Array.<number>} edges
+     * @override
      * @param {number} edgeIndex
      * @return {!WebInspector.JSHeapSnapshotEdge}
      */
-    createEdge: function(edges, edgeIndex)
+    createEdge: function(edgeIndex)
     {
-        return new WebInspector.JSHeapSnapshotEdge(this, edges, edgeIndex);
+        return new WebInspector.JSHeapSnapshotEdge(this, edgeIndex);
     },
 
     /**
-     * @param {number} retainedNodeIndex
+     * @override
      * @param {number} retainerIndex
      * @return {!WebInspector.JSHeapSnapshotRetainerEdge}
      */
-    createRetainingEdge: function(retainedNodeIndex, retainerIndex)
+    createRetainingEdge: function(retainerIndex)
     {
-        return new WebInspector.JSHeapSnapshotRetainerEdge(this, retainedNodeIndex, retainerIndex);
+        return new WebInspector.JSHeapSnapshotRetainerEdge(this, retainerIndex);
     },
 
     /**
-     * @return {function(!WebInspector.JSHeapSnapshotNode):boolean}
+     * @override
+     * @return {?function(!WebInspector.JSHeapSnapshotNode):boolean}
      */
     classNodesFilter: function()
     {
+        /**
+         * @param {!WebInspector.JSHeapSnapshotNode} node
+         * @return {boolean}
+         */
         function filter(node)
         {
             return node.isUserObject();
         }
-        return filter;
+        return this._showHiddenData ? null : filter;
     },
 
     /**
-     * @param {boolean} showHiddenData
      * @return {function(!WebInspector.HeapSnapshotEdge):boolean}
      */
-    containmentEdgesFilter: function(showHiddenData)
+    containmentEdgesFilter: function()
     {
+        var showHiddenData = this._showHiddenData;
         function filter(edge) {
             if (edge.isInvisible())
                 return false;
@@ -106,12 +112,11 @@ WebInspector.JSHeapSnapshot.prototype = {
     },
 
     /**
-     * @param {boolean} showHiddenData
      * @return {function(!WebInspector.HeapSnapshotEdge):boolean}
      */
-    retainingEdgesFilter: function(showHiddenData)
+    retainingEdgesFilter: function()
     {
-        var containmentEdgesFilter = this.containmentEdgesFilter(showHiddenData);
+        var containmentEdgesFilter = this.containmentEdgesFilter();
         function filter(edge)
         {
             return containmentEdgesFilter(edge) && !edge.node().isRoot() && !edge.isWeak();
@@ -123,33 +128,6 @@ WebInspector.JSHeapSnapshot.prototype = {
     {
         WebInspector.HeapSnapshot.prototype.dispose.call(this);
         delete this._flags;
-    },
-
-    _markInvisibleEdges: function()
-    {
-        // Mark hidden edges of global objects as invisible.
-        // FIXME: This is a temporary measure. Normally, we should
-        // really hide all hidden nodes.
-        for (var iter = this.rootNode().edges(); iter.hasNext(); iter.next()) {
-            var edge = iter.edge;
-            if (!edge.isShortcut())
-                continue;
-            var node = edge.node();
-            var propNames = {};
-            for (var innerIter = node.edges(); innerIter.hasNext(); innerIter.next()) {
-                var globalObjEdge = innerIter.edge;
-                if (globalObjEdge.isShortcut())
-                    propNames[globalObjEdge._nameOrIndex()] = true;
-            }
-            for (innerIter.rewind(); innerIter.hasNext(); innerIter.next()) {
-                var globalObjEdge = innerIter.edge;
-                if (!globalObjEdge.isShortcut()
-                    && globalObjEdge.node().isHidden()
-                    && globalObjEdge._hasStringName()
-                    && (globalObjEdge._nameOrIndex() in propNames))
-                    this._containmentEdges[globalObjEdge._edges._start + globalObjEdge.edgeIndex + this._edgeTypeOffset] = this._edgeInvisibleType;
-            }
-        }
     },
 
     _calculateFlags: function()
@@ -190,21 +168,6 @@ WebInspector.JSHeapSnapshot.prototype = {
             return null;
         }
 
-        /**
-         * @param {!WebInspector.HeapSnapshotNode} node
-         * @param {!string} name
-         * @return {?WebInspector.HeapSnapshotNode}
-         */
-        function getChildNodeByLinkName(node, name)
-        {
-            for (var iter = node.edges(); iter.hasNext(); iter.next()) {
-                var edge = iter.edge;
-                if (edge.name() === name)
-                    return edge.node();
-            }
-            return null;
-        }
-
         var visitedNodes = {};
         /**
          * @param {!WebInspector.HeapSnapshotNode} node
@@ -225,15 +188,8 @@ WebInspector.JSHeapSnapshot.prototype = {
         if (userRootsOnly) {
             for (var iter = this.rootNode().edges(); iter.hasNext(); iter.next()) {
                 var node = iter.edge.node();
-                if (node.isDocumentDOMTreesRoot())
+                if (this._isUserRoot(node))
                     doAction(node);
-                else if (node.isUserRoot()) {
-                    var nativeContextNode = getChildNodeByLinkName(node, "native_context");
-                    if (nativeContextNode)
-                        doAction(nativeContextNode);
-                    else
-                        doAction(node);
-                }
             }
         } else {
             for (var iter = gcRoots.edges(); iter.hasNext(); iter.next()) {
@@ -248,11 +204,11 @@ WebInspector.JSHeapSnapshot.prototype = {
     },
 
     /**
-     * @return {!{map: !Uint32Array, flag: number}}
+     * @return {?{map: !Uint32Array, flag: number}}
      */
     userObjectsMapAndFlag: function()
     {
-        return {
+        return this._showHiddenData ? null : {
             map: this._flags,
             flag: this._nodeFlags.pageObject
         };
@@ -395,6 +351,84 @@ WebInspector.JSHeapSnapshot.prototype = {
                 flags[childNodeOrdinal] |= visitedMarker;
             }
         }
+    },
+
+    _calculateStatistics: function()
+    {
+        var nodeFieldCount = this._nodeFieldCount;
+        var nodes = this._nodes;
+        var nodesLength = nodes.length;
+        var nodeTypeOffset = this._nodeTypeOffset;
+        var nodeSizeOffset = this._nodeSelfSizeOffset;;
+        var nodeNativeType = this._nodeNativeType;
+        var nodeCodeType = this._nodeCodeType;
+        var nodeConsStringType = this._nodeConsStringType;
+        var nodeSlicedStringType = this._nodeSlicedStringType;
+        var sizeNative = 0;
+        var sizeCode = 0;
+        var sizeStrings = 0;
+        var sizeJSArrays = 0;
+        var node = this.rootNode();
+        for (var nodeIndex = 0; nodeIndex < nodesLength; nodeIndex += nodeFieldCount) {
+            node.nodeIndex = nodeIndex;
+            var nodeType = nodes[nodeIndex + nodeTypeOffset];
+            var nodeSize = nodes[nodeIndex + nodeSizeOffset];
+            if (nodeType === nodeNativeType)
+                sizeNative += nodeSize;
+            else if (nodeType === nodeCodeType)
+                sizeCode += nodeSize;
+            else if (nodeType === nodeConsStringType || nodeType === nodeSlicedStringType || node.type() === "string")
+                sizeStrings += nodeSize;
+            else if (node.name() === "Array")
+                sizeJSArrays += this._calculateArraySize(node);
+        }
+        this._statistics = new WebInspector.HeapSnapshotCommon.Statistics();
+        this._statistics.total = this.totalSize;
+        this._statistics.v8heap = this.totalSize - sizeNative;
+        this._statistics.native = sizeNative;
+        this._statistics.code = sizeCode;
+        this._statistics.jsArrays = sizeJSArrays;
+        this._statistics.strings = sizeStrings;
+    },
+
+    /**
+     * @param {!WebInspector.HeapSnapshotNode} node
+     * @return {number}
+     */
+    _calculateArraySize: function(node)
+    {
+        var size = node.selfSize();
+        var beginEdgeIndex = node._edgeIndexesStart();
+        var endEdgeIndex = node._edgeIndexesEnd();
+        var containmentEdges = this._containmentEdges;
+        var strings = this._strings;
+        var edgeToNodeOffset = this._edgeToNodeOffset;
+        var edgeTypeOffset = this._edgeTypeOffset;
+        var edgeNameOffset = this._edgeNameOffset;
+        var edgeFieldsCount = this._edgeFieldsCount;
+        var edgeInternalType = this._edgeInternalType;
+        for (var edgeIndex = beginEdgeIndex; edgeIndex < endEdgeIndex; edgeIndex += edgeFieldsCount) {
+            var edgeType = containmentEdges[edgeIndex + edgeTypeOffset];
+            if (edgeType !== edgeInternalType)
+                continue;
+            var edgeName = strings[containmentEdges[edgeIndex + edgeNameOffset]];
+            if (edgeName !== "elements")
+                continue;
+            var elementsNodeIndex = containmentEdges[edgeIndex + edgeToNodeOffset];
+            node.nodeIndex = elementsNodeIndex;
+            if (node.retainersCount() === 1)
+                size += node.selfSize();
+            break;
+        }
+        return size;
+    },
+
+    /**
+     * @return {!WebInspector.HeapSnapshotCommon.Statistics}
+     */
+    getStatistics: function()
+    {
+        return this._statistics;
     },
 
     __proto__: WebInspector.HeapSnapshot.prototype
@@ -588,12 +622,11 @@ WebInspector.JSHeapSnapshotNode.prototype = {
  * @constructor
  * @extends {WebInspector.HeapSnapshotEdge}
  * @param {!WebInspector.JSHeapSnapshot} snapshot
- * @param {!Array.<number>} edges
  * @param {number=} edgeIndex
  */
-WebInspector.JSHeapSnapshotEdge = function(snapshot, edges, edgeIndex)
+WebInspector.JSHeapSnapshotEdge = function(snapshot, edgeIndex)
 {
-    WebInspector.HeapSnapshotEdge.call(this, snapshot, edges, edgeIndex);
+    WebInspector.HeapSnapshotEdge.call(this, snapshot, edgeIndex);
 }
 
 WebInspector.JSHeapSnapshotEdge.prototype = {
@@ -602,7 +635,8 @@ WebInspector.JSHeapSnapshotEdge.prototype = {
      */
     clone: function()
     {
-        return new WebInspector.JSHeapSnapshotEdge(this._snapshot, this._edges, this.edgeIndex);
+        var snapshot = /** @type {!WebInspector.JSHeapSnapshot} */ (this._snapshot);
+        return new WebInspector.JSHeapSnapshotEdge(snapshot, this.edgeIndex);
     },
 
     /**
@@ -711,12 +745,12 @@ WebInspector.JSHeapSnapshotEdge.prototype = {
 
     _nameOrIndex: function()
     {
-        return this._edges.item(this.edgeIndex + this._snapshot._edgeNameOffset);
+        return this._edges[this.edgeIndex + this._snapshot._edgeNameOffset];
     },
 
     _type: function()
     {
-        return this._edges.item(this.edgeIndex + this._snapshot._edgeTypeOffset);
+        return this._edges[this.edgeIndex + this._snapshot._edgeTypeOffset];
     },
 
     __proto__: WebInspector.HeapSnapshotEdge.prototype
@@ -727,10 +761,11 @@ WebInspector.JSHeapSnapshotEdge.prototype = {
  * @constructor
  * @extends {WebInspector.HeapSnapshotRetainerEdge}
  * @param {!WebInspector.JSHeapSnapshot} snapshot
+ * @param {number} retainerIndex
  */
-WebInspector.JSHeapSnapshotRetainerEdge = function(snapshot, retainedNodeIndex, retainerIndex)
+WebInspector.JSHeapSnapshotRetainerEdge = function(snapshot, retainerIndex)
 {
-    WebInspector.HeapSnapshotRetainerEdge.call(this, snapshot, retainedNodeIndex, retainerIndex);
+    WebInspector.HeapSnapshotRetainerEdge.call(this, snapshot, retainerIndex);
 }
 
 WebInspector.JSHeapSnapshotRetainerEdge.prototype = {
@@ -739,7 +774,8 @@ WebInspector.JSHeapSnapshotRetainerEdge.prototype = {
      */
     clone: function()
     {
-        return new WebInspector.JSHeapSnapshotRetainerEdge(this._snapshot, this._retainedNodeIndex, this.retainerIndex());
+        var snapshot = /** @type {!WebInspector.JSHeapSnapshot} */ (this._snapshot);
+        return new WebInspector.JSHeapSnapshotRetainerEdge(snapshot, this.retainerIndex());
     },
 
     /**

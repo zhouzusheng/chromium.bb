@@ -39,9 +39,9 @@ public:
     virtual ~WebMIDIClient() { }
 
     // Request a permission to use system exclusive messages. Called when MIDIOptions.sysex is true.
-    virtual void requestSysExPermission(const WebMIDIPermissionRequest&) = 0;
+    virtual void requestSysexPermission(const WebMIDIPermissionRequest&) = 0;
     // Cancel the request since the requesting frame may be moving to a new page.
-    virtual void cancelSysExPermissionRequest(const WebMIDIPermissionRequest&) = 0;
+    virtual void cancelSysexPermissionRequest(const WebMIDIPermissionRequest&) = 0;
 };
 
 } // namespace blink

@@ -32,7 +32,7 @@
 #include "core/editing/Editor.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
@@ -130,12 +130,17 @@ void InsertTextCommand::doApply()
     if (endingSelection().isRange()) {
         if (performTrivialReplace(m_text, m_selectInsertedText))
             return;
+        bool endOfSelectionWasAtStartOfBlock = isStartOfBlock(endingSelection().visibleEnd());
         deleteSelection(false, true, false, false);
         // deleteSelection eventually makes a new endingSelection out of a Position. If that Position doesn't have
         // a renderer (e.g. it is on a <frameset> in the DOM), the VisibleSelection cannot be canonicalized to
         // anything other than NoSelection. The rest of this function requires a real endingSelection, so bail out.
         if (endingSelection().isNone())
             return;
+        if (endOfSelectionWasAtStartOfBlock) {
+            if (EditingStyle* typingStyle = document().frame()->selection().typingStyle())
+                typingStyle->removeBlockProperties();
+        }
     } else if (document().frame()->editor().isOverwriteModeEnabled()) {
         if (performOverwrite(m_text, m_selectInsertedText))
             return;
@@ -164,7 +169,8 @@ void InsertTextCommand::doApply()
 
     // It is possible for the node that contains startPosition to contain only unrendered whitespace,
     // and so deleteInsignificantText could remove it.  Save the position before the node in case that happens.
-    Position positionBeforeStartNode(positionInParentBeforeNode(startPosition.containerNode()));
+    ASSERT(startPosition.containerNode());
+    Position positionBeforeStartNode(positionInParentBeforeNode(*startPosition.containerNode()));
     deleteInsignificantText(startPosition, startPosition.downstream());
     if (!startPosition.inDocument())
         startPosition = positionBeforeStartNode;
@@ -225,7 +231,7 @@ Position InsertTextCommand::insertTab(const Position& pos)
     Position insertPos = VisiblePosition(pos, DOWNSTREAM).deepEquivalent();
 
     Node* node = insertPos.containerNode();
-    unsigned int offset = node->isTextNode() ? insertPos.offsetInContainerNode() : 0;
+    unsigned offset = node->isTextNode() ? insertPos.offsetInContainerNode() : 0;
 
     // keep tabs coalesced in tab span
     if (isTabSpanTextNode(node)) {

@@ -352,7 +352,7 @@ int Hunspell::insert_sug(char ***slst, char * word, int ns) {
 int Hunspell::spell(const char * word, int * info, char ** root)
 {
 #ifdef HUNSPELL_CHROME_CLIENT
-  if (pHMgr) pHMgr[0]->EmptyHentryCache();
+  if (pHMgr[0]) pHMgr[0]->EmptyHentryCache();
 #endif
   struct hentry * rv=NULL;
   // need larger vector. For example, Turkish capital letter I converted a
@@ -715,7 +715,7 @@ struct hentry * Hunspell::checkword(const char * w, int * info, char ** root)
 int Hunspell::suggest(char*** slst, const char * word)
 {
 #ifdef HUNSPELL_CHROME_CLIENT
-  if (pHMgr) pHMgr[0]->EmptyHentryCache();
+  if (pHMgr[0]) pHMgr[0]->EmptyHentryCache();
 #endif
   int onlycmpdsug = 0;
   char cw[MAXWORDUTF8LEN];

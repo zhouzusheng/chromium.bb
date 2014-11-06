@@ -121,12 +121,10 @@ class IdentityAllocator : public SkBitmap::Allocator {
   void* buffer_;
 };
 
-void CopyBitmap(const SkBitmap& src,
-                uint8_t* dst,
-                SkBitmap::Config dst_config) {
+void CopyBitmap(const SkBitmap& src, uint8_t* dst, SkColorType dst_colorType) {
   SkBitmap dst_bitmap;
   IdentityAllocator allocator(dst);
-  src.copyTo(&dst_bitmap, dst_config, &allocator);
+  src.copyTo(&dst_bitmap, dst_colorType, &allocator);
   // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
   // bitmap data. This check will be removed once crbug.com/293728 is fixed.
   CHECK_EQ(0u, dst_bitmap.rowBytes() % 4);
@@ -212,28 +210,29 @@ ResourceProvider::Resource::Resource()
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
+      dirty_image(false),
       locked_for_write(false),
-      origin(Internal),
+      lost(false),
       marked_for_deletion(false),
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
       enable_read_lock_fences(false),
+      has_shared_bitmap_id(false),
+      allow_overlay(false),
       read_lock_fence(NULL),
       size(),
+      origin(Internal),
       target(0),
       original_filter(0),
       filter(0),
       image_id(0),
       bound_image_id(0),
-      dirty_image(false),
       texture_pool(0),
       wrap_mode(0),
-      lost(false),
       hint(TextureUsageAny),
       type(InvalidType),
       format(RGBA_8888),
-      has_shared_bitmap_id(false),
       shared_bitmap(NULL) {}
 
 ResourceProvider::Resource::~Resource() {}
@@ -256,28 +255,29 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
+      dirty_image(false),
       locked_for_write(false),
-      origin(origin),
+      lost(false),
       marked_for_deletion(false),
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
       enable_read_lock_fences(false),
+      has_shared_bitmap_id(false),
+      allow_overlay(false),
       read_lock_fence(NULL),
       size(size),
+      origin(origin),
       target(target),
       original_filter(filter),
       filter(filter),
       image_id(0),
       bound_image_id(0),
-      dirty_image(false),
       texture_pool(texture_pool),
       wrap_mode(wrap_mode),
-      lost(false),
       hint(hint),
       type(GLTexture),
       format(format),
-      has_shared_bitmap_id(false),
       shared_bitmap(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
   DCHECK_EQ(origin == Internal, !!texture_pool);
@@ -298,28 +298,29 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
+      dirty_image(false),
       locked_for_write(false),
-      origin(origin),
+      lost(false),
       marked_for_deletion(false),
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
       enable_read_lock_fences(false),
+      has_shared_bitmap_id(!!bitmap),
+      allow_overlay(false),
       read_lock_fence(NULL),
       size(size),
+      origin(origin),
       target(0),
       original_filter(filter),
       filter(filter),
       image_id(0),
       bound_image_id(0),
-      dirty_image(false),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      lost(false),
       hint(TextureUsageAny),
       type(Bitmap),
       format(RGBA_8888),
-      has_shared_bitmap_id(!!bitmap),
       shared_bitmap(bitmap) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
   DCHECK(origin == Delegated || pixels);
@@ -341,28 +342,29 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
+      dirty_image(false),
       locked_for_write(false),
-      origin(origin),
+      lost(false),
       marked_for_deletion(false),
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
       enable_read_lock_fences(false),
+      has_shared_bitmap_id(true),
+      allow_overlay(false),
       read_lock_fence(NULL),
       size(size),
+      origin(origin),
       target(0),
       original_filter(filter),
       filter(filter),
       image_id(0),
       bound_image_id(0),
-      dirty_image(false),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      lost(false),
       hint(TextureUsageAny),
       type(Bitmap),
       format(RGBA_8888),
-      has_shared_bitmap_id(true),
       shared_bitmap_id(bitmap_id),
       shared_bitmap(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
@@ -382,6 +384,9 @@ ResourceProvider::RasterBuffer::RasterBuffer(
 ResourceProvider::RasterBuffer::~RasterBuffer() {}
 
 SkCanvas* ResourceProvider::RasterBuffer::LockForWrite() {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::RasterBuffer::LockForWrite");
+
   DCHECK(!locked_canvas_);
 
   locked_canvas_ = DoLockForWrite();
@@ -389,28 +394,37 @@ SkCanvas* ResourceProvider::RasterBuffer::LockForWrite() {
   return locked_canvas_;
 }
 
-void ResourceProvider::RasterBuffer::UnlockForWrite() {
+bool ResourceProvider::RasterBuffer::UnlockForWrite() {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::RasterBuffer::UnlockForWrite");
+
   if (locked_canvas_) {
     locked_canvas_->restoreToCount(canvas_save_count_);
     locked_canvas_ = NULL;
   }
-  DoUnlockForWrite();
+  return DoUnlockForWrite();
 }
 
 ResourceProvider::DirectRasterBuffer::DirectRasterBuffer(
     const Resource* resource,
     ResourceProvider* resource_provider)
-    : RasterBuffer(resource, resource_provider) {}
+    : RasterBuffer(resource, resource_provider), surface_generation_id_(0u) {}
 
 ResourceProvider::DirectRasterBuffer::~DirectRasterBuffer() {}
 
 SkCanvas* ResourceProvider::DirectRasterBuffer::DoLockForWrite() {
   if (!surface_)
     surface_ = CreateSurface();
+  surface_generation_id_ = surface_ ? surface_->generationID() : 0u;
   return surface_ ? surface_->getCanvas() : NULL;
 }
 
-void ResourceProvider::DirectRasterBuffer::DoUnlockForWrite() {}
+bool ResourceProvider::DirectRasterBuffer::DoUnlockForWrite() {
+  // generationID returns a non-zero, unique value corresponding to the content
+  // of surface. Hence, a change since DoLockForWrite was called means the
+  // surface has changed.
+  return surface_ ? surface_generation_id_ != surface_->generationID() : false;
+}
 
 skia::RefPtr<SkSurface> ResourceProvider::DirectRasterBuffer::CreateSurface() {
   skia::RefPtr<SkSurface> surface;
@@ -438,10 +452,8 @@ skia::RefPtr<SkSurface> ResourceProvider::DirectRasterBuffer::CreateSurface() {
       DCHECK_EQ(RGBA_8888, resource()->format);
       SkImageInfo image_info = SkImageInfo::MakeN32Premul(
           resource()->size.width(), resource()->size.height());
-      size_t row_bytes = SkBitmap::ComputeRowBytes(SkBitmap::kARGB_8888_Config,
-                                                   resource()->size.width());
       surface = skia::AdoptRef(SkSurface::NewRasterDirect(
-          image_info, resource()->pixels, row_bytes));
+          image_info, resource()->pixels, image_info.minRowBytes()));
       break;
     }
     default:
@@ -453,7 +465,9 @@ skia::RefPtr<SkSurface> ResourceProvider::DirectRasterBuffer::CreateSurface() {
 ResourceProvider::BitmapRasterBuffer::BitmapRasterBuffer(
     const Resource* resource,
     ResourceProvider* resource_provider)
-    : RasterBuffer(resource, resource_provider), mapped_buffer_(NULL) {}
+    : RasterBuffer(resource, resource_provider),
+      mapped_buffer_(NULL),
+      raster_bitmap_generation_id_(0u) {}
 
 ResourceProvider::BitmapRasterBuffer::~BitmapRasterBuffer() {}
 
@@ -470,41 +484,49 @@ SkCanvas* ResourceProvider::BitmapRasterBuffer::DoLockForWrite() {
     case RGBA_4444:
       // Use the default stride if we will eventually convert this
       // bitmap to 4444.
-      raster_bitmap_.setConfig(SkBitmap::kARGB_8888_Config,
-                               resource()->size.width(),
-                               resource()->size.height());
-      raster_bitmap_.allocPixels();
+      raster_bitmap_.allocN32Pixels(resource()->size.width(),
+                                    resource()->size.height());
       break;
     case RGBA_8888:
-    case BGRA_8888:
-      raster_bitmap_.setConfig(SkBitmap::kARGB_8888_Config,
-                               resource()->size.width(),
-                               resource()->size.height(),
-                               stride);
-      raster_bitmap_.setPixels(mapped_buffer_);
+    case BGRA_8888: {
+      SkImageInfo info = SkImageInfo::MakeN32Premul(resource()->size.width(),
+                                                    resource()->size.height());
+      if (0 == stride)
+        stride = info.minRowBytes();
+      raster_bitmap_.installPixels(info, mapped_buffer_, stride);
       break;
+    }
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
       NOTREACHED();
       break;
   }
-  skia::RefPtr<SkBitmapDevice> device =
-      skia::AdoptRef(new SkBitmapDevice(raster_bitmap_));
-  raster_canvas_ = skia::AdoptRef(new SkCanvas(device.get()));
+  raster_canvas_ = skia::AdoptRef(new SkCanvas(raster_bitmap_));
+  raster_bitmap_generation_id_ = raster_bitmap_.getGenerationID();
   return raster_canvas_.get();
 }
 
-void ResourceProvider::BitmapRasterBuffer::DoUnlockForWrite() {
+bool ResourceProvider::BitmapRasterBuffer::DoUnlockForWrite() {
   raster_canvas_.clear();
 
-  SkBitmap::Config buffer_config = SkBitmapConfig(resource()->format);
-  if (mapped_buffer_ && (buffer_config != raster_bitmap_.config()))
-    CopyBitmap(raster_bitmap_, mapped_buffer_, buffer_config);
+  // getGenerationID returns a non-zero, unique value corresponding to the
+  // pixels in bitmap. Hence, a change since DoLockForWrite was called means the
+  // bitmap has changed.
+  bool raster_bitmap_changed =
+      raster_bitmap_generation_id_ != raster_bitmap_.getGenerationID();
+
+  if (raster_bitmap_changed) {
+    SkColorType buffer_colorType =
+        ResourceFormatToSkColorType(resource()->format);
+    if (mapped_buffer_ && (buffer_colorType != raster_bitmap_.colorType()))
+      CopyBitmap(raster_bitmap_, mapped_buffer_, buffer_colorType);
+  }
   raster_bitmap_.reset();
 
   UnmapBuffer();
   mapped_buffer_ = NULL;
+  return raster_bitmap_changed;
 }
 
 ResourceProvider::ImageRasterBuffer::ImageRasterBuffer(
@@ -587,6 +609,11 @@ bool ResourceProvider::InUseByConsumer(ResourceId id) {
 bool ResourceProvider::IsLost(ResourceId id) {
   Resource* resource = GetResource(id);
   return resource->lost;
+}
+
+bool ResourceProvider::AllowOverlay(ResourceId id) {
+  Resource* resource = GetResource(id);
+  return resource->allow_overlay;
 }
 
 ResourceProvider::ResourceId ResourceProvider::CreateResource(
@@ -763,6 +790,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
   resource.release_callback =
       base::Bind(&SingleReleaseCallback::Run,
                  base::Owned(release_callback.release()));
+  resource.allow_overlay = mailbox.allow_overlay();
   return id;
 }
 
@@ -771,12 +799,11 @@ void ResourceProvider::DeleteResource(ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
   Resource* resource = &it->second;
-  DCHECK(!resource->lock_for_read_count);
   DCHECK(!resource->marked_for_deletion);
   DCHECK_EQ(resource->imported_count, 0);
   DCHECK(resource->pending_set_pixels || !resource->locked_for_write);
 
-  if (resource->exported_count > 0) {
+  if (resource->exported_count > 0 || resource->lock_for_read_count > 0) {
     resource->marked_for_deletion = true;
     return;
   } else {
@@ -905,21 +932,20 @@ void ResourceProvider::SetPixels(ResourceId id,
     DCHECK_EQ(Bitmap, resource->type);
     DCHECK(resource->allocated);
     DCHECK_EQ(RGBA_8888, resource->format);
-    SkBitmap src_full;
-    src_full.setConfig(
-        SkBitmap::kARGB_8888_Config, image_rect.width(), image_rect.height());
-    src_full.setPixels(const_cast<uint8_t*>(image));
-    SkBitmap src_subset;
-    SkIRect sk_source_rect = SkIRect::MakeXYWH(source_rect.x(),
-                                               source_rect.y(),
-                                               source_rect.width(),
-                                               source_rect.height());
-    sk_source_rect.offset(-image_rect.x(), -image_rect.y());
-    src_full.extractSubset(&src_subset, sk_source_rect);
+    DCHECK(source_rect.x() >= image_rect.x());
+    DCHECK(source_rect.y() >= image_rect.y());
+    DCHECK(source_rect.right() <= image_rect.right());
+    DCHECK(source_rect.bottom() <= image_rect.bottom());
+    SkImageInfo source_info =
+        SkImageInfo::MakeN32Premul(source_rect.width(), source_rect.height());
+    size_t image_row_bytes = image_rect.width() * 4;
+    gfx::Vector2d source_offset = source_rect.origin() - image_rect.origin();
+    image += source_offset.y() * image_row_bytes + source_offset.x() * 4;
 
     ScopedWriteLockSoftware lock(this, id);
     SkCanvas* dest = lock.sk_canvas();
-    dest->writePixels(src_subset, dest_offset.x(), dest_offset.y());
+    dest->writePixels(
+        source_info, image, image_row_bytes, dest_offset.x(), dest_offset.y());
   }
 }
 
@@ -1060,10 +1086,25 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
 }
 
 void ResourceProvider::UnlockForRead(ResourceId id) {
-  Resource* resource = GetResource(id);
+  DCHECK(thread_checker_.CalledOnValidThread());
+  ResourceMap::iterator it = resources_.find(id);
+  CHECK(it != resources_.end());
+
+  Resource* resource = &it->second;
   DCHECK_GT(resource->lock_for_read_count, 0);
   DCHECK_EQ(resource->exported_count, 0);
   resource->lock_for_read_count--;
+  if (resource->marked_for_deletion && !resource->lock_for_read_count) {
+    if (!resource->child_id) {
+      // The resource belongs to this ResourceProvider, so it can be destroyed.
+      DeleteResourceInternal(it, Normal);
+    } else {
+      ChildMap::iterator child_it = children_.find(resource->child_id);
+      ResourceIdArray unused;
+      unused.push_back(id);
+      DeleteAndReturnUnusedResourcesToChild(child_it, Normal, unused);
+    }
+  }
 }
 
 const ResourceProvider::Resource* ResourceProvider::LockForWrite(
@@ -1147,10 +1188,9 @@ ResourceProvider::ScopedWriteLockGL::~ScopedWriteLockGL() {
 void ResourceProvider::PopulateSkBitmapWithResource(
     SkBitmap* sk_bitmap, const Resource* resource) {
   DCHECK_EQ(RGBA_8888, resource->format);
-  sk_bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                       resource->size.width(),
-                       resource->size.height());
-  sk_bitmap->setPixels(resource->pixels);
+  SkImageInfo info = SkImageInfo::MakeN32Premul(resource->size.width(),
+                                                resource->size.height());
+  sk_bitmap->installPixels(info, resource->pixels, info.minRowBytes());
 }
 
 ResourceProvider::ScopedReadLockSoftware::ScopedReadLockSoftware(
@@ -1621,7 +1661,6 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     Resource& resource = it->second;
 
     DCHECK(!resource.locked_for_write);
-    DCHECK(!resource.lock_for_read_count);
     DCHECK_EQ(0u, child_info->in_use_resources.count(local_id));
     DCHECK(child_info->parent_to_child_map.count(local_id));
 
@@ -1630,9 +1669,10 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
 
     bool is_lost =
         resource.lost || (resource.type == GLTexture && lost_output_surface_);
-    if (resource.exported_count > 0) {
+    if (resource.exported_count > 0 || resource.lock_for_read_count > 0) {
       if (style != ForShutdown) {
-        // Defer this until we receive the resource back from the parent.
+        // Defer this until we receive the resource back from the parent or
+        // the read lock is released.
         resource.marked_for_deletion = true;
         continue;
       }
@@ -1740,13 +1780,16 @@ SkCanvas* ResourceProvider::MapPixelRasterBuffer(ResourceId id) {
   return resource->pixel_raster_buffer->LockForWrite();
 }
 
-void ResourceProvider::UnmapPixelRasterBuffer(ResourceId id) {
+bool ResourceProvider::UnmapPixelRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
   DCHECK(resource->pixel_raster_buffer.get());
-  resource->pixel_raster_buffer->UnlockForWrite();
+  return resource->pixel_raster_buffer->UnlockForWrite();
 }
 
 void ResourceProvider::AcquirePixelBuffer(Resource* resource) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::AcquirePixelBuffer");
+
   DCHECK(resource->origin == Resource::Internal);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
@@ -1776,6 +1819,9 @@ void ResourceProvider::AcquirePixelBuffer(Resource* resource) {
 }
 
 void ResourceProvider::ReleasePixelBuffer(Resource* resource) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::ReleasePixelBuffer");
+
   DCHECK(resource->origin == Resource::Internal);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
@@ -1813,6 +1859,9 @@ void ResourceProvider::ReleasePixelBuffer(Resource* resource) {
 
 uint8_t* ResourceProvider::MapPixelBuffer(const Resource* resource,
                                           int* stride) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::MapPixelBuffer");
+
   DCHECK(resource->origin == Resource::Internal);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
@@ -1836,6 +1885,9 @@ uint8_t* ResourceProvider::MapPixelBuffer(const Resource* resource,
 }
 
 void ResourceProvider::UnmapPixelBuffer(const Resource* resource) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::UnmapPixelBuffer");
+
   DCHECK(resource->origin == Resource::Internal);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
@@ -1879,6 +1931,9 @@ GLenum ResourceProvider::BindForSampling(
 }
 
 void ResourceProvider::BeginSetPixels(ResourceId id) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::BeginSetPixels");
+
   Resource* resource = GetResource(id);
   DCHECK(!resource->pending_set_pixels);
 
@@ -1934,7 +1989,8 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
     DCHECK(resource->pixel_buffer);
     DCHECK_EQ(RGBA_8888, resource->format);
 
-    std::swap(resource->pixels, resource->pixel_buffer);
+    memcpy(
+        resource->pixels, resource->pixel_buffer, 4 * resource->size.GetArea());
     delete[] resource->pixel_buffer;
     resource->pixel_buffer = NULL;
   }
@@ -1944,6 +2000,9 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
 }
 
 void ResourceProvider::ForceSetPixelsToComplete(ResourceId id) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::ForceSetPixelsToComplete");
+
   Resource* resource = GetResource(id);
   DCHECK(resource->locked_for_write);
   DCHECK(resource->pending_set_pixels);
@@ -1960,6 +2019,9 @@ void ResourceProvider::ForceSetPixelsToComplete(ResourceId id) {
 }
 
 bool ResourceProvider::DidSetPixelsComplete(ResourceId id) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "ResourceProvider::DidSetPixelsComplete");
+
   Resource* resource = GetResource(id);
   DCHECK(resource->locked_for_write);
   DCHECK(resource->pending_set_pixels);
@@ -2132,10 +2194,12 @@ uint8_t* ResourceProvider::MapImage(const Resource* resource, int* stride) {
     DCHECK(resource->image_id);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
+    // MapImageCHROMIUM should be called prior to GetImageParameterivCHROMIUM.
+    uint8_t* pixels = static_cast<uint8_t*>(
+        gl->MapImageCHROMIUM(resource->image_id, GL_READ_WRITE));
     gl->GetImageParameterivCHROMIUM(
         resource->image_id, GL_IMAGE_ROWBYTES_CHROMIUM, stride);
-    return static_cast<uint8_t*>(
-        gl->MapImageCHROMIUM(resource->image_id, GL_READ_WRITE));
+    return pixels;
   }
   DCHECK_EQ(Bitmap, resource->type);
   *stride = 0;

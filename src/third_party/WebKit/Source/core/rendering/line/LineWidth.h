@@ -62,14 +62,14 @@ public:
     void addUncommittedWidth(float delta) { m_uncommittedWidth += delta; }
     void commit();
     void applyOverhang(RenderRubyRun*, RenderObject* startRenderer, RenderObject* endRenderer);
-    void fitBelowFloats();
-
-    void updateCurrentShapeSegment();
+    void fitBelowFloats(bool isFirstLine = false);
 
     bool shouldIndentText() const { return m_shouldIndentText == IndentText; }
 
 private:
     void computeAvailableWidthFromLeftAndRight();
+    void updateLineDimension(LayoutUnit newLineTop, LayoutUnit newLineWidth, const float& newLineLeft, const float& newLineRight);
+    void wrapNextToShapeOutside(bool isFirstLine);
 
     RenderBlockFlow& m_block;
     float m_uncommittedWidth;
@@ -78,7 +78,6 @@ private:
     float m_left;
     float m_right;
     float m_availableWidth;
-    const LineSegment* m_segment;
     bool m_isFirstLine;
     IndentTextOrNot m_shouldIndentText;
 };

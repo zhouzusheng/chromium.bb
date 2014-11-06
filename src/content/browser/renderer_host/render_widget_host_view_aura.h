@@ -26,21 +26,22 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
 #include "content/common/content_export.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/aura/client/activation_change_observer.h"
-#include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_change_observer.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_vsync_manager.h"
+#include "ui/compositor/layer_owner_delegate.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/cursors/webcursor.h"
+#include "ui/wm/public/activation_change_observer.h"
+#include "ui/wm/public/activation_delegate.h"
 
 namespace aura {
 class WindowTracker;
@@ -77,6 +78,7 @@ namespace content {
 class LegacyRenderWidgetHostHWND;
 #endif
 
+class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
 class ResizeLock;
@@ -86,9 +88,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     : public RenderWidgetHostViewBase,
       public ui::CompositorObserver,
       public ui::CompositorVSyncManager::Observer,
+      public ui::LayerOwnerDelegate,
       public ui::TextInputClient,
       public gfx::DisplayObserver,
-      public aura::RootWindowObserver,
+      public aura::WindowTreeHostObserver,
       public aura::WindowDelegate,
       public aura::client::ActivationDelegate,
       public aura::client::ActivationChangeObserver,
@@ -295,13 +298,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer *old_layer,
-                                ui::Layer *new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -324,9 +325,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnWindowFocused(aura::Window* gained_focus,
                                aura::Window* lost_focus) OVERRIDE;
 
-  // Overridden from aura::RootWindowObserver:
-  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
-                                     const gfx::Point& new_origin) OVERRIDE;
+  // Overridden from aura::WindowTreeHostObserver:
+  virtual void OnHostMoved(const aura::WindowTreeHost* host,
+                           const gfx::Point& new_origin) OVERRIDE;
 
   // SoftwareFrameManagerClient implementation:
   virtual void SoftwareFrameWasFreed(
@@ -342,6 +343,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // windowed NPAPI plugins shouldn't paint in. Overwrites any previous cutout
   // rects.
   void UpdateConstrainedWindowRects(const std::vector<gfx::Rect>& rects);
+
+  // Updates the cursor clip region. Used for mouse locking.
+  void UpdateMouseLockRegion();
 #endif
 
   // Method to indicate if this instance is shutting down or closing.
@@ -380,9 +384,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCompositingLockStateChanged(
       ui::Compositor* compositor) OVERRIDE;
 
-  // Overridden from ui::CompositorVSyncManager::Observer
+  // Overridden from ui::CompositorVSyncManager::Observer:
   virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
                                        base::TimeDelta interval) OVERRIDE;
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // Overridden from ui::LayerOwnerObserver:
+  virtual void OnLayerRecreated(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
@@ -467,10 +476,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Add on compositing commit callback.
   void AddOnCommitCallbackAndDisableLocks(const base::Closure& callback);
 
-  // Called after |window_| is parented to a RootWindow.
+  // Called after |window_| is parented to a WindowEventDispatcher.
   void AddedToRootWindow();
 
-  // Called prior to removing |window_| from a RootWindow.
+  // Called prior to removing |window_| from a WindowEventDispatcher.
   void RemovingFromRootWindow();
 
   // Called after commit for the last reference to the texture going away
@@ -515,6 +524,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();
+
+  // Before calling RenderWidgetHost::ForwardKeyboardEvent(), this method
+  // calls our keybindings handler against the event and send matched
+  // edit commands to renderer instead.
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   // Dismisses a Web Popup on a mouse or touch press outside the popup and its
   // parent.
@@ -575,6 +589,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Helper function to set keyboard focus to the main window.
   void SetKeyboardFocus();
+
+  RenderFrameHostImpl* GetFocusedFrame();
 
   // The model object.
   RenderWidgetHostImpl* host_;

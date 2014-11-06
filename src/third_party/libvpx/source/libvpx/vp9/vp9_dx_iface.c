@@ -46,7 +46,7 @@ struct vpx_codec_alg_priv {
   vp9_stream_info_t       si;
   int                     defer_alloc;
   int                     decoder_init;
-  VP9D_PTR                pbi;
+  struct VP9Decompressor *pbi;
   int                     postproc_cfg_set;
   vp8_postproc_cfg_t      postproc_cfg;
 #if CONFIG_POSTPROC_VISUALIZER
@@ -159,11 +159,7 @@ static vpx_codec_err_t vp9_peek_si(const uint8_t *data, unsigned int data_sz,
 
     if (frame_marker != VP9_FRAME_MARKER)
       return VPX_CODEC_UNSUP_BITSTREAM;
-#if CONFIG_NON420
     if (version > 1) return VPX_CODEC_UNSUP_BITSTREAM;
-#else
-    if (version != 0) return VPX_CODEC_UNSUP_BITSTREAM;
-#endif
 
     if (vp9_rb_read_bit(&rb)) {  // show an existing frame
       return VPX_CODEC_OK;
@@ -278,7 +274,7 @@ static vpx_codec_err_t decode_one(vpx_codec_alg_priv_t *ctx,
 
     if (!res) {
       VP9D_CONFIG oxcf;
-      VP9D_PTR optr;
+      struct VP9Decompressor *optr;
 
       vp9_initialize_dec();
 
@@ -462,7 +458,7 @@ static vpx_codec_err_t vp9_decode(vpx_codec_alg_priv_t  *ctx,
     while (data_start < data_end && *data_start == 0)
       data_start++;
 
-    data_sz = data_end - data_start;
+    data_sz = (unsigned int)(data_end - data_start);
   } while (data_start < data_end);
   return res;
 }

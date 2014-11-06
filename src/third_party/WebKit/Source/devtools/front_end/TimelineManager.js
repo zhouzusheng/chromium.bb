@@ -43,7 +43,8 @@ WebInspector.TimelineManager = function()
 WebInspector.TimelineManager.EventTypes = {
     TimelineStarted: "TimelineStarted",
     TimelineStopped: "TimelineStopped",
-    TimelineEventRecorded: "TimelineEventRecorded"
+    TimelineEventRecorded: "TimelineEventRecorded",
+    TimelineProgress: "TimelineProgress"
 }
 
 WebInspector.TimelineManager.prototype = {
@@ -57,15 +58,17 @@ WebInspector.TimelineManager.prototype = {
 
     /**
      * @param {number=} maxCallStackDepth
+     * @param {boolean=} bufferEvents
+     * @param {string=} liveEvents
      * @param {boolean=} includeCounters
      * @param {boolean=} includeGPUEvents
      * @param {function(?Protocol.Error)=} callback
      */
-    start: function(maxCallStackDepth, includeCounters, includeGPUEvents, callback)
+    start: function(maxCallStackDepth, bufferEvents, liveEvents, includeCounters, includeGPUEvents, callback)
     {
         this._enablementCount++;
         if (this._enablementCount === 1)
-            TimelineAgent.start(maxCallStackDepth, /* bufferEvents */false, includeCounters, includeGPUEvents, callback);
+            TimelineAgent.start(maxCallStackDepth, bufferEvents, liveEvents, includeCounters, includeGPUEvents, callback);
         else if (callback)
             callback(null);
     },
@@ -136,6 +139,11 @@ WebInspector.TimelineDispatcher.prototype = {
     {
         this._started = false;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStopped, consoleTimeline);
+    },
+
+    progress: function(count)
+    {
+        this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineProgress, count);
     }
 }
 

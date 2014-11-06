@@ -24,7 +24,6 @@
 #include "ui/surface/transport_dib.h"
 
 class SkBitmap;
-class WebCursor;
 
 struct AccessibilityHostMsg_EventParams;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
@@ -45,6 +44,7 @@ class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SyntheticGesture;
 class SyntheticGestureTarget;
+class WebCursor;
 struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
@@ -162,6 +162,11 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // indicates the direction at which the selection was made on touch devices.
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) = 0;
+
+#if defined(OS_ANDROID)
+  // Notifies the View that the renderer selection root bounds has changed.
+  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) = 0;
+#endif
 
   // Notifies the view that the scroll offset has changed.
   virtual void ScrollOffsetChanged() = 0;
@@ -329,6 +334,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Called each time the RenderWidgetHost receives a new frame for display from
   // the renderer.
   virtual void DidReceiveRendererFrame() = 0;
+
+  virtual SkBitmap::Config PreferredReadbackFormat() = 0;
 
 #if defined(OS_MACOSX)
   // Does any event handling necessary for plugin IME; should be called after

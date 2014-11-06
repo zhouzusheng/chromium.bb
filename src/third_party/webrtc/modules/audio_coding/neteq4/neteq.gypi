@@ -16,6 +16,7 @@
       'iSAC',
       'iSACFix',
       'CNG',
+      '<(DEPTH)/third_party/opus/opus.gyp:opus',
       '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
       '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
     ],
@@ -38,20 +39,27 @@
         '<@(neteq_defines)',
       ],
       'include_dirs': [
-        'interface',
-        '<(webrtc_root)',
+        # Need Opus header files for the audio classifier.
+        '<(DEPTH)/third_party/opus/src/celt',
+        '<(DEPTH)/third_party/opus/src/src',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          'interface',
-          '<(webrtc_root)',
+          # Need Opus header files for the audio classifier.
+          '<(DEPTH)/third_party/opus/src/celt',
+          '<(DEPTH)/third_party/opus/src/src',
         ],
       },
+      'export_dependent_settings': [
+        '<(DEPTH)/third_party/opus/opus.gyp:opus',
+      ],
       'sources': [
         'interface/audio_decoder.h',
         'interface/neteq.h',
         'accelerate.cc',
         'accelerate.h',
+        'audio_classifier.cc',
+        'audio_classifier.h',
         'audio_decoder_impl.cc',
         'audio_decoder_impl.h',
         'audio_decoder.cc',
@@ -178,6 +186,8 @@
             'tools/neteq_performance_test.h',
             'tools/rtp_generator.cc',
             'tools/rtp_generator.h',
+            'tools/neteq_quality_test.cc',
+            'tools/neteq_quality_test.h',
           ],
         }, # neteq_unittest_tools
       ], # targets

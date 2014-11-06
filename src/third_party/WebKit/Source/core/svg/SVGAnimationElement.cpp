@@ -39,11 +39,6 @@
 
 namespace WebCore {
 
-// Animated property definitions
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAnimationElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document& document)
     : SVGSMILElement(tagName, document)
     , SVGTests(this)
@@ -56,7 +51,6 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document&
     , m_animationMode(NoAnimation)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGAnimationElement();
 
     UseCounter::count(document, UseCounter::SVGAnimationElement);
 }
@@ -189,7 +183,7 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
     }
 
     if (name == SVGNames::keyPointsAttr) {
-        if (hasTagName(SVGNames::animateMotionTag)) {
+        if (isSVGAnimateMotionElement(*this)) {
             // This is specified to be an animateMotion attribute only but it is simpler to put it here
             // where the other timing calculatations are.
             parseKeyTimes(value, m_keyPoints, false);
@@ -311,7 +305,7 @@ void SVGAnimationElement::setCalcMode(const AtomicString& calcMode)
     else if (calcMode == spline)
         setCalcMode(CalcModeSpline);
     else
-        setCalcMode(hasTagName(SVGNames::animateMotionTag) ? CalcModePaced : CalcModeLinear);
+        setCalcMode(isSVGAnimateMotionElement(*this) ? CalcModePaced : CalcModeLinear);
 }
 
 void SVGAnimationElement::setAttributeType(const AtomicString& attributeType)
@@ -421,10 +415,12 @@ unsigned SVGAnimationElement::calculateKeyTimesIndex(float percent) const
 {
     unsigned index;
     unsigned keyTimesCount = m_keyTimes.size();
-    // Compare index + 1 to keyTimesCount because the last keyTimes entry is
-    // required to be 1, and percent can never exceed 1; i.e., the second last
-    // keyTimes entry defines the beginning of the final interval
-    for (index = 1; index + 1 < keyTimesCount; ++index) {
+    // For linear and spline animations, the last value must be '1'. In those
+    // cases we don't need to consider the last value, since |percent| is never
+    // greater than one.
+    if (keyTimesCount && calcMode() != CalcModeDiscrete)
+        keyTimesCount--;
+    for (index = 1; index < keyTimesCount; ++index) {
         if (m_keyTimes[index] > percent)
             break;
     }
@@ -453,14 +449,15 @@ float SVGAnimationElement::calculatePercentFromKeyPoints(float percent) const
         return m_keyPoints[m_keyPoints.size() - 1];
 
     unsigned index = calculateKeyTimesIndex(percent);
-    float fromPercent = m_keyTimes[index];
-    float toPercent = m_keyTimes[index + 1];
     float fromKeyPoint = m_keyPoints[index];
-    float toKeyPoint = m_keyPoints[index + 1];
 
     if (calcMode() == CalcModeDiscrete)
         return fromKeyPoint;
 
+    ASSERT(index + 1 < m_keyTimes.size());
+    float fromPercent = m_keyTimes[index];
+    float toPercent = m_keyTimes[index + 1];
+    float toKeyPoint = m_keyPoints[index + 1];
     float keyPointPercent = (percent - fromPercent) / (toPercent - fromPercent);
 
     if (calcMode() == CalcModeSpline) {
@@ -489,6 +486,26 @@ void SVGAnimationElement::currentValuesFromKeyPoints(float percent, float& effec
     to = m_values[index + 1];
 }
 
+AnimatedPropertyType SVGAnimationElement::determineAnimatedPropertyType() const
+{
+    if (!targetElement())
+        return AnimatedString;
+
+    RefPtr<SVGAnimatedPropertyBase> property = targetElement()->propertyFromAttribute(attributeName());
+    if (property) {
+        AnimatedPropertyType propertyType = property->type();
+
+        // Only <animatedTransform> is allowed to animate AnimatedTransformList.
+        // http://www.w3.org/TR/SVG/animate.html#AnimationAttributesAndProperties
+        if (propertyType == AnimatedTransformList && !isSVGAnimateTransformElement(*this))
+            return AnimatedUnknown;
+
+        return propertyType;
+    }
+
+    return SVGElement::animatedPropertyTypeForCSSAttribute(attributeName());
+}
+
 void SVGAnimationElement::currentValuesForValuesAnimation(float percent, float& effectivePercent, String& from, String& to)
 {
     unsigned valuesCount = m_values.size();
@@ -504,7 +521,7 @@ void SVGAnimationElement::currentValuesForValuesAnimation(float percent, float& 
 
     CalcMode calcMode = this->calcMode();
     if (hasTagName(SVGNames::animateTag)) {
-        AnimatedPropertyType attributeType = toSVGAnimateElement(this)->determineAnimatedPropertyType(targetElement());
+        AnimatedPropertyType attributeType = determineAnimatedPropertyType();
         // Fall back to discrete animations for Strings.
         if (attributeType == AnimatedBoolean
             || attributeType == AnimatedEnumeration

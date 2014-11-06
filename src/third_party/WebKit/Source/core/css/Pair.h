@@ -33,7 +33,6 @@ namespace WebCore {
 // border-radius and background-size, but (FIXME) border-spacing and background-position could be converted over to use
 // it (eliminating some extra -webkit- internal properties).
 class Pair FINAL : public RefCountedWillBeGarbageCollected<Pair> {
-    DECLARE_GC_INFO;
 public:
     enum IdenticalValuesPolicy { DropIdenticalValues, KeepIdenticalValues };
 
@@ -67,8 +66,8 @@ public:
 
 private:
     Pair()
-        : m_first(0)
-        , m_second(0)
+        : m_first(nullptr)
+        , m_second(nullptr)
         , m_identicalValuesPolicy(DropIdenticalValues) { }
 
     Pair(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> first, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> second, IdenticalValuesPolicy identicalValuesPolicy)

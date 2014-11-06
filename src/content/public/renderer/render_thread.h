@@ -22,6 +22,7 @@ class GURL;
 namespace base {
 class MessageLoop;
 class MessageLoopProxy;
+class WaitableEvent;
 }
 
 namespace IPC {
@@ -77,9 +78,11 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
 
   // Sends over a base::UserMetricsAction to be recorded by user metrics as
   // an action. Once a new user metric is added, run
-  //   tools/metrics/actions/extract_actions.py --hash
-  // to generate a new mapping of [action hashes -> metric names] and send it
-  // out for review to be updated.
+  //   tools/metrics/actions/extract_actions.py
+  // to add the metric to actions.xml, then update the <owner>s and
+  // <description> sections. Make sure to include the actions.xml file when you
+  // upload your code for review!
+  //
   // WARNING: When using base::UserMetricsAction, base::UserMetricsAction
   // and a string literal parameter must be on the same line, e.g.
   //   RenderThread::Get()->RecordAction(
@@ -120,6 +123,9 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   // returned and |proxy_list| is set to a PAC string containing a list of
   // proxy servers.
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) = 0;
+
+  // Gets the shutdown event for the process.
+  virtual base::WaitableEvent* GetShutdownEvent() = 0;
 
 #if defined(OS_WIN)
   // Request that the given font be loaded by the browser so it's cached by the

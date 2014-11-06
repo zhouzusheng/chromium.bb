@@ -83,8 +83,6 @@ private:
 
     virtual void layout() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     virtual bool canBeProgramaticallyScrolled() const OVERRIDE { return true; }
@@ -130,9 +128,6 @@ private:
     virtual int lineStep(ScrollbarOrientation) const OVERRIDE;
     virtual int pageStep(ScrollbarOrientation) const OVERRIDE;
     virtual float pixelStep(ScrollbarOrientation) const OVERRIDE;
-
-
-    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
 
     // NOTE: This should only be called by the overriden setScrollOffset from ScrollableArea.
@@ -143,7 +138,6 @@ private:
     void destroyScrollbar();
 
     LayoutUnit itemHeight() const;
-    void valueChanged(unsigned listIndex);
     int numVisibleItems() const;
     int numItems() const;
     LayoutUnit listHeight() const;

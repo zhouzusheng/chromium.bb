@@ -92,15 +92,16 @@ void StyleKeyframe::setKeys(PassOwnPtr<Vector<double> > keys)
     ASSERT(m_keyText.isNull());
 }
 
-MutableStylePropertySet* StyleKeyframe::mutableProperties()
+MutableStylePropertySet& StyleKeyframe::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return toMutableStylePropertySet(m_properties);
+    return *toMutableStylePropertySet(m_properties);
 }
 
 void StyleKeyframe::setProperties(PassRefPtr<StylePropertySet> properties)
 {
+    ASSERT(properties);
     m_properties = properties;
 }
 
@@ -160,6 +161,12 @@ void CSSKeyframeRule::reattach(StyleRuleBase*)
 {
     // No need to reattach, the underlying data is shareable on mutation.
     ASSERT_NOT_REACHED();
+}
+
+void CSSKeyframeRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_keyframe);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

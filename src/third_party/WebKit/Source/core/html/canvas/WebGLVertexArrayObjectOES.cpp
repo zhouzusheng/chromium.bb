@@ -27,20 +27,20 @@
 
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-PassRefPtr<WebGLVertexArrayObjectOES> WebGLVertexArrayObjectOES::create(WebGLRenderingContext* ctx, VaoType type)
+PassRefPtr<WebGLVertexArrayObjectOES> WebGLVertexArrayObjectOES::create(WebGLRenderingContextBase* ctx, VaoType type)
 {
     return adoptRef(new WebGLVertexArrayObjectOES(ctx, type));
 }
 
-WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContext* ctx, VaoType type)
+WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContextBase* ctx, VaoType type)
     : WebGLContextObject(ctx)
     , m_type(type)
     , m_hasEverBeenBound(false)
-    , m_boundElementArrayBuffer(0)
+    , m_boundElementArrayBuffer(nullptr)
 {
     ScriptWrappable::init(this);
     m_vertexAttribState.resize(ctx->maxVertexAttribs());
@@ -115,14 +115,14 @@ void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtr<WebGLBuffer> buffer)
 {
     if (m_boundElementArrayBuffer == buffer) {
         m_boundElementArrayBuffer->onDetached(context()->webGraphicsContext3D());
-        m_boundElementArrayBuffer = 0;
+        m_boundElementArrayBuffer = nullptr;
     }
 
     for (size_t i = 0; i < m_vertexAttribState.size(); ++i) {
         VertexAttribState& state = m_vertexAttribState[i];
         if (state.bufferBinding == buffer) {
             buffer->onDetached(context()->webGraphicsContext3D());
-            state.bufferBinding = 0;
+            state.bufferBinding = nullptr;
         }
     }
 }

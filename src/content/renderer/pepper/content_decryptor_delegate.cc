@@ -249,6 +249,7 @@ ContentDecryptorDelegate::ContentDecryptorDelegate(
       next_decryption_request_id_(1),
       audio_samples_per_second_(0),
       audio_channel_count_(0),
+      audio_channel_layout_(media::CHANNEL_LAYOUT_NONE),
       weak_ptr_factory_(this) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
 }
@@ -418,6 +419,7 @@ bool ContentDecryptorDelegate::InitializeAudioDecoder(
 
   audio_samples_per_second_ = pp_decoder_config.samples_per_second;
   audio_channel_count_ = pp_decoder_config.channel_count;
+  audio_channel_layout_ = decoder_config.channel_layout();
 
   scoped_refptr<PPB_Buffer_Impl> extra_data_resource;
   if (!MakeBufferResource(pp_instance_,
@@ -471,7 +473,8 @@ bool ContentDecryptorDelegate::DeinitializeDecoder(
     Decryptor::StreamType stream_type) {
   CancelDecode(stream_type);
 
-  natural_size_ = gfx::Size();
+  if (stream_type == Decryptor::kVideo)
+    natural_size_ = gfx::Size();
 
   // TODO(tomfinegan): Add decoder deinitialize request tracking, and get
   // stream type from media stack.
@@ -627,7 +630,7 @@ void ContentDecryptorDelegate::OnSessionClosed(uint32 session_id) {
 
 void ContentDecryptorDelegate::OnSessionError(uint32 session_id,
                                               int32_t media_error,
-                                              int32_t system_code) {
+                                              uint32_t system_code) {
   if (session_error_cb_.is_null())
     return;
 
@@ -1020,7 +1023,9 @@ bool ContentDecryptorDelegate::DeserializeAudioFrames(
     const int frame_count = frame_size / audio_bytes_per_frame;
     scoped_refptr<media::AudioBuffer> frame = media::AudioBuffer::CopyFrom(
         sample_format,
+        audio_channel_layout_,
         audio_channel_count_,
+        audio_samples_per_second_,
         frame_count,
         &channel_ptrs[0],
         base::TimeDelta::FromMicroseconds(timestamp),

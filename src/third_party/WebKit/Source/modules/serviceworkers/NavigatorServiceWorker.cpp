@@ -10,8 +10,8 @@
 
 namespace WebCore {
 
-NavigatorServiceWorker::NavigatorServiceWorker(Navigator* navigator)
-    : DOMWindowProperty(navigator->frame())
+NavigatorServiceWorker::NavigatorServiceWorker(Navigator& navigator)
+    : DOMWindowProperty(navigator.frame())
 {
 }
 
@@ -19,14 +19,19 @@ NavigatorServiceWorker::~NavigatorServiceWorker()
 {
 }
 
-NavigatorServiceWorker* NavigatorServiceWorker::from(Navigator* navigator)
+NavigatorServiceWorker& NavigatorServiceWorker::from(Navigator& navigator)
 {
     NavigatorServiceWorker* supplement = toNavigatorServiceWorker(navigator);
     if (!supplement) {
         supplement = new NavigatorServiceWorker(navigator);
-        provideTo(navigator, supplementName(), adoptPtr(supplement));
+        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
+}
+
+NavigatorServiceWorker* NavigatorServiceWorker::toNavigatorServiceWorker(Navigator& navigator)
+{
+    return static_cast<NavigatorServiceWorker*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
 }
 
 const char* NavigatorServiceWorker::supplementName()
@@ -34,16 +39,22 @@ const char* NavigatorServiceWorker::supplementName()
     return "NavigatorServiceWorker";
 }
 
-ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker(Navigator* navigator)
+ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker(ExecutionContext* executionContext, Navigator& navigator)
 {
-    return NavigatorServiceWorker::from(navigator)->serviceWorker();
+    return NavigatorServiceWorker::from(navigator).serviceWorker(executionContext);
 }
 
-ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker()
+ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker(ExecutionContext* executionContext)
 {
     if (!m_serviceWorker && frame())
-        m_serviceWorker = ServiceWorkerContainer::create();
+        m_serviceWorker = ServiceWorkerContainer::create(executionContext);
     return m_serviceWorker.get();
+}
+
+void NavigatorServiceWorker::willDetachGlobalObjectFromFrame()
+{
+    m_serviceWorker->detachClient();
+    m_serviceWorker = nullptr;
 }
 
 } // namespace WebCore

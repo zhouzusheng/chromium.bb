@@ -7,14 +7,15 @@
 #include "base/bind.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/process/process.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/media/capture/web_contents_audio_input_stream.h"
+#include "content/browser/media/capture/web_contents_capture_util.h"
 #include "content/browser/media/media_internals.h"
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
 #include "content/browser/renderer_host/media/audio_input_sync_writer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
-#include "content/browser/renderer_host/media/web_contents_audio_input_stream.h"
-#include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "media/audio/audio_manager_base.h"
 
 namespace content {
@@ -55,7 +56,8 @@ AudioInputRendererHost::AudioInputRendererHost(
     MediaStreamManager* media_stream_manager,
     AudioMirroringManager* audio_mirroring_manager,
     media::UserInputMonitor* user_input_monitor)
-    : audio_manager_(audio_manager),
+    : BrowserMessageFilter(AudioMsgStart),
+      audio_manager_(audio_manager),
       media_stream_manager_(media_stream_manager),
       audio_mirroring_manager_(audio_mirroring_manager),
       user_input_monitor_(user_input_monitor),
@@ -258,8 +260,10 @@ void AudioInputRendererHost::OnCreateStream(
 
   // Create the shared memory and share it with the renderer process
   // using a new SyncWriter object.
-  if (!entry->shared_memory.CreateAndMapAnonymous(
-      segment_size * entry->shared_memory_segment_count)) {
+  base::CheckedNumeric<uint32> size = segment_size;
+  size *= entry->shared_memory_segment_count;
+  if (!size.IsValid() ||
+      !entry->shared_memory.CreateAndMapAnonymous(size.ValueOrDie())) {
     // If creation of shared memory failed then send an error message.
     SendErrorMessage(stream_id, SHARED_MEMORY_CREATE_FAILED);
     return;

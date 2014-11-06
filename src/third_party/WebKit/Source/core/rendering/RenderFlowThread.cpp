@@ -67,7 +67,7 @@ PassRefPtr<RenderStyle> RenderFlowThread::createFlowThreadStyle(RenderStyle* par
     newStyle->setTop(Length(0, Fixed));
     newStyle->setWidth(Length(100, Percent));
     newStyle->setHeight(Length(100, Percent));
-    newStyle->font().update(0);
+    newStyle->font().update(nullptr);
 
     return newStyle.release();
 }
@@ -211,7 +211,7 @@ void RenderFlowThread::repaintRectangleInRegions(const LayoutRect& repaintRect) 
     if (!shouldRepaint(repaintRect) || !hasValidRegionInfo())
         return;
 
-    LayoutStateDisabler layoutStateDisabler(view()); // We can't use layout state to repaint, since the regions are somewhere else.
+    LayoutStateDisabler layoutStateDisabler(*this); // We can't use layout state to repaint, since the regions are somewhere else.
 
     // We can't use currentFlowThread as it is possible to have interleaved flow threads and the wrong one could be used.
     // Let each region figure out the proper enclosing flow thread.
@@ -566,18 +566,18 @@ const RenderBox* RenderFlowThread::currentStatePusherRenderBox() const
     return 0;
 }
 
-void RenderFlowThread::pushFlowThreadLayoutState(const RenderObject* object)
+void RenderFlowThread::pushFlowThreadLayoutState(const RenderObject& object)
 {
     if (const RenderBox* currentBoxDescendant = currentStatePusherRenderBox()) {
         LayoutState* layoutState = currentBoxDescendant->view()->layoutState();
         if (layoutState && layoutState->isPaginated()) {
             ASSERT(layoutState->renderer() == currentBoxDescendant);
-            LayoutSize offsetDelta = layoutState->m_layoutOffset - layoutState->m_pageOffset;
+            LayoutSize offsetDelta = layoutState->layoutOffset() - layoutState->pageOffset();
             setOffsetFromLogicalTopOfFirstRegion(currentBoxDescendant, currentBoxDescendant->isHorizontalWritingMode() ? offsetDelta.height() : offsetDelta.width());
         }
     }
 
-    m_statePusherObjectsStack.add(object);
+    m_statePusherObjectsStack.add(&object);
 }
 
 void RenderFlowThread::popFlowThreadLayoutState()
@@ -605,7 +605,7 @@ LayoutUnit RenderFlowThread::offsetFromLogicalTopOfFirstRegion(const RenderBlock
         LayoutState* layoutState = view()->layoutState();
         ASSERT(layoutState->renderer() == currentBlock);
         ASSERT(layoutState && layoutState->isPaginated());
-        LayoutSize offsetDelta = layoutState->m_layoutOffset - layoutState->m_pageOffset;
+        LayoutSize offsetDelta = layoutState->layoutOffset() - layoutState->pageOffset();
         return currentBoxDescendant->isHorizontalWritingMode() ? offsetDelta.height() : offsetDelta.width();
     }
 

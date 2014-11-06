@@ -45,6 +45,7 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -66,7 +67,6 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/vector2d_conversions.h"
 #include "ui/snapshot/snapshot.h"
-#include "webkit/common/cursors/webcursor.h"
 #include "webkit/common/webpreferences.h"
 
 #if defined(TOOLKIT_GTK)
@@ -157,11 +157,6 @@ class RenderWidgetHostIteratorImpl : public RenderWidgetHostIterator {
 
 }  // namespace
 
-
-// static
-void RenderWidgetHost::RemoveAllBackingStores() {
-  BackingStoreManager::RemoveAllBackingStores();
-}
 
 // static
 size_t RenderWidgetHost::BackingStoreMemorySize() {
@@ -343,10 +338,8 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
 void RenderWidgetHostImpl::SetView(RenderWidgetHostView* view) {
   view_ = RenderWidgetHostViewPort::FromRWHV(view);
 
-  if (!view_) {
-    GpuSurfaceTracker::Get()->SetSurfaceHandle(
-        surface_id_, gfx::GLSurfaceHandle());
-  }
+  GpuSurfaceTracker::Get()->SetSurfaceHandle(
+      surface_id_, GetCompositingSurface());
 
   synthetic_gesture_controller_.reset();
 }
@@ -481,10 +474,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnUpdateScreenRectsAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnSetTooltipText)
-#if defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
-                        OnCompositorSurfaceBuffersSwapped)
-#endif
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
                                 msg_is_ok = OnSwapCompositorFrame(msg))
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidOverscroll, OnOverscrolled)
@@ -504,13 +493,20 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
                         OnShowDisambiguationPopup)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionChanged, OnSelectionChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionBoundsChanged,
+                        OnSelectionBoundsChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_Snapshot, OnSnapshot)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowCreated,
                         OnWindowlessPluginDummyWindowCreated)
     IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowDestroyed,
                         OnWindowlessPluginDummyWindowDestroyed)
 #endif
-    IPC_MESSAGE_HANDLER(ViewHostMsg_Snapshot, OnSnapshot)
+#if defined(OS_MACOSX)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
+                        OnCompositorSurfaceBuffersSwapped)
+#endif
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
@@ -718,16 +714,15 @@ void RenderWidgetHostImpl::SetIsLoading(bool is_loading) {
 void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Rect& src_subrect,
     const gfx::Size& accelerated_dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    const SkBitmap::Config& bitmap_config) {
   if (view_ && is_accelerated_compositing_active_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
     gfx::Rect accelerated_copy_rect = src_subrect.IsEmpty() ?
         gfx::Rect(view_->GetViewBounds().size()) : src_subrect;
-    view_->CopyFromCompositingSurface(accelerated_copy_rect,
-                                      accelerated_dst_size,
-                                      callback,
-                                      SkBitmap::kARGB_8888_Config);
+    view_->CopyFromCompositingSurface(
+        accelerated_copy_rect, accelerated_dst_size, callback, bitmap_config);
     return;
   }
 
@@ -792,6 +787,29 @@ bool RenderWidgetHostImpl::CopyFromBackingStoreToCGContext(
   return true;
 }
 #endif
+
+void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostImpl::PauseForPendingResizeOrRepaints");
+
+  if (!CanPauseForPendingResizeOrRepaints())
+    return;
+
+  // Waiting for a backing store will do the wait for us.
+  ignore_result(GetBackingStore(true));
+}
+
+bool RenderWidgetHostImpl::CanPauseForPendingResizeOrRepaints() {
+  // Do not pause if the view is hidden.
+  if (is_hidden())
+    return false;
+
+  // Do not pause if there is not a paint or resize already coming.
+  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+    return false;
+
+  return true;
+}
 
 bool RenderWidgetHostImpl::TryGetBackingStore(const gfx::Size& desired_size,
                                               BackingStore** backing_store) {
@@ -947,6 +965,18 @@ void RenderWidgetHostImpl::EnableFullAccessibilityMode() {
   AddAccessibilityMode(AccessibilityModeComplete);
 }
 
+bool RenderWidgetHostImpl::IsFullAccessibilityModeForTesting() {
+  return accessibility_mode() == AccessibilityModeComplete;
+}
+
+void RenderWidgetHostImpl::EnableTreeOnlyAccessibilityMode() {
+  AddAccessibilityMode(AccessibilityModeTreeOnly);
+}
+
+bool RenderWidgetHostImpl::IsTreeOnlyAccessibilityModeForTesting() {
+  return accessibility_mode() == AccessibilityModeTreeOnly;
+}
+
 void RenderWidgetHostImpl::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
   ForwardMouseEventWithLatencyInfo(mouse_event, ui::LatencyInfo());
 }
@@ -989,9 +1019,6 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
       CreateRWHLatencyInfoIfNotExist(&ui_latency, wheel_event.type);
 
   if (IgnoreInputEvents())
-    return;
-
-  if (delegate_->PreHandleWheelEvent(wheel_event))
     return;
 
   input_router_->SendWheelEvent(MouseWheelEventWithLatencyInfo(wheel_event,
@@ -1124,6 +1151,20 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
       is_shortcut);
 }
 
+void RenderWidgetHostImpl::QueueSyntheticGesture(
+    scoped_ptr<SyntheticGesture> synthetic_gesture,
+    const base::Callback<void(SyntheticGesture::Result)>& on_complete) {
+  if (!synthetic_gesture_controller_ && view_) {
+    synthetic_gesture_controller_.reset(
+        new SyntheticGestureController(
+            view_->CreateSyntheticGestureTarget().Pass()));
+  }
+  if (synthetic_gesture_controller_) {
+    synthetic_gesture_controller_->QueueSyntheticGesture(
+        synthetic_gesture.Pass(), on_complete);
+  }
+}
+
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
   Send(new InputMsg_CursorVisibilityChange(GetRoutingID(), is_visible));
 }
@@ -1230,6 +1271,20 @@ void RenderWidgetHostImpl::GetSnapshotFromRenderer(
 
   gfx::Rect copy_rect_in_pixel = ConvertViewRectToPixel(view_, copy_rect);
   Send(new ViewMsg_Snapshot(GetRoutingID(), copy_rect_in_pixel));
+}
+
+void RenderWidgetHostImpl::OnSelectionChanged(const base::string16& text,
+                                              size_t offset,
+                                              const gfx::Range& range) {
+  if (view_)
+    view_->SelectionChanged(text, offset, range);
+}
+
+void RenderWidgetHostImpl::OnSelectionBoundsChanged(
+    const ViewHostMsg_SelectionBounds_Params& params) {
+  if (view_) {
+    view_->SelectionBoundsChanged(params);
+  }
 }
 
 void RenderWidgetHostImpl::OnSnapshot(bool success,
@@ -1351,12 +1406,6 @@ void RenderWidgetHostImpl::ImeConfirmComposition(
 void RenderWidgetHostImpl::ImeCancelComposition() {
   Send(new ViewMsg_ImeSetComposition(GetRoutingID(), base::string16(),
             std::vector<blink::WebCompositionUnderline>(), 0, 0));
-}
-
-void RenderWidgetHostImpl::ExtendSelectionAndDelete(
-    size_t before,
-    size_t after) {
-  Send(new ViewMsg_ExtendSelectionAndDelete(GetRoutingID(), before, after));
 }
 
 gfx::Rect RenderWidgetHostImpl::GetRootWindowResizerRect() const {
@@ -1746,20 +1795,15 @@ void RenderWidgetHostImpl::OnQueueSyntheticGesture(
   // Only allow untrustworthy gestures if explicitly enabled.
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           cc::switches::kEnableGpuBenchmarking)) {
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_RWH7"));
     GetProcess()->ReceivedBadMessage();
     return;
   }
 
-  if (!synthetic_gesture_controller_) {
-    if (!view_)
-      return;
-    synthetic_gesture_controller_.reset(
-        new SyntheticGestureController(
-            view_->CreateSyntheticGestureTarget().Pass()));
-  }
-
-  synthetic_gesture_controller_->QueueSyntheticGesture(
-      SyntheticGesture::Create(*gesture_packet.gesture_params()));
+  QueueSyntheticGesture(
+        SyntheticGesture::Create(*gesture_packet.gesture_params()),
+        base::Bind(&RenderWidgetHostImpl::OnSyntheticGestureCompleted,
+                   weak_factory_.GetWeakPtr()));
 }
 
 void RenderWidgetHostImpl::OnFocus() {
@@ -2079,8 +2123,10 @@ void RenderWidgetHostImpl::OnWheelEventAck(
   }
 
   const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  if (!processed && !is_hidden() && view_)
-    view_->UnhandledWheelEvent(wheel_event.event);
+  if (!processed && !is_hidden() && view_) {
+    if (!delegate_->HandleWheelEvent(wheel_event.event))
+      view_->UnhandledWheelEvent(wheel_event.event);
+  }
 }
 
 void RenderWidgetHostImpl::OnGestureEventAck(
@@ -2123,6 +2169,11 @@ void RenderWidgetHostImpl::OnUnexpectedEventAck(UnexpectedEventAckType type) {
   } else if (type == UNEXPECTED_EVENT_TYPE) {
     suppress_next_char_events_ = false;
   }
+}
+
+void RenderWidgetHostImpl::OnSyntheticGestureCompleted(
+    SyntheticGesture::Result result) {
+  Send(new InputMsg_SyntheticGestureCompleted(GetRoutingID()));
 }
 
 const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
@@ -2227,66 +2278,8 @@ void RenderWidgetHostImpl::ScrollFocusedEditableNodeIntoRect(
   Send(new InputMsg_ScrollFocusedEditableNodeIntoRect(GetRoutingID(), rect));
 }
 
-void RenderWidgetHostImpl::SelectRange(const gfx::Point& start,
-                                       const gfx::Point& end) {
-  Send(new InputMsg_SelectRange(GetRoutingID(), start, end));
-}
-
 void RenderWidgetHostImpl::MoveCaret(const gfx::Point& point) {
   Send(new InputMsg_MoveCaret(GetRoutingID(), point));
-}
-
-void RenderWidgetHostImpl::Undo() {
-  Send(new InputMsg_Undo(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Undo"));
-}
-
-void RenderWidgetHostImpl::Redo() {
-  Send(new InputMsg_Redo(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Redo"));
-}
-
-void RenderWidgetHostImpl::Cut() {
-  Send(new InputMsg_Cut(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Cut"));
-}
-
-void RenderWidgetHostImpl::Copy() {
-  Send(new InputMsg_Copy(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Copy"));
-}
-
-void RenderWidgetHostImpl::CopyToFindPboard() {
-#if defined(OS_MACOSX)
-  // Windows/Linux don't have the concept of a find pasteboard.
-  Send(new InputMsg_CopyToFindPboard(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("CopyToFindPboard"));
-#endif
-}
-
-void RenderWidgetHostImpl::Paste() {
-  Send(new InputMsg_Paste(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Paste"));
-}
-
-void RenderWidgetHostImpl::PasteAndMatchStyle() {
-  Send(new InputMsg_PasteAndMatchStyle(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("PasteAndMatchStyle"));
-}
-
-void RenderWidgetHostImpl::Delete() {
-  Send(new InputMsg_Delete(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("DeleteSelection"));
-}
-
-void RenderWidgetHostImpl::SelectAll() {
-  Send(new InputMsg_SelectAll(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("SelectAll"));
-}
-
-void RenderWidgetHostImpl::Unselect() {
-  Send(new InputMsg_Unselect(GetRoutingID()));
-  RecordAction(base::UserMetricsAction("Unselect"));
 }
 
 bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
@@ -2558,6 +2551,12 @@ void RenderWidgetHostImpl::AddLatencyInfoComponentIds(
   for (lc = new_components.begin(); lc != new_components.end(); ++lc) {
     latency_info->latency_components[lc->first] = lc->second;
   }
+}
+
+SkBitmap::Config RenderWidgetHostImpl::PreferredReadbackFormat() {
+  if (view_)
+    return view_->PreferredReadbackFormat();
+  return SkBitmap::kARGB_8888_Config;
 }
 
 }  // namespace content

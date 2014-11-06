@@ -259,7 +259,8 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
@@ -277,6 +278,7 @@
         '<(angle_path)/src/build_angle.gyp:translator',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gl/gl.gyp:gl',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'command_buffer_common',
@@ -555,24 +557,6 @@
               'msvs_target_platform': 'x64',
             },
           },
-        },
-      ],
-    }],
-    ['OS == "android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-          'target_name': 'gl_tests_apk',
-          'type': 'none',
-          'dependencies': [
-            'gl_tests',
-          ],
-          'variables': {
-            'test_suite_name': 'gl_tests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)gl_tests<(SHARED_LIB_SUFFIX)',
-          },
-          'includes': [
-            '../build/apk_test.gypi',
-          ],
         },
       ],
     }],

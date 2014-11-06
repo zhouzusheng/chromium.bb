@@ -30,12 +30,13 @@
 
 #include "config.h"
 #include "core/dom/NodeRareData.h"
+#include "core/dom/Element.h"
 
 namespace WebCore {
 
 struct SameSizeAsNodeRareData {
-    unsigned m_bitfields : 20;
     void* m_pointer[3];
+    unsigned m_bitfields;
 };
 
 COMPILE_ASSERT(sizeof(NodeRareData) == sizeof(SameSizeAsNodeRareData), NodeRareDataShouldStaySmall);
@@ -54,5 +55,7 @@ void NodeListsNodeData::invalidateCaches(const QualifiedName* attrName)
         it->value->invalidateCache();
 }
 
+// Ensure the 10 bits reserved for the m_connectedFrameCount cannot overflow
+COMPILE_ASSERT(Page::maxNumberOfFrames < (1 << NodeRareData::ConnectedFrameCountBits), Frame_limit_should_fit_in_rare_data_count);
 
 } // namespace WebCore

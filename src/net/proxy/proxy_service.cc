@@ -1276,7 +1276,7 @@ int ProxyService::DidFinishResolvingProxy(ProxyInfo* result,
   // Log the result of the proxy resolution.
   if (result_code == OK) {
     // When logging all events is enabled, dump the proxy list.
-    if (net_log.IsLoggingAllEvents()) {
+    if (net_log.IsLogging()) {
       net_log.AddEvent(
           NetLog::TYPE_PROXY_SERVICE_RESOLVED_PROXY_LIST,
           base::Bind(&NetLogFinishedResolvingProxyCallback, result));
@@ -1353,12 +1353,6 @@ void ProxyService::ResetConfigService(
 
   if (previous_state != STATE_NONE)
     ApplyProxyConfigIfAvailable();
-}
-
-void ProxyService::PurgeMemory() {
-  DCHECK(CalledOnValidThread());
-  if (resolver_.get())
-    resolver_->PurgeMemory();
 }
 
 void ProxyService::ForceReloadProxyConfig() {

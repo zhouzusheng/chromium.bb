@@ -31,27 +31,32 @@
 #ifndef MIDIAccess_h
 #define MIDIAccess_h
 
+#include "bindings/v8/MIDIAccessResolver.h"
+#include "bindings/v8/ScriptPromise.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
+#include "heap/Handle.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIInput.h"
+#include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIOutput.h"
+#include "platform/AsyncMethodRunner.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
+#include "wtf/WeakPtr.h"
 
 namespace WebCore {
 
 class ExecutionContext;
-class MIDIAccessPromise;
 
-class MIDIAccess FINAL : public RefCounted<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
-    REFCOUNTED_EVENT_TARGET(MIDIAccess);
+class MIDIAccess FINAL : public RefCountedWillBeRefCountedGarbageCollected<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<MIDIAccess>);
 public:
     virtual ~MIDIAccess();
-    static PassRefPtr<MIDIAccess> create(ExecutionContext*, MIDIAccessPromise*);
+    // Returns a promise object that will be resolved with this MIDIAccess.
+    static ScriptPromise request(const MIDIOptions&, ExecutionContext*);
 
     MIDIInputVector inputs() const { return m_inputs; }
     MIDIOutputVector outputs() const { return m_outputs; }
@@ -59,15 +64,18 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
 
-    void setSysExEnabled(bool);
-    bool sysExEnabled() const { return m_sysExEnabled; }
+    void setSysexEnabled(bool);
+    bool sysexEnabled() const { return m_sysexEnabled; }
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIAccess; }
     virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     // ActiveDOMObject
+    virtual void suspend() OVERRIDE;
+    virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE;
 
     // MIDIAccessorClient
     virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
@@ -78,20 +86,39 @@ public:
     // |timeStampInMilliseconds| is in the same time coordinate system as performance.now().
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds);
 
-private:
-    MIDIAccess(ExecutionContext*, MIDIAccessPromise*);
+    void trace(Visitor*);
 
-    void startRequest();
+private:
+    class PostAction;
+    enum State {
+        Requesting,
+        Resolved,
+        Stopped,
+    };
+
+    MIDIAccess(const MIDIOptions&, ExecutionContext*);
+    ScriptPromise startRequest();
+
     void permissionDenied();
 
+    void resolve();
+    void reject(PassRefPtrWillBeRawPtr<DOMError>);
+    void resolveNow();
+    void rejectNow();
+    // Called when the promise is resolved or rejected.
+    void doPostAction(State);
+
+    State m_state;
+    WeakPtrFactory<MIDIAccess> m_weakPtrFactory;
     MIDIInputVector m_inputs;
     MIDIOutputVector m_outputs;
-    MIDIAccessPromise* m_promise;
-
     OwnPtr<MIDIAccessor> m_accessor;
-    bool m_hasAccess;
-    bool m_sysExEnabled;
-    bool m_requesting;
+    OwnPtr<MIDIAccessResolver> m_resolver;
+    MIDIOptions m_options;
+    bool m_sysexEnabled;
+    AsyncMethodRunner<MIDIAccess> m_asyncResolveRunner;
+    AsyncMethodRunner<MIDIAccess> m_asyncRejectRunner;
+    RefPtrWillBeMember<DOMError> m_error;
 };
 
 } // namespace WebCore

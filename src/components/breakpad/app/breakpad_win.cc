@@ -629,13 +629,8 @@ static void InitPipeNameEnvVar(bool is_per_user_install) {
       crash_reporting_enabled = GetBreakpadClient()->GetCollectStatsConsent();
 
     if (!crash_reporting_enabled) {
-      if (!controlled_by_policy &&
-          GetBreakpadClient()->GetDeferredUploadsSupported(
-              is_per_user_install)) {
-        g_deferred_crash_uploads = true;
-      } else {
-        return;
-      }
+      // Crash reporting is disabled, don't set the environment variable.
+      return;
     }
 
     // Build the pipe name. It can be either:
@@ -653,7 +648,7 @@ static void InitPipeNameEnvVar(bool is_per_user_install) {
     pipe_name = kGoogleUpdatePipeName;
     pipe_name += user_sid;
   }
-  env->SetVar(kPipeNameVar, WideToASCII(pipe_name));
+  env->SetVar(kPipeNameVar, base::UTF16ToASCII(pipe_name));
 }
 
 void InitDefaultCrashCallback(LPTOP_LEVEL_EXCEPTION_FILTER filter) {

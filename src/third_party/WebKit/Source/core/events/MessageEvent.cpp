@@ -30,7 +30,6 @@
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -54,7 +53,7 @@ MessageEvent::MessageEvent(const AtomicString& type, const MessageEventInit& ini
     , m_dataType(DataTypeScriptValue)
     , m_origin(initializer.origin)
     , m_lastEventId(initializer.lastEventId)
-    , m_source(isValidSource(initializer.source.get()) ? initializer.source : 0)
+    , m_source(isValidSource(initializer.source.get()) ? initializer.source : nullptr)
     , m_ports(adoptPtr(new MessagePortArray(initializer.ports)))
 {
     ScriptWrappable::init(this);
@@ -112,7 +111,7 @@ MessageEvent::MessageEvent(const String& data, const String& origin)
     ScriptWrappable::init(this);
 }
 
-MessageEvent::MessageEvent(PassRefPtr<Blob> data, const String& origin)
+MessageEvent::MessageEvent(PassRefPtrWillBeRawPtr<Blob> data, const String& origin)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeBlob)
     , m_dataAsBlob(data)
@@ -134,13 +133,13 @@ MessageEvent::~MessageEvent()
 {
 }
 
-PassRefPtr<MessageEvent> MessageEvent::create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<MessageEvent> MessageEvent::create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState& exceptionState)
 {
     if (initializer.source.get() && !isValidSource(initializer.source.get())) {
         exceptionState.throwTypeError("The optional 'source' property is neither a Window nor MessagePort.");
-        return 0;
+        return nullptr;
     }
-    return adoptRef(new MessageEvent(type, initializer));
+    return adoptRefWillBeRefCountedGarbageCollected(new MessageEvent(type, initializer));
 }
 
 void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtr<MessagePortArray> ports)
@@ -183,6 +182,12 @@ const AtomicString& MessageEvent::interfaceName() const
 void MessageEvent::entangleMessagePorts(ExecutionContext* context)
 {
     m_ports = MessagePort::entanglePorts(*context, m_channels.release());
+}
+
+void MessageEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_dataAsBlob);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

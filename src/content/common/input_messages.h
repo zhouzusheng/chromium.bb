@@ -43,8 +43,13 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 IPC_ENUM_TRAITS_MAX_VALUE(
     content::SyntheticGestureParams::GestureType,
     content::SyntheticGestureParams::SYNTHETIC_GESTURE_TYPE_MAX)
-IPC_ENUM_TRAITS_MAX_VALUE(content::TouchAction,
-    content::TOUCH_ACTION_MAX)
+IPC_ENUM_TRAITS_VALIDATE(content::TouchAction, (
+    value >= 0 &&
+    value <= content::TOUCH_ACTION_MAX &&
+    (!(value & content::TOUCH_ACTION_NONE) ||
+        (value == content::TOUCH_ACTION_NONE)) &&
+    (!(value & content::TOUCH_ACTION_PINCH_ZOOM) ||
+        (value == content::TOUCH_ACTION_MANIPULATION))))
 
 IPC_STRUCT_TRAITS_BEGIN(content::EditCommand)
   IPC_STRUCT_TRAITS_MEMBER(name)
@@ -63,8 +68,8 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
   IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
-  IPC_STRUCT_TRAITS_MEMBER(distance)
   IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(distances)
   IPC_STRUCT_TRAITS_MEMBER(prevent_fling)
   IPC_STRUCT_TRAITS_MEMBER(speed_in_pixels_s)
 IPC_STRUCT_TRAITS_END()

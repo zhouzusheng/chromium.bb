@@ -94,6 +94,7 @@ class CC_EXPORT ResourceProvider {
   bool InUseByConsumer(ResourceId id);
 
   bool IsLost(ResourceId id);
+  bool AllowOverlay(ResourceId id);
 
   // Producer interface.
 
@@ -331,14 +332,15 @@ class CC_EXPORT ResourceProvider {
   SkCanvas* MapImageRasterBuffer(ResourceId id);
   void UnmapImageRasterBuffer(ResourceId id);
 
-  // Returns a canvas backed by pixel buffer.
+  // Returns a canvas backed by pixel buffer. UnmapPixelRasterBuffer
+  // returns true if canvas was written to while mapped.
   // The pixel buffer needs to be uploaded to the underlying resource
   // using BeginSetPixels before the resouce can be used for compositing.
   // It is used by PixelRasterWorkerPool.
   void AcquirePixelRasterBuffer(ResourceId id);
   void ReleasePixelRasterBuffer(ResourceId id);
   SkCanvas* MapPixelRasterBuffer(ResourceId id);
-  void UnmapPixelRasterBuffer(ResourceId id);
+  bool UnmapPixelRasterBuffer(ResourceId id);
 
   // Asynchronously update pixels from acquired pixel buffer.
   void BeginSetPixels(ResourceId id);
@@ -414,29 +416,30 @@ class CC_EXPORT ResourceProvider {
     int lock_for_read_count;
     int imported_count;
     int exported_count;
-    bool locked_for_write;
-    Origin origin;
-    bool marked_for_deletion;
-    bool pending_set_pixels;
-    bool set_pixels_completion_forced;
-    bool allocated;
-    bool enable_read_lock_fences;
+    bool dirty_image : 1;
+    bool locked_for_write : 1;
+    bool lost : 1;
+    bool marked_for_deletion : 1;
+    bool pending_set_pixels : 1;
+    bool set_pixels_completion_forced : 1;
+    bool allocated : 1;
+    bool enable_read_lock_fences : 1;
+    bool has_shared_bitmap_id : 1;
+    bool allow_overlay : 1;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
+    Origin origin;
     GLenum target;
     // TODO(skyostil): Use a separate sampler object for filter state.
     GLenum original_filter;
     GLenum filter;
     unsigned image_id;
     unsigned bound_image_id;
-    bool dirty_image;
     GLenum texture_pool;
     GLint wrap_mode;
-    bool lost;
     TextureUsageHint hint;
     ResourceType type;
     ResourceFormat format;
-    bool has_shared_bitmap_id;
     SharedBitmapId shared_bitmap_id;
     SharedBitmap* shared_bitmap;
     linked_ptr<DirectRasterBuffer> direct_raster_buffer;
@@ -450,7 +453,8 @@ class CC_EXPORT ResourceProvider {
     virtual ~RasterBuffer();
 
     SkCanvas* LockForWrite();
-    void UnlockForWrite();
+    // Returns true if canvas was written to while locked.
+    bool UnlockForWrite();
 
    protected:
     RasterBuffer(const Resource* resource, ResourceProvider* resource_provider);
@@ -458,7 +462,7 @@ class CC_EXPORT ResourceProvider {
     ResourceProvider* resource_provider() const { return resource_provider_; }
 
     virtual SkCanvas* DoLockForWrite() = 0;
-    virtual void DoUnlockForWrite() = 0;
+    virtual bool DoUnlockForWrite() = 0;
 
    private:
     const Resource* resource_;
@@ -475,11 +479,13 @@ class CC_EXPORT ResourceProvider {
 
    protected:
     virtual SkCanvas* DoLockForWrite() OVERRIDE;
-    virtual void DoUnlockForWrite() OVERRIDE;
+    virtual bool DoUnlockForWrite() OVERRIDE;
     skia::RefPtr<SkSurface> CreateSurface();
 
    private:
     skia::RefPtr<SkSurface> surface_;
+    uint32_t surface_generation_id_;
+
     DISALLOW_COPY_AND_ASSIGN(DirectRasterBuffer);
   };
 
@@ -492,7 +498,7 @@ class CC_EXPORT ResourceProvider {
                        ResourceProvider* resource_provider);
 
     virtual SkCanvas* DoLockForWrite() OVERRIDE;
-    virtual void DoUnlockForWrite() OVERRIDE;
+    virtual bool DoUnlockForWrite() OVERRIDE;
 
     virtual uint8_t* MapBuffer(int* stride) = 0;
     virtual void UnmapBuffer() = 0;
@@ -500,6 +506,7 @@ class CC_EXPORT ResourceProvider {
    private:
     uint8_t* mapped_buffer_;
     SkBitmap raster_bitmap_;
+    uint32_t raster_bitmap_generation_id_;
     skia::RefPtr<SkCanvas> raster_canvas_;
   };
 

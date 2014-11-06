@@ -27,6 +27,7 @@
 #define DOMWindowIndexedDatabase_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "modules/indexeddb/IDBFactoryBackendInterface.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
@@ -34,23 +35,26 @@ namespace WebCore {
 class IDBFactory;
 class DOMWindow;
 
-class DOMWindowIndexedDatabase FINAL : public DOMWindowProperty, public Supplement<DOMWindow> {
+class DOMWindowIndexedDatabase FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowIndexedDatabase>, public WillBeHeapSupplement<DOMWindow>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowIndexedDatabase);
 public:
     virtual ~DOMWindowIndexedDatabase();
-    static DOMWindowIndexedDatabase* from(DOMWindow*);
+    static DOMWindowIndexedDatabase& from(DOMWindow&);
 
-    static IDBFactory* indexedDB(DOMWindow*);
+    static IDBFactory* indexedDB(DOMWindow&);
 
     virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
     virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
 
+    void trace(Visitor*) { }
+
 private:
-    explicit DOMWindowIndexedDatabase(DOMWindow*);
+    explicit DOMWindowIndexedDatabase(DOMWindow&);
 
     IDBFactory* indexedDB();
     static const char* supplementName();
 
-    DOMWindow* m_window;
+    DOMWindow& m_window;
     RefPtr<IDBFactory> m_idbFactory;
 };
 

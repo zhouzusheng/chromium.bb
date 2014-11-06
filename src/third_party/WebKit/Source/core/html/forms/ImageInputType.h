@@ -61,6 +61,8 @@ private:
     virtual bool shouldRespectHeightAndWidthAttributes() OVERRIDE;
     virtual unsigned height() const OVERRIDE;
     virtual unsigned width() const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
     IntPoint m_clickLocation; // Valid only during HTMLFormElement::prepareForSubmission().
 };

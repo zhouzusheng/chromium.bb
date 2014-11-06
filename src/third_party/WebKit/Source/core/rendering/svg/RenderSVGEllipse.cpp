@@ -63,8 +63,8 @@ void RenderSVGEllipse::updateShapeFromElement()
 
     calculateRadiiAndCenter();
 
-    // Spec: "A value of zero disables rendering of the element."
-    if (m_radii.width() <= 0 || m_radii.height() <= 0)
+    // Spec: "A negative value is an error. A value of zero disables rendering of the element."
+    if (m_radii.isZero() || m_radii.width() < 0 || m_radii.height() < 0)
         return;
 
     m_fillBoundingBox = FloatRect(m_center.x() - m_radii.width(), m_center.y() - m_radii.height(), 2 * m_radii.width(), 2 * m_radii.height());
@@ -76,21 +76,21 @@ void RenderSVGEllipse::updateShapeFromElement()
 void RenderSVGEllipse::calculateRadiiAndCenter()
 {
     ASSERT(element());
-    if (element()->hasTagName(SVGNames::circleTag)) {
-        SVGCircleElement* circle = toSVGCircleElement(element());
+    if (isSVGCircleElement(*element())) {
+        SVGCircleElement& circle = toSVGCircleElement(*element());
 
-        SVGLengthContext lengthContext(circle);
-        float radius = circle->r()->currentValue()->value(lengthContext);
+        SVGLengthContext lengthContext(&circle);
+        float radius = circle.r()->currentValue()->value(lengthContext);
         m_radii = FloatSize(radius, radius);
-        m_center = FloatPoint(circle->cx()->currentValue()->value(lengthContext), circle->cy()->currentValue()->value(lengthContext));
+        m_center = FloatPoint(circle.cx()->currentValue()->value(lengthContext), circle.cy()->currentValue()->value(lengthContext));
         return;
     }
 
-    SVGEllipseElement* ellipse = toSVGEllipseElement(element());
+    SVGEllipseElement& ellipse = toSVGEllipseElement(*element());
 
-    SVGLengthContext lengthContext(ellipse);
-    m_radii = FloatSize(ellipse->rx()->currentValue()->value(lengthContext), ellipse->ry()->currentValue()->value(lengthContext));
-    m_center = FloatPoint(ellipse->cx()->currentValue()->value(lengthContext), ellipse->cy()->currentValue()->value(lengthContext));
+    SVGLengthContext lengthContext(&ellipse);
+    m_radii = FloatSize(ellipse.rx()->currentValue()->value(lengthContext), ellipse.ry()->currentValue()->value(lengthContext));
+    m_center = FloatPoint(ellipse.cx()->currentValue()->value(lengthContext), ellipse.cy()->currentValue()->value(lengthContext));
 }
 
 void RenderSVGEllipse::fillShape(GraphicsContext* context) const

@@ -124,7 +124,6 @@ WebInspector.Script.prototype = {
     searchInContent: function(query, caseSensitive, isRegex, callback)
     {
         /**
-         * @this {WebInspector.Script}
          * @param {?Protocol.Error} error
          * @param {!Array.<!PageAgent.SearchMatch>} searchMatches
          */
@@ -142,7 +141,7 @@ WebInspector.Script.prototype = {
 
         if (this.scriptId) {
             // Script failed to parse.
-            DebuggerAgent.searchInContent(this.scriptId, query, caseSensitive, isRegex, innerCallback.bind(this));
+            DebuggerAgent.searchInContent(this.scriptId, query, caseSensitive, isRegex, innerCallback);
         } else
             callback([]);
     },
@@ -230,7 +229,7 @@ WebInspector.Script.prototype = {
         for (var i = this._sourceMappings.length - 1; !uiLocation && i >= 0; --i)
             uiLocation = this._sourceMappings[i].rawLocationToUILocation(rawLocation);
         console.assert(uiLocation, "Script raw location can not be mapped to any ui location.");
-        return uiLocation.uiSourceCode.overrideLocation(uiLocation);
+        return /** @type {!WebInspector.UILocation} */ (uiLocation);
     },
 
     /**
@@ -240,6 +239,16 @@ WebInspector.Script.prototype = {
     {
         this._sourceMappings.push(sourceMapping);
         this.updateLocations();
+    },
+
+    /**
+     * @return {!WebInspector.SourceMapping}
+     */
+    popSourceMapping: function()
+    {
+        var sourceMapping = this._sourceMappings.pop();
+        this.updateLocations();
+        return sourceMapping;
     },
 
     updateLocations: function()

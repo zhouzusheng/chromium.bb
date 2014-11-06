@@ -9,10 +9,10 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame_pool.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 
 struct AVCodecContext;
 struct AVFrame;
@@ -24,8 +24,6 @@ class SingleThreadTaskRunner;
 namespace media {
 
 class DecoderBuffer;
-class ScopedPtrAVFreeContext;
-class ScopedPtrAVFreeFrame;
 
 class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
  public:
@@ -72,8 +70,6 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   void DoReset();
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<FFmpegVideoDecoder> weak_factory_;
-  base::WeakPtr<FFmpegVideoDecoder> weak_this_;
 
   DecoderState state_;
 
@@ -81,8 +77,8 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   base::Closure reset_cb_;
 
   // FFmpeg structures owned by this object.
-  scoped_ptr_malloc<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
-  scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
+  scoped_ptr<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
+  scoped_ptr<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
 
   VideoDecoderConfig config_;
 

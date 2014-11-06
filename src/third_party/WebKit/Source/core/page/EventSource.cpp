@@ -42,9 +42,9 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/events/Event.h"
 #include "core/events/MessageEvent.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/network/ResourceError.h"
@@ -72,17 +72,17 @@ inline EventSource::EventSource(ExecutionContext* context, const KURL& url, cons
     eventSourceInit.get("withCredentials", m_withCredentials);
 }
 
-PassRefPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& exceptionState)
 {
     if (url.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "Cannot open an EventSource to an empty URL.");
-        return 0;
+        return nullptr;
     }
 
     KURL fullURL = context->completeURL(url);
     if (!fullURL.isValid()) {
         exceptionState.throwDOMException(SyntaxError, "Cannot open an EventSource to '" + url + "'. The URL is invalid.");
-        return 0;
+        return nullptr;
     }
 
     // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
@@ -94,10 +94,10 @@ PassRefPtr<EventSource> EventSource::create(ExecutionContext* context, const Str
     if (!shouldBypassMainWorldContentSecurityPolicy && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
         // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
         exceptionState.throwSecurityError("Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<EventSource> source = adoptRef(new EventSource(context, fullURL, eventSourceInit));
+    RefPtrWillBeRawPtr<EventSource> source = adoptRefWillBeRefCountedGarbageCollected(new EventSource(context, fullURL, eventSourceInit));
 
     source->setPendingActivity(source.get());
     source->scheduleInitialConnect();
@@ -117,7 +117,7 @@ void EventSource::scheduleInitialConnect()
     ASSERT(m_state == CONNECTING);
     ASSERT(!m_requestInFlight);
 
-    m_connectTimer.startOneShot(0);
+    m_connectTimer.startOneShot(0, FROM_HERE);
 }
 
 void EventSource::connect()
@@ -166,7 +166,7 @@ void EventSource::networkRequestEnded()
 void EventSource::scheduleReconnect()
 {
     m_state = CONNECTING;
-    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0);
+    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0, FROM_HERE);
     dispatchEvent(Event::create(EventTypeNames::error));
 }
 
@@ -327,8 +327,8 @@ void EventSource::abortConnectionAttempt()
 
 void EventSource::parseEventStream()
 {
-    unsigned int bufPos = 0;
-    unsigned int bufSize = m_receiveBuf.size();
+    unsigned bufPos = 0;
+    unsigned bufSize = m_receiveBuf.size();
     while (bufPos < bufSize) {
         if (m_discardTrailingNewline) {
             if (m_receiveBuf[bufPos] == '\n')
@@ -338,7 +338,7 @@ void EventSource::parseEventStream()
 
         int lineLength = -1;
         int fieldLength = -1;
-        for (unsigned int i = bufPos; lineLength < 0 && i < bufSize; i++) {
+        for (unsigned i = bufPos; lineLength < 0 && i < bufSize; i++) {
             switch (m_receiveBuf[i]) {
             case ':':
                 if (fieldLength < 0)

@@ -6,7 +6,7 @@
 #include "modules/filesystem/InspectorFrontendHostFileSystem.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/Page.h"
 #include "modules/filesystem/DOMFileSystem.h"
@@ -14,13 +14,13 @@
 
 namespace WebCore {
 
-PassRefPtr<DOMFileSystem> InspectorFrontendHostFileSystem::isolatedFileSystem(InspectorFrontendHost* host, const String& fileSystemName, const String& rootURL)
+PassRefPtrWillBeRawPtr<DOMFileSystem> InspectorFrontendHostFileSystem::isolatedFileSystem(InspectorFrontendHost& host, const String& fileSystemName, const String& rootURL)
 {
-    ExecutionContext* context = host->frontendPage()->mainFrame()->document();
+    ExecutionContext* context = host.frontendPage()->mainFrame()->document();
     return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL));
 }
 
-void InspectorFrontendHostFileSystem::upgradeDraggedFileSystemPermissions(InspectorFrontendHost* host, DOMFileSystem* domFileSystem)
+void InspectorFrontendHostFileSystem::upgradeDraggedFileSystemPermissions(InspectorFrontendHost& host, DOMFileSystem* domFileSystem)
 {
     RefPtr<JSONObject> message = JSONObject::create();
     message->setNumber("id", 0);
@@ -28,7 +28,7 @@ void InspectorFrontendHostFileSystem::upgradeDraggedFileSystemPermissions(Inspec
     RefPtr<JSONArray> params = JSONArray::create();
     message->setArray("params", params);
     params->pushString(domFileSystem->rootURL().string());
-    host->sendMessageToEmbedder(message->toJSONString());
+    host.sendMessageToEmbedder(message->toJSONString());
 }
 
 InspectorFrontendHostFileSystem::InspectorFrontendHostFileSystem() { }

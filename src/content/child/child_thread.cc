@@ -27,7 +27,9 @@
 #include "content/child/child_histogram_message_filter.h"
 #include "content/child/child_process.h"
 #include "content/child/child_resource_message_filter.h"
+#include "content/child/child_shared_bitmap_manager.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
@@ -43,6 +45,7 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -166,7 +169,10 @@ base::LazyInstance<base::Lock> g_lazy_child_thread_lock =
 // doesn't handle the case. Thus, we need our own class here.
 struct CondVarLazyInstanceTraits {
   static const bool kRegisterOnExit = true;
-  static const bool kAllowedToAccessOnNonjoinableThread ALLOW_UNUSED = false;
+#ifndef NDEBUG
+  static const bool kAllowedToAccessOnNonjoinableThread = false;
+#endif
+
   static base::ConditionVariable* New(void* instance) {
     return new (instance) base::ConditionVariable(
         g_lazy_child_thread_lock.Pointer());
@@ -189,8 +195,17 @@ void QuitMainThreadMessageLoop() {
 
 }  // namespace
 
+ChildThread::ChildThreadMessageRouter::ChildThreadMessageRouter(
+    IPC::Sender* sender)
+    : sender_(sender) {}
+
+bool ChildThread::ChildThreadMessageRouter::Send(IPC::Message* msg) {
+  return sender_->Send(msg);
+}
+
 ChildThread::ChildThread()
-    : channel_connected_factory_(this),
+    : router_(this),
+      channel_connected_factory_(this),
       in_browser_process_(false) {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessChannelID);
@@ -199,6 +214,7 @@ ChildThread::ChildThread()
 
 ChildThread::ChildThread(const std::string& channel_name)
     : channel_name_(channel_name),
+      router_(this),
       channel_connected_factory_(this),
       in_browser_process_(true) {
   Init();
@@ -298,6 +314,9 @@ void ChildThread::Init() {
       ::HeapProfilerStop,
       ::GetHeapProfile));
 #endif
+
+  shared_bitmap_manager_.reset(
+      new ChildSharedBitmapManager(thread_safe_sender()));
 }
 
 ChildThread::~ChildThread() {
@@ -325,6 +344,7 @@ void ChildThread::Shutdown() {
   // safely shutdown blink in their Shutdown implementation.
   file_system_dispatcher_.reset();
   quota_dispatcher_.reset();
+  WebFileSystemImpl::DeleteThreadSpecificInstance();
 }
 
 void ChildThread::OnChannelConnected(int32 peer_pid) {
@@ -346,20 +366,13 @@ bool ChildThread::Send(IPC::Message* msg) {
   return channel_->Send(msg);
 }
 
-void ChildThread::AddRoute(int32 routing_id, IPC::Listener* listener) {
+MessageRouter* ChildThread::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());
-
-  router_.AddRoute(routing_id, listener);
-}
-
-void ChildThread::RemoveRoute(int32 routing_id) {
-  DCHECK(base::MessageLoop::current() == message_loop());
-
-  router_.RemoveRoute(routing_id);
+  return &router_;
 }
 
 webkit_glue::ResourceLoaderBridge* ChildThread::CreateBridge(
-    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
+    const RequestInfo& request_info) {
   return resource_dispatcher()->CreateBridge(request_info);
 }
 
@@ -477,10 +490,9 @@ void ChildThread::OnDumpHandles() {
               switches::kAuditAllHandles)));
   handle_enum->EnumerateHandles();
   Send(new ChildProcessHostMsg_DumpHandlesDone);
-  return;
-#endif
-
+#else
   NOTIMPLEMENTED();
+#endif
 }
 
 #if defined(USE_TCMALLOC)
@@ -512,7 +524,6 @@ void ChildThread::ShutdownThread() {
   g_child_thread->message_loop()->PostTask(
       FROM_HERE, base::Bind(&QuitMainThreadMessageLoop));
 }
-
 #endif
 
 void ChildThread::OnProcessFinalRelease() {

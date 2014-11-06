@@ -30,7 +30,7 @@
 #include "core/dom/DocumentSupplementable.h"
 #include "core/events/Event.h"
 #include "core/frame/DOMWindowLifecycleObserver.h"
-#include "modules/device_orientation/DeviceSensorEventController.h"
+#include "core/frame/DeviceSensorEventController.h"
 
 namespace WebCore {
 
@@ -42,9 +42,11 @@ public:
     virtual ~DeviceOrientationController();
 
     static const char* supplementName();
-    static DeviceOrientationController* from(Document*);
+    static DeviceOrientationController& from(Document&);
 
-    void didChangeDeviceOrientation(WebCore::DeviceOrientationData*);
+    void didChangeDeviceOrientation(DeviceOrientationData*);
+    void setOverride(DeviceOrientationData*);
+    void clearOverride();
 
     // Inherited from DOMWindowLifecycleObserver
     virtual void didAddEventListener(DOMWindow*, const AtomicString&) OVERRIDE;
@@ -52,13 +54,16 @@ public:
     virtual void didRemoveAllEventListeners(DOMWindow*) OVERRIDE;
 
 private:
-    explicit DeviceOrientationController(Document*);
+    explicit DeviceOrientationController(Document&);
     virtual void registerWithDispatcher() OVERRIDE;
     virtual void unregisterWithDispatcher() OVERRIDE;
 
+    DeviceOrientationData* lastData();
     virtual bool hasLastData() OVERRIDE;
     virtual PassRefPtr<Event> getLastEvent() OVERRIDE;
     virtual bool isNullEvent(Event*) OVERRIDE;
+
+    RefPtrWillBePersistent<DeviceOrientationData> m_overrideOrientationData;
 };
 
 } // namespace WebCore

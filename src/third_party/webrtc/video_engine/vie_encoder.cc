@@ -149,6 +149,7 @@ ViEEncoder::ViEEncoder(int32_t engine_id,
     bitrate_controller_(bitrate_controller),
     time_of_last_incoming_frame_ms_(0),
     send_padding_(false),
+    min_transmit_bitrate_kbps_(0),
     target_delay_ms_(0),
     network_is_transmitting_(true),
     encoder_paused_(false),
@@ -459,9 +460,14 @@ int32_t ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec) {
                                           kTransmissionMaxBitrateMultiplier *
                                           video_codec.maxBitrate * 1000);
 
-  paced_sender_->UpdateBitrate(video_codec.startBitrate,
-                               video_codec.startBitrate,
-                               video_codec.startBitrate);
+  CriticalSectionScoped crit(data_cs_.get());
+  int pad_up_to_bitrate_kbps = video_codec.startBitrate;
+  if (pad_up_to_bitrate_kbps < min_transmit_bitrate_kbps_)
+    pad_up_to_bitrate_kbps = min_transmit_bitrate_kbps_;
+
+  paced_sender_->UpdateBitrate(kPaceMultiplier * video_codec.startBitrate,
+                               pad_up_to_bitrate_kbps);
+
   return 0;
 }
 
@@ -527,7 +533,8 @@ int ViEEncoder::TimeToSendPadding(int bytes) {
   bool send_padding;
   {
     CriticalSectionScoped cs(data_cs_.get());
-    send_padding = send_padding_ || video_suspended_;
+    send_padding =
+        send_padding_ || video_suspended_ || min_transmit_bitrate_kbps_ > 0;
   }
   if (send_padding) {
     return default_rtp_rtcp_->TimeToSendPadding(bytes);
@@ -568,13 +575,13 @@ void ViEEncoder::DeliverFrame(int id,
                ViEId(engine_id_, channel_id_),
                "%s: %llu", __FUNCTION__,
                video_frame->timestamp());
+  if (default_rtp_rtcp_->SendingMedia() == false) {
+    // We've paused or we have no channels attached, don't encode.
+    return;
+  }
   {
     CriticalSectionScoped cs(data_cs_.get());
     time_of_last_incoming_frame_ms_ = TickTime::MillisecondTimestamp();
-    if (default_rtp_rtcp_->SendingMedia() == false) {
-      // We've paused or we have no channels attached, don't encode.
-      return;
-    }
     if (EncoderPaused()) {
       if (!encoder_paused_and_dropped_frame_) {
         TRACE_EVENT_ASYNC_BEGIN0("webrtc", "EncoderPaused", this);
@@ -737,6 +744,10 @@ int32_t ViEEncoder::SendCodecStatistics(
   *num_key_frames = sent_frames.numKeyFrames;
   *num_delta_frames = sent_frames.numDeltaFrames;
   return 0;
+}
+
+int32_t ViEEncoder::PacerQueuingDelayMs() const {
+  return paced_sender_->QueueInMs();
 }
 
 int32_t ViEEncoder::EstimatedSendBandwidth(
@@ -1024,6 +1035,12 @@ bool ViEEncoder::SetSsrcs(const std::list<unsigned int>& ssrcs) {
   return true;
 }
 
+void ViEEncoder::SetMinTransmitBitrate(int min_transmit_bitrate_kbps) {
+  assert(min_transmit_bitrate_kbps >= 0);
+  CriticalSectionScoped crit(data_cs_.get());
+  min_transmit_bitrate_kbps_ = min_transmit_bitrate_kbps;
+}
+
 // Called from ViEBitrateObserver.
 void ViEEncoder::OnNetworkChanged(const uint32_t bitrate_bps,
                                   const uint8_t fraction_lost,
@@ -1049,55 +1066,48 @@ void ViEEncoder::OnNetworkChanged(const uint32_t bitrate_bps,
   // Find the max amount of padding we can allow ourselves to send at this
   // point, based on which streams are currently active and what our current
   // available bandwidth is.
-  int max_padding_bitrate_kbps = 0;
   int pad_up_to_bitrate_kbps = 0;
   if (send_codec.numberOfSimulcastStreams == 0) {
-    max_padding_bitrate_kbps = send_codec.minBitrate;
     pad_up_to_bitrate_kbps = send_codec.minBitrate;
   } else {
-    int i = send_codec.numberOfSimulcastStreams - 1;
-    for (std::vector<uint32_t>::reverse_iterator it = stream_bitrates.rbegin();
-        it != stream_bitrates.rend(); ++it) {
-      if (*it > 0) {
-        max_padding_bitrate_kbps = std::min((*it + 500) / 1000,
-                                            stream_configs[i].minBitrate);
-        break;
-      }
-      --i;
-    }
     pad_up_to_bitrate_kbps =
         stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate;
     for (int i = 0; i < send_codec.numberOfSimulcastStreams - 1; ++i) {
       pad_up_to_bitrate_kbps += stream_configs[i].targetBitrate;
     }
   }
-  if (video_is_suspended || send_codec.numberOfSimulcastStreams > 1) {
-    pad_up_to_bitrate_kbps = std::min(bitrate_kbps, pad_up_to_bitrate_kbps);
-  } else {
-    // Disable padding if only sending one stream and video isn't suspended.
+
+  // Disable padding if only sending one stream and video isn't suspended and
+  // min-transmit bitrate isn't used (applied later).
+  if (!video_is_suspended && send_codec.numberOfSimulcastStreams <= 1)
     pad_up_to_bitrate_kbps = 0;
-  }
 
   {
-    // The amount of padding should decay to zero if no frames are being
-    // captured.
     CriticalSectionScoped cs(data_cs_.get());
+    // The amount of padding should decay to zero if no frames are being
+    // captured unless a min-transmit bitrate is used.
     int64_t now_ms = TickTime::MillisecondTimestamp();
     if (now_ms - time_of_last_incoming_frame_ms_ > kStopPaddingThresholdMs)
-      max_padding_bitrate_kbps = 0;
-  }
+      pad_up_to_bitrate_kbps = 0;
 
-  paced_sender_->UpdateBitrate(bitrate_kbps,
-                               max_padding_bitrate_kbps,
-                               pad_up_to_bitrate_kbps);
-  default_rtp_rtcp_->SetTargetSendBitrate(stream_bitrates);
-  {
-    CriticalSectionScoped cs(data_cs_.get());
+    // Pad up to min bitrate.
+    if (pad_up_to_bitrate_kbps < min_transmit_bitrate_kbps_)
+      pad_up_to_bitrate_kbps = min_transmit_bitrate_kbps_;
+
+    // Padding may never exceed bitrate estimate.
+    if (pad_up_to_bitrate_kbps > bitrate_kbps)
+      pad_up_to_bitrate_kbps = bitrate_kbps;
+
+    paced_sender_->UpdateBitrate(kPaceMultiplier * bitrate_kbps,
+                                 pad_up_to_bitrate_kbps);
+    default_rtp_rtcp_->SetTargetSendBitrate(stream_bitrates);
     if (video_suspended_ == video_is_suspended)
       return;
     video_suspended_ = video_is_suspended;
   }
-  // State changed, inform codec observer.
+
+  // Video suspend-state changed, inform codec observer.
+  CriticalSectionScoped crit(callback_cs_.get());
   if (codec_observer_) {
     WEBRTC_TRACE(webrtc::kTraceInfo, webrtc::kTraceVideo,
                  ViEId(engine_id_, channel_id_),

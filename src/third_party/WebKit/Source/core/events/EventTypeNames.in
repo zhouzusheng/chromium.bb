@@ -25,7 +25,6 @@ autocomplete
 autocompleteerror
 beforecopy
 beforecut
-beforeload
 beforepaste
 beforeunload
 beginEvent
@@ -82,6 +81,8 @@ fetch
 focus
 focusin
 focusout
+gamepadconnected
+gamepaddisconnected
 gesturescrollend
 gesturescrollstart
 gesturescrollupdate
@@ -171,6 +172,7 @@ storage
 submit
 success
 suspend
+sync
 textInput
 timeout
 timeupdate

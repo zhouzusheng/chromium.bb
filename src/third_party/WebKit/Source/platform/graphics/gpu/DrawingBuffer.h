@@ -134,6 +134,7 @@ public:
     virtual bool prepareMailbox(blink::WebExternalTextureMailbox*, blink::WebExternalBitmap*) OVERRIDE;
     virtual void mailboxReleased(const blink::WebExternalTextureMailbox&) OVERRIDE;
 
+    // Destroys the TEXTURE_2D binding for the owned context
     bool copyToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject texture, GLenum internalFormat,
         GLenum destType, GLint level, bool premultiplyAlpha, bool flipY);
 
@@ -224,6 +225,14 @@ private:
     // True if commit() has been called since the last time markContentsChanged() had been called.
     bool m_contentsChangeCommitted;
     bool m_layerComposited;
+
+    enum MultisampleMode {
+        None,
+        ImplicitResolve,
+        ExplicitResolve,
+    };
+
+    MultisampleMode m_multisampleMode;
 
     blink::WebGraphicsContext3D::Attributes m_attributes;
     unsigned m_internalColorFormat;

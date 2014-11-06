@@ -43,7 +43,7 @@ class WebDOMEventPrivate : public WebCore::Event {
 
 void WebDOMEvent::reset()
 {
-    assign(0);
+    assign(nullptr);
 }
 
 void WebDOMEvent::assign(const WebDOMEvent& other)
@@ -196,12 +196,6 @@ bool WebDOMEvent::isXMLHttpRequestProgressEvent() const
 {
     ASSERT(m_private.get());
     return m_private->hasInterface(WebCore::EventNames::XMLHttpRequestProgressEvent);
-}
-
-bool WebDOMEvent::isBeforeLoadEvent() const
-{
-    ASSERT(m_private.get());
-    return m_private->hasInterface(WebCore::EventNames::BeforeLoadEvent);
 }
 
 } // namespace blink

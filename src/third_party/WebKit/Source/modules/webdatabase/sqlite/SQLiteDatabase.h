@@ -27,6 +27,7 @@
 #ifndef SQLiteDatabase_h
 #define SQLiteDatabase_h
 
+#include "heap/Handle.h"
 #include "wtf/Threading.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/CString.h"
@@ -52,6 +53,7 @@ extern const int SQLResultInterrupt;
 extern const int SQLResultConstraint;
 
 class SQLiteDatabase {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(SQLiteDatabase);
     friend class SQLiteTransaction;
 public:
@@ -97,7 +99,7 @@ public:
         return m_db;
     }
 
-    void setAuthorizer(PassRefPtr<DatabaseAuthorizer>);
+    void setAuthorizer(DatabaseAuthorizer*);
 
     Mutex& databaseMutex() { return m_lockingMutex; }
     bool isAutoCommitOn() const;
@@ -114,6 +116,8 @@ public:
     enum AutoVacuumPragma { AutoVacuumNone = 0, AutoVacuumFull = 1, AutoVacuumIncremental = 2 };
     bool turnOnIncrementalAutoVacuum();
 
+    void trace(Visitor*);
+
 private:
     static int authorizerFunction(void*, int, const char*, const char*, const char*, const char*);
 
@@ -128,7 +132,7 @@ private:
     bool m_sharable;
 
     Mutex m_authorizerLock;
-    RefPtr<DatabaseAuthorizer> m_authorizer;
+    RefPtrWillBeMember<DatabaseAuthorizer> m_authorizer;
 
     Mutex m_lockingMutex;
     ThreadIdentifier m_openingThread;

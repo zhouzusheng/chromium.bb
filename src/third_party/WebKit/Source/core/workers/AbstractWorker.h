@@ -35,7 +35,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -47,8 +47,8 @@ class ExceptionState;
 class KURL;
 class ExecutionContext;
 
-class AbstractWorker : public RefCounted<AbstractWorker>, public EventTargetWithInlineData, public ActiveDOMObject {
-    REFCOUNTED_EVENT_TARGET(AbstractWorker);
+class AbstractWorker : public RefCountedWillBeRefCountedGarbageCollected<AbstractWorker>, public EventTargetWithInlineData, public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<AbstractWorker>);
 public:
     // EventTarget APIs
     virtual ExecutionContext* executionContext() const OVERRIDE FINAL { return ActiveDOMObject::executionContext(); }
@@ -57,6 +57,8 @@ public:
 
     AbstractWorker(ExecutionContext*);
     virtual ~AbstractWorker();
+
+    virtual void trace(Visitor*) { }
 
 protected:
     // Helper function that converts a URL to an absolute URL and checks the result for validity.

@@ -32,6 +32,7 @@
 #include "WorkerPermissionClient.h"
 
 #include "core/workers/WorkerGlobalScope.h"
+#include "public/platform/WebPermissionCallbacks.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
 #include "wtf/PassOwnPtr.h"
@@ -63,6 +64,16 @@ bool WorkerPermissionClient::allowFileSystem()
     return m_proxy->allowFileSystem();
 }
 
+void WorkerPermissionClient::requestFileSystemAccess(const WebPermissionCallbacks& callbacks)
+{
+    if (!m_proxy) {
+        WebPermissionCallbacks permissionCallbacks(callbacks);
+        permissionCallbacks.doAllow();
+        return;
+    }
+    m_proxy->requestFileSystemAccess(callbacks);
+}
+
 bool WorkerPermissionClient::allowIndexedDB(const WebString& name)
 {
     if (!m_proxy)
@@ -75,9 +86,11 @@ const char* WorkerPermissionClient::supplementName()
     return "WorkerPermissionClient";
 }
 
-WorkerPermissionClient* WorkerPermissionClient::from(ExecutionContext* context)
+WorkerPermissionClient* WorkerPermissionClient::from(ExecutionContext& context)
 {
-    return static_cast<WorkerPermissionClient*>(Supplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
+    WorkerClients* clients = toWorkerGlobalScope(context).clients();
+    ASSERT(clients);
+    return static_cast<WorkerPermissionClient*>(Supplement<WorkerClients>::from(*clients, supplementName()));
 }
 
 WorkerPermissionClient::WorkerPermissionClient(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
@@ -87,7 +100,8 @@ WorkerPermissionClient::WorkerPermissionClient(PassOwnPtr<WebWorkerPermissionCli
 
 void providePermissionClientToWorker(WorkerClients* clients, PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
 {
-    WorkerPermissionClient::provideTo(clients, WorkerPermissionClient::supplementName(), WorkerPermissionClient::create(proxy));
+    ASSERT(clients);
+    WorkerPermissionClient::provideTo(*clients, WorkerPermissionClient::supplementName(), WorkerPermissionClient::create(proxy));
 }
 
 } // namespace blink

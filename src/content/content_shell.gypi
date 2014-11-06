@@ -53,6 +53,7 @@
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
+        '../ui/base/ui_base.gyp:ui_base',
 
         # SHEZ: Add this dependency for LayerAnimationObserver
         '../ui/compositor/compositor.gyp:compositor',
@@ -62,10 +63,8 @@
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gl/gl.gyp:gl',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '../webkit/common/webkit_common.gyp:webkit_common',
 
         # SHEZ: Add this dependency for FileInfoSet
@@ -194,14 +193,6 @@
         'shell/renderer/shell_render_view_observer.h',
 
         # SHEZ: Remove test-only code
-        # 'shell/renderer/test_runner/AccessibilityController.cpp',
-        # 'shell/renderer/test_runner/AccessibilityController.h',
-        # 'shell/renderer/test_runner/CppBoundClass.cpp',
-        # 'shell/renderer/test_runner/CppBoundClass.h',
-        # 'shell/renderer/test_runner/CppVariant.cpp',
-        # 'shell/renderer/test_runner/CppVariant.h',
-        # 'shell/renderer/test_runner/EventSender.cpp',
-        # 'shell/renderer/test_runner/EventSender.h',
         # 'shell/renderer/test_runner/KeyCodeMapping.cpp',
         # 'shell/renderer/test_runner/KeyCodeMapping.h',
         # 'shell/renderer/test_runner/MockColorChooser.cpp',
@@ -228,8 +219,6 @@
         # 'shell/renderer/test_runner/MockWebSpeechInputController.h',
         # 'shell/renderer/test_runner/MockWebSpeechRecognizer.cpp',
         # 'shell/renderer/test_runner/MockWebSpeechRecognizer.h',
-        # 'shell/renderer/test_runner/NotificationPresenter.cpp',
-        # 'shell/renderer/test_runner/NotificationPresenter.h',
         # 'shell/renderer/test_runner/SpellCheckClient.cpp',
         # 'shell/renderer/test_runner/SpellCheckClient.h',
         # 'shell/renderer/test_runner/TestCommon.cpp',
@@ -238,10 +227,6 @@
         # 'shell/renderer/test_runner/TestInterfaces.h',
         # 'shell/renderer/test_runner/TestPlugin.cpp',
         # 'shell/renderer/test_runner/TestPlugin.h',
-        # 'shell/renderer/test_runner/TestRunner.cpp',
-        # 'shell/renderer/test_runner/TestRunner.h',
-        # 'shell/renderer/test_runner/WebAXObjectProxy.cpp',
-        # 'shell/renderer/test_runner/WebAXObjectProxy.h',
         # 'shell/renderer/test_runner/WebFrameTestProxy.h',
         # 'shell/renderer/test_runner/WebPermissions.cpp',
         # 'shell/renderer/test_runner/WebPermissions.h',
@@ -259,10 +244,21 @@
         # 'shell/renderer/test_runner/WebTestThemeEngineMock.h',
         # 'shell/renderer/test_runner/WebUserMediaClientMock.cpp',
         # 'shell/renderer/test_runner/WebUserMediaClientMock.h',
+        # 'shell/renderer/test_runner/accessibility_controller.cc',
+        # 'shell/renderer/test_runner/accessibility_controller.h',
+        # 'shell/renderer/test_runner/event_sender.cc',
+        # 'shell/renderer/test_runner/event_sender.h',
         # 'shell/renderer/test_runner/gamepad_controller.cc',
         # 'shell/renderer/test_runner/gamepad_controller.h',
+        # 'shell/renderer/test_runner/notification_presenter.cc',
+        # 'shell/renderer/test_runner/notification_presenter.h',
+        # 'shell/renderer/test_runner/test_runner.cc',
+        # 'shell/renderer/test_runner/test_runner.h',
         # 'shell/renderer/test_runner/text_input_controller.cc',
         # 'shell/renderer/test_runner/text_input_controller.h',
+        # 'shell/renderer/test_runner/unsafe_persistent.h',
+        # 'shell/renderer/test_runner/web_ax_object_proxy.cc',
+        # 'shell/renderer/test_runner/web_ax_object_proxy.h',
         # 'shell/renderer/webkit_test_runner.cc',
         # 'shell/renderer/webkit_test_runner.h',
         # 'test/layouttest_support.cc',
@@ -334,7 +330,8 @@
             '../components/components.gyp:breakpad_host',
           ],
         }],
-        ['(os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (android_use_tcmalloc==1)', {
+        # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
+        ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and ((OS=="linux" and os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (OS=="android" and android_use_tcmalloc==1)))', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -354,6 +351,7 @@
                 '../ui/resources/ui_resources.gyp:ui_resources',
                 '../ui/views/controls/webview/webview.gyp:webview',
                 '../ui/views/views.gyp:views',
+                '../ui/wm/wm.gyp:wm_core',
               ],
               'sources/': [
                 ['exclude', 'shell/browser/shell_aura.cc'],
@@ -424,6 +422,7 @@
           'all_dependent_settings': {
             'mac_bundle_resources': [
               'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
+              'shell/renderer/test_runner/resources/fonts/ChromiumAATTest.ttf',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/missingImage.png',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/textAreaResizeCorner.png',
             ],
@@ -492,9 +491,6 @@
           ],
         }],
       ],
-      'variables': {
-        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-      },
       'actions': [
         {
           'action_name': 'repack_content_shell_pack',
@@ -512,29 +508,20 @@
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
             ],
+            'conditions': [
+              ['OS!="android"', {
+                'variables': {
+                  'pak_inputs': [
+                    '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+                  ],
+                },
+                'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
+              }, {
+                'pak_output': '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
+              }],
+            ],
           },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)',
-                     '<@(pak_inputs)'],
-          'conditions': [
-            ['OS!="android"', {
-              'variables': {
-                'pak_inputs': [
-                  '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
-                ],
-              },
-              'outputs': [
-                '<(PRODUCT_DIR)/content_shell.pak',
-              ],
-            }, {
-              'outputs': [
-                '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
-              ],
-            }],
-          ],
+          'includes': [ '../build/repack_action.gypi' ],
         },
       ],
     },
@@ -598,6 +585,7 @@
               },
             },
           },
+          'msvs_large_pdb': 1,
         }],  # OS=="win"
         ['OS == "win" or toolkit_uses_gtk == 1', {
           'dependencies': [
@@ -982,109 +970,6 @@
         },  # target content_shell_helper_app
       ],
     }],  # OS=="mac"
-    ['OS=="android"', {
-      'targets': [
-        {
-          # TODO(jrg): Update this action and other jni generators to only
-          # require specifying the java directory and generate the rest.
-          'target_name': 'content_shell_jni_headers',
-          'type': 'none',
-          'sources': [
-            'shell/android/browsertests_apk/src/org/chromium/content_browsertests_apk/ContentBrowserTestsActivity.java',
-            'shell/android/java/src/org/chromium/content_shell/ShellLayoutTestUtils.java',
-            'shell/android/java/src/org/chromium/content_shell/ShellManager.java',
-            'shell/android/java/src/org/chromium/content_shell/Shell.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'content/shell',
-            'jni_generator_ptr_type': 'long',
-          },
-          'includes': [ '../build/jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'libcontent_shell_content_view',
-          'type': 'shared_library',
-          'dependencies': [
-            'content_shell_jni_headers',
-            'content_shell_lib',
-            'content_shell_pak',
-            # Skia is necessary to ensure the dependencies needed by
-            # WebContents are included.
-            '../skia/skia.gyp:skia',
-            '<(DEPTH)/media/media.gyp:player_android',
-          ],
-          'sources': [
-            'shell/android/shell_library_loader.cc',
-            'shell/android/shell_library_loader.h',
-          ],
-          'conditions': [
-            ['android_webview_build==1', {
-              'ldflags': [
-                '-lgabi++',  # For rtti
-              ],
-            }],
-          ],
-        },
-        {
-          'target_name': 'content_shell_java',
-          'type': 'none',
-          'dependencies': [
-            'content.gyp:content_java',
-          ],
-          'variables': {
-            'java_in_dir': '../content/shell/android/java',
-            'has_java_resources': 1,
-            'R_package': 'org.chromium.content_shell',
-            'R_package_relpath': 'org/chromium/content_shell',
-          },
-          'includes': [ '../build/java.gypi' ],
-        },
-        {
-          # content_shell_apk creates a .jar as a side effect. Any java targets
-          # that need that .jar in their classpath should depend on this target,
-          # content_shell_apk_java. Dependents of content_shell_apk receive its
-          # jar path in the variable 'apk_output_jar_path'. This target should
-          # only be used by targets which instrument content_shell_apk.
-          'target_name': 'content_shell_apk_java',
-          'type': 'none',
-          'dependencies': [
-            'content_shell_apk',
-          ],
-          'includes': [ '../build/apk_fake_jar.gypi' ],
-        },
-        {
-          'target_name': 'content_shell_apk',
-          'type': 'none',
-          'dependencies': [
-            'content.gyp:content_java',
-            'content_java_test_support',
-            'content_shell_java',
-            'libcontent_shell_content_view',
-            '../base/base.gyp:base_java',
-            '../media/media.gyp:media_java',
-            '../net/net.gyp:net_java',
-            '../tools/android/forwarder/forwarder.gyp:forwarder',
-            '../ui/android/ui_android.gyp:ui_java',
-          ],
-          'variables': {
-            'apk_name': 'ContentShell',
-            'manifest_package_name': 'org.chromium.content_shell_apk',
-            'java_in_dir': 'shell/android/shell_apk',
-            'resource_dir': 'shell/android/shell_apk/res',
-            'native_lib_target': 'libcontent_shell_content_view',
-            'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
-            'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
-          },
-          'conditions': [
-            ['android_webview_build==0', {
-              'dependencies': [
-              ],
-            }],
-          ],
-          'includes': [ '../build/java_apk.gypi' ],
-        },
-      ],
-    }],  # OS=="android"
     ['OS=="win"', {
       'targets': [
         {

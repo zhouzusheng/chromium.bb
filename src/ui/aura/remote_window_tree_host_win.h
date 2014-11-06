@@ -216,7 +216,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   void OnImeInputSourceChanged(uint16 language_id, bool is_ime);
 
   // WindowTreeHost overrides:
-  virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -233,7 +232,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   virtual void UnConfineCursor() OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void PrepareForShutdown() OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
@@ -248,7 +246,7 @@ class AURA_EXPORT RemoteWindowTreeHostWin
       const std::vector<gfx::Rect>& composition_character_bounds) OVERRIDE;
 
   // Helper function to dispatch a keyboard message to the desired target.
-  // The default target is the WindowTreeHostDelegate. For nested message loop
+  // The default target is the WindowEventDispatcher. For nested message loop
   // invocations we post a synthetic keyboard message directly into the message
   // loop. The dispatcher for the nested loop would then decide how this
   // message is routed.

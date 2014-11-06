@@ -40,25 +40,12 @@
 
 namespace WebCore {
 
-static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> valueForCenterCoordinate(CSSValuePool& pool, const RenderStyle& style, const BasicShapeCenterCoordinate& center)
+static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> valueForCenterCoordinate(CSSValuePool& pool, const RenderStyle& style, const BasicShapeCenterCoordinate& center, EBoxOrient orientation)
 {
-    CSSValueID keyword = CSSValueInvalid;
-    switch (center.keyword()) {
-    case BasicShapeCenterCoordinate::None:
+    if (center.direction() == BasicShapeCenterCoordinate::TopLeft)
         return pool.createValue(center.length(), style);
-    case BasicShapeCenterCoordinate::Top:
-        keyword = CSSValueTop;
-        break;
-    case BasicShapeCenterCoordinate::Right:
-        keyword = CSSValueRight;
-        break;
-    case BasicShapeCenterCoordinate::Bottom:
-        keyword = CSSValueBottom;
-        break;
-    case BasicShapeCenterCoordinate::Left:
-        keyword = CSSValueLeft;
-        break;
-    }
+
+    CSSValueID keyword = orientation == HORIZONTAL ? CSSValueRight : CSSValueBottom;
 
     return pool.createValue(Pair::create(pool.createIdentifierValue(keyword), pool.createValue(center.length(), style), Pair::DropIdenticalValues));
 }
@@ -75,68 +62,31 @@ static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> basicShapeRadiusToCSSValue(CSSV
     }
 
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
-PassRefPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicShape* basicShape)
+PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicShape* basicShape)
 {
     CSSValuePool& pool = cssValuePool();
 
-    RefPtr<CSSBasicShape> basicShapeValue;
+    RefPtrWillBeRawPtr<CSSBasicShape> basicShapeValue = nullptr;
     switch (basicShape->type()) {
-    case BasicShape::BasicShapeRectangleType: {
-        const BasicShapeRectangle* rectangle = static_cast<const BasicShapeRectangle*>(basicShape);
-        RefPtr<CSSBasicShapeRectangle> rectangleValue = CSSBasicShapeRectangle::create();
-
-        rectangleValue->setX(pool.createValue(rectangle->x(), style));
-        rectangleValue->setY(pool.createValue(rectangle->y(), style));
-        rectangleValue->setWidth(pool.createValue(rectangle->width(), style));
-        rectangleValue->setHeight(pool.createValue(rectangle->height(), style));
-        rectangleValue->setRadiusX(pool.createValue(rectangle->cornerRadiusX(), style));
-        rectangleValue->setRadiusY(pool.createValue(rectangle->cornerRadiusY(), style));
-
-        basicShapeValue = rectangleValue.release();
-        break;
-    }
-    case BasicShape::DeprecatedBasicShapeCircleType: {
-        const DeprecatedBasicShapeCircle* circle = static_cast<const DeprecatedBasicShapeCircle*>(basicShape);
-        RefPtr<CSSDeprecatedBasicShapeCircle> circleValue = CSSDeprecatedBasicShapeCircle::create();
-
-        circleValue->setCenterX(pool.createValue(circle->centerX(), style));
-        circleValue->setCenterY(pool.createValue(circle->centerY(), style));
-        circleValue->setRadius(pool.createValue(circle->radius(), style));
-
-        basicShapeValue = circleValue.release();
-        break;
-    }
     case BasicShape::BasicShapeCircleType: {
         const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
-        RefPtr<CSSBasicShapeCircle> circleValue = CSSBasicShapeCircle::create();
+        RefPtrWillBeRawPtr<CSSBasicShapeCircle> circleValue = CSSBasicShapeCircle::create();
 
-        circleValue->setCenterX(valueForCenterCoordinate(pool, style, circle->centerX()));
-        circleValue->setCenterY(valueForCenterCoordinate(pool, style, circle->centerY()));
+        circleValue->setCenterX(valueForCenterCoordinate(pool, style, circle->centerX(), HORIZONTAL));
+        circleValue->setCenterY(valueForCenterCoordinate(pool, style, circle->centerY(), VERTICAL));
         circleValue->setRadius(basicShapeRadiusToCSSValue(pool, style, circle->radius()));
         basicShapeValue = circleValue.release();
         break;
     }
-    case BasicShape::DeprecatedBasicShapeEllipseType: {
-        const DeprecatedBasicShapeEllipse* ellipse = static_cast<const DeprecatedBasicShapeEllipse*>(basicShape);
-        RefPtr<CSSDeprecatedBasicShapeEllipse> ellipseValue = CSSDeprecatedBasicShapeEllipse::create();
-
-        ellipseValue->setCenterX(pool.createValue(ellipse->centerX(), style));
-        ellipseValue->setCenterY(pool.createValue(ellipse->centerY(), style));
-        ellipseValue->setRadiusX(pool.createValue(ellipse->radiusX(), style));
-        ellipseValue->setRadiusY(pool.createValue(ellipse->radiusY(), style));
-
-        basicShapeValue = ellipseValue.release();
-        break;
-    }
     case BasicShape::BasicShapeEllipseType: {
         const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(basicShape);
-        RefPtr<CSSBasicShapeEllipse> ellipseValue = CSSBasicShapeEllipse::create();
+        RefPtrWillBeRawPtr<CSSBasicShapeEllipse> ellipseValue = CSSBasicShapeEllipse::create();
 
-        ellipseValue->setCenterX(valueForCenterCoordinate(pool, style, ellipse->centerX()));
-        ellipseValue->setCenterY(valueForCenterCoordinate(pool, style, ellipse->centerY()));
+        ellipseValue->setCenterX(valueForCenterCoordinate(pool, style, ellipse->centerX(), HORIZONTAL));
+        ellipseValue->setCenterY(valueForCenterCoordinate(pool, style, ellipse->centerY(), VERTICAL));
         ellipseValue->setRadiusX(basicShapeRadiusToCSSValue(pool, style, ellipse->radiusX()));
         ellipseValue->setRadiusY(basicShapeRadiusToCSSValue(pool, style, ellipse->radiusY()));
         basicShapeValue = ellipseValue.release();
@@ -144,7 +94,7 @@ PassRefPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicSha
     }
     case BasicShape::BasicShapePolygonType: {
         const BasicShapePolygon* polygon = static_cast<const BasicShapePolygon*>(basicShape);
-        RefPtr<CSSBasicShapePolygon> polygonValue = CSSBasicShapePolygon::create();
+        RefPtrWillBeRawPtr<CSSBasicShapePolygon> polygonValue = CSSBasicShapePolygon::create();
 
         polygonValue->setWindRule(polygon->windRule());
         const Vector<Length>& values = polygon->values();
@@ -154,23 +104,9 @@ PassRefPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicSha
         basicShapeValue = polygonValue.release();
         break;
     }
-    case BasicShape::BasicShapeInsetRectangleType: {
-        const BasicShapeInsetRectangle* rectangle = static_cast<const BasicShapeInsetRectangle*>(basicShape);
-        RefPtr<CSSBasicShapeInsetRectangle> rectangleValue = CSSBasicShapeInsetRectangle::create();
-
-        rectangleValue->setTop(cssValuePool().createValue(rectangle->top()));
-        rectangleValue->setRight(cssValuePool().createValue(rectangle->right()));
-        rectangleValue->setBottom(cssValuePool().createValue(rectangle->bottom()));
-        rectangleValue->setLeft(cssValuePool().createValue(rectangle->left()));
-        rectangleValue->setRadiusX(cssValuePool().createValue(rectangle->cornerRadiusX()));
-        rectangleValue->setRadiusY(cssValuePool().createValue(rectangle->cornerRadiusY()));
-
-        basicShapeValue = rectangleValue.release();
-        break;
-    }
     case BasicShape::BasicShapeInsetType: {
         const BasicShapeInset* inset = static_cast<const BasicShapeInset*>(basicShape);
-        RefPtr<CSSBasicShapeInset> insetValue = CSSBasicShapeInset::create();
+        RefPtrWillBeRawPtr<CSSBasicShapeInset> insetValue = CSSBasicShapeInset::create();
 
         insetValue->setTop(CSSPrimitiveValue::create(inset->top()));
         insetValue->setRight(CSSPrimitiveValue::create(inset->right()));
@@ -188,9 +124,6 @@ PassRefPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicSha
     default:
         break;
     }
-
-    if (basicShape->layoutBox() != BoxMissing)
-        basicShapeValue->setLayoutBox(pool.createValue(basicShape->layoutBox()));
 
     return pool.createValue(basicShapeValue.release());
 }
@@ -213,29 +146,41 @@ static LengthSize convertToLengthSize(const StyleResolverState& state, CSSPrimit
 
 static BasicShapeCenterCoordinate convertToCenterCoordinate(const StyleResolverState& state, CSSPrimitiveValue* value)
 {
-    if (Pair* pair = value->getPairValue()) {
-        BasicShapeCenterCoordinate::Keyword keyword = BasicShapeCenterCoordinate::None;
-        switch (pair->first()->getValueID()) {
-        case CSSValueTop:
-            keyword = BasicShapeCenterCoordinate::Top;
-            break;
-        case CSSValueRight:
-            keyword = BasicShapeCenterCoordinate::Right;
-            break;
-        case CSSValueBottom:
-            keyword = BasicShapeCenterCoordinate::Bottom;
-            break;
-        case CSSValueLeft:
-            keyword = BasicShapeCenterCoordinate::Left;
-            break;
-        default:
-            ASSERT_NOT_REACHED();
-            break;
-        }
-        return BasicShapeCenterCoordinate(keyword, convertToLength(state, pair->second()));
+    BasicShapeCenterCoordinate::Direction direction;
+    Length offset = Length(0, Fixed);
+
+    CSSValueID keyword = CSSValueTop;
+    if (!value) {
+        keyword = CSSValueCenter;
+    } else if (value->isValueID()) {
+        keyword = value->getValueID();
+    } else if (Pair* pair = value->getPairValue()) {
+        keyword = pair->first()->getValueID();
+        offset = convertToLength(state, pair->second());
+    } else {
+        offset = convertToLength(state, value);
     }
 
-    return BasicShapeCenterCoordinate(convertToLength(state, value));
+    switch (keyword) {
+    case CSSValueTop:
+    case CSSValueLeft:
+        direction = BasicShapeCenterCoordinate::TopLeft;
+        break;
+    case CSSValueRight:
+    case CSSValueBottom:
+        direction = BasicShapeCenterCoordinate::BottomRight;
+        break;
+    case CSSValueCenter:
+        direction = BasicShapeCenterCoordinate::TopLeft;
+        offset = Length(50, Percent);
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        direction = BasicShapeCenterCoordinate::TopLeft;
+        break;
+    }
+
+    return BasicShapeCenterCoordinate(direction, offset);
 }
 
 static BasicShapeRadius cssValueToBasicShapeRadius(const StyleResolverState& state, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> radius)
@@ -263,78 +208,23 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
     RefPtr<BasicShape> basicShape;
 
     switch (basicShapeValue->type()) {
-    case CSSBasicShape::CSSBasicShapeRectangleType: {
-        const CSSBasicShapeRectangle* rectValue = static_cast<const CSSBasicShapeRectangle *>(basicShapeValue);
-        RefPtr<BasicShapeRectangle> rect = BasicShapeRectangle::create();
-
-        rect->setX(convertToLength(state, rectValue->x()));
-        rect->setY(convertToLength(state, rectValue->y()));
-        rect->setWidth(convertToLength(state, rectValue->width()));
-        rect->setHeight(convertToLength(state, rectValue->height()));
-        if (rectValue->radiusX()) {
-            Length radiusX = convertToLength(state, rectValue->radiusX());
-            rect->setCornerRadiusX(radiusX);
-            if (rectValue->radiusY())
-                rect->setCornerRadiusY(convertToLength(state, rectValue->radiusY()));
-            else
-                rect->setCornerRadiusY(radiusX);
-        } else {
-            rect->setCornerRadiusX(Length(0, Fixed));
-            rect->setCornerRadiusY(Length(0, Fixed));
-        }
-        basicShape = rect.release();
-        break;
-    }
-    case CSSBasicShape::CSSDeprecatedBasicShapeCircleType: {
-        const CSSDeprecatedBasicShapeCircle* circleValue = static_cast<const CSSDeprecatedBasicShapeCircle *>(basicShapeValue);
-        RefPtr<DeprecatedBasicShapeCircle> circle = DeprecatedBasicShapeCircle::create();
-
-        circle->setCenterX(convertToLength(state, circleValue->centerX()));
-        circle->setCenterY(convertToLength(state, circleValue->centerY()));
-        circle->setRadius(convertToLength(state, circleValue->radius()));
-
-        basicShape = circle.release();
-        break;
-    }
     case CSSBasicShape::CSSBasicShapeCircleType: {
         const CSSBasicShapeCircle* circleValue = static_cast<const CSSBasicShapeCircle *>(basicShapeValue);
         RefPtr<BasicShapeCircle> circle = BasicShapeCircle::create();
 
-        if (circleValue->centerX() && circleValue->centerY()) {
-            circle->setCenterX(convertToCenterCoordinate(state, circleValue->centerX()));
-            circle->setCenterY(convertToCenterCoordinate(state, circleValue->centerY()));
-        } else {
-            circle->setCenterX(BasicShapeCenterCoordinate(Length(50, Percent)));
-            circle->setCenterY(BasicShapeCenterCoordinate(Length(50, Percent)));
-        }
+        circle->setCenterX(convertToCenterCoordinate(state, circleValue->centerX()));
+        circle->setCenterY(convertToCenterCoordinate(state, circleValue->centerY()));
         circle->setRadius(cssValueToBasicShapeRadius(state, circleValue->radius()));
 
         basicShape = circle.release();
-        break;
-    }
-    case CSSBasicShape::CSSDeprecatedBasicShapeEllipseType: {
-        const CSSDeprecatedBasicShapeEllipse* ellipseValue = static_cast<const CSSDeprecatedBasicShapeEllipse *>(basicShapeValue);
-        RefPtr<DeprecatedBasicShapeEllipse> ellipse = DeprecatedBasicShapeEllipse::create();
-
-        ellipse->setCenterX(convertToLength(state, ellipseValue->centerX()));
-        ellipse->setCenterY(convertToLength(state, ellipseValue->centerY()));
-        ellipse->setRadiusX(convertToLength(state, ellipseValue->radiusX()));
-        ellipse->setRadiusY(convertToLength(state, ellipseValue->radiusY()));
-
-        basicShape = ellipse.release();
         break;
     }
     case CSSBasicShape::CSSBasicShapeEllipseType: {
         const CSSBasicShapeEllipse* ellipseValue = static_cast<const CSSBasicShapeEllipse *>(basicShapeValue);
         RefPtr<BasicShapeEllipse> ellipse = BasicShapeEllipse::create();
 
-        if (ellipseValue->centerX() && ellipseValue->centerY()) {
-            ellipse->setCenterX(convertToCenterCoordinate(state, ellipseValue->centerX()));
-            ellipse->setCenterY(convertToCenterCoordinate(state, ellipseValue->centerY()));
-        } else {
-            ellipse->setCenterX(BasicShapeCenterCoordinate(Length(50, Percent)));
-            ellipse->setCenterY(BasicShapeCenterCoordinate(Length(50, Percent)));
-        }
+        ellipse->setCenterX(convertToCenterCoordinate(state, ellipseValue->centerX()));
+        ellipse->setCenterY(convertToCenterCoordinate(state, ellipseValue->centerY()));
         ellipse->setRadiusX(cssValueToBasicShapeRadius(state, ellipseValue->radiusX()));
         ellipse->setRadiusY(cssValueToBasicShapeRadius(state, ellipseValue->radiusY()));
 
@@ -346,33 +236,11 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
         RefPtr<BasicShapePolygon> polygon = BasicShapePolygon::create();
 
         polygon->setWindRule(polygonValue->windRule());
-        const Vector<RefPtr<CSSPrimitiveValue> >& values = polygonValue->values();
+        const WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue> >& values = polygonValue->values();
         for (unsigned i = 0; i < values.size(); i += 2)
             polygon->appendPoint(convertToLength(state, values.at(i).get()), convertToLength(state, values.at(i + 1).get()));
 
         basicShape = polygon.release();
-        break;
-    }
-    case CSSBasicShape::CSSBasicShapeInsetRectangleType: {
-        const CSSBasicShapeInsetRectangle* rectValue = static_cast<const CSSBasicShapeInsetRectangle *>(basicShapeValue);
-        RefPtr<BasicShapeInsetRectangle> rect = BasicShapeInsetRectangle::create();
-
-        rect->setTop(convertToLength(state, rectValue->top()));
-        rect->setRight(convertToLength(state, rectValue->right()));
-        rect->setBottom(convertToLength(state, rectValue->bottom()));
-        rect->setLeft(convertToLength(state, rectValue->left()));
-        if (rectValue->radiusX()) {
-            Length radiusX = convertToLength(state, rectValue->radiusX());
-            rect->setCornerRadiusX(radiusX);
-            if (rectValue->radiusY())
-                rect->setCornerRadiusY(convertToLength(state, rectValue->radiusY()));
-            else
-                rect->setCornerRadiusY(radiusX);
-        } else {
-            rect->setCornerRadiusX(Length(0, Fixed));
-            rect->setCornerRadiusY(Length(0, Fixed));
-        }
-        basicShape = rect.release();
         break;
     }
     case CSSBasicShape::CSSBasicShapeInsetType: {
@@ -396,9 +264,6 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
         break;
     }
 
-    if (basicShapeValue->layoutBox())
-        basicShape->setLayoutBox(LayoutBox(*basicShapeValue->layoutBox()));
-
     return basicShape.release();
 }
 
@@ -406,31 +271,9 @@ FloatPoint floatPointForCenterCoordinate(const BasicShapeCenterCoordinate& cente
 {
     FloatPoint p;
     float offset = floatValueForLength(centerX.length(), boxSize.width());
-    switch (centerX.keyword()) {
-    case BasicShapeCenterCoordinate::None:
-    case BasicShapeCenterCoordinate::Left:
-        p.setX(offset);
-        break;
-    case BasicShapeCenterCoordinate::Right:
-        p.setX(boxSize.width() - offset);
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-    }
-
+    p.setX(centerX.direction() == BasicShapeCenterCoordinate::TopLeft ? offset : boxSize.width() - offset);
     offset = floatValueForLength(centerY.length(), boxSize.height());
-    switch (centerY.keyword()) {
-    case BasicShapeCenterCoordinate::None:
-    case BasicShapeCenterCoordinate::Top:
-        p.setY(offset);
-        break;
-    case BasicShapeCenterCoordinate::Bottom:
-        p.setY(boxSize.height() - offset);
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-    }
-
+    p.setY(centerY.direction() == BasicShapeCenterCoordinate::TopLeft ? offset : boxSize.height() - offset);
     return p;
 }
 

@@ -38,8 +38,6 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(TextDecoder);
-
 PassRefPtrWillBeRawPtr<TextDecoder> TextDecoder::create(const String& label, const Dictionary& options, ExceptionState& exceptionState)
 {
     const String& encodingLabel = label.isNull() ? String("utf-8") : label;
@@ -47,7 +45,7 @@ PassRefPtrWillBeRawPtr<TextDecoder> TextDecoder::create(const String& label, con
     WTF::TextEncoding encoding(encodingLabel);
     if (!encoding.isValid()) {
         exceptionState.throwTypeError("The encoding label provided ('" + encodingLabel + "') is invalid.");
-        return 0;
+        return nullptr;
     }
 
     bool fatal = false;
@@ -87,10 +85,7 @@ String TextDecoder::decode(ArrayBufferView* input, const Dictionary& options, Ex
     const char* start = input ? static_cast<const char*>(input->baseAddress()) : 0;
     size_t length = input ? input->byteLength() : 0;
 
-    bool flush = !stream;
-
-    // FIXME: Not all TextCodec implementations handle |flush| - notably TextCodecUTF16
-    // ignores it and never flushes!
+    WTF::FlushBehavior flush = stream ? WTF::DoNotFlush : WTF::DataEOF;
 
     bool sawError = false;
     String s = m_codec->decode(start, length, flush, m_fatal, sawError);

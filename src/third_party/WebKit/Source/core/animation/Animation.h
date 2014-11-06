@@ -32,24 +32,31 @@
 #define Animation_h
 
 #include "core/animation/AnimationEffect.h"
+#include "core/animation/EffectInput.h"
 #include "core/animation/TimedItem.h"
+#include "core/animation/TimingInput.h"
+#include "heap/Handle.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-class Element;
 class Dictionary;
+class Element;
+class ExceptionState;
 
 class Animation FINAL : public TimedItem {
 
 public:
     enum Priority { DefaultPriority, TransitionPriority };
 
-    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
+    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
     // Web Animations API Bindings constructors.
-    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector, Dictionary timingInput);
-    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector, double timingInput);
-    static PassRefPtr<Animation> create(Element*, Vector<Dictionary> keyframeDictionaryVector);
+    static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Dictionary& timingInputDictionary);
+    static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, double duration);
+    static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>);
+    static PassRefPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState&);
+    static PassRefPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState&);
+    static PassRefPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState&);
 
     // FIXME: Move all of these setter methods out of Animation,
     // possibly into a new class (TimingInput?).
@@ -65,10 +72,10 @@ public:
 
     virtual bool isAnimation() const OVERRIDE { return true; }
 
-    const AnimationEffect::CompositableValueList* compositableValues() const
+    const WillBeHeapVector<RefPtrWillBeMember<Interpolation> >& activeInterpolations() const
     {
-        ASSERT(m_compositableValues);
-        return m_compositableValues.get();
+        ASSERT(m_activeInterpolations);
+        return *m_activeInterpolations;
     }
 
     bool affects(CSSPropertyID) const;
@@ -85,35 +92,30 @@ public:
     void pauseAnimationForTestingOnCompositor(double pauseTime);
 
 protected:
-    // Returns whether style recalc was triggered.
-    bool applyEffects(bool previouslyInEffect);
+    void applyEffects(bool previouslyInEffect);
     void clearEffects();
-    virtual bool updateChildrenAndEffects() const OVERRIDE;
+    virtual void updateChildrenAndEffects() const OVERRIDE;
     virtual void didAttach() OVERRIDE;
     virtual void willDetach() OVERRIDE;
     virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
     static void populateTiming(Timing&, Dictionary);
-    // createUnsafe should only be directly called from tests.
-    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector, Dictionary timingInput);
-    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector, double timingInput);
-    static PassRefPtr<Animation> createUnsafe(Element*, Vector<Dictionary> keyframeDictionaryVector);
 
-    Animation(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
+    Animation(PassRefPtr<Element>, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
 
     RefPtr<Element> m_target;
-    RefPtr<AnimationEffect> m_effect;
+    RefPtrWillBePersistent<AnimationEffect> m_effect;
 
     bool m_activeInAnimationStack;
-    OwnPtr<AnimationEffect::CompositableValueList> m_compositableValues;
+    OwnPtrWillBePersistent<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > m_activeInterpolations;
 
     Priority m_priority;
 
     Vector<int> m_compositorAnimationIds;
 
     friend class CSSAnimations;
-    friend class AnimationAnimationTest;
+    friend class AnimationAnimationV8Test;
 };
 
 DEFINE_TYPE_CASTS(Animation, TimedItem, timedItem, timedItem->isAnimation(), timedItem.isAnimation());

@@ -18,20 +18,35 @@ from tvcm import strip_js_comments
 
 class JSModule(module.Module):
   def Parse(self):
-    stripped_text = strip_js_comments.strip_js_comments(self.contents)
+    stripped_text = self.loader.GetStrippedJSForFilename(self.resource.absolute_path,
+                                                         early_out_if_no_tvcm=False)
     if self.name != 'tvcm':
-      if not IsJSModule(stripped_text):
+      if not IsJSModule(stripped_text, text_is_stripped=True):
         raise module.DepsException('%s is not a JS Module' % self.name)
     ValidateUsesStrictMode(self.name, stripped_text)
-    if self.name.endswith('_test'):
+    if IsJSTest(stripped_text, text_is_stripped=True):
       ValidateTestSuiteDefinition(self.name, stripped_text)
     self.dependency_metadata = Parse(self.name, stripped_text)
+
+def IsJSTest(text, text_is_stripped=True):
+  if text_is_stripped:
+    stripped_text = text
+  else:
+    stripped_text = strip_js_comments.StripJSComments(text)
+  if re.search("""tvcm\s*\.\s*unittest\s*\.\s*testSuite\((["'])(.+?)\\1""",
+               stripped_text, re.DOTALL):
+    return True
+  if re.search("""tvcm\s*\.\s*testSuite\((["'])(.+?)\\1""",
+               stripped_text, re.DOTALL):
+    return True
+
+  return False
 
 def IsJSModule(text, text_is_stripped=True):
   if text_is_stripped:
     stripped_text = text
   else:
-    stripped_text = strip_js_comments.strip_js_comments(text)
+    stripped_text = strip_js_comments.StripJSComments(text)
   if re.search("""tvcm\s*\.\s*exportTo""",
                stripped_text, re.DOTALL):
     return True
@@ -40,8 +55,7 @@ def IsJSModule(text, text_is_stripped=True):
                stripped_text, re.DOTALL):
     return True
 
-  if re.search("""tvcm\s*\.\s*unittest\s*\.\s*testSuite\((["'])(.+?)\\1""",
-               stripped_text, re.DOTALL):
+  if IsJSTest(stripped_text, text_is_stripped=True):
     return True
 
   return False
@@ -50,11 +64,13 @@ def ValidateTestSuiteDefinition(module_name, stripped_text):
   rest = stripped_text
   num_matches = 0
   while True:
-    m_ts = re.search("""tvcm\s*\.\s*unittest\s*\.\s*testSuite\((["'])(.+?)\\1""",
-                     rest, re.DOTALL)
+    m_ts1 = re.search("""tvcm\s*\.\s*unittest\s*\.\s*testSuite\((["'])(.+?)\\1""",
+                      rest, re.DOTALL)
+    m_ts2 = re.search("""tvcm\s*\.\s*testSuite\((["'])(.+?)\\1""",
+                      rest, re.DOTALL)
 
     # Figure out which was first.
-    matches = [m for m in [m_ts] if m]
+    matches = [m for m in [m_ts1, m_ts2] if m]
     matches.sort(key=lambda x: x.start())
     if len(matches):
       m = matches[0]
@@ -105,6 +121,8 @@ def Parse(module_name, stripped_text):
     DepsException: The name of a resource was not formatted properly.
   """
   res = module.ModuleDependencyMetadata()
+  if module_name != 'tvcm':
+    res.dependent_module_names.append('tvcm')
   if not module_name:
     raise Exception("Module.name must be set.")
 

@@ -29,6 +29,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
+        '<(DEPTH)/third_party/khronos',
         '<(DEPTH)/third_party/mesa/src/include',
         '<(gl_binding_output_dir)',
       ],
@@ -84,8 +85,6 @@
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
-        'gl_implementation_linux.cc',
-        'gl_implementation_linux.h',
         'gl_implementation_ozone.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
@@ -98,6 +97,7 @@
         'gl_state_restorer.h',
         'gl_surface.cc',
         'gl_surface.h',
+        'gl_surface_android.cc',
         'gl_surface_mac.cc',
         'gl_surface_stub.cc',
         'gl_surface_stub.h',
@@ -105,6 +105,7 @@
         'gl_surface_x11.cc',
         'gl_surface_osmesa.cc',
         'gl_surface_osmesa.h',
+        'gl_surface_ozone.cc',
         'gl_switches.cc',
         'gl_switches.h',
         'gl_version_info.cc',
@@ -176,6 +177,8 @@
             'egl_util.h',
             'gl_context_egl.cc',
             'gl_context_egl.h',
+            'gl_image_egl.cc',
+            'gl_image_egl.h',
             'gl_surface_egl.cc',
             'gl_surface_egl.h',
             'gl_egl_api_implementation.cc',
@@ -186,6 +189,12 @@
           'include_dirs': [
             '<(DEPTH)/third_party/khronos',
         ],
+        }],
+        ['OS in ("android", "linux")', {
+          'sources': [
+            'gl_implementation_osmesa.cc',
+            'gl_implementation_osmesa.h',
+          ],
         }],
         ['use_x11 == 1', {
           'sources': [
@@ -268,8 +277,8 @@
             'gl_jni_headers',
           ],
           'sources': [
-            'gl_image_egl.cc',
-            'gl_image_egl.h',
+            'gl_image_android_native_buffer.cc',
+            'gl_image_android_native_buffer.h',
           ],
           'link_settings': {
             'libraries': [
@@ -277,7 +286,6 @@
             ],
           },
           'sources!': [
-            'gl_context_osmesa.cc',
             'system_monitor_posix.cc',
           ],
           'defines': [
@@ -291,6 +299,11 @@
         ['use_ozone==1', {
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
+          ],
+        }],
+        ['OS=="android" and android_webview_build==0', {
+          'dependencies': [
+            '../android/ui_android.gyp:ui_java',
           ],
         }],
       ],

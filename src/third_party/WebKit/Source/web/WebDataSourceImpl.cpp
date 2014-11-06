@@ -31,9 +31,7 @@
 #include "config.h"
 #include "WebDataSourceImpl.h"
 
-#include "ApplicationCacheHostInternal.h"
 #include "core/dom/Document.h"
-#include "core/loader/FrameLoader.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
@@ -48,7 +46,7 @@ static OwnPtr<WebPluginLoadObserver>& nextPluginLoadObserver()
     return nextPluginLoadObserver;
 }
 
-PassRefPtr<WebDataSourceImpl> WebDataSourceImpl::create(Frame* frame, const ResourceRequest& request, const SubstituteData& data)
+PassRefPtr<WebDataSourceImpl> WebDataSourceImpl::create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
 {
     return adoptRef(new WebDataSourceImpl(frame, request, data));
 }
@@ -108,11 +106,8 @@ WebNavigationType WebDataSourceImpl::navigationType() const
 
 double WebDataSourceImpl::triggeringEventTime() const
 {
-    if (!triggeringAction().event())
-        return 0.0;
-
     // DOMTimeStamp uses units of milliseconds.
-    return convertDOMTimeStampToSeconds(triggeringAction().event()->timeStamp());
+    return convertDOMTimeStampToSeconds(triggeringAction().eventTimeStamp());
 }
 
 WebDataSource::ExtraData* WebDataSourceImpl::extraData() const
@@ -124,11 +119,6 @@ void WebDataSourceImpl::setExtraData(ExtraData* extraData)
 {
     // extraData can't be a PassOwnPtr because setExtraData is a WebKit API function.
     m_extraData = adoptPtr(extraData);
-}
-
-WebApplicationCacheHost* WebDataSourceImpl::applicationCacheHost()
-{
-    return ApplicationCacheHostInternal::toWebApplicationCacheHost(DocumentLoader::applicationCacheHost());
 }
 
 void WebDataSourceImpl::setNavigationStartTime(double navigationStart)
@@ -160,7 +150,7 @@ void WebDataSourceImpl::setNextPluginLoadObserver(PassOwnPtr<WebPluginLoadObserv
     nextPluginLoadObserver() = observer;
 }
 
-WebDataSourceImpl::WebDataSourceImpl(Frame* frame, const ResourceRequest& request, const SubstituteData& data)
+WebDataSourceImpl::WebDataSourceImpl(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
     : DocumentLoader(frame, request, data)
 {
     if (!nextPluginLoadObserver())

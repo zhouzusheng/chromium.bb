@@ -36,9 +36,14 @@
 
 namespace WebCore {
 
-PassRefPtr<InstallPhaseEvent> InstallPhaseEvent::create()
+PassRefPtrWillBeRawPtr<InstallPhaseEvent> InstallPhaseEvent::create()
 {
-    return adoptRef(new InstallPhaseEvent());
+    return adoptRefWillBeRefCountedGarbageCollected(new InstallPhaseEvent());
+}
+
+PassRefPtrWillBeRawPtr<InstallPhaseEvent> InstallPhaseEvent::create(const AtomicString& type, const EventInit& eventInit, PassRefPtr<WaitUntilObserver> observer)
+{
+    return adoptRefWillBeRefCountedGarbageCollected(new InstallPhaseEvent(type, eventInit, observer));
 }
 
 InstallPhaseEvent::~InstallPhaseEvent()
@@ -58,6 +63,11 @@ InstallPhaseEvent::InstallPhaseEvent(const AtomicString& type, const EventInit& 
     : Event(type, initializer)
     , m_observer(observer)
 {
+}
+
+void InstallPhaseEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

@@ -36,18 +36,26 @@
          disable_multisampling)                              \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
+  GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
+         disable_post_sub_buffers_for_onscreen_surfaces)     \
   GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
          enable_chromium_fast_npot_mo8_textures)             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
   GPU_OP(FORCE_DISCRETE_GPU,                                 \
          force_discrete_gpu)                                 \
+  GPU_OP(FORCE_GL_FINISH_AFTER_COMPOSITING,                  \
+         force_gl_finish_after_compositing)                  \
   GPU_OP(FORCE_INTEGRATED_GPU,                               \
          force_integrated_gpu)                               \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
+  GPU_OP(INIT_TEXTURE_MAX_ANISOTROPY,                        \
+         init_texture_max_anisotropy)                        \
   GPU_OP(INIT_VARYINGS_WITHOUT_STATIC_USE,                   \
          init_varyings_without_static_use)                   \
+  GPU_OP(INIT_VERTEX_ATTRIBUTES,                             \
+         init_vertex_attributes)                             \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \
@@ -76,6 +84,8 @@
          unbind_fbo_on_context_switch)                       \
   GPU_OP(UNFOLD_SHORT_CIRCUIT_AS_TERNARY_OPERATION,          \
          unfold_short_circuit_as_ternary_operation)          \
+  GPU_OP(UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX,           \
+         unroll_for_loop_with_sampler_array_index)           \
   GPU_OP(USE_CLIENT_SIDE_ARRAYS_FOR_STREAM_BUFFERS,          \
          use_client_side_arrays_for_stream_buffers)          \
   GPU_OP(USE_CURRENT_PROGRAM_AFTER_SUCCESSFUL_LINK,          \

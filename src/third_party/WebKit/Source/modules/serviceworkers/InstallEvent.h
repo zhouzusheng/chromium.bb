@@ -41,8 +41,8 @@ class ExecutionContext;
 
 class InstallEvent FINAL : public InstallPhaseEvent {
 public:
-    static PassRefPtr<InstallEvent> create();
-    static PassRefPtr<InstallEvent> create(const AtomicString& type, const EventInit&, PassRefPtr<WaitUntilObserver>);
+    static PassRefPtrWillBeRawPtr<InstallEvent> create();
+    static PassRefPtrWillBeRawPtr<InstallEvent> create(const AtomicString& type, const EventInit&, PassRefPtr<WaitUntilObserver>);
     virtual ~InstallEvent() { }
 
     void replace();
@@ -50,6 +50,8 @@ public:
     ScriptPromise reloadAll(ExecutionContext*);
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     InstallEvent();

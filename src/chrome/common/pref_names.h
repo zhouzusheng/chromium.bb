@@ -12,6 +12,7 @@
 #include "build/build_config.h"
 
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/signin/core/common/signin_pref_names.h"
 
 namespace prefs {
 
@@ -35,8 +36,6 @@ extern const char kURLsToRestoreOnStartup[];
 extern const char kURLsToRestoreOnStartupOld[];
 extern const char kRestoreStartupURLsMigrationTime[];
 extern const char kForceEphemeralProfiles[];
-extern const char kEnhancedBookmarksExperimentEnabled[];
-extern const char kEnhancedBookmarksExtensionId[];
 
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -132,8 +131,6 @@ extern const char kWebKitFontScaleFactor[];
 extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
 #endif
-extern const char kPasswordManagerEnabled[];
-extern const char kPasswordManagerAllowShowPasswords[];
 extern const char kAutologinEnabled[];
 extern const char kReverseAutologinEnabled[];
 extern const char kReverseAutologinRejectedEmailList[];
@@ -182,6 +179,8 @@ extern const char kAlternateProtocolServers[];
 extern const char kDisabledSchemes[];
 #if defined(OS_ANDROID)
 extern const char kLastPolicyCheckTime[];
+#endif
+#if defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kManagedBookmarks[];
 #endif
 extern const char kInstantUIZeroSuggestUrlPrefix[];
@@ -373,15 +372,16 @@ extern const char kImportHomepage[];
 extern const char kImportSearchEngine[];
 extern const char kImportSavedPasswords[];
 
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-extern const char kLocalProfileId[];
-extern const char kPasswordsUseLocalProfileId[];
-#endif
-
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
 extern const char kProfileIsManaged[];
 extern const char kManagedUserId[];
+
+extern const char kProfileGAIAInfoUpdateTime[];
+extern const char kProfileGAIAInfoPictureURL[];
+
+extern const char kProfileAvatarTutorialShown[];
+extern const char kProfileUserManagerTutorialShown[];
 
 extern const char kInvertNotificationShown[];
 
@@ -400,6 +400,7 @@ extern const char kEnabledSyncedNotificationSendingServices[];
 extern const char kInitializedSyncedNotificationSendingServices[];
 extern const char kSyncedNotificationFirstRun[];
 extern const char kWelcomeNotificationDismissed[];
+extern const char kWelcomeNotificationDismissedLocal[];
 extern const char kWelcomeNotificationPreviouslyPoppedUp[];
 extern const char kWelcomeNotificationExpirationTimestamp[];
 
@@ -407,10 +408,14 @@ extern const char kFullscreenAllowed[];
 
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
+extern const char kPreferenceResetTime[];
 extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
-extern const char kGCMRegisteredAppIDs[];
+
+extern const char kEasyUnlockEnabled[];
+extern const char kEasyUnlockShowTutorial[];
+extern const char kEasyUnlockPairing[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -420,8 +425,6 @@ extern const char kSSLVersionMax[];
 extern const char kCipherSuiteBlacklist[];
 extern const char kEnableOriginBoundCerts[];
 extern const char kDisableSSLRecordSplitting[];
-extern const char kEnableUnrestrictedSSL3Fallback[];
-extern const char kEnableMemoryInfo[];
 
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
@@ -433,8 +436,12 @@ extern const char kMetricsClientID[];
 extern const char kMetricsSessionID[];
 extern const char kMetricsLowEntropySource[];
 extern const char kMetricsPermutedEntropyCache[];
-extern const char kMetricsClientIDTimestamp[];
+extern const char kMetricsOldClientID[];
+extern const char kMetricsOldLowEntropySource[];
 extern const char kMetricsReportingEnabled[];
+extern const char kMetricsReportingEnabledTimestamp[];
+extern const char kMetricsMachineId[];
+extern const char kMetricsResetIds[];
 // Android has it's own metric / crash reporting implemented in Android
 // Java code so kMetricsReportingEnabled doesn't make sense. We use this
 // to inform crashes_ui that we have enabled crash reporting.
@@ -598,64 +605,19 @@ extern const char kDevToolsRemoteEnabled[];
 extern const char kSpdyProxyAuthEnabled[];
 extern const char kSpdyProxyAuthWasEnabledBefore[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
-extern const char kSigninAllowed[];
-extern const char kSyncLastSyncedTime[];
-extern const char kSyncHasAuthError[];
-extern const char kSyncHasSetupCompleted[];
-extern const char kSyncKeepEverythingSynced[];
 
-extern const char kSyncAppList[];
-extern const char kSyncAppNotifications[];
-extern const char kSyncAppSettings[];
-extern const char kSyncApps[];
-extern const char kSyncAutofillProfile[];
-extern const char kSyncAutofill[];
-extern const char kSyncBookmarks[];
-extern const char kSyncDictionary[];
-extern const char kSyncExtensionSettings[];
-extern const char kSyncExtensions[];
-extern const char kSyncFaviconImages[];
-extern const char kSyncFaviconTracking[];
-extern const char kSyncHistoryDeleteDirectives[];
-extern const char kSyncManagedUserSettings[];
-extern const char kSyncManagedUserSharedSettings[];
-extern const char kSyncManagedUsers[];
-extern const char kSyncArticles[];
-extern const char kSyncPasswords[];
-extern const char kSyncPreferences[];
-extern const char kSyncPriorityPreferences[];
-extern const char kSyncSearchEngines[];
-extern const char kSyncSessions[];
-extern const char kSyncSyncedNotificationAppInfo[];
-extern const char kSyncSyncedNotifications[];
-extern const char kSyncTabs[];
-extern const char kSyncThemes[];
-extern const char kSyncTypedUrls[];
-
-extern const char kSyncManaged[];
-extern const char kSyncSuppressStart[];
-extern const char kGoogleServicesLastUsername[];
-extern const char kGoogleServicesUserAccountId[];
-extern const char kGoogleServicesUsername[];
 extern const char kGoogleServicesUsernamePattern[];
 extern const char kGoogleServicesPasswordHash[];
-extern const char kSyncUsingSecondaryPassphrase[];
-extern const char kSyncEncryptionBootstrapToken[];
-extern const char kSyncKeystoreEncryptionBootstrapToken[];
-extern const char kSyncAcknowledgedSyncTypes[];
-extern const char kSyncSessionsGUID[];
 
 extern const char kInvalidatorClientId[];
 extern const char kInvalidatorInvalidationState[];
 extern const char kInvalidatorSavedInvalidations[];
+extern const char kInvalidationServiceUseGCMChannel[];
 
 extern const char kSignInPromoStartupCount[];
 extern const char kSignInPromoUserSkipped[];
 extern const char kSignInPromoShowOnFirstRunAllowed[];
 extern const char kSignInPromoShowNTPBubble[];
-
-extern const char kProfileGAIAInfoUpdateTime[];
-extern const char kProfileGAIAInfoPictureURL[];
 
 extern const char kWebAppCreateOnDesktop[];
 extern const char kWebAppCreateInAppsMenu[];
@@ -680,6 +642,7 @@ extern const char kRemoteAccessHostDomain[];
 extern const char kRemoteAccessHostTalkGadgetPrefix[];
 extern const char kRemoteAccessHostRequireCurtain[];
 extern const char kRemoteAccessHostAllowClientPairing[];
+extern const char kRemoteAccessHostAllowGnubbyAuth[];
 
 extern const char kPrintPreviewStickySettings[];
 extern const char kCloudPrintRoot[];
@@ -739,10 +702,7 @@ extern const char kVideoCaptureAllowedUrls[];
 
 extern const char kHotwordSearchEnabled[];
 extern const char kHotwordOptInPopupTimesShown[];
-
-#if defined(OS_CHROMEOS)
-extern const char kHotwordAppListEnabled[];
-#endif
+extern const char kHotwordAudioLoggingEnabled[];
 
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
@@ -756,7 +716,6 @@ extern const char kShouldAutoEnroll[];
 extern const char kAutoEnrollmentPowerLimit[];
 extern const char kDeviceActivityTimes[];
 extern const char kDeviceLocation[];
-extern const char kSyncSpareBootstrapToken[];
 extern const char kExternalStorageDisabled[];
 extern const char kUsersWallpaperInfo[];
 extern const char kAudioOutputAllowed[];
@@ -775,6 +734,7 @@ extern const char kInitialLocale[];
 extern const char kOobeComplete[];
 extern const char kDeviceRegistered[];
 extern const char kUsedPolicyCertificates[];
+extern const char kServerBackedDeviceState[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -837,11 +797,13 @@ extern const char kHardwareAccelerationModePrevious[];
 extern const char kDevicePolicyRefreshRate[];
 
 extern const char kFactoryResetRequested[];
+extern const char kRollbackRequested[];
 
 extern const char kMessageCenterShowedFirstRunBalloon[];
 
 extern const char kRecoveryComponentVersion[];
 extern const char kComponentUpdaterState[];
+extern const char kAttemptedToEnableAutoupdate[];
 
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];
@@ -943,17 +905,11 @@ extern const char kWatchdogExtensionActive[];
 extern const char kWatchdogExtensionActiveOld[];
 
 extern const char kProfilePreferenceHashes[];
-extern const char kProfilePreferenceResetTime[];
 
 extern const char kNetworkTimeMapping[];
 
 #if defined(OS_ANDROID)
 extern const char kPartnerBookmarkMappings[];
-#endif
-
-#if defined(OS_WIN)
-extern const char kOsPasswordBlank[];
-extern const char kOsPasswordLastChanged[];
 #endif
 
 extern const char kQuickCheckEnabled[];

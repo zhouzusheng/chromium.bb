@@ -36,22 +36,15 @@
 namespace blink {
 
 // This class is used to enable runtime features of Blink.
-// All features are disabled by default.
-// Most clients should call enableStableFeatures() to enable
-// features Blink has made API commitments to.
+// Stable features are enabled by default.
 class WebRuntimeFeatures {
 public:
-    BLINK_EXPORT static void enableStableFeatures(bool);
     BLINK_EXPORT static void enableExperimentalFeatures(bool);
     BLINK_EXPORT static void enableTestOnlyFeatures(bool);
 
     BLINK_EXPORT static void enableApplicationCache(bool);
 
     BLINK_EXPORT static void enableDatabase(bool);
-
-    BLINK_EXPORT static void enableDeviceMotion(bool);
-
-    BLINK_EXPORT static void enableDeviceOrientation(bool);
 
     BLINK_EXPORT static void enableDialogElement(bool);
 
@@ -61,7 +54,7 @@ public:
     BLINK_EXPORT static void enablePrefixedEncryptedMedia(bool);
     BLINK_EXPORT static bool isPrefixedEncryptedMediaEnabled();
 
-    BLINK_EXPORT static void enableDirectWrite(bool);
+    BLINK_EXPORT static void enableBleedingEdgeFastPaths(bool);
 
     BLINK_EXPORT static void enableExperimentalCanvasFeatures(bool);
 
@@ -69,11 +62,7 @@ public:
 
     BLINK_EXPORT static void enableFileSystem(bool);
 
-    BLINK_EXPORT static void enableFullscreen(bool);
-
     BLINK_EXPORT static void enableGamepad(bool);
-
-    BLINK_EXPORT static void enableGeolocation(bool);
 
     BLINK_EXPORT static void enableLazyLayout(bool);
 
@@ -127,8 +116,6 @@ public:
     BLINK_EXPORT static void enableXSLT(bool);
 
     BLINK_EXPORT static void enableOverlayScrollbars(bool);
-
-    BLINK_EXPORT static void enableInputModeAttribute(bool);
 
     BLINK_EXPORT static void enableOverlayFullscreenVideo(bool);
 

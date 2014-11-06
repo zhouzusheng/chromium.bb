@@ -36,6 +36,7 @@
 #include "WebDataSourceImpl.h"
 #include "WebFrameImpl.h"
 #include "WebServiceWorkerContextClient.h"
+#include "WebServiceWorkerNetworkProvider.h"
 #include "WebView.h"
 #include "WebWorkerPermissionClientProxy.h"
 #include "WorkerPermissionClient.h"
@@ -47,9 +48,11 @@
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 #include "core/workers/WorkerThreadStartupData.h"
+#include "heap/Handle.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
 #include "platform/NotImplemented.h"
 #include "platform/SharedBuffer.h"
+#include "platform/network/ContentSecurityPolicyParsers.h"
 #include "wtf/Functional.h"
 
 using namespace WebCore;
@@ -202,10 +205,21 @@ void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
     webFrame->frame()->loader().load(FrameLoadRequest(0, ResourceRequest(m_workerStartData.scriptURL), SubstituteData(buffer, "text/html", "UTF-8", KURL())));
 }
 
+void WebEmbeddedWorkerImpl::willSendRequest(
+    WebFrame* frame, unsigned, WebURLRequest& request,
+    const WebURLResponse& redirectResponse)
+{
+    if (m_networkProvider)
+        m_networkProvider->willSendRequest(frame->dataSource(), request);
+}
+
 void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
 {
     ASSERT(!m_mainScriptLoader);
+    ASSERT(!m_networkProvider);
     ASSERT(m_mainFrame);
+    ASSERT(m_workerContextClient);
+    m_networkProvider = adoptPtr(m_workerContextClient->createServiceWorkerNetworkProvider(frame->dataSource()));
     m_mainScriptLoader = Loader::create();
     m_mainScriptLoader->load(
         toWebFrameImpl(m_mainFrame)->frame()->document(),
@@ -236,7 +250,7 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
     providePermissionClientToWorker(workerClients.get(), m_permissionClient.release());
     provideServiceWorkerGlobalScopeClientToWorker(workerClients.get(), ServiceWorkerGlobalScopeClientImpl::create(m_workerContextClient.release()));
 
-    OwnPtr<WorkerThreadStartupData> startupData =
+    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData =
         WorkerThreadStartupData::create(
             m_mainScriptLoader->url(),
             m_workerStartData.userAgent,
@@ -244,7 +258,7 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
             startMode,
             // FIXME: fill appropriate CSP info and policy type.
             String(),
-            ContentSecurityPolicy::Enforce,
+            ContentSecurityPolicyHeaderTypeEnforce,
             workerClients.release());
 
     m_mainScriptLoader.clear();

@@ -37,6 +37,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
@@ -76,6 +77,7 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
   explicit InterstitialPageRVHDelegateView(InterstitialPageImpl* page);
 
   // RenderViewHostDelegateView implementation:
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -83,6 +85,8 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
                              const std::vector<MenuItem>& items,
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
+  virtual void HidePopupMenu() OVERRIDE;
+#endif
   virtual void StartDragging(const DropData& drop_data,
                              WebDragOperationsMask operations_allowed,
                              const gfx::ImageSkia& image,
@@ -249,9 +253,6 @@ void InterstitialPageImpl::Show() {
 
   notification_registrar_.Add(this, NOTIFICATION_NAV_ENTRY_PENDING,
       Source<NavigationController>(controller_));
-  notification_registrar_.Add(
-      this, NOTIFICATION_DOM_OPERATION_RESPONSE,
-      Source<RenderViewHost>(render_view_host_));
 }
 
 void InterstitialPageImpl::Hide() {
@@ -346,13 +347,6 @@ void InterstitialPageImpl::Observe(
         TakeActionOnResourceDispatcher(CANCEL);
       }
       break;
-    case NOTIFICATION_DOM_OPERATION_RESPONSE:
-      if (enabled()) {
-        Details<DomOperationNotificationDetails> dom_op_details(
-            details);
-        delegate_->CommandReceived(dom_op_details->json);
-      }
-      break;
     default:
       NOTREACHED();
   }
@@ -365,6 +359,34 @@ void InterstitialPageImpl::NavigationEntryCommitted(
 
 void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
   OnNavigatingAwayOrTabClosing();
+}
+
+bool InterstitialPageImpl::OnMessageReceived(RenderFrameHost* render_frame_host,
+                                             const IPC::Message& message) {
+  return OnMessageReceived(message);
+}
+
+bool InterstitialPageImpl::OnMessageReceived(RenderViewHost* render_view_host,
+                                             const IPC::Message& message) {
+  return OnMessageReceived(message);
+}
+
+bool InterstitialPageImpl::OnMessageReceived(const IPC::Message& message) {
+
+  bool handled = true;
+  bool message_is_ok = true;
+  IPC_BEGIN_MESSAGE_MAP_EX(InterstitialPageImpl, message, message_is_ok)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DomOperationResponse,
+                        OnDomOperationResponse)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP_EX()
+
+  if (!message_is_ok) {
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_RVD"));
+    web_contents()->GetRenderProcessHost()->ReceivedBadMessage();
+  }
+
+  return handled;
 }
 
 void InterstitialPageImpl::RenderFrameCreated(
@@ -436,7 +458,7 @@ void InterstitialPageImpl::DidNavigate(
   // an interstitial would hang.
   web_contents_was_loading_ = controller_->delegate()->IsLoading();
   controller_->delegate()->SetIsLoading(
-      controller_->delegate()->GetRenderViewHost(), false, NULL);
+      controller_->delegate()->GetRenderViewHost(), false, true, NULL);
 }
 
 void InterstitialPageImpl::UpdateTitle(
@@ -581,7 +603,7 @@ void InterstitialPageImpl::Proceed() {
   // Resumes the throbber, if applicable.
   if (web_contents_was_loading_)
     controller_->delegate()->SetIsLoading(
-        controller_->delegate()->GetRenderViewHost(), true, NULL);
+        controller_->delegate()->GetRenderViewHost(), true, true, NULL);
 
   // If this is a new navigation, the old page is going away, so we cancel any
   // blocked requests for it.  If it is not a new navigation, then it means the
@@ -806,11 +828,28 @@ void InterstitialPageImpl::TakeActionOnResourceDispatcher(
           action));
 }
 
+void InterstitialPageImpl::OnDomOperationResponse(
+    const std::string& json_string,
+    int automation_id) {
+  // Needed by test code.
+  DomOperationNotificationDetails details(json_string, automation_id);
+  NotificationService::current()->Notify(
+      NOTIFICATION_DOM_OPERATION_RESPONSE,
+      Source<WebContents>(web_contents()),
+      Details<DomOperationNotificationDetails>(&details));
+
+  if (!enabled())
+    return;
+  delegate_->CommandReceived(details.json);
+}
+
+
 InterstitialPageImpl::InterstitialPageRVHDelegateView::
     InterstitialPageRVHDelegateView(InterstitialPageImpl* page)
     : interstitial_page_(page) {
 }
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
     const gfx::Rect& bounds,
     int item_height,
@@ -821,6 +860,11 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
     bool allow_multiple_selection) {
   NOTREACHED() << "InterstitialPage does not support showing popup menus.";
 }
+
+void InterstitialPageImpl::InterstitialPageRVHDelegateView::HidePopupMenu() {
+  NOTREACHED() << "InterstitialPage does not support showing popup menus.";
+}
+#endif
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::StartDragging(
     const DropData& drop_data,

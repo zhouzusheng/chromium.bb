@@ -62,11 +62,11 @@ public:
     explicit PageInspectorProxy(WorkerGlobalScope* workerGlobalScope) : m_workerGlobalScope(workerGlobalScope) { }
     virtual ~PageInspectorProxy() { }
 private:
-    virtual bool sendMessageToFrontend(const String& message) OVERRIDE
+    virtual void sendMessageToFrontend(PassRefPtr<JSONObject> message) OVERRIDE
     {
-        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message);
-        return true;
+        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
     }
+    virtual void flush() OVERRIDE { }
     WorkerGlobalScope* m_workerGlobalScope;
 };
 
@@ -93,12 +93,12 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
     , m_state(adoptPtr(new InspectorCompositeState(m_stateClient.get())))
     , m_instrumentingAgents(InstrumentingAgents::create())
     , m_injectedScriptManager(InjectedScriptManager::createForWorker())
-    , m_debugServer(adoptPtr(new WorkerScriptDebugServer(workerGlobalScope, WorkerDebuggerAgent::debuggerTaskMode)))
+    , m_debugServer(adoptPtr(new WorkerScriptDebugServer(workerGlobalScope)))
     , m_agents(m_instrumentingAgents.get(), m_state.get())
 {
     m_agents.append(WorkerRuntimeAgent::create(m_injectedScriptManager.get(), m_debugServer.get(), workerGlobalScope));
 
-    OwnPtr<InspectorTimelineAgent> timelineAgent = InspectorTimelineAgent::create(0, 0, 0, InspectorTimelineAgent::WorkerInspector, 0);
+    OwnPtr<InspectorTimelineAgent> timelineAgent = InspectorTimelineAgent::create(0, 0, 0, 0, InspectorTimelineAgent::WorkerInspector, 0);
     m_agents.append(WorkerDebuggerAgent::create(m_debugServer.get(), workerGlobalScope, m_injectedScriptManager.get()));
 
     m_agents.append(InspectorProfilerAgent::create(m_injectedScriptManager.get(), 0));

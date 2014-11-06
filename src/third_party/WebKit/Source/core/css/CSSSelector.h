@@ -128,10 +128,8 @@ namespace WebCore {
             DirectAdjacent, // + combinator
             IndirectAdjacent, // ~ combinator
             SubSelector, // "No space" combinator
-            ShadowPseudo, // Special case of shadow DOM pseudo elements
-            // FIXME: rename ChildTree and DescendantTree when the spec for this is written down.
-            ChildTree, // ^ operator for shadow DOM
-            DescendantTree // ^^ operator for shadow DOM
+            ShadowPseudo, // Special case of shadow DOM pseudo elements / shadow pseudo element
+            ShadowDeep // /shadow-deep/ combinator
         };
 
         enum PseudoType {
@@ -213,11 +211,11 @@ namespace WebCore {
             PseudoCue,
             PseudoFutureCue,
             PseudoPastCue,
-            PseudoDistributed,
             PseudoUnresolved,
             PseudoContent,
             PseudoHost,
-            PseudoAncestor
+            PseudoHostContext,
+            PseudoShadow
         };
 
         enum MarginBoxType {
@@ -286,11 +284,11 @@ namespace WebCore {
         bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
-        bool isDistributedPseudoElement() const;
         bool isContentPseudoElement() const;
+        bool isShadowPseudoElement() const;
         bool isHostPseudoClass() const;
 
-        // FIXME: selectors with no tagHistory() get a relation() of Descendant. It should instead be
+        // FIXME: selectors with no tagHistory() get a relation() of Descendant (and sometimes even SubSelector). It should instead be
         // None.
         Relation relation() const { return static_cast<Relation>(m_relation); }
 
@@ -381,7 +379,7 @@ inline bool CSSSelector::isCustomPseudoElement() const
 
 inline bool CSSSelector::isHostPseudoClass() const
 {
-    return m_match == PseudoClass && m_pseudoType == PseudoHost;
+    return m_match == PseudoClass && (m_pseudoType == PseudoHost || m_pseudoType == PseudoHostContext);
 }
 
 inline bool CSSSelector::isSiblingSelector() const
@@ -413,14 +411,14 @@ inline bool CSSSelector::isAttributeSelector() const
         || m_match == CSSSelector::End;
 }
 
-inline bool CSSSelector::isDistributedPseudoElement() const
-{
-    return m_match == PseudoElement && pseudoType() == PseudoDistributed;
-}
-
 inline bool CSSSelector::isContentPseudoElement() const
 {
     return m_match == PseudoElement && pseudoType() == PseudoContent;
+}
+
+inline bool CSSSelector::isShadowPseudoElement() const
+{
+    return m_match == PseudoElement && pseudoType() == PseudoShadow;
 }
 
 inline void CSSSelector::setValue(const AtomicString& value)

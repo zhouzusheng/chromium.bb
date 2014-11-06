@@ -29,25 +29,29 @@
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_ENUMERATION(SVGFEColorMatrixElement, SVGNames::typeAttr, Type, type, ColorMatrixType)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEColorMatrixElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(type)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-END_REGISTER_ANIMATED_PROPERTIES
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<ColorMatrixType>()
+{
+    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+    if (entries.isEmpty()) {
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_MATRIX, "matrix"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_SATURATE, "saturate"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_HUEROTATE, "hueRotate"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_LUMINANCETOALPHA, "luminanceToAlpha"));
+    }
+    return entries;
+}
 
 inline SVGFEColorMatrixElement::SVGFEColorMatrixElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feColorMatrixTag, document)
     , m_values(SVGAnimatedNumberList::create(this, SVGNames::valuesAttr, SVGNumberList::create()))
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
-    , m_type(FECOLORMATRIX_TYPE_MATRIX)
+    , m_type(SVGAnimatedEnumeration<ColorMatrixType>::create(this, SVGNames::typeAttr, FECOLORMATRIX_TYPE_MATRIX))
 {
     ScriptWrappable::init(this);
 
     addToPropertyMap(m_values);
     addToPropertyMap(m_in1);
-    registerAnimatedPropertiesForSVGFEColorMatrixElement();
+    addToPropertyMap(m_type);
 }
 
 PassRefPtr<SVGFEColorMatrixElement> SVGFEColorMatrixElement::create(Document& document)
@@ -73,19 +77,14 @@ void SVGFEColorMatrixElement::parseAttribute(const QualifiedName& name, const At
         return;
     }
 
-    if (name == SVGNames::typeAttr) {
-        ColorMatrixType propertyValue = SVGPropertyTraits<ColorMatrixType>::fromString(value);
-        if (propertyValue > 0)
-            setTypeBaseValue(propertyValue);
-        return;
-    }
-
     SVGParsingError parseError = NoError;
 
     if (name == SVGNames::inAttr)
         m_in1->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::valuesAttr)
         m_values->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::typeAttr)
+        m_type->setBaseValueAsString(value, parseError);
     else
         ASSERT_NOT_REACHED();
 
@@ -96,7 +95,7 @@ bool SVGFEColorMatrixElement::setFilterEffectAttribute(FilterEffect* effect, con
 {
     FEColorMatrix* colorMatrix = static_cast<FEColorMatrix*>(effect);
     if (attrName == SVGNames::typeAttr)
-        return colorMatrix->setType(typeCurrentValue());
+        return colorMatrix->setType(m_type->currentValue()->enumValue());
     if (attrName == SVGNames::valuesAttr)
         return colorMatrix->setValues(m_values->currentValue()->toFloatVector());
 
@@ -131,10 +130,10 @@ PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filter
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
 
     if (!input1)
-        return 0;
+        return nullptr;
 
     Vector<float> filterValues;
-    ColorMatrixType filterType = typeCurrentValue();
+    ColorMatrixType filterType = m_type->currentValue()->enumValue();
 
     // Use defaults if values is empty (SVG 1.1 15.10).
     if (!hasAttribute(SVGNames::valuesAttr)) {
@@ -154,12 +153,12 @@ PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filter
         }
     } else {
         RefPtr<SVGNumberList> values = m_values->currentValue();
-        size_t size = values->numberOfItems();
+        size_t size = values->length();
 
         if ((filterType == FECOLORMATRIX_TYPE_MATRIX && size != 20)
             || (filterType == FECOLORMATRIX_TYPE_HUEROTATE && size != 1)
             || (filterType == FECOLORMATRIX_TYPE_SATURATE && size != 1))
-            return 0;
+            return nullptr;
 
         filterValues = values->toFloatVector();
     }

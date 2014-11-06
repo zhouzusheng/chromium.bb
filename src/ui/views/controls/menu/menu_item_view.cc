@@ -9,7 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -150,15 +150,15 @@ bool MenuItemView::GetTooltipText(const gfx::Point& p,
   return !tooltip->empty();
 }
 
-void MenuItemView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_MENUITEM;
+void MenuItemView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_MENU_ITEM;
 
   base::string16 item_text;
   if (IsContainer()) {
     // The first child is taking over, just use its accessible name instead of
     // |title_|.
     View* child = child_at(0);
-    ui::AccessibleViewState state;
+    ui::AXViewState state;
     child->GetAccessibleState(&state);
     item_text = state.name;
   } else {
@@ -168,12 +168,12 @@ void MenuItemView::GetAccessibleState(ui::AccessibleViewState* state) {
 
   switch (GetType()) {
     case SUBMENU:
-      state->state |= ui::AccessibilityTypes::STATE_HASPOPUP;
+      state->AddStateFlag(ui::AX_STATE_HASPOPUP);
       break;
     case CHECKBOX:
     case RADIO:
-      state->state |= GetDelegate()->IsItemChecked(GetCommand()) ?
-          ui::AccessibilityTypes::STATE_CHECKED : 0;
+      if (GetDelegate()->IsItemChecked(GetCommand()))
+        state->AddStateFlag(ui::AX_STATE_CHECKED);
       break;
     case NORMAL:
     case SEPARATOR:
@@ -742,13 +742,6 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
        parent_menu_item_->GetSubmenu()->GetShowSelection(this) &&
        (NonIconChildViewsCount() == 0));
 
-  int icon_x = config.item_left_margin + left_icon_margin_;
-  int top_margin = GetTopMargin();
-  int bottom_margin = GetBottomMargin();
-  int icon_y = top_margin + (height() - config.item_top_margin -
-                             bottom_margin - config.check_height) / 2;
-  int icon_height = config.check_height;
-  int available_height = height() - top_margin - bottom_margin;
   MenuDelegate *delegate = GetDelegate();
   // Render the background. As MenuScrollViewContainer draws the background, we
   // only need the background when we want it to look different, as when we're
@@ -770,21 +763,27 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                         ui::NativeTheme::ExtraParams());
   }
 
+  const int icon_x = config.item_left_margin + left_icon_margin_;
+  const int top_margin = GetTopMargin();
+  const int bottom_margin = GetBottomMargin();
+  const int available_height = height() - top_margin - bottom_margin;
+
   // Render the check.
   if (type_ == CHECKBOX && delegate->IsItemChecked(GetCommand())) {
     gfx::ImageSkia check = GetMenuCheckImage(IsSelected());
     // Don't use config.check_width here as it's padded
     // to force more padding (AURA).
-    gfx::Rect check_bounds(icon_x, icon_y, check.width(), icon_height);
+    gfx::Rect check_bounds(icon_x,
+                           top_margin + (available_height - check.height()) / 2,
+                           check.width(),
+                           check.height());
     AdjustBoundsForRTLUI(&check_bounds);
     canvas->DrawImageInt(check, check_bounds.x(), check_bounds.y());
   } else if (type_ == RADIO) {
     gfx::ImageSkia image =
         GetRadioButtonImage(delegate->IsItemChecked(GetCommand()));
     gfx::Rect radio_bounds(icon_x,
-                           top_margin +
-                           (height() - top_margin - bottom_margin -
-                               image.height()) / 2,
+                           top_margin + (available_height - image.height()) / 2,
                            image.width(),
                            image.height());
     AdjustBoundsForRTLUI(&radio_bounds);
@@ -792,12 +791,18 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   }
 
   // Render the foreground.
-  ui::NativeTheme::ColorId color_id =
-      ui::NativeTheme::kColorId_DisabledMenuItemForegroundColor;
+  ui::NativeTheme::ColorId color_id;
   if (enabled()) {
     color_id = render_selection ?
         ui::NativeTheme::kColorId_SelectedMenuItemForegroundColor:
         ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor;
+  } else {
+    bool emphasized = delegate &&
+                      delegate->GetShouldUseDisabledEmphasizedForegroundColor(
+                          GetCommand());
+    color_id = emphasized ?
+        ui::NativeTheme::kColorId_DisabledEmphasizedMenuItemForegroundColor :
+        ui::NativeTheme::kColorId_DisabledMenuItemForegroundColor;
   }
   SkColor fg_color = native_theme->GetSystemColor(color_id);
   SkColor override_foreground_color;
@@ -837,14 +842,14 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 
   // Render the submenu indicator (arrow).
   if (HasSubmenu()) {
+    gfx::ImageSkia arrow = GetSubmenuArrowImage(IsSelected());
     gfx::Rect arrow_bounds(this->width() - config.arrow_width -
                                config.arrow_to_edge_padding,
-                           top_margin + (available_height -
-                                         config.arrow_width) / 2,
-                           config.arrow_width, height());
+                           top_margin + (available_height - arrow.height()) / 2,
+                           config.arrow_width,
+                           arrow.height());
     AdjustBoundsForRTLUI(&arrow_bounds);
-    canvas->DrawImageInt(GetSubmenuArrowImage(IsSelected()),
-                         arrow_bounds.x(), arrow_bounds.y());
+    canvas->DrawImageInt(arrow, arrow_bounds.x(), arrow_bounds.y());
   }
 }
 

@@ -1193,6 +1193,18 @@ class TypeBindings:
 
                                 writer.newline("    typedef TypeBuilder::StructItemTraits ItemTraits;\n")
 
+                                for prop_data in resolve_data.main_properties:
+                                    prop_name = prop_data.p["name"]
+                                    param_type_binding = prop_data.param_type_binding
+                                    raw_type = param_type_binding.reduce_to_raw_type()
+                                    if isinstance(param_type_binding.get_type_model(), TypeModel.ValueType):
+                                        writer.append_multiline("\n    void %s" % prop_name)
+                                        writer.append("(%s value)\n" % param_type_binding.get_type_model().get_command_return_pass_model().get_output_parameter_type())
+                                        writer.newline("    {\n")
+                                        writer.newline("        JSONObjectBase::get%s(\"%s\", value);\n"
+                                            % (param_type_binding.reduce_to_raw_type().get_setter_name(), prop_data.p["name"]))
+                                        writer.newline("    }\n")
+
                                 for prop_data in resolve_data.optional_properties:
                                     prop_name = prop_data.p["name"]
                                     param_type_binding = prop_data.param_type_binding
@@ -1205,7 +1217,6 @@ class TypeBindings:
                                         % (param_type_binding.reduce_to_raw_type().get_setter_name(), prop_data.p["name"],
                                            format_setter_value_expression(param_type_binding, "value")))
                                     writer.newline("    }\n")
-
 
                                     if setter_name in INSPECTOR_OBJECT_SETTER_NAMES:
                                         writer.newline("    using JSONObjectBase::%s;\n\n" % setter_name)
@@ -1849,6 +1860,9 @@ class Generator:
 
     @staticmethod
     def process_event(json_event, domain_name, frontend_method_declaration_lines):
+        if (("handlers" in json_event) and (not ("renderer" in json_event["handlers"]))):
+            return
+
         event_name = json_event["name"]
 
         ad_hoc_type_output = []
@@ -1879,6 +1893,9 @@ class Generator:
 
     @staticmethod
     def process_command(json_command, domain_name, agent_field_name, agent_interface_name):
+        if (("handlers" in json_command) and (not ("renderer" in json_command["handlers"]))):
+            return
+
         json_command_name = json_command["name"]
 
         cmd_enum_name = "k%s_%sCmd" % (domain_name, json_command["name"])

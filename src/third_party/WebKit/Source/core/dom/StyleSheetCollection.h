@@ -28,6 +28,7 @@
 #ifndef StyleSheetCollection_h
 #define StyleSheetCollection_h
 
+#include "heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -37,29 +38,32 @@ namespace WebCore {
 class CSSStyleSheet;
 class StyleSheet;
 
-class StyleSheetCollection {
-    WTF_MAKE_NONCOPYABLE(StyleSheetCollection); WTF_MAKE_FAST_ALLOCATED;
+class StyleSheetCollection : public NoBaseWillBeGarbageCollectedFinalized<StyleSheetCollection> {
+    WTF_MAKE_NONCOPYABLE(StyleSheetCollection);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     friend class ActiveDocumentStyleSheetCollector;
     friend class ImportedDocumentStyleSheetCollector;
 
     StyleSheetCollection();
-    ~StyleSheetCollection();
+    virtual ~StyleSheetCollection();
 
-    Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() { return m_activeAuthorStyleSheets; }
-    Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList() { return m_styleSheetsForStyleSheetList; }
-    const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
-    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() { return m_activeAuthorStyleSheets; }
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList() { return m_styleSheetsForStyleSheetList; }
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
 
     void swap(StyleSheetCollection&);
-    void swapSheetsForSheetList(Vector<RefPtr<StyleSheet> >&);
-    void appendActiveStyleSheets(const Vector<RefPtr<CSSStyleSheet> >&);
+    void swapSheetsForSheetList(WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >&);
+    void appendActiveStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
     void appendActiveStyleSheet(CSSStyleSheet*);
     void appendSheetForList(StyleSheet*);
 
+    virtual void trace(Visitor*);
+
 protected:
-    Vector<RefPtr<StyleSheet> > m_styleSheetsForStyleSheetList;
-    Vector<RefPtr<CSSStyleSheet> > m_activeAuthorStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > m_styleSheetsForStyleSheetList;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_activeAuthorStyleSheets;
 };
 
 }

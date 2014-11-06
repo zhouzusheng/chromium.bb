@@ -27,9 +27,7 @@
 #include "HTMLNames.h"
 #include "core/dom/ClassCollection.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/NodeRareData.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -160,7 +158,7 @@ static NodeListInvalidationType invalidationTypeExcludingIdAndNameAttributes(Col
     return DoNotInvalidateOnAttributeChanges;
 }
 
-HTMLCollection::HTMLCollection(ContainerNode* ownerNode, CollectionType type, ItemAfterOverrideType itemAfterOverrideType)
+HTMLCollection::HTMLCollection(ContainerNode& ownerNode, CollectionType type, ItemAfterOverrideType itemAfterOverrideType)
     : LiveNodeListBase(ownerNode, rootTypeFromCollectionType(type), invalidationTypeExcludingIdAndNameAttributes(type), type)
     , m_overridesItemAfter(itemAfterOverrideType == OverridesItemAfter)
     , m_shouldOnlyIncludeDirectChildren(shouldTypeOnlyIncludeDirectChildren(type))
@@ -169,7 +167,7 @@ HTMLCollection::HTMLCollection(ContainerNode* ownerNode, CollectionType type, It
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLCollection> HTMLCollection::create(ContainerNode* base, CollectionType type)
+PassRefPtr<HTMLCollection> HTMLCollection::create(ContainerNode& base, CollectionType type)
 {
     return adoptRef(new HTMLCollection(base, type, DoesNotOverrideItemAfter));
 }
@@ -181,7 +179,7 @@ HTMLCollection::~HTMLCollection()
     // HTMLNameCollection, ClassCollection and TagCollection remove cache by themselves.
     if (type() != WindowNamedItems && type() != DocumentNamedItems && type() != ClassCollectionType
         && type() != HTMLTagCollectionType && type() != TagCollectionType) {
-        ownerNode()->nodeLists()->removeCache(this, type());
+        ownerNode().nodeLists()->removeCache(this, type());
     }
 }
 
@@ -279,106 +277,9 @@ template <> inline bool isMatchingElement(const HTMLTagCollection& collection, c
     return collection.elementMatches(element);
 }
 
-template <> inline bool isMatchingElement(const LiveNodeList& nodeList, const Element& element)
-{
-    return nodeList.nodeMatches(element);
-}
-
-static Node* previousNode(const ContainerNode& base, const Node& previous, bool onlyIncludeDirectChildren)
-{
-    return onlyIncludeDirectChildren ? previous.previousSibling() : NodeTraversal::previous(previous, &base);
-}
-
-static inline Node* lastDescendant(const ContainerNode& node)
-{
-    Node* descendant = node.lastChild();
-    for (Node* current = descendant; current; current = current->lastChild())
-        descendant = current;
-    return descendant;
-}
-
-static Node* lastNode(const ContainerNode& rootNode, bool onlyIncludeDirectChildren)
-{
-    return onlyIncludeDirectChildren ? rootNode.lastChild() : lastDescendant(rootNode);
-}
-
-template <typename Collection>
-ALWAYS_INLINE Element* LiveNodeListBase::iterateForPreviousNode(const Collection& collection, Node* current)
-{
-    bool onlyIncludeDirectChildren = collection.shouldOnlyIncludeDirectChildren();
-    ContainerNode& rootNode = collection.rootNode();
-    for (; current; current = previousNode(rootNode, *current, onlyIncludeDirectChildren)) {
-        if (current->isElementNode() && isMatchingElement(collection, toElement(*current)))
-            return toElement(current);
-    }
-    return 0;
-}
-
-template <typename Collection>
-Element* LiveNodeListBase::itemBefore(const Collection& collection, const Element* previous)
-{
-    Node* current;
-    if (LIKELY(!!previous)) // Without this LIKELY, length() and item() can be 10% slower.
-        current = previousNode(collection.rootNode(), *previous, collection.shouldOnlyIncludeDirectChildren());
-    else
-        current = lastNode(collection.rootNode(), collection.shouldOnlyIncludeDirectChildren());
-
-    return iterateForPreviousNode(collection, current);
-}
-
-Element* LiveNodeList::itemBefore(const Element* previous) const
-{
-    return LiveNodeListBase::itemBefore(*this, previous);
-}
-
 Element* HTMLCollection::itemBefore(const Element* previous) const
 {
     return LiveNodeListBase::itemBefore(*this, previous);
-}
-
-template <class NodeListType>
-inline Element* firstMatchingElement(const NodeListType& nodeList, const ContainerNode& root)
-{
-    Element* element = ElementTraversal::firstWithin(root);
-    while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::next(*element, &root);
-    return element;
-}
-
-template <class NodeListType>
-inline Element* nextMatchingElement(const NodeListType& nodeList, Element& current, const ContainerNode& root)
-{
-    Element* next = &current;
-    do {
-        next = ElementTraversal::next(*next, &root);
-    } while (next && !isMatchingElement(nodeList, *next));
-    return next;
-}
-
-template <class NodeListType>
-inline Element* traverseMatchingElementsForwardToOffset(const NodeListType& nodeList, unsigned offset, Element& currentElement, unsigned& currentOffset, const ContainerNode& root)
-{
-    ASSERT(currentOffset < offset);
-    Element* next = &currentElement;
-    while ((next = nextMatchingElement(nodeList, *next, root))) {
-        if (++currentOffset == offset)
-            return next;
-    }
-    return 0;
-}
-
-// FIXME: This should be in LiveNodeList.cpp but it needs to stay here until firstMatchingElement()
-// and others are moved to a separate header.
-Element* LiveNodeList::traverseToFirstElement(const ContainerNode& root) const
-{
-    return firstMatchingElement(*this, root);
-}
-
-// FIXME: This should be in LiveNodeList.cpp but it needs to stay here until traverseMatchingElementsForwardToOffset()
-// and others are moved to a separate header.
-Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset, const ContainerNode& root) const
-{
-    return traverseMatchingElementsForwardToOffset(*this, offset, currentNode, currentOffset, root);
 }
 
 Element* HTMLCollection::virtualItemAfter(Element*) const
@@ -408,17 +309,17 @@ static inline bool nameShouldBeVisibleInDocumentAll(const HTMLElement& element)
 
 inline Element* firstMatchingChildElement(const HTMLCollection& nodeList, const ContainerNode& root)
 {
-    Element* element = ElementTraversal::firstWithin(root);
+    Element* element = ElementTraversal::firstChild(root);
     while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::nextSkippingChildren(*element, &root);
+        element = ElementTraversal::nextSibling(*element);
     return element;
 }
 
-inline Element* nextMatchingChildElement(const HTMLCollection& nodeList, Element& current, const ContainerNode& root)
+inline Element* nextMatchingChildElement(const HTMLCollection& nodeList, Element& current)
 {
     Element* next = &current;
     do {
-        next = ElementTraversal::nextSkippingChildren(*next, &root);
+        next = ElementTraversal::nextSibling(*next);
     } while (next && !isMatchingElement(nodeList, *next));
     return next;
 }
@@ -444,7 +345,7 @@ inline Element* HTMLCollection::traverseNextElement(Element& previous, const Con
     if (overridesItemAfter())
         return virtualItemAfter(&previous);
     if (shouldOnlyIncludeDirectChildren())
-        return nextMatchingChildElement(*this, previous, root);
+        return nextMatchingChildElement(*this, previous);
     return nextMatchingElement(*this, previous, root);
 }
 
@@ -467,7 +368,7 @@ Element* HTMLCollection::traverseForwardToOffset(unsigned offset, Element& curre
         }
         if (shouldOnlyIncludeDirectChildren()) {
             Element* next = &currentElement;
-            while ((next = nextMatchingChildElement(*this, *next, root))) {
+            while ((next = nextMatchingChildElement(*this, *next))) {
                 if (++currentOffset == offset)
                     return next;
             }

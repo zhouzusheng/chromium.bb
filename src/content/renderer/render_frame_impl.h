@@ -14,12 +14,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/process_handle.h"
-#include "base/strings/string16.h"
+#include "content/public/common/referrer.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "ui/gfx/range/range.h"
 
 class TransportDIB;
 struct FrameMsg_BuffersSwapped_Params;
@@ -29,6 +30,8 @@ struct FrameMsg_Navigate_Params;
 namespace blink {
 class WebInputEvent;
 class WebMouseEvent;
+class WebContentDecryptionModule;
+class WebSecurityOrigin;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
@@ -98,8 +101,11 @@ class CONTENT_EXPORT RenderFrameImpl
   // TODO(nasko): Those are page-level methods at this time and come from
   // WebViewClient. We should move them to be WebFrameClient calls and put
   // logic in the browser side to balance starts/stops.
-  void didStartLoading();
-  void didStopLoading();
+  // |to_different_document| will be true unless the load is a fragment
+  // navigation, or triggered by history.pushState/replaceState.
+  virtual void didStartLoading(bool to_different_document);
+  virtual void didStopLoading();
+  virtual void didChangeLoadProgress(double load_progress);
 
 #if defined(ENABLE_PLUGINS)
   // Notification that a PPAPI plugin has been created.
@@ -170,6 +176,7 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual int ShowContextMenu(ContextMenuClient* client,
                               const ContextMenuParams& params) OVERRIDE;
   virtual void CancelContextMenu(int request_id) OVERRIDE;
+  virtual blink::WebNode GetContextMenuNode() const OVERRIDE;
   virtual blink::WebPlugin* CreatePlugin(
       blink::WebFrame* frame,
       const WebPluginInfo& info,
@@ -178,6 +185,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebFrame* frame,
       const blink::WebURLRequest& request,
       blink::WebNavigationPolicy policy) OVERRIDE;
+  virtual void ExecuteJavaScript(const base::string16& javascript) OVERRIDE;
 
   // blink::WebFrameClient implementation -------------------------------------
   virtual blink::WebPlugin* createPlugin(
@@ -187,6 +195,10 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebFrame* frame,
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client);
+  virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
+      blink::WebFrame* frame,
+      const blink::WebSecurityOrigin& security_origin,
+      const blink::WebString& key_system);
   virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
       blink::WebFrame* frame,
       blink::WebApplicationCacheHostClient* client);
@@ -194,13 +206,13 @@ class CONTENT_EXPORT RenderFrameImpl
       createWorkerPermissionClientProxy(blink::WebFrame* frame);
   virtual blink::WebCookieJar* cookieJar(blink::WebFrame* frame);
   virtual blink::WebServiceWorkerProvider* createServiceWorkerProvider(
-      blink::WebFrame* frame,
-      blink::WebServiceWorkerProviderClient*);
+      blink::WebFrame* frame);
   virtual void didAccessInitialDocument(blink::WebFrame* frame);
   virtual blink::WebFrame* createChildFrame(blink::WebFrame* parent,
                                              const blink::WebString& name);
   virtual void didDisownOpener(blink::WebFrame* frame);
   virtual void frameDetached(blink::WebFrame* frame);
+  virtual void frameFocused();
   virtual void willClose(blink::WebFrame* frame);
   virtual void didChangeName(blink::WebFrame* frame,
                              const blink::WebString& name);
@@ -260,6 +272,9 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didNavigateWithinPage(blink::WebFrame* frame,
                                      bool is_new_navigation);
   virtual void didUpdateCurrentHistoryItem(blink::WebFrame* frame);
+  virtual void didChangeSelection(bool is_empty_selection);
+  virtual void showContextMenu(const blink::WebContextMenuData& data);
+  virtual void clearContextMenu();
   virtual void willRequestAfterPreconnect(blink::WebFrame* frame,
                                           blink::WebURLRequest& request);
   virtual void willSendRequest(
@@ -282,8 +297,6 @@ class CONTENT_EXPORT RenderFrameImpl
                                      const blink::WebSecurityOrigin& origin,
                                      const blink::WebURL& target);
   virtual void didAbortLoading(blink::WebFrame* frame);
-  virtual void didExhaustMemoryAvailableForScript(
-      blink::WebFrame* frame);
   virtual void didCreateScriptContext(blink::WebFrame* frame,
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
@@ -325,9 +338,8 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didLoseWebGLContext(blink::WebFrame* frame,
                                    int arb_robustness_status_code);
   virtual void forwardInputEvent(const blink::WebInputEvent* event);
-
-  // TODO(jam): move this to WebFrameClient
-  virtual void showContextMenu(const blink::WebContextMenuData& data);
+  virtual void initializeChildFrame(const blink::WebRect& frame_rect,
+                                    float scale_factor);
 
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.
@@ -338,8 +350,16 @@ class CONTENT_EXPORT RenderFrameImpl
 
  private:
   friend class RenderFrameObserver;
-  FRIEND_TEST_ALL_PREFIXES(RenderFrameImplTest,
+  FRIEND_TEST_ALL_PREFIXES(RendererAccessibilityTest,
+                           AccessibilityMessagesQueueWhileSwappedOut);
+    FRIEND_TEST_ALL_PREFIXES(RenderFrameImplTest,
                            ShouldUpdateSelectionTextFromContextMenuParams);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           OnExtendSelectionAndDelete);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           SetEditableSelectionAndComposition);
 
   typedef std::map<GURL, double> HostZoomLevels;
 
@@ -349,10 +369,15 @@ class CONTENT_EXPORT RenderFrameImpl
 
   void UpdateURL(blink::WebFrame* frame);
 
+  // Gets the focused element. If no such element exists then the element will
+  // be NULL.
+  blink::WebElement GetFocusedElement();
+
   // IPC message handlers ------------------------------------------------------
   //
   // The documentation for these functions should be in
   // content/common/*_messages.h for the message that the function is handling.
+  void OnBeforeUnload();
   void OnSwapOut();
   void OnChildFrameProcessGone();
   void OnBuffersSwapped(const FrameMsg_BuffersSwapped_Params& params);
@@ -361,6 +386,48 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
   void OnCustomContextMenuAction(const CustomContextMenuContext& custom_context,
                                  unsigned action);
+  void OnUndo();
+  void OnRedo();
+  void OnCut();
+  void OnCopy();
+  void OnPaste();
+  void OnPasteAndMatchStyle();
+  void OnDelete();
+  void OnSelectAll();
+  void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
+  void OnUnselect();
+  void OnCSSInsertRequest(const std::string& css);
+  void OnJavaScriptExecuteRequest(const base::string16& javascript,
+                                  int id,
+                                  bool notify_result);
+  void OnSetEditableSelectionOffsets(int start, int end);
+  void OnSetCompositionFromExistingText(
+      int start, int end,
+      const std::vector<blink::WebCompositionUnderline>& underlines);
+  void OnExtendSelectionAndDelete(int before, int after);
+#if defined(OS_MACOSX)
+  void OnCopyToFindPboard();
+#endif
+
+  // Virtual since overridden by WebTestProxy for layout tests.
+  virtual blink::WebNavigationPolicy DecidePolicyForNavigation(
+      RenderFrame* render_frame,
+      blink::WebFrame* frame,
+      blink::WebDataSource::ExtraData* extraData,
+      const blink::WebURLRequest& request,
+      blink::WebNavigationType type,
+      blink::WebNavigationPolicy default_policy,
+      bool is_redirect);
+  void OpenURL(blink::WebFrame* frame,
+               const GURL& url,
+               const Referrer& referrer,
+               blink::WebNavigationPolicy policy);
+
+  // Dispatches the current state of selection on the webpage to the browser if
+  // it has changed.
+  // TODO(varunjain): delete this method once we figure out how to keep
+  // selection handles in sync with the webpage.
+  void SyncSelectionIfRequired();
 
   // Returns whether |params.selection_text| should be synchronized to the
   // browser before bringing up the context menu. Static for testing.
@@ -375,6 +442,7 @@ class CONTENT_EXPORT RenderFrameImpl
 
   base::WeakPtr<RenderViewImpl> render_view_;
   int routing_id_;
+  bool is_loading_;
   bool is_swapped_out_;
   bool is_detaching_;
 
@@ -391,6 +459,9 @@ class CONTENT_EXPORT RenderFrameImpl
 
   scoped_refptr<ChildFrameCompositingHelper> compositing_helper_;
 
+  // The node that the context menu was pressed over.
+  blink::WebNode context_menu_node_;
+
   // External context menu requests we're waiting for. "Internal"
   // (WebKit-originated) context menu events will have an ID of 0 and will not
   // be in this map.
@@ -403,6 +474,21 @@ class CONTENT_EXPORT RenderFrameImpl
   // always respond properly to the request, so we don't have to worry so
   // much about leaks.
   IDMap<ContextMenuClient, IDMapExternalPointer> pending_context_menus_;
+
+  // The text selection the last time DidChangeSelection got called. May contain
+  // additional characters before and after the selected text, for IMEs. The
+  // portion of this string that is the actual selected text starts at index
+  // |selection_range_.GetMin() - selection_text_offset_| and has length
+  // |selection_range_.length()|.
+  base::string16 selection_text_;
+  // The offset corresponding to the start of |selection_text_| in the document.
+  size_t selection_text_offset_;
+  // Range over the document corresponding to the actual selected text (which
+  // could correspond to a substring of |selection_text_|; see above).
+  gfx::Range selection_range_;
+  // Used to inform didChangeSelection() when it is called in the context
+  // of handling a InputMsg_SelectRange IPC.
+  bool handling_select_range_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameImpl);
 };

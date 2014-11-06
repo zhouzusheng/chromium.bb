@@ -28,10 +28,11 @@
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/HTMLAnchorElement.h"
+#include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/rendering/RenderImage.h"
@@ -123,7 +124,7 @@ HTMLFormElement* HTMLImageElement::formOwner() const
     return m_form.get();
 }
 
-void HTMLImageElement::formRemovedFromTree(const Node* formRoot)
+void HTMLImageElement::formRemovedFromTree(const Node& formRoot)
 {
     ASSERT(m_form);
     if (highestAncestor() != formRoot)
@@ -163,18 +164,16 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
                 toRenderImage(renderer())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
         }
         m_imageLoader.updateFromElementIgnoringPreviousError();
-    }
-    else if (name == usemapAttr)
+    } else if (name == usemapAttr) {
         setIsLink(!value.isNull());
-    else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
-    else if (name == compositeAttr) {
+    } else if (name == compositeAttr) {
         // FIXME: images don't support blend modes in their compositing attribute.
         blink::WebBlendMode blendOp = blink::WebBlendModeNormal;
         if (!parseCompositeAndBlendOperator(value, m_compositeOperator, blendOp))
             m_compositeOperator = CompositeSourceOver;
-    } else
+    } else {
         HTMLElement::parseAttribute(name, value);
+    }
 }
 
 const AtomicString& HTMLImageElement::altText() const
@@ -212,7 +211,7 @@ void HTMLImageElement::attach(const AttachContext& context)
 {
     HTMLElement::attach(context);
 
-    if (renderer() && renderer()->isImage() && !m_imageLoader.hasPendingBeforeLoadEvent()) {
+    if (renderer() && renderer()->isImage()) {
         RenderImage* renderImage = toRenderImage(renderer());
         RenderImageResource* renderImageResource = renderImage->imageResource();
         if (renderImageResource->hasImage())
@@ -319,6 +318,16 @@ bool HTMLImageElement::isURLAttribute(const Attribute& attribute) const
         || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLImageElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLImageElement::subResourceAttributeName() const
+{
+    return srcAttr;
+}
+
 const AtomicString& HTMLImageElement::alt() const
 {
     return fastGetAttribute(altAttr);
@@ -408,6 +417,59 @@ Image* HTMLImageElement::imageContents()
 bool HTMLImageElement::isInteractiveContent() const
 {
     return fastHasAttribute(usemapAttr);
+}
+
+PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageMode, SourceImageStatus* status) const
+{
+    if (!complete() || !cachedImage()) {
+        *status = IncompleteSourceImageStatus;
+        return nullptr;
+    }
+
+    if (cachedImage()->errorOccurred()) {
+        *status = UndecodableSourceImageStatus;
+        return nullptr;
+    }
+
+    RefPtr<Image> sourceImage = cachedImage()->imageForRenderer(renderer());
+
+    // We need to synthesize a container size if a renderer is not available to provide one.
+    if (!renderer() && sourceImage->usesContainerSize())
+        sourceImage->setContainerSize(sourceImage->size());
+
+    *status = NormalSourceImageStatus;
+    return sourceImage.release();
+}
+
+bool HTMLImageElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return false;
+    return !image->isAccessAllowed(destinationSecurityOrigin);
+}
+
+FloatSize HTMLImageElement::sourceSize() const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return FloatSize();
+    LayoutSize size;
+    size = image->imageSizeForRenderer(renderer(), 1.0f); // FIXME: Not sure about this.
+
+    return size;
+}
+
+FloatSize HTMLImageElement::defaultDestinationSize() const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return FloatSize();
+    LayoutSize size;
+    size = image->imageSizeForRenderer(renderer(), 1.0f); // FIXME: Not sure about this.
+    if (renderer() && renderer()->isRenderImage() && image->image() && !image->image()->hasRelativeWidth())
+        size.scale(toRenderImage(renderer())->imageDevicePixelRatio());
+    return size;
 }
 
 }

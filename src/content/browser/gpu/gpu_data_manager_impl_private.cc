@@ -234,9 +234,17 @@ void DisplayReconfigCallback(CGDirectDisplayID display,
 
 #if defined(OS_ANDROID)
 void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
-                             CommandLine* command_line) {
+                             CommandLine* command_line,
+                             std::set<int>* workarounds) {
   std::string vendor(StringToLowerASCII(gpu_info.gl_vendor));
   std::string renderer(StringToLowerASCII(gpu_info.gl_renderer));
+  std::string version(StringToLowerASCII(gpu_info.gl_version));
+
+  if (vendor.find("nvidia") != std::string::npos &&
+      version.find("3.1") != std::string::npos) {
+    workarounds->insert(gpu::USE_VIRTUALIZED_GL_CONTEXTS);
+  }
+
   bool is_img =
       gpu_info.gl_vendor.find("Imagination") != std::string::npos;
 
@@ -603,15 +611,7 @@ void GpuDataManagerImplPrivate::Initialize() {
                  gpu_info);
 }
 
-void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
-  // No further update of gpu_info if falling back to SwiftShader.
-  if (use_swiftshader_)
-    return;
-
-  gpu::MergeGPUInfo(&gpu_info_, gpu_info);
-  complete_gpu_info_already_requested_ =
-      complete_gpu_info_already_requested_ || gpu_info_.finalized;
-
+void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
   GetContentClient()->SetGpuInfo(gpu_info_);
 
   if (gpu_blacklist_) {
@@ -622,7 +622,9 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 
     UpdateBlacklistedFeatures(features);
   }
-  if (gpu_driver_bug_list_) {
+  gpu_driver_bugs_ =
+      gpu::WorkaroundsFromCommandLine(CommandLine::ForCurrentProcess());
+  if (gpu_driver_bugs_.empty() && gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
   }
@@ -630,6 +632,18 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 
   // We have to update GpuFeatureType before notify all the observers.
   NotifyGpuInfoUpdate();
+}
+
+void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
+  // No further update of gpu_info if falling back to SwiftShader.
+  if (use_swiftshader_)
+    return;
+
+  gpu::MergeGPUInfo(&gpu_info_, gpu_info);
+  complete_gpu_info_already_requested_ =
+      complete_gpu_info_already_requested_ || gpu_info_.finalized;
+
+  UpdateGpuInfoHelper();
 }
 
 void GpuDataManagerImplPrivate::UpdateVideoMemoryUsageStats(
@@ -795,6 +809,7 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->force_compositing_mode = true;
     prefs->accelerated_compositing_enabled = true;
     prefs->accelerated_compositing_for_3d_transforms_enabled = true;
+    prefs->accelerated_compositing_for_animation_enabled = true;
     prefs->accelerated_compositing_for_plugins_enabled = true;
     prefs->accelerated_compositing_for_video_enabled = true;
   }
@@ -838,7 +853,9 @@ std::string GpuDataManagerImplPrivate::GetDriverBugListVersion() const {
 void GpuDataManagerImplPrivate::GetBlacklistReasons(
     base::ListValue* reasons) const {
   if (gpu_blacklist_)
-    gpu_blacklist_->GetReasons(reasons);
+    gpu_blacklist_->GetReasons(reasons, "disabledFeatures");
+  if (gpu_driver_bug_list_)
+    gpu_driver_bug_list_->GetReasons(reasons, "workarounds");
 }
 
 void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(
@@ -889,8 +906,34 @@ base::ListValue* GpuDataManagerImplPrivate::GetLogMessages() const {
 }
 
 void GpuDataManagerImplPrivate::HandleGpuSwitch() {
-  GpuDataManagerImpl::UnlockedSession session(owner_);
-  observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
+  // Check if the active gpu has changed.
+  uint32 vendor_id, device_id;
+  gpu::GPUInfo::GPUDevice* active = NULL;
+  gpu::GPUInfo::GPUDevice* old_active = NULL;
+  if (gpu::CollectGpuID(&vendor_id, &device_id) == gpu::kGpuIDSuccess) {
+    if (gpu_info_.gpu.active)
+      old_active = &gpu_info_.gpu;
+    if (gpu_info_.gpu.vendor_id == vendor_id &&
+        gpu_info_.gpu.device_id == device_id)
+      active = &gpu_info_.gpu;
+    for (size_t ii = 0; ii < gpu_info_.secondary_gpus.size(); ++ii) {
+      gpu::GPUInfo::GPUDevice& gpu = gpu_info_.secondary_gpus[ii];
+      if (gpu.active)
+        old_active = &gpu;
+      if (gpu.vendor_id == vendor_id && gpu.device_id == device_id)
+        active = &gpu;
+    }
+    DCHECK(active && old_active);
+    if (active != old_active) {  // A different GPU is used.
+      old_active->active = false;
+      active->active = true;
+      UpdateGpuInfoHelper();
+    }
+  }
+  {
+    GpuDataManagerImpl::UnlockedSession session(owner_);
+    observer_list_->Notify(&GpuDataManagerObserver::OnGpuSwitching);
+  }
 }
 
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
@@ -1010,7 +1053,8 @@ void GpuDataManagerImplPrivate::InitializeImpl(
   UpdatePreliminaryBlacklistedFeatures();
 
 #if defined(OS_ANDROID)
-  ApplyAndroidWorkarounds(gpu_info, CommandLine::ForCurrentProcess());
+  ApplyAndroidWorkarounds(
+      gpu_info, CommandLine::ForCurrentProcess(), &gpu_driver_bugs_);
 #endif  // OS_ANDROID
 }
 

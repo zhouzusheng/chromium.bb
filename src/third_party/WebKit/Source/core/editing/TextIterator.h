@@ -63,6 +63,7 @@ inline bool isCollapsibleWhitespace(UChar c)
 
 String plainText(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 PassRefPtr<Range> findPlainText(const Range*, const String&, FindOptions);
+PassRefPtr<Range> findPlainText(const Position& start, const Position& end, const String&, FindOptions);
 
 class BitStack {
 public:
@@ -87,6 +88,8 @@ private:
 class TextIterator {
 public:
     explicit TextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    // [start, end] indicates the document range that the iteration should take place within (both ends inclusive).
+    TextIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
     ~TextIterator();
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
@@ -127,6 +130,8 @@ private:
         HandledNode,
         HandledChildren
     };
+
+    void initialize(const Position& start, const Position& end);
 
     int startOffset() const { return m_positionStartOffset; }
     const String& string() const { return m_text; }
@@ -304,6 +309,7 @@ private:
 class CharacterIterator {
 public:
     explicit CharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    CharacterIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int numCharacters);
 
@@ -320,6 +326,8 @@ public:
     PassRefPtr<Range> range() const;
 
 private:
+    void initialize();
+
     int m_offset;
     int m_runOffset;
     bool m_atBreak;

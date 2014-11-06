@@ -314,13 +314,46 @@ gfx::Rect BrowserAccessibility::GetGlobalBoundsForRange(int start, int len)
 
 BrowserAccessibility* BrowserAccessibility::BrowserAccessibilityForPoint(
     const gfx::Point& point) {
+  // The best result found that's a child of this object.
+  BrowserAccessibility* child_result = NULL;
+  // The best result that's an indirect descendant like grandchild, etc.
+  BrowserAccessibility* descendant_result = NULL;
+
   // Walk the children recursively looking for the BrowserAccessibility that
-  // most tightly encloses the specified point.
+  // most tightly encloses the specified point. Walk backwards so that in
+  // the absence of any other information, we assume the object that occurs
+  // later in the tree is on top of one that comes before it.
   for (int i = static_cast<int>(PlatformChildCount()) - 1; i >= 0; --i) {
     BrowserAccessibility* child = PlatformGetChild(i);
-    if (child->GetGlobalBoundsRect().Contains(point))
-      return child->BrowserAccessibilityForPoint(point);
+
+    // Skip table columns because cells are only contained in rows,
+    // not columns.
+    if (child->role() == ui::AX_ROLE_COLUMN)
+      continue;
+
+    if (child->GetGlobalBoundsRect().Contains(point)) {
+      BrowserAccessibility* result = child->BrowserAccessibilityForPoint(point);
+      if (result == child && !child_result)
+        child_result = result;
+      if (result != child && !descendant_result)
+        descendant_result = result;
+    }
+
+    if (child_result && descendant_result)
+      break;
   }
+
+  // Explanation of logic: it's possible that this point overlaps more than
+  // one child of this object. If so, as a heuristic we prefer if the point
+  // overlaps a descendant of one of the two children and not the other.
+  // As an example, suppose you have two rows of buttons - the buttons don't
+  // overlap, but the rows do. Without this heuristic, we'd greedily only
+  // consider one of the containers.
+  if (descendant_result)
+    return descendant_result;
+  if (child_result)
+    return child_result;
+
   return this;
 }
 
@@ -620,7 +653,7 @@ std::string BrowserAccessibility::GetTextRecursive() const {
 }
 
 int BrowserAccessibility::GetStaticTextLenRecursive() const {
-  if (role_ == blink::WebAXRoleStaticText)
+  if (role_ == ui::AX_ROLE_STATIC_TEXT)
     return static_cast<int>(GetStringAttribute(ui::AX_ATTR_VALUE).size());
 
   int len = 0;

@@ -37,7 +37,7 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:base_prefs',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../components/components.gyp:browser_context_keyed_service',
+        '../components/components.gyp:keyed_service_content',
         '../components/components.gyp:user_prefs',
         '../content/content.gyp:content',
         '../ipc/ipc.gyp:ipc',

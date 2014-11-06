@@ -39,7 +39,7 @@ namespace WebCore {
 
 class Document;
 class DocumentLoader;
-class Frame;
+class LocalFrame;
 class Page;
 class ResourceError;
 class ResourceLoader;
@@ -48,12 +48,12 @@ class ResourceRequest;
 
 class FrameFetchContext FINAL : public FetchContext {
 public:
-    static PassOwnPtr<FrameFetchContext> create(Frame* frame) { return adoptPtr(new FrameFetchContext(frame)); }
+    static PassOwnPtr<FrameFetchContext> create(LocalFrame* frame) { return adoptPtr(new FrameFetchContext(frame)); }
 
     virtual void reportLocalLoadFailed(const KURL&) OVERRIDE;
     virtual void addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType) OVERRIDE;
     virtual CachePolicy cachePolicy(Document*) const OVERRIDE;
-    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority) OVERRIDE;
+    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority, int intraPriorityValue);
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) OVERRIDE;
     virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) OVERRIDE;
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) OVERRIDE;
@@ -64,10 +64,10 @@ public:
     virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength) OVERRIDE;
 
 private:
-    explicit FrameFetchContext(Frame*);
+    explicit FrameFetchContext(LocalFrame*);
     inline DocumentLoader* ensureLoader(DocumentLoader*);
 
-    Frame* m_frame;
+    LocalFrame* m_frame;
 };
 
 }

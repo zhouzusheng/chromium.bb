@@ -67,7 +67,7 @@ Length animatableValueToLength(const AnimatableValue* value, const StyleResolver
 {
     if (value->isLength())
         return toAnimatableLength(value)->toLength(state.cssToLengthConversionData(), range);
-    RefPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
+    RefPtrWillBeRawPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
     CSSPrimitiveValue* cssPrimitiveValue = toCSSPrimitiveValue(cssValue.get());
     return cssPrimitiveValue->convertToLength<AnyConversion>(state.cssToLengthConversionData());
 }
@@ -78,7 +78,7 @@ BorderImageLength animatableValueToBorderImageLength(const AnimatableValue* valu
         return BorderImageLength(toAnimatableLength(value)->toLength(state.cssToLengthConversionData(), NonNegativeValues));
     if (value->isDouble())
         return BorderImageLength(clampTo<double>(toAnimatableDouble(value)->toDouble(), 0));
-    RefPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
+    RefPtrWillBeRawPtr<CSSValue> cssValue = toAnimatableUnknown(value)->toCSSValue();
     CSSPrimitiveValue* cssPrimitiveValue = toCSSPrimitiveValue(cssValue.get());
     return BorderImageLength(cssPrimitiveValue->convertToLength<AnyConversion>(state.cssToLengthConversionData()));
 }
@@ -145,7 +145,7 @@ PassRefPtr<SVGLength> animatableValueToNonNegativeSVGLength(const AnimatableValu
 template <CSSPropertyID property>
 void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleResolverState& state)
 {
-    const Vector<RefPtr<AnimatableValue> >& values = toAnimatableRepeatable(value)->values();
+    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values = toAnimatableRepeatable(value)->values();
     ASSERT(!values.isEmpty());
     FillLayer* prev = 0;
     for (size_t i = 0; i < values.size(); ++i) {
@@ -174,10 +174,10 @@ void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleRe
         case CSSPropertyBackgroundImage:
         case CSSPropertyWebkitMaskImage:
             if (layerValue->isImage()) {
-                fillLayer->setImage(toAnimatableImage(layerValue)->toStyleImage());
+                fillLayer->setImage(state.styleImage(property, toAnimatableImage(layerValue)->toCSSValue()));
             } else {
                 ASSERT(toAnimatableUnknown(layerValue)->toCSSValueID() == CSSValueNone);
-                fillLayer->setImage(0);
+                fillLayer->setImage(nullptr);
             }
             break;
         case CSSPropertyBackgroundPositionX:
@@ -223,6 +223,27 @@ void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleRe
         }
         fillLayer = fillLayer->next();
     }
+}
+
+FontWeight animatableValueToFontWeight(const AnimatableValue* value)
+{
+    int index = round(toAnimatableDouble(value)->toDouble() / 100) - 1;
+
+    static const FontWeight weights[] = {
+        FontWeight100,
+        FontWeight200,
+        FontWeight300,
+        FontWeight400,
+        FontWeight500,
+        FontWeight600,
+        FontWeight700,
+        FontWeight800,
+        FontWeight900
+    };
+
+    index = clampTo<int>(index, 0, WTF_ARRAY_LENGTH(weights) - 1);
+
+    return weights[index];
 }
 
 } // namespace
@@ -276,7 +297,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderImageSlices(animatableValueToLengthBox(value, state, NonNegativeValues));
         return;
     case CSSPropertyBorderImageSource:
-        style->setBorderImageSource(toAnimatableImage(value)->toStyleImage());
+        style->setBorderImageSource(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyBorderImageWidth:
         style->setBorderImageWidth(animatableValueToBorderImageLengthBox(value, state));
@@ -324,8 +345,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setVisitedLinkColor(toAnimatableColor(value)->visitedLinkColor());
         return;
     case CSSPropertyFillOpacity:
-        // Avoiding a value of 1 forces a layer to be created.
-        style->setFillOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, nextafterf(1, 0)));
+        style->setFillOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, 1));
         return;
     case CSSPropertyFill:
         {
@@ -351,6 +371,9 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyFontSize:
         style->setFontSize(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0));
         return;
+    case CSSPropertyFontWeight:
+        style->setFontWeight(animatableValueToFontWeight(value));
+        return;
     case CSSPropertyHeight:
         style->setHeight(animatableValueToLength(value, state, NonNegativeValues));
         return;
@@ -370,7 +393,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
             style->setLineHeight(Length(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0), Percent));
         return;
     case CSSPropertyListStyleImage:
-        style->setListStyleImage(toAnimatableImage(value)->toStyleImage());
+        style->setListStyleImage(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyLetterSpacing:
         style->setLetterSpacing(clampTo<float>(toAnimatableDouble(value)->toDouble()));
@@ -513,7 +536,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setMaskBoxImageSlicesFill(toAnimatableLengthBoxAndBool(value)->flag());
         return;
     case CSSPropertyWebkitMaskBoxImageSource:
-        style->setMaskBoxImageSource(toAnimatableImage(value)->toStyleImage());
+        style->setMaskBoxImageSource(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyWebkitMaskBoxImageWidth:
         style->setMaskBoxImageWidth(animatableValueToBorderImageLengthBox(value, state));
@@ -539,9 +562,6 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyWebkitPerspectiveOriginY:
         style->setPerspectiveOriginY(animatableValueToLength(value, state));
         return;
-    case CSSPropertyShapeInside:
-        style->setShapeInside(toAnimatableShapeValue(value)->shapeValue());
-        return;
     case CSSPropertyShapeOutside:
         style->setShapeOutside(toAnimatableShapeValue(value)->shapeValue());
         return;
@@ -557,8 +577,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         return;
     case CSSPropertyWebkitTransform: {
         const TransformOperations& operations = toAnimatableTransform(value)->transformOperations();
-        // FIXME: Using identity matrix here when the transform list is empty
-        // forces a layer to be created in the presence of a transform animation.
+        // FIXME: This normalization (handling of 'none') should be performed at input in AnimatableValueFactory.
         style->setTransform(operations.size() ? operations : TransformOperations(true));
         return;
     }

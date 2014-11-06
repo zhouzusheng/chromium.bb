@@ -30,7 +30,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/ScriptProfiler.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -67,7 +67,6 @@ InspectorConsoleAgent::InspectorConsoleAgent(InspectorTimelineAgent* timelineAge
     , m_timelineAgent(timelineAgent)
     , m_injectedScriptManager(injectedScriptManager)
     , m_frontend(0)
-    , m_previousMessage(0)
     , m_expiredConsoleMessageCount(0)
     , m_enabled(false)
 {
@@ -122,7 +121,6 @@ void InspectorConsoleAgent::clearMessages(ErrorString*)
 {
     m_consoleMessages.clear();
     m_expiredConsoleMessageCount = 0;
-    m_previousMessage = 0;
     m_injectedScriptManager->releaseObjectGroup("console");
     if (m_frontend && m_enabled)
         m_frontend->messagesCleared();
@@ -157,7 +155,7 @@ void InspectorConsoleAgent::clearFrontend()
     disable(&errorString);
 }
 
-void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack, unsigned long requestIdentifier)
+void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptCallStack* callStack, unsigned long requestIdentifier)
 {
     if (type == ClearMessageType) {
         ErrorString error;
@@ -167,7 +165,7 @@ void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageTyp
     addConsoleMessage(adoptPtr(new ConsoleMessage(!isWorkerAgent(), source, type, level, message, callStack, requestIdentifier)));
 }
 
-void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, PassRefPtr<ScriptArguments> arguments, unsigned long requestIdentifier)
+void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, ScriptArguments* arguments, unsigned long requestIdentifier)
 {
     if (type == ClearMessageType) {
         ErrorString error;
@@ -248,7 +246,7 @@ void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptAr
 
     HashCountedSet<String>::AddResult result = m_counts.add(identifier);
     String message = title + ": " + String::number(result.storedValue->value);
-    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack);
+    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack.get());
 }
 
 void InspectorConsoleAgent::frameWindowDiscarded(DOMWindow* window)
@@ -259,7 +257,7 @@ void InspectorConsoleAgent::frameWindowDiscarded(DOMWindow* window)
     m_injectedScriptManager->discardInjectedScriptsFor(window);
 }
 
-void InspectorConsoleAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void InspectorConsoleAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
     if (loader->frame() != frame->page()->mainFrame())
         return;
@@ -274,7 +272,7 @@ void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoade
     }
 }
 
-void InspectorConsoleAgent::didReceiveResourceResponse(Frame*, unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorConsoleAgent::didReceiveResourceResponse(LocalFrame*, unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
         return;
@@ -302,27 +300,14 @@ void InspectorConsoleAgent::setMonitoringXHREnabled(ErrorString*, bool enabled)
     m_state->setBoolean(ConsoleAgentState::monitoringXHR, enabled);
 }
 
-static bool isGroupMessage(MessageType type)
-{
-    return type == StartGroupMessageType
-        || type ==  StartGroupCollapsedMessageType
-        || type == EndGroupMessageType;
-}
-
 void InspectorConsoleAgent::addConsoleMessage(PassOwnPtr<ConsoleMessage> consoleMessage)
 {
     ASSERT_ARG(consoleMessage, consoleMessage);
 
-    if (m_previousMessage && !isGroupMessage(m_previousMessage->type()) && m_previousMessage->isEqual(consoleMessage.get())) {
-        m_previousMessage->incrementCount();
-        if (m_frontend && m_enabled)
-            m_previousMessage->updateRepeatCountInConsole(m_frontend);
-    } else {
-        m_previousMessage = consoleMessage.get();
-        m_consoleMessages.append(consoleMessage);
-        if (m_frontend && m_enabled)
-            m_previousMessage->addToFrontend(m_frontend, m_injectedScriptManager, true);
-    }
+    if (m_frontend && m_enabled)
+        consoleMessage->addToFrontend(m_frontend, m_injectedScriptManager, true);
+
+    m_consoleMessages.append(consoleMessage);
 
     if (!m_frontend && m_consoleMessages.size() >= maximumConsoleMessages) {
         m_expiredConsoleMessageCount += expireConsoleMessagesStep;

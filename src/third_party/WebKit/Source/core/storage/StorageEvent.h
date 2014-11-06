@@ -35,23 +35,20 @@ namespace WebCore {
 class Storage;
 
 struct StorageEventInit : public EventInit {
-    // FIXME: oilpan: Replace this with STACK_ALLOCATED.
-    DISALLOW_ALLOCATION();
-public:
     StorageEventInit();
 
     String key;
     String oldValue;
     String newValue;
     String url;
-    RefPtrWillBeRawPtr<Storage> storageArea;
+    RefPtrWillBeMember<Storage> storageArea;
 };
 
 class StorageEvent FINAL : public Event {
 public:
-    static PassRefPtr<StorageEvent> create();
-    static PassRefPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
-    static PassRefPtr<StorageEvent> create(const AtomicString&, const StorageEventInit&);
+    static PassRefPtrWillBeRawPtr<StorageEvent> create();
+    static PassRefPtrWillBeRawPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
+    static PassRefPtrWillBeRawPtr<StorageEvent> create(const AtomicString&, const StorageEventInit&);
     virtual ~StorageEvent();
 
     const String& key() const { return m_key; }
@@ -68,6 +65,8 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     StorageEvent();
     StorageEvent(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
@@ -77,7 +76,7 @@ private:
     String m_oldValue;
     String m_newValue;
     String m_url;
-    RefPtrWillBePersistent<Storage> m_storageArea;
+    RefPtrWillBeMember<Storage> m_storageArea;
 };
 
 } // namespace WebCore

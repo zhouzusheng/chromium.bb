@@ -26,6 +26,7 @@
 #define MemoryCache_h
 
 #include "core/fetch/Resource.h"
+#include "core/fetch/ResourcePtr.h"
 #include "public/platform/WebThread.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -65,11 +66,35 @@ public:
     MemoryCache();
     virtual ~MemoryCache();
 
-    typedef HashMap<String, Resource*> ResourceMap;
+    class MemoryCacheEntry {
+    public:
+        static PassOwnPtr<MemoryCacheEntry> create(Resource* resource) { return adoptPtr(new MemoryCacheEntry(resource)); }
+
+        ResourcePtr<Resource> m_resource;
+        bool m_inLiveDecodedResourcesList;
+        unsigned m_accessCount;
+
+        MemoryCacheEntry* m_previousInLiveResourcesList;
+        MemoryCacheEntry* m_nextInLiveResourcesList;
+        MemoryCacheEntry* m_previousInAllResourcesList;
+        MemoryCacheEntry* m_nextInAllResourcesList;
+
+    private:
+        MemoryCacheEntry(Resource* resource)
+            : m_resource(resource)
+            , m_inLiveDecodedResourcesList(false)
+            , m_accessCount(0)
+            , m_previousInLiveResourcesList(0)
+            , m_nextInLiveResourcesList(0)
+            , m_previousInAllResourcesList(0)
+            , m_nextInAllResourcesList(0)
+        {
+        }
+    };
 
     struct LRUList {
-        Resource* m_head;
-        Resource* m_tail;
+        MemoryCacheEntry* m_head;
+        MemoryCacheEntry* m_tail;
         LRUList() : m_head(0), m_tail(0) { }
     };
 
@@ -111,7 +136,8 @@ public:
 
     void add(Resource*);
     void replace(Resource* newResource, Resource* oldResource);
-    void remove(Resource* resource) { evict(resource); }
+    void remove(Resource*);
+    bool contains(const Resource*) const;
 
     static KURL removeFragmentIdentifierIfNeeded(const KURL& originalURL);
 
@@ -128,16 +154,14 @@ public:
 
     void prune(Resource* justReleasedResource = 0);
 
-    // Calls to put the cached resource into and out of LRU lists.
-    void insertInLRUList(Resource*);
-    void removeFromLRUList(Resource*);
-
-    // Called to adjust the cache totals when a resource changes size.
-    void adjustSize(bool live, ptrdiff_t delta);
+    // Called to adjust a resource's size, lru list position, and access count.
+    void update(Resource*, size_t oldSize, size_t newSize, bool wasAccessed = false);
+    void updateForAccess(Resource* resource) { update(resource, resource->size(), resource->size(), true); }
 
     // Track decoded resources that are in the cache and referenced by a Web page.
     void insertInLiveDecodedResourcesList(Resource*);
     void removeFromLiveDecodedResourcesList(Resource*);
+    bool isInLiveDecodedResourcesList(Resource*);
 
     void addToLiveResourcesSize(Resource*);
     void removeFromLiveResourcesSize(Resource*);
@@ -157,12 +181,16 @@ public:
     virtual void didProcessTask() OVERRIDE;
 
 private:
-    LRUList* lruListFor(Resource*);
+    LRUList* lruListFor(unsigned accessCount, size_t);
 
 #ifdef MEMORY_CACHE_STATS
     void dumpStats(Timer<MemoryCache>*);
     void dumpLRULists(bool includeLive) const;
 #endif
+
+    // Calls to put the cached resource into and out of LRU lists.
+    void insertInLRUList(MemoryCacheEntry*, LRUList*);
+    void removeFromLRUList(MemoryCacheEntry*, LRUList*);
 
     size_t liveCapacity() const;
     size_t deadCapacity() const;
@@ -173,7 +201,7 @@ private:
     void pruneLiveResources();
     void pruneNow(double currentTime);
 
-    bool evict(Resource*);
+    bool evict(MemoryCacheEntry*);
 
     static void removeURLFromCacheInternal(ExecutionContext*, const KURL&);
 
@@ -203,7 +231,8 @@ private:
 
     // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being
     // referenced by a Web page).
-    HashMap<String, Resource*> m_resources;
+    typedef HashMap<String, OwnPtr<MemoryCacheEntry> > ResourceMap;
+    ResourceMap m_resources;
 
     friend class MemoryCacheTest;
 #ifdef MEMORY_CACHE_STATS

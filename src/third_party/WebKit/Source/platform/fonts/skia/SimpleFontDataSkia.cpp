@@ -41,10 +41,6 @@
 #include "platform/geometry/FloatRect.h"
 #include "wtf/unicode/Unicode.h"
 
-#if OS(WIN)
-#include "platform/win/HWndDC.h"
-#endif
-
 namespace WebCore {
 
 // This is the largest VDMX table which we'll try to load and parse.
@@ -198,7 +194,7 @@ void SimpleFontData::platformDestroy()
 PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const FontDescription& fontDescription, float scaleFactor) const
 {
     const float scaledSize = lroundf(fontDescription.computedSize() * scaleFactor);
-    return SimpleFontData::create(FontPlatformData(m_platformData, scaledSize), isCustomFont() ? CustomFontData::create(false) : 0);
+    return SimpleFontData::create(FontPlatformData(m_platformData, scaledSize), isCustomFont() ? CustomFontData::create() : nullptr);
 }
 
 void SimpleFontData::determinePitch()

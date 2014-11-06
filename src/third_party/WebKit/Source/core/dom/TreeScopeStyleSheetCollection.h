@@ -56,7 +56,6 @@ public:
     void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode);
     bool hasStyleSheetCandidateNodes() const { return !m_styleSheetCandidateNodes.isEmpty(); }
 
-
     bool usesRemUnits() const { return m_usesRemUnits; }
 
     DocumentOrderedList& styleSheetCandidateNodes() { return m_styleSheetCandidateNodes; }
@@ -64,6 +63,11 @@ public:
     ListHashSet<Node*, 4>* scopingNodesRemoved() { return m_scopingNodesForStyleScoped.scopingNodesRemoved(); }
 
     void clearMediaQueryRuleSetStyleSheets();
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        StyleSheetCollection::trace(visitor);
+    }
 
 protected:
     explicit TreeScopeStyleSheetCollection(TreeScope&);
@@ -76,10 +80,12 @@ protected:
         Additive
     };
 
-    struct StyleSheetChange {
+    class StyleSheetChange {
+        STACK_ALLOCATED();
+    public:
         StyleResolverUpdateType styleResolverUpdateType;
         bool requiresFullStyleRecalc;
-        Vector<const StyleRuleFontFace*> fontFaceRulesToRemove;
+        WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> > fontFaceRulesToRemove;
 
         StyleSheetChange()
             : styleResolverUpdateType(Reconstruct)
@@ -91,8 +97,8 @@ protected:
     void updateUsesRemUnits();
 
 private:
-    static StyleResolverUpdateType compareStyleSheets(const Vector<RefPtr<CSSStyleSheet> >& oldStyleSheets, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, Vector<StyleSheetContents*>& addedSheets);
-    bool activeLoadingStyleSheetLoaded(const Vector<RefPtr<CSSStyleSheet> >& newStyleSheets);
+    static StyleResolverUpdateType compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& addedSheets);
+    bool activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStyleSheets);
 
 protected:
     TreeScope& m_treeScope;

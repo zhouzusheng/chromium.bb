@@ -30,16 +30,12 @@
 
 namespace WebCore {
 
-class SVGAnimatedProperty;
-class SVGAnimatedType;
 class SVGAnimatedTypeAnimator;
 
 class SVGAnimateElement : public SVGAnimationElement {
 public:
     static PassRefPtr<SVGAnimateElement> create(Document&);
     virtual ~SVGAnimateElement();
-
-    AnimatedPropertyType determineAnimatedPropertyType(SVGElement*) const;
 
 protected:
     SVGAnimateElement(const QualifiedName&, Document&);
@@ -67,12 +63,12 @@ private:
 
     virtual bool hasValidAttributeType() OVERRIDE;
 
-    OwnPtr<SVGAnimatedType> m_fromType;
-    OwnPtr<SVGAnimatedType> m_toType;
-    OwnPtr<SVGAnimatedType> m_toAtEndOfDurationType;
-    OwnPtr<SVGAnimatedType> m_animatedType;
+    RefPtr<SVGPropertyBase> m_fromProperty;
+    RefPtr<SVGPropertyBase> m_toProperty;
+    RefPtr<SVGPropertyBase> m_toAtEndOfDurationProperty;
+    RefPtr<SVGPropertyBase> m_animatedProperty;
 
-    SVGElementAnimatedPropertyList m_animatedProperties;
+    Vector<SVGElement*> m_animatedElements;
     OwnPtr<SVGAnimatedTypeAnimator> m_animator;
 };
 
@@ -83,7 +79,7 @@ inline bool isSVGAnimateElement(const Node& node)
         || node.hasTagName(SVGNames::setTag);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGAnimateElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGAnimateElement);
 
 } // namespace WebCore
 

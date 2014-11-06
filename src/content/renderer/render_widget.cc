@@ -54,7 +54,6 @@
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebHelperPlugin.h"
 #include "third_party/WebKit/public/web/WebPagePopup.h"
 #include "third_party/WebKit/public/web/WebPopupMenu.h"
 #include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
@@ -62,6 +61,7 @@
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/frame_time.h"
+#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -69,6 +69,7 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_ANDROID)
+#include <android/keycodes.h>
 #include "base/android/sys_utils.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
@@ -170,6 +171,7 @@ class RenderWidget::ScreenMetricsEmulator {
   gfx::Point offset() { return offset_; }
   gfx::Rect widget_rect() const { return widget_rect_; }
   gfx::Rect original_screen_rect() const { return original_view_screen_rect_; }
+  const WebScreenInfo& original_screen_info() { return original_screen_info_; }
 
   void ChangeEmulationParams(
       const gfx::Rect& device_rect,
@@ -185,6 +187,7 @@ class RenderWidget::ScreenMetricsEmulator {
   void OnShowContextMenu(ContextMenuParams* params);
 
  private:
+  void CalculateScaleAndOffset();
   void Apply(float overdraw_bottom_height,
       gfx::Rect resizer_rect, bool is_fullscreen);
 
@@ -254,8 +257,7 @@ void RenderWidget::ScreenMetricsEmulator::ChangeEmulationParams(
         widget_->resizer_rect_, widget_->is_fullscreen_);
 }
 
-void RenderWidget::ScreenMetricsEmulator::Apply(
-    float overdraw_bottom_height, gfx::Rect resizer_rect, bool is_fullscreen) {
+void RenderWidget::ScreenMetricsEmulator::CalculateScaleAndOffset() {
   if (fit_to_view_) {
     DCHECK(!original_size_.IsEmpty());
 
@@ -269,17 +271,42 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
         static_cast<float>(widget_rect_.height()) / height_with_gutter;
     float ratio = std::max(1.0f, std::max(width_ratio, height_ratio));
     scale_ = 1.f / ratio;
+
+    // Center emulated view inside available view space.
+    offset_.set_x((original_size_.width() - scale_ * widget_rect_.width()) / 2);
+    offset_.set_y(
+        (original_size_.height() - scale_ * widget_rect_.height()) / 2);
   } else {
     scale_ = 1.f;
+    offset_.SetPoint(0, 0);
+  }
+}
+
+void RenderWidget::ScreenMetricsEmulator::Apply(
+    float overdraw_bottom_height, gfx::Rect resizer_rect, bool is_fullscreen) {
+  gfx::Rect applied_widget_rect = widget_rect_;
+  if (widget_rect_.size().IsEmpty()) {
+    scale_ = 1.f;
+    offset_.SetPoint(0, 0);
+    applied_widget_rect =
+        gfx::Rect(original_view_screen_rect_.origin(), original_size_);
+  } else {
+    CalculateScaleAndOffset();
   }
 
-  // Center emulated view inside available view space.
-  offset_.set_x((original_size_.width() - scale_ * widget_rect_.width()) / 2);
-  offset_.set_y((original_size_.height() - scale_ * widget_rect_.height()) / 2);
+  if (device_rect_.size().IsEmpty()) {
+    widget_->screen_info_.rect = original_screen_info_.rect;
+    widget_->screen_info_.availableRect = original_screen_info_.availableRect;
+    widget_->window_screen_rect_ = original_window_screen_rect_;
+  } else {
+    widget_->screen_info_.rect = gfx::Rect(device_rect_.size());
+    widget_->screen_info_.availableRect = gfx::Rect(device_rect_.size());
+    widget_->window_screen_rect_ = widget_->screen_info_.availableRect;
+  }
 
-  widget_->screen_info_.rect = gfx::Rect(device_rect_.size());
-  widget_->screen_info_.availableRect = gfx::Rect(device_rect_.size());
-  widget_->screen_info_.deviceScaleFactor = device_scale_factor_;
+  float applied_device_scale_factor = device_scale_factor_ ?
+      device_scale_factor_ : original_screen_info_.deviceScaleFactor;
+  widget_->screen_info_.deviceScaleFactor = applied_device_scale_factor;
 
   // Pass three emulation parameters to the blink side:
   // - we keep the real device scale factor in compositor to produce sharp image
@@ -289,13 +316,12 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
   widget_->SetScreenMetricsEmulationParameters(
       original_screen_info_.deviceScaleFactor, offset_, scale_);
 
-  widget_->SetDeviceScaleFactor(device_scale_factor_);
-  widget_->view_screen_rect_ = widget_rect_;
-  widget_->window_screen_rect_ = widget_->screen_info_.availableRect;
+  widget_->SetDeviceScaleFactor(applied_device_scale_factor);
+  widget_->view_screen_rect_ = applied_widget_rect;
 
   gfx::Size physical_backing_size = gfx::ToCeiledSize(gfx::ScaleSize(
       original_size_, original_screen_info_.deviceScaleFactor));
-  widget_->Resize(widget_rect_.size(), physical_backing_size,
+  widget_->Resize(applied_widget_rect.size(), physical_backing_size,
       overdraw_bottom_height, resizer_rect, is_fullscreen, NO_RESIZE_ACK);
 }
 
@@ -321,6 +347,10 @@ void RenderWidget::ScreenMetricsEmulator::OnUpdateScreenRectsMessage(
     const gfx::Rect& window_screen_rect) {
   original_view_screen_rect_ = view_screen_rect;
   original_window_screen_rect_ = window_screen_rect;
+  if (device_rect_.size().IsEmpty())
+    widget_->window_screen_rect_ = window_screen_rect;
+  if (widget_rect_.size().IsEmpty())
+    widget_->view_screen_rect_ = view_screen_rect;
 }
 
 void RenderWidget::ScreenMetricsEmulator::OnShowContextMenu(
@@ -437,8 +467,6 @@ WebWidget* RenderWidget::CreateWebWidget(RenderWidget* render_widget) {
       return WebPopupMenu::create(render_widget);
     case blink::WebPopupTypePage:
       return WebPagePopup::create(render_widget);
-    case blink::WebPopupTypeHelperPlugin:
-      return blink::WebHelperPlugin::create(render_widget);
     default:
       NOTREACHED();
   }
@@ -511,10 +539,6 @@ void RenderWidget::SetSwappedOut(bool is_swapped_out) {
     RenderProcess::current()->AddRefProcess();
 }
 
-bool RenderWidget::AllowPartialSwap() const {
-  return true;
-}
-
 bool RenderWidget::UsingSynchronousRendererCompositor() const {
 #if defined(OS_ANDROID)
   return SynchronousCompositorFactory::GetInstance() != NULL;
@@ -548,6 +572,8 @@ void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
   popup_screen_origin_for_emulation_ = gfx::Point(
       emulator->original_screen_rect().origin().x() + emulator->offset().x(),
       emulator->original_screen_rect().origin().y() + emulator->offset().y());
+  screen_info_ = emulator->original_screen_info();
+  device_scale_factor_ = screen_info_.deviceScaleFactor;
 }
 
 void RenderWidget::SetScreenMetricsEmulationParameters(
@@ -558,11 +584,13 @@ void RenderWidget::SetScreenMetricsEmulationParameters(
   NOTREACHED();
 }
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
     ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator) {
   popup->SetOriginScaleAndOffsetForEmulation(
       emulator->scale(), emulator->offset());
 }
+#endif
 
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
   if (screen_metrics_emulator_)
@@ -884,32 +912,31 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   }
 #endif
 
-  // Explicitly disable antialiasing for the compositor. As of the time of
-  // this writing, the only platform that supported antialiasing for the
-  // compositor was Mac OS X, because the on-screen OpenGL context creation
-  // code paths on Windows and Linux didn't yet have multisampling support.
-  // Mac OS X essentially always behaves as though it's rendering offscreen.
-  // Multisampling has a heavy cost especially on devices with relatively low
-  // fill rate like most notebooks, and the Mac implementation would need to
-  // be optimized to resolve directly into the IOSurface shared between the
-  // GPU and browser processes. For these reasons and to avoid platform
-  // disparities we explicitly disable antialiasing.
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.antialias = false;
-  attributes.shareResources = true;
-  attributes.noAutomaticFlushes = true;
-  attributes.depth = false;
-  attributes.stencil = false;
-
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  bool use_software = fallback;
+  if (command_line.HasSwitch(switches::kDisableGpuCompositing))
+    use_software = true;
+
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
-  if (!fallback) {
+  if (!use_software) {
     context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(attributes),
-        "RenderCompositor");
+        CreateGraphicsContext3D(), "RenderCompositor");
+    if (!context_provider.get()) {
+      // Cause the compositor to wait and try again.
+      return scoped_ptr<cc::OutputSurface>();
+    }
   }
 
   uint32 output_surface_id = next_output_surface_id_++;
+  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
+      !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
+    DCHECK(is_threaded_compositing_enabled_);
+    return scoped_ptr<cc::OutputSurface>(
+        new DelegatedCompositorOutputSurface(
+            routing_id(),
+            output_surface_id,
+            context_provider));
+  }
   if (!context_provider.get()) {
     if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       return scoped_ptr<cc::OutputSurface>();
@@ -925,16 +952,6 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
         true));
   }
 
-  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer) &&
-      !command_line.HasSwitch(switches::kDisableDelegatedRenderer)) {
-    DCHECK(is_threaded_compositing_enabled_);
-    return scoped_ptr<cc::OutputSurface>(
-        new DelegatedCompositorOutputSurface(
-            routing_id(),
-            output_surface_id,
-            context_provider,
-            scoped_ptr<cc::SoftwareOutputDevice>()));
-  }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
     cc::ResourceFormat format = cc::RGBA_8888;
@@ -1044,7 +1061,7 @@ void RenderWidget::OnSwapBuffersComplete() {
 }
 
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
-                                      ui::LatencyInfo latency_info,
+                                      const ui::LatencyInfo& latency_info,
                                       bool is_keyboard_shortcut) {
   handling_input_event_ = true;
   if (!input_event) {
@@ -1063,10 +1080,11 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("blink.HandleInputEvent");
 
   scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
-
+  ui::LatencyInfo swap_latency_info(latency_info);
   if (compositor_) {
     latency_info_swap_promise_monitor =
-        compositor_->CreateLatencyInfoSwapPromiseMonitor(&latency_info).Pass();
+        compositor_->CreateLatencyInfoSwapPromiseMonitor(&swap_latency_info)
+            .Pass();
   } else {
     latency_info_.push_back(latency_info);
   }
@@ -1088,6 +1106,9 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
           base::HistogramBase::kUmaTargetedHistogramFlag);
   counter_for_type->Add(delta);
 
+  if (WebInputEvent::isUserGestureEventType(input_event->type))
+    WillProcessUserGesture();
+
   bool prevent_default = false;
   if (WebInputEvent::isMouseEventType(input_event->type)) {
     const WebMouseEvent& mouse_event =
@@ -1098,8 +1119,27 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     prevent_default = WillHandleMouseEvent(mouse_event);
   }
 
-  if (WebInputEvent::isKeyboardEventType(input_event->type))
+  if (WebInputEvent::isKeyboardEventType(input_event->type)) {
     context_menu_source_type_ = ui::MENU_SOURCE_KEYBOARD;
+#if defined(OS_ANDROID)
+    // The DPAD_CENTER key on Android has a dual semantic: (1) in the general
+    // case it should behave like a select key (i.e. causing a click if a button
+    // is focused). However, if a text field is focused (2), its intended
+    // behavior is to just show the IME and don't propagate the key.
+    // A typical use case is a web form: the DPAD_CENTER should bring up the IME
+    // when clicked on an input text field and cause the form submit if clicked
+    // when the submit button is focused, but not vice-versa.
+    // The UI layer takes care of translating DPAD_CENTER into a RETURN key,
+    // but at this point we have to swallow the event for the scenario (2).
+    const WebKeyboardEvent& key_event =
+        *static_cast<const WebKeyboardEvent*>(input_event);
+    if (key_event.nativeKeyCode == AKEYCODE_DPAD_CENTER &&
+        GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE) {
+      OnShowImeIfNeeded();
+      prevent_default = true;
+    }
+#endif
+  }
 
   if (WebInputEvent::isGestureEventType(input_event->type)) {
     const WebGestureEvent& gesture_event =
@@ -1138,8 +1178,7 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     for (size_t i = 0; i < touch_event.touchesLength; ++i) {
       if (touch_event.touches[i].state == WebTouchPoint::StatePressed &&
           HasTouchEventHandlersAt(
-              blink::WebPoint(touch_event.touches[i].position.x,
-                              touch_event.touches[i].position.y))) {
+              gfx::ToFlooredPoint(touch_event.touches[i].position))) {
         ack_result = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
         break;
       }
@@ -1173,7 +1212,7 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
         new InputHostMsg_HandleInputEvent_ACK(routing_id_,
                                               input_event->type,
                                               ack_result,
-                                              latency_info));
+                                              swap_latency_info));
     if (rate_limiting_wanted && event_type_can_be_rate_limited &&
         frame_pending && !is_hidden_) {
       // We want to rate limit the input events in this case, so we'll wait for
@@ -1503,6 +1542,9 @@ void RenderWidget::DoDeferredUpdate() {
   // enable GPU acceleration so they need to be called before any painting
   // is done.
   UpdateTextInputType();
+#if defined(OS_ANDROID)
+  UpdateSelectionRootBounds();
+#endif
   UpdateSelectionBounds();
 
   // Suppress painting if nothing is dirty.  This has to be done after updating
@@ -1811,7 +1853,39 @@ void RenderWidget::AutoResizeCompositor()  {
     compositor_->setViewportSize(size_, physical_backing_size_);
 }
 
+// FIXME: To be removed as soon as chromium and blink side changes land
+// didActivateCompositor with parameters is still kept in order to land
+// these changes s-chromium - https://codereview.chromium.org/137893025/.
+// s-blink - https://codereview.chromium.org/138523003/
 void RenderWidget::didActivateCompositor(int input_handler_identifier) {
+  TRACE_EVENT0("gpu", "RenderWidget::didActivateCompositor");
+
+#if !defined(OS_MACOSX)
+  if (!is_accelerated_compositing_active_) {
+    // When not in accelerated compositing mode, in certain cases (e.g. waiting
+    // for a resize or if no backing store) the RenderWidgetHost is blocking the
+    // browser's UI thread for some time, waiting for an UpdateRect. If we are
+    // going to switch to accelerated compositing, the GPU process may need
+    // round-trips to the browser's UI thread before finishing the frame,
+    // causing deadlocks if we delay the UpdateRect until we receive the
+    // OnSwapBuffersComplete.  So send a dummy message that will unblock the
+    // browser's UI thread. This is not necessary on Mac, because SwapBuffers
+    // now unblocks GetBackingStore on Mac.
+    Send(new ViewHostMsg_UpdateIsDelayed(routing_id_));
+  }
+#endif
+
+  is_accelerated_compositing_active_ = true;
+  Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
+      routing_id_, is_accelerated_compositing_active_));
+
+  if (!was_accelerated_compositing_ever_active_) {
+    was_accelerated_compositing_ever_active_ = true;
+    webwidget_->enterForceCompositingMode(true);
+  }
+}
+
+void RenderWidget::didActivateCompositor() {
   TRACE_EVENT0("gpu", "RenderWidget::didActivateCompositor");
 
 #if !defined(OS_MACOSX)
@@ -1888,6 +1962,7 @@ void RenderWidget::willBeginCompositorFrame() {
   UpdateTextInputType();
 #if defined(OS_ANDROID)
   UpdateTextInputState(false, true);
+  UpdateSelectionRootBounds();
 #endif
   UpdateSelectionBounds();
 }
@@ -2205,7 +2280,7 @@ bool RenderWidget::OnSnapshotHelper(const gfx::Rect& src_subrect,
   canvas->restore();
 
   const SkBitmap& bitmap = skia::GetTopDevice(*canvas)->accessBitmap(false);
-  if (!bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config))
+  if (!bitmap.copyTo(snapshot, kPMColor_SkColorType))
     return false;
 
   UMA_HISTOGRAM_TIMES("Renderer4.Snapshot",
@@ -2391,6 +2466,9 @@ void RenderWidget::FinishHandlingImeEvent() {
   // While handling an ime event, text input state and selection bounds updates
   // are ignored. These must explicitly be updated once finished handling the
   // ime event.
+#if defined(OS_ANDROID)
+  UpdateSelectionRootBounds();
+#endif
   UpdateSelectionBounds();
 #if defined(OS_ANDROID)
   UpdateTextInputState(false, false);
@@ -2471,6 +2549,12 @@ void RenderWidget::UpdateTextInputState(bool show_ime_if_needed,
     p.require_ack = send_ime_ack;
     if (p.require_ack)
       IncrementOutstandingImeEventAcks();
+#endif
+#if defined(USE_AURA)
+    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
+                                              new_type,
+                                              text_input_mode_,
+                                              new_can_compose_inline));
 #endif
     Send(new ViewHostMsg_TextInputStateChanged(routing_id(), p));
 
@@ -2723,19 +2807,27 @@ void RenderWidget::setTouchAction(
    COMPILE_ASSERT(static_cast<blink::WebTouchAction>(TOUCH_ACTION_PAN_Y) ==
                       blink::WebTouchActionPanY,
                   enum_values_must_match_for_touch_action);
+   COMPILE_ASSERT(
+       static_cast<blink::WebTouchAction>(TOUCH_ACTION_PINCH_ZOOM) ==
+           blink::WebTouchActionPinchZoom,
+       enum_values_must_match_for_touch_action);
 
    content::TouchAction content_touch_action =
        static_cast<content::TouchAction>(web_touch_action);
   Send(new InputHostMsg_SetTouchAction(routing_id_, content_touch_action));
 }
 
+#if defined(OS_ANDROID)
+void RenderWidget::UpdateSelectionRootBounds() {
+}
+#endif
+
 bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
   return true;
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-RenderWidget::CreateGraphicsContext3D(
-    const blink::WebGraphicsContext3D::Attributes& attributes) {
+RenderWidget::CreateGraphicsContext3D() {
   if (!webwidget_)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -2750,6 +2842,26 @@ RenderWidget::CreateGraphicsContext3D(
   if (!gpu_channel_host)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
 
+  // Explicitly disable antialiasing for the compositor. As of the time of
+  // this writing, the only platform that supported antialiasing for the
+  // compositor was Mac OS X, because the on-screen OpenGL context creation
+  // code paths on Windows and Linux didn't yet have multisampling support.
+  // Mac OS X essentially always behaves as though it's rendering offscreen.
+  // Multisampling has a heavy cost especially on devices with relatively low
+  // fill rate like most notebooks, and the Mac implementation would need to
+  // be optimized to resolve directly into the IOSurface shared between the
+  // GPU and browser processes. For these reasons and to avoid platform
+  // disparities we explicitly disable antialiasing.
+  blink::WebGraphicsContext3D::Attributes attributes;
+  attributes.antialias = false;
+  attributes.shareResources = true;
+  attributes.noAutomaticFlushes = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+#if !defined(OS_CHROMEOS)
+  bool bind_generates_resources = false;
+#endif
+  bool lose_context_when_out_of_memory = true;
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
 #if defined(OS_ANDROID)
   // If we raster too fast we become upload bound, and pending
@@ -2775,13 +2887,16 @@ RenderWidget::CreateGraphicsContext3D(
 #endif
 
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(
-          surface_id(),
-          GetURLForGraphicsContext3D(),
-          gpu_channel_host.get(),
-          attributes,
-          false /* bind generates resources */,
-          limits));
+      new WebGraphicsContext3DCommandBufferImpl(surface_id(),
+                                                GetURLForGraphicsContext3D(),
+                                                gpu_channel_host.get(),
+                                                attributes,
+#if !defined(OS_CHROMEOS)
+                                                bind_generates_resources,
+#endif
+                                                lose_context_when_out_of_memory,
+                                                limits,
+                                                NULL));
   return context.Pass();
 }
 

@@ -128,7 +128,7 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
             atEnd = true;
 
         rangeForParagraphSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
-        endOfCurrentParagraph = end;
+        endOfCurrentParagraph = VisiblePosition(end);
 
         Node* enclosingCell = enclosingNodeOfType(start, &isTableCell);
         VisiblePosition endOfNextParagraph = endOfNextParagrahSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
@@ -138,7 +138,7 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
         // Don't put the next paragraph in the blockquote we just created for this paragraph unless
         // the next paragraph is in the same cell.
         if (enclosingCell && enclosingCell != enclosingNodeOfType(endOfNextParagraph.deepEquivalent(), &isTableCell))
-            blockquoteForNextIndent = 0;
+            blockquoteForNextIndent = nullptr;
 
         // indentIntoBlockquote could move more than one paragraph if the paragraph
         // is in a list item or a table. As a result, endAfterSelection could refer to a position
@@ -180,7 +180,7 @@ void ApplyBlockElementCommand::rangeForParagraphSplittingTextNodesIfNeeded(const
     start = startOfParagraph(endOfCurrentParagraph).deepEquivalent();
     end = endOfCurrentParagraph.deepEquivalent();
 
-    document().updateStyleIfNeeded();
+    document().updateRenderTreeIfNeeded();
 
     bool isStartAndEndOnSameNode = false;
     if (RenderStyle* startStyle = renderStyleOfEnclosingTextNode(start)) {
@@ -189,7 +189,7 @@ void ApplyBlockElementCommand::rangeForParagraphSplittingTextNodesIfNeeded(const
 
         // Avoid obtanining the start of next paragraph for start
         if (startStyle->preserveNewline() && isNewLineAtPosition(start) && !isNewLineAtPosition(start.previous()) && start.offsetInContainerNode() > 0)
-            start = startOfParagraph(end.previous()).deepEquivalent();
+            start = startOfParagraph(VisiblePosition(end.previous())).deepEquivalent();
 
         // If start is in the middle of a text node, split.
         if (!startStyle->collapseWhiteSpace() && start.offsetInContainerNode() > 0) {
@@ -208,7 +208,7 @@ void ApplyBlockElementCommand::rangeForParagraphSplittingTextNodesIfNeeded(const
         }
     }
 
-    document().updateStyleIfNeeded();
+    document().updateRenderTreeIfNeeded();
 
     if (RenderStyle* endStyle = renderStyleOfEnclosingTextNode(end)) {
         bool isEndAndEndOfLastParagraphOnSameNode = renderStyleOfEnclosingTextNode(m_endOfLastParagraph) && end.deprecatedNode() == m_endOfLastParagraph.deprecatedNode();
@@ -273,7 +273,7 @@ VisiblePosition ApplyBlockElementCommand::endOfNextParagrahSplittingTextNodesIfN
             m_endOfLastParagraph = Position(text.get(), m_endOfLastParagraph.offsetInContainerNode() - 1);
     }
 
-    return Position(text.get(), position.offsetInContainerNode() - 1);
+    return VisiblePosition(Position(text.get(), position.offsetInContainerNode() - 1));
 }
 
 PassRefPtr<Element> ApplyBlockElementCommand::createBlockElement() const

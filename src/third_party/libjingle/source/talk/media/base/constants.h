@@ -116,6 +116,23 @@ extern const char kGoogleSctpDataCodecName[];
 
 extern const char kComfortNoiseCodecName[];
 
+// Extension header for audio levels, as defined in
+// http://tools.ietf.org/html/draft-ietf-avtext-client-to-mixer-audio-level-03
+extern const int kRtpAudioLevelHeaderExtensionDefaultId;
+extern const char kRtpAudioLevelHeaderExtension[];
+
+// Extension header for RTP timestamp offset, see RFC 5450 for details:
+// http://tools.ietf.org/html/rfc5450
+extern const int kRtpTimestampOffsetHeaderExtensionDefaultId;
+extern const char kRtpTimestampOffsetHeaderExtension[];
+
+// Extension header for absolute send time, see url for details:
+// http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+extern const int kRtpAbsoluteSenderTimeHeaderExtensionDefaultId;
+extern const char kRtpAbsoluteSenderTimeHeaderExtension[];
+
+extern const int kNumDefaultUnsignalledVideoRecvStreams;
 }  // namespace cricket
 
 #endif  // TALK_MEDIA_BASE_CONSTANTS_H_
+

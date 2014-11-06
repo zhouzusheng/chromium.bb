@@ -289,7 +289,7 @@ void RenderTableSection::populateSpanningRowsHeightFromCell(RenderTableCell* cel
 
         spanningRowsHeight.rowHeight[row] = m_rowPos[actualRow + 1] - m_rowPos[actualRow] - borderSpacingForRow(actualRow);
         if (!spanningRowsHeight.rowHeight[row])
-            spanningRowsHeight.rowWithOnlySpanningCells |= rowHasOnlySpanningCells(actualRow);
+            spanningRowsHeight.isAnyRowWithOnlySpanningCells |= rowHasOnlySpanningCells(actualRow);
 
         spanningRowsHeight.totalRowsHeight += spanningRowsHeight.rowHeight[row];
         spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing -= borderSpacingForRow(actualRow);
@@ -328,6 +328,17 @@ void RenderTableSection::distributeExtraRowSpanHeightToPercentRows(RenderTableCe
     }
 }
 
+// Sometimes the multiplication of the 2 values below will overflow an integer.
+// So we convert the parameters to 'long long' instead of 'int' to avoid the
+// problem in this function.
+static void updatePositionIncreasedWithRowHeight(long long extraHeight, long long rowHeight, long long totalHeight, int& accumulatedPositionIncrease, int& remainder)
+{
+    COMPILE_ASSERT(sizeof(long long int) > sizeof(int), int_should_be_less_than_longlong);
+
+    accumulatedPositionIncrease += (extraHeight * rowHeight) / totalHeight;
+    remainder += (extraHeight * rowHeight) % totalHeight;
+}
+
 void RenderTableSection::distributeExtraRowSpanHeightToAutoRows(RenderTableCell* cell, int totalAutoRowsHeight, int& extraRowSpanningHeight, Vector<int>& rowsHeight)
 {
     if (!extraRowSpanningHeight || !totalAutoRowsHeight)
@@ -342,8 +353,7 @@ void RenderTableSection::distributeExtraRowSpanHeightToAutoRows(RenderTableCell*
     // So extra height distributed in auto spanning rows based on their weight in spanning cell.
     for (unsigned row = rowIndex; row < (rowIndex + rowSpan); row++) {
         if (m_grid[row].logicalHeight.isAuto()) {
-            accumulatedPositionIncrease += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) / totalAutoRowsHeight;
-            remainder += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) % totalAutoRowsHeight;
+            updatePositionIncreasedWithRowHeight(extraRowSpanningHeight, rowsHeight[row - rowIndex], totalAutoRowsHeight, accumulatedPositionIncrease, remainder);
 
             // While whole extra spanning height is distributing in auto spanning rows, rational parts remains
             // in every integer division. So accumulating all remainder part in integer division and when total remainder
@@ -376,8 +386,7 @@ void RenderTableSection::distributeExtraRowSpanHeightToRemainingRows(RenderTable
     // So extra height distribution in remaining spanning rows based on their weight in spanning cell.
     for (unsigned row = rowIndex; row < (rowIndex + rowSpan); row++) {
         if (!m_grid[row].logicalHeight.isPercent()) {
-            accumulatedPositionIncrease += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) / totalRemainingRowsHeight;
-            remainder += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) % totalRemainingRowsHeight;
+            updatePositionIncreasedWithRowHeight(extraRowSpanningHeight, rowsHeight[row - rowIndex], totalRemainingRowsHeight, accumulatedPositionIncrease, remainder);
 
             // While whole extra spanning height is distributing in remaining spanning rows, rational parts remains
             // in every integer division. So accumulating all remainder part in integer division and when total remainder
@@ -542,14 +551,31 @@ void RenderTableSection::distributeRowSpanHeightToRows(SpanningRenderTableCells&
 
         populateSpanningRowsHeightFromCell(cell, spanningRowsHeight);
 
-        if (spanningRowsHeight.rowWithOnlySpanningCells)
+        // Here we are handling only row(s) who have only rowspanning cells and do not have any empty cell.
+        if (spanningRowsHeight.isAnyRowWithOnlySpanningCells)
             updateRowsHeightHavingOnlySpanningCells(cell, spanningRowsHeight);
 
-        if (!spanningRowsHeight.totalRowsHeight || spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing <= spanningRowsHeight.totalRowsHeight) {
+        // This code handle row(s) that have rowspanning cell(s) and at least one empty cell.
+        // Such rows are not handled below and end up having a height of 0. That would mean
+        // content overlapping if one of their cells has any content. To avoid the problem, we
+        // add all the remaining spanning cells' height to the last spanned row.
+        // This means that we could grow a row past its 'height' or break percentage spreading
+        // however this is better than overlapping content.
+        // FIXME: Is there a better algorithm?
+        if (!spanningRowsHeight.totalRowsHeight) {
+            if (spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing)
+                m_rowPos[spanningCellEndIndex] += spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing + borderSpacingForRow(spanningCellEndIndex - 1);
+
+            extraHeightToPropagate = m_rowPos[spanningCellEndIndex] - originalBeforePosition;
+            continue;
+        }
+
+        if (spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing <= spanningRowsHeight.totalRowsHeight) {
             extraHeightToPropagate = m_rowPos[rowIndex + rowSpan] - originalBeforePosition;
             continue;
         }
 
+        // Below we are handling only row(s) who have at least one visible cell without rowspan value.
         int totalPercent = 0;
         int totalAutoRowsHeight = 0;
         int totalRemainingRowsHeight = spanningRowsHeight.totalRowsHeight;
@@ -619,7 +645,7 @@ int RenderTableSection::calcRowLogicalHeight()
 
     RenderTableCell* cell;
 
-    LayoutStateMaintainer statePusher(view());
+    LayoutStateMaintainer statePusher(*this);
 
     m_rowPos.resize(m_grid.size() + 1);
 
@@ -675,7 +701,7 @@ int RenderTableSection::calcRowLogicalHeight()
                     if (!statePusher.didPush()) {
                         // Technically, we should also push state for the row, but since
                         // rows don't push a coordinate transform, that's not necessary.
-                        statePusher.push(this, locationOffset());
+                        statePusher.push(*this, locationOffset());
                     }
                     cell->clearIntrinsicPadding();
                     cell->clearOverrideSize();
@@ -699,8 +725,6 @@ int RenderTableSection::calcRowLogicalHeight()
 
     ASSERT(!needsLayout());
 
-    statePusher.pop();
-
     return m_rowPos[m_grid.size()];
 }
 
@@ -716,7 +740,7 @@ void RenderTableSection::layout()
     // can be called in a loop (e.g during parsing). Doing it now ensures we have a stable-enough structure.
     m_grid.shrinkToFit();
 
-    LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
+    LayoutStateMaintainer statePusher(*this, locationOffset());
 
     const Vector<int>& columnPos = table()->columnPositions();
 
@@ -745,11 +769,13 @@ void RenderTableSection::layout()
             cell->setCellLogicalWidth(tableLayoutLogicalWidth, layouter);
         }
 
-        if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer)
+        if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer) {
+            if (!rowRenderer->needsLayout())
+                rowRenderer->markForPaginationRelayoutIfNeeded(layouter);
             rowRenderer->layoutIfNeeded();
+        }
     }
 
-    statePusher.pop();
     clearNeedsLayout();
 }
 
@@ -860,6 +886,8 @@ void RenderTableSection::layoutRows()
 
     ASSERT(!needsLayout());
 
+    // FIXME: Changing the height without a layout can change the overflow so it seems wrong.
+
     unsigned totalRows = m_grid.size();
 
     // Set the width of our section now.  The rows will also be this width.
@@ -871,7 +899,7 @@ void RenderTableSection::layoutRows()
     int vspacing = table()->vBorderSpacing();
     unsigned nEffCols = table()->numEffCols();
 
-    LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
+    LayoutStateMaintainer statePusher(*this, locationOffset());
 
     for (unsigned r = 0; r < totalRows; r++) {
         // Set the row's x/y position and width/height.
@@ -880,6 +908,8 @@ void RenderTableSection::layoutRows()
             rowRenderer->setLogicalWidth(logicalWidth());
             rowRenderer->setLogicalHeight(m_rowPos[r + 1] - m_rowPos[r] - vspacing);
             rowRenderer->updateLayerTransform();
+            rowRenderer->clearAllOverflows();
+            rowRenderer->addVisualEffectOverflow();
         }
 
         int rowHeightIncreaseForPagination = 0;
@@ -956,8 +986,8 @@ void RenderTableSection::layoutRows()
 
             setLogicalPositionForCell(cell, c);
 
-            if (!cell->needsLayout() && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                layouter.setChildNeedsLayout(cell);
+            if (!cell->needsLayout())
+                cell->markForPaginationRelayoutIfNeeded(layouter);
 
             cell->layoutIfNeeded();
 
@@ -966,9 +996,11 @@ void RenderTableSection::layoutRows()
                 // FIXME: Pagination might have made us change size. For now just shrink or grow the cell to fit without doing a relayout.
                 // We'll also do a basic increase of the row height to accommodate the cell if it's bigger, but this isn't quite right
                 // either. It's at least stable though and won't result in an infinite # of relayouts that may never stabilize.
-                if (cell->logicalHeight() > rHeight)
-                    rowHeightIncreaseForPagination = max<int>(rowHeightIncreaseForPagination, cell->logicalHeight() - rHeight);
+                LayoutUnit oldLogicalHeight = cell->logicalHeight();
+                if (oldLogicalHeight > rHeight)
+                    rowHeightIncreaseForPagination = max<int>(rowHeightIncreaseForPagination, oldLogicalHeight - rHeight);
                 cell->setLogicalHeight(rHeight);
+                cell->computeOverflow(oldLogicalHeight, false);
             }
 
             LayoutSize childOffset(cell->location() - oldCellRect.location());
@@ -988,8 +1020,11 @@ void RenderTableSection::layoutRows()
                 m_rowPos[rowIndex] += rowHeightIncreaseForPagination;
             for (unsigned c = 0; c < nEffCols; ++c) {
                 Vector<RenderTableCell*, 1>& cells = cellAt(r, c).cells;
-                for (size_t i = 0; i < cells.size(); ++i)
-                    cells[i]->setLogicalHeight(cells[i]->logicalHeight() + rowHeightIncreaseForPagination);
+                for (size_t i = 0; i < cells.size(); ++i) {
+                    LayoutUnit oldLogicalHeight = cells[i]->logicalHeight();
+                    cells[i]->setLogicalHeight(oldLogicalHeight + rowHeightIncreaseForPagination);
+                    cells[i]->computeOverflow(oldLogicalHeight, false);
+                }
             }
         }
     }
@@ -999,8 +1034,6 @@ void RenderTableSection::layoutRows()
     setLogicalHeight(m_rowPos[totalRows]);
 
     computeOverflowFromCells(totalRows, nEffCols);
-
-    statePusher.pop();
 }
 
 void RenderTableSection::computeOverflowFromCells()
@@ -1183,7 +1216,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
 {
     ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
 
-    ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
+    ASSERT(!needsLayout());
     // avoid crashing on bugs that cause us to paint with dirty layout
     if (needsLayout())
         return;
@@ -1360,11 +1393,8 @@ CellSpan RenderTableSection::spannedColumns(const LayoutRect& flippedRect) const
 
 void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    PaintPhase paintPhase = paintInfo.phase;
-
     LayoutRect localRepaintRect = paintInfo.rect;
     localRepaintRect.moveBy(-paintOffset);
-    localRepaintRect.inflate(maximalOutlineSize(paintPhase));
 
     LayoutRect tableAlignedRect = logicalRectForWritingModeAndDirection(localRepaintRect);
 
@@ -1582,7 +1612,7 @@ void RenderTableSection::splitColumn(unsigned pos, unsigned first)
         Row& r = m_grid[row].row;
         r.insert(pos + 1, CellStruct());
         if (r[pos].hasCells()) {
-            r[pos + 1].cells.append(r[pos].cells);
+            r[pos + 1].cells.appendVector(r[pos].cells);
             RenderTableCell* cell = r[pos].primaryCell();
             ASSERT(cell);
             ASSERT(cell->colSpan() >= (r[pos].inColSpan ? 1u : 0));

@@ -31,7 +31,6 @@
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -54,6 +53,16 @@ bool HTMLScriptElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == srcAttr || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLScriptElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLScriptElement::subResourceAttributeName() const
+{
+    return srcAttr;
+}
+
 void HTMLScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
@@ -66,8 +75,6 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_loader->handleSourceAttribute(value);
     else if (name == asyncAttr)
         m_loader->handleAsyncAttribute();
-    else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else
         HTMLElement::parseAttribute(name, value);
 }

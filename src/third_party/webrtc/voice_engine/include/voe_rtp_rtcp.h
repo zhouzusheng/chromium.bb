@@ -18,7 +18,6 @@
 //  - Forward Error Correction (FEC).
 //  - Writing RTP and RTCP packets to binary files for off-line analysis of
 //    the call quality.
-//  - Inserting extra RTP packets into active audio stream.
 //
 // Usage example, omitting error checking:
 //
@@ -45,6 +44,7 @@
 
 namespace webrtc {
 
+class ViENetwork;
 class VoiceEngine;
 
 // VoERTPObserver
@@ -153,12 +153,19 @@ public:
     virtual int GetRemoteSSRC(int channel, unsigned int& ssrc) = 0;
 
     // Sets the status of rtp-audio-level-indication on a specific |channel|.
-    virtual int SetRTPAudioLevelIndicationStatus(
-        int channel, bool enable, unsigned char ID = 1) = 0;
+    virtual int SetSendAudioLevelIndicationStatus(int channel,
+                                                  bool enable,
+                                                  unsigned char id = 1) = 0;
 
-    // Sets the status of rtp-audio-level-indication on a specific |channel|.
-    virtual int GetRTPAudioLevelIndicationStatus(
-        int channel, bool& enabled, unsigned char& ID) = 0;
+    // Sets the status of sending absolute sender time on a specific |channel|.
+    virtual int SetSendAbsoluteSenderTimeStatus(int channel,
+                                                bool enable,
+                                                unsigned char id) = 0;
+
+    // Sets status of receiving absolute sender time on a specific |channel|.
+    virtual int SetReceiveAbsoluteSenderTimeStatus(int channel,
+                                                   bool enable,
+                                                   unsigned char id) = 0;
 
     // Gets the CSRCs of the incoming RTP packets.
     virtual int GetRemoteCSRCs(int channel, unsigned int arrCSRC[15]) = 0;
@@ -246,16 +253,22 @@ public:
     virtual int RTPDumpIsActive(
         int channel, RTPDirections direction = kRtpIncoming) = 0;
 
-    // Sends an extra RTP packet using an existing/active RTP session.
-    // It is possible to set the payload type, marker bit and payload
-    // of the extra RTP
-    virtual int InsertExtraRTPPacket(
-        int channel, unsigned char payloadType, bool markerBit,
-        const char* payloadData, unsigned short payloadSize) = 0;
-
     // Gets the timestamp of the last RTP packet received by |channel|.
     virtual int GetLastRemoteTimeStamp(int channel,
                                        uint32_t* lastRemoteTimeStamp) = 0;
+
+    // Don't use. To be removed.
+    virtual int InsertExtraRTPPacket(
+        int channel, unsigned char payloadType, bool markerBit,
+        const char* payloadData, unsigned short payloadSize) { return -1; };
+
+    // Sets video engine channel to receive incoming audio packets for
+    // aggregated bandwidth estimation. Takes ownership of the ViENetwork
+    // interface.
+    virtual int SetVideoEngineBWETarget(int channel, ViENetwork* vie_network,
+                                        int video_channel) {
+      return 0;
+    }
 
 protected:
     VoERTP_RTCP() {}

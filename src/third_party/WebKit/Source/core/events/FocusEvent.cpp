@@ -28,12 +28,11 @@
 
 #include "core/events/Event.h"
 #include "core/events/EventDispatcher.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
 FocusEventInit::FocusEventInit()
-    : relatedTarget(0)
+    : relatedTarget(nullptr)
 {
 }
 
@@ -52,7 +51,7 @@ FocusEvent::FocusEvent()
     ScriptWrappable::init(this);
 }
 
-FocusEvent::FocusEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view, int detail, EventTarget* relatedTarget)
+FocusEvent::FocusEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view, int detail, EventTarget* relatedTarget)
     : UIEvent(type, canBubble, cancelable, view, detail)
     , m_relatedTarget(relatedTarget)
 {
@@ -64,6 +63,11 @@ FocusEvent::FocusEvent(const AtomicString& type, const FocusEventInit& initializ
     , m_relatedTarget(initializer.relatedTarget)
 {
     ScriptWrappable::init(this);
+}
+
+void FocusEvent::trace(Visitor* visitor)
+{
+    UIEvent::trace(visitor);
 }
 
 PassRefPtr<FocusEventDispatchMediator> FocusEventDispatchMediator::create(PassRefPtr<FocusEvent> focusEvent)

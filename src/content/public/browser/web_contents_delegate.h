@@ -112,7 +112,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Notifies the delegate that this contents is starting or is done loading
   // some resource. The delegate should use this notification to represent
   // loading feedback. See WebContents::IsLoading()
-  virtual void LoadingStateChanged(WebContents* source) {}
+  // |to_different_document| will be true unless the load is a fragment
+  // navigation, or triggered by history.pushState/replaceState.
+  virtual void LoadingStateChanged(WebContents* source,
+                                   bool to_different_document) {}
 
   // Notifies the delegate that the page has made some progress loading.
   // |progress| is a value between 0.0 (nothing loaded) to 1.0 (page fully
@@ -305,7 +308,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Notifies the delegate about the creation of a new WebContents. This
   // typically happens when popups are created.
   virtual void WebContentsCreated(WebContents* source_contents,
-                                  int64 source_frame_id,
+                                  int opener_render_frame_id,
                                   const base::string16& frame_name,
                                   const GURL& target_url,
                                   WebContents* new_contents) {}
@@ -362,9 +365,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                           bool enter_fullscreen) {}
   virtual bool IsFullscreenForTabOrPending(
       const WebContents* web_contents) const;
-
-  // Called when a Javascript out of memory notification is received.
-  virtual void JSOutOfMemory(WebContents* web_contents) {}
 
   // Register a new handler for URL requests with the given scheme.
   // |user_gesture| is true if the registration is made in the context of a user

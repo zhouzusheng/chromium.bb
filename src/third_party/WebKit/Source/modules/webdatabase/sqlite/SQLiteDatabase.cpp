@@ -363,7 +363,7 @@ int SQLiteDatabase::authorizerFunction(void* userData, int actionCode, const cha
     }
 }
 
-void SQLiteDatabase::setAuthorizer(PassRefPtr<DatabaseAuthorizer> auth)
+void SQLiteDatabase::setAuthorizer(DatabaseAuthorizer* auth)
 {
     if (!m_db) {
         WTF_LOG_ERROR("Attempt to set an authorizer on a non-open SQL database");
@@ -419,6 +419,11 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
         error = lastError();
         return (error == SQLITE_OK);
     }
+}
+
+void SQLiteDatabase::trace(Visitor* visitor)
+{
+    visitor->trace(m_authorizer);
 }
 
 } // namespace WebCore

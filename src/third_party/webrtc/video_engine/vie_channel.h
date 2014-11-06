@@ -202,6 +202,9 @@ class ViEChannel
   void RegisterReceiveChannelRtpStatisticsCallback(
       StreamDataCountersCallback* callback);
 
+  void GetRtcpPacketTypeCounters(RtcpPacketTypeCounter* packets_sent,
+                                 RtcpPacketTypeCounter* packets_received) const;
+
   void GetBandwidthUsage(uint32_t* total_bitrate_sent,
                          uint32_t* video_bitrate_sent,
                          uint32_t* fec_bitrate_sent,
@@ -347,6 +350,9 @@ class ViEChannel
       EncodedImageCallback* pre_decode_callback);
 
   void RegisterSendFrameCountObserver(FrameCountObserver* observer);
+
+  void ReceivedBWEPacket(int64_t arrival_time_ms, int payload_size,
+                         const RTPHeader& header);
 
  protected:
   static bool ChannelDecodeThreadFunction(void* obj);

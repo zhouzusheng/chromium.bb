@@ -73,7 +73,7 @@ namespace WTF {
         typedef HashTableIterator<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> iterator;
         typedef HashTableConstIterator<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> const_iterator;
         typedef Value ValueType;
-        typedef const ValueType& ReferenceType;
+        typedef typename Traits::IteratorConstGetType GetType;
         typedef const ValueType* PointerType;
 
         friend class HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>;
@@ -101,12 +101,12 @@ namespace WTF {
         {
         }
 
-        PointerType get() const
+        GetType get() const
         {
             return m_position;
         }
-        ReferenceType operator*() const { return *get(); }
-        PointerType operator->() const { return get(); }
+        typename Traits::IteratorConstReferenceType operator*() const { return Traits::getToReferenceConstConversion(get()); }
+        GetType operator->() const { return get(); }
 
         const_iterator& operator++()
         {
@@ -218,8 +218,21 @@ namespace WTF {
         static bool isEmptyOrDeletedBucket(const Value& value) { return isEmptyBucket(value) || isDeletedBucket(value); }
     };
 
+    // Don't declare a destructor for HeapAllocated hash tables.
+    template<typename Derived, bool isGarbageCollected>
+    class HashTableDestructorBase;
+
+    template<typename Derived>
+    class HashTableDestructorBase<Derived, true> { };
+
+    template<typename Derived>
+    class HashTableDestructorBase<Derived, false> {
+    public:
+        ~HashTableDestructorBase() { static_cast<Derived*>(this)->finalize(); }
+    };
+
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
-    class HashTable {
+    class HashTable : public HashTableDestructorBase<HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>, Allocator::isGarbageCollected> {
     public:
         typedef HashTableIterator<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> iterator;
         typedef HashTableConstIterator<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> const_iterator;
@@ -278,8 +291,9 @@ namespace WTF {
 #endif
 
         HashTable();
-        ~HashTable()
+        void finalize()
         {
+            ASSERT(!Allocator::isGarbageCollected);
             if (LIKELY(!m_table))
                 return;
             deallocateTable(m_table, m_tableSize);
@@ -887,6 +901,8 @@ namespace WTF {
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
     void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::deallocateTable(ValueType* table, unsigned size)
     {
+        if (Allocator::isGarbageCollected)
+            return;
         if (Traits::needsDestruction) {
             for (unsigned i = 0; i < size; ++i) {
                 if (!isDeletedBucket(table[i]))
@@ -975,25 +991,11 @@ namespace WTF {
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
     void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::swap(HashTable& other)
     {
-        ValueType* tmpTable = m_table;
-        m_table = other.m_table;
-        other.m_table = tmpTable;
-
-        size_t tmpTableSize = m_tableSize;
-        m_tableSize = other.m_tableSize;
-        other.m_tableSize = tmpTableSize;
-
-        size_t tmpTableSizeMask = m_tableSizeMask;
-        m_tableSizeMask = other.m_tableSizeMask;
-        other.m_tableSizeMask = tmpTableSizeMask;
-
-        size_t tmpKeyCount = m_keyCount;
-        m_keyCount = other.m_keyCount;
-        other.m_keyCount = tmpKeyCount;
-
-        size_t tmpDeletedCount = m_deletedCount;
-        m_deletedCount = other.m_deletedCount;
-        other.m_deletedCount = tmpDeletedCount;
+        std::swap(m_table, other.m_table);
+        std::swap(m_tableSize, other.m_tableSize);
+        std::swap(m_tableSizeMask, other.m_tableSizeMask);
+        std::swap(m_keyCount, other.m_keyCount);
+        std::swap(m_deletedCount, other.m_deletedCount);
 
 #if DUMP_HASHTABLE_STATS_PER_TABLE
         m_stats.swap(other.m_stats);
@@ -1067,8 +1069,8 @@ namespace WTF {
         if (!Traits::isWeak)
             Allocator::markNoTracing(visitor, m_table);
         else
-            Allocator::registerWeakMembers(visitor, this, WeakProcessingHashTableHelper<Traits::isWeak, Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::process);
-        if (Traits::needsTracing) {
+            Allocator::registerWeakMembers(visitor, this, m_table, WeakProcessingHashTableHelper<Traits::isWeak, Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::process);
+        if (ShouldBeTraced<Traits>::value) {
             for (ValueType* element = m_table + m_tableSize - 1; element >= m_table; element--) {
                 if (!isEmptyOrDeletedBucket(*element))
                     Allocator::template trace<ValueType, Traits>(visitor, *element);

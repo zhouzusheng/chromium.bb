@@ -9,7 +9,7 @@
 
 namespace WebCore {
 
-PassRefPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
+PassRefPtrWillBeRawPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
 {
 {%- for event in events %}
 {%- call wrap_with_condition(event.Conditional) %}
@@ -17,7 +17,7 @@ PassRefPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
         return {{event|cpp_name}}::create();
 {%- endcall %}
 {%- endfor %}
-    return 0;
+    return nullptr;
 }
 
 } // namespace WebCore

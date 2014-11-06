@@ -7,9 +7,15 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModule.h"
+
+namespace blink {
+class WebFrame;
+class WebSecurityOrigin;
+}
 
 namespace media {
 class Decryptor;
@@ -18,13 +24,15 @@ class MediaKeys;
 
 namespace content {
 
+class CdmSessionAdapter;
 class WebContentDecryptionModuleSessionImpl;
-class SessionIdAdapter;
 
 class WebContentDecryptionModuleImpl
     : public blink::WebContentDecryptionModule {
  public:
   static WebContentDecryptionModuleImpl* Create(
+      blink::WebFrame* frame,
+      const blink::WebSecurityOrigin& security_origin,
       const base::string16& key_system);
 
   virtual ~WebContentDecryptionModuleImpl();
@@ -40,15 +48,10 @@ class WebContentDecryptionModuleImpl
       blink::WebContentDecryptionModuleSession::Client* client);
 
  private:
-  // Takes ownership of |media_keys| and |adapter|.
-  WebContentDecryptionModuleImpl(scoped_ptr<media::MediaKeys> media_keys,
-                                 scoped_ptr<SessionIdAdapter> adapter);
+  // Takes reference to |adapter|.
+  WebContentDecryptionModuleImpl(scoped_refptr<CdmSessionAdapter> adapter);
 
-  // Called when a WebContentDecryptionModuleSessionImpl is closed.
-  void OnSessionClosed(uint32 session_id);
-
-  scoped_ptr<media::MediaKeys> media_keys_;
-  scoped_ptr<SessionIdAdapter> adapter_;
+  scoped_refptr<CdmSessionAdapter> adapter_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentDecryptionModuleImpl);
 };

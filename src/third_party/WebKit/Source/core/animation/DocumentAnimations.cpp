@@ -37,10 +37,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderLayerCompositor.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 
 namespace WebCore {
 
@@ -48,39 +48,31 @@ namespace {
 
 void updateAnimationTiming(Document& document)
 {
-    bool didTriggerStyleRecalc = document.timeline()->serviceAnimations();
-    didTriggerStyleRecalc |= document.transitionTimeline()->serviceAnimations();
-    if (!didTriggerStyleRecalc)
-        document.animationClock().unfreeze();
-}
-
-void dispatchAnimationEvents(Document& document)
-{
-    document.timeline()->dispatchEvents();
-    document.transitionTimeline()->dispatchEvents();
-}
-
-void dispatchAnimationEventsAsync(Document& document)
-{
-    document.timeline()->dispatchEventsAsync();
-    document.transitionTimeline()->dispatchEventsAsync();
+    document.timeline().serviceAnimations();
+    document.transitionTimeline().serviceAnimations();
 }
 
 } // namespace
 
-void DocumentAnimations::serviceOnAnimationFrame(Document& document, double monotonicAnimationStartTime)
+void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& document, double monotonicAnimationStartTime)
 {
     document.animationClock().updateTime(monotonicAnimationStartTime);
     updateAnimationTiming(document);
-    dispatchAnimationEvents(document);
 }
 
-void DocumentAnimations::serviceBeforeGetComputedStyle(Node& node, CSSPropertyID property)
+void DocumentAnimations::updateOutdatedAnimationPlayersAfterFrameCallbacks(Document& document)
+{
+    if (document.timeline().hasOutdatedAnimationPlayer()) {
+        updateAnimationTiming(document);
+    }
+}
+
+void DocumentAnimations::updateAnimationTimingForGetComputedStyle(Node& node, CSSPropertyID property)
 {
     if (!node.isElementNode())
         return;
     const Element& element = toElement(node);
-    if (element.document().timeline()->hasPlayerNeedingUpdate()) {
+    if (element.document().timeline().hasOutdatedAnimationPlayer()) {
         updateAnimationTiming(element.document());
         return;
     }
@@ -90,13 +82,15 @@ void DocumentAnimations::serviceBeforeGetComputedStyle(Node& node, CSSPropertyID
     }
 }
 
-void DocumentAnimations::serviceAfterStyleRecalc(Document& document)
+void DocumentAnimations::startPendingAnimations(Document& document)
 {
-    if (document.cssPendingAnimations().startPendingAnimations() && document.view())
+    ASSERT(document.lifecycle().state() == DocumentLifecycle::CompositingClean);
+    if (document.cssPendingAnimations().startPendingAnimations()) {
+        ASSERT(document.view());
         document.view()->scheduleAnimation();
+    }
 
     document.animationClock().unfreeze();
-    dispatchAnimationEventsAsync(document);
 }
 
 } // namespace WebCore

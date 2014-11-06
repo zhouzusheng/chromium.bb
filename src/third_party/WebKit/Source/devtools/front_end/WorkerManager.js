@@ -31,14 +31,14 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
- * @param {boolean} canInspectWorkers
+ * @param {boolean} isMainFrontend
  */
-WebInspector.WorkerManager = function(canInspectWorkers)
+WebInspector.WorkerManager = function(target, isMainFrontend)
 {
     this._reset();
-    if (canInspectWorkers) {
+    target.registerWorkerDispatcher(new WebInspector.WorkerDispatcher(this));
+    if (isMainFrontend) {
         WorkerAgent.enable();
-        InspectorBackend.registerWorkerDispatcher(new WebInspector.WorkerDispatcher(this));
         WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
     }
 }
@@ -167,3 +167,41 @@ WebInspector.WorkerDispatcher.prototype = {
  * @type {!WebInspector.WorkerManager}
  */
 WebInspector.workerManager;
+
+/**
+ * @constructor
+ * @extends {InspectorBackendClass.Connection}
+ * @param {string} workerId
+ */
+WebInspector.ExternalWorkerConnection = function(workerId, onConnectionReady)
+{
+    InspectorBackendClass.Connection.call(this);
+    this._workerId = workerId;
+    window.addEventListener("message", this._processMessage.bind(this), true);
+    onConnectionReady(this);
+}
+
+WebInspector.ExternalWorkerConnection.prototype = {
+
+    /**
+     * @param {?Event} event
+     */
+    _processMessage: function(event)
+    {
+        if (!event)
+            return;
+
+        var message = event.data;
+        this.dispatch(message);
+    },
+
+    /**
+     * @param {!Object} messageObject
+     */
+    sendMessage: function(messageObject)
+    {
+        window.opener.postMessage({workerId: this._workerId, command: "sendMessageToBackend", message: messageObject}, "*");
+    },
+
+    __proto__: InspectorBackendClass.Connection.prototype
+}

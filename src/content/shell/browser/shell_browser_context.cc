@@ -23,7 +23,7 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service_factory.h"
 #include "base/prefs/pref_service.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/user_prefs/user_prefs.h"
 
 #if defined(OS_WIN)
@@ -159,7 +159,8 @@ net::URLRequestContextGetter* ShellBrowserContext::GetRequestContext()  {
 }
 
 net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   DCHECK(!url_request_getter_.get());
   url_request_getter_ = new ShellURLRequestContextGetter(
       ignore_certificate_errors_,
@@ -167,6 +168,7 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO),
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE),
       protocol_handlers,
+      protocol_interceptors.Pass(),
       net_log_);
   resource_context_->set_url_request_context_getter(url_request_getter_.get());
   return url_request_getter_.get();
@@ -201,6 +203,7 @@ void ShellBrowserContext::RequestMidiSysExPermission(
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
+      bool user_gesture,
       const MidiSysExPermissionCallback& callback) {
   // Always reject requests for LayoutTests for now.
   // TODO(toyoshim): Make it programmable to improve test coverage.
@@ -234,10 +237,11 @@ void ShellBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
 }
 
 net::URLRequestContextGetter*
-    ShellBrowserContext::CreateRequestContextForStoragePartition(
-        const base::FilePath& partition_path,
-        bool in_memory,
-        ProtocolHandlerMap* protocol_handlers) {
+ShellBrowserContext::CreateRequestContextForStoragePartition(
+    const base::FilePath& partition_path,
+    bool in_memory,
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
   return NULL;
 }
 

@@ -32,12 +32,14 @@
 #define ServiceWorkerGlobalScopeClient_h
 
 #include "core/workers/WorkerClients.h"
+#include "public/platform/WebServiceWorkerEventResult.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
 class ExecutionContext;
+class Response;
 class WorkerClients;
 
 class ServiceWorkerGlobalScopeClient : public Supplement<WorkerClients> {
@@ -45,7 +47,11 @@ class ServiceWorkerGlobalScopeClient : public Supplement<WorkerClients> {
 public:
     virtual ~ServiceWorkerGlobalScopeClient() { }
 
-    virtual void didHandleInstallEvent(int installEventID) = 0;
+    virtual void didHandleActivateEvent(int eventID, blink::WebServiceWorkerEventResult) = 0;
+    virtual void didHandleInstallEvent(int installEventID, blink::WebServiceWorkerEventResult) = 0;
+    // A null response means no valid response was provided by the service worker, so fallback to native.
+    virtual void didHandleFetchEvent(int fetchEventID, PassRefPtr<Response> = nullptr) = 0;
+    virtual void didHandleSyncEvent(int syncEventID) = 0;
 
     static const char* supplementName();
     static ServiceWorkerGlobalScopeClient* from(ExecutionContext*);

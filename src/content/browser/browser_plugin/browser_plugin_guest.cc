@@ -14,6 +14,7 @@
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -179,7 +180,9 @@ class BrowserPluginGuest::MediaRequest : public PermissionRequest {
       web_contents->RequestMediaAccessPermission(request_, callback_);
     } else {
       // Deny the request.
-      callback_.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
+      callback_.Run(MediaStreamDevices(),
+                    MEDIA_DEVICE_INVALID_STATE,
+                    scoped_ptr<MediaStreamUI>());
     }
   }
 
@@ -362,6 +365,7 @@ BrowserPluginGuest::BrowserPluginGuest(
       mouse_locked_(false),
       pending_lock_request_(false),
       embedder_visible_(true),
+      auto_size_enabled_(false),
       copy_request_id_(0),
       next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
       has_render_view_(has_render_view),
@@ -634,12 +638,13 @@ void BrowserPluginGuest::Initialize(
 
   has_render_view_ = true;
 
+  WebPreferences prefs = GetWebContents()->GetWebkitPrefs();
+  prefs.navigate_on_drag_drop = false;
   if (!embedder_web_contents_->
           GetWebkitPrefs().accelerated_compositing_enabled) {
-    WebPreferences prefs = GetWebContents()->GetWebkitPrefs();
     prefs.accelerated_compositing_enabled = false;
-    GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
   }
+  GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
 
   // Enable input method for guest if it's enabled for the embedder.
   if (static_cast<RenderViewHostImpl*>(
@@ -826,6 +831,21 @@ void BrowserPluginGuest::SetZoom(double zoom_factor) {
     delegate_->SetZoom(zoom_factor);
 }
 
+void BrowserPluginGuest::FindReply(WebContents* contents,
+                                   int request_id,
+                                   int number_of_matches,
+                                   const gfx::Rect& selection_rect,
+                                   int active_match_ordinal,
+                                   bool final_update) {
+  if (!delegate_)
+    return;
+
+  // |selection_rect| is updated to incorporate embedder coordinates.
+  delegate_->FindReply(request_id, number_of_matches,
+                       ToGuestRect(selection_rect),
+                       active_match_ordinal, final_update);
+}
+
 WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
                                                 const OpenURLParams& params) {
   // If the guest wishes to navigate away prior to attachment then we save the
@@ -853,7 +873,7 @@ WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
 }
 
 void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
-                                            int64 source_frame_id,
+                                            int opener_render_frame_id,
                                             const base::string16& frame_name,
                                             const GURL& target_url,
                                             WebContents* new_contents) {
@@ -1106,8 +1126,8 @@ void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
     const char script[] = "window.addEventListener('dragstart', function() { "
                           "  window.event.preventDefault(); "
                           "});";
-    render_view_host->ExecuteJavascriptInWebFrame(base::string16(),
-                                                  base::ASCIIToUTF16(script));
+    render_view_host->GetMainFrame()->ExecuteJavaScript(
+        base::ASCIIToUTF16(script));
   }
 }
 
@@ -1353,7 +1373,10 @@ void BrowserPluginGuest::OnExtendSelectionAndDelete(
     int instance_id,
     int before,
     int after) {
-  Send(new ViewMsg_ExtendSelectionAndDelete(routing_id(), before, after));
+  RenderFrameHostImpl* rfh = static_cast<RenderFrameHostImpl*>(
+      web_contents()->GetFocusedFrame());
+  if (rfh)
+    rfh->ExtendSelectionAndDelete(before, after);
 }
 
 void BrowserPluginGuest::OnReclaimCompositorResources(

@@ -32,11 +32,10 @@
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
+#include "sync/internal_api/sync_core.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/internal_api/syncapi_server_connection_manager.h"
 #include "sync/js/js_arg_list.h"
-#include "sync/js/js_event_details.h"
-#include "sync/js/js_event_handler.h"
 #include "sync/js/js_reply_handler.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
@@ -67,8 +66,8 @@ static const int kSyncRefreshDelayMsec = 500;
 static const int kSyncSchedulerDelayMsec = 250;
 
 // Maximum count and size for traffic recorder.
-static const unsigned int kMaxMessagesToRecord = 10;
-static const unsigned int kMaxMessageSizeToRecord = 5 * 1024;
+static const unsigned int kMaxMessagesToRecord = 100;
+static const unsigned int kMaxMessageSizeToRecord = 50 * 1024;
 
 GetUpdatesCallerInfo::GetUpdatesSource GetSourceFromReason(
     ConfigureReason reason) {
@@ -184,12 +183,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
   }
 
   // Bind message handlers.
-  BindJsMessageHandler(
-      "getNotificationState",
-      &SyncManagerImpl::GetNotificationState);
-  BindJsMessageHandler(
-      "getNotificationInfo",
-      &SyncManagerImpl::GetNotificationInfo);
   BindJsMessageHandler(
       "getAllNodes",
       &SyncManagerImpl::GetAllNodes);
@@ -417,6 +410,8 @@ void SyncManagerImpl::Init(
   allstatus_.SetInvalidatorClientId(invalidator_client_id);
 
   model_type_registry_.reset(new ModelTypeRegistry(workers, directory()));
+
+  sync_core_.reset(new SyncCore(model_type_registry_.get()));
 
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
@@ -907,7 +902,6 @@ void SyncManagerImpl::RequestNudgeForDataTypes(
   base::TimeDelta nudge_delay = NudgeStrategy::GetNudgeDelayTimeDelta(
       types.First().Get(),
       this);
-  allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_LOCAL);
   scheduler_->ScheduleLocalNudge(nudge_delay,
                                  types,
                                  nudge_location);
@@ -951,12 +945,16 @@ void SyncManagerImpl::OnMigrationRequested(ModelTypeSet types) {
       OnMigrationRequested(types));
 }
 
+void SyncManagerImpl::OnProtocolEvent(const ProtocolEvent& event) {
+  FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
+                    OnProtocolEvent(event));
+}
+
 void SyncManagerImpl::SetJsEventHandler(
     const WeakHandle<JsEventHandler>& event_handler) {
-  js_event_handler_ = event_handler;
-  js_sync_manager_observer_.SetJsEventHandler(js_event_handler_);
-  js_mutation_event_observer_.SetJsEventHandler(js_event_handler_);
-  js_sync_encryption_handler_observer_.SetJsEventHandler(js_event_handler_);
+  js_sync_manager_observer_.SetJsEventHandler(event_handler);
+  js_mutation_event_observer_.SetJsEventHandler(event_handler);
+  js_sync_encryption_handler_observer_.SetJsEventHandler(event_handler);
 }
 
 void SyncManagerImpl::ProcessJsMessage(
@@ -992,47 +990,6 @@ void SyncManagerImpl::BindJsMessageHandler(
       base::Bind(unbound_message_handler, base::Unretained(this));
 }
 
-base::DictionaryValue* SyncManagerImpl::NotificationInfoToValue(
-    const NotificationInfoMap& notification_info) {
-  base::DictionaryValue* value = new base::DictionaryValue();
-
-  for (NotificationInfoMap::const_iterator it = notification_info.begin();
-      it != notification_info.end(); ++it) {
-    const std::string model_type_str = ModelTypeToString(it->first);
-    value->Set(model_type_str, it->second.ToValue());
-  }
-
-  return value;
-}
-
-std::string SyncManagerImpl::NotificationInfoToString(
-    const NotificationInfoMap& notification_info) {
-  scoped_ptr<base::DictionaryValue> value(
-      NotificationInfoToValue(notification_info));
-  std::string str;
-  base::JSONWriter::Write(value.get(), &str);
-  return str;
-}
-
-JsArgList SyncManagerImpl::GetNotificationState(
-    const JsArgList& args) {
-  const std::string& notification_state =
-      InvalidatorStateToString(invalidator_state_);
-  DVLOG(1) << "GetNotificationState: " << notification_state;
-  base::ListValue return_args;
-  return_args.Append(new base::StringValue(notification_state));
-  return JsArgList(&return_args);
-}
-
-JsArgList SyncManagerImpl::GetNotificationInfo(
-    const JsArgList& args) {
-  DVLOG(1) << "GetNotificationInfo: "
-           << NotificationInfoToString(notification_info_map_);
-  base::ListValue return_args;
-  return_args.Append(NotificationInfoToValue(notification_info_map_));
-  return JsArgList(&return_args);
-}
-
 JsArgList SyncManagerImpl::GetClientServerTraffic(
     const JsArgList& args) {
   base::ListValue return_args;
@@ -1051,28 +1008,6 @@ JsArgList SyncManagerImpl::GetAllNodes(const JsArgList& args) {
   return JsArgList(&return_args);
 }
 
-void SyncManagerImpl::UpdateNotificationInfo(
-    const ObjectIdInvalidationMap& invalidation_map) {
-  ObjectIdSet ids = invalidation_map.GetObjectIds();
-  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
-    ModelType type = UNSPECIFIED;
-    if (!ObjectIdToRealModelType(*it, &type)) {
-      continue;
-    }
-    const SingleObjectInvalidationSet& type_invalidations =
-        invalidation_map.ForObject(*it);
-    for (SingleObjectInvalidationSet::const_iterator inv_it =
-         type_invalidations.begin(); inv_it != type_invalidations.end();
-         ++inv_it) {
-      NotificationInfo* info = &notification_info_map_[type];
-      info->total_count++;
-      std::string payload =
-          inv_it->is_unknown_version() ? "UNKNOWN" : inv_it->payload();
-      info->payload = payload;
-    }
-  }
-}
-
 void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -1083,15 +1018,6 @@ void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
       (invalidator_state_ == INVALIDATIONS_ENABLED);
   allstatus_.SetNotificationsEnabled(notifications_enabled);
   scheduler_->SetNotificationsEnabled(notifications_enabled);
-
-  if (js_event_handler_.IsInitialized()) {
-    base::DictionaryValue details;
-    details.SetString("state", state_str);
-    js_event_handler_.Call(FROM_HERE,
-                           &JsEventHandler::HandleJsEvent,
-                           "onNotificationStateChange",
-                           JsEventDetails(&details));
-  }
 }
 
 void SyncManagerImpl::OnIncomingInvalidation(
@@ -1110,61 +1036,23 @@ void SyncManagerImpl::OnIncomingInvalidation(
   if (invalidation_map.Empty()) {
     LOG(WARNING) << "Sync received invalidation without any type information.";
   } else {
-    allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_NOTIFICATION);
     scheduler_->ScheduleInvalidationNudge(
         TimeDelta::FromMilliseconds(kSyncSchedulerDelayMsec),
         invalidation_map, FROM_HERE);
-    allstatus_.IncrementNotificationsReceived();
-    UpdateNotificationInfo(invalidation_map);
     debug_info_event_listener_.OnIncomingNotification(invalidation_map);
   }
-
-  if (js_event_handler_.IsInitialized()) {
-    base::DictionaryValue details;
-    base::ListValue* changed_types = new base::ListValue();
-    details.Set("changedTypes", changed_types);
-
-    ObjectIdSet id_set = invalidation_map.GetObjectIds();
-    ModelTypeSet nudged_types = ObjectIdSetToModelTypeSet(id_set);
-    DCHECK(!nudged_types.Empty());
-    for (ModelTypeSet::Iterator it = nudged_types.First();
-         it.Good(); it.Inc()) {
-      const std::string model_type_str = ModelTypeToString(it.Get());
-      changed_types->Append(new base::StringValue(model_type_str));
-    }
-    details.SetString("source", "REMOTE_INVALIDATION");
-    js_event_handler_.Call(FROM_HERE,
-                           &JsEventHandler::HandleJsEvent,
-                           "onIncomingNotification",
-                           JsEventDetails(&details));
-  }
 }
+
+std::string SyncManagerImpl::GetOwnerName() const { return "SyncManagerImpl"; }
 
 void SyncManagerImpl::RefreshTypes(ModelTypeSet types) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (types.Empty()) {
     LOG(WARNING) << "Sync received refresh request with no types specified.";
   } else {
-    allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_LOCAL_REFRESH);
     scheduler_->ScheduleLocalRefreshRequest(
         TimeDelta::FromMilliseconds(kSyncRefreshDelayMsec),
         types, FROM_HERE);
-  }
-
-  if (js_event_handler_.IsInitialized()) {
-    base::DictionaryValue details;
-    base::ListValue* changed_types = new base::ListValue();
-    details.Set("changedTypes", changed_types);
-    for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
-      const std::string& model_type_str =
-          ModelTypeToString(it.Get());
-      changed_types->Append(new base::StringValue(model_type_str));
-    }
-    details.SetString("source", "LOCAL_INVALIDATION");
-    js_event_handler_.Call(FROM_HERE,
-                           &JsEventHandler::HandleJsEvent,
-                           "onIncomingNotification",
-                           JsEventDetails(&details));
   }
 }
 
@@ -1179,6 +1067,11 @@ void SyncManagerImpl::SaveChanges() {
 UserShare* SyncManagerImpl::GetUserShare() {
   DCHECK(initialized_);
   return &share_;
+}
+
+syncer::SyncCore* SyncManagerImpl::GetSyncCore() {
+  DCHECK(initialized_);
+  return sync_core_.get();
 }
 
 const std::string SyncManagerImpl::cache_guid() {
@@ -1242,6 +1135,18 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
           enhanced_bookmarks.extension_id();
     }
     found_experiment = true;
+  }
+
+  ReadNode gcm_invalidations_node(&trans);
+  if (gcm_invalidations_node.InitByClientTagLookup(
+          syncer::EXPERIMENTS, syncer::kGCMInvalidationsTag) ==
+      BaseNode::INIT_OK) {
+    const sync_pb::GcmInvalidationsFlags& gcm_invalidations =
+        gcm_invalidations_node.GetExperimentsSpecifics().gcm_invalidations();
+    if (gcm_invalidations.has_enabled()) {
+      experiments->gcm_invalidations_enabled = gcm_invalidations.enabled();
+      found_experiment = true;
+    }
   }
 
   return found_experiment;

@@ -37,7 +37,6 @@
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
-#include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_graphics_2d_dev.h"
@@ -101,6 +100,7 @@
 #include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
+#include "ppapi/c/private/ppb_find_private.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
@@ -310,11 +310,9 @@ const void* InternalGetInterface(const char* name) {
     return custom_interface;
 
   // TODO(brettw) put these in a hash map for better performance.
-  #define UNPROXIED_IFACE(iface_str, iface_struct) \
+  #define PROXIED_IFACE(iface_str, iface_struct) \
       if (strcmp(name, iface_str) == 0) \
         return ppapi::thunk::Get##iface_struct##_Thunk();
-  #define PROXIED_IFACE(iface_str, iface_struct) \
-      UNPROXIED_IFACE(iface_str, iface_struct)
 
   #include "ppapi/thunk/interfaces_ppb_private.h"
   #include "ppapi/thunk/interfaces_ppb_private_flash.h"
@@ -323,7 +321,6 @@ const void* InternalGetInterface(const char* name) {
   #include "ppapi/thunk/interfaces_ppb_public_dev_channel.h"
   #include "ppapi/thunk/interfaces_ppb_public_stable.h"
 
-  #undef UNPROXIED_API
   #undef PROXIED_IFACE
 
   #define LEGACY_IFACE(iface_str, function_name) \

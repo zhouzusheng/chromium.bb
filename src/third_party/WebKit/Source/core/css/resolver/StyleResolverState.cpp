@@ -32,18 +32,16 @@ namespace WebCore {
 StyleResolverState::StyleResolverState(Document& document, Element* element, RenderStyle* parentStyle)
     : m_elementContext(element ? ElementResolveContext(*element) : ElementResolveContext())
     , m_document(document)
-    , m_style(0)
+    , m_style(nullptr)
     , m_cssToLengthConversionData(0, rootElementStyle(), document.renderView())
     , m_parentStyle(parentStyle)
     , m_applyPropertyToRegularStyle(true)
     , m_applyPropertyToVisitedLinkStyle(false)
-    , m_lineHeightValue(0)
+    , m_lineHeightValue(nullptr)
     , m_styleMap(*this, m_elementStyleResources)
-    , m_currentRule(0)
+    , m_currentRule(nullptr)
 {
-    if (m_elementContext.resetStyleInheritance())
-        m_parentStyle = 0;
-    else if (!parentStyle && m_elementContext.parentNode())
+    if (!parentStyle && m_elementContext.parentNode())
         m_parentStyle = m_elementContext.parentNode()->renderStyle();
 
     // FIXME: Animation unitests will start animations on non-active documents!
@@ -58,12 +56,12 @@ StyleResolverState::~StyleResolverState()
 {
 }
 
-void StyleResolverState::setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate> update)
+void StyleResolverState::setAnimationUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> update)
 {
     m_animationUpdate = update;
 }
 
-PassOwnPtr<CSSAnimationUpdate> StyleResolverState::takeAnimationUpdate()
+PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> StyleResolverState::takeAnimationUpdate()
 {
     return m_animationUpdate.release();
 }

@@ -196,9 +196,9 @@ WebElement WebDocument::getElementById(const WebString& id) const
     return WebElement(constUnwrap<Document>()->getElementById(id));
 }
 
-WebNode WebDocument::focusedNode() const
+WebElement WebDocument::focusedElement() const
 {
-    return WebNode(constUnwrap<Document>()->focusedElement());
+    return WebElement(constUnwrap<Document>()->focusedElement());
 }
 
 WebDocumentType WebDocument::doctype() const
@@ -210,7 +210,7 @@ void WebDocument::insertStyleSheet(const WebString& sourceCode)
 {
     RefPtr<Document> document = unwrap<Document>();
     ASSERT(document);
-    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(CSSParserContext(*document.get(), 0));
+    RefPtrWillBeRawPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(CSSParserContext(*document.get(), 0));
     parsedSheet->parseString(sourceCode);
     document->styleEngine()->addAuthorSheet(parsedSheet);
 }
@@ -225,14 +225,14 @@ void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 
 void WebDocument::cancelFullScreen()
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(unwrap<Document>()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*unwrap<Document>()))
         fullscreen->webkitCancelFullScreen();
 }
 
 WebElement WebDocument::fullScreenElement() const
 {
     Element* fullScreenElement = 0;
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(const_cast<WebDocument*>(this)->unwrap<Document>()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*const_cast<WebDocument*>(this)->unwrap<Document>()))
         fullScreenElement = fullscreen->webkitCurrentFullScreenElement();
     return WebElement(fullScreenElement);
 }

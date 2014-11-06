@@ -45,7 +45,6 @@ class SpeechRecognitionController;
 class SpeechRecognitionError;
 
 class SpeechRecognition FINAL : public RefCountedWillBeRefCountedGarbageCollected<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
-    DECLARE_GC_INFO;
     DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<SpeechRecognition>);
 public:
     static PassRefPtrWillBeRawPtr<SpeechRecognition> create(ExecutionContext*);
@@ -75,8 +74,8 @@ public:
     void didEndSpeech();
     void didEndSound();
     void didEndAudio();
-    void didReceiveResults(const Vector<RefPtr<SpeechRecognitionResult> >& newFinalResults, const Vector<RefPtr<SpeechRecognitionResult> >& currentInterimResults);
-    void didReceiveNoMatch(PassRefPtr<SpeechRecognitionResult>);
+    void didReceiveResults(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& newFinalResults, const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& currentInterimResults);
+    void didReceiveNoMatch(PassRefPtrWillBeRawPtr<SpeechRecognitionResult>);
     void didReceiveError(PassRefPtr<SpeechRecognitionError>);
     void didStart();
     void didEnd();
@@ -86,6 +85,7 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // ActiveDOMObject.
+    virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audiostart);
@@ -117,7 +117,7 @@ private:
     bool m_stoppedByActiveDOMObject;
     bool m_started;
     bool m_stopping;
-    Vector<RefPtr<SpeechRecognitionResult> > m_finalResults;
+    WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> > m_finalResults;
 };
 
 } // namespace WebCore

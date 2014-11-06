@@ -31,12 +31,11 @@
 #ifndef WebFrame_h
 #define WebFrame_h
 
+#include "WebCompositionUnderline.h"
 #include "WebIconURL.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
 #include "public/platform/WebCanvas.h"
-#include "public/platform/WebFileSystem.h"
-#include "public/platform/WebFileSystemType.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebReferrerPolicy.h"
 #include "public/platform/WebURL.h"
@@ -87,6 +86,8 @@ struct WebURLLoaderOptions;
 
 template <typename T> class WebVector;
 
+typedef class WebFrame WebLocalFrame;
+
 class WebFrame {
 public:
     // Control of renderTreeAsText output
@@ -99,20 +100,7 @@ public:
 
     // Creates a WebFrame. Delete this WebFrame by calling WebFrame::close().
     // It is valid to pass a null client pointer.
-    BLINK_EXPORT static WebFrame* create(WebFrameClient*);
-
-    // Same as create(WebFrameClient*) except the embedder may explicitly pass
-    // in the identifier for the WebFrame. This can be used with
-    // generateEmbedderIdentifier() if constructing the WebFrameClient for this
-    // frame requires the identifier.
-    //
-    // FIXME: Move the embedderIdentifier concept fully to the embedder and
-    // remove this factory method.
-    BLINK_EXPORT static WebFrame* create(WebFrameClient*, long long embedderIdentifier);
-
-    // Generates an identifier suitable for use with create() above.
-    // Never returns -1.
-    BLINK_EXPORT static long long generateEmbedderIdentifier();
+    BLINK_EXPORT static WebLocalFrame* create(WebFrameClient*);
 
     // Returns the number of live WebFrame objects, used for leak checking.
     BLINK_EXPORT static int instanceCount();
@@ -120,16 +108,18 @@ public:
     // Returns the WebFrame associated with the current V8 context. This
     // function can return 0 if the context is associated with a Document that
     // is not currently being displayed in a Frame.
-    BLINK_EXPORT static WebFrame* frameForCurrentContext();
+    BLINK_EXPORT static WebLocalFrame* frameForCurrentContext();
 
     // Returns the frame corresponding to the given context. This can return 0
     // if the context is detached from the frame, or if the context doesn't
     // correspond to a frame (e.g., workers).
-    BLINK_EXPORT static WebFrame* frameForContext(v8::Handle<v8::Context>);
+    BLINK_EXPORT static WebLocalFrame* frameForContext(v8::Handle<v8::Context>);
 
     // Returns the frame inside a given frame or iframe element. Returns 0 if
     // the given element is not a frame, iframe or if the frame is empty.
-    BLINK_EXPORT static WebFrame* fromFrameOwnerElement(const WebElement&);
+    BLINK_EXPORT static WebLocalFrame* fromFrameOwnerElement(const WebElement&);
+
+    virtual WebLocalFrame* toWebLocalFrame() = 0;
 
     // This method closes and deletes the WebFrame.
     virtual void close() = 0;
@@ -147,11 +137,6 @@ public:
     // top-most frame) the actual name may have a suffix appended to make the
     // frame name unique within the hierarchy.
     virtual void setName(const WebString&) = 0;
-
-    // A globally unique identifier for this frame.
-    // FIXME: Convert users to embedderIdentifier() and remove identifier().
-    long long identifier() const { return embedderIdentifier(); }
-    virtual long long embedderIdentifier() const = 0;
 
     // The urls of the given combination types of favicon (if any) specified by
     // the document loaded in this frame. The iconTypesMask is a bit-mask of
@@ -211,7 +196,7 @@ public:
     virtual WebFrame* opener() const = 0;
 
     // Sets the frame that opened this one or 0 if there is none.
-    virtual void setOpener(const WebFrame*) = 0;
+    virtual void setOpener(WebFrame*) = 0;
 
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
@@ -324,7 +309,7 @@ public:
     // canExecute().
     virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
         v8::Handle<v8::Function>,
-        v8::Handle<v8::Object>,
+        v8::Handle<v8::Value>,
         int argc,
         v8::Handle<v8::Value> argv[]) = 0;
 
@@ -334,23 +319,6 @@ public:
     // the "main world" or an "isolated world" is, then you probably shouldn't
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
-
-    // Creates an instance of file system object.
-    virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
-        const WebString& name,
-        const WebString& rootURL) = 0;
-    // Creates an instance of serializable file system object.
-    // FIXME: Remove this API after we have a better way of creating serialized
-    // file system object.
-    virtual v8::Handle<v8::Value> createSerializableFileSystem(WebFileSystemType,
-        const WebString& name,
-        const WebString& rootURL) = 0;
-    // Creates an instance of file or directory entry object.
-    virtual v8::Handle<v8::Value> createFileEntry(WebFileSystemType,
-        const WebString& fileSystemName,
-        const WebString& fileSystemRootURL,
-        const WebString& filePath,
-        bool isDirectory) = 0;
 
     // Navigation ----------------------------------------------------------
 
@@ -499,6 +467,10 @@ public:
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
 
+    virtual bool setEditableSelectionOffsets(int start, int end) = 0;
+    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
+    virtual void extendSelectionAndDelete(int before, int after) = 0;
+
     virtual void setCaretVisible(bool) = 0;
 
     // Printing ------------------------------------------------------------
@@ -631,6 +603,12 @@ public:
     // This method should be called only on the main frame.
     virtual int selectNearestFindMatch(const WebFloatPoint&,
                                        WebRect* selectionRect) = 0;
+
+
+    // Set the tickmarks for the frame. This will override the default tickmarks
+    // generated by find results. If this is called with an empty array, the
+    // default behavior will be restored.
+    virtual void setTickmarks(const WebVector<WebRect>&) = 0;
 
     // OrientationChange event ---------------------------------------------
 

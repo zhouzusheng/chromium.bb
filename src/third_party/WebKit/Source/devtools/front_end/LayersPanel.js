@@ -28,11 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("LayerTreeModel.js");
 importScript("LayerTree.js");
 importScript("Layers3DView.js");
 importScript("LayerDetailsView.js");
 importScript("PaintProfilerView.js");
+importScript("TransformController.js");
 
 /**
  * @constructor
@@ -55,7 +55,7 @@ WebInspector.LayersPanel = function()
     this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerSelected, this._onLayerSelected, this);
     this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerHovered, this._onLayerHovered, this);
 
-    this._rightSplitView = new WebInspector.SplitView(false, true, "layerDetailsSplitView");
+    this._rightSplitView = new WebInspector.SplitView(false, true, "layerDetailsSplitViewState");
     this._rightSplitView.show(this.mainElement());
 
     this._layers3DView = new WebInspector.Layers3DView(this._model);
@@ -90,6 +90,14 @@ WebInspector.LayersPanel.prototype = {
     {
         this._model.disable();
         WebInspector.Panel.prototype.willHide.call(this);
+    },
+
+    /**
+     * @param {!WebInspector.LayerTreeSnapshot} snapshot
+     */
+    _showSnapshot: function(snapshot)
+    {
+        this._model.setSnapshot(snapshot);
     },
 
     _onLayerTreeUpdated: function()
@@ -138,9 +146,9 @@ WebInspector.LayersPanel.prototype = {
         this._currentlySelectedLayer = layer;
         var nodeId = layer && layer.nodeIdForSelfOrAncestor();
         if (nodeId)
-            WebInspector.domAgent.highlightDOMNodeForTwoSeconds(nodeId);
+            WebInspector.domModel.highlightDOMNodeForTwoSeconds(nodeId);
         else
-            WebInspector.domAgent.hideDOMNodeHighlight();
+            WebInspector.domModel.hideDOMNodeHighlight();
         this._layerTree.selectLayer(layer);
         this._layers3DView.selectLayer(layer);
         this._layerDetailsView.setLayer(layer);
@@ -156,12 +164,31 @@ WebInspector.LayersPanel.prototype = {
         this._currentlyHoveredLayer = layer;
         var nodeId = layer && layer.nodeIdForSelfOrAncestor();
         if (nodeId)
-            WebInspector.domAgent.highlightDOMNode(nodeId);
+            WebInspector.domModel.highlightDOMNode(nodeId);
         else
-            WebInspector.domAgent.hideDOMNodeHighlight();
+            WebInspector.domModel.hideDOMNodeHighlight();
         this._layerTree.hoverLayer(layer);
         this._layers3DView.hoverLayer(layer);
     },
 
     __proto__: WebInspector.PanelWithSidebarTree.prototype
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.Revealer}
+ */
+WebInspector.LayersPanel.LayerTreeRevealer = function()
+{
+}
+
+WebInspector.LayersPanel.LayerTreeRevealer.prototype = {
+    /**
+     * @param {!Object} layerTree
+     */
+    reveal: function(layerTree)
+    {
+        if (layerTree instanceof WebInspector.LayerTreeSnapshot)
+            /** @type {!WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"))._showSnapshot(layerTree);
+    }
 }

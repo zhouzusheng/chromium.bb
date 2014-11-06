@@ -77,25 +77,20 @@ void CSSParserValueList::deleteValueAt(unsigned i)
 
 void CSSParserValueList::stealValues(CSSParserValueList& valueList)
 {
-    for (unsigned int i = 0; i < valueList.size(); ++i)
+    for (unsigned i = 0; i < valueList.size(); ++i)
         m_values.append(*(valueList.valueAt(i)));
     valueList.clear();
 }
 
-PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
+PassRefPtrWillBeRawPtr<CSSValue> CSSParserValue::createCSSValue()
 {
-    RefPtr<CSSValue> parsedValue;
     if (id)
         return CSSPrimitiveValue::createIdentifier(id);
 
-    if (unit == CSSParserValue::Operator) {
-        RefPtrWillBeRawPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createParserOperator(iValue);
-        primitiveValue->setPrimitiveType(CSSPrimitiveValue::CSS_PARSER_OPERATOR);
-        return primitiveValue;
-    }
-    if (unit == CSSParserValue::Function) {
+    if (unit == CSSParserValue::Operator)
+        return CSSPrimitiveValue::createParserOperator(iValue);
+    if (unit == CSSParserValue::Function)
         return CSSFunctionValue::create(function);
-    }
     if (unit == CSSParserValue::ValueList)
         return CSSValueList::createFromParserValueList(valueList);
     if (unit >= CSSParserValue::Q_EMS)
@@ -149,31 +144,29 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
     case CSSPrimitiveValue::CSS_DPCM:
     case CSSPrimitiveValue::CSS_PAIR:
     case CSSPrimitiveValue::CSS_UNICODE_RANGE:
-    case CSSPrimitiveValue::CSS_PARSER_OPERATOR:
     case CSSPrimitiveValue::CSS_PARSER_INTEGER:
     case CSSPrimitiveValue::CSS_PARSER_IDENTIFIER:
+    case CSSPrimitiveValue::CSS_PARSER_OPERATOR:
     case CSSPrimitiveValue::CSS_COUNTER_NAME:
     case CSSPrimitiveValue::CSS_SHAPE:
     case CSSPrimitiveValue::CSS_QUAD:
     case CSSPrimitiveValue::CSS_CALC:
     case CSSPrimitiveValue::CSS_CALC_PERCENTAGE_WITH_NUMBER:
     case CSSPrimitiveValue::CSS_CALC_PERCENTAGE_WITH_LENGTH:
-        return 0;
+        return nullptr;
     }
 
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 CSSParserSelector::CSSParserSelector()
     : m_selector(adoptPtr(new CSSSelector()))
-    , m_functionArgumentSelector(0)
 {
 }
 
 CSSParserSelector::CSSParserSelector(const QualifiedName& tagQName)
     : m_selector(adoptPtr(new CSSSelector(tagQName)))
-    , m_functionArgumentSelector(0)
 {
 }
 
@@ -248,14 +241,14 @@ void CSSParserSelector::prependTagSelector(const QualifiedName& tagQName, bool t
     m_selector->m_relation = CSSSelector::SubSelector;
 }
 
-CSSParserSelector* CSSParserSelector::findDistributedPseudoElementSelector() const
+bool CSSParserSelector::hasHostPseudoSelector() const
 {
     CSSParserSelector* selector = const_cast<CSSParserSelector*>(this);
     do {
-        if (selector->isDistributedPseudoElement())
-            return selector;
+        if (selector->pseudoType() == CSSSelector::PseudoHost || selector->pseudoType() == CSSSelector::PseudoHostContext)
+            return true;
     } while ((selector = selector->tagHistory()));
-    return 0;
+    return false;
 }
 
 } // namespace WebCore

@@ -138,8 +138,7 @@ bool FileURLToFilePath(const GURL& url, base::FilePath* file_path) {
   return true;
 }
 
-bool GetNetworkList(NetworkInterfaceList* networks,
-                    HostScopeVirtualInterfacePolicy policy) {
+bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
   // GetAdaptersAddresses() may require IO operations.
   base::ThreadRestrictions::AssertIOAllowed();
   bool is_xp = base::win::GetVersion() < base::win::VERSION_VISTA;
@@ -211,8 +210,9 @@ bool GetNetworkList(NetworkInterfaceList* networks,
           uint32 index =
               (family == AF_INET) ? adapter->IfIndex : adapter->Ipv6IfIndex;
           networks->push_back(
-              NetworkInterface(adapter->AdapterName, index, endpoint.address(),
-                               net_prefix));
+              NetworkInterface(adapter->AdapterName,
+                               base::SysWideToNativeMB(adapter->FriendlyName),
+                               index, endpoint.address(), net_prefix));
         }
       }
     }

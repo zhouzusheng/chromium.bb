@@ -61,6 +61,7 @@ protected:
         int widthMultipliedByPixelSize;
         int widthDecreasedByOne;
         int heightDecreasedByOne;
+        const LightSource* lightSource;
 
         inline void topLeft(int offset, IntPoint& normalVector);
         inline void topRow(int offset, IntPoint& normalVector);
@@ -121,7 +122,8 @@ protected:
 
 private:
     virtual void applySoftware() OVERRIDE;
-    virtual bool applySkia() OVERRIDE;
+
+    void getTransform(FloatPoint3D* scale, FloatSize* offset) const;
 };
 
 } // namespace WebCore

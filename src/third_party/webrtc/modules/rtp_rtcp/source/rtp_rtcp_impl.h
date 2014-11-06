@@ -197,9 +197,13 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Set received RTCP report block.
   virtual int32_t AddRTCPReportBlock(
-    const uint32_t ssrc, const RTCPReportBlock* receive_block) OVERRIDE;
+      const uint32_t ssrc, const RTCPReportBlock* receive_block) OVERRIDE;
 
   virtual int32_t RemoveRTCPReportBlock(const uint32_t ssrc) OVERRIDE;
+
+  virtual void GetRtcpPacketTypeCounters(
+      RtcpPacketTypeCounter* packets_sent,
+      RtcpPacketTypeCounter* packets_received) const OVERRIDE;
 
   // (REMB) Receiver Estimated Max Bitrate.
   virtual bool REMB() const OVERRIDE;
@@ -290,14 +294,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Get payload type for Redundant Audio Data RFC 2198.
   virtual int32_t SendREDPayloadType(int8_t& payload_type) const OVERRIDE;
-
-  // Set status and id for header-extension-for-audio-level-indication.
-  virtual int32_t SetRTPAudioLevelIndicationStatus(
-      const bool enable, const uint8_t id) OVERRIDE;
-
-  // Get status and id for header-extension-for-audio-level-indication.
-  virtual int32_t GetRTPAudioLevelIndicationStatus(
-      bool& enable, uint8_t& id) const OVERRIDE;
 
   // Store the audio level in d_bov for header-extension-for-audio-level-
   // indication.

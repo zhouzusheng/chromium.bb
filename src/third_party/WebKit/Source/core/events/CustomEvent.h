@@ -38,14 +38,14 @@ class CustomEvent FINAL : public Event {
 public:
     virtual ~CustomEvent();
 
-    static PassRefPtr<CustomEvent> create()
+    static PassRefPtrWillBeRawPtr<CustomEvent> create()
     {
-        return adoptRef(new CustomEvent);
+        return adoptRefWillBeRefCountedGarbageCollected(new CustomEvent);
     }
 
-    static PassRefPtr<CustomEvent> create(const AtomicString& type, const CustomEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<CustomEvent> create(const AtomicString& type, const CustomEventInit& initializer)
     {
-        return adoptRef(new CustomEvent(type, initializer));
+        return adoptRefWillBeRefCountedGarbageCollected(new CustomEvent(type, initializer));
     }
 
     void initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue>);
@@ -59,6 +59,8 @@ public:
         ASSERT(!m_serializedDetail);
         m_serializedDetail = detail;
     }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     CustomEvent();

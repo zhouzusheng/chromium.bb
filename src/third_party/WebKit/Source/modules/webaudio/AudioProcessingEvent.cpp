@@ -28,18 +28,16 @@
 
 #include "modules/webaudio/AudioProcessingEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<AudioProcessingEvent> AudioProcessingEvent::create()
+PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create()
 {
-    return adoptRef(new AudioProcessingEvent);
+    return adoptRefWillBeRefCountedGarbageCollected(new AudioProcessingEvent);
 }
 
-PassRefPtr<AudioProcessingEvent> AudioProcessingEvent::create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer)
+PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer)
 {
-    return adoptRef(new AudioProcessingEvent(inputBuffer, outputBuffer));
+    return adoptRefWillBeRefCountedGarbageCollected(new AudioProcessingEvent(inputBuffer, outputBuffer));
 }
 
 AudioProcessingEvent::AudioProcessingEvent()
@@ -62,6 +60,11 @@ AudioProcessingEvent::~AudioProcessingEvent()
 const AtomicString& AudioProcessingEvent::interfaceName() const
 {
     return EventNames::AudioProcessingEvent;
+}
+
+void AudioProcessingEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

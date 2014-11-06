@@ -7,11 +7,13 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "content/common/input/web_input_event_traits.h"
 #include "content/renderer/input/input_handler_proxy_client.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/frame_time.h"
+#include "ui/gfx/geometry/point_conversions.h"
 
 using blink::WebFloatPoint;
 using blink::WebFloatSize;
@@ -106,6 +108,8 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     const WebInputEvent& event) {
   DCHECK(client_);
   DCHECK(input_handler_);
+  TRACE_EVENT1("input", "InputHandlerProxy::HandleInputEvent",
+               "type", WebInputEventTraits::GetName(event.type));
 
   if (event.type == WebInputEvent::MouseWheel) {
     const WebMouseWheelEvent& wheel_event =
@@ -115,12 +119,17 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
       // thread, so punt it to the main thread. http://crbug.com/236639
       return DID_NOT_HANDLE;
     }
+    if (wheel_event.modifiers & WebInputEvent::ControlKey) {
+      // Wheel events involving the control key never trigger scrolling, only
+      // event handlers.  Forward to the main thread.
+      return DID_NOT_HANDLE;
+    }
     cc::InputHandler::ScrollStatus scroll_status = input_handler_->ScrollBegin(
         gfx::Point(wheel_event.x, wheel_event.y), cc::InputHandler::Wheel);
     switch (scroll_status) {
       case cc::InputHandler::ScrollStarted: {
         TRACE_EVENT_INSTANT2(
-            "renderer",
+            "input",
             "InputHandlerProxy::handle_input wheel scroll",
             TRACE_EVENT_SCOPE_THREAD,
             "deltaX",
@@ -155,6 +164,9 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
         cc::InputHandler::Gesture);
     switch (scroll_status) {
       case cc::InputHandler::ScrollStarted:
+        TRACE_EVENT_INSTANT0("input",
+                             "InputHandlerProxy::handle_input gesture scroll",
+                             TRACE_EVENT_SCOPE_THREAD);
         gesture_scroll_on_impl_thread_ = true;
         return DID_HANDLE;
       case cc::InputHandler::ScrollOnMainThread:
@@ -223,8 +235,8 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
       if (touch_event.touches[i].state != WebTouchPoint::StatePressed)
         continue;
       if (input_handler_->HaveTouchEventHandlersAt(
-              blink::WebPoint(touch_event.touches[i].position.x,
-                              touch_event.touches[i].position.y))) {
+              gfx::Point(touch_event.touches[i].position.x,
+                         touch_event.touches[i].position.y))) {
         return DID_NOT_HANDLE;
       }
     }
@@ -279,7 +291,7 @@ InputHandlerProxy::HandleGestureFling(
       disallow_vertical_fling_scroll_ =
           !gesture_event.data.flingStart.velocityY;
       TRACE_EVENT_ASYNC_BEGIN0(
-          "renderer",
+          "input",
           "InputHandlerProxy::HandleGestureFling::started",
           this);
       if (gesture_event.timeStampSeconds) {
@@ -300,7 +312,7 @@ InputHandlerProxy::HandleGestureFling(
       return DID_HANDLE;
     }
     case cc::InputHandler::ScrollOnMainThread: {
-      TRACE_EVENT_INSTANT0("renderer",
+      TRACE_EVENT_INSTANT0("input",
                            "InputHandlerProxy::HandleGestureFling::"
                            "scroll_on_main_thread",
                            TRACE_EVENT_SCOPE_THREAD);
@@ -309,7 +321,7 @@ InputHandlerProxy::HandleGestureFling(
     }
     case cc::InputHandler::ScrollIgnored: {
       TRACE_EVENT_INSTANT0(
-          "renderer",
+          "input",
           "InputHandlerProxy::HandleGestureFling::ignored",
           TRACE_EVENT_SCOPE_THREAD);
       if (gesture_event.sourceDevice == WebGestureEvent::Touchpad) {
@@ -345,7 +357,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
   if (fling_is_active) {
     input_handler_->ScheduleAnimation();
   } else {
-    TRACE_EVENT_INSTANT0("renderer",
+    TRACE_EVENT_INSTANT0("input",
                          "InputHandlerProxy::animate::flingOver",
                          TRACE_EVENT_SCOPE_THREAD);
     CancelCurrentFling(true);
@@ -379,12 +391,12 @@ bool InputHandlerProxy::CancelCurrentFling(
       fling_parameters_.sourceDevice == WebGestureEvent::Touchscreen) {
     input_handler_->ScrollEnd();
     TRACE_EVENT_ASYNC_END0(
-        "renderer",
+        "input",
         "InputHandlerProxy::HandleGestureFling::started",
         this);
   }
 
-  TRACE_EVENT_INSTANT1("renderer",
+  TRACE_EVENT_INSTANT1("input",
                        "InputHandlerProxy::CancelCurrentFling",
                        TRACE_EVENT_SCOPE_THREAD,
                        "had_fling_animation",
@@ -418,7 +430,7 @@ bool InputHandlerProxy::TouchpadFlingScroll(
     case DROP_EVENT:
       break;
     case DID_NOT_HANDLE:
-      TRACE_EVENT_INSTANT0("renderer",
+      TRACE_EVENT_INSTANT0("input",
                            "InputHandlerProxy::scrollBy::AbortFling",
                            TRACE_EVENT_SCOPE_THREAD);
       // If we got a DID_NOT_HANDLE, that means we need to deliver wheels on the
@@ -450,7 +462,7 @@ void InputHandlerProxy::scrollBy(const WebFloatSize& increment) {
   if (clipped_increment == WebFloatSize())
     return;
 
-  TRACE_EVENT2("renderer",
+  TRACE_EVENT2("input",
                "InputHandlerProxy::scrollBy",
                "x",
                clipped_increment.width,
@@ -478,7 +490,7 @@ void InputHandlerProxy::scrollBy(const WebFloatSize& increment) {
 
 void InputHandlerProxy::notifyCurrentFlingVelocity(
     const WebFloatSize& velocity) {
-  TRACE_EVENT2("renderer",
+  TRACE_EVENT2("input",
                "InputHandlerProxy::notifyCurrentFlingVelocity",
                "vx",
                velocity.width,

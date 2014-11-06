@@ -40,22 +40,94 @@
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/html/LinkImport.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/html/imports/LinkImport.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
+template <typename CharacterType>
+static void parseSizes(const CharacterType* value, unsigned length, Vector<IntSize>& iconSizes)
+{
+    enum State {
+        ParseStart,
+        ParseWidth,
+        ParseHeight
+    };
+    int width = 0;
+    unsigned start = 0;
+    unsigned i = 0;
+    State state = ParseStart;
+    bool invalid = false;
+    for (; i < length; ++i) {
+        if (state == ParseWidth) {
+            if (value[i] == 'x' || value[i] == 'X') {
+                if (i == start) {
+                    invalid = true;
+                    break;
+                }
+                width = charactersToInt(value + start, i - start);
+                start = i + 1;
+                state = ParseHeight;
+            } else if (value[i] < '0' || value[i] > '9') {
+                invalid = true;
+                break;
+            }
+        } else if (state == ParseHeight) {
+            if (value[i] == ' ') {
+                if (i == start) {
+                    invalid = true;
+                    break;
+                }
+                int height = charactersToInt(value + start, i - start);
+                iconSizes.append(IntSize(width, height));
+                start = i + 1;
+                state = ParseStart;
+            } else if (value[i] < '0' || value[i] > '9') {
+                invalid = true;
+                break;
+            }
+        } else if (state == ParseStart) {
+            if (value[i] >= '0' && value[i] <= '9') {
+                start = i;
+                state = ParseWidth;
+            } else if (value[i] != ' ') {
+                invalid = true;
+                break;
+            }
+        }
+    }
+    if (invalid || state == ParseWidth || (state == ParseHeight && start == i)) {
+        iconSizes.clear();
+        return;
+    }
+    if (state == ParseHeight && i > start) {
+        int height = charactersToInt(value + start, i - start);
+        iconSizes.append(IntSize(width, height));
+    }
+}
+
 static LinkEventSender& linkLoadEventSender()
 {
     DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (EventTypeNames::load));
     return sharedLoadEventSender;
+}
+
+void HTMLLinkElement::parseSizesAttribute(const AtomicString& value, Vector<IntSize>& iconSizes)
+{
+    ASSERT(iconSizes.isEmpty());
+    if (value.isEmpty())
+        return;
+    if (value.is8Bit())
+        parseSizes(value.characters8(), value.length(), iconSizes);
+    else
+        parseSizes(value.characters16(), value.length(), iconSizes);
 }
 
 inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser)
@@ -64,7 +136,6 @@ inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser
     , m_sizes(DOMSettableTokenList::create())
     , m_createdByParser(createdByParser)
     , m_isInShadowTree(false)
-    , m_beforeLoadRecurseCount(0)
 {
     ScriptWrappable::init(this);
 }
@@ -96,6 +167,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         process();
     } else if (name == sizesAttr) {
         m_sizes->setValue(value);
+        parseSizesAttribute(value, m_iconSizes);
         process();
     } else if (name == mediaAttr) {
         m_media = value.string().lower();
@@ -103,9 +175,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
     } else if (name == disabledAttr) {
         if (LinkStyle* link = linkStyle())
             link->setDisabledState(!value.isNull());
-    } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
-    else {
+    } else {
         if (name == titleAttr) {
             if (LinkStyle* link = linkStyle())
                 link->setSheetTitle(value);
@@ -117,25 +187,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
 
 bool HTMLLinkElement::shouldLoadLink()
 {
-    bool continueLoad = true;
-    RefPtr<Document> originalDocument(document());
-    int recursionRank = ++m_beforeLoadRecurseCount;
-    if (!dispatchBeforeLoadEvent(getNonEmptyURLAttribute(hrefAttr)))
-        continueLoad = false;
-
-    // A beforeload handler might have removed us from the document or changed the document.
-    if (continueLoad && (!inDocument() || document() != originalDocument))
-        continueLoad = false;
-
-    // If the beforeload handler recurses into the link element by mutating it, we should only
-    // let the latest (innermost) mutation occur.
-    if (recursionRank != m_beforeLoadRecurseCount)
-        continueLoad = false;
-
-    if (recursionRank == 1)
-        m_beforeLoadRecurseCount = 0;
-
-    return continueLoad;
+    return inDocument();
 }
 
 bool HTMLLinkElement::loadLink(const String& type, const KURL& url)
@@ -230,7 +282,7 @@ void HTMLLinkElement::removedFrom(ContainerNode* insertionPoint)
     }
     document().styleEngine()->removeStyleSheetCandidateNode(this);
 
-    RefPtr<StyleSheet> removedSheet = sheet();
+    RefPtrWillBeRawPtr<StyleSheet> removedSheet = sheet();
 
     if (m_link)
         m_link->ownerRemoved();
@@ -300,11 +352,6 @@ void HTMLLinkElement::dispatchPendingEvent(LinkEventSender* eventSender)
 {
     ASSERT_UNUSED(eventSender, eventSender == &linkLoadEventSender());
     ASSERT(m_link);
-    dispatchEventImmediately();
-}
-
-void HTMLLinkElement::dispatchEventImmediately()
-{
     if (m_link->hasLoaded())
         linkLoaded();
     else
@@ -327,6 +374,22 @@ bool HTMLLinkElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLLinkElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == hrefAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLLinkElement::subResourceAttributeName() const
+{
+    // If the link element is not css, ignore it.
+    if (equalIgnoringCase(getAttribute(typeAttr), "text/css")) {
+        // FIXME: Add support for extracting links of sub-resources which
+        // are inside style-sheet such as @import, @font-face, url(), etc.
+        return hrefAttr;
+    }
+    return HTMLElement::subResourceAttributeName();
+}
+
 KURL HTMLLinkElement::href() const
 {
     return document().completeURL(getAttribute(hrefAttr));
@@ -342,14 +405,19 @@ const AtomicString& HTMLLinkElement::type() const
     return getAttribute(typeAttr);
 }
 
+bool HTMLLinkElement::async() const
+{
+    return fastHasAttribute(HTMLNames::asyncAttr);
+}
+
 IconType HTMLLinkElement::iconType() const
 {
     return m_relAttribute.iconType();
 }
 
-const AtomicString& HTMLLinkElement::iconSizes() const
+const Vector<IntSize>& HTMLLinkElement::iconSizes() const
 {
-    return m_sizes->toString();
+    return m_iconSizes;
 }
 
 DOMSettableTokenList* HTMLLinkElement::sizes() const
@@ -395,7 +463,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
 
     CSSParserContext parserContext(m_owner->document(), 0, baseURL, charset);
 
-    if (RefPtr<StyleSheetContents> restoredSheet = const_cast<CSSStyleSheetResource*>(cachedStyleSheet)->restoreParsedStyleSheet(parserContext)) {
+    if (RefPtrWillBeRawPtr<StyleSheetContents> restoredSheet = const_cast<CSSStyleSheetResource*>(cachedStyleSheet)->restoreParsedStyleSheet(parserContext)) {
         ASSERT(restoredSheet->isCacheable());
         ASSERT(!restoredSheet->isLoading());
 
@@ -410,7 +478,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
         return;
     }
 
-    RefPtr<StyleSheetContents> styleSheet = StyleSheetContents::create(href, parserContext);
+    RefPtrWillBeRawPtr<StyleSheetContents> styleSheet = StyleSheetContents::create(href, parserContext);
 
     if (m_sheet)
         clearSheet();
@@ -458,7 +526,7 @@ void LinkStyle::clearSheet()
     ASSERT(m_sheet);
     ASSERT(m_sheet->ownerNode() == m_owner);
     m_sheet->clearOwnerNode();
-    m_sheet = 0;
+    m_sheet = nullptr;
 }
 
 bool LinkStyle::styleSheetIsLoading() const
@@ -581,10 +649,10 @@ void LinkStyle::process()
 
         bool mediaQueryMatches = true;
         if (!m_owner->media().isEmpty()) {
-            Frame* frame = loadingFrame();
+            LocalFrame* frame = loadingFrame();
             if (Document* document = loadingFrame()->document()) {
                 RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(*document);
-                RefPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
+                RefPtrWillBeRawPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
                 MediaQueryEvaluator evaluator(frame->view()->mediaType(), frame, documentStyle.get());
                 mediaQueryMatches = evaluator.eval(media.get());
             }
@@ -598,10 +666,8 @@ void LinkStyle::process()
         // Load stylesheets that are not needed for the rendering immediately with low priority.
         FetchRequest request = builder.build(blocking);
         AtomicString crossOriginMode = m_owner->fastGetAttribute(HTMLNames::crossoriginAttr);
-        if (!crossOriginMode.isNull()) {
-            StoredCredentials allowCredentials = equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials;
-            request.setCrossOriginAccessControl(document().securityOrigin(), allowCredentials);
-        }
+        if (!crossOriginMode.isNull())
+            request.setCrossOriginAccessControl(document().securityOrigin(), crossOriginMode);
         setResource(document().fetcher()->fetchCSSStyleSheet(request));
 
         if (!resource()) {
@@ -611,7 +677,7 @@ void LinkStyle::process()
         }
     } else if (m_sheet) {
         // we no longer contain a stylesheet, e.g. perhaps rel or type was changed
-        RefPtr<StyleSheet> removedSheet = m_sheet;
+        RefPtrWillBeRawPtr<StyleSheet> removedSheet = m_sheet.get();
         clearSheet();
         document().removedStyleSheet(removedSheet.get());
     }

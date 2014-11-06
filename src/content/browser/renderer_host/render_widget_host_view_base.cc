@@ -610,4 +610,8 @@ void RenderWidgetHostViewBase::FlushInput() {
   impl->FlushInput();
 }
 
+SkBitmap::Config RenderWidgetHostViewBase::PreferredReadbackFormat() {
+  return SkBitmap::kARGB_8888_Config;
+}
+
 }  // namespace content

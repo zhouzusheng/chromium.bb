@@ -37,17 +37,17 @@ namespace WebCore {
 
 struct SameSizeAsElementRareData : NodeRareData {
     short indices[2];
-    unsigned bitfields;
     LayoutSize sizeForResizing;
     IntSize scrollOffset;
     void* pointers[11];
+    OwnPtrWillBePersistent<ActiveAnimations> m_activeAnimations;
 };
 
-CSSStyleDeclaration* ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
+CSSStyleDeclaration& ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
 {
     if (!m_cssomWrapper)
         m_cssomWrapper = adoptPtr(new InlineCSSStyleDeclaration(ownerElement));
-    return m_cssomWrapper.get();
+    return *m_cssomWrapper;
 }
 
 

@@ -44,9 +44,9 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/UniqueIdentifier.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
@@ -69,7 +69,7 @@ static bool isArchiveMIMEType(const String& mimeType)
     return mimeType == "multipart/related";
 }
 
-DocumentLoader::DocumentLoader(Frame* frame, const ResourceRequest& req, const SubstituteData& substituteData)
+DocumentLoader::DocumentLoader(LocalFrame* frame, const ResourceRequest& req, const SubstituteData& substituteData)
     : m_frame(frame)
     , m_fetcher(ResourceFetcher::create(this))
     , m_originalRequest(req)
@@ -141,9 +141,9 @@ void DocumentLoader::updateForSameDocumentNavigation(const KURL& newURL)
     appendRedirect(newURL);
 }
 
-bool DocumentLoader::isURLValidForNewHistoryEntry() const
+const KURL& DocumentLoader::urlForHistory() const
 {
-    return !originalRequest().url().isEmpty() || !unreachableURL().isEmpty();
+    return unreachableURL().isEmpty() ? url() : unreachableURL();
 }
 
 void DocumentLoader::setMainDocumentError(const ResourceError& error)
@@ -170,7 +170,7 @@ void DocumentLoader::mainReceivedError(const ResourceError& error)
 // but not loads initiated by child frames' data sources -- that's the WebFrame's job.
 void DocumentLoader::stopLoading()
 {
-    RefPtr<Frame> protectFrame(m_frame);
+    RefPtr<LocalFrame> protectFrame(m_frame);
     RefPtr<DocumentLoader> protectLoader(this);
 
     // In some rare cases, calling FrameLoader::stopLoading could cause isLoading() to return false.
@@ -186,8 +186,6 @@ void DocumentLoader::stopLoading()
         if (loading || doc->parsing())
             m_frame->loader().stopLoading();
     }
-
-    clearArchiveResources();
 
     if (!loading)
         return;
@@ -314,7 +312,7 @@ bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& re
         return true;
     if (policy == NavigationPolicyIgnore)
         return false;
-    if (!DOMWindow::allowPopUp(m_frame) && !UserGestureIndicator::processingUserGesture())
+    if (!DOMWindow::allowPopUp(*m_frame) && !UserGestureIndicator::processingUserGesture())
         return false;
     frameLoader()->client()->loadURLExternally(request, policy);
     return false;
@@ -375,7 +373,7 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
 
     // If this is a sub-frame, check for mixed content blocking against the top frame.
     if (m_frame->tree().parent()) {
-        Frame* top = m_frame->tree().top();
+        LocalFrame* top = m_frame->tree().top();
         if (!top->loader().mixedContentChecker()->canRunInsecureContent(top->document()->securityOrigin(), newRequest.url())) {
             cancelMainResourceLoad(ResourceError::cancelledError(newRequest.url()));
             return;
@@ -522,7 +520,7 @@ void DocumentLoader::dataReceived(Resource* resource, const char* data, int leng
 
     // Both unloading the old page and parsing the new page may execute JavaScript which destroys the datasource
     // by starting a new load, so retain temporarily.
-    RefPtr<Frame> protectFrame(m_frame);
+    RefPtr<LocalFrame> protectFrame(m_frame);
     RefPtr<DocumentLoader> protectLoader(this);
 
     m_applicationCacheHost->mainResourceDataReceived(data, length);
@@ -561,7 +559,7 @@ void DocumentLoader::appendRedirect(const KURL& url)
 void DocumentLoader::detachFromFrame()
 {
     ASSERT(m_frame);
-    RefPtr<Frame> protectFrame(m_frame);
+    RefPtr<LocalFrame> protectFrame(m_frame);
     RefPtr<DocumentLoader> protectLoader(this);
 
     // It never makes sense to have a document loader that is detached from its
@@ -587,28 +585,12 @@ void DocumentLoader::clearMainResourceHandle()
     m_mainResource = 0;
 }
 
-bool DocumentLoader::isLoadingInAPISense() const
-{
-    // Once a frame has loaded, we no longer need to consider subresources,
-    // but we still need to consider subframes.
-    if (frameLoader()->state() != FrameStateComplete) {
-        Document* doc = m_frame->document();
-        if ((m_loadingMainResource || !m_frame->document()->loadEventFinished()) && isLoading())
-            return true;
-        if (m_fetcher->requestCount())
-            return true;
-        if (doc->isDelayingLoadEvent() && !doc->loadEventFinished())
-            return true;
-        if (doc->processingLoadEvent())
-            return true;
-        if (doc->hasActiveParser())
-            return true;
-    }
-    return frameLoader()->subframeIsLoading();
-}
-
 bool DocumentLoader::maybeCreateArchive()
 {
+    // Only the top-frame can load MHTML.
+    if (m_frame->tree().parent())
+        return false;
+
     // Give the archive machinery a crack at this document. If the MIME type is not an archive type, it will return 0.
     if (!isArchiveMIMEType(m_response.mimeType()))
         return false;
@@ -627,6 +609,9 @@ bool DocumentLoader::maybeCreateArchive()
     // The origin is the MHTML file, we need to set the base URL to the document encoded in the MHTML so
     // relative URLs are resolved properly.
     ensureWriter(mainResource->mimeType(), m_archive->mainResource()->url());
+
+    // The Document has now been created.
+    document()->enforceSandboxFlags(SandboxAll);
 
     commitData(mainResource->data()->data(), mainResource->data()->size());
     return true;
@@ -659,11 +644,6 @@ void DocumentLoader::prepareSubframeArchiveLoadIfNeeded()
     m_substituteData = SubstituteData(mainResource->data(), mainResource->mimeType(), mainResource->textEncoding(), KURL());
 }
 
-void DocumentLoader::clearArchiveResources()
-{
-    m_archiveResourceCollection.clear();
-}
-
 bool DocumentLoader::scheduleArchiveLoad(Resource* cachedResource, const ResourceRequest& request)
 {
     if (!m_archive)
@@ -683,11 +663,6 @@ bool DocumentLoader::scheduleArchiveLoad(Resource* cachedResource, const Resourc
         cachedResource->appendData(data->data(), data->size());
     cachedResource->finish();
     return true;
-}
-
-const KURL& DocumentLoader::originalURL() const
-{
-    return m_originalRequest.url();
 }
 
 const AtomicString& DocumentLoader::responseMIMEType() const
@@ -741,7 +716,7 @@ void DocumentLoader::startLoadingMainResource()
     timing()->markFetchStart();
     willSendRequest(m_request, ResourceResponse());
 
-    // willSendRequest() may lead to our Frame being detached or cancelling the load via nulling the ResourceRequest.
+    // willSendRequest() may lead to our LocalFrame being detached or cancelling the load via nulling the ResourceRequest.
     if (!m_frame || m_request.isNull())
         return;
 
@@ -792,7 +767,7 @@ void DocumentLoader::endWriting(DocumentWriter* writer)
     m_writer.clear();
 }
 
-PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const Document* ownerDocument, const KURL& url, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch)
+PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(LocalFrame* frame, const Document* ownerDocument, const KURL& url, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch)
 {
     // Create a new document before clearing the frame, because it may need to
     // inherit an aliased security context.
@@ -814,7 +789,7 @@ PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const D
         frame->document()->prepareForDestruction();
 
     if (!shouldReuseDefaultView)
-        frame->setDOMWindow(DOMWindow::create(frame));
+        frame->setDOMWindow(DOMWindow::create(*frame));
 
     RefPtr<Document> document = frame->domWindow()->installNewDocument(mimeType, init);
     if (ownerDocument) {

@@ -30,7 +30,6 @@
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
 #include "platform/audio/AudioBus.h"
-#include "platform/audio/HRTFDatabaseLoader.h"
 #include "modules/webaudio/AsyncAudioDecoder.h"
 #include "modules/webaudio/AudioDestinationNode.h"
 #include "wtf/HashSet.h"
@@ -89,13 +88,9 @@ public:
 
     bool isOfflineContext() { return m_isOfflineContext; }
 
-    // Returns true when initialize() was called AND all asynchronous initialization has completed.
-    bool isRunnable() const;
-
-    HRTFDatabaseLoader* hrtfDatabaseLoader() const { return m_hrtfDatabaseLoader.get(); }
-
     // Document notification
     virtual void stop() OVERRIDE FINAL;
+    virtual bool hasPendingActivity() const OVERRIDE;
 
     AudioDestinationNode* destination() { return m_destinationNode.get(); }
     size_t currentSampleFrame() const { return m_destinationNode->currentSampleFrame(); }
@@ -257,6 +252,7 @@ private:
     // We'd like to schedule only one stop action for them.
     bool m_isStopScheduled;
     static void stopDispatch(void* userData);
+    bool m_isCleared;
     void clear();
 
     void scheduleNodeDeletion();
@@ -320,9 +316,6 @@ private:
 
     // Only accessed in the audio thread.
     Vector<AudioNode*> m_deferredFinishDerefList;
-
-    // HRTF Database loader
-    RefPtr<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
 
     RefPtr<AudioBuffer> m_renderTarget;
 

@@ -121,7 +121,7 @@ void ResourceLoader::init(const ResourceRequest& passedRequest)
     request.setReportLoadTiming(true);
     ASSERT(m_state != Terminated);
     ASSERT(!request.isNull());
-    m_originalRequest = m_request = request;
+    m_originalRequest = m_request = applyOptions(request);
     m_resource->updateRequest(request);
     m_host->didInitializeResourceLoader(this);
 }
@@ -153,7 +153,6 @@ void ResourceLoader::start()
     m_loader = adoptPtr(blink::Platform::current()->createURLLoader());
     ASSERT(m_loader);
     blink::WrappedResourceRequest wrappedRequest(m_request);
-    wrappedRequest.setAllowStoredCredentials(m_options.allowCredentials == AllowStoredCredentials);
     m_loader->loadAsynchronously(wrappedRequest, this);
 }
 
@@ -174,7 +173,7 @@ void ResourceLoader::setDefersLoading(bool defers)
     if (m_loader)
         m_loader->setDefersLoading(defers);
     if (!defers && !m_deferredRequest.isNull()) {
-        m_request = m_deferredRequest;
+        m_request = applyOptions(m_deferredRequest);
         m_deferredRequest = ResourceRequest();
         start();
     }
@@ -201,11 +200,11 @@ void ResourceLoader::didFinishLoadingOnePart(double finishTime, int64 encodedDat
     m_host->didFinishLoading(m_resource, finishTime, encodedDataLength);
 }
 
-void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority)
+void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority, int intraPriorityValue)
 {
     if (m_loader) {
-        m_host->didChangeLoadingPriority(m_resource, loadPriority);
-        m_loader->didChangePriority(static_cast<blink::WebURLRequest::Priority>(loadPriority));
+        m_host->didChangeLoadingPriority(m_resource, loadPriority, intraPriorityValue);
+        m_loader->didChangePriority(static_cast<blink::WebURLRequest::Priority>(loadPriority), intraPriorityValue);
     }
 }
 
@@ -263,7 +262,7 @@ void ResourceLoader::willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&
 {
     RefPtr<ResourceLoader> protect(this);
 
-    ResourceRequest& request(passedRequest.toMutableResourceRequest());
+    ResourceRequest& request(applyOptions(passedRequest.toMutableResourceRequest()));
     ASSERT(!request.isNull());
     const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
     ASSERT(!redirectResponse.isNull());
@@ -272,6 +271,7 @@ void ResourceLoader::willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&
         return;
     }
 
+    applyOptions(request); // canAccessRedirect() can modify m_options so we should re-apply it.
     m_host->redirectReceived(m_resource, redirectResponse);
     m_resource->willSendRequest(request, redirectResponse);
     if (request.isNull() || m_state == Terminated)
@@ -327,6 +327,7 @@ void ResourceLoader::didReceiveResponse(blink::WebURLLoader*, const blink::WebUR
         else
             m_resource->setResponse(resourceResponse);
         if (!m_host->canAccessResource(resource, m_options.securityOrigin.get(), response.url())) {
+            m_host->didReceiveResponse(m_resource, resourceResponse);
             cancel();
             return;
         }
@@ -447,6 +448,9 @@ void ResourceLoader::requestSynchronously()
     OwnPtr<blink::WebURLLoader> loader = adoptPtr(blink::Platform::current()->createURLLoader());
     ASSERT(loader);
 
+    // downloadToFile is not supported for synchronous requests.
+    ASSERT(!m_request.downloadToFile());
+
     RefPtr<ResourceLoader> protect(this);
     RefPtr<ResourceLoaderHost> protectHost(m_host);
     ResourcePtr<Resource> protectResource(m_resource);
@@ -455,7 +459,6 @@ void ResourceLoader::requestSynchronously()
     m_connectionState = ConnectionStateStarted;
 
     blink::WrappedResourceRequest requestIn(m_request);
-    requestIn.setAllowStoredCredentials(m_options.allowCredentials == AllowStoredCredentials);
     blink::WebURLResponse responseOut;
     responseOut.initialize();
     blink::WebURLError errorOut;
@@ -473,6 +476,12 @@ void ResourceLoader::requestSynchronously()
     m_host->didReceiveData(m_resource, dataOut.data(), dataOut.size(), encodedDataLength);
     m_resource->setResourceBuffer(dataOut);
     didFinishLoading(0, monotonicallyIncreasingTime(), encodedDataLength);
+}
+
+ResourceRequest& ResourceLoader::applyOptions(ResourceRequest& request) const
+{
+    request.setAllowStoredCredentials(m_options.allowCredentials == AllowStoredCredentials);
+    return request;
 }
 
 }

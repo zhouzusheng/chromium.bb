@@ -29,7 +29,7 @@
         ],
       }],
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd" or OS=="mac" or OS=="android") and \
+         or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
         (target_arch=="arm" or target_arch=="ia32" or \
          target_arch=="mipsel")', {
         'target_conditions': [
@@ -78,23 +78,18 @@
             [ 'use_system_icu==0 and want_separate_host_toolset==0', {
               'toolsets': ['target'],
             }],
-
-            # SHEZ: Copy icudt_cr33.dll even if we are using data file.  This
-            # SHEZ: is because v8 still uses the dll.
-            # TODO(SHEZ): Check future versions of chromium to see if v8 is
-            # TODO(SHEZ): updated to use the datafile.
-            [ 'OS == "win"', {
+            [ 'OS == "win" and icu_use_data_file_flag==0', {
               'type': 'none',
               'copies': [
                 {
                   'destination': '<(PRODUCT_DIR)',
                   'files': [
-                    'windows/icudt_cr33.dll',
+                    'windows/icudt.dll',
                   ],
                 },
               ],
             }],
-            [ 'icu_use_data_file_flag', {
+            [ 'icu_use_data_file_flag==1', {
               # Remove any assembly data file.
               'sources/': [['exclude', 'icudt46l_dat']],
               # Compile in the stub data symbol.
@@ -105,8 +100,16 @@
                 ['OS != "ios"', {
                   'copies': [{
                     'destination': '<(PRODUCT_DIR)',
-                    'files': [
-                      'source/data/in/icudtl.dat',
+                    'conditions': [
+                      ['OS == "android"', {
+                        'files': [
+                          'android/icudtl.dat',
+                        ],
+                      } , { # else: OS != android
+                        'files': [
+                          'source/data/in/icudtl.dat',
+                        ],
+                      }],
                     ],
                   }],
                 } , { # else: OS=="ios"
@@ -121,14 +124,16 @@
           ], # conditions
           'target_conditions': [
             [ 'OS == "win" or OS == "mac" or OS == "ios" or '
-              '(OS == "android" and (_toolset == "target" or host_os != "linux"))', {
+              '(OS == "android" and (_toolset != "host" or host_os != "linux")) or '
+              '(OS == "qnx" and (_toolset == "host" and host_os != "linux"))', {
               'sources!': ['linux/icudt46l_dat.S'],
             }],
             [ 'OS != "android" or _toolset == "host"', {
               'sources!': ['android/icudt46l_dat.S'],
             }],
             [ 'OS != "mac" and OS != "ios" and '
-              '(OS != "android" or _toolset != "host" or host_os != "mac")', {
+              '((OS != "android" and OS != "qnx") or '
+              '_toolset != "host" or host_os != "mac")', {
               'sources!': ['mac/icudt46l_dat.S'],
             }],
           ], # target_conditions
@@ -358,7 +363,16 @@
                   '-licuuc',
                 ],
               },
-            },{ # OS!="android"
+            }],
+            ['OS=="qnx"', {
+              'link_settings': {
+                'libraries': [
+                  '-licui18n',
+                  '-licuuc',
+                ],
+              },
+            }],
+            ['OS!="android" and OS!="qnx"', {
               'link_settings': {
                 'ldflags': [
                   '<!@(icu-config --ldflags)',

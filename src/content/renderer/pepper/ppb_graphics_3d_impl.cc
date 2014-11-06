@@ -38,20 +38,19 @@ namespace {
 const int32 kCommandBufferSize = 1024 * 1024;
 const int32 kTransferBufferSize = 1024 * 1024;
 
-PP_Bool ShmToHandle(base::SharedMemory* shm,
-                    size_t size,
+PP_Bool BufferToHandle(scoped_refptr<gpu::Buffer> buffer,
                     int* shm_handle,
                     uint32_t* shm_size) {
-  if (!shm || !shm_handle || !shm_size)
+  if (!buffer || !shm_handle || !shm_size)
     return PP_FALSE;
 #if defined(OS_POSIX)
-  *shm_handle = shm->handle().fd;
+  *shm_handle = buffer->shared_memory()->handle().fd;
 #elif defined(OS_WIN)
-  *shm_handle = reinterpret_cast<int>(shm->handle());
+  *shm_handle = reinterpret_cast<int>(buffer->shared_memory()->handle());
 #else
   #error "Platform not supported."
 #endif
-  *shm_size = size;
+  *shm_size = buffer->size();
   return PP_TRUE;
 }
 
@@ -127,8 +126,8 @@ PP_Bool PPB_Graphics3D_Impl::DestroyTransferBuffer(int32_t id) {
 PP_Bool PPB_Graphics3D_Impl::GetTransferBuffer(int32_t id,
                                                int* shm_handle,
                                                uint32_t* shm_size) {
-  gpu::Buffer buffer = GetCommandBuffer()->GetTransferBuffer(id);
-  return ShmToHandle(buffer.shared_memory, buffer.size, shm_handle, shm_size);
+  scoped_refptr<gpu::Buffer> buffer = GetCommandBuffer()->GetTransferBuffer(id);
+  return BufferToHandle(buffer, shm_handle, shm_size);
 }
 
 PP_Bool PPB_Graphics3D_Impl::Flush(int32_t put_offset) {
@@ -136,15 +135,18 @@ PP_Bool PPB_Graphics3D_Impl::Flush(int32_t put_offset) {
   return PP_TRUE;
 }
 
-gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSync(int32_t put_offset) {
-  gpu::CommandBuffer::State state = GetCommandBuffer()->GetState();
-  return GetCommandBuffer()->FlushSync(put_offset, state.get_offset);
+gpu::CommandBuffer::State PPB_Graphics3D_Impl::WaitForTokenInRange(
+    int32_t start,
+    int32_t end) {
+  GetCommandBuffer()->WaitForTokenInRange(start, end);
+  return GetCommandBuffer()->GetLastState();
 }
 
-gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSyncFast(
-    int32_t put_offset,
-    int32_t last_known_get) {
-  return GetCommandBuffer()->FlushSync(put_offset, last_known_get);
+gpu::CommandBuffer::State PPB_Graphics3D_Impl::WaitForGetOffsetInRange(
+    int32_t start,
+    int32_t end) {
+  GetCommandBuffer()->WaitForGetOffsetInRange(start, end);
+  return GetCommandBuffer()->GetLastState();
 }
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {

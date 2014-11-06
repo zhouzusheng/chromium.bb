@@ -34,7 +34,6 @@
 #include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallFrame.h"
@@ -104,7 +103,7 @@ PassRefPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSize, bool empt
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (!isolate->InContext())
-        return 0;
+        return nullptr;
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::StackTrace> stackTrace(v8::StackTrace::CurrentStackTrace(isolate, maxStackSize, stackTraceOptions));
     return createScriptCallStack(stackTrace, maxStackSize, emptyStackIsAllowed, isolate);

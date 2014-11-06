@@ -42,7 +42,6 @@ enum CSSTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
 
 // Please don't expose more CSSValue types to the web.
 class CSSValue : public RefCountedWillBeRefCountedGarbageCollected<CSSValue> {
-    DECLARE_GC_INFO;
 public:
     enum Type {
         CSS_INHERIT = 0,
@@ -104,7 +103,6 @@ public:
     bool isFilterValue() const { return m_classType == CSSFilterClass; }
     bool isArrayFunctionValue() const { return m_classType == CSSArrayFunctionValueClass; }
     bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
-    bool isSVGColor() const { return m_classType == SVGColorClass || m_classType == SVGPaintClass; }
     bool isSVGPaint() const { return m_classType == SVGPaintClass; }
     bool isSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
     bool isUnicodeRangeValue() const { return m_classType == UnicodeRangeClass; }
@@ -113,16 +111,16 @@ public:
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
     bool isSubtypeExposedToCSSOM() const
     {
-        return isPrimitiveValue() || isSVGColor() || isValueList();
+        return isPrimitiveValue() || isSVGPaint() || isValueList();
     }
 
-    PassRefPtr<CSSValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSValue> cloneForCSSOM() const;
 
     bool hasFailedOrCanceledSubresources() const;
 
     bool equals(const CSSValue&) const;
 
-    void finalize();
+    void finalizeGarbageCollectedObject();
     void traceAfterDispatch(Visitor*) { }
     void trace(Visitor*);
 
@@ -165,7 +163,6 @@ protected:
         GridTemplateAreasClass,
 
         // SVG classes.
-        SVGColorClass,
         SVGPaintClass,
         CSSSVGDocumentClass,
 
@@ -224,16 +221,16 @@ private:
     unsigned m_classType : ClassTypeBits; // ClassType
 };
 
-template<typename CSSValueType>
-inline bool compareCSSValueVector(const Vector<RefPtr<CSSValueType> >& firstVector, const Vector<RefPtr<CSSValueType> >& secondVector)
+template<typename CSSValueType, size_t inlineCapacity>
+inline bool compareCSSValueVector(const WillBeHeapVector<RefPtrWillBeMember<CSSValueType>, inlineCapacity>& firstVector, const WillBeHeapVector<RefPtrWillBeMember<CSSValueType>, inlineCapacity>& secondVector)
 {
     size_t size = firstVector.size();
     if (size != secondVector.size())
         return false;
 
     for (size_t i = 0; i < size; i++) {
-        const RefPtr<CSSValueType>& firstPtr = firstVector[i];
-        const RefPtr<CSSValueType>& secondPtr = secondVector[i];
+        const RefPtrWillBeMember<CSSValueType>& firstPtr = firstVector[i];
+        const RefPtrWillBeMember<CSSValueType>& secondPtr = secondVector[i];
         if (firstPtr == secondPtr || (firstPtr && secondPtr && firstPtr->equals(*secondPtr)))
             continue;
         return false;

@@ -32,7 +32,6 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/RefCountedSupplement.h"
 #include "wtf/PassRefPtr.h"
@@ -68,7 +67,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadingerror);
 
     bool check(const String& font, const String& text, ExceptionState&);
-    ScriptPromise load(const String& font, const String& text, ExceptionState&);
+    ScriptPromise load(const String& font, const String& text);
     ScriptPromise ready();
 
     void add(FontFace*, ExceptionState&);
@@ -96,31 +95,34 @@ public:
     virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
 
-    static PassRefPtr<FontFaceSet> from(Document*);
-    static void didLayout(Document*);
+    static PassRefPtr<FontFaceSet> from(Document&);
+    static void didLayout(Document&);
 
     void addFontFacesToFontFaceCache(FontFaceCache*, CSSFontSelector*);
 
 private:
     typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
 
-    static PassRefPtr<FontFaceSet> create(Document* document)
+    static PassRefPtr<FontFaceSet> create(Document& document)
     {
         return adoptRef<FontFaceSet>(new FontFaceSet(document));
     }
 
     class FontLoadHistogram {
     public:
-        FontLoadHistogram() : m_count(0), m_recorded(false) { }
+        enum Status { NoWebFonts, HadBlankText, DidNotHaveBlankText, Reported };
+        FontLoadHistogram() : m_status(NoWebFonts), m_count(0), m_recorded(false) { }
         void incrementCount() { m_count++; }
+        void updateStatus(FontFace*);
         void record();
 
     private:
+        Status m_status;
         int m_count;
         bool m_recorded;
     };
 
-    FontFaceSet(Document*);
+    FontFaceSet(Document&);
 
     bool hasLoadedFonts() const { return !m_loadedFonts.isEmpty() || !m_failedFonts.isEmpty(); }
 

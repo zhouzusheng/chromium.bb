@@ -41,13 +41,10 @@
 #include "wtf/unicode/Unicode.h"
 
 #if OS(WIN)
+#include "SkFontMgr.h"
 #include <windows.h>
 #include <objidl.h>
 #include <mlang.h>
-#endif
-
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
-#include "SkFontMgr.h"
 #endif
 
 class SkTypeface;
@@ -95,9 +92,11 @@ public:
     PassRefPtr<SimpleFontData> fontDataFromDescriptionAndLogFont(const FontDescription&, ShouldRetain, const LOGFONT&, wchar_t* outFontFamilyName);
 #endif
 
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
-    bool useSubpixelPositioning() const { return m_useSubpixelPositioning; }
+#if OS(WIN)
+    bool useSubpixelPositioning() const { return s_useSubpixelPositioning; }
     SkFontMgr* fontManager() { return m_fontManager.get(); }
+    static void setUseDirectWrite(bool useDirectWrite) { s_useDirectWrite = useDirectWrite; }
+    static void setUseSubpixelPositioning(bool useSubpixelPositioning) { s_useSubpixelPositioning = useSubpixelPositioning; }
 #endif
 
 #if ENABLE(OPENTYPE_VERTICAL)
@@ -144,9 +143,10 @@ private:
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
 
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
+#if OS(WIN)
     OwnPtr<SkFontMgr> m_fontManager;
-    bool m_useSubpixelPositioning;
+    static bool s_useDirectWrite;
+    static bool s_useSubpixelPositioning;
 #endif
 
 #if OS(MACOSX) || OS(ANDROID)

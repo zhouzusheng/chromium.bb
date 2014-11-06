@@ -30,6 +30,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/StyleResolverParentScope.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/Text.h"
@@ -37,7 +38,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRootRareData.h"
 #include "core/editing/markup.h"
-#include "core/html/shadow/HTMLShadowElement.h"
+#include "core/html/HTMLShadowElement.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -49,12 +50,6 @@ struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public 
 
 COMPILE_ASSERT(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), shadowroot_should_stay_small);
 
-enum ShadowRootUsageOriginType {
-    ShadowRootUsageOriginWeb = 0,
-    ShadowRootUsageOriginNotWeb,
-    ShadowRootUsageOriginMax
-};
-
 ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     : DocumentFragment(0, CreateShadowRoot)
     , TreeScope(*this, document)
@@ -62,17 +57,11 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     , m_next(0)
     , m_numberOfStyles(0)
     , m_applyAuthorStyles(false)
-    , m_resetStyleInheritance(false)
     , m_type(type)
     , m_registeredWithParentShadowRoot(false)
     , m_descendantInsertionPointsIsValid(false)
 {
     ScriptWrappable::init(this);
-
-    if (type == ShadowRoot::AuthorShadowRoot) {
-        ShadowRootUsageOriginType usageType = document.url().protocolIsInHTTPFamily() ? ShadowRootUsageOriginWeb : ShadowRootUsageOriginNotWeb;
-        blink::Platform::current()->histogramEnumeration("WebCore.ShadowRoot.constructor", usageType, ShadowRootUsageOriginMax);
-    }
 }
 
 ShadowRoot::~ShadowRoot()
@@ -128,7 +117,7 @@ bool ShadowRoot::isOldestAuthorShadowRoot() const
 PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionState& exceptionState)
 {
     exceptionState.throwDOMException(DataCloneError, "ShadowRoot nodes are not clonable.");
-    return 0;
+    return nullptr;
 }
 
 String ShadowRoot::innerHTML() const
@@ -152,16 +141,13 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
     // ShadowRoot doesn't support custom callbacks.
     ASSERT(!hasCustomStyleCallbacks());
 
-    // If we're propagating an Inherit change and this ShadowRoot resets
-    // inheritance we don't need to look at the children.
-    if (change <= Inherit && resetStyleInheritance() && !needsStyleRecalc() && !childNeedsStyleRecalc())
-        return;
-
-    StyleResolver& styleResolver = document().ensureStyleResolver();
-    styleResolver.pushParentShadowRoot(*this);
+    StyleResolverParentScope parentScope(*this);
 
     if (styleChangeType() >= SubtreeStyleChange)
         change = Force;
+
+    if (change < Force && hasRareData() && childNeedsStyleRecalc())
+        checkForChildrenAdjacentRuleChanges();
 
     // There's no style to update so just calling recalcStyle means we're updated.
     clearNeedsStyleRecalc();
@@ -180,21 +166,7 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
         }
     }
 
-    styleResolver.popParentShadowRoot(*this);
-
     clearChildNeedsStyleRecalc();
-}
-
-bool ShadowRoot::isActiveForStyling() const
-{
-    if (!youngerShadowRoot())
-        return true;
-
-    if (InsertionPoint* point = shadowInsertionPointOfYoungerShadowRoot()) {
-        if (point->containingShadowRoot())
-            return true;
-    }
-    return false;
 }
 
 void ShadowRoot::setApplyAuthorStyles(bool value)
@@ -206,8 +178,6 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
         return;
 
     m_applyAuthorStyles = value;
-    if (!isActiveForStyling())
-        return;
 
     ASSERT(host());
     ASSERT(host()->shadow());
@@ -223,27 +193,10 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
     setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
-void ShadowRoot::setResetStyleInheritance(bool value)
-{
-    if (isOrphan())
-        return;
-
-    if (value == resetStyleInheritance())
-        return;
-
-    m_resetStyleInheritance = value;
-    if (!isActiveForStyling())
-        return;
-
-    setNeedsStyleRecalc(SubtreeStyleChange);
-}
-
 void ShadowRoot::attach(const AttachContext& context)
 {
-    StyleResolver& styleResolver = document().ensureStyleResolver();
-    styleResolver.pushParentShadowRoot(*this);
+    StyleResolverParentScope parentScope(*this);
     DocumentFragment::attach(context);
-    styleResolver.popParentShadowRoot(*this);
 }
 
 Node::InsertionNotificationRequest ShadowRoot::insertedInto(ContainerNode* insertionPoint)

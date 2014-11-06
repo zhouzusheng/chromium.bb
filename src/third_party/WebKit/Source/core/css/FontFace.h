@@ -34,6 +34,8 @@
 #include "CSSPropertyNames.h"
 #include "bindings/v8/ScriptPromise.h"
 #include "core/css/CSSValue.h"
+#include "core/dom/DOMError.h"
+#include "platform/fonts/FontTraits.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -49,10 +51,12 @@ class FontFaceReadyPromiseResolver;
 class StylePropertySet;
 class StyleRuleFontFace;
 
-class FontFace : public RefCounted<FontFace> {
+class FontFace : public RefCountedWillBeRefCountedGarbageCollected<FontFace> {
 public:
     enum LoadStatus { Unloaded, Loading, Loaded, Error };
 
+    static PassRefPtr<FontFace> create(ExecutionContext*, const AtomicString& family, PassRefPtr<ArrayBuffer> source, const Dictionary&, ExceptionState&);
+    static PassRefPtr<FontFace> create(ExecutionContext*, const AtomicString& family, PassRefPtr<ArrayBufferView>, const Dictionary&, ExceptionState&);
     static PassRefPtr<FontFace> create(ExecutionContext*, const AtomicString& family, const String& source, const Dictionary&, ExceptionState&);
     static PassRefPtr<FontFace> create(Document*, const StyleRuleFontFace*);
 
@@ -77,36 +81,52 @@ public:
 
     String status() const;
 
-    void load(ExecutionContext*);
-    ScriptPromise ready(ExecutionContext*);
+    ScriptPromise load(ExecutionContext*);
 
     LoadStatus loadStatus() const { return m_status; }
     void setLoadStatus(LoadStatus);
-    unsigned traitsMask() const;
+    DOMError* error() const { return m_error.get(); }
+    FontTraits traits() const;
     CSSFontFace* cssFontFace() { return m_cssFontFace.get(); }
 
-private:
-    FontFace(PassRefPtr<CSSValue> source);
+    void trace(Visitor*);
 
-    void initCSSFontFace(Document*);
+    bool hadBlankText() const;
+
+    class LoadFontCallback : public RefCounted<LoadFontCallback> {
+    public:
+        virtual ~LoadFontCallback() { }
+        virtual void notifyLoaded(FontFace*) = 0;
+        virtual void notifyError(FontFace*) = 0;
+    };
+    void loadWithCallback(PassRefPtr<LoadFontCallback>, ExecutionContext*);
+
+private:
+    FontFace();
+
+    void initCSSFontFace(Document*, PassRefPtrWillBeRawPtr<CSSValue> src);
+    void initCSSFontFace(const unsigned char* data, unsigned size);
     void setPropertyFromString(const Document*, const String&, CSSPropertyID, ExceptionState&);
-    bool setPropertyFromStyle(const StylePropertySet*, CSSPropertyID);
-    bool setPropertyValue(PassRefPtr<CSSValue>, CSSPropertyID);
+    bool setPropertyFromStyle(const StylePropertySet&, CSSPropertyID);
+    bool setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue>, CSSPropertyID);
     bool setFamilyValue(CSSValueList*);
     void resolveReadyPromises();
+    void loadInternal(ExecutionContext*);
 
     AtomicString m_family;
-    RefPtr<CSSValue> m_src;
-    RefPtr<CSSValue> m_style;
-    RefPtr<CSSValue> m_weight;
-    RefPtr<CSSValue> m_stretch;
-    RefPtr<CSSValue> m_unicodeRange;
-    RefPtr<CSSValue> m_variant;
-    RefPtr<CSSValue> m_featureSettings;
+    RefPtrWillBeMember<CSSValue> m_src;
+    RefPtrWillBeMember<CSSValue> m_style;
+    RefPtrWillBeMember<CSSValue> m_weight;
+    RefPtrWillBeMember<CSSValue> m_stretch;
+    RefPtrWillBeMember<CSSValue> m_unicodeRange;
+    RefPtrWillBeMember<CSSValue> m_variant;
+    RefPtrWillBeMember<CSSValue> m_featureSettings;
     LoadStatus m_status;
+    RefPtrWillBeMember<DOMError> m_error;
 
     Vector<OwnPtr<FontFaceReadyPromiseResolver> > m_readyResolvers;
     OwnPtr<CSSFontFace> m_cssFontFace;
+    Vector<RefPtr<LoadFontCallback> > m_callbacks;
 };
 
 typedef Vector<RefPtr<FontFace> > FontFaceArray;

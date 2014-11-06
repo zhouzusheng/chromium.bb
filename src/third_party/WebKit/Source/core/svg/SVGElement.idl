@@ -30,12 +30,9 @@
     attribute DOMString xmllang;
     attribute DOMString xmlspace;
 
-    readonly attribute SVGAnimatedString className;
-    readonly attribute CSSStyleDeclaration style;
+    [MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
 
-    // CSSValue was deprecated in 2003:
-    // http://lists.w3.org/Archives/Public/www-style/2003Oct/0347.html
-    [DeprecateAs=SVGElementGetPresentationAttribute] CSSValue getPresentationAttribute([Default=Undefined] optional DOMString name);
+    readonly attribute CSSStyleDeclaration style;
 };
 
 SVGElement implements GlobalEventHandlers;

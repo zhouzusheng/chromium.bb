@@ -42,7 +42,8 @@ class FontDescription;
 class StyleRule;
 
 class StyleResolverState {
-WTF_MAKE_NONCOPYABLE(StyleResolverState);
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
     StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0);
     ~StyleResolverState();
@@ -66,9 +67,9 @@ public:
 
     const CSSToLengthConversionData& cssToLengthConversionData() const { return m_cssToLengthConversionData; }
 
-    void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate>);
+    void setAnimationUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate>);
     const CSSAnimationUpdate* animationUpdate() { return m_animationUpdate.get(); }
-    PassOwnPtr<CSSAnimationUpdate> takeAnimationUpdate();
+    PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> takeAnimationUpdate();
 
     void setParentStyle(PassRefPtr<RenderStyle> parentStyle) { m_parentStyle = parentStyle; }
     const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
@@ -93,7 +94,14 @@ public:
     void setLineHeightValue(CSSValue* value) { m_lineHeightValue = value; }
     CSSValue* lineHeightValue() { return m_lineHeightValue; }
 
-    void cacheUserAgentBorderAndBackground() { m_cachedUAStyle = CachedUAStyle(style()); }
+    void cacheUserAgentBorderAndBackground()
+    {
+        // RenderTheme only needs the cached style if it has an appearance,
+        // and constructing it is expensive so we avoid it if possible.
+        if (!style()->hasAppearance())
+            return;
+        m_cachedUAStyle = CachedUAStyle(style());
+    }
     const CachedUAStyle& cachedUAStyle() const { return m_cachedUAStyle; }
 
     ElementStyleResources& elementStyleResources() { return m_elementStyleResources; }
@@ -145,12 +153,12 @@ private:
     // so we keep it separate from m_elementContext.
     RefPtr<RenderStyle> m_parentStyle;
 
-    OwnPtr<CSSAnimationUpdate> m_animationUpdate;
+    OwnPtrWillBeMember<CSSAnimationUpdate> m_animationUpdate;
 
     bool m_applyPropertyToRegularStyle;
     bool m_applyPropertyToVisitedLinkStyle;
 
-    CSSValue* m_lineHeightValue;
+    RawPtrWillBeMember<CSSValue> m_lineHeightValue;
 
     FontBuilder m_fontBuilder;
 
@@ -162,7 +170,7 @@ private:
     CSSToStyleMap m_styleMap;
     Vector<AtomicString> m_contentAttrValues;
 
-    StyleRule* m_currentRule;
+    RawPtrWillBeMember<StyleRule> m_currentRule;
 };
 
 } // namespace WebCore

@@ -30,6 +30,7 @@
 #ifndef DatabaseBackendBase_h
 #define DatabaseBackendBase_h
 
+#include "heap/Handle.h"
 #include "modules/webdatabase/sqlite/SQLiteDatabase.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
@@ -47,11 +48,13 @@ namespace WebCore {
 class DatabaseAuthorizer;
 class DatabaseContext;
 class DatabaseBase;
+class ExecutionContext;
 class SecurityOrigin;
 
-class DatabaseBackendBase : public ThreadSafeRefCounted<DatabaseBackendBase> {
+class DatabaseBackendBase : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<DatabaseBackendBase> {
 public:
     virtual ~DatabaseBackendBase();
+    virtual void trace(Visitor*);
 
     virtual String version() const;
 
@@ -83,6 +86,7 @@ public:
     virtual void closeImmediately() = 0;
 
     DatabaseContext* databaseContext() const { return m_databaseContext.get(); }
+    ExecutionContext* executionContext() const;
     void setFrontend(DatabaseBase* frontend) { m_frontend = frontend; }
 
 protected:
@@ -92,7 +96,7 @@ protected:
     friend class SQLTransactionBackend;
     friend class SQLTransactionBackendSync;
 
-    DatabaseBackendBase(PassRefPtr<DatabaseContext>, const String& name, const String& expectedVersion,
+    DatabaseBackendBase(DatabaseContext*, const String& name, const String& expectedVersion,
         const String& displayName, unsigned long estimatedSize, DatabaseType);
 
     void closeDatabase();
@@ -114,11 +118,11 @@ protected:
     void reportCommitTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode);
     void reportExecuteStatementResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode);
     void reportVacuumDatabaseResult(int sqliteErrorCode);
-
+    void logErrorMessage(const String&);
     static const char* databaseInfoTableName();
 
     RefPtr<SecurityOrigin> m_contextThreadSecurityOrigin;
-    RefPtr<DatabaseContext> m_databaseContext; // Associated with m_executionContext.
+    RefPtrWillBeMember<DatabaseContext> m_databaseContext; // Associated with m_executionContext.
 
     String m_name;
     String m_expectedVersion;
@@ -140,7 +144,7 @@ private:
 
     SQLiteDatabase m_sqliteDatabase;
 
-    RefPtr<DatabaseAuthorizer> m_databaseAuthorizer;
+    RefPtrWillBeMember<DatabaseAuthorizer> m_databaseAuthorizer;
 
     friend class DatabaseServer;
 };

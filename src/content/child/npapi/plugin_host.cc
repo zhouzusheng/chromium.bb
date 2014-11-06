@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
@@ -17,7 +18,9 @@
 #include "content/child/npapi/plugin_lib.h"
 #include "content/child/npapi/plugin_stream_url.h"
 #include "content/child/npapi/webplugin_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/user_agent.h"
 #include "content/public/common/webplugininfo.h"
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
@@ -25,7 +28,6 @@
 #include "third_party/npapi/bindings/npruntime.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
-#include "webkit/common/user_agent/user_agent.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -262,7 +264,7 @@ bool PluginHost::SetPostData(const char* buf,
         case GETNAME:
           // Got a value.
           value = std::string(start, ptr - start);
-          TrimWhitespace(value, TRIM_ALL, &value);
+          base::TrimWhitespace(value, base::TRIM_ALL, &value);
           // If the name field is empty, we'll skip this header
           // but we won't error out.
           if (!name.empty() && name != "content-length") {
@@ -274,7 +276,7 @@ bool PluginHost::SetPostData(const char* buf,
         case GETVALUE:
           // Got a header.
           name = StringToLowerASCII(std::string(start, ptr - start));
-          TrimWhitespace(name, TRIM_ALL, &name);
+          base::TrimWhitespace(name, base::TRIM_ALL, &name);
           start = ptr + 1;
           break;
         case GETDATA: {
@@ -598,7 +600,13 @@ const char* NPN_UserAgent(NPP id) {
         "Gecko/20061103 Firefox/2.0a1";
 #endif
 
-  return webkit_glue::GetUserAgent(GURL()).c_str();
+  // Provide a consistent user-agent string with memory that lasts
+  // long enough for the caller to read it.
+  static base::LazyInstance<std::string>::Leaky leaky_user_agent =
+    LAZY_INSTANCE_INITIALIZER;
+  if (leaky_user_agent == NULL)
+    leaky_user_agent.Get() = content::GetContentClient()->GetUserAgent();
+  return leaky_user_agent.Get().c_str();
 }
 
 void NPN_Status(NPP id, const char* message) {

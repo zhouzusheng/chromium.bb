@@ -117,10 +117,6 @@ HDC VectorPlatformDeviceEmf::BeginPlatformPaint() {
   return hdc_;
 }
 
-uint32_t VectorPlatformDeviceEmf::getDeviceCapabilities() {
-  return SkBitmapDevice::getDeviceCapabilities() | kVector_Capability;
-}
-
 void VectorPlatformDeviceEmf::drawPaint(const SkDraw& draw,
                                         const SkPaint& paint) {
   // TODO(maruel):  Bypass the current transformation matrix.
@@ -700,11 +696,20 @@ void VectorPlatformDeviceEmf::LoadClipRegion() {
   LoadClippingRegionToDC(hdc_, clip_region_, t);
 }
 
+#ifdef SK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG
 SkBaseDevice* VectorPlatformDeviceEmf::onCreateCompatibleDevice(
     SkBitmap::Config config, int width, int height, bool isOpaque,
     Usage /*usage*/) {
   SkASSERT(config == SkBitmap::kARGB_8888_Config);
   return VectorPlatformDeviceEmf::CreateDevice(width, height, isOpaque, NULL);
+}
+#endif
+
+SkBaseDevice* VectorPlatformDeviceEmf::onCreateDevice(const SkImageInfo& info,
+                                                      Usage /*usage*/) {
+  SkASSERT(info.colorType() == kPMColor_SkColorType);
+  return VectorPlatformDeviceEmf::CreateDevice(
+      info.width(), info.height(), info.isOpaque(), NULL);
 }
 
 bool VectorPlatformDeviceEmf::CreateBrush(bool use_brush, COLORREF color) {

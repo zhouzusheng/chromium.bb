@@ -140,8 +140,12 @@ typedef enum {
   SH_VARIABLES               = 0x0008,
   SH_LINE_DIRECTIVES         = 0x0010,
   SH_SOURCE_PATH             = 0x0020,
-  SH_MAP_LONG_VARIABLE_NAMES = 0x0040,
-  SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX = 0x0080,
+  SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX = 0x0040,
+  // If a sampler array index happens to be a loop index,
+  //   1) if its type is integer, unroll the loop.
+  //   2) if its type is float, fail the shader compile.
+  // This is to work around a mac driver bug.
+  SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX = 0x0080,
 
   // This is needed only as a workaround for certain OpenGL driver bugs.
   SH_EMULATE_BUILT_IN_FUNCTIONS = 0x0100,

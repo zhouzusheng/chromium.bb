@@ -48,11 +48,11 @@
 
 namespace WebCore {
 
-PassRefPtr<SQLTransaction> SQLTransaction::create(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
+PassRefPtrWillBeRawPtr<SQLTransaction> SQLTransaction::create(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
     PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
     bool readOnly)
 {
-    return adoptRef(new SQLTransaction(db, callback, successCallback, errorCallback, readOnly));
+    return adoptRefWillBeNoop(new SQLTransaction(db, callback, successCallback, errorCallback, readOnly));
 }
 
 SQLTransaction::SQLTransaction(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
@@ -67,6 +67,12 @@ SQLTransaction::SQLTransaction(Database* db, PassOwnPtr<SQLTransactionCallback> 
 {
     ASSERT(m_database);
     ScriptWrappable::init(this);
+}
+
+void SQLTransaction::trace(Visitor* visitor)
+{
+    visitor->trace(m_database);
+    visitor->trace(m_backend);
 }
 
 bool SQLTransaction::hasCallback() const
@@ -151,7 +157,7 @@ SQLTransactionState SQLTransaction::deliverTransactionCallback()
     SQLTransactionState nextState = SQLTransactionState::RunStatements;
     if (shouldDeliverErrorCallback) {
         m_database->reportStartTransactionResult(5, SQLError::UNKNOWN_ERR, 0);
-        m_transactionError = SQLError::create(SQLError::UNKNOWN_ERR, "the SQLTransactionCallback was null or threw an exception");
+        m_transactionError = SQLErrorData::create(SQLError::UNKNOWN_ERR, "the SQLTransactionCallback was null or threw an exception");
         nextState = SQLTransactionState::DeliverTransactionErrorCallback;
     }
     m_database->reportStartTransactionResult(0, -1, 0); // OK
@@ -168,13 +174,15 @@ SQLTransactionState SQLTransaction::deliverTransactionErrorCallback()
         // must be waiting in the idle state waiting for this state to finish.
         // Hence, it's thread safe to fetch the backend transactionError without
         // a lock.
-        if (!m_transactionError)
-            m_transactionError = m_backend->transactionError();
-
+        if (!m_transactionError) {
+            ASSERT(m_backend->transactionError());
+            m_transactionError = SQLErrorData::create(*m_backend->transactionError());
+        }
         ASSERT(m_transactionError);
-        errorCallback->handleEvent(m_transactionError.get());
+        RefPtrWillBeRawPtr<SQLError> error = SQLError::create(*m_transactionError);
+        errorCallback->handleEvent(error.get());
 
-        m_transactionError = 0;
+        m_transactionError = nullptr;
     }
 
     clearCallbackWrappers();
@@ -199,7 +207,7 @@ SQLTransactionState SQLTransaction::deliverStatementCallback()
 
     if (result) {
         m_database->reportCommitTransactionResult(2, SQLError::UNKNOWN_ERR, 0);
-        m_transactionError = SQLError::create(SQLError::UNKNOWN_ERR, "the statement callback raised an exception or statement error callback did not return false");
+        m_transactionError = SQLErrorData::create(SQLError::UNKNOWN_ERR, "the statement callback raised an exception or statement error callback did not return false");
         return nextStateForTransactionError();
     }
     return SQLTransactionState::RunStatements;

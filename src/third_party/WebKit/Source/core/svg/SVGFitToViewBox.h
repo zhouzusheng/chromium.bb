@@ -55,11 +55,11 @@ public:
         if (name == SVGNames::viewBoxAttr) {
             m_viewBox->setBaseValueAsString(value, parseError);
             if (m_viewBox->baseValue()->width() < 0.0f) {
-                document.accessSVGExtensions()->reportError("A negative value for ViewBox width is not allowed");
+                document.accessSVGExtensions().reportError("A negative value for ViewBox width is not allowed");
                 m_viewBox->baseValue()->setInvalid();
             }
             if (m_viewBox->baseValue()->height() < 0.0f) {
-                document.accessSVGExtensions()->reportError("A negative value for ViewBox height is not allowed");
+                document.accessSVGExtensions().reportError("A negative value for ViewBox height is not allowed");
                 m_viewBox->baseValue()->setInvalid();
             }
             return true;
@@ -72,8 +72,8 @@ public:
     }
 
     // SVGFitToViewBox JS API.
-    static SVGAnimatedRect* viewBox(SVGFitToViewBox* object) { return object->viewBox(); }
-    static SVGAnimatedPreserveAspectRatio* preserveAspectRatio(SVGFitToViewBox* object) { return object->preserveAspectRatio(); }
+    static SVGAnimatedRect* viewBox(SVGFitToViewBox& object) { return object.viewBox(); }
+    static SVGAnimatedPreserveAspectRatio* preserveAspectRatio(SVGFitToViewBox& object) { return object.preserveAspectRatio(); }
 
     SVGAnimatedRect* viewBox() const { return m_viewBox.get(); }
     bool hasEmptyViewBox() const { return m_viewBox->currentValue()->isValid() && m_viewBox->currentValue()->value().isEmpty(); }
@@ -82,8 +82,8 @@ public:
 protected:
     explicit SVGFitToViewBox(SVGElement*, PropertyMapPolicy = PropertyMapPolicyAdd);
     void updateViewBox(const FloatRect&);
-    void clearViewBox() { m_viewBox = 0; }
-    void clearPreserveAspectRatio() { m_preserveAspectRatio = 0; }
+    void clearViewBox() { m_viewBox = nullptr; }
+    void clearPreserveAspectRatio() { m_preserveAspectRatio = nullptr; }
 
 private:
     RefPtr<SVGAnimatedRect> m_viewBox;

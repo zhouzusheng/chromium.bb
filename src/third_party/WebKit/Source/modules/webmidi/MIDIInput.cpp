@@ -31,15 +31,16 @@
 #include "config.h"
 #include "modules/webmidi/MIDIInput.h"
 
+#include "heap/Handle.h"
 #include "modules/webmidi/MIDIAccess.h"
 #include "modules/webmidi/MIDIMessageEvent.h"
 
 namespace WebCore {
 
-PassRefPtr<MIDIInput> MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
+PassRefPtrWillBeRawPtr<MIDIInput> MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(access);
-    RefPtr<MIDIInput> input = adoptRef(new MIDIInput(access, id, manufacturer, name, version));
+    RefPtrWillBeRawPtr<MIDIInput> input = adoptRefWillBeRefCountedGarbageCollected(new MIDIInput(access, id, manufacturer, name, version));
     return input.release();
 }
 
@@ -56,13 +57,18 @@ void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data
     if (!length)
         return;
 
-    // Drop SysEx message here when the client does not request it. Note that this is not a security check but an
-    // automatic filtering for clients that do not want SysEx message. Also note that SysEx message will never be sent
-    // unless the current process has an explicit permission to handle SysEx message.
-    if (data[0] == 0xf0 && !midiAccess()->sysExEnabled())
+    // Drop sysex message here when the client does not request it. Note that this is not a security check but an
+    // automatic filtering for clients that do not want sysex message. Also note that sysex message will never be sent
+    // unless the current process has an explicit permission to handle sysex message.
+    if (data[0] == 0xf0 && !midiAccess()->sysexEnabled())
         return;
     RefPtr<Uint8Array> array = Uint8Array::create(data, length);
     dispatchEvent(MIDIMessageEvent::create(timeStamp, array));
+}
+
+void MIDIInput::trace(Visitor* visitor)
+{
+    MIDIPort::trace(visitor);
 }
 
 } // namespace WebCore

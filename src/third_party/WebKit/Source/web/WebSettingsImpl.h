@@ -60,12 +60,11 @@ public:
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) OVERRIDE;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForTransitionEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) OVERRIDE;
+    virtual void setAcceleratedCompositingForGpuRasterizationHintEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForPluginsEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForVideoEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedFiltersEnabled(bool) OVERRIDE;
     virtual void setAllowDisplayOfInsecureContent(bool) OVERRIDE;
     virtual void setAllowFileAccessFromFileURLs(bool) OVERRIDE;
     virtual void setAllowCustomScrollbarInMainFrame(bool) OVERRIDE;
@@ -79,7 +78,9 @@ public:
     virtual void setClobberUserAgentInitialScaleQuirk(bool) OVERRIDE;
     virtual void setCompositedScrollingForFramesEnabled(bool) OVERRIDE;
     virtual void setCompositorTouchHitTesting(bool) OVERRIDE;
+    virtual void setContainerCullingEnabled(bool) OVERRIDE;
     virtual void setCookieEnabled(bool) OVERRIDE;
+    virtual void setNavigateOnDragDrop(bool) OVERRIDE;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setDNSPrefetchingEnabled(bool) OVERRIDE;
     virtual void setDOMPasteAllowed(bool) OVERRIDE;
@@ -103,7 +104,6 @@ public:
     virtual void setExperimentalWebSocketEnabled(bool) OVERRIDE;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
-    virtual void setFixedPositionCreatesStackingContext(bool) OVERRIDE;
     virtual void setForceCompositingMode(bool) OVERRIDE;
     virtual void setFullScreenEnabled(bool) OVERRIDE;
     virtual void setGestureTapHighlightEnabled(bool) OVERRIDE;
@@ -124,7 +124,6 @@ public:
     virtual void setMaxTouchPoints(int) OVERRIDE;
     virtual void setMediaPlaybackRequiresUserGesture(bool) OVERRIDE;
     virtual void setMediaFullscreenRequiresUserGesture(bool) OVERRIDE;
-    virtual void setMemoryInfoEnabled(bool) OVERRIDE;
     virtual void setMinimumAccelerated2dCanvasSize(int) OVERRIDE;
     virtual void setMinimumFontSize(int) OVERRIDE;
     virtual void setMinimumLogicalFontSize(int) OVERRIDE;
@@ -197,7 +196,6 @@ public:
     bool viewportMetaLayoutSizeQuirk() const { return m_viewportMetaLayoutSizeQuirk; }
     bool viewportMetaNonUserScalableQuirk() const { return m_viewportMetaNonUserScalableQuirk; }
     bool clobberUserAgentInitialScaleQuirk() const { return m_clobberUserAgentInitialScaleQuirk; }
-    int pinchOverlayScrollbarThickness() const { return m_pinchOverlayScrollbarThickness; }
 
 private:
     WebCore::Settings* m_settings;
@@ -223,7 +221,6 @@ private:
     // the Android SDK prior to and including version 18. Presumably, this
     // can be removed any time after 2015. See http://crbug.com/313754.
     bool m_clobberUserAgentInitialScaleQuirk;
-    int m_pinchOverlayScrollbarThickness;
     bool m_mainFrameResizesAreOrientationChanges;
 };
 

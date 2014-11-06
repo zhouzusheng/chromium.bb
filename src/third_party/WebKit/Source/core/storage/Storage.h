@@ -38,12 +38,11 @@
 namespace WebCore {
 
 class ExceptionState;
-class Frame;
+class LocalFrame;
 
 class Storage FINAL : public RefCountedWillBeGarbageCollectedFinalized<Storage>, public ScriptWrappable, public DOMWindowProperty {
-    DECLARE_GC_INFO;
 public:
-    static PassRefPtrWillBeRawPtr<Storage> create(Frame*, PassOwnPtrWillBeRawPtr<StorageArea>);
+    static PassRefPtrWillBeRawPtr<Storage> create(LocalFrame*, PassOwnPtrWillBeRawPtr<StorageArea>);
     virtual ~Storage();
 
     unsigned length(ExceptionState& ec) const { return m_storageArea->length(ec, m_frame); }
@@ -68,7 +67,7 @@ public:
     void trace(Visitor*);
 
 private:
-    Storage(Frame*, PassOwnPtrWillBeRawPtr<StorageArea>);
+    Storage(LocalFrame*, PassOwnPtrWillBeRawPtr<StorageArea>);
 
     OwnPtrWillBeMember<StorageArea> m_storageArea;
 };

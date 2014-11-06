@@ -52,12 +52,12 @@ void CSSGradientColorStop::trace(Visitor* visitor)
 PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize& size)
 {
     if (size.isEmpty())
-        return 0;
+        return nullptr;
 
     bool cacheable = isCacheable();
     if (cacheable) {
         if (!clients().contains(renderer))
-            return 0;
+            return nullptr;
 
         // Need to look up our size.  Create a string of width*height to use as a hash key.
         Image* result = getImage(renderer, size);
@@ -122,7 +122,7 @@ PassRefPtrWillBeRawPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesRes
             break;
         }
 
-    RefPtrWillBeRawPtr<CSSGradientValue> result;
+    RefPtrWillBeRawPtr<CSSGradientValue> result = nullptr;
     if (!derived)
         result = this;
     else if (isLinearGradientValue())
@@ -131,7 +131,7 @@ PassRefPtrWillBeRawPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesRes
         result = toCSSRadialGradientValue(this)->clone();
     else {
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 
     for (unsigned i = 0; i < result->m_stops.size(); i++)
@@ -157,8 +157,6 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
             gradient->addColorStop(offset, stop.m_resolvedColor);
         }
 
-        // The back end already sorted the stops.
-        gradient->setStopsSorted(true);
         return;
     }
 
@@ -389,8 +387,6 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
 
     for (unsigned i = 0; i < numStops; i++)
         gradient->addColorStop(stops[i].offset, stops[i].color);
-
-    gradient->setStopsSorted(true);
 }
 
 static float positionFromValue(CSSPrimitiveValue* value, const CSSToLengthConversionData& conversionData, const IntSize& size, bool isHorizontal)

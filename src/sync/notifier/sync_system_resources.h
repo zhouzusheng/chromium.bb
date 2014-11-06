@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/values.h"
 #include "google/cacheinvalidation/include/system-resources.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "sync/base/sync_export.h"
@@ -80,10 +81,9 @@ class SyncInvalidationScheduler : public invalidation::Scheduler {
 // SyncNetworkChannel implements common tasks needed to interact with
 // invalidation library:
 //  - registering message and network status callbacks
-//  - Encoding/Decoding message to ClientGatewayMessage
 //  - notifying observers about network channel state change
 // Implementation of particular network protocol should implement
-// SendEncodedMessage and call NotifyStateChange and DeliverIncomingMessage.
+// SendMessage and call NotifyStateChange and DeliverIncomingMessage.
 class SYNC_EXPORT_PRIVATE SyncNetworkChannel
     : public NON_EXPORTED_BASE(invalidation::NetworkChannel) {
  public:
@@ -102,7 +102,8 @@ class SYNC_EXPORT_PRIVATE SyncNetworkChannel
   virtual ~SyncNetworkChannel();
 
   // invalidation::NetworkChannel implementation.
-  virtual void SendMessage(const std::string& outgoing_message) OVERRIDE;
+  // SyncNetworkChannel doesn't implement SendMessage. It is responsibility of
+  // subclass to implement it.
   virtual void SetMessageReceiver(
       invalidation::MessageCallback* incoming_receiver) OVERRIDE;
   virtual void AddNetworkStatusReceiver(
@@ -110,11 +111,15 @@ class SYNC_EXPORT_PRIVATE SyncNetworkChannel
   virtual void SetSystemResources(
       invalidation::SystemResources* resources) OVERRIDE;
 
-  // Subclass should implement SendEncodedMessage to send encoded message to
-  // Tango over network.
-  virtual void SendEncodedMessage(const std::string& encoded_message) = 0;
+  // Subclass should implement UpdateCredentials to pass new token to channel
+  // library.
   virtual void UpdateCredentials(const std::string& email,
       const std::string& token) = 0;
+
+  // Subclass should implement RequestDetailedStatus to provide debugging
+  // information.
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) = 0;
 
   // Classes interested in network channel state changes should implement
   // SyncNetworkChannel::Observer and register here.
@@ -129,43 +134,19 @@ class SYNC_EXPORT_PRIVATE SyncNetworkChannel
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,
       scoped_ptr<GCMNetworkChannelDelegate> delegate);
 
-  const std::string& GetServiceContextForTest() const;
-
-  int64 GetSchedulingHashForTest() const;
-
-  static std::string EncodeMessageForTest(
-      const std::string& message,
-      const std::string& service_context,
-      int64 scheduling_hash);
-
-  static bool DecodeMessageForTest(
-      const std::string& notification,
-      std::string* message,
-      std::string* service_context,
-      int64* scheduling_hash);
+  // Get the count of how many valid received messages were received.
+  int GetReceivedMessagesCount() const;
 
  protected:
   // Subclass should notify about connection state through NotifyStateChange.
   void NotifyStateChange(InvalidatorState invalidator_state);
   // Subclass should call DeliverIncomingMessage for message to reach
   // invalidations library.
-  void DeliverIncomingMessage(const std::string& message);
+  bool DeliverIncomingMessage(const std::string& message);
 
  private:
   typedef std::vector<invalidation::NetworkStatusCallback*>
       NetworkStatusReceiverList;
-
-  static void EncodeMessage(
-      std::string* encoded_message,
-      const std::string& message,
-      const std::string& service_context,
-      int64 scheduling_hash);
-
-  static bool DecodeMessage(
-      const std::string& data,
-      std::string* message,
-      std::string* service_context,
-      int64* scheduling_hash);
 
   // Callbacks into invalidation library
   scoped_ptr<invalidation::MessageCallback> incoming_receiver_;
@@ -174,10 +155,9 @@ class SYNC_EXPORT_PRIVATE SyncNetworkChannel
   // Last channel state for new network status receivers.
   InvalidatorState invalidator_state_;
 
-  ObserverList<Observer> observers_;
+  int received_messages_count_;
 
-  std::string service_context_;
-  int64 scheduling_hash_;
+  ObserverList<Observer> observers_;
 };
 
 class SyncStorage : public invalidation::Storage {

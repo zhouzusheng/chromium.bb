@@ -41,7 +41,6 @@ ScrollView::ScrollView()
     , m_verticalScrollbarMode(ScrollbarAuto)
     , m_horizontalScrollbarLock(false)
     , m_verticalScrollbarLock(false)
-    , m_canBlitOnScroll(true)
     , m_scrollbarsAvoidingResizer(0)
     , m_scrollbarsSuppressed(false)
     , m_inUpdateScrollbars(false)
@@ -81,7 +80,7 @@ void ScrollView::setHasHorizontalScrollbar(bool hasBar)
     } else if (!hasBar && m_horizontalScrollbar) {
         willRemoveScrollbar(m_horizontalScrollbar.get(), HorizontalScrollbar);
         removeChild(m_horizontalScrollbar.get());
-        m_horizontalScrollbar = 0;
+        m_horizontalScrollbar = nullptr;
     }
 }
 
@@ -95,7 +94,7 @@ void ScrollView::setHasVerticalScrollbar(bool hasBar)
     } else if (!hasBar && m_verticalScrollbar) {
         willRemoveScrollbar(m_verticalScrollbar.get(), VerticalScrollbar);
         removeChild(m_verticalScrollbar.get());
-        m_verticalScrollbar = 0;
+        m_verticalScrollbar = nullptr;
     }
 }
 
@@ -164,14 +163,9 @@ void ScrollView::setCanHaveScrollbars(bool canScroll)
     setScrollbarModes(newHorizontalMode, newVerticalMode);
 }
 
-void ScrollView::setCanBlitOnScroll(bool b)
+bool ScrollView::shouldAttemptToScrollUsingFastPath() const
 {
-    m_canBlitOnScroll = b;
-}
-
-bool ScrollView::canBlitOnScroll() const
-{
-    return m_canBlitOnScroll;
+    return true;
 }
 
 void ScrollView::setPaintsEntireContents(bool paintsEntireContents)
@@ -544,15 +538,8 @@ void ScrollView::scrollContents(const IntSize& scrollDelta)
         window->invalidateContentsAndRootView(panScrollIconDirtyRect);
     }
 
-    if (canBlitOnScroll()) { // The main frame can just blit the WebView window
-        // FIXME: Find a way to scroll subframes with this faster path
-        if (!scrollContentsFastPath(-scrollDelta, scrollViewRect, clipRect))
-            scrollContentsSlowPath(updateRect);
-    } else {
-       // We need to go ahead and repaint the entire backing store.  Do it now before moving the
-       // windowed plugins.
-       scrollContentsSlowPath(updateRect);
-    }
+    if (!shouldAttemptToScrollUsingFastPath() || !scrollContentsFastPath(-scrollDelta, scrollViewRect, clipRect))
+        scrollContentsSlowPath(updateRect);
 
     // Invalidate the overhang areas if they are visible.
     updateOverhangAreas();
@@ -899,6 +886,7 @@ void ScrollView::paint(GraphicsContext* context, const IntRect& rect)
         scrollViewDirtyRect.intersect(visibleAreaWithScrollbars);
         context->translate(x(), y());
         scrollViewDirtyRect.moveBy(-location());
+        context->clip(IntRect(IntPoint(), visibleAreaWithScrollbars.size()));
 
         paintScrollbars(context, scrollViewDirtyRect);
     }
@@ -1123,15 +1111,6 @@ void ScrollView::setScrollOrigin(const IntPoint& origin, bool updatePositionAtAl
     // Update if the scroll origin changes, since our position will be different if the content size did not change.
     if (updatePositionAtAll && updatePositionSynchronously)
         updateScrollbars(scrollOffset());
-}
-
-int ScrollView::pageStep(ScrollbarOrientation orientation) const
-{
-    int length = (orientation == HorizontalScrollbar) ? visibleWidth() : visibleHeight();
-    int minPageStep = static_cast<float>(length) * minFractionToStepWhenPaging();
-    int pageStep = std::max(minPageStep, length - maxOverlapBetweenPages());
-
-    return std::max(pageStep, 1);
 }
 
 } // namespace WebCore

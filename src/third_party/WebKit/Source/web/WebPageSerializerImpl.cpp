@@ -78,7 +78,6 @@
 #include "config.h"
 #include "WebPageSerializerImpl.h"
 
-#include "DOMUtilitiesPrivate.h"
 #include "HTMLNames.h"
 #include "WebFrameImpl.h"
 #include "core/dom/Document.h"
@@ -132,12 +131,13 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
         // Skip the open tag of original META tag which declare charset since we
         // have overrided the META which have correct charset declaration after
         // serializing open tag of HEAD element.
-        if (element->hasTagName(HTMLNames::metaTag)) {
-            const HTMLMetaElement* meta = toHTMLMetaElement(element);
+        ASSERT(element);
+        if (isHTMLMetaElement(*element)) {
+            const HTMLMetaElement& meta = toHTMLMetaElement(*element);
             // Check whether the META tag has declared charset or not.
-            String equiv = meta->httpEquiv();
+            String equiv = meta.httpEquiv();
             if (equalIgnoringCase(equiv, "content-type")) {
-                String content = meta->content();
+                String content = meta.content();
                 if (content.length() && content.contains("charset", false)) {
                     // Find META tag declared charset, we need to skip it when
                     // serializing DOM.
@@ -145,7 +145,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
                     *needSkip = true;
                 }
             }
-        } else if (element->hasTagName(HTMLNames::htmlTag)) {
+        } else if (isHTMLHtmlElement(*element)) {
             // Check something before processing the open tag of HEAD element.
             // First we add doc type declaration if original document has it.
             if (!param->haveSeenDocType) {
@@ -156,7 +156,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
             // Add MOTW declaration before html tag.
             // See http://msdn2.microsoft.com/en-us/library/ms537628(VS.85).aspx.
             result.append(WebPageSerializer::generateMarkOfTheWebDeclaration(param->url));
-        } else if (element->hasTagName(HTMLNames::baseTag)) {
+        } else if (isHTMLBaseElement(*element)) {
             // Comment the BASE tag when serializing dom.
             result.append("<!--");
         }
@@ -197,7 +197,7 @@ String WebPageSerializerImpl::postActionAfterSerializeOpenTag(
         return result.toString();
     // Check after processing the open tag of HEAD element
     if (!param->haveAddedCharsetDeclaration
-        && element->hasTagName(HTMLNames::headTag)) {
+        && isHTMLHeadElement(*element)) {
         param->haveAddedCharsetDeclaration = true;
         // Check meta element. WebKit only pre-parse the first 512 bytes
         // of the document. If the whole <HEAD> is larger and meta is the
@@ -212,8 +212,7 @@ String WebPageSerializerImpl::postActionAfterSerializeOpenTag(
         param->haveAddedContentsBeforeEnd = true;
         // Will search each META which has charset declaration, and skip them all
         // in PreActionBeforeSerializeOpenTag.
-    } else if (element->hasTagName(HTMLNames::scriptTag)
-               || element->hasTagName(HTMLNames::styleTag)) {
+    } else if (isHTMLScriptElement(*element) || isHTMLScriptElement(*element)) {
         param->isInScriptOrStyleTag = true;
     }
 
@@ -231,10 +230,9 @@ String WebPageSerializerImpl::preActionBeforeSerializeEndTag(
     // Skip the end tag of original META tag which declare charset.
     // Need not to check whether it's META tag since we guarantee
     // skipMetaElement is definitely META tag if it's not 0.
-    if (param->skipMetaElement == element)
+    if (param->skipMetaElement == element) {
         *needSkip = true;
-    else if (element->hasTagName(HTMLNames::scriptTag)
-             || element->hasTagName(HTMLNames::styleTag)) {
+    } else if (isHTMLScriptElement(*element) || isHTMLScriptElement(*element)) {
         ASSERT(param->isInScriptOrStyleTag);
         param->isInScriptOrStyleTag = false;
     }
@@ -252,7 +250,7 @@ String WebPageSerializerImpl::postActionAfterSerializeEndTag(
     if (!param->isHTMLDocument)
         return result.toString();
     // Comment the BASE tag when serializing DOM.
-    if (element->hasTagName(HTMLNames::baseTag)) {
+    if (isHTMLBaseElement(*element)) {
         result.append("-->");
         // Append a new base tag declaration.
         result.append(WebPageSerializer::generateBaseTagDeclaration(
@@ -309,16 +307,16 @@ void WebPageSerializerImpl::openTagToString(Element* element,
         for (unsigned i = 0; i < numAttrs; i++) {
             result.append(' ');
             // Add attribute pair
-            const Attribute *attribute = element->attributeItem(i);
-            result.append(attribute->name().toString());
+            const Attribute& attribute = element->attributeItem(i);
+            result.append(attribute.name().toString());
             result.appendLiteral("=\"");
-            if (!attribute->value().isEmpty()) {
-                const String& attrValue = attribute->value();
+            if (!attribute.value().isEmpty()) {
+                const String& attrValue = attribute.value();
 
                 // Check whether we need to replace some resource links
                 // with local resource paths.
-                const QualifiedName& attrName = attribute->name();
-                if (elementHasLegalLinkAttribute(element, attrName)) {
+                const QualifiedName& attrName = attribute.name();
+                if (element->hasLegalLinkAttribute(attrName)) {
                     // For links start with "javascript:", we do not change it.
                     if (attrValue.startsWith("javascript:", false))
                         result.append(attrValue);
@@ -352,7 +350,7 @@ void WebPageSerializerImpl::openTagToString(Element* element,
     // Do post action for open tag.
     String addedContents = postActionAfterSerializeOpenTag(element, param);
     // Complete the open tag for element when it has child/children.
-    if (element->hasChildNodes() || param->haveAddedContentsBeforeEnd)
+    if (element->hasChildren() || param->haveAddedContentsBeforeEnd)
         result.append('>');
     // Append the added contents generate in  post action of open tag.
     result.append(addedContents);
@@ -371,7 +369,7 @@ void WebPageSerializerImpl::endTagToString(Element* element,
     if (needSkip)
         return;
     // Write end tag when element has child/children.
-    if (element->hasChildNodes() || param->haveAddedContentsBeforeEnd) {
+    if (element->hasChildren() || param->haveAddedContentsBeforeEnd) {
         result.appendLiteral("</");
         result.append(element->nodeName().lower());
         result.append('>');

@@ -24,9 +24,7 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(DOMPlugin);
-
-DOMPlugin::DOMPlugin(PluginData* pluginData, Frame* frame, unsigned index)
+DOMPlugin::DOMPlugin(PluginData* pluginData, LocalFrame* frame, unsigned index)
     : FrameDestructionObserver(frame)
     , m_pluginData(pluginData)
     , m_index(index)
@@ -61,7 +59,7 @@ unsigned DOMPlugin::length() const
 PassRefPtrWillBeRawPtr<DOMMimeType> DOMPlugin::item(unsigned index)
 {
     if (index >= pluginInfo().mimes.size())
-        return 0;
+        return nullptr;
 
     const MimeClassInfo& mime = pluginInfo().mimes[index];
 
@@ -70,7 +68,7 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMPlugin::item(unsigned index)
         if (mimes[i] == mime && m_pluginData->mimePluginIndices()[i] == m_index)
             return DOMMimeType::create(m_pluginData.get(), m_frame, i).get();
     }
-    return 0;
+    return nullptr;
 }
 
 bool DOMPlugin::canGetItemsForName(const AtomicString& propertyName)
@@ -88,7 +86,7 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMPlugin::namedItem(const AtomicString& pro
     for (unsigned i = 0; i < mimes.size(); ++i)
         if (mimes[i].type == propertyName)
             return DOMMimeType::create(m_pluginData.get(), m_frame, i).get();
-    return 0;
+    return nullptr;
 }
 
 } // namespace WebCore

@@ -49,10 +49,12 @@ bool shouldCompositeForActiveAnimations(const RenderObject&);
 bool hasActiveAnimations(const RenderObject&, CSSPropertyID);
 bool hasActiveAnimationsOnCompositor(const RenderObject&, CSSPropertyID);
 
-class ActiveAnimations {
+class ActiveAnimations : public NoBaseWillBeGarbageCollectedFinalized<ActiveAnimations> {
 public:
     ActiveAnimations()
-        : m_animationStyleChange(false) { }
+        : m_animationStyleChange(false)
+    {
+    }
 
     // Animations that are currently active for this element, their effects will be applied
     // during a style recalc. CSS Transitions are included in this stack.
@@ -63,25 +65,29 @@ public:
     CSSAnimations& cssAnimations() { return m_cssAnimations; }
     const CSSAnimations& cssAnimations() const { return m_cssAnimations; }
 
-    typedef HashCountedSet<Player*> PlayerSet;
-    // Players which have animations targeting this element.
-    const PlayerSet& players() const { return m_players; }
-    PlayerSet& players() { return m_players; }
+    typedef HashCountedSet<AnimationPlayer*> AnimationPlayerSet;
+    // AnimationPlayers which have animations targeting this element.
+    const AnimationPlayerSet& players() const { return m_players; }
+    AnimationPlayerSet& players() { return m_players; }
 
     bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty(); }
 
+    // FIXME: This and most of this class needs to be renamed to consider 'current'
+    // rather than 'active' animations.
     bool hasActiveAnimations(CSSPropertyID) const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
 
     void setAnimationStyleChange(bool animationStyleChange) { m_animationStyleChange = animationStyleChange; }
 
+    void trace(Visitor*);
+
 private:
     bool isAnimationStyleChange() const { return m_animationStyleChange; }
 
     AnimationStack m_defaultStack;
     CSSAnimations m_cssAnimations;
-    PlayerSet m_players;
+    AnimationPlayerSet m_players;
     bool m_animationStyleChange;
 
     // CSSAnimations checks if a style change is due to animation.

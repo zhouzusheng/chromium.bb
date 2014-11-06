@@ -43,6 +43,7 @@
       'sources': [
         'file_descriptor_set_posix_unittest.cc',
         'ipc_channel_posix_unittest.cc',
+        'ipc_channel_proxy_unittest.cc',
         'ipc_channel_unittest.cc',
         'ipc_fuzzing_tests.cc',
         'ipc_message_unittest.cc',
@@ -75,7 +76,8 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -115,7 +117,8 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -154,24 +157,6 @@
           },
         },
       ],
-    }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # ipc_tests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-          'target_name': 'ipc_tests_apk',
-          'type': 'none',
-          'dependencies': [
-            'ipc_tests',
-          ],
-          'variables': {
-            'test_suite_name': 'ipc_tests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)ipc_tests<(SHARED_LIB_SUFFIX)',
-          },
-          'includes': [ '../build/apk_test.gypi' ],
-        }],
     }],
   ],
 }

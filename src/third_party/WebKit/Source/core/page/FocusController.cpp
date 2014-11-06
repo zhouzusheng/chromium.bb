@@ -41,13 +41,13 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h" // For firstPositionInOrBeforeNode
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/shadow/HTMLShadowElement.h"
+#include "core/html/HTMLPlugInElement.h"
+#include "core/html/HTMLShadowElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
@@ -87,7 +87,7 @@ Element* FocusNavigationScope::owner() const
         ShadowRoot* shadowRoot = toShadowRoot(root);
         return shadowRoot->isYoungest() ? shadowRoot->host() : shadowRoot->shadowInsertionPointOfYoungerShadowRoot();
     }
-    if (Frame* frame = root->document().frame())
+    if (LocalFrame* frame = root->document().frame())
         return frame->ownerElement();
     return 0;
 }
@@ -231,7 +231,7 @@ PassOwnPtr<FocusController> FocusController::create(Page* page)
     return adoptPtr(new FocusController(page));
 }
 
-void FocusController::setFocusedFrame(PassRefPtr<Frame> frame)
+void FocusController::setFocusedFrame(PassRefPtr<LocalFrame> frame)
 {
     ASSERT(!frame || frame->page() == m_page);
     if (m_focusedFrame == frame || m_isChangingFocusedFrame)
@@ -239,8 +239,8 @@ void FocusController::setFocusedFrame(PassRefPtr<Frame> frame)
 
     m_isChangingFocusedFrame = true;
 
-    RefPtr<Frame> oldFrame = m_focusedFrame;
-    RefPtr<Frame> newFrame = frame;
+    RefPtr<LocalFrame> oldFrame = m_focusedFrame;
+    RefPtr<LocalFrame> newFrame = frame;
 
     m_focusedFrame = newFrame;
 
@@ -256,11 +256,13 @@ void FocusController::setFocusedFrame(PassRefPtr<Frame> frame)
     }
 
     m_isChangingFocusedFrame = false;
+
+    m_page->chrome().client().focusedFrameChanged(newFrame.get());
 }
 
-Frame* FocusController::focusedOrMainFrame() const
+LocalFrame* FocusController::focusedOrMainFrame() const
 {
-    if (Frame* frame = focusedFrame())
+    if (LocalFrame* frame = focusedFrame())
         return frame;
     return m_page->mainFrame();
 }
@@ -278,7 +280,9 @@ void FocusController::setFocused(bool focused)
     if (!m_focusedFrame)
         setFocusedFrame(m_page->mainFrame());
 
-    if (m_focusedFrame->view()) {
+    // setFocusedFrame above might reject to update m_focusedFrame, or
+    // m_focusedFrame might be changed by blur/focus event handlers.
+    if (m_focusedFrame && m_focusedFrame->view()) {
         m_focusedFrame->selection().setFocused(focused);
         dispatchEventsOnWindowAndFocusedNode(m_focusedFrame->document(), focused);
     }
@@ -335,7 +339,7 @@ bool FocusController::advanceFocus(FocusType type, bool initialFocus)
 
 bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFocus)
 {
-    Frame* frame = focusedOrMainFrame();
+    LocalFrame* frame = focusedOrMainFrame();
     ASSERT(frame);
     Document* document = frame->document();
 
@@ -353,8 +357,8 @@ bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFo
     if (!node) {
         // We didn't find a node to focus, so we should try to pass focus to Chrome.
         if (!initialFocus && m_page->chrome().canTakeFocus(type)) {
-            document->setFocusedElement(0);
-            setFocusedFrame(0);
+            document->setFocusedElement(nullptr);
+            setFocusedFrame(nullptr);
             m_page->chrome().takeFocus(type);
             return true;
         }
@@ -378,14 +382,14 @@ bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFo
         return false;
 
     Element* element = toElement(node);
-    if (element->isFrameOwnerElement() && (!element->isPluginElement() || !element->isKeyboardFocusable())) {
+    if (element->isFrameOwnerElement() && (!isHTMLPlugInElement(*element) || !element->isKeyboardFocusable())) {
         // We focus frames rather than frame owners.
         // FIXME: We should not focus frames that have no scrollbars, as focusing them isn't useful to the user.
         HTMLFrameOwnerElement* owner = toHTMLFrameOwnerElement(element);
         if (!owner->contentFrame())
             return false;
 
-        document->setFocusedElement(0);
+        document->setFocusedElement(nullptr);
         setFocusedFrame(owner->contentFrame());
         return true;
     }
@@ -397,7 +401,7 @@ bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFo
 
     if (&newDocument != document) {
         // Focus is going away from this document, so clear the focused node.
-        document->setFocusedElement(0);
+        document->setFocusedElement(nullptr);
     }
 
     setFocusedFrame(newDocument.frame());
@@ -584,7 +588,7 @@ static bool relinquishesEditingFocus(Node *node)
     return node->document().frame() && node->rootEditableElement();
 }
 
-static void clearSelectionIfNeeded(Frame* oldFocusedFrame, Frame* newFocusedFrame, Node* newFocusedNode)
+static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newFocusedFrame, Node* newFocusedNode)
 {
     if (!oldFocusedFrame || !newFocusedFrame)
         return;
@@ -612,7 +616,7 @@ static void clearSelectionIfNeeded(Frame* oldFocusedFrame, Frame* newFocusedFram
                 return;
 
             if (Node* shadowAncestorNode = root->deprecatedShadowAncestorNode()) {
-                if (!shadowAncestorNode->hasTagName(inputTag) && !shadowAncestorNode->hasTagName(textareaTag))
+                if (!isHTMLInputElement(*shadowAncestorNode) && !isHTMLTextAreaElement(*shadowAncestorNode))
                     return;
             }
         }
@@ -621,9 +625,9 @@ static void clearSelectionIfNeeded(Frame* oldFocusedFrame, Frame* newFocusedFram
     selection.clear();
 }
 
-bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newFocusedFrame, FocusType type)
+bool FocusController::setFocusedElement(Element* element, PassRefPtr<LocalFrame> newFocusedFrame, FocusType type)
 {
-    RefPtr<Frame> oldFocusedFrame = focusedFrame();
+    RefPtr<LocalFrame> oldFocusedFrame = focusedFrame();
     RefPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : 0;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : 0;
@@ -648,10 +652,10 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newF
     clearSelectionIfNeeded(oldFocusedFrame.get(), newFocusedFrame.get(), element);
 
     if (oldDocument && oldDocument != newDocument)
-        oldDocument->setFocusedElement(0);
+        oldDocument->setFocusedElement(nullptr);
 
     if (newFocusedFrame && !newFocusedFrame->page()) {
-        setFocusedFrame(0);
+        setFocusedFrame(nullptr);
         return false;
     }
     setFocusedFrame(newFocusedFrame);
@@ -674,12 +678,8 @@ void FocusController::setActive(bool active)
 
     m_isActive = active;
 
-    if (FrameView* view = m_page->mainFrame()->view()) {
-        view->updateLayoutAndStyleIfNeededRecursive();
-        // https://code.google.com/p/chromium/issues/detail?id=343758
-        DisableCompositingQueryAsserts disabler;
+    if (FrameView* view = m_page->mainFrame()->view())
         view->updateControlTints();
-    }
 
     focusedOrMainFrame()->selection().pageActivationChanged();
 }
@@ -705,7 +705,7 @@ void FocusController::setContainingWindowIsVisible(bool containingWindowIsVisibl
 
     contentAreaDidShowOrHide(view, containingWindowIsVisible);
 
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (LocalFrame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         FrameView* frameView = frame->view();
         if (!frameView)
             continue;
@@ -872,7 +872,7 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
 
 bool FocusController::advanceFocusDirectionally(FocusType type)
 {
-    Frame* curFrame = focusedOrMainFrame();
+    LocalFrame* curFrame = focusedOrMainFrame();
     ASSERT(curFrame);
 
     Document* focusedDocument = curFrame->document();
@@ -891,9 +891,9 @@ bool FocusController::advanceFocusDirectionally(FocusType type)
         if (!hasOffscreenRect(focusedElement)) {
             container = scrollableEnclosingBoxOrParentFrameForNodeInDirection(type, focusedElement);
             startingRect = nodeRectInAbsoluteCoordinates(focusedElement, true /* ignore border */);
-        } else if (focusedElement->hasTagName(areaTag)) {
-            HTMLAreaElement* area = toHTMLAreaElement(focusedElement);
-            container = scrollableEnclosingBoxOrParentFrameForNodeInDirection(type, area->imageElement());
+        } else if (isHTMLAreaElement(*focusedElement)) {
+            HTMLAreaElement& area = toHTMLAreaElement(*focusedElement);
+            container = scrollableEnclosingBoxOrParentFrameForNodeInDirection(type, area.imageElement());
             startingRect = virtualRectForAreaElementAndDirection(area, type);
         }
     }

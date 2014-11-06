@@ -64,7 +64,7 @@ IDBRequest::IDBRequest(ExecutionContext* context, PassRefPtr<IDBAny> source, IDB
     , m_hasPendingActivity(true)
     , m_cursorType(IndexedDB::CursorKeyAndValue)
     , m_cursorDirection(blink::WebIDBCursor::Next)
-    , m_pendingCursor(0)
+    , m_pendingCursor(nullptr)
     , m_didFireUpgradeNeededEvent(false)
     , m_preventPropagation(false)
     , m_resultDirty(true)
@@ -84,21 +84,26 @@ ScriptValue IDBRequest::result(ExceptionState& exceptionState)
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::requestNotFinishedErrorMessage);
         return ScriptValue();
     }
+    if (m_contextStopped || !executionContext())
+        return ScriptValue();
     m_resultDirty = false;
     return idbAnyToScriptValue(&m_requestState, m_result);
 }
 
-PassRefPtr<DOMError> IDBRequest::error(ExceptionState& exceptionState) const
+PassRefPtrWillBeRawPtr<DOMError> IDBRequest::error(ExceptionState& exceptionState) const
 {
     if (m_readyState != DONE) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::requestNotFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     return m_error;
 }
 
 ScriptValue IDBRequest::source(ExecutionContext* context) const
 {
+    if (m_contextStopped || !executionContext())
+        return ScriptValue();
+
     DOMRequestState requestState(context);
     return idbAnyToScriptValue(&requestState, m_source);
 }
@@ -158,7 +163,7 @@ void IDBRequest::setPendingCursor(PassRefPtr<IDBCursor> cursor)
 
     m_hasPendingActivity = true;
     m_pendingCursor = cursor;
-    setResult(PassRefPtr<IDBAny>(0));
+    setResult(PassRefPtr<IDBAny>(nullptr));
     m_readyState = PENDING;
     m_error.clear();
     m_transaction->registerRequest(this);
@@ -211,7 +216,7 @@ bool IDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
-void IDBRequest::onError(PassRefPtr<DOMError> error)
+void IDBRequest::onError(PassRefPtrWillBeRawPtr<DOMError> error)
 {
     IDB_TRACE("IDBRequest::onError()");
     if (!shouldEnqueueEvent())
@@ -292,7 +297,7 @@ static PassRefPtr<IDBObjectStore> effectiveObjectStore(PassRefPtr<IDBAny> source
         return source->idbIndex()->objectStore();
 
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 #endif
 

@@ -30,7 +30,7 @@
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
 #include "SkDropShadowImageFilter.h"
-#include "SkResizeImageFilter.h"
+#include "SkMatrixImageFilter.h"
 #include "SkTableColorFilter.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/filters/FilterEffect.h"
@@ -67,7 +67,7 @@ SkiaImageFilterBuilder::~SkiaImageFilterBuilder()
 PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::build(FilterEffect* effect, ColorSpace colorSpace)
 {
     if (!effect)
-        return 0;
+        return nullptr;
 
     FilterColorSpacePair key(effect, colorSpace);
     FilterBuilderHashMap::iterator it = m_map.find(key);
@@ -205,9 +205,9 @@ bool SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& opera
     return true;
 }
 
-PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::buildResize(float scaleX, float scaleY, SkImageFilter* input)
+PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::buildTransform(const AffineTransform& transform, SkImageFilter* input)
 {
-    return adoptRef(new SkResizeImageFilter(scaleX, scaleY, SkPaint::kHigh_FilterLevel, input));
+    return adoptRef(SkMatrixImageFilter::Create(affineTransformToSkMatrix(transform), SkPaint::kHigh_FilterLevel, input));
 }
 
 };

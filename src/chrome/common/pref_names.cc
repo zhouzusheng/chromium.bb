@@ -101,12 +101,6 @@ const char kRestoreStartupURLsMigrationTime[] =
 // data in the profile folder on disk but only in memory.
 const char kForceEphemeralProfiles[] = "profile.ephemeral_mode";
 
-// Set to true when enhanced bookmarks experiment is enabled via Chrome sync.
-const char kEnhancedBookmarksExperimentEnabled[] = "enhanced_bookmarks_enabled";
-
-// Enhanced bookmarks extension id passed via Chrome sync.
-const char kEnhancedBookmarksExtensionId[] = "enhanced_bookmarks_extension_id";
-
 // The application locale.
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -306,15 +300,6 @@ const char kShowAppsShortcutInBookmarkBar[] = "bookmark_bar.show_apps_shortcut";
 // the bookmark editor.
 const char kBookmarkEditorExpandedNodes[] = "bookmark_editor.expanded_nodes";
 
-// Boolean that is true if the password manager is on (will record new
-// passwords and fill in known passwords).
-const char kPasswordManagerEnabled[] = "profile.password_manager_enabled";
-
-// Boolean controlling whether the password manager allows to retrieve passwords
-// in clear text.
-const char kPasswordManagerAllowShowPasswords[] =
-    "profile.password_manager_allow_show_passwords";
-
 // Booleans identifying whether normal and reverse auto-logins are enabled.
 const char kAutologinEnabled[] = "autologin.enabled";
 const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
@@ -511,7 +496,9 @@ const char kDisabledSchemes[] = "protocol.disabled_schemes";
 // recorded on Android so that retries aren't attempted on every startup.
 // Instead the cloud policy registration is retried at least 1 or 3 days later.
 const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
+#endif
 
+#if defined(OS_ANDROID) || defined(OS_IOS)
 // A list of bookmarks to include in a Managed Bookmarks root node. Each
 // list item is a dictionary containing a "name" and an "url" entry, detailing
 // the bookmark name and target URL respectively.
@@ -1177,9 +1164,6 @@ const char kEnableReferrers[] = "enable_referrers";
 // Whether to send the DNT header.
 const char kEnableDoNotTrack[] = "enable_do_not_track";
 
-// Boolean to enable reporting memory info to page.
-const char kEnableMemoryInfo[] = "enable_memory_info";
-
 // GL_VENDOR string.
 const char kGLVendorString[] = "gl_vendor_string";
 
@@ -1209,16 +1193,6 @@ const char kImportSearchEngine[] = "import_search_engine";
 // browser on first run.
 const char kImportSavedPasswords[] = "import_saved_passwords";
 
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-// The local profile id for this profile.
-const char kLocalProfileId[] = "profile.local_profile_id";
-
-// Whether passwords in external services (e.g. GNOME Keyring) have been tagged
-// with the local profile id yet. (Used for migrating to tagged passwords.)
-const char kPasswordsUseLocalProfileId[] =
-    "profile.passwords_use_local_profile_id";
-#endif
-
 // Profile avatar and name
 const char kProfileAvatarIndex[] = "profile.avatar_index";
 const char kProfileName[] = "profile.name";
@@ -1228,6 +1202,23 @@ const char kProfileIsManaged[] = "profile.is_managed";
 
 // The managed user ID.
 const char kManagedUserId[] = "profile.managed_user_id";
+
+// 64-bit integer serialization of the base::Time when the user's GAIA info
+// was last updated.
+const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
+
+// The URL from which the GAIA profile picture was downloaded. This is cached to
+// prevent the same picture from being downloaded multiple times.
+const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
+
+// Integer that specifies the number of times that we have shown the tutorial
+// card in the profile avatar bubble.
+const char kProfileAvatarTutorialShown[] =
+    "profile.avatar_bubble_tutorial_shown";
+
+// Boolean that specifies whether we have shown the user manager tutorial.
+const char kProfileUserManagerTutorialShown[] =
+    "profile.user_manager_tutorial_shown";
 
 // Indicates if we've already shown a notification that high contrast
 // mode is on, recommending high-contrast extensions and themes.
@@ -1284,9 +1275,17 @@ extern const char kInitializedSyncedNotificationSendingServices[] =
 extern const char kSyncedNotificationFirstRun[] =
     "synced_notification.first_run";
 
-// Boolean pref indicating the welcome notification was dismissed by the user.
+// Boolean pref indicating the Chrome Now welcome notification was dismissed
+// by the user. Syncable.
+// Note: This is now read-only. The welcome notification writes the _local
+// version, below.
 extern const char kWelcomeNotificationDismissed[] =
     "message_center.welcome_notification_dismissed";
+
+// Boolean pref indicating the Chrome Now welcome notification was dismissed
+// by the user on this machine.
+extern const char kWelcomeNotificationDismissedLocal[] =
+    "message_center.welcome_notification_dismissed_local";
 
 // Boolean pref indicating the welcome notification was previously popped up.
 extern const char kWelcomeNotificationPreviouslyPoppedUp[] =
@@ -1306,6 +1305,10 @@ extern const char kFullscreenAllowed[] = "fullscreen.allowed";
 const char kLocalDiscoveryNotificationsEnabled[] =
     "local_discovery.notifications_enabled";
 
+// A timestamp (stored in base::Time::ToInternalValue format) of the last time
+// a preference was reset.
+const char kPreferenceResetTime[] = "prefs.preference_reset_time";
+
 // String that indicates if the Profile Reset prompt has already been shown to
 // the user. Used both in user preferences and local state, in the latter, it is
 // actually a dictionary that maps profile keys to before-mentioned strings.
@@ -1314,8 +1317,14 @@ const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 // The GCM channel's enabled state.
 const char kGCMChannelEnabled[] = "gcm.channel_enabled";
 
-// Registered GCM application ids.
-const char kGCMRegisteredAppIDs[] = "gcm.register_app_ids";
+// Whether Easy Unlock is enabled.
+extern const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
+
+// Whether to show the Easy Unlock first run tutorial.
+extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
+
+// Preference storing Easy Unlock pairing data.
+extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1356,29 +1365,45 @@ const char kSSLVersionMax[] = "ssl.version_max";
 const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
 const char kEnableOriginBoundCerts[] = "ssl.origin_bound_certs.enabled";
 const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
-const char kEnableUnrestrictedSSL3Fallback[] =
-    "ssl.unrestricted_ssl3_fallback.enabled";
 
 // A boolean pref of the EULA accepted flag.
 const char kEulaAccepted[] = "EulaAccepted";
 
 // The metrics client GUID, entropy source and session ID.
-const char kMetricsClientID[] = "user_experience_metrics.client_id";
+// Note: The names client_id2 and low_entropy_source2 are a result of creating
+// new prefs to do a one-time reset of the previous values.
+const char kMetricsClientID[] = "user_experience_metrics.client_id2";
 const char kMetricsSessionID[] = "user_experience_metrics.session_id";
 const char kMetricsLowEntropySource[] =
-    "user_experience_metrics.low_entropy_source";
+    "user_experience_metrics.low_entropy_source2";
 const char kMetricsPermutedEntropyCache[] =
     "user_experience_metrics.permuted_entropy_cache";
 
-// Date/time when the current metrics profile ID was created
-// (which hopefully corresponds to first run).
-const char kMetricsClientIDTimestamp[] =
-    "user_experience_metrics.client_id_timestamp";
+// Old client id and low entropy source values, cleared the first time this
+// version is launched.
+// TODO(asvitkine): Delete these after a few releases have gone by and old
+// values have been cleaned up. http://crbug.com/357704
+const char kMetricsOldClientID[] = "user_experience_metrics.client_id";
+const char kMetricsOldLowEntropySource[] =
+    "user_experience_metrics.low_entropy_source";
 
 // Boolean that specifies whether or not crash reporting and metrics reporting
 // are sent over the network for analysis.
 const char kMetricsReportingEnabled[] =
     "user_experience_metrics.reporting_enabled";
+// Date/time when the user opted in to UMA and generated the client id for the
+// very first time (local machine time, stored as a 64-bit time_t value).
+const char kMetricsReportingEnabledTimestamp[] =
+    "user_experience_metrics.client_id_timestamp";
+
+// A machine ID used to detect when underlying hardware changes. It is only
+// stored locally and never transmitted in metrics reports.
+const char kMetricsMachineId[] = "user_experience_metrics.machine_id";
+
+// Boolean that indicates a cloned install has been detected and the metrics
+// client id and low entropy source should be reset.
+const char kMetricsResetIds[] =
+    "user_experience_metrics.reset_metrics_ids";
 
 // Boolean that specifies whether or not crash reports are sent
 // over the network for analysis.
@@ -1817,71 +1842,6 @@ const char kSpdyProxyAuthEnabled[] = "spdy_proxy.enabled";
 const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
-// Boolean which stores if the user is allowed to signin to chrome.
-const char kSigninAllowed[] = "signin.allowed";
-
-// 64-bit integer serialization of the base::Time when the last sync occurred.
-const char kSyncLastSyncedTime[] = "sync.last_synced_time";
-
-// Boolean specifying whether the user finished setting up sync.
-const char kSyncHasSetupCompleted[] = "sync.has_setup_completed";
-
-// Boolean specifying whether sync has an auth error.
-const char kSyncHasAuthError[] = "sync.has_auth_error";
-
-// Boolean specifying whether to automatically sync all data types (including
-// future ones, as they're added).  If this is true, the following preferences
-// (kSyncBookmarks, kSyncPasswords, etc.) can all be ignored.
-const char kSyncKeepEverythingSynced[] = "sync.keep_everything_synced";
-
-// Booleans specifying whether the user has selected to sync the following
-// datatypes.
-const char kSyncAppList[] = "sync.app_list";
-const char kSyncAppNotifications[] = "sync.app_notifications";
-const char kSyncAppSettings[] = "sync.app_settings";
-const char kSyncApps[] = "sync.apps";
-const char kSyncAutofillProfile[] = "sync.autofill_profile";
-const char kSyncAutofill[] = "sync.autofill";
-const char kSyncBookmarks[] = "sync.bookmarks";
-const char kSyncDictionary[] = "sync.dictionary";
-const char kSyncExtensionSettings[] = "sync.extension_settings";
-const char kSyncExtensions[] = "sync.extensions";
-const char kSyncFaviconImages[] = "sync.favicon_images";
-const char kSyncFaviconTracking[] = "sync.favicon_tracking";
-const char kSyncHistoryDeleteDirectives[] = "sync.history_delete_directives";
-const char kSyncManagedUserSettings[] = "sync.managed_user_settings";
-const char kSyncManagedUserSharedSettings[] =
-    "sync.managed_user_shared_settings";
-const char kSyncManagedUsers[] = "sync.managed_users";
-const char kSyncArticles[] = "sync.articles";
-const char kSyncPasswords[] = "sync.passwords";
-const char kSyncPreferences[] = "sync.preferences";
-const char kSyncPriorityPreferences[] = "sync.priority_preferences";
-const char kSyncSearchEngines[] = "sync.search_engines";
-const char kSyncSessions[] = "sync.sessions";
-const char kSyncSyncedNotificationAppInfo[] =
-    "sync.synced_notification_app_info";
-const char kSyncSyncedNotifications[] = "sync.synced_notifications";
-const char kSyncTabs[] = "sync.tabs";
-const char kSyncThemes[] = "sync.themes";
-const char kSyncTypedUrls[] = "sync.typed_urls";
-
-// Boolean used by enterprise configuration management in order to lock down
-// sync.
-const char kSyncManaged[] = "sync.managed";
-
-// Boolean to prevent sync from automatically starting up.  This is
-// used when sync is disabled by the user via the privacy dashboard.
-const char kSyncSuppressStart[] = "sync.suppress_start";
-
-// List of the currently acknowledged set of sync types, used to figure out
-// if a new sync type has rolled out so we can notify the user.
-const char kSyncAcknowledgedSyncTypes[] = "sync.acknowledged_types";
-
-// The GUID session sync will use to identify this client, even across sync
-// disable/enable events.
-const char kSyncSessionsGUID[] = "sync.session_sync_guid";
-
 // An ID to uniquely identify this client to the invalidator service.
 const char kInvalidatorClientId[] = "invalidator.client_id";
 
@@ -1893,33 +1853,10 @@ const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
 // yet.  Used to keep invalidation clients in sync in case of a restart.
 const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 
-// A string that can be used to restore sync encryption infrastructure on
-// startup so that the user doesn't need to provide credentials on each start.
-const char kSyncEncryptionBootstrapToken[] =
-    "sync.encryption_bootstrap_token";
-
-// Same as kSyncEncryptionBootstrapToken, but derived from the keystore key,
-// so we don't have to do a GetKey command at restart.
-const char kSyncKeystoreEncryptionBootstrapToken[] =
-    "sync.keystore_encryption_bootstrap_token";
-
-// Boolean tracking whether the user chose to specify a secondary encryption
-// passphrase.
-const char kSyncUsingSecondaryPassphrase[] = "sync.using_secondary_passphrase";
-
-// String the identifies the last user that logged into sync and other
-// google services. As opposed to kGoogleServicesUsername, this value is not
-// cleared on signout, but while the user is signed in the two values will
-// be the same.
-const char kGoogleServicesLastUsername[] = "google.services.last_username";
-
-// Obfuscated account ID that identifies the current user logged into sync and
-// other google services.
-const char kGoogleServicesUserAccountId[] = "google.services.user_account_id";
-
-// String that identifies the current user logged into sync and other google
-// services.
-const char kGoogleServicesUsername[] = "google.services.username";
+// Boolean indicating that TiclInvalidationService should use GCM channel.
+// False or lack of settings means XMPPPushClient channel.
+const char kInvalidationServiceUseGCMChannel[] =
+    "invalidation_service.use_gcm_channel";
 
 // Local state pref containing a string regex that restricts which accounts
 // can be used to log in to chrome (e.g. "*@google.com"). If missing or blank,
@@ -1948,13 +1885,6 @@ const char kSignInPromoShowOnFirstRunAllowed[] =
 // The bubble is used to confirm that the user is signed into sync.
 const char kSignInPromoShowNTPBubble[] = "sync_promo.show_ntp_bubble";
 #endif
-
-// Time when the user's GAIA info was last updated (represented as an int64).
-const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
-
-// The URL from which the GAIA profile picture was downloaded. This is cached to
-// prevent the same picture from being downloaded multiple times.
-const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
 
 // Create web application shortcut dialog preferences.
 const char kWebAppCreateOnDesktop[] = "browser.web_app.create_on_desktop";
@@ -1992,6 +1922,10 @@ const char kRemoteAccessHostRequireCurtain[] =
 // Boolean controlling whether curtaining is required when connecting to a host.
 const char kRemoteAccessHostAllowClientPairing[] =
     "remote_access.host_allow_client_pairing";
+
+// Whether Chrome Remote Desktop can proxy gnubby authentication traffic.
+const char kRemoteAccessHostAllowGnubbyAuth[] =
+    "remote_access.host_allow_gnubby_auth";
 
 // The last used printer and its settings.
 const char kPrintPreviewStickySettings[] =
@@ -2137,7 +2071,7 @@ const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 
 // A boolean pref that controls the enabled-state of hotword search voice
 // trigger.
-const char kHotwordSearchEnabled[] = "hotword.search_enabled";
+const char kHotwordSearchEnabled[] = "hotword.search_enabled_2";
 
 // An integer pref that keeps track of how many times the opt in popup for
 // hotword void search has been shown to the user. After this pref has reached
@@ -2145,12 +2079,9 @@ const char kHotwordSearchEnabled[] = "hotword.search_enabled";
 // longer shown.
 const char kHotwordOptInPopupTimesShown[] = "hotword.opt_in_popup_times_shown";
 
-#if defined(OS_CHROMEOS)
-// A boolean pref that controls the enabled-state of hotword search in the
-// app-list. This pref cooperates with kHotwordSearchEnabled. If the user
-// explicitly turns off kHotwordSearchEnabled, this pref should go off too.
-const char kHotwordAppListEnabled[] = "hotword.app_list_enabled";
-#endif
+// A boolean pref that controls whether the sound of "Ok, Google" plus a few
+// seconds of audio data before is sent back to improve voice search.
+const char kHotwordAudioLoggingEnabled[] = "hotword.audio_logging_enabled";
 
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
@@ -2190,10 +2121,6 @@ const char kDeviceActivityTimes[] = "device_status.activity_times";
 // A pref holding the last known location when device location reporting is
 // enabled.
 const char kDeviceLocation[] = "device_status.location";
-
-// A string that is used to store first-time sync startup after once sync is
-// disabled. This will be refreshed every sign-in.
-const char kSyncSpareBootstrapToken[] = "sync.spare_bootstrap_token";
 
 // A pref holding the value of the policy used to disable mounting of external
 // storage for the user.
@@ -2262,6 +2189,10 @@ const char kDeviceRegistered[] = "DeviceRegistered";
 // This is used to prevent these users from joining multiprofile sessions.
 const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
 
+// A dictionary containing server-provided device state pulled form the cloud
+// after recovery.
+const char kServerBackedDeviceState[] = "server_backed_device_state";
+
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2292,8 +2223,12 @@ const char kPerformanceTracingEnabled[] =
 // Value of the enums in TabStrip::LayoutType as an int.
 const char kTabStripLayoutType[] = "tab_strip_layout_type";
 
-// Indicates that factory reset was requested from options page.
+// Indicates that factory reset was requested from options page or reset screen.
 const char kFactoryResetRequested[] = "FactoryResetRequested";
+
+// Indicates that rollback was requested alongside with factory reset.
+// Makes sense only if kFactoryResetRequested is true.
+const char kRollbackRequested[] = "RollbackRequested";
 
 // Boolean recording whether we have showed a balloon that calls out the message
 // center for desktop notifications.
@@ -2443,6 +2378,13 @@ const char kRecoveryComponentVersion[] = "recovery_component.version";
 // String that stores the component updater last known state. This is used for
 // troubleshooting.
 const char kComponentUpdaterState[] = "component_updater.state";
+
+// A boolean where true means that the browser has previously attempted to
+// enable autoupdate and failed, so the next out-of-date browser start should
+// not prompt the user to enable autoupdate, it should offer to reinstall Chrome
+// instead.
+const char kAttemptedToEnableAutoupdate[] =
+    "browser.attempted_to_enable_autoupdate";
 
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";
@@ -2667,10 +2609,6 @@ const char kWatchdogExtensionActiveOld[] =
 // of Chrome.
 const char kProfilePreferenceHashes[] = "profile.preference_hashes";
 
-// A timestamp (stored in base::Time::ToInternalValue format) of the last time
-// a preference was reset.
-const char kProfilePreferenceResetTime[] = "profile.preference_reset_time";
-
 // Stores a pair of local time and corresponding network time to bootstrap
 // network time tracker when browser starts.
 const char kNetworkTimeMapping[] = "profile.network_time_mapping";
@@ -2682,16 +2620,6 @@ const char kNetworkTimeMapping[] = "profile.network_time_mapping";
 // given by the PartnerBookmarksProvider and either the user-visible renamed
 // title or an empty string if the bookmark node was removed.
 const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
-#endif
-
-#if defined(OS_WIN)
-// Whether the password was blank, only valid if OS password was last changed
-// on or before the value contained in kOsPasswordLastChanged.
-const char kOsPasswordBlank[] = "password_manager.os_password_blank";
-
-// The number of seconds since epoch that the OS password was last changed.
-const char kOsPasswordLastChanged[] =
-    "password_manager.os_password_last_changed";
 #endif
 
 // Whether DNS Quick Check is disabled in proxy resolution.

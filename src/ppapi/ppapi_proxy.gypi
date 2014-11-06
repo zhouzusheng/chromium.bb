@@ -112,7 +112,6 @@
           'proxy/plugin_dispatcher.h',
           'proxy/plugin_globals.cc',
           'proxy/plugin_globals.h',
-          'proxy/plugin_main_nacl.cc',
           'proxy/plugin_message_filter.cc',
           'proxy/plugin_message_filter.h',
           'proxy/plugin_resource.cc',
@@ -159,6 +158,8 @@
           'proxy/ppp_class_proxy.h',
           'proxy/ppp_content_decryptor_private_proxy.cc',
           'proxy/ppp_content_decryptor_private_proxy.h',
+          'proxy/ppp_find_proxy.cc',
+          'proxy/ppp_find_proxy.h',
           'proxy/ppp_graphics_3d_proxy.cc',
           'proxy/ppp_graphics_3d_proxy.h',
           'proxy/ppp_input_event_proxy.cc',
@@ -244,6 +245,8 @@
           ['>(nacl_untrusted_build)==1', {
             'sources': [
               'proxy/irt_ppapi.c',
+              'proxy/plugin_main_irt.cc',
+              'proxy/plugin_main_irt.h',
             ],
             'sources!': [
               'proxy/audio_input_resource.cc',

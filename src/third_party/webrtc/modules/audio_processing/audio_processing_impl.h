@@ -21,7 +21,7 @@
 namespace webrtc {
 class AudioBuffer;
 class CriticalSectionWrapper;
-class EchoCancellationImplWrapper;
+class EchoCancellationImpl;
 class EchoControlMobileImpl;
 class FileWrapper;
 class GainControlImpl;
@@ -41,22 +41,16 @@ class Event;
 
 class AudioProcessingImpl : public AudioProcessing {
  public:
-  enum {
-    kSampleRate8kHz = 8000,
-    kSampleRate16kHz = 16000,
-    kSampleRate32kHz = 32000
-  };
-
   explicit AudioProcessingImpl(const Config& config);
   virtual ~AudioProcessingImpl();
 
-  CriticalSectionWrapper* crit() const;
-
-  int split_sample_rate_hz() const;
-  bool was_stream_delay_set() const;
-
   // AudioProcessing methods.
   virtual int Initialize() OVERRIDE;
+  virtual int Initialize(int sample_rate_hz,
+                         int reverse_sample_rate_hz,
+                         int num_input_channels,
+                         int num_output_channels,
+                         int num_reverse_channels) OVERRIDE;
   virtual void SetExtraOptions(const Config& config) OVERRIDE;
   virtual int EnableExperimentalNs(bool enable) OVERRIDE;
   virtual bool experimental_ns_enabled() const OVERRIDE {
@@ -64,6 +58,7 @@ class AudioProcessingImpl : public AudioProcessing {
   }
   virtual int set_sample_rate_hz(int rate) OVERRIDE;
   virtual int sample_rate_hz() const OVERRIDE;
+  virtual int split_sample_rate_hz() const OVERRIDE;
   virtual int set_num_channels(int input_channels,
                                int output_channels) OVERRIDE;
   virtual int num_input_channels() const OVERRIDE;
@@ -73,9 +68,19 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual void set_output_will_be_muted(bool muted) OVERRIDE;
   virtual bool output_will_be_muted() const OVERRIDE;
   virtual int ProcessStream(AudioFrame* frame) OVERRIDE;
+  virtual int ProcessStream(float* const* data,
+                            int samples_per_channel,
+                            int sample_rate_hz,
+                            ChannelLayout input_layout,
+                            ChannelLayout output_layout) OVERRIDE;
   virtual int AnalyzeReverseStream(AudioFrame* frame) OVERRIDE;
+  virtual int AnalyzeReverseStream(const float* const* data,
+                                   int samples_per_channel,
+                                   int sample_rate_hz,
+                                   ChannelLayout layout) OVERRIDE;
   virtual int set_stream_delay_ms(int delay) OVERRIDE;
   virtual int stream_delay_ms() const OVERRIDE;
+  virtual bool was_stream_delay_set() const OVERRIDE;
   virtual void set_delay_offset_ms(int offset) OVERRIDE;
   virtual int delay_offset_ms() const OVERRIDE;
   virtual void set_stream_key_pressed(bool key_pressed) OVERRIDE;
@@ -93,17 +98,29 @@ class AudioProcessingImpl : public AudioProcessing {
   virtual VoiceDetection* voice_detection() const OVERRIDE;
 
  protected:
+  // Overridden in a mock.
   virtual int InitializeLocked();
 
  private:
-  int MaybeInitializeLocked(int sample_rate_hz, int num_input_channels,
-                            int num_output_channels, int num_reverse_channels);
+  int InitializeLocked(int sample_rate_hz,
+                       int reverse_sample_rate_hz,
+                       int num_input_channels,
+                       int num_output_channels,
+                       int num_reverse_channels);
+  int MaybeInitializeLocked(int sample_rate_hz,
+                            int reverse_sample_rate_hz,
+                            int num_input_channels,
+                            int num_output_channels,
+                            int num_reverse_channels);
+  int ProcessStreamLocked();
+  int AnalyzeReverseStreamLocked();
+
   bool is_data_processed() const;
-  bool interleave_needed(bool is_data_processed) const;
+  bool output_copy_needed(bool is_data_processed) const;
   bool synthesis_needed(bool is_data_processed) const;
   bool analysis_needed(bool is_data_processed) const;
 
-  EchoCancellationImplWrapper* echo_cancellation_;
+  EchoCancellationImpl* echo_cancellation_;
   EchoControlMobileImpl* echo_control_mobile_;
   GainControlImpl* gain_control_;
   HighPassFilterImpl* high_pass_filter_;
@@ -126,8 +143,10 @@ class AudioProcessingImpl : public AudioProcessing {
 #endif
 
   int sample_rate_hz_;
+  int reverse_sample_rate_hz_;
   int split_sample_rate_hz_;
   int samples_per_channel_;
+  int reverse_samples_per_channel_;
   int stream_delay_ms_;
   int delay_offset_ms_;
   bool was_stream_delay_set_;

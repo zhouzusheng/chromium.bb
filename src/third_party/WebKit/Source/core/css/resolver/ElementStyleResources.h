@@ -41,12 +41,13 @@ class FilterOperation;
 class StyleImage;
 class TextLinkColors;
 
-typedef WillBePersistentHeapHashMap<FilterOperation*, RefPtrWillBeMember<CSSSVGDocumentValue> > PendingSVGDocumentMap;
-typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
+typedef WillBeHeapHashMap<FilterOperation*, RefPtrWillBeMember<CSSSVGDocumentValue> > PendingSVGDocumentMap;
+typedef WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<CSSValue> > PendingImagePropertyMap;
 
 // Holds information about resources, requested by stylesheets.
 // Lifetime: per-element style resolve.
 class ElementStyleResources {
+STACK_ALLOCATED();
 WTF_MAKE_NONCOPYABLE(ElementStyleResources);
 public:
     ElementStyleResources();
@@ -60,6 +61,9 @@ public:
 
     const PendingImagePropertyMap& pendingImageProperties() const { return m_pendingImageProperties; }
     const PendingSVGDocumentMap& pendingSVGDocuments() const { return m_pendingSVGDocuments; }
+
+    void clearPendingImageProperties();
+    void clearPendingSVGDocuments();
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float deviceScaleFactor) { m_deviceScaleFactor = deviceScaleFactor; }

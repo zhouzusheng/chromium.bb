@@ -91,7 +91,7 @@ static HashSet<AtomicString>& clipperFilterMaskerTags()
     return s_tagList;
 }
 
-static HashSet<AtomicString>& markerTags()
+bool SVGResources::supportsMarkers(const SVGElement& element)
 {
     DEFINE_STATIC_LOCAL(HashSet<AtomicString>, s_tagList, ());
     if (s_tagList.isEmpty()) {
@@ -101,7 +101,7 @@ static HashSet<AtomicString>& markerTags()
         s_tagList.add(SVGNames::polylineTag.localName());
     }
 
-    return s_tagList;
+    return s_tagList.contains(element.localName());
 }
 
 static HashSet<AtomicString>& fillAndStrokeTags()
@@ -137,19 +137,19 @@ static HashSet<AtomicString>& chainableResourceTags()
     return s_tagList;
 }
 
-static inline AtomicString targetReferenceFromResource(SVGElement* element)
+static inline AtomicString targetReferenceFromResource(SVGElement& element)
 {
     String target;
-    if (element->hasTagName(SVGNames::patternTag))
-        target = toSVGPatternElement(element)->href()->currentValue()->value();
-    else if (element->hasTagName(SVGNames::linearGradientTag) || element->hasTagName(SVGNames::radialGradientTag))
-        target = toSVGGradientElement(element)->href()->currentValue()->value();
-    else if (element->hasTagName(SVGNames::filterTag))
-        target = toSVGFilterElement(element)->href()->currentValue()->value();
+    if (isSVGPatternElement(element))
+        target = toSVGPatternElement(element).href()->currentValue()->value();
+    else if (isSVGGradientElement(element))
+        target = toSVGGradientElement(element).href()->currentValue()->value();
+    else if (isSVGFilterElement(element))
+        target = toSVGFilterElement(element).href()->currentValue()->value();
     else
         ASSERT_NOT_REACHED();
 
-    return SVGURIReference::fragmentIdentifierFromIRIString(target, element->document());
+    return SVGURIReference::fragmentIdentifierFromIRIString(target, element.document());
 }
 
 static inline bool svgPaintTypeHasURL(SVGPaint::SVGPaintType paintType)
@@ -186,10 +186,10 @@ static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document&
     return container;
 }
 
-static inline void registerPendingResource(SVGDocumentExtensions* extensions, const AtomicString& id, SVGElement* element)
+static inline void registerPendingResource(SVGDocumentExtensions& extensions, const AtomicString& id, SVGElement* element)
 {
     ASSERT(element);
-    extensions->addPendingResource(id, element);
+    extensions.addPendingResource(id, element);
 }
 
 bool SVGResources::hasResourceData() const
@@ -223,8 +223,7 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
 
     Document& document = object->document();
 
-    SVGDocumentExtensions* extensions = document.accessSVGExtensions();
-    ASSERT(extensions);
+    SVGDocumentExtensions& extensions = document.accessSVGExtensions();
 
     const AtomicString& tagName = element->localName();
     if (tagName.isNull())
@@ -251,17 +250,17 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
         }
     }
 
-    if (markerTags().contains(tagName) && style->hasMarkers()) {
-        AtomicString markerStartId(style->markerStartResource());
+    if (style->hasMarkers() && supportsMarkers(*element)) {
+        const AtomicString& markerStartId = style->markerStartResource();
         if (!ensureResources(resources)->setMarkerStart(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerStartId)))
             registerPendingResource(extensions, markerStartId, element);
 
-        AtomicString markerMidId(style->markerMidResource());
+        const AtomicString& markerMidId = style->markerMidResource();
         if (!ensureResources(resources)->setMarkerMid(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerMidId)))
             registerPendingResource(extensions, markerMidId, element);
 
-        AtomicString markerEndId(style->markerEndResource());
-        if (!ensureResources(resources)->setMarkerEnd(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerEndId)))
+        const AtomicString& markerEndId = style->markerEndResource();
+        if (!ensureResources(resources)->setMarkerEnd(getRenderSVGResourceById<RenderSVGResourceMarker>(document, style->markerEndResource())))
             registerPendingResource(extensions, markerEndId, element);
     }
 
@@ -286,7 +285,7 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     }
 
     if (chainableResourceTags().contains(tagName)) {
-        AtomicString id = targetReferenceFromResource(element);
+        AtomicString id = targetReferenceFromResource(*element);
         if (!ensureResources(resources)->setLinkedResource(getRenderSVGResourceContainerById(document, id)))
             registerPendingResource(extensions, id, element);
     }

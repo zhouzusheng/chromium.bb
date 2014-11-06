@@ -34,6 +34,8 @@
 
 namespace WebCore {
 
+class StyleSheetContents;
+
 ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(ContainerNode& scopingNode)
 {
     bool isNewEntry;
@@ -127,8 +129,6 @@ void ScopedStyleTree::collectScopedResolversForHostedShadowTrees(const Element* 
             if (ScopedStyleResolver* resolver = scopedStyleResolverFor(*shadowRoot))
                 resolvers.append(resolver);
         }
-        if (!shadowRoot->containsShadowElements())
-            break;
     }
 }
 
@@ -191,8 +191,9 @@ void ScopedStyleTree::popStyleCache(const ContainerNode& scopingNode)
 
 void ScopedStyleTree::collectFeaturesTo(RuleFeatureSet& features)
 {
+    HashSet<const StyleSheetContents*> visitedSharedStyleSheetContents;
     for (HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.begin(); it != m_authorStyles.end(); ++it)
-        it->value->collectFeaturesTo(features);
+        it->value->collectFeaturesTo(features, visitedSharedStyleSheetContents);
 }
 
 inline void ScopedStyleTree::reparentNodes(const ScopedStyleResolver* oldParent, ScopedStyleResolver* newParent)

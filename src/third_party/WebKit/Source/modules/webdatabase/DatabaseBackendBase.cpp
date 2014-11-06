@@ -31,6 +31,7 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
 #include "platform/Logging.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 #include "modules/webdatabase/DatabaseBase.h"
@@ -199,7 +200,7 @@ const char* DatabaseBackendBase::databaseInfoTableName()
     return infoTableName;
 }
 
-DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseContext> databaseContext, const String& name,
+DatabaseBackendBase::DatabaseBackendBase(DatabaseContext* databaseContext, const String& name,
     const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseType databaseType)
     : m_databaseContext(databaseContext)
     , m_name(name.isolatedCopy())
@@ -247,6 +248,13 @@ DatabaseBackendBase::~DatabaseBackendBase()
     ASSERT(!m_opened);
 }
 
+void DatabaseBackendBase::trace(Visitor* visitor)
+{
+    visitor->trace(m_databaseContext);
+    visitor->trace(m_sqliteDatabase);
+    visitor->trace(m_databaseAuthorizer);
+}
+
 void DatabaseBackendBase::closeDatabase()
 {
     if (!m_opened)
@@ -254,6 +262,7 @@ void DatabaseBackendBase::closeDatabase()
 
     m_sqliteDatabase.close();
     m_opened = false;
+    databaseContext()->didCloseDatabase(*this);
     // See comment at the top this file regarding calling removeOpenDatabase().
     DatabaseTracker::tracker().removeOpenDatabase(this);
     {
@@ -406,8 +415,9 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
     }
 
     ASSERT(m_databaseAuthorizer);
-    m_sqliteDatabase.setAuthorizer(m_databaseAuthorizer);
+    m_sqliteDatabase.setAuthorizer(m_databaseAuthorizer.get());
 
+    databaseContext()->didOpenDatabase(*this);
     // See comment at the top this file regarding calling addOpenDatabase().
     DatabaseTracker::tracker().addOpenDatabase(this);
     m_opened = true;
@@ -576,7 +586,7 @@ void DatabaseBackendBase::incrementalVacuumIfNeeded()
         int result = m_sqliteDatabase.runIncrementalVacuumCommand();
         reportVacuumDatabaseResult(result);
         if (result != SQLResultOk)
-            m_frontend->logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
+            logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
     }
 }
 
@@ -652,5 +662,14 @@ void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
     }
 }
 
+void DatabaseBackendBase::logErrorMessage(const String& message)
+{
+    executionContext()->addConsoleMessage(StorageMessageSource, ErrorMessageLevel, message);
+}
+
+ExecutionContext* DatabaseBackendBase::executionContext() const
+{
+    return databaseContext()->executionContext();
+}
 
 } // namespace WebCore

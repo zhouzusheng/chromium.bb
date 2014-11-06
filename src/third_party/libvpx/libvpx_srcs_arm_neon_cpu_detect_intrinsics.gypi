@@ -14,6 +14,10 @@
       ],
       'sources': [
         '<(libvpx_source)/vp8/common/arm/neon/bilinearpredict_neon.c',
+        '<(libvpx_source)/vp8/common/arm/neon/copymem_neon.c',
+        '<(libvpx_source)/vp8/common/arm/neon/dc_only_idct_add_neon.c',
+        '<(libvpx_source)/vp8/common/arm/neon/dequant_idct_neon.c',
+        '<(libvpx_source)/vp8/common/arm/neon/dequantizeb_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/idct_blk_neon.c',
         '<(libvpx_source)/vp8/encoder/arm/neon/denoising_neon.c',
         '<(libvpx_source)/vp9/common/arm/neon/vp9_convolve_neon.c',

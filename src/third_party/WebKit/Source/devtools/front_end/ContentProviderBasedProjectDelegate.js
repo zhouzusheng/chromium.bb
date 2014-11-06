@@ -270,7 +270,7 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
         var barrier = new CallbackBarrier();
         progress.setTotalWork(paths.length);
         for (var i = 0; i < paths.length; ++i)
-            searchInContent.call(this, paths[i], barrier.createCallback(searchInContentCallback.bind(this, paths[i])));
+            searchInContent.call(this, paths[i], barrier.createCallback(searchInContentCallback.bind(null, paths[i])));
         barrier.callWhenDone(doneCallback);
 
         /**
@@ -355,6 +355,8 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
     addContentProvider: function(parentPath, name, url, contentProvider, isEditable, isContentScript)
     {
         var path = parentPath ? parentPath + "/" + name : name;
+        if (this._contentProviders[path])
+            return path;
         var fileDescriptor = new WebInspector.FileDescriptor(parentPath, name, url, url, contentProvider.contentType(), isEditable, isContentScript);
         this._contentProviders[path] = contentProvider;
         this._isContentScriptMap[path] = isContentScript || false;

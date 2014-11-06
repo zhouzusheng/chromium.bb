@@ -47,8 +47,6 @@ enum ParseState {
 
 namespace WebCore {
 
-DEFINE_GC_INFO(CSSCalcExpressionNode);
-
 static CalculationCategory unitCategory(CSSPrimitiveValue::UnitTypes type)
 {
     switch (type) {
@@ -176,9 +174,7 @@ double CSSCalcValue::computeLengthPx(const CSSToLengthConversionData& conversion
     return clampToPermittedRange(m_expression->computeLengthPx(conversionData));
 }
 
-CSSCalcExpressionNode::~CSSCalcExpressionNode()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CSSCalcExpressionNode)
 
 class CSSCalcPrimitiveValue FINAL : public CSSCalcExpressionNode {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
@@ -192,7 +188,7 @@ public:
     static PassRefPtrWillBeRawPtr<CSSCalcPrimitiveValue> create(double value, CSSPrimitiveValue::UnitTypes type, bool isInteger)
     {
         if (std::isnan(value) || std::isinf(value))
-            return 0;
+            return nullptr;
         return adoptRefWillBeNoop(new CSSCalcPrimitiveValue(CSSPrimitiveValue::create(value, type).get(), isInteger));
     }
 
@@ -333,7 +329,7 @@ public:
 
         CalculationCategory newCategory = determineCategory(*leftSide, *rightSide, op);
         if (newCategory == CalcOther)
-            return 0;
+            return nullptr;
 
         return adoptRefWillBeNoop(new CSSCalcBinaryOperation(leftSide, rightSide, op, newCategory));
     }
@@ -378,14 +374,14 @@ public:
             if (!numberSide)
                 return create(leftSide, rightSide, op);
             if (numberSide == leftSide && op == CalcDivide)
-                return 0;
+                return nullptr;
             CSSCalcExpressionNode* otherSide = leftSide == numberSide ? rightSide.get() : leftSide.get();
 
             double number = numberSide->doubleValue();
             if (std::isnan(number) || std::isinf(number))
-                return 0;
+                return nullptr;
             if (op == CalcDivide && !number)
-                return 0;
+                return nullptr;
 
             CSSPrimitiveValue::UnitTypes otherType = otherSide->primitiveType();
             if (hasDoubleValue(otherType))
@@ -546,7 +542,7 @@ static ParseState checkDepthAndIndex(int* depth, unsigned index, CSSParserValueL
 }
 
 class CSSCalcExpressionNodeParser {
-    DISALLOW_ALLOCATION(); // Is only ever stack allocated.
+    STACK_ALLOCATED();
 public:
     PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> parseCalc(CSSParserValueList* tokens)
     {
@@ -555,15 +551,15 @@ public:
         bool ok = parseValueExpression(tokens, 0, &index, &result);
         ASSERT_WITH_SECURITY_IMPLICATION(index <= tokens->size());
         if (!ok || index != tokens->size())
-            return 0;
+            return nullptr;
         return result.value;
     }
 
 private:
     struct Value {
-        DISALLOW_ALLOCATION(); // Is only ever stack allocated.
+        STACK_ALLOCATED();
     public:
-        RefPtrWillBeRawPtr<CSSCalcExpressionNode> value;
+        RefPtrWillBeMember<CSSCalcExpressionNode> value;
     };
 
     char operatorValue(CSSParserValueList* tokens, unsigned index)
@@ -583,7 +579,7 @@ private:
         if (parserValue->unit == CSSParserValue::Operator)
             return false;
 
-        RefPtr<CSSValue> value = parserValue->createCSSValue();
+        RefPtrWillBeRawPtr<CSSValue> value = parserValue->createCSSValue();
         if (!value || !value->isPrimitiveValue())
             return false;
 
@@ -713,10 +709,10 @@ PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode
     }
     case CalcExpressionNodeUndefined:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Length& length, float zoom)
@@ -739,27 +735,27 @@ PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode
     case DeviceHeight:
     case Undefined:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 PassRefPtrWillBeRawPtr<CSSCalcValue> CSSCalcValue::create(CSSParserString name, CSSParserValueList* parserValueList, ValueRange range)
 {
     CSSCalcExpressionNodeParser parser;
-    RefPtrWillBeRawPtr<CSSCalcExpressionNode> expression;
+    RefPtrWillBeRawPtr<CSSCalcExpressionNode> expression = nullptr;
 
     if (equalIgnoringCase(name, "calc(") || equalIgnoringCase(name, "-webkit-calc("))
         expression = parser.parseCalc(parserValueList);
     // FIXME calc (http://webkit.org/b/16662) Add parsing for min and max here
 
-    return expression ? adoptRefCountedWillBeRefCountedGarbageCollected(new CSSCalcValue(expression, range)) : 0;
+    return expression ? adoptRefWillBeRefCountedGarbageCollected(new CSSCalcValue(expression, range)) : nullptr;
 }
 
 PassRefPtrWillBeRawPtr<CSSCalcValue> CSSCalcValue::create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> expression, ValueRange range)
 {
-    return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSCalcValue(expression, range));
+    return adoptRefWillBeRefCountedGarbageCollected(new CSSCalcValue(expression, range));
 }
 
 void CSSCalcValue::traceAfterDispatch(Visitor* visitor)

@@ -26,19 +26,18 @@
 
 #include "modules/mediastream/RTCIceCandidateEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/RTCIceCandidate.h"
 
 namespace WebCore {
 
-PassRefPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create()
+PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create()
 {
-    return adoptRef(new RTCIceCandidateEvent);
+    return adoptRefWillBeRefCountedGarbageCollected(new RTCIceCandidateEvent);
 }
 
-PassRefPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate> candidate)
+PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate> candidate)
 {
-    return adoptRef(new RTCIceCandidateEvent(canBubble, cancelable, candidate));
+    return adoptRefWillBeRefCountedGarbageCollected(new RTCIceCandidateEvent(canBubble, cancelable, candidate));
 }
 
 RTCIceCandidateEvent::RTCIceCandidateEvent()
@@ -65,6 +64,11 @@ RTCIceCandidate* RTCIceCandidateEvent::candidate() const
 const AtomicString& RTCIceCandidateEvent::interfaceName() const
 {
     return EventNames::RTCIceCandidateEvent;
+}
+
+void RTCIceCandidateEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

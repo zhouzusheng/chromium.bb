@@ -23,50 +23,56 @@
 #ifndef CSSDefaultStyleSheets_h
 #define CSSDefaultStyleSheets_h
 
+#include "heap/Handle.h"
+
 namespace WebCore {
 
 class Element;
 class RuleSet;
 class StyleSheetContents;
 
-class CSSDefaultStyleSheets {
+class CSSDefaultStyleSheets : public NoBaseWillBeGarbageCollected<CSSDefaultStyleSheets> {
 public:
     static CSSDefaultStyleSheets& instance();
 
     void ensureDefaultStyleSheetsForElement(Element*, bool& changedDefaultStyle);
 
-    RuleSet* defaultStyle() { return m_defaultStyle;}
-    RuleSet* defaultViewportStyle() { return m_defaultViewportStyle;}
-    RuleSet* defaultQuirksStyle() { return m_defaultQuirksStyle;}
-    RuleSet* defaultPrintStyle() { return m_defaultPrintStyle;}
+    RuleSet* defaultStyle() { return m_defaultStyle.get(); }
+    RuleSet* defaultViewportStyle() { return m_defaultViewportStyle.get(); }
+    RuleSet* defaultQuirksStyle() { return m_defaultQuirksStyle.get(); }
+    RuleSet* defaultPrintStyle() { return m_defaultPrintStyle.get(); }
     RuleSet* defaultViewSourceStyle();
 
     // FIXME: Remove WAP support.
     RuleSet* defaultXHTMLMobileProfileStyle();
 
-    StyleSheetContents* defaultStyleSheet() { return m_viewportStyleSheet; }
-    StyleSheetContents* viewportStyleSheet() { return m_viewportStyleSheet; }
-    StyleSheetContents* quirksStyleSheet() { return m_quirksStyleSheet; }
-    StyleSheetContents* svgStyleSheet() { return m_svgStyleSheet; }
-    StyleSheetContents* mediaControlsStyleSheet() { return m_mediaControlsStyleSheet; }
-    StyleSheetContents* fullscreenStyleSheet() { return m_fullscreenStyleSheet; }
+    StyleSheetContents* defaultStyleSheet() { return m_defaultStyleSheet.get(); }
+    StyleSheetContents* viewportStyleSheet() { return m_viewportStyleSheet.get(); }
+    StyleSheetContents* quirksStyleSheet() { return m_quirksStyleSheet.get(); }
+    StyleSheetContents* svgStyleSheet() { return m_svgStyleSheet.get(); }
+    StyleSheetContents* mathmlStyleSheet() { return m_mathmlStyleSheet.get(); }
+    StyleSheetContents* mediaControlsStyleSheet() { return m_mediaControlsStyleSheet.get(); }
+    StyleSheetContents* fullscreenStyleSheet() { return m_fullscreenStyleSheet.get(); }
+
+    void trace(Visitor*);
 
 private:
     CSSDefaultStyleSheets();
 
-    RuleSet* m_defaultStyle;
-    RuleSet* m_defaultViewportStyle;
-    RuleSet* m_defaultQuirksStyle;
-    RuleSet* m_defaultPrintStyle;
-    RuleSet* m_defaultViewSourceStyle;
-    RuleSet* m_defaultXHTMLMobileProfileStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultViewportStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultQuirksStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultPrintStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultViewSourceStyle;
+    OwnPtrWillBeMember<RuleSet> m_defaultXHTMLMobileProfileStyle;
 
-    StyleSheetContents* m_defaultStyleSheet;
-    StyleSheetContents* m_viewportStyleSheet;
-    StyleSheetContents* m_quirksStyleSheet;
-    StyleSheetContents* m_svgStyleSheet;
-    StyleSheetContents* m_mediaControlsStyleSheet;
-    StyleSheetContents* m_fullscreenStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_defaultStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_viewportStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_quirksStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_svgStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_mathmlStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_mediaControlsStyleSheet;
+    RefPtrWillBeMember<StyleSheetContents> m_fullscreenStyleSheet;
 };
 
 } // namespace WebCore

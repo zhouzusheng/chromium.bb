@@ -36,15 +36,15 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/FormController.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/rendering/RenderListBox.h"
 #include "core/rendering/RenderMenuList.h"
@@ -73,6 +73,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     , m_multiple(false)
     , m_activeSelectionState(false)
     , m_shouldRecalcListItems(false)
+    , m_suggestedIndex(-1)
 {
     ScriptWrappable::init(this);
 }
@@ -113,7 +114,7 @@ void HTMLSelectElement::optionSelectedByUser(int optionIndex, bool fireOnChangeN
     if (optionIndex == selectedIndex())
         return;
 
-    selectOption(optionIndex, DeselectOtherOptions | (fireOnChangeNow ? DispatchChangeEvent : 0) | UserDriven);
+    selectOption(optionIndex, DeselectOtherOptions | (fireOnChangeNow ? DispatchInputAndChangeEvent : 0) | UserDriven);
 }
 
 bool HTMLSelectElement::hasPlaceholderLabelOption() const
@@ -203,11 +204,17 @@ void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, Exception
     // Make sure the element is ref'd and deref'd so we don't leak it.
     RefPtr<HTMLElement> protectNewChild(element);
 
-    if (!element || !(element->hasLocalName(optionTag) || element->hasLocalName(hrTag)))
+    if (!element || !(isHTMLOptionElement(element) || isHTMLOptGroupElement(element) || isHTMLHRElement(element)))
         return;
 
     insertBefore(element, before, exceptionState);
     setNeedsValidityCheck();
+}
+
+void HTMLSelectElement::addBeforeOptionAtIndex(HTMLElement* element, int beforeIndex, ExceptionState& exceptionState)
+{
+    HTMLElement* beforeElement = toHTMLElement(options()->item(beforeIndex));
+    add(element, beforeElement, exceptionState);
 }
 
 void HTMLSelectElement::remove(int optionIndex)
@@ -219,46 +226,77 @@ void HTMLSelectElement::remove(int optionIndex)
     listItems()[listIndex]->remove(IGNORE_EXCEPTION);
 }
 
-void HTMLSelectElement::remove(HTMLOptionElement* option)
-{
-    if (option->ownerSelectElement() != this)
-        return;
-
-    option->remove(IGNORE_EXCEPTION);
-}
-
 String HTMLSelectElement::value() const
 {
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); i++) {
-        if (items[i]->hasLocalName(optionTag) && toHTMLOptionElement(items[i])->selected())
+        if (isHTMLOptionElement(items[i]) && toHTMLOptionElement(items[i])->selected())
             return toHTMLOptionElement(items[i])->value();
     }
     return "";
 }
 
-void HTMLSelectElement::setValue(const String &value)
+void HTMLSelectElement::setValue(const String &value, bool sendEvents)
 {
     // We clear the previously selected option(s) when needed, to guarantee calling setSelectedIndex() only once.
+    unsigned optionIndex = 0;
     if (value.isNull()) {
-        setSelectedIndex(-1);
+        optionIndex = -1;
+    } else {
+        // Find the option with value() matching the given parameter and make it the current selection.
+        const Vector<HTMLElement*>& items = listItems();
+        for (unsigned i = 0; i < items.size(); i++) {
+            if (isHTMLOptionElement(items[i])) {
+                if (toHTMLOptionElement(items[i])->value() == value)
+                    break;
+                optionIndex++;
+            }
+        }
+        if (optionIndex >= items.size())
+            optionIndex = -1;
+    }
+    setSelectedIndex(optionIndex);
+
+    if (sendEvents) {
+        if (usesMenuList())
+            dispatchInputAndChangeEventForMenuList(false);
+        else
+            listBoxOnChange();
+    }
+}
+
+String HTMLSelectElement::suggestedValue() const
+{
+    const Vector<HTMLElement*>& items = listItems();
+    for (unsigned i = 0; i < items.size(); ++i) {
+        if (isHTMLOptionElement(items[i]) && m_suggestedIndex >= 0) {
+            if (i == static_cast<unsigned>(m_suggestedIndex))
+                return toHTMLOptionElement(items[i])->value();
+        }
+    }
+    return "";
+}
+
+void HTMLSelectElement::setSuggestedValue(const String& value)
+{
+    if (value.isNull()) {
+        setSuggestedIndex(-1);
         return;
     }
 
-    // Find the option with value() matching the given parameter and make it the current selection.
     const Vector<HTMLElement*>& items = listItems();
     unsigned optionIndex = 0;
-    for (unsigned i = 0; i < items.size(); i++) {
-        if (items[i]->hasLocalName(optionTag)) {
+    for (unsigned i = 0; i < items.size(); ++i) {
+        if (isHTMLOptionElement(items[i])) {
             if (toHTMLOptionElement(items[i])->value() == value) {
-                setSelectedIndex(optionIndex);
+                setSuggestedIndex(optionIndex);
                 return;
             }
             optionIndex++;
         }
     }
 
-    setSelectedIndex(-1);
+    setSuggestedIndex(-1);
 }
 
 bool HTMLSelectElement::isPresentationAttribute(const QualifiedName& name) const
@@ -282,7 +320,7 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         AtomicString attrSize = AtomicString::number(size);
         if (attrSize != value) {
             // FIXME: This is horribly factored.
-            if (Attribute* sizeAttribute = ensureUniqueElementData()->getAttributeItem(sizeAttr))
+            if (Attribute* sizeAttribute = ensureUniqueElementData().getAttributeItem(sizeAttr))
                 sizeAttribute->setValue(attrSize);
         }
         size = max(size, 1);
@@ -302,6 +340,15 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
     else if (name == accesskeyAttr) {
         // FIXME: ignore for the moment.
         //
+    } else if (name == disabledAttr) {
+        HTMLFormControlElementWithState::parseAttribute(name, value);
+        if (renderer() && renderer()->isMenuList()) {
+            if (RenderMenuList* menuList = toRenderMenuList(renderer())) {
+                if (menuList->popupIsVisible())
+                    menuList->hidePopup();
+            }
+        }
+
     } else
         HTMLFormControlElementWithState::parseAttribute(name, value);
 }
@@ -400,7 +447,7 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
     if (index > maxSelectItems - 1)
         index = maxSelectItems - 1;
     int diff = index - length();
-    RefPtr<HTMLElement> before = 0;
+    RefPtr<HTMLElement> before = nullptr;
     // Out of array bounds? First insert empty dummies.
     if (diff > 0) {
         setLength(index, exceptionState);
@@ -440,7 +487,7 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& exceptionStat
         size_t optionIndex = 0;
         for (size_t i = 0; i < items.size(); ++i) {
             Element* item = items[i];
-            if (item->hasLocalName(optionTag) && optionIndex++ >= newLen) {
+            if (isHTMLOptionElement(items[i]) && optionIndex++ >= newLen) {
                 ASSERT(item->parentNode());
                 itemsToRemove.append(item);
             }
@@ -472,7 +519,7 @@ int HTMLSelectElement::nextValidIndex(int listIndex, SkipDirection direction, in
     int size = listItems.size();
     for (listIndex += direction; listIndex >= 0 && listIndex < size; listIndex += direction) {
         --skip;
-        if (!listItems[listIndex]->isDisabledFormControl() && listItems[listIndex]->hasTagName(optionTag)) {
+        if (!listItems[listIndex]->isDisabledFormControl() && isHTMLOptionElement(*listItems[listIndex])) {
             lastGoodIndex = listIndex;
             if (skip <= 0)
                 break;
@@ -554,7 +601,7 @@ void HTMLSelectElement::saveLastSelection()
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        m_lastOnChangeSelection.append(element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected());
+        m_lastOnChangeSelection.append(isHTMLOptionElement(*element) && toHTMLOptionElement(element)->selected());
     }
 }
 
@@ -569,7 +616,7 @@ void HTMLSelectElement::setActiveSelectionAnchorIndex(int index)
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        m_cachedStateForActiveSelection.append(element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected());
+        m_cachedStateForActiveSelection.append(isHTMLOptionElement(*element) && toHTMLOptionElement(element)->selected());
     }
 }
 
@@ -589,7 +636,7 @@ void HTMLSelectElement::updateListBoxSelection(bool deselectOtherOptions)
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (!element->hasTagName(optionTag) || toHTMLOptionElement(element)->isDisabledFormControl())
+        if (!isHTMLOptionElement(*element) || toHTMLOptionElement(element)->isDisabledFormControl())
             continue;
 
         if (i >= start && i <= end)
@@ -623,24 +670,29 @@ void HTMLSelectElement::listBoxOnChange()
     bool fireOnChange = false;
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        bool selected = element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected();
+        bool selected = isHTMLOptionElement(*element) && toHTMLOptionElement(element)->selected();
         if (selected != m_lastOnChangeSelection[i])
             fireOnChange = true;
         m_lastOnChangeSelection[i] = selected;
     }
 
-    if (fireOnChange)
+    if (fireOnChange) {
+        RefPtr<HTMLSelectElement> protector(this);
+        dispatchInputEvent();
         dispatchFormControlChangeEvent();
+    }
 }
 
-void HTMLSelectElement::dispatchChangeEventForMenuList()
+void HTMLSelectElement::dispatchInputAndChangeEventForMenuList(bool requiresUserGesture)
 {
     ASSERT(usesMenuList());
 
     int selected = selectedIndex();
-    if (m_lastOnChangeIndex != selected && m_isProcessingUserDrivenChange) {
+    if (m_lastOnChangeIndex != selected && (!requiresUserGesture || m_isProcessingUserDrivenChange)) {
         m_lastOnChangeIndex = selected;
         m_isProcessingUserDrivenChange = false;
+        RefPtr<HTMLSelectElement> protector(this);
+        dispatchInputEvent();
         dispatchFormControlChangeEvent();
     }
 }
@@ -726,7 +778,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         // optgroup tags may not nest. However, both FireFox and IE will
         // flatten the tree automatically, so we follow suit.
         // (http://www.w3.org/TR/html401/interact/forms.html#h-17.6)
-        if (current.hasTagName(optgroupTag)) {
+        if (isHTMLOptGroupElement(current)) {
             m_listItems.append(&current);
             if (Element* nextElement = ElementTraversal::firstWithin(current)) {
                 currentElement = nextElement;
@@ -734,7 +786,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
             }
         }
 
-        if (current.hasTagName(optionTag)) {
+        if (isHTMLOptionElement(current)) {
             m_listItems.append(&current);
 
             if (updateSelectedStates && !m_multiple) {
@@ -752,7 +804,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
             }
         }
 
-        if (current.hasTagName(hrTag))
+        if (isHTMLHRElement(current))
             m_listItems.append(&current);
 
         // In conforming HTML code, only <optgroup> and <option> will be found
@@ -776,8 +828,8 @@ int HTMLSelectElement::selectedIndex() const
     const Vector<HTMLElement*>& items = listItems();
     for (size_t i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (element->hasTagName(optionTag)) {
-            if (toHTMLOptionElement(element)->selected())
+        if (isHTMLOptionElement(*element)) {
+            if (toHTMLOptionElement(*element).selected())
                 return index;
             ++index;
         }
@@ -789,6 +841,22 @@ int HTMLSelectElement::selectedIndex() const
 void HTMLSelectElement::setSelectedIndex(int index)
 {
     selectOption(index, DeselectOtherOptions);
+}
+
+int HTMLSelectElement::suggestedIndex() const
+{
+    return m_suggestedIndex;
+}
+
+void HTMLSelectElement::setSuggestedIndex(int suggestedIndex)
+{
+    m_suggestedIndex = suggestedIndex;
+
+    if (RenderObject* renderer = this->renderer())  {
+        renderer->updateFromElement();
+        if (renderer->isListBox())
+            toRenderListBox(renderer)->scrollToRevealElementAtListIndex(suggestedIndex);
+    }
 }
 
 void HTMLSelectElement::optionSelectionStateChanged(HTMLOptionElement* option, bool optionIsSelected)
@@ -812,12 +880,12 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
     HTMLElement* element = 0;
     if (listIndex >= 0) {
         element = items[listIndex];
-        if (element->hasTagName(optionTag)) {
+        if (isHTMLOptionElement(*element)) {
             if (m_activeSelectionAnchorIndex < 0 || shouldDeselect)
                 setActiveSelectionAnchorIndex(listIndex);
             if (m_activeSelectionEndIndex < 0 || shouldDeselect)
                 setActiveSelectionEndIndex(listIndex);
-            toHTMLOptionElement(element)->setSelectedState(true);
+            toHTMLOptionElement(*element).setSelectedState(true);
         }
     }
 
@@ -832,8 +900,8 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
 
     if (usesMenuList()) {
         m_isProcessingUserDrivenChange = flags & UserDriven;
-        if (flags & DispatchChangeEvent)
-            dispatchChangeEventForMenuList();
+        if (flags & DispatchInputAndChangeEvent)
+            dispatchInputAndChangeEventForMenuList();
         if (RenderObject* renderer = this->renderer()) {
             if (usesMenuList())
                 toRenderMenuList(renderer)->didSetSelectedIndex(listIndex);
@@ -855,7 +923,7 @@ int HTMLSelectElement::optionToListIndex(int optionIndex) const
 
     int optionIndex2 = -1;
     for (int listIndex = 0; listIndex < listSize; ++listIndex) {
-        if (items[listIndex]->hasTagName(optionTag)) {
+        if (isHTMLOptionElement(*items[listIndex])) {
             ++optionIndex2;
             if (optionIndex2 == optionIndex)
                 return listIndex;
@@ -868,13 +936,13 @@ int HTMLSelectElement::optionToListIndex(int optionIndex) const
 int HTMLSelectElement::listToOptionIndex(int listIndex) const
 {
     const Vector<HTMLElement*>& items = listItems();
-    if (listIndex < 0 || listIndex >= static_cast<int>(items.size()) || !items[listIndex]->hasTagName(optionTag))
+    if (listIndex < 0 || listIndex >= static_cast<int>(items.size()) || !isHTMLOptionElement(*items[listIndex]))
         return -1;
 
     // Actual index of option not counting OPTGROUP entries that may be in list.
     int optionIndex = 0;
     for (int i = 0; i < listIndex; ++i) {
-        if (items[i]->hasTagName(optionTag))
+        if (isHTMLOptionElement(*items[i]))
             ++optionIndex;
     }
 
@@ -896,7 +964,7 @@ void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement)
     // change events for list boxes whenever the selection change is actually made.
     // This matches other browsers' behavior.
     if (usesMenuList())
-        dispatchChangeEventForMenuList();
+        dispatchInputAndChangeEventForMenuList();
     HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement);
 }
 
@@ -905,7 +973,7 @@ void HTMLSelectElement::deselectItemsWithoutValidation(HTMLElement* excludeEleme
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (element != excludeElement && element->hasTagName(optionTag))
+        if (element != excludeElement && isHTMLOptionElement(*element))
             toHTMLOptionElement(element)->setSelectedState(false);
     }
 }
@@ -916,7 +984,7 @@ FormControlState HTMLSelectElement::saveFormControlState() const
     size_t length = items.size();
     FormControlState state;
     for (unsigned i = 0; i < length; ++i) {
-        if (!items[i]->hasTagName(optionTag))
+        if (!isHTMLOptionElement(*items[i]))
             continue;
         HTMLOptionElement* option = toHTMLOptionElement(items[i]);
         if (!option->selected())
@@ -933,7 +1001,7 @@ size_t HTMLSelectElement::searchOptionsForValue(const String& value, size_t list
     const Vector<HTMLElement*>& items = listItems();
     size_t loopEndIndex = std::min(items.size(), listIndexEnd);
     for (size_t i = listIndexStart; i < loopEndIndex; ++i) {
-        if (!items[i]->hasLocalName(optionTag))
+        if (!isHTMLOptionElement(items[i]))
             continue;
         if (toHTMLOptionElement(items[i])->value() == value)
             return i;
@@ -951,7 +1019,7 @@ void HTMLSelectElement::restoreFormControlState(const FormControlState& state)
         return;
 
     for (size_t i = 0; i < itemsSize; ++i) {
-        if (!items[i]->hasLocalName(optionTag))
+        if (!isHTMLOptionElement(items[i]))
             continue;
         toHTMLOptionElement(items[i])->setSelectedState(false);
     }
@@ -998,8 +1066,8 @@ bool HTMLSelectElement::appendFormData(FormDataList& list, bool)
 
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected() && !toHTMLOptionElement(element)->isDisabledFormControl()) {
-            list.appendData(name, toHTMLOptionElement(element)->value());
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected() && !toHTMLOptionElement(*element).isDisabledFormControl()) {
+            list.appendData(name, toHTMLOptionElement(*element).value());
             successful = true;
         }
     }
@@ -1018,7 +1086,7 @@ void HTMLSelectElement::resetImpl()
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (!element->hasTagName(optionTag))
+        if (!isHTMLOptionElement(*element))
             continue;
 
         if (items[i]->fastHasAttribute(selectedAttr)) {
@@ -1112,7 +1180,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
             handled = false;
 
         if (handled && static_cast<size_t>(listIndex) < listItems.size())
-            selectOption(listToOptionIndex(listIndex), DeselectOtherOptions | DispatchChangeEvent | UserDriven);
+            selectOption(listToOptionIndex(listIndex), DeselectOtherOptions | DispatchInputAndChangeEvent | UserDriven);
 
         if (handled)
             event->setDefaultHandled();
@@ -1140,7 +1208,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
 
                 // Calling focus() may remove the renderer or change the
                 // renderer type.
-                if (!renderer() || !renderer()->isMenuList())
+                if (!renderer() || !renderer()->isMenuList() || isDisabledFormControl())
                     return;
 
                 // Save the selection so it can be compared to the new selection
@@ -1158,7 +1226,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
 
                 // Calling focus() may remove the renderer or change the
                 // renderer type.
-                if (!renderer() || !renderer()->isMenuList())
+                if (!renderer() || !renderer()->isMenuList() || isDisabledFormControl())
                     return;
 
                 // Save the selection so it can be compared to the new selection
@@ -1172,7 +1240,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
             } else if (keyCode == '\r') {
                 if (form())
                     form()->submitImplicitly(event, false);
-                dispatchChangeEventForMenuList();
+                dispatchInputAndChangeEventForMenuList();
                 handled = true;
             }
         }
@@ -1183,7 +1251,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
 
     if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         focus();
-        if (renderer() && renderer()->isMenuList()) {
+        if (renderer() && renderer()->isMenuList() && !isDisabledFormControl()) {
             if (RenderMenuList* menuList = toRenderMenuList(renderer())) {
                 if (menuList->popupIsVisible())
                     menuList->hidePopup();
@@ -1223,13 +1291,14 @@ void HTMLSelectElement::updateSelectedState(int listIndex, bool multi, bool shif
     bool multiSelect = m_multiple && multi && !shift;
 
     HTMLElement* clickedElement = listItems()[listIndex];
-    if (clickedElement->hasTagName(optionTag)) {
+    ASSERT(clickedElement);
+    if (isHTMLOptionElement(*clickedElement)) {
         // Keep track of whether an active selection (like during drag
         // selection), should select or deselect.
-        if (toHTMLOptionElement(clickedElement)->selected() && multiSelect)
+        if (toHTMLOptionElement(*clickedElement).selected() && multiSelect)
             m_activeSelectionState = false;
         if (!m_activeSelectionState)
-            toHTMLOptionElement(clickedElement)->setSelectedState(false);
+            toHTMLOptionElement(*clickedElement).setSelectedState(false);
     }
 
     // If we're not in any special multiple selection mode, then deselect all
@@ -1244,8 +1313,8 @@ void HTMLSelectElement::updateSelectedState(int listIndex, bool multi, bool shif
         setActiveSelectionAnchorIndex(selectedIndex());
 
     // Set the selection state of the clicked option.
-    if (clickedElement->hasTagName(optionTag) && !toHTMLOptionElement(clickedElement)->isDisabledFormControl())
-        toHTMLOptionElement(clickedElement)->setSelectedState(true);
+    if (isHTMLOptionElement(*clickedElement) && !toHTMLOptionElement(*clickedElement).isDisabledFormControl())
+        toHTMLOptionElement(*clickedElement).setSelectedState(true);
 
     // If there was no selectedIndex() for the previous initialization, or If
     // we're doing a single selection, or a multiple selection (using cmd or
@@ -1262,7 +1331,22 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
 {
     const Vector<HTMLElement*>& listItems = this->listItems();
     bool dragSelection = false;
-    if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
+    if (event->type() == EventTypeNames::gesturetap && event->isGestureEvent()) {
+        focus();
+        // Calling focus() may cause us to lose our renderer or change the render type, in which case do not want to handle the event.
+        if (!renderer() || !renderer()->isListBox())
+            return;
+
+        // Convert to coords relative to the list box if needed.
+        GestureEvent& gestureEvent = toGestureEvent(*event);
+        IntPoint localOffset = roundedIntPoint(renderer()->absoluteToLocal(gestureEvent.absoluteLocation(), UseTransforms));
+        int listIndex = toRenderListBox(renderer())->listIndexAtOffset(toIntSize(localOffset));
+        if (listIndex >= 0) {
+            if (!isDisabledFormControl())
+                updateSelectedState(listIndex, true, gestureEvent.shiftKey());
+            event->setDefaultHandled();
+        }
+    } else if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         focus();
         // Calling focus() may cause us to lose our renderer, in which case do not want to handle the event.
         if (!renderer() || !renderer()->isListBox() || isDisabledFormControl())
@@ -1280,7 +1364,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
                 updateSelectedState(listIndex, mouseEvent->ctrlKey(), mouseEvent->shiftKey());
 #endif
             }
-            if (Frame* frame = document().frame())
+            if (LocalFrame* frame = document().frame())
                 frame->eventHandler().setMouseDownMayStartAutoscroll();
 
             event->setDefaultHandled();
@@ -1454,7 +1538,7 @@ int HTMLSelectElement::lastSelectedListIndex() const
     const Vector<HTMLElement*>& items = listItems();
     for (size_t i = items.size(); i;) {
         HTMLElement* element = items[--i];
-        if (element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected())
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(element)->selected())
             return i;
     }
     return -1;
@@ -1475,7 +1559,7 @@ String HTMLSelectElement::optionAtIndex(int index) const
     const Vector<HTMLElement*>& items = listItems();
 
     HTMLElement* element = items[index];
-    if (!element->hasTagName(optionTag) || toHTMLOptionElement(element)->isDisabledFormControl())
+    if (!isHTMLOptionElement(*element) || toHTMLOptionElement(element)->isDisabledFormControl())
         return String();
     return toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
 }
@@ -1485,7 +1569,7 @@ void HTMLSelectElement::typeAheadFind(KeyboardEvent* event)
     int index = m_typeAhead.handleEvent(event, TypeAhead::MatchPrefix | TypeAhead::CycleFirstChar);
     if (index < 0)
         return;
-    selectOption(listToOptionIndex(index), DeselectOtherOptions | DispatchChangeEvent | UserDriven);
+    selectOption(listToOptionIndex(index), DeselectOtherOptions | DispatchInputAndChangeEvent | UserDriven);
     if (!usesMenuList())
         listBoxOnChange();
 }
@@ -1511,16 +1595,16 @@ void HTMLSelectElement::accessKeySetSelectedIndex(int index)
     int listIndex = optionToListIndex(index);
     if (listIndex >= 0) {
         HTMLElement* element = items[listIndex];
-        if (element->hasTagName(optionTag)) {
-            if (toHTMLOptionElement(element)->selected())
-                toHTMLOptionElement(element)->setSelectedState(false);
+        if (isHTMLOptionElement(*element)) {
+            if (toHTMLOptionElement(*element).selected())
+                toHTMLOptionElement(*element).setSelectedState(false);
             else
-                selectOption(index, DispatchChangeEvent | UserDriven);
+                selectOption(index, DispatchInputAndChangeEvent | UserDriven);
         }
     }
 
     if (usesMenuList())
-        dispatchChangeEventForMenuList();
+        dispatchInputAndChangeEventForMenuList();
     else
         listBoxOnChange();
 
@@ -1533,7 +1617,7 @@ unsigned HTMLSelectElement::length() const
 
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); ++i) {
-        if (items[i]->hasTagName(optionTag))
+        if (isHTMLOptionElement(*items[i]))
             ++options;
     }
 

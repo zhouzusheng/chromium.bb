@@ -334,20 +334,23 @@ void HttpStreamFactoryImpl::Job::OnWebSocketHandshakeStreamReadyCallback() {
 }
 
 void HttpStreamFactoryImpl::Job::OnNewSpdySessionReadyCallback() {
-  DCHECK(!stream_.get());
+  DCHECK(stream_.get());
   DCHECK(!IsPreconnecting());
   DCHECK(using_spdy());
-  if (!new_spdy_session_)
-    return;
+  // Note: an event loop iteration has passed, so |new_spdy_session_| may be
+  // NULL at this point if the SpdySession closed immediately after creation.
   base::WeakPtr<SpdySession> spdy_session = new_spdy_session_;
   new_spdy_session_.reset();
   if (IsOrphaned()) {
-    stream_factory_->OnNewSpdySessionReady(
-        spdy_session, spdy_session_direct_, server_ssl_config_, proxy_info_,
-        was_npn_negotiated(), protocol_negotiated(), using_spdy(), net_log_);
+    if (spdy_session) {
+      stream_factory_->OnNewSpdySessionReady(
+          spdy_session, spdy_session_direct_, server_ssl_config_, proxy_info_,
+          was_npn_negotiated(), protocol_negotiated(), using_spdy(), net_log_);
+    }
     stream_factory_->OnOrphanedJobComplete(this);
   } else {
-    request_->OnNewSpdySessionReady(this, spdy_session, spdy_session_direct_);
+    request_->OnNewSpdySessionReady(
+        this, stream_.Pass(), spdy_session, spdy_session_direct_);
   }
   // |this| may be deleted after this call.
 }
@@ -452,9 +455,8 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
   if (IsPreconnecting()) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(
-            &HttpStreamFactoryImpl::Job::OnPreconnectsComplete,
-            ptr_factory_.GetWeakPtr()));
+        base::Bind(&HttpStreamFactoryImpl::Job::OnPreconnectsComplete,
+                   ptr_factory_.GetWeakPtr()));
     return ERR_IO_PENDING;
   }
 
@@ -465,62 +467,50 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
     next_state_ = STATE_WAITING_USER_ACTION;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(
-            &HttpStreamFactoryImpl::Job::OnCertificateErrorCallback,
-            ptr_factory_.GetWeakPtr(),
-            result, ssl_info_));
+        base::Bind(&HttpStreamFactoryImpl::Job::OnCertificateErrorCallback,
+                   ptr_factory_.GetWeakPtr(), result, ssl_info_));
     return ERR_IO_PENDING;
   }
 
   switch (result) {
-    case ERR_PROXY_AUTH_REQUESTED:
-      {
-        DCHECK(connection_.get());
-        DCHECK(connection_->socket());
-        DCHECK(establishing_tunnel_);
+    case ERR_PROXY_AUTH_REQUESTED: {
+      DCHECK(connection_.get());
+      DCHECK(connection_->socket());
+      DCHECK(establishing_tunnel_);
 
-        ProxyClientSocket* proxy_socket =
-            static_cast<ProxyClientSocket*>(connection_->socket());
-        const HttpResponseInfo* tunnel_auth_response =
-            proxy_socket->GetConnectResponseInfo();
-
-        next_state_ = STATE_WAITING_USER_ACTION;
-        base::MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(
-                &Job::OnNeedsProxyAuthCallback,
-                ptr_factory_.GetWeakPtr(),
-                *tunnel_auth_response,
-                proxy_socket->GetAuthController()));
-      }
+      next_state_ = STATE_WAITING_USER_ACTION;
+      ProxyClientSocket* proxy_socket =
+          static_cast<ProxyClientSocket*>(connection_->socket());
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&Job::OnNeedsProxyAuthCallback, ptr_factory_.GetWeakPtr(),
+                     *proxy_socket->GetConnectResponseInfo(),
+                     proxy_socket->GetAuthController()));
       return ERR_IO_PENDING;
+    }
 
     case ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
-          base::Bind(
-              &Job::OnNeedsClientAuthCallback,
-              ptr_factory_.GetWeakPtr(),
-              connection_->ssl_error_response_info().cert_request_info));
+          base::Bind(&Job::OnNeedsClientAuthCallback, ptr_factory_.GetWeakPtr(),
+                     connection_->ssl_error_response_info().cert_request_info));
       return ERR_IO_PENDING;
 
-    case ERR_HTTPS_PROXY_TUNNEL_RESPONSE:
-      {
-        DCHECK(connection_.get());
-        DCHECK(connection_->socket());
-        DCHECK(establishing_tunnel_);
+    case ERR_HTTPS_PROXY_TUNNEL_RESPONSE: {
+      DCHECK(connection_.get());
+      DCHECK(connection_->socket());
+      DCHECK(establishing_tunnel_);
 
-        ProxyClientSocket* proxy_socket =
-            static_cast<ProxyClientSocket*>(connection_->socket());
-        base::MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(
-                &Job::OnHttpsProxyTunnelResponseCallback,
-                ptr_factory_.GetWeakPtr(),
-                *proxy_socket->GetConnectResponseInfo(),
-                proxy_socket->CreateConnectResponseStream()));
-        return ERR_IO_PENDING;
-      }
+      ProxyClientSocket* proxy_socket =
+          static_cast<ProxyClientSocket*>(connection_->socket());
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&Job::OnHttpsProxyTunnelResponseCallback,
+                     ptr_factory_.GetWeakPtr(),
+                     *proxy_socket->GetConnectResponseInfo(),
+                     proxy_socket->CreateConnectResponseStream()));
+      return ERR_IO_PENDING;
+    }
 
     case OK:
       next_state_ = STATE_DONE;
@@ -539,22 +529,17 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
         DCHECK(stream_.get());
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
-            base::Bind(
-                &Job::OnStreamReadyCallback,
-                ptr_factory_.GetWeakPtr()));
+            base::Bind(&Job::OnStreamReadyCallback, ptr_factory_.GetWeakPtr()));
       }
       return ERR_IO_PENDING;
 
     default:
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
-          base::Bind(
-              &Job::OnStreamFailedCallback,
-              ptr_factory_.GetWeakPtr(),
-              result));
+          base::Bind(&Job::OnStreamFailedCallback, ptr_factory_.GetWeakPtr(),
+                     result));
       return ERR_IO_PENDING;
   }
-  return result;
 }
 
 int HttpStreamFactoryImpl::Job::DoLoop(int result) {
@@ -753,15 +738,13 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
       // TODO(rch): support QUIC proxies for HTTPS urls.
       return ERR_NOT_IMPLEMENTED;
     }
-    HostPortProxyPair destination;
-    destination.first = proxy_info_.is_quic() ?
+    HostPortPair destination = proxy_info_.is_quic() ?
         proxy_info_.proxy_server().host_port_pair() : origin_;
-    destination.second = ProxyServer::Direct();
     next_state_ = STATE_INIT_CONNECTION_COMPLETE;
     bool secure_quic = using_ssl_ || proxy_info_.is_quic();
     int rv = quic_request_.Request(
-        destination, secure_quic, request_info_.method,
-        session_->cert_verifier(), net_log_, io_callback_);
+        destination, secure_quic, request_info_.privacy_mode,
+        request_info_.method, net_log_, io_callback_);
     if (rv != OK) {
       // OK, there's no available QUIC session. Let |waiting_job_| resume
       // if it's paused.
@@ -1124,21 +1107,27 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     SpdySessionPool* spdy_pool = session_->spdy_session_pool();
     spdy_session = spdy_pool->FindAvailableSession(spdy_session_key, net_log_);
     if (!spdy_session) {
-      int error =
+      new_spdy_session_ =
           spdy_pool->CreateAvailableSessionFromSocket(spdy_session_key,
                                                       connection_.Pass(),
                                                       net_log_,
                                                       spdy_certificate_error_,
-                                                      &new_spdy_session_,
                                                       using_ssl_);
-      if (error != OK)
-        return error;
       const HostPortPair& host_port_pair = spdy_session_key.host_port_pair();
       base::WeakPtr<HttpServerProperties> http_server_properties =
           session_->http_server_properties();
       if (http_server_properties)
         http_server_properties->SetSupportsSpdy(host_port_pair, true);
       spdy_session_direct_ = direct;
+
+      // Create a SpdyHttpStream attached to the session;
+      // OnNewSpdySessionReadyCallback is not called until an event loop
+      // iteration later, so if the SpdySession is closed between then, allow
+      // reuse state from the underlying socket, sampled by SpdyHttpStream,
+      // bubble up to the request.
+      bool use_relative_url = direct || request_info_.url.SchemeIs("https");
+      stream_.reset(new SpdyHttpStream(new_spdy_session_, use_relative_url));
+
       return OK;
     }
   }

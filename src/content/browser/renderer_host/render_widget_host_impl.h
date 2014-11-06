@@ -25,6 +25,7 @@
 #include "build/build_config.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
+#include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/browser/event_with_latency_info.h"
@@ -37,12 +38,12 @@
 #include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 
-class WebCursor;
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
-struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
-struct ViewHostMsg_UpdateRect_Params;
-struct ViewHostMsg_TextInputState_Params;
 struct ViewHostMsg_BeginSmoothScroll_Params;
+struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
+struct ViewHostMsg_SelectionBounds_Params;
+struct ViewHostMsg_TextInputState_Params;
+struct ViewHostMsg_UpdateRect_Params;
 
 namespace base {
 class TimeTicks;
@@ -83,6 +84,7 @@ class RenderWidgetHostDelegate;
 class RenderWidgetHostViewPort;
 class SyntheticGestureController;
 class TimeoutMonitor;
+class WebCursor;
 struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
@@ -120,16 +122,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   }
 
   // RenderWidgetHost implementation.
-  virtual void Undo() OVERRIDE;
-  virtual void Redo() OVERRIDE;
-  virtual void Cut() OVERRIDE;
-  virtual void Copy() OVERRIDE;
-  virtual void CopyToFindPboard() OVERRIDE;
-  virtual void Paste() OVERRIDE;
-  virtual void PasteAndMatchStyle() OVERRIDE;
-  virtual void Delete() OVERRIDE;
-  virtual void SelectAll() OVERRIDE;
-  virtual void Unselect() OVERRIDE;
   virtual void UpdateTextDirection(blink::WebTextDirection direction) OVERRIDE;
   virtual void NotifyTextDirection() OVERRIDE;
   virtual void Focus() OVERRIDE;
@@ -138,7 +130,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void CopyFromBackingStore(
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config& bitmap_config) OVERRIDE;
   virtual bool CanCopyFromBackingStore() OVERRIDE;
 #if defined(OS_ANDROID)
   virtual void LockBackingStore() OVERRIDE;
@@ -153,6 +146,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                                                CGContextRef target) OVERRIDE;
 #endif
   virtual void EnableFullAccessibilityMode() OVERRIDE;
+  virtual bool IsFullAccessibilityModeForTesting() OVERRIDE;
+  virtual void EnableTreeOnlyAccessibilityMode() OVERRIDE;
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() OVERRIDE;
   virtual void ForwardMouseEvent(
       const blink::WebMouseEvent& mouse_event) OVERRIDE;
   virtual void ForwardWheelEvent(
@@ -184,6 +180,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void GetSnapshotFromRenderer(
       const gfx::Rect& src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
+
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -246,6 +244,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Indicates if the page has finished loading.
   void SetIsLoading(bool is_loading);
 
+  // Pause for a moment to wait for pending repaint or resize messages sent to
+  // the renderer to arrive. If pending resize messages are for an old window
+  // size, then also pump through a new resize message if there is time.
+  void PauseForPendingResizeOrRepaints();
+
+  // Whether pausing may be useful.
+  bool CanPauseForPendingResizeOrRepaints();
+
   // Check for the existance of a BackingStore of the given |desired_size| and
   // return it if it exists. If the BackingStore is GPU, true is returned and
   // |*backing_store| is set to NULL.
@@ -302,6 +308,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& ui_latency);
 
+  // Queues a synthetic gesture for testing purposes.  Invokes the on_complete
+  // callback when the gesture is finished running.
+  void QueueSyntheticGesture(
+      scoped_ptr<SyntheticGesture> synthetic_gesture,
+      const base::Callback<void(SyntheticGesture::Result)>& on_complete);
+
   void CancelUpdateTextDirection();
 
   // Called when a mouse click/gesture tap activates the renderer.
@@ -353,10 +365,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Cancels an ongoing composition.
   void ImeCancelComposition();
-
-  // Deletes the current selection plus the specified number of characters
-  // before and after the selection or caret.
-  void ExtendSelectionAndDelete(size_t before, size_t after);
 
   // This is for derived classes to give us access to the resizer rect.
   // And to also expose it to the RenderWidgetHostView.
@@ -450,9 +458,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // the currently focused node is a Text node (textfield, text area or content
   // editable divs).
   void ScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
-
-  // Requests the renderer to select the region between two points.
-  void SelectRange(const gfx::Point& start, const gfx::Point& end);
 
   // Requests the renderer to move the caret selection towards the point.
   void MoveCaret(const gfx::Point& point);
@@ -560,6 +565,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // provided to them by the browser process. This function adds the correct
   // component ID where necessary.
   void AddLatencyInfoComponentIds(ui::LatencyInfo* latency_info);
+
+  InputRouter* input_router() { return input_router_.get(); }
 
  protected:
   virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
@@ -704,6 +711,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnWindowlessPluginDummyWindowDestroyed(
       gfx::NativeViewId dummy_activation_window);
 #endif
+  void OnSelectionChanged(const base::string16& text,
+                          size_t offset,
+                          const gfx::Range& range);
+  void OnSelectionBoundsChanged(
+      const ViewHostMsg_SelectionBounds_Params& params);
   void OnSnapshot(bool success, const SkBitmap& bitmap);
 
   // Called (either immediately or asynchronously) after we're done with our
@@ -754,6 +766,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
                                  InputEventAckState ack_result) OVERRIDE;
   virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE;
+
+  void OnSyntheticGestureCompleted(SyntheticGesture::Result result);
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).

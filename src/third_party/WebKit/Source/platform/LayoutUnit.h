@@ -107,7 +107,6 @@ public:
 
     operator int() const { return toInt(); }
     operator unsigned() const { return toUnsigned(); }
-    operator float() const { return toFloat(); }
     operator double() const { return toDouble(); }
     operator bool() const { return m_value; }
 
@@ -792,6 +791,15 @@ inline LayoutUnit layoutMod(const LayoutUnit& numerator, const LayoutUnit& denom
 inline bool isIntegerValue(const LayoutUnit value)
 {
     return value.toInt() == value;
+}
+
+inline LayoutUnit clampToLayoutUnit(LayoutUnit value, LayoutUnit min, LayoutUnit max)
+{
+    if (value >= max)
+        return max;
+    if (value <= min)
+        return min;
+    return value;
 }
 
 } // namespace WebCore

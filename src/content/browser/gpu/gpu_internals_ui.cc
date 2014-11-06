@@ -91,8 +91,8 @@ std::string GPUDeviceToString(const gpu::GPUInfo::GPUDevice& gpu) {
   std::string device = base::StringPrintf("0x%04x", gpu.device_id);
   if (!gpu.device_string.empty())
     device += " [" + gpu.device_string + "]";
-  return base::StringPrintf(
-      "VENDOR = %s, DEVICE= %s", vendor.c_str(), device.c_str());
+  return base::StringPrintf("VENDOR = %s, DEVICE= %s%s",
+      vendor.c_str(), device.c_str(), gpu.active ? " *ACTIVE*" : "");
 }
 
 base::DictionaryValue* GpuInfoAsDictionaryValue() {
@@ -157,6 +157,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
                                              gpu_info.gl_ws_version));
   basic_info->Append(NewDescriptionValuePair("Window system binding extensions",
                                              gpu_info.gl_ws_extensions));
+  std::string direct_rendering = gpu_info.direct_rendering ? "Yes" : "No";
+  basic_info->Append(
+      NewDescriptionValuePair("Direct rendering", direct_rendering));
+
   std::string reset_strategy =
       base::StringPrintf("0x%04x", gpu_info.gl_reset_notification_strategy);
   basic_info->Append(NewDescriptionValuePair(

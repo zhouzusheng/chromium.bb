@@ -8,7 +8,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/render_process_host.h"
@@ -48,7 +48,7 @@ SpellcheckServiceFactory::SpellcheckServiceFactory()
 
 SpellcheckServiceFactory::~SpellcheckServiceFactory() {}
 
-BrowserContextKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
+KeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   // Many variables are initialized from the |context| in the SpellcheckService.
   SpellcheckService* spellcheck = new SpellcheckService(context);

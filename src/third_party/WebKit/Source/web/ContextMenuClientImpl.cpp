@@ -36,6 +36,7 @@
 #include "WebContextMenuData.h"
 #include "WebDataSourceImpl.h"
 #include "WebFormElement.h"
+#include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebMenuItemInfo.h"
 #include "WebPlugin.h"
@@ -83,7 +84,7 @@ namespace blink {
 // Figure out the URL of a page or subframe. Returns |page_type| as the type,
 // which indicates page or subframe, or ContextNodeType::NONE if the URL could not
 // be determined for some reason.
-static WebURL urlFromFrame(Frame* frame)
+static WebURL urlFromFrame(LocalFrame* frame)
 {
     if (frame) {
         DocumentLoader* dl = frame->loader().documentLoader();
@@ -107,7 +108,7 @@ static bool isASingleWord(const String& text)
 // is to be invoked. This function also sets the word on which context menu
 // has been invoked to be the selected word, as required. This function changes
 // the selection only when there were no selected characters on OS X.
-static String selectMisspelledWord(Frame* selectedFrame)
+static String selectMisspelledWord(LocalFrame* selectedFrame)
 {
     // First select from selectedText to check for multiple word selection.
     String misspelledWord = selectedFrame->selectedText().stripWhiteSpace();
@@ -150,7 +151,7 @@ static bool IsWhiteSpaceOrPunctuation(UChar c)
     return isSpaceOrNewline(c) || WTF::Unicode::isPunct(c);
 }
 
-static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marker)
+static String selectMisspellingAsync(LocalFrame* selectedFrame, DocumentMarker& marker)
 {
     VisibleSelection selection = selectedFrame->selection().selection();
     if (!selection.isCaretOrRange())
@@ -158,7 +159,7 @@ static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marke
 
     // Caret and range selections always return valid normalized ranges.
     RefPtr<Range> selectionRange = selection.toNormalizedRange();
-    Vector<DocumentMarker*> markers = selectedFrame->document()->markers()->markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
+    Vector<DocumentMarker*> markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     marker = *markers[0];
@@ -185,7 +186,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         return;
 
     HitTestResult r = m_webView->page()->contextMenuController().hitTestResult();
-    Frame* selectedFrame = r.innerNodeFrame();
+    LocalFrame* selectedFrame = r.innerNodeFrame();
 
     WebContextMenuData data;
     IntPoint mousePoint = selectedFrame->view()->contentsToWindow(r.roundedPointInInnerNodeFrame());
@@ -224,9 +225,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         // We know that if absoluteMediaURL() is not empty, then this
         // is a media element.
         HTMLMediaElement* mediaElement = toHTMLMediaElement(r.innerNonSharedNode());
-        if (mediaElement->hasTagName(HTMLNames::videoTag))
+        if (isHTMLVideoElement(*mediaElement))
             data.mediaType = WebContextMenuData::MediaTypeVideo;
-        else if (mediaElement->hasTagName(HTMLNames::audioTag))
+        else if (isHTMLAudioElement(*mediaElement))
             data.mediaType = WebContextMenuData::MediaTypeAudio;
 
         if (mediaElement->error())
@@ -245,8 +246,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             data.mediaFlags |= WebContextMenuData::MediaHasVideo;
         if (mediaElement->controls())
             data.mediaFlags |= WebContextMenuData::MediaControls;
-    } else if (r.innerNonSharedNode()->hasTagName(HTMLNames::objectTag)
-               || r.innerNonSharedNode()->hasTagName(HTMLNames::embedTag)) {
+    } else if (isHTMLObjectElement(*r.innerNonSharedNode()) || isHTMLEmbedElement(*r.innerNonSharedNode())) {
         RenderObject* object = r.innerNonSharedNode()->renderer();
         if (object && object->isWidget()) {
             Widget* widget = toRenderWidget(object)->widget();
@@ -295,14 +295,14 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     }
 
     if (r.isSelected()) {
-        if (!r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag) || !toHTMLInputElement(r.innerNonSharedNode())->isPasswordField())
+        if (!isHTMLInputElement(*r.innerNonSharedNode()) || !toHTMLInputElement(r.innerNonSharedNode())->isPasswordField())
             data.selectedText = selectedFrame->selectedText().stripWhiteSpace();
     }
 
     if (r.isContentEditable()) {
         data.isEditable = true;
 #if ENABLE(INPUT_SPEECH)
-        if (r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag))
+        if (isHTMLInputElement(*r.innerNonSharedNode()))
             data.isSpeechInputEnabled = toHTMLInputElement(r.innerNonSharedNode())->isSpeechEnabled();
 #endif
         // When Chrome enables asynchronous spellchecking, its spellchecker adds spelling markers to misspelled
@@ -337,13 +337,11 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             }
         }
         HTMLFormElement* form = selectedFrame->selection().currentForm();
-        if (form && r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
-            HTMLInputElement* selectedElement = toHTMLInputElement(r.innerNonSharedNode());
-            if (selectedElement) {
-                WebSearchableFormData ws = WebSearchableFormData(WebFormElement(form), WebInputElement(selectedElement));
-                if (ws.url().isValid())
-                    data.keywordURL = ws.url();
-            }
+        if (form && isHTMLInputElement(*r.innerNonSharedNode())) {
+            HTMLInputElement& selectedElement = toHTMLInputElement(*r.innerNonSharedNode());
+            WebSearchableFormData ws = WebSearchableFormData(WebFormElement(form), WebInputElement(&selectedElement));
+            if (ws.url().isValid())
+                data.keywordURL = ws.url();
         }
     }
 
@@ -365,15 +363,21 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
     data.node = r.innerNonSharedNode();
 
-    WebFrame* selected_web_frame = WebFrameImpl::fromFrame(selectedFrame);
-    if (m_webView->client())
-        m_webView->client()->showContextMenu(selected_web_frame, data);
+    WebFrameImpl* selectedWebFrame = WebFrameImpl::fromFrame(selectedFrame);
+    if (selectedWebFrame->client())
+        selectedWebFrame->client()->showContextMenu(data);
 }
 
 void ContextMenuClientImpl::clearContextMenu()
 {
-    if (m_webView->client())
-        m_webView->client()->clearContextMenu();
+    HitTestResult r = m_webView->page()->contextMenuController().hitTestResult();
+    LocalFrame* selectedFrame = r.innerNodeFrame();
+    if (!selectedFrame)
+        return;
+
+    WebFrameImpl* selectedWebFrame = WebFrameImpl::fromFrame(selectedFrame);
+    if (selectedWebFrame->client())
+        selectedWebFrame->client()->clearContextMenu();
 }
 
 static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVector<WebMenuItemInfo>& subMenuItems)

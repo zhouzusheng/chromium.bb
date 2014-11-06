@@ -80,7 +80,7 @@ bool RenderTreeBuilder::shouldCreateRenderer() const
         return false;
     if (m_node->isSVGElement()) {
         // SVG elements only render when inside <svg>, or if the element is an <svg> itself.
-        if (!m_node->hasTagName(SVGNames::svgTag) && !m_renderingParent->isSVGElement())
+        if (!isSVGSVGElement(*m_node) && !m_renderingParent->isSVGElement())
             return false;
         if (!toSVGElement(m_node)->isValid())
             return false;
@@ -161,10 +161,7 @@ void RenderTreeBuilder::createRendererForTextIfNeeded()
     Text* textNode = toText(m_node);
     RenderObject* parentRenderer = this->parentRenderer();
 
-    if (m_parentDetails.resetStyleInheritance())
-        m_style = textNode->document().ensureStyleResolver().defaultStyleForElement();
-    else
-        m_style = parentRenderer->style();
+    m_style = parentRenderer->style();
 
     if (!textNode->textRendererIsNeeded(*m_style, *parentRenderer))
         return;

@@ -43,6 +43,7 @@ private:
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
@@ -54,8 +55,6 @@ private:
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool isInteractiveContent() const OVERRIDE;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLEmbedElement, hasTagName(HTMLNames::embedTag));
 
 }
 

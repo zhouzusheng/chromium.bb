@@ -82,6 +82,7 @@ enum SpdyProtocolErrorDetails {
   SPDY_ERROR_RST_STREAM_FRAME_CORRUPT = 30,
   SPDY_ERROR_INVALID_DATA_FRAME_FLAGS = 8,
   SPDY_ERROR_INVALID_CONTROL_FRAME_FLAGS = 9,
+  SPDY_ERROR_UNEXPECTED_FRAME = 31,
   // SpdyRstStreamStatus mappings.
   // RST_STREAM_INVALID not mapped.
   STATUS_CODE_PROTOCOL_ERROR = 11,
@@ -105,7 +106,7 @@ enum SpdyProtocolErrorDetails {
   PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION = 28,
 
   // Next free value.
-  NUM_SPDY_PROTOCOL_ERROR_DETAILS = 31,
+  NUM_SPDY_PROTOCOL_ERROR_DETAILS = 32,
 };
 SpdyProtocolErrorDetails NET_EXPORT_PRIVATE MapFramerErrorToProtocolError(
     SpdyFramer::SpdyError);
@@ -114,7 +115,7 @@ SpdyProtocolErrorDetails NET_EXPORT_PRIVATE MapRstStreamStatusToProtocolError(
 
 // If these compile asserts fail then SpdyProtocolErrorDetails needs
 // to be updated with new values, as do the mapping functions above.
-COMPILE_ASSERT(11 == SpdyFramer::LAST_ERROR,
+COMPILE_ASSERT(12 == SpdyFramer::LAST_ERROR,
                SpdyProtocolErrorDetails_SpdyErrors_mismatch);
 COMPILE_ASSERT(12 == RST_STREAM_NUM_STATUS_CODES,
                SpdyProtocolErrorDetails_RstStreamStatus_mismatch);
@@ -255,13 +256,13 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // |certificate_error_code| must either be OK or less than
   // ERR_IO_PENDING.
   //
-  // Returns OK on success, or an error on failure. Never returns
-  // ERR_IO_PENDING. If an error is returned, the session must be
-  // destroyed immediately.
-  Error InitializeWithSocket(scoped_ptr<ClientSocketHandle> connection,
-                             SpdySessionPool* pool,
-                             bool is_secure,
-                             int certificate_error_code);
+  // The session begins reading from |connection| on a subsequent event loop
+  // iteration, so the SpdySession may close immediately afterwards if the first
+  // read of |connection| fails.
+  void InitializeWithSocket(scoped_ptr<ClientSocketHandle> connection,
+                            SpdySessionPool* pool,
+                            bool is_secure,
+                            int certificate_error_code);
 
   // Returns the protocol used by this session. Always between
   // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
@@ -366,7 +367,8 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   base::Value* GetInfoAsValue() const;
 
   // Indicates whether the session is being reused after having successfully
-  // used to send/receive data in the past.
+  // used to send/receive data in the past or if the underlying socket was idle
+  // before being used for a SPDY session.
   bool IsReused() const;
 
   // Returns true if the underlying transport socket ever had any reads or
@@ -616,8 +618,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // Advance the ReadState state machine. |expected_read_state| is the
   // expected starting read state.
   //
-  // This function must always be called via PumpReadLoop() except for
-  // from InitializeWithSocket().
+  // This function must always be called via PumpReadLoop().
   int DoReadLoop(ReadState expected_read_state, int result);
   // The implementations of the states of the ReadState state machine.
   int DoRead();
@@ -668,7 +669,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                              RequestPriority priority);
 
   // Send the PING frame.
-  void WritePingFrame(uint32 unique_id);
+  void WritePingFrame(uint32 unique_id, bool is_ack);
 
   // Post a CheckPingStatus call after delay. Don't post if there is already
   // CheckPingStatus running.
@@ -784,7 +785,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   virtual void OnError(SpdyFramer::SpdyError error_code) OVERRIDE;
   virtual void OnStreamError(SpdyStreamId stream_id,
                              const std::string& description) OVERRIDE;
-  virtual void OnPing(SpdyPingId unique_id) OVERRIDE;
+  virtual void OnPing(SpdyPingId unique_id, bool is_ack) OVERRIDE;
   virtual void OnRstStream(SpdyStreamId stream_id,
                            SpdyRstStreamStatus status) OVERRIDE;
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,

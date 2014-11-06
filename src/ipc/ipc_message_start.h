@@ -95,6 +95,11 @@ enum IPCMessageStart {
   EmbeddedWorkerMsgStart,
   EmbeddedWorkerContextMsgStart,
   CastMsgStart,
+  CdmMsgStart,
+  ScreenOrientationMsgStart,
+  MediaStreamTrackMetricsHostMsgStart,
+  ChromeExtensionMsgStart,
+  MojoMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/page/DOMSelection.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
@@ -41,12 +42,12 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-static Node* selectionShadowAncestor(Frame* frame)
+static Node* selectionShadowAncestor(LocalFrame* frame)
 {
     Node* node = frame->selection().selection().base().anchorNode();
     if (!node)
@@ -328,7 +329,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
         return;
 
     if (!node) {
-        exceptionState.throwDOMException(TypeMismatchError, "The node provided is invalid.");
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "Node"));
         return;
     }
 
@@ -336,7 +337,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
         return;
     }
-    if (offset > (node->offsetInCharacters() ? caretMaxOffset(node) : (int)node->childNodeCount())) {
+    if (offset > (node->offsetInCharacters() ? caretMaxOffset(node) : (int)node->countChildren())) {
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is larger than the given node's length.");
         return;
     }
@@ -351,11 +352,11 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
 PassRefPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
 
     if (index < 0 || index >= rangeCount()) {
         exceptionState.throwDOMException(IndexSizeError, String::number(index) + " is not a valid index.");
-        return 0;
+        return nullptr;
     }
 
     // If you're hitting this, you've added broken multi-range selection support
@@ -368,8 +369,7 @@ PassRefPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionS
         return Range::create(shadowAncestor->document(), container, offset, container, offset);
     }
 
-    const VisibleSelection& selection = m_frame->selection().selection();
-    return selection.firstRange();
+    return m_frame->selection().firstRange();
 }
 
 void DOMSelection::removeAllRanges()
@@ -379,42 +379,61 @@ void DOMSelection::removeAllRanges()
     m_frame->selection().clear();
 }
 
-void DOMSelection::addRange(Range* r)
+void DOMSelection::addRange(Range* newRange)
 {
     if (!m_frame)
         return;
-    if (!r)
+
+    // FIXME: Should we throw DOMException for error cases below?
+    if (!newRange) {
+        addConsoleError("The given range is null.");
         return;
+    }
+
+    if (!newRange->startContainer()) {
+        addConsoleError("The given range has no container. Perhaps 'detach()' has been invoked on it?");
+        return;
+    }
 
     FrameSelection& selection = m_frame->selection();
 
     if (selection.isNone()) {
-        selection.setSelection(VisibleSelection(r));
+        selection.setSelectedRange(newRange, VP_DEFAULT_AFFINITY);
         return;
     }
 
-    RefPtr<Range> range = selection.selection().toNormalizedRange();
-    if (r->compareBoundaryPoints(Range::START_TO_START, range.get(), IGNORE_EXCEPTION) == -1) {
-        // We don't support discontiguous selection. We don't do anything if r and range don't intersect.
-        if (r->compareBoundaryPoints(Range::START_TO_END, range.get(), IGNORE_EXCEPTION) > -1) {
-            if (r->compareBoundaryPoints(Range::END_TO_END, range.get(), IGNORE_EXCEPTION) == -1) {
-                // The original range and r intersect.
-                selection.setSelection(VisibleSelection(r->startPosition(), range->endPosition(), DOWNSTREAM));
+    RefPtr<Range> originalRange = selection.selection().toNormalizedRange();
+
+    if (originalRange->startContainer()->document() != newRange->startContainer()->document()) {
+        addConsoleError("The given range does not belong to the current selection's document.");
+        return;
+    }
+    if (originalRange->startContainer()->treeScope() != newRange->startContainer()->treeScope()) {
+        addConsoleError("The given range and the current selection belong to two different document fragments.");
+        return;
+    }
+
+    // FIXME: Emit a console error if the combined ranges would form a discontiguous selection.
+    if (newRange->compareBoundaryPoints(Range::START_TO_START, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
+        // We don't support discontiguous selection. We don't do anything if newRange and originalRange don't intersect.
+        if (newRange->compareBoundaryPoints(Range::START_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) > -1) {
+            if (newRange->compareBoundaryPoints(Range::END_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
+                // The original originalRange and newRange intersect.
+                selection.setSelection(VisibleSelection(newRange->startPosition(), originalRange->endPosition(), DOWNSTREAM));
             } else {
-                // r contains the original range.
-                selection.setSelection(VisibleSelection(r));
+                // newRange contains the original originalRange.
+                selection.setSelection(VisibleSelection(newRange));
             }
         }
     } else {
-        // We don't support discontiguous selection. We don't do anything if r and range don't intersect.
-        TrackExceptionState exceptionState;
-        if (r->compareBoundaryPoints(Range::END_TO_START, range.get(), exceptionState) < 1 && !exceptionState.hadException()) {
-            if (r->compareBoundaryPoints(Range::END_TO_END, range.get(), IGNORE_EXCEPTION) == -1) {
-                // The original range contains r.
-                selection.setSelection(VisibleSelection(range.get()));
+        // We don't support discontiguous selection. We don't do anything if newRange and originalRange don't intersect.
+        if (newRange->compareBoundaryPoints(Range::END_TO_START, originalRange.get(), ASSERT_NO_EXCEPTION) < 1) {
+            if (newRange->compareBoundaryPoints(Range::END_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
+                // The original range contains newRange.
+                selection.setSelection(VisibleSelection(originalRange.get()));
             } else {
                 // The original range and r intersect.
-                selection.setSelection(VisibleSelection(range->startPosition(), r->endPosition(), DOWNSTREAM));
+                selection.setSelection(VisibleSelection(originalRange->startPosition(), newRange->endPosition(), DOWNSTREAM));
             }
         }
     }
@@ -429,9 +448,6 @@ void DOMSelection::deleteFromDocument()
 
     if (selection.isNone())
         return;
-
-    if (isCollapsed())
-        selection.modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
     RefPtr<Range> selectedRange = selection.selection().toNormalizedRange();
     if (!selectedRange)
@@ -462,7 +478,8 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
     TrackExceptionState exceptionState;
     bool nodeFullySelected = Range::compareBoundaryPoints(parentNode, nodeIndex, selectedRange->startContainer(), selectedRange->startOffset(), exceptionState) >= 0 && !exceptionState.hadException()
         && Range::compareBoundaryPoints(parentNode, nodeIndex + 1, selectedRange->endContainer(), selectedRange->endOffset(), exceptionState) <= 0 && !exceptionState.hadException();
-    ASSERT(!exceptionState.hadException());
+    if (exceptionState.hadException())
+        return false;
     if (nodeFullySelected)
         return true;
 
@@ -481,7 +498,7 @@ void DOMSelection::selectAllChildren(Node* n, ExceptionState& exceptionState)
         return;
 
     // This doesn't (and shouldn't) select text node characters.
-    setBaseAndExtent(n, 0, n, n->childNodeCount(), exceptionState);
+    setBaseAndExtent(n, 0, n, n->countChildren(), exceptionState);
 }
 
 String DOMSelection::toString()
@@ -533,6 +550,12 @@ bool DOMSelection::isValidForPosition(Node* node) const
     if (!node)
         return true;
     return node->document() == m_frame->document();
+}
+
+void DOMSelection::addConsoleError(const String& message)
+{
+    if (m_treeScope)
+        m_treeScope->document().addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 }
 
 } // namespace WebCore

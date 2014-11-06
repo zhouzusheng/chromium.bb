@@ -32,25 +32,29 @@
 #define NavigatorDoNotTrack_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class Navigator;
 
-class NavigatorDoNotTrack FINAL : public Supplement<Navigator>, public DOMWindowProperty {
+class NavigatorDoNotTrack FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorDoNotTrack>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorDoNotTrack);
 public:
     virtual ~NavigatorDoNotTrack();
-    static NavigatorDoNotTrack* from(Navigator*);
+    static NavigatorDoNotTrack& from(Navigator&);
 
-    static String doNotTrack(Navigator*);
+    static String doNotTrack(Navigator&);
 
     String doNotTrack();
 
+    void trace(Visitor*) { }
+
 private:
-    explicit NavigatorDoNotTrack(Frame*);
+    explicit NavigatorDoNotTrack(LocalFrame*);
     static const char* supplementName();
 };
 

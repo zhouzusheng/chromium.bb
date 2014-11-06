@@ -28,14 +28,14 @@
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
@@ -54,7 +54,7 @@ public:
 private:
     PluginDocumentParser(Document* document)
         : RawDataDocumentParser(document)
-        , m_embedElement(0)
+        , m_embedElement(nullptr)
     {
     }
 
@@ -76,7 +76,7 @@ void PluginDocumentParser::createDocumentStructure()
     ASSERT(document());
     RELEASE_ASSERT(document()->loader());
 
-    Frame* frame = document()->frame();
+    LocalFrame* frame = document()->frame();
     if (!frame)
         return;
 
@@ -134,7 +134,7 @@ void PluginDocumentParser::finish()
             view->didFinishLoading();
         else
             view->didFailLoading(error);
-        m_embedElement = 0;
+        m_embedElement = nullptr;
     }
     RawDataDocumentParser::finish();
 }
@@ -178,7 +178,7 @@ Node* PluginDocument::pluginNode()
 void PluginDocument::detach(const AttachContext& context)
 {
     // Release the plugin node so that we don't have a circular reference.
-    m_pluginNode = 0;
+    m_pluginNode = nullptr;
     HTMLDocument::detach(context);
 }
 

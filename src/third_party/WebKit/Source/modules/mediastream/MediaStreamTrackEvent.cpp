@@ -25,19 +25,18 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamTrackEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create()
+PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create()
 {
-    return adoptRef(new MediaStreamTrackEvent);
+    return adoptRefWillBeRefCountedGarbageCollected(new MediaStreamTrackEvent);
 }
 
-PassRefPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack> track)
+PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack> track)
 {
-    return adoptRef(new MediaStreamTrackEvent(type, canBubble, cancelable, track));
+    return adoptRefWillBeRefCountedGarbageCollected(new MediaStreamTrackEvent(type, canBubble, cancelable, track));
 }
 
 
@@ -67,5 +66,9 @@ const AtomicString& MediaStreamTrackEvent::interfaceName() const
     return EventNames::MediaStreamTrackEvent;
 }
 
-} // namespace WebCore
+void MediaStreamTrackEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
+}
 
+} // namespace WebCore

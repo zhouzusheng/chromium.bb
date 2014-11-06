@@ -135,7 +135,7 @@ void FileReaderLoader::start(ExecutionContext* executionContext, const Stream& s
     }
 
     m_urlForReadingIsStream = true;
-    startInternal(executionContext, &stream, 0);
+    startInternal(executionContext, &stream, nullptr);
 }
 
 void FileReaderLoader::cancel()
@@ -154,7 +154,7 @@ void FileReaderLoader::terminate()
 
 void FileReaderLoader::cleanup()
 {
-    m_loader = 0;
+    m_loader = nullptr;
 
     // If we get any error, we do not need to keep a buffer around.
     if (m_errorCode) {
@@ -201,17 +201,19 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
             return;
         }
 
-        if (initialBufferLength < 0) {
+        if (initialBufferLength < 0)
             m_rawData = adoptPtr(new ArrayBufferBuilder());
-        } else {
+        else
             m_rawData = adoptPtr(new ArrayBufferBuilder(static_cast<unsigned>(initialBufferLength)));
-            // Total size is known. Set m_rawData to ignore overflowed data.
-            m_rawData->setVariableCapacity(false);
-        }
 
-        if (!m_rawData) {
+        if (!m_rawData || !m_rawData->isValid()) {
             failed(FileError::NOT_READABLE_ERR);
             return;
+        }
+
+        if (initialBufferLength >= 0) {
+            // Total size is known. Set m_rawData to ignore overflowed data.
+            m_rawData->setVariableCapacity(false);
         }
     }
 
@@ -304,7 +306,7 @@ PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
 
     // If the loading is not started or an error occurs, return an empty result.
     if (!m_rawData || m_errorCode)
-        return 0;
+        return nullptr;
 
     return m_rawData->toArrayBuffer();
 }

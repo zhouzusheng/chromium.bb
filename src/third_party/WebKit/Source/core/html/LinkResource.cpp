@@ -32,8 +32,8 @@
 #include "core/html/LinkResource.h"
 
 #include "HTMLNames.h"
-#include "core/html/HTMLImport.h"
 #include "core/html/HTMLLinkElement.h"
+#include "core/html/imports/HTMLImport.h"
 
 namespace WebCore {
 
@@ -53,7 +53,7 @@ bool LinkResource::shouldLoadResource() const
     return m_owner->document().frame() || m_owner->document().import();
 }
 
-Frame* LinkResource::loadingFrame() const
+LocalFrame* LinkResource::loadingFrame() const
 {
     HTMLImport* import = m_owner->document().import();
     if (!import)

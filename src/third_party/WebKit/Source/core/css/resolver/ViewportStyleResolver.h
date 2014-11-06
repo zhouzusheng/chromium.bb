@@ -42,21 +42,21 @@ class Document;
 class MutableStylePropertySet;
 class StyleRuleViewport;
 
-class ViewportStyleResolver : public RefCounted<ViewportStyleResolver> {
+class ViewportStyleResolver : public NoBaseWillBeGarbageCollected<ViewportStyleResolver> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ViewportStyleResolver);
 public:
-    static PassRefPtr<ViewportStyleResolver> create(Document* document)
+    static PassOwnPtrWillBeRawPtr<ViewportStyleResolver> create(Document* document)
     {
-        return adoptRef(new ViewportStyleResolver(document));
+        return adoptPtrWillBeNoop(new ViewportStyleResolver(document));
     }
-
-    ~ViewportStyleResolver();
 
     enum Origin { UserAgentOrigin, AuthorOrigin };
 
     void collectViewportRules(RuleSet*, Origin);
 
-    void clearDocument();
     void resolve();
+
+    void trace(Visitor*);
 
 private:
     explicit ViewportStyleResolver(Document*);
@@ -67,7 +67,7 @@ private:
     Length viewportLengthValue(CSSPropertyID) const;
 
     Document* m_document;
-    RefPtr<MutableStylePropertySet> m_propertySet;
+    RefPtrWillBeMember<MutableStylePropertySet> m_propertySet;
     bool m_hasAuthorStyle;
 };
 

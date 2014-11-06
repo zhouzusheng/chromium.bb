@@ -12,6 +12,7 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 #include "ui/surface/transport_dib.h"
 
@@ -107,9 +108,6 @@ class RenderWidgetHostView;
 // the RenderWidgetHost's IPC message map.
 class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
  public:
-  // Free all backing stores used for rendering to drop memory usage.
-  static void RemoveAllBackingStores();
-
   // Returns the size of all the backing stores used for rendering
   static size_t BackingStoreMemorySize();
 
@@ -122,18 +120,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   static scoped_ptr<RenderWidgetHostIterator> GetRenderWidgetHosts();
 
   virtual ~RenderWidgetHost() {}
-
-  // Edit operations.
-  virtual void Undo() = 0;
-  virtual void Redo() = 0;
-  virtual void Cut() = 0;
-  virtual void Copy() = 0;
-  virtual void CopyToFindPboard() = 0;
-  virtual void Paste() = 0;
-  virtual void PasteAndMatchStyle() = 0;
-  virtual void Delete() = 0;
-  virtual void SelectAll() = 0;
-  virtual void Unselect() = 0;
 
   // Update the text direction of the focused input element and notify it to a
   // renderer process.
@@ -199,7 +185,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void CopyFromBackingStore(
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config& bitmap_config) = 0;
   // Ensures that the view does not drop the backing store even when hidden.
   virtual bool CanCopyFromBackingStore() = 0;
 #if defined(OS_ANDROID)
@@ -218,6 +205,15 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Send a command to the renderer to turn on full accessibility.
   virtual void EnableFullAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has full accessibility mode.
+  virtual bool IsFullAccessibilityModeForTesting() = 0;
+
+  // Send a command to the renderer to turn on tree only accessibility.
+  virtual void EnableTreeOnlyAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has tree-only accessibility mode.
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() = 0;
 
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
@@ -301,6 +297,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void GetSnapshotFromRenderer(
       const gfx::Rect& src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+
+  virtual SkBitmap::Config PreferredReadbackFormat() = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

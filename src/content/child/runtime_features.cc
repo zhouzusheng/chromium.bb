@@ -8,6 +8,7 @@
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "ui/native_theme/native_theme_switches.h"
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
@@ -50,8 +51,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     const CommandLine& command_line) {
-  WebRuntimeFeatures::enableStableFeatures(true);
-
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
@@ -117,21 +116,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableWebAudio(false);
 #endif
 
-  if (command_line.HasSwitch(switches::kDisableFullScreen))
-    WebRuntimeFeatures::enableFullscreen(false);
-
   if (command_line.HasSwitch(switches::kEnableEncryptedMedia))
     WebRuntimeFeatures::enableEncryptedMedia(true);
 
   if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
-
-  // FIXME: Remove the enable switch once Web Animations CSS is enabled by
-  // default in Blink.
-  if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
-    WebRuntimeFeatures::enableWebAnimationsCSS(true);
-  else if (command_line.HasSwitch(switches::kDisableWebAnimationsCSS))
-    WebRuntimeFeatures::enableWebAnimationsCSS(false);
 
   if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
     WebRuntimeFeatures::enableWebAnimationsSVG(true);
@@ -144,11 +133,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
-
-#if defined(OS_WIN)
-  if (command_line.HasSwitch(switches::kEnableDirectWrite))
-    WebRuntimeFeatures::enableDirectWrite(true);
-#endif
 
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
@@ -165,13 +149,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo))
     WebRuntimeFeatures::enableOverlayFullscreenVideo(true);
 
-  if (IsOverlayScrollbarEnabled())
+  if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableInputModeAttribute))
-    WebRuntimeFeatures::enableInputModeAttribute(true);
-
-  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
+  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing)
+      && !command_line.HasSwitch(switches::kDisableFastTextAutosizing))
     WebRuntimeFeatures::enableFastTextAutosizing(true);
 
   if (command_line.HasSwitch(switches::kDisableRepaintAfterLayout))
@@ -182,6 +164,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableTargetedStyleRecalc))
     WebRuntimeFeatures::enableTargetedStyleRecalc(true);
+
+  if (command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths))
+    WebRuntimeFeatures::enableBleedingEdgeFastPaths(true);
 }
 
 }  // namespace content

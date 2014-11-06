@@ -126,6 +126,7 @@ id
 incremental
 indeterminate
 inputmode
+integrity
 is
 ismap
 itemid
@@ -176,7 +177,6 @@ onautocomplete
 onautocompleteerror
 onbeforecopy
 onbeforecut
-onbeforeload
 onbeforepaste
 onbeforeunload
 onblur
@@ -292,7 +292,6 @@ pseudo
 readonly
 rel
 required
-reset-style-inheritance
 results
 rev
 reversed

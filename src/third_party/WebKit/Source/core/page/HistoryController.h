@@ -40,7 +40,7 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class HistoryEntry;
 class Page;
 
@@ -97,7 +97,7 @@ public:
     ~HistoryNode() { }
 
     HistoryNode* addChild(PassRefPtr<HistoryItem>, int64_t frameID);
-    PassOwnPtr<HistoryNode> cloneAndReplace(HistoryEntry*, HistoryItem* newItem, bool clipAtTarget, Frame* targetFrame, Frame* currentFrame);
+    PassOwnPtr<HistoryNode> cloneAndReplace(HistoryEntry*, HistoryItem* newItem, bool clipAtTarget, LocalFrame* targetFrame, LocalFrame* currentFrame);
     HistoryItem* value() { return m_value.get(); }
     void updateValue(PassRefPtr<HistoryItem> item) { m_value = item; }
     const Vector<OwnPtr<HistoryNode> >& children() const { return m_children; }
@@ -115,10 +115,10 @@ private:
 class HistoryEntry {
 public:
     static PassOwnPtr<HistoryEntry> create(HistoryItem* root, int64_t frameID);
-    PassOwnPtr<HistoryEntry> cloneAndReplace(HistoryItem* newItem, bool clipAtTarget, Frame* targetFrame, Page*);
+    PassOwnPtr<HistoryEntry> cloneAndReplace(HistoryItem* newItem, bool clipAtTarget, LocalFrame* targetFrame, Page*);
 
-    HistoryNode* historyNodeForFrame(Frame*);
-    HistoryItem* itemForFrame(Frame*);
+    HistoryNode* historyNodeForFrame(LocalFrame*);
+    HistoryItem* itemForFrame(LocalFrame*);
     HistoryItem* root() const { return m_root->value(); }
     HistoryNode* rootHistoryNode() const { return m_root.get(); }
 
@@ -143,38 +143,27 @@ public:
     // navigation, call FrameLoaderClient::navigateBackForward().
     void goToItem(HistoryItem*, ResourceRequestCachePolicy);
 
-    void updateBackForwardListForFragmentScroll(Frame*, HistoryItem*);
-    void updateForCommit(Frame*, HistoryItem*, HistoryCommitType);
+    void updateBackForwardListForFragmentScroll(LocalFrame*, HistoryItem*);
+    void updateForCommit(LocalFrame*, HistoryItem*, HistoryCommitType);
 
     PassRefPtr<HistoryItem> currentItemForExport();
     PassRefPtr<HistoryItem> previousItemForExport();
-    HistoryItem* itemForNewChildFrame(Frame*) const;
-    void removeChildrenForRedirect(Frame*);
-
-    bool inSameDocumentLoad() const { return !m_sameDocumentLoadsInProgress.isEmpty() && m_differentDocumentLoadsInProgress.isEmpty(); }
-
-    void setDefersLoading(bool);
+    HistoryItem* itemForNewChildFrame(LocalFrame*) const;
+    void removeChildrenForRedirect(LocalFrame*);
 
 private:
     void goToEntry(PassOwnPtr<HistoryEntry>, ResourceRequestCachePolicy);
-    void recursiveGoToEntry(Frame*);
+    typedef HashMap<RefPtr<LocalFrame>, RefPtr<HistoryItem> > HistoryFrameLoadSet;
+    void recursiveGoToEntry(LocalFrame*, HistoryFrameLoadSet& sameDocumentLoads, HistoryFrameLoadSet& differentDocumentLoads);
 
-    void updateForInitialLoadInChildFrame(Frame*, HistoryItem*);
-    void createNewBackForwardItem(Frame*, HistoryItem*, bool doClip);
+    void updateForInitialLoadInChildFrame(LocalFrame*, HistoryItem*);
+    void createNewBackForwardItem(LocalFrame*, HistoryItem*, bool doClip);
 
     Page* m_page;
 
     OwnPtr<HistoryEntry> m_currentEntry;
     OwnPtr<HistoryEntry> m_previousEntry;
     OwnPtr<HistoryEntry> m_provisionalEntry;
-
-    typedef HashMap<RefPtr<Frame>, RefPtr<HistoryItem> > HistoryFrameLoadSet;
-    HistoryFrameLoadSet m_sameDocumentLoadsInProgress;
-    HistoryFrameLoadSet m_differentDocumentLoadsInProgress;
-
-    bool m_defersLoading;
-    RefPtr<HistoryItem> m_deferredItem;
-    ResourceRequestCachePolicy m_deferredCachePolicy;
 };
 
 } // namespace WebCore

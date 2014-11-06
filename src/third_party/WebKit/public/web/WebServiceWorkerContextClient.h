@@ -32,16 +32,21 @@
 #define WebServiceWorkerContextClient_h
 
 #include "WebWorkerPermissionClientProxy.h"
+#include "public/platform/WebServiceWorkerEventResult.h"
 
 namespace blink {
 
+class WebDataSource;
 class WebString;
 class WebServiceWorkerContextProxy;
+class WebServiceWorkerNetworkProvider;
+class WebServiceWorkerResponse;
 
-// This interface is implemented by the client. It is suppoed to be created
+// This interface is implemented by the client. It is supposed to be created
 // on the main thread and then passed on to the worker thread to be owned
 // by a newly created WorkerGlobalScope. All methods of this class, except
-// for workerContextFailedToStart(), are called on the worker thread.
+// for createServiceWorkerNetworkProvider() and workerContextFailedToStart(),
+// are called on the worker thread.
 // FIXME: Split this into EmbeddedWorkerContextClient and
 // ServiceWorkerScriptContextClient when we decide to use EmbeddedWorker
 // framework for other implementation (like SharedWorker).
@@ -73,10 +78,31 @@ public:
     virtual void dispatchDevToolsMessage(const WebString&) { }
     virtual void saveDevToolsAgentState(const WebString&) { }
 
+    // ServiceWorker specific method.
+    virtual void didHandleActivateEvent(int eventID, blink::WebServiceWorkerEventResult result) { }
+
     // ServiceWorker specific method. Called after InstallEvent (dispatched
     // via WebServiceWorkerContextProxy) is handled by the ServiceWorker's
     // script context.
     virtual void didHandleInstallEvent(int installEventID) { }
+    virtual void didHandleInstallEvent(int installEventID, blink::WebServiceWorkerEventResult result)
+    {
+        didHandleInstallEvent(installEventID);
+    }
+
+    // ServiceWorker specific methods. Called after FetchEvent is handled by the
+    // ServiceWorker's script context. When no response is provided, the browser
+    // should fallback to native fetch.
+    virtual void didHandleFetchEvent(int fetchEventID) { }
+    virtual void didHandleFetchEvent(int fetchEventID, const WebServiceWorkerResponse& response) { }
+
+    // Ownership of the returned object is transferred to the caller.
+    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(blink::WebDataSource*) { return 0; }
+
+    // ServiceWorker specific method. Called after SyncEvent (dispatched via
+    // WebServiceWorkerContextProxy) is handled by the ServiceWorker's script
+    // context.
+    virtual void didHandleSyncEvent(int syncEventID) { }
 };
 
 } // namespace blink

@@ -119,14 +119,14 @@ static String generateSecWebSocketKey()
 String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocketKey)
 {
     static const char webSocketKeyGUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    static const size_t sha1HashSize = 20; // FIXME: This should be defined in SHA1.h.
     SHA1 sha1;
     CString keyData = secWebSocketKey.ascii();
     sha1.addBytes(reinterpret_cast<const uint8_t*>(keyData.data()), keyData.length());
     sha1.addBytes(reinterpret_cast<const uint8_t*>(webSocketKeyGUID), strlen(webSocketKeyGUID));
-    Vector<uint8_t, sha1HashSize> hash;
+    Vector<uint8_t, SHA1::outputSizeBytes> hash;
     sha1.computeHash(hash);
-    return base64Encode(reinterpret_cast<const char*>(hash.data()), sha1HashSize);
+    return base64Encode(reinterpret_cast<const char*>(hash.data()),
+        SHA1::outputSizeBytes);
 }
 
 WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, Document* document)
@@ -252,7 +252,7 @@ PassRefPtr<WebSocketHandshakeRequest> WebSocketHandshake::clientHandshakeRequest
     // Keep the following consistent with clientHandshakeMessage().
     // FIXME: do we need to store m_secWebSocketKey1, m_secWebSocketKey2 and
     // m_key3 in WebSocketHandshakeRequest?
-    RefPtr<WebSocketHandshakeRequest> request = WebSocketHandshakeRequest::create("GET", m_url);
+    RefPtr<WebSocketHandshakeRequest> request = WebSocketHandshakeRequest::create(m_url);
     request->addHeaderField("Upgrade", "websocket");
     request->addHeaderField("Connection", "Upgrade");
     request->addHeaderField("Host", AtomicString(hostName(m_url, m_secure)));

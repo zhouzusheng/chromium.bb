@@ -48,23 +48,23 @@
 namespace WebCore {
 
 // static
-PassRefPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem* item)
+PassRefPtrWillBeRawPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem& item)
 {
-    if (!item->dataObjectItem()->isFilename())
-        return 0;
+    if (!item.dataObjectItem()->isFilename())
+        return nullptr;
 
     // For dragged files getAsFile must be pretty lightweight.
-    Blob* file = item->getAsFile().get();
+    Blob* file = item.getAsFile().get();
     // The clipboard may not be in a readable state.
     if (!file)
-        return 0;
+        return nullptr;
     ASSERT(file->isFile());
 
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(item->clipboard()->dataObject().get());
+    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(item.clipboard()->dataObject().get());
     DOMFileSystem* domFileSystem = filesystem ? filesystem->getDOMFileSystem(executionContext) : 0;
     if (!filesystem) {
         // IsolatedFileSystem may not be enabled.
-        return 0;
+        return nullptr;
     }
 
     ASSERT(domFileSystem);
@@ -75,7 +75,7 @@ PassRefPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext*
     // FIXME: This involves synchronous file operation. Consider passing file type data when we dispatch drag event.
     FileMetadata metadata;
     if (!getFileMetadata(toFile(file)->path(), metadata))
-        return 0;
+        return nullptr;
 
     if (metadata.type == FileMetadata::TypeDirectory)
         return DirectoryEntry::create(domFileSystem, virtualPath);

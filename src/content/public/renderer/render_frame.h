@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 #define CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -14,6 +15,7 @@ struct WebPreferences;
 
 namespace blink {
 class WebFrame;
+class WebNode;
 class WebPlugin;
 class WebURLRequest;
 struct WebPluginParams;
@@ -64,6 +66,9 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // menu is closed.
   virtual void CancelContextMenu(int request_id) = 0;
 
+  // Gets the node that the context menu was pressed over.
+  virtual blink::WebNode GetContextMenuNode() const = 0;
+
   // Create a new NPAPI/Pepper plugin depending on |info|. Returns NULL if no
   // plugin was found.
   virtual blink::WebPlugin* CreatePlugin(
@@ -76,6 +81,9 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
       blink::WebFrame* frame,
       const blink::WebURLRequest& request,
       blink::WebNavigationPolicy policy) = 0;
+
+  // Execute a string of JavaScript in this frame's context.
+  virtual void ExecuteJavaScript(const base::string16& javascript) = 0;
 
  protected:
   virtual ~RenderFrame() {}

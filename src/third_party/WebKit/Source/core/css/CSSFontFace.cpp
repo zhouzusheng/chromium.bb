@@ -26,9 +26,11 @@
 #include "config.h"
 #include "core/css/CSSFontFace.h"
 
+#include "core/css/CSSFontFaceSource.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/FontFaceSet.h"
+#include "core/css/RemoteFontFaceSource.h"
 #include "core/dom/Document.h"
 #include "core/frame/UseCounter.h"
 #include "platform/fonts/SimpleFontData.h"
@@ -62,7 +64,7 @@ void CSSFontFace::beginLoadIfNeeded(CSSFontFaceSource* source, CSSFontSelector* 
         setLoadStatus(FontFace::Loading);
 }
 
-void CSSFontFace::fontLoaded(CSSFontFaceSource* source)
+void CSSFontFace::fontLoaded(RemoteFontFaceSource* source)
 {
     if (m_segmentedFontFace)
         m_segmentedFontFace->fontSelector()->fontLoaded();
@@ -87,10 +89,18 @@ void CSSFontFace::fontLoaded(CSSFontFaceSource* source)
         m_segmentedFontFace->fontLoaded(this);
 }
 
+void CSSFontFace::fontLoadWaitLimitExceeded(RemoteFontFaceSource* source)
+{
+    if (!isValid() || source != m_sources.first())
+        return;
+    if (m_segmentedFontFace)
+        m_segmentedFontFace->fontLoadWaitLimitExceeded(this);
+}
+
 PassRefPtr<SimpleFontData> CSSFontFace::getFontData(const FontDescription& fontDescription)
 {
     if (!isValid())
-        return 0;
+        return nullptr;
 
     while (!m_sources.isEmpty()) {
         OwnPtr<CSSFontFaceSource>& source = m_sources.first();
@@ -108,7 +118,7 @@ PassRefPtr<SimpleFontData> CSSFontFace::getFontData(const FontDescription& fontD
         setLoadStatus(FontFace::Loading);
     if (loadStatus() == FontFace::Loading)
         setLoadStatus(FontFace::Error);
-    return 0;
+    return nullptr;
 }
 
 void CSSFontFace::willUseFontData(const FontDescription& fontDescription)
@@ -164,17 +174,42 @@ void CSSFontFace::setLoadStatus(FontFace::LoadStatus newStatus)
 
     switch (newStatus) {
     case FontFace::Loading:
-        FontFaceSet::from(document)->beginFontLoading(m_fontFace);
+        FontFaceSet::from(*document)->beginFontLoading(m_fontFace);
         break;
     case FontFace::Loaded:
-        FontFaceSet::from(document)->fontLoaded(m_fontFace);
+        FontFaceSet::from(*document)->fontLoaded(m_fontFace);
         break;
     case FontFace::Error:
-        FontFaceSet::from(document)->loadError(m_fontFace);
+        FontFaceSet::from(*document)->loadError(m_fontFace);
         break;
     default:
         break;
     }
+}
+
+CSSFontFace::UnicodeRangeSet::UnicodeRangeSet(const Vector<UnicodeRange>& ranges)
+    : m_ranges(ranges)
+{
+    if (m_ranges.isEmpty())
+        return;
+
+    std::sort(m_ranges.begin(), m_ranges.end());
+
+    // Unify overlapping ranges.
+    UChar32 from = m_ranges[0].from();
+    UChar32 to = m_ranges[0].to();
+    size_t targetIndex = 0;
+    for (size_t i = 1; i < m_ranges.size(); i++) {
+        if (to + 1 >= m_ranges[i].from()) {
+            to = std::max(to, m_ranges[i].to());
+        } else {
+            m_ranges[targetIndex++] = UnicodeRange(from, to);
+            from = m_ranges[i].from();
+            to = m_ranges[i].to();
+        }
+    }
+    m_ranges[targetIndex++] = UnicodeRange(from, to);
+    m_ranges.shrink(targetIndex);
 }
 
 bool CSSFontFace::UnicodeRangeSet::intersectsWith(const String& text) const
@@ -183,17 +218,16 @@ bool CSSFontFace::UnicodeRangeSet::intersectsWith(const String& text) const
         return false;
     if (isEntireRange())
         return true;
+    if (text.is8Bit() && m_ranges[0].from() >= 0x100)
+        return false;
 
-    // FIXME: This takes O(text.length() * m_ranges.size()) time. It would be
-    // better to make m_ranges sorted and use binary search.
     unsigned index = 0;
     while (index < text.length()) {
         UChar32 c = text.characterStartingAt(index);
         index += U16_LENGTH(c);
-        for (unsigned i = 0; i < m_ranges.size(); i++) {
-            if (m_ranges[i].contains(c))
-                return true;
-        }
+        Vector<UnicodeRange>::const_iterator it = std::lower_bound(m_ranges.begin(), m_ranges.end(), c);
+        if (it != m_ranges.end() && it->contains(c))
+            return true;
     }
     return false;
 }

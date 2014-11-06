@@ -39,8 +39,6 @@ class SchedulerClient {
   virtual base::TimeDelta DrawDurationEstimate() = 0;
   virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() = 0;
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
-  virtual void PostBeginImplFrameDeadline(const base::Closure& closure,
-                                          base::TimeTicks deadline) = 0;
   virtual void DidBeginImplFrameDeadline() = 0;
 
  protected:
@@ -52,9 +50,10 @@ class CC_EXPORT Scheduler {
   static scoped_ptr<Scheduler> Create(
       SchedulerClient* client,
       const SchedulerSettings& scheduler_settings,
-      int layer_tree_host_id) {
-    return make_scoped_ptr(
-        new Scheduler(client, scheduler_settings, layer_tree_host_id));
+      int layer_tree_host_id,
+      const scoped_refptr<base::SequencedTaskRunner>& impl_task_runner) {
+    return make_scoped_ptr(new Scheduler(
+        client, scheduler_settings, layer_tree_host_id, impl_task_runner));
   }
 
   virtual ~Scheduler();
@@ -81,7 +80,7 @@ class CC_EXPORT Scheduler {
 
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
 
-  void FinishCommit();
+  void NotifyReadyToCommit();
   void BeginMainFrameAborted(bool did_handle);
 
   void DidManageTiles();
@@ -99,10 +98,15 @@ class CC_EXPORT Scheduler {
   bool MainThreadIsInHighLatencyMode() const {
     return state_machine_.MainThreadIsInHighLatencyMode();
   }
+  bool BeginImplFrameDeadlinePending() const {
+    return !begin_impl_frame_deadline_closure_.IsCancelled();
+  }
 
   bool WillDrawIfNeeded() const;
 
-  base::TimeTicks AnticipatedDrawTime();
+  base::TimeTicks AnticipatedDrawTime() const;
+
+  void NotifyBeginMainFrameStarted();
 
   base::TimeTicks LastBeginImplFrameTime();
 
@@ -110,20 +114,22 @@ class CC_EXPORT Scheduler {
   void OnBeginImplFrameDeadline();
   void PollForAnticipatedDrawTriggers();
 
-  scoped_ptr<base::Value> StateAsValue() {
-    return state_machine_.AsValue().Pass();
-  }
+  scoped_ptr<base::Value> StateAsValue() const;
 
   bool IsInsideAction(SchedulerStateMachine::Action action) {
     return inside_action_ == action;
   }
 
+  bool IsBeginMainFrameSent() const;
+
  private:
   Scheduler(SchedulerClient* client,
             const SchedulerSettings& scheduler_settings,
-            int layer_tree_host_id);
+            int layer_tree_host_id,
+            const scoped_refptr<base::SequencedTaskRunner>& impl_task_runner);
 
-  void PostBeginImplFrameDeadline(base::TimeTicks deadline);
+  base::TimeTicks AdjustedBeginImplFrameDeadline() const;
+  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
   void SetupNextBeginImplFrameIfNeeded();
   void ActivatePendingTree();
   void DrawAndSwapIfPossible();
@@ -134,9 +140,12 @@ class CC_EXPORT Scheduler {
   bool CanCommitAndActivateBeforeDeadline() const;
   void AdvanceCommitStateIfPossible();
 
+  bool IsBeginMainFrameSentOrStarted() const;
+
   const SchedulerSettings settings_;
   SchedulerClient* client_;
   int layer_tree_host_id_;
+  scoped_refptr<base::SequencedTaskRunner> impl_task_runner_;
 
   bool last_set_needs_begin_impl_frame_;
   BeginFrameArgs last_begin_impl_frame_args_;

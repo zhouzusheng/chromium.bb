@@ -28,6 +28,7 @@
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/Nullable.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8BindingMacros.h"
@@ -45,6 +46,7 @@ namespace WebCore {
 class ArrayValue;
 class DOMError;
 class DOMWindow;
+class Gamepad;
 class IDBKeyRange;
 class MIDIPort;
 class MediaKeyError;
@@ -57,6 +59,7 @@ class TrackBase;
 class VoidCallback;
 
 class Dictionary {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     Dictionary();
     Dictionary(const v8::Handle<v8::Value>& options, v8::Isolate*);
@@ -79,8 +82,8 @@ public:
     bool get(const String&, unsigned&) const;
     bool get(const String&, unsigned long&) const;
     bool get(const String&, unsigned long long&) const;
-    bool get(const String&, RefPtr<DOMWindow>&) const;
-    bool get(const String&, RefPtrWillBeRawPtr<Storage>&) const;
+    bool get(const String&, RefPtrWillBeMember<DOMWindow>&) const;
+    bool get(const String&, RefPtrWillBeMember<Storage>&) const;
     bool get(const String&, MessagePortArray&) const;
     bool get(const String&, RefPtr<Uint8Array>&) const;
     bool get(const String&, RefPtr<ArrayBufferView>&) const;
@@ -88,15 +91,16 @@ public:
     bool get(const String&, RefPtr<MediaKeyError>&) const;
     bool get(const String&, RefPtr<TrackBase>&) const;
     bool get(const String&, RefPtr<SpeechRecognitionError>&) const;
-    bool get(const String&, RefPtrWillBeRawPtr<SpeechRecognitionResult>&) const;
-    bool get(const String&, RefPtrWillBeRawPtr<SpeechRecognitionResultList>&) const;
+    bool get(const String&, RefPtrWillBeMember<SpeechRecognitionResult>&) const;
+    bool get(const String&, RefPtrWillBeMember<SpeechRecognitionResultList>&) const;
+    bool get(const String&, RefPtrWillBeMember<Gamepad>&) const;
     bool get(const String&, RefPtr<MediaStream>&) const;
     bool get(const String&, RefPtr<EventTarget>&) const;
     bool get(const String&, HashSet<AtomicString>&) const;
     bool get(const String&, Dictionary&) const;
     bool get(const String&, Vector<String>&) const;
     bool get(const String&, ArrayValue&) const;
-    bool get(const String&, RefPtr<DOMError>&) const;
+    bool get(const String&, RefPtrWillBeMember<DOMError>&) const;
     bool get(const String&, OwnPtr<VoidCallback>&) const;
     bool get(const String&, v8::Local<v8::Value>&) const;
 
@@ -154,6 +158,9 @@ public:
 
     template<typename IntegralType>
     bool convert(ConversionContext&, const String&, IntegralType&) const;
+    template<typename IntegralType>
+    bool convert(ConversionContext&, const String&, Nullable<IntegralType>&) const;
+
     bool convert(ConversionContext&, const String&, MessagePortArray&) const;
     bool convert(ConversionContext&, const String&, HashSet<AtomicString>&) const;
     bool convert(ConversionContext&, const String&, Dictionary&) const;
@@ -172,13 +179,7 @@ public:
 
     bool hasProperty(const String&) const;
 
-    // Only allow inline allocation.
-    void* operator new(size_t, NotNullTag, void* location) { return location; }
-
 private:
-    // Disallow new allocation.
-    void* operator new(size_t);
-
     bool getKey(const String& key, v8::Local<v8::Value>&) const;
 
     v8::Handle<v8::Value> m_options;
@@ -299,6 +300,28 @@ template<typename T> bool Dictionary::convert(ConversionContext& context, const 
     if (context.exceptionState().throwIfNeeded())
         return false;
 
+    return true;
+}
+
+template<typename T> bool Dictionary::convert(ConversionContext& context, const String& key, Nullable<T>& value) const
+{
+    ConversionContextScope scope(context);
+
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return true;
+
+    if (context.isNullable() && WebCore::isUndefinedOrNull(v8Value)) {
+        value = Nullable<T>();
+        return true;
+    }
+
+    T converted = IntegralTypeTraits<T>::toIntegral(v8Value, NormalConversion, context.exceptionState());
+
+    if (context.exceptionState().throwIfNeeded())
+        return false;
+
+    value = Nullable<T>(converted);
     return true;
 }
 

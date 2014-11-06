@@ -50,8 +50,8 @@ class ExecutionContext;
 // (resolve / reject) from C++ world.
 // ScriptPromiseResolver holds a PromiseResolver.
 // Here is a typical usage:
-//  1. Create a ScriptPromiseResolver from a ScriptPromise.
-//  2. Pass the promise object of the holder to a JavaScript program
+//  1. Create a ScriptPromiseResolver.
+//  2. Pass the associated promise object to a JavaScript program
 //     (such as XMLHttpRequest return value).
 //  3. Call resolve or reject when the operation completes or
 //     the operation fails respectively.
@@ -63,12 +63,15 @@ class ExecutionContext;
 // To prevent memory leaks, you should release the reference manually
 // by calling resolve or reject.
 // Destroying the object will also release the reference.
-//
+// Note that ScriptPromiseResolver::promise returns an empty value when the
+// resolver is already resolved or rejected. If you want to resolve a resolver
+// immediately and return the associated promise, you should get the promise
+// before resolving.
 class ScriptPromiseResolver : public RefCounted<ScriptPromiseResolver> {
     WTF_MAKE_NONCOPYABLE(ScriptPromiseResolver);
 public:
-    static PassRefPtr<ScriptPromiseResolver> create(ScriptPromise, ExecutionContext*);
-    static PassRefPtr<ScriptPromiseResolver> create(ScriptPromise);
+    static PassRefPtr<ScriptPromiseResolver> create(ExecutionContext*);
+    static PassRefPtr<ScriptPromiseResolver> create(v8::Isolate*);
 
     // A ScriptPromiseResolver should be resolved / rejected before
     // its destruction.
@@ -76,14 +79,10 @@ public:
     // entering a v8 context.
     ~ScriptPromiseResolver();
 
-    // Return true if the promise object is in pending state.
-    bool isPending() const;
-
-    ScriptPromise promise()
-    {
-        ASSERT(m_promise.isolate()->InContext());
-        return m_promise;
-    }
+    // Returns the underlying Promise.
+    // Note that the underlying Promise is cleared when |resolve| or |reject|
+    // is called.
+    ScriptPromise promise();
 
     // To use following template methods, T must be a DOM class.
 
@@ -121,6 +120,11 @@ public:
     template<typename T>
     inline void reject(T* value);
 
+    template<typename T, size_t inlineCapacity>
+    void resolve(const Vector<T, inlineCapacity>& iterator) { resolve(v8ArrayNoInline(iterator, m_isolate)); }
+    template<typename T, size_t inlineCapacity>
+    void reject(const Vector<T, inlineCapacity>& iterator) { reject(v8ArrayNoInline(iterator, m_isolate)); }
+
     template<typename T>
     void resolve(PassRefPtr<T> value) { resolve(value.get()); }
     template<typename T>
@@ -134,12 +138,17 @@ public:
     void reject(ScriptValue);
 
 private:
-    ScriptPromiseResolver(ScriptPromise);
+    ScriptPromiseResolver(ExecutionContext*);
+    ScriptPromiseResolver(v8::Isolate*);
+
     void resolve(v8::Handle<v8::Value>);
     void reject(v8::Handle<v8::Value>);
 
     v8::Isolate* m_isolate;
+    // Used when scriptPromiseOnV8Promise is disabled.
     ScriptPromise m_promise;
+    // Used when scriptPromiseOnV8Promise is enabled.
+    ScriptValue m_resolver;
 };
 
 template<typename T>

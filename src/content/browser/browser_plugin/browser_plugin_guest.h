@@ -53,7 +53,6 @@ struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_ShowPopup_Params;
 #endif
 struct ViewHostMsg_UpdateRect_Params;
-class WebCursor;
 
 namespace cc {
 class CompositorFrameAck;
@@ -79,6 +78,7 @@ class BrowserPluginGuestManager;
 class RenderProcessHost;
 class RenderWidgetHostView;
 class SiteInstance;
+class WebCursor;
 struct DropData;
 struct MediaStreamRequest;
 
@@ -208,10 +208,16 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual void HandleKeyboardEvent(
       WebContents* source,
       const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual void FindReply(WebContents* contents,
+                         int request_id,
+                         int number_of_matches,
+                         const gfx::Rect& selection_rect,
+                         int active_match_ordinal,
+                         bool final_update) OVERRIDE;
   virtual WebContents* OpenURLFromTab(WebContents* source,
                                       const OpenURLParams& params) OVERRIDE;
   virtual void WebContentsCreated(WebContents* source_contents,
-                                  int64 source_frame_id,
+                                  int opener_render_frame_id,
                                   const base::string16& frame_name,
                                   const GURL& target_url,
                                   WebContents* new_contents) OVERRIDE;

@@ -64,7 +64,7 @@ public:
 
     void releaseResources();
 
-    void didChangePriority(ResourceLoadPriority);
+    void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
 
     // WebURLLoaderClient
     virtual void willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&, const blink::WebURLResponse& redirectResponse) OVERRIDE;
@@ -92,6 +92,8 @@ private:
     void didFinishLoadingOnePart(double finishTime, int64_t encodedDataLength);
 
     bool responseNeedsAccessControlCheck() const;
+
+    ResourceRequest& applyOptions(ResourceRequest&) const;
 
     OwnPtr<blink::WebURLLoader> m_loader;
     RefPtr<ResourceLoaderHost> m_host;

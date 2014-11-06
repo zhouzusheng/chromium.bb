@@ -33,11 +33,10 @@
 #include "core/events/MouseEvent.h"
 #include "core/events/TextEvent.h"
 #include "core/events/TextEventInputType.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/RenderTextControlSingleLine.h"
 #include "core/rendering/RenderView.h"
 #include "core/speech/SpeechInput.h"
@@ -88,9 +87,6 @@ PassRefPtr<RenderStyle> EditingViewPortElement::customStyleForRenderer()
     style->inheritFrom(shadowHost()->renderStyle());
 
     style->setFlexGrow(1);
-    // min-width: 0; is needed for correct shrinking.
-    // FIXME: Remove this line when https://bugs.webkit.org/show_bug.cgi?id=111790 is fixed.
-    style->setMinWidth(Length(0, Fixed));
     style->setDisplay(BLOCK);
     style->setDirection(LTR);
 
@@ -171,7 +167,7 @@ const AtomicString& SearchFieldDecorationElement::shadowPseudoId() const
     Element* host = shadowHost();
     if (!host)
         return resultsDecorationId;
-    if (host->hasTagName(inputTag)) {
+    if (isHTMLInputElement(*host)) {
         if (toHTMLInputElement(host)->maxResults() < 0)
             return decorationId;
         return resultsDecorationId;
@@ -217,8 +213,8 @@ PassRefPtr<SearchFieldCancelButtonElement> SearchFieldCancelButtonElement::creat
 void SearchFieldCancelButtonElement::detach(const AttachContext& context)
 {
     if (m_capturing) {
-        if (Frame* frame = document().frame())
-            frame->eventHandler().setCapturingMouseEventsNode(0);
+        if (LocalFrame* frame = document().frame())
+            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
     }
     HTMLDivElement::detach(context);
 }
@@ -234,30 +230,11 @@ void SearchFieldCancelButtonElement::defaultEventHandler(Event* event)
         return;
     }
 
-    if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
-        if (renderer() && renderer()->visibleToHitTesting()) {
-            if (Frame* frame = document().frame()) {
-                frame->eventHandler().setCapturingMouseEventsNode(this);
-                m_capturing = true;
-            }
-        }
-        input->focus();
-        input->select();
+
+    if (event->type() == EventTypeNames::click && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
+        input->setValueForUser("");
+        input->onSearch();
         event->setDefaultHandled();
-    }
-    if (event->type() == EventTypeNames::mouseup && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
-        if (m_capturing) {
-            if (Frame* frame = document().frame()) {
-                frame->eventHandler().setCapturingMouseEventsNode(0);
-                m_capturing = false;
-            }
-            if (hovered()) {
-                String oldValue = input->value();
-                input->setValueForUser("");
-                input->onSearch();
-                event->setDefaultHandled();
-            }
-        }
     }
 
     if (!event->defaultHandled())
@@ -325,7 +302,7 @@ void InputFieldSpeechButtonElement::defaultEventHandler(Event* event)
     // On mouse down, select the text and set focus.
     if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (renderer() && renderer()->visibleToHitTesting()) {
-            if (Frame* frame = document().frame()) {
+            if (LocalFrame* frame = document().frame()) {
                 frame->eventHandler().setCapturingMouseEventsNode(this);
                 m_capturing = true;
             }
@@ -338,8 +315,8 @@ void InputFieldSpeechButtonElement::defaultEventHandler(Event* event)
     // On mouse up, release capture cleanly.
     if (event->type() == EventTypeNames::mouseup && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (m_capturing && renderer() && renderer()->visibleToHitTesting()) {
-            if (Frame* frame = document().frame()) {
-                frame->eventHandler().setCapturingMouseEventsNode(0);
+            if (LocalFrame* frame = document().frame()) {
+                frame->eventHandler().setCapturingMouseEventsNode(nullptr);
                 m_capturing = false;
             }
         }
@@ -437,8 +414,8 @@ void InputFieldSpeechButtonElement::attach(const AttachContext& context)
 void InputFieldSpeechButtonElement::detach(const AttachContext& context)
 {
     if (m_capturing) {
-        if (Frame* frame = document().frame())
-            frame->eventHandler().setCapturingMouseEventsNode(0);
+        if (LocalFrame* frame = document().frame())
+            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
     }
 
     if (m_listenerId) {

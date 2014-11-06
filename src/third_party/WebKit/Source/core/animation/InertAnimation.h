@@ -40,19 +40,19 @@ namespace WebCore {
 class InertAnimation FINAL : public TimedItem {
 
 public:
-    static PassRefPtr<InertAnimation> create(PassRefPtr<AnimationEffect>, const Timing&, bool paused);
-    PassOwnPtr<AnimationEffect::CompositableValueList> sample();
+    static PassRefPtr<InertAnimation> create(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
+    PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample();
     AnimationEffect* effect() const { return m_effect.get(); }
     bool paused() const { return m_paused; }
 
 protected:
-    virtual bool updateChildrenAndEffects() const OVERRIDE { return false; }
+    virtual void updateChildrenAndEffects() const OVERRIDE { }
     virtual void willDetach() OVERRIDE { }
     virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
-    InertAnimation(PassRefPtr<AnimationEffect>, const Timing&, bool paused);
-    RefPtr<AnimationEffect> m_effect;
+    InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
+    RefPtrWillBePersistent<AnimationEffect> m_effect;
     bool m_paused;
 };
 

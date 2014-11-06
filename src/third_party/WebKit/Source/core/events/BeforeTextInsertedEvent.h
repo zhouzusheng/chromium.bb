@@ -34,9 +34,9 @@ class BeforeTextInsertedEvent FINAL : public Event {
 public:
     virtual ~BeforeTextInsertedEvent();
 
-    static PassRefPtr<BeforeTextInsertedEvent> create(const String& text)
+    static PassRefPtrWillBeRawPtr<BeforeTextInsertedEvent> create(const String& text)
     {
-        return adoptRef(new BeforeTextInsertedEvent(text));
+        return adoptRefWillBeRefCountedGarbageCollected(new BeforeTextInsertedEvent(text));
     }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -44,6 +44,8 @@ public:
 
     const String& text() const { return m_text; }
     void setText(const String& s) { m_text = s; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit BeforeTextInsertedEvent(const String&);

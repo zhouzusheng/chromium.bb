@@ -25,21 +25,16 @@
 #include "core/dom/Document.h"
 #include "core/svg/SVGAnimateMotionElement.h"
 #include "core/svg/SVGDocumentExtensions.h"
+#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGPathElement.h"
 
 namespace WebCore {
-
-// Animated property definitions
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMPathElement)
-END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGMPathElement::SVGMPathElement(Document& document)
     : SVGElement(SVGNames::mpathTag, document)
     , SVGURIReference(this)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGMPathElement();
 }
 
 PassRefPtr<SVGMPathElement> SVGMPathElement::create(Document& document)
@@ -62,17 +57,17 @@ void SVGMPathElement::buildPendingResource()
     Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), document(), &id);
     if (!target) {
         // Do not register as pending if we are already pending this resource.
-        if (document().accessSVGExtensions()->isElementPendingResource(this, id))
+        if (document().accessSVGExtensions().isElementPendingResource(this, id))
             return;
 
         if (!id.isEmpty()) {
-            document().accessSVGExtensions()->addPendingResource(id, this);
+            document().accessSVGExtensions().addPendingResource(id, this);
             ASSERT(hasPendingResources());
         }
     } else if (target->isSVGElement()) {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document().accessSVGExtensions()->addElementReferencingTarget(this, toSVGElement(target));
+        document().accessSVGExtensions().addElementReferencingTarget(this, toSVGElement(target));
     }
 
     targetPathChanged();
@@ -80,7 +75,7 @@ void SVGMPathElement::buildPendingResource()
 
 void SVGMPathElement::clearResourceReferences()
 {
-    document().accessSVGExtensions()->removeAllTargetReferencesForElement(this);
+    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
 }
 
 Node::InsertionNotificationRequest SVGMPathElement::insertedInto(ContainerNode* rootParent)
@@ -142,9 +137,7 @@ void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)
 SVGPathElement* SVGMPathElement::pathElement()
 {
     Element* target = targetElementFromIRIString(hrefString(), document());
-    if (target && target->hasTagName(SVGNames::pathTag))
-        return toSVGPathElement(target);
-    return 0;
+    return isSVGPathElement(target) ? toSVGPathElement(target) : 0;
 }
 
 void SVGMPathElement::targetPathChanged()
@@ -154,7 +147,7 @@ void SVGMPathElement::targetPathChanged()
 
 void SVGMPathElement::notifyParentOfPathChange(ContainerNode* parent)
 {
-    if (parent && parent->hasTagName(SVGNames::animateMotionTag))
+    if (isSVGAnimateMotionElement(parent))
         toSVGAnimateMotionElement(parent)->updateAnimationPath();
 }
 

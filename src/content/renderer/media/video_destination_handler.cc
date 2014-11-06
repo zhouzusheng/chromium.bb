@@ -9,12 +9,15 @@
 #include "base/base64.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
+#include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
+#include "url/gurl.h"
 
 using cricket::CaptureState;
 using cricket::VideoFormat;
@@ -194,9 +197,7 @@ bool VideoDestinationHandler::Open(
   }
 
   // Gets a handler to the native video track, which owns the |writer|.
-  MediaStreamExtraData* extra_data =
-      static_cast<MediaStreamExtraData*>(stream.extraData());
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
+  webrtc::MediaStreamInterface* native_stream = MediaStream::GetAdapter(stream);
   DCHECK(native_stream);
   VideoTrackVector video_tracks = native_stream->GetVideoTracks();
   // Currently one supports one video track per media stream.

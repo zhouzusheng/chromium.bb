@@ -864,8 +864,6 @@ void Editor::cut()
         }
         deleteSelectionWithSmartDelete(canSmartCopyOrDelete());
     }
-
-    dispatchCPPEvent("bbAfterCut", ClipboardWritable);
 }
 
 void Editor::copy()
@@ -884,8 +882,6 @@ void Editor::copy()
         else
             writeSelectionToPasteboard(Pasteboard::generalPasteboard(), selectedRange().get(), m_frame.selectedTextForClipboard());
     }
-
-    dispatchCPPEvent("bbAfterCopy", ClipboardWritable);
 }
 
 void Editor::paste()

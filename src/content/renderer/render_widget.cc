@@ -715,7 +715,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
       DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
              paint_aggregator_.HasPendingUpdate());
     }
-  } else if (!resizing_mode_selector_->is_synchronous_mode()) {
+  } else if (!resizing_mode_selector_->is_synchronous_mode() && browser_size_ == size_) {
     resize_ack = NO_RESIZE_ACK;
   }
 
@@ -791,6 +791,8 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
   Resize(params.new_size, params.physical_backing_size,
          params.overdraw_bottom_height, params.resizer_rect,
          params.is_fullscreen, SEND_RESIZE_ACK);
+
+  browser_size_ = params.new_size;
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {

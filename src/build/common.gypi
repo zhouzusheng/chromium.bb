@@ -319,11 +319,17 @@
       # by the GYP command line or by ~/.gyp/include.gypi.
       'component%': 'shared_library',
 
+      # Product version, appended to product_name for Bloomberg targets.
+      'bb_version%': '',
+
       # By default, don't include PPAPI plugin examples for blpwtk2.
       'bb_ppapi_examples%': 0,
 
       # By default, put type in pdb name.
       'dont_include_type_in_pdb%': 0,
+
+      # By default, don't generate map files.
+      'bb_generate_map_files%': 0,
 
       # Set to select the Title Case versions of strings in GRD files.
       'use_titlecase_in_grd_files%': 0,
@@ -989,8 +995,10 @@
     'system_libdir%': '<(system_libdir)',
     'component%': '<(component)',
     'enable_resource_whitelist_generation%': '<(enable_resource_whitelist_generation)',
+    'bb_version%': '<(bb_version)',
     'bb_ppapi_examples%': '<(bb_ppapi_examples)',
     'dont_include_type_in_pdb%': '<(dont_include_type_in_pdb)',
+    'bb_generate_map_files%': '<(bb_generate_map_files)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
@@ -2472,6 +2480,14 @@
           'ENABLE_EGLIMAGE=1',
         ],
       }],
+      ['bb_generate_map_files==1 and OS=="win"', {
+        'msvs_settings': {
+          'VCLinkerTool': {
+            'GenerateMapFile': 'true',
+            'MapExports': 'true',
+          },
+        },
+      }],  # bb_generate_map_files==1 and OS=="win"
       ['syzyasan==1', {
         # SyzyAsan needs /PROFILE turned on to produce appropriate pdbs.
         'msvs_settings': {

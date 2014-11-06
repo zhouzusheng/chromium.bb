@@ -17,6 +17,7 @@
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 class GURL;
 class SkBitmap;
@@ -167,6 +168,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client);
+
+  // Allows the embedder to override the ResourceLoaderBridge used.
+  // If it returns NULL, the content layer will provide a bridge.
+  virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+      const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info);
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.

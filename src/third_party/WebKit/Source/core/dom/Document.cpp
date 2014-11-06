@@ -153,6 +153,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ImageLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
+#include "core/page/BBPrintInfo.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
@@ -476,6 +477,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_timeline(DocumentTimeline::create(this))
     , m_transitionTimeline(TransitionTimeline::create(this))
     , m_templateDocumentHost(0)
+    , m_bbPrintInfo(0)
     , m_didAssociateFormControlsTimer(this, &Document::didAssociateFormControlsTimerFired)
     , m_hasViewportUnits(false)
 {
@@ -5349,6 +5351,13 @@ Document& Document::ensureTemplateDocument()
     m_templateDocument->m_templateDocumentHost = this; // balanced in dtor.
 
     return *m_templateDocument.get();
+}
+
+PassRefPtr<BBPrintInfo> Document::bbPrintInfo()
+{
+    if (!m_bbPrintInfo)
+        m_bbPrintInfo = BBPrintInfo::create(this);
+    return m_bbPrintInfo;
 }
 
 void Document::didAssociateFormControl(Element* element)

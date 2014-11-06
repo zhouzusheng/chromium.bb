@@ -568,6 +568,9 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
+  // The size of the RenderWidget expected by the host.
+  gfx::Size browser_size_;
+
   // The TransportDIB that is being used to transfer an image to the browser.
   TransportDIB* current_paint_buf_;
 

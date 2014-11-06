@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_APP_CONTENT_MAIN_RUNNER_H_
 #define CONTENT_PUBLIC_APP_CONTENT_MAIN_RUNNER_H_
 
+#include "content/common/content_export.h"
+
 namespace content {
 struct ContentMainParams;
 
@@ -14,7 +16,7 @@ class ContentMainRunner {
   virtual ~ContentMainRunner() {}
 
   // Create a new ContentMainRunner object.
-  static ContentMainRunner* Create();
+  CONTENT_EXPORT static ContentMainRunner* Create();
 
   // Initialize all necessary content state.
   virtual int Initialize(const ContentMainParams& params) = 0;

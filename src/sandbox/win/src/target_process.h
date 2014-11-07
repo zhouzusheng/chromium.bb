@@ -161,7 +161,7 @@ class TargetProcess {
   void* module_base_address_;
   // Full name of the sandbox module. This is only set if exe_has_sandbox_ is
   // false (i.e. only if a sandbox dll has been injected).
-  scoped_ptr_malloc<wchar_t>  module_path_;
+  scoped_ptr<wchar_t, base::FreeDeleter>  module_path_;
 #endif
 
   // Base address of the main executable

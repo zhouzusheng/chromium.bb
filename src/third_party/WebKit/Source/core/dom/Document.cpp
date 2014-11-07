@@ -477,7 +477,6 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_timeline(DocumentTimeline::create(this))
     , m_transitionTimeline(TransitionTimeline::create(this))
     , m_templateDocumentHost(0)
-    , m_bbPrintInfo(0)
     , m_didAssociateFormControlsTimer(this, &Document::didAssociateFormControlsTimerFired)
     , m_hasViewportUnits(false)
 {

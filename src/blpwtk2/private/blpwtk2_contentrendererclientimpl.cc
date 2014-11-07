@@ -29,13 +29,14 @@
 #include <blpwtk2_stringref.h>
 
 #include <base/strings/utf_string_conversions.h>
+#include <chrome/renderer/printing/print_web_view_helper.h>
+#include <chrome/renderer/spellchecker/spellcheck.h>
+#include <chrome/renderer/spellchecker/spellcheck_provider.h>
+#include <content/child/request_info.h>
+#include <content/public/renderer/render_thread.h>
 #include <net/base/net_errors.h>
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
-#include <chrome/renderer/printing/print_web_view_helper.h>
-#include <content/public/renderer/render_thread.h>
-#include <chrome/renderer/spellchecker/spellcheck_provider.h>
-#include <chrome/renderer/spellchecker/spellcheck.h>
 
 namespace blpwtk2 {
 
@@ -127,7 +128,7 @@ void ContentRendererClientImpl::GetNavigationErrorStrings(
 
 webkit_glue::ResourceLoaderBridge*
 ContentRendererClientImpl::OverrideResourceLoaderBridge(
-    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info)
+    const content::RequestInfo& request_info)
 {
     StringRef url = request_info.url.spec();
 

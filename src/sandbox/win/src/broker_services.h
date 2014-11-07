@@ -107,7 +107,7 @@ class BrokerServicesBase : public BrokerServices,
 
 #if SANDBOX_DLL
   // Stores the module name where sandbox.lib is linked into.
-  scoped_ptr_malloc<wchar_t> module_path_;
+  scoped_ptr<wchar_t, base::FreeDeleter> module_path_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(BrokerServicesBase);

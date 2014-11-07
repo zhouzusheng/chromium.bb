@@ -40,7 +40,6 @@ namespace content {
 namespace blpwtk2 {
 
 class BrowserContextImplManager;
-class MediaObserverImpl;
 class ProcessHostManager;
 class Profile;
 class ResourceLoader;
@@ -77,9 +76,6 @@ struct Statics {
 
     // MessageLoop for the browser main thread.
     static base::MessageLoop* browserMainMessageLoop;
-
-    // The single MediaObserverImpl instance.
-    static MediaObserverImpl* mediaObserver;
 
     // The single BrowserContextImplManager instance.
     static BrowserContextImplManager* browserContextImplManager;

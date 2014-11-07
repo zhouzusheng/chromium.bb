@@ -35,7 +35,6 @@ namespace net {
 
 namespace blpwtk2 {
 
-class MediaObserverImpl;
 class RendererInfoMap;
 
 // This is our implementation of the content::ContentBrowserClient interface.
@@ -81,16 +80,14 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
     virtual net::URLRequestContextGetter* CreateRequestContext(
         content::BrowserContext* browserContext,
-        content::ProtocolHandlerMap* protocolHandlers) OVERRIDE;
+        content::ProtocolHandlerMap* protocolHandlers,
+        content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
 
     // Returns whether a specified URL is handled by the embedder's internal
     // protocol handlers.
     virtual bool IsHandledURL(const GURL& url) OVERRIDE;
 
-    virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
-
   private:
-    scoped_ptr<MediaObserverImpl> d_mediaObserver;
     RendererInfoMap* d_rendererInfoMap;
 
     DISALLOW_COPY_AND_ASSIGN(ContentBrowserClientImpl);

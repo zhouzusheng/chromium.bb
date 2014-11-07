@@ -52,5 +52,8 @@ int SubProcessMain(HINSTANCE hInstance,
 {
     gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
     blpwtk2::ContentMainDelegateImpl delegate(true);
-    return content::ContentMain(hInstance, sandboxInfo, &delegate);
+    content::ContentMainParams params(&delegate);
+    params.instance = hInstance;
+    params.sandbox_info = sandboxInfo;
+    return content::ContentMain(params);
 }

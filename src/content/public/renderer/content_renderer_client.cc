@@ -86,7 +86,7 @@ blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
 
 webkit_glue::ResourceLoaderBridge*
 ContentRendererClient::OverrideResourceLoaderBridge(
-    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
+    const content::RequestInfo& request_info) {
   return NULL;
 }
 

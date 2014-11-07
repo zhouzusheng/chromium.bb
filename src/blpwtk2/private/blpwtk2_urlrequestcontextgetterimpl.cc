@@ -136,7 +136,8 @@ void URLRequestContextGetterImpl::useSystemProxyConfig()
 }
 
 void URLRequestContextGetterImpl::setProtocolHandlers(
-    content::ProtocolHandlerMap* protocolHandlers)
+    content::ProtocolHandlerMap* protocolHandlers,
+    content::ProtocolHandlerScopedVector protocolInterceptors)
 {
     // Note: It is guaranteed that this is only called once, and it happens
     //       before GetURLRequestContext() is called on the IO thread.
@@ -153,6 +154,7 @@ void URLRequestContextGetterImpl::setProtocolHandlers(
     base::AutoLock guard(d_protocolHandlersLock);
     DCHECK(!d_gotProtocolHandlers);
     std::swap(d_protocolHandlers, *protocolHandlers);
+    d_protocolInterceptors = protocolInterceptors.Pass();
     d_gotProtocolHandlers = true;
 }
 
@@ -191,7 +193,7 @@ void URLRequestContextGetterImpl::initialize()
                 (content::CookieCryptoDelegate*)0);
     }
 
-    const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();
 
     d_urlRequestContext.reset(new net::URLRequestContext());
     d_urlRequestContext->set_proxy_service(d_proxyService.get());

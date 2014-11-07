@@ -42,7 +42,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/SpellCheckRequester.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTextFormControlElement.h"

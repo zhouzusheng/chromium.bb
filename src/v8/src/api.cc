@@ -5117,6 +5117,11 @@ bool v8::V8::InitializeICU(const char* icu_data_file) {
 }
 
 
+bool v8::V8::InitializeICUWithData(const void* icu_data) {
+  return i::InitializeICUWithData(icu_data);
+}
+
+
 const char* v8::V8::GetVersion() {
   return i::Version::GetVersion();
 }

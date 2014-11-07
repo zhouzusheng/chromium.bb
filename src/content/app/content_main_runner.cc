@@ -746,9 +746,10 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
-    CHECK(base::i18n::InitializeICU());
+    const void* icu_data;
+    CHECK(base::i18n::InitializeICU(&icu_data));
 #if !defined(COMPONENT_BUILD) && defined(USING_V8_SHARED)
-    CHECK(v8::V8::InitializeICU());
+    CHECK(v8::V8::InitializeICUWithData(icu_data));
 #endif
 
     InitializeStatsTable(command_line);

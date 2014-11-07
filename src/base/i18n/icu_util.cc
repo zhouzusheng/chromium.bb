@@ -55,7 +55,7 @@ bool g_check_called_once = true;
 #endif
 }
 
-bool InitializeICU() {
+bool InitializeICU(const void **data) {
 #if !defined(NDEBUG)
   DCHECK(!g_check_called_once || !g_called_once);
   g_called_once = true;
@@ -126,6 +126,7 @@ bool InitializeICU() {
     }
   }
   UErrorCode err = U_ZERO_ERROR;
+  *data = mapped_file.data();
   udata_setCommonData(const_cast<uint8*>(mapped_file.data()), &err);
   return err == U_ZERO_ERROR;
 #endif

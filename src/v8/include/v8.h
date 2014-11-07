@@ -4982,6 +4982,11 @@ class V8_EXPORT V8 {
   static bool InitializeICU(const char* icu_data_file = NULL);
 
   /**
+   * Initialize the ICU library bundled with V8 using the specified icu data.
+  */
+  static bool InitializeICUWithData(const void* icu_data);
+
+  /**
    * Sets the v8::Platform to use. This should be invoked before V8 is
    * initialized.
    */

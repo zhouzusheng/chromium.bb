@@ -71,6 +71,7 @@ class ShellBrowserContext : public BrowserContext {
   virtual GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
+  virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers,

@@ -39,6 +39,10 @@ base::FilePath GetResourcesPakFilePath(const std::string& pak_name) {
 
 }  // namespace
 
+void ResourceBundle::AddDLLResources() {
+  data_packs_.push_back(new ResourceDataDLL(GetCurrentResourceDLL()));
+}
+
 void ResourceBundle::LoadCommonResources() {
   // As a convenience, add the current resource module as a data packs.
   data_packs_.push_back(new ResourceDataDLL(GetCurrentResourceDLL()));

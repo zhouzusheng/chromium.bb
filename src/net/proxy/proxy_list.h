@@ -63,6 +63,11 @@ class NET_EXPORT_PRIVATE ProxyList {
   // this if !IsEmpty().
   const ProxyServer& Get() const;
 
+  // These references to the internal structure is provided to simplify IPC
+  // serialization.
+  std::vector<ProxyServer>& internalProxies() { return proxies_; }
+  const std::vector<ProxyServer>& internalProxies() const { return proxies_; }
+
   // Sets the list by parsing the pac result |pac_string|.
   // Some examples for |pac_string|:
   //   "DIRECT"

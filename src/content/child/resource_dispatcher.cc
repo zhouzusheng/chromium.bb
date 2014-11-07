@@ -22,7 +22,9 @@
 #include "content/common/resource_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/child/resource_dispatcher_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/resource_response.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
@@ -702,6 +704,10 @@ void ResourceDispatcher::FlushDeferredMessages(int request_id) {
 
 ResourceLoaderBridge* ResourceDispatcher::CreateBridge(
     const RequestInfo& request_info) {
+  ResourceLoaderBridge* bridge =
+      GetContentClient()->renderer()->OverrideResourceLoaderBridge(request_info);
+  if (bridge)
+    return bridge;
   return new IPCResourceLoaderBridge(this, request_info);
 }
 

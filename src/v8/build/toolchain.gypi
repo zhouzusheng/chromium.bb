@@ -40,6 +40,7 @@
     # TODO(bradchen): get rid of nacl_target_arch when someday
     # NaCl V8 builds stop using the ARM simulator
     'nacl_target_arch%': 'none',     # must be set externally
+    'v8_as_shared_library%': 1,
 
     # Setting 'v8_can_use_vfp32dregs' to 'true' will cause V8 to use the VFP
     # registers d16-d31 in the generated code, both in the snapshot and for the
@@ -455,16 +456,11 @@
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
+            'RuntimeLibrary': '1',  # /MTd
+
             'conditions': [
               ['v8_optimized_debug==0', {
                 'Optimization': '0',
-                'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  # /MDd
-                  }, {
-                    'RuntimeLibrary': '1',  # /MTd
-                  }],
-                ],
               }],
               ['v8_optimized_debug==1', {
                 'Optimization': '1',
@@ -473,13 +469,6 @@
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
                 'BasicRuntimeChecks': '0',
-                'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  # /MDd
-                  }, {
-                    'RuntimeLibrary': '1',  # /MTd
-                  }],
-                ],
               }],
               ['v8_optimized_debug==2', {
                 'Optimization': '2',
@@ -489,11 +478,6 @@
                 'StringPooling': 'true',
                 'BasicRuntimeChecks': '0',
                 'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  #/MDd
-                  }, {
-                    'RuntimeLibrary': '1',  #/MTd
-                  }],
                   ['v8_target_arch=="x64"', {
                     # TODO(2207): remove this option once the bug is fixed.
                     'WholeProgramOptimization': 'true',
@@ -682,12 +666,8 @@
                 'EnableIntrinsicFunctions': 'true',
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
+                'RuntimeLibrary': '0',  #/MT
                 'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '2',  #/MD
-                  }, {
-                    'RuntimeLibrary': '0',  #/MT
-                  }],
                   ['v8_target_arch=="x64"', {
                     # TODO(2207): remove this option once the bug is fixed.
                     'WholeProgramOptimization': 'true',

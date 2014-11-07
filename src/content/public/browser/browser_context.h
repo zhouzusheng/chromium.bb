@@ -171,6 +171,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;
+
+  // Returns true if the spellcheck service should download dictionaries.
+  virtual bool AllowDictionaryDownloads() = 0;
 };
 
 }  // namespace content

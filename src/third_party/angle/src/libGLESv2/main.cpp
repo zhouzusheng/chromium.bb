@@ -5,7 +5,7 @@
 // found in the LICENSE file.
 //
 
-// main.cpp: DLL entry point and management of thread-local data.
+// main.cpp: Management of thread-local data.
 
 #include "libGLESv2/main.h"
 
@@ -47,7 +47,7 @@ void DeallocateCurrent()
 
 }
 
-extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
+extern "C" BOOL libGLESv2Main(DWORD reason)
 {
     switch (reason)
     {

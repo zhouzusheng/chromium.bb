@@ -378,6 +378,15 @@ const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
 const char kEnableBrowserPluginForAllViewTypes[] =
     "enable-browser-plugin-for-all-view-types";
 
+// Enables CSS3 Text Decorations.
+const char kEnableCSS3TextDecorations[] = "enable-css3-text-decorations";
+
+// Enables CSS3 Text.
+const char kEnableCSS3Text[] = "enable-css3-text";
+
+// Enables CSS Grid Layout.
+const char kEnableCSSGridLayout[] = "enable-css-grid-layout";
+
 // Enable the creation of compositing layers for fixed position
 // elements. Three options are needed to support four possible scenarios:
 //  1. Default (disabled)

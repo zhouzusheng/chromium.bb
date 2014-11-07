@@ -469,8 +469,8 @@ bool InterceptionManager::PatchClientFunctions(DllInterceptionData* thunks,
   char* interceptor_base = NULL;
 
 #if SANDBOX_EXPORTS
-  interceptor_base = reinterpret_cast<char*>(child_->MainModule());
-  HMODULE local_interceptor = ::LoadLibrary(child_->Name());
+  interceptor_base = reinterpret_cast<char*>(child_->SandboxModule());
+  HMODULE local_interceptor = ::LoadLibrary(child_->SandboxModuleName());
 #endif
 
   ServiceResolverThunk* thunk;

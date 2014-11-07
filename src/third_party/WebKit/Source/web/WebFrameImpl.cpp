@@ -921,6 +921,13 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
     return toV8Context(V8PerIsolateData::mainThreadIsolate(), frame(), DOMWrapperWorld::mainWorld());
 }
 
+v8::Isolate* WebFrameImpl::scriptIsolate() const
+{
+    if (!frame())
+        return 0;
+    return toIsolate(frame());
+}
+
 void WebFrameImpl::reload(bool ignoreCache)
 {
     ASSERT(frame());

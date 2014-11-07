@@ -644,6 +644,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual int GetRoutingID() const OVERRIDE;
   virtual int GetPageId() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
+  virtual void SetSize(const gfx::Size& new_size) OVERRIDE;
+  virtual void SetFocus(bool focused) OVERRIDE;
   virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
   virtual void SetWebkitPreferences(const WebPreferences& preferences) OVERRIDE;
   virtual blink::WebView* GetWebView() OVERRIDE;

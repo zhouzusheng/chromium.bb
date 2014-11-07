@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-    class Frame;
+    class LocalFrame;
     class Node;
     class Document;
     class Range;
@@ -41,7 +41,7 @@ namespace WebCore {
 
     class BBWindowHooks : public RefCounted<BBWindowHooks>, public DOMWindowProperty {
     public:
-        static PassRefPtr<BBWindowHooks> create(Frame *frame) { return adoptRef(new BBWindowHooks(frame)); }
+        static PassRefPtr<BBWindowHooks> create(LocalFrame *frame) { return adoptRef(new BBWindowHooks(frame)); }
 
         bool isBlock(Node* node);
         String getPlainText(Node* node, const String& excluder = "", const String& mask = "");
@@ -56,7 +56,7 @@ namespace WebCore {
 
     private:
 
-        explicit BBWindowHooks(Frame *frame);
+        explicit BBWindowHooks(LocalFrame *frame);
         bool matchSelector(Node *node, const String& selector);
         void appendTextContent(Node *node, StringBuilder& content, const String& excluder, const String& mask);
     };

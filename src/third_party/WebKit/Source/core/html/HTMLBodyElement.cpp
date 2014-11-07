@@ -352,7 +352,7 @@ void HTMLBodyElement::setBbScrollLeftNoZoomAdjust(int scrollLeft)
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     if (!frame)
         return;
     FrameView* view = frame->view();
@@ -365,7 +365,7 @@ void HTMLBodyElement::setBbScrollTopNoZoomAdjust(int scrollTop)
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     if (!frame)
         return;
     FrameView* view = frame->view();

@@ -179,7 +179,7 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, DocumentMarker& 
 }
 
 // Forward declare this, it is implemented at the end of this file.
-static bool fireBbContextMenuEvent(Frame*, WebContextMenuData&);
+static bool fireBbContextMenuEvent(LocalFrame*, WebContextMenuData&);
 
 void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultMenu)
 {
@@ -454,7 +454,7 @@ static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object
     obj->Set(v8::String::NewFromUtf8(isolate, name), array);
 }
 
-static bool fireBbContextMenuEvent(Frame* frame, WebContextMenuData& data)
+static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
 {
     v8::Isolate* isolate = toIsolate(frame);
     v8::HandleScope handleScope(isolate);

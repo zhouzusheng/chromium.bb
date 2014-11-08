@@ -1269,8 +1269,8 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
     }
 
     Color markerColor(255,0,0,255);
-    if (textRenderer()->node()) {
-        const Element *element = textRenderer()->node()->rootEditableElement();
+    if (textRenderer().node()) {
+        const Element *element = textRenderer().node()->rootEditableElement();
         if (element && element->hasAttributes()) {
             AtomicString colorAttr = nullAtom;
 

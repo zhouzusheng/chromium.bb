@@ -138,6 +138,8 @@ public:
 
     Color tapHighlightColor;
 
+    StyleColor caretColor;
+
 private:
     StyleRareInheritedData();
     StyleRareInheritedData(const StyleRareInheritedData&);

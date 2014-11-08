@@ -69,6 +69,8 @@ private:
 
     virtual void layout() OVERRIDE;
 
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     void positionListMarker();
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;

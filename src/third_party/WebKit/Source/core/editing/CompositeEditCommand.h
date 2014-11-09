@@ -120,7 +120,7 @@ protected:
     HTMLElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtr<HTMLElement>);
     void removeNodePreservingChildren(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void removeNodeAndPruneAncestors(PassRefPtr<Node>, Node* excludeNode = 0);
-    void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtr<Element> prpNewParent, PassRefPtr<Node> prpRefChild = 0);
+    void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtr<Element> prpNewParent, PassRefPtr<Node> prpRefChild = PassRefPtr<Node>());
     void updatePositionForNodeRemovalPreservingChildren(Position&, Node&);
     void prune(PassRefPtr<Node>, Node* excludeNode = 0);
     void replaceTextInNode(PassRefPtr<Text>, unsigned offset, unsigned count, const String& replacementText);

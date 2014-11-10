@@ -1162,10 +1162,6 @@ void WebContentsImpl::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 
 bool WebContentsImpl::PreHandleWheelEvent(
     const blink::WebMouseWheelEvent& event) {
-
-/* This is commented out to pass ctrl+wheel event to JS.
-   The real fix is already in the upstream and we will get it in v35
-
 #if !defined(OS_MACOSX)
   // On platforms other than Mac, control+mousewheel changes zoom. On Mac, this
   // isn't done for two reasons:
@@ -1180,7 +1176,6 @@ bool WebContentsImpl::PreHandleWheelEvent(
     return true;
   }
 #endif
-  */
 
   return false;
 }

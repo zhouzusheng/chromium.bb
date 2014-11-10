@@ -2457,13 +2457,13 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
     if (ltr) {
         if (containsStartOfSelection) {
             InlineBox* firstBox = line->firstSelectedBox();
-            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForRepaint(rootBlock, false) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
                 logicalLeft = min(logicalLeft, firstBoxSelRect.x());
         }
         if (containsEndOfSelection) {
             InlineBox* lastBox = line->lastSelectedBox();
-            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForRepaint(rootBlock, false) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
                 logicalRight = min(logicalRight, lastBoxSelRect.maxX());
         }
@@ -2471,13 +2471,13 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
     else {
         if (containsStartOfSelection) {
             InlineBox* lastBox = line->lastSelectedBox();
-            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForRepaint(rootBlock, false) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
                 logicalRight = max(logicalRight, lastBoxSelRect.maxX());
         }
         if (containsEndOfSelection) {
             InlineBox* firstBox = line->firstSelectedBox();
-            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForRepaint(rootBlock, false) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
                 logicalLeft = max(logicalLeft, firstBoxSelRect.x());
         }

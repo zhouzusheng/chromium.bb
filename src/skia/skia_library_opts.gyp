@@ -38,12 +38,14 @@
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and \
-           target_arch != "arm" and target_arch != "mipsel"', {
+           target_arch != "arm" and target_arch != "arm64" and \
+           target_arch != "mipsel"', {
           'cflags': [
             '-msse2',
           ],
         }],
-        [ 'target_arch != "arm" and target_arch != "mipsel"', {
+        [ 'target_arch != "arm" and target_arch != "mipsel" and \
+           target_arch != "arm64"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
@@ -58,6 +60,7 @@
             'skia_opts_ssse3',
           ],
         }],
+        # TODO(rmcilroy): Add neon support for arm64 - http://crbug.com/354405
         [ 'target_arch == "arm"', {
           'conditions': [
             [ 'arm_version >= 7 and arm_neon == 1', {
@@ -139,6 +142,18 @@
             '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
           ],
         }],
+        [ 'target_arch == "arm64"',{
+          # TODO(rmcilroy): Update this once http://crrev.com/143423004/ lands.
+          'sources': [
+            '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+            '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
+          ],
+        }],
       ],
     },
     # For the same lame reasons as what is done for skia_opts, we have to
@@ -177,7 +192,8 @@
             ],
           },
         }],
-        [ 'target_arch != "arm" and target_arch != "mipsel"', {
+        [ 'target_arch != "arm" and target_arch != "arm64" and \
+           target_arch != "mipsel"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp',
           ],

@@ -30,12 +30,18 @@
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_ENUMERATION(SVGComponentTransferFunctionElement, SVGNames::typeAttr, Type, type, ComponentTransferType)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGComponentTransferFunctionElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(type)
-END_REGISTER_ANIMATED_PROPERTIES
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<ComponentTransferType>()
+{
+    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+    if (entries.isEmpty()) {
+        entries.append(std::make_pair(FECOMPONENTTRANSFER_TYPE_IDENTITY, "identity"));
+        entries.append(std::make_pair(FECOMPONENTTRANSFER_TYPE_TABLE, "table"));
+        entries.append(std::make_pair(FECOMPONENTTRANSFER_TYPE_DISCRETE, "discrete"));
+        entries.append(std::make_pair(FECOMPONENTTRANSFER_TYPE_LINEAR, "linear"));
+        entries.append(std::make_pair(FECOMPONENTTRANSFER_TYPE_GAMMA, "gamma"));
+    }
+    return entries;
+}
 
 SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
@@ -45,7 +51,7 @@ SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(const Q
     , m_amplitude(SVGAnimatedNumber::create(this, SVGNames::amplitudeAttr, SVGNumber::create(1)))
     , m_exponent(SVGAnimatedNumber::create(this, SVGNames::exponentAttr, SVGNumber::create(1)))
     , m_offset(SVGAnimatedNumber::create(this, SVGNames::offsetAttr, SVGNumber::create()))
-    , m_type(FECOMPONENTTRANSFER_TYPE_IDENTITY)
+    , m_type(SVGAnimatedEnumeration<ComponentTransferType>::create(this, SVGNames::typeAttr, FECOMPONENTTRANSFER_TYPE_IDENTITY))
 {
     ScriptWrappable::init(this);
 
@@ -55,7 +61,7 @@ SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(const Q
     addToPropertyMap(m_amplitude);
     addToPropertyMap(m_exponent);
     addToPropertyMap(m_offset);
-    registerAnimatedPropertiesForSVGComponentTransferFunctionElement();
+    addToPropertyMap(m_type);
 }
 
 bool SVGComponentTransferFunctionElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -80,17 +86,12 @@ void SVGComponentTransferFunctionElement::parseAttribute(const QualifiedName& na
         return;
     }
 
-    if (name == SVGNames::typeAttr) {
-        ComponentTransferType propertyValue = SVGPropertyTraits<ComponentTransferType>::fromString(value);
-        if (propertyValue > 0)
-            setTypeBaseValue(propertyValue);
-        return;
-    }
-
     SVGParsingError parseError = NoError;
 
     if (name == SVGNames::tableValuesAttr)
         m_tableValues->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::typeAttr)
+        m_type->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::slopeAttr)
         m_slope->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::interceptAttr)
@@ -120,7 +121,7 @@ void SVGComponentTransferFunctionElement::svgAttributeChanged(const QualifiedNam
 ComponentTransferFunction SVGComponentTransferFunctionElement::transferFunction() const
 {
     ComponentTransferFunction func;
-    func.type = typeCurrentValue();
+    func.type = m_type->currentValue()->enumValue();
     func.slope = m_slope->currentValue()->value();
     func.intercept = m_intercept->currentValue()->value();
     func.amplitude = m_amplitude->currentValue()->value();

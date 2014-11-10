@@ -110,12 +110,12 @@ void CSSStyleSheetResource::checkNotify()
 
 bool CSSStyleSheetResource::isSafeToUnlock() const
 {
-    return m_parsedStyleSheetCache;
+    return m_data->hasOneRef();
 }
 
 void CSSStyleSheetResource::destroyDecodedDataIfPossible()
 {
-    if (!isSafeToUnlock())
+    if (!m_parsedStyleSheetCache)
         return;
 
     m_parsedStyleSheetCache->removedFromMemoryCache();
@@ -148,14 +148,14 @@ bool CSSStyleSheetResource::canUseSheet(bool enforceMIMEType, bool* hasValidMIME
     return typeOK;
 }
 
-PassRefPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedStyleSheet(const CSSParserContext& context)
+PassRefPtrWillBeRawPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedStyleSheet(const CSSParserContext& context)
 {
     if (!m_parsedStyleSheetCache)
-        return 0;
+        return nullptr;
     if (m_parsedStyleSheetCache->hasFailedOrCanceledSubresources()) {
         m_parsedStyleSheetCache->removedFromMemoryCache();
         m_parsedStyleSheetCache.clear();
-        return 0;
+        return nullptr;
     }
 
     ASSERT(m_parsedStyleSheetCache->isCacheable());
@@ -163,14 +163,14 @@ PassRefPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedStyleSheet(co
 
     // Contexts must be identical so we know we would get the same exact result if we parsed again.
     if (m_parsedStyleSheetCache->parserContext() != context)
-        return 0;
+        return nullptr;
 
     didAccessDecodedData(currentTime());
 
     return m_parsedStyleSheetCache;
 }
 
-void CSSStyleSheetResource::saveParsedStyleSheet(PassRefPtr<StyleSheetContents> sheet)
+void CSSStyleSheetResource::saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> sheet)
 {
     ASSERT(sheet && sheet->isCacheable());
 

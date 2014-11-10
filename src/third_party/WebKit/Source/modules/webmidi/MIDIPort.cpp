@@ -66,4 +66,9 @@ ExecutionContext* MIDIPort::executionContext() const
     return m_access->executionContext();
 }
 
+void MIDIPort::trace(Visitor* visitor)
+{
+    visitor->trace(m_access);
+}
+
 } // namespace WebCore

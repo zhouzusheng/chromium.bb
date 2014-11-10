@@ -33,10 +33,22 @@ input[type="text"]:focus {
 }
 
 input[type="checkbox"] {
-    height: 13px;
-    width: 13px;
+    height: 12px;
+    width: 12px;
     margin: auto 3px;
     flex-shrink: 0;
+}
+
+label:hover {
+    cursor: pointer;
+}
+
+label:hover input {
+    box-shadow: 0 0 3px highlight;
+}
+
+fieldset[disabled] label:hover input {
+    box-shadow: none;
 }
 
 .fill {
@@ -48,8 +60,6 @@ input[type="checkbox"] {
 }
 
 .view {
-    display: flex;
-    flex-direction: column;
     position: relative;
     flex: auto;
 }
@@ -87,14 +97,14 @@ input[type="checkbox"] {
 
 .toolbar-background {
     background-image: linear-gradient(to bottom, rgb(191, 191, 191), rgb(151, 151, 151));
-    padding: 1px 0 0 1px;
-    border-bottom: 1px solid rgb(80, 80, 80);
+    padding-left: 1px;
+    border-bottom: 1px solid rgb(64%, 64%, 64%);
     background-origin: padding-box;
     background-clip: padding-box;
 }
 
 .toolbar {
-    flex: 0 0 25px;
+    flex: 0 0 24px;
     display: flex;
     flex-direction: row;
     position: relative;
@@ -133,7 +143,6 @@ select {
 
 body.inactive .toolbar-background {
     background-image: linear-gradient(to bottom, rgb(233, 233, 233), rgb(207, 207, 207));
-    border-bottom: 1px solid rgb(64%, 64%, 64%);
 }
 
 body.dock-to-bottom .toolbar-background {
@@ -244,13 +253,17 @@ body.undocked.platform-mac.inactive .toolbar-background {
 .search-replace {
     -webkit-appearance: none;
     border: 0;
-    padding: 0 2px;
+    padding: 0 3px;
     margin: 0;
-    -webkit-flex: 1;
+    flex: 1;
 }
 
 .search-replace:focus {
     outline: none;
+}
+
+#search-input-field {
+    height: 18px;
 }
 
 .toolbar-search {
@@ -309,6 +322,7 @@ body.undocked.platform-mac.inactive .toolbar-background {
     border: 1px solid rgb(163, 163, 163);
     height: 20px;
     border-radius: 2px;
+    margin-left: 1px;
 }
 
 .toolbar-replace-control {
@@ -651,43 +665,6 @@ button.status-bar-item.settings-status-bar-item:active {
     border-right: 0 transparent none;
 }
 
-button.status-bar-item.left-sidebar-show-hide-button,
-button.status-bar-item.right-sidebar-show-hide-button {
-    position: absolute;
-    top: 0;
-    background-image: none;
-    height: 16px;
-    width: 16px;
-    margin: 4px 2px 2px 2px;
-    border: none;
-    z-index: 10;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button:active,
-button.status-bar-item.right-sidebar-show-hide-button:active {
-    margin: 5px 1px 1px 3px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-left > .glyph {
-    -webkit-mask-position: -199px -76px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-right > .glyph {
-    -webkit-mask-position: -168px -76px;
-}
-
-button.status-bar-item.right-sidebar-show-hide-button.toggled-left > .glyph {
-    -webkit-mask-position: -296px -76px;
-}
-
-button.status-bar-item.right-sidebar-show-hide-button.toggled-right > .glyph {
-    -webkit-mask-position: -264px -76px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-overlay > .glyph {
-    -webkit-mask-position: -231px -76px;
-}
-
 div.resizer-widget {
     position: absolute;
     top: 0;
@@ -698,6 +675,14 @@ div.resizer-widget {
     background-repeat: no-repeat;
     background-position: center;
     z-index: 13;
+}
+
+.ns-resizer-widget {
+    cursor: ns-resize;
+}
+
+.ew-resizer-widget {
+    cursor: ew-resize;
 }
 
 .settings-status-bar-item .glyph {
@@ -793,7 +778,7 @@ body.remote .dock-status-bar-item {
     margin-left: 6px;
 }
 
-#drawer-contents > .tabbed-pane > .tabbed-pane-header {
+#drawer-tabbed-pane > .tabbed-pane-header {
     background-color: rgb(236, 236, 236);
 }
 
@@ -839,6 +824,10 @@ body.platform-linux .source-code {
     overflow: hidden;
 }
 
+.console-status-bar {
+    display: flex;
+}
+
 #console-messages {
     flex: 1 1;
     padding: 2px 0;
@@ -846,6 +835,7 @@ body.platform-linux .source-code {
     word-wrap: break-word;
     -webkit-user-select: text;
     border-top: 1px solid rgb(230, 230, 230);
+    -webkit-transform: translateZ(0);
 }
 
 #console-prompt {
@@ -886,6 +876,12 @@ body.platform-linux .source-code {
 
 .console-adjacent-user-command-result + .console-user-command-result.console-log-level::before {
     background-image: none;
+}
+
+.console-timestamp {
+    color: gray;
+    margin-right: 10px;
+    -webkit-user-select: none;
 }
 
 .console-message::before,
@@ -1191,6 +1187,7 @@ ol.watch-expressions > li.hovered {
 .console-formatted-regexp {
     color: rgb(196, 26, 22);
     white-space: pre;
+    unicode-bidi: -webkit-isolate;
 }
 
 .console-formatted-null,
@@ -1208,7 +1205,7 @@ ol.watch-expressions > li.hovered {
 }
 
 .object-info-state-note {
-    display: none;
+    display: inline-block;
     width: 11px;
     height: 11px;
     background-color: rgb(179, 203, 247);
@@ -1224,8 +1221,8 @@ ol.watch-expressions > li.hovered {
     content: "i";
 }
 
-.section.expanded .object-info-state-note {
-    display: inline-block;
+.section:not(.expanded) .object-info-state-note {
+    display: none;
 }
 
 .error-message {
@@ -1371,7 +1368,7 @@ iframe.panel.extension {
 
 .outline-disclosure li.parent::before {
     float: left;
-    width: 8px;
+    width: 10px;
     padding-right: 2px;
 }
 
@@ -1487,7 +1484,7 @@ iframe.panel.extension {
 }
 
 .section > .header {
-    padding: 0 8px 0 5px;
+    padding: 0px 8px 0 5px;
     min-height: 18px;
     white-space: nowrap;
     background-origin: padding-box;
@@ -1724,6 +1721,7 @@ li.editing-sub-part .delete-button {
 .watch-expressions > li.editing-sub-part .text-prompt {
     display: block;
     width: 100%;
+    overflow: hidden;
 }
 
 .watch-expressions > li.editing-sub-part .value,
@@ -1786,8 +1784,8 @@ li.editing-sub-part .delete-button {
 .swatch {
     margin-left: 1px;
     margin-right: 2px;
-    width: 1em;
-    height: 1em;
+    width: 10px;
+    height: 10px;
     position: relative;
     top: 1px;
     display: inline-block;
@@ -1808,10 +1806,6 @@ li.editing-sub-part .delete-button {
 
 .sidebar {
     overflow-x: hidden;
-    background-color: rgb(214, 221, 229);
-}
-
-body.inactive .sidebar {
     background-color: rgb(232, 232, 232);
 }
 
@@ -1854,14 +1848,6 @@ body.inactive button.show-all-nodes {
 button.show-all-nodes:active {
     background-color: rgb(215, 215, 215);
     background-image: linear-gradient(to bottom, rgb(194, 194, 194), rgb(239, 239, 239));
-}
-
-button.enable-toggle-status-bar-item .glyph {
-    -webkit-mask-position: -192px 0;
-}
-
-button.enable-toggle-status-bar-item.toggled-on .glyph {
-    -webkit-mask-position: -96px -24px;
 }
 
 #console-messages.console-filter-top {
@@ -2055,6 +2041,42 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
     height: 32px;
     margin-top: 1px;
     margin-right: 3px;
+}
+
+.sidebar-tree-item.wait .icon {
+    content: none;
+}
+
+.spinner-icon::before,
+.sidebar-tree-item.wait .icon::before {
+    display: block;
+    width: 24px;
+    height: 24px;
+    margin: 4px;
+    border: 3px solid grey;
+    border-radius: 12px;
+    clip: rect(0px, 15px, 15px, 0px);
+    content: "";
+    position: absolute;
+    -webkit-animation: spinner-animation 1s linear infinite;
+}
+
+.spinner-icon.small::before,
+.sidebar-tree-item.wait.small .icon::before {
+    width: 14px;
+    height: 14px;
+    margin: 1px;
+    clip: rect(0px, 9px, 9px, 0px);
+    border-width: 2px;
+}
+
+.sidebar-tree-item.wait.selected .icon::before {
+    border-color: white;
+}
+
+@-webkit-keyframes spinner-animation {
+    from { -webkit-transform: rotate(0); }
+    to { -webkit-transform: rotate(360deg); }
 }
 
 li .status {
@@ -2303,17 +2325,6 @@ body.inactive .sidebar-tree-item.selected {
     background-color: rgb(255, 255, 194);
 }
 
-.source-frame-stepin-mark {
-    cursor: pointer;
-    text-decoration: underline;
-}
-
-.source-frame-stepin-mark-highlighted {
-    font-weight: 800;
-    cursor: pointer;
-    text-decoration: underline;
-}
-
 .workers-list {
     list-style: none;
     margin: 0;
@@ -2452,7 +2463,7 @@ body.platform-mac .soft-context-menu-item-mouse-over {
 
 .search-drawer-header input[type="text"].search-config-search {
     -webkit-appearance: none;
-    padding: 0 2px;
+    padding: 0 3px;
     margin: 0;
     border: 1px solid rgb(163, 163, 163);
     height: 20px;
@@ -2531,11 +2542,12 @@ body.platform-mac .search-drawer-header input[type="search"].search-config-searc
     background-image: url(Images/statusbarButtonGlyphs.png);
     background-size: 320px 144px;
     opacity: 0.5;
-    width: 8px;
+    width: 12px;
     content: "a";
     color: transparent;
     margin-left: -5px;
     padding-right: 4px;
+    display: inline-block;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
@@ -2785,15 +2797,20 @@ button.record-profile-status-bar-item.toggled-on .glyph:not(.shadow) {
     max-width: 200px;
 }
 
-.inspector-view {
+.root-view {
     overflow: hidden;
     position: absolute !important;
+    left: 0;
+    top: 0;
 }
 
-.inspector-footer.status-bar {
-    flex: 0 0 auto;
+.search-bar {
+    flex: 0 0 23px;
     background-color: rgb(236, 236, 236);
-    height: auto;
+}
+
+.search-bar.replaceable {
+    flex: 0 0 44px;
 }
 
 .progress-bar-container {
@@ -2846,6 +2863,11 @@ body.undocked .toolbar-close-button-item {
     display: none;
 }
 
-#inspector-split-view > .split-view-sidebar {
+.root-view > .split-view > .split-view-sidebar {
     position: relative;
+}
+
+select.drop-down-menu {
+    border: none;
+    -webkit-appearance: none;
 }

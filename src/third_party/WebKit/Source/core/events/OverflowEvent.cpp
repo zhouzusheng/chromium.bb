@@ -26,8 +26,6 @@
 #include "config.h"
 #include "core/events/OverflowEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 OverflowEventInit::OverflowEventInit()
@@ -74,6 +72,11 @@ OverflowEvent::OverflowEvent(const AtomicString& type, const OverflowEventInit& 
 const AtomicString& OverflowEvent::interfaceName() const
 {
     return EventNames::OverflowEvent;
+}
+
+void OverflowEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 }

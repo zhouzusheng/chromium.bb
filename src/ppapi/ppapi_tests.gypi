@@ -99,7 +99,8 @@
       ],
       'conditions': [
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
@@ -158,6 +159,8 @@
         'proxy/serialized_var_unittest.cc',
         'proxy/talk_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
+        'shared_impl/media_stream_buffer_manager_unittest.cc',
+        'shared_impl/media_stream_video_track_shared_unittest.cc',
         'shared_impl/proxy_lock_unittest.cc',
         'shared_impl/resource_tracker_unittest.cc',
         'shared_impl/thread_aware_callback_unittest.cc',
@@ -169,7 +172,8 @@
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            [ 'linux_use_tcmalloc == 1', {
+            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
+            [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -514,6 +518,22 @@
       ],
       'sources': [
         'examples/media_stream_video/media_stream_video.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_gles2_spinning_cube',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/gles2_spinning_cube/gles2_spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.h',
       ],
     },
   ],

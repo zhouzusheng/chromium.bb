@@ -56,7 +56,6 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings, InspectorController* inspec
     , m_viewportMetaLayoutSizeQuirk(false)
     , m_viewportMetaNonUserScalableQuirk(false)
     , m_clobberUserAgentInitialScaleQuirk(false)
-    , m_pinchOverlayScrollbarThickness(0)
     , m_mainFrameResizesAreOrientationChanges(false)
 {
     ASSERT(settings);
@@ -483,6 +482,11 @@ void WebSettingsImpl::setAcceleratedCompositingForFixedRootBackgroundEnabled(boo
     m_settings->setAcceleratedCompositingForFixedRootBackgroundEnabled(enabled);
 }
 
+void WebSettingsImpl::setAcceleratedCompositingForGpuRasterizationHintEnabled(bool enabled)
+{
+    m_settings->setAcceleratedCompositingForGpuRasterizationHintEnabled(enabled);
+}
+
 void WebSettingsImpl::setAcceleratedCompositingForPluginsEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForPluginsEnabled(enabled);
@@ -503,11 +507,6 @@ void WebSettingsImpl::setAcceleratedCompositingForScrollableFramesEnabled(bool e
     m_settings->setAcceleratedCompositingForScrollableFramesEnabled(enabled);
 }
 
-void WebSettingsImpl::setAcceleratedFiltersEnabled(bool enabled)
-{
-    m_settings->setAcceleratedFiltersEnabled(enabled);
-}
-
 void WebSettingsImpl::setAccelerated2dCanvasEnabled(bool enabled)
 {
     m_settings->setAccelerated2dCanvasEnabled(enabled);
@@ -521,6 +520,11 @@ void WebSettingsImpl::setAccelerated2dCanvasMSAASampleCount(int count)
 void WebSettingsImpl::setAntialiased2dCanvasEnabled(bool enabled)
 {
     m_settings->setAntialiased2dCanvasEnabled(enabled);
+}
+
+void WebSettingsImpl::setContainerCullingEnabled(bool enabled)
+{
+    m_settings->setContainerCullingEnabled(enabled);
 }
 
 void WebSettingsImpl::setDeferredImageDecodingEnabled(bool enabled)
@@ -539,19 +543,9 @@ void WebSettingsImpl::setAcceleratedCompositingForFixedPositionEnabled(bool enab
     m_settings->setAcceleratedCompositingForFixedPositionEnabled(enabled);
 }
 
-void WebSettingsImpl::setAcceleratedCompositingForTransitionEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingForTransitionEnabled(enabled);
-}
-
 void WebSettingsImpl::setMinimumAccelerated2dCanvasSize(int numPixels)
 {
     m_settings->setMinimumAccelerated2dCanvasSize(numPixels);
-}
-
-void WebSettingsImpl::setMemoryInfoEnabled(bool enabled)
-{
-    m_settings->setMemoryInfoEnabled(enabled);
 }
 
 void WebSettingsImpl::setHyperlinkAuditingEnabled(bool enabled)
@@ -679,11 +673,6 @@ void WebSettingsImpl::setMediaFullscreenRequiresUserGesture(bool required)
     m_settings->setMediaFullscreenRequiresUserGesture(required);
 }
 
-void WebSettingsImpl::setFixedPositionCreatesStackingContext(bool creates)
-{
-    m_settings->setFixedPositionCreatesStackingContext(creates);
-}
-
 void WebSettingsImpl::setViewportEnabled(bool enabled)
 {
     m_settings->setViewportEnabled(enabled);
@@ -702,6 +691,11 @@ void WebSettingsImpl::setSyncXHRInDocumentsEnabled(bool enabled)
 void WebSettingsImpl::setCookieEnabled(bool enabled)
 {
     m_settings->setCookieEnabled(enabled);
+}
+
+void WebSettingsImpl::setNavigateOnDragDrop(bool enabled)
+{
+    m_settings->setNavigateOnDragDrop(enabled);
 }
 
 void WebSettingsImpl::setGestureTapHighlightEnabled(bool enableHighlight)
@@ -741,7 +735,7 @@ void WebSettingsImpl::setSmartInsertDeleteEnabled(bool enabled)
 
 void WebSettingsImpl::setPinchOverlayScrollbarThickness(int thickness)
 {
-    m_pinchOverlayScrollbarThickness = thickness;
+    m_settings->setPinchOverlayScrollbarThickness(thickness);
 }
 
 void WebSettingsImpl::setPinchVirtualViewportEnabled(bool enabled)

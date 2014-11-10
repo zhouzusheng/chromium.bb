@@ -44,7 +44,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/spellcheck_data.h>
 #include <content/public/browser/storage_partition.h>
-#include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
+#include <components/keyed_service/content/browser_context_dependency_manager.h>
 #include <components/user_prefs/pref_registry_syncable.h>
 #include <components/user_prefs/user_prefs.h>
 
@@ -358,6 +358,7 @@ void BrowserContextImpl::RequestMidiSysExPermission(
     int render_view_id,
     int bridge_id,
     const GURL& requesting_frame,
+    bool user_gesture,
     const MidiSysExPermissionCallback& callback)
 {
     callback.Run(true);

@@ -46,15 +46,13 @@
 #include "bindings/v8/PageScriptDebugServer.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fetch/MemoryCache.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "core/rendering/RenderView.h"
 #include "platform/JSONValues.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -119,11 +117,17 @@ private:
             return;
         m_running = true;
 
+        // 0. Flush pending frontend messages.
+        WebViewImpl* viewImpl = WebViewImpl::fromPage(page);
+        WebDevToolsAgentImpl* agent = static_cast<WebDevToolsAgentImpl*>(viewImpl->devToolsAgent());
+        agent->flushPendingFrontendMessages();
+
         Vector<WebViewImpl*> views;
 
         // 1. Disable input events.
-        HashSet<Page*>::const_iterator end =  page->group().pages().end();
-        for (HashSet<Page*>::const_iterator it =  page->group().pages().begin(); it != end; ++it) {
+        const HashSet<Page*>& pages = Page::ordinaryPages();
+        HashSet<Page*>::const_iterator end = pages.end();
+        for (HashSet<Page*>::const_iterator it =  pages.begin(); it != end; ++it) {
             WebViewImpl* view = WebViewImpl::fromPage(*it);
             if (!view)
                 continue;
@@ -278,7 +282,7 @@ void WebDevToolsAgentImpl::didCreateScriptContext(WebFrameImpl* webframe, int wo
     // Skip non main world contexts.
     if (worldId)
         return;
-    if (WebCore::Frame* frame = webframe->frame())
+    if (WebCore::LocalFrame* frame = webframe->frame())
         frame->script().setContextDebugId(m_hostId);
 }
 
@@ -320,7 +324,7 @@ bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputE
 
 void WebDevToolsAgentImpl::overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
 {
-    if (!width && !height) {
+    if (!width && !height && !deviceScaleFactor) {
         if (m_deviceMetricsEnabled) {
             m_deviceMetricsEnabled = false;
             m_webViewImpl->setBackgroundColorOverride(Color::transparent);
@@ -466,9 +470,14 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
     m_client->dumpUncountedAllocatedObjects(&provider);
 }
 
-void WebDevToolsAgentImpl::setTraceEventCallback(TraceEventCallback callback)
+void WebDevToolsAgentImpl::setTraceEventCallback(const String& categoryFilter, TraceEventCallback callback)
 {
-    m_client->setTraceEventCallback(callback);
+    m_client->setTraceEventCallback(categoryFilter, callback);
+}
+
+void WebDevToolsAgentImpl::resetTraceEventCallback()
+{
+    m_client->resetTraceEventCallback();
 }
 
 void WebDevToolsAgentImpl::startGPUEventsRecording()
@@ -528,7 +537,7 @@ InspectorController* WebDevToolsAgentImpl::inspectorController()
     return 0;
 }
 
-Frame* WebDevToolsAgentImpl::mainFrame()
+LocalFrame* WebDevToolsAgentImpl::mainFrame()
 {
     if (Page* page = m_webViewImpl->page())
         return page->mainFrame();
@@ -556,13 +565,14 @@ void WebDevToolsAgentImpl::hideHighlight()
     m_webViewImpl->removePageOverlay(this);
 }
 
-bool WebDevToolsAgentImpl::sendMessageToFrontend(const String& message)
+void WebDevToolsAgentImpl::sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message)
 {
-    WebDevToolsAgentImpl* devToolsAgent = static_cast<WebDevToolsAgentImpl*>(m_webViewImpl->devToolsAgent());
-    if (!devToolsAgent)
-        return false;
-    m_client->sendMessageToInspectorFrontend(message);
-    return true;
+    m_frontendMessageQueue.append(message);
+}
+
+void WebDevToolsAgentImpl::flush()
+{
+    flushPendingFrontendMessages();
 }
 
 void WebDevToolsAgentImpl::updateInspectorStateCookie(const String& state)
@@ -596,16 +606,31 @@ void WebDevToolsAgentImpl::evaluateInWebInspector(long callId, const WebString& 
     ic->evaluateForTestInFrontend(callId, script);
 }
 
+void WebDevToolsAgentImpl::flushPendingFrontendMessages()
+{
+    InspectorController* ic = inspectorController();
+    ic->flushPendingFrontendMessages();
+
+    for (size_t i = 0; i < m_frontendMessageQueue.size(); ++i)
+        m_client->sendMessageToInspectorFrontend(m_frontendMessageQueue[i]->toJSONString());
+    m_frontendMessageQueue.clear();
+}
+
 void WebDevToolsAgentImpl::willProcessTask()
 {
+    if (!m_attached)
+        return;
     if (InspectorController* ic = inspectorController())
         ic->willProcessTask();
 }
 
 void WebDevToolsAgentImpl::didProcessTask()
 {
+    if (!m_attached)
+        return;
     if (InspectorController* ic = inspectorController())
         ic->didProcessTask();
+    flushPendingFrontendMessages();
 }
 
 WebString WebDevToolsAgent::inspectorProtocolVersion()

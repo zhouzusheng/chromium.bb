@@ -36,8 +36,8 @@
 #include "WebPopupMenuInfo.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/PopupMenuClient.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntPoint.h"
@@ -48,7 +48,7 @@ using namespace WebCore;
 
 namespace blink {
 
-ExternalPopupMenu::ExternalPopupMenu(Frame& frame, PopupMenuClient* popupMenuClient, WebViewImpl& webView)
+ExternalPopupMenu::ExternalPopupMenu(LocalFrame& frame, PopupMenuClient* popupMenuClient, WebViewImpl& webView)
     : m_popupMenuClient(popupMenuClient)
     , m_frameView(frame.view())
     , m_webView(webView)
@@ -64,9 +64,12 @@ ExternalPopupMenu::~ExternalPopupMenu()
 void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, int index)
 {
     IntRect rect(controlPosition.enclosingBoundingBox());
-    // WebCore reuses the PopupMenu of a page.
+    // WebCore reuses the PopupMenu of an element.
     // For simplicity, we do recreate the actual external popup everytime.
-    hide();
+    if (m_webExternalPopupMenu) {
+        m_webExternalPopupMenu->close();
+        m_webExternalPopupMenu = 0;
+    }
 
     WebPopupMenuInfo info;
     getPopupMenuInfo(&info);
@@ -81,7 +84,7 @@ void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, i
             m_syntheticEvent = adoptPtr(new WebMouseEvent);
             *m_syntheticEvent = *static_cast<const WebMouseEvent*>(currentEvent);
             m_syntheticEvent->type = WebInputEvent::MouseUp;
-            m_dispatchEventTimer.startOneShot(0);
+            m_dispatchEventTimer.startOneShot(0, FROM_HERE);
             // FIXME: show() is asynchronous. If preparing a popup is slow and
             // a user released the mouse button before showing the popup,
             // mouseup and click events are correctly dispatched. Dispatching
@@ -134,11 +137,8 @@ void ExternalPopupMenu::didAcceptIndex(int index)
     RefPtr<ExternalPopupMenu> guard(this);
 
     if (m_popupMenuClient) {
+        m_popupMenuClient->popupDidHide();
         m_popupMenuClient->valueChanged(index);
-        // The call to valueChanged above might have lead to a call to
-        // disconnectClient, so we might not have a PopupMenuClient anymore.
-        if (m_popupMenuClient)
-            m_popupMenuClient->popupDidHide();
     }
     m_webExternalPopupMenu = 0;
 }

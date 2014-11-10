@@ -24,6 +24,8 @@
         'proto_out_dir': '<(proto_dir_relpath)',
       },
       'sources': [
+        '<(proto_in_dir)/android_channel.proto',
+        '<(proto_in_dir)/channel_common.proto',
         '<(proto_in_dir)/client.proto',
         '<(proto_in_dir)/client_gateway.proto',
         '<(proto_in_dir)/client_protocol.proto',
@@ -38,6 +40,17 @@
       },
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
+      # channel_common.proto contains definition of ANDROID constant which on 
+      # android build conflicts with compiler option -DANDROID. Remove protos
+      # from android build.
+      'conditions': [
+        ['OS=="android"', {
+          'sources!': [
+            '<(proto_in_dir)/android_channel.proto',
+            '<(proto_in_dir)/channel_common.proto',
+          ],
+        }],
+      ],
     },
     # The main cache invalidation library.  External clients should depend
     # only on this.
@@ -172,62 +185,6 @@
           'sources': [
             'cacheinvalidation_unittests.isolate',
           ],
-        },
-      ],
-    }],
-    ['OS == "android"', {
-      'variables': {
-        'emma_never_instrument': 1,
-      },
-      'targets': [
-        {
-          'target_name': 'cacheinvalidation_proto_java',
-          'type': 'none',
-          'variables': {
-            'proto_in_dir': '../../third_party/cacheinvalidation/src/proto',
-          },
-          'sources': [
-            '<(proto_in_dir)/android_channel.proto',
-            '<(proto_in_dir)/android_listener.proto',
-            '<(proto_in_dir)/android_service.proto',
-            '<(proto_in_dir)/android_state.proto',
-            '<(proto_in_dir)/channel.proto',
-            '<(proto_in_dir)/channel_common.proto',
-            '<(proto_in_dir)/client.proto',
-            '<(proto_in_dir)/client_protocol.proto',
-            '<(proto_in_dir)/java_client.proto',
-            '<(proto_in_dir)/types.proto',
-          ],
-          'includes': [ '../../build/protoc_java.gypi' ],
-        },
-        {
-          'target_name': 'cacheinvalidation_javalib',
-          'type': 'none',
-          'dependencies': [
-            '../../third_party/android_tools/android_tools.gyp:android_gcm',
-            '../../third_party/guava/guava.gyp:guava_javalib',
-            'cacheinvalidation_aidl_javalib',
-            'cacheinvalidation_proto_java',
-          ],
-          'variables': {
-            'java_in_dir': '../../build/android/empty',
-            'additional_src_dirs': [ 'src/java/' ],
-          },
-          'includes': [ '../../build/java.gypi' ],
-        },
-        {
-          'target_name': 'cacheinvalidation_aidl_javalib',
-          'type': 'none',
-          'variables': {
-            # TODO(shashishekhar): aidl_interface_file should be made optional.
-            'aidl_interface_file':'<(android_sdk)/framework.aidl'
-          },
-          'sources': [
-            'src/java/com/google/ipc/invalidation/external/client/android/service/InvalidationService.aidl',
-            'src/java/com/google/ipc/invalidation/external/client/android/service/ListenerService.aidl',
-            'src/java/com/google/ipc/invalidation/testing/android/InvalidationTest.aidl',
-          ],
-          'includes': [ '../../build/java_aidl.gypi' ],
         },
       ],
     }],

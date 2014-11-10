@@ -38,16 +38,14 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
 {
     WebInspector.DialogDelegate.call(this);
 
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "filteredItemSelectionDialog.css", false);
-    xhr.send(null);
+    if (!WebInspector.FilteredItemSelectionDialog._stylesLoaded) {
+        WebInspector.View.createStyleElement("filteredItemSelectionDialog.css");
+        WebInspector.FilteredItemSelectionDialog._stylesLoaded = true;
+    }
 
     this.element = document.createElement("div");
     this.element.className = "filtered-item-list-dialog";
     this.element.addEventListener("keydown", this._onKeyDown.bind(this), false);
-    var styleElement = this.element.createChild("style");
-    styleElement.type = "text/css";
-    styleElement.textContent = xhr.responseText;
 
     this._promptElement = this.element.createChild("input", "monospace");
     this._promptElement.addEventListener("input", this._onInput.bind(this), false);
@@ -65,8 +63,6 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
     this._delegate = delegate;
     this._delegate.setRefreshCallback(this._itemsLoaded.bind(this));
     this._itemsLoaded();
-
-    this._shouldShowMatchingItems = true;
 }
 
 WebInspector.FilteredItemSelectionDialog.prototype = {
@@ -76,19 +72,20 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
      */
     position: function(element, relativeToElement)
     {
-        const minWidth = 500;
-        const minHeight = 204;
-        var width = Math.max(relativeToElement.offsetWidth * 2 / 3, minWidth);
-        var height = Math.max(relativeToElement.offsetHeight * 2 / 3, minHeight);
+        const shadow = 10;
+        const shadowPadding = 20; // shadow + padding
+        var container = WebInspector.Dialog.modalHostView().element;
+        var preferredWidth = Math.max(relativeToElement.offsetWidth * 2 / 3, 500);
+        var width = Math.min(preferredWidth, container.offsetWidth - 2 * shadowPadding);
+        var preferredHeight = Math.max(relativeToElement.offsetHeight * 2 / 3, 204);
+        var height = Math.min(preferredHeight, container.offsetHeight - 2 * shadowPadding);
 
         this.element.style.width = width + "px";
-        var container = WebInspector.Dialog.modalHostView().element;
         var box = relativeToElement.boxInWindow(window).relativeToElement(container);
-        const shadowPadding = 20; // shadow + padding
-        var positionX = box.x + Math.max((box.width - width - 2 * shadowPadding) / 2, shadowPadding);
-        positionX = Math.max(shadowPadding, Math.min(container.offsetWidth - width - 2 * shadowPadding, positionX));
-        var positionY = box.y + Math.max((box.height - height - 2 * shadowPadding) / 2, shadowPadding);
-        positionY = Math.max(shadowPadding, Math.min(container.offsetHeight - height - 2 * shadowPadding, positionY));
+        var positionX = box.x + Math.max((box.width - width - 2 * shadowPadding) / 2, shadow);
+        positionX = Math.max(shadow, Math.min(container.offsetWidth - width - 2 * shadowPadding, positionX));
+        var positionY = box.y + Math.max((box.height - height - 2 * shadowPadding) / 2, shadow);
+        positionY = Math.max(shadow, Math.min(container.offsetHeight - height - 2 * shadowPadding, positionY));
         element.positionAt(positionX, positionY, container);
         this._dialogHeight = height;
 
@@ -147,8 +144,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
     {
         var itemElement = document.createElement("div");
         itemElement.className = "filtered-item-list-dialog-item " + (this._renderAsTwoRows ? "two-rows" : "one-row");
-        itemElement._titleElement = itemElement.createChild("span");
-        itemElement._titleSuffixElement = itemElement.createChild("span");
+        itemElement._titleElement = itemElement.createChild("div", "filtered-item-list-dialog-title");
         itemElement._subtitleElement = itemElement.createChild("div", "filtered-item-list-dialog-subtitle");
         itemElement._subtitleElement.textContent = "\u200B";
         itemElement._index = index;
@@ -255,17 +251,25 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         }
     },
 
+    /**
+     * @return {boolean}
+     */
+    _shouldShowMatchingItems: function()
+    {
+        return this._delegate.shouldShowMatchingItems(this._promptElement.value);
+    },
+
     _onInput: function(event)
     {
-        this._shouldShowMatchingItems = this._delegate.shouldShowMatchingItems(this._promptElement.value);
         this._updateShowMatchingItems();
         this._scheduleFilter();
     },
 
     _updateShowMatchingItems: function()
     {
-        this._itemElementsContainer.enableStyleClass("hidden", !this._shouldShowMatchingItems);
-        this.element.style.height = this._shouldShowMatchingItems ? this._dialogHeight + "px" : "auto";
+        var shouldShowMatchingItems = this._shouldShowMatchingItems();
+        this._itemElementsContainer.classList.toggle("hidden", !shouldShowMatchingItems);
+        this.element.style.height = shouldShowMatchingItems ? this._dialogHeight + "px" : "auto";
     },
 
     _onKeyDown: function(event)
@@ -489,16 +493,14 @@ WebInspector.SelectionDialogContentProvider.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.SelectionDialogContentProvider}
- * @param {!WebInspector.View} view
  * @param {!WebInspector.UISourceCode} uiSourceCode
  * @param {function(number, number)} selectItemCallback
  */
-WebInspector.JavaScriptOutlineDialog = function(view, uiSourceCode, selectItemCallback)
+WebInspector.JavaScriptOutlineDialog = function(uiSourceCode, selectItemCallback)
 {
     WebInspector.SelectionDialogContentProvider.call(this);
 
     this._functionItems = [];
-    this._view = view;
     this._selectItemCallback = selectItemCallback;
     this._outlineWorker = new Worker("ScriptFormatterWorker.js");
     this._outlineWorker.onmessage = this._didBuildOutlineChunk.bind(this);
@@ -514,7 +516,7 @@ WebInspector.JavaScriptOutlineDialog.show = function(view, uiSourceCode, selectI
 {
     if (WebInspector.Dialog.currentInstance())
         return null;
-    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.JavaScriptOutlineDialog(view, uiSourceCode, selectItemCallback));
+    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.JavaScriptOutlineDialog(uiSourceCode, selectItemCallback));
     WebInspector.Dialog.show(view.element, filteredItemSelectionDialog);
 }
 
@@ -529,7 +531,7 @@ WebInspector.JavaScriptOutlineDialog.prototype = {
         for (var i = 0; i < chunk.length; ++i)
             this._functionItems.push(chunk[i]);
 
-        if (data.total === data.index)
+        if (data.total === data.index + 1)
             this.dispose();
 
         this.refresh();
@@ -765,13 +767,13 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.SelectUISourceCodeDialog}
- * @param {!WebInspector.SourcesPanel} panel
+ * @param {!WebInspector.SourcesView} sourcesView
  * @param {!Map.<!WebInspector.UISourceCode, number>=} defaultScores
  */
-WebInspector.OpenResourceDialog = function(panel, defaultScores)
+WebInspector.OpenResourceDialog = function(sourcesView, defaultScores)
 {
     WebInspector.SelectUISourceCodeDialog.call(this, defaultScores);
-    this._panel = panel;
+    this._sourcesView = sourcesView;
 }
 
 WebInspector.OpenResourceDialog.prototype = {
@@ -784,10 +786,10 @@ WebInspector.OpenResourceDialog.prototype = {
     uiSourceCodeSelected: function(uiSourceCode, lineNumber, columnNumber)
     {
         if (!uiSourceCode)
-            uiSourceCode = this._panel.currentUISourceCode();
+            uiSourceCode = this._sourcesView.currentUISourceCode();
         if (!uiSourceCode)
             return;
-        this._panel.showUISourceCode(uiSourceCode, lineNumber, columnNumber);
+        this._sourcesView.showSourceLocation(uiSourceCode, lineNumber, columnNumber);
     },
 
     /**
@@ -812,20 +814,20 @@ WebInspector.OpenResourceDialog.prototype = {
 }
 
 /**
- * @param {!WebInspector.SourcesPanel} panel
+ * @param {!WebInspector.SourcesView} sourcesView
  * @param {!Element} relativeToElement
- * @param {string=} name
+ * @param {string=} query
  * @param {!Map.<!WebInspector.UISourceCode, number>=} defaultScores
  */
-WebInspector.OpenResourceDialog.show = function(panel, relativeToElement, name, defaultScores)
+WebInspector.OpenResourceDialog.show = function(sourcesView, relativeToElement, query, defaultScores)
 {
     if (WebInspector.Dialog.currentInstance())
         return;
 
-    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.OpenResourceDialog(panel, defaultScores));
+    var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.OpenResourceDialog(sourcesView, defaultScores));
     filteredItemSelectionDialog.renderAsTwoRows();
-    if (name)
-        filteredItemSelectionDialog.setQuery(name);
+    if (query)
+        filteredItemSelectionDialog.setQuery(query);
     WebInspector.Dialog.show(relativeToElement, filteredItemSelectionDialog);
 }
 

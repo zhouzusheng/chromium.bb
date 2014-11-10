@@ -27,12 +27,12 @@
  */
 
 /**
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @constructor
  */
 WebInspector.Panel = function(name)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
     WebInspector.panels[name] = this;
 
     this.element.classList.add("panel");
@@ -141,7 +141,7 @@ WebInspector.Panel.prototype = {
             this._shortcuts[keys[i].key] = handler;
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }
 
 /**
@@ -153,13 +153,16 @@ WebInspector.PanelWithSidebarTree = function(name, defaultWidth)
 {
     WebInspector.Panel.call(this, name);
 
-    this._panelSplitView = new WebInspector.SplitView(true, false, this._panelName + "SidebarWidth", defaultWidth || 200);
-    this._panelSplitView.setSidebarElementConstraints(Preferences.minSidebarWidth);
+    this._panelSplitView = new WebInspector.SplitView(true, false, this._panelName + "PanelSplitViewState", defaultWidth || 200);
     this._panelSplitView.show(this.element);
 
-    var sidebarElement = this._panelSplitView.sidebarElement();
-    sidebarElement.classList.add("sidebar");
-    var sidebarTreeElement = sidebarElement.createChild("ol", "sidebar-tree");
+    var sidebarView = new WebInspector.VBox();
+    sidebarView.setMinimumSize(Preferences.minSidebarWidth, 25);
+    sidebarView.show(this._panelSplitView.sidebarElement());
+
+    this._sidebarElement = sidebarView.element;
+    this._sidebarElement.classList.add("sidebar");
+    var sidebarTreeElement = this._sidebarElement.createChild("ol", "sidebar-tree");
     this.sidebarTree = new TreeOutline(sidebarTreeElement);
 }
 
@@ -169,7 +172,7 @@ WebInspector.PanelWithSidebarTree.prototype = {
      */
     sidebarElement: function()
     {
-        return this._panelSplitView.sidebarElement();
+        return this._sidebarElement;
     },
 
     /**
@@ -178,15 +181,6 @@ WebInspector.PanelWithSidebarTree.prototype = {
     mainElement: function()
     {
         return this._panelSplitView.mainElement();
-    },
-
-    /**
-     * @param {number=} minWidth
-     * @param {number=} minHeight
-     */
-    setMainElementConstraints: function(minWidth, minHeight)
-    {
-        this._panelSplitView.setMainElementConstraints(minWidth, minHeight);
     },
 
     /**

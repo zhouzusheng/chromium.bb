@@ -26,7 +26,6 @@
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
 #include <blpwtk2_filechooserparams.h>
 #include <blpwtk2_filechooserparamsimpl.h>
-#include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_nativeviewwidget.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_products.h>
@@ -42,6 +41,7 @@
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
+#include <content/public/browser/media_capture_devices.h>
 #include <content/public/browser/render_frame_host.h>
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
@@ -61,8 +61,9 @@ public:
     DummyMediaStreamUI() {}
     virtual ~DummyMediaStreamUI() {}
 
-    virtual void OnStarted(const base::Closure& stop) OVERRIDE
+    virtual gfx::NativeViewId OnStarted(const base::Closure& stop) OVERRIDE
     {
+        return 0;
     }
 };
 
@@ -430,28 +431,36 @@ void WebViewImpl::cutSelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->Cut();
+    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
+    if (frame)
+        frame->Cut();
 }
 
 void WebViewImpl::copySelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->Copy();
+    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
+    if (frame)
+        frame->Copy();
 }
 
 void WebViewImpl::paste()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->Paste();
+    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
+    if (frame)
+        frame->Paste();
 }
 
 void WebViewImpl::deleteSelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->GetRenderViewHost()->Delete();
+    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
+    if (frame)
+        frame->Delete();
 }
 
 void WebViewImpl::enableFocusBefore(bool enabled)
@@ -620,7 +629,8 @@ void WebViewImpl::UpdateTargetURL(content::WebContents* source,
         d_delegate->updateTargetURL(this, url.spec());
 }
 
-void WebViewImpl::LoadingStateChanged(content::WebContents* source)
+void WebViewImpl::LoadingStateChanged(content::WebContents* source,
+                                      bool to_different_document)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source == d_webContents);
@@ -729,7 +739,7 @@ void WebViewImpl::WebContentsBlurred(content::WebContents* contents)
 }
 
 void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
-                                     int64 source_frame_id,
+                                     int opener_render_frame_id,
                                      const base::string16& frame_name,
                                      const GURL& target_url,
                                      const content::ContentCreatedParams& params,
@@ -823,31 +833,36 @@ void WebViewImpl::RequestMediaAccessPermission(
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback)
 {
+    const content::MediaStreamDevices& audioDevices =
+        content::MediaCaptureDevices::GetInstance()->GetAudioCaptureDevices();
+    const content::MediaStreamDevices& videoDevices =
+        content::MediaCaptureDevices::GetInstance()->GetVideoCaptureDevices();
+
     scoped_ptr<content::MediaStreamUI> ui(new DummyMediaStreamUI());
     content::MediaStreamDevices devices;
     if (request.requested_video_device_id.empty()) {
-        if (request.video_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getVideoDevices().empty()) {
-            devices.push_back(Statics::mediaObserver->getVideoDevices()[0]);
+        if (request.video_type != content::MEDIA_NO_SERVICE && !videoDevices.empty()) {
+            devices.push_back(videoDevices[0]);
         }
     }
     else {
-        const content::MediaStreamDevice* device = findDeviceById(request.requested_video_device_id, Statics::mediaObserver->getVideoDevices());
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_video_device_id, videoDevices);
         if (device) {
             devices.push_back(*device);
         }
     }
     if (request.requested_audio_device_id.empty()) {
-        if (request.audio_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getAudioDevices().empty()) {
-            devices.push_back(Statics::mediaObserver->getAudioDevices()[0]);
+        if (request.audio_type != content::MEDIA_NO_SERVICE && !audioDevices.empty()) {
+            devices.push_back(audioDevices[0]);
         }
     }
     else {
-        const content::MediaStreamDevice* device = findDeviceById(request.requested_audio_device_id, Statics::mediaObserver->getAudioDevices());
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_audio_device_id, audioDevices);
         if (device) {
             devices.push_back(*device);
         }
     }
-    callback.Run(devices, ui.Pass());
+    callback.Run(devices, content::MEDIA_DEVICE_OK, ui.Pass());
 }
 
 bool WebViewImpl::OnNCHitTest(int* result)

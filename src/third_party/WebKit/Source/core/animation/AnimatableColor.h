@@ -44,6 +44,7 @@ public:
     AnimatableColorImpl interpolateTo(const AnimatableColorImpl&, double fraction) const;
     AnimatableColorImpl addWith(const AnimatableColorImpl&) const;
     bool operator==(const AnimatableColorImpl&) const;
+    double distanceTo(const AnimatableColorImpl&) const;
 
 private:
     float m_alpha;
@@ -58,13 +59,15 @@ private:
 // but inefficient.
 class AnimatableColor FINAL : public AnimatableValue {
 public:
-    static PassRefPtr<AnimatableColor> create(const AnimatableColorImpl&, const AnimatableColorImpl& visitedLinkColor);
+    static PassRefPtrWillBeRawPtr<AnimatableColor> create(const AnimatableColorImpl&, const AnimatableColorImpl& visitedLinkColor);
     Color color() const { return m_color.toColor(); }
     Color visitedLinkColor() const { return m_visitedLinkColor.toColor(); }
 
+    virtual void trace(Visitor*) OVERRIDE { }
+
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableColor(const AnimatableColorImpl& color, const AnimatableColorImpl& visitedLinkColor)
@@ -74,6 +77,7 @@ private:
     }
     virtual AnimatableType type() const OVERRIDE { return TypeColor; }
     virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual double distanceTo(const AnimatableValue*) const OVERRIDE;
     const AnimatableColorImpl m_color;
     const AnimatableColorImpl m_visitedLinkColor;
 };

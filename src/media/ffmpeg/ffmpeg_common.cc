@@ -389,9 +389,12 @@ void AVStreamToVideoDecoderConfig(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
 
   if (record_stats) {
+    // Note the PRESUBMIT_IGNORE_UMA_MAX below, this silences the PRESUBMIT.py
+    // check for uma enum max usage, since we're abusing
+    // UMA_HISTOGRAM_ENUMERATION to report a discrete value.
     UMA_HISTOGRAM_ENUMERATION("Media.VideoColorRange",
                               stream->codec->color_range,
-                              AVCOL_RANGE_NB);
+                              AVCOL_RANGE_NB);  // PRESUBMIT_IGNORE_UMA_MAX
   }
 
   VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
@@ -400,6 +403,11 @@ void AVStreamToVideoDecoderConfig(
     format = VideoFrame::YV12;
     coded_size = natural_size;
   }
+
+  // Pad out |coded_size| for subsampled YUV formats.
+  coded_size.set_width((coded_size.width() + 1) / 2 * 2);
+  if (format != VideoFrame::YV16)
+    coded_size.set_height((coded_size.height() + 1) / 2 * 2);
 
   bool is_encrypted = false;
   AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);

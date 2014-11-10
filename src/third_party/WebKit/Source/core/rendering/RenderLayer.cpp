@@ -53,27 +53,28 @@
 #include "core/dom/Document.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/frame/DeprecatedScheduleStyleRecalcDuringLayout.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameElement.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/ColumnInfo.h"
-#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/FilterEffectRenderer.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/HitTestingTransformState.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderReplica.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderScrollbarPart.h"
 #include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "platform/LengthFunctions.h"
@@ -125,6 +126,8 @@ RenderLayer::RenderLayer(RenderLayerModelObject* renderer, LayerType type)
     , m_containsDirtyOverlayScrollbars(false)
     , m_canSkipRepaintRectsUpdateOnScroll(renderer->isTableCell())
     , m_hasFilterInfo(false)
+    , m_needsToUpdateAncestorDependentProperties(true)
+    , m_childNeedsToUpdateAncestorDependantProperties(true)
     , m_renderer(renderer)
     , m_parent(0)
     , m_previous(0)
@@ -134,7 +137,6 @@ RenderLayer::RenderLayer(RenderLayerModelObject* renderer, LayerType type)
     , m_staticInlinePosition(0)
     , m_staticBlockPosition(0)
     , m_enclosingPaginationLayer(0)
-    , m_3dRenderingContextRoot(0)
     , m_groupedMapping(0)
     , m_repainter(renderer)
     , m_clipper(renderer)
@@ -165,6 +167,7 @@ RenderLayer::~RenderLayer()
     removeFilterInfoIfNeeded();
 
     if (groupedMapping()) {
+        DisableCompositingQueryAsserts disabler;
         groupedMapping()->removeRenderLayerFromSquashingGraphicsLayer(this);
         setGroupedMapping(0);
     }
@@ -193,11 +196,16 @@ RenderLayerCompositor* RenderLayer::compositor() const
 
 void RenderLayer::contentChanged(ContentChangeType changeType)
 {
+    // updateLayerCompositingState will query compositingReasons for accelerated overflow scrolling.
+    // This is tripped by LayoutTests/compositing/content-changed-chicken-egg.html
     DisableCompositingQueryAsserts disabler;
 
     // This can get called when video becomes accelerated, so the layers may change.
     if (changeType == CanvasChanged || changeType == VideoChanged || changeType == FullScreenChanged)
         compositor()->updateLayerCompositingState(this);
+
+    if (changeType == CanvasContextChanged)
+        compositor()->setNeedsCompositingUpdate(CompositingUpdateAfterCanvasContextChange);
 
     if (m_compositedLayerMapping)
         m_compositedLayerMapping->contentChanged(changeType);
@@ -215,10 +223,9 @@ bool RenderLayer::paintsWithFilters() const
 
     // https://code.google.com/p/chromium/issues/detail?id=343759
     DisableCompositingQueryAsserts disabler;
-    if (compositingState() != PaintsIntoOwnBacking)
-        return true;
-
-    if (!m_compositedLayerMapping || !m_compositedLayerMapping->canCompositeFilters())
+    if (!m_compositedLayerMapping
+        || compositingState() != PaintsIntoOwnBacking
+        || !m_compositedLayerMapping->canCompositeFilters())
         return true;
 
     return false;
@@ -498,6 +505,10 @@ void RenderLayer::updateLayerPositionsAfterScroll(RenderGeometryMap* geometryMap
 
     if (flags & HasSeenViewportConstrainedAncestor
         || (flags & IsOverflowScroll && flags & HasSeenAncestorWithOverflowClip && !m_canSkipRepaintRectsUpdateOnScroll)) {
+        // FIXME: This may not be needed. Once repaint-after-layout isn't
+        // under-painting for layer's we should see if this can be removed.
+        LayoutRectRecorder recorder(*m_renderer);
+
         // FIXME: Remove incremental compositing updates after fixing the chicken/egg issues
         // https://code.google.com/p/chromium/issues/detail?id=343756
         DisableCompositingQueryAsserts disabler;
@@ -551,20 +562,24 @@ void RenderLayer::updateTransform()
         dirty3DTransformedDescendantStatus();
 }
 
-// Note: this function assumes that all ancestors have an updated 3d rendering context root.
-void RenderLayer::update3dRenderingContext()
+static RenderLayer* enclosingLayerForContainingBlock(RenderLayer* layer)
 {
-    m_3dRenderingContextRoot = 0;
+    if (RenderObject* containingBlock = layer->renderer()->containingBlock())
+        return containingBlock->enclosingLayer();
+    return 0;
+}
 
-    if (!shouldFlattenTransform())
-        m_3dRenderingContextRoot = this;
+RenderLayer* RenderLayer::renderingContextRoot()
+{
+    RenderLayer* renderingContext = 0;
 
-    if (RenderObject* containingBlock = renderer()->containingBlock()) {
-        if (RenderLayer* ancestorLayer = containingBlock->enclosingLayer()) {
-            if (!ancestorLayer->shouldFlattenTransform())
-                m_3dRenderingContextRoot = ancestorLayer->renderingContextRoot();
-        }
-    }
+    if (shouldPreserve3D())
+        renderingContext = this;
+
+    for (RenderLayer* current = enclosingLayerForContainingBlock(this); current && current->shouldPreserve3D(); current = enclosingLayerForContainingBlock(current))
+        renderingContext = current;
+
+    return renderingContext;
 }
 
 TransformationMatrix RenderLayer::currentTransform(RenderStyle::ApplyTransformOrigin applyOrigin) const
@@ -712,8 +727,17 @@ void RenderLayer::setHasVisibleContent()
         return;
     }
 
-    m_visibleContentStatusDirty = false;
     m_hasVisibleContent = true;
+    m_visibleContentStatusDirty = false;
+
+    {
+        // FIXME: We can remove this code once we remove the recursive tree
+        // walk inside updateGraphicsLayerGeometry.
+        DisableCompositingQueryAsserts disabler;
+        if (RenderLayer* compositingLayer = enclosingCompositingLayer())
+            compositingLayer->compositedLayerMapping()->setNeedsGeometryUpdate();
+    }
+
     repainter().computeRepaintRects(renderer()->containerForRepaint());
     if (!m_stackingNode->isNormalFlowOnly()) {
         // We don't collect invisible layers in z-order lists if we are not in compositing mode.
@@ -837,9 +861,8 @@ void RenderLayer::updateDescendantDependentFlags()
             if (!child->stackingNode()->isStackingContext())
                 child->updateDescendantDependentFlags();
 
-            bool childLayerHasBlendMode = child->blendInfo().childLayerHasBlendModeWhileDirty();
-            childLayerHasBlendMode |= child->paintsWithBlendMode()
-                || (childLayerHasBlendMode && !child->stackingNode()->isStackingContext());
+            bool childLayerHadBlendMode = child->blendInfo().childLayerHasBlendModeWhileDirty();
+            bool childLayerHasBlendMode = childLayerHadBlendMode || child->blendInfo().hasBlendMode();
 
             m_blendInfo.setChildLayerHasBlendMode(childLayerHasBlendMode);
 
@@ -850,6 +873,7 @@ void RenderLayer::updateDescendantDependentFlags()
     }
 
     if (m_visibleContentStatusDirty) {
+        bool previouslyHasVisibleCOntent = m_hasVisibleContent;
         if (renderer()->style()->visibility() == VISIBLE)
             m_hasVisibleContent = true;
         else {
@@ -877,6 +901,14 @@ void RenderLayer::updateDescendantDependentFlags()
             }
         }
         m_visibleContentStatusDirty = false;
+
+        // FIXME: We can remove this code once we remove the recursive tree
+        // walk inside updateGraphicsLayerGeometry.
+        if (hasVisibleContent() != previouslyHasVisibleCOntent) {
+            DisableCompositingQueryAsserts disabler;
+            if (RenderLayer* compositingLayer = enclosingCompositingLayer())
+                compositingLayer->compositedLayerMapping()->setNeedsGeometryUpdate();
+        }
     }
 }
 
@@ -925,6 +957,9 @@ bool RenderLayer::updateLayerPosition()
 {
     LayoutPoint localPoint;
     LayoutSize inlineBoundingBoxOffset; // We don't put this into the RenderLayer x/y for inlines, so we need to subtract it out when done.
+
+    LayoutRectRecorder recorder(*m_renderer);
+
     if (renderer()->isInline() && renderer()->isRenderInline()) {
         RenderInline* inlineFlow = toRenderInline(renderer());
         IntRect lineBox = inlineFlow->linesBoundingBox();
@@ -966,7 +1001,7 @@ bool RenderLayer::updateLayerPosition()
         }
 
         if (renderer()->isOutOfFlowPositioned() && positionedParent->renderer()->isInFlowPositioned() && positionedParent->renderer()->isRenderInline()) {
-            LayoutSize offset = toRenderInline(positionedParent->renderer())->offsetForInFlowPositionedInline(toRenderBox(renderer()));
+            LayoutSize offset = toRenderInline(positionedParent->renderer())->offsetForInFlowPositionedInline(*toRenderBox(renderer()));
             localPoint += offset;
         }
     } else if (parent()) {
@@ -1044,8 +1079,7 @@ FloatPoint RenderLayer::perspectiveOrigin() const
     const LayoutRect borderBox = toRenderBox(renderer())->borderBoxRect();
     RenderStyle* style = renderer()->style();
 
-    return FloatPoint(floatValueForLength(style->perspectiveOriginX(), borderBox.width()),
-                      floatValueForLength(style->perspectiveOriginY(), borderBox.height()));
+    return FloatPoint(floatValueForLength(style->perspectiveOriginX(), borderBox.width().toFloat()), floatValueForLength(style->perspectiveOriginY(), borderBox.height().toFloat()));
 }
 
 static inline bool isFixedPositionedContainer(RenderLayer* layer)
@@ -1073,7 +1107,11 @@ RenderLayer* RenderLayer::enclosingTransformedAncestor() const
 
 const RenderLayer* RenderLayer::compositingContainer() const
 {
-    return stackingNode()->isNormalFlowOnly() ? parent() : (stackingNode()->ancestorStackingContainerNode() ? stackingNode()->ancestorStackingContainerNode()->layer() : 0);
+    if (stackingNode()->isNormalFlowOnly())
+        return parent();
+    if (RenderLayerStackingNode* ancestorStackingNode = stackingNode()->ancestorStackingContainerNode())
+        return ancestorStackingNode->layer();
+    return 0;
 }
 
 // FIXME: having two different functions named enclosingCompositingLayer and enclosingCompositingLayerForRepaint
@@ -1111,23 +1149,49 @@ RenderLayer* RenderLayer::enclosingCompositingLayerForRepaint(IncludeSelfOrNot i
     return 0;
 }
 
+void RenderLayer::clearAncestorDependentPropertyCache()
+{
+    ASSERT(isInCompositingUpdate());
+    m_ancestorDependentPropertyCache.clear();
+}
+
+void RenderLayer::ensureAncestorDependentPropertyCache() const
+{
+    ASSERT(isInCompositingUpdate());
+    if (m_ancestorDependentPropertyCache)
+        return;
+    m_ancestorDependentPropertyCache = adoptPtr(new AncestorDependentPropertyCache());
+}
+
 RenderLayer* RenderLayer::ancestorCompositedScrollingLayer() const
 {
-    ASSERT(isAllowedToQueryCompositingState());
-
     if (!renderer()->acceleratedCompositingForOverflowScrollEnabled())
         return 0;
+
+    ASSERT(isInCompositingUpdate() || !m_ancestorDependentPropertyCache);
+
+    if (m_ancestorDependentPropertyCache && !m_ancestorDependentPropertyCache->ancestorCompositedScrollingLayerDirty())
+        return m_ancestorDependentPropertyCache->ancestorCompositedScrollingLayer();
 
     RenderObject* containingBlock = renderer()->containingBlock();
     if (!containingBlock)
         return 0;
 
+    if (isInCompositingUpdate())
+        ensureAncestorDependentPropertyCache();
+
+    RenderLayer* ancestorCompositedScrollingLayer = 0;
     for (RenderLayer* ancestorLayer = containingBlock->enclosingLayer(); ancestorLayer; ancestorLayer = ancestorLayer->parent()) {
-        if (ancestorLayer->needsCompositedScrolling())
-            return ancestorLayer;
+        if (ancestorLayer->needsCompositedScrolling()) {
+            ancestorCompositedScrollingLayer = ancestorLayer;
+            break;
+        }
     }
 
-    return 0;
+    if (m_ancestorDependentPropertyCache)
+        m_ancestorDependentPropertyCache->setAncestorCompositedScrollingLayer(ancestorCompositedScrollingLayer);
+
+    return ancestorCompositedScrollingLayer;
 }
 
 RenderLayer* RenderLayer::ancestorScrollingLayer() const
@@ -1153,6 +1217,35 @@ RenderLayer* RenderLayer::enclosingFilterLayer(IncludeSelfOrNot includeSelf) con
     }
 
     return 0;
+}
+
+void RenderLayer::setNeedsToUpdateAncestorDependentProperties()
+{
+    m_needsToUpdateAncestorDependentProperties = true;
+
+    for (RenderLayer* current = this; current && !current->m_childNeedsToUpdateAncestorDependantProperties; current = current->parent())
+        current->m_childNeedsToUpdateAncestorDependantProperties = true;
+}
+
+void RenderLayer::updateAncestorDependentProperties(const AncestorDependentProperties& ancestorDependentProperties)
+{
+    m_ancestorDependentProperties = ancestorDependentProperties;
+    m_needsToUpdateAncestorDependentProperties = false;
+}
+
+void RenderLayer::clearChildNeedsToUpdateAncestorDependantProperties()
+{
+    ASSERT(!m_needsToUpdateAncestorDependentProperties);
+    m_childNeedsToUpdateAncestorDependantProperties = false;
+}
+
+void RenderLayer::setCompositingReasons(CompositingReasons reasons, CompositingReasons mask)
+{
+    ASSERT(reasons == (reasons & mask));
+    if ((m_compositingProperties.compositingReasons & mask) == (reasons & mask))
+        return;
+    m_compositingProperties.compositingReasons = (reasons & mask) | (m_compositingProperties.compositingReasons & ~mask);
+    m_clipper.setCompositingClipRectsDirty();
 }
 
 bool RenderLayer::hasAncestorWithFilterOutsets() const
@@ -1349,6 +1442,8 @@ void RenderLayer::addChild(RenderLayer* child, RenderLayer* beforeChild)
 
     child->setParent(this);
 
+    setNeedsToUpdateAncestorDependentProperties();
+
     if (child->stackingNode()->isNormalFlowOnly())
         m_stackingNode->dirtyNormalFlowList();
 
@@ -1366,7 +1461,7 @@ void RenderLayer::addChild(RenderLayer* child, RenderLayer* beforeChild)
     if (child->isSelfPaintingLayer() || child->hasSelfPaintingLayerDescendant())
         setAncestorChainHasSelfPaintingLayerDescendant();
 
-    if (child->paintsWithBlendMode() || child->blendInfo().childLayerHasBlendMode())
+    if (child->blendInfo().hasBlendMode() || child->blendInfo().childLayerHasBlendMode())
         m_blendInfo.setAncestorChainBlendedDescendant();
 
     if (subtreeContainsOutOfFlowPositionedLayer(child)) {
@@ -1411,6 +1506,9 @@ RenderLayer* RenderLayer::removeChild(RenderLayer* oldChild)
         oldChild->stackingNode()->dirtyStackingContainerZOrderLists();
     }
 
+    if (renderer()->style()->visibility() != VISIBLE)
+        dirtyVisibleContentStatus();
+
     oldChild->setPreviousSibling(0);
     oldChild->setNextSibling(0);
     oldChild->setParent(0);
@@ -1427,7 +1525,7 @@ RenderLayer* RenderLayer::removeChild(RenderLayer* oldChild)
     if (oldChild->m_hasVisibleContent || oldChild->m_hasVisibleDescendant)
         dirtyAncestorChainVisibleDescendantStatus();
 
-    if (oldChild->paintsWithBlendMode() || oldChild->blendInfo().childLayerHasBlendMode())
+    if (oldChild->m_blendInfo.hasBlendMode() || oldChild->blendInfo().childLayerHasBlendMode())
         m_blendInfo.dirtyAncestorChainBlendedDescendantStatus();
 
     if (oldChild->isSelfPaintingLayer() || oldChild->hasSelfPaintingLayerDescendant())
@@ -1459,7 +1557,15 @@ void RenderLayer::removeOnlyThisLayer()
         RenderLayer* next = current->nextSibling();
         removeChild(current);
         m_parent->addChild(current, nextSib);
-        current->repainter().setRepaintStatus(NeedsFullRepaint);
+
+        if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+            current->renderer()->setShouldDoFullRepaintAfterLayout(true);
+        else
+            current->repainter().setRepaintStatus(NeedsFullRepaint);
+
+        // Hits in compositing/overflow/automatically-opt-into-composited-scrolling-part-1.html
+        DisableCompositingQueryAsserts disabler;
+
         current->updateLayerPositions(0); // FIXME: use geometry map.
         current = next;
     }
@@ -1632,13 +1738,16 @@ void RenderLayer::convertToLayerCoords(const RenderLayer* ancestorLayer, LayoutR
 
 RenderLayer* RenderLayer::scrollParent() const
 {
-    if (!renderer()->compositorDrivenAcceleratedScrollingEnabled())
-        return 0;
+    ASSERT(renderer()->compositorDrivenAcceleratedScrollingEnabled());
 
     // Normal flow elements will be parented under the main scrolling layer, so
     // we don't need a scroll parent/child relationship to get them to scroll.
     if (stackingNode()->isNormalFlowOnly())
         return 0;
+
+    // We should never have an ancestor dependent property cache outside of the
+    // compositing update phase.
+    ASSERT(isInCompositingUpdate() || !m_ancestorDependentPropertyCache);
 
     // A layer scrolls with its containing block. So to find the overflow scrolling layer
     // that we scroll with respect to, we must ascend the layer tree until we reach the
@@ -1652,32 +1761,45 @@ RenderLayer* RenderLayer::scrollParent() const
     // our scrolling ancestor, and we will therefore not scroll with it. In this case, we must
     // be a composited layer since the compositor will need to take special measures to ensure
     // that we scroll with our scrolling ancestor and it cannot do this if we do not promote.
-    RenderLayer* scrollParent = ancestorCompositedScrollingLayer();
+    if (m_ancestorDependentPropertyCache && !m_ancestorDependentPropertyCache->scrollParentDirty())
+        return m_ancestorDependentPropertyCache->scrollParent();
 
-    if (!scrollParent || scrollParent->stackingNode()->isStackingContainer())
+    RenderLayer* scrollParent = ancestorCompositedScrollingLayer();
+    if (!scrollParent || scrollParent->stackingNode()->isStackingContainer()) {
+        if (m_ancestorDependentPropertyCache)
+            m_ancestorDependentPropertyCache->setScrollParent(0);
         return 0;
+    }
 
     // If we hit a stacking context on our way up to the ancestor scrolling layer, it will already
     // be composited due to an overflow scrolling parent, so we don't need to.
     for (RenderLayer* ancestor = parent(); ancestor && ancestor != scrollParent; ancestor = ancestor->parent()) {
-        if (ancestor->stackingNode()->isStackingContainer())
-            return 0;
+        if (ancestor->stackingNode()->isStackingContainer()) {
+            scrollParent = 0;
+            break;
+        }
+        if (!isInCompositingUpdate())
+            continue;
+        if (AncestorDependentPropertyCache* ancestorCache = ancestor->m_ancestorDependentPropertyCache.get()) {
+            if (!ancestorCache->ancestorCompositedScrollingLayerDirty() && ancestorCache->ancestorCompositedScrollingLayer() == scrollParent) {
+                scrollParent = ancestorCache->scrollParent();
+                break;
+            }
+        }
     }
 
+    if (m_ancestorDependentPropertyCache)
+        m_ancestorDependentPropertyCache->setScrollParent(scrollParent);
     return scrollParent;
 }
 
 RenderLayer* RenderLayer::clipParent() const
 {
-    const bool needsAncestorClip = compositor()->clippedByAncestor(this);
-
-    RenderLayer* clipParent = 0;
-    if ((compositingReasons() & CompositingReasonOutOfFlowClipping) && !needsAncestorClip) {
+    if (compositingReasons() & CompositingReasonOutOfFlowClipping && !compositor()->clippedByAncestor(this)) {
         if (RenderObject* containingBlock = renderer()->containingBlock())
-            clipParent = containingBlock->enclosingLayer()->enclosingCompositingLayer();
+            return containingBlock->enclosingLayer()->enclosingCompositingLayer();
     }
-
-    return clipParent;
+    return 0;
 }
 
 void RenderLayer::didUpdateNeedsCompositedScrolling()
@@ -1773,10 +1895,10 @@ static bool inContainingBlockChain(RenderLayer* startLayer, RenderLayer* endLaye
     return false;
 }
 
-void RenderLayer::clipToRect(RenderLayer* rootLayer, GraphicsContext* context, const LayoutRect& paintDirtyRect, const ClipRect& clipRect,
+void RenderLayer::clipToRect(const LayerPaintingInfo& localPaintingInfo, GraphicsContext* context, const ClipRect& clipRect,
                              BorderRadiusClippingRule rule)
 {
-    if (clipRect.rect() == paintDirtyRect && !clipRect.hasRadius())
+    if (clipRect.rect() == localPaintingInfo.paintDirtyRect && !clipRect.hasRadius())
         return;
     context->save();
     context->clip(pixelSnappedIntRect(clipRect.rect()));
@@ -1790,11 +1912,11 @@ void RenderLayer::clipToRect(RenderLayer* rootLayer, GraphicsContext* context, c
     for (RenderLayer* layer = rule == IncludeSelfForBorderRadius ? this : parent(); layer; layer = layer->parent()) {
         if (layer->renderer()->hasOverflowClip() && layer->renderer()->style()->hasBorderRadius() && inContainingBlockChain(this, layer)) {
                 LayoutPoint delta;
-                layer->convertToLayerCoords(rootLayer, delta);
+                layer->convertToLayerCoords(localPaintingInfo.rootLayer, delta);
                 context->clipRoundedRect(layer->renderer()->style()->getRoundedInnerBorderFor(LayoutRect(delta, layer->size())));
         }
 
-        if (layer == rootLayer)
+        if (layer == localPaintingInfo.rootLayer)
             break;
     }
 }
@@ -1909,7 +2031,7 @@ void RenderLayer::paintLayer(GraphicsContext* context, const LayerPaintingInfo& 
             clipRect.intersect(paintingInfo.paintDirtyRect);
 
             // Push the parent coordinate space's clip.
-            parent()->clipToRect(paintingInfo.rootLayer, context, paintingInfo.paintDirtyRect, clipRect);
+            parent()->clipToRect(paintingInfo, context, clipRect);
         }
 
         paintLayerByApplyingTransform(context, paintingInfo, paintFlags);
@@ -2004,7 +2126,7 @@ void RenderLayer::paintLayerContents(GraphicsContext* context, const LayerPainti
             Document& document = renderer()->document();
             // FIXME: It doesn't work with forward or external SVG references (https://bugs.webkit.org/show_bug.cgi?id=90405)
             Element* element = document.getElementById(referenceClipPathOperation->fragment());
-            if (element && element->hasTagName(SVGNames::clipPathTag) && element->renderer()) {
+            if (isSVGClipPathElement(element) && element->renderer()) {
                 if (!rootRelativeBoundsComputed) {
                     rootRelativeBounds = calculateLayerBounds(paintingInfo.rootLayer, &offsetFromRoot, 0);
                     rootRelativeBoundsComputed = true;
@@ -2126,7 +2248,7 @@ void RenderLayer::paintLayerContents(GraphicsContext* context, const LayerPainti
         // Apply the correct clipping (ie. overflow: hidden).
         // FIXME: It is incorrect to just clip to the damageRect here once multiple fragments are involved.
         ClipRect backgroundRect = layerFragments.isEmpty() ? ClipRect() : layerFragments[0].backgroundRect;
-        clipToRect(localPaintingInfo.rootLayer, transparencyLayerContext, localPaintingInfo.paintDirtyRect, backgroundRect);
+        clipToRect(localPaintingInfo, transparencyLayerContext, backgroundRect);
         context = filterPainter.applyFilterEffect();
         restoreClip(transparencyLayerContext, localPaintingInfo.paintDirtyRect, backgroundRect);
     }
@@ -2318,7 +2440,7 @@ void RenderLayer::paintTransformedLayerIntoFragments(GraphicsContext* context, c
             clipRect.intersect(parentClipRect);
         }
 
-        parent()->clipToRect(paintingInfo.rootLayer, context, paintingInfo.paintDirtyRect, clipRect);
+        parent()->clipToRect(paintingInfo, context, clipRect);
         paintLayerByApplyingTransform(context, paintingInfo, paintFlags, fragment.paginationOffset);
         parent()->restoreClip(context, paintingInfo.paintDirtyRect, clipRect);
     }
@@ -2349,7 +2471,7 @@ void RenderLayer::paintBackgroundForFragments(const LayerFragments& layerFragmen
         if (localPaintingInfo.clipToDirtyRect) {
             // Paint our background first, before painting any child layers.
             // Establish the clip used to paint our background.
-            clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.backgroundRect, DoNotIncludeSelfForBorderRadius); // Background painting will handle clipping to self.
+            clipToRect(localPaintingInfo, context, fragment.backgroundRect, DoNotIncludeSelfForBorderRadius); // Background painting will handle clipping to self.
         }
 
         // Paint the background.
@@ -2382,7 +2504,7 @@ void RenderLayer::paintForegroundForFragments(const LayerFragments& layerFragmen
     // Optimize clipping for the single fragment case.
     bool shouldClip = localPaintingInfo.clipToDirtyRect && layerFragments.size() == 1 && layerFragments[0].shouldPaintContent && !layerFragments[0].foregroundRect.isEmpty();
     if (shouldClip)
-        clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, layerFragments[0].foregroundRect);
+        clipToRect(localPaintingInfo, context, layerFragments[0].foregroundRect);
 
     // We have to loop through every fragment multiple times, since we have to repaint in each specific phase in order for
     // interleaving of the fragments to work properly.
@@ -2410,7 +2532,7 @@ void RenderLayer::paintForegroundForFragmentsWithPhase(PaintPhase phase, const L
             continue;
 
         if (shouldClip)
-            clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.foregroundRect);
+            clipToRect(localPaintingInfo, context, fragment.foregroundRect);
 
         PaintInfo paintInfo(context, pixelSnappedIntRect(fragment.foregroundRect.rect()), phase, paintBehavior, paintingRootForRenderer, 0, 0, localPaintingInfo.rootLayer->renderer());
         if (phase == PaintPhaseForeground)
@@ -2432,7 +2554,7 @@ void RenderLayer::paintOutlineForFragments(const LayerFragments& layerFragments,
 
         // Paint our own outline
         PaintInfo paintInfo(context, pixelSnappedIntRect(fragment.outlineRect.rect()), PaintPhaseSelfOutline, paintBehavior, paintingRootForRenderer, 0, 0, localPaintingInfo.rootLayer->renderer());
-        clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.outlineRect, DoNotIncludeSelfForBorderRadius);
+        clipToRect(localPaintingInfo, context, fragment.outlineRect, DoNotIncludeSelfForBorderRadius);
         renderer()->paint(paintInfo, toPoint(fragment.layerBounds.location() - renderBoxLocation() + subPixelAccumulationIfNeeded(localPaintingInfo.subPixelAccumulation, compositingState())));
         restoreClip(context, localPaintingInfo.paintDirtyRect, fragment.outlineRect);
     }
@@ -2447,7 +2569,7 @@ void RenderLayer::paintMaskForFragments(const LayerFragments& layerFragments, Gr
             continue;
 
         if (localPaintingInfo.clipToDirtyRect)
-            clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.backgroundRect, DoNotIncludeSelfForBorderRadius); // Mask painting will handle clipping to self.
+            clipToRect(localPaintingInfo, context, fragment.backgroundRect, DoNotIncludeSelfForBorderRadius); // Mask painting will handle clipping to self.
 
         // Paint the mask.
         // FIXME: Eventually we will collect the region from the fragment itself instead of just from the paint info.
@@ -2468,7 +2590,7 @@ void RenderLayer::paintChildClippingMaskForFragments(const LayerFragments& layer
             continue;
 
         if (localPaintingInfo.clipToDirtyRect)
-            clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.foregroundRect, IncludeSelfForBorderRadius); // Child clipping mask painting will handle clipping to self.
+            clipToRect(localPaintingInfo, context, fragment.foregroundRect, IncludeSelfForBorderRadius); // Child clipping mask painting will handle clipping to self.
 
         // Paint the the clipped mask.
         PaintInfo paintInfo(context, pixelSnappedIntRect(fragment.backgroundRect.rect()), PaintPhaseClippingMask, PaintBehaviorNormal, paintingRootForRenderer, 0, 0, localPaintingInfo.rootLayer->renderer());
@@ -2483,7 +2605,7 @@ void RenderLayer::paintOverflowControlsForFragments(const LayerFragments& layerF
 {
     for (size_t i = 0; i < layerFragments.size(); ++i) {
         const LayerFragment& fragment = layerFragments.at(i);
-        clipToRect(localPaintingInfo.rootLayer, context, localPaintingInfo.paintDirtyRect, fragment.backgroundRect);
+        clipToRect(localPaintingInfo, context, fragment.backgroundRect);
         if (RenderLayerScrollableArea* scrollableArea = this->scrollableArea())
             scrollableArea->paintOverflowControls(context, roundedIntPoint(toPoint(fragment.layerBounds.location() - renderBoxLocation() + subPixelAccumulationIfNeeded(localPaintingInfo.subPixelAccumulation, compositingState()))), pixelSnappedIntRect(fragment.backgroundRect.rect()), true);
         restoreClip(context, localPaintingInfo.paintDirtyRect, fragment.backgroundRect);
@@ -3244,9 +3366,7 @@ bool RenderLayer::intersectsDamageRect(const LayoutRect& layerBounds, const Layo
     RenderView* view = renderer()->view();
     ASSERT(view);
     if (view && !renderer()->isRenderInline()) {
-        LayoutRect b = layerBounds;
-        b.inflate(view->maximalOutlineSize());
-        if (b.intersects(damageRect))
+        if (layerBounds.intersects(damageRect))
             return true;
     }
 
@@ -3295,10 +3415,7 @@ LayoutRect RenderLayer::localBoundingBox(CalculateLayerBoundsFlags flags) const
         }
     }
 
-    RenderView* view = renderer()->view();
-    ASSERT(view);
-    if (view)
-        result.inflate(view->maximalOutlineSize()); // Used to apply a fudge factor to dirty-rect checks on blocks/tables.
+    ASSERT(renderer()->view());
 
     return result;
 }
@@ -3338,11 +3455,6 @@ LayoutRect RenderLayer::boundingBox(const RenderLayer* ancestorLayer, CalculateL
 
     result.moveBy(delta);
     return result;
-}
-
-IntRect RenderLayer::absoluteBoundingBox() const
-{
-    return pixelSnappedIntRect(boundingBox(root()));
 }
 
 LayoutRect RenderLayer::calculateLayerBounds(const RenderLayer* ancestorLayer, const LayoutPoint* offsetFromRoot, CalculateLayerBoundsFlags flags) const
@@ -3474,10 +3586,9 @@ CompositingState RenderLayer::compositingState() const
     if (!m_compositedLayerMapping)
         return NotComposited;
 
-    if (m_compositedLayerMapping && compositedLayerMapping()->paintsIntoCompositedAncestor())
+    if (compositedLayerMapping()->paintsIntoCompositedAncestor())
         return HasOwnBackingButPaintsIntoAncestor;
 
-    ASSERT(m_compositedLayerMapping);
     return PaintsIntoOwnBacking;
 }
 
@@ -3488,10 +3599,22 @@ bool RenderLayer::isAllowedToQueryCompositingState() const
     return renderer()->document().lifecycle().state() >= DocumentLifecycle::InCompositingUpdate;
 }
 
+bool RenderLayer::isInCompositingUpdate() const
+{
+    return renderer()->document().lifecycle().state() == DocumentLifecycle::InCompositingUpdate;
+}
+
+CompositedLayerMappingPtr RenderLayer::compositedLayerMapping() const
+{
+    ASSERT(isAllowedToQueryCompositingState());
+    return m_compositedLayerMapping.get();
+}
+
 CompositedLayerMappingPtr RenderLayer::ensureCompositedLayerMapping()
 {
     if (!m_compositedLayerMapping) {
-        m_compositedLayerMapping = adoptPtr(new CompositedLayerMapping(this));
+        m_compositedLayerMapping = adoptPtr(new CompositedLayerMapping(*this));
+        m_compositedLayerMapping->setNeedsGeometryUpdate();
 
         updateOrRemoveFilterEffectRenderer();
 
@@ -3503,10 +3626,28 @@ CompositedLayerMappingPtr RenderLayer::ensureCompositedLayerMapping()
 
 void RenderLayer::clearCompositedLayerMapping(bool layerBeingDestroyed)
 {
+    if (!layerBeingDestroyed) {
+        // We need to make sure our decendants get a geometry update. In principle,
+        // we could call setNeedsGeometryUpdate on our children, but that would
+        // require walking the z-order lists to find them. Instead, we over-invalidate
+        // by marking our parent as needing a geometry update.
+        if (RenderLayer* compositingParent = enclosingCompositingLayer(ExcludeSelf))
+            compositingParent->compositedLayerMapping()->setNeedsGeometryUpdate();
+    }
+
     m_compositedLayerMapping.clear();
 
     if (!layerBeingDestroyed)
         updateOrRemoveFilterEffectRenderer();
+}
+
+void RenderLayer::setGroupedMapping(CompositedLayerMapping* groupedMapping, bool layerBeingDestroyed)
+{
+    if (!layerBeingDestroyed && m_groupedMapping)
+        m_groupedMapping->setNeedsGeometryUpdate();
+    m_groupedMapping = groupedMapping;
+    if (!layerBeingDestroyed && m_groupedMapping)
+        m_groupedMapping->setNeedsGeometryUpdate();
 }
 
 bool RenderLayer::hasCompositedMask() const
@@ -3535,8 +3676,6 @@ bool RenderLayer::paintsWithTransform(PaintBehavior paintBehavior) const
 
 bool RenderLayer::paintsWithBlendMode() const
 {
-    // https://code.google.com/p/chromium/issues/detail?id=343759
-    DisableCompositingQueryAsserts disabler;
     return m_blendInfo.hasBlendMode() && compositingState() != PaintsIntoOwnBacking;
 }
 
@@ -3743,11 +3882,14 @@ inline bool RenderLayer::needsCompositingLayersRebuiltForClip(const RenderStyle*
 inline bool RenderLayer::needsCompositingLayersRebuiltForOverflow(const RenderStyle* oldStyle, const RenderStyle* newStyle) const
 {
     ASSERT(newStyle);
-    return !hasCompositedLayerMapping()
-        && oldStyle
-        && (oldStyle->overflowX() != newStyle->overflowX())
-        && m_stackingNode->ancestorStackingContainerNode()
-        && m_stackingNode->ancestorStackingContainerNode()->layer()->hasCompositingDescendant();
+    if (hasCompositedLayerMapping())
+        return false;
+    if (!oldStyle)
+        return false;
+    if (oldStyle->overflowX() == newStyle->overflowX())
+        return false;
+    RenderLayerStackingNode* stackingNode = m_stackingNode->ancestorStackingContainerNode();
+    return stackingNode && stackingNode->layer()->hasCompositingDescendant();
 }
 
 inline bool RenderLayer::needsCompositingLayersRebuiltForFilters(const RenderStyle* oldStyle, const RenderStyle* newStyle, bool didPaintWithFilters) const
@@ -3770,16 +3912,6 @@ inline bool RenderLayer::needsCompositingLayersRebuiltForFilters(const RenderSty
         //     whose compositors can't compute their own filter outsets.
         return true;
     }
-
-#if HAVE(COMPOSITOR_FILTER_OUTSETS)
-    if ((didPaintWithFilters != paintsWithFilters()) && !newOutsets.isZero()) {
-        // When the layer used to paint filters in software and now paints filters in the
-        // compositor, the compositing layer bounds need to change from including filter outsets to
-        // excluding filter outsets, on platforms whose compositors compute their own outsets.
-        // Similarly for the reverse change from compositor-painted to software-painted filters.
-        return true;
-    }
-#endif
 
     return false;
 }
@@ -3851,13 +3983,21 @@ void RenderLayer::styleChanged(StyleDifference diff, const RenderStyle* oldStyle
         updateFilters(oldStyle, renderer()->style());
     }
 
+    compositor()->updateStyleDeterminedCompositingReasons(this);
+
+    setNeedsToUpdateAncestorDependentProperties();
+
     // FIXME: Remove incremental compositing updates after fixing the chicken/egg issues
     // https://code.google.com/p/chromium/issues/detail?id=343756
     DisableCompositingQueryAsserts disabler;
 
+    // FIXME: Move this work to CompositingPropertyUpdater::updateAncestorDependentProperties.
+    if (RenderLayer* compositingLayer = enclosingCompositingLayer())
+        compositingLayer->compositedLayerMapping()->setNeedsGeometryUpdate();
+
     const RenderStyle* newStyle = renderer()->style();
 
-    compositor()->updateLayerCompositingState(this);
+    compositor()->updateLayerCompositingState(this, RenderLayerCompositor::UseChickenEggHacks);
     // FIXME: this compositing logic should be pushed into the compositing code, not here.
     if (needsCompositingLayersRebuiltForClip(oldStyle, newStyle)
         || needsCompositingLayersRebuiltForOverflow(oldStyle, newStyle)
@@ -3886,7 +4026,11 @@ FilterOperations RenderLayer::computeFilterOperations(const RenderStyle* style)
             ReferenceFilterOperation* referenceOperation = toReferenceFilterOperation(filterOperation);
             // FIXME: Cache the ReferenceFilter if it didn't change.
             RefPtr<ReferenceFilter> referenceFilter = ReferenceFilter::create();
+#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
             float zoom = style->effectiveZoom() * WebCore::deviceScaleFactor(renderer()->frame());
+#else
+            float zoom = style->effectiveZoom();
+#endif
             referenceFilter->setAbsoluteTransform(AffineTransform().scale(zoom, zoom));
             referenceFilter->setLastEffect(ReferenceFilterBuilder::build(referenceFilter.get(), renderer(), referenceFilter->sourceGraphic(),
                 referenceOperation));
@@ -3919,7 +4063,7 @@ void RenderLayer::updateOrRemoveFilterEffectRenderer()
         // Don't delete the whole filter info here, because we might use it
         // for loading CSS shader files.
         if (RenderLayerFilterInfo* filterInfo = this->filterInfo())
-            filterInfo->setRenderer(0);
+            filterInfo->setRenderer(nullptr);
 
         return;
     }
@@ -3927,7 +4071,6 @@ void RenderLayer::updateOrRemoveFilterEffectRenderer()
     RenderLayerFilterInfo* filterInfo = ensureFilterInfo();
     if (!filterInfo->renderer()) {
         RefPtr<FilterEffectRenderer> filterRenderer = FilterEffectRenderer::create();
-        filterRenderer->setIsAccelerated(renderer()->frame()->settings()->acceleratedFiltersEnabled());
         filterInfo->setRenderer(filterRenderer.release());
 
         // We can optimize away code paths in other places if we know that there are no software filters.
@@ -3937,7 +4080,7 @@ void RenderLayer::updateOrRemoveFilterEffectRenderer()
     // If the filter fails to build, remove it from the layer. It will still attempt to
     // go through regular processing (e.g. compositing), but never apply anything.
     if (!filterInfo->renderer()->build(renderer(), computeFilterOperations(renderer()->style())))
-        filterInfo->setRenderer(0);
+        filterInfo->setRenderer(nullptr);
 }
 
 void RenderLayer::filterNeedsRepaint()
@@ -4000,6 +4143,38 @@ void RenderLayer::computeSelfHitTestRects(LayerHitTestRects& rects) const
 DisableCompositingQueryAsserts::DisableCompositingQueryAsserts()
     : m_disabler(gCompositingQueryMode, CompositingQueriesAreAllowed) { }
 
+COMPILE_ASSERT(1 << RenderLayer::ViewportConstrainedNotCompositedReasonBits >= RenderLayer::NumNotCompositedReasons, too_many_viewport_constrained_not_compositing_reasons);
+
+RenderLayer::AncestorDependentPropertyCache::AncestorDependentPropertyCache()
+    : m_ancestorCompositedScrollingLayer(0)
+    , m_scrollParent(0)
+    , m_ancestorCompositedScrollingLayerDirty(true)
+    , m_scrollParentDirty(true) { }
+
+RenderLayer* RenderLayer::AncestorDependentPropertyCache::scrollParent() const
+{
+    ASSERT(!m_scrollParentDirty);
+    return m_scrollParent;
+}
+
+void RenderLayer::AncestorDependentPropertyCache::setScrollParent(RenderLayer* scrollParent)
+{
+    m_scrollParent = scrollParent;
+    m_scrollParentDirty = false;
+}
+
+RenderLayer* RenderLayer::AncestorDependentPropertyCache::ancestorCompositedScrollingLayer() const
+{
+    ASSERT(!m_ancestorCompositedScrollingLayerDirty);
+    return m_ancestorCompositedScrollingLayer;
+}
+
+void RenderLayer::AncestorDependentPropertyCache::setAncestorCompositedScrollingLayer(RenderLayer* layer)
+{
+    m_ancestorCompositedScrollingLayer = layer;
+    m_ancestorCompositedScrollingLayerDirty = false;
+}
+
 } // namespace WebCore
 
 #ifndef NDEBUG
@@ -4008,7 +4183,7 @@ void showLayerTree(const WebCore::RenderLayer* layer)
     if (!layer)
         return;
 
-    if (WebCore::Frame* frame = layer->renderer()->frame()) {
+    if (WebCore::LocalFrame* frame = layer->renderer()->frame()) {
         WTF::String output = externalRepresentation(frame, WebCore::RenderAsTextShowAllLayers | WebCore::RenderAsTextShowLayerNesting | WebCore::RenderAsTextShowCompositedLayers | WebCore::RenderAsTextShowAddresses | WebCore::RenderAsTextShowIDAndClass | WebCore::RenderAsTextDontUpdateLayout | WebCore::RenderAsTextShowLayoutState);
         fprintf(stderr, "%s\n", output.utf8().data());
     }

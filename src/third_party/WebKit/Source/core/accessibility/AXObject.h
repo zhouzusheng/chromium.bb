@@ -42,7 +42,7 @@ namespace WebCore {
 class AXObject;
 class AXObjectCache;
 class Element;
-class Frame;
+class LocalFrame;
 class FrameView;
 class HTMLAnchorElement;
 class HTMLAreaElement;
@@ -418,7 +418,6 @@ public:
     virtual float valueForRange() const { return 0.0f; }
     virtual float maxValueForRange() const { return 0.0f; }
     virtual float minValueForRange() const { return 0.0f; }
-    const AtomicString& placeholderValue() const;
     virtual void selectedChildren(AccessibilityChildrenVector&) { }
     virtual String stringValue() const { return String(); }
 
@@ -426,6 +425,10 @@ public:
     virtual AXObject* activeDescendant() const { return 0; }
     virtual String ariaDescribedByAttribute() const { return String(); }
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
+    virtual void ariaControlsElements(AccessibilityChildrenVector&) const { }
+    virtual void ariaDescribedbyElements(AccessibilityChildrenVector& describedby) const { };
+    virtual void ariaLabelledbyElements(AccessibilityChildrenVector& labelledby) const { };
+    virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { };
     virtual bool ariaHasPopup() const { return false; }
     bool ariaIsMultiline() const;
     virtual String ariaLabeledByAttribute() const { return String(); }
@@ -455,7 +458,6 @@ public:
     virtual bool ariaLiveRegionBusy() const { return false; }
 
     // Accessibility Text.
-    virtual void accessibilityText(Vector<AccessibilityText>&) { };
     virtual String textUnderElement() const { return String(); }
 
     // Accessibility Text - (To be deprecated).

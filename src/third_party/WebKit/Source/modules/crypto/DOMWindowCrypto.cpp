@@ -36,8 +36,8 @@
 
 namespace WebCore {
 
-DOMWindowCrypto::DOMWindowCrypto(DOMWindow* window)
-    : DOMWindowProperty(window->frame())
+DOMWindowCrypto::DOMWindowCrypto(DOMWindow& window)
+    : DOMWindowProperty(window.frame())
 {
 }
 
@@ -50,19 +50,19 @@ const char* DOMWindowCrypto::supplementName()
     return "DOMWindowCrypto";
 }
 
-DOMWindowCrypto* DOMWindowCrypto::from(DOMWindow* window)
+DOMWindowCrypto& DOMWindowCrypto::from(DOMWindow& window)
 {
-    DOMWindowCrypto* supplement = static_cast<DOMWindowCrypto*>(Supplement<DOMWindow>::from(window, supplementName()));
+    DOMWindowCrypto* supplement = static_cast<DOMWindowCrypto*>(WillBeHeapSupplement<DOMWindow>::from(window, supplementName()));
     if (!supplement) {
         supplement = new DOMWindowCrypto(window);
-        provideTo(window, supplementName(), adoptPtr(supplement));
+        provideTo(window, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-Crypto* DOMWindowCrypto::crypto(DOMWindow* window)
+Crypto* DOMWindowCrypto::crypto(DOMWindow& window)
 {
-    return DOMWindowCrypto::from(window)->crypto();
+    return DOMWindowCrypto::from(window).crypto();
 }
 
 Crypto* DOMWindowCrypto::crypto() const
@@ -70,6 +70,11 @@ Crypto* DOMWindowCrypto::crypto() const
     if (!m_crypto && frame())
         m_crypto = Crypto::create();
     return m_crypto.get();
+}
+
+void DOMWindowCrypto::trace(Visitor* visitor)
+{
+    visitor->trace(m_crypto);
 }
 
 } // namespace WebCore

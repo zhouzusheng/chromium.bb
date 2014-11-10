@@ -31,25 +31,29 @@
 #ifndef NavigatorWebMIDI_h
 #define NavigatorWebMIDI_h
 
+#include "bindings/v8/ScriptPromise.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "modules/webmidi/MIDIOptions.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
 
-class MIDIAccessPromise;
 class Navigator;
 
-class NavigatorWebMIDI FINAL : public Supplement<Navigator>, public DOMWindowProperty {
+class NavigatorWebMIDI FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorWebMIDI>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorWebMIDI);
 public:
     virtual ~NavigatorWebMIDI();
-    static NavigatorWebMIDI* from(Navigator*);
+    static NavigatorWebMIDI& from(Navigator&);
 
-    static PassRefPtr<MIDIAccessPromise> requestMIDIAccess(Navigator*, const Dictionary&);
-    PassRefPtr<MIDIAccessPromise> requestMIDIAccess(const Dictionary&);
+    static ScriptPromise requestMIDIAccess(Navigator&, const Dictionary&);
+    ScriptPromise requestMIDIAccess(const Dictionary&);
+
+    void trace(Visitor*) { }
 
 private:
-    NavigatorWebMIDI(Frame*);
+    NavigatorWebMIDI(LocalFrame*);
     static const char* supplementName();
 };
 

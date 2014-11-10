@@ -31,9 +31,9 @@
 #include "core/dom/Element.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/StyleEngine.h"
-#include "core/html/HTMLImport.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLStyleElement.h"
+#include "core/html/imports/HTMLImport.h"
 #include "core/svg/SVGStyleElement.h"
 
 namespace WebCore {
@@ -58,12 +58,7 @@ bool StyleSheetCandidate::isImport() const
 Document* StyleSheetCandidate::importedDocument() const
 {
     ASSERT(isImport());
-    // The stylesheet update traversal shouldn't go into shared import
-    // to prevent it from stepping into cycle.
-    HTMLLinkElement& element = toHTMLLinkElement(m_node);
-    if (!element.importOwnsLoader())
-        return 0;
-    return element.import();
+    return toHTMLLinkElement(m_node).import();
 }
 
 bool StyleSheetCandidate::isAlternate() const
@@ -109,16 +104,16 @@ StyleSheetCandidate::Type StyleSheetCandidate::typeOf(Node& node)
         return Pi;
 
     if (node.isHTMLElement()) {
-        if (node.hasTagName(linkTag))
+        if (isHTMLLinkElement(node))
             return HTMLLink;
-        if (node.hasTagName(styleTag))
+        if (isHTMLStyleElement(node))
             return HTMLStyle;
 
         ASSERT_NOT_REACHED();
         return HTMLStyle;
     }
 
-    if (node.isSVGElement() && node.hasTagName(SVGNames::styleTag))
+    if (isSVGStyleElement(node))
         return SVGStyle;
 
     ASSERT_NOT_REACHED();

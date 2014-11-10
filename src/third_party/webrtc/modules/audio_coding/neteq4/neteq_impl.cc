@@ -512,6 +512,19 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     memcpy(&main_header, &packet_list.front()->header, sizeof(main_header));
   }
 
+  // Check for FEC in packets, and separate payloads into several packets.
+  int ret = payload_splitter_->SplitFec(&packet_list, decoder_database_.get());
+  if (ret != PayloadSplitter::kOK) {
+    LOG_FERR1(LS_WARNING, SplitFec, packet_list.size());
+    PacketBuffer::DeleteAllPackets(&packet_list);
+    switch (ret) {
+      case PayloadSplitter::kUnknownPayloadType:
+        return kUnknownRtpPayloadType;
+      default:
+        return kOtherError;
+    }
+  }
+
   // Check payload types.
   if (decoder_database_->CheckPayloadTypes(packet_list) ==
       DecoderDatabase::kDecoderNotFound) {
@@ -561,7 +574,7 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   // Split payloads into smaller chunks. This also verifies that all payloads
   // are of a known payload type. SplitAudio() method is protected against
   // sync-packets.
-  int ret = payload_splitter_->SplitAudio(&packet_list, *decoder_database_);
+  ret = payload_splitter_->SplitAudio(&packet_list, *decoder_database_);
   if (ret != PayloadSplitter::kOK) {
     LOG_FERR1(LS_WARNING, SplitAudio, packet_list.size());
     PacketBuffer::DeleteAllPackets(&packet_list);
@@ -833,10 +846,10 @@ int NetEqImpl::GetAudioInternal(size_t max_length, int16_t* output,
     sync_buffer_->set_dtmf_index(sync_buffer_->Size());
   }
 
-  if ((last_mode_ != kModeExpand) && (last_mode_ != kModeRfc3389Cng)) {
-    // If last operation was neither expand, nor comfort noise, calculate the
-    // |playout_timestamp_| from the |sync_buffer_|. However, do not update the
-    // |playout_timestamp_| if it would be moved "backwards".
+  if (last_mode_ != kModeExpand) {
+    // If last operation was not expand, calculate the |playout_timestamp_| from
+    // the |sync_buffer_|. However, do not update the |playout_timestamp_| if it
+    // would be moved "backwards".
     uint32_t temp_timestamp = sync_buffer_->end_timestamp() -
         static_cast<uint32_t>(sync_buffer_->FutureLength());
     if (static_cast<int32_t>(temp_timestamp - playout_timestamp_) > 0) {
@@ -870,15 +883,15 @@ int NetEqImpl::GetDecision(Operations* operation,
   }
   const RTPHeader* header = packet_buffer_->NextRtpHeader();
 
-  if (decision_logic_->CngRfc3389On()) {
+  if (decision_logic_->CngRfc3389On() || last_mode_ == kModeRfc3389Cng) {
     // Because of timestamp peculiarities, we have to "manually" disallow using
     // a CNG packet with the same timestamp as the one that was last played.
     // This can happen when using redundancy and will cause the timing to shift.
-    while (header &&
-        decoder_database_->IsComfortNoise(header->payloadType) &&
-        end_timestamp >= header->timestamp) {
+    while (header && decoder_database_->IsComfortNoise(header->payloadType) &&
+           (end_timestamp >= header->timestamp ||
+            end_timestamp + decision_logic_->generated_noise_samples() >
+                header->timestamp)) {
       // Don't use this packet, discard it.
-      // TODO(hlundin): Write test for this case.
       if (packet_buffer_->DiscardNextPacket() != PacketBuffer::kOK) {
         assert(false);  // Must be ok by design.
       }
@@ -1132,12 +1145,11 @@ int NetEqImpl::Decode(PacketList* packet_list, Operations* operation,
           PacketBuffer::DeleteAllPackets(packet_list);
           return kDecoderNotFound;
         }
-        // We should have correct sampling rate and number of channels. They
-        // are set when packets are inserted.
+        // If sampling rate or number of channels has changed, we need to make
+        // a reset.
         if (decoder_info->fs_hz != fs_hz_ ||
             decoder->channels() != algorithm_buffer_->Channels()) {
-          LOG_F(LS_ERROR) << "Sampling rate or number of channels mismatch.";
-          assert(false);
+          // TODO(tlegrand): Add unittest to cover this event.
           SetSampleRateAndChannels(decoder_info->fs_hz, decoder->channels());
         }
         sync_buffer_->set_end_timestamp(timestamp_);
@@ -1777,8 +1789,14 @@ int NetEqImpl::ExtractPackets(int required_samples, PacketList* packet_list) {
     AudioDecoder* decoder = decoder_database_->GetDecoder(
         packet->header.payloadType);
     if (decoder) {
-      packet_duration = packet->sync_packet ? decoder_frame_length_ :
-          decoder->PacketDuration(packet->payload, packet->payload_length);
+      if (packet->sync_packet) {
+        packet_duration = decoder_frame_length_;
+      } else {
+        packet_duration = packet->primary ?
+            decoder->PacketDuration(packet->payload, packet->payload_length) :
+            decoder->PacketDurationRedundant(packet->payload,
+                                             packet->payload_length);
+      }
     } else {
       LOG_FERR1(LS_WARNING, GetDecoder, packet->header.payloadType) <<
           "Could not find a decoder for a packet about to be extracted.";

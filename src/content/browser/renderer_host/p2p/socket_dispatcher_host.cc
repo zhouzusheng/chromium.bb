@@ -96,7 +96,8 @@ class P2PSocketDispatcherHost::DnsRequest {
 P2PSocketDispatcherHost::P2PSocketDispatcherHost(
     content::ResourceContext* resource_context,
     net::URLRequestContextGetter* url_context)
-    : resource_context_(resource_context),
+    : BrowserMessageFilter(P2PMsgStart),
+      resource_context_(resource_context),
       url_context_(url_context),
       monitoring_networks_(false) {
 }
@@ -192,7 +193,7 @@ void P2PSocketDispatcherHost::OnGetHostAddress(const std::string& host_name,
 void P2PSocketDispatcherHost::OnCreateSocket(
     P2PSocketType type, int socket_id,
     const net::IPEndPoint& local_address,
-    const net::IPEndPoint& remote_address) {
+    const P2PHostAndIPEndPoint& remote_address) {
   if (LookupSocket(socket_id)) {
     LOG(ERROR) << "Received P2PHostMsg_CreateSocket for socket "
         "that already exists.";
@@ -231,7 +232,7 @@ void P2PSocketDispatcherHost::OnAcceptIncomingTcpConnection(
 void P2PSocketDispatcherHost::OnSend(int socket_id,
                                      const net::IPEndPoint& socket_address,
                                      const std::vector<char>& data,
-                                     net::DiffServCodePoint dscp,
+                                     const talk_base::PacketOptions& options,
                                      uint64 packet_id) {
   P2PSocketHost* socket = LookupSocket(socket_id);
   if (!socket) {
@@ -248,7 +249,7 @@ void P2PSocketDispatcherHost::OnSend(int socket_id,
     return;
   }
 
-  socket->Send(socket_address, data, dscp, packet_id);
+  socket->Send(socket_address, data, options, packet_id);
 }
 
 void P2PSocketDispatcherHost::OnSetOption(int socket_id,
@@ -275,7 +276,8 @@ void P2PSocketDispatcherHost::OnDestroySocket(int socket_id) {
 
 void P2PSocketDispatcherHost::DoGetNetworkList() {
   net::NetworkInterfaceList list;
-  net::GetNetworkList(&list, net::EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES);
+  net::GetNetworkList(&list, net::EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES |
+                             net::INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE, base::Bind(
           &P2PSocketDispatcherHost::SendNetworkList, this, list));

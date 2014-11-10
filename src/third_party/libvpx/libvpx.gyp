@@ -13,14 +13,20 @@
         'asm_obj_extension': 'obj',
       }],
 
-      ['(target_arch=="arm" or target_arch=="armv7") and arm_neon==1', {
-        'target_arch_full': 'arm-neon',
+      ['msan==1', {
+        'target_arch_full': 'generic',
       }, {
         'conditions': [
-          ['OS=="android" and ((target_arch=="arm" or target_arch=="armv7") and arm_neon==0)', {
-            'target_arch_full': 'arm-neon-cpu-detect',
+          ['(target_arch=="arm" or target_arch=="armv7") and arm_neon==1', {
+            'target_arch_full': 'arm-neon',
           }, {
-           'target_arch_full': '<(target_arch)',
+            'conditions': [
+              ['OS=="android" and ((target_arch=="arm" or target_arch=="armv7") and arm_neon==0)', {
+                'target_arch_full': 'arm-neon-cpu-detect',
+              }, {
+               'target_arch_full': '<(target_arch)',
+              }],
+            ],
           }],
         ],
       }],
@@ -41,12 +47,22 @@
         'sources/': [ ['exclude', '(^|/)vp9/'], ],
       }],
     ],
+    'variables': {
+      'conditions': [
+        ['OS=="win" and buildtype=="Official"', {
+          # Setting the optimizations to 'speed' or to 'max' results in a lot of
+          # unresolved symbols. The only supported mode is 'size' (see
+          # crbug.com/352476).
+          'optimize' :'size',
+        }],
+      ],
+    },
   },
   'conditions': [
     ['target_arch=="ia32"', {
       'includes': ['libvpx_srcs_x86_intrinsics.gypi', ],
     }],
-    ['target_arch=="x64"', {
+    ['target_arch=="x64" and msan==0', {
       'includes': ['libvpx_srcs_x86_64_intrinsics.gypi', ],
     }],
     [ '(target_arch=="arm" or target_arch=="armv7") and arm_neon==0 and OS=="android"', {
@@ -116,21 +132,28 @@
               ],
             }],
             ['target_arch=="x64"', {
-              'includes': [
-                'libvpx_srcs_x86_64.gypi',
-              ],
-              'dependencies': [
-                'libvpx_intrinsics_mmx',
-                'libvpx_intrinsics_sse2',
-                # Currently no sse3 intrinsic functions
-                #'libvpx_intrinsics_sse3',
-                'libvpx_intrinsics_ssse3',
-                # Currently no sse4_1 intrinsic functions
-                #'libvpx_intrinsics_sse4_1',
-                # Currently no avx intrinsic functions
-                #'libvpx_intrinsics_avx',
-                # Add avx2 support when VS2013 lands: crbug.com/328981
-                #'libvpx_intrinsics_avx2',
+              'conditions': [
+                ['msan==1', {
+                  'includes': [ 'libvpx_srcs_generic.gypi', ],
+                }, {
+                  'includes': [
+                    'libvpx_srcs_x86_64.gypi',
+                    'libvpx_srcs_nacl.gypi',
+                  ],
+                  'dependencies': [
+                    'libvpx_intrinsics_mmx',
+                    'libvpx_intrinsics_sse2',
+                    # Currently no sse3 intrinsic functions
+                    #'libvpx_intrinsics_sse3',
+                    'libvpx_intrinsics_ssse3',
+                    # Currently no sse4_1 intrinsic functions
+                    #'libvpx_intrinsics_sse4_1',
+                    # Currently no avx intrinsic functions
+                    #'libvpx_intrinsics_avx',
+                    # Add avx2 support when VS2013 lands: crbug.com/328981
+                    #'libvpx_intrinsics_avx2',
+                  ],
+                }],
               ],
             }],
             ['clang == 1', {
@@ -174,9 +197,6 @@
           },
           'includes': [
             'libvpx_srcs_mips.gypi',
-          ],
-          'cflags': [
-            '-EL -static -mips32',
           ],
           'include_dirs': [
             'source/config/<(OS_CATEGORY)/<(target_arch_full)',
@@ -310,11 +330,6 @@
                 'libvpx_srcs_arm_neon.gypi',
               ],
             }],
-            ['OS == "android"', {
-              'includes': [
-                '../../build/android/cpufeatures.gypi',
-              ],
-            }],
             ['chromeos == 1', {
               # ChromeOS needs these files for animated WebM avatars.
               'sources': [
@@ -322,6 +337,14 @@
                 '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
                 '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
+            }],
+            ['OS == "ios"', {
+              'xcode_settings': {
+                'OTHER_CFLAGS!': [
+                  # Breaks at least boolhuff_armv5te:token_high_bit_not_set_ev.
+                  '-fstack-protector-all',  # Implies -fstack-protector
+                ],
+              },
             }],
           ],
         },
@@ -359,6 +382,16 @@
           'cflags!': [ '-fsanitize=address' ],
           'xcode_settings': { 'OTHER_CFLAGS!': [ '-fsanitize=address' ] },
           'ldflags!': [ '-fsanitize=address' ],
+        }],
+        ['OS=="win"', {
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              # Clang uses -fdata-sections when function level linking is
+              # enabled, but libvpx_obj_int_extract expects all data to
+              # reside in the same section on Windows.
+              'EnableFunctionLevelLinking': 'false',
+            },
+          },
         }],
       ],
       'sources': [

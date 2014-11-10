@@ -34,8 +34,6 @@
 .sidebar-pane > .body {
     position: relative;
     display: none;
-    overflow-y: auto;
-    overflow-x: hidden;
 }
 
 .sidebar-pane > .body .info {
@@ -133,7 +131,7 @@
 .sidebar-pane-toolbar > .pane-title-button,
 .sidebar-pane-toolbar > label {
     float: right;
-    height: 17px;
+    height: 19px;
     background-color: transparent;
     border: none;
     background-repeat: no-repeat;
@@ -184,7 +182,6 @@ body.platform-windows .sidebar-pane-subtitle {
     padding-top: 1px;
 }
 
-.sidebar-pane-subtitle input,
 .section > .header input[type=checkbox] {
     height: 1em;
     width: 1em;

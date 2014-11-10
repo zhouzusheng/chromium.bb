@@ -38,6 +38,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/XMLDocument.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
@@ -46,8 +48,6 @@
 #include "core/html/PluginDocument.h"
 #include "core/html/TextDocument.h"
 #include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
-#include "core/frame/UseCounter.h"
 #include "core/page/Page.h"
 #include "core/svg/SVGDocument.h"
 #include "platform/ContentType.h"
@@ -193,7 +193,7 @@ PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicStrin
 {
     AtomicString prefix, localName;
     if (!Document::parseQualifiedName(qualifiedName, prefix, localName, exceptionState))
-        return 0;
+        return nullptr;
 
     return DocumentType::create(&m_document, qualifiedName, publicId, systemId);
 }
@@ -225,7 +225,7 @@ PassRefPtr<XMLDocument> DOMImplementation::createDocument(const AtomicString& na
     if (!qualifiedName.isEmpty()) {
         documentElement = doc->createElementNS(namespaceURI, qualifiedName, exceptionState);
         if (exceptionState.hadException())
-            return 0;
+            return nullptr;
     }
 
     if (doctype)
@@ -236,11 +236,11 @@ PassRefPtr<XMLDocument> DOMImplementation::createDocument(const AtomicString& na
     return doc.release();
 }
 
-PassRefPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media)
+PassRefPtrWillBeRawPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media)
 {
     // FIXME: Title should be set.
     // FIXME: Media could have wrong syntax, in which case we should generate an exception.
-    RefPtr<CSSStyleSheet> sheet = CSSStyleSheet::create(StyleSheetContents::create(strictCSSParserContext()));
+    RefPtrWillBeRawPtr<CSSStyleSheet> sheet = CSSStyleSheet::create(StyleSheetContents::create(strictCSSParserContext()));
     sheet->setMediaQueries(MediaQuerySet::create(media));
     return sheet;
 }
@@ -349,7 +349,7 @@ PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& tit
     return d.release();
 }
 
-PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame* frame, const KURL& url, bool inViewSourceMode)
+PassRefPtr<Document> DOMImplementation::createDocument(const String& type, LocalFrame* frame, const KURL& url, bool inViewSourceMode)
 {
     return createDocument(type, DocumentInit(url, frame), inViewSourceMode);
 }

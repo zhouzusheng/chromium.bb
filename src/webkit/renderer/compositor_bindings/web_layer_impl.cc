@@ -41,14 +41,7 @@ using blink::WebFilterOperations;
 namespace webkit {
 namespace {
 
-struct ImplSidePaintingStatus {
-  ImplSidePaintingStatus()
-      : enabled(cc::switches::IsImplSidePaintingEnabled()) {
-  }
-  bool enabled;
-};
-base::LazyInstance<ImplSidePaintingStatus> g_impl_side_painting_status =
-    LAZY_INSTANCE_INITIALIZER;
+bool g_impl_side_painting_enabled = false;
 
 }  // namespace
 
@@ -70,7 +63,12 @@ WebLayerImpl::~WebLayerImpl() {
 
 // static
 bool WebLayerImpl::UsingPictureLayer() {
-  return g_impl_side_painting_status.Get().enabled;
+  return g_impl_side_painting_enabled;
+}
+
+// static
+void WebLayerImpl::SetImplSidePaintingEnabled(bool enabled) {
+  g_impl_side_painting_enabled = enabled;
 }
 
 int WebLayerImpl::id() const { return layer_->id(); }
@@ -260,9 +258,11 @@ WebSize WebLayerImpl::maxScrollPosition() const {
 }
 
 void WebLayerImpl::setScrollClipLayer(WebLayer* clip_layer) {
-  cc::Layer* cc_clip_layer =
-      clip_layer ? static_cast<WebLayerImpl*>(clip_layer)->layer() : 0;
-  layer_->SetScrollClipLayerId(cc_clip_layer->id());
+  if (!clip_layer) {
+    layer_->SetScrollClipLayerId(Layer::INVALID_ID);
+    return;
+  }
+  layer_->SetScrollClipLayerId(clip_layer->id());
 }
 
 bool WebLayerImpl::scrollable() const { return layer_->scrollable(); }

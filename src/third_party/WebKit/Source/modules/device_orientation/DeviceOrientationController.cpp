@@ -29,7 +29,6 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/page/Page.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/device_orientation/DeviceOrientationDispatcher.h"
@@ -37,9 +36,9 @@
 
 namespace WebCore {
 
-DeviceOrientationController::DeviceOrientationController(Document* document)
+DeviceOrientationController::DeviceOrientationController(Document& document)
     : DeviceSensorEventController(document)
-    , DOMWindowLifecycleObserver(document->domWindow())
+    , DOMWindowLifecycleObserver(document.domWindow())
 {
 }
 
@@ -50,6 +49,8 @@ DeviceOrientationController::~DeviceOrientationController()
 
 void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientationData* deviceOrientationData)
 {
+    if (m_overrideOrientationData)
+        return;
     dispatchDeviceEvent(DeviceOrientationEvent::create(EventTypeNames::deviceorientation, deviceOrientationData));
 }
 
@@ -58,25 +59,29 @@ const char* DeviceOrientationController::supplementName()
     return "DeviceOrientationController";
 }
 
-DeviceOrientationController* DeviceOrientationController::from(Document* document)
+DeviceOrientationController& DeviceOrientationController::from(Document& document)
 {
     DeviceOrientationController* controller = static_cast<DeviceOrientationController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new DeviceOrientationController(document);
         DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
     }
-    return controller;
+    return *controller;
+}
+
+DeviceOrientationData* DeviceOrientationController::lastData()
+{
+    return m_overrideOrientationData ? m_overrideOrientationData.get() : DeviceOrientationDispatcher::instance().latestDeviceOrientationData();
 }
 
 bool DeviceOrientationController::hasLastData()
 {
-    return DeviceOrientationDispatcher::instance().latestDeviceOrientationData();
+    return lastData();
 }
 
 PassRefPtr<Event> DeviceOrientationController::getLastEvent()
 {
-    return DeviceOrientationEvent::create(EventTypeNames::deviceorientation,
-        DeviceOrientationDispatcher::instance().latestDeviceOrientationData());
+    return DeviceOrientationEvent::create(EventTypeNames::deviceorientation, lastData());
 }
 
 void DeviceOrientationController::registerWithDispatcher()
@@ -116,6 +121,23 @@ void DeviceOrientationController::didRemoveAllEventListeners(DOMWindow* window)
 {
     stopUpdating();
     m_hasEventListener = false;
+}
+
+void DeviceOrientationController::setOverride(DeviceOrientationData* deviceOrientationData)
+{
+    m_overrideOrientationData.clear();
+    didChangeDeviceOrientation(deviceOrientationData);
+    m_overrideOrientationData = deviceOrientationData;
+}
+
+void DeviceOrientationController::clearOverride()
+{
+    if (!m_overrideOrientationData)
+        return;
+    m_overrideOrientationData.clear();
+    DeviceOrientationData* orientation = lastData();
+    if (orientation)
+        didChangeDeviceOrientation(orientation);
 }
 
 } // namespace WebCore

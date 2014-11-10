@@ -25,8 +25,8 @@
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/dom/TransformSource.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/xml/XSLImportRule.h"
 #include "core/xml/XSLTProcessor.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
@@ -62,7 +62,7 @@ XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const 
     , m_stylesheetDoc(0)
     , m_stylesheetDocTaken(false)
     , m_compilationFailed(false)
-    , m_parentStyleSheet(0)
+    , m_parentStyleSheet(nullptr)
 {
 }
 
@@ -129,7 +129,7 @@ bool XSLStyleSheet::parseString(const String& source)
     m_stylesheetDocTaken = false;
 
     PageConsole* console = 0;
-    Frame* frame = ownerDocument()->frame();
+    LocalFrame* frame = ownerDocument()->frame();
     if (frame && frame->host())
         console = &frame->host()->console();
 
@@ -301,6 +301,11 @@ void XSLStyleSheet::markAsProcessed()
     ASSERT(!m_stylesheetDocTaken);
     m_processed = true;
     m_stylesheetDocTaken = true;
+}
+
+void XSLStyleSheet::trace(Visitor* visitor)
+{
+    visitor->trace(m_parentStyleSheet);
 }
 
 } // namespace WebCore

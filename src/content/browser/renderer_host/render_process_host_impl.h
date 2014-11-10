@@ -23,10 +23,14 @@
 #include "ipc/ipc_platform_file.h"
 #include "ui/surface/transport_dib.h"
 
-class CommandLine;
+#if defined(USE_MOJO)
+#include "mojo/public/cpp/system/core.h"
+#endif
+
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
 namespace base {
+class CommandLine;
 class MessageLoop;
 }
 
@@ -45,8 +49,13 @@ class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
 class RenderWidgetHostViewFrameSubscriber;
+class ScreenOrientationDispatcherHost;
 class StoragePartition;
 class StoragePartitionImpl;
+
+#if defined(USE_MOJO)
+class RenderProcessHostMojoImpl;
+#endif
 
 // Implements a concrete RenderProcessHost for the browser process for talking
 // to actual renderer processes (as opposed to mocks).
@@ -130,6 +139,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
+  virtual void NotifyTimezoneChange() OVERRIDE;
   virtual bool IsProcessManagedExternally() const OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
@@ -171,6 +181,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Fires the webrtc log message callback with |message|, if callback is set.
   void WebRtcLogMessage(const std::string& message);
 #endif
+
+  scoped_refptr<ScreenOrientationDispatcherHost>
+      screen_orientation_dispatcher_host() const;
 
   // This value is guaranteed to never be returned by GenerateUniqueId() below.
   static int kInvalidId;
@@ -226,6 +239,17 @@ class CONTENT_EXPORT RenderProcessHostImpl
     is_guest_ = is_guest;
   }
 
+  // Called when the existence of the other renderer process which is connected
+  // to the Worker in this renderer process has changed.
+  // It is only called when "enable-embedded-shared-worker" flag is set.
+  void IncrementWorkerRefCount();
+  void DecrementWorkerRefCount();
+
+#if defined(USE_MOJO)
+  void SetWebUIHandle(int32 view_routing_id,
+                      mojo::ScopedMessagePipeHandle handle);
+#endif
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -266,7 +290,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
-  void AppendRendererCommandLine(CommandLine* command_line) const;
+  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
@@ -405,7 +429,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::Callback<void(const std::string&)> webrtc_log_message_callback_;
 #endif
 
-  // Lives on the browser's ChildThread.
+  // Message filter and dispatcher for screen orientation.
+  ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host_;
+
+  int worker_ref_count_;
+
+#if defined(USE_MOJO)
+  scoped_ptr<RenderProcessHostMojoImpl> render_process_host_mojo_;
+#endif
+
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);

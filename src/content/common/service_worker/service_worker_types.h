@@ -20,7 +20,9 @@ namespace content {
 // Indicates invalid request ID (i.e. the sender does not expect it gets
 // response for the message) for messaging between browser process
 // and embedded worker.
-const static int kInvalidRequestId = -1;
+const static int kInvalidServiceWorkerRequestId = -1;
+
+const static int kInvalidServiceWorkerProviderId = -1;
 
 // To dispatch fetch request from browser to child process.
 // TODO(kinuko): This struct will definitely need more fields and
@@ -34,6 +36,30 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   ~ServiceWorkerFetchRequest();
 
   GURL url;
+  std::string method;
+  std::map<std::string, std::string> headers;
+};
+
+// Indicates how the service worker handled a fetch event.
+enum ServiceWorkerFetchEventResult {
+  // Browser should fallback to native fetch.
+  SERVICE_WORKER_FETCH_EVENT_RESULT_FALLBACK,
+  // Service worker provided a ServiceWorkerResponse.
+  SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
+  SERVICE_WORKER_FETCH_EVENT_LAST = SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE
+};
+
+// Represents a response to a fetch.
+struct CONTENT_EXPORT ServiceWorkerResponse {
+  ServiceWorkerResponse();
+  ServiceWorkerResponse(int status_code,
+                        const std::string& status_text,
+                        const std::string& method,
+                        const std::map<std::string, std::string>& headers);
+  ~ServiceWorkerResponse();
+
+  int status_code;
+  std::string status_text;
   std::string method;
   std::map<std::string, std::string> headers;
 };

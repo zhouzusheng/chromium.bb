@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -31,6 +31,7 @@ namespace blink {
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
+class WebScreenOrientationListener;
 }
 
 namespace content {
@@ -38,14 +39,14 @@ class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
 class QuotaMessageFilter;
 class RendererClipboardClient;
+class ScreenOrientationDispatcher;
 class ThreadSafeSender;
 class WebClipboardImpl;
-class WebCryptoImpl;
 class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
 
 class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
-    : public WebKitPlatformSupportImpl {
+    : public BlinkPlatformImpl {
  public:
   RendererWebKitPlatformSupportImpl();
   virtual ~RendererWebKitPlatformSupportImpl();
@@ -117,16 +118,14 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   virtual bool loadAudioResource(
       blink::WebAudioBus* destination_bus, const char* audio_file_data,
-      size_t data_size, double sample_rate);
+      size_t data_size);
 
-  virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
-      const blink::WebString& key_system);
   virtual blink::WebMIDIAccessor*
       createMIDIAccessor(blink::WebMIDIAccessorClient* client);
 
   virtual blink::WebBlobRegistry* blobRegistry();
-  virtual void sampleGamepads(blink::WebGamepads&);
-  virtual blink::WebString userAgent(const blink::WebURL& url);
+  virtual void sampleGamepads(blink::WebGamepads&) OVERRIDE;
+  virtual void setGamepadListener(blink::WebGamepadListener*) OVERRIDE;
   virtual blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client);
   virtual blink::WebMediaStreamCenter* createMediaStreamCenter(
@@ -135,6 +134,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       size_t* private_bytes, size_t* shared_bytes);
   virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const blink::WebGraphicsContext3D::Attributes& attributes);
+  virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      blink::WebGraphicsContext3D* share_context);
   virtual blink::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual blink::WebCompositorSupport* compositorSupport();
@@ -144,13 +146,16 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       blink::WebDeviceMotionListener* listener) OVERRIDE;
   virtual void setDeviceOrientationListener(
       blink::WebDeviceOrientationListener* listener) OVERRIDE;
-  virtual blink::WebCrypto* crypto() OVERRIDE;
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
       blink::WebStorageQuotaCallbacks) OVERRIDE;
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
+  virtual void setScreenOrientationListener(
+    blink::WebScreenOrientationListener*) OVERRIDE;
+  virtual void lockOrientation(blink::WebScreenOrientations) OVERRIDE;
+  virtual void unlockOrientation() OVERRIDE;
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -163,6 +168,15 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   // Set WebGamepads to return when sampleGamepads() is invoked.
   static void SetMockGamepadsForTesting(const blink::WebGamepads& pads);
+
+  // Notifies blink::WebGamepadListener about a new gamepad if a listener
+  // has been set via setGamepadListener.
+  static void MockGamepadConnected(int index, const blink::WebGamepad& pad);
+
+  // Notifies blink::WebGamepadListener that a gamepad has been disconnected if
+  // a listener has been set via setGamepadListener.
+  static void MockGamepadDisconnected(int index, const blink::WebGamepad& pad);
+
   // Set WebDeviceMotionData to return when setDeviceMotionListener is invoked.
   static void SetMockDeviceMotionDataForTesting(
       const blink::WebDeviceMotionData& data);
@@ -170,6 +184,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // is invoked.
   static void SetMockDeviceOrientationDataForTesting(
       const blink::WebDeviceOrientationData& data);
+  // Set WebScreenOrientation to return when setScreenOrientationListener is
+  // invoked.
+  static void SetMockScreenOrientationForTesting(blink::WebScreenOrientation);
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -217,7 +234,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   webkit::WebCompositorSupportImpl compositor_support_;
 
-  scoped_ptr<WebCryptoImpl> web_crypto_;
+  scoped_ptr<ScreenOrientationDispatcher> screen_orientation_dispatcher_;
 
   scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
 

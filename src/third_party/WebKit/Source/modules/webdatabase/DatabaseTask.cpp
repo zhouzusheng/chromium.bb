@@ -45,6 +45,9 @@ DatabaseTaskSynchronizer::DatabaseTaskSynchronizer()
 
 void DatabaseTaskSynchronizer::waitForTaskCompletion()
 {
+    // Prevent the deadlock between park request by other threads and blocking
+    // by m_synchronousCondition.
+    ThreadState::SafePointScope scope(ThreadState::HeapPointersOnStack);
     m_synchronousMutex.lock();
     while (!m_taskCompleted)
         m_synchronousCondition.wait(m_synchronousMutex);
@@ -154,7 +157,7 @@ const char* DatabaseBackend::DatabaseCloseTask::debugTaskName() const
 // *** DatabaseTransactionTask ***
 // Starts a transaction that will report its results via a callback.
 
-DatabaseBackend::DatabaseTransactionTask::DatabaseTransactionTask(PassRefPtr<SQLTransactionBackend> transaction)
+DatabaseBackend::DatabaseTransactionTask::DatabaseTransactionTask(PassRefPtrWillBeRawPtr<SQLTransactionBackend> transaction)
     : DatabaseTask(Database::from(transaction->database()), 0)
     , m_transaction(transaction)
 {

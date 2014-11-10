@@ -31,18 +31,36 @@
 #include "config.h"
 #include "core/animation/AnimationStack.h"
 
+#include "core/animation/Interpolation.h"
 #include "core/animation/css/CSSAnimations.h"
 
 namespace WebCore {
 
 namespace {
 
-void copyToCompositableValueMap(const AnimationEffect::CompositableValueList* source, AnimationEffect::CompositableValueMap& target)
+void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<WebCore::Interpolation> >& source, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<WebCore::Interpolation> >& target)
 {
-    if (!source)
-        return;
-    for (AnimationEffect::CompositableValueList::const_iterator iter = source->begin(); iter != source->end(); ++iter)
-        target.set(iter->first, iter->second);
+    for (WillBeHeapVector<RefPtrWillBeMember<WebCore::Interpolation> >::const_iterator iter = source.begin(); iter != source.end(); ++iter) {
+        RefPtrWillBeRawPtr<WebCore::Interpolation> interpolation = *iter;
+        WebCore::StyleInterpolation *styleInterpolation = toStyleInterpolation(interpolation.get());
+        target.set(styleInterpolation->id(), styleInterpolation);
+    }
+}
+
+bool compareAnimations(Animation* animation1, Animation* animation2)
+{
+    ASSERT(animation1->player() && animation2->player());
+    return AnimationPlayer::hasLowerPriority(animation1->player(), animation2->player());
+}
+
+void copyNewAnimationsToActiveInterpolationMap(const Vector<InertAnimation*>& newAnimations, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >& result)
+{
+    for (size_t i = 0; i < newAnimations.size(); ++i) {
+        OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample = newAnimations[i]->sample();
+        if (sample) {
+            copyToActiveInterpolationMap(*sample, result);
+        }
+    }
 }
 
 } // namespace
@@ -65,26 +83,31 @@ bool AnimationStack::hasActiveAnimationsOnCompositor(CSSPropertyID property) con
     return false;
 }
 
-AnimationEffect::CompositableValueMap AnimationStack::compositableValues(const AnimationStack* animationStack, const Vector<InertAnimation*>* newAnimations, const HashSet<const Player*>* cancelledPlayers, Animation::Priority priority)
+WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > AnimationStack::activeInterpolations(AnimationStack* animationStack, const Vector<InertAnimation*>* newAnimations, const HashSet<const AnimationPlayer*>* cancelledAnimationPlayers, Animation::Priority priority, double timelineCurrentTime)
 {
-    AnimationEffect::CompositableValueMap result;
+    // We don't exactly know when new animations will start, but timelineCurrentTime is a good estimate.
+
+    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > result;
 
     if (animationStack) {
-        const Vector<Animation*>& animations = animationStack->m_activeAnimations;
+        Vector<Animation*>& animations = animationStack->m_activeAnimations;
+        std::sort(animations.begin(), animations.end(), compareAnimations);
         for (size_t i = 0; i < animations.size(); ++i) {
             Animation* animation = animations[i];
             if (animation->priority() != priority)
                 continue;
-            if (cancelledPlayers && cancelledPlayers->contains(animation->player()))
+            if (cancelledAnimationPlayers && cancelledAnimationPlayers->contains(animation->player()))
                 continue;
-            copyToCompositableValueMap(animation->compositableValues(), result);
+            if (animation->player()->startTime() > timelineCurrentTime && newAnimations) {
+                copyNewAnimationsToActiveInterpolationMap(*newAnimations, result);
+                newAnimations = 0;
+            }
+            copyToActiveInterpolationMap(animation->activeInterpolations(), result);
         }
     }
 
-    if (newAnimations) {
-        for (size_t i = 0; i < newAnimations->size(); ++i)
-            copyToCompositableValueMap(newAnimations->at(i)->sample().get(), result);
-    }
+    if (newAnimations)
+        copyNewAnimationsToActiveInterpolationMap(*newAnimations, result);
 
     return result;
 }

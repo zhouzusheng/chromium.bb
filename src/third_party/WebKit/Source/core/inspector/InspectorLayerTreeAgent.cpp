@@ -33,21 +33,26 @@
 
 #include "core/inspector/InspectorLayerTreeAgent.h"
 
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/rendering/CompositedLayerMapping.h"
-#include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/CompositingReasons.h"
 #include "platform/graphics/GraphicsContextRecorder.h"
 #include "platform/transforms/TransformationMatrix.h"
+#include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebLayer.h"
+
+namespace {
+const char LayerTreeAgentObjectGroup[] = "layerTreeAgent";
+}
 
 namespace WebCore {
 
@@ -72,18 +77,49 @@ inline String idForLayer(const GraphicsLayer* graphicsLayer)
     return String::number(graphicsLayer->platformLayer()->id());
 }
 
-static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLayer* graphicsLayer, int nodeId)
+static PassRefPtr<TypeBuilder::LayerTree::ScrollRect> buildScrollRect(const blink::WebRect& rect, const TypeBuilder::LayerTree::ScrollRect::Type::Enum& type)
 {
+    RefPtr<TypeBuilder::DOM::Rect> rectObject = TypeBuilder::DOM::Rect::create()
+        .setX(rect.x)
+        .setY(rect.y)
+        .setHeight(rect.height)
+        .setWidth(rect.width);
+    RefPtr<TypeBuilder::LayerTree::ScrollRect> scrollRectObject = TypeBuilder::LayerTree::ScrollRect::create()
+        .setRect(rectObject.release())
+        .setType(type);
+    return scrollRectObject.release();
+}
+
+static PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::ScrollRect> > buildScrollRectsForLayer(GraphicsLayer* graphicsLayer)
+{
+    RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::ScrollRect> > scrollRects = TypeBuilder::Array<TypeBuilder::LayerTree::ScrollRect>::create();
+    blink::WebLayer* webLayer = graphicsLayer->platformLayer();
+    for (size_t i = 0; i < webLayer->nonFastScrollableRegion().size(); ++i) {
+        scrollRects->addItem(buildScrollRect(webLayer->nonFastScrollableRegion()[i], TypeBuilder::LayerTree::ScrollRect::Type::RepaintsOnScroll));
+    }
+    for (size_t i = 0; i < webLayer->touchEventHandlerRegion().size(); ++i) {
+        scrollRects->addItem(buildScrollRect(webLayer->touchEventHandlerRegion()[i], TypeBuilder::LayerTree::ScrollRect::Type::TouchEventHandler));
+    }
+    if (webLayer->haveWheelEventHandlers()) {
+        blink::WebRect webRect(webLayer->position().x, webLayer->position().y, webLayer->bounds().width, webLayer->bounds().height);
+        scrollRects->addItem(buildScrollRect(webRect, TypeBuilder::LayerTree::ScrollRect::Type::WheelEventHandler));
+    }
+    return scrollRects->length() ? scrollRects.release() : nullptr;
+}
+
+static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLayer* graphicsLayer, BackendNodeId nodeId)
+{
+    blink::WebLayer* webLayer = graphicsLayer->platformLayer();
     RefPtr<TypeBuilder::LayerTree::Layer> layerObject = TypeBuilder::LayerTree::Layer::create()
         .setLayerId(idForLayer(graphicsLayer))
-        .setOffsetX(graphicsLayer->position().x())
-        .setOffsetY(graphicsLayer->position().y())
-        .setWidth(graphicsLayer->size().width())
-        .setHeight(graphicsLayer->size().height())
+        .setOffsetX(webLayer->position().x)
+        .setOffsetY(webLayer->position().y)
+        .setWidth(webLayer->bounds().width)
+        .setHeight(webLayer->bounds().height)
         .setPaintCount(graphicsLayer->paintCount());
 
     if (nodeId)
-        layerObject->setNodeId(nodeId);
+        layerObject->setBackendNodeId(nodeId);
 
     GraphicsLayer* parent = graphicsLayer->parent();
     if (!parent)
@@ -105,17 +141,10 @@ static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLay
         layerObject->setAnchorY(anchor.y());
         layerObject->setAnchorZ(anchor.z());
     }
+    RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::ScrollRect> > scrollRects = buildScrollRectsForLayer(graphicsLayer);
+    if (scrollRects)
+        layerObject->setScrollRects(scrollRects.release());
     return layerObject;
-}
-
-void gatherGraphicsLayers(GraphicsLayer* root, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >& layers)
-{
-    int layerId = root->platformLayer()->id();
-    layers->addItem(buildObjectForLayer(root, layerIdToNodeIdMap.get(layerId)));
-    if (GraphicsLayer* replica = root->replicaLayer())
-        gatherGraphicsLayers(replica, layerIdToNodeIdMap, layers);
-    for (size_t i = 0, size = root->children().size(); i < size; ++i)
-        gatherGraphicsLayers(root->children()[i], layerIdToNodeIdMap, layers);
 }
 
 InspectorLayerTreeAgent::InspectorLayerTreeAgent(InspectorDOMAgent* domAgent, Page* page)
@@ -158,11 +187,13 @@ void InspectorLayerTreeAgent::disable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorLayerTreeAgent(0);
     m_snapshotById.clear();
+    ErrorString unused;
+    m_domAgent->releaseBackendNodeIds(&unused, LayerTreeAgentObjectGroup);
 }
 
 void InspectorLayerTreeAgent::layerTreeDidChange()
 {
-    m_frontend->layerTreeDidChange(buildLayerTree());
+    m_frontend->layerTreeDidChange(buildLayerTree(LayerTreeAgentObjectGroup));
 }
 
 void InspectorLayerTreeAgent::didPaint(RenderObject*, const GraphicsLayer* graphicsLayer, GraphicsContext*, const LayoutRect& rect)
@@ -179,45 +210,54 @@ void InspectorLayerTreeAgent::didPaint(RenderObject*, const GraphicsLayer* graph
     m_frontend->layerPainted(idForLayer(graphicsLayer), domRect.release());
 }
 
-PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTreeAgent::buildLayerTree()
+PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTreeAgent::buildLayerTree(const String& nodeGroup)
 {
     RenderLayerCompositor* compositor = renderLayerCompositor();
     if (!compositor || !compositor->inCompositingMode())
-        return 0;
+        return nullptr;
+    ASSERT(!compositor->compositingLayersNeedRebuild());
+
     LayerIdToNodeIdMap layerIdToNodeIdMap;
     RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > layers = TypeBuilder::Array<TypeBuilder::LayerTree::Layer>::create();
-    buildLayerIdToNodeIdMap(compositor->rootRenderLayer(), layerIdToNodeIdMap);
+    buildLayerIdToNodeIdMap(compositor->rootRenderLayer(), nodeGroup, layerIdToNodeIdMap);
     gatherGraphicsLayers(compositor->rootGraphicsLayer(), layerIdToNodeIdMap, layers);
     return layers.release();
 }
 
-void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
+void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, const String& nodeGroup, LayerIdToNodeIdMap& layerIdToNodeIdMap)
 {
     if (root->hasCompositedLayerMapping()) {
         if (Node* node = root->renderer()->generatingNode()) {
             GraphicsLayer* graphicsLayer = root->compositedLayerMapping()->childForSuperlayers();
-            layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(node));
+            layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(node, nodeGroup));
         }
     }
     for (RenderLayer* child = root->firstChild(); child; child = child->nextSibling())
-        buildLayerIdToNodeIdMap(child, layerIdToNodeIdMap);
+        buildLayerIdToNodeIdMap(child, nodeGroup, layerIdToNodeIdMap);
     if (!root->renderer()->isRenderIFrame())
         return;
     FrameView* childFrameView = toFrameView(toRenderWidget(root->renderer())->widget());
     if (RenderView* childRenderView = childFrameView->renderView()) {
         if (RenderLayerCompositor* childCompositor = childRenderView->compositor())
-            buildLayerIdToNodeIdMap(childCompositor->rootRenderLayer(), layerIdToNodeIdMap);
+            buildLayerIdToNodeIdMap(childCompositor->rootRenderLayer(), nodeGroup, layerIdToNodeIdMap);
     }
 }
 
-int InspectorLayerTreeAgent::idForNode(Node* node)
+void InspectorLayerTreeAgent::gatherGraphicsLayers(GraphicsLayer* root, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >& layers)
 {
-    int nodeId = m_domAgent->boundNodeId(node);
-    if (!nodeId) {
-        ErrorString ignoredError;
-        nodeId = m_domAgent->pushNodeToFrontend(&ignoredError, m_domAgent->boundNodeId(&node->document()), node);
-    }
-    return nodeId;
+    int layerId = root->platformLayer()->id();
+    if (m_pageOverlayLayerIds.find(layerId) != WTF::kNotFound)
+        return;
+    layers->addItem(buildObjectForLayer(root, layerIdToNodeIdMap.get(layerId)));
+    if (GraphicsLayer* replica = root->replicaLayer())
+        gatherGraphicsLayers(replica, layerIdToNodeIdMap, layers);
+    for (size_t i = 0, size = root->children().size(); i < size; ++i)
+        gatherGraphicsLayers(root->children()[i], layerIdToNodeIdMap, layers);
+}
+
+int InspectorLayerTreeAgent::idForNode(Node* node, const String& nodeGroup)
+{
+    return m_domAgent->backendNodeIdForNode(node, nodeGroup);
 }
 
 RenderLayerCompositor* InspectorLayerTreeAgent::renderLayerCompositor()
@@ -262,60 +302,19 @@ GraphicsLayer* InspectorLayerTreeAgent::layerById(ErrorString* errorString, cons
     return result;
 }
 
-struct CompositingReasonToProtocolName {
-    uint64_t mask;
-    const char *protocolName;
-};
-
-
 void InspectorLayerTreeAgent::compositingReasons(ErrorString* errorString, const String& layerId, RefPtr<TypeBuilder::Array<String> >& reasonStrings)
 {
-    static CompositingReasonToProtocolName compositingReasonNames[] = {
-        { CompositingReason3DTransform, "transform3D" },
-        { CompositingReasonVideo, "video" },
-        { CompositingReasonCanvas, "canvas" },
-        { CompositingReasonPlugin, "plugin" },
-        { CompositingReasonIFrame, "iFrame" },
-        { CompositingReasonBackfaceVisibilityHidden, "backfaceVisibilityHidden" },
-        { CompositingReasonAnimation, "animation" },
-        { CompositingReasonFilters, "filters" },
-        { CompositingReasonPositionFixed, "positionFixed" },
-        { CompositingReasonPositionSticky, "positionSticky" },
-        { CompositingReasonOverflowScrollingTouch, "overflowScrollingTouch" },
-        { CompositingReasonAssumedOverlap, "assumedOverlap" },
-        { CompositingReasonOverlap, "overlap" },
-        { CompositingReasonNegativeZIndexChildren, "negativeZIndexChildren" },
-        { CompositingReasonTransformWithCompositedDescendants, "transformWithCompositedDescendants" },
-        { CompositingReasonOpacityWithCompositedDescendants, "opacityWithCompositedDescendants" },
-        { CompositingReasonMaskWithCompositedDescendants, "maskWithCompositedDescendants" },
-        { CompositingReasonReflectionWithCompositedDescendants, "reflectionWithCompositedDescendants" },
-        { CompositingReasonFilterWithCompositedDescendants, "filterWithCompositedDescendants" },
-        { CompositingReasonBlendingWithCompositedDescendants, "blendingWithCompositedDescendants" },
-        { CompositingReasonClipsCompositingDescendants, "clipsCompositingDescendants" },
-        { CompositingReasonPerspective, "perspective" },
-        { CompositingReasonPreserve3D, "preserve3D" },
-        { CompositingReasonRoot, "root" },
-        { CompositingReasonLayerForClip, "layerForClip" },
-        { CompositingReasonLayerForScrollbar, "layerForScrollbar" },
-        { CompositingReasonLayerForScrollingContainer, "layerForScrollingContainer" },
-        { CompositingReasonLayerForForeground, "layerForForeground" },
-        { CompositingReasonLayerForBackground, "layerForBackground" },
-        { CompositingReasonLayerForMask, "layerForMask" },
-        { CompositingReasonLayerForVideoOverlay, "layerForVideoOverlay" },
-        { CompositingReasonIsolateCompositedDescendants, "isolateCompositedDescendants" }
-    };
-
     const GraphicsLayer* graphicsLayer = layerById(errorString, layerId);
     if (!graphicsLayer)
         return;
     CompositingReasons reasonsBitmask = graphicsLayer->compositingReasons();
     reasonStrings = TypeBuilder::Array<String>::create();
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonNames); ++i) {
-        if (!(reasonsBitmask & compositingReasonNames[i].mask))
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonStringMap); ++i) {
+        if (!(reasonsBitmask & compositingReasonStringMap[i].reason))
             continue;
-        reasonStrings->addItem(compositingReasonNames[i].protocolName);
+        reasonStrings->addItem(compositingReasonStringMap[i].shortName);
 #ifndef _NDEBUG
-        reasonsBitmask &= ~compositingReasonNames[i].mask;
+        reasonsBitmask &= ~compositingReasonStringMap[i].reason;
 #endif
     }
     ASSERT(!reasonsBitmask);
@@ -381,5 +380,19 @@ void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const St
         outTimings->addItem(outRow.release());
     }
 }
+
+void InspectorLayerTreeAgent::willAddPageOverlay(const GraphicsLayer* layer)
+{
+    m_pageOverlayLayerIds.append(layer->platformLayer()->id());
+}
+
+void InspectorLayerTreeAgent::didRemovePageOverlay(const GraphicsLayer* layer)
+{
+    size_t index = m_pageOverlayLayerIds.find(layer->platformLayer()->id());
+    if (index == WTF::kNotFound)
+        return;
+    m_pageOverlayLayerIds.remove(index);
+}
+
 
 } // namespace WebCore

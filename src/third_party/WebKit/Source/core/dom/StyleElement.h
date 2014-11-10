@@ -53,15 +53,16 @@ protected:
     void childrenChanged(Element*);
     void finishParsingChildren(Element*);
 
-    RefPtr<CSSStyleSheet> m_sheet;
+    RefPtrWillBePersistent<CSSStyleSheet> m_sheet;
 
 private:
     void createSheet(Element*, const String& text = String());
     void process(Element*);
-    void clearSheet();
+    void clearSheet(Element* ownerElement = 0);
 
-    bool m_createdByParser;
-    bool m_loading;
+    bool m_createdByParser : 1;
+    bool m_loading : 1;
+    bool m_registeredAsCandidate : 1;
     TextPosition m_startPosition;
 };
 

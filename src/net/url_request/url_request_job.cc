@@ -286,6 +286,12 @@ bool URLRequestJob::CanEnablePrivacyMode() const {
   return request_->CanEnablePrivacyMode();
 }
 
+CookieStore* URLRequestJob::GetCookieStore() const {
+  DCHECK(request_);
+
+  return request_->cookie_store();
+}
+
 void URLRequestJob::NotifyBeforeNetworkStart(bool* defer) {
   if (!request_)
     return;
@@ -321,6 +327,10 @@ void URLRequestJob::NotifyHeadersComplete() {
   GURL new_location;
   int http_status_code;
   if (IsRedirectResponse(&new_location, &http_status_code)) {
+    // Redirect response bodies are not read. Notify the transaction
+    // so it does not treat being stopped as an error.
+    DoneReadingRedirectResponse();
+
     const GURL& url = request_->url();
 
     // Move the reference fragment of the old location to the new one if the
@@ -333,10 +343,6 @@ void URLRequestJob::NotifyHeadersComplete() {
                           url.parsed_for_possibly_invalid_spec().ref);
       new_location = new_location.ReplaceComponents(replacements);
     }
-
-    // Redirect response bodies are not read. Notify the transaction
-    // so it does not treat being stopped as an error.
-    DoneReading();
 
     bool defer_redirect = false;
     request_->NotifyReceivedRedirect(new_location, &defer_redirect);
@@ -526,6 +532,9 @@ void URLRequestJob::DoneReading() {
   // Do nothing.
 }
 
+void URLRequestJob::DoneReadingRedirectResponse() {
+}
+
 void URLRequestJob::FilteredDataRead(int bytes_read) {
   DCHECK(filter_.get());  // don't add data if there is no filter
   filter_->FlushStreamBuffer(bytes_read);
@@ -707,15 +716,6 @@ bool URLRequestJob::ReadRawDataHelper(IOBuffer* buf, int buf_size,
   bool rv = ReadRawData(buf, buf_size, bytes_read);
 
   if (!request_->status().is_io_pending()) {
-    // If |filter_| is NULL, and logging all bytes is enabled, log the raw
-    // bytes read.
-    if (!filter_.get() && request() && request()->net_log().IsLoggingBytes() &&
-        *bytes_read > 0) {
-      request()->net_log().AddByteTransferEvent(
-          NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ,
-          *bytes_read, raw_read_buffer_->data());
-    }
-
     // If the read completes synchronously, either success or failure,
     // invoke the OnRawReadComplete callback so we can account for the
     // completed read.
@@ -732,6 +732,14 @@ void URLRequestJob::FollowRedirect(const GURL& location, int http_status_code) {
 
 void URLRequestJob::OnRawReadComplete(int bytes_read) {
   DCHECK(raw_read_buffer_.get());
+  // If |filter_| is non-NULL, bytes will be logged after it is applied instead.
+  if (!filter_.get() && request() && request()->net_log().IsLoggingBytes() &&
+      bytes_read > 0) {
+    request()->net_log().AddByteTransferEvent(
+        NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ,
+        bytes_read, raw_read_buffer_->data());
+  }
+
   if (bytes_read > 0) {
     RecordBytesRead(bytes_read);
   }

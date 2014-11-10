@@ -14,10 +14,15 @@
   ],
   'sources': [
     'tests/main.cc',
+    'tests/test_utils.cc',
+    'tests/test_utils.h',
     'tests/unit_tests.cc',
     'tests/unit_tests.h',
+    'tests/unit_tests_unittest.cc',
     'services/broker_process_unittest.cc',
+    'services/scoped_process_unittest.cc',
     'services/thread_helpers_unittests.cc',
+    'services/yama_unittests.cc',
   ],
   'conditions': [
     [ 'compile_suid_client==1', {

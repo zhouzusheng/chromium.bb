@@ -7,31 +7,43 @@
 
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "heap/Handle.h"
 #include "platform/Supplementable.h"
-#include "wtf/Vector.h"
+#include "platform/Timer.h"
+#include "public/platform/WebScreenOrientation.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+class Document;
 class Screen;
 
-class ScreenOrientation FINAL : public Supplement<Screen>, DOMWindowProperty {
+class ScreenOrientation FINAL : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientation>, public WillBeHeapSupplement<Screen>, DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientation);
 public:
-    static ScreenOrientation* from(Screen*);
+    static ScreenOrientation& from(Screen&);
     virtual ~ScreenOrientation();
 
     DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(orientationchange);
 
-    static const AtomicString& orientation(Screen*);
-    static bool lockOrientation(Screen*, const Vector<String>& orientations);
-    static bool lockOrientation(Screen*, const AtomicString& orientation);
-    static void unlockOrientation(Screen*);
+    static const AtomicString& orientation(Screen&);
+    static bool lockOrientation(Screen&, const AtomicString& orientation);
+    static void unlockOrientation(Screen&);
+
+    virtual void trace(Visitor*) { }
 
 private:
-    explicit ScreenOrientation(Screen*);
+    explicit ScreenOrientation(Screen&);
+
+    void lockOrientationAsync(blink::WebScreenOrientations);
+    void orientationLockTimerFired(Timer<ScreenOrientation>*);
+
     static const char* supplementName();
-    Screen* screen() const;
+    Document* document() const;
+
+    Timer<ScreenOrientation> m_orientationLockTimer;
+    blink::WebScreenOrientations m_lockedOrientations;
 };
 
 } // namespace WebCore

@@ -37,14 +37,14 @@
 #include "WebViewImpl.h"
 #include "WebWidgetClient.h"
 #include "core/dom/ContextFeatures.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/DOMWindowPagePopup.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupClient.h"
 #include "core/frame/Settings.h"
@@ -138,6 +138,16 @@ private:
         m_popup->widgetClient()->hasTouchEventHandlers(needsTouchEvents);
     }
 
+    virtual GraphicsLayerFactory* graphicsLayerFactory() const OVERRIDE
+    {
+        return m_popup->m_webView->graphicsLayerFactory();
+    }
+
+    virtual void attachRootGraphicsLayer(GraphicsLayer* graphicsLayer) OVERRIDE
+    {
+        m_popup->setRootGraphicsLayer(graphicsLayer);
+    }
+
     WebPagePopupImpl* m_popup;
 };
 
@@ -157,6 +167,10 @@ bool PagePopupFeaturesClient::isEnabled(Document*, ContextFeatures::FeatureType 
 WebPagePopupImpl::WebPagePopupImpl(WebWidgetClient* client)
     : m_widgetClient(client)
     , m_closing(false)
+    , m_layerTreeView(0)
+    , m_rootLayer(0)
+    , m_rootGraphicsLayer(0)
+    , m_isAcceleratedCompositingActive(false)
 {
     ASSERT(client);
 }
@@ -197,15 +211,16 @@ bool WebPagePopupImpl::initializePage()
     m_page->settings().setDeviceSupportsTouch(m_webView->page()->settings().deviceSupportsTouch());
 
     static ContextFeaturesClient* pagePopupFeaturesClient =  new PagePopupFeaturesClient();
-    provideContextFeaturesTo(m_page.get(), pagePopupFeaturesClient);
+    provideContextFeaturesTo(*m_page, pagePopupFeaturesClient);
     static FrameLoaderClient* emptyFrameLoaderClient =  new EmptyFrameLoaderClient();
-    RefPtr<Frame> frame = Frame::create(FrameInit::create(0, &m_page->frameHost(), emptyFrameLoaderClient));
+    RefPtr<LocalFrame> frame = LocalFrame::create(emptyFrameLoaderClient, &m_page->frameHost(), 0);
     frame->setView(FrameView::create(frame.get()));
     frame->init();
     frame->view()->resize(m_popupClient->contentSize());
     frame->view()->setTransparent(false);
 
-    DOMWindowPagePopup::install(frame->domWindow(), m_popupClient);
+    ASSERT(frame->domWindow());
+    DOMWindowPagePopup::install(*frame->domWindow(), m_popupClient);
 
     RefPtr<SharedBuffer> data = SharedBuffer::create();
     m_popupClient->writeDocument(data.get());
@@ -224,6 +239,49 @@ void WebPagePopupImpl::destroyPage()
     m_page.clear();
 }
 
+void WebPagePopupImpl::setRootGraphicsLayer(GraphicsLayer* layer)
+{
+    m_rootGraphicsLayer = layer;
+    m_rootLayer = layer ? layer->platformLayer() : 0;
+
+    setIsAcceleratedCompositingActive(layer);
+    if (m_layerTreeView) {
+        if (m_rootLayer) {
+            m_layerTreeView->setRootLayer(*m_rootLayer);
+        } else {
+            m_layerTreeView->clearRootLayer();
+        }
+    }
+}
+
+void WebPagePopupImpl::setIsAcceleratedCompositingActive(bool enter)
+{
+    if (m_isAcceleratedCompositingActive == enter)
+        return;
+
+    if (!enter) {
+        m_isAcceleratedCompositingActive = false;
+        m_widgetClient->didDeactivateCompositor();
+    } else if (m_layerTreeView) {
+        m_isAcceleratedCompositingActive = true;
+        m_widgetClient->didActivateCompositor(0);
+    } else {
+        TRACE_EVENT0("webkit", "WebPagePopupImpl::setIsAcceleratedCompositingActive(true)");
+
+        m_widgetClient->initializeLayerTreeView();
+        m_layerTreeView = m_widgetClient->layerTreeView();
+        if (m_layerTreeView) {
+            m_layerTreeView->setVisible(true);
+            m_widgetClient->didActivateCompositor(0);
+            m_isAcceleratedCompositingActive = true;
+            m_layerTreeView->setDeviceScaleFactor(m_widgetClient->deviceScaleFactor());
+        } else {
+            m_isAcceleratedCompositingActive = false;
+            m_widgetClient->didDeactivateCompositor();
+        }
+    }
+}
+
 WebSize WebPagePopupImpl::size()
 {
     return m_popupClient->contentSize();
@@ -232,6 +290,37 @@ WebSize WebPagePopupImpl::size()
 void WebPagePopupImpl::animate(double)
 {
     PageWidgetDelegate::animate(m_page.get(), monotonicallyIncreasingTime());
+}
+
+void WebPagePopupImpl::enterForceCompositingMode(bool enter)
+{
+    if (!m_page)
+        return;
+    if (m_page->settings().forceCompositingMode() == enter)
+        return;
+
+    TRACE_EVENT1("webkit", "WebPagePopupImpl::enterForceCompositingMode", "enter", enter);
+    m_page->settings().setForceCompositingMode(enter);
+    if (enter) {
+        LocalFrame* mainFrame = m_page->mainFrame();
+        if (!mainFrame)
+            return;
+        mainFrame->view()->updateCompositingLayersAfterStyleChange();
+    }
+}
+
+void WebPagePopupImpl::didExitCompositingMode()
+{
+    setIsAcceleratedCompositingActive(false);
+    m_widgetClient->didInvalidateRect(IntRect(0, 0, size().width, size().height));
+    if (m_page)
+        m_page->mainFrame()->document()->setNeedsStyleRecalc(SubtreeStyleChange);
+}
+
+void WebPagePopupImpl::willCloseLayerTreeView()
+{
+    setIsAcceleratedCompositingActive(false);
+    m_layerTreeView = 0;
 }
 
 void WebPagePopupImpl::layout()
@@ -273,7 +362,7 @@ bool WebPagePopupImpl::handleGestureEvent(const WebGestureEvent& event)
 {
     if (m_closing || !m_page || !m_page->mainFrame() || !m_page->mainFrame()->view())
         return false;
-    Frame& frame = *m_page->mainFrame();
+    LocalFrame& frame = *m_page->mainFrame();
     return frame.eventHandler().handleGestureEvent(PlatformGestureEventBuilder(frame.view(), event));
 }
 
@@ -311,9 +400,9 @@ void WebPagePopupImpl::close()
 void WebPagePopupImpl::closePopup()
 {
     if (m_page) {
-        m_page->clearPageGroup();
         m_page->mainFrame()->loader().stopAllLoaders();
-        DOMWindowPagePopup::uninstall(m_page->mainFrame()->domWindow());
+        ASSERT(m_page->mainFrame()->domWindow());
+        DOMWindowPagePopup::uninstall(*m_page->mainFrame()->domWindow());
     }
     m_closing = true;
 

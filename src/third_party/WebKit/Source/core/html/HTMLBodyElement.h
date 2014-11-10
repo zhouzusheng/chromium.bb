@@ -54,6 +54,8 @@ private:
     virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
     virtual bool supportsFocus() const OVERRIDE;
 
@@ -74,8 +76,6 @@ private:
     virtual int bbScrollWidthNoZoomAdjust();
     virtual int bbScrollHeightNoZoomAdjust();
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLBodyElement, hasTagName(HTMLNames::bodyTag));
 
 } //namespace
 

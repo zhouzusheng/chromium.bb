@@ -28,6 +28,7 @@
 #ifndef DatabaseTask_h
 #define DatabaseTask_h
 
+#include "heap/Handle.h"
 #include "modules/webdatabase/DatabaseBackend.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
@@ -90,7 +91,7 @@ private:
     virtual void doPerformTask() = 0;
     virtual void taskCancelled() { }
 
-    RefPtr<DatabaseBackend> m_database;
+    RefPtrWillBeCrossThreadPersistent<DatabaseBackend> m_database;
     DatabaseTaskSynchronizer* m_synchronizer;
 
 #if !LOG_DISABLED
@@ -141,7 +142,7 @@ public:
     virtual ~DatabaseTransactionTask();
 
     // Transaction task is never synchronous, so no 'synchronizer' parameter.
-    static PassOwnPtr<DatabaseTransactionTask> create(PassRefPtr<SQLTransactionBackend> transaction)
+    static PassOwnPtr<DatabaseTransactionTask> create(PassRefPtrWillBeRawPtr<SQLTransactionBackend> transaction)
     {
         return adoptPtr(new DatabaseTransactionTask(transaction));
     }
@@ -149,7 +150,7 @@ public:
     SQLTransactionBackend* transaction() const { return m_transaction.get(); }
 
 private:
-    explicit DatabaseTransactionTask(PassRefPtr<SQLTransactionBackend>);
+    explicit DatabaseTransactionTask(PassRefPtrWillBeRawPtr<SQLTransactionBackend>);
 
     virtual void doPerformTask() OVERRIDE;
     virtual void taskCancelled() OVERRIDE;
@@ -157,7 +158,7 @@ private:
     virtual const char* debugTaskName() const OVERRIDE;
 #endif
 
-    RefPtr<SQLTransactionBackend> m_transaction;
+    RefPtrWillBeCrossThreadPersistent<SQLTransactionBackend> m_transaction;
 };
 
 class DatabaseBackend::DatabaseTableNamesTask FINAL : public DatabaseTask {

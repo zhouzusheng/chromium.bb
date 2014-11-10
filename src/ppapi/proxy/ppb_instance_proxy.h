@@ -58,6 +58,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   virtual uint32_t GetAudioHardwareOutputBufferSize(PP_Instance instance)
       OVERRIDE;
   virtual PP_Var GetDefaultCharSet(PP_Instance instance) OVERRIDE;
+  virtual void SetPluginToHandleFindRequests(PP_Instance instance) OVERRIDE;
   virtual void NumberOfFindResultsChanged(PP_Instance instance,
                                           int32_t total,
                                           PP_Bool final_result) OVERRIDE;
@@ -128,7 +129,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   virtual void SessionError(PP_Instance instance,
                             uint32_t session_id,
                             int32_t media_error,
-                            int32_t system_code) OVERRIDE;
+                            uint32_t system_code) OVERRIDE;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) OVERRIDE;
@@ -172,6 +173,12 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                                  uint32_t *result);
   void OnHostMsgGetDefaultCharSet(PP_Instance instance,
                                   SerializedVarReturnValue result);
+  void OnHostMsgSetPluginToHandleFindRequests(PP_Instance instance);
+  void OnHostMsgNumberOfFindResultsChanged(PP_Instance instance,
+                                           int32_t total,
+                                           PP_Bool final_result);
+  void OnHostMsgSelectFindResultChanged(PP_Instance instance,
+                                        int32_t index);
   void OnHostMsgSetFullscreen(PP_Instance instance,
                               PP_Bool fullscreen,
                               PP_Bool* result);
@@ -234,7 +241,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   virtual void OnHostMsgSessionError(PP_Instance instance,
                                      uint32_t session_id,
                                      int32_t media_error,
-                                     int32_t system_code);
+                                     uint32_t system_code);
   virtual void OnHostMsgDecoderInitializeDone(
       PP_Instance instance,
       PP_DecryptorStreamType decoder_type,

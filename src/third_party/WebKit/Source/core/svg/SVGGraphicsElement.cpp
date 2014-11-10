@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2004, 2005, 2008 Nikolas Zimmermann <zimmermann@kde.org>
  * Copyright (C) 2004, 2005, 2006 Rob Buis <buis@kde.org>
+ * Copyright (C) 2014 Google, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -31,26 +32,19 @@
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_TRANSFORM_LIST(SVGGraphicsElement, SVGNames::transformAttr, Transform, transform)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGGraphicsElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(transform)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 SVGGraphicsElement::SVGGraphicsElement(const QualifiedName& tagName, Document& document, ConstructionType constructionType)
     : SVGElement(tagName, document, constructionType)
     , SVGTests(this)
+    , m_transform(SVGAnimatedTransformList::create(this, SVGNames::transformAttr, SVGTransformList::create()))
 {
-    registerAnimatedPropertiesForSVGGraphicsElement();
+    addToPropertyMap(m_transform);
 }
 
 SVGGraphicsElement::~SVGGraphicsElement()
 {
 }
 
-AffineTransform SVGGraphicsElement::getTransformToElement(SVGElement* target, ExceptionState& exceptionState)
+PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getTransformToElement(SVGElement* target, ExceptionState& exceptionState)
 {
     AffineTransform ctm = getCTM(AllowStyleUpdate);
 
@@ -58,32 +52,51 @@ AffineTransform SVGGraphicsElement::getTransformToElement(SVGElement* target, Ex
         AffineTransform targetCTM = toSVGGraphicsElement(target)->getCTM(AllowStyleUpdate);
         if (!targetCTM.isInvertible()) {
             exceptionState.throwDOMException(InvalidStateError, "The target transformation is not invertable.");
-            return ctm;
+            return nullptr;
         }
         ctm = targetCTM.inverse() * ctm;
     }
 
-    return ctm;
+    return SVGMatrixTearOff::create(ctm);
 }
 
-static AffineTransform computeCTM(SVGGraphicsElement* element, SVGElement::CTMScope mode, SVGGraphicsElement::StyleUpdateStrategy styleUpdateStrategy)
+static bool isViewportElement(const Element& element)
 {
-    ASSERT(element);
-    if (styleUpdateStrategy == SVGGraphicsElement::AllowStyleUpdate)
-        element->document().updateLayoutIgnorePendingStylesheets();
+    return (isSVGSVGElement(element)
+        || isSVGSymbolElement(element)
+        || isSVGForeignObjectElement(element)
+        || isSVGImageElement(element));
+}
+
+AffineTransform SVGGraphicsElement::computeCTM(SVGElement::CTMScope mode,
+    SVGGraphicsElement::StyleUpdateStrategy styleUpdateStrategy, const SVGGraphicsElement* ancestor) const
+{
+    if (styleUpdateStrategy == AllowStyleUpdate)
+        document().updateLayoutIgnorePendingStylesheets();
 
     AffineTransform ctm;
+    bool done = false;
 
-    SVGElement* stopAtElement = mode == SVGGraphicsElement::NearestViewportScope ? element->nearestViewportElement() : 0;
-    for (Element* currentElement = element; currentElement; currentElement = currentElement->parentOrShadowHostElement()) {
+    for (const Element* currentElement = this; currentElement && !done;
+        currentElement = currentElement->parentOrShadowHostElement()) {
         if (!currentElement->isSVGElement())
             break;
 
         ctm = toSVGElement(currentElement)->localCoordinateSpaceTransform(mode).multiply(ctm);
 
-        // For getCTM() computation, stop at the nearest viewport element
-        if (currentElement == stopAtElement)
+        switch (mode) {
+        case NearestViewportScope:
+            // Stop at the nearest viewport ancestor.
+            done = currentElement != this && isViewportElement(*currentElement);
             break;
+        case AncestorScope:
+            // Stop at the designated ancestor.
+            done = currentElement == ancestor;
+            break;
+        default:
+            ASSERT(mode == ScreenScope);
+            break;
+        }
     }
 
     return ctm;
@@ -91,12 +104,22 @@ static AffineTransform computeCTM(SVGGraphicsElement* element, SVGElement::CTMSc
 
 AffineTransform SVGGraphicsElement::getCTM(StyleUpdateStrategy styleUpdateStrategy)
 {
-    return computeCTM(this, NearestViewportScope, styleUpdateStrategy);
+    return computeCTM(NearestViewportScope, styleUpdateStrategy);
 }
 
 AffineTransform SVGGraphicsElement::getScreenCTM(StyleUpdateStrategy styleUpdateStrategy)
 {
-    return computeCTM(this, ScreenScope, styleUpdateStrategy);
+    return computeCTM(ScreenScope, styleUpdateStrategy);
+}
+
+PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getCTMFromJavascript()
+{
+    return SVGMatrixTearOff::create(getCTM());
+}
+
+PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJavascript()
+{
+    return SVGMatrixTearOff::create(getScreenCTM());
 }
 
 AffineTransform SVGGraphicsElement::animatedLocalTransform() const
@@ -122,7 +145,7 @@ AffineTransform SVGGraphicsElement::animatedLocalTransform() const
             matrix.setF(matrix.f() / zoom);
         }
     } else {
-        transformCurrentValue().concatenate(matrix);
+        m_transform->currentValue()->concatenate(matrix);
     }
 
     if (m_supplementalTransform)
@@ -154,17 +177,16 @@ void SVGGraphicsElement::parseAttribute(const QualifiedName& name, const AtomicS
         return;
     }
 
-    if (name == SVGNames::transformAttr) {
-        SVGTransformList newList;
-        newList.parse(value);
-        detachAnimatedTransformListWrappers(newList.size());
-        setTransformBaseValue(newList);
-        return;
-    } else if (SVGTests::parseAttribute(name, value)) {
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    ASSERT_NOT_REACHED();
+    if (name == SVGNames::transformAttr)
+        m_transform->setBaseValueAsString(value, parseError);
+    else if (SVGTests::parseAttribute(name, value))
+        return;
+    else
+        ASSERT_NOT_REACHED();
+
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -195,18 +217,10 @@ void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
     ASSERT_NOT_REACHED();
 }
 
-static bool isViewportElement(Node* node)
-{
-    return (node->hasTagName(SVGNames::svgTag)
-        || node->hasTagName(SVGNames::symbolTag)
-        || node->hasTagName(SVGNames::foreignObjectTag)
-        || node->hasTagName(SVGNames::imageTag));
-}
-
 SVGElement* SVGGraphicsElement::nearestViewportElement() const
 {
     for (Element* current = parentOrShadowHostElement(); current; current = current->parentOrShadowHostElement()) {
-        if (isViewportElement(current))
+        if (isViewportElement(*current))
             return toSVGElement(current);
     }
 
@@ -217,7 +231,7 @@ SVGElement* SVGGraphicsElement::farthestViewportElement() const
 {
     SVGElement* farthest = 0;
     for (Element* current = parentOrShadowHostElement(); current; current = current->parentOrShadowHostElement()) {
-        if (isViewportElement(current))
+        if (isViewportElement(*current))
             farthest = toSVGElement(current);
     }
     return farthest;

@@ -43,7 +43,7 @@ namespace blpwtk2 {
 
 BrowserMainRunner::BrowserMainRunner(
     sandbox::SandboxInterfaceInfo* sandboxInfo)
-: d_mainParams(*CommandLine::ForCurrentProcess())
+: d_mainParams(*base::CommandLine::ForCurrentProcess())
 {
     Statics::initBrowserMainThread();
 

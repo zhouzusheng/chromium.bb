@@ -40,9 +40,9 @@ namespace internal {
 const char* Variable::Mode2String(VariableMode mode) {
   switch (mode) {
     case VAR: return "VAR";
-    case CONST: return "CONST";
+    case CONST_LEGACY: return "CONST_LEGACY";
     case LET: return "LET";
-    case CONST_HARMONY: return "CONST_HARMONY";
+    case CONST: return "CONST";
     case MODULE: return "MODULE";
     case DYNAMIC: return "DYNAMIC";
     case DYNAMIC_GLOBAL: return "DYNAMIC_GLOBAL";
@@ -58,7 +58,7 @@ const char* Variable::Mode2String(VariableMode mode) {
 Variable::Variable(Scope* scope,
                    Handle<String> name,
                    VariableMode mode,
-                   bool is_valid_LHS,
+                   bool is_valid_ref,
                    Kind kind,
                    InitializationFlag initialization_flag,
                    Interface* interface)
@@ -70,7 +70,7 @@ Variable::Variable(Scope* scope,
     index_(-1),
     initializer_position_(RelocInfo::kNoPosition),
     local_if_not_shadowed_(NULL),
-    is_valid_LHS_(is_valid_LHS),
+    is_valid_ref_(is_valid_ref),
     force_context_allocation_(false),
     is_used_(false),
     initialization_flag_(initialization_flag),

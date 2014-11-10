@@ -104,6 +104,7 @@ NSS_Get_CERT_CertificateTemplate
 NSS_Get_CERT_SequenceOfCertExtensionTemplate
 NSS_Get_CERT_SignedDataTemplate
 NSS_Get_SECKEY_EncryptedPrivateKeyInfoTemplate
+NSS_Get_SECKEY_PrivateKeyInfoTemplate
 NSS_Get_SECOID_AlgorithmIDTemplate_Util
 NSS_Get_SEC_GeneralizedTimeTemplate_Util
 NSS_Get_SEC_IA5StringTemplate_Util
@@ -131,6 +132,7 @@ PK11_DigestKey
 PK11_DigestOp
 PK11_DoesMechanism
 PK11_Encrypt
+PK11_ExportDERPrivateKeyInfo
 PK11_ExportEncryptedPrivKeyInfo
 PK11_ExtractKeyValue
 PK11_Finalize
@@ -148,6 +150,7 @@ PK11_GetCurrentWrapIndex
 PK11_GetInternalKeySlot
 PK11_GetInternalSlot
 PK11_GetKeyData
+PK11_GetKeyLength
 PK11_GetMechanism
 PK11_GetModuleID
 PK11_GetPadMechanism
@@ -177,6 +180,7 @@ PK11_PubDeriveWithKDF
 PK11_PubEncryptRaw
 PK11_PubEncryptPKCS1
 PK11_PubUnwrapSymKey
+PK11_PubUnwrapSymKeyWithFlagsPerm
 PK11_PubWrapSymKey
 PK11_ReadRawAttribute
 PK11_ReferenceSlot
@@ -258,6 +262,7 @@ SECOID_FindOID_Util
 SECOID_GetAlgorithmTag_Util
 SECOID_SetAlgorithmID_Util
 SEC_ASN1DecodeItem_Util
+SEC_ASN1EncodeInteger_Util
 SEC_ASN1EncodeItem_Util
 SEC_DerSignData
 SEC_GetSignatureAlgorithmOidTag

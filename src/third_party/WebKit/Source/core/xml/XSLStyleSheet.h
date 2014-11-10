@@ -38,28 +38,28 @@ class XSLImportRule;
 
 class XSLStyleSheet FINAL : public StyleSheet {
 public:
-    static PassRefPtr<XSLStyleSheet> create(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL)
+    static PassRefPtrWillBeRawPtr<XSLStyleSheet> create(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRef(new XSLStyleSheet(parentImport, originalURL, finalURL));
+        return adoptRefWillBeNoop(new XSLStyleSheet(parentImport, originalURL, finalURL));
     }
-    static PassRefPtr<XSLStyleSheet> create(ProcessingInstruction* parentNode, const String& originalURL, const KURL& finalURL)
+    static PassRefPtrWillBeRawPtr<XSLStyleSheet> create(ProcessingInstruction* parentNode, const String& originalURL, const KURL& finalURL)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRef(new XSLStyleSheet(parentNode, originalURL, finalURL, false));
+        return adoptRefWillBeNoop(new XSLStyleSheet(parentNode, originalURL, finalURL, false));
     }
-    static PassRefPtr<XSLStyleSheet> createEmbedded(ProcessingInstruction* parentNode, const KURL& finalURL)
+    static PassRefPtrWillBeRawPtr<XSLStyleSheet> createEmbedded(ProcessingInstruction* parentNode, const KURL& finalURL)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRef(new XSLStyleSheet(parentNode, finalURL.string(), finalURL, true));
+        return adoptRefWillBeNoop(new XSLStyleSheet(parentNode, finalURL.string(), finalURL, true));
     }
 
     // Taking an arbitrary node is unsafe, because owner node pointer can become stale.
     // XSLTProcessor ensures that the stylesheet doesn't outlive its parent, in part by not exposing it to JavaScript.
-    static PassRefPtr<XSLStyleSheet> createForXSLTProcessor(Node* parentNode, const String& originalURL, const KURL& finalURL)
+    static PassRefPtrWillBeRawPtr<XSLStyleSheet> createForXSLTProcessor(Node* parentNode, const String& originalURL, const KURL& finalURL)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRef(new XSLStyleSheet(parentNode, originalURL, finalURL, false));
+        return adoptRefWillBeNoop(new XSLStyleSheet(parentNode, originalURL, finalURL, false));
     }
 
     virtual ~XSLStyleSheet();
@@ -99,6 +99,8 @@ public:
     virtual KURL baseURL() const OVERRIDE { return m_finalURL; }
     virtual bool isLoading() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     XSLStyleSheet(Node* parentNode, const String& originalURL, const KURL& finalURL, bool embedded);
     XSLStyleSheet(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL);
@@ -117,7 +119,7 @@ private:
     bool m_stylesheetDocTaken;
     bool m_compilationFailed;
 
-    XSLStyleSheet* m_parentStyleSheet;
+    RawPtrWillBeMember<XSLStyleSheet> m_parentStyleSheet;
 };
 
 DEFINE_TYPE_CASTS(XSLStyleSheet, StyleSheet, sheet, !sheet->isCSSStyleSheet(), !sheet.isCSSStyleSheet());

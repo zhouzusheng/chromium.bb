@@ -47,6 +47,7 @@ namespace ui {
 
 class Compositor;
 class LayerAnimator;
+class LayerOwner;
 class Texture;
 
 // Layer manages a texture, transform and a set of child Layers. Any View that
@@ -70,6 +71,8 @@ class COMPOSITOR_EXPORT Layer
   explicit Layer(LayerType type);
   virtual ~Layer();
 
+  static bool UsingPictureLayer();
+
   // Retrieves the Layer's compositor. The Layer will walk up its parent chain
   // to locate it. Returns NULL if the Layer is not attached to a compositor.
   Compositor* GetCompositor();
@@ -80,6 +83,8 @@ class COMPOSITOR_EXPORT Layer
 
   LayerDelegate* delegate() { return delegate_; }
   void set_delegate(LayerDelegate* delegate) { delegate_ = delegate; }
+
+  LayerOwner* owner() { return owner_; }
 
   // Adds a new Layer to this Layer.
   void Add(Layer* child);
@@ -244,6 +249,10 @@ class COMPOSITOR_EXPORT Layer
   void SetFillsBoundsOpaquely(bool fills_bounds_opaquely);
   bool fills_bounds_opaquely() const { return fills_bounds_opaquely_; }
 
+  // Set to true if this layer always paints completely within its bounds. If so
+  // we can omit an unnecessary clear, even if the layer is transparent.
+  void SetFillsBoundsCompletely(bool fills_bounds_completely);
+
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
 
@@ -313,6 +322,7 @@ class COMPOSITOR_EXPORT Layer
   virtual void PaintContents(
       SkCanvas* canvas, const gfx::Rect& clip, gfx::RectF* opaque) OVERRIDE;
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
+  virtual bool FillsBoundsCompletely() const OVERRIDE;
 
   cc::Layer* cc_layer() { return cc_layer_; }
 
@@ -346,6 +356,8 @@ class COMPOSITOR_EXPORT Layer
   void SwitchCCLayerForTest();
 
  private:
+  friend class LayerOwner;
+
   // Stacks |child| above or below |other|.  Helper method for StackAbove() and
   // StackBelow().
   void StackRelativeTo(Layer* child, Layer* other, bool above);
@@ -417,6 +429,7 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface_;
 
   bool fills_bounds_opaquely_;
+  bool fills_bounds_completely_;
 
   // Union of damaged rects, in pixel coordinates, to be used when
   // compositor is ready to paint the content.
@@ -449,6 +462,8 @@ class COMPOSITOR_EXPORT Layer
 
   LayerDelegate* delegate_;
 
+  LayerOwner* owner_;
+
   scoped_refptr<LayerAnimator> animator_;
 
   // Animations that are passed to AddThreadedAnimation before this layer is
@@ -457,7 +472,7 @@ class COMPOSITOR_EXPORT Layer
 
   // Ownership of the layer is held through one of the strongly typed layer
   // pointers, depending on which sort of layer this is.
-  scoped_refptr<cc::ContentLayer> content_layer_;
+  scoped_refptr<cc::Layer> content_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;

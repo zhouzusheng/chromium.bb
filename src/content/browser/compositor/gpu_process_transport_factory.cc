@@ -139,7 +139,7 @@ class ImageTransportClientTexture : public OwnedTexture {
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
-    : callback_factory_(this) {
+    : callback_factory_(this), offscreen_content_bound_to_other_thread_(false) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
       &output_surface_map_);
 }
@@ -149,6 +149,13 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
   // Make sure the lost context callback doesn't try to run during destruction.
   callback_factory_.InvalidateWeakPtrs();
+
+  if (offscreen_compositor_contexts_.get() &&
+      offscreen_content_bound_to_other_thread_) {
+    // Leak shared contexts on other threads, as we can not get to the correct
+    // thread to destroy them.
+    offscreen_compositor_contexts_->set_leak_on_destroy();
+  }
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -167,10 +174,10 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
 #elif defined(USE_X11)
   return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceX11(
       compositor));
-#endif
-
+#else
   NOTREACHED();
   return scoped_ptr<cc::SoftwareOutputDevice>();
+#endif
 }
 
 scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
@@ -179,24 +186,19 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   if (!data)
     data = CreatePerCompositorData(compositor);
 
-  bool force_software_renderer = false;
-#if defined(OS_WIN)
+  bool create_software_renderer = software_fallback;
+#if defined(OS_CHROMEOS)
+  // Software fallback does not happen on Chrome OS.
+  create_software_renderer = false;
+#elif defined(OS_WIN)
   if (::GetProp(compositor->widget(), kForceSoftwareCompositor)) {
-    force_software_renderer = reinterpret_cast<bool>(
-        ::RemoveProp(compositor->widget(), kForceSoftwareCompositor));
+    if (::RemoveProp(compositor->widget(), kForceSoftwareCompositor))
+      create_software_renderer = true;
   }
 #endif
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
-
-  // Software fallback does not happen on Chrome OS.
-#if defined(OS_CHROMEOS)
-  software_fallback = false;
-#endif
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kUIEnableSoftwareCompositing) &&
-      !force_software_renderer && !software_fallback) {
+  if (!create_software_renderer) {
     context_provider = ContextProviderCommandBuffer::Create(
         GpuProcessTransportFactory::CreateContextCommon(data->surface_id),
         "Compositor");
@@ -365,6 +367,8 @@ GpuProcessTransportFactory::OffscreenCompositorContextProvider() {
   offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
       GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
       "Compositor-Offscreen");
+  offscreen_content_bound_to_other_thread_ =
+      ui::Compositor::WasInitializedWithThread();
 
   return offscreen_compositor_contexts_;
 }
@@ -424,12 +428,18 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   attrs.stencil = false;
   attrs.antialias = false;
   attrs.noAutomaticFlushes = true;
+#if !defined(OS_CHROMEOS)
+  bool bind_generates_resources = false;
+#endif
+  bool lose_context_when_out_of_memory = true;
   CauseForGpuLaunch cause =
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(cause));
-  if (!gpu_channel_host)
+  if (!gpu_channel_host) {
+    LOG(ERROR) << "Failed to establish GPU channel.";
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+  }
   GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(
@@ -437,8 +447,12 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
           url,
           gpu_channel_host.get(),
           attrs,
-          false,
-          WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits()));
+#if !defined(OS_CHROMEOS)
+          bind_generates_resources,
+#endif
+          lose_context_when_out_of_memory,
+          WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
+          NULL));
   return context.Pass();
 }
 

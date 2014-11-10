@@ -11,6 +11,8 @@
 #ifndef WEBRTC_EXPERIMENTS_H_
 #define WEBRTC_EXPERIMENTS_H_
 
+#include "webrtc/typedefs.h"
+
 namespace webrtc {
 struct PaddingStrategy {
   PaddingStrategy()
@@ -34,6 +36,15 @@ struct SkipEncodingUnusedStreams {
   explicit SkipEncodingUnusedStreams(bool set_enabled)
     : enabled(set_enabled) {}
   virtual ~SkipEncodingUnusedStreams() {}
+
+  const bool enabled;
+};
+
+struct AimdRemoteRateControl {
+  AimdRemoteRateControl() : enabled(false) {}
+  explicit AimdRemoteRateControl(bool set_enabled)
+    : enabled(set_enabled) {}
+  virtual ~AimdRemoteRateControl() {}
 
   const bool enabled;
 };

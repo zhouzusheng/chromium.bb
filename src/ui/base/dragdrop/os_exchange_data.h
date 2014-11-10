@@ -33,6 +33,8 @@ class Vector2d;
 
 namespace ui {
 
+struct FileInfo;
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // OSExchangeData
@@ -82,17 +84,6 @@ class UI_BASE_EXPORT OSExchangeData {
     scoped_refptr<DownloadFileProvider> downloader;
   };
 
-  // Encapsulates the info about a file.
-  struct UI_BASE_EXPORT FileInfo {
-    FileInfo(const base::FilePath& path, const base::FilePath& display_name);
-    ~FileInfo();
-
-    // The path of the file.
-    base::FilePath path;
-    // The display name of the file. This field is optional.
-    base::FilePath display_name;
-  };
-
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
   class UI_BASE_EXPORT Provider {
@@ -124,18 +115,19 @@ class UI_BASE_EXPORT OSExchangeData {
                                 Pickle* data) const = 0;
 
     virtual bool HasString() const = 0;
-    virtual bool HasURL() const = 0;
+    virtual bool HasURL(FilenameToURLPolicy policy) const = 0;
     virtual bool HasFile() const = 0;
     virtual bool HasCustomFormat(const CustomFormat& format) const = 0;
 
-#if defined(OS_WIN)
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
     virtual void SetFileContents(const base::FilePath& filename,
                                  const std::string& file_contents) = 0;
+#endif
+#if defined(OS_WIN)
     virtual bool GetFileContents(base::FilePath* filename,
                                  std::string* file_contents) const = 0;
     virtual bool HasFileContents() const = 0;
     virtual void SetDownloadFileInfo(const DownloadFileInfo& download) = 0;
-    virtual void SetInDragLoop(bool in_drag_loop) = 0;
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)
@@ -210,14 +202,9 @@ class UI_BASE_EXPORT OSExchangeData {
   // Test whether or not data of certain types is present, without actually
   // returning anything.
   bool HasString() const;
-  bool HasURL() const;
+  bool HasURL(FilenameToURLPolicy policy) const;
   bool HasFile() const;
   bool HasCustomFormat(const CustomFormat& format) const;
-
-  // Returns true if this OSExchangeData has data for ALL the formats in
-  // |formats| and ALL the custom formats in |custom_formats|.
-  bool HasAllFormats(int formats,
-                     const std::set<CustomFormat>& custom_formats) const;
 
   // Returns true if this OSExchangeData has data in any of the formats in
   // |formats| or any custom format in |custom_formats|.
@@ -225,7 +212,8 @@ class UI_BASE_EXPORT OSExchangeData {
                      const std::set<CustomFormat>& custom_formats) const;
 
 #if defined(OS_WIN)
-  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR).
+  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR on
+  // Windows).
   void SetFileContents(const base::FilePath& filename,
                        const std::string& file_contents);
   bool GetFileContents(base::FilePath* filename,
@@ -233,8 +221,6 @@ class UI_BASE_EXPORT OSExchangeData {
 
   // Adds a download file with full path (CF_HDROP).
   void SetDownloadFileInfo(const DownloadFileInfo& download);
-
-  void SetInDragLoop(bool in_drag_loop);
 #endif
 
 #if defined(OS_WIN) || defined(USE_AURA)

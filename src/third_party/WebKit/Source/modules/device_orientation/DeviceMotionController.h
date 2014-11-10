@@ -30,7 +30,7 @@
 #include "core/dom/DocumentSupplementable.h"
 #include "core/events/Event.h"
 #include "core/frame/DOMWindowLifecycleObserver.h"
-#include "modules/device_orientation/DeviceSensorEventController.h"
+#include "core/frame/DeviceSensorEventController.h"
 
 namespace WebCore {
 
@@ -43,12 +43,12 @@ public:
     virtual ~DeviceMotionController();
 
     static const char* supplementName();
-    static DeviceMotionController* from(Document*);
+    static DeviceMotionController& from(Document&);
 
     void didChangeDeviceMotion(DeviceMotionData*);
 
 private:
-    explicit DeviceMotionController(Document*);
+    explicit DeviceMotionController(Document&);
     virtual void registerWithDispatcher() OVERRIDE;
     virtual void unregisterWithDispatcher() OVERRIDE;
 

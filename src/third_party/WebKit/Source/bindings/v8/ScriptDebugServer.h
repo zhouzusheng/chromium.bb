@@ -79,6 +79,7 @@ public:
 
     bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, ScriptValue* newCallFrames, ScriptObject* result);
     ScriptValue currentCallFrames();
+    ScriptValue currentCallFramesForAsyncStack();
 
     class Task {
     public:
@@ -101,8 +102,11 @@ public:
     virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage);
     virtual void setPreprocessorSource(const String&) { }
     virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&) { }
-    virtual PassOwnPtr<ScriptSourceCode> preprocess(Frame*, const ScriptSourceCode&);
-    virtual String preprocessEventListener(Frame*, const String& source, const String& url, const String& functionName);
+    virtual PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
+    virtual String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
+
+    virtual void muteWarningsAndDeprecations() { }
+    virtual void unmuteWarningsAndDeprecations() { }
 
 protected:
     explicit ScriptDebugServer(v8::Isolate*);
@@ -133,8 +137,16 @@ protected:
     v8::Isolate* m_isolate;
 
 private:
+    enum ScopeInfoDetails {
+        AllScopes,
+        FastAsyncScopes,
+        NoScopes // Should be the last option.
+    };
+
+    ScriptValue currentCallFramesInner(ScopeInfoDetails);
+
     void stepCommandWithFrame(const char* functionName, const ScriptValue& frame);
-    PassRefPtr<JavaScriptCallFrame> wrapCallFrames(v8::Handle<v8::Object> executionState, int maximumLimit);
+    PassRefPtr<JavaScriptCallFrame> wrapCallFrames(v8::Handle<v8::Object> executionState, int maximumLimit, ScopeInfoDetails);
     bool executeSkipPauseRequest(ScriptDebugListener::SkipPauseRequest, v8::Handle<v8::Object> executionState);
 
     bool m_runningNestedMessageLoop;

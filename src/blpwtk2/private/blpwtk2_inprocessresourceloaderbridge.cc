@@ -28,6 +28,7 @@
 
 #include <base/bind.h>
 #include <base/message_loop/message_loop.h>
+#include <content/child/request_info.h>
 #include <net/base/mime_sniffer.h>
 #include <net/base/net_errors.h>
 #include <net/http/http_response_headers.h>
@@ -35,7 +36,7 @@
 namespace blpwtk2 {
 
 InProcessResourceLoaderBridge::InProcessResourceLoaderBridge(
-    const webkit_glue::ResourceLoaderBridge::RequestInfo& requestInfo)
+    const content::RequestInfo& requestInfo)
 : d_url(requestInfo.url)
 , d_peer(0)
 , d_userData(0)
@@ -59,7 +60,7 @@ InProcessResourceLoaderBridge::~InProcessResourceLoaderBridge()
 // webkit_glue::ResourceLoaderBridge overrides
 
 void InProcessResourceLoaderBridge::SetRequestBody(
-    webkit_glue::ResourceRequestBody* request_body)
+    content::ResourceRequestBody* request_body)
 {
 }
 

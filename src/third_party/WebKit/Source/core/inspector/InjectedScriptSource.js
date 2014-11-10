@@ -111,6 +111,30 @@ function nullifyObjectProto(obj)
 }
 
 /**
+ * FireBug's array detection.
+ * @param {*} obj
+ * @return {boolean}
+ */
+function isArrayLike(obj)
+{
+    try {
+        if (typeof obj !== "object")
+            return false;
+        if (typeof obj.splice === "function")
+            return isFinite(obj.length);
+        var str = Object.prototype.toString.call(obj);
+        if (str === "[object Array]" ||
+            str === "[object Arguments]" ||
+            str === "[object HTMLCollection]" ||
+            str === "[object NodeList]" ||
+            str === "[object DOMTokenList]")
+            return isFinite(obj.length);
+    } catch (e) {
+    }
+    return false;
+}
+
+/**
  * @constructor
  */
 var InjectedScript = function()
@@ -434,7 +458,7 @@ InjectedScript.prototype = {
 
                 try {
                     nameProcessed[name] = true;
-                    var descriptor = nullifyObjectProto(Object.getOwnPropertyDescriptor(/** @type {!Object} */ (o), name));
+                    var descriptor = nullifyObjectProto(InjectedScriptHost.suppressWarningsAndCall(Object, Object.getOwnPropertyDescriptor, o, name));
                     if (descriptor) {
                         if (accessorPropertiesOnly && !("get" in descriptor || "set" in descriptor))
                             continue;
@@ -557,7 +581,10 @@ InjectedScript.prototype = {
 
             return resolvedArg;
         } else if ("value" in callArgumentJson) {
-            return callArgumentJson.value;
+            var value = callArgumentJson.value;
+            if (callArgumentJson.type === "number" && typeof value !== "number")
+                value = Number(value);
+            return value;
         }
         return undefined;
     },
@@ -893,14 +920,8 @@ InjectedScript.prototype = {
         if (preciseType)
             return preciseType;
 
-        // FireBug's array detection.
-        try {
-            if (typeof obj.splice === "function" && isFinite(obj.length))
-                return "array";
-            if (Object.prototype.toString.call(obj) === "[object Arguments]" && isFinite(obj.length)) // arguments.
-                return "array";
-        } catch (e) {
-        }
+        if (isArrayLike(obj))
+            return "array";
 
         // If owning frame has navigated to somewhere else window properties will be undefined.
         return null;
@@ -989,8 +1010,19 @@ InjectedScript.RemoteObject = function(object, objectGroupName, forceValueType, 
             this.subtype = "null";
 
         // Provide user-friendly number values.
-        if (this.type === "number")
+        if (this.type === "number") {
             this.description = toStringDescription(object);
+            // Override "value" property for values that can not be JSON-stringified.
+            switch (this.description) {
+            case "NaN":
+            case "Infinity":
+            case "-Infinity":
+            case "-0":
+                this.value = this.description;
+                break;
+            }
+        }
+
         return;
     }
 

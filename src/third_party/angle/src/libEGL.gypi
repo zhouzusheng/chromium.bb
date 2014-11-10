@@ -20,7 +20,13 @@
                         'libGLESv2',
                         '<(SHARED_INTERMEDIATE_DIR)',
                     ],
-                    'sources': [ '<!@(python enumerate_files.py common libEGL -exclude common/version.h libEGL/dllmain.cpp -types *.cpp *.h)' ],
+                    'sources':
+                    [
+                        '<!@(python <(angle_build_scripts_path)/enumerate_files.py \
+                             -dirs common libEGL ../include \
+                             -exclude common/version.h libEGL/dllmain.cpp \
+                             -types *.cpp *.h)',
+                    ],
                     'msvs_disabled_warnings': [ 4267 ],
                     'link_settings':
                     {

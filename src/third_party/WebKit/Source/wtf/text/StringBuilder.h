@@ -265,7 +265,7 @@ public:
     {
         m_length = 0;
         m_string = String();
-        m_buffer = 0;
+        m_buffer = nullptr;
         m_bufferCharacters8 = 0;
         m_is8Bit = true;
     }

@@ -36,7 +36,7 @@
 #include "core/editing/SpellChecker.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/PaintPhase.h"
@@ -45,7 +45,7 @@
 
 namespace WebCore {
 
-BBWindowHooks::BBWindowHooks(Frame *frame)
+BBWindowHooks::BBWindowHooks(LocalFrame *frame)
     : DOMWindowProperty(frame)
 {
 }
@@ -107,7 +107,7 @@ String BBWindowHooks::getPlainText(Node* node, const String& excluder, const Str
 
 void BBWindowHooks::fakePaint(Document* document)
 {
-    Frame *frame = document->frame();
+    LocalFrame *frame = document->frame();
 
     // Do a "fake" paint in order to execute the code that computes the
     // rendered rect for each text match.
@@ -129,7 +129,7 @@ void BBWindowHooks::fakePaint(Document* document)
 
 void BBWindowHooks::setTextMatchMarkerVisibility(Document* document, bool highlight)
 {
-    Frame *frame = document->frame();
+    LocalFrame *frame = document->frame();
     frame->editor().setMarkedTextMatchesAreHighlighted(highlight);
 }
 
@@ -141,7 +141,7 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
         return false;
     }
 
-    WebCore::Frame *frame = range->ownerDocument().frame();
+    WebCore::LocalFrame *frame = range->ownerDocument().frame();
     WebCore::VisibleSelection s(range);
     frame->spellChecker().clearMisspellingsAndBadGrammar(s);
     frame->spellChecker().markMisspellingsAndBadGrammar(s, false, s);
@@ -150,7 +150,7 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
 
 void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 {
-    range->ownerDocument().markers()->removeMarkers(range,
+    range->ownerDocument().markers().removeMarkers(range,
         DocumentMarker::MarkerTypes(mask),
         static_cast<WebCore::DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>
         (removeMarkerFlag));
@@ -158,7 +158,7 @@ void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 
 void BBWindowHooks::addMarker(Range* range, long markerType)
 {
-    range->ownerDocument().markers()->addMarker(range,
+    range->ownerDocument().markers().addMarker(range,
         static_cast<WebCore::DocumentMarker::MarkerType>(markerType));
 
 }
@@ -177,7 +177,7 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
     WTF::RefPtr<WebCore::Element> e = toElement(node);
 
     if (e && e->isSpellCheckingEnabled()) {
-        WebCore::Frame *frame = e->document().frame();
+        WebCore::LocalFrame *frame = e->document().frame();
         if (frame) {
             WebCore::VisibleSelection s(WebCore::firstPositionInOrBeforeNode(e.get()),
                 WebCore::lastPositionInOrAfterNode(e.get()));
@@ -193,7 +193,8 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
 
 PassRefPtr<ClientRect> BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
 {
-    WebCore::VisiblePosition visiblePos = WebCore::Position(node, offset, WebCore::Position::PositionIsOffsetInAnchor);
+    WebCore::VisiblePosition visiblePos = WebCore::VisiblePosition(
+        WebCore::Position(node, offset, WebCore::Position::PositionIsOffsetInAnchor));
     WebCore::IntRect rc = visiblePos.absoluteCaretBounds();
     return ClientRect::create(rc);
 }

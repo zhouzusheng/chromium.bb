@@ -9,11 +9,11 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/renderer/spellchecker/custom_dictionary_engine.h"

@@ -7,13 +7,6 @@
     'use_snappy%': 1,
   },
   'conditions': [
-    ['OS == "android" and android_webview_build == 1', {
-      'variables': {
-        # Snappy not used in Android WebView
-        # crbug.com/236780
-        'use_snappy': 0,
-      },
-    }],
   ],
   'target_defaults': {
     'defines': [
@@ -177,6 +170,15 @@
       ],
       'sources': [
         'env_chromium_unittest.cc',
+      ],
+      'conditions': [
+        ['OS=="android" and gtest_target_type == "shared_library"', {
+          'type': 'shared_library',
+          'dependencies': [
+            '../../testing/android/native_test.gyp:native_test_native_code',
+            '../../tools/android/forwarder2/forwarder.gyp:forwarder2',
+          ],
+        }],
       ],
     },
     {

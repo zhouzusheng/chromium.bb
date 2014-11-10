@@ -33,18 +33,28 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/DOMWindow.h"
+#include "core/timing/Performance.h"
 #include "modules/webmidi/MIDIAccess.h"
 
 namespace WebCore {
 
 namespace {
 
+double now(ExecutionContext* context)
+{
+    DOMWindow* window = context ? context->executingWindow() : 0;
+    Performance* performance = window ? &window->performance() : 0;
+    return performance ? performance->now() : 0.0;
+}
+
 class MessageValidator {
 public:
-    static bool validate(Uint8Array* array, ExceptionState& exceptionState, bool sysExEnabled)
+    static bool validate(Uint8Array* array, ExceptionState& exceptionState, bool sysexEnabled)
     {
         MessageValidator validator(array);
-        return validator.process(exceptionState, sysExEnabled);
+        return validator.process(exceptionState, sysexEnabled);
     }
 private:
     MessageValidator(Uint8Array* array)
@@ -52,39 +62,39 @@ private:
         , m_length(array->length())
         , m_offset(0) { }
 
-    bool process(ExceptionState& exceptionState, bool sysExEnabled)
+    bool process(ExceptionState& exceptionState, bool sysexEnabled)
     {
         while (!isEndOfData() && acceptRealTimeMessages()) {
             if (!isStatusByte()) {
-                exceptionState.throwDOMException(TypeError, "Running status is not allowed " + getPositionString());
+                exceptionState.throwTypeError("Running status is not allowed " + getPositionString());
                 return false;
             }
-            if (isEndOfSysEx()) {
-                exceptionState.throwDOMException(TypeError, "Unexpected end of system exclusive message " + getPositionString());
+            if (isEndOfSysex()) {
+                exceptionState.throwTypeError("Unexpected end of system exclusive message " + getPositionString());
                 return false;
             }
             if (isReservedStatusByte()) {
-                exceptionState.throwDOMException(TypeError, "Reserved status is not allowed " + getPositionString());
+                exceptionState.throwTypeError("Reserved status is not allowed " + getPositionString());
                 return false;
             }
-            if (isSysEx()) {
-                if (!sysExEnabled) {
+            if (isSysex()) {
+                if (!sysexEnabled) {
                     exceptionState.throwDOMException(InvalidAccessError, "System exclusive message is not allowed " + getPositionString());
                     return false;
                 }
-                if (!acceptCurrentSysEx()) {
+                if (!acceptCurrentSysex()) {
                     if (isEndOfData())
-                        exceptionState.throwDOMException(TypeError, "System exclusive message is not ended by end of system exclusive message.");
+                        exceptionState.throwTypeError("System exclusive message is not ended by end of system exclusive message.");
                     else
-                        exceptionState.throwDOMException(TypeError, "System exclusive message contains a status byte " + getPositionString());
+                        exceptionState.throwTypeError("System exclusive message contains a status byte " + getPositionString());
                     return false;
                 }
             } else {
                 if (!acceptCurrentMessage()) {
                     if (isEndOfData())
-                        exceptionState.throwDOMException(TypeError, "Message is incomplete.");
+                        exceptionState.throwTypeError("Message is incomplete.");
                     else
-                        exceptionState.throwDOMException(TypeError, "Unexpected status byte at index " + getPositionString());
+                        exceptionState.throwTypeError("Unexpected status byte at index " + getPositionString());
                     return false;
                 }
             }
@@ -94,9 +104,9 @@ private:
 
 private:
     bool isEndOfData() { return m_offset >= m_length; }
-    bool isSysEx() { return m_data[m_offset] == 0xf0; }
+    bool isSysex() { return m_data[m_offset] == 0xf0; }
     bool isSystemMessage() { return m_data[m_offset] >= 0xf0; }
-    bool isEndOfSysEx() { return m_data[m_offset] == 0xf7; }
+    bool isEndOfSysex() { return m_data[m_offset] == 0xf7; }
     bool isRealTimeMessage() { return m_data[m_offset] >= 0xf8; }
     bool isStatusByte() { return m_data[m_offset] & 0x80; }
     bool isReservedStatusByte() { return m_data[m_offset] == 0xf4 || m_data[m_offset] == 0xf5 || m_data[m_offset] == 0xf9 || m_data[m_offset] == 0xfd; }
@@ -111,15 +121,15 @@ private:
         return false;
     }
 
-    bool acceptCurrentSysEx()
+    bool acceptCurrentSysex()
     {
-        ASSERT(isSysEx());
+        ASSERT(isSysex());
         for (m_offset++; !isEndOfData(); m_offset++) {
             if (isReservedStatusByte())
                 return false;
             if (isRealTimeMessage())
                 continue;
-            if (isEndOfSysEx()) {
+            if (isEndOfSysex()) {
                 m_offset++;
                 return true;
             }
@@ -132,7 +142,7 @@ private:
     bool acceptCurrentMessage()
     {
         ASSERT(isStatusByte());
-        ASSERT(!isSysEx());
+        ASSERT(!isSysex());
         ASSERT(!isReservedStatusByte());
         ASSERT(!isRealTimeMessage());
         static const int channelMessageLength[7] = { 3, 3, 3, 3, 2, 2, 3 }; // for 0x8*, 0x9*, ..., 0xe*
@@ -163,11 +173,10 @@ private:
 
 } // namespace
 
-PassRefPtr<MIDIOutput> MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
+PassRefPtrWillBeRawPtr<MIDIOutput> MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(access);
-    RefPtr<MIDIOutput> output = adoptRef(new MIDIOutput(access, portIndex, id, manufacturer, name, version));
-    return output.release();
+    return adoptRefWillBeRefCountedGarbageCollected(new MIDIOutput(access, portIndex, id, manufacturer, name, version));
 }
 
 MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
@@ -183,20 +192,26 @@ MIDIOutput::~MIDIOutput()
 
 void MIDIOutput::send(Uint8Array* array, double timestamp, ExceptionState& exceptionState)
 {
+    if (timestamp == 0.0)
+        timestamp = now(executionContext());
+
     if (!array)
         return;
 
-    if (MessageValidator::validate(array, exceptionState, midiAccess()->sysExEnabled()))
+    if (MessageValidator::validate(array, exceptionState, midiAccess()->sysexEnabled()))
         midiAccess()->sendMIDIData(m_portIndex, array->data(), array->length(), timestamp);
 }
 
 void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, ExceptionState& exceptionState)
 {
+    if (timestamp == 0.0)
+        timestamp = now(executionContext());
+
     RefPtr<Uint8Array> array = Uint8Array::create(unsignedData.size());
 
     for (size_t i = 0; i < unsignedData.size(); ++i) {
         if (unsignedData[i] > 0xff) {
-            exceptionState.throwDOMException(TypeError, "The value at index " + String::number(i) + " (" + String::number(unsignedData[i]) + ") is greater than 0xFF.");
+            exceptionState.throwTypeError("The value at index " + String::number(i) + " (" + String::number(unsignedData[i]) + ") is greater than 0xFF.");
             return;
         }
         unsigned char value = unsignedData[i] & 0xff;
@@ -208,12 +223,17 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, Exception
 
 void MIDIOutput::send(Uint8Array* data, ExceptionState& exceptionState)
 {
-    send(data, 0, exceptionState);
+    send(data, 0.0, exceptionState);
 }
 
 void MIDIOutput::send(Vector<unsigned> unsignedData, ExceptionState& exceptionState)
 {
-    send(unsignedData, 0, exceptionState);
+    send(unsignedData, 0.0, exceptionState);
+}
+
+void MIDIOutput::trace(Visitor* visitor)
+{
+    MIDIPort::trace(visitor);
 }
 
 } // namespace WebCore

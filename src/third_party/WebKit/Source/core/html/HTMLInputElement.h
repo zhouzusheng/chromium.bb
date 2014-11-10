@@ -203,7 +203,7 @@ public:
     bool multiple() const;
 
     FileList* files();
-    void setFiles(PassRefPtr<FileList>);
+    void setFiles(PassRefPtrWillBeRawPtr<FileList>);
 
     // Returns true if the given DragData has more than one dropped files.
     bool receiveDroppedFiles(const DragData*);
@@ -338,6 +338,8 @@ private:
     virtual void postDispatchEventHandler(Event*, void* dataFromPreDispatch) OVERRIDE FINAL;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE FINAL;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE FINAL;
     virtual bool isInRange() const OVERRIDE FINAL;
     virtual bool isOutOfRange() const OVERRIDE FINAL;
 
@@ -399,8 +401,6 @@ private:
     OwnPtr<HTMLImageLoader> m_imageLoader;
     OwnPtr<ListAttributeTargetObserver> m_listAttributeTargetObserver;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLInputElement, hasTagName(HTMLNames::inputTag));
 
 } //namespace
 #endif

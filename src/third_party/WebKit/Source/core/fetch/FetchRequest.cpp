@@ -69,17 +69,23 @@ FetchRequest::~FetchRequest()
 {
 }
 
-void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCredentials allowCredentials)
+void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCredentials allowCredentials, CredentialRequest requested)
 {
+    ASSERT(requested == ClientDidNotRequestCredentials || allowCredentials == AllowStoredCredentials);
     updateRequestForAccessControl(m_resourceRequest, origin, allowCredentials);
     m_options.corsEnabled = IsCORSEnabled;
+    m_options.securityOrigin = origin;
+    m_options.credentialsRequested = requested;
+}
+
+void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, StoredCredentials allowCredentials)
+{
+    setCrossOriginAccessControl(origin, allowCredentials, allowCredentials == AllowStoredCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials);
 }
 
 void FetchRequest::setCrossOriginAccessControl(SecurityOrigin* origin, const AtomicString& crossOriginMode)
 {
-    StoredCredentials allowCredentials = equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials;
-    updateRequestForAccessControl(m_resourceRequest, origin, allowCredentials);
-    m_options.corsEnabled = IsCORSEnabled;
+    setCrossOriginAccessControl(origin, equalIgnoringCase(crossOriginMode, "use-credentials") ? AllowStoredCredentials : DoNotAllowStoredCredentials);
 }
 
 } // namespace WebCore

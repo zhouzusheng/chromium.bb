@@ -34,6 +34,7 @@
 #include "core/events/EventListener.h"
 #include "core/events/EventSender.h"
 #include "core/svg/SVGDocumentExtensions.h"
+#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/animation/SMILTimeContainer.h"
@@ -48,20 +49,24 @@ namespace WebCore {
 
 class RepeatEvent FINAL : public Event {
 public:
-    static PassRefPtr<RepeatEvent> create(const AtomicString& type, int repeat)
+    static PassRefPtrWillBeRawPtr<RepeatEvent> create(const AtomicString& type, int repeat)
     {
-        return adoptRef(new RepeatEvent(type, false, false, repeat));
+        return adoptRefWillBeRefCountedGarbageCollected(new RepeatEvent(type, false, false, repeat));
     }
 
     virtual ~RepeatEvent() { }
 
     int repeat() const { return m_repeat; }
+
+    virtual void trace(Visitor* visitor) { }
+
 protected:
     RepeatEvent(const AtomicString& type, bool canBubble, bool cancelable, int repeat = -1)
         : Event(type, canBubble, cancelable)
         , m_repeat(repeat)
     {
     }
+
 private:
     int m_repeat;
 };
@@ -196,7 +201,7 @@ SVGSMILElement::~SVGSMILElement()
 
 void SVGSMILElement::clearResourceAndEventBaseReferences()
 {
-    document().accessSVGExtensions()->removeAllTargetReferencesForElement(this);
+    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
 }
 
 void SVGSMILElement::clearConditions()
@@ -233,17 +238,17 @@ void SVGSMILElement::buildPendingResource()
 
     if (!svgTarget) {
         // Do not register as pending if we are already pending this resource.
-        if (document().accessSVGExtensions()->isElementPendingResource(this, id))
+        if (document().accessSVGExtensions().isElementPendingResource(this, id))
             return;
 
         if (!id.isEmpty()) {
-            document().accessSVGExtensions()->addPendingResource(id, this);
+            document().accessSVGExtensions().addPendingResource(id, this);
             ASSERT(hasPendingResources());
         }
     } else {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document().accessSVGExtensions()->addElementReferencingTarget(this, svgTarget);
+        document().accessSVGExtensions().addElementReferencingTarget(this, svgTarget);
     }
     connectEventBaseConditions();
 }
@@ -332,7 +337,7 @@ void SVGSMILElement::removedFrom(ContainerNode* rootParent)
         setTargetElement(0);
         setAttributeName(anyQName());
         animationAttributeChanged();
-        m_timeContainer = 0;
+        m_timeContainer = nullptr;
     }
 
     SVGElement::removedFrom(rootParent);
@@ -587,7 +592,7 @@ void SVGSMILElement::connectSyncBaseConditions()
             ASSERT(!condition.m_baseID.isEmpty());
             condition.m_syncbase = treeScope().getElementById(AtomicString(condition.m_baseID));
             if (!condition.m_syncbase || !isSVGSMILElement(*condition.m_syncbase)) {
-                condition.m_syncbase = 0;
+                condition.m_syncbase = nullptr;
                 continue;
             }
             toSVGSMILElement(condition.m_syncbase.get())->addSyncBaseDependent(this);
@@ -605,7 +610,7 @@ void SVGSMILElement::disconnectSyncBaseConditions()
         if (condition.m_type == Condition::Syncbase) {
             if (condition.m_syncbase)
                 toSVGSMILElement(condition.m_syncbase.get())->removeSyncBaseDependent(this);
-            condition.m_syncbase = 0;
+            condition.m_syncbase = nullptr;
         }
     }
 }
@@ -619,14 +624,14 @@ void SVGSMILElement::connectEventBaseConditions()
             ASSERT(!condition.m_syncbase);
             SVGElement* eventBase = eventBaseFor(condition);
             if (!eventBase) {
-                if (!condition.m_baseID.isEmpty() && !document().accessSVGExtensions()->isElementPendingResource(this, AtomicString(condition.m_baseID)))
-                    document().accessSVGExtensions()->addPendingResource(AtomicString(condition.m_baseID), this);
+                if (!condition.m_baseID.isEmpty() && !document().accessSVGExtensions().isElementPendingResource(this, AtomicString(condition.m_baseID)))
+                    document().accessSVGExtensions().addPendingResource(AtomicString(condition.m_baseID), this);
                 continue;
             }
             ASSERT(!condition.m_eventListener);
             condition.m_eventListener = ConditionEventListener::create(this, &condition);
             eventBase->addEventListener(AtomicString(condition.m_name), condition.m_eventListener, false);
-            document().accessSVGExtensions()->addElementReferencingTarget(this, eventBase);
+            document().accessSVGExtensions().addElementReferencingTarget(this, eventBase);
         }
     }
 }
@@ -648,7 +653,7 @@ void SVGSMILElement::disconnectEventBaseConditions()
             if (eventBase)
                 eventBase->removeEventListener(AtomicString(condition.m_name), condition.m_eventListener.get(), false);
             condition.m_eventListener->disconnectAnimation();
-            condition.m_eventListener = 0;
+            condition.m_eventListener = nullptr;
         }
     }
 }
@@ -744,16 +749,21 @@ SMILTime SVGSMILElement::repeatCount() const
 {
     if (m_cachedRepeatCount != invalidCachedTime)
         return m_cachedRepeatCount;
+    SMILTime computedRepeatCount = SMILTime::unresolved();
     const AtomicString& value = fastGetAttribute(SVGNames::repeatCountAttr);
-    if (value.isNull())
-        return SMILTime::unresolved();
-
-    DEFINE_STATIC_LOCAL(const AtomicString, indefiniteValue, ("indefinite", AtomicString::ConstructFromLiteral));
-    if (value == indefiniteValue)
-        return SMILTime::indefinite();
-    bool ok;
-    double result = value.string().toDouble(&ok);
-    return m_cachedRepeatCount = ok && result > 0 ? result : SMILTime::unresolved();
+    if (!value.isNull()) {
+        DEFINE_STATIC_LOCAL(const AtomicString, indefiniteValue, ("indefinite", AtomicString::ConstructFromLiteral));
+        if (value == indefiniteValue) {
+            computedRepeatCount = SMILTime::indefinite();
+        } else {
+            bool ok;
+            double result = value.string().toDouble(&ok);
+            if (ok && result > 0)
+                computedRepeatCount = result;
+        }
+    }
+    m_cachedRepeatCount = computedRepeatCount;
+    return m_cachedRepeatCount;
 }
 
 SMILTime SVGSMILElement::maxValue() const
@@ -1020,7 +1030,7 @@ SVGSMILElement::RestartedInterval SVGSMILElement::maybeRestartInterval(SMILTime 
     }
 
     if (elapsed >= m_intervalEnd) {
-        if (resolveNextInterval())
+        if (resolveNextInterval() && elapsed >= m_intervalBegin)
             return DidRestartInterval;
     }
     return DidNotRestartInterval;
@@ -1098,7 +1108,7 @@ SMILTime SVGSMILElement::calculateNextProgressTime(SMILTime elapsed) const
     if (m_activeState == Active) {
         // If duration is indefinite the value does not actually change over time. Same is true for <set>.
         SMILTime simpleDuration = this->simpleDuration();
-        if (simpleDuration.isIndefinite() || hasTagName(SVGNames::setTag)) {
+        if (simpleDuration.isIndefinite() || isSVGSetElement(*this)) {
             SMILTime repeatingDurationEnd = m_intervalBegin + repeatingDuration();
             // We are supposed to do freeze semantics when repeating ends, even if the element is still active.
             // Take care that we get a timer callback at that point.
@@ -1197,7 +1207,7 @@ bool SVGSMILElement::progress(SMILTime elapsed, SVGSMILElement* resultElement, b
     if ((oldActiveState == Active && m_activeState != Active) || restartedInterval == DidRestartInterval) {
         smilEndEventSender().dispatchEventSoon(this);
         endedActiveInterval();
-        if (restartedInterval == DidNotRestartInterval && m_activeState != Frozen && this == resultElement)
+        if (!animationIsContributing && this == resultElement)
             clearAnimatedType(m_targetElement);
     }
 

@@ -166,6 +166,7 @@ void RangeInputType::handleTouchEvent(TouchEvent* event)
         return;
 
     if (event->type() == EventTypeNames::touchend) {
+        element().dispatchFormControlChangeEvent();
         event->setDefaultHandled();
         return;
     }
@@ -230,12 +231,11 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
 
     if (newValue != current) {
         EventQueueScope scope;
-        TextFieldEventBehavior eventBehavior = DispatchChangeEvent;
+        TextFieldEventBehavior eventBehavior = DispatchInputAndChangeEvent;
         setValueAsDecimal(newValue, eventBehavior, IGNORE_EXCEPTION);
 
         if (AXObjectCache* cache = element().document().existingAXObjectCache())
             cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
-        element().dispatchFormControlChangeEvent();
     }
 
     event->setDefaultHandled();
@@ -318,7 +318,7 @@ void RangeInputType::disabledAttributeChanged()
 
 bool RangeInputType::shouldRespectListAttribute()
 {
-    return InputType::themeSupportsDataListUI(this);
+    return true;
 }
 
 inline SliderThumbElement* RangeInputType::sliderThumbElement() const

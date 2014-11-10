@@ -77,7 +77,7 @@ WebInspector.ResourcesPanel = function(database)
         this.sidebarTree.appendChild(this.fileSystemListTreeElement);
     }
 
-    var mainView = new WebInspector.View();
+    var mainView = new WebInspector.VBox();
     this.storageViews = mainView.element.createChild("div", "resources-main diff-container");
     var statusBarContainer = mainView.element.createChild("div", "resources-status-bar");
     this.storageViewStatusBarItemsContainer = statusBarContainer.createChild("div", "status-bar");
@@ -102,14 +102,17 @@ WebInspector.ResourcesPanel = function(database)
     this.sidebarElement().addEventListener("mouseout", this._onmouseout.bind(this), false);
 
     /**
-     * @return {!WebInspector.View}
      * @this {WebInspector.ResourcesPanel}
+     * @return {?WebInspector.SourceFrame}
      */
-    function viewGetter()
+    function sourceFrameGetter()
     {
-        return this.visibleView;
+        var view = this.visibleView;
+        if (view && view instanceof WebInspector.SourceFrame)
+            return /** @type {!WebInspector.SourceFrame} */ (view);
+        return null;
     }
-    WebInspector.GoToLineDialog.install(this, viewGetter.bind(this));
+    WebInspector.GoToLineDialog.install(this, sourceFrameGetter.bind(this));
 
     if (WebInspector.resourceTreeModel.cachedResourcesLoaded())
         this._cachedResourcesLoaded();
@@ -171,7 +174,9 @@ WebInspector.ResourcesPanel.prototype = {
             }
         }
 
-        var mainResource = WebInspector.inspectedPageURL && this.resourcesListTreeElement && this.resourcesListTreeElement.expanded && WebInspector.resourceTreeModel.resourceForURL(WebInspector.inspectedPageURL);
+        var mainResource = WebInspector.resourceTreeModel.inspectedPageURL() && this.resourcesListTreeElement && this.resourcesListTreeElement.expanded
+                ? WebInspector.resourceTreeModel.resourceForURL(WebInspector.resourceTreeModel.inspectedPageURL())
+                : null;
         if (mainResource)
             this.showResource(mainResource);
     },
@@ -423,9 +428,9 @@ WebInspector.ResourcesPanel.prototype = {
             resourceTreeElement.revealAndSelect(true);
 
         if (typeof line === "number") {
-            var view = this._resourceViewForResource(resource);
-            if (view.canHighlightPosition())
-                view.highlightPosition(line, column);
+            var resourceSourceFrame = this._resourceSourceFrameViewForResource(resource);
+            if (resourceSourceFrame)
+                resourceSourceFrame.revealPosition(line, column, true);
         }
         return true;
     },
@@ -440,6 +445,10 @@ WebInspector.ResourcesPanel.prototype = {
         this._innerShowView(view);
     },
 
+    /**
+     * @param {!WebInspector.Resource} resource
+     * @return {?WebInspector.View}
+     */
     _resourceViewForResource: function(resource)
     {
         if (WebInspector.ResourceView.hasTextContent(resource)) {
@@ -449,6 +458,18 @@ WebInspector.ResourcesPanel.prototype = {
             return treeElement.sourceView();
         }
         return WebInspector.ResourceView.nonSourceViewForResource(resource);
+    },
+
+    /**
+     * @param {!WebInspector.Resource} resource
+     * @return {?WebInspector.ResourceSourceFrame}
+     */
+    _resourceSourceFrameViewForResource: function(resource)
+    {
+        var resourceView = this._resourceViewForResource(resource);
+        if (resourceView && resourceView instanceof WebInspector.ResourceSourceFrame)
+            return /** @type {!WebInspector.ResourceSourceFrame} */ (resourceView);
+        return null;
     },
 
     /**
@@ -696,15 +717,6 @@ WebInspector.ResourcesPanel.prototype = {
             this._applicationCacheViews[manifestURL].updateNetworkState(isNowOnline);
     },
 
-    _forAllResourceTreeElements: function(callback)
-    {
-        var stop = false;
-        for (var treeElement = this.resourcesListTreeElement; !stop && treeElement; treeElement = treeElement.traverseNextTreeElement(false, this.resourcesListTreeElement, true)) {
-            if (treeElement instanceof WebInspector.FrameResourceTreeElement)
-                stop = callback(treeElement);
-        }
-    },
-
     _findTreeElementForResource: function(resource)
     {
         function isAncestor(ancestor, object)
@@ -780,7 +792,7 @@ WebInspector.ResourcesPanel.ResourceRevealer.prototype = {
     reveal: function(resource, lineNumber)
     {
         if (resource instanceof WebInspector.Resource)
-            /** @type {!WebInspector.ResourcesPanel} */ (WebInspector.showPanel("resources")).showResource(resource, lineNumber);
+            /** @type {!WebInspector.ResourcesPanel} */ (WebInspector.inspectorView.showPanel("resources")).showResource(resource, lineNumber);
     }
 }
 
@@ -2077,11 +2089,11 @@ WebInspector.FileSystemTreeElement.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  */
 WebInspector.StorageCategoryView = function()
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
 
     this.element.classList.add("storage-view");
     this._emptyView = new WebInspector.EmptyView("");
@@ -2094,5 +2106,5 @@ WebInspector.StorageCategoryView.prototype = {
         this._emptyView.text = text;
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }

@@ -414,7 +414,7 @@ GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
 }
 
 
-bool GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
+void GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
                       base::WaitableEvent* shutdown_event) {
   DCHECK(!channel_.get());
 
@@ -438,8 +438,6 @@ bool GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
   channel_->AddFilter(filter_.get());
 
   devtools_gpu_agent_.reset(new DevToolsGpuAgent(this));
-
-  return true;
 }
 
 std::string GpuChannel::GetChannelName() {
@@ -894,6 +892,15 @@ void GpuChannel::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
 
 void GpuChannel::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
   channel_->RemoveFilter(filter);
+}
+
+uint64 GpuChannel::GetMemoryUsage() {
+  uint64 size = 0;
+  for (StubMap::Iterator<GpuCommandBufferStub> it(&stubs_);
+       !it.IsAtEnd(); it.Advance()) {
+    size += it.GetCurrentValue()->GetMemoryUsage();
+  }
+  return size;
 }
 
 }  // namespace content

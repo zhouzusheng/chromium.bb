@@ -83,6 +83,11 @@ Options:
                     flag should match what sys.platform would report for your
                     target platform; see grit.node.base.EvaluateCondition.
 
+  -h HEADERFORMAT   Custom format string to use for generating rc header files.
+                    The string should have two placeholders: {textual_id}
+                    and {numeric_id}. E.g. "#define {textual_id} {numeric_id}"
+                    Otherwise it will use the default "#define SYMBOL 1234"
+
 Conditional inclusion of resources only affects the output of files which
 control which resources get linked into a binary, e.g. it affects .rc files
 meant for compilation but it does not affect resource header files (that define
@@ -100,7 +105,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
     target_platform = None
     depfile = None
     depdir = None
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:', ('depdir=','depfile='))
+    rc_header_format = None
+    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:h:', ('depdir=','depfile='))
     for (key, val) in own_opts:
       if key == '-o':
         self.output_directory = val
@@ -119,6 +125,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
         whitelist_filenames.append(val)
       elif key == '-t':
         target_platform = val
+      elif key == '-h':
+        rc_header_format = val
       elif key == '--depdir':
         depdir = val
       elif key == '--depfile':
@@ -151,6 +159,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
     self.res.SetOutputLanguage('en')
+    if rc_header_format:
+      self.res.AssignRcHeaderFormat(rc_header_format)
     self.res.RunGatherers()
     self.Process()
 
@@ -180,7 +190,6 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # The set of names that are whitelisted to actually be included in the
     # output.
     self.whitelist_names = None
-
 
   @staticmethod
   def AddWhitelistTags(start_node, whitelist_names):

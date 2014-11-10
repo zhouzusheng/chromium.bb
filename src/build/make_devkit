@@ -111,7 +111,7 @@ def copyBin(destDir, version):
     'blpangle' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
     'd3dcompiler_46.dll',
-    'icudt_cr33.dll',
+    'icudtl.dat',
     'libEGL.dll',
     'libGLESv2.dll',
     'blpwtk2_devtools' + productAppend + '.pak',
@@ -238,6 +238,7 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
   applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
+  applyVariableToEnvironment('GYP_DEFINES', 'win_embed_manifest', '1')
 
   print("Running hooks...")
   sys.stdout.flush()

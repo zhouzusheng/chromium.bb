@@ -34,11 +34,11 @@
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/editing/TypingCommand.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -56,12 +56,12 @@ InputMethodController::SelectionOffsetsScope::~SelectionOffsetsScope()
 
 // ----------------------------
 
-PassOwnPtr<InputMethodController> InputMethodController::create(Frame& frame)
+PassOwnPtr<InputMethodController> InputMethodController::create(LocalFrame& frame)
 {
     return adoptPtr(new InputMethodController(frame));
 }
 
-InputMethodController::InputMethodController(Frame& frame)
+InputMethodController::InputMethodController(LocalFrame& frame)
     : m_frame(frame)
     , m_compositionStart(0)
     , m_compositionEnd(0)
@@ -84,7 +84,7 @@ inline Editor& InputMethodController::editor() const
 
 void InputMethodController::clear()
 {
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 }
 
@@ -211,7 +211,7 @@ bool InputMethodController::finishComposition(const String& text, FinishComposit
         TypingCommand::deleteSelection(*m_frame.document(), 0);
     }
 
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 
     insertTextForConfirmedComposition(text);
@@ -231,7 +231,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
     // Updates styles before setting selection for composition to prevent
     // inserting the previous composition text into text nodes oddly.
     // See https://bugs.webkit.org/show_bug.cgi?id=46868
-    m_frame.document()->updateStyleIfNeeded();
+    m_frame.document()->updateRenderTreeIfNeeded();
 
     selectComposition();
 
@@ -279,7 +279,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
         TypingCommand::deleteSelection(*m_frame.document(), TypingCommand::PreventSpellChecking);
     }
 
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 
     if (!text.isEmpty()) {
@@ -310,7 +310,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
             unsigned start = std::min(baseOffset + selectionStart, extentOffset);
             unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
             RefPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
-            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, false);
+            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, static_cast<FrameSelection::SetSelectionOption>(0));
         }
     }
 }
@@ -321,7 +321,7 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
     Position base = m_frame.selection().base().downstream();
     Node* baseNode = base.anchorNode();
     if (editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
-        m_compositionNode = 0;
+        m_compositionNode = nullptr;
         m_customCompositionUnderlines.clear();
 
         if (base.anchorType() != Position::PositionIsOffsetInAnchor)
@@ -352,12 +352,12 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
 PassRefPtr<Range> InputMethodController::compositionRange() const
 {
     if (!hasComposition())
-        return 0;
+        return nullptr;
     unsigned length = m_compositionNode->length();
     unsigned start = std::min(m_compositionStart, length);
     unsigned end = std::min(std::max(start, m_compositionEnd), length);
     if (start >= end)
-        return 0;
+        return nullptr;
     return Range::create(m_compositionNode->document(), m_compositionNode.get(), start, m_compositionNode.get(), end);
 }
 
@@ -383,7 +383,7 @@ bool InputMethodController::setSelectionOffsets(const PlainTextRange& selectionO
     if (!range)
         return false;
 
-    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, true);
+    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, FrameSelection::CloseTyping);
 }
 
 bool InputMethodController::setEditableSelectionOffsets(const PlainTextRange& selectionOffsets)

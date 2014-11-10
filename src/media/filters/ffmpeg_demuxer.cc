@@ -268,6 +268,8 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
   bitstream_converter_enabled_ = true;
 }
 
+bool FFmpegDemuxerStream::SupportsConfigChanges() { return false; }
+
 AudioDecoderConfig FFmpegDemuxerStream::audio_decoder_config() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK_EQ(type_, AUDIO);
@@ -313,14 +315,20 @@ void FFmpegDemuxerStream::SatisfyPendingRead() {
 }
 
 bool FFmpegDemuxerStream::HasAvailableCapacity() {
-  // TODO(scherkus): Remove early return and reenable time-based capacity
+  // TODO(scherkus): Remove this return and reenable time-based capacity
   // after our data sources support canceling/concurrent reads, see
   // http://crbug.com/165762 for details.
+#if 1
   return !read_cb_.is_null();
-
+#else
   // Try to have one second's worth of encoded data per stream.
   const base::TimeDelta kCapacity = base::TimeDelta::FromSeconds(1);
   return buffer_queue_.IsEmpty() || buffer_queue_.Duration() < kCapacity;
+#endif
+}
+
+size_t FFmpegDemuxerStream::MemoryUsage() const {
+  return buffer_queue_.data_size();
 }
 
 TextKind FFmpegDemuxerStream::GetTextKind() const {
@@ -363,7 +371,6 @@ FFmpegDemuxer::FFmpegDemuxer(
     const scoped_refptr<MediaLog>& media_log)
     : host_(NULL),
       task_runner_(task_runner),
-      weak_factory_(this),
       blocking_thread_("FFmpegDemuxer"),
       pending_read_(false),
       pending_seek_(false),
@@ -374,7 +381,8 @@ FFmpegDemuxer::FFmpegDemuxer(
       audio_disabled_(false),
       text_enabled_(false),
       duration_known_(false),
-      need_key_cb_(need_key_cb) {
+      need_key_cb_(need_key_cb),
+      weak_factory_(this) {
   DCHECK(task_runner_.get());
   DCHECK(data_source_);
 }
@@ -384,9 +392,10 @@ FFmpegDemuxer::~FFmpegDemuxer() {}
 void FFmpegDemuxer::Stop(const base::Closure& callback) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   url_protocol_->Abort();
-  data_source_->Stop(BindToCurrentLoop(base::Bind(
-      &FFmpegDemuxer::OnDataSourceStopped, weak_this_,
-      BindToCurrentLoop(callback))));
+  data_source_->Stop(
+      BindToCurrentLoop(base::Bind(&FFmpegDemuxer::OnDataSourceStopped,
+                                   weak_factory_.GetWeakPtr(),
+                                   BindToCurrentLoop(callback))));
   data_source_ = NULL;
 }
 
@@ -413,7 +422,8 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
                  -1,
                  time.InMicroseconds(),
                  flags),
-      base::Bind(&FFmpegDemuxer::OnSeekFrameDone, weak_this_, cb));
+      base::Bind(
+          &FFmpegDemuxer::OnSeekFrameDone, weak_factory_.GetWeakPtr(), cb));
 }
 
 void FFmpegDemuxer::OnAudioRendererDisabled() {
@@ -432,7 +442,6 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
                                bool enable_text_tracks) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   host_ = host;
-  weak_this_ = weak_factory_.GetWeakPtr();
   text_enabled_ = enable_text_tracks;
 
   // TODO(scherkus): DataSource should have a host by this point,
@@ -455,7 +464,9 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
       blocking_thread_.message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&FFmpegGlue::OpenContext, base::Unretained(glue_.get())),
-      base::Bind(&FFmpegDemuxer::OnOpenContextDone, weak_this_, status_cb));
+      base::Bind(&FFmpegDemuxer::OnOpenContextDone,
+                 weak_factory_.GetWeakPtr(),
+                 status_cb));
 }
 
 DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStream::Type type) {
@@ -554,7 +565,9 @@ void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
       base::Bind(&avformat_find_stream_info,
                  glue_->format_context(),
                  static_cast<AVDictionary**>(NULL)),
-      base::Bind(&FFmpegDemuxer::OnFindStreamInfoDone, weak_this_, status_cb));
+      base::Bind(&FFmpegDemuxer::OnFindStreamInfoDone,
+                 weak_factory_.GetWeakPtr(),
+                 status_cb));
 }
 
 void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
@@ -729,8 +742,8 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   }
 
 
-  media_log_->SetDoubleProperty("max_duration", max_duration.InSecondsF());
-  media_log_->SetDoubleProperty("start_time", start_time_.InSecondsF());
+  media_log_->SetTimeProperty("max_duration", max_duration);
+  media_log_->SetTimeProperty("start_time", start_time_);
   media_log_->SetIntegerProperty("bitrate", bitrate_);
 
   status_cb.Run(PIPELINE_OK);
@@ -787,8 +800,9 @@ void FFmpegDemuxer::ReadFrameIfNeeded() {
       blocking_thread_.message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&av_read_frame, glue_->format_context(), packet_ptr),
-      base::Bind(
-          &FFmpegDemuxer::OnReadFrameDone, weak_this_, base::Passed(&packet)));
+      base::Bind(&FFmpegDemuxer::OnReadFrameDone,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&packet)));
 }
 
 void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
@@ -800,7 +814,10 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
     return;
   }
 
-  if (result < 0) {
+  // Consider the stream as ended if:
+  // - either underlying ffmpeg returned an error
+  // - or FFMpegDemuxer reached the maximum allowed memory usage.
+  if (result < 0 || IsMaxMemoryUsageReached()) {
     // Update the duration based on the highest elapsed time across all streams
     // if it was previously unknown.
     if (!duration_known_) {
@@ -903,6 +920,26 @@ bool FFmpegDemuxer::StreamsHaveAvailableCapacity() {
     if (*iter && (*iter)->HasAvailableCapacity()) {
       return true;
     }
+  }
+  return false;
+}
+
+bool FFmpegDemuxer::IsMaxMemoryUsageReached() const {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  // Max allowed memory usage, all streams combined.
+  const size_t kDemuxerMemoryLimit = 150 * 1024 * 1024;
+
+  size_t memory_left = kDemuxerMemoryLimit;
+  for (StreamVector::const_iterator iter = streams_.begin();
+       iter != streams_.end(); ++iter) {
+    if (!(*iter))
+      continue;
+
+    size_t stream_memory_usage = (*iter)->MemoryUsage();
+    if (stream_memory_usage > memory_left)
+      return true;
+    memory_left -= stream_memory_usage;
   }
   return false;
 }

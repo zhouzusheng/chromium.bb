@@ -47,12 +47,12 @@ WebDOMMediaStreamTrack WebDOMMediaStreamTrack::fromV8Value(v8::Handle<v8::Value>
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
         return WebDOMMediaStreamTrack(WebCore::V8MediaStreamTrack::toNative(object));
     }
-    return WebDOMMediaStreamTrack(0);
+    return WebDOMMediaStreamTrack(nullptr);
 }
 
 void WebDOMMediaStreamTrack::reset()
 {
-    m_private = 0;
+    m_private.reset();
 }
 
 void WebDOMMediaStreamTrack::assign(const WebDOMMediaStreamTrack& b)

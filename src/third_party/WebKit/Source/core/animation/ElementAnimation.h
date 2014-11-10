@@ -31,19 +31,56 @@
 #ifndef ElementAnimation_h
 #define ElementAnimation_h
 
-#include "wtf/Vector.h"
+#include "RuntimeEnabledFeatures.h"
+#include "core/animation/Animation.h"
+#include "core/animation/DocumentTimeline.h"
+#include "core/animation/EffectInput.h"
+#include "core/animation/TimingInput.h"
+#include "core/dom/Element.h"
 
 namespace WebCore {
 
-class Animation;
 class Dictionary;
-class Element;
 
 class ElementAnimation {
 public:
-    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector, Dictionary timingInput);
-    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector, double timingInput);
-    static Animation* animate(Element*, Vector<Dictionary> keyframesDictionaryVector);
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Dictionary& timingInputDictionary)
+    {
+        return animateInternal(element, effect, TimingInput::convert(timingInputDictionary));
+    }
+
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration)
+    {
+        return animateInternal(element, effect, TimingInput::convert(duration));
+    }
+
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect)
+    {
+        return animateInternal(element, effect, Timing());
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState& exceptionState)
+    {
+        return animateInternal(element, EffectInput::convert(&element, keyframeDictionaryVector, exceptionState), TimingInput::convert(timingInputDictionary));
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+    {
+        return animateInternal(element, EffectInput::convert(&element, keyframeDictionaryVector, exceptionState), TimingInput::convert(duration));
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+    {
+        return animateInternal(element, EffectInput::convert(&element, keyframeDictionaryVector, exceptionState), Timing());
+    }
+
+private:
+    static AnimationPlayer* animateInternal(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing)
+    {
+        ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+        RefPtr<Animation> animation = Animation::create(&element, effect, timing);
+        return element.document().timeline().play(animation.get());
+    }
 };
 
 } // namespace WebCore

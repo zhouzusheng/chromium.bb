@@ -38,9 +38,11 @@
 #include "WebAudioDevice.h"
 #include "WebCommon.h"
 #include "WebData.h"
+#include "WebGamepadListener.h"
 #include "WebGamepads.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
+#include "WebScreenOrientation.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
@@ -83,6 +85,7 @@ class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
+class WebScreenOrientationListener;
 class WebScrollbarBehavior;
 class WebSocketHandle;
 class WebSocketStreamHandle;
@@ -138,12 +141,6 @@ public:
     virtual WebSpeechSynthesizer* createSpeechSynthesizer(WebSpeechSynthesizerClient*) { return 0; }
 
 
-    // Media --------------------------------------------------------------
-
-    // May return null.
-    virtual WebContentDecryptionModule* createContentDecryptionModule(const WebString& keySystem) { return 0; }
-
-
     // Audio --------------------------------------------------------------
 
     virtual double audioHardwareSampleRate() { return 0; }
@@ -153,10 +150,6 @@ public:
     // Creates a device for audio I/O.
     // Pass in (numberOfInputChannels > 0) if live/local audio input is desired.
     virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*, const WebString& deviceId) { return 0; }
-
-    // FIXME: remove deprecated APIs once chromium switches over to new method.
-    virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
-    virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
 
 
     // MIDI ----------------------------------------------------------------
@@ -217,6 +210,8 @@ public:
     // Gamepad -------------------------------------------------------------
 
     virtual void sampleGamepads(WebGamepads& into) { into.length = 0; }
+
+    virtual void setGamepadListener(WebGamepadListener*) { }
 
 
     // History -------------------------------------------------------------
@@ -322,8 +317,8 @@ public:
     // Returns a new WebSocketHandle instance.
     virtual WebSocketHandle* createWebSocketHandle() { return 0; }
 
-    // Returns the User-Agent string that should be used for the given URL.
-    virtual WebString userAgent(const WebURL&) { return WebString(); }
+    // Returns the User-Agent string.
+    virtual WebString userAgent() { return WebString(); }
 
     // A suggestion to cache this metadata in association with this URL.
     virtual void cacheMetadata(const WebURL&, double responseTime, const char* data, size_t dataSize) { }
@@ -391,8 +386,7 @@ public:
     // Decodes the in-memory audio file data and returns the linear PCM audio data in the destinationBus.
     // A sample-rate conversion to sampleRate will occur if the file data is at a different sample-rate.
     // Returns true on success.
-    virtual bool loadAudioResource(WebAudioBus* destinationBus, const char* audioFileData, size_t dataSize, double sampleRate) { return false; }
-
+    virtual bool loadAudioResource(WebAudioBus* destinationBus, const char* audioFileData, size_t dataSize) { return false; }
 
     // Screen -------------------------------------------------------------
 
@@ -450,7 +444,6 @@ public:
 
     // Testing -------------------------------------------------------------
 
-#define HAVE_WEBUNITTESTSUPPORT 1
     // Get a pointer to testing support interfaces. Will not be available in production builds.
     virtual WebUnitTestSupport* unitTestSupport() { return 0; }
 
@@ -557,6 +550,8 @@ public:
     //
     // May return null if GPU is not supported.
     // Returns newly allocated and initialized offscreen WebGraphicsContext3D instance.
+    // Passing an existing context to shareContext will create the new context in the same share group as the passed context.
+    virtual WebGraphicsContext3D* createOffscreenGraphicsContext3D(const WebGraphicsContext3D::Attributes&, WebGraphicsContext3D* shareContext) { return 0; }
     virtual WebGraphicsContext3D* createOffscreenGraphicsContext3D(const WebGraphicsContext3D::Attributes&) { return 0; }
 
     // Returns a newly allocated and initialized offscreen context provider. The provider may return a null
@@ -611,6 +606,12 @@ public:
     // Sets a Listener to listen for device orientation data updates.
     // If null, the platform stops proving device orientation data to the current listener.
     virtual void setDeviceOrientationListener(blink::WebDeviceOrientationListener*) { }
+
+    // Screen Orientation -------------------------------------------------
+
+    virtual void setScreenOrientationListener(blink::WebScreenOrientationListener*) { }
+    virtual void lockOrientation(WebScreenOrientations) { }
+    virtual void unlockOrientation() { }
 
 
     // Quota -----------------------------------------------------------

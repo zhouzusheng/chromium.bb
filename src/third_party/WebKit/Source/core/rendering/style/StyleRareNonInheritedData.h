@@ -57,6 +57,7 @@ class StyleMultiColData;
 class StyleReflection;
 class StyleResolver;
 class StyleTransformData;
+class StyleWillChangeData;
 
 // Page size type.
 // StyleRareNonInheritedData::m_pageSize is meaningful only when
@@ -106,6 +107,7 @@ public:
     DataRef<StyleMarqueeData> m_marquee; // Marquee properties
     DataRef<StyleMultiColData> m_multiCol; //  CSS3 multicol properties
     DataRef<StyleTransformData> m_transform; // Transform properties (rotate, scale, skew, etc.)
+    DataRef<StyleWillChangeData> m_willChange; // CSS Will Change
 
     DataRef<StyleFilterData> m_filter; // Filter operations (url, sepia, blur, etc.)
 
@@ -119,15 +121,14 @@ public:
 
     RefPtr<StyleReflection> m_boxReflect;
 
-    OwnPtr<CSSAnimationDataList> m_animations;
-    OwnPtr<CSSAnimationDataList> m_transitions;
+    OwnPtrWillBePersistent<CSSAnimationDataList> m_animations;
+    OwnPtrWillBePersistent<CSSAnimationDataList> m_transitions;
 
     FillLayer m_mask;
     NinePieceImage m_maskBoxImage;
 
     LengthSize m_pageSize;
 
-    RefPtr<ShapeValue> m_shapeInside;
     RefPtr<ShapeValue> m_shapeOutside;
     Length m_shapeMargin;
     Length m_shapePadding;

@@ -30,7 +30,6 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLCollection.h"
@@ -112,8 +111,6 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
     } else if (name == classidAttr) {
         m_classId = value;
         reloadPluginOnAttributeChange(name);
-    } else if (name == onbeforeloadAttr) {
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     } else {
         HTMLPlugInElement::parseAttribute(name, value);
     }
@@ -124,7 +121,7 @@ static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramV
     // Some plugins don't understand the "data" attribute of the OBJECT tag (i.e. Real and WMP
     // require "src" attribute).
     int srcIndex = -1, dataIndex = -1;
-    for (unsigned int i = 0; i < paramNames->size(); ++i) {
+    for (unsigned i = 0; i < paramNames->size(); ++i) {
         if (equalIgnoringCase((*paramNames)[i], "src"))
             srcIndex = i;
         else if (equalIgnoringCase((*paramNames)[i], "data"))
@@ -145,11 +142,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 
     // Scan the PARAM children and store their name/value pairs.
     // Get the URL and type from the params if we don't already have them.
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->hasTagName(paramTag))
-            continue;
-
-        HTMLParamElement* p = toHTMLParamElement(child);
+    for (HTMLParamElement* p = Traversal<HTMLParamElement>::firstChild(*this); p; p = Traversal<HTMLParamElement>::nextSibling(*p)) {
         String name = p->name();
         if (name.isEmpty())
             continue;
@@ -183,12 +176,13 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 
     // Turn the attributes of the <object> element into arrays, but don't override <param> values.
     if (hasAttributes()) {
-        for (unsigned i = 0; i < attributeCount(); ++i) {
-            const Attribute* attribute = attributeItem(i);
-            const AtomicString& name = attribute->name().localName();
+        unsigned attributeCount = this->attributeCount();
+        for (unsigned i = 0; i < attributeCount; ++i) {
+            const Attribute& attribute = attributeItem(i);
+            const AtomicString& name = attribute.name().localName();
             if (!uniqueParamNames.contains(name.impl())) {
                 paramNames.append(name.string());
-                paramValues.append(attribute->value().string());
+                paramValues.append(attribute.value().string());
             }
         }
     }
@@ -215,8 +209,9 @@ bool HTMLObjectElement::hasFallbackContent() const
         if (child->isTextNode()) {
             if (!toText(child)->containsOnlyWhitespace())
                 return true;
-        } else if (!child->hasTagName(paramTag))
+        } else if (!isHTMLParamElement(*child)) {
             return true;
+        }
     }
     return false;
 }
@@ -322,12 +317,11 @@ void HTMLObjectElement::updateWidgetInternal()
     bool fallbackContent = hasFallbackContent();
     renderEmbeddedObject()->setHasFallbackContent(fallbackContent);
 
-    RefPtr<HTMLObjectElement> protect(this); // beforeload and plugin loading can make arbitrary DOM mutations.
-    bool beforeLoadAllowedLoad = dispatchBeforeLoadEvent(url);
-    if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
+    // FIXME: Is it possible to get here without a renderer now that we don't have beforeload events?
+    if (!renderer())
         return;
 
-    if (!beforeLoadAllowedLoad || !hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
+    if (!hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
         if (!url.isEmpty())
             dispatchErrorEvent();
         if (fallbackContent)
@@ -370,6 +364,16 @@ bool HTMLObjectElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == codebaseAttr || attribute.name() == dataAttr
         || (attribute.name() == usemapAttr && attribute.value().string()[0] != '#')
         || HTMLPlugInElement::isURLAttribute(attribute);
+}
+
+bool HTMLObjectElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == classidAttr || name == dataAttr || name == codebaseAttr || HTMLPlugInElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLObjectElement::subResourceAttributeName() const
+{
+    return dataAttr;
 }
 
 const AtomicString HTMLObjectElement::imageSourceURL() const
@@ -416,12 +420,12 @@ void HTMLObjectElement::renderFallbackContent()
 bool HTMLObjectElement::isExposed() const
 {
     // http://www.whatwg.org/specs/web-apps/current-work/#exposed
-    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+    for (HTMLObjectElement* ancestor = Traversal<HTMLObjectElement>::firstAncestor(*this); ancestor; ancestor = Traversal<HTMLObjectElement>::firstAncestor(*ancestor)) {
+        if (ancestor->isExposed())
             return false;
     }
-    for (Node* node = firstChild(); node; node = NodeTraversal::next(*node, this)) {
-        if (node->hasTagName(objectTag) || node->hasTagName(embedTag))
+    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
+        if (isHTMLObjectElement(*element) || isHTMLEmbedElement(*element))
             return false;
     }
     return true;
@@ -432,14 +436,14 @@ bool HTMLObjectElement::containsJavaApplet() const
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
 
-    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSkippingChildren(*child, this)) {
-        if (child->hasTagName(paramTag)
+    for (HTMLElement* child = Traversal<HTMLElement>::firstChild(*this); child; child = Traversal<HTMLElement>::nextSibling(*child)) {
+        if (isHTMLParamElement(*child)
                 && equalIgnoringCase(child->getNameAttribute(), "type")
                 && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))
             return true;
-        if (child->hasTagName(objectTag) && toHTMLObjectElement(child)->containsJavaApplet())
+        if (isHTMLObjectElement(*child) && toHTMLObjectElement(*child).containsJavaApplet())
             return true;
-        if (child->hasTagName(appletTag))
+        if (isHTMLAppletElement(*child))
             return true;
     }
 

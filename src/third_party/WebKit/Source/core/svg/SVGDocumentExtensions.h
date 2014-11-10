@@ -44,7 +44,7 @@ class SVGDocumentExtensions {
     WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED;
 public:
     typedef HashSet<Element*> SVGPendingElements;
-    SVGDocumentExtensions(Document*);
+    explicit SVGDocumentExtensions(Document*);
     ~SVGDocumentExtensions();
 
     void addTimeContainer(SVGSVGElement*);
@@ -53,6 +53,8 @@ public:
     void addResource(const AtomicString& id, RenderSVGResourceContainer*);
     void removeResource(const AtomicString& id);
     RenderSVGResourceContainer* resourceById(const AtomicString& id) const;
+
+    static void serviceOnAnimationFrame(Document&, double monotonicAnimationStartTime);
 
     void startAnimations();
     void pauseAnimations();
@@ -79,6 +81,9 @@ public:
     const HashSet<SVGFontFaceElement*>& svgFontFaceElements() const { return m_svgFontFaceElements; }
     void registerSVGFontFaceElement(SVGFontFaceElement*);
     void unregisterSVGFontFaceElement(SVGFontFaceElement*);
+
+    void registerPendingSVGFontFaceElementsForRemoval(PassRefPtr<SVGFontFaceElement>);
+    void removePendingSVGFontFaceElementsForRemoval();
 #endif
 
 private:
@@ -86,6 +91,8 @@ private:
     HashSet<SVGSVGElement*> m_timeContainers; // For SVG 1.2 support this will need to be made more general.
 #if ENABLE(SVG_FONTS)
     HashSet<SVGFontFaceElement*> m_svgFontFaceElements;
+    // SVGFontFaceElements that are pending and scheduled for removal.
+    HashSet<RefPtr<SVGFontFaceElement> > m_pendingSVGFontFaceElementsForRemoval;
 #endif
     HashMap<AtomicString, RenderSVGResourceContainer*> m_resources;
     HashMap<AtomicString, OwnPtr<SVGPendingElements> > m_pendingResources; // Resources that are pending.
@@ -108,6 +115,8 @@ public:
     void clearHasPendingResourcesIfPossible(Element*);
     void removeElementFromPendingResources(Element*);
     PassOwnPtr<SVGPendingElements> removePendingResource(const AtomicString& id);
+
+    void serviceAnimations(double monotonicAnimationStartTime);
 
     // The following two functions are used for scheduling a pending resource to be removed.
     void markPendingResourcesForRemoval(const AtomicString&);

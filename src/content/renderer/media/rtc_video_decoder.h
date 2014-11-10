@@ -111,7 +111,6 @@ class CONTENT_EXPORT RTCVideoDecoder
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, IsBufferAfterReset);
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, IsFirstBufferAfterReset);
 
-  // The meessage loop of |factories| will be saved to |vda_task_runner_|.
   RTCVideoDecoder(
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories);
 
@@ -152,9 +151,15 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Resets VDA.
   void ResetInternal();
 
+  // Static method is to allow it to run even after RVD is deleted.
+  static void ReleaseMailbox(
+      base::WeakPtr<RTCVideoDecoder> decoder,
+      const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
+      int64 picture_buffer_id,
+      uint32 texture_id,
+      scoped_ptr<gpu::MailboxHolder> mailbox_holder);
   // Tells VDA that a picture buffer can be recycled.
-  void ReusePictureBuffer(int64 picture_buffer_id,
-                          scoped_ptr<gpu::MailboxHolder> mailbox_holder);
+  void ReusePictureBuffer(int64 picture_buffer_id);
 
   // Create |vda_| on |vda_loop_proxy_|.
   void CreateVDA(media::VideoCodecProfile profile, base::WaitableEvent* waiter);
@@ -185,6 +190,9 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Records the result of InitDecode to UMA and returns |status|.
   int32_t RecordInitDecodeUMA(int32_t status);
 
+  // Assert the contract that this class is operated on the right thread.
+  void DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent() const;
+
   enum State {
     UNINITIALIZED,  // The decoder has not initialized.
     INITIALIZED,    // The decoder has initialized.
@@ -202,13 +210,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   // The size of the incoming video frames.
   gfx::Size frame_size_;
 
-  // Weak pointer to this, which can be dereferenced only on |vda_task_runner_|.
-  base::WeakPtr<RTCVideoDecoder> weak_this_;
-
   scoped_refptr<media::GpuVideoAcceleratorFactories> factories_;
-
-  // The task runner to run callbacks on. This is from |factories_|.
-  scoped_refptr<base::SingleThreadTaskRunner> vda_task_runner_;
 
   // The texture target used for decoded pictures.
   uint32 decoder_texture_target_;
@@ -223,13 +225,12 @@ class CONTENT_EXPORT RTCVideoDecoder
   // A map from picture buffer IDs to texture-backed picture buffers.
   std::map<int32, media::PictureBuffer> assigned_picture_buffers_;
 
-  // Picture buffers that are dismissed but not deleted yet.
-  std::map<int32, media::PictureBuffer> dismissed_picture_buffers_;
-
   // PictureBuffers given to us by VDA via PictureReady, which we sent forward
   // as VideoFrames to be rendered via read_cb_, and which will be returned
   // to us via ReusePictureBuffer.
-  std::set<int32> picture_buffers_at_display_;
+  typedef std::map<int32 /* picture_buffer_id */, uint32 /* texture_id */>
+      PictureBufferTextureMap;
+  PictureBufferTextureMap picture_buffers_at_display_;
 
   // The id that will be given to the next picture buffer.
   int32 next_picture_buffer_id_;
@@ -269,8 +270,8 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Release has been called. Guarded by |lock_|.
   int32 reset_bitstream_buffer_id_;
 
-  // Factory used to populate |weak_this_|. Must be destroyed, or invalidated,
-  // on |vda_loop_proxy_|.
+  // Must be destroyed, or invalidated, on |vda_loop_proxy_|
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<RTCVideoDecoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoDecoder);

@@ -98,9 +98,11 @@ struct CSSParserString {
 
     bool equalIgnoringCase(const char* str) const
     {
-        if (is8Bit())
-            return WTF::equalIgnoringCase(str, characters8(), length());
-        return WTF::equalIgnoringCase(str, characters16(), length());
+        bool match = is8Bit() ? WTF::equalIgnoringCase(str, characters8(), length()) : WTF::equalIgnoringCase(str, characters16(), length());
+        if (!match)
+            return false;
+        ASSERT(strlen(str) >= length());
+        return str[length()] == '\0';
     }
 
     template <size_t strLength>
@@ -161,7 +163,7 @@ struct CSSParserValue {
     inline void setFromFunction(CSSParserFunction*);
     inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 
-    PassRefPtr<CSSValue> createCSSValue();
+    PassRefPtrWillBeRawPtr<CSSValue> createCSSValue();
 };
 
 class CSSParserValueList {
@@ -192,7 +194,7 @@ public:
 
     CSSParserValue* valueAt(unsigned i) { return i < m_values.size() ? &m_values[i] : 0; }
 
-    void clear() { m_values.clear(); }
+    void clear() { m_values.clear(); m_current = 0;}
 
 private:
     unsigned m_current;
@@ -227,15 +229,12 @@ public:
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
-    CSSParserSelector* functionArgumentSelector() const { return m_functionArgumentSelector; }
-    void setFunctionArgumentSelector(CSSParserSelector* selector) { m_functionArgumentSelector = selector; }
-    bool isDistributedPseudoElement() const { return m_selector->isDistributedPseudoElement(); }
-    CSSParserSelector* findDistributedPseudoElementSelector() const;
+    bool hasHostPseudoSelector() const;
     bool isContentPseudoElement() const { return m_selector->isContentPseudoElement(); }
 
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
-    bool needsCrossingTreeScopeBoundary() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue; }
+    bool crossesTreeScopes() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue || pseudoType() == CSSSelector::PseudoShadow; }
 
     bool isSimple() const;
     bool hasShadowPseudo() const;
@@ -250,7 +249,6 @@ public:
 private:
     OwnPtr<CSSSelector> m_selector;
     OwnPtr<CSSParserSelector> m_tagHistory;
-    CSSParserSelector* m_functionArgumentSelector;
 };
 
 inline bool CSSParserSelector::hasShadowPseudo() const

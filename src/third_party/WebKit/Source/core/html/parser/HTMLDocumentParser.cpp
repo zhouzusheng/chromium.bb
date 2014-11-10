@@ -29,6 +29,7 @@
 #include "HTMLNames.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
@@ -37,7 +38,6 @@
 #include "core/html/parser/HTMLScriptRunner.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/frame/Frame.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
 #include "wtf/Functional.h"
@@ -264,7 +264,7 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
 
     if (isWaitingForScripts()) {
         if (mode == AllowYield)
-            m_parserScheduler->checkForYieldBeforeScript(session);
+            session.didSeeScript = true;
 
         // If we don't run the script, we cannot allow the next token to be taken.
         if (session.needsYield)
@@ -279,7 +279,7 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
     }
 
     // FIXME: It's wrong for the HTMLDocumentParser to reach back to the
-    //        Frame, but this approach is how the old parser handled
+    //        LocalFrame, but this approach is how the old parser handled
     //        stopping when the page assigns window.location.  What really
     //        should happen is that assigning window.location causes the
     //        parser to stop parsing cleanly.  The problem is we're not

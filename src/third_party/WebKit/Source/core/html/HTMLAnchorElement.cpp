@@ -28,10 +28,10 @@
 #include "core/editing/FrameSelection.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -170,16 +170,16 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
     ASSERT(event->target());
     Node* target = event->target()->toNode();
     ASSERT(target);
-    if (!target->hasTagName(imgTag))
+    if (!isHTMLImageElement(*target))
         return;
 
-    HTMLImageElement* imageElement = toHTMLImageElement(event->target()->toNode());
-    if (!imageElement || !imageElement->isServerMap())
+    HTMLImageElement& imageElement = toHTMLImageElement(*target);
+    if (!imageElement.isServerMap())
         return;
 
-    if (!imageElement->renderer() || !imageElement->renderer()->isRenderImage())
+    if (!imageElement.renderer() || !imageElement.renderer()->isRenderImage())
         return;
-    RenderImage* renderer = toRenderImage(imageElement->renderer());
+    RenderImage* renderer = toRenderImage(imageElement.renderer());
 
     // FIXME: This should probably pass true for useTransforms.
     FloatPoint absolutePosition = renderer->absoluteToLocal(FloatPoint(toMouseEvent(event)->pageX(), toMouseEvent(event)->pageY()));
@@ -300,6 +300,11 @@ bool HTMLAnchorElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLAnchorElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == hrefAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
 bool HTMLAnchorElement::canStartSelection() const
 {
     // FIXME: We probably want this same behavior in SVGAElement too
@@ -392,10 +397,13 @@ bool HTMLAnchorElement::isLiveLink() const
 
 void HTMLAnchorElement::sendPings(const KURL& destinationURL)
 {
-    if (!hasAttribute(pingAttr) || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
+    const AtomicString& pingValue = getAttribute(pingAttr);
+    if (pingValue.isNull() || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
         return;
 
-    SpaceSplitString pingURLs(getAttribute(pingAttr), false);
+    UseCounter::count(document(), UseCounter::HTMLAnchorElementPingAttribute);
+
+    SpaceSplitString pingURLs(pingValue, false);
     for (unsigned i = 0; i < pingURLs.size(); i++)
         PingLoader::sendPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
 }
@@ -404,7 +412,7 @@ void HTMLAnchorElement::handleClick(Event* event)
 {
     event->setDefaultHandled();
 
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -427,7 +435,10 @@ void HTMLAnchorElement::handleClick(Event* event)
                 request.setHTTPReferrer(Referrer(referrer, document().referrerPolicy()));
         }
 
-        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, fastGetAttribute(downloadAttr));
+        bool isSameOrigin = document().securityOrigin()->canRequest(completedURL);
+        const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
+
+        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
     } else {
         FrameLoadRequest frameRequest(&document(), request, target());
         frameRequest.setTriggeringEvent(event);
@@ -664,7 +675,7 @@ bool HTMLAnchorElement::PrefetchEventHandler::shouldPrefetch(const KURL& url)
     if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(document.url(), url))
         return false;
 
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     if (!frame)
         return false;
 

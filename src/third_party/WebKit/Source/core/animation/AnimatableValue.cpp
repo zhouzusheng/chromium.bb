@@ -34,15 +34,26 @@
 #include "wtf/StdLibExtras.h"
 #include <algorithm>
 
+namespace {
+
+const double defaultDistance = 1;
+
+} // namespace
+
 namespace WebCore {
 
 const AnimatableValue* AnimatableValue::neutralValue()
 {
+#if ENABLE_OILPAN
+    DEFINE_STATIC_LOCAL(Persistent<AnimatableNeutral>, neutralSentinelValue, (AnimatableNeutral::create()));
+    return neutralSentinelValue.get();
+#else
     DEFINE_STATIC_REF(AnimatableNeutral, neutralSentinelValue, (AnimatableNeutral::create()));
     return neutralSentinelValue;
+#endif
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
 {
     ASSERT(left);
     ASSERT(right);
@@ -55,7 +66,7 @@ PassRefPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* 
     return defaultInterpolateTo(left, right, fraction);
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, const AnimatableValue* right)
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, const AnimatableValue* right)
 {
     ASSERT(left);
     ASSERT(right);
@@ -71,9 +82,25 @@ PassRefPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, co
     return defaultAddWith(left, right);
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::addWith(const AnimatableValue* value) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::addWith(const AnimatableValue* value) const
 {
     return defaultAddWith(this, value);
+}
+
+double AnimatableValue::distance(const AnimatableValue* left, const AnimatableValue* right)
+{
+    ASSERT(left);
+    ASSERT(right);
+
+    if (left->isSameType(right))
+        return left->distanceTo(right);
+
+    return defaultDistance;
+}
+
+double AnimatableValue::distanceTo(const AnimatableValue*) const
+{
+    return defaultDistance;
 }
 
 } // namespace WebCore

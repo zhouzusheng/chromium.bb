@@ -31,14 +31,14 @@
 
 namespace WebCore {
 
-PassRefPtr<StyleRuleImport> StyleRuleImport::create(const String& href, PassRefPtr<MediaQuerySet> media)
+PassRefPtrWillBeRawPtr<StyleRuleImport> StyleRuleImport::create(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
 {
-    return adoptRef(new StyleRuleImport(href, media));
+    return adoptRefWillBeNoop(new StyleRuleImport(href, media));
 }
 
-StyleRuleImport::StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet> media)
+StyleRuleImport::StyleRuleImport(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
     : StyleRuleBase(Import)
-    , m_parentStyleSheet(0)
+    , m_parentStyleSheet(nullptr)
     , m_styleSheetClient(this)
     , m_strHref(href)
     , m_mediaQueries(media)
@@ -51,10 +51,20 @@ StyleRuleImport::StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet> m
 
 StyleRuleImport::~StyleRuleImport()
 {
+#if !ENABLE(OILPAN)
     if (m_styleSheet)
         m_styleSheet->clearOwnerRule();
+#endif
     if (m_resource)
         m_resource->removeClient(&m_styleSheetClient);
+}
+
+void StyleRuleImport::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_parentStyleSheet);
+    visitor->trace(m_mediaQueries);
+    visitor->trace(m_styleSheet);
+    StyleRuleBase::traceAfterDispatch(visitor);
 }
 
 void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* cachedStyleSheet)

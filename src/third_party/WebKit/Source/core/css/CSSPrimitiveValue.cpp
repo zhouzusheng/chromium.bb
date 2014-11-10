@@ -112,6 +112,40 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     return false;
 }
 
+CSSPrimitiveValue::UnitTable createUnitTable()
+{
+    CSSPrimitiveValue::UnitTable table;
+    table.set(String("em"), CSSPrimitiveValue::CSS_EMS);
+    table.set(String("ex"), CSSPrimitiveValue::CSS_EXS);
+    table.set(String("px"), CSSPrimitiveValue::CSS_PX);
+    table.set(String("cm"), CSSPrimitiveValue::CSS_CM);
+    table.set(String("mm"), CSSPrimitiveValue::CSS_MM);
+    table.set(String("in"), CSSPrimitiveValue::CSS_IN);
+    table.set(String("pt"), CSSPrimitiveValue::CSS_PT);
+    table.set(String("pc"), CSSPrimitiveValue::CSS_PC);
+    table.set(String("deg"), CSSPrimitiveValue::CSS_DEG);
+    table.set(String("rad"), CSSPrimitiveValue::CSS_RAD);
+    table.set(String("grad"), CSSPrimitiveValue::CSS_GRAD);
+    table.set(String("ms"), CSSPrimitiveValue::CSS_MS);
+    table.set(String("s"), CSSPrimitiveValue::CSS_S);
+    table.set(String("hz"), CSSPrimitiveValue::CSS_HZ);
+    table.set(String("khz"), CSSPrimitiveValue::CSS_KHZ);
+    table.set(String("dpi"), CSSPrimitiveValue::CSS_DPI);
+    table.set(String("dpcm"), CSSPrimitiveValue::CSS_DPCM);
+    table.set(String("dppx"), CSSPrimitiveValue::CSS_DPPX);
+    table.set(String("vw"), CSSPrimitiveValue::CSS_VW);
+    table.set(String("vh"), CSSPrimitiveValue::CSS_VH);
+    table.set(String("vmax"), CSSPrimitiveValue::CSS_VMIN);
+    table.set(String("vmin"), CSSPrimitiveValue::CSS_VMAX);
+    return table;
+}
+
+CSSPrimitiveValue::UnitTypes CSSPrimitiveValue::fromName(const String& unit)
+{
+    DEFINE_STATIC_LOCAL(UnitTable, unitTable, (createUnitTable()));
+    return unitTable.get(unit.lower());
+}
+
 CSSPrimitiveValue::UnitCategory CSSPrimitiveValue::unitCategory(CSSPrimitiveValue::UnitTypes type)
 {
     // Here we violate the spec (http://www.w3.org/TR/DOM-Level-2-Style/css.html#CSS-CSSPrimitiveValue) and allow conversions
@@ -234,9 +268,10 @@ CSSPrimitiveValue::CSSPrimitiveValue(CSSPropertyID propertyID)
     m_value.propertyID = propertyID;
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(int parserOperator)
+CSSPrimitiveValue::CSSPrimitiveValue(int parserOperator, UnitTypes type)
     : CSSValue(PrimitiveClass)
 {
+    ASSERT(type == CSS_PARSER_OPERATOR);
     m_primitiveUnitType = CSS_PARSER_OPERATOR;
     m_value.parserOperator = parserOperator;
 }
@@ -263,9 +298,10 @@ CSSPrimitiveValue::CSSPrimitiveValue(const LengthSize& lengthSize)
     init(lengthSize);
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(RGBA32 color)
+CSSPrimitiveValue::CSSPrimitiveValue(RGBA32 color, UnitTypes type)
     : CSSValue(PrimitiveClass)
 {
+    ASSERT(type == CSS_RGBCOLOR);
     m_primitiveUnitType = CSS_RGBCOLOR;
     m_value.rgbcolor = color;
 }
@@ -298,42 +334,6 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
         ASSERT_NOT_REACHED();
         break;
     }
-}
-
-// Remove below specialized constructors once all callers of CSSPrimitiveValue(...)
-// have been converted to PassRefPtrWillBeRawPtr, ie. when
-//    template<typename T> CSSPrimitiveValue(T* val)
-//    template<typename T> CSSPrimitiveValue(PassRefPtr<T> val)
-// both can be converted to use PassRefPtrWillBeRawPtr.
-CSSPrimitiveValue::CSSPrimitiveValue(CSSCalcValue* value)
-    : CSSValue(PrimitiveClass)
-{
-    init(PassRefPtrWillBeRawPtr<CSSCalcValue>(value));
-}
-CSSPrimitiveValue::CSSPrimitiveValue(PassRefPtrWillBeRawPtr<CSSCalcValue> value)
-    : CSSValue(PrimitiveClass)
-{
-    init(value);
-}
-CSSPrimitiveValue::CSSPrimitiveValue(Pair* value)
-    : CSSValue(PrimitiveClass)
-{
-    init(PassRefPtrWillBeRawPtr<Pair>(value));
-}
-CSSPrimitiveValue::CSSPrimitiveValue(PassRefPtrWillBeRawPtr<Pair> value)
-    : CSSValue(PrimitiveClass)
-{
-    init(value);
-}
-CSSPrimitiveValue::CSSPrimitiveValue(Counter* value)
-    : CSSValue(PrimitiveClass)
-{
-    init(PassRefPtrWillBeRawPtr<Counter>(value));
-}
-CSSPrimitiveValue::CSSPrimitiveValue(PassRefPtrWillBeRawPtr<Counter> value)
-    : CSSValue(PrimitiveClass)
-{
-    init(value);
 }
 
 void CSSPrimitiveValue::init(const Length& length)
@@ -403,14 +403,14 @@ void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Counter> c)
     m_value.counter = c.leakRef();
 }
 
-void CSSPrimitiveValue::init(PassRefPtr<Rect> r)
+void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Rect> r)
 {
     m_primitiveUnitType = CSS_RECT;
     m_hasCachedCSSText = false;
     m_value.rect = r.leakRef();
 }
 
-void CSSPrimitiveValue::init(PassRefPtr<Quad> quad)
+void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Quad> quad)
 {
     m_primitiveUnitType = CSS_QUAD;
     m_hasCachedCSSText = false;
@@ -431,7 +431,7 @@ void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<CSSCalcValue> c)
     m_value.calc = c.leakRef();
 }
 
-void CSSPrimitiveValue::init(PassRefPtr<CSSBasicShape> shape)
+void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<CSSBasicShape> shape)
 {
     m_primitiveUnitType = CSS_SHAPE;
     m_hasCachedCSSText = false;
@@ -461,10 +461,16 @@ void CSSPrimitiveValue::cleanup()
 #endif
         break;
     case CSS_RECT:
+        // We must not call deref() when oilpan is enabled because m_value.rect is traced.
+#if !ENABLE(OILPAN)
         m_value.rect->deref();
+#endif
         break;
     case CSS_QUAD:
+        // We must not call deref() when oilpan is enabled because m_value.quad is traced.
+#if !ENABLE(OILPAN)
         m_value.quad->deref();
+#endif
         break;
     case CSS_PAIR:
         // We must not call deref() when oilpan is enabled because m_value.pair is traced.
@@ -483,7 +489,10 @@ void CSSPrimitiveValue::cleanup()
         ASSERT_NOT_REACHED();
         break;
     case CSS_SHAPE:
+        // We must not call deref() when oilpan is enabled because m_value.shape is traced.
+#if !ENABLE(OILPAN)
         m_value.shape->deref();
+#endif
         break;
     case CSS_NUMBER:
     case CSS_PARSER_INTEGER:
@@ -590,7 +599,7 @@ double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& c
         return m_value.calc->computeLengthPx(conversionData);
 
     const RenderStyle& style = conversionData.style();
-    const RenderStyle& rootStyle = conversionData.rootStyle();
+    const RenderStyle* rootStyle = conversionData.rootStyle();
     bool computingFontSize = conversionData.computingFontSize();
 
     double factor;
@@ -609,7 +618,10 @@ double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& c
                 factor = (computingFontSize ? style.fontDescription().specifiedSize() : style.fontDescription().computedSize()) / 2.0;
             break;
         case CSS_REMS:
-            factor = computingFontSize ? rootStyle.fontDescription().specifiedSize() : rootStyle.fontDescription().computedSize();
+            if (rootStyle)
+                factor = computingFontSize ? rootStyle->fontDescription().specifiedSize() : rootStyle->fontDescription().computedSize();
+            else
+                factor = 1.0;
             break;
         case CSS_CHS:
             factor = style.fontMetrics().zeroWidth();
@@ -896,11 +908,11 @@ Quad* CSSPrimitiveValue::getQuadValue(ExceptionState& exceptionState) const
     return m_value.quad;
 }
 
-PassRefPtr<RGBColor> CSSPrimitiveValue::getRGBColorValue(ExceptionState& exceptionState) const
+PassRefPtrWillBeRawPtr<RGBColor> CSSPrimitiveValue::getRGBColorValue(ExceptionState& exceptionState) const
 {
     if (m_primitiveUnitType != CSS_RGBCOLOR) {
         exceptionState.throwDOMException(InvalidAccessError, "This object is not an RGB color value.");
-        return 0;
+        return nullptr;
     }
 
     // FIMXE: This should not return a new object for each invocation.
@@ -1131,7 +1143,7 @@ String CSSPrimitiveValue::customCSSText(CSSTextFormattingFlags formattingFlag) c
 
 PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() const
 {
-    RefPtrWillBeRawPtr<CSSPrimitiveValue> result;
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> result = nullptr;
 
     switch (m_primitiveUnitType) {
     case CSS_STRING:
@@ -1290,11 +1302,20 @@ void CSSPrimitiveValue::traceAfterDispatch(Visitor* visitor)
     case CSS_COUNTER:
         visitor->trace(m_value.counter);
         break;
+    case CSS_RECT:
+        visitor->trace(m_value.rect);
+        break;
+    case CSS_QUAD:
+        visitor->trace(m_value.quad);
+        break;
     case CSS_PAIR:
         visitor->trace(m_value.pair);
         break;
     case CSS_CALC:
         visitor->trace(m_value.calc);
+        break;
+    case CSS_SHAPE:
+        visitor->trace(m_value.shape);
         break;
     default:
         break;

@@ -97,23 +97,28 @@ public:
 
         // WebMouseEvent
         MouseDown,
+        MouseTypeFirst = MouseDown,
         MouseUp,
         MouseMove,
         MouseEnter,
         MouseLeave,
         ContextMenu,
+        MouseTypeLast = ContextMenu,
 
         // WebMouseWheelEvent
         MouseWheel,
 
         // WebKeyboardEvent
         RawKeyDown,
+        KeyboardTypeFirst = RawKeyDown,
         KeyDown,
         KeyUp,
         Char,
+        KeyboardTypeLast = Char,
 
         // WebGestureEvent
         GestureScrollBegin,
+        GestureTypeFirst = GestureScrollBegin,
         GestureScrollEnd,
         GestureScrollUpdate,
         GestureScrollUpdateWithoutPropagation,
@@ -131,13 +136,17 @@ public:
         GesturePinchBegin,
         GesturePinchEnd,
         GesturePinchUpdate,
+        GestureTypeLast = GesturePinchUpdate,
 
         // WebTouchEvent
         TouchStart,
+        TouchTypeFirst = TouchStart,
         TouchMove,
         TouchEnd,
         TouchCancel,
-        TypeLast = TouchCancel
+        TouchTypeLast = TouchCancel,
+
+        TypeLast = TouchTypeLast
     };
 
     enum Modifiers {
@@ -185,30 +194,19 @@ public:
     // Returns true if the WebInputEvent |type| is a mouse event.
     static bool isMouseEventType(int type)
     {
-        return type == MouseDown
-            || type == MouseUp
-            || type == MouseMove
-            || type == MouseEnter
-            || type == MouseLeave
-            || type == ContextMenu;
+        return MouseTypeFirst <= type && type <= MouseTypeLast;
     }
 
     // Returns true if the WebInputEvent |type| is a keyboard event.
     static bool isKeyboardEventType(int type)
     {
-        return type == RawKeyDown
-            || type == KeyDown
-            || type == KeyUp
-            || type == Char;
+        return KeyboardTypeFirst <= type && type <= KeyboardTypeLast;
     }
 
     // Returns true if the WebInputEvent |type| is a touch event.
     static bool isTouchEventType(int type)
     {
-        return type == TouchStart
-            || type == TouchMove
-            || type == TouchEnd
-            || type == TouchCancel;
+        return TouchTypeFirst <= type && type <= TouchTypeLast;
     }
 
     // Returns true if the WebInputEvent |type| should be handled as user gesture.
@@ -224,24 +222,7 @@ public:
     // Returns true if the WebInputEvent is a gesture event.
     static bool isGestureEventType(int type)
     {
-        return type == GestureScrollBegin
-            || type == GestureScrollEnd
-            || type == GestureScrollUpdate
-            || type == GestureScrollUpdateWithoutPropagation
-            || type == GestureFlingStart
-            || type == GestureFlingCancel
-            || type == GesturePinchBegin
-            || type == GesturePinchEnd
-            || type == GesturePinchUpdate
-            || type == GestureTap
-            || type == GestureTapUnconfirmed
-            || type == GestureTapDown
-            || type == GestureTapCancel
-            || type == GestureShowPress
-            || type == GestureDoubleTap
-            || type == GestureTwoFingerTap
-            || type == GestureLongPress
-            || type == GestureLongTap;
+        return GestureTypeFirst <= type && type <= GestureTypeLast;
     }
 };
 
@@ -380,6 +361,24 @@ public:
     Phase phase;
     Phase momentumPhase;
 
+    // See comment at the top of the file for why an int is used here.
+    // Rubberbanding is an OSX visual effect. When a user scrolls the content
+    // area with a track pad, and the content area is already at its limit in
+    // the direction being scrolled, the entire content area is allowed to
+    // scroll slightly off screen, revealing a grey background. When the user
+    // lets go, the content area snaps back into place. Blink is responsible
+    // for this rubberbanding effect, but the embedder may wish to disable
+    // rubber banding in the left or right direction, if the scroll should have
+    // an alternate effect. The common case is that a scroll in the left or
+    // right directions causes a back or forwards navigation, respectively.
+    //
+    // These flags prevent rubber banding from starting in a given direction,
+    // but have no effect on an ongoing rubber banding. A rubber banding that
+    // started in the vertical direction is allowed to continue in the right
+    // direction, even if canRubberbandRight is 0.
+    int canRubberbandLeft;
+    int canRubberbandRight;
+
     WebMouseWheelEvent(unsigned sizeParam = sizeof(WebMouseWheelEvent))
         : WebMouseEvent(sizeParam)
         , deltaX(0.0f)
@@ -392,6 +391,8 @@ public:
         , hasPreciseScrollingDeltas(false)
         , phase(PhaseNone)
         , momentumPhase(PhaseNone)
+        , canRubberbandLeft(true)
+        , canRubberbandRight(true)
     {
     }
 };
@@ -412,6 +413,8 @@ public:
     SourceDevice sourceDevice;
 
     union {
+        // Tap information must be set for GestureTap, GestureTapUnconfirmed,
+        // and GestureDoubleTap events.
         struct {
             int tapCount;
             float width;

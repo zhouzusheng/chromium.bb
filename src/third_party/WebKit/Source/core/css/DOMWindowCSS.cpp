@@ -37,9 +37,9 @@
 
 namespace WebCore {
 
-PassRefPtr<DOMWindowCSS> DOMWindowCSS::create()
+PassRefPtrWillBeRawPtr<DOMWindowCSS> DOMWindowCSS::create()
 {
-    return adoptRef(new DOMWindowCSS());
+    return adoptRefWillBeNoop(new DOMWindowCSS());
 }
 
 static String valueWithoutImportant(const String& value)
@@ -74,7 +74,7 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
     if (normalizedValue.isEmpty())
         return false;
 
-    RefPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
     return BisonCSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
 }
 

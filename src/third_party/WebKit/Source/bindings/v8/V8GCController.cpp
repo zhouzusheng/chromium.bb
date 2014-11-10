@@ -70,11 +70,12 @@ static void addReferencesForNodeWithEventListeners(v8::Isolate* isolate, Node* n
 
 Node* V8GCController::opaqueRootForGC(Node* node, v8::Isolate*)
 {
+    ASSERT(node);
     // FIXME: Remove the special handling for image elements.
     // The same special handling is in V8GCController::gcTree().
     // Maybe should image elements be active DOM nodes?
     // See https://code.google.com/p/chromium/issues/detail?id=164882
-    if (node->inDocument() || (node->hasTagName(HTMLNames::imgTag) && toHTMLImageElement(node)->hasPendingActivity()))
+    if (node->inDocument() || (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity()))
         return &node->document();
 
     if (node->isAttributeNode()) {
@@ -134,7 +135,7 @@ public:
             // The same special handling is in V8GCController::opaqueRootForGC().
             // Maybe should image elements be active DOM nodes?
             // See https://code.google.com/p/chromium/issues/detail?id=164882
-            if (node->hasTagName(HTMLNames::imgTag) && toHTMLImageElement(node)->hasPendingActivity())
+            if (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity())
                 return;
             // FIXME: Remove the special handling for SVG context elements.
             if (node->isSVGElement() && toSVGElement(node)->isContextElement())
@@ -187,8 +188,8 @@ private:
             }
             // <template> has a |content| property holding a DOM fragment which we must traverse,
             // just like we do for the shadow trees above.
-            if (node->hasTagName(HTMLNames::templateTag)) {
-                if (!traverseTree(toHTMLTemplateElement(node)->content(), partiallyDependentNodes))
+            if (isHTMLTemplateElement(*node)) {
+                if (!traverseTree(toHTMLTemplateElement(*node).content(), partiallyDependentNodes))
                     return false;
             }
         }
@@ -390,24 +391,9 @@ void V8GCController::majorGCEpilogue(v8::Isolate* isolate)
         TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
 }
 
-void V8GCController::hintForCollectGarbage()
-{
-    V8PerIsolateData* data = V8PerIsolateData::current();
-    if (!data->shouldCollectGarbageSoon())
-        return;
-    const int longIdlePauseInMS = 1000;
-    data->clearShouldCollectGarbageSoon();
-    v8::V8::ContextDisposedNotification();
-    v8::V8::IdleNotification(longIdlePauseInMS);
-}
-
 void V8GCController::collectGarbage(v8::Isolate* isolate)
 {
-    v8::HandleScope handleScope(isolate);
-    v8::Local<v8::Context> context = v8::Context::New(isolate);
-    if (context.IsEmpty())
-        return;
-    v8::Context::Scope contextScope(context);
+    V8ExecutionScope scope(isolate);
     V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, "if (gc) gc();"), isolate);
 }
 

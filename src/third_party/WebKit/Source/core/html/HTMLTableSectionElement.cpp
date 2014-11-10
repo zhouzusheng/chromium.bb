@@ -27,6 +27,7 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableElement.h"
@@ -95,15 +96,10 @@ void HTMLTableSectionElement::deleteRow(int index, ExceptionState& exceptionStat
 
 int HTMLTableSectionElement::numRows() const
 {
-    int rows = 0;
-    const Node *n = firstChild();
-    while (n) {
-        if (n->hasTagName(trTag))
-            rows++;
-        n = n->nextSibling();
-    }
-
-    return rows;
+    int rowCount = 0;
+    for (const HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*this); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row))
+        ++rowCount;
+    return rowCount;
 }
 
 PassRefPtr<HTMLCollection> HTMLTableSectionElement::rows()

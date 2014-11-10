@@ -39,22 +39,24 @@
 
 namespace WebCore {
 
-class WorkerNavigatorStorageQuota FINAL : public Supplement<WorkerNavigator> {
+class WorkerNavigatorStorageQuota FINAL : public NoBaseWillBeGarbageCollected<WorkerNavigatorStorageQuota>, public WillBeHeapSupplement<WorkerNavigator> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorStorageQuota);
 public:
-    virtual ~WorkerNavigatorStorageQuota();
-    static WorkerNavigatorStorageQuota* from(WorkerNavigator*);
+    static WorkerNavigatorStorageQuota& from(WorkerNavigator&);
 
-    static DeprecatedStorageQuota* webkitTemporaryStorage(WorkerNavigator*);
-    static DeprecatedStorageQuota* webkitPersistentStorage(WorkerNavigator*);
+    static DeprecatedStorageQuota* webkitTemporaryStorage(WorkerNavigator&);
+    static DeprecatedStorageQuota* webkitPersistentStorage(WorkerNavigator&);
     DeprecatedStorageQuota* webkitTemporaryStorage() const;
     DeprecatedStorageQuota* webkitPersistentStorage() const;
+
+    virtual void trace(Visitor*);
 
 private:
     explicit WorkerNavigatorStorageQuota();
     static const char* supplementName();
 
-    mutable RefPtrWillBePersistent<DeprecatedStorageQuota> m_temporaryStorage;
-    mutable RefPtrWillBePersistent<DeprecatedStorageQuota> m_persistentStorage;
+    mutable RefPtrWillBeMember<DeprecatedStorageQuota> m_temporaryStorage;
+    mutable RefPtrWillBeMember<DeprecatedStorageQuota> m_persistentStorage;
 };
 
 } // namespace WebCore

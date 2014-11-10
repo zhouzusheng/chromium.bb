@@ -33,14 +33,12 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(Storage);
-
-PassRefPtrWillBeRawPtr<Storage> Storage::create(Frame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
+PassRefPtrWillBeRawPtr<Storage> Storage::create(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
 {
     return adoptRefWillBeNoop(new Storage(frame, storageArea));
 }
 
-Storage::Storage(Frame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
+Storage::Storage(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
     : DOMWindowProperty(frame)
     , m_storageArea(storageArea)
 {

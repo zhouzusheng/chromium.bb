@@ -15,6 +15,7 @@
 #include "./vpx_scale_rtcd.h"
 
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/mem_ops.h"
 #include "vpx_scale/vpx_scale.h"
 
 #include "vp9/common/vp9_alloccommon.h"
@@ -39,20 +40,16 @@
 #include "vp9/decoder/vp9_reader.h"
 #include "vp9/decoder/vp9_thread.h"
 
-static int read_be32(const uint8_t *p) {
-  return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
-}
-
 static int is_compound_reference_allowed(const VP9_COMMON *cm) {
   int i;
   for (i = 1; i < REFS_PER_FRAME; ++i)
-    if  (cm->ref_frame_sign_bias[i + 1] != cm->ref_frame_sign_bias[1])
+    if (cm->ref_frame_sign_bias[i + 1] != cm->ref_frame_sign_bias[1])
       return 1;
 
   return 0;
 }
 
-static void setup_compound_reference(VP9_COMMON *cm) {
+static void setup_compound_reference_mode(VP9_COMMON *cm) {
   if (cm->ref_frame_sign_bias[LAST_FRAME] ==
           cm->ref_frame_sign_bias[GOLDEN_FRAME]) {
     cm->comp_fixed_ref = ALTREF_FRAME;
@@ -116,33 +113,34 @@ static void read_inter_mode_probs(FRAME_CONTEXT *fc, vp9_reader *r) {
       vp9_diff_update_prob(r, &fc->inter_mode_probs[i][j]);
 }
 
-static REFERENCE_MODE read_reference_mode(VP9_COMMON *cm, vp9_reader *r) {
+static REFERENCE_MODE read_frame_reference_mode(const VP9_COMMON *cm,
+                                                vp9_reader *r) {
   if (is_compound_reference_allowed(cm)) {
-    REFERENCE_MODE mode = vp9_read_bit(r);
-    if (mode)
-      mode += vp9_read_bit(r);
-    setup_compound_reference(cm);
-    return mode;
+    return vp9_read_bit(r) ? (vp9_read_bit(r) ? REFERENCE_MODE_SELECT
+                                              : COMPOUND_REFERENCE)
+                           : SINGLE_REFERENCE;
   } else {
     return SINGLE_REFERENCE;
   }
 }
 
-static void read_reference_mode_probs(VP9_COMMON *cm, vp9_reader *r) {
+static void read_frame_reference_mode_probs(VP9_COMMON *cm, vp9_reader *r) {
+  FRAME_CONTEXT *const fc = &cm->fc;
   int i;
+
   if (cm->reference_mode == REFERENCE_MODE_SELECT)
-    for (i = 0; i < COMP_INTER_CONTEXTS; i++)
-      vp9_diff_update_prob(r, &cm->fc.comp_inter_prob[i]);
+    for (i = 0; i < COMP_INTER_CONTEXTS; ++i)
+      vp9_diff_update_prob(r, &fc->comp_inter_prob[i]);
 
   if (cm->reference_mode != COMPOUND_REFERENCE)
-    for (i = 0; i < REF_CONTEXTS; i++) {
-      vp9_diff_update_prob(r, &cm->fc.single_ref_prob[i][0]);
-      vp9_diff_update_prob(r, &cm->fc.single_ref_prob[i][1]);
+    for (i = 0; i < REF_CONTEXTS; ++i) {
+      vp9_diff_update_prob(r, &fc->single_ref_prob[i][0]);
+      vp9_diff_update_prob(r, &fc->single_ref_prob[i][1]);
     }
 
   if (cm->reference_mode != SINGLE_REFERENCE)
-    for (i = 0; i < REF_CONTEXTS; i++)
-      vp9_diff_update_prob(r, &cm->fc.comp_ref_prob[i]);
+    for (i = 0; i < REF_CONTEXTS; ++i)
+      vp9_diff_update_prob(r, &fc->comp_ref_prob[i]);
 }
 
 static void update_mv_probs(vp9_prob *p, int n, vp9_reader *r) {
@@ -289,10 +287,8 @@ static void predict_and_reconstruct_intra_block(int plane, int block,
   MACROBLOCKD *const xd = args->xd;
   struct macroblockd_plane *const pd = &xd->plane[plane];
   MODE_INFO *const mi = xd->mi_8x8[0];
-  const MB_PREDICTION_MODE mode = (plane == 0)
-          ? ((mi->mbmi.sb_type < BLOCK_8X8) ? mi->bmi[block].as_mode
-                                            : mi->mbmi.mode)
-          : mi->mbmi.uv_mode;
+  const MB_PREDICTION_MODE mode = (plane == 0) ? get_y_mode(mi, block)
+                                               : mi->mbmi.uv_mode;
   int x, y;
   uint8_t *dst;
   txfrm_block_to_raster_xy(plane_bsize, tx_size, block, &x, &y);
@@ -350,9 +346,9 @@ static void set_offsets(VP9_COMMON *const cm, MACROBLOCKD *const xd,
 
   xd->mi_8x8 = cm->mi_grid_visible + offset;
   xd->prev_mi_8x8 = cm->prev_mi_grid_visible + offset;
-  // Special case: if prev_mi is NULL, the previous mode info context
-  // cannot be used.
-  xd->last_mi = cm->prev_mi ? xd->prev_mi_8x8[0] : NULL;
+
+  xd->last_mi = cm->coding_use_prev_mi && cm->prev_mi ?
+      xd->prev_mi_8x8[0] : NULL;
 
   xd->mi_8x8[0] = xd->mi_stream + offset - tile_offset;
   xd->mi_8x8[0]->mbmi.sb_type = bsize;
@@ -836,7 +832,7 @@ static size_t get_tile(const uint8_t *const data_end,
       vpx_internal_error(error_info, VPX_CODEC_CORRUPT_FRAME,
                          "Truncated packet or corrupt tile length");
 
-    size = read_be32(*data);
+    size = mem_get_be32(*data);
     *data += 4;
 
     if (size > (size_t)(data_end - *data))
@@ -1091,7 +1087,7 @@ static void check_sync_code(VP9_COMMON *cm, struct vp9_read_bit_buffer *rb) {
   }
 }
 
-static void error_handler(void *data, size_t bit_offset) {
+static void error_handler(void *data) {
   VP9_COMMON *const cm = (VP9_COMMON *)data;
   vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME, "Truncated packet");
 }
@@ -1120,6 +1116,12 @@ static size_t read_uncompressed_header(VP9D_COMP *pbi,
   if (cm->show_existing_frame) {
     // Show an existing frame directly.
     const int frame_to_show = cm->ref_frame_map[vp9_rb_read_literal(rb, 3)];
+
+    if (cm->frame_bufs[frame_to_show].ref_count < 1)
+      vpx_internal_error(&cm->error, VPX_CODEC_UNSUP_BITSTREAM,
+                         "Buffer %d does not contain a decoded frame",
+                         frame_to_show);
+
     ref_cnt_fb(cm->frame_bufs, &cm->new_fb_idx, frame_to_show);
     pbi->refresh_frame_flags = 0;
     cm->lf.filter_level = 0;
@@ -1196,16 +1198,17 @@ static size_t read_uncompressed_header(VP9D_COMP *pbi,
                                           ref_buf->buf->y_crop_height,
                                           cm->width, cm->height);
         if (vp9_is_scaled(&ref_buf->sf))
-          vp9_extend_frame_borders(ref_buf->buf,
-                                   cm->subsampling_x, cm->subsampling_y);
+          vp9_extend_frame_borders(ref_buf->buf);
       }
     }
   }
 
   if (!cm->error_resilient_mode) {
+    cm->coding_use_prev_mi = 1;
     cm->refresh_frame_context = vp9_rb_read_bit(rb);
     cm->frame_parallel_decoding_mode = vp9_rb_read_bit(rb);
   } else {
+    cm->coding_use_prev_mi = 0;
     cm->refresh_frame_context = 0;
     cm->frame_parallel_decoding_mode = 1;
   }
@@ -1263,8 +1266,10 @@ static int read_compressed_header(VP9D_COMP *pbi, const uint8_t *data,
     for (i = 0; i < INTRA_INTER_CONTEXTS; i++)
       vp9_diff_update_prob(&r, &fc->intra_inter_prob[i]);
 
-    cm->reference_mode = read_reference_mode(cm, &r);
-    read_reference_mode_probs(cm, &r);
+    cm->reference_mode = read_frame_reference_mode(cm, &r);
+    if (cm->reference_mode != SINGLE_REFERENCE)
+      setup_compound_reference_mode(cm);
+    read_frame_reference_mode_probs(cm, &r);
 
     for (j = 0; j < BLOCK_SIZE_GROUPS; j++)
       for (i = 0; i < INTRA_MODES - 1; ++i)
@@ -1373,7 +1378,10 @@ int vp9_decode_frame(VP9D_COMP *pbi, const uint8_t **p_data_end) {
   alloc_tile_storage(pbi, tile_rows, tile_cols);
 
   xd->mode_info_stride = cm->mode_info_stride;
-  set_prev_mi(cm);
+  if (cm->coding_use_prev_mi)
+    set_prev_mi(cm);
+  else
+    cm->prev_mi = NULL;
 
   setup_plane_dequants(cm, xd, cm->base_qindex);
   vp9_setup_block_planes(xd, cm->subsampling_x, cm->subsampling_y);

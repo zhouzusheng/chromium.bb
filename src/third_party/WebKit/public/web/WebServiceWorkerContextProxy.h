@@ -31,6 +31,8 @@
 #ifndef WebServiceWorkerContextProxy_h
 #define WebServiceWorkerContextProxy_h
 
+#include "public/platform/WebMessagePortChannel.h"
+
 namespace blink {
 
 class WebString;
@@ -41,8 +43,17 @@ class WebServiceWorkerContextProxy {
 public:
     virtual ~WebServiceWorkerContextProxy() { }
 
+    virtual void dispatchActivateEvent(int eventID) = 0;
     // FIXME: This needs to pass the active service worker info.
     virtual void dispatchInstallEvent(int installEventID) = 0;
+    // FIXME: This needs to pass the fetch request info.
+    virtual void dispatchFetchEvent(int fetchEventID) = 0;
+
+    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& channels) = 0;
+
+    // Once the ServiceWorker has finished handling the sync event
+    // didHandleSyncEvent is called on the context client.
+    virtual void dispatchSyncEvent(int syncEventID) = 0;
 
     virtual void resumeWorkerContext() { }
     virtual void attachDevTools() { }

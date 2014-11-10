@@ -35,9 +35,9 @@
 
 namespace WebCore {
 
-PassRefPtr<DataTransferItemList> DataTransferItemList::create(PassRefPtr<Clipboard> clipboard, PassRefPtr<DataObject> list)
+PassRefPtrWillBeRawPtr<DataTransferItemList> DataTransferItemList::create(PassRefPtrWillBeRawPtr<Clipboard> clipboard, PassRefPtrWillBeRawPtr<DataObject> list)
 {
-    return adoptRef(new DataTransferItemList(clipboard, list));
+    return adoptRefWillBeNoop(new DataTransferItemList(clipboard, list));
 }
 
 DataTransferItemList::~DataTransferItemList()
@@ -51,13 +51,13 @@ size_t DataTransferItemList::length() const
     return m_dataObject->length();
 }
 
-PassRefPtr<DataTransferItem> DataTransferItemList::item(unsigned long index)
+PassRefPtrWillBeRawPtr<DataTransferItem> DataTransferItemList::item(unsigned long index)
 {
     if (!m_clipboard->canReadTypes())
-        return 0;
-    RefPtr<DataObjectItem> item = m_dataObject->item(index);
+        return nullptr;
+    RefPtrWillBeRawPtr<DataObjectItem> item = m_dataObject->item(index);
     if (!item)
-        return 0;
+        return nullptr;
 
     return DataTransferItem::create(m_clipboard, item);
 }
@@ -78,33 +78,39 @@ void DataTransferItemList::clear()
     m_dataObject->clearAll();
 }
 
-PassRefPtr<DataTransferItem> DataTransferItemList::add(const String& data, const String& type, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DataTransferItem> DataTransferItemList::add(const String& data, const String& type, ExceptionState& exceptionState)
 {
     if (!m_clipboard->canWriteData())
-        return 0;
-    RefPtr<DataObjectItem> item = m_dataObject->add(data, type);
+        return nullptr;
+    RefPtrWillBeRawPtr<DataObjectItem> item = m_dataObject->add(data, type);
     if (!item) {
         exceptionState.throwDOMException(NotSupportedError, "An item already exists for type '" + type + "'.");
-        return 0;
+        return nullptr;
     }
     return DataTransferItem::create(m_clipboard, item);
 }
 
-PassRefPtr<DataTransferItem> DataTransferItemList::add(PassRefPtr<File> file)
+PassRefPtrWillBeRawPtr<DataTransferItem> DataTransferItemList::add(PassRefPtrWillBeRawPtr<File> file)
 {
     if (!m_clipboard->canWriteData())
-        return 0;
-    RefPtr<DataObjectItem> item = m_dataObject->add(file);
+        return nullptr;
+    RefPtrWillBeRawPtr<DataObjectItem> item = m_dataObject->add(file);
     if (!item)
-        return 0;
+        return nullptr;
     return DataTransferItem::create(m_clipboard, item);
 }
 
-DataTransferItemList::DataTransferItemList(PassRefPtr<Clipboard> clipboard, PassRefPtr<DataObject> dataObject)
+DataTransferItemList::DataTransferItemList(PassRefPtrWillBeRawPtr<Clipboard> clipboard, PassRefPtrWillBeRawPtr<DataObject> dataObject)
     : m_clipboard(clipboard)
     , m_dataObject(dataObject)
 {
     ScriptWrappable::init(this);
+}
+
+void DataTransferItemList::trace(Visitor* visitor)
+{
+    visitor->trace(m_clipboard);
+    visitor->trace(m_dataObject);
 }
 
 } // namespace WebCore

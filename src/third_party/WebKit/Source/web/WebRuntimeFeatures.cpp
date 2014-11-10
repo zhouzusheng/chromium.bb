@@ -38,15 +38,18 @@ using namespace WebCore;
 
 namespace blink {
 
-void WebRuntimeFeatures::enableStableFeatures(bool enable)
-{
-    // FIXME: This entire method should be removed once it is no longer called by Chromium.
-    ASSERT(enable);
-}
-
 void WebRuntimeFeatures::enableExperimentalFeatures(bool enable)
 {
     RuntimeEnabledFeatures::setExperimentalFeaturesEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
+{
+    ASSERT(enable);
+    RuntimeEnabledFeatures::setBleedingEdgeFastPathsEnabled(enable);
+    RuntimeEnabledFeatures::setSubpixelFontScalingEnabled(enable || RuntimeEnabledFeatures::subpixelFontScalingEnabled());
+    RuntimeEnabledFeatures::setCSSWillChangeEnabled(enable);
+    RuntimeEnabledFeatures::setWebAnimationsAPIEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableTestOnlyFeatures(bool enable)
@@ -77,16 +80,6 @@ void WebRuntimeFeatures::enableCSSGridLayout(bool enable)
 void WebRuntimeFeatures::enableDatabase(bool enable)
 {
     RuntimeEnabledFeatures::setDatabaseEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableDeviceMotion(bool enable)
-{
-    RuntimeEnabledFeatures::setDeviceMotionEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableDeviceOrientation(bool enable)
-{
-    RuntimeEnabledFeatures::setDeviceOrientationEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableDialogElement(bool enable)
@@ -122,12 +115,6 @@ bool WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()
     return RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled();
 }
 
-void WebRuntimeFeatures::enableDirectWrite(bool enable)
-{
-    RuntimeEnabledFeatures::setDirectWriteEnabled(enable);
-    RuntimeEnabledFeatures::setSubpixelFontScalingEnabled(enable || RuntimeEnabledFeatures::subpixelFontScalingEnabled());
-}
-
 void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
 {
     RuntimeEnabledFeatures::setExperimentalCanvasFeaturesEnabled(enable);
@@ -143,19 +130,9 @@ void WebRuntimeFeatures::enableFileSystem(bool enable)
     RuntimeEnabledFeatures::setFileSystemEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableFullscreen(bool enable)
-{
-    RuntimeEnabledFeatures::setFullscreenEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableGamepad(bool enable)
 {
     RuntimeEnabledFeatures::setGamepadEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableGeolocation(bool enable)
-{
-    RuntimeEnabledFeatures::setGeolocationEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableLazyLayout(bool enable)
@@ -292,11 +269,6 @@ void WebRuntimeFeatures::enableXSLT(bool enable)
 void WebRuntimeFeatures::enableOverlayScrollbars(bool enable)
 {
     RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableInputModeAttribute(bool enable)
-{
-    RuntimeEnabledFeatures::setInputModeAttributeEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableOverlayFullscreenVideo(bool enable)

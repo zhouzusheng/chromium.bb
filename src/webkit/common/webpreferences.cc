@@ -74,8 +74,6 @@ WebPreferences::WebPreferences()
       deferred_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
-      memory_info_enabled(false),
-      fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
       password_echo_enabled(false),
@@ -122,6 +120,7 @@ WebPreferences::WebPreferences()
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       compositor_touch_hit_testing(true),
+      navigate_on_drag_drop(true),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false)
 #if defined(OS_ANDROID)

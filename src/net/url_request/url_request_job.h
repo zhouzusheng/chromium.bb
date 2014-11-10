@@ -26,6 +26,7 @@ namespace net {
 class AuthChallengeInfo;
 class AuthCredentials;
 class CookieOptions;
+class CookieStore;
 class Filter;
 class HttpRequestHeaders;
 class HttpResponseInfo;
@@ -238,6 +239,9 @@ class NET_EXPORT URLRequestJob
   // Delegates to URLRequest::Delegate.
   bool CanEnablePrivacyMode() const;
 
+  // Returns the cookie store to be used for the request.
+  CookieStore* GetCookieStore() const;
+
   // Notifies the job that the network is about to be used.
   void NotifyBeforeNetworkStart(bool* defer);
 
@@ -288,6 +292,11 @@ class NET_EXPORT URLRequestJob
   // Called to tell the job that a filter has successfully reached the end of
   // the stream.
   virtual void DoneReading();
+
+  // Called to tell the job that the body won't be read because it's a redirect.
+  // This is needed so that redirect headers can be cached even though their
+  // bodies are never read.
+  virtual void DoneReadingRedirectResponse();
 
   // Informs the filter that data has been read into its buffer
   void FilteredDataRead(int bytes_read);

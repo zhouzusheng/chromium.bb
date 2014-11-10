@@ -227,6 +227,7 @@ visibility
 white-space
 widows
 width
+will-change
 word-break
 -epub-word-break alias_for=word-break
 word-spacing
@@ -234,6 +235,7 @@ word-wrap
 z-index
 -webkit-appearance
 -webkit-aspect-ratio
+backface-visibility
 -webkit-backface-visibility
 -webkit-background-clip
 -webkit-background-composite
@@ -277,14 +279,12 @@ z-index
 -webkit-box-reflect
 -webkit-box-shadow
 -internal-callback
--webkit-column-axis
 -webkit-column-break-after
 -webkit-column-break-before
 -webkit-column-break-inside
 -webkit-column-count
 column-fill
 -webkit-column-gap
--webkit-column-progression
 -webkit-column-rule
 -webkit-column-rule-color
 -webkit-column-rule-style
@@ -374,7 +374,9 @@ order
 -webkit-padding-before
 -webkit-padding-end
 -webkit-padding-start
+perspective
 -webkit-perspective
+perspective-origin
 -webkit-perspective-origin
 -webkit-perspective-origin-x
 -webkit-perspective-origin-y
@@ -396,22 +398,23 @@ order
 -webkit-text-stroke
 -webkit-text-stroke-color
 -webkit-text-stroke-width
+transform
 -webkit-transform
+transform-origin
 -webkit-transform-origin
 -webkit-transform-origin-x
 -webkit-transform-origin-y
 -webkit-transform-origin-z
+transform-style
 -webkit-transform-style
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
 -bb-rubberbandable
--webkit-shape-inside alias_for=shape-inside
 -webkit-shape-outside alias_for=shape-outside
 -webkit-shape-margin alias_for=shape-margin
 -webkit-shape-padding alias_for=shape-padding
 -webkit-shape-image-threshold alias_for=shape-image-threshold
-shape-inside
 shape-outside
 shape-margin
 shape-padding

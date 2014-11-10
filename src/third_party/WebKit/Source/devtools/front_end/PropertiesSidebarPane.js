@@ -59,7 +59,8 @@ WebInspector.PropertiesSidebarPane.prototype = {
                 return;
 
             /**
-             * @this {WebInspector.PropertiesSidebarPane}
+             * @suppressReceiverCheck
+             * @this {*}
              */
             function protoList()
             {

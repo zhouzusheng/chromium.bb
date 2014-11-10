@@ -7,10 +7,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/resources/platform_color.h"
+#include "cc/resources/raster_mode.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/scoped_resource.h"
+#include "cc/resources/tile_priority.h"
 
 namespace cc {
 
@@ -69,10 +71,15 @@ class CC_EXPORT ManagedTileState {
       return mode_ == RESOURCE_MODE || mode_ == PICTURE_PILE_MODE;
     }
 
+    inline bool has_resource() const { return !!resource_; }
+
     size_t GPUMemoryUsageInBytes() const;
 
     void SetSolidColorForTesting(SkColor color) { set_solid_color(color); }
     void SetHasTextForTesting(bool has_text) { has_text_ = has_text; }
+    void SetResourceForTesting(scoped_ptr<ScopedResource> resource) {
+      resource_ = resource.Pass();
+    }
 
    private:
     friend class TileManager;
@@ -95,7 +102,7 @@ class CC_EXPORT ManagedTileState {
     SkColor solid_color_;
     bool has_text_;
     scoped_ptr<ScopedResource> resource_;
-    RasterWorkerPool::RasterTask raster_task_;
+    scoped_refptr<internal::RasterWorkerPoolTask> raster_task_;
   };
 
   ManagedTileState();

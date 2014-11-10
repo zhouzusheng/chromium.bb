@@ -34,6 +34,9 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
+// FIXME(crbug.com/352043): This is temporarily enabled even on RELEASE to diagnose a wild crash.
+#define ENABLE_RESOURCE_IS_DELETED_CHECK
+
 namespace WebCore {
 
 struct FetchInitiatorInfo;
@@ -43,7 +46,6 @@ class ResourceClient;
 class ResourcePtrBase;
 class ResourceFetcher;
 class InspectorResource;
-class PurgeableBuffer;
 class ResourceLoader;
 class SecurityOrigin;
 class SharedBuffer;
@@ -109,12 +111,13 @@ public:
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return false; }
 
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
+    const ResourceRequest& lastResourceRequest();
     const KURL& url() const { return m_resourceRequest.url();}
     Type type() const { return static_cast<Type>(m_type); }
     const ResourceLoaderOptions& options() const { return m_options; }
     void setOptions(const ResourceLoaderOptions& options) { m_options = options; }
 
-    void didChangePriority(ResourceLoadPriority);
+    void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
 
     void addClient(ResourceClient*);
     void removeClient(ResourceClient*);
@@ -160,9 +163,6 @@ public:
             || type() == Raw;
     }
 
-    void updateForAccess();
-    unsigned accessCount() const { return m_accessCount; }
-
     // Computes the status of an object after loading.
     // Updates the expire date on the cache entry file
     void finish(double finishTime = 0.0);
@@ -171,23 +171,16 @@ public:
     bool passesAccessControlCheck(SecurityOrigin*);
     bool passesAccessControlCheck(SecurityOrigin*, String& errorDescription);
 
-    // Called by the cache if the object has been removed from the cache
-    // while still being referenced. This means the object should delete itself
-    // if the number of clients observing it ever drops to 0.
-    // The resource can be brought back to cache after successful revalidation.
-    void setInCache(bool inCache) { m_inCache = inCache; }
-    bool inCache() const { return m_inCache; }
-
     void setCacheLiveResourcePriority(CacheLiveResourcePriority);
     unsigned cacheLiveResourcePriority() const { return m_cacheLiveResourcePriority; }
-    bool inLiveDecodedResourcesList() { return m_inLiveDecodedResourcesList; }
 
     void clearLoader();
 
-    SharedBuffer* resourceBuffer() const { ASSERT(!m_purgeableData); return m_data.get(); }
+    SharedBuffer* resourceBuffer() const { return m_data.get(); }
     void setResourceBuffer(PassRefPtr<SharedBuffer>);
 
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
+    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&);
+
     virtual void updateRequest(const ResourceRequest&) { }
     virtual void responseReceived(const ResourceResponse&);
     void setResponse(const ResourceResponse& response) { m_response = response; }
@@ -206,8 +199,6 @@ public:
 
     bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_protectorCount && !m_resourceToRevalidate && !m_proxyResource; }
     bool hasOneHandle() const { return m_handleCount == 1; }
-
-    bool isExpired() const;
 
     // List of acceptable MIME types separated by ",".
     // A MIME type may contain a wildcard, e.g. "text/*".
@@ -228,8 +219,9 @@ public:
     void registerHandle(ResourcePtrBase* h);
     void unregisterHandle(ResourcePtrBase* h);
 
-    bool canUseCacheValidator() const;
+    bool canReuseRedirectChain() const;
     bool mustRevalidateDueToCacheHeaders() const;
+    bool canUseCacheValidator() const;
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
@@ -245,9 +237,16 @@ public:
 
     virtual bool canReuse(const ResourceRequest&) const { return true; }
 
+    // Used by the MemoryCache to reduce the memory consumption of the entry.
     void prune();
 
     static const char* resourceTypeToString(Type, const FetchInitiatorInfo&);
+
+#ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
+    void assertAlive() const { RELEASE_ASSERT(!m_deleted); }
+#else
+    void assertAlive() const { }
+#endif
 
 protected:
     virtual void checkNotify();
@@ -297,6 +296,7 @@ protected:
         static ResourceCallback* callbackHandler();
         void schedule(Resource*);
         void cancel(Resource*);
+        bool isScheduled(Resource*) const;
     private:
         ResourceCallback();
         void timerFired(Timer<ResourceCallback>*);
@@ -305,6 +305,19 @@ protected:
     };
 
     bool hasClient(ResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
+
+    struct RedirectPair {
+    public:
+        explicit RedirectPair(const ResourceRequest& request, const ResourceResponse& redirectResponse)
+            : m_request(request)
+            , m_redirectResponse(redirectResponse)
+        {
+        }
+
+        const ResourceRequest m_request;
+        const ResourceResponse m_redirectResponse;
+    };
+    const Vector<RedirectPair>& redirectChain() const { return m_redirectChain; }
 
     virtual bool isSafeToUnlock() const { return false; }
     virtual void destroyDecodedDataIfPossible() { }
@@ -318,7 +331,6 @@ protected:
     double m_responseTimestamp;
 
     RefPtr<SharedBuffer> m_data;
-    OwnPtr<PurgeableBuffer> m_purgeableData;
     Timer<Resource> m_cancelTimer;
 
 private:
@@ -328,8 +340,6 @@ private:
     void revalidationSucceeded(const ResourceResponse&);
     void revalidationFailed();
 
-    double currentAge() const;
-    double freshnessLifetime() const;
     bool unlock();
 
     void failBeforeStarting();
@@ -347,17 +357,14 @@ private:
 
     size_t m_encodedSize;
     size_t m_decodedSize;
-    unsigned m_accessCount;
     unsigned m_handleCount;
     unsigned m_preloadCount;
     unsigned m_protectorCount;
 
     unsigned m_preloadResult : 2; // PreloadResult
     unsigned m_cacheLiveResourcePriority : 2; // CacheLiveResourcePriority
-    unsigned m_inLiveDecodedResourcesList : 1;
     unsigned m_requestedFromNetworkingLayer : 1;
 
-    unsigned m_inCache : 1;
     unsigned m_loading : 1;
 
     unsigned m_switchingClientsToRevalidatedResource : 1;
@@ -369,16 +376,9 @@ private:
 
     unsigned m_needsSynchronousCacheHit : 1;
 
-#ifndef NDEBUG
+#ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
     bool m_deleted;
-    unsigned m_lruIndex;
 #endif
-
-    Resource* m_nextInAllResourcesList;
-    Resource* m_prevInAllResourcesList;
-
-    Resource* m_nextInLiveResourcesList;
-    Resource* m_prevInLiveResourcesList;
 
     // If this field is non-null we are using the resource as a proxy for checking whether an existing resource is still up to date
     // using HTTP If-Modified-Since/If-None-Match headers. If the response is 304 all clients of this resource are moved
@@ -391,6 +391,9 @@ private:
 
     // These handles will need to be updated to point to the m_resourceToRevalidate in case we get 304 response.
     HashSet<ResourcePtrBase*> m_handlesToRevalidate;
+
+    // Ordered list of all redirects followed while fetching this resource.
+    Vector<RedirectPair> m_redirectChain;
 };
 
 #if !LOG_DISABLED

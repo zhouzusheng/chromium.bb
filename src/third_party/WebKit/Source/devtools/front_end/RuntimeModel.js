@@ -31,23 +31,39 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
- * @param {!WebInspector.ResourceTreeModel} resourceTreeModel
+ * @param {!WebInspector.Target} target
  */
-WebInspector.RuntimeModel = function(resourceTreeModel)
+WebInspector.RuntimeModel = function(target)
 {
-    resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
-    resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameNavigated, this._frameNavigated, this);
-    resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameDetached, this);
-    resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._didLoadCachedResources, this);
-    this._frameIdToContextList = {};
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameNavigated, this._frameNavigated, this);
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameDetached, this);
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._didLoadCachedResources, this);
+    this._target = target;
+    this._debuggerModel = target.debuggerModel;
+    this._agent = target.runtimeAgent();
+    this._contextListById = {};
 }
 
 WebInspector.RuntimeModel.Events = {
-    FrameExecutionContextListAdded: "FrameExecutionContextListAdded",
-    FrameExecutionContextListRemoved: "FrameExecutionContextListRemoved",
+    ExecutionContextListAdded: "ExecutionContextListAdded",
+    ExecutionContextListRemoved: "ExecutionContextListRemoved",
 }
 
 WebInspector.RuntimeModel.prototype = {
+
+    /**
+     * @param {string} url
+     */
+    addWorkerContextList: function(url)
+    {
+        console.assert(this._target.isWorkerTarget(), "Worker context list was added in a non-worker target");
+        var fakeContextList = new WebInspector.WorkerExecutionContextList("worker", url);
+        this._addContextList(fakeContextList);
+        var fakeExecutionContext = new WebInspector.ExecutionContext(undefined, url, true);
+        fakeContextList._addExecutionContext(fakeExecutionContext);
+    },
+
     /**
      * @param {?WebInspector.ExecutionContext} executionContext
      */
@@ -65,20 +81,20 @@ WebInspector.RuntimeModel.prototype = {
     },
 
     /**
-     * @return {!Array.<!WebInspector.FrameExecutionContextList>}
+     * @return {!Array.<!WebInspector.ExecutionContextList>}
      */
     contextLists: function()
     {
-        return Object.values(this._frameIdToContextList);
+        return Object.values(this._contextListById);
     },
 
     /**
      * @param {!WebInspector.ResourceTreeFrame} frame
-     * @return {!WebInspector.FrameExecutionContextList}
+     * @return {!WebInspector.ExecutionContextList}
      */
     contextListByFrame: function(frame)
     {
-        return this._frameIdToContextList[frame.id];
+        return this._contextListById[frame.id];
     },
 
     /**
@@ -86,10 +102,16 @@ WebInspector.RuntimeModel.prototype = {
      */
     _frameAdded: function(event)
     {
+        console.assert(!this._target.isWorkerTarget() ,"Frame was added in a worker target.t");
         var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
-        var context = new WebInspector.FrameExecutionContextList(frame);
-        this._frameIdToContextList[frame.id] = context;
-        this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.FrameExecutionContextListAdded, context);
+        var contextList = new WebInspector.FrameExecutionContextList(frame);
+        this._addContextList(contextList);
+    },
+
+    _addContextList: function(executionContextList)
+    {
+        this._contextListById[executionContextList.id()] = executionContextList;
+        this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.ExecutionContextListAdded, executionContextList);
     },
 
     /**
@@ -97,8 +119,9 @@ WebInspector.RuntimeModel.prototype = {
      */
     _frameNavigated: function(event)
     {
+        console.assert(!this._target.isWorkerTarget() ,"Frame was navigated in worker's target");
         var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
-        var context = this._frameIdToContextList[frame.id];
+        var context = this._contextListById[frame.id];
         if (context)
             context._frameNavigated(frame);
     },
@@ -108,23 +131,24 @@ WebInspector.RuntimeModel.prototype = {
      */
     _frameDetached: function(event)
     {
+        console.assert(!this._target.isWorkerTarget() ,"Frame was detached in worker's target");
         var frame = /** @type {!WebInspector.ResourceTreeFrame} */ (event.data);
-        var context = this._frameIdToContextList[frame.id];
+        var context = this._contextListById[frame.id];
         if (!context)
             return;
-        this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.FrameExecutionContextListRemoved, context);
-        delete this._frameIdToContextList[frame.id];
+        this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.ExecutionContextListRemoved, context);
+        delete this._contextListById[frame.id];
     },
 
     _didLoadCachedResources: function()
     {
-        InspectorBackend.registerRuntimeDispatcher(new WebInspector.RuntimeDispatcher(this));
-        RuntimeAgent.enable();
+        this._target.registerRuntimeDispatcher(new WebInspector.RuntimeDispatcher(this));
+        this._agent.enable();
     },
 
     _executionContextCreated: function(context)
     {
-        var contextList = this._frameIdToContextList[context.frameId];
+        var contextList = this._contextListById[context.frameId];
         console.assert(contextList);
         contextList._addExecutionContext(new WebInspector.ExecutionContext(context.id, context.name, context.isPageContext));
     },
@@ -140,8 +164,8 @@ WebInspector.RuntimeModel.prototype = {
      */
     evaluate: function(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback)
     {
-        if (WebInspector.debuggerModel.selectedCallFrame()) {
-            WebInspector.debuggerModel.evaluateOnSelectedCallFrame(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback);
+        if (this._debuggerModel.selectedCallFrame()) {
+            this._debuggerModel.evaluateOnSelectedCallFrame(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback);
             return;
         }
 
@@ -151,6 +175,7 @@ WebInspector.RuntimeModel.prototype = {
         }
 
         /**
+         * @this {WebInspector.RuntimeModel}
          * @param {?Protocol.Error} error
          * @param {!RuntimeAgent.RemoteObject} result
          * @param {boolean=} wasThrown
@@ -165,9 +190,9 @@ WebInspector.RuntimeModel.prototype = {
             if (returnByValue)
                 callback(null, !!wasThrown, wasThrown ? null : result);
             else
-                callback(WebInspector.RemoteObject.fromPayload(result), !!wasThrown);
+                callback(WebInspector.RemoteObject.fromPayload(result, this._target), !!wasThrown);
         }
-        RuntimeAgent.evaluate(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, this._currentExecutionContext ? this._currentExecutionContext.id : undefined, returnByValue, generatePreview, evalCallback);
+        this._agent.evaluate(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, this._currentExecutionContext ? this._currentExecutionContext.id : undefined, returnByValue, generatePreview, evalCallback.bind(this));
     },
 
     /**
@@ -212,8 +237,8 @@ WebInspector.RuntimeModel.prototype = {
             return;
         }
 
-        if (!expressionString && WebInspector.debuggerModel.selectedCallFrame())
-            WebInspector.debuggerModel.getSelectedCallFrameVariables(receivedPropertyNames.bind(this));
+        if (!expressionString && this._debuggerModel.selectedCallFrame())
+            this._debuggerModel.getSelectedCallFrameVariables(receivedPropertyNames.bind(this));
         else
             this.evaluate(expressionString, "completion", true, true, false, false, evaluated.bind(this));
 
@@ -229,6 +254,7 @@ WebInspector.RuntimeModel.prototype = {
 
             /**
              * @param {string} primitiveType
+             * @suppressReceiverCheck
              * @this {WebInspector.RuntimeModel}
              */
             function getCompletions(primitiveType)
@@ -280,7 +306,7 @@ WebInspector.RuntimeModel.prototype = {
          */
         function receivedPropertyNames(propertyNames)
         {
-            RuntimeAgent.releaseObjectGroup("completion");
+            this._agent.releaseObjectGroup("completion");
             if (!propertyNames) {
                 completionsReadyCallback([]);
                 return;
@@ -398,29 +424,23 @@ WebInspector.ExecutionContext.comparator = function(a, b)
 /**
  * @constructor
  * @extends {WebInspector.Object}
- * @param {!WebInspector.ResourceTreeFrame} frame
  */
-WebInspector.FrameExecutionContextList = function(frame)
+WebInspector.ExecutionContextList = function()
 {
-    this._frame = frame;
     this._executionContexts = [];
 }
 
-WebInspector.FrameExecutionContextList.EventTypes = {
-    ContextsUpdated: "ContextsUpdated",
+WebInspector.ExecutionContextList.EventTypes = {
+    Reset: "Reset",
     ContextAdded: "ContextAdded"
 }
 
-WebInspector.FrameExecutionContextList.prototype =
+WebInspector.ExecutionContextList.prototype =
 {
-    /**
-     * @param {!WebInspector.ResourceTreeFrame} frame
-     */
-    _frameNavigated: function(frame)
+    _reset: function()
     {
-        this._frame = frame;
         this._executionContexts = [];
-        this.dispatchEventToListeners(WebInspector.FrameExecutionContextList.EventTypes.ContextsUpdated, this);
+        this.dispatchEventToListeners(WebInspector.ExecutionContextList.EventTypes.Reset, this);
     },
 
     /**
@@ -430,7 +450,7 @@ WebInspector.FrameExecutionContextList.prototype =
     {
         var insertAt = insertionIndexForObjectInListSortedByFunction(context, this._executionContexts, WebInspector.ExecutionContext.comparator);
         this._executionContexts.splice(insertAt, 0, context);
-        this.dispatchEventToListeners(WebInspector.FrameExecutionContextList.EventTypes.ContextAdded, this);
+        this.dispatchEventToListeners(WebInspector.ExecutionContextList.EventTypes.ContextAdded, this);
     },
 
     /**
@@ -466,7 +486,59 @@ WebInspector.FrameExecutionContextList.prototype =
     /**
      * @return {string}
      */
-    get frameId()
+    id: function()
+    {
+        // Overridden by subclasses
+        throw "Not implemented";
+    },
+
+    /**
+     * @return {string}
+     */
+    url: function()
+    {
+        // Overridden by subclasses
+        throw "Not implemented";
+    },
+
+    /**
+     * @return {string}
+     */
+    displayName: function()
+    {
+        // Overridden by subclasses
+        throw "Not implemented";
+    },
+
+    __proto__: WebInspector.Object.prototype
+}
+
+
+/**
+ * @constructor
+ * @extends {WebInspector.ExecutionContextList}
+ * @param {!WebInspector.ResourceTreeFrame} frame
+ */
+WebInspector.FrameExecutionContextList = function(frame)
+{
+    WebInspector.ExecutionContextList.call(this);
+    this._frame = frame;
+}
+
+WebInspector.FrameExecutionContextList.prototype = {
+    /**
+     * @param {!WebInspector.ResourceTreeFrame} frame
+     */
+    _frameNavigated: function(frame)
+    {
+        this._frame = frame;
+        this._reset();
+    },
+
+    /**
+     * @return {string}
+     */
+    id: function()
     {
         return this._frame.id;
     },
@@ -474,7 +546,7 @@ WebInspector.FrameExecutionContextList.prototype =
     /**
      * @return {string}
      */
-    get url()
+    url: function()
     {
         return this._frame.url;
     },
@@ -482,10 +554,52 @@ WebInspector.FrameExecutionContextList.prototype =
     /**
      * @return {string}
      */
-    get displayName()
+    displayName: function()
     {
         return this._frame.displayName();
     },
 
-    __proto__: WebInspector.Object.prototype
+    __proto__: WebInspector.ExecutionContextList.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.ExecutionContextList}
+ * @param {string} id
+ * @param {string} url
+ */
+WebInspector.WorkerExecutionContextList = function(id, url)
+{
+    WebInspector.ExecutionContextList.call(this);
+    this._url = url;
+    this._id = id;
+}
+
+WebInspector.WorkerExecutionContextList.prototype = {
+
+    /**
+     * @return {string}
+     */
+    id: function()
+    {
+        return this._id;
+    },
+
+    /**
+     * @return {string}
+     */
+    url: function()
+    {
+        return this._url;
+    },
+
+    /**
+     * @return {string}
+     */
+    displayName: function()
+    {
+        return this._url;
+    },
+
+    __proto__: WebInspector.ExecutionContextList.prototype
 }

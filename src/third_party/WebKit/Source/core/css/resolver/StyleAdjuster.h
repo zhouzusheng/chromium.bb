@@ -41,7 +41,9 @@ public:
     void adjustRenderStyle(RenderStyle* styleToAdjust, RenderStyle* parentStyle, Element*);
 
 private:
-    void adjustGridItemPosition(RenderStyle*, RenderStyle*) const;
+    void adjustStyleForDisplay(RenderStyle* styleToAdjust, RenderStyle* parentStyle);
+    void adjustStyleForTagName(RenderStyle* styleToAdjust, RenderStyle* parentStyle, Element&);
+    void adjustOverflow(RenderStyle* styleToAdjust, Element*);
 
     const CachedUAStyle& m_cachedUAStyle;
     bool m_useQuirksModeStyles;

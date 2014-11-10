@@ -180,6 +180,96 @@
           ],
         },
         {
+          'action_name': 'MediaFeatureNames',
+          'variables': {
+            'in_files': [
+              'css/MediaFeatureNames.in',
+            ],
+          },
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_media_feature_names.py',
+            '<@(in_files)'
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaFeatureNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaFeatureNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_media_feature_names.py',
+            '<@(in_files)',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--defines', '<(feature_defines)',
+          ],
+        },
+        {
+          'action_name': 'MediaFeatures',
+          'variables': {
+            'in_files': [
+              'css/MediaFeatureNames.in',
+            ],
+          },
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_media_features.py',
+            '<@(in_files)'
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaFeatures.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_media_features.py',
+            '<@(in_files)',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--defines', '<(feature_defines)',
+          ],
+        },
+        {
+          'action_name': 'MediaTypeNames',
+          'variables': {
+            'in_files': [
+              'css/MediaTypeNames.in',
+            ],
+          },
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_names.py',
+            '<@(in_files)'
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaTypeNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaTypeNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_names.py',
+            '<@(in_files)',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--defines', '<(feature_defines)',
+          ],
+        },
+        {
+          'action_name': 'MediaQueryTokenizerCodepoints',
+          'inputs': [
+            '../build/scripts/make_mediaquery_tokenizer_codepoints.py',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/MediaQueryTokenizerCodepoints.cpp',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_mediaquery_tokenizer_codepoints.py',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--defines', '<(feature_defines)',
+          ],
+        },
+        {
           'action_name': 'StylePropertyShorthand',
           'inputs': [
             '<@(scripts_for_in_files)',
@@ -275,6 +365,23 @@
           ],
         },
         {
+          'action_name': 'HTMLElementTypeHelpers',
+          'inputs': [
+            '<@(make_element_type_helpers_files)',
+            'html/HTMLTagNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementTypeHelpers.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_element_type_helpers.py',
+            'html/HTMLTagNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
           'action_name': 'SVGNames',
           'inputs': [
             '<@(make_element_factory_files)',
@@ -294,6 +401,23 @@
             '../build/scripts/make_element_factory.py',
             'svg/SVGTagNames.in',
             'svg/SVGAttributeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
+          'action_name': 'SVGElementTypeHelpers',
+          'inputs': [
+            '<@(make_element_type_helpers_files)',
+            'svg/SVGTagNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/SVGElementTypeHelpers.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_element_type_helpers.py',
+            'svg/SVGTagNames.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -409,9 +533,11 @@
               'css/themeChromiumAndroid.css',
               'css/themeChromiumLinux.css',
               'css/themeChromiumSkia.css',
+              'css/themeMac.css',
               'css/themeWin.css',
               'css/themeWinQuirks.css',
               'css/svg.css',
+              'css/mathml.css',
               'css/mediaControls.css',
               'css/mediaControlsAndroid.css',
               'css/fullscreen.css',

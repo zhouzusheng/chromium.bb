@@ -104,6 +104,10 @@ void RenderLayerFilterInfo::setRenderer(PassRefPtr<FilterEffectRenderer> rendere
 void RenderLayerFilterInfo::notifyFinished(Resource*)
 {
     RenderObject* renderer = m_layer->renderer();
+    // FIXME: This caller of scheduleLayerUpdate() is not correct. It's using the layer update
+    // system to trigger a RenderLayer to go through the filter updating logic, but that might not
+    // even happen if this element is style sharing and RenderObject::setStyle() returns early.
+    // Filters need to find a better way to hook into the system.
     toElement(renderer->node())->scheduleLayerUpdate();
     renderer->repaint();
 }
@@ -127,7 +131,7 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
             // Reference is internal; add layer as a client so we can trigger
             // filter repaint on SVG attribute change.
             Element* filter = m_layer->renderer()->node()->document().getElementById(referenceFilterOperation->fragment());
-            if (!filter || !filter->hasTagName(SVGNames::filterTag))
+            if (!isSVGFilterElement(filter))
                 continue;
             if (filter->renderer())
                 toRenderSVGResourceContainer(filter->renderer())->addClientRenderLayer(m_layer);

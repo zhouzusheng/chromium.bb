@@ -49,8 +49,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
 #include "core/dom/TouchList.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/frame/Frame.h"
 #include "core/xml/DocumentXPathEvaluator.h"
 #include "core/xml/XPathNSResolver.h"
 #include "core/xml/XPathResult.h"
@@ -61,26 +61,22 @@ namespace WebCore {
 void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     RefPtr<Document> document = V8Document::toNative(info.Holder());
+    ASSERT(document);
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "evaluate", "Document", info.Holder(), info.GetIsolate());
     V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, expression, info[0]);
-    RefPtr<Node> contextNode;
-    if (V8Node::hasInstance(info[1], info.GetIsolate()))
-        contextNode = V8Node::toNative(v8::Handle<v8::Object>::Cast(info[1]));
+    RefPtr<Node> contextNode = V8Node::toNativeWithTypeCheck(info.GetIsolate(), info[1]);
 
     const int resolverArgumentIndex = 2;
-    RefPtr<XPathNSResolver> resolver = toXPathNSResolver(info[resolverArgumentIndex], info.GetIsolate());
+    RefPtrWillBeRawPtr<XPathNSResolver> resolver = toXPathNSResolver(info[resolverArgumentIndex], info.GetIsolate());
     if (!resolver && !isUndefinedOrNull(info[resolverArgumentIndex])) {
-        exceptionState.throwTypeError(ExceptionMessages::incorrectArgumentType(resolverArgumentIndex + 1, "is not a resolver function."));
+        exceptionState.throwTypeError(ExceptionMessages::argumentNullOrIncorrectType(resolverArgumentIndex + 1, "XPathNSResolver"));
         exceptionState.throwIfNeeded();
         return;
     }
 
     int type = toInt32(info[3]);
-    RefPtr<XPathResult> inResult;
-    if (V8XPathResult::hasInstance(info[4], info.GetIsolate()))
-        inResult = V8XPathResult::toNative(v8::Handle<v8::Object>::Cast(info[4]));
-
-    V8TRYCATCH_VOID(RefPtr<XPathResult>, result, DocumentXPathEvaluator::evaluate(document.get(), expression, contextNode.get(), resolver.release(), type, inResult.get(), exceptionState));
+    RefPtrWillBeRawPtr<XPathResult> inResult = V8XPathResult::toNativeWithTypeCheck(info.GetIsolate(), info[4]);
+    V8TRYCATCH_VOID(RefPtrWillBeRawPtr<XPathResult>, result, DocumentXPathEvaluator::evaluate(*document, expression, contextNode.get(), resolver.release(), type, inResult.get(), exceptionState));
     if (exceptionState.throwIfNeeded())
         return;
 

@@ -268,11 +268,8 @@ bool TextureImageTransportSurface::PostSubBuffer(
   return true;
 }
 
-std::string TextureImageTransportSurface::GetExtensions() {
-  std::string extensions = gfx::GLSurface::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool TextureImageTransportSurface::SupportsPostSubBuffer() {
+  return true;
 }
 
 gfx::Size TextureImageTransportSurface::GetSize() {
@@ -400,26 +397,26 @@ void TextureImageTransportSurface::CreateBackTexture() {
         current_size_.width(), current_size_.height(), 0,
         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     gpu::gles2::ErrorState* error_state = decoder->GetErrorState();
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MIN_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MAG_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_S,
-                                  GL_CLAMP_TO_EDGE);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_T,
-                                  GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MIN_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MAG_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_S,
+                                   GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_T,
+                                   GL_CLAMP_TO_EDGE);
     texture_manager->SetLevelInfo(backbuffer_.get(),
                                   GL_TEXTURE_2D,
                                   0,

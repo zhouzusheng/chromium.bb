@@ -29,14 +29,14 @@
  */
 
 /**
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @constructor
  * @implements {WebInspector.Replaceable}
  * @param {!WebInspector.ContentProvider} contentProvider
  */
 WebInspector.SourceFrame = function(contentProvider)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
     this.element.classList.add("script-view");
 
     this._url = contentProvider.contentURL();
@@ -125,8 +125,7 @@ WebInspector.SourceFrame.prototype = {
     {
         WebInspector.View.prototype.willHide.call(this);
 
-        this._clearPositionHighlight();
-        this._clearLineToReveal();
+        this._clearPositionToReveal();
     },
 
     /**
@@ -200,69 +199,34 @@ WebInspector.SourceFrame.prototype = {
     },
 
     /**
-     * @override
-     * @return {boolean}
+     * @param {number} line
+     * @param {number=} column
+     * @param {boolean=} shouldHighlight
      */
-    canHighlightPosition: function()
+    revealPosition: function(line, column, shouldHighlight)
     {
-        return true;
-    },
-
-    /**
-     * @override
-     */
-    highlightPosition: function(line, column)
-    {
-        this._clearLineToReveal();
         this._clearLineToScrollTo();
         this._clearSelectionToSet();
-        this._positionToHighlight = { line: line, column: column };
-        this._innerHighlightPositionIfNeeded();
+        this._positionToReveal = { line: line, column: column, shouldHighlight: shouldHighlight };
+        this._innerRevealPositionIfNeeded();
     },
 
-    _innerHighlightPositionIfNeeded: function()
+    _innerRevealPositionIfNeeded: function()
     {
-        if (!this._positionToHighlight)
+        if (!this._positionToReveal)
             return;
 
         if (!this.loaded || !this._isEditorShowing())
             return;
 
-        this._textEditor.highlightPosition(this._positionToHighlight.line, this._positionToHighlight.column);
-        delete this._positionToHighlight;
+        this._textEditor.revealPosition(this._positionToReveal.line, this._positionToReveal.column, this._positionToReveal.shouldHighlight);
+        delete this._positionToReveal;
     },
 
-    _clearPositionHighlight: function()
+    _clearPositionToReveal: function()
     {
         this._textEditor.clearPositionHighlight();
-        delete this._positionToHighlight;
-    },
-
-    /**
-     * @param {number} line
-     */
-    revealLine: function(line)
-    {
-        this._clearPositionHighlight();
-        this._clearLineToScrollTo();
-        this._clearSelectionToSet();
-        this._lineToReveal = line;
-        this._innerRevealLineIfNeeded();
-    },
-
-    _innerRevealLineIfNeeded: function()
-    {
-        if (typeof this._lineToReveal === "number") {
-            if (this.loaded && this._isEditorShowing()) {
-                this._textEditor.revealLine(this._lineToReveal);
-                delete this._lineToReveal;
-            }
-        }
-    },
-
-    _clearLineToReveal: function()
-    {
-        delete this._lineToReveal;
+        delete this._positionToReveal;
     },
 
     /**
@@ -270,8 +234,7 @@ WebInspector.SourceFrame.prototype = {
      */
     scrollToLine: function(line)
     {
-        this._clearPositionHighlight();
-        this._clearLineToReveal();
+        this._clearPositionToReveal();
         this._lineToScrollTo = line;
         this._innerScrollToLineIfNeeded();
     },
@@ -289,6 +252,14 @@ WebInspector.SourceFrame.prototype = {
     _clearLineToScrollTo: function()
     {
         delete this._lineToScrollTo;
+    },
+
+    /**
+     * @return {!WebInspector.TextRange}
+     */
+    selection: function()
+    {
+        return this.textEditor.selection();
     },
 
     /**
@@ -315,8 +286,7 @@ WebInspector.SourceFrame.prototype = {
 
     _wasShownOrLoaded: function()
     {
-        this._innerHighlightPositionIfNeeded();
-        this._innerRevealLineIfNeeded();
+        this._innerRevealPositionIfNeeded();
         this._innerSetSelectionIfNeeded();
         this._innerScrollToLineIfNeeded();
     },
@@ -636,7 +606,7 @@ WebInspector.SourceFrame.prototype = {
 
         for (var i = 0; i < rowMessages.length; ++i) {
             if (rowMessages[i].consoleMessage.isEqual(msg)) {
-                rowMessages[i].repeatCount = msg.totalRepeatCount;
+                rowMessages[i].repeatCount++;
                 this._updateMessageRepeatCount(rowMessages[i]);
                 return;
             }
@@ -672,10 +642,10 @@ WebInspector.SourceFrame.prototype = {
 
         // Create the image element in the Inspector's document so we can use relative image URLs.
         messageLineElement.appendChild(imageElement);
-        messageLineElement.appendChild(document.createTextNode(msg.message));
+        messageLineElement.appendChild(document.createTextNode(msg.messageText));
 
         rowMessage.element = messageLineElement;
-        rowMessage.repeatCount = msg.totalRepeatCount;
+        rowMessage.repeatCount = 1;
         this._updateMessageRepeatCount(rowMessage);
         this._textEditor.endUpdates();
     },
@@ -805,7 +775,7 @@ WebInspector.SourceFrame.prototype = {
             e.consume(true);
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }
 
 

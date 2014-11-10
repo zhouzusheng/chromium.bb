@@ -36,11 +36,10 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/frame/Frame.h"
-#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderTheme.h"
 #include "wtf/text/StringBuilder.h"
@@ -304,7 +303,7 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
         newSelection = VisibleSelection(startPosition, endPosition);
     newSelection.setIsDirectional(direction != SelectionHasNoDirection);
 
-    if (Frame* frame = document().frame())
+    if (LocalFrame* frame = document().frame())
         frame->selection().setSelection(newSelection);
 }
 
@@ -344,11 +343,11 @@ int HTMLTextFormControlElement::selectionStart() const
 int HTMLTextFormControlElement::computeSelectionStart() const
 {
     ASSERT(isTextFormControl());
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return 0;
 
-    return indexForVisiblePosition(frame->selection().start());
+    return indexForVisiblePosition(VisiblePosition(frame->selection().start()));
 }
 
 int HTMLTextFormControlElement::selectionEnd() const
@@ -363,11 +362,11 @@ int HTMLTextFormControlElement::selectionEnd() const
 int HTMLTextFormControlElement::computeSelectionEnd() const
 {
     ASSERT(isTextFormControl());
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return 0;
 
-    return indexForVisiblePosition(frame->selection().end());
+    return indexForVisiblePosition(VisiblePosition(frame->selection().end()));
 }
 
 static const AtomicString& directionString(TextFieldSelectionDirection direction)
@@ -402,7 +401,7 @@ const AtomicString& HTMLTextFormControlElement::selectionDirection() const
 TextFieldSelectionDirection HTMLTextFormControlElement::computeSelectionDirection() const
 {
     ASSERT(isTextFormControl());
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return SelectionHasNoDirection;
 
@@ -424,7 +423,7 @@ static inline void setContainerAndOffsetForRange(Node* node, int offset, Node*& 
 PassRefPtr<Range> HTMLTextFormControlElement::selection() const
 {
     if (!renderer() || !isTextFormControl() || !hasCachedSelection())
-        return 0;
+        return nullptr;
 
     int start = m_cachedSelectionStart;
     int end = m_cachedSelectionEnd;
@@ -432,7 +431,7 @@ PassRefPtr<Range> HTMLTextFormControlElement::selection() const
     ASSERT(start <= end);
     HTMLElement* innerText = innerTextElement();
     if (!innerText)
-        return 0;
+        return nullptr;
 
     if (!innerText->firstChild())
         return Range::create(document(), innerText, 0, innerText, 0);
@@ -442,7 +441,7 @@ PassRefPtr<Range> HTMLTextFormControlElement::selection() const
     Node* endNode = 0;
     for (Node* node = innerText->firstChild(); node; node = NodeTraversal::next(*node, innerText)) {
         ASSERT(!node->firstChild());
-        ASSERT(node->isTextNode() || node->hasTagName(brTag));
+        ASSERT(node->isTextNode() || isHTMLBRElement(*node));
         int length = node->isTextNode() ? lastOffsetInNode(node) : 1;
 
         if (offset <= start && start <= offset + length)
@@ -457,7 +456,7 @@ PassRefPtr<Range> HTMLTextFormControlElement::selection() const
     }
 
     if (!startNode || !endNode)
-        return 0;
+        return nullptr;
 
     return Range::create(document(), startNode, start, endNode, end);
 }
@@ -475,7 +474,7 @@ void HTMLTextFormControlElement::selectionChanged(bool userTriggered)
     // selectionStart() or selectionEnd() will return cached selection when this node doesn't have focus
     cacheSelection(computeSelectionStart(), computeSelectionEnd(), computeSelectionDirection());
 
-    if (Frame* frame = document().frame()) {
+    if (LocalFrame* frame = document().frame()) {
         if (frame->selection().isRange() && userTriggered)
             dispatchEvent(Event::createBubble(EventTypeNames::select));
     }
@@ -504,7 +503,7 @@ void HTMLTextFormControlElement::setInnerTextValue(const String& value)
         return;
 
     bool textIsChanged = value != innerTextValue();
-    if (textIsChanged || !innerTextElement()->hasChildNodes()) {
+    if (textIsChanged || !innerTextElement()->hasChildren()) {
         if (textIsChanged && renderer()) {
             if (AXObjectCache* cache = document().existingAXObjectCache())
                 cache->postNotification(this, AXObjectCache::AXValueChanged, false);
@@ -536,7 +535,7 @@ String HTMLTextFormControlElement::innerTextValue() const
 
     StringBuilder result;
     for (Node* node = innerText; node; node = NodeTraversal::next(*node, innerText)) {
-        if (node->hasTagName(brTag))
+        if (isHTMLBRElement(*node))
             result.append(newlineCharacter);
         else if (node->isTextNode())
             result.append(toText(node)->data());
@@ -583,7 +582,7 @@ String HTMLTextFormControlElement::valueWithHardLineBreaks() const
 
     StringBuilder result;
     for (Node* node = innerText->firstChild(); node; node = NodeTraversal::next(*node, innerText)) {
-        if (node->hasTagName(brTag))
+        if (isHTMLBRElement(*node))
             result.append(newlineCharacter);
         else if (node->isTextNode()) {
             String data = toText(node)->data();
@@ -615,7 +614,7 @@ HTMLTextFormControlElement* enclosingTextFormControl(const Position& position)
     if (!container)
         return 0;
     Element* ancestor = container->shadowHost();
-    return ancestor && isHTMLTextFormControlElement(*ancestor) ? toHTMLTextFormControlElement(ancestor) : 0;
+    return ancestor && isHTMLTextFormControlElement(*ancestor) && container->containingShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot ? toHTMLTextFormControlElement(ancestor) : 0;
 }
 
 static const HTMLElement* parentHTMLElement(const Element* element)

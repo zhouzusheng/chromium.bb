@@ -34,14 +34,19 @@ namespace WebCore {
 
 class DOMMimeTypeArray;
 class DOMPluginArray;
-class Frame;
+class LocalFrame;
 class PluginData;
 
 typedef int ExceptionCode;
 
-class Navigator FINAL : public NavigatorBase, public ScriptWrappable, public RefCounted<Navigator>, public DOMWindowProperty, public Supplementable<Navigator> {
+class Navigator FINAL : public RefCountedWillBeGarbageCollectedFinalized<Navigator>, public NavigatorBase, public ScriptWrappable, public DOMWindowProperty, public WillBeHeapSupplementable<Navigator> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Navigator);
 public:
-    static PassRefPtr<Navigator> create(Frame* frame) { return adoptRef(new Navigator(frame)); }
+    static PassRefPtrWillBeRawPtr<Navigator> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new Navigator(frame));
+    }
+
     virtual ~Navigator();
 
     AtomicString language() const;
@@ -59,11 +64,13 @@ public:
     // Relinquishes the storage lock, if one exists.
     void getStorageUpdates();
 
-private:
-    explicit Navigator(Frame*);
+    virtual void trace(Visitor*);
 
-    mutable RefPtrWillBePersistent<DOMPluginArray> m_plugins;
-    mutable RefPtrWillBePersistent<DOMMimeTypeArray> m_mimeTypes;
+private:
+    explicit Navigator(LocalFrame*);
+
+    mutable RefPtrWillBeMember<DOMPluginArray> m_plugins;
+    mutable RefPtrWillBeMember<DOMMimeTypeArray> m_mimeTypes;
 };
 
 }

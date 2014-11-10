@@ -59,9 +59,8 @@ private:
     virtual void setFocus(bool) OVERRIDE FINAL;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE FINAL;
     virtual bool isHTMLContentAttribute(const Attribute&) const OVERRIDE FINAL;
-
-    virtual bool isFrameElementBase() const OVERRIDE FINAL { return true; }
 
     virtual bool areAuthorShadowsAllowed() const OVERRIDE FINAL { return false; }
 
@@ -77,12 +76,17 @@ private:
     int m_marginHeight;
 };
 
-inline bool isHTMLFrameElementBase(const Node& node)
+inline bool isHTMLFrameElementBase(const Element& element)
 {
-    return node.isElementNode() && toElement(node).isFrameElementBase();
+    return isHTMLFrameElement(element) || isHTMLIFrameElement(element);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLFrameElementBase);
+inline bool isHTMLFrameElementBase(const HTMLElement& element)
+{
+    return isHTMLFrameElement(element) || isHTMLIFrameElement(element);
+}
+
+DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLFrameElementBase);
 
 } // namespace WebCore
 

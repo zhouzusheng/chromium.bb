@@ -27,6 +27,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/DOMTimeStamp.h"
 #include "core/events/EventPath.h"
+#include "heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
@@ -37,13 +38,15 @@ class EventDispatcher;
 class HTMLIFrameElement;
 
 struct EventInit {
+    STACK_ALLOCATED();
+public:
     EventInit();
 
     bool bubbles;
     bool cancelable;
 };
 
-class Event : public ScriptWrappable, public RefCounted<Event> {
+class Event : public RefCountedWillBeRefCountedGarbageCollected<Event>,  public ScriptWrappable {
 public:
     enum PhaseType {
         NONE                = 0,
@@ -71,34 +74,34 @@ public:
         CHANGE              = 32768
     };
 
-    static PassRefPtr<Event> create()
+    static PassRefPtrWillBeRawPtr<Event> create()
     {
-        return adoptRef(new Event);
+        return adoptRefWillBeRefCountedGarbageCollected(new Event);
     }
 
     // A factory for a simple event. The event doesn't bubble, and isn't
     // cancelable.
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/webappapis.html#fire-a-simple-event
-    static PassRefPtr<Event> create(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> create(const AtomicString& type)
     {
-        return adoptRef(new Event(type, false, false));
+        return adoptRefWillBeRefCountedGarbageCollected(new Event(type, false, false));
     }
-    static PassRefPtr<Event> createCancelable(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createCancelable(const AtomicString& type)
     {
-        return adoptRef(new Event(type, false, true));
+        return adoptRefWillBeRefCountedGarbageCollected(new Event(type, false, true));
     }
-    static PassRefPtr<Event> createBubble(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createBubble(const AtomicString& type)
     {
-        return adoptRef(new Event(type, true, false));
+        return adoptRefWillBeRefCountedGarbageCollected(new Event(type, true, false));
     }
-    static PassRefPtr<Event> createCancelableBubble(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createCancelableBubble(const AtomicString& type)
     {
-        return adoptRef(new Event(type, true, true));
+        return adoptRefWillBeRefCountedGarbageCollected(new Event(type, true, true));
     }
 
-    static PassRefPtr<Event> create(const AtomicString& type, const EventInit& initializer)
+    static PassRefPtrWillBeRawPtr<Event> create(const AtomicString& type, const EventInit& initializer)
     {
-        return adoptRef(new Event(type, initializer));
+        return adoptRefWillBeRefCountedGarbageCollected(new Event(type, initializer));
     }
 
     virtual ~Event();
@@ -177,6 +180,8 @@ public:
     PassRefPtr<NodeList> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
+
+    virtual void trace(Visitor*);
 
 protected:
     Event();

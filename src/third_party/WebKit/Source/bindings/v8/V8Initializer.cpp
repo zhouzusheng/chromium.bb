@@ -41,11 +41,12 @@
 #include "bindings/v8/V8PerContextData.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/frame/ConsoleTypes.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/inspector/ScriptCallStack.h"
+#include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -53,12 +54,12 @@
 
 namespace WebCore {
 
-static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v8::Isolate* isolate)
+static LocalFrame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v8::Isolate* isolate)
 {
     const WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
     if (V8Window::wrapperTypeInfo.equals(type)) {
-        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, worldTypeInMainThread(isolate)));
+        v8::Handle<v8::Object> windowWrapper = V8Window::findInstanceInPrototypeChain(host, isolate);
         if (windowWrapper.IsEmpty())
             return 0;
         return V8Window::toNative(windowWrapper)->frame();
@@ -84,14 +85,17 @@ static void reportFatalErrorInMainThread(const char* location, const char* messa
 
 static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
 {
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    // If called during context initialization, there will be no entered context.
-    v8::Handle<v8::Context> enteredContext = isolate->GetEnteredContext();
-    if (enteredContext.IsEmpty())
+    ASSERT(isMainThread());
+    // It's possible that messageHandlerInMainThread() is invoked while we're initializing a window.
+    // In that half-baked situation, we don't have a valid context nor a valid world,
+    // so just return immediately.
+    if (DOMWrapperWorld::windowIsBeingInitialized())
         return;
 
-    DOMWindow* firstWindow = toDOMWindow(enteredContext);
-    if (!firstWindow->isCurrentlyDisplayedInFrame())
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    // If called during context initialization, there will be no entered window.
+    DOMWindow* enteredWindow = enteredDOMWindow(isolate);
+    if (!enteredWindow || !enteredWindow->isCurrentlyDisplayedInFrame())
         return;
 
     String errorMessage = toCoreString(message->Get());
@@ -104,7 +108,7 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
 
     v8::Handle<v8::Value> resourceName = message->GetScriptResourceName();
     bool shouldUseDocumentURL = resourceName.IsEmpty() || !resourceName->IsString();
-    String resource = shouldUseDocumentURL ? firstWindow->document()->url() : toCoreString(resourceName.As<v8::String>());
+    String resource = shouldUseDocumentURL ? enteredWindow->document()->url() : toCoreString(resourceName.As<v8::String>());
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
     DOMWrapperWorld* world = DOMWrapperWorld::current(isolate);
@@ -122,22 +126,23 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     // This method might be called while we're creating a new context. In this case, we
     // avoid storing the exception object, as we can't create a wrapper during context creation.
     // FIXME: Can we even get here during initialization now that we bail out when GetEntered returns an empty handle?
-    Frame* frame = firstWindow->document()->frame();
+    LocalFrame* frame = enteredWindow->document()->frame();
     if (world && frame && frame->script().existingWindowShell(world))
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, v8::Isolate::GetCurrent());
-    firstWindow->document()->reportException(event.release(), callStack, corsStatus);
+    enteredWindow->document()->reportException(event.release(), callStack, corsStatus);
 }
 
 static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8::AccessType type, v8::Local<v8::Value> data)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    Frame* target = findFrame(host, data, isolate);
+    LocalFrame* target = findFrame(host, data, isolate);
     if (!target)
         return;
     DOMWindow* targetWindow = target->domWindow();
 
-    ExceptionState exceptionState(v8::Handle<v8::Object>(), isolate);
-    exceptionState.throwSecurityError(targetWindow->sanitizedCrossDomainAccessErrorMessage(activeDOMWindow(isolate)), targetWindow->crossDomainAccessErrorMessage(activeDOMWindow(isolate)));
+    // FIXME: We should modify V8 to pass in more contextual information (context, property, and object).
+    ExceptionState exceptionState(ExceptionState::UnknownContext, 0, 0, v8::Handle<v8::Object>(), isolate);
+    exceptionState.throwSecurityError(targetWindow->sanitizedCrossDomainAccessErrorMessage(callingDOMWindow(isolate)), targetWindow->crossDomainAccessErrorMessage(callingDOMWindow(isolate)));
     exceptionState.throwIfNeeded();
 }
 
@@ -145,9 +150,18 @@ static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> conte
 {
     if (ExecutionContext* executionContext = toExecutionContext(context)) {
         if (ContentSecurityPolicy* policy = toDocument(executionContext)->contentSecurityPolicy())
-            return policy->allowScriptEval(ScriptState::forContext(context));
+            return policy->allowEval(ScriptState::forContext(context));
     }
     return false;
+}
+
+static void timerTraceProfilerInMainThread(const char* name, int status)
+{
+    if (!status) {
+        TRACE_EVENT_BEGIN0("V8", name);
+    } else {
+        TRACE_EVENT_END0("V8", name);
+    }
 }
 
 static void initializeV8Common(v8::Isolate* isolate)
@@ -158,7 +172,6 @@ static void initializeV8Common(v8::Isolate* isolate)
 
     v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
     v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
-    v8::V8::IgnoreOutOfMemoryException();
 
     v8::Debug::SetLiveEditEnabled(false);
 }
@@ -179,6 +192,9 @@ void V8Initializer::initializeMainThreadIfNeeded(v8::Isolate* isolate)
     v8::V8::AddMessageListener(messageHandlerInMainThread);
     v8::V8::SetFailedAccessCheckCallbackFunction(failedAccessCheckCallbackInMainThread);
     v8::V8::SetAllowCodeGenerationFromStringsCallback(codeGenerationCheckCallbackInMainThread);
+
+    isolate->SetEventLogger(timerTraceProfilerInMainThread);
+
     ScriptProfiler::initialize();
 }
 
@@ -207,7 +223,7 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
         AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, isolate);
-        context->reportException(event.release(), 0, corsStatus);
+        context->reportException(event.release(), nullptr, corsStatus);
     }
 
     isReportingException = false;

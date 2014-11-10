@@ -31,7 +31,7 @@
 #ifndef MIDIClient_h
 #define MIDIClient_h
 
-#include "wtf/PassRefPtr.h"
+#include "heap/Handle.h"
 
 namespace WebCore {
 
@@ -40,14 +40,14 @@ class Page;
 
 class MIDIClient {
 public:
-    virtual void requestSysExPermission(PassRefPtr<MIDIAccess>) = 0;
-    virtual void cancelSysExPermissionRequest(MIDIAccess*) = 0;
+    virtual void requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess>) = 0;
+    virtual void cancelSysexPermissionRequest(MIDIAccess*) = 0;
 
 protected:
     virtual ~MIDIClient() { }
 };
 
-void provideMIDITo(Page*, MIDIClient*);
+void provideMIDITo(Page&, MIDIClient*);
 
 } // namespace WebCore
 

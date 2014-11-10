@@ -48,8 +48,6 @@ public:
     bool hasFallbackContent() const { return m_hasFallbackContent; }
     void setHasFallbackContent(bool hasFallbackContent) { m_hasFallbackContent = hasFallbackContent; }
 
-    bool allowsAcceleratedCompositing() const;
-
 protected:
     virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
@@ -76,6 +74,8 @@ private:
     virtual bool canHaveChildren() const OVERRIDE FINAL;
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
+
+    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
 
     bool m_hasFallbackContent; // FIXME: This belongs on HTMLObjectElement.
 

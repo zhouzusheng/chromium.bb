@@ -509,7 +509,7 @@ Handle<FixedArray> GetKeysInFixedArrayFor(Handle<JSReceiver> object,
   Isolate* isolate = object->GetIsolate();
   Handle<FixedArray> content = isolate->factory()->empty_fixed_array();
   Handle<JSObject> arguments_boilerplate = Handle<JSObject>(
-      isolate->context()->native_context()->arguments_boilerplate(),
+      isolate->context()->native_context()->sloppy_arguments_boilerplate(),
       isolate);
   Handle<JSFunction> arguments_function = Handle<JSFunction>(
       JSFunction::cast(arguments_boilerplate->map()->constructor()),
@@ -537,10 +537,10 @@ Handle<FixedArray> GetKeysInFixedArrayFor(Handle<JSReceiver> object,
 
     // Check access rights if required.
     if (current->IsAccessCheckNeeded() &&
-        !isolate->MayNamedAccess(*current,
-                                 isolate->heap()->undefined_value(),
-                                 v8::ACCESS_KEYS)) {
-      isolate->ReportFailedAccessCheck(*current, v8::ACCESS_KEYS);
+        !isolate->MayNamedAccessWrapper(current,
+                                        isolate->factory()->undefined_value(),
+                                        v8::ACCESS_KEYS)) {
+      isolate->ReportFailedAccessCheckWrapper(current, v8::ACCESS_KEYS);
       if (isolate->has_scheduled_exception()) {
         isolate->PromoteScheduledException();
         *threw = true;

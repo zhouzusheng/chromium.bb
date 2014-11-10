@@ -40,11 +40,26 @@ inline base::PlatformFile PlatformFileForTransitToPlatformFile(
 #endif
 }
 
+inline base::File PlatformFileForTransitToFile(
+    const PlatformFileForTransit& transit) {
+#if defined(OS_WIN)
+  return base::File(transit);
+#elif defined(OS_POSIX)
+  return base::File(transit.fd);
+#endif
+}
+
 // Returns a file handle equivalent to |file| that can be used in |process|.
 IPC_EXPORT PlatformFileForTransit GetFileHandleForProcess(
     base::PlatformFile file,
     base::ProcessHandle process,
     bool close_source_handle);
+
+// Returns a file handle equivalent to |file| that can be used in |process|.
+// Note that this function takes ownership of |file|.
+IPC_EXPORT PlatformFileForTransit TakeFileHandleForProcess(
+    base::File file,
+    base::ProcessHandle process);
 
 }  // namespace IPC
 

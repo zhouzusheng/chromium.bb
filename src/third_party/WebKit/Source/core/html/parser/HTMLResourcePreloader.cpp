@@ -29,9 +29,9 @@
 #include "core/dom/Document.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/html/HTMLImport.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
+#include "core/html/imports/HTMLImport.h"
 #include "core/rendering/RenderObject.h"
 #include "public/platform/Platform.h"
 
@@ -73,9 +73,9 @@ void HTMLResourcePreloader::takeAndPreload(PreloadRequestStream& r)
         preload(it->release());
 }
 
-static bool mediaAttributeMatches(Frame* frame, RenderStyle* renderStyle, const String& attributeValue)
+static bool mediaAttributeMatches(LocalFrame* frame, RenderStyle* renderStyle, const String& attributeValue)
 {
-    RefPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(attributeValue);
+    RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(attributeValue);
     MediaQueryEvaluator mediaQueryEvaluator("screen", frame, renderStyle);
     return mediaQueryEvaluator.eval(mediaQueries.get());
 }

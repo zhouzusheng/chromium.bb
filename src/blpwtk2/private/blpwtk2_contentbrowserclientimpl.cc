@@ -24,7 +24,6 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_statics.h>
-#include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
@@ -164,12 +163,14 @@ ContentBrowserClientImpl::GetWebContentsViewDelegate(content::WebContents* webCo
 
 net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
     content::BrowserContext* browserContext,
-    content::ProtocolHandlerMap* protocolHandlers)
+    content::ProtocolHandlerMap* protocolHandlers,
+    content::ProtocolHandlerScopedVector protocolInterceptors)
 {
     BrowserContextImpl* contextImpl
         = static_cast<BrowserContextImpl*>(browserContext);
 
-    contextImpl->requestContextGetter()->setProtocolHandlers(protocolHandlers);
+    contextImpl->requestContextGetter()->setProtocolHandlers(protocolHandlers,
+                                                             protocolInterceptors.Pass());
     return contextImpl->requestContextGetter();
 }
 
@@ -181,7 +182,7 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
     // Keep in sync with ProtocolHandlers added by
     // URLRequestContextGetterImpl::GetURLRequestContext().
     static const char* const kProtocolList[] = {
-        chrome::kBlobScheme,
+        content::kBlobScheme,
         content::kFileSystemScheme,
         content::kChromeUIScheme,
         content::kChromeDevToolsScheme,
@@ -193,14 +194,6 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
             return true;
     }
     return false;
-}
-
-content::MediaObserver* ContentBrowserClientImpl::GetMediaObserver()
-{
-    if (!d_mediaObserver.get()) {
-        d_mediaObserver.reset(new MediaObserverImpl());
-    }
-    return d_mediaObserver.get();
 }
 
 }  // close namespace blpwtk2

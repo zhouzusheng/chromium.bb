@@ -85,7 +85,7 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsign
         return 0;
 
     AffineTransform absoluteTransformIgnoringRotation;
-    SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(object, absoluteTransformIgnoringRotation);
+    SVGRenderingContext::calculateDeviceSpaceTransformation(object, absoluteTransformIgnoringRotation);
 
     // Ignore 2D rotation, as it doesn't affect the size of the tile.
     SVGRenderingContext::clear2DRotation(absoluteTransformIgnoringRotation);
@@ -158,13 +158,13 @@ bool RenderSVGResourcePattern::applyResource(RenderObject* object, RenderStyle* 
     ASSERT(svgStyle);
 
     if (resourceMode & ApplyToFillMode) {
-        context->setAlpha(svgStyle->fillOpacity());
+        context->setAlphaAsFloat(svgStyle->fillOpacity());
         context->setFillPattern(patternData->pattern);
         context->setFillRule(svgStyle->fillRule());
     } else if (resourceMode & ApplyToStrokeMode) {
         if (svgStyle->vectorEffect() == VE_NON_SCALING_STROKE)
             patternData->pattern->setPatternSpaceTransform(transformOnNonScalingStroke(object, patternData->transform));
-        context->setAlpha(svgStyle->strokeOpacity());
+        context->setAlphaAsFloat(svgStyle->strokeOpacity());
         context->setStrokePattern(patternData->pattern);
         SVGRenderSupport::applyStrokeStyleToContext(context, style, object);
     }
@@ -266,12 +266,12 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
         contentTransformation = tileImageTransform;
 
     // Draw the content into the ImageBuffer.
-    for (Node* node = attributes.patternContentElement()->firstChild(); node; node = node->nextSibling()) {
-        if (!node->isSVGElement() || !node->renderer())
+    for (Element* element = ElementTraversal::firstWithin(*attributes.patternContentElement()); element; element = ElementTraversal::nextSibling(*element)) {
+        if (!element->isSVGElement() || !element->renderer())
             continue;
-        if (node->renderer()->needsLayout())
+        if (element->renderer()->needsLayout())
             return nullptr;
-        SVGRenderingContext::renderSubtree(tileImage->context(), node->renderer(), contentTransformation);
+        SVGRenderingContext::renderSubtree(tileImage->context(), element->renderer(), contentTransformation);
     }
 
     return tileImage.release();

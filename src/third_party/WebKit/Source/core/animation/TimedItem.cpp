@@ -31,8 +31,9 @@
 #include "config.h"
 #include "core/animation/TimedItem.h"
 
-#include "core/animation/Player.h"
+#include "core/animation/AnimationPlayer.h"
 #include "core/animation/TimedItemCalculations.h"
+#include "core/animation/TimedItemTiming.h"
 
 namespace WebCore {
 
@@ -80,7 +81,7 @@ double TimedItem::repeatedDuration() const
 double TimedItem::activeDuration() const
 {
     const double result = m_specified.playbackRate
-        ? repeatedDuration() / abs(m_specified.playbackRate)
+        ? repeatedDuration() / std::abs(m_specified.playbackRate)
         : std::numeric_limits<double>::infinity();
     ASSERT(result >= 0);
     return result;
@@ -91,10 +92,10 @@ void TimedItem::updateSpecifiedTiming(const Timing& timing)
     m_specified = timing;
     invalidate();
     if (m_player)
-        m_player->setNeedsUpdate();
+        m_player->setOutdated();
 }
 
-bool TimedItem::updateInheritedTime(double inheritedTime) const
+void TimedItem::updateInheritedTime(double inheritedTime) const
 {
     bool needsUpdate = m_needsUpdate || (m_lastUpdateTime != inheritedTime && !(isNull(m_lastUpdateTime) && isNull(inheritedTime)));
     m_needsUpdate = false;
@@ -125,7 +126,7 @@ bool TimedItem::updateInheritedTime(double inheritedTime) const
             timeFraction = calculateTransformedTime(currentIteration, iterationDuration, iterationTime, m_specified) / iterationDuration;
 
             if (!isNull(iterationTime)) {
-                timeToNextIteration = (iterationDuration - iterationTime) / abs(m_specified.playbackRate);
+                timeToNextIteration = (iterationDuration - iterationTime) / std::abs(m_specified.playbackRate);
                 if (activeDuration - activeTime < timeToNextIteration)
                     timeToNextIteration = std::numeric_limits<double>::infinity();
             }
@@ -133,7 +134,7 @@ bool TimedItem::updateInheritedTime(double inheritedTime) const
             const double localIterationDuration = 1;
             const double localRepeatedDuration = localIterationDuration * m_specified.iterationCount;
             ASSERT(localRepeatedDuration >= 0);
-            const double localActiveDuration = m_specified.playbackRate ? localRepeatedDuration / abs(m_specified.playbackRate) : std::numeric_limits<double>::infinity();
+            const double localActiveDuration = m_specified.playbackRate ? localRepeatedDuration / std::abs(m_specified.playbackRate) : std::numeric_limits<double>::infinity();
             ASSERT(localActiveDuration >= 0);
             const double localLocalTime = localTime < m_specified.startDelay ? localTime : localActiveDuration + m_specified.startDelay;
             const TimedItem::Phase localCurrentPhase = calculatePhase(localActiveDuration, localLocalTime, m_specified);
@@ -167,24 +168,27 @@ bool TimedItem::updateInheritedTime(double inheritedTime) const
         m_isFirstSample = false;
     }
 
-    bool didTriggerStyleRecalc = false;
     if (needsUpdate)  {
         // FIXME: This probably shouldn't be recursive.
-        didTriggerStyleRecalc = updateChildrenAndEffects();
+        updateChildrenAndEffects();
         m_calculated.timeToForwardsEffectChange = calculateTimeToEffectChange(true, localTime, timeToNextIteration);
         m_calculated.timeToReverseEffectChange = calculateTimeToEffectChange(false, localTime, timeToNextIteration);
     }
-    return didTriggerStyleRecalc;
 }
 
 const TimedItem::CalculatedTiming& TimedItem::ensureCalculated() const
 {
     if (!m_player)
         return m_calculated;
-    if (m_player->needsUpdate())
+    if (m_player->outdated())
         m_player->update();
-    ASSERT(!m_player->needsUpdate());
+    ASSERT(!m_player->outdated());
     return m_calculated;
+}
+
+PassRefPtr<TimedItemTiming> TimedItem::specified()
+{
+    return TimedItemTiming::create(this);
 }
 
 } // namespace WebCore

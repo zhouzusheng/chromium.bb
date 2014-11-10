@@ -37,7 +37,6 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/SelectorQuery.h"
 #include "core/events/MutationEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/RadioNodeList.h"
 #include "core/rendering/InlineTextBox.h"
@@ -268,7 +267,7 @@ void ContainerNode::parserInsertBefore(PassRefPtr<Node> newChild, Node& nextChil
     ASSERT(newChild);
     ASSERT(nextChild.parentNode() == this);
     ASSERT(!newChild->isDocumentFragment());
-    ASSERT(!hasTagName(templateTag));
+    ASSERT(!isHTMLTemplateElement(this));
 
     if (nextChild.previousSibling() == newChild || nextChild == newChild) // nothing to do
         return;
@@ -425,7 +424,7 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
 
     document().removeFocusedElementOfSubtree(child.get());
 
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(&document()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document()))
         fullscreen->removeFullScreenElementOfSubtree(child.get());
 
     // Events fired when blurring currently focused node might have moved this
@@ -509,7 +508,7 @@ void ContainerNode::removeChildren()
     // The container node can be removed from event handlers.
     RefPtr<ContainerNode> protect(this);
 
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(&document()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document()))
         fullscreen->removeFullScreenElementOfSubtree(this, true);
 
     // Do any prep work needed before actually starting to detach
@@ -528,7 +527,7 @@ void ContainerNode::removeChildren()
         document().removeFocusedElementOfSubtree(this, true);
 
         // Removing a node from a selection can cause widget updates.
-        document().nodeChildrenWillBeRemoved(this);
+        document().nodeChildrenWillBeRemoved(*this);
     }
 
 
@@ -537,7 +536,7 @@ void ContainerNode::removeChildren()
         RenderWidget::UpdateSuspendScope suspendWidgetHierarchyUpdates;
         {
             NoEventDispatchAssertion assertNoEventDispatch;
-            removedChildren.reserveInitialCapacity(childNodeCount());
+            removedChildren.reserveInitialCapacity(countChildren());
             while (m_firstChild) {
                 removedChildren.append(m_firstChild);
                 removeBetween(0, m_firstChild->nextSibling(), *m_firstChild);
@@ -614,7 +613,7 @@ void ContainerNode::parserAppendChild(PassRefPtr<Node> newChild)
     ASSERT(newChild);
     ASSERT(!newChild->parentNode()); // Use appendChild if you need to handle reparenting (and want DOM mutation events).
     ASSERT(!newChild->isDocumentFragment());
-    ASSERT(!hasTagName(templateTag));
+    ASSERT(!isHTMLTemplateElement(this));
 
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
@@ -711,7 +710,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
             point = FloatPoint();
             if (o->isText() && toRenderText(o)->firstTextBox()) {
-                point.move(toRenderText(o)->linesBoundingBox().x(), toRenderText(o)->firstTextBox()->root()->lineTop());
+                point.move(toRenderText(o)->linesBoundingBox().x(), toRenderText(o)->firstTextBox()->root().lineTop().toFloat());
             } else if (o->isBox()) {
                 RenderBox* box = toRenderBox(o);
                 point.moveBy(box->location());
@@ -808,10 +807,13 @@ void ContainerNode::focusStateChanged()
     // renderer we can just ignore the state change.
     if (!renderer())
         return;
-    // FIXME: This could probably setNeedsStyleRecalc(LocalStyleChange) in the affectedByFocus case
-    // and only setNeedsStyleRecalc(SubtreeStyleChange) in the childrenAffectedByFocus case.
-    if (renderStyle()->affectedByFocus() || (isElementNode() && toElement(this)->childrenAffectedByFocus()))
+
+    if ((isElementNode() && toElement(this)->childrenAffectedByFocus())
+        || (renderStyle()->affectedByFocus() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
         setNeedsStyleRecalc(SubtreeStyleChange);
+    else if (renderStyle()->affectedByFocus())
+        setNeedsStyleRecalc(LocalStyleChange);
+
     if (renderer() && renderer()->style()->hasAppearance())
         RenderTheme::theme().stateChanged(renderer(), FocusState);
 }
@@ -824,9 +826,15 @@ void ContainerNode::setFocus(bool received)
     Node::setFocus(received);
 
     focusStateChanged();
+
+    if (renderer() || received)
+        return;
+
     // If :focus sets display: none, we lose focus but still need to recalc our style.
-    if (!renderer() && !received)
+    if (isElementNode() && toElement(this)->childrenAffectedByFocus())
         setNeedsStyleRecalc(SubtreeStyleChange);
+    else
+        setNeedsStyleRecalc(LocalStyleChange);
 }
 
 void ContainerNode::setActive(bool down)
@@ -838,7 +846,8 @@ void ContainerNode::setActive(bool down)
 
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
     if (renderer()) {
-        if (isElementNode() && toElement(this)->childrenAffectedByActive())
+        if ((isElementNode() && toElement(this)->childrenAffectedByActive())
+            || (renderStyle()->affectedByActive() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
             setNeedsStyleRecalc(SubtreeStyleChange);
         else if (renderStyle()->affectedByActive())
             setNeedsStyleRecalc(LocalStyleChange);
@@ -866,7 +875,8 @@ void ContainerNode::setHovered(bool over)
         return;
     }
 
-    if (isElementNode() && toElement(this)->childrenAffectedByHover())
+    if ((isElementNode() && toElement(this)->childrenAffectedByHover())
+        || (renderStyle()->affectedByHover() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
         setNeedsStyleRecalc(SubtreeStyleChange);
     else if (renderStyle()->affectedByHover())
         setNeedsStyleRecalc(LocalStyleChange);
@@ -877,10 +887,10 @@ void ContainerNode::setHovered(bool over)
 
 PassRefPtr<HTMLCollection> ContainerNode::children()
 {
-    return ensureRareData().ensureNodeLists().addCache<HTMLCollection>(this, NodeChildren);
+    return ensureRareData().ensureNodeLists().addCache<HTMLCollection>(*this, NodeChildren);
 }
 
-unsigned ContainerNode::childNodeCount() const
+unsigned ContainerNode::countChildren() const
 {
     unsigned count = 0;
     Node *n;
@@ -889,7 +899,7 @@ unsigned ContainerNode::childNodeCount() const
     return count;
 }
 
-Node *ContainerNode::childNode(unsigned index) const
+Node* ContainerNode::traverseToChildAt(unsigned index) const
 {
     unsigned i;
     Node *n = firstChild();
@@ -902,12 +912,12 @@ PassRefPtr<Element> ContainerNode::querySelector(const AtomicString& selectors, 
 {
     if (selectors.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
-        return 0;
+        return nullptr;
     }
 
     SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
     if (!selectorQuery)
-        return 0;
+        return nullptr;
     return selectorQuery->queryFirst(*this);
 }
 
@@ -915,12 +925,12 @@ PassRefPtr<NodeList> ContainerNode::querySelectorAll(const AtomicString& selecto
 {
     if (selectors.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
-        return 0;
+        return nullptr;
     }
 
     SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
     if (!selectorQuery)
-        return 0;
+        return nullptr;
     return selectorQuery->queryAll(*this);
 }
 
@@ -986,46 +996,93 @@ void ContainerNode::updateTreeAfterInsertion(Node& child)
     dispatchChildInsertionEvents(child);
 }
 
+bool ContainerNode::hasRestyleFlagInternal(DynamicRestyleFlags mask) const
+{
+    return rareData()->hasRestyleFlag(mask);
+}
+
+bool ContainerNode::hasRestyleFlagsInternal() const
+{
+    return rareData()->hasRestyleFlags();
+}
+
+void ContainerNode::setRestyleFlag(DynamicRestyleFlags mask)
+{
+    ASSERT(isElementNode() || isShadowRoot());
+    ensureRareData().setRestyleFlag(mask);
+}
+
+void ContainerNode::checkForChildrenAdjacentRuleChanges()
+{
+    bool hasDirectAdjacentRules = childrenAffectedByDirectAdjacentRules();
+    bool hasIndirectAdjacentRules = childrenAffectedByIndirectAdjacentRules();
+
+    if (!hasDirectAdjacentRules && !hasIndirectAdjacentRules)
+        return;
+
+    unsigned forceCheckOfNextElementCount = 0;
+    bool forceCheckOfAnyElementSibling = false;
+    Document& document = this->document();
+
+    for (Node* child = firstChild(); child; child = child->nextSibling()) {
+        if (!child->isElementNode())
+            continue;
+        Element* element = toElement(child);
+        bool childRulesChanged = element->needsStyleRecalc() && element->styleChangeType() >= SubtreeStyleChange;
+
+        if (forceCheckOfNextElementCount || forceCheckOfAnyElementSibling)
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
+
+        if (forceCheckOfNextElementCount)
+            forceCheckOfNextElementCount--;
+
+        if (childRulesChanged && hasDirectAdjacentRules)
+            forceCheckOfNextElementCount = document.styleEngine()->maxDirectAdjacentSelectors();
+
+        forceCheckOfAnyElementSibling = forceCheckOfAnyElementSibling || (childRulesChanged && hasIndirectAdjacentRules);
+    }
+}
+
 PassRefPtr<HTMLCollection> ContainerNode::getElementsByTagName(const AtomicString& localName)
 {
     if (localName.isNull())
-        return 0;
+        return nullptr;
 
     if (document().isHTMLDocument())
-        return ensureRareData().ensureNodeLists().addCache<HTMLTagCollection>(this, HTMLTagCollectionType, localName);
-    return ensureRareData().ensureNodeLists().addCache<TagCollection>(this, TagCollectionType, localName);
+        return ensureRareData().ensureNodeLists().addCache<HTMLTagCollection>(*this, HTMLTagCollectionType, localName);
+    return ensureRareData().ensureNodeLists().addCache<TagCollection>(*this, TagCollectionType, localName);
 }
 
 PassRefPtr<HTMLCollection> ContainerNode::getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName)
 {
     if (localName.isNull())
-        return 0;
+        return nullptr;
 
     if (namespaceURI == starAtom)
         return getElementsByTagName(localName);
 
-    return ensureRareData().ensureNodeLists().addCache(this, namespaceURI.isEmpty() ? nullAtom : namespaceURI, localName);
+    return ensureRareData().ensureNodeLists().addCache(*this, namespaceURI.isEmpty() ? nullAtom : namespaceURI, localName);
 }
 
 // Takes an AtomicString in argument because it is common for elements to share the same name attribute.
 // Therefore, the NameNodeList factory function expects an AtomicString type.
 PassRefPtr<NodeList> ContainerNode::getElementsByName(const AtomicString& elementName)
 {
-    return ensureRareData().ensureNodeLists().addCache<NameNodeList>(this, NameNodeListType, elementName);
+    return ensureRareData().ensureNodeLists().addCache<NameNodeList>(*this, NameNodeListType, elementName);
 }
 
 // Takes an AtomicString in argument because it is common for elements to share the same set of class names.
 // Therefore, the ClassNodeList factory function expects an AtomicString type.
 PassRefPtr<HTMLCollection> ContainerNode::getElementsByClassName(const AtomicString& classNames)
 {
-    return ensureRareData().ensureNodeLists().addCache<ClassCollection>(this, ClassCollectionType, classNames);
+    return ensureRareData().ensureNodeLists().addCache<ClassCollection>(*this, ClassCollectionType, classNames);
 }
 
 PassRefPtr<RadioNodeList> ContainerNode::radioNodeList(const AtomicString& name, bool onlyMatchImgElements)
 {
-    ASSERT(hasTagName(formTag) || hasTagName(fieldsetTag));
+    ASSERT(isHTMLFormElement(this) || isHTMLFieldSetElement(this));
     CollectionType type = onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType;
-    return ensureRareData().ensureNodeLists().addCache<RadioNodeList>(this, type, name);
+    return ensureRareData().ensureNodeLists().addCache<RadioNodeList>(*this, type, name);
 }
 
 #ifndef NDEBUG

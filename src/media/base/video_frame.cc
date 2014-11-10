@@ -18,6 +18,12 @@
 
 namespace media {
 
+static inline size_t RoundUp(size_t value, size_t alignment) {
+  // Check that |alignment| is a power of 2.
+  DCHECK((alignment + (alignment - 1)) == (alignment | (alignment - 1)));
+  return ((value + (alignment - 1)) & ~(alignment - 1));
+}
+
 // static
 scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
     VideoFrame::Format format,
@@ -25,20 +31,28 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
-  DCHECK(IsValidConfig(format, coded_size, visible_rect, natural_size));
-  scoped_refptr<VideoFrame> frame(new VideoFrame(
-      format, coded_size, visible_rect, natural_size, timestamp, false));
+  // Since we're creating a new YUV frame (and allocating memory for it
+  // ourselves), we can pad the requested |coded_size| if necessary if the
+  // request does not line up on sample boundaries.
+  gfx::Size new_coded_size(coded_size);
   switch (format) {
     case VideoFrame::YV12:
     case VideoFrame::YV12A:
-    case VideoFrame::YV16:
     case VideoFrame::I420:
     case VideoFrame::YV12J:
-      frame->AllocateYUV();
+      new_coded_size.set_height((new_coded_size.height() + 1) / 2 * 2);
+    // Fallthrough.
+    case VideoFrame::YV16:
+      new_coded_size.set_width((new_coded_size.width() + 1) / 2 * 2);
       break;
     default:
-      LOG(FATAL) << "Unsupported frame format: " << format;
+      LOG(FATAL) << "Only YUV formats supported: " << format;
+      return NULL;
   }
+  DCHECK(IsValidConfig(format, new_coded_size, visible_rect, natural_size));
+  scoped_refptr<VideoFrame> frame(new VideoFrame(
+      format, new_coded_size, visible_rect, natural_size, timestamp, false));
+  frame->AllocateYUV();
   return frame;
 }
 
@@ -63,8 +77,6 @@ std::string VideoFrame::FormatToString(VideoFrame::Format format) {
       return "YV12A";
     case VideoFrame::YV12J:
       return "YV12J";
-    case VideoFrame::HISTOGRAM_MAX:
-      return "HISTOGRAM_MAX";
   }
   NOTREACHED() << "Invalid videoframe format provided: " << format;
   return "";
@@ -75,19 +87,49 @@ bool VideoFrame::IsValidConfig(VideoFrame::Format format,
                                const gfx::Size& coded_size,
                                const gfx::Rect& visible_rect,
                                const gfx::Size& natural_size) {
-  return (format != VideoFrame::UNKNOWN &&
-          !coded_size.IsEmpty() &&
-          coded_size.GetArea() <= limits::kMaxCanvas &&
-          coded_size.width() <= limits::kMaxDimension &&
-          coded_size.height() <= limits::kMaxDimension &&
-          !visible_rect.IsEmpty() &&
-          visible_rect.x() >= 0 && visible_rect.y() >= 0 &&
-          visible_rect.right() <= coded_size.width() &&
-          visible_rect.bottom() <= coded_size.height() &&
-          !natural_size.IsEmpty() &&
-          natural_size.GetArea() <= limits::kMaxCanvas &&
-          natural_size.width() <= limits::kMaxDimension &&
-          natural_size.height() <= limits::kMaxDimension);
+  // Check maximum limits for all formats.
+  if (coded_size.GetArea() > limits::kMaxCanvas ||
+      coded_size.width() > limits::kMaxDimension ||
+      coded_size.height() > limits::kMaxDimension ||
+      visible_rect.x() < 0 || visible_rect.y() < 0 ||
+      visible_rect.right() > coded_size.width() ||
+      visible_rect.bottom() > coded_size.height() ||
+      natural_size.GetArea() > limits::kMaxCanvas ||
+      natural_size.width() > limits::kMaxDimension ||
+      natural_size.height() > limits::kMaxDimension)
+    return false;
+
+  // Check format-specific width/height requirements.
+  switch (format) {
+    case VideoFrame::UNKNOWN:
+      return (coded_size.IsEmpty() && visible_rect.IsEmpty() &&
+              natural_size.IsEmpty());
+    case VideoFrame::YV12:
+    case VideoFrame::YV12J:
+    case VideoFrame::I420:
+    case VideoFrame::YV12A:
+      // YUV formats have width/height requirements due to chroma subsampling.
+      if (static_cast<size_t>(coded_size.height()) <
+          RoundUp(visible_rect.bottom(), 2))
+        return false;
+    // Fallthrough.
+    case VideoFrame::YV16:
+      if (static_cast<size_t>(coded_size.width()) <
+          RoundUp(visible_rect.right(), 2))
+        return false;
+      break;
+    case VideoFrame::NATIVE_TEXTURE:
+#if defined(VIDEO_HOLE)
+    case VideoFrame::HOLE:
+#endif  // defined(VIDEO_HOLE)
+      // NATIVE_TEXTURE and HOLE have no software-allocated buffers and are
+      // allowed to skip the below check and be empty.
+      return true;
+  }
+
+  // Check that software-allocated buffer formats are not empty.
+  return (!coded_size.IsEmpty() && !visible_rect.IsEmpty() &&
+          !natural_size.IsEmpty());
 }
 
 // static
@@ -129,6 +171,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalPackedMemory(
     base::SharedMemoryHandle handle,
     base::TimeDelta timestamp,
     const base::Closure& no_longer_needed_cb) {
+  if (!IsValidConfig(format, coded_size, visible_rect, natural_size))
+    return NULL;
   if (data_size < AllocationSize(format, coded_size))
     return NULL;
 
@@ -166,7 +210,9 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
     uint8* v_data,
     base::TimeDelta timestamp,
     const base::Closure& no_longer_needed_cb) {
-  DCHECK(format == YV12 || format == YV16 || format == I420) << format;
+  if (!IsValidConfig(format, coded_size, visible_rect, natural_size))
+    return NULL;
+
   scoped_refptr<VideoFrame> frame(new VideoFrame(
       format, coded_size, visible_rect, natural_size, timestamp, false));
   frame->strides_[kYPlane] = y_stride;
@@ -182,10 +228,13 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
 // static
 scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
       const scoped_refptr<VideoFrame>& frame,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const base::Closure& no_longer_needed_cb) {
+  DCHECK(frame->visible_rect().Contains(visible_rect));
   scoped_refptr<VideoFrame> wrapped_frame(new VideoFrame(
-      frame->format(), frame->coded_size(), frame->visible_rect(),
-      frame->natural_size(), frame->GetTimestamp(), frame->end_of_stream()));
+      frame->format(), frame->coded_size(), visible_rect, natural_size,
+      frame->GetTimestamp(), frame->end_of_stream()));
 
   for (size_t i = 0; i < NumPlanes(frame->format()); ++i) {
     wrapped_frame->strides_[i] = frame->stride(i);
@@ -211,7 +260,6 @@ scoped_refptr<VideoFrame> VideoFrame::CreateColorFrame(
     const gfx::Size& size,
     uint8 y, uint8 u, uint8 v,
     base::TimeDelta timestamp) {
-  DCHECK(IsValidConfig(VideoFrame::YV12, size, gfx::Rect(size), size));
   scoped_refptr<VideoFrame> frame = VideoFrame::CreateFrame(
       VideoFrame::YV12, size, gfx::Rect(size), size, timestamp);
   FillYUV(frame.get(), y, u, v);
@@ -260,18 +308,12 @@ size_t VideoFrame::NumPlanes(Format format) {
     case VideoFrame::YV12A:
       return 4;
     case VideoFrame::UNKNOWN:
-    case VideoFrame::HISTOGRAM_MAX:
       break;
   }
   NOTREACHED() << "Unsupported video frame format: " << format;
   return 0;
 }
 
-static inline size_t RoundUp(size_t value, size_t alignment) {
-  // Check that |alignment| is a power of 2.
-  DCHECK((alignment + (alignment - 1)) == (alignment | (alignment - 1)));
-  return ((value + (alignment - 1)) & ~(alignment-1));
-}
 
 // static
 size_t VideoFrame::AllocationSize(Format format, const gfx::Size& coded_size) {
@@ -282,21 +324,21 @@ size_t VideoFrame::AllocationSize(Format format, const gfx::Size& coded_size) {
 }
 
 // static
-size_t VideoFrame::PlaneAllocationSize(Format format,
-                                       size_t plane,
-                                       const gfx::Size& coded_size) {
-  const size_t area =
-      RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
+gfx::Size VideoFrame::PlaneSize(Format format,
+                                size_t plane,
+                                const gfx::Size& coded_size) {
+  const int width = RoundUp(coded_size.width(), 2);
+  const int height = RoundUp(coded_size.height(), 2);
   switch (format) {
     case VideoFrame::YV12:
     case VideoFrame::YV12J:
     case VideoFrame::I420: {
       switch (plane) {
         case VideoFrame::kYPlane:
-          return area;
+          return gfx::Size(width, height);
         case VideoFrame::kUPlane:
         case VideoFrame::kVPlane:
-          return area / 4;
+          return gfx::Size(width / 2, height / 2);
         default:
           break;
       }
@@ -305,10 +347,10 @@ size_t VideoFrame::PlaneAllocationSize(Format format,
       switch (plane) {
         case VideoFrame::kYPlane:
         case VideoFrame::kAPlane:
-          return area;
+          return gfx::Size(width, height);
         case VideoFrame::kUPlane:
         case VideoFrame::kVPlane:
-          return area / 4;
+          return gfx::Size(width / 2, height / 2);
         default:
           break;
       }
@@ -316,17 +358,16 @@ size_t VideoFrame::PlaneAllocationSize(Format format,
     case VideoFrame::YV16: {
       switch (plane) {
         case VideoFrame::kYPlane:
-          return area;
+          return gfx::Size(width, height);
         case VideoFrame::kUPlane:
         case VideoFrame::kVPlane:
-          return area / 2;
+          return gfx::Size(width / 2, height);
         default:
           break;
       }
     }
     case VideoFrame::UNKNOWN:
     case VideoFrame::NATIVE_TEXTURE:
-    case VideoFrame::HISTOGRAM_MAX:
 #if defined(VIDEO_HOLE)
     case VideoFrame::HOLE:
 #endif  // defined(VIDEO_HOLE)
@@ -334,7 +375,14 @@ size_t VideoFrame::PlaneAllocationSize(Format format,
   }
   NOTREACHED() << "Unsupported video frame format/plane: "
                << format << "/" << plane;
-  return 0;
+  return gfx::Size();
+}
+
+size_t VideoFrame::PlaneAllocationSize(Format format,
+                                       size_t plane,
+                                       const gfx::Size& coded_size) {
+  // VideoFrame formats are (so far) all YUV and 1 byte per sample.
+  return PlaneSize(format, plane, coded_size).GetArea();
 }
 
 // Release data allocated by AllocateYUV().
@@ -410,6 +458,8 @@ VideoFrame::VideoFrame(VideoFrame::Format format,
       shared_memory_handle_(base::SharedMemory::NULLHandle()),
       timestamp_(timestamp),
       end_of_stream_(end_of_stream) {
+  DCHECK(IsValidConfig(format_, coded_size_, visible_rect_, natural_size_));
+
   memset(&strides_, 0, sizeof(strides_));
   memset(&data_, 0, sizeof(data_));
 }

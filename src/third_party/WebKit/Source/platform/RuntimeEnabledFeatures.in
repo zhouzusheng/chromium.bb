@@ -17,7 +17,17 @@
 
 ApplicationCache status=stable
 AuthorShadowDOMForAnyElement
-BeforeLoad status=test
+BatteryStatus status=test
+
+// This feature is deprecated and we are evangalizing affected sites.
+// See https://crbug.com/346236 for current status.
+PrefixedVideoFullscreen status=stable
+
+// Enable bleeding-edge code to make Blink draw content faster.
+// The changes enabled behind this flag are very likely to break lots of content.
+// ** DO NOT use this flag unless you know what you are doing. **
+BleedingEdgeFastPaths
+
 ClientHintsDpr status=experimental
 Crypto status=experimental
 CSSAnimationUnprefixed status=experimental
@@ -30,7 +40,9 @@ CSSShapes status=experimental
 CSSStickyPosition status=experimental
 CSSTouchAction status=experimental
 CSSTouchActionDelay status=test
+CSSTransformsUnprefixed status=test
 CSSViewport status=experimental
+CSSWillChange status=experimental
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
 CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
@@ -38,25 +50,23 @@ Database status=stable
 DeviceMotion status=stable
 DeviceOrientation status=stable
 DialogElement status=experimental
-DirectWrite
 EncodingAPI status=experimental
-EncryptedMedia status=experimental
+EncryptedMedia status=test
 EncryptedMediaAnyVersion status=stable
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
 ExperimentalWebSocket status=test
+FileAPIBlobClose status=experimental
 FileConstructor status=experimental
 FileSystem status=stable
-FontLoadEvents status=experimental
-Fullscreen status=stable
+FontLoadEvents status=stable
 FastTextAutosizing
 Gamepad status=stable
-Geolocation status=stable
 HTMLImports status=test
 HighResolutionTimeInWorkers status=stable
 IMEAPI status=experimental
 IndexedDBExperimental status=experimental
-InputModeAttribute status=test
+InputModeAttribute status=experimental
 LangAttributeAwareFormControlUI
 PrefixedEncryptedMedia status=stable
 LocalStorage status=stable
@@ -71,13 +81,8 @@ OrientationEvent
 // Only enabled on Android, and for certain layout tests on Linux.
 OverlayFullscreenVideo
 PagePopup status=stable
-PartialLayout status=experimental
 PathOpsSVGClipping
 PeerConnection depends_on=MediaStream, status=stable
-// Implementation of this feature varies by platform for now.
-// Bug to track removal once completed everywhere:
-//   http://crbug.com/308649
-PointerEventsMaxTouchPoints status=experimental
 Quota status=stable
 QuotaPromise status=experimental
 OverlayScrollbars
@@ -88,7 +93,7 @@ RegionBasedColumns status=experimental
 RepaintAfterLayout
 
 RequestAutocomplete status=test
-ScreenOrientation status=test
+ScreenOrientation status=experimental
 ScriptedSpeech status=stable
 
 // Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
@@ -97,19 +102,19 @@ ScrollTopLeftInterop status=experimental
 
 ServiceWorker status=experimental
 SessionStorage status=stable
-ShadowDOM status=experimental
 SharedWorker status=stable
-SpeechInput status=stable
+SpeechInput status=test
 SpeechSynthesis status=stable
 Srcset status=stable
 Stream status=experimental
 StyleScoped status=experimental
 SubpixelFontScaling status=experimental
-SVGPaintOrder status=experimental
+SubresourceIntegrity status=test
+SVGPaintOrder status=stable
 
 // Enable optimizations to recalculate style on the fewest possible number of
 // elements when updating classes, ids or attributes of DOM elements.
-TargetedStyleRecalc
+TargetedStyleRecalc status=experimental
 
 // Many websites disable mouse support when touch APIs are available.  We'd
 // like to enable this always but can't until more websites fix this bug.
@@ -119,6 +124,7 @@ Touch status=stable
 
 TouchIconLoading
 UserSelectAll status=experimental
+ScriptPromiseOnV8Promise
 VideoTrack depends_on=Media, status=stable
 WebAnimationsSVG
 WebAnimationsAPI status=experimental
@@ -129,3 +135,5 @@ WebKitMediaSource status=stable
 WebVTTRegions depends_on=VideoTrack, status=experimental
 WOFF2 status=experimental
 XSLT status=stable
+
+PseudoClassesInMatchingCriteriaInAuthorShadowTrees status=test

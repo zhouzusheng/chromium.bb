@@ -36,13 +36,15 @@ class MediaStreamTrackEvent FINAL : public Event {
 public:
     virtual ~MediaStreamTrackEvent();
 
-    static PassRefPtr<MediaStreamTrackEvent> create();
-    static PassRefPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack>);
+    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create();
+    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack>);
 
     MediaStreamTrack* track() const;
 
     // Event
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     MediaStreamTrackEvent();

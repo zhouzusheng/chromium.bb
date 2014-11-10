@@ -82,12 +82,14 @@ typedef base::hash_set<HashedHandle> ParentHandleSet;
 // associated with it in the map will be returned, otherwise a new V8 value will
 // be created and added to the map. |did_create| indicates whether a new v8
 // value was created as a result of calling the function.
-bool GetOrCreateV8Value(v8::Isolate* isolate,
+bool GetOrCreateV8Value(v8::Handle<v8::Context> context,
                         const PP_Var& var,
                         v8::Handle<v8::Value>* result,
                         bool* did_create,
                         VarHandleMap* visited_ids,
-                        ParentVarSet* parent_ids) {
+                        ParentVarSet* parent_ids,
+                        ResourceConverter* resource_converter) {
+  v8::Isolate* isolate = context->GetIsolate();
   *did_create = false;
 
   if (ppapi::VarTracker::IsVarTypeRefcounted(var.type)) {
@@ -126,13 +128,14 @@ bool GetOrCreateV8Value(v8::Isolate* isolate,
         return false;
       }
       const std::string& value = string->value();
-      // Create a string object rather than a string primitive. This allows us
-      // to have multiple references to the same string in javascript, which
-      // matches the reference behavior of PP_Vars.
+      // Create a string primitive rather than a string object. This is lossy
+      // in the sense that string primitives in JavaScript can't be referenced
+      // in the same way that string vars can in pepper. But that information
+      // isn't very useful and primitive strings are a more expected form in JS.
       *result = v8::String::NewFromUtf8(isolate,
                                         value.c_str(),
                                         v8::String::kNormalString,
-                                        value.size())->ToObject();
+                                        value.size());
       break;
     }
     case PP_VARTYPE_ARRAY_BUFFER: {
@@ -155,11 +158,14 @@ bool GetOrCreateV8Value(v8::Isolate* isolate,
       *result = v8::Object::New(isolate);
       break;
     case PP_VARTYPE_OBJECT:
-    case PP_VARTYPE_RESOURCE:
-      // TODO(mgiuca): Convert PP_VARTYPE_RESOURCE vars into the correct V8
-      // type. (http://crbug.com/177017)
       result->Clear();
       return false;
+    case PP_VARTYPE_RESOURCE:
+      if (!resource_converter->ToV8Value(var, context, result)) {
+        result->Clear();
+        return false;
+      }
+      break;
   }
 
   *did_create = true;
@@ -306,8 +312,9 @@ bool V8VarConverter::ToV8Value(const PP_Var& var,
     }
 
     bool did_create = false;
-    if (!GetOrCreateV8Value(isolate, current_var, &current_v8, &did_create,
-                            &visited_ids, &parent_ids)) {
+    if (!GetOrCreateV8Value(context, current_var, &current_v8, &did_create,
+                            &visited_ids, &parent_ids,
+                            resource_converter_.get())) {
       return false;
     }
 
@@ -330,8 +337,9 @@ bool V8VarConverter::ToV8Value(const PP_Var& var,
       for (size_t i = 0; i < array_var->elements().size(); ++i) {
         const PP_Var& child_var = array_var->elements()[i].get();
         v8::Handle<v8::Value> child_v8;
-        if (!GetOrCreateV8Value(isolate, child_var, &child_v8, &did_create,
-                                &visited_ids, &parent_ids)) {
+        if (!GetOrCreateV8Value(context, child_var, &child_v8, &did_create,
+                                &visited_ids, &parent_ids,
+                                resource_converter_.get())) {
           return false;
         }
         if (did_create && CanHaveChildren(child_var))
@@ -360,8 +368,9 @@ bool V8VarConverter::ToV8Value(const PP_Var& var,
         const std::string& key = iter->first;
         const PP_Var& child_var = iter->second.get();
         v8::Handle<v8::Value> child_v8;
-        if (!GetOrCreateV8Value(isolate, child_var, &child_v8, &did_create,
-                                &visited_ids, &parent_ids)) {
+        if (!GetOrCreateV8Value(context, child_var, &child_v8, &did_create,
+                                &visited_ids, &parent_ids,
+                                resource_converter_.get())) {
           return false;
         }
         if (did_create && CanHaveChildren(child_var))

@@ -89,10 +89,7 @@ AudioManagerBase::AudioManagerBase(AudioLogFactory* audio_log_factory)
   // case is sadly the browser UI thread.  Failure to execute calls on the right
   // thread leads to crashes and odd behavior.  See http://crbug.com/158170.
   // TODO(dalecurtis): We should require the message loop to be passed in.
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (!cmd_line->HasSwitch(switches::kDisableMainThreadAudio) &&
-      base::MessageLoopProxy::current().get() &&
-      base::MessageLoopForUI::IsCurrent()) {
+  if (base::MessageLoopForUI::IsCurrent()) {
     task_runner_ = base::MessageLoopProxy::current();
     return;
   }
@@ -337,22 +334,10 @@ void AudioManagerBase::Shutdown() {
 
 void AudioManagerBase::ShutdownOnAudioThread() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-
-  AudioOutputDispatchers::iterator it = output_dispatchers_.begin();
-  for (; it != output_dispatchers_.end(); ++it) {
-    scoped_refptr<AudioOutputDispatcher>& dispatcher = (*it)->dispatcher;
-    dispatcher->Shutdown();
-
-    // All AudioOutputProxies must have been freed before Shutdown is called.
-    // If they still exist, things will go bad.  They have direct pointers to
-    // both physical audio stream objects that belong to the dispatcher as
-    // well as the message loop of the audio thread that will soon go away.
-    // So, better crash now than later.
-    DCHECK(dispatcher->HasOneRef()) << "AudioOutputProxies are still alive";
-    dispatcher = NULL;
+  while (!output_dispatchers_.empty()) {
+    output_dispatchers_.back()->dispatcher->Shutdown();
+    output_dispatchers_.pop_back();
   }
-
-  output_dispatchers_.clear();
 }
 
 void AudioManagerBase::AddOutputDeviceChangeListener(

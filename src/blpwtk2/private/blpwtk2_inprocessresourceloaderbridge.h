@@ -33,6 +33,10 @@ namespace base {
 class MessageLoop;
 }  // close namespace base
 
+namespace content {
+struct RequestInfo;
+}  // close namespace content
+
 namespace blpwtk2 {
 
 class InProcessResourceLoaderBridge
@@ -40,12 +44,12 @@ class InProcessResourceLoaderBridge
       public ResourceContext {
   public:
     InProcessResourceLoaderBridge(
-        const webkit_glue::ResourceLoaderBridge::RequestInfo& requestInfo);
+        const content::RequestInfo& requestInfo);
     virtual ~InProcessResourceLoaderBridge();
 
     // webkit_glue::ResourceLoaderBridge overrides
     virtual void SetRequestBody(
-        webkit_glue::ResourceRequestBody* request_body) OVERRIDE;
+        content::ResourceRequestBody* request_body) OVERRIDE;
     virtual bool Start(Peer* peer) OVERRIDE;
     virtual void Cancel() OVERRIDE;
     virtual void SetDefersLoading(bool value) OVERRIDE;

@@ -63,7 +63,7 @@ PassRefPtr<RTCDataChannel> RTCDataChannel::create(ExecutionContext* context, bli
     OwnPtr<blink::WebRTCDataChannelHandler> handler = adoptPtr(peerConnectionHandler->createDataChannel(label, init));
     if (!handler) {
         exceptionState.throwDOMException(NotSupportedError, "RTCDataChannel is not supported");
-        return 0;
+        return nullptr;
     }
     return adoptRef(new RTCDataChannel(context, handler.release()));
 }
@@ -207,7 +207,7 @@ void RTCDataChannel::send(PassRefPtr<ArrayBufferView> data, ExceptionState& exce
     send(arrayBuffer.release(), exceptionState);
 }
 
-void RTCDataChannel::send(PassRefPtr<Blob> data, ExceptionState& exceptionState)
+void RTCDataChannel::send(PassRefPtrWillBeRawPtr<Blob> data, ExceptionState& exceptionState)
 {
     // FIXME: implement
     throwNoBlobSupportException(exceptionState);
@@ -296,7 +296,7 @@ void RTCDataChannel::scheduleDispatchEvent(PassRefPtr<Event> event)
     m_scheduledEvents.append(event);
 
     if (!m_scheduledEventTimer.isActive())
-        m_scheduledEventTimer.startOneShot(0);
+        m_scheduledEventTimer.startOneShot(0, FROM_HERE);
 }
 
 void RTCDataChannel::scheduledEventTimerFired(Timer<RTCDataChannel>*)

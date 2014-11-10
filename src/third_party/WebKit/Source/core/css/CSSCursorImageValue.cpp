@@ -42,13 +42,10 @@ namespace WebCore {
 static inline SVGCursorElement* resourceReferencedByCursorElement(const String& url, Document& document)
 {
     Element* element = SVGURIReference::targetElementFromIRIString(url, document);
-    if (element && element->hasTagName(SVGNames::cursorTag))
-        return toSVGCursorElement(element);
-
-    return 0;
+    return isSVGCursorElement(element) ? toSVGCursorElement(element) : 0;
 }
 
-CSSCursorImageValue::CSSCursorImageValue(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
+CSSCursorImageValue::CSSCursorImageValue(PassRefPtrWillBeRawPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
     : CSSValue(CursorImageClass)
     , m_imageValue(imageValue)
     , m_hasHotSpot(hasHotSpot)
@@ -181,7 +178,7 @@ String CSSCursorImageValue::cachedImageURL()
 
 void CSSCursorImageValue::clearImageResource()
 {
-    m_image = 0;
+    m_image = nullptr;
     m_accessedImage = false;
 }
 

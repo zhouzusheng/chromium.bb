@@ -79,7 +79,8 @@ private:
         net::URLRequest* request,
         const net::CompletionCallback& callback,
         const net::HttpResponseHeaders* original_response_headers,
-        scoped_refptr<net::HttpResponseHeaders>* override_response_headers) OVERRIDE;
+        scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+        GURL* allowed_unsafe_redirect_url) OVERRIDE;
 
     // Called right after a redirect response code was received.
     // |new_location| is only valid until OnURLRequestDestroyed is called for this

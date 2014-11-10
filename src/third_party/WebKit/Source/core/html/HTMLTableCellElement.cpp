@@ -67,14 +67,12 @@ int HTMLTableCellElement::rowSpan() const
 
 int HTMLTableCellElement::cellIndex() const
 {
-    int index = 0;
-    if (!parentElement() || !parentElement()->hasTagName(trTag))
+    if (!isHTMLTableRowElement(parentElement()))
         return -1;
 
-    for (const Node * node = previousSibling(); node; node = node->previousSibling()) {
-        if (node->hasTagName(tdTag) || node->hasTagName(thTag))
-            index++;
-    }
+    int index = 0;
+    for (const HTMLTableCellElement* element = Traversal<HTMLTableCellElement>::previousSibling(*this); element; element = Traversal<HTMLTableCellElement>::previousSibling(*element))
+        ++index;
 
     return index;
 }
@@ -128,6 +126,16 @@ const StylePropertySet* HTMLTableCellElement::additionalPresentationAttributeSty
 bool HTMLTableCellElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == backgroundAttr || HTMLTablePartElement::isURLAttribute(attribute);
+}
+
+bool HTMLTableCellElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return (hasLocalName(tdTag) && name == backgroundAttr) || HTMLTablePartElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLTableCellElement::subResourceAttributeName() const
+{
+    return hasLocalName(tdTag) ? backgroundAttr : HTMLTablePartElement::subResourceAttributeName();
 }
 
 const AtomicString& HTMLTableCellElement::abbr() const

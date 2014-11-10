@@ -127,9 +127,6 @@ static const char kAttributeMsidSemantics[] = "msid-semantic";
 static const char kMediaStreamSemantic[] = "WMS";
 static const char kSsrcAttributeMsid[] = "msid";
 static const char kDefaultMsid[] = "default";
-static const char kMsidAppdataAudio[] = "a";
-static const char kMsidAppdataVideo[] = "v";
-static const char kMsidAppdataData[] = "d";
 static const char kSsrcAttributeMslabel[] = "mslabel";
 static const char kSSrcAttributeLabel[] = "label";
 static const char kAttributeSsrcGroup[] = "ssrc-group";
@@ -2111,9 +2108,6 @@ bool ParseMediaDescription(const std::string& message,
                     message, cricket::MEDIA_TYPE_AUDIO, mline_index, protocol,
                     codec_preference, pos, &content_name,
                     &transport, candidates, error));
-      MaybeCreateStaticPayloadAudioCodecs(
-          codec_preference,
-          static_cast<AudioContentDescription*>(content.get()));
     } else if (HasAttribute(line, kMediaTypeData)) {
       DataContentDescription* desc =
           ParseContentDescription<DataContentDescription>(
@@ -2121,7 +2115,7 @@ bool ParseMediaDescription(const std::string& message,
                     codec_preference, pos, &content_name,
                     &transport, candidates, error);
 
-      if (protocol == cricket::kMediaProtocolDtlsSctp) {
+      if (desc && protocol == cricket::kMediaProtocolDtlsSctp) {
         // Add the SCTP Port number as a pseudo-codec "port" parameter
         cricket::DataCodec codec_port(
             cricket::kGoogleSctpDataCodecId, cricket::kGoogleSctpDataCodecName,
@@ -2365,6 +2359,11 @@ bool ParseContent(const std::string& message,
   ASSERT(media_desc != NULL);
   ASSERT(content_name != NULL);
   ASSERT(transport != NULL);
+
+  if (media_type == cricket::MEDIA_TYPE_AUDIO) {
+    MaybeCreateStaticPayloadAudioCodecs(
+        codec_preference, static_cast<AudioContentDescription*>(media_desc));
+  }
 
   // The media level "ice-ufrag" and "ice-pwd".
   // The candidates before update the media level "ice-pwd" and "ice-ufrag".

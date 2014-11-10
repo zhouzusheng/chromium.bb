@@ -10,11 +10,9 @@
 #include <windows.h>
 #endif
 
-#include <string>
-
 #include "base/base_export.h"
 #include "base/basictypes.h"
-#include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/move.h"
 #include "base/time/time.h"
 
@@ -23,6 +21,8 @@
 #endif
 
 namespace base {
+
+class FilePath;
 
 #if defined(OS_WIN)
 typedef HANDLE PlatformFile;
@@ -149,6 +149,9 @@ class BASE_EXPORT File {
   // Takes ownership of |platform_file|.
   explicit File(PlatformFile platform_file);
 
+  // Creates an object with a specific error_details code.
+  explicit File(Error error_details);
+
   // Move constructor for C++03 move emulation of this type.
   File(RValue other);
 
@@ -171,10 +174,14 @@ class BASE_EXPORT File {
   // FLAG_CREATE_ALWAYS), and false otherwise.
   bool created() const { return created_; }
 
-  // Returns the OS result of opening this file.
+  // Returns the OS result of opening this file. Note that the way to verify
+  // the success of the operation is to use IsValid(), not this method:
+  //   File file(name, flags);
+  //   if (!file.IsValid())
+  //     return;
   Error error_details() const { return error_details_; }
 
-  PlatformFile GetPlatformFile() const { return file_; }
+  PlatformFile GetPlatformFile() const;
   PlatformFile TakePlatformFile();
 
   // Destroying this object closes the file automatically.
@@ -261,6 +268,8 @@ class BASE_EXPORT File {
   // Unlock a file previously locked.
   Error Unlock();
 
+  bool async() const { return async_; }
+
 #if defined(OS_WIN)
   static Error OSErrorToFileError(DWORD last_error);
 #elif defined(OS_POSIX)
@@ -273,7 +282,7 @@ class BASE_EXPORT File {
 #if defined(OS_WIN)
   win::ScopedHandle file_;
 #elif defined(OS_POSIX)
-  PlatformFile file_;
+  ScopedFD file_;
 #endif
 
   Error error_details_;

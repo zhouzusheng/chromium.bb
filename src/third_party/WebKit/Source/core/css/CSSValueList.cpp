@@ -53,7 +53,7 @@ bool CSSValueList::removeAll(CSSValue* val)
 {
     bool found = false;
     for (size_t index = 0; index < m_values.size(); index++) {
-        RefPtr<CSSValue>& value = m_values.at(index);
+        RefPtrWillBeMember<CSSValue>& value = m_values.at(index);
         if (value && val && value->equals(*val)) {
             m_values.remove(index);
             found = true;
@@ -66,7 +66,7 @@ bool CSSValueList::removeAll(CSSValue* val)
 bool CSSValueList::hasValue(CSSValue* val) const
 {
     for (size_t index = 0; index < m_values.size(); index++) {
-        const RefPtr<CSSValue>& value = m_values.at(index);
+        const RefPtrWillBeMember<CSSValue>& value = m_values.at(index);
         if (value && val && value->equals(*val))
             return true;
     }
@@ -75,7 +75,7 @@ bool CSSValueList::hasValue(CSSValue* val) const
 
 PassRefPtrWillBeRawPtr<CSSValueList> CSSValueList::copy()
 {
-    RefPtrWillBeRawPtr<CSSValueList> newList;
+    RefPtrWillBeRawPtr<CSSValueList> newList = nullptr;
     switch (m_valueListSeparator) {
     case SpaceSeparator:
         newList = createSpaceSeparated();
@@ -127,16 +127,15 @@ String CSSValueList::customCSSText(CSSTextFormattingFlags formattingFlag) const
 
 bool CSSValueList::equals(const CSSValueList& other) const
 {
-    // FIXME: the explicit Vector conversion copies into a temporary and is
-    // wasteful.
-    return m_valueListSeparator == other.m_valueListSeparator && compareCSSValueVector<CSSValue>(Vector<RefPtr<CSSValue> >(m_values), Vector<RefPtr<CSSValue> >(other.m_values));}
+    return m_valueListSeparator == other.m_valueListSeparator && compareCSSValueVector(m_values, other.m_values);
+}
 
 bool CSSValueList::equals(const CSSValue& other) const
 {
     if (m_values.size() != 1)
         return false;
 
-    const RefPtr<CSSValue>& value = m_values[0];
+    const RefPtrWillBeMember<CSSValue>& value = m_values[0];
     return value && value->equals(other);
 }
 
@@ -160,11 +159,12 @@ CSSValueList::CSSValueList(const CSSValueList& cloneFrom)
 
 PassRefPtrWillBeRawPtr<CSSValueList> CSSValueList::cloneForCSSOM() const
 {
-    return adoptRefCountedWillBeRefCountedGarbageCollected(new CSSValueList(*this));
+    return adoptRefWillBeRefCountedGarbageCollected(new CSSValueList(*this));
 }
 
 void CSSValueList::traceAfterDispatch(Visitor* visitor)
 {
+    visitor->trace(m_values);
     CSSValue::traceAfterDispatch(visitor);
 }
 

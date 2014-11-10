@@ -81,6 +81,8 @@ private:
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
@@ -111,9 +113,13 @@ private:
     bool m_useFallbackContent : 1;
 };
 
-DEFINE_NODE_TYPE_CASTS(HTMLObjectElement, hasTagName(HTMLNames::objectTag));
+// Intentionally left unimplemented, template specialization needs to be provided for specific
+// return types.
+template<typename T> inline const T& toElement(const FormAssociatedElement&);
+template<typename T> inline const T* toElement(const FormAssociatedElement*);
 
-inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement* element)
+// Make toHTMLObjectElement() accept a FormAssociatedElement as input instead of a Node.
+template<> inline const HTMLObjectElement* toElement<HTMLObjectElement>(const FormAssociatedElement* element)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!element || !element->isFormControlElement());
     const HTMLObjectElement* objectElement = static_cast<const HTMLObjectElement*>(element);
@@ -123,7 +129,7 @@ inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement*
     return objectElement;
 }
 
-inline const HTMLObjectElement& toHTMLObjectElement(const FormAssociatedElement& element)
+template<> inline const HTMLObjectElement& toElement<HTMLObjectElement>(const FormAssociatedElement& element)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!element.isFormControlElement());
     const HTMLObjectElement& objectElement = static_cast<const HTMLObjectElement&>(element);

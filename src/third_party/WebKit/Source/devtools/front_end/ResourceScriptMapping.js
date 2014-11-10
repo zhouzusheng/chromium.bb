@@ -39,9 +39,9 @@ WebInspector.ResourceScriptMapping = function(debuggerModel, workspace)
     this._debuggerModel = debuggerModel;
     this._workspace = workspace;
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAddedToWorkspace, this);
+    this._boundURLs = new StringSet();
 
     debuggerModel.addEventListener(WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._debuggerReset, this);
-    this._initialize();
 }
 
 WebInspector.ResourceScriptMapping.prototype = {
@@ -84,10 +84,6 @@ WebInspector.ResourceScriptMapping.prototype = {
             return;
         script.pushSourceMapping(this);
 
-        var scriptsForSourceURL = script.isInlineScript() ? this._inlineScriptsForSourceURL : this._nonInlineScriptsForSourceURL;
-        scriptsForSourceURL.put(script.sourceURL, scriptsForSourceURL.get(script.sourceURL) || []);
-        scriptsForSourceURL.get(script.sourceURL).push(script);
-
         var uiSourceCode = this._workspaceUISourceCodeForScript(script);
         if (!uiSourceCode)
             return;
@@ -95,9 +91,19 @@ WebInspector.ResourceScriptMapping.prototype = {
         this._bindUISourceCodeToScripts(uiSourceCode, [script]);
     },
 
+    /**
+     * @return {boolean}
+     */
+    isIdentity: function()
+    {
+        return true;
+    },
+
     _uiSourceCodeAddedToWorkspace: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
+        if (uiSourceCode.project().isServiceProject())
+            return;
         if (!uiSourceCode.url)
             return;
 
@@ -149,21 +155,9 @@ WebInspector.ResourceScriptMapping.prototype = {
      */
     _scriptsForUISourceCode: function(uiSourceCode)
     {
-        var isInlineScript;
-        switch (uiSourceCode.contentType()) {
-        case WebInspector.resourceTypes.Document:
-            isInlineScript = true;
-            break;
-        case WebInspector.resourceTypes.Script:
-            isInlineScript = false;
-            break;
-        default:
-            return [];
-        }
         if (!uiSourceCode.url)
             return [];
-        var scriptsForSourceURL = isInlineScript ? this._inlineScriptsForSourceURL : this._nonInlineScriptsForSourceURL;
-        return scriptsForSourceURL.get(uiSourceCode.url) || [];
+        return this._debuggerModel.scriptsForSourceURL(uiSourceCode.url);
     },
 
     /**
@@ -178,15 +172,14 @@ WebInspector.ResourceScriptMapping.prototype = {
         for (var i = 0; i < scripts.length; ++i)
             scripts[i].updateLocations();
         uiSourceCode.setSourceMapping(this);
+        this._boundURLs.put(uiSourceCode.url);
     },
 
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
-     * @param {!Array.<!WebInspector.Script>} scripts
      */
-    _unbindUISourceCodeFromScripts: function(uiSourceCode, scripts)
+    _unbindUISourceCode: function(uiSourceCode)
     {
-        console.assert(scripts.length);
         var scriptFile = /** @type {!WebInspector.ResourceScriptFile} */ (uiSourceCode.scriptFile());
         if (scriptFile) {
             scriptFile.dispose();
@@ -195,33 +188,17 @@ WebInspector.ResourceScriptMapping.prototype = {
         uiSourceCode.setSourceMapping(null);
     },
 
-    _initialize: function()
-    {
-        /** @type {!StringMap.<!Array.<!WebInspector.Script>>} */
-        this._inlineScriptsForSourceURL = new StringMap();
-        /** @type {!StringMap.<!Array.<!WebInspector.Script>>} */
-        this._nonInlineScriptsForSourceURL = new StringMap();
-    },
-
     _debuggerReset: function()
     {
-        /**
-         * @param {!Array.<!WebInspector.Script>} scripts
-         * @this {WebInspector.ResourceScriptMapping}
-         */
-        function unbindUISourceCodesForScripts(scripts)
+        var boundURLs = this._boundURLs.values();
+        for (var i = 0; i < boundURLs.length; ++i)
         {
-            if (!scripts.length)
-                return;
-            var uiSourceCode = this._workspaceUISourceCodeForScript(scripts[0]);
+            var uiSourceCode = this._workspace.uiSourceCodeForURL(boundURLs[i]);
             if (!uiSourceCode)
-                return;
-            this._unbindUISourceCodeFromScripts(uiSourceCode, scripts);
+                continue;
+            this._unbindUISourceCode(uiSourceCode);
         }
-
-        this._inlineScriptsForSourceURL.values().forEach(unbindUISourceCodesForScripts.bind(this));
-        this._nonInlineScriptsForSourceURL.values().forEach(unbindUISourceCodesForScripts.bind(this));
-        this._initialize();
+        this._boundURLs.clear();
     },
 }
 
@@ -311,8 +288,6 @@ WebInspector.ResourceScriptFile.prototype = {
      */
     _isDiverged: function()
     {
-        if (this._uiSourceCode.formatted())
-            return false;
         if (this._uiSourceCode.isDirty())
             return true;
         if (!this._script)

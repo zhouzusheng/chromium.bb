@@ -70,7 +70,8 @@ class GPU_EXPORT GpuControlList {
   //    "crBugs": [1234],
   //    "webkitBugs": []
   // }
-  void GetReasons(base::ListValue* problem_list) const;
+  void GetReasons(
+      base::ListValue* problem_list, const std::string& tag) const;
 
   // Return the largest entry id.  This is used for histogramming.
   uint32 max_entry_id() const;
@@ -253,6 +254,17 @@ class GPU_EXPORT GpuControlList {
     int value2_;
   };
 
+  class GPU_EXPORT BoolInfo {
+   public:
+    explicit BoolInfo(bool value);
+
+    // Determines if a given bool is included in the BoolInfo.
+    bool Contains(bool value) const;
+
+   private:
+    bool value_;
+  };
+
   class GPU_EXPORT MachineModelInfo {
    public:
     MachineModelInfo(const std::string& name_op,
@@ -321,6 +333,11 @@ class GPU_EXPORT GpuControlList {
     // Returns the blacklisted features in this entry.
     const std::set<int>& features() const;
 
+    // Returns a list of blacklisted feature names in this entry.
+    void GetFeatureNames(base::ListValue* feature_names,
+                         const FeatureMap& feature_map,
+                         bool supports_feature_type_all) const;
+
    private:
     friend class base::RefCounted<GpuControlListEntry>;
 
@@ -331,8 +348,13 @@ class GPU_EXPORT GpuControlList {
     };
 
     enum MultiGpuCategory {
+      // This entry applies if this is the primary GPU on the system.
       kMultiGpuCategoryPrimary,
+      // This entry applies if this is a secondary GPU on the system.
       kMultiGpuCategorySecondary,
+      // This entry applies if this is the active GPU on the system.
+      kMultiGpuCategoryActive,
+      // This entry applies if this is any of the GPUs on the system.
       kMultiGpuCategoryAny,
       kMultiGpuCategoryNone
     };
@@ -407,6 +429,8 @@ class GPU_EXPORT GpuControlList {
                          const std::string& int_string,
                          const std::string& int_string2);
 
+    void SetDirectRenderingInfo(bool value);
+
     bool SetFeatures(const std::vector<std::string>& features,
                      const FeatureMap& feature_map,
                      bool supports_feature_type_all);
@@ -447,6 +471,7 @@ class GPU_EXPORT GpuControlList {
     scoped_ptr<FloatInfo> perf_overall_info_;
     scoped_ptr<MachineModelInfo> machine_model_info_;
     scoped_ptr<IntInfo> gpu_count_info_;
+    scoped_ptr<BoolInfo> direct_rendering_info_;
     std::set<int> features_;
     std::vector<ScopedGpuControlListEntry> exceptions_;
   };

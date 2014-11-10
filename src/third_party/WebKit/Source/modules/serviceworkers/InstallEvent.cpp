@@ -32,21 +32,20 @@
 #include "InstallEvent.h"
 
 #include "bindings/v8/ScriptPromiseResolver.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InstallEvent> InstallEvent::create()
+PassRefPtrWillBeRawPtr<InstallEvent> InstallEvent::create()
 {
-    return adoptRef(new InstallEvent());
+    return adoptRefWillBeRefCountedGarbageCollected(new InstallEvent());
 }
 
-PassRefPtr<InstallEvent> InstallEvent::create(const AtomicString& type, const EventInit& initializer, PassRefPtr<WaitUntilObserver> observer)
+PassRefPtrWillBeRawPtr<InstallEvent> InstallEvent::create(const AtomicString& type, const EventInit& initializer, PassRefPtr<WaitUntilObserver> observer)
 {
-    return adoptRef(new InstallEvent(type, initializer, observer));
+    return adoptRefWillBeRefCountedGarbageCollected(new InstallEvent(type, initializer, observer));
 }
 
 void InstallEvent::replace()
@@ -61,8 +60,8 @@ ScriptPromise InstallEvent::reloadAll(ExecutionContext* context)
     notImplemented();
 
     // For now this just returns a promise which is already rejected.
-    ScriptPromise promise = ScriptPromise::createPending(context);
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(promise, context);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(context);
+    ScriptPromise promise = resolver->promise();
     resolver->reject(ScriptValue::createNull());
     return promise;
 }
@@ -81,6 +80,11 @@ InstallEvent::InstallEvent(const AtomicString& type, const EventInit& initialize
     : InstallPhaseEvent(type, initializer, observer)
 {
     ScriptWrappable::init(this);
+}
+
+void InstallEvent::trace(Visitor* visitor)
+{
+    InstallPhaseEvent::trace(visitor);
 }
 
 } // namespace WebCore

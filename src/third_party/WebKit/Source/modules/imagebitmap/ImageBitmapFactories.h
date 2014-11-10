@@ -36,7 +36,6 @@
 #include "bindings/v8/ScriptState.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/workers/WorkerSupplementable.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/IntRect.h"
 #include "wtf/Forward.h"
@@ -55,34 +54,36 @@ class ImageBitmap;
 class ImageData;
 class ExecutionContext;
 
-class ImageBitmapFactories FINAL : public Supplement<DOMWindow>, public WorkerSupplement {
-
-class ImageBitmapLoader;
+class ImageBitmapFactories FINAL : public NoBaseWillBeGarbageCollectedFinalized<ImageBitmapFactories>, public WillBeHeapSupplement<DOMWindow>, public WillBeHeapSupplement<WorkerGlobalScope> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapFactories);
 
 public:
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLImageElement*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLImageElement*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLVideoElement*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLVideoElement*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, CanvasRenderingContext2D*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, CanvasRenderingContext2D*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLCanvasElement*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, HTMLCanvasElement*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, Blob*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, Blob*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, ImageData*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, ImageData*, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, ImageBitmap*, ExceptionState&);
-    static ScriptPromise createImageBitmap(EventTarget*, ImageBitmap*, int sx, int sy, int sw, int sh, ExceptionState&);
-
-    void didFinishLoading(ImageBitmapLoader*);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLImageElement*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLImageElement*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLVideoElement*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLVideoElement*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, CanvasRenderingContext2D*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, CanvasRenderingContext2D*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLCanvasElement*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, HTMLCanvasElement*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, Blob*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, Blob*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, ImageData*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, ImageData*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, ImageBitmap*, ExceptionState&);
+    static ScriptPromise createImageBitmap(EventTarget&, ImageBitmap*, int sx, int sy, int sw, int sh, ExceptionState&);
 
     virtual ~ImageBitmapFactories() { }
+
+    void trace(Visitor*) { }
+
+protected:
+    static const char* supplementName();
 
 private:
     class ImageBitmapLoader FINAL : public RefCounted<ImageBitmapLoader>, public FileReaderLoaderClient {
     public:
-        static PassRefPtr<ImageBitmapLoader> create(ImageBitmapFactories* factory, PassRefPtr<ScriptPromiseResolver> resolver, const IntRect& cropRect)
+        static PassRefPtr<ImageBitmapLoader> create(ImageBitmapFactories& factory, PassRefPtr<ScriptPromiseResolver> resolver, const IntRect& cropRect)
         {
             return adoptRef(new ImageBitmapLoader(factory, resolver, cropRect));
         }
@@ -92,7 +93,7 @@ private:
         virtual ~ImageBitmapLoader() { }
 
     private:
-        ImageBitmapLoader(ImageBitmapFactories*, PassRefPtr<ScriptPromiseResolver>, const IntRect&);
+        ImageBitmapLoader(ImageBitmapFactories&, PassRefPtr<ScriptPromiseResolver>, const IntRect&);
 
         void rejectPromise();
 
@@ -109,13 +110,13 @@ private:
         IntRect m_cropRect;
     };
 
-    static const char* supplementName();
-    static ImageBitmapFactories* from(EventTarget*);
+    static ImageBitmapFactories& from(EventTarget&);
 
-    template <class T>
-    static ImageBitmapFactories* fromInternal(T*);
+    template<class GlobalObject>
+    static ImageBitmapFactories& fromInternal(GlobalObject&);
 
     void addLoader(PassRefPtr<ImageBitmapLoader>);
+    void didFinishLoading(ImageBitmapLoader*);
 
     HashSet<RefPtr<ImageBitmapLoader> > m_pendingLoaders;
 };

@@ -45,7 +45,7 @@ public:
 
     virtual WrappedImagePtr data() const OVERRIDE { return m_value; }
 
-    virtual PassRefPtr<CSSValue> cssValue() const OVERRIDE { return m_value; }
+    virtual PassRefPtrWillBeRawPtr<CSSValue> cssValue() const OVERRIDE { return m_value; }
     CSSImageValue* cssImageValue() const { return m_value->isImageValue() ? toCSSImageValue(m_value) : 0; }
     CSSImageGeneratorValue* cssImageGeneratorValue() const { return m_value->isImageGeneratorValue() ? toCSSImageGeneratorValue(m_value) : 0; }
     CSSCursorImageValue* cssCursorImageValue() const { return m_value->isCursorImageValue() ? toCSSCursorImageValue(m_value) : 0; }
@@ -62,7 +62,7 @@ public:
     virtual PassRefPtr<Image> image(RenderObject*, const IntSize&) const OVERRIDE
     {
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
     virtual bool knownToBeOpaque(const RenderObject*) const OVERRIDE { return false; }
 

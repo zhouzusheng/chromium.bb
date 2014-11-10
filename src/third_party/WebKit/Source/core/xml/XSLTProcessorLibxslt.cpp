@@ -33,8 +33,8 @@
 #include "core/editing/markup.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/PageConsole.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/XSLTExtensions.h"
@@ -109,7 +109,7 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
             return 0;
 
         PageConsole* console = 0;
-        Frame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
+        LocalFrame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
         if (frame && frame->host())
             console = &frame->host()->console();
         xmlSetStructuredErrorFunc(console, XSLTProcessor::parseErrorFunc);
@@ -219,7 +219,7 @@ static void freeXsltParamArray(const char** params)
     fastFree(params);
 }
 
-static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
+static xsltStylesheetPtr xsltStylesheetPointer(RefPtrWillBeMember<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
 {
     if (!cachedStylesheet && stylesheetRootNode) {
         cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
@@ -280,7 +280,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());
     if (!sheet) {
         setXSLTLoadCallBack(0, 0, 0);
-        m_stylesheet = 0;
+        m_stylesheet = nullptr;
         return false;
     }
     m_stylesheet->clearDocuments();
@@ -339,7 +339,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     sheet->method = origMethod;
     setXSLTLoadCallBack(0, 0, 0);
     xsltFreeStylesheet(sheet);
-    m_stylesheet = 0;
+    m_stylesheet = nullptr;
 
     return success;
 }

@@ -47,7 +47,6 @@ private:
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
@@ -62,8 +61,6 @@ private:
 
     RefPtr<RenderStyle> m_style;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLOptGroupElement, hasTagName(HTMLNames::optgroupTag));
 
 } //namespace
 

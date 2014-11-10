@@ -29,7 +29,6 @@
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderLineBoxList.h"
 #include "core/rendering/RootInlineBox.h"
-#include "core/rendering/shapes/ShapeInsideInfo.h"
 #include "core/rendering/style/ShapeValue.h"
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextRun.h"
@@ -116,13 +115,21 @@ public:
         return objects && !objects->isEmpty();
     }
 
+    virtual bool visibleForTouchAction() const OVERRIDE FINAL { return true; }
+
     void addPercentHeightDescendant(RenderBox*);
     static void removePercentHeightDescendant(RenderBox*);
-    TrackedRendererListHashSet* percentHeightDescendants() const;
     static bool hasPercentHeightContainerMap();
     static bool hasPercentHeightDescendant(RenderBox*);
     static void clearPercentHeightDescendantsFrom(RenderBox*);
     static void removePercentHeightDescendantIfNeeded(RenderBox*);
+
+    TrackedRendererListHashSet* percentHeightDescendants() const;
+    bool hasPercentHeightDescendants() const
+    {
+        TrackedRendererListHashSet* descendants = percentHeightDescendants();
+        return descendants && !descendants->isEmpty();
+    }
 
     void setHasMarkupTruncation(bool b) { m_hasMarkupTruncation = b; }
     bool hasMarkupTruncation() const { return m_hasMarkupTruncation; }
@@ -136,7 +143,6 @@ public:
     bool hasMarginBeforeQuirk(const RenderBox* child) const;
     bool hasMarginAfterQuirk(const RenderBox* child) const;
 
-    void markShapeInsideDescendantsForLayout();
     void markPositionedObjectsForLayout();
     // FIXME: Do we really need this to be virtual? It's just so we can call this on
     // RenderBoxes without needed to check whether they're RenderBlocks first.
@@ -229,12 +235,10 @@ public:
     void setPageLogicalOffset(LayoutUnit);
 
     // Accessors for logical width/height and margins in the containing block's block-flow direction.
-    enum ApplyLayoutDeltaMode { ApplyLayoutDelta, DoNotApplyLayoutDelta };
     LayoutUnit logicalWidthForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->width() : child->height(); }
     LayoutUnit logicalHeightForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->height() : child->width(); }
+    LayoutSize logicalSizeForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->size() : child->size().transposedSize(); }
     LayoutUnit logicalTopForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->y() : child->x(); }
-    void setLogicalLeftForChild(RenderBox* child, LayoutUnit logicalLeft, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
-    void setLogicalTopForChild(RenderBox* child, LayoutUnit logicalTop, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
     LayoutUnit marginBeforeForChild(const RenderBoxModelObject* child) const { return child->marginBefore(style()); }
     LayoutUnit marginAfterForChild(const RenderBoxModelObject* child) const { return child->marginAfter(style()); }
     LayoutUnit marginStartForChild(const RenderBoxModelObject* child) const { return child->marginStart(style()); }
@@ -261,26 +265,7 @@ public:
     void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const RenderObject* = 0) const;
 #endif
 
-    ShapeInsideInfo* ensureShapeInsideInfo()
-    {
-        if (!m_rareData || !m_rareData->m_shapeInsideInfo)
-            setShapeInsideInfo(ShapeInsideInfo::createInfo(this));
-        return m_rareData->m_shapeInsideInfo.get();
-    }
-    ShapeInsideInfo* shapeInsideInfo() const
-    {
-        return m_rareData && m_rareData->m_shapeInsideInfo && ShapeInsideInfo::isEnabledFor(this) ? m_rareData->m_shapeInsideInfo.get() : 0;
-    }
-    void setShapeInsideInfo(PassOwnPtr<ShapeInsideInfo> value)
-    {
-        if (!m_rareData)
-            m_rareData = adoptPtr(new RenderBlockRareData());
-        m_rareData->m_shapeInsideInfo = value;
-    }
-    ShapeInsideInfo* layoutShapeInsideInfo() const;
-    bool allowsShapeInsideInfoSharing(const RenderBlock* other) const;
     LayoutSize logicalOffsetFromShapeAncestorContainer(const RenderBlock* container) const;
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     // inline-block elements paint all phases atomically. This function ensures that. Certain other elements
     // (grid items, flex items) require this behavior as well, and this function exists as a helper for them.
@@ -300,8 +285,6 @@ protected:
     LayoutUnit marginIntrinsicLogicalWidthForChild(RenderBox* child) const;
 
     int beforeMarginInLineDirection(LineDirectionMode) const;
-
-    virtual bool supportsPartialLayout() const OVERRIDE { return true; };
 
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
     virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
@@ -355,7 +338,6 @@ protected:
 
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const OVERRIDE;
 
-    bool updateRegionsAndShapesLogicalSize(RenderFlowThread*);
     void computeRegionRangeForBlock(RenderFlowThread*);
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox*);
@@ -366,11 +348,6 @@ private:
     LayoutUnit adjustLogicalTopForSpanningHeader(RenderBox* child,
                                                  ColumnInfo* colInfo,
                                                  LayoutUnit logicalTop);
-
-    void computeShapeSize();
-    void updateRegionsAndShapesAfterChildLayout(RenderFlowThread*, bool);
-    void updateShapeInsideInfoAfterStyleChange(const ShapeValue*, const ShapeValue* oldShape);
-    void relayoutShapeDescendantIfMoved(RenderBlock* child, LayoutSize offset);
 
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
@@ -397,9 +374,6 @@ private:
     void insertIntoTrackedRendererMaps(RenderBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
     static void removeFromTrackedRendererMaps(RenderBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
 
-    // Called to lay out the legend for a fieldset or the ruby text of a ruby run.
-    virtual RenderObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&) { return 0; }
-
     void createFirstLetterRenderer(RenderObject* firstLetterBlock, RenderObject* currentChild, unsigned length);
     void updateFirstLetterStyle(RenderObject* firstLetterBlock, RenderObject* firstLetterContainer);
 
@@ -425,8 +399,6 @@ private:
 
     virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset);
 
-    // FIXME: Make this method const so we can remove the const_cast in computeIntrinsicLogicalWidths.
-    void computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth);
     void computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
 
     // Obtains the nearest enclosing block (including this block) that contributes a first-line style to our inline
@@ -498,8 +470,6 @@ private:
     // End helper functions and structs used by layoutBlockChildren.
 
 protected:
-    void determineLogicalLeftPositionForChild(RenderBox* child, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
-
     // Returns the logicalOffset at the top of the next page. If the offset passed in is already at the top of the current page,
     // then nextPageLogicalTop with ExcludePageBoundary will still move to the top of the next page. nextPageLogicalTop with
     // IncludePageBoundary set will not.
@@ -559,7 +529,6 @@ public:
         LayoutUnit m_paginationStrut;
         LayoutUnit m_pageLogicalOffset;
 
-        OwnPtr<ShapeInsideInfo> m_shapeInsideInfo;
         int m_lineBreakToAvoidWidow : 31;
         unsigned m_didBreakAtLineToAvoidWidow : 1;
      };
@@ -588,20 +557,6 @@ protected:
     // member variables out of RenderBlock and into RenderBlockFlow.
     friend class RenderBlockFlow;
 };
-
-
-inline bool RenderBlock::allowsShapeInsideInfoSharing(const RenderBlock* other) const
-{
-    if (!other)
-        return false;
-    for (const RenderBlock* current = this; current && current != other && !current->isRenderFlowThread(); current = current->containingBlock()) {
-        if (current->isInline() || current->isFloating())
-            return false;
-        if (current->parent() != current->containingBlock())
-            return false;
-    }
-    return true;
-}
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBlock, isRenderBlock());
 

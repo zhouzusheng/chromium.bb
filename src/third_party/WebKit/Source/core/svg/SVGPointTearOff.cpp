@@ -34,12 +34,12 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/svg/SVGMatrix.h"
+#include "core/svg/SVGMatrixTearOff.h"
 
 namespace WebCore {
 
 SVGPointTearOff::SVGPointTearOff(PassRefPtr<SVGPoint> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
-    : NewSVGPropertyTearOff<SVGPoint>(target, contextElement, propertyIsAnimVal, attributeName)
+    : SVGPropertyTearOff<SVGPoint>(target, contextElement, propertyIsAnimVal, attributeName)
 {
     ScriptWrappable::init(this);
 }
@@ -66,9 +66,9 @@ void SVGPointTearOff::setY(float f, ExceptionState& exceptionState)
     commitChange();
 }
 
-PassRefPtr<SVGPointTearOff> SVGPointTearOff::matrixTransform(SVGMatrix matrix)
+PassRefPtr<SVGPointTearOff> SVGPointTearOff::matrixTransform(PassRefPtr<SVGMatrixTearOff> matrix)
 {
-    FloatPoint point = target()->matrixTransform(matrix);
+    FloatPoint point = target()->matrixTransform(matrix->value());
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 

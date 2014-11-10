@@ -34,7 +34,7 @@
 namespace WebCore {
 
 SVGStaticStringList::SVGStaticStringList(SVGElement* contextElement, const QualifiedName& attributeName)
-    : NewSVGAnimatedPropertyBase(AnimatedStringList, contextElement, attributeName)
+    : SVGAnimatedPropertyBase(AnimatedStringList, contextElement, attributeName)
     , m_value(SVGStringList::create())
 {
     ASSERT(contextElement);
@@ -44,7 +44,7 @@ SVGStaticStringList::~SVGStaticStringList()
 {
 }
 
-NewSVGPropertyBase* SVGStaticStringList::currentValueBase()
+SVGPropertyBase* SVGStaticStringList::currentValueBase()
 {
     return m_value.get();
 }
@@ -54,28 +54,18 @@ void SVGStaticStringList::animationStarted()
     ASSERT_NOT_REACHED();
 }
 
-PassRefPtr<NewSVGPropertyBase> SVGStaticStringList::createAnimatedValue()
+PassRefPtr<SVGPropertyBase> SVGStaticStringList::createAnimatedValue()
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
-void SVGStaticStringList::setAnimatedValue(PassRefPtr<NewSVGPropertyBase>)
+void SVGStaticStringList::setAnimatedValue(PassRefPtr<SVGPropertyBase>)
 {
     ASSERT_NOT_REACHED();
 }
 
 void SVGStaticStringList::animationEnded()
-{
-    ASSERT_NOT_REACHED();
-}
-
-void SVGStaticStringList::animValWillChange()
-{
-    ASSERT_NOT_REACHED();
-}
-
-void SVGStaticStringList::animValDidChange()
 {
     ASSERT_NOT_REACHED();
 }

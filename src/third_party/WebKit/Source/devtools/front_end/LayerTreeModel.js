@@ -39,8 +39,9 @@ WebInspector.LayerTreeModel = function()
     // We fetch layer tree lazily and get paint events asynchronously, so keep the last painted
     // rect separate from layer so we can get it after refreshing the tree.
     this._lastPaintRectByLayerId = {};
+    this._backendNodeIdToNodeId = {};
     InspectorBackend.registerLayerTreeDispatcher(new WebInspector.LayerTreeDispatcher(this));
-    WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.DocumentUpdated, this._onDocumentUpdated, this);
+    WebInspector.domModel.addEventListener(WebInspector.DOMModel.Events.DocumentUpdated, this._onDocumentUpdated, this);
 }
 
 WebInspector.LayerTreeModel.Events = {
@@ -54,6 +55,7 @@ WebInspector.LayerTreeModel.prototype = {
         if (!this._enabled)
             return;
         this._enabled = false;
+        this._backendNodeIdToNodeId = {};
         LayerTreeAgent.disable();
     },
 
@@ -65,18 +67,16 @@ WebInspector.LayerTreeModel.prototype = {
         if (this._enabled)
             return;
         this._enabled = true;
-        WebInspector.domAgent.requestDocument(onDocumentAvailable.bind(this));
+        LayerTreeAgent.enable();
+    },
 
-        /**
-         * @this {WebInspector.LayerTreeModel}
-         */
-        function onDocumentAvailable()
-        {
-            // The agent might have been disabled while we were waiting for the document.
-            if (!this._enabled)
-                return;
-            LayerTreeAgent.enable();
-        }
+    /**
+     * @param {!WebInspector.LayerTreeSnapshot} snapshot
+     */
+    setSnapshot: function(snapshot)
+    {
+        this.disable();
+        this._resolveNodesAndRepopulate(snapshot.layers);
     },
 
     /**
@@ -97,7 +97,7 @@ WebInspector.LayerTreeModel.prototype = {
 
     /**
      * @param {function(!WebInspector.Layer)} callback
-     * @param {?WebInspector.Layer} root
+     * @param {?WebInspector.Layer=} root
      * @return {boolean}
      */
     forEachLayer: function(callback, root)
@@ -120,26 +120,53 @@ WebInspector.LayerTreeModel.prototype = {
     },
 
     /**
-     * @param {!Array.<!LayerTreeAgent.Layer>} payload
+     * @param {!Array.<!LayerTreeAgent.Layer>=} payload
      */
-    _repopulate: function(payload)
+    _resolveNodesAndRepopulate: function(payload)
     {
+        if (payload)
+            this._resolveBackendNodeIdsForLayers(payload, onBackendNodeIdsResolved.bind(this));
+        else
+            onBackendNodeIdsResolved.call(this);
+        /**
+         * @this {WebInspector.LayerTreeModel}
+         */
+        function onBackendNodeIdsResolved()
+        {
+            this._repopulate(payload || []);
+            this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerTreeChanged);
+        }
+    },
+
+    /**
+     * @param {!Array.<!LayerTreeAgent.Layer>} layers
+     */
+    _repopulate: function(layers)
+    {
+        this._root = null;
+        this._contentRoot = null;
+        // Payload will be null when not in the composited mode.
+        if (!layers)
+            return;
         var oldLayersById = this._layersById;
         this._layersById = {};
-        for (var i = 0; i < payload.length; ++i) {
-            var layerId = payload[i].layerId;
+        for (var i = 0; i < layers.length; ++i) {
+            var layerId = layers[i].layerId;
             var layer = oldLayersById[layerId];
             if (layer)
-                layer._reset(payload[i]);
+                layer._reset(layers[i]);
             else
-                layer = new WebInspector.Layer(payload[i]);
+                layer = new WebInspector.Layer(layers[i]);
             this._layersById[layerId] = layer;
-            var parentId = layer.parentId();
-            if (!this._contentRoot && layer.nodeId())
-                this._contentRoot = layer;
+            if (layers[i].backendNodeId) {
+                layer._setNodeId(this._backendNodeIdToNodeId[layers[i].backendNodeId]);
+                if (!this._contentRoot)
+                    this._contentRoot = layer;
+            }
             var lastPaintRect = this._lastPaintRectByLayerId[layerId];
             if (lastPaintRect)
                 layer._lastPaintRect = lastPaintRect;
+            var parentId = layer.parentId();
             if (parentId) {
                 var parent = this._layersById[parentId];
                 if (!parent)
@@ -155,16 +182,53 @@ WebInspector.LayerTreeModel.prototype = {
     },
 
     /**
-     * @param {!Array.<!LayerTreeAgent.Layer>=} payload
+     * @param {!Array.<!LayerTreeAgent.Layer>=} layers
      */
-    _layerTreeChanged: function(payload)
+    _layerTreeChanged: function(layers)
     {
-        this._root = null;
-        this._contentRoot = null;
-        // Payload will be null when not in the composited mode.
-        if (payload)
-            this._repopulate(payload);
-        this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerTreeChanged);
+        if (!this._enabled)
+            return;
+        this._resolveNodesAndRepopulate(layers);
+    },
+
+    /**
+     * @param {!Array.<!LayerTreeAgent.Layer>} layers
+     * @param {function()} callback
+     */
+    _resolveBackendNodeIdsForLayers: function(layers, callback)
+    {
+        var idsToResolve = {};
+        var requestedIds = [];
+        for (var i = 0; i < layers.length; ++i) {
+            var backendNodeId = layers[i].backendNodeId;
+            if (!backendNodeId || idsToResolve[backendNodeId] ||
+                (this._backendNodeIdToNodeId[backendNodeId] && WebInspector.domModel.nodeForId(this._backendNodeIdToNodeId[backendNodeId]))) {
+                continue;
+            }
+            idsToResolve[backendNodeId] = true;
+            requestedIds.push(backendNodeId);
+        }
+        if (!requestedIds.length) {
+            callback();
+            return;
+        }
+        WebInspector.domModel.pushNodesByBackendIdsToFrontend(requestedIds, populateBackendNodeIdMap.bind(this));
+
+        /**
+         * @this {WebInspector.LayerTreeModel}
+         * @param {?Array.<number>} nodeIds
+         */
+        function populateBackendNodeIdMap(nodeIds)
+        {
+            if (nodeIds) {
+                for (var i = 0; i < requestedIds.length; ++i) {
+                    var nodeId = nodeIds[i];
+                    if (nodeId)
+                        this._backendNodeIdToNodeId[requestedIds[i]] = nodeId;
+                }
+            }
+            callback();
+        }
     },
 
     /**
@@ -197,6 +261,7 @@ WebInspector.LayerTreeModel.prototype = {
  */
 WebInspector.Layer = function(layerPayload)
 {
+    this._scrollRects = [];
     this._reset(layerPayload);
 }
 
@@ -253,11 +318,19 @@ WebInspector.Layer.prototype = {
     },
 
     /**
+     * @param {!DOMAgent.NodeId} nodeId
+     */
+    _setNodeId: function(nodeId)
+    {
+        this._nodeId = nodeId;
+    },
+
+    /**
      * @return {?DOMAgent.NodeId}
      */
     nodeId: function()
     {
-        return this._layerPayload.nodeId;
+        return this._nodeId;
     },
 
     /**
@@ -266,7 +339,7 @@ WebInspector.Layer.prototype = {
     nodeIdForSelfOrAncestor: function()
     {
         for (var layer = this; layer; layer = layer._parent) {
-            var nodeId = layer._layerPayload.nodeId;
+            var nodeId = layer._nodeId;
             if (nodeId)
                 return nodeId;
         }
@@ -350,6 +423,14 @@ WebInspector.Layer.prototype = {
     },
 
     /**
+     * @return {!Array.<!LayerTreeAgent.ScrollRect>}
+     */
+    scrollRects: function()
+    {
+        return this._scrollRects;
+    },
+
+    /**
      * @param {function(!Array.<string>)} callback
      */
     requestCompositingReasons: function(callback)
@@ -387,7 +468,18 @@ WebInspector.Layer.prototype = {
         this._paintCount = 0;
         this._layerPayload = layerPayload;
         this._image = null;
+        this._nodeId = 0;
+        this._scrollRects = this._layerPayload.scrollRects || [];
     }
+}
+
+/**
+ * @constructor
+ * @param {!Array.<!LayerTreeAgent.Layer>} layers
+ */
+WebInspector.LayerTreeSnapshot = function(layers)
+{
+    this.layers = layers;
 }
 
 /**
@@ -402,11 +494,11 @@ WebInspector.LayerTreeDispatcher = function(layerTreeModel)
 
 WebInspector.LayerTreeDispatcher.prototype = {
     /**
-     * @param {!Array.<!LayerTreeAgent.Layer>=} payload
+     * @param {!Array.<!LayerTreeAgent.Layer>=} layers
      */
-    layerTreeDidChange: function(payload)
+    layerTreeDidChange: function(layers)
     {
-        this._layerTreeModel._layerTreeChanged(payload);
+        this._layerTreeModel._layerTreeChanged(layers);
     },
 
     /**

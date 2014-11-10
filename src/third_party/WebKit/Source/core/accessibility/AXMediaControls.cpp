@@ -30,6 +30,7 @@
 #include "config.h"
 #include "core/accessibility/AXMediaControls.h"
 
+#include "core/html/HTMLMediaElement.h"
 #include "platform/text/PlatformLocale.h"
 
 namespace WebCore {
@@ -75,22 +76,6 @@ MediaControlElementType AccessibilityMediaControl::controlType() const
 
     return mediaControlElementType(renderer()->node());
 }
-
-void AccessibilityMediaControl::accessibilityText(Vector<AccessibilityText>& textOrder)
-{
-    String description = accessibilityDescription();
-    if (!description.isEmpty())
-        textOrder.append(AccessibilityText(description, AlternativeText));
-
-    String title = this->title();
-    if (!title.isEmpty())
-        textOrder.append(AccessibilityText(title, AlternativeText));
-
-    String helptext = helpText();
-    if (!helptext.isEmpty())
-        textOrder.append(AccessibilityText(helptext, HelpText));
-}
-
 
 String AccessibilityMediaControl::title() const
 {
@@ -228,7 +213,7 @@ bool AXMediaControlsContainer::controllingVideoElement() const
 
     MediaControlTimeDisplayElement* element = static_cast<MediaControlTimeDisplayElement*>(m_renderer->node());
 
-    return toParentMediaElement(element)->isVideo();
+    return isHTMLVideoElement(toParentMediaElement(element));
 }
 
 bool AXMediaControlsContainer::computeAccessibilityIsIgnored() const
@@ -259,7 +244,7 @@ PassRefPtr<AXObject> AccessibilityMediaTimeline::create(RenderObject* renderer)
 String AccessibilityMediaTimeline::valueDescription() const
 {
     Node* node = m_renderer->node();
-    if (!node->hasTagName(inputTag))
+    if (!isHTMLInputElement(node))
         return String();
 
     return localizedMediaTimeDescription(toHTMLInputElement(node)->value().toFloat());

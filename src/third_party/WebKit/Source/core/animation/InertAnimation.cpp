@@ -30,22 +30,23 @@
 
 #include "config.h"
 #include "core/animation/InertAnimation.h"
+#include "core/animation/Interpolation.h"
 
 namespace WebCore {
 
-PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
+PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
 {
     return adoptRef(new InertAnimation(effect, timing, paused));
 }
 
-InertAnimation::InertAnimation(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
+InertAnimation::InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
     : TimedItem(timing)
     , m_effect(effect)
     , m_paused(paused)
 {
 }
 
-PassOwnPtr<AnimationEffect::CompositableValueList> InertAnimation::sample()
+PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > InertAnimation::sample()
 {
     updateInheritedTime(0);
     if (!isInEffect())
@@ -54,7 +55,7 @@ PassOwnPtr<AnimationEffect::CompositableValueList> InertAnimation::sample()
     double iteration = currentIteration();
     ASSERT(iteration >= 0);
     // FIXME: Handle iteration values which overflow int.
-    return m_effect->sample(static_cast<int>(iteration), timeFraction());
+    return m_effect->sample(static_cast<int>(iteration), timeFraction(), duration());
 }
 
 

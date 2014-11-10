@@ -35,12 +35,12 @@
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLMediaSource.h"
 #include "core/html/URLRegistry.h"
+#include "public/platform/WebMediaSource.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace blink {
-class WebMediaSource;
 class WebSourceBuffer;
 }
 
@@ -50,7 +50,6 @@ class ExceptionState;
 class GenericEventQueue;
 
 class MediaSourceBase : public RefCountedWillBeRefCountedGarbageCollected<MediaSourceBase>, public HTMLMediaSource, public ActiveDOMObject, public EventTargetWithInlineData {
-    DECLARE_GC_INFO;
     DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<MediaSourceBase>);
 public:
     static const AtomicString& openKeyword();

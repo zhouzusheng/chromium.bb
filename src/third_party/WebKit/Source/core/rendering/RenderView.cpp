@@ -24,13 +24,12 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLDialogElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/rendering/ColumnInfo.h"
-#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
@@ -38,8 +37,9 @@
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderSelectionInfo.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
@@ -54,7 +54,6 @@ RenderView::RenderView(Document* document)
     , m_selectionEnd(0)
     , m_selectionStartPos(-1)
     , m_selectionEndPos(-1)
-    , m_maximalOutlineSize(0)
     , m_pageLogicalHeight(0)
     , m_pageLogicalHeightChanged(false)
     , m_layoutState(0)
@@ -141,7 +140,7 @@ void RenderView::positionDialog(RenderBox* box)
     }
     FrameView* frameView = document().view();
     int scrollTop = frameView->scrollOffset().height();
-    int visibleHeight = frameView->visibleContentRect(ScrollableArea::IncludeScrollbars).height();
+    int visibleHeight = frameView->visibleContentRect(IncludeScrollbars).height();
     LayoutUnit top = scrollTop;
     if (box->height() < visibleHeight)
         top += (visibleHeight - box->height()) / 2;
@@ -157,12 +156,12 @@ void RenderView::positionDialogs()
     TrackedRendererListHashSet::iterator end = positionedDescendants->end();
     for (TrackedRendererListHashSet::iterator it = positionedDescendants->begin(); it != end; ++it) {
         RenderBox* box = *it;
-        if (box->node() && box->node()->hasTagName(HTMLNames::dialogTag))
+        if (isHTMLDialogElement(box->node()))
             positionDialog(box);
     }
 }
 
-void RenderView::layoutContent(const LayoutState& state)
+void RenderView::layoutContent()
 {
     ASSERT(needsLayout());
 
@@ -172,33 +171,21 @@ void RenderView::layoutContent(const LayoutState& state)
     if (RuntimeEnabledFeatures::dialogElementEnabled())
         positionDialogs();
 
-    if (m_frameView->partialLayout().isStopping())
-        return;
-
 #ifndef NDEBUG
-    checkLayoutState(state);
+    checkLayoutState();
 #endif
 }
 
 #ifndef NDEBUG
-void RenderView::checkLayoutState(const LayoutState& state)
+void RenderView::checkLayoutState()
 {
     if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
         ASSERT(layoutDeltaMatches(LayoutSize()));
     }
     ASSERT(!m_layoutStateDisableCount);
-    ASSERT(m_layoutState == &state);
+    ASSERT(!m_layoutState->next());
 }
 #endif
-
-void RenderView::initializeLayoutState(LayoutState& state)
-{
-    // FIXME: May be better to push a clip and avoid issuing offscreen repaints.
-    state.m_clipped = false;
-    state.m_pageLogicalHeight = m_pageLogicalHeight;
-    state.m_pageLogicalHeightChanged = m_pageLogicalHeightChanged;
-    state.m_isPaginated = state.m_pageLogicalHeight;
-}
 
 void RenderView::layout()
 {
@@ -226,30 +213,22 @@ void RenderView::layout()
         }
 
         if (document().svgExtensions())
-            document().accessSVGExtensions()->invalidateSVGRootsWithRelativeLengthDescendents(&layoutScope);
+            document().accessSVGExtensions().invalidateSVGRootsWithRelativeLengthDescendents(&layoutScope);
     }
 
     ASSERT(!m_layoutState);
     if (!needsLayout())
         return;
 
-    LayoutState state;
-    initializeLayoutState(state);
+    RootLayoutStateScope rootLayoutStateScope(*this);
 
     m_pageLogicalHeightChanged = false;
-    m_layoutState = &state;
 
-    layoutContent(state);
-
-    if (m_frameView->partialLayout().isStopping()) {
-        m_layoutState = 0;
-        return;
-    }
+    layoutContent();
 
 #ifndef NDEBUG
-    checkLayoutState(state);
+    checkLayoutState();
 #endif
-    m_layoutState = 0;
     clearNeedsLayout();
 }
 
@@ -358,6 +337,7 @@ static inline bool rendererObscuresBackground(RenderBox* rootBox)
     RenderStyle* style = rootBox->style();
     if (style->visibility() != VISIBLE
         || style->opacity() != 1
+        || style->hasFilter()
         || style->hasTransform())
         return false;
 
@@ -464,22 +444,6 @@ void RenderView::repaintViewRectangle(const LayoutRect& ur) const
         // FIXME: Hardcoded offsets here are not good.
         r.moveBy(obj->contentBoxRect().location());
         obj->repaintRectangle(r);
-    }
-}
-
-void RenderView::repaintRectangleInViewAndCompositedLayers(const LayoutRect& ur)
-{
-    if (!shouldRepaint(ur))
-        return;
-
-    repaintViewRectangle(ur);
-
-    // FIXME: We don't actually know how to hit these ASSERTS.
-    DisableCompositingQueryAsserts disabler;
-
-    if (compositor()->inCompositingMode()) {
-        IntRect repaintRect = pixelSnappedIntRect(ur);
-        compositor()->repaintCompositedLayers(&repaintRect);
     }
 }
 
@@ -600,19 +564,6 @@ void RenderView::repaintSelection() const
                 break;
             RenderSelectionInfo(block, true).repaint();
         }
-    }
-}
-
-// Compositing layer dimensions take outline size into account, so we have to recompute layer
-// bounds when it changes.
-// FIXME: This is ugly; it would be nice to have a better way to do this.
-void RenderView::setMaximalOutlineSize(int o)
-{
-    if (o != m_maximalOutlineSize) {
-        m_maximalOutlineSize = o;
-
-        // maximalOutlineSize affects compositing layer dimensions.
-        compositor()->setCompositingLayersNeedRebuild();    // FIXME: this really just needs to be a geometry update.
     }
 }
 
@@ -868,7 +819,7 @@ IntRect RenderView::documentRect() const
     return IntRect(overflowRect);
 }
 
-int RenderView::viewHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion) const
+int RenderView::viewHeight(IncludeScrollbarsInRect scrollbarInclusion) const
 {
     int height = 0;
     if (!shouldUsePrintingLayout() && m_frameView)
@@ -877,7 +828,7 @@ int RenderView::viewHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarIncl
     return height;
 }
 
-int RenderView::viewWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion) const
+int RenderView::viewWidth(IncludeScrollbarsInRect scrollbarInclusion) const
 {
     int width = 0;
     if (!shouldUsePrintingLayout() && m_frameView)
@@ -888,7 +839,7 @@ int RenderView::viewWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclu
 
 int RenderView::viewLogicalHeight() const
 {
-    return style()->isHorizontalWritingMode() ? viewHeight(ScrollableArea::ExcludeScrollbars) : viewWidth(ScrollableArea::ExcludeScrollbars);
+    return style()->isHorizontalWritingMode() ? viewHeight(ExcludeScrollbars) : viewWidth(ExcludeScrollbars);
 }
 
 float RenderView::zoomFactor() const
@@ -896,7 +847,7 @@ float RenderView::zoomFactor() const
     return m_frameView->frame().pageZoomFactor();
 }
 
-void RenderView::pushLayoutState(RenderObject* root)
+void RenderView::pushLayoutState(RenderObject& root)
 {
     ASSERT(m_layoutStateDisableCount == 0);
     ASSERT(m_layoutState == 0);
@@ -905,11 +856,11 @@ void RenderView::pushLayoutState(RenderObject* root)
     m_layoutState = new LayoutState(root);
 }
 
-bool RenderView::shouldDisableLayoutStateForSubtree(RenderObject* renderer) const
+bool RenderView::shouldDisableLayoutStateForSubtree(RenderObject& renderer) const
 {
-    RenderObject* o = renderer;
+    RenderObject* o = &renderer;
     while (o) {
-        if (o->hasColumns() || o->hasTransform() || o->hasReflection())
+        if (o->shouldDisableLayoutState())
             return true;
         o = o->container();
     }
@@ -942,7 +893,7 @@ bool RenderView::usesCompositing() const
 RenderLayerCompositor* RenderView::compositor()
 {
     if (!m_compositor)
-        m_compositor = adoptPtr(new RenderLayerCompositor(this));
+        m_compositor = adoptPtr(new RenderLayerCompositor(*this));
 
     return m_compositor.get();
 }
@@ -961,7 +912,7 @@ FlowThreadController* RenderView::flowThreadController()
     return m_flowThreadController.get();
 }
 
-void RenderView::pushLayoutStateForCurrentFlowThread(const RenderObject* object)
+void RenderView::pushLayoutStateForCurrentFlowThread(const RenderObject& object)
 {
     if (!m_flowThreadController)
         return;
@@ -1004,13 +955,13 @@ bool RenderView::backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const
 double RenderView::layoutViewportWidth() const
 {
     float scale = m_frameView ? m_frameView->frame().pageZoomFactor() : 1;
-    return viewWidth(ScrollableArea::IncludeScrollbars) / scale;
+    return viewWidth(IncludeScrollbars) / scale;
 }
 
 double RenderView::layoutViewportHeight() const
 {
     float scale = m_frameView ? m_frameView->frame().pageZoomFactor() : 1;
-    return viewHeight(ScrollableArea::IncludeScrollbars) / scale;
+    return viewHeight(IncludeScrollbars) / scale;
 }
 
 } // namespace WebCore

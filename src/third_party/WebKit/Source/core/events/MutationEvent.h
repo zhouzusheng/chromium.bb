@@ -39,15 +39,15 @@ namespace WebCore {
             REMOVAL         = 3
         };
 
-        static PassRefPtr<MutationEvent> create()
+        static PassRefPtrWillBeRawPtr<MutationEvent> create()
         {
-            return adoptRef(new MutationEvent);
+            return adoptRefWillBeRefCountedGarbageCollected(new MutationEvent);
         }
 
-        static PassRefPtr<MutationEvent> create(const AtomicString& type, bool canBubble, PassRefPtr<Node> relatedNode = 0,
+        static PassRefPtrWillBeRawPtr<MutationEvent> create(const AtomicString& type, bool canBubble, PassRefPtr<Node> relatedNode = nullptr,
             const String& prevValue = String(), const String& newValue = String(), const String& attrName = String(), unsigned short attrChange = 0)
         {
-            return adoptRef(new MutationEvent(type, canBubble, false, relatedNode, prevValue, newValue, attrName, attrChange));
+            return adoptRefWillBeRefCountedGarbageCollected(new MutationEvent(type, canBubble, false, relatedNode, prevValue, newValue, attrName, attrChange));
         }
 
         void initMutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<Node> relatedNode,
@@ -61,6 +61,8 @@ namespace WebCore {
         unsigned short attrChange() const { return m_attrChange; }
 
         virtual const AtomicString& interfaceName() const OVERRIDE;
+
+        virtual void trace(Visitor*) OVERRIDE;
 
     private:
         MutationEvent();

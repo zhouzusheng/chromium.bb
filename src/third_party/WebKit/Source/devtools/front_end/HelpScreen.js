@@ -31,11 +31,11 @@
 /**
  * @constructor
  * @param {string=} title
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  */
 WebInspector.HelpScreen = function(title)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
     this.markAsRoot();
     this.registerRequiredCSS("helpScreen.css");
 
@@ -88,7 +88,7 @@ WebInspector.HelpScreen.prototype = {
         if (visibleHelpScreen)
             visibleHelpScreen.hide();
         WebInspector.HelpScreen._visibleScreen = this;
-        this.show(WebInspector.inspectorView.devtoolsElement());
+        this.show(WebInspector.inspectorView.element);
         this.focus();
     },
 
@@ -124,7 +124,7 @@ WebInspector.HelpScreen.prototype = {
         }
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }
 
 /**
@@ -145,3 +145,21 @@ WebInspector.RemoteDebuggingTerminatedScreen = function(reason)
 WebInspector.RemoteDebuggingTerminatedScreen.prototype = {
     __proto__: WebInspector.HelpScreen.prototype
 }
+
+/**
+ * @constructor
+ * @extends {WebInspector.HelpScreen}
+ */
+WebInspector.WorkerTerminatedScreen = function()
+{
+    WebInspector.HelpScreen.call(this, WebInspector.UIString("Inspected worker terminated"));
+    var p = this.contentElement.createChild("p");
+    p.classList.add("help-section");
+    p.textContent = WebInspector.UIString("Inspected worker has terminated. Once it restarts we will attach to it automatically.");
+}
+
+WebInspector.WorkerTerminatedScreen.prototype = {
+
+    __proto__: WebInspector.HelpScreen.prototype
+}
+

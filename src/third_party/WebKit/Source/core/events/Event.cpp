@@ -25,7 +25,6 @@
 
 #include "core/dom/StaticNodeList.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -202,14 +201,20 @@ PassRefPtr<NodeList> Event::path() const
     if (!m_currentTarget || !m_currentTarget->toNode())
         return StaticNodeList::createEmpty();
     Node* node = m_currentTarget->toNode();
+    // FIXME: Support SVG Elements.
+    if (node->isSVGElement())
+        return StaticNodeList::createEmpty();
     size_t eventPathSize = m_eventPath->size();
     for (size_t i = 0; i < eventPathSize; ++i) {
         if (node == (*m_eventPath)[i].node()) {
-            ASSERT((*m_eventPath)[i].eventPath());
-            return (*m_eventPath)[i].eventPath();
+            return (*m_eventPath)[i].treeScopeEventContext()->ensureEventPath(*m_eventPath);
         }
     }
     return StaticNodeList::createEmpty();
+}
+
+void Event::trace(Visitor*)
+{
 }
 
 } // namespace WebCore

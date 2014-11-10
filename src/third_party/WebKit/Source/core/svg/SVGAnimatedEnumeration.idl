@@ -24,6 +24,8 @@
  */
 
 [
+    ImplementedAs=SVGAnimatedEnumerationBase,
+    SetWrapperReferenceTo(SVGElement contextElement),
     StrictTypeChecking,
 ] interface SVGAnimatedEnumeration {
     [RaisesException=Setter] attribute unsigned short baseVal;

@@ -32,7 +32,7 @@
 #define DocumentTimeline_h
 
 #include "core/animation/AnimationEffect.h"
-#include "core/animation/Player.h"
+#include "core/animation/AnimationPlayer.h"
 #include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "platform/Timer.h"
@@ -61,14 +61,14 @@ public:
 
     static PassRefPtr<DocumentTimeline> create(Document*, PassOwnPtr<PlatformTiming> = nullptr);
     ~DocumentTimeline();
-    // Returns whether style recalc was triggered.
-    bool serviceAnimations();
+
+    void serviceAnimations();
 
     // Creates a player attached to this timeline, but without a start time.
-    Player* createPlayer(TimedItem*);
-    Player* play(TimedItem*);
+    AnimationPlayer* createAnimationPlayer(TimedItem*);
+    AnimationPlayer* play(TimedItem*);
 
-    void playerDestroyed(Player* player)
+    void playerDestroyed(AnimationPlayer* player)
     {
         ASSERT(m_players.contains(player));
         m_players.remove(player);
@@ -78,23 +78,17 @@ public:
     // performance.timing.domInteractive
     void setZeroTime(double);
     bool hasStarted() const { return !isNull(m_zeroTime); }
+    bool hasPendingUpdates() const { return !m_playersNeedingUpdate.isEmpty(); }
     double zeroTime() const { return m_zeroTime; }
     double currentTime();
+    double effectiveTime();
     void pauseAnimationsForTesting(double);
     size_t numberOfActiveAnimationsForTesting() const;
-    const Vector<RefPtr<Player> >& currentPlayers() const { return m_currentPlayers; }
 
-    void setHasPlayerNeedingUpdate();
-    bool hasPlayerNeedingUpdate() const { return m_hasPlayerNeedingUpdate; }
+    void setOutdatedAnimationPlayer(AnimationPlayer*);
+    bool hasOutdatedAnimationPlayer() const { return m_hasOutdatedAnimationPlayer; }
 
-    void addEventToDispatch(EventTarget* target, PassRefPtr<Event> event)
-    {
-        m_events.append(EventToDispatch(target, event));
-    }
-
-    void dispatchEvents();
-    void dispatchEventsAsync();
-
+    Document* document() { return m_document; }
     void detachFromDocument();
 
 protected:
@@ -103,25 +97,15 @@ protected:
 private:
     double m_zeroTime;
     Document* m_document;
-    Timer<DocumentTimeline> m_eventDistpachTimer;
-    Vector<RefPtr<Player> > m_currentPlayers;
-    HashSet<Player*> m_players;
-    bool m_hasPlayerNeedingUpdate;
+    // AnimationPlayers which will be updated on the next frame
+    // i.e. current, in effect, or had timing changed
+    HashSet<RefPtr<AnimationPlayer> > m_playersNeedingUpdate;
+    HashSet<AnimationPlayer*> m_players;
+    bool m_hasOutdatedAnimationPlayer;
 
-    void eventDispatchTimerFired(Timer<DocumentTimeline>*);
     void wake();
 
-    struct EventToDispatch {
-        EventToDispatch(EventTarget* target, PassRefPtr<Event> event)
-            : target(target)
-            , event(event)
-        {
-        }
-        RefPtr<EventTarget> target;
-        RefPtr<Event> event;
-    };
-    Vector<EventToDispatch> m_events;
-
+    friend class SMILTimeContainer;
     static const double s_minimumDelay;
 
     OwnPtr<PlatformTiming> m_timing;

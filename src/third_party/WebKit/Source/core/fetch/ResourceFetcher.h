@@ -54,7 +54,7 @@ class SubstituteData;
 class XSLStyleSheetResource;
 class Document;
 class DocumentLoader;
-class Frame;
+class LocalFrame;
 class FrameLoader;
 class ImageLoader;
 class KURL;
@@ -67,7 +67,7 @@ class ResourceLoaderSet;
 // in the DocumentLoader constructor and loses its ability to generate network
 // requests when the DocumentLoader is destroyed. Documents also hold a
 // RefPtr<ResourceFetcher> for their lifetime (and will create one if they
-// are initialized without a Frame), so a Document can keep a ResourceFetcher
+// are initialized without a LocalFrame), so a Document can keep a ResourceFetcher
 // alive past detach if scripts still reference the Document.
 class ResourceFetcher FINAL : public RefCounted<ResourceFetcher>, public ResourceLoaderHost {
     WTF_MAKE_NONCOPYABLE(ResourceFetcher); WTF_MAKE_FAST_ALLOCATED;
@@ -110,7 +110,7 @@ public:
 
     bool shouldDeferImageLoad(const KURL&) const;
 
-    Frame* frame() const; // Can be null
+    LocalFrame* frame() const; // Can be null
     FetchContext& context() const;
     Document* document() const { return m_document; } // Can be null
     void setDocument(Document* document) { m_document = document; }
@@ -137,7 +137,7 @@ public:
     virtual void didLoadResource(Resource*) OVERRIDE;
     virtual void redirectReceived(Resource*, const ResourceResponse&) OVERRIDE;
     virtual void didFinishLoading(const Resource*, double finishTime, int64_t encodedDataLength) OVERRIDE;
-    virtual void didChangeLoadingPriority(const Resource*, ResourceLoadPriority) OVERRIDE;
+    virtual void didChangeLoadingPriority(const Resource*, ResourceLoadPriority, int intraPriorityValue) OVERRIDE;
     virtual void didFailLoading(const Resource*, const ResourceError&) OVERRIDE;
     virtual void willSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&) OVERRIDE;
     virtual void didReceiveResponse(const Resource*, const ResourceResponse&) OVERRIDE;

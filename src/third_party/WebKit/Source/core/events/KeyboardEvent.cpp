@@ -23,7 +23,6 @@
 #include "config.h"
 #include "core/events/KeyboardEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/WindowsKeyboardCodes.h"
 
@@ -215,6 +214,11 @@ int KeyboardEvent::which() const
     // Netscape's "which" returns a virtual key code for keydown and keyup, and a character code for keypress.
     // That's exactly what IE's "keyCode" returns. So they are the same for keyboard events.
     return keyCode();
+}
+
+void KeyboardEvent::trace(Visitor* visitor)
+{
+    UIEventWithKeyState::trace(visitor);
 }
 
 PassRefPtr<KeyboardEventDispatchMediator> KeyboardEventDispatchMediator::create(PassRefPtr<KeyboardEvent> event)

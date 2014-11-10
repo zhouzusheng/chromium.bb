@@ -34,7 +34,7 @@
 #include <content/public/common/context_menu_params.h>
 #include <content/public/common/menu_item.h>
 #include <third_party/WebKit/public/web/WebContextMenuData.h>
-#include <ui/aura/root_window.h>
+#include <ui/aura/window_tree_host.h>
 #include <ui/aura/window.h>
 
 namespace {
@@ -108,8 +108,8 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
     webViewImpl->saveCustomContextMenuContext(renderFrameHost, params.custom_context);
 
     gfx::Point point(params.x, params.y);
-    aura::RootWindow* rootWindow = webViewImpl->getNativeView()->GetDispatcher();
-    rootWindow->host()->ConvertPointToNativeScreen(&point);
+    aura::WindowTreeHost* host = webViewImpl->getNativeView()->GetHost();
+    host->ConvertPointToNativeScreen(&point);
 
     bool hasSelection = !params.selection_text.empty();
 

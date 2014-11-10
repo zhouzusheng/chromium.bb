@@ -68,7 +68,7 @@ public:
     void clearDescendantInsertionPoints() { m_descendantInsertionPoints.clear(); }
 
     StyleSheetList* styleSheets() { return m_styleSheetList.get(); }
-    void setStyleSheets(PassRefPtr<StyleSheetList> styleSheetList) { m_styleSheetList = styleSheetList; }
+    void setStyleSheets(PassRefPtrWillBeRawPtr<StyleSheetList> styleSheetList) { m_styleSheetList = styleSheetList; }
 
 private:
     RefPtr<HTMLShadowElement> m_shadowInsertionPointOfYoungerShadowRoot;
@@ -76,14 +76,15 @@ private:
     unsigned m_descendantContentElementCount;
     unsigned m_childShadowRootCount;
     Vector<RefPtr<InsertionPoint> > m_descendantInsertionPoints;
-    RefPtr<StyleSheetList> m_styleSheetList;
+    RefPtrWillBePersistent<StyleSheetList> m_styleSheetList;
 };
 
 inline void ShadowRootRareData::didAddInsertionPoint(InsertionPoint* point)
 {
-    if (point->hasTagName(HTMLNames::shadowTag))
+    ASSERT(point);
+    if (isHTMLShadowElement(*point))
         ++m_descendantShadowElementCount;
-    else if (point->hasTagName(HTMLNames::contentTag))
+    else if (isHTMLContentElement(*point))
         ++m_descendantContentElementCount;
     else
         ASSERT_NOT_REACHED();
@@ -91,9 +92,10 @@ inline void ShadowRootRareData::didAddInsertionPoint(InsertionPoint* point)
 
 inline void ShadowRootRareData::didRemoveInsertionPoint(InsertionPoint* point)
 {
-    if (point->hasTagName(HTMLNames::shadowTag))
+    ASSERT(point);
+    if (isHTMLShadowElement(*point))
         --m_descendantShadowElementCount;
-    else if (point->hasTagName(HTMLNames::contentTag))
+    else if (isHTMLContentElement(*point))
         --m_descendantContentElementCount;
     else
         ASSERT_NOT_REACHED();

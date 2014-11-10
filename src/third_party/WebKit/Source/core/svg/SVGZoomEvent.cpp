@@ -22,7 +22,6 @@
 #include "config.h"
 #include "core/svg/SVGZoomEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/svg/SVGPointTearOff.h"
 #include "core/svg/SVGRectTearOff.h"
 
@@ -79,6 +78,11 @@ PassRefPtr<SVGPointTearOff> SVGZoomEvent::newTranslate() const
 const AtomicString& SVGZoomEvent::interfaceName() const
 {
     return EventNames::SVGZoomEvent;
+}
+
+void SVGZoomEvent::trace(Visitor* visitor)
+{
+    UIEvent::trace(visitor);
 }
 
 } // namespace WebCore

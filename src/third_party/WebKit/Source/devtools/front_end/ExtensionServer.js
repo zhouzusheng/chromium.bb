@@ -232,8 +232,8 @@ WebInspector.ExtensionServer.prototype = {
 
     _onShowPanel: function(message)
     {
-        // Note: WebInspector.showPanel already sanitizes input.
-        WebInspector.showPanel(message.id);
+        // Note: WebInspector.inspectorView.showPanel already sanitizes input.
+        WebInspector.inspectorView.showPanel(message.id);
     },
 
     _onCreateStatusBarButton: function(message, port)
@@ -258,7 +258,7 @@ WebInspector.ExtensionServer.prototype = {
 
     _onCreateSidebarPane: function(message)
     {
-        var panel = WebInspector.panel(message.panel);
+        var panel = WebInspector.inspectorView.panel(message.panel);
         if (!panel)
             return this._status.E_NOTFOUND(message.panel);
         if (!panel.addExtensionSidebarPane)
@@ -416,7 +416,7 @@ WebInspector.ExtensionServer.prototype = {
         if (!level)
             return this._status.E_BADARG("message.severity", message.severity);
 
-        var consoleMessage = WebInspector.ConsoleMessage.create(
+        var consoleMessage = new WebInspector.ConsoleMessage(
             WebInspector.ConsoleMessage.MessageSource.JS,
             level,
             message.text,
@@ -447,7 +447,7 @@ WebInspector.ExtensionServer.prototype = {
         }
         var result = {
             severity: convertLevel(message.level),
-            text: message.text,
+            text: message.messageText,
         };
         if (message.url)
             result.url = message.url;
@@ -579,11 +579,11 @@ WebInspector.ExtensionServer.prototype = {
     _onAddAuditCategory: function(message, port)
     {
         var category = new WebInspector.ExtensionAuditCategory(port._extensionOrigin, message.id, message.displayName, message.resultCount);
-        if (WebInspector.panel("audits").getCategory(category.id))
+        if (WebInspector.inspectorView.panel("audits").getCategory(category.id))
             return this._status.E_EXISTS(category.id);
         this._clientObjects[message.id] = category;
         // FIXME: register module manager extension instead of waking up audits module.
-        WebInspector.panel("audits").addCategory(category);
+        WebInspector.inspectorView.panel("audits").addCategory(category);
     },
 
     _onAddAuditResult: function(message)
@@ -618,20 +618,37 @@ WebInspector.ExtensionServer.prototype = {
     _onForwardKeyboardEvent: function(message)
     {
         const Esc = "U+001B";
+        message.entries.forEach(handleEventEntry);
 
-        if (!message.ctrlKey && !message.altKey && !message.metaKey && !/^F\d+$/.test(message.keyIdentifier) && message.keyIdentifier !== Esc)
-            return;
-        // Fool around closure compiler -- it has its own notion of both KeyboardEvent constructor
-        // and initKeyboardEvent methods and overriding these in externs.js does not have effect.
-        var event = new window.KeyboardEvent(message.eventType, {
-            keyIdentifier: message.keyIdentifier,
-            location: message.location,
-            ctrlKey: message.ctrlKey,
-            altKey: message.altKey,
-            shiftKey: message.shiftKey,
-            metaKey: message.metaKey
-        });
-        document.dispatchEvent(event);
+        function handleEventEntry(entry)
+        {
+            if (!entry.ctrlKey && !entry.altKey && !entry.metaKey && !/^F\d+$/.test(entry.keyIdentifier) && entry.keyIdentifier !== Esc)
+                return;
+            // Fool around closure compiler -- it has its own notion of both KeyboardEvent constructor
+            // and initKeyboardEvent methods and overriding these in externs.js does not have effect.
+            var event = new window.KeyboardEvent(entry.eventType, {
+                keyIdentifier: entry.keyIdentifier,
+                location: entry.location,
+                ctrlKey: entry.ctrlKey,
+                altKey: entry.altKey,
+                shiftKey: entry.shiftKey,
+                metaKey: entry.metaKey
+            });
+            event.__keyCode = keyCodeForEntry(entry);
+            document.dispatchEvent(event);
+        }
+
+        function keyCodeForEntry(entry)
+        {
+            var keyCode = entry.keyCode;
+            if (!keyCode) {
+                // This is required only for synthetic events (e.g. dispatched in tests).
+                var match = entry.keyIdentifier.match(/^U\+([\dA-Fa-f]+)$/);
+                if (match)
+                    keyCode = parseInt(match[1], 16);
+            }
+            return keyCode || 0;
+        }
     },
 
     _dispatchCallback: function(requestId, port, result)
@@ -716,7 +733,7 @@ WebInspector.ExtensionServer.prototype = {
             startColumn: textRange.startColumn,
             endLine: textRange.endLine,
             endColumn: textRange.endColumn,
-            url: sourcesPanel.tabbedEditorContainer.currentFile().uri()
+            url: sourcesPanel.sourcesView().currentUISourceCode().uri()
         };
 
         return selection;

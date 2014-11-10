@@ -13,8 +13,7 @@ Preferences::Preferences()
       is_3d_supported(true),
       is_stage3d_supported(false),
       is_stage3d_baseline_supported(false),
-      is_accelerated_video_decode_enabled(false) {
-}
+      is_accelerated_video_decode_enabled(false) {}
 
 Preferences::Preferences(const WebPreferences& prefs)
     : standard_font_family_map(prefs.standard_font_family_map),
@@ -33,10 +32,8 @@ Preferences::Preferences(const WebPreferences& prefs)
       is_webgl_supported(prefs.experimental_webgl_enabled &&
                          prefs.accelerated_compositing_for_plugins_enabled),
       is_accelerated_video_decode_enabled(
-          prefs.pepper_accelerated_video_decode_enabled) {
-}
+          prefs.pepper_accelerated_video_decode_enabled) {}
 
-Preferences::~Preferences() {
-}
+Preferences::~Preferences() {}
 
 }  // namespace ppapi

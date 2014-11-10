@@ -59,10 +59,11 @@ WebInspector.AdvancedSearchController.prototype = {
     {
         if (WebInspector.KeyboardShortcut.makeKeyFromEvent(event) === this._shortcut.key) {
             if (!this._searchView || !this._searchView.isShowing() || this._searchView._search !== document.activeElement) {
-                WebInspector.showPanel("sources");
+                WebInspector.inspectorView.showPanel("sources");
                 this.show();
-            } else
+            } else {
                 WebInspector.inspectorView.closeDrawer();
+            }
             event.consume(true);
             return true;
         }
@@ -208,34 +209,15 @@ WebInspector.AdvancedSearchController.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.Drawer.ViewFactory}
- */
-WebInspector.AdvancedSearchController.ViewFactory = function()
-{
-}
-
-WebInspector.AdvancedSearchController.ViewFactory.prototype = {
-    /**
-     * @return {!WebInspector.View}
-     */
-    createView: function()
-    {
-        if (!WebInspector.advancedSearchController._searchView)
-            WebInspector.advancedSearchController._searchView = new WebInspector.SearchView(WebInspector.advancedSearchController);
-        return WebInspector.advancedSearchController._searchView;
-    }
-}
-
-/**
- * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @param {!WebInspector.AdvancedSearchController} controller
  */
 WebInspector.SearchView = function(controller)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
 
-    this._controller = controller;
+    this._controller = WebInspector.advancedSearchController;
+    WebInspector.advancedSearchController._searchView = this;
 
     this.element.classList.add("search-view");
 
@@ -428,7 +410,7 @@ WebInspector.SearchView.prototype = {
         this._controller.startSearch(searchConfig);
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }
 
 

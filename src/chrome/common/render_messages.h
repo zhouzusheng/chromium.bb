@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 // Multiply-included file, no traditional include guard.
+#include <stdint.h>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/memory/shared_memory.h"
 #include "base/process/process.h"
@@ -262,20 +262,11 @@ IPC_MESSAGE_CONTROL3(ChromeViewMsg_SetCacheCapacities,
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_ClearCache,
                      bool /* on_navigation */)
 
-// Tells the renderer to dump as much memory as it can, perhaps because we
-// have memory pressure or the renderer is (or will be) paged out.  This
-// should only result in purging objects we can recalculate, e.g. caches or
-// JS garbage, not in purging irreplaceable objects.
-IPC_MESSAGE_CONTROL0(ChromeViewMsg_PurgeMemory)
-
-// For WebUI testing, this message stores parameters to do ScriptEvalRequest at
-// a time which is late enough to not be thrown out, and early enough to be
-// before onload events are fired.
-IPC_MESSAGE_ROUTED4(ChromeViewMsg_WebUIJavaScript,
-                    base::string16,  /* frame_xpath */
-                    base::string16,  /* jscript_url */
-                    int,  /* ID */
-                    bool  /* If true, result is sent back. */)
+// For WebUI testing, this message requests JavaScript to be executed at a time
+// which is late enough to not be thrown out, and early enough to be before
+// onload events are fired.
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_WebUIJavaScript,
+                    base::string16  /* javascript */)
 
 // Set the content setting rules stored by the renderer.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetContentSettingRules,
@@ -409,6 +400,17 @@ IPC_MESSAGE_ROUTED2(ChromeViewMsg_RetrieveMetaTagContent,
                     GURL /* expected_url */,
                     std::string /* tag_name */ )
 #endif  // defined(OS_ANDROID)
+
+#if defined(CLD2_DYNAMIC_MODE)
+// Informs the renderer process that Compact Language Detector (CLD) data is
+// available and provides an IPC::PlatformFileForTransit obtained from
+// IPC::GetFileHandleForProcess(...)
+// See also: ChromeViewHostMsg_NeedCLDData
+IPC_MESSAGE_ROUTED3(ChromeViewMsg_CLDDataAvailable,
+                    IPC::PlatformFileForTransit /* ipc_file_handle */,
+                    uint64 /* data_offset */,
+                    uint64 /* data_length */)
+#endif
 
 // chrome.principals messages ------------------------------------------------
 
@@ -703,7 +705,14 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
 
 // Logs an impression on one of the Most Visited tile on the InstantExtended
 // New Tab Page.
-IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogImpression,
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogMostVisitedImpression,
+                    int /* page_id */,
+                    int /* position */,
+                    base::string16 /* provider */)
+
+// Logs a navigation on one of the Most Visited tile on the InstantExtended
+// New Tab Page.
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogMostVisitedNavigation,
                     int /* page_id */,
                     int /* position */,
                     base::string16 /* provider */)
@@ -771,3 +780,16 @@ IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DetailedConsoleMessageAdded,
                     base::string16 /* source */,
                     extensions::StackTrace /* stack trace */,
                     int32 /* severity level */)
+
+// Sent by the renderer to check if crash reporting is enabled.
+IPC_SYNC_MESSAGE_CONTROL0_1(ChromeViewHostMsg_IsCrashReportingEnabled,
+                            bool /* enabled */)
+
+#if defined(CLD2_DYNAMIC_MODE)
+// Informs the browser process that Compact Language Detector (CLD) data is
+// required by the originating renderer. The browser process should respond
+// with a ChromeViewMsg_CLDDataAvailable if the data is available, else it
+// should go unanswered (the renderer will ask again later).
+// See also: ChromeViewMsg_CLDDataAvailable
+IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_NeedCLDData)
+#endif

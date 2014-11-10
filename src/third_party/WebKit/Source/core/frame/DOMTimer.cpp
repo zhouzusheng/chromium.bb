@@ -95,9 +95,9 @@ DOMTimer::DOMTimer(ExecutionContext* context, PassOwnPtr<ScheduledAction> action
     if (intervalMilliseconds < minimumInterval && m_nestingLevel >= maxTimerNestingLevel)
         intervalMilliseconds = minimumInterval;
     if (singleShot)
-        startOneShot(intervalMilliseconds);
+        startOneShot(intervalMilliseconds, FROM_HERE);
     else
-        startRepeating(intervalMilliseconds);
+        startRepeating(intervalMilliseconds, FROM_HERE);
 }
 
 DOMTimer::~DOMTimer()

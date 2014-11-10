@@ -34,8 +34,7 @@
 #include <base/path_service.h>
 #include <content/public/browser/plugin_service.h>
 #include <content/public/common/content_switches.h>
-#include <webkit/common/user_agent/user_agent.h>
-#include <webkit/common/user_agent/user_agent_util.h>
+#include <content/public/common/user_agent.h>
 #include <ui/base/resource/resource_bundle.h>
 #include <ui/base/resource/resource_bundle_win.h>
 #include <ui/base/ui_base_switches.h>
@@ -70,7 +69,7 @@ std::string ContentClient::GetUserAgent() const
 {
     // include Chrome in our user-agent because some sites actually look for
     // this.  For example, google's "Search as you type" feature.
-    return webkit_glue::BuildUserAgentFromProduct("BlpWtk/" BB_PATCH_VERSION " Chrome/" CHROMIUM_VERSION);
+    return content::BuildUserAgentFromProduct("BlpWtk/" BB_PATCH_VERSION " Chrome/" CHROMIUM_VERSION);
 }
 
 base::StringPiece ContentClient::GetDataResource(
@@ -123,7 +122,7 @@ void ContentMainDelegateImpl::addPluginsToPluginService()
 // ContentMainDelegate implementation
 bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 {
-    CommandLine* commandLine = CommandLine::ForCurrentProcess();
+    base::CommandLine* commandLine = base::CommandLine::ForCurrentProcess();
 
     // Add all the command-line switches provided by the application.
     for (size_t i = 0; i < d_commandLineSwitches.size(); ++i) {

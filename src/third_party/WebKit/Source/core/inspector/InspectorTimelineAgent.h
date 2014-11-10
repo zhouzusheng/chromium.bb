@@ -42,6 +42,8 @@
 #include "platform/JSONValues.h"
 #include "platform/PlatformInstrumentation.h"
 #include "platform/geometry/LayoutRect.h"
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/WeakPtr.h"
@@ -59,7 +61,7 @@ class DocumentLoader;
 class Event;
 class ExecutionContext;
 class FloatQuad;
-class Frame;
+class LocalFrame;
 class FrameHost;
 class GraphicsContext;
 class GraphicsLayer;
@@ -68,6 +70,7 @@ class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorOverlay;
 class InspectorPageAgent;
+class InspectorLayerTreeAgent;
 class InstrumentingAgents;
 class KURL;
 class Node;
@@ -124,9 +127,10 @@ public:
         size_t usedGPUMemoryBytes;
     };
 
-    static PassOwnPtr<InspectorTimelineAgent> create(InspectorPageAgent* pageAgent, InspectorDOMAgent* domAgent, InspectorOverlay* overlay, InspectorType type, InspectorClient* client)
+    static PassOwnPtr<InspectorTimelineAgent> create(InspectorPageAgent* pageAgent, InspectorDOMAgent* domAgent, InspectorLayerTreeAgent* layerTreeAgent,
+        InspectorOverlay* overlay, InspectorType type, InspectorClient* client)
     {
-        return adoptPtr(new InspectorTimelineAgent(pageAgent, domAgent, overlay, type, client));
+        return adoptPtr(new InspectorTimelineAgent(pageAgent, domAgent, layerTreeAgent, overlay, type, client));
     }
 
     virtual ~InspectorTimelineAgent();
@@ -137,7 +141,7 @@ public:
 
     virtual void enable(ErrorString*) OVERRIDE;
     virtual void disable(ErrorString*) OVERRIDE;
-    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeCounters, const bool* includeGPUEvents) OVERRIDE;
+    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const String* liveEvents, const bool* includeCounters, const bool* includeGPUEvents) OVERRIDE;
     virtual void stop(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> >& events) OVERRIDE;
 
     void setLayerTreeId(int layerTreeId) { m_layerTreeId = layerTreeId; }
@@ -157,9 +161,11 @@ public:
     void didBeginFrame(int frameId);
     void didCancelFrame();
 
-    void didInvalidateLayout(Frame*);
-    bool willLayout(Frame*);
+    void didInvalidateLayout(LocalFrame*);
+    bool willLayout(LocalFrame*);
     void didLayout(RenderObject*);
+
+    void layerTreeDidChange();
 
     void willAutosizeText(RenderObject*);
     void didAutosizeText(RenderObject*);
@@ -194,12 +200,12 @@ public:
     bool willDispatchXHRLoadEvent(ExecutionContext*, XMLHttpRequest*);
     void didDispatchXHRLoadEvent();
 
-    bool willEvaluateScript(Frame*, const String&, int);
+    bool willEvaluateScript(LocalFrame*, const String&, int);
     void didEvaluateScript();
 
     void consoleTimeStamp(ExecutionContext*, const String& title);
-    void domContentLoadedEventFired(Frame*);
-    void loadEventFired(Frame*);
+    void domContentLoadedEventFired(LocalFrame*);
+    void loadEventFired(LocalFrame*);
 
     void consoleTime(ExecutionContext*, const String&);
     void consoleTimeEnd(ExecutionContext*, const String&, ScriptState*);
@@ -208,11 +214,10 @@ public:
 
     void didScheduleResourceRequest(Document*, const String& url);
     void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&);
-    void didReceiveResourceResponse(Frame*, unsigned long, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
+    void didReceiveResourceResponse(LocalFrame*, unsigned long, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFinishLoading(unsigned long, DocumentLoader*, double monotonicFinishTime, int64_t);
     void didFailLoading(unsigned long identifier, const ResourceError&);
-    bool willReceiveResourceData(Frame*, unsigned long identifier, int length);
-    void didReceiveResourceData();
+    void didReceiveData(LocalFrame*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
 
     void didRequestAnimationFrame(Document*, int callbackId);
     void didCancelAnimationFrame(Document*, int callbackId);
@@ -223,8 +228,8 @@ public:
     void didProcessTask();
 
     void didCreateWebSocket(Document*, unsigned long identifier, const KURL&, const String& protocol);
-    void willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest&);
-    void didReceiveWebSocketHandshakeResponse(Document*, unsigned long identifier, const WebSocketHandshakeResponse&);
+    void willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest*);
+    void didReceiveWebSocketHandshakeResponse(Document*, unsigned long identifier, const WebSocketHandshakeRequest*, const WebSocketHandshakeResponse*);
     void didCloseWebSocket(Document*, unsigned long identifier);
 
     void processGPUEvent(const GPUEvent&);
@@ -242,7 +247,7 @@ private:
 
     friend class TimelineRecordStack;
 
-    InspectorTimelineAgent(InspectorPageAgent*, InspectorDOMAgent*, InspectorOverlay*, InspectorType, InspectorClient*);
+    InspectorTimelineAgent(InspectorPageAgent*, InspectorDOMAgent*, InspectorLayerTreeAgent*, InspectorOverlay*, InspectorType, InspectorClient*);
 
     // Trace event handlers
     void onBeginImplSideFrame(const TraceEventDispatcher::TraceEvent&);
@@ -260,16 +265,18 @@ private:
     void onActivateLayerTree(const TraceEventDispatcher::TraceEvent&);
     void onDrawFrame(const TraceEventDispatcher::TraceEvent&);
     void onLazyPixelRefDeleted(const TraceEventDispatcher::TraceEvent&);
+    void onEmbedderCallbackBegin(const TraceEventDispatcher::TraceEvent&);
+    void onEmbedderCallbackEnd(const TraceEventDispatcher::TraceEvent&);
 
     void didFinishLoadingResource(unsigned long, bool didFail, double finishTime);
 
     void sendEvent(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
-    void appendRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, Frame*);
-    void pushCurrentRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
+    void appendRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, LocalFrame*);
+    void pushCurrentRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, LocalFrame*, bool hasLowLevelDetails = false);
     TimelineThreadState& threadState(ThreadIdentifier);
 
     void setCounters(TypeBuilder::Timeline::TimelineEvent*);
-    void setFrameIdentifier(TypeBuilder::Timeline::TimelineEvent* record, Frame*);
+    void setFrameIdentifier(TypeBuilder::Timeline::TimelineEvent* record, LocalFrame*);
     void populateImageDetails(JSONObject* data, const RenderImage&);
 
     void pushGCEventRecords();
@@ -279,7 +286,7 @@ private:
 
     void commitFrameRecord();
 
-    void addRecordToTimeline(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
+    void addRecordToTimeline(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>, double ts);
     void innerAddRecordToTimeline(PassRefPtr<TypeBuilder::Timeline::TimelineEvent>);
     void clearRecordStack();
     PassRefPtr<TypeBuilder::Timeline::TimelineEvent> createRecordForEvent(const TraceEventDispatcher::TraceEvent&, const String& type, PassRefPtr<JSONObject> data);
@@ -296,9 +303,11 @@ private:
     bool isStarted();
     void innerStart();
     void innerStop(bool fromConsole);
+    void setLiveEvents(const String&);
 
     InspectorPageAgent* m_pageAgent;
     InspectorDOMAgent* m_domAgent;
+    InspectorLayerTreeAgent* m_layerTreeAgent;
     InspectorFrontend::Timeline* m_frontend;
     InspectorClient* m_client;
     InspectorOverlay* m_overlay;
@@ -330,6 +339,8 @@ private:
     typedef HashMap<ThreadIdentifier, TimelineThreadState> ThreadStateMap;
     ThreadStateMap m_threadStates;
     bool m_mayEmitFirstPaint;
+    HashSet<String> m_liveEvents;
+    double m_lastProgressTimestamp;
 };
 
 } // namespace WebCore

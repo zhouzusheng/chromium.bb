@@ -44,6 +44,8 @@ public:
 
     int selectedIndex() const;
     void setSelectedIndex(int);
+    int suggestedIndex() const;
+    void setSuggestedIndex(int);
 
     void optionSelectedByUser(int index, bool dispatchChangeEvent, bool allowMultipleSelection = false);
 
@@ -61,13 +63,15 @@ public:
     bool usesMenuList() const;
 
     void add(HTMLElement*, HTMLElement* beforeElement, ExceptionState&);
+    void addBeforeOptionAtIndex(HTMLElement*, int beforeIndex, ExceptionState&);
 
     using Node::remove;
     void remove(int index);
-    void remove(HTMLOptionElement*);
 
     String value() const;
-    void setValue(const String&);
+    void setValue(const String&, bool sendEvents = false);
+    String suggestedValue() const;
+    void setSuggestedValue(const String&);
 
     PassRefPtr<HTMLOptionsCollection> options();
     PassRefPtr<HTMLCollection> selectedOptions();
@@ -141,7 +145,7 @@ private:
 
     virtual void defaultEventHandler(Event*) OVERRIDE;
 
-    void dispatchChangeEventForMenuList();
+    void dispatchInputAndChangeEventForMenuList(bool requiresUserGesture = true);
 
     void recalcListItems(bool updateSelectedStates = true) const;
 
@@ -157,7 +161,7 @@ private:
 
     enum SelectOptionFlag {
         DeselectOtherOptions = 1 << 0,
-        DispatchChangeEvent = 1 << 1,
+        DispatchInputAndChangeEvent = 1 << 1,
         UserDriven = 1 << 2,
     };
     typedef unsigned SelectOptionFlags;
@@ -205,9 +209,8 @@ private:
     bool m_multiple;
     bool m_activeSelectionState;
     mutable bool m_shouldRecalcListItems;
+    int m_suggestedIndex;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLSelectElement, hasTagName(HTMLNames::selectTag));
 
 } // namespace
 

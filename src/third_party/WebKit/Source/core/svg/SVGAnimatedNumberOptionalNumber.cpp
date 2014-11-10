@@ -24,7 +24,7 @@
 namespace WebCore {
 
 SVGAnimatedNumberOptionalNumber::SVGAnimatedNumberOptionalNumber(SVGElement* contextElement, const QualifiedName& attributeName, float initialFirstValue, float initialSecondValue)
-    : NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>(contextElement, attributeName,
+    : SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>(contextElement, attributeName,
         SVGNumberOptionalNumber::create(SVGNumber::create(initialFirstValue), SVGNumber::create(initialSecondValue)))
     , m_firstNumber(SVGAnimatedNumber::create(contextElement, attributeName, baseValue()->firstNumber()))
     , m_secondNumber(SVGAnimatedNumber::create(contextElement, attributeName, baseValue()->secondNumber()))
@@ -35,37 +35,23 @@ SVGAnimatedNumberOptionalNumber::SVGAnimatedNumberOptionalNumber(SVGElement* con
 
 void SVGAnimatedNumberOptionalNumber::animationStarted()
 {
-    NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animationStarted();
+    SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animationStarted();
     m_firstNumber->animationStarted();
     m_secondNumber->animationStarted();
 }
 
-void SVGAnimatedNumberOptionalNumber::setAnimatedValue(PassRefPtr<NewSVGPropertyBase> value)
+void SVGAnimatedNumberOptionalNumber::setAnimatedValue(PassRefPtr<SVGPropertyBase> value)
 {
-    NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::setAnimatedValue(value);
+    SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::setAnimatedValue(value);
     m_firstNumber->setAnimatedValue(currentValue()->firstNumber());
     m_secondNumber->setAnimatedValue(currentValue()->secondNumber());
 }
 
 void SVGAnimatedNumberOptionalNumber::animationEnded()
 {
-    NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animationEnded();
+    SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animationEnded();
     m_firstNumber->animationEnded();
     m_secondNumber->animationEnded();
-}
-
-void SVGAnimatedNumberOptionalNumber::animValWillChange()
-{
-    NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animValWillChange();
-    m_firstNumber->animValWillChange();
-    m_secondNumber->animValWillChange();
-}
-
-void SVGAnimatedNumberOptionalNumber::animValDidChange()
-{
-    NewSVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animValDidChange();
-    m_firstNumber->animValDidChange();
-    m_secondNumber->animValDidChange();
 }
 
 bool SVGAnimatedNumberOptionalNumber::needsSynchronizeAttribute()

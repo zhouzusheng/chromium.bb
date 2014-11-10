@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2011 Ericsson AB. All rights reserved.
- * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright 2014 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,6 +46,7 @@ class WebMediaStreamTrack;
 
 namespace WebCore {
 
+class AudioSourceProvider;
 class MediaStreamComponent;
 class MediaStreamDescriptor;
 class MediaStreamTrackSourcesRequest;
@@ -61,8 +61,9 @@ public:
     bool getMediaStreamTrackSources(PassRefPtr<MediaStreamTrackSourcesRequest>);
 
     void didCreateMediaStreamTrack(MediaStreamComponent*);
-    void didSetMediaStreamTrackEnabled(MediaStreamDescriptor*, MediaStreamComponent*);
+    void didSetMediaStreamTrackEnabled(MediaStreamComponent*);
     bool didStopMediaStreamTrack(MediaStreamComponent*);
+    PassOwnPtr<AudioSourceProvider> createWebAudioSourceFromMediaStreamTrack(MediaStreamComponent*);
 
     void didCreateMediaStream(MediaStreamDescriptor*);
     bool didAddMediaStreamTrack(MediaStreamDescriptor*, MediaStreamComponent*);

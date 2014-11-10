@@ -13,9 +13,9 @@
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "content/browser/media/capture/web_contents_video_capture_device.h"
 #include "content/browser/renderer_host/media/video_capture_controller.h"
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
-#include "content/browser/renderer_host/media/web_contents_video_capture_device.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/common/content_switches.h"
@@ -27,11 +27,51 @@
 #include "media/video/capture/video_capture_device.h"
 
 #if defined(ENABLE_SCREEN_CAPTURE)
-#include "content/browser/renderer_host/media/desktop_capture_device.h"
+#include "content/browser/media/capture/desktop_capture_device.h"
 #if defined(USE_AURA)
-#include "content/browser/renderer_host/media/desktop_capture_device_aura.h"
+#include "content/browser/media/capture/desktop_capture_device_aura.h"
 #endif
 #endif
+
+namespace {
+
+// Compares two VideoCaptureFormat by checking smallest frame_size area, then
+// by _largest_ frame_rate. Used to order a VideoCaptureFormats vector so that
+// the first entry for a given resolution has the largest frame rate, as needed
+// by the ConsolidateCaptureFormats() method.
+bool IsCaptureFormatSmaller(const media::VideoCaptureFormat& format1,
+                            const media::VideoCaptureFormat& format2) {
+  if (format1.frame_size.GetArea() == format2.frame_size.GetArea())
+    return format1.frame_rate > format2.frame_rate;
+  return format1.frame_size.GetArea() < format2.frame_size.GetArea();
+}
+
+bool IsCaptureFormatSizeEqual(const media::VideoCaptureFormat& format1,
+                              const media::VideoCaptureFormat& format2) {
+  return format1.frame_size.GetArea() == format2.frame_size.GetArea();
+}
+
+// This function receives a list of capture formats, removes duplicated
+// resolutions while keeping the highest frame rate for each, and forcing I420
+// pixel format.
+void ConsolidateCaptureFormats(media::VideoCaptureFormats* formats) {
+  if (formats->empty())
+    return;
+  std::sort(formats->begin(), formats->end(), IsCaptureFormatSmaller);
+  // Due to the ordering imposed, the largest frame_rate is kept while removing
+  // duplicated resolutions.
+  media::VideoCaptureFormats::iterator last =
+      std::unique(formats->begin(), formats->end(), IsCaptureFormatSizeEqual);
+  formats->erase(last, formats->end());
+  // Mark all formats as I420, since this is what the renderer side will get
+  // anyhow: the actual pixel format is decided at the device level.
+  for (media::VideoCaptureFormats::iterator it = formats->begin();
+       it != formats->end(); ++it) {
+    it->pixel_format = media::PIXEL_FORMAT_I420;
+  }
+}
+
+}  // namespace
 
 namespace content {
 
@@ -156,6 +196,7 @@ void VideoCaptureManager::UseFakeDevice() {
 }
 
 void VideoCaptureManager::DoStartDeviceOnDeviceThread(
+    media::VideoCaptureSessionId session_id,
     DeviceEntry* entry,
     const media::VideoCaptureParams& params,
     scoped_ptr<media::VideoCaptureDevice::Client> device_client) {
@@ -203,6 +244,11 @@ void VideoCaptureManager::DoStartDeviceOnDeviceThread(
       if (id.type != DesktopMediaID::TYPE_NONE &&
           id.type != DesktopMediaID::TYPE_AURA_WINDOW) {
         video_capture_device = DesktopCaptureDevice::Create(id);
+        if (notification_window_ids_.find(session_id) !=
+            notification_window_ids_.end()) {
+          static_cast<DesktopCaptureDevice*>(video_capture_device.get())
+              ->SetNotificationWindowId(notification_window_ids_[session_id]);
+        }
       }
 #endif  // defined(ENABLE_SCREEN_CAPTURE)
       break;
@@ -252,6 +298,7 @@ void VideoCaptureManager::StartCaptureForClient(
         base::Bind(
             &VideoCaptureManager::DoStartDeviceOnDeviceThread,
             this,
+            session_id,
             entry,
             params,
             base::Passed(entry->video_capture_controller->NewDeviceClient())));
@@ -327,6 +374,43 @@ bool VideoCaptureManager::GetDeviceFormatsInUse(
         device_in_use->video_capture_controller->GetVideoCaptureFormat());
   }
   return true;
+}
+
+void VideoCaptureManager::SetDesktopCaptureWindowId(
+    media::VideoCaptureSessionId session_id,
+    gfx::NativeViewId window_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator
+      session_it = sessions_.find(session_id);
+  if (session_it == sessions_.end()) {
+    device_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &VideoCaptureManager::SaveDesktopCaptureWindowIdOnDeviceThread,
+            this,
+            session_id,
+            window_id));
+    return;
+  }
+
+  DeviceEntry* const existing_device =
+      GetDeviceEntryForMediaStreamDevice(session_it->second);
+  if (!existing_device)
+    return;
+
+  DCHECK_EQ(MEDIA_DESKTOP_VIDEO_CAPTURE, existing_device->stream_type);
+  DesktopMediaID id = DesktopMediaID::Parse(existing_device->id);
+  if (id.type == DesktopMediaID::TYPE_NONE ||
+      id.type == DesktopMediaID::TYPE_AURA_WINDOW) {
+    return;
+  }
+
+  device_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&VideoCaptureManager::SetDesktopCaptureWindowIdOnDeviceThread,
+                 this,
+                 existing_device,
+                 window_id));
 }
 
 void VideoCaptureManager::DoStopDeviceOnDeviceThread(DeviceEntry* entry) {
@@ -459,6 +543,7 @@ VideoCaptureManager::GetAvailableDevicesInfoOnDeviceThread(
             *it, &(device_info.supported_formats));
         break;
     }
+    ConsolidateCaptureFormats(&device_info.supported_formats);
     new_devices_info_cache.push_back(device_info);
   }
   return new_devices_info_cache;
@@ -551,6 +636,27 @@ VideoCaptureManager::DeviceInfo* VideoCaptureManager::FindDeviceInfoById(
       return &(*it);
   }
   return NULL;
+}
+
+void VideoCaptureManager::SetDesktopCaptureWindowIdOnDeviceThread(
+    DeviceEntry* entry,
+    gfx::NativeViewId window_id) {
+  DCHECK(IsOnDeviceThread());
+  DCHECK(entry->stream_type == MEDIA_DESKTOP_VIDEO_CAPTURE);
+#if defined(ENABLE_SCREEN_CAPTURE)
+  DesktopCaptureDevice* device =
+      static_cast<DesktopCaptureDevice*>(entry->video_capture_device.get());
+  device->SetNotificationWindowId(window_id);
+#endif
+}
+
+void VideoCaptureManager::SaveDesktopCaptureWindowIdOnDeviceThread(
+    media::VideoCaptureSessionId session_id,
+    gfx::NativeViewId window_id) {
+  DCHECK(IsOnDeviceThread());
+  DCHECK(notification_window_ids_.find(session_id) ==
+         notification_window_ids_.end());
+  notification_window_ids_[session_id] = window_id;
 }
 
 }  // namespace content

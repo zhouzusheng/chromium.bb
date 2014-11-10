@@ -36,9 +36,9 @@
 
 namespace WebCore {
 
-CSSSegmentedFontFace::CSSSegmentedFontFace(CSSFontSelector* fontSelector, FontTraitsMask traitsMask)
+CSSSegmentedFontFace::CSSSegmentedFontFace(CSSFontSelector* fontSelector, FontTraits traits)
     : m_fontSelector(fontSelector)
-    , m_traitsMask(traitsMask)
+    , m_traits(traits)
     , m_firstNonCssConnectedFace(m_fontFaces.end())
 {
 }
@@ -72,17 +72,12 @@ bool CSSSegmentedFontFace::isValid() const
 void CSSSegmentedFontFace::fontLoaded(CSSFontFace*)
 {
     pruneTable();
+}
 
-    if (RuntimeEnabledFeatures::fontLoadEventsEnabled() && !isLoading()) {
-        Vector<RefPtr<LoadFontCallback> > callbacks;
-        m_callbacks.swap(callbacks);
-        for (size_t index = 0; index < callbacks.size(); ++index) {
-            if (isLoaded())
-                callbacks[index]->notifyLoaded(this);
-            else
-                callbacks[index]->notifyError(this);
-        }
-    }
+void CSSSegmentedFontFace::fontLoadWaitLimitExceeded(CSSFontFace*)
+{
+    m_fontSelector->fontLoaded();
+    pruneTable();
 }
 
 void CSSSegmentedFontFace::addFontFace(PassRefPtr<FontFace> prpFontFace, bool cssConnected)
@@ -131,13 +126,13 @@ static void appendFontData(SegmentedFontData* newFontData, PassRefPtr<SimpleFont
 PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fontDescription)
 {
     if (!isValid())
-        return 0;
+        return nullptr;
 
-    FontTraitsMask desiredTraitsMask = fontDescription.traitsMask();
+    FontTraits desiredTraits = fontDescription.traits();
     AtomicString emptyFontFamily = "";
-    FontCacheKey key = fontDescription.cacheKey(emptyFontFamily, desiredTraitsMask);
+    FontCacheKey key = fontDescription.cacheKey(emptyFontFamily, desiredTraits);
 
-    RefPtr<SegmentedFontData>& fontData = m_fontDataTable.add(key.hash(), 0).storedValue->value;
+    RefPtr<SegmentedFontData>& fontData = m_fontDataTable.add(key.hash(), nullptr).storedValue->value;
     if (fontData && fontData->numRanges())
         return fontData; // No release, we have a reference to an object in the cache which should retain the ref count it has.
 
@@ -145,9 +140,9 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
         fontData = SegmentedFontData::create();
 
     FontDescription requestedFontDescription(fontDescription);
-    requestedFontDescription.setTraitsMask(m_traitsMask);
-    requestedFontDescription.setSyntheticBold(!(m_traitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask)) && (desiredTraitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask)));
-    requestedFontDescription.setSyntheticItalic(!(m_traitsMask & FontStyleItalicMask) && (desiredTraitsMask & FontStyleItalicMask));
+    requestedFontDescription.setTraits(m_traits);
+    requestedFontDescription.setSyntheticBold(m_traits.weight() < FontWeight600 && desiredTraits.weight() >= FontWeight600);
+    requestedFontDescription.setSyntheticItalic(m_traits.style() == FontStyleNormal && desiredTraits.style() == FontStyleItalic);
 
     for (FontFaceList::reverse_iterator it = m_fontFaces.rbegin(); it != m_fontFaces.rend(); ++it) {
         if (!(*it)->cssFontFace()->isValid())
@@ -157,7 +152,7 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
 #if ENABLE(SVG_FONTS)
             // For SVG Fonts that specify that they only support the "normal" variant, we will assume they are incapable
             // of small-caps synthesis and just ignore the font face.
-            if (faceFontData->isSVGFont() && (desiredTraitsMask & FontVariantSmallCapsMask) && !(m_traitsMask & FontVariantSmallCapsMask))
+            if (faceFontData->isSVGFont() && desiredTraits.variant() == FontVariantSmallCaps && m_traits.variant() == FontVariantNormal)
                 continue;
 #endif
             appendFontData(fontData.get(), faceFontData.release(), (*it)->cssFontFace()->ranges());
@@ -166,7 +161,7 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
     if (fontData->numRanges())
         return fontData; // No release, we have a reference to an object in the cache which should retain the ref count it has.
 
-    return 0;
+    return nullptr;
 }
 
 bool CSSSegmentedFontFace::isLoading() const
@@ -202,20 +197,11 @@ bool CSSSegmentedFontFace::checkFont(const String& text) const
     return true;
 }
 
-void CSSSegmentedFontFace::loadFont(const FontDescription& fontDescription, const String& text, PassRefPtr<LoadFontCallback> callback)
+void CSSSegmentedFontFace::match(const String& text, Vector<RefPtr<FontFace> >& faces) const
 {
-    for (FontFaceList::iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
-        if ((*it)->loadStatus() == FontFace::Unloaded && (*it)->cssFontFace()->ranges().intersectsWith(text))
-            (*it)->cssFontFace()->load(fontDescription);
-    }
-
-    if (callback) {
-        if (isLoading())
-            m_callbacks.append(callback);
-        else if (isLoaded())
-            callback->notifyLoaded(this);
-        else
-            callback->notifyError(this);
+    for (FontFaceList::const_iterator it = m_fontFaces.begin(); it != m_fontFaces.end(); ++it) {
+        if ((*it)->cssFontFace()->ranges().intersectsWith(text))
+            faces.append(*it);
     }
 }
 

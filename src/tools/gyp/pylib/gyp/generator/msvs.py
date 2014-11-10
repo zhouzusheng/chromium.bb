@@ -1484,8 +1484,14 @@ def _AdjustSourcesAndConvertToFilterHierarchy(
 
   # Prune filters with a single child to flatten ugly directory structures
   # such as ../../src/modules/module1 etc.
-  while len(sources) == 1 and isinstance(sources[0], MSVSProject.Filter):
-    sources = sources[0].contents
+  if version.UsesVcxproj():
+    while all([isinstance(s, MSVSProject.Filter) for s in sources]) \
+        and len(set([s.name for s in sources])) == 1:
+      assert all([len(s.contents) == 1 for s in sources])
+      sources = [s.contents[0] for s in sources]
+  else:
+    while len(sources) == 1 and isinstance(sources[0], MSVSProject.Filter):
+      sources = sources[0].contents
 
   return sources, excluded_sources, excluded_idl
 
@@ -2597,6 +2603,7 @@ def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
        ['ProjectGuid', guid],
        ['Keyword', 'Win32Proj'],
        ['RootNamespace', namespace],
+       ['IgnoreWarnCompileDuplicatedFilename', 'true'],
       ]
   ]
 

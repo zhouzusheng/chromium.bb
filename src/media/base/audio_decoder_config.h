@@ -5,6 +5,7 @@
 #ifndef MEDIA_BASE_AUDIO_DECODER_CONFIG_H_
 #define MEDIA_BASE_AUDIO_DECODER_CONFIG_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -18,7 +19,8 @@ namespace media {
 enum AudioCodec {
   // These values are histogrammed over time; do not change their ordinal
   // values.  When deleting a codec replace it with a dummy value; when adding a
-  // codec, do so at the bottom before kAudioCodecMax.
+  // codec, do so at the bottom before kAudioCodecMax, and update the value of
+  // kAudioCodecMax to equal the new codec.
   kUnknownAudioCodec = 0,
   kCodecAAC = 1,
   kCodecMP3 = 2,
@@ -39,8 +41,8 @@ enum AudioCodec {
   // The only acceptable time to add a new codec is if there is production code
   // that uses said codec in the same CL.
 
-  // Must always be last!
-  kAudioCodecMax
+  // Must always be equal to the largest entry ever logged.
+  kAudioCodecMax = kCodecPCM_ALAW,
 };
 
 // TODO(dalecurtis): FFmpeg API uses |bytes_per_channel| instead of
@@ -76,6 +78,10 @@ class MEDIA_EXPORT AudioDecoderConfig {
   // Returns true if all fields in |config| match this config.
   // Note: The contents of |extra_data_| are compared not the raw pointers.
   bool Matches(const AudioDecoderConfig& config) const;
+
+  // Returns a human-readable string describing |*this|.  For debugging & test
+  // output only.
+  std::string AsHumanReadableString() const;
 
   AudioCodec codec() const { return codec_; }
   int bits_per_channel() const { return bytes_per_channel_ * 8; }

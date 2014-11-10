@@ -42,11 +42,11 @@ static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> glyphOrientationToCSSPrimitiveV
         case GO_270DEG:
             return CSSPrimitiveValue::create(270.0f, CSSPrimitiveValue::CSS_DEG);
         default:
-            return 0;
+            return nullptr;
     }
 }
 
-static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(PassRefPtr<SVGLengthList> passDashes)
+static PassRefPtrWillBeRawPtr<CSSValue> strokeDashArrayToCSSValueList(PassRefPtr<SVGLengthList> passDashes)
 {
     RefPtr<SVGLengthList> dashes = passDashes;
 
@@ -62,7 +62,7 @@ static PassRefPtr<CSSValue> strokeDashArrayToCSSValueList(PassRefPtr<SVGLengthLi
     return list.release();
 }
 
-static PassRefPtr<CSSValue> paintOrderToCSSValueList(EPaintOrder paintorder)
+static PassRefPtrWillBeRawPtr<CSSValue> paintOrderToCSSValueList(EPaintOrder paintorder)
 {
     RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
     do {
@@ -91,11 +91,11 @@ PassRefPtrWillBeRawPtr<SVGPaint> CSSComputedStyleDeclaration::adjustSVGPaintForC
     return paint.release();
 }
 
-PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSPropertyID propertyID, EUpdateLayout updateLayout) const
+PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSPropertyID propertyID, EUpdateLayout updateLayout) const
 {
     Node* node = m_node.get();
     if (!node)
-        return 0;
+        return nullptr;
 
     // Make sure our layout is up to date before we allow a query on these attributes.
     if (updateLayout)
@@ -103,11 +103,11 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
 
     RenderStyle* style = node->computedStyle();
     if (!style)
-        return 0;
+        return nullptr;
 
     const SVGRenderStyle* svgStyle = style->svgStyle();
     if (!svgStyle)
-        return 0;
+        return nullptr;
 
     switch (propertyID) {
         case CSSPropertyClipRule:
@@ -198,7 +198,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
                     return SVGLength::toCSSPrimitiveValue(svgStyle->baselineShiftValue());
             }
             ASSERT_NOT_REACHED();
-            return 0;
+            return nullptr;
         }
         case CSSPropertyBufferedRendering:
             return CSSPrimitiveValue::create(svgStyle->bufferedRendering());
@@ -211,7 +211,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
             if (svgStyle->glyphOrientationVertical() == GO_AUTO)
                 return CSSPrimitiveValue::createIdentifier(CSSValueAuto);
 
-            return 0;
+            return nullptr;
         }
         case CSSPropertyPaintOrder:
             return paintOrderToCSSValueList(svgStyle->paintOrder());
@@ -230,7 +230,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSValue(CSSProp
         ASSERT_WITH_MESSAGE(0, "unimplemented propertyID: %d", propertyID);
     }
     WTF_LOG_ERROR("unimplemented propertyID: %d", propertyID);
-    return 0;
+    return nullptr;
 }
 
 }

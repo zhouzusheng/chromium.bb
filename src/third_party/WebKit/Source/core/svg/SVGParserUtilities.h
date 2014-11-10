@@ -34,13 +34,11 @@ namespace WebCore {
 class FloatPoint;
 class FloatRect;
 class SVGPointList;
-class SVGTransformList;
 
 template <typename CharType>
 bool parseSVGNumber(CharType* ptr, size_t length, double& number);
 bool parseNumber(const LChar*& ptr, const LChar* end, float& number, bool skip = true);
 bool parseNumber(const UChar*& ptr, const UChar* end, float& number, bool skip = true);
-bool parseNumberFromString(const String&, float& number, bool skip = true);
 bool parseNumberOptionalNumber(const String& s, float& h, float& v);
 bool parseArcFlag(const LChar*& ptr, const LChar* end, bool& flag);
 bool parseArcFlag(const UChar*& ptr, const UChar* end, bool& flag);
@@ -82,23 +80,13 @@ inline bool skipOptionalSVGSpacesOrDelimiter(const CharType*& ptr, const CharTyp
     return ptr < end;
 }
 
-bool pointsListFromSVGData(SVGPointList& pointsList, const String& points);
 Vector<String> parseDelimitedString(const String& input, const char seperator);
 bool parseKerningUnicodeString(const String& input, UnicodeRanges&, HashSet<String>& stringList);
 bool parseGlyphName(const String& input, HashSet<String>& values);
 
-enum TransformParsingMode {
-    ClearList,
-    DoNotClearList
-};
-
-bool parseTransformAttribute(SVGTransformList&, const LChar*& ptr, const LChar* end, TransformParsingMode = ClearList);
-bool parseTransformAttribute(SVGTransformList&, const UChar*& ptr, const UChar* end, TransformParsingMode = ClearList);
-
-bool parseTransformValue(unsigned type, const LChar*& ptr, const LChar* end, SVGTransform&);
-bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform&);
-
-SVGTransform::SVGTransformType parseTransformType(const String&);
+template<typename CharType>
+bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType&);
+SVGTransformType parseTransformType(const String&);
 
 } // namespace WebCore
 

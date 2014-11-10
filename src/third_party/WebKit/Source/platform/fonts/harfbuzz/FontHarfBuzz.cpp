@@ -106,9 +106,15 @@ static void paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
         if (textMode & TextModeFill) {
-            // If we also filled, we don't want to draw shadows twice.
-            // See comment in FontChromiumWin.cpp::paintSkiaText() for more details.
-            // Since we use the looper for shadows, we remove it (if any) now.
+            // If there is a shadow and we filled above, there will already be
+            // a shadow. We don't want to draw it again or it will be too dark
+            // and it will go on top of the fill.
+            //
+            // Note that this isn't strictly correct, since the stroke could be
+            // very thick and the shadow wouldn't account for this. The "right"
+            // thing would be to draw to a new layer and then draw that layer
+            // with a shadow. But this is a lot of extra work for something
+            // that isn't normally an issue.
             paint.setLooper(0);
         }
 
@@ -157,7 +163,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
                 pos[i].set(
                     x + SkIntToScalar(lroundf(translations[i].x())),
                     y + -SkIntToScalar(-lroundf(currentWidth - translations[i].y())));
-                currentWidth += glyphBuffer.advanceAt(from + glyphIndex);
+                currentWidth += glyphBuffer.advanceAt(from + glyphIndex).width();
             }
             horizontalOffset += currentWidth;
             paintGlyphs(gc, font, m_fontDescription, glyphs, chunkLength, pos, textRect);
@@ -201,22 +207,44 @@ void Font::drawComplexText(GraphicsContext* gc, const TextRunPaintInfo& runInfo,
     GlyphBuffer glyphBuffer;
     HarfBuzzShaper shaper(this, runInfo.run);
     shaper.setDrawRange(runInfo.from, runInfo.to);
-    if (!shaper.shape(&glyphBuffer) || glyphBuffer.isEmpty())
+    if (!shaper.shape(&glyphBuffer))
         return;
     FloatPoint adjustedPoint = shaper.adjustStartPoint(point);
     drawGlyphBuffer(gc, runInfo, glyphBuffer, adjustedPoint);
 }
 
-void Font::drawEmphasisMarksForComplexText(GraphicsContext* /* context */, const TextRunPaintInfo& /* runInfo */, const AtomicString& /* mark */, const FloatPoint& /* point */) const
+void Font::drawEmphasisMarksForComplexText(GraphicsContext* context, const TextRunPaintInfo& runInfo, const AtomicString& mark, const FloatPoint& point) const
 {
-    notImplemented();
+    GlyphBuffer glyphBuffer;
+
+    float initialAdvance = getGlyphsAndAdvancesForComplexText(runInfo.run, runInfo.from, runInfo.to, glyphBuffer, ForTextEmphasis);
+
+    if (glyphBuffer.isEmpty())
+        return;
+
+    drawEmphasisMarks(context, runInfo, glyphBuffer, mark, FloatPoint(point.x() + initialAdvance, point.y()));
 }
 
-float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */, GlyphOverflow* /* glyphOverflow */) const
+float Font::getGlyphsAndAdvancesForComplexText(const TextRun& run, int from, int to, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
+{
+    HarfBuzzShaper shaper(this, run, HarfBuzzShaper::ForTextEmphasis);
+    shaper.setDrawRange(from, to);
+    shaper.shape(&glyphBuffer);
+    return 0;
+}
+
+float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */, GlyphOverflow* glyphOverflow) const
 {
     HarfBuzzShaper shaper(this, run);
     if (!shaper.shape())
         return 0;
+
+    if (glyphOverflow) {
+        glyphOverflow->top = std::max<int>(glyphOverflow->top, ceilf(-shaper.glyphBoundingBox().top()) - (glyphOverflow->computeBounds ? 0 : fontMetrics().ascent()));
+        glyphOverflow->bottom = std::max<int>(glyphOverflow->bottom, ceilf(shaper.glyphBoundingBox().bottom()) - (glyphOverflow->computeBounds ? 0 : fontMetrics().descent()));
+        glyphOverflow->left = std::max<int>(0, ceilf(-shaper.glyphBoundingBox().left()));
+        glyphOverflow->right = std::max<int>(0, ceilf(shaper.glyphBoundingBox().right() - shaper.totalWidth()));
+    }
     return shaper.totalWidth();
 }
 

@@ -31,6 +31,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/power_monitor/power_observer.h"
 #include "base/system_monitor/system_monitor.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
@@ -57,6 +58,7 @@ class VideoCaptureManager;
 class CONTENT_EXPORT MediaStreamManager
     : public MediaStreamProviderListener,
       public base::MessageLoop::DestructionObserver,
+      public base::PowerObserver,
       public base::SystemMonitor::DevicesChangedObserver {
  public:
   // Callback to deliver the result of a media request.
@@ -97,7 +99,8 @@ class CONTENT_EXPORT MediaStreamManager
                       const ResourceContext::SaltCallback& sc,
                       int page_request_id,
                       const StreamOptions& components,
-                      const GURL& security_origin);
+                      const GURL& security_origin,
+                      bool user_gesture);
 
   void CancelRequest(int render_process_id,
                      int render_view_id,
@@ -192,6 +195,10 @@ class CONTENT_EXPORT MediaStreamManager
   // logging from webrtcLoggingPrivate API. Safe to call from any thread.
   static void SendMessageToNativeLog(const std::string& message);
 
+  // base::PowerObserver overrides.
+  virtual void OnSuspend() OVERRIDE;
+  virtual void OnResume() OVERRIDE;
+
  protected:
   // Used for testing.
   MediaStreamManager();
@@ -221,7 +228,8 @@ class CONTENT_EXPORT MediaStreamManager
                             const StreamDeviceInfoArray& devices);
 
   void HandleAccessRequestResponse(const std::string& label,
-                                   const MediaStreamDevices& devices);
+                                   const MediaStreamDevices& devices,
+                                   content::MediaStreamRequestResult result);
   void StopMediaStreamFromBrowser(const std::string& label);
 
   void DoEnumerateDevices(const std::string& label);
@@ -284,7 +292,8 @@ class CONTENT_EXPORT MediaStreamManager
   void FinalizeGenerateStream(const std::string& label,
                               DeviceRequest* request);
   void FinalizeRequestFailed(const std::string& label,
-                             DeviceRequest* request);
+                             DeviceRequest* request,
+                             content::MediaStreamRequestResult result);
   void FinalizeOpenDevice(const std::string& label,
                           DeviceRequest* request);
   void FinalizeMediaAccessRequest(const std::string& label,
@@ -307,6 +316,9 @@ class CONTENT_EXPORT MediaStreamManager
   // Helpers to start and stop monitoring devices.
   void StartMonitoring();
   void StopMonitoring();
+#if defined(OS_MACOSX)
+  void StartMonitoringOnUIThread();
+#endif
 
   // Finds the requested device id from constraints. The requested device type
   // must be MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
@@ -332,6 +344,12 @@ class CONTENT_EXPORT MediaStreamManager
       const GURL& security_origin,
       const std::string& source_id,
       std::string* device_id) const;
+
+  // Handles the callback from MediaStreamUIProxy to receive the UI window id,
+  // used for excluding the notification window in desktop capturing.
+  void OnMediaStreamUIWindowId(MediaStreamType video_type,
+                               StreamDeviceInfoArray devices,
+                               gfx::NativeViewId window_id);
 
   // Task runner shared by VideoCaptureManager and AudioInputDeviceManager.
   // Note: Enumeration tasks may take seconds to complete so must never be run

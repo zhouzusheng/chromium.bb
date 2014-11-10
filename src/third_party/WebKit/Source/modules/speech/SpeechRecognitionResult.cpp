@@ -29,15 +29,13 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(SpeechRecognitionResult);
-
 SpeechRecognitionResult::~SpeechRecognitionResult()
 {
 }
 
-PassRefPtr<SpeechRecognitionResult> SpeechRecognitionResult::create(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionAlternative> >& alternatives, bool final)
+PassRefPtrWillBeRawPtr<SpeechRecognitionResult> SpeechRecognitionResult::create(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionAlternative> >& alternatives, bool final)
 {
-    return adoptRef(new SpeechRecognitionResult(alternatives, final));
+    return adoptRefWillBeNoop(new SpeechRecognitionResult(alternatives, final));
 }
 
 SpeechRecognitionAlternative* SpeechRecognitionResult::item(unsigned long index)

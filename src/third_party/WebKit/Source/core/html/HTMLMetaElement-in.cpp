@@ -438,9 +438,12 @@ void HTMLMetaElement::parseAttribute(const QualifiedName& name, const AtomicStri
 Node::InsertionNotificationRequest HTMLMetaElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument())
-        process();
-    return InsertionDone;
+    return InsertionShouldCallDidNotifySubtreeInsertions;
+}
+
+void HTMLMetaElement::didNotifySubtreeInsertionsToDocument()
+{
+    process();
 }
 
 static bool inDocumentHead(HTMLMetaElement* element)
@@ -449,7 +452,7 @@ static bool inDocumentHead(HTMLMetaElement* element)
         return false;
 
     for (Element* current = element; current; current = current->parentElement()) {
-        if (current->hasTagName(HTMLNames::headTag))
+        if (isHTMLHeadElement(*current))
             return true;
     }
     return false;

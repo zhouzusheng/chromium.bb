@@ -56,7 +56,6 @@
         'audio_processing_impl.h',
         'echo_cancellation_impl.cc',
         'echo_cancellation_impl.h',
-        'echo_cancellation_impl_wrapper.h',
         'echo_control_mobile_impl.cc',
         'echo_control_mobile_impl.h',
         'gain_control_impl.cc',
@@ -135,6 +134,14 @@
         ['target_arch=="mipsel"', {
           'sources': [
             'aecm/aecm_core_mips.c',
+          ],
+          'conditions': [
+            ['mips_fpu==1', {
+              'sources': [
+                'aec/aec_core_mips.c',
+                'aec/aec_rdft_mips.c',
+              ],
+            }],
           ],
         }, {
           'sources': [

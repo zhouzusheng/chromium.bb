@@ -20,7 +20,6 @@ class WindowTreeHostWin : public WindowTreeHost,
   WindowTreeHostWin(const gfx::Rect& bounds);
   virtual ~WindowTreeHostWin();
   // WindowTreeHost:
-  virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
@@ -40,7 +39,6 @@ class WindowTreeHostWin : public WindowTreeHost,
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void PrepareForShutdown() OVERRIDE;
 
   // ui::EventSource:
   virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;

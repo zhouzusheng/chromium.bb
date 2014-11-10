@@ -40,6 +40,7 @@ class NavigationControllerDelegate {
   virtual int32 GetMaxPageID() = 0;
   virtual int32 GetMaxPageIDForSiteInstance(SiteInstance* site_instance) = 0;
   virtual bool IsLoading() const = 0;
+  virtual bool IsBeingDestroyed() const = 0;
 
   // Methods from WebContentsImpl that NavigationControllerImpl needs to
   // call.
@@ -71,6 +72,7 @@ class NavigationControllerDelegate {
   virtual void DetachInterstitialPage() = 0;
   virtual void SetIsLoading(RenderViewHost* render_view_host,
                             bool is_loading,
+                            bool to_different_document,
                             LoadNotificationDetails* details) = 0;
 };
 

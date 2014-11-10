@@ -10,9 +10,9 @@
     '../base/base.gyp:base',
     '../base/base.gyp:base_i18n',
     '../crypto/crypto.gyp:crypto',
+    '../ui/base/ui_base.gyp:ui_base',
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/gfx/gfx.gyp:gfx_geometry',
-    '../ui/ui.gyp:ui',
 
     # SHEZ: Added this so that we can initialize V8's ICU in
     #       content_main_runner.
@@ -28,6 +28,8 @@
     'app/android/library_loader_hooks.cc',
     'app/content_main.cc',
     'app/content_main_runner.cc',
+    'app/mojo/mojo_init.cc',
+    'app/mojo/mojo_init.h',
     'app/startup_helper_win.cc',
     'public/app/android_library_loader_hooks.h',
     'public/app/content_main.h',
@@ -42,22 +44,23 @@
         '../sandbox/sandbox.gyp:sandbox',
       ],
     }],
-    ['OS=="android"', {
-      'sources!': [
-        'app/content_main.cc',
-      ],
-      'dependencies': [
-        'content.gyp:content_jni_headers',
-        '../skia/skia.gyp:skia',
-      ],
-      'includes': [
-        '../build/android/cpufeatures.gypi',
-      ],
-    }],
     ['OS=="ios"', {
       'sources!': [
         'app/content_main.cc',
       ],
+    }],
+    ['use_mojo==0', {
+      'sources!': [
+        'app/mojo/mojo_init.cc',
+        'app/mojo/mojo_init.h',
+      ],
+    }, {
+      'dependencies': [
+        '../mojo/mojo.gyp:mojo_environment_chromium',
+        '../mojo/mojo.gyp:mojo_service_manager',
+        '../mojo/mojo.gyp:mojo_system',
+        '../mojo/mojo.gyp:mojo_system_impl',
+     ],
     }],
   ],
 }

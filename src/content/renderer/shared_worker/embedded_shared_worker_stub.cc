@@ -26,7 +26,7 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
       name_(name),
       runing_(false),
       url_(url) {
-  RenderThreadImpl::current()->AddRoute(route_id_, this);
+  RenderThreadImpl::current()->AddSharedWorkerRoute(route_id_, this);
   impl_ = blink::WebSharedWorker::create(this);
   worker_devtools_agent_.reset(
       new SharedWorkerDevToolsAgent(route_id, impl_));
@@ -35,7 +35,7 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
 }
 
 EmbeddedSharedWorkerStub::~EmbeddedSharedWorkerStub() {
-  RenderThreadImpl::current()->RemoveRoute(route_id_);
+  RenderThreadImpl::current()->RemoveSharedWorkerRoute(route_id_);
 }
 
 bool EmbeddedSharedWorkerStub::OnMessageReceived(
@@ -63,9 +63,7 @@ void EmbeddedSharedWorkerStub::workerScriptLoaded() {
   for (PendingChannelList::const_iterator iter = pending_channels_.begin();
        iter != pending_channels_.end();
        ++iter) {
-    impl_->connect(*iter);
-    Send(new WorkerHostMsg_WorkerConnected((*iter)->message_port_id(),
-                                           route_id_));
+    ConnectToChannel(*iter);
   }
   pending_channels_.clear();
 }
@@ -134,6 +132,13 @@ bool EmbeddedSharedWorkerStub::Send(IPC::Message* message) {
   return RenderThreadImpl::current()->Send(message);
 }
 
+void EmbeddedSharedWorkerStub::ConnectToChannel(
+    WebMessagePortChannelImpl* channel) {
+  impl_->connect(channel);
+  Send(
+      new WorkerHostMsg_WorkerConnected(channel->message_port_id(), route_id_));
+}
+
 void EmbeddedSharedWorkerStub::OnConnect(int sent_message_port_id,
                                          int routing_id) {
   WebMessagePortChannelImpl* channel =
@@ -141,7 +146,7 @@ void EmbeddedSharedWorkerStub::OnConnect(int sent_message_port_id,
                                     sent_message_port_id,
                                     base::MessageLoopProxy::current().get());
   if (runing_) {
-    impl_->connect(channel);
+    ConnectToChannel(channel);
   } else {
     // If two documents try to load a SharedWorker at the same time, the
     // WorkerMsg_Connect for one of the documents can come in before the

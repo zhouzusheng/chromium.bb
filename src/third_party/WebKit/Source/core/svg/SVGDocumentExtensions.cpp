@@ -26,6 +26,7 @@
 #include "core/dom/Document.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGElement.h"
+#include "core/svg/SVGFontFaceElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "wtf/TemporaryChange.h"
@@ -81,6 +82,22 @@ RenderSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicStri
         return 0;
 
     return m_resources.get(id);
+}
+
+void SVGDocumentExtensions::serviceOnAnimationFrame(Document& document, double monotonicAnimationStartTime)
+{
+    if (!document.svgExtensions())
+        return;
+    document.accessSVGExtensions().serviceAnimations(monotonicAnimationStartTime);
+}
+
+void SVGDocumentExtensions::serviceAnimations(double monotonicAnimationStartTime)
+{
+    Vector<RefPtr<SVGSVGElement> > timeContainers;
+    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
+    Vector<RefPtr<SVGSVGElement> >::iterator end = timeContainers.end();
+    for (Vector<RefPtr<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
+        (*itr)->timeContainer()->serviceAnimations(monotonicAnimationStartTime);
 }
 
 void SVGDocumentExtensions::startAnimations()
@@ -414,6 +431,17 @@ void SVGDocumentExtensions::unregisterSVGFontFaceElement(SVGFontFaceElement* ele
     ASSERT(m_svgFontFaceElements.contains(element));
     m_svgFontFaceElements.remove(element);
 }
+
+void SVGDocumentExtensions::registerPendingSVGFontFaceElementsForRemoval(PassRefPtr<SVGFontFaceElement> font)
+{
+    m_pendingSVGFontFaceElementsForRemoval.add(font);
+}
+
+void SVGDocumentExtensions::removePendingSVGFontFaceElementsForRemoval()
+{
+    m_pendingSVGFontFaceElementsForRemoval.clear();
+}
+
 #endif
 
 }

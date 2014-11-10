@@ -45,6 +45,7 @@
 #error "Bogus include."
 #endif
 
+
 namespace webrtc {
 class VideoCaptureModule;
 class VideoDecoder;
@@ -245,6 +246,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   int video_channel() const { return vie_channel_; }
   bool sending() const { return sending_; }
 
+  // Public for testing purpose.
+  uint32 GetDefaultChannelSsrc();
+
   // VideoMediaChannel implementation
   virtual bool SetRecvCodecs(const std::vector<VideoCodec> &codecs);
   virtual bool SetSendCodecs(const std::vector<VideoCodec> &codecs);
@@ -323,6 +327,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // returning false.
   bool CreateChannel(uint32 ssrc_key, MediaDirection direction,
                      int* channel_id);
+  bool CreateUnsignalledRecvChannel(uint32 ssrc_key, int* channel_id);
   bool ConfigureChannel(int channel_id, MediaDirection direction,
                         uint32 ssrc_key);
   bool ConfigureReceiving(int channel_id, uint32 remote_ssrc_key);
@@ -376,7 +381,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool IsDefaultChannel(int channel_id) const {
     return channel_id == vie_channel_;
   }
-  uint32 GetDefaultChannelSsrc();
 
   bool DeleteSendChannel(uint32 ssrc_key);
 
@@ -412,6 +416,8 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // to one send channel, i.e. the last send channel.
   void MaybeDisconnectCapturer(VideoCapturer* capturer);
 
+  bool RemoveRecvStreamInternal(uint32 ssrc);
+
   // Global state.
   WebRtcVideoEngine* engine_;
   VoiceMediaChannel* voice_channel_;
@@ -431,6 +437,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool render_started_;
   uint32 first_receive_ssrc_;
   std::vector<RtpHeaderExtension> receive_extensions_;
+  int num_unsignalled_recv_channels_;
 
   // Global send side state.
   SendChannelMap send_channels_;

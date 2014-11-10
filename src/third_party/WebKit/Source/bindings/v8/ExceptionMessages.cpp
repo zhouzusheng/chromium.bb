@@ -36,29 +36,54 @@
 
 namespace WebCore {
 
-String ExceptionMessages::failedToConstruct(const String& type, const String& detail)
+String ExceptionMessages::failedToConstruct(const char* type, const String& detail)
 {
-    return "Failed to construct '" + type + (!detail.isEmpty() ? String("': " + detail) : String("'"));
+    return "Failed to construct '" + String(type) + (!detail.isEmpty() ? String("': " + detail) : String("'"));
 }
 
-String ExceptionMessages::failedToExecute(const String& method, const String& type, const String& detail)
+String ExceptionMessages::failedToEnumerate(const char* type, const String& detail)
 {
-    return "Failed to execute '" + method + "' on '" + type + (!detail.isEmpty() ? String("': " + detail) : String("'"));
+    return "Failed to enumerate the properties of '" + String(type) + (!detail.isEmpty() ? String("': " + detail) : String("'"));
 }
 
-String ExceptionMessages::failedToGet(const String& property, const String& type, const String& detail)
+String ExceptionMessages::failedToExecute(const char* method, const char* type, const String& detail)
 {
-    return "Failed to read the '" + property + "' property from '" + type + "': " + detail;
+    return "Failed to execute '" + String(method) + "' on '" + String(type) + (!detail.isEmpty() ? String("': " + detail) : String("'"));
 }
 
-String ExceptionMessages::failedToSet(const String& property, const String& type, const String& detail)
+String ExceptionMessages::failedToGet(const char* property, const char* type, const String& detail)
 {
-    return "Failed to set the '" + property + "' property on '" + type + "': " + detail;
+    return "Failed to read the '" + String(property) + "' property from '" + String(type) + "': " + detail;
 }
 
-String ExceptionMessages::failedToDelete(const String& property, const String& type, const String& detail)
+String ExceptionMessages::failedToSet(const char* property, const char* type, const String& detail)
 {
-    return "Failed to delete the '" + property + "' property from '" + type + "': " + detail;
+    return "Failed to set the '" + String(property) + "' property on '" + String(type) + "': " + detail;
+}
+
+String ExceptionMessages::failedToDelete(const char* property, const char* type, const String& detail)
+{
+    return "Failed to delete the '" + String(property) + "' property from '" + String(type) + "': " + detail;
+}
+
+String ExceptionMessages::failedToGetIndexed(const char* type, const String& detail)
+{
+    return "Failed to read an indexed property from '" + String(type) + "': " + detail;
+}
+
+String ExceptionMessages::failedToSetIndexed(const char* type, const String& detail)
+{
+    return "Failed to set an indexed property on '" + String(type) + "': " + detail;
+}
+
+String ExceptionMessages::failedToDeleteIndexed(const char* type, const String& detail)
+{
+    return "Failed to delete an indexed property from '" + String(type) + "': " + detail;
+}
+
+String ExceptionMessages::constructorNotCallableAsFunction(const char* type)
+{
+    return failedToConstruct(type, "Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
 }
 
 String ExceptionMessages::incorrectPropertyType(const String& property, const String& detail)
@@ -66,9 +91,9 @@ String ExceptionMessages::incorrectPropertyType(const String& property, const St
     return "The '" + property + "' property " + detail;
 }
 
-String ExceptionMessages::incorrectArgumentType(int argumentIndex, const String& detail)
+String ExceptionMessages::argumentNullOrIncorrectType(int argumentIndex, const String& expectedType)
 {
-    return "The " + ordinalNumber(argumentIndex) + " argument " + detail;
+    return "The " + ordinalNumber(argumentIndex) + " argument provided is either null, or an invalid " + expectedType + " object.";
 }
 
 String ExceptionMessages::notAnArrayTypeArgumentOrValue(int argumentIndex)
@@ -129,15 +154,16 @@ String ExceptionMessages::readOnly(const char* detail)
     return detail ? String::format("This object is read-only, because %s.", detail) : readOnly;
 }
 
-String ExceptionMessages::indexExceedsMaximumBound(const char* name, unsigned given, unsigned bound)
+template <>
+String ExceptionMessages::formatNumber<float>(float number)
 {
-    bool eq = given == bound;
-    return String::format("The %s provided (%u) is greater than %sthe maximum bound (%u).", name, given, eq ? "or equal to " : "", bound);
+    return formatPotentiallyNonFiniteNumber(number);
 }
 
-String ExceptionMessages::indexOutsideRange(const char* name, double given, double lowerBound, BoundType lowerInclusive, double upperBound, BoundType upperInclusive)
+template <>
+String ExceptionMessages::formatNumber<double>(double number)
 {
-    return String::format("The %s provided (%f) is outside the range %c%f, %f%c.", name, given, lowerBound == ExclusiveBound ? '(' : '[', lowerBound, upperBound, upperBound == ExclusiveBound ? ')' : ']');
+    return formatPotentiallyNonFiniteNumber(number);
 }
 
 } // namespace WebCore

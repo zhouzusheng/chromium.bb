@@ -148,6 +148,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLint max_vertex_uniform_vectors;
       GLint num_compressed_texture_formats;
       GLint num_shader_binary_formats;
+#if defined(OS_CHROMEOS)
+      GLint bind_generates_resource_chromium;
+#endif
     };
     IntState int_state;
 
@@ -180,13 +183,12 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // Number of swap buffers allowed before waiting.
   static const size_t kMaxSwapBuffers = 2;
 
-  GLES2Implementation(
-      GLES2CmdHelper* helper,
-      ShareGroup* share_group,
-      TransferBufferInterface* transfer_buffer,
-      bool bind_generates_resource,
-      bool free_everything_when_invisible,
-      GpuControl* gpu_control);
+  GLES2Implementation(GLES2CmdHelper* helper,
+                      ShareGroup* share_group,
+                      TransferBufferInterface* transfer_buffer,
+                      bool bind_generates_resource,
+                      bool lose_context_when_out_of_memory,
+                      GpuControl* gpu_control);
 
   virtual ~GLES2Implementation();
 
@@ -221,6 +223,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   virtual void SetSwapBuffersCompleteCallback(
       const base::Closure& swap_buffers_complete_callback)
           OVERRIDE;
+  virtual void ScheduleOverlayPlane(int plane_z_order,
+                                    unsigned plane_transform,
+                                    unsigned overlay_texture_id,
+                                    const gfx::Rect& display_bounds,
+                                    const gfx::RectF& uv_rect) OVERRIDE;
 
   void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
@@ -258,6 +265,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   GpuControl* gpu_control() {
     return gpu_control_;
+  }
+
+  ShareGroupContextData* share_group_context_data() {
+    return &share_group_context_data_;
   }
 
  private:
@@ -491,12 +502,14 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool IsRenderbufferReservedId(GLuint id) { return false; }
   bool IsTextureReservedId(GLuint id) { return false; }
   bool IsVertexArrayReservedId(GLuint id) { return false; }
+  bool IsProgramReservedId(GLuint id) { return false; }
 
   bool BindBufferHelper(GLenum target, GLuint texture);
   bool BindFramebufferHelper(GLenum target, GLuint texture);
   bool BindRenderbufferHelper(GLenum target, GLuint texture);
   bool BindTextureHelper(GLenum target, GLuint texture);
-  bool BindVertexArrayHelper(GLuint array);
+  bool BindVertexArrayOESHelper(GLuint array);
+  bool UseProgramHelper(GLuint program);
 
   void GenBuffersHelper(GLsizei n, const GLuint* buffers);
   void GenFramebuffersHelper(GLsizei n, const GLuint* framebuffers);
@@ -581,11 +594,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   IdHandlerInterface* GetIdHandler(int id_namespace) const;
 
   void FinishHelper();
-
-  // Asserts that the context is lost.
-  // NOTE: This is an expensive call and should only be called
-  // for error checking.
-  bool MustBeContextLost();
 
   void RunIfContextNotLost(const base::Closure& callback);
 
@@ -675,6 +683,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // Whether or not to print debugging info.
   bool debug_;
 
+  // When true, the context is lost when a GL_OUT_OF_MEMORY error occurs.
+  bool lose_context_when_out_of_memory_;
+
   // Used to check for single threaded access.
   int use_count_;
 
@@ -696,6 +707,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   scoped_ptr<MappedMemoryManager> mapped_memory_;
 
   scoped_refptr<ShareGroup> share_group_;
+  ShareGroupContextData share_group_context_data_;
 
   scoped_ptr<QueryTracker> query_tracker_;
   typedef std::map<GLuint, QueryTracker::Query*> QueryMap;
@@ -710,9 +722,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   scoped_ptr<std::string> current_trace_name_;
 
   GpuControl* gpu_control_;
-
-  bool surface_visible_;
-  bool free_everything_when_invisible_;
 
   Capabilities capabilities_;
 

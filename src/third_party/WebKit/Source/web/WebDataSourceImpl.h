@@ -47,7 +47,7 @@ class WebPluginLoadObserver;
 
 class WebDataSourceImpl FINAL : public WebCore::DocumentLoader, public WebDataSource {
 public:
-    static PassRefPtr<WebDataSourceImpl> create(WebCore::Frame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
+    static PassRefPtr<WebDataSourceImpl> create(WebCore::LocalFrame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
 
     static WebDataSourceImpl* fromDocumentLoader(WebCore::DocumentLoader* loader)
     {
@@ -68,7 +68,6 @@ public:
     virtual double triggeringEventTime() const OVERRIDE;
     virtual ExtraData* extraData() const OVERRIDE;
     virtual void setExtraData(ExtraData*) OVERRIDE;
-    virtual WebApplicationCacheHost* applicationCacheHost() OVERRIDE;
     virtual void setNavigationStartTime(double) OVERRIDE;
 
     static WebNavigationType toWebNavigationType(WebCore::NavigationType type);
@@ -77,7 +76,7 @@ public:
     static void setNextPluginLoadObserver(PassOwnPtr<WebPluginLoadObserver>);
 
 private:
-    WebDataSourceImpl(WebCore::Frame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
+    WebDataSourceImpl(WebCore::LocalFrame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
     virtual ~WebDataSourceImpl();
 
     // Mutable because the const getters will magically sync these to the

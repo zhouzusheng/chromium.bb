@@ -63,7 +63,6 @@ public:
         // to the end of the list.
         PageDestruction = 0,
         LegacyNotifications = 1,
-        MultipartMainResource = 2,
         PrefixedIndexedDB = 3,
         WorkerStart = 4,
         SharedWorkerStart = 5,
@@ -85,7 +84,6 @@ public:
         IncrementalAttribute = 25,
         InputTypeColor = 26,
         InputTypeDate = 27,
-        InputTypeDateTime = 28,
         InputTypeDateTimeFallback = 29,
         InputTypeDateTimeLocal = 30,
         InputTypeEmail = 31,
@@ -132,43 +130,34 @@ public:
         XSLProcessingInstruction = 78,
         XSLTProcessor = 79,
         SVGSwitchElement = 80,
-        HTMLShadowElementOlderShadowRoot = 82,
         DocumentAll = 83,
         FormElement = 84,
         DemotedFormElement = 85,
         CaptureAttributeAsEnum = 86,
-        ShadowDOMPrefixedPseudo = 87,
         ShadowDOMPrefixedCreateShadowRoot = 88,
         ShadowDOMPrefixedShadowRoot = 89,
         SVGAnimationElement = 90,
         KeyboardEventKeyLocation = 91,
-        CaptureEvents = 92,
-        ReleaseEvents = 93,
-        CSSDisplayRunIn = 94,
-        CSSDisplayCompact = 95,
         LineClamp = 96,
         SubFrameBeforeUnloadRegistered = 97,
         SubFrameBeforeUnloadFired = 98,
-        CSSPseudoElementPrefixedDistributed = 99,
         TextReplaceWholeText = 100,
         PrefixedShadowRootConstructor = 101,
         ConsoleMarkTimeline = 102,
         CSSPseudoElementUserAgentCustomPseudo = 103,
-        DocumentTypeEntities = 104, // Removed from DOM4.
         DocumentTypeInternalSubset = 105, // Removed from DOM4.
-        DocumentTypeNotations = 106, // Removed from DOM4.
         ElementGetAttributeNode = 107, // Removed from DOM4.
         ElementSetAttributeNode = 108, // Removed from DOM4.
         ElementRemoveAttributeNode = 109, // Removed from DOM4.
         ElementGetAttributeNodeNS = 110, // Removed from DOM4.
         DocumentCreateAttribute = 111, // Removed from DOM4.
+        DocumentCreateAttributeNS = 112, // Removed from DOM4.
         DocumentCreateCDATASection = 113, // Removed from DOM4.
         DocumentInputEncoding = 114, // Removed from DOM4.
         DocumentXMLEncoding = 115, // Removed from DOM4.
         DocumentXMLStandalone = 116, // Removed from DOM4.
         DocumentXMLVersion = 117, // Removed from DOM4.
         NodeIsSameNode = 118, // Removed from DOM4.
-        NodeIsSupported = 119, // Removed from DOM4.
         NodeNamespaceURI = 120, // Removed from DOM4.
         NodeLocalName = 122, // Removed from DOM4.
         NavigatorProductSub = 123,
@@ -201,13 +190,10 @@ public:
         HTMLAppletElementLegacyCall = 151,
         HTMLEmbedElementLegacyCall = 152,
         HTMLObjectElementLegacyCall = 153,
-        BeforeLoadEvent = 154,
         GetMatchedCSSRules = 155,
         SVGFontInCSS = 156,
-        ScrollTopBodyNotQuirksMode = 157,
-        ScrollLeftBodyNotQuirksMode = 158,
+        AttributeOwnerElement = 160, // Removed in DOM4.
         AttributeSpecified = 162, // Removed in DOM4.
-        BeforeLoadEventInIsolatedWorld = 163,
         PrefixedAudioDecodedByteCount = 164,
         PrefixedVideoDecodedByteCount = 165,
         PrefixedVideoSupportsFullscreen = 166,
@@ -229,9 +215,6 @@ public:
         InputTypeEmailMultiple = 184,
         InputTypeEmailMaxLength = 185,
         InputTypeEmailMultipleMaxLength = 186,
-        TextTrackCueConstructor = 187,
-        CSSStyleDeclarationPropertyName = 188, // Removed in CSSOM.
-        CSSStyleDeclarationFloatPropertyName = 189, // Pending removal in CSSOM.
         InputTypeText = 190,
         InputTypeTextMaxLength = 191,
         InputTypePassword = 192,
@@ -247,7 +230,6 @@ public:
         DocumentUnloadFired = 203,
         SVGLocatableNearestViewportElement = 204,
         SVGLocatableFarthestViewportElement = 205,
-        IsIndexElement = 206,
         HTMLHeadElementProfile = 207,
         OverflowChangedEvent = 208,
         SVGPointMatrixTransform = 209,
@@ -257,16 +239,18 @@ public:
         HTMLElementInnerText = 213,
         HTMLElementOuterText = 214,
         ReplaceDocumentViaJavaScriptURL = 215,
+        ElementSetAttributeNodeNS = 216, // Removed from DOM4.
         ElementPrefixedMatchesSelector = 217,
         DOMImplementationCreateCSSStyleSheet = 218,
         CSSStyleSheetRules = 219,
         CSSStyleSheetAddRule = 220,
         CSSStyleSheetRemoveRule = 221,
+        // The above items are available in M33 branch.
+
         InitMessageEvent = 222,
         PrefixedInitMessageEvent = 223,
         ElementSetPrefix = 224, // Element.prefix is readonly in DOM4.
         CSSStyleDeclarationGetPropertyCSSValue = 225,
-        SVGElementGetPresentationAttribute = 226,
         PrefixedMediaCancelKeyRequest = 229,
         DOMImplementationHasFeature = 230,
         DOMImplementationHasFeatureReturnFalse = 231,
@@ -294,7 +278,6 @@ public:
         MediaErrorEncrypted = 253,
         EventSourceURL = 254,
         WebSocketURL = 255,
-        UnsafeEvalBlocksCSSOM = 256,
         WorkerSubjectToCSP = 257,
         WorkerAllowedByChildBlockedByScript = 258,
         HTMLMediaElementControllerNotNull = 259,
@@ -307,11 +290,63 @@ public:
         PrefixedPutImageDataHD = 266,
         PrefixedImageSmoothingEnabled = 267,
         UnprefixedImageSmoothingEnabled = 268,
-        ShadowRootApplyAuthorStyles = 269,
         PromiseConstructor = 270,
         PromiseCast = 271,
         PromiseReject = 272,
         PromiseResolve = 273,
+        // The above items are available in M34 branch.
+
+        TextAutosizing = 274,
+        TextAutosizingLayout = 275,
+        HTMLAnchorElementPingAttribute = 276,
+        JavascriptExhaustedMemory = 277,
+        InsertAdjacentHTML = 278,
+        SVGClassName = 279,
+        HTMLAppletElement = 280,
+        HTMLMediaElementSeekToFragmentStart = 281,
+        HTMLMediaElementPauseAtFragmentEnd = 282,
+        PrefixedWindowURL = 283,
+        PrefixedWorkerURL = 284,
+        WindowOrientation = 285,
+        DOMStringListContains = 286,
+        DocumentCaptureEvents = 287,
+        DocumentReleaseEvents = 288,
+        WindowCaptureEvents = 289,
+        WindowReleaseEvents = 290,
+        PrefixedGamepad = 291,
+        ElementAnimateKeyframeListEffectObjectTiming = 292,
+        ElementAnimateKeyframeListEffectDoubleTiming = 293,
+        ElementAnimateKeyframeListEffectNoTiming = 294,
+        DocumentXPathCreateExpression = 295,
+        DocumentXPathCreateNSResolver = 296,
+        DocumentXPathEvaluate = 297,
+        AttrGetValue = 298,
+        AttrSetValue = 299,
+        AnimationConstructorKeyframeListEffectObjectTiming = 300,
+        AnimationConstructorKeyframeListEffectDoubleTiming = 301,
+        AnimationConstructorKeyframeListEffectNoTiming = 302,
+        AttrSetValueWithElement = 303,
+        PrefixedCancelAnimationFrame = 304,
+        PrefixedCancelRequestAnimationFrame = 305,
+        NamedNodeMapGetNamedItem = 306,
+        NamedNodeMapSetNamedItem = 307,
+        NamedNodeMapRemoveNamedItem = 308,
+        NamedNodeMapItem = 309,
+        NamedNodeMapGetNamedItemNS = 310,
+        NamedNodeMapSetNamedItemNS = 311,
+        NamedNodeMapRemoveNamedItemNS = 312,
+        OpenWebDatabaseInWorker = 313,
+        OpenWebDatabaseSyncInWorker = 314,
+        PrefixedAllowFullscreenAttribute = 315,
+        XHRProgressEventPosition = 316,
+        XHRProgressEventTotalSize = 317,
+        PrefixedDocumentIsFullscreen = 318,
+        PrefixedDocumentFullScreenKeyboardInputAllowed = 319,
+        PrefixedDocumentCurrentFullScreenElement = 320,
+        PrefixedDocumentCancelFullScreen = 321,
+        PrefixedDocumentFullscreenEnabled = 322,
+        PrefixedDocumentFullscreenElement = 323,
+        PrefixedDocumentExitFullscreen = 324,
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
         NumberOfFeatures, // This enum value must be last.
@@ -341,9 +376,16 @@ public:
 
     static int mapCSSPropertyIdToCSSSampleIdForHistogram(int id);
 
+    static void muteForInspector();
+    static void unmuteForInspector();
+
 private:
+    static int m_muteCount;
+
     bool recordMeasurement(Feature feature)
     {
+        if (UseCounter::m_muteCount)
+            return false;
         ASSERT(feature != PageDestruction); // PageDestruction is reserved as a scaling factor.
         ASSERT(feature < NumberOfFeatures);
         if (!m_countBits) {

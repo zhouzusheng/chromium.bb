@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 
 enum ListenerLookupType {
     ListenerFindOnly,
@@ -50,7 +50,7 @@ public:
     {
         ASSERT(isolate->InContext());
         if (!value->IsObject())
-            return 0;
+            return nullptr;
 
         v8::Handle<v8::String> wrapperProperty = getHiddenProperty(false, isolate);
         return doFindWrapper(v8::Local<v8::Object>::Cast(value), wrapperProperty, isolate);
@@ -62,7 +62,7 @@ public:
     static void clearWrapper(v8::Handle<v8::Object> listenerObject, bool isAttribute, v8::Isolate* isolate)
     {
         v8::Handle<v8::String> wrapperProperty = getHiddenProperty(isAttribute, isolate);
-        deleteHiddenValue(isolate, listenerObject, wrapperProperty);
+        listenerObject->DeleteHiddenValue(wrapperProperty);
     }
 
     static PassRefPtr<EventListener> getEventListener(v8::Local<v8::Value>, bool isAttribute, ListenerLookupType);
@@ -72,7 +72,7 @@ private:
     {
         ASSERT(isolate->InContext());
         v8::HandleScope scope(isolate);
-        v8::Local<v8::Value> listener = getHiddenValue(isolate, object, wrapperProperty);
+        v8::Local<v8::Value> listener = object->GetHiddenValue(wrapperProperty);
         if (listener.IsEmpty())
             return 0;
         return static_cast<V8EventListener*>(v8::External::Cast(*listener)->Value());
@@ -91,7 +91,7 @@ PassRefPtr<V8EventListener> V8EventListenerList::findOrCreateWrapper(v8::Local<v
     if (!value->IsObject()
         // Non-callable attribute setter input is treated as null (no wrapper)
         || (isAttribute && !value->IsFunction()))
-        return 0;
+        return nullptr;
 
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(value);
     v8::Handle<v8::String> wrapperProperty = getHiddenProperty(isAttribute, isolate);
@@ -102,7 +102,7 @@ PassRefPtr<V8EventListener> V8EventListenerList::findOrCreateWrapper(v8::Local<v
 
     RefPtr<V8EventListener> wrapperPtr = WrapperType::create(object, isAttribute, isolate);
     if (wrapperPtr)
-        setHiddenValue(isolate, object, wrapperProperty, v8::External::New(isolate, wrapperPtr.get()));
+        object->SetHiddenValue(wrapperProperty, v8::External::New(isolate, wrapperPtr.get()));
 
     return wrapperPtr;
 }

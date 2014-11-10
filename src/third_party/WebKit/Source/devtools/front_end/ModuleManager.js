@@ -47,6 +47,10 @@ WebInspector.ModuleManager = function(descriptors)
      */
     this._extensions = [];
 
+    /**
+     * @type {!Object.<string, !function(new:Object)>}
+     */
+    this._cachedTypeClasses = {};
 
     /**
      * @type {!Object.<string, !WebInspector.ModuleManager.ModuleDescriptor>}
@@ -99,7 +103,7 @@ WebInspector.ModuleManager.prototype = {
          */
         function filter(extension)
         {
-            if (extension._type !== type && extension._typeClass !== type)
+            if (extension._type !== type && extension._typeClass() !== type)
                 return false;
             return !context || extension.isApplicable(context);
         }
@@ -175,7 +179,22 @@ WebInspector.ModuleManager.prototype = {
             return name1.compareTo(name2);
         }
         return result;
+    },
+
+    /**
+     * @return {?function(new:Object)}
+     */
+    resolve: function(typeName)
+    {
+        if (!this._cachedTypeClasses[typeName]) {
+            try {
+                this._cachedTypeClasses[typeName] = /** @type function(new:Object) */ (window.eval(typeName.substring(1)));
+            } catch (e) {
+            }
+        }
+        return this._cachedTypeClasses[typeName];
     }
+
 }
 
 /**
@@ -278,8 +297,7 @@ WebInspector.ModuleManager.Extension = function(module, descriptor)
     this._descriptor = descriptor;
 
     this._type = descriptor.type;
-    if (this._type.startsWith("@"))
-        this._typeClass = /** @template T @type function(new:T) */ (window.eval(this._type.substring(1)));
+    this._hasTypeClass = !!this._type.startsWith("@");
 
     /**
      * @type {?string}
@@ -302,6 +320,16 @@ WebInspector.ModuleManager.Extension.prototype = {
     module: function()
     {
         return this._module;
+    },
+
+    /**
+     * @return {?function(new:Object)}
+     */
+    _typeClass: function()
+    {
+        if (!this._hasTypeClass)
+            return null;
+        return this._module._manager.resolve(this._type);
     },
 
     /**
@@ -382,6 +410,21 @@ WebInspector.Revealer.prototype = {
      * @param {!Object} object
      */
     reveal: function(object) {}
+}
+
+/**
+ * @interface
+ */
+WebInspector.ActionDelegate = function()
+{
+}
+
+WebInspector.ActionDelegate.prototype = {
+    /**
+     * @param {!Event} event
+     * @return {boolean}
+     */
+    handleAction: function(event) {}
 }
 
 WebInspector.moduleManager = new WebInspector.ModuleManager(allDescriptors);

@@ -64,14 +64,6 @@ class GPU_EXPORT CommandBufferHelper {
   // returns, the command buffer service is aware of all pending commands.
   void Flush();
 
-  // Flushes the commands, setting the put pointer to let the buffer interface
-  // know that new commands have been added. After a flush returns, the command
-  // buffer service is aware of all pending commands and it is guaranteed to
-  // have made some progress in processing them. Returns whether the flush was
-  // successful. The flush will fail if the command buffer service has
-  // disconnected.
-  bool FlushSync();
-
   // Waits until all the commands have been executed. Returns whether it
   // was successful. The function will fail if the command buffer service has
   // disconnected.
@@ -252,9 +244,9 @@ class GPU_EXPORT CommandBufferHelper {
     return command_buffer_;
   }
 
-  Buffer get_ring_buffer() const {
-    return ring_buffer_;
-  }
+  scoped_refptr<Buffer> get_ring_buffer() const { return ring_buffer_; }
+
+  uint32 flush_generation() const { return flush_generation_; }
 
   void FreeRingBuffer();
 
@@ -272,9 +264,6 @@ class GPU_EXPORT CommandBufferHelper {
   }
 
  private:
-  // Waits until get changes, updating the value of get_.
-  void WaitForGetChange();
-
   // Returns the number of available entries (they may not be contiguous).
   int32 AvailableEntries() {
     return (get_offset() - put_ - 1 + total_entry_count_) % total_entry_count_;
@@ -284,6 +273,10 @@ class GPU_EXPORT CommandBufferHelper {
   bool AllocateRingBuffer();
   void FreeResources();
 
+  // Waits for the get offset to be in a specific range, inclusive. Returns
+  // false if there was an error.
+  bool WaitForGetOffsetInRange(int32 start, int32 end);
+
 #if defined(CMD_HELPER_PERIODIC_FLUSH_CHECK)
   // Calls Flush if automatic flush conditions are met.
   void PeriodicFlushCheck();
@@ -292,7 +285,7 @@ class GPU_EXPORT CommandBufferHelper {
   CommandBuffer* command_buffer_;
   int32 ring_buffer_id_;
   int32 ring_buffer_size_;
-  Buffer ring_buffer_;
+  scoped_refptr<gpu::Buffer> ring_buffer_;
   CommandBufferEntry* entries_;
   int32 total_entry_count_;  // the total number of entries
   int32 immediate_entry_count_;
@@ -310,6 +303,10 @@ class GPU_EXPORT CommandBufferHelper {
 
   // Using C runtime instead of base because this file cannot depend on base.
   clock_t last_flush_time_;
+
+  // Incremented every time the helper flushes the command buffer.
+  // Can be used to track when prior commands have been flushed.
+  uint32 flush_generation_;
 
   friend class CommandBufferHelperTest;
   DISALLOW_COPY_AND_ASSIGN(CommandBufferHelper);

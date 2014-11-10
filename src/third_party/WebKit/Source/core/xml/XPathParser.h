@@ -64,6 +64,7 @@ struct Token {
 
 class Parser {
     WTF_MAKE_NONCOPYABLE(Parser);
+    STACK_ALLOCATED();
 public:
     Parser();
     ~Parser();
@@ -71,7 +72,7 @@ public:
     XPathNSResolver* resolver() const { return m_resolver.get(); }
     bool expandQName(const String& qName, AtomicString& localName, AtomicString& namespaceURI);
 
-    Expression* parseStatement(const String& statement, PassRefPtr<XPathNSResolver>, ExceptionState&);
+    Expression* parseStatement(const String& statement, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
 
     static Parser* current() { return currentParser; }
 
@@ -120,7 +121,7 @@ private:
     unsigned m_nextPos;
     String m_data;
     int m_lastTokenType;
-    RefPtr<XPathNSResolver> m_resolver;
+    RefPtrWillBeMember<XPathNSResolver> m_resolver;
 
     HashSet<ParseNode*> m_parseNodes;
     HashSet<Vector<OwnPtr<Predicate> >*> m_predicateVectors;

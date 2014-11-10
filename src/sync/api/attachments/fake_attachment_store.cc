@@ -22,19 +22,17 @@ class FakeAttachmentStore::Backend
   Backend(
       const scoped_refptr<base::SingleThreadTaskRunner>& frontend_task_runner);
 
-  void Read(const sync_pb::AttachmentId& id, const ReadCallback& callback);
-  void Write(const sync_pb::AttachmentId& id,
-             const scoped_refptr<base::RefCountedMemory>& bytes,
+  void Read(const AttachmentId& id, const ReadCallback& callback);
+  void Write(const scoped_refptr<base::RefCountedMemory>& bytes,
              const WriteCallback& callback);
-  void Drop(const sync_pb::AttachmentId& id, const DropCallback& callback);
+  void Drop(const AttachmentId& id, const DropCallback& callback);
 
  private:
   friend class base::RefCountedThreadSafe<Backend>;
-  typedef std::string UniqueId;
-  typedef std::map<UniqueId, Attachment*> AttachmentMap;
+  typedef std::map<AttachmentId, Attachment*> AttachmentMap;
 
   ~Backend();
-  Result RemoveAttachment(const sync_pb::AttachmentId& id);
+  Result Remove(const AttachmentId& id);
 
   scoped_refptr<base::SingleThreadTaskRunner> frontend_task_runner_;
   AttachmentMap attachments_;
@@ -48,9 +46,9 @@ FakeAttachmentStore::Backend::Backend(
 
 FakeAttachmentStore::Backend::~Backend() {}
 
-void FakeAttachmentStore::Backend::Read(const sync_pb::AttachmentId& id,
+void FakeAttachmentStore::Backend::Read(const AttachmentId& id,
                                         const ReadCallback& callback) {
-  AttachmentMap::iterator iter = attachments_.find(id.unique_id());
+  AttachmentMap::iterator iter = attachments_.find(id);
   scoped_ptr<Attachment> attachment;
   Result result = NOT_FOUND;
   if (iter != attachments_.end()) {
@@ -62,26 +60,27 @@ void FakeAttachmentStore::Backend::Read(const sync_pb::AttachmentId& id,
 }
 
 void FakeAttachmentStore::Backend::Write(
-    const sync_pb::AttachmentId& id,
     const scoped_refptr<base::RefCountedMemory>& bytes,
     const WriteCallback& callback) {
-  scoped_ptr<Attachment> attachment = Attachment::CreateWithId(id, bytes);
-  RemoveAttachment(id);
+  scoped_ptr<Attachment> attachment = Attachment::Create(bytes);
+  DCHECK(attachment.get());
+  AttachmentId attachment_id(attachment->GetId());
   attachments_.insert(
-      AttachmentMap::value_type(id.unique_id(), attachment.release()));
-  frontend_task_runner_->PostTask(FROM_HERE, base::Bind(callback, SUCCESS));
+      AttachmentMap::value_type(attachment_id, attachment.release()));
+  frontend_task_runner_->PostTask(FROM_HERE,
+                                  base::Bind(callback, SUCCESS, attachment_id));
 }
 
-void FakeAttachmentStore::Backend::Drop(const sync_pb::AttachmentId& id,
+void FakeAttachmentStore::Backend::Drop(const AttachmentId& id,
                                         const DropCallback& callback) {
-  Result result = RemoveAttachment(id);
+  Result result = Remove(id);
   frontend_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result));
 }
 
-AttachmentStore::Result FakeAttachmentStore::Backend::RemoveAttachment(
-    const sync_pb::AttachmentId& id) {
+AttachmentStore::Result FakeAttachmentStore::Backend::Remove(
+    const AttachmentId& id) {
   Result result = NOT_FOUND;
-  AttachmentMap::iterator iter = attachments_.find(id.unique_id());
+  AttachmentMap::iterator iter = attachments_.find(id);
   if (iter != attachments_.end()) {
     delete iter->second;
     attachments_.erase(iter);
@@ -97,7 +96,7 @@ FakeAttachmentStore::FakeAttachmentStore(
 
 FakeAttachmentStore::~FakeAttachmentStore() {}
 
-void FakeAttachmentStore::Read(const sync_pb::AttachmentId& id,
+void FakeAttachmentStore::Read(const AttachmentId& id,
                                const ReadCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,
@@ -105,16 +104,15 @@ void FakeAttachmentStore::Read(const sync_pb::AttachmentId& id,
 }
 
 void FakeAttachmentStore::Write(
-    const sync_pb::AttachmentId& id,
     const scoped_refptr<base::RefCountedMemory>& bytes,
     const WriteCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
-          &FakeAttachmentStore::Backend::Write, backend_, id, bytes, callback));
+          &FakeAttachmentStore::Backend::Write, backend_, bytes, callback));
 }
 
-void FakeAttachmentStore::Drop(const sync_pb::AttachmentId& id,
+void FakeAttachmentStore::Drop(const AttachmentId& id,
                                const DropCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,

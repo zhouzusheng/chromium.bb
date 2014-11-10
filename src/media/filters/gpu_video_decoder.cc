@@ -60,14 +60,14 @@ GpuVideoDecoder::GpuVideoDecoder(
     const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
     const scoped_refptr<MediaLog>& media_log)
     : needs_bitstream_conversion_(false),
-      weak_factory_(this),
       factories_(factories),
       state_(kNormal),
       media_log_(media_log),
       decoder_texture_target_(0),
       next_picture_buffer_id_(0),
       next_bitstream_buffer_id_(0),
-      available_pictures_(0) {
+      available_pictures_(0),
+      weak_factory_(this) {
   DCHECK(factories_.get());
 }
 
@@ -76,8 +76,10 @@ void GpuVideoDecoder::Reset(const base::Closure& closure)  {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
   if (state_ == kDrainingDecoder) {
-    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &GpuVideoDecoder::Reset, weak_this_, closure));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &GpuVideoDecoder::Reset, weak_factory_.GetWeakPtr(), closure));
     // NOTE: if we're deferring Reset() until a Flush() completes, return
     // queued pictures to the VDA so they can be used to finish that Flush().
     if (pending_decode_cb_.is_null())
@@ -121,7 +123,7 @@ static bool IsCodedSizeSupported(const gfx::Size& coded_size) {
 
   base::CPU cpu;
   bool hw_large_video_support =
-      (cpu.vendor_name() == "GenuineIntel") && cpu.model() >= 58;
+      (cpu.vendor_name() == "GenuineIntel") && cpu.model() >= 55;
   bool os_large_video_support = true;
 #if defined(OS_WIN)
   os_large_video_support = false;
@@ -136,7 +138,7 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
     const PipelineStatusCB& cb,
     PipelineStatus status) {
   UMA_HISTOGRAM_ENUMERATION(
-      "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX);
+      "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX + 1);
   cb.Run(status);
 }
 
@@ -147,22 +149,11 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   DCHECK(config.IsValidConfig());
   DCHECK(!config.is_encrypted());
 
-  weak_this_ = weak_factory_.GetWeakPtr();
-
   PipelineStatusCB status_cb =
       base::Bind(&ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB,
                  BindToCurrentLoop(orig_status_cb));
 
   bool previously_initialized = config_.IsValidConfig();
-#if !defined(OS_CHROMEOS) && !defined(OS_WIN)
-  if (previously_initialized) {
-    // TODO(xhwang): Make GpuVideoDecoder reinitializable.
-    // See http://crbug.com/233608
-    DVLOG(1) << "GpuVideoDecoder reinitialization not supported.";
-    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
-    return;
-  }
-#endif
   DVLOG(1) << "(Re)initializing GVD with config: "
            << config.AsHumanReadableString();
 
@@ -190,9 +181,8 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  vda_ =
-      factories_->CreateVideoDecodeAccelerator(config.profile(), this).Pass();
-  if (!vda_) {
+  vda_ = factories_->CreateVideoDecodeAccelerator(config.profile()).Pass();
+  if (!vda_ || !vda_->Initialize(config.profile(), this)) {
     status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
@@ -218,9 +208,15 @@ void GpuVideoDecoder::DestroyVDA() {
   if (vda_)
     vda_.release()->Destroy();
 
-  DestroyPictureBuffers(&assigned_picture_buffers_);
-  // Not destroying PictureBuffers in |dismissed_picture_buffers_| yet, since
+  // Not destroying PictureBuffers in |picture_buffers_at_display_| yet, since
   // their textures may still be in use by the user of this GpuVideoDecoder.
+  for (PictureBufferTextureMap::iterator it =
+           picture_buffers_at_display_.begin();
+       it != picture_buffers_at_display_.end();
+       ++it) {
+    assigned_picture_buffers_.erase(it->first);
+  }
+  DestroyPictureBuffers(&assigned_picture_buffers_);
 }
 
 void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
@@ -364,8 +360,6 @@ void GpuVideoDecoder::ProvidePictureBuffers(uint32 count,
   std::vector<uint32> texture_ids;
   std::vector<gpu::Mailbox> texture_mailboxes;
   decoder_texture_target_ = texture_target;
-  // Discards the sync point returned here since PictureReady will imply that
-  // the produce has already happened, and the texture is ready for use.
   if (!factories_->CreateTextures(count,
                                   size,
                                   &texture_ids,
@@ -407,20 +401,14 @@ void GpuVideoDecoder::DismissPictureBuffer(int32 id) {
   PictureBuffer buffer_to_dismiss = it->second;
   assigned_picture_buffers_.erase(it);
 
-  std::set<int32>::iterator at_display_it =
-      picture_buffers_at_display_.find(id);
-
-  if (at_display_it == picture_buffers_at_display_.end()) {
+  if (!picture_buffers_at_display_.count(id)) {
     // We can delete the texture immediately as it's not being displayed.
     factories_->DeleteTexture(buffer_to_dismiss.texture_id());
     CHECK_GT(available_pictures_, 0);
     --available_pictures_;
-  } else {
-    // Texture in display. Postpone deletion until after it's returned to us.
-    bool inserted = dismissed_picture_buffers_.insert(std::make_pair(
-        id, buffer_to_dismiss)).second;
-    DCHECK(inserted);
   }
+  // Not destroying a texture in display in |picture_buffers_at_display_|.
+  // Postpone deletion until after it's returned to us.
 }
 
 static void ReadPixelsSyncInner(
@@ -474,9 +462,11 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   scoped_refptr<VideoFrame> frame(VideoFrame::WrapNativeTexture(
       make_scoped_ptr(new gpu::MailboxHolder(
           pb.texture_mailbox(), decoder_texture_target_, 0 /* sync_point */)),
-      BindToCurrentLoop(base::Bind(&GpuVideoDecoder::ReusePictureBuffer,
-                                   weak_this_,
-                                   picture.picture_buffer_id())),
+      BindToCurrentLoop(base::Bind(&GpuVideoDecoder::ReleaseMailbox,
+                                   weak_factory_.GetWeakPtr(),
+                                   factories_,
+                                   picture.picture_buffer_id(),
+                                   pb.texture_id())),
       pb.size(),
       visible_rect,
       natural_size,
@@ -485,7 +475,9 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   CHECK_GT(available_pictures_, 0);
   --available_pictures_;
   bool inserted =
-      picture_buffers_at_display_.insert(picture.picture_buffer_id()).second;
+      picture_buffers_at_display_.insert(std::make_pair(
+                                             picture.picture_buffer_id(),
+                                             pb.texture_id())).second;
   DCHECK(inserted);
 
   EnqueueFrameAndTriggerFrameDelivery(frame);
@@ -513,36 +505,47 @@ void GpuVideoDecoder::EnqueueFrameAndTriggerFrameDelivery(
   ready_video_frames_.pop_front();
 }
 
-void GpuVideoDecoder::ReusePictureBuffer(
+// static
+void GpuVideoDecoder::ReleaseMailbox(
+    base::WeakPtr<GpuVideoDecoder> decoder,
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
     int64 picture_buffer_id,
+    uint32 texture_id,
     scoped_ptr<gpu::MailboxHolder> mailbox_holder) {
+  DCHECK(factories->GetTaskRunner()->BelongsToCurrentThread());
+  factories->WaitSyncPoint(mailbox_holder->sync_point);
+
+  if (decoder) {
+    decoder->ReusePictureBuffer(picture_buffer_id);
+    return;
+  }
+  // It's the last chance to delete the texture after display,
+  // because GpuVideoDecoder was destructed.
+  factories->DeleteTexture(texture_id);
+}
+
+void GpuVideoDecoder::ReusePictureBuffer(int64 picture_buffer_id) {
   DVLOG(3) << "ReusePictureBuffer(" << picture_buffer_id << ")";
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
 
-  if (!vda_)
-    return;
+  DCHECK(!picture_buffers_at_display_.empty());
+  PictureBufferTextureMap::iterator display_iterator =
+      picture_buffers_at_display_.find(picture_buffer_id);
+  uint32 texture_id = display_iterator->second;
+  DCHECK(display_iterator != picture_buffers_at_display_.end());
+  picture_buffers_at_display_.erase(display_iterator);
 
-  CHECK(!picture_buffers_at_display_.empty());
-
-  size_t num_erased = picture_buffers_at_display_.erase(picture_buffer_id);
-  DCHECK(num_erased);
-
-  PictureBufferMap::iterator it =
-      assigned_picture_buffers_.find(picture_buffer_id);
-
-  if (it == assigned_picture_buffers_.end()) {
+  if (!assigned_picture_buffers_.count(picture_buffer_id)) {
     // This picture was dismissed while in display, so we postponed deletion.
-    it = dismissed_picture_buffers_.find(picture_buffer_id);
-    DCHECK(it != dismissed_picture_buffers_.end());
-    factories_->DeleteTexture(it->second.texture_id());
-    dismissed_picture_buffers_.erase(it);
+    factories_->DeleteTexture(texture_id);
     return;
   }
 
-  factories_->WaitSyncPoint(mailbox_holder->sync_point);
   ++available_pictures_;
 
-  vda_->ReusePictureBuffer(picture_buffer_id);
+  // DestroyVDA() might already have been called.
+  if (vda_)
+    vda_->ReusePictureBuffer(picture_buffer_id);
 }
 
 GpuVideoDecoder::SHMBuffer* GpuVideoDecoder::GetSHM(size_t min_size) {
@@ -589,7 +592,8 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
 
 GpuVideoDecoder::~GpuVideoDecoder() {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
-  DCHECK(!vda_.get());  // Stop should have been already called.
+  // Stop should have been already called.
+  DCHECK(!vda_.get() && assigned_picture_buffers_.empty());
   DCHECK(pending_decode_cb_.is_null());
   for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
     available_shm_segments_[i]->shm->Close();
@@ -602,9 +606,6 @@ GpuVideoDecoder::~GpuVideoDecoder() {
     it->second.shm_buffer->shm->Close();
   }
   bitstream_buffers_in_decoder_.clear();
-
-  DestroyPictureBuffers(&assigned_picture_buffers_);
-  DestroyPictureBuffers(&dismissed_picture_buffers_);
 }
 
 void GpuVideoDecoder::NotifyFlushDone() {

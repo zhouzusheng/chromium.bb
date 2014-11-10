@@ -26,6 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+importScript("ConsoleViewMessage.js");
+importScript("ConsoleView.js");
+
 /**
  * @constructor
  * @extends {WebInspector.Panel}
@@ -33,7 +36,18 @@
 WebInspector.ConsolePanel = function()
 {
     WebInspector.Panel.call(this, "console");
-    this._view = WebInspector.consoleView;
+    this._view = WebInspector.ConsolePanel._view();
+}
+
+/**
+ * @return {!WebInspector.ConsoleView}
+ */
+WebInspector.ConsolePanel._view = function()
+{
+    if (!WebInspector.ConsolePanel._consoleView)
+        WebInspector.ConsolePanel._consoleView = new WebInspector.ConsoleView(!Capabilities.isMainFrontend);
+
+    return WebInspector.ConsolePanel._consoleView;
 }
 
 WebInspector.ConsolePanel.prototype = {
@@ -63,34 +77,16 @@ WebInspector.ConsolePanel.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.Drawer.ViewFactory}
- */
-WebInspector.ConsolePanel.ViewFactory = function()
-{
-}
-
-WebInspector.ConsolePanel.ViewFactory.prototype = {
-    /**
-     * @return {!WebInspector.View}
-     */
-    createView: function()
-    {
-        if (!WebInspector.ConsolePanel.WrapperView._instance)
-            WebInspector.ConsolePanel.WrapperView._instance = new WebInspector.ConsolePanel.WrapperView();
-        return WebInspector.ConsolePanel.WrapperView._instance;
-    }
-}
-
-/**
- * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  */
 WebInspector.ConsolePanel.WrapperView = function()
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
     this.element.classList.add("console-view-wrapper");
 
-    this._view = WebInspector.consoleView;
+    WebInspector.ConsolePanel.WrapperView._instance = this;
+
+    this._view = WebInspector.ConsolePanel._view();
     // FIXME: this won't be needed once drawer becomes a view.
     this.wasShown();
 }
@@ -120,5 +116,31 @@ WebInspector.ConsolePanel.WrapperView.prototype = {
         this._view.show(this.element);
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.Revealer}
+ */
+WebInspector.ConsolePanel.ConsoleRevealer = function()
+{
+}
+
+WebInspector.ConsolePanel.ConsoleRevealer.prototype = {
+    /**
+     * @param {!Object} object
+     */
+    reveal: function(object)
+    {
+        if (!(object instanceof WebInspector.ConsoleModel))
+            return;
+
+        var consoleView = WebInspector.ConsolePanel._view();
+        if (consoleView.isShowing()) {
+            consoleView.focus();
+            return;
+        }
+        WebInspector.inspectorView.showViewInDrawer("console");
+    }
 }

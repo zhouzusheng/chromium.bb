@@ -11,6 +11,7 @@
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/file_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/video_engine/include/vie_network.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
 #include "webrtc/voice_engine/voe_rtp_rtcp_impl.h"
 #include "webrtc/voice_engine/voice_engine_impl.h"
@@ -211,62 +212,96 @@ int VoERTP_RTCPImpl::GetRemoteCSRCs(int channel, unsigned int arrCSRC[15])
     return channelPtr->GetRemoteCSRCs(arrCSRC);
 }
 
-
-int VoERTP_RTCPImpl::SetRTPAudioLevelIndicationStatus(int channel,
-                                                      bool enable,
-                                                      unsigned char ID)
+int VoERTP_RTCPImpl::SetSendAudioLevelIndicationStatus(int channel,
+                                                       bool enable,
+                                                       unsigned char id)
 {
     WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "SetRTPAudioLevelIndicationStatus(channel=%d, enable=%d,"
-                 " ID=%u)", channel, enable, ID);
+                 "SetSendAudioLevelIndicationStatus(channel=%d, enable=%d,"
+                 " ID=%u)", channel, enable, id);
     if (!_shared->statistics().Initialized())
     {
         _shared->SetLastError(VE_NOT_INITED, kTraceError);
         return -1;
     }
-    if (enable && (ID < kVoiceEngineMinRtpExtensionId ||
-                   ID > kVoiceEngineMaxRtpExtensionId))
+    if (enable && (id < kVoiceEngineMinRtpExtensionId ||
+                   id > kVoiceEngineMaxRtpExtensionId))
     {
-        // [RFC5285] The 4-bit ID is the local identifier of this element in
+        // [RFC5285] The 4-bit id is the local identifier of this element in
         // the range 1-14 inclusive.
         _shared->SetLastError(VE_INVALID_ARGUMENT, kTraceError,
-            "SetRTPAudioLevelIndicationStatus() invalid ID parameter");
+            "SetSendAudioLevelIndicationStatus() invalid ID parameter");
         return -1;
     }
 
-    // Set state and ID for the specified channel.
+    // Set state and id for the specified channel.
     voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
     voe::Channel* channelPtr = ch.channel();
     if (channelPtr == NULL)
     {
         _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "SetRTPAudioLevelIndicationStatus() failed to locate channel");
+            "SetSendAudioLevelIndicationStatus() failed to locate channel");
         return -1;
     }
-    return channelPtr->SetRTPAudioLevelIndicationStatus(enable, ID);
+    return channelPtr->SetSendAudioLevelIndicationStatus(enable, id);
 }
 
-int VoERTP_RTCPImpl::GetRTPAudioLevelIndicationStatus(int channel,
-                                                      bool& enabled,
-                                                      unsigned char& ID)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "GetRTPAudioLevelIndicationStatus(channel=%d, enable=?, ID=?)",
-                 channel);
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "GetRTPAudioLevelIndicationStatus() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->GetRTPAudioLevelIndicationStatus(enabled, ID);
+int VoERTP_RTCPImpl::SetSendAbsoluteSenderTimeStatus(int channel,
+                                                     bool enable,
+                                                     unsigned char id) {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
+               "SetSendAbsoluteSenderTimeStatus(channel=%d, enable=%d, id=%u)",
+               channel, enable, id);
+  if (!_shared->statistics().Initialized()) {
+    _shared->SetLastError(VE_NOT_INITED, kTraceError);
+    return -1;
+  }
+  if (enable && (id < kVoiceEngineMinRtpExtensionId ||
+                 id > kVoiceEngineMaxRtpExtensionId)) {
+    // [RFC5285] The 4-bit id is the local identifier of this element in
+    // the range 1-14 inclusive.
+    _shared->SetLastError(VE_INVALID_ARGUMENT, kTraceError,
+        "SetSendAbsoluteSenderTimeStatus() invalid id parameter");
+    return -1;
+  }
+  // Set state and id for the specified channel.
+  voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
+  voe::Channel* channelPtr = ch.channel();
+  if (channelPtr == NULL) {
+    _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
+        "SetSendAbsoluteSenderTimeStatus() failed to locate channel");
+    return -1;
+  }
+  return channelPtr->SetSendAbsoluteSenderTimeStatus(enable, id);
+}
+
+int VoERTP_RTCPImpl::SetReceiveAbsoluteSenderTimeStatus(int channel,
+                                                        bool enable,
+                                                        unsigned char id) {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
+      "SetReceiveAbsoluteSenderTimeStatus(channel=%d, enable=%d, id=%u)",
+      channel, enable, id);
+  if (!_shared->statistics().Initialized()) {
+    _shared->SetLastError(VE_NOT_INITED, kTraceError);
+    return -1;
+  }
+  if (enable && (id < kVoiceEngineMinRtpExtensionId ||
+                 id > kVoiceEngineMaxRtpExtensionId)) {
+    // [RFC5285] The 4-bit id is the local identifier of this element in
+    // the range 1-14 inclusive.
+    _shared->SetLastError(VE_INVALID_ARGUMENT, kTraceError,
+        "SetReceiveAbsoluteSenderTimeStatus() invalid id parameter");
+    return -1;
+  }
+  // Set state and id for the specified channel.
+  voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
+  voe::Channel* channelPtr = ch.channel();
+  if (channelPtr == NULL) {
+    _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
+        "SetReceiveAbsoluteSenderTimeStatus() failed to locate channel");
+    return -1;
+  }
+  return channelPtr->SetReceiveAbsoluteSenderTimeStatus(enable, id);
 }
 
 int VoERTP_RTCPImpl::SetRTCPStatus(int channel, bool enable)
@@ -655,36 +690,6 @@ int VoERTP_RTCPImpl::RTPDumpIsActive(int channel, RTPDirections direction)
     return channelPtr->RTPDumpIsActive(direction);
 }
 
-int VoERTP_RTCPImpl::InsertExtraRTPPacket(int channel,
-                                          unsigned char payloadType,
-                                          bool markerBit,
-                                          const char* payloadData,
-                                          unsigned short payloadSize)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "InsertExtraRTPPacket(channel=%d, payloadType=%u,"
-                 " markerBit=%u, payloadSize=%u)",
-                 channel, payloadType, markerBit, payloadSize);
-
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "InsertExtraRTPPacket() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->InsertExtraRTPPacket(payloadType,
-                                            markerBit,
-                                            payloadData,
-                                            payloadSize);
-}
-
 int VoERTP_RTCPImpl::GetLastRemoteTimeStamp(int channel,
                                             uint32_t* timestamp) {
     WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
@@ -704,6 +709,27 @@ int VoERTP_RTCPImpl::GetLastRemoteTimeStamp(int channel,
     }
     *timestamp = channelPtr->LastRemoteTimeStamp();
     return 0;
+}
+
+int VoERTP_RTCPImpl::SetVideoEngineBWETarget(int channel,
+                                             ViENetwork* vie_network,
+                                             int video_channel) {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
+      "SetVideoEngineBWETarget(channel=%d, vie_network=?, video_channel=%d)",
+      channel, vie_network, video_channel);
+
+  voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
+  voe::Channel* channelPtr = ch.channel();
+  if (channelPtr == NULL) {
+    _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
+                          "SetVideoEngineBWETarget() failed to locate channel");
+    if (vie_network) {
+      vie_network->Release();
+    }
+    return -1;
+  }
+  channelPtr->SetVideoEngineBWETarget(vie_network, video_channel);
+  return 0;
 }
 
 #endif  // #ifdef WEBRTC_VOICE_ENGINE_RTP_RTCP_API

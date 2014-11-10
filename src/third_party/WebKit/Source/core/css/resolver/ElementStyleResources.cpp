@@ -54,7 +54,7 @@ PassRefPtr<StyleImage> ElementStyleResources::styleImage(const TextLinkColors& t
     if (value->isCursorImageValue())
         return cursorOrPendingFromValue(property, toCSSCursorImageValue(value));
 
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<StyleImage> ElementStyleResources::generatedOrPendingFromValue(CSSPropertyID property, CSSImageGeneratorValue* value)
@@ -88,6 +88,16 @@ PassRefPtr<StyleImage> ElementStyleResources::cursorOrPendingFromValue(CSSProper
     if (image && image->isPendingImage())
         m_pendingImageProperties.set(property, value);
     return image.release();
+}
+
+void ElementStyleResources::clearPendingImageProperties()
+{
+    m_pendingImageProperties.clear();
+}
+
+void ElementStyleResources::clearPendingSVGDocuments()
+{
+    m_pendingSVGDocuments.clear();
 }
 
 void ElementStyleResources::addPendingSVGDocument(FilterOperation* filterOperation, CSSSVGDocumentValue* cssSVGDocumentValue)

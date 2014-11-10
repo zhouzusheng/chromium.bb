@@ -48,15 +48,16 @@
 #include "core/dom/TransformSource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
-#include "core/frame/UseCounter.h"
 #include "core/xml/XMLTreeViewer.h"
+#include "core/xml/parser/SharedBufferReader.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
 #include "platform/SharedBuffer.h"
@@ -320,7 +321,7 @@ void XMLDocumentParser::clearCurrentNodeStack()
     if (m_currentNode && m_currentNode != document())
         m_currentNode->deref();
     m_currentNode = 0;
-    m_leafTextNode = 0;
+    m_leafTextNode = nullptr;
 
     if (m_currentNodeStack.size()) { // Aborted parsing.
         for (size_t i = m_currentNodeStack.size() - 1; i != 0; --i)
@@ -355,12 +356,6 @@ void XMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
     RefPtr<XMLDocumentParser> protect(this);
 
     doWrite(source.toString());
-
-    if (isStopped())
-        return;
-
-    if (document()->frame() && document()->frame()->script().canExecuteScripts(NotAboutToExecuteScript))
-        ImageLoader::dispatchPendingBeforeLoadEvents();
 }
 
 void XMLDocumentParser::handleError(XMLErrors::ErrorType type, const char* formattedMessage, TextPosition position)
@@ -390,7 +385,7 @@ void XMLDocumentParser::exitText()
 
     m_leafTextNode->appendData(toString(m_bufferedText.data(), m_bufferedText.size()));
     m_bufferedText.clear();
-    m_leafTextNode = 0;
+    m_leafTextNode = nullptr;
 }
 
 void XMLDocumentParser::detach()
@@ -450,7 +445,6 @@ void XMLDocumentParser::insertErrorMessageBlock()
 void XMLDocumentParser::notifyFinished(Resource* unusedResource)
 {
     ASSERT_UNUSED(unusedResource, unusedResource == m_pendingScript);
-    ASSERT(m_pendingScript->accessCount() > 0);
 
     ScriptSourceCode sourceCode(m_pendingScript.get());
     bool errorOccurred = m_pendingScript->errorOccurred();
@@ -460,7 +454,7 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
     m_pendingScript = 0;
 
     RefPtr<Element> e = m_scriptElement;
-    m_scriptElement = 0;
+    m_scriptElement = nullptr;
 
     ScriptLoader* scriptLoader = toScriptLoaderIfPossible(e.get());
     ASSERT(scriptLoader);
@@ -475,7 +469,7 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
         scriptLoader->dispatchLoadEvent();
     }
 
-    m_scriptElement = 0;
+    m_scriptElement = nullptr;
 
     if (!isDetached() && !m_requestingScript)
         resumeParsing();
@@ -524,27 +518,6 @@ static int matchFunc(const char*)
     // interfering with client applications that also use libxml2.  http://bugs.webkit.org/show_bug.cgi?id=17353
     return XMLDocumentParserScope::currentFetcher && currentThread() == libxmlLoaderThread;
 }
-
-class OffsetBuffer {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    OffsetBuffer(const Vector<char>& b) : m_buffer(b), m_currentOffset(0) { }
-
-    int readOutBytes(char* outputBuffer, unsigned askedToRead)
-    {
-        unsigned bytesLeft = m_buffer.size() - m_currentOffset;
-        unsigned lenToCopy = min(askedToRead, bytesLeft);
-        if (lenToCopy) {
-            memcpy(outputBuffer, m_buffer.data() + m_currentOffset, lenToCopy);
-            m_currentOffset += lenToCopy;
-        }
-        return lenToCopy;
-    }
-
-private:
-    Vector<char> m_buffer;
-    unsigned m_currentOffset;
-};
 
 static inline void setAttributes(Element* element, Vector<Attribute>& attributeVector, ParserContentPolicy parserContentPolicy)
 {
@@ -642,7 +615,7 @@ static void* openFunc(const char* uri)
         return &globalDescriptor;
 
     KURL finalURL;
-    Vector<char> data;
+    RefPtr<SharedBuffer> data;
 
     {
         ResourceFetcher* fetcher = XMLDocumentParserScope::currentFetcher;
@@ -653,7 +626,7 @@ static void* openFunc(const char* uri)
             FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, ResourceFetcher::defaultResourceOptions());
             ResourcePtr<Resource> resource = fetcher->fetchSynchronously(request);
             if (resource && !resource->errorOccurred()) {
-                resource->resourceBuffer()->moveTo(data);
+                data = resource->resourceBuffer();
                 finalURL = resource->response().url();
             }
         }
@@ -664,7 +637,7 @@ static void* openFunc(const char* uri)
     if (!shouldAllowExternalLoad(finalURL))
         return &globalDescriptor;
 
-    return new OffsetBuffer(data);
+    return new SharedBufferReader(data);
 }
 
 static int readFunc(void* context, char* buffer, int len)
@@ -673,8 +646,8 @@ static int readFunc(void* context, char* buffer, int len)
     if (context == &globalDescriptor)
         return 0;
 
-    OffsetBuffer* data = static_cast<OffsetBuffer*>(context);
-    return data->readOutBytes(buffer, len);
+    SharedBufferReader* data = static_cast<SharedBufferReader*>(context);
+    return data->readData(buffer, len);
 }
 
 static int writeFunc(void*, const char*, int)
@@ -686,7 +659,7 @@ static int writeFunc(void*, const char*, int)
 static int closeFunc(void* context)
 {
     if (context != &globalDescriptor) {
-        OffsetBuffer* data = static_cast<OffsetBuffer*>(context);
+        SharedBufferReader* data = static_cast<SharedBufferReader*>(context);
         delete data;
     }
     return 0;
@@ -733,7 +706,7 @@ PassRefPtr<XMLParserContext> XMLParserContext::createMemoryParser(xmlSAXHandlerP
     xmlParserCtxtPtr parser = xmlCreateMemoryParserCtxt(chunk.data(), chunk.length());
 
     if (!parser)
-        return 0;
+        return nullptr;
 
     // Copy the sax handler
     memcpy(parser->sax, handlers, sizeof(xmlSAXHandler));
@@ -765,7 +738,7 @@ bool XMLDocumentParser::supportsXMLVersion(const String& version)
 XMLDocumentParser::XMLDocumentParser(Document* document, FrameView* frameView)
     : ScriptableDocumentParser(document)
     , m_view(frameView)
-    , m_context(0)
+    , m_context(nullptr)
     , m_currentNode(document)
     , m_isCurrentlyParsing8BitChunk(false)
     , m_sawError(false)
@@ -788,7 +761,7 @@ XMLDocumentParser::XMLDocumentParser(Document* document, FrameView* frameView)
 XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parentElement, ParserContentPolicy parserContentPolicy)
     : ScriptableDocumentParser(&fragment->document(), parserContentPolicy)
     , m_view(0)
-    , m_context(0)
+    , m_context(nullptr)
     , m_currentNode(fragment)
     , m_isCurrentlyParsing8BitChunk(false)
     , m_sawError(false)
@@ -823,12 +796,13 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
     for (; !elemStack.isEmpty(); elemStack.removeLast()) {
         Element* element = elemStack.last();
         if (element->hasAttributes()) {
-            for (unsigned i = 0; i < element->attributeCount(); i++) {
-                const Attribute* attribute = element->attributeItem(i);
-                if (attribute->localName() == xmlnsAtom)
-                    m_defaultNamespaceURI = attribute->value();
-                else if (attribute->prefix() == xmlnsAtom)
-                    m_prefixToNamespaceMap.set(attribute->localName(), attribute->value());
+            unsigned attributeCount = element->attributeCount();
+            for (unsigned i = 0; i < attributeCount; ++i) {
+                const Attribute& attribute = element->attributeItem(i);
+                if (attribute.localName() == xmlnsAtom)
+                    m_defaultNamespaceURI = attribute.value();
+                else if (attribute.prefix() == xmlnsAtom)
+                    m_prefixToNamespaceMap.set(attribute.localName(), attribute.value());
             }
         }
     }
@@ -995,13 +969,13 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
 
     m_currentNode->parserAppendChild(newElement.get());
 
-    if (newElement->hasTagName(HTMLNames::templateTag))
-        pushCurrentNode(toHTMLTemplateElement(newElement.get())->content());
+    if (isHTMLTemplateElement(*newElement))
+        pushCurrentNode(toHTMLTemplateElement(*newElement).content());
     else
         pushCurrentNode(newElement.get());
 
-    if (newElement->hasTagName(HTMLNames::htmlTag))
-        toHTMLHtmlElement(newElement)->insertedByParser();
+    if (isHTMLHtmlElement(*newElement))
+        toHTMLHtmlElement(*newElement).insertedByParser();
 
     if (!m_parsingFragment && isFirstElement && document()->frame())
         document()->frame()->loader().dispatchDocumentElementAvailable();
@@ -1072,7 +1046,7 @@ void XMLDocumentParser::endElementNs()
             if (m_pendingScript)
                 pauseParsing();
         } else {
-            m_scriptElement = 0;
+            m_scriptElement = nullptr;
         }
 
         // JavaScript may have detached the parser
@@ -1453,7 +1427,7 @@ void XMLDocumentParser::doEnd()
                 finishParsing(context());
             }
 
-            m_context = 0;
+            m_context = nullptr;
         }
     }
 

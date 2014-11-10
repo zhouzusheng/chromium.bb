@@ -32,14 +32,17 @@ class SYNC_EXPORT_PRIVATE PushClientChannel
 
   virtual ~PushClientChannel();
 
+  // invalidation::NetworkChannel implementation.
+  virtual void SendMessage(const std::string& message) OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) OVERRIDE;
+
+  // SyncNetworkChannel implementation.
   // If not connected, connects with the given credentials.  If
   // already connected, the next connection attempt will use the given
   // credentials.
   virtual void UpdateCredentials(const std::string& email,
       const std::string& token) OVERRIDE;
-
-  // SyncNetworkChannel implementation.
-  virtual void SendEncodedMessage(const std::string& encoded_message) OVERRIDE;
 
   // notifier::PushClient::Observer implementation.
   virtual void OnNotificationsEnabled() OVERRIDE;
@@ -48,8 +51,36 @@ class SYNC_EXPORT_PRIVATE PushClientChannel
   virtual void OnIncomingNotification(
       const notifier::Notification& notification) OVERRIDE;
 
+  const std::string& GetServiceContextForTest() const;
+
+  int64 GetSchedulingHashForTest() const;
+
+  static std::string EncodeMessageForTest(const std::string& message,
+                                          const std::string& service_context,
+                                          int64 scheduling_hash);
+
+  static bool DecodeMessageForTest(const std::string& notification,
+                                   std::string* message,
+                                   std::string* service_context,
+                                   int64* scheduling_hash);
+
  private:
+  static void EncodeMessage(std::string* encoded_message,
+                            const std::string& message,
+                            const std::string& service_context,
+                            int64 scheduling_hash);
+  static bool DecodeMessage(const std::string& data,
+                            std::string* message,
+                            std::string* service_context,
+                            int64* scheduling_hash);
+  scoped_ptr<base::DictionaryValue> CollectDebugData() const;
+
   scoped_ptr<notifier::PushClient> push_client_;
+  std::string service_context_;
+  int64 scheduling_hash_;
+
+  // This count is saved for displaying statatistics.
+  int sent_messages_count_;
 
   DISALLOW_COPY_AND_ASSIGN(PushClientChannel);
 };

@@ -150,9 +150,6 @@ void ImageInputType::startResourceLoading()
     if (!renderer)
         return;
 
-    if (imageLoader->hasPendingBeforeLoadEvent())
-        return;
-
     RenderImageResource* imageResource = renderer->imageResource();
     imageResource->setImageResource(imageLoader->image());
 
@@ -233,6 +230,16 @@ unsigned ImageInputType::width() const
 
     RenderBox* box = element->renderBox();
     return box ? adjustForAbsoluteZoom(box->contentWidth(), box) : 0;
+}
+
+bool ImageInputType::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || BaseButtonInputType::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& ImageInputType::subResourceAttributeName() const
+{
+    return srcAttr;
 }
 
 } // namespace WebCore

@@ -4480,7 +4480,7 @@ LayoutRect RenderBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
         LayoutUnit x = isAfterLastChild ? inlineBox->x() + inlineBox->width() + margin
                                         : inlineBox->x() - margin;
         if (extraWidthToEndOfLine)
-            *extraWidthToEndOfLine = inlineBox->root()->width() - x;
+            *extraWidthToEndOfLine = inlineBox->root().width() - x;
         return LayoutRect(x, inlineBox->y(), 1, inlineBox->height());
     }
 

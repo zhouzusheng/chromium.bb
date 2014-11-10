@@ -1612,6 +1612,24 @@ ScriptData* ScriptData::New(const char* data, int length) {
 // Internally, UnboundScript is a SharedFunctionInfo, and Script is a
 // JSFunction.
 
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create() {
+  return new ScriptCompiler::CachedData();
+}
+
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create(
+    const uint8_t* data, int length,
+    BufferPolicy buffer_policy) {
+  return new ScriptCompiler::CachedData(data, length, buffer_policy);
+}
+
+
+void ScriptCompiler::CachedData::dispose(CachedData* cd) {
+  delete cd;
+}
+
+
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
                                        BufferPolicy buffer_policy_)
     : data(data_), length(length_), buffer_policy(buffer_policy_) {}
@@ -1733,7 +1751,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
       // Asked to produce cached data even though there is some already -> not
       // good. In release mode, try to do the right thing: Just regenerate the
       // data.
-      delete source->cached_data;
+      CachedData::dispose(source->cached_data);
       source->cached_data = NULL;
     }
   } else if (source->cached_data) {
@@ -1751,7 +1769,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
       // If the pre-data isn't sane we simply ignore it.
       delete script_data_impl;
       script_data_impl = NULL;
-      delete source->cached_data;
+      CachedData::dispose(source->cached_data);
       source->cached_data = NULL;
     }
   }
@@ -1801,7 +1819,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
     if ((options & kProduceDataToCache) && script_data_impl != NULL) {
       // script_data_impl now contains the data that was generated. source will
       // take the ownership.
-      source->cached_data = new CachedData(
+      source->cached_data = CachedData::create(
           reinterpret_cast<const uint8_t*>(script_data_impl->Data()),
           script_data_impl->Length(), CachedData::BufferOwned);
       script_data_impl->owns_store_ = false;
@@ -1835,7 +1853,7 @@ Local<Script> Script::Compile(v8::Handle<String> source,
   i::Handle<i::String> str = Utils::OpenHandle(*source);
   ScriptCompiler::CachedData* cached_data = NULL;
   if (script_data) {
-    cached_data = new ScriptCompiler::CachedData(
+    cached_data = ScriptCompiler::CachedData::create(
         reinterpret_cast<const uint8_t*>(script_data->Data()),
         script_data->Length());
   }

@@ -1103,6 +1103,15 @@ class V8_EXPORT ScriptCompiler {
       BufferOwned
     };
 
+    // SHEZ: These static functions need to be defined within V8 because we use
+    // SHEZ: a separate heap for V8 and Blink.
+    static CachedData* create();
+    static CachedData* create(const uint8_t* data, int length,
+                              BufferPolicy buffer_policy = BufferNotOwned);
+    static void dispose(CachedData* cd);
+
+    // SHEZ: These are made private to prevent their usage outside V8.
+  private:
     CachedData() : data(NULL), length(0), buffer_policy(BufferNotOwned) {}
 
     // If buffer_policy is BufferNotOwned, the caller keeps the ownership of
@@ -1114,6 +1123,8 @@ class V8_EXPORT ScriptCompiler {
     ~CachedData();
     // TODO(marja): Async compilation; add constructors which take a callback
     // which will be called when V8 no longer needs the data.
+
+  public:
     const uint8_t* data;
     int length;
     BufferPolicy buffer_policy;
@@ -6121,7 +6132,7 @@ ScriptCompiler::Source::Source(Local<String> string,
 
 
 ScriptCompiler::Source::~Source() {
-  delete cached_data;
+  CachedData::dispose(cached_data);
 }
 
 

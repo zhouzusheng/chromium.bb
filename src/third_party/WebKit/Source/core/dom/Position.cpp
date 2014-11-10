@@ -1114,6 +1114,8 @@ static InlineTextBox* searchAheadForBetterMatch(RenderObject* renderer)
         if (isNonTextLeafChild(next))
             return 0;
         if (next->isText()) {
+            if (next->style()->userModify() == READ_ONLY)
+                return 0;
             InlineTextBox* match = 0;
             int minOffset = INT_MAX;
             for (InlineTextBox* box = toRenderText(next)->firstTextBox(); box; box = box->nextTextBox()) {
@@ -1158,6 +1160,10 @@ void Position::getInlineBoxAndOffset(EAffinity affinity, TextDirection primaryDi
     if (!renderer->isText()) {
         inlineBox = 0;
         if (canHaveChildrenForEditing(deprecatedNode()) && renderer->isRenderBlockFlow() && hasRenderedNonAnonymousDescendantsWithHeight(renderer)) {
+            if (renderer->isRenderBlock() && toRenderBlock(renderer)->childrenInline()) {
+                return;
+            }
+
             // Try a visually equivalent position with possibly opposite editability. This helps in case |this| is in
             // an editable block but surrounded by non-editable positions. It acts to negate the logic at the beginning
             // of RenderObject::createVisiblePosition().

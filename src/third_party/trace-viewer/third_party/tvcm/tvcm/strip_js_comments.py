@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 """Utility function for stripping comments out of javascript source code."""
 
-def _tokenize_js(text):
+import re
+
+def _TokenizeJS(text):
   """Splits source code text into segments in preparation for comment stripping.
 
   Note that this doesn't tokenize for parsing. There is no notion of statements,
@@ -17,26 +19,24 @@ def _tokenize_js(text):
   """
   rest = text
   tokens = ["//", "/*", "*/", "\n"]
+  next_tok = re.compile('|'.join([re.escape(x) for x in tokens]))
   while len(rest):
-    indices = [rest.find(token) for token in tokens]
-    found_indices = [index for index in indices if index >= 0]
-
-    if len(found_indices) == 0:
+    m = next_tok.search(rest)
+    if not m:
       # end of string
       yield rest
       return
-
-    min_index = min(found_indices)
-    token_with_min = tokens[indices.index(min_index)]
+    min_index = m.start()
+    end_index = m.end()
 
     if min_index > 0:
       yield rest[:min_index]
 
-    yield rest[min_index:min_index + len(token_with_min)]
-    rest = rest[min_index + len(token_with_min):]
+    yield rest[min_index:end_index]
+    rest = rest[end_index:]
 
 
-def strip_js_comments(text):
+def StripJSComments(text):
   """Strips comments out of javascript source code.
 
   Args:
@@ -46,7 +46,7 @@ def strip_js_comments(text):
     Javascript source text with comments stripped out.
   """
   result_tokens = []
-  token_stream = _tokenize_js(text).__iter__()
+  token_stream = _TokenizeJS(text).__iter__()
   while True:
     try:
       t = token_stream.next()

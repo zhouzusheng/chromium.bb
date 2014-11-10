@@ -985,7 +985,6 @@
       'defines': [
         'MP_API_COMPATIBLE',
         'NSS_DISABLE_DBM',
-        'NSS_ENABLE_ECC',
         'NSS_STATIC',
         'NSS_USE_STATIC_LIBS',
         'RIJNDAEL_INCLUDE_TABLES',
@@ -1025,7 +1024,6 @@
       ],
       'direct_dependent_settings': {
         'defines': [
-          'NSS_ENABLE_ECC',
           'NSS_STATIC',
           'NSS_USE_STATIC_LIBS',
           'USE_UTIL_DIRECTLY',

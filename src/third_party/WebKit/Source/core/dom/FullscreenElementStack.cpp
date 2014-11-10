@@ -31,10 +31,12 @@
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/rendering/RenderFullScreen.h"
@@ -44,13 +46,18 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static bool isAttributeOnAllOwners(const WebCore::QualifiedName& attribute, const WebCore::QualifiedName& prefixedAttribute, const HTMLFrameOwnerElement* owner)
+static bool fullscreenIsAllowedForAllOwners(const Document& document)
 {
+    const HTMLFrameOwnerElement* owner = document.ownerElement();
     if (!owner)
         return true;
     do {
-        if (!(owner->hasAttribute(attribute) || owner->hasAttribute(prefixedAttribute)))
-            return false;
+        if (!owner->hasAttribute(allowfullscreenAttr)) {
+            if (owner->hasAttribute(webkitallowfullscreenAttr))
+                UseCounter::count(document, UseCounter::PrefixedAllowFullscreenAttribute);
+            else
+                return false;
+        }
     } while ((owner = owner->document().ownerElement()));
     return true;
 }
@@ -60,7 +67,7 @@ const char* FullscreenElementStack::supplementName()
     return "FullscreenElementStack";
 }
 
-FullscreenElementStack* FullscreenElementStack::from(Document* document)
+FullscreenElementStack& FullscreenElementStack::from(Document& document)
 {
     FullscreenElementStack* fullscreen = fromIfExists(document);
     if (!fullscreen) {
@@ -68,42 +75,42 @@ FullscreenElementStack* FullscreenElementStack::from(Document* document)
         DocumentSupplement::provideTo(document, supplementName(), adoptPtr(fullscreen));
     }
 
-    return fullscreen;
+    return *fullscreen;
 }
 
-FullscreenElementStack* FullscreenElementStack::fromIfExistsSlow(Document* document)
+FullscreenElementStack* FullscreenElementStack::fromIfExistsSlow(Document& document)
 {
     return static_cast<FullscreenElementStack*>(DocumentSupplement::from(document, supplementName()));
 }
 
-Element* FullscreenElementStack::fullscreenElementFrom(Document* document)
+Element* FullscreenElementStack::fullscreenElementFrom(Document& document)
 {
     if (FullscreenElementStack* found = fromIfExists(document))
         return found->webkitFullscreenElement();
     return 0;
 }
 
-Element* FullscreenElementStack::currentFullScreenElementFrom(Document* document)
+Element* FullscreenElementStack::currentFullScreenElementFrom(Document& document)
 {
     if (FullscreenElementStack* found = fromIfExists(document))
         return found->webkitCurrentFullScreenElement();
     return 0;
 }
 
-bool FullscreenElementStack::isFullScreen(Document* document)
+bool FullscreenElementStack::isFullScreen(Document& document)
 {
     if (FullscreenElementStack* found = fromIfExists(document))
         return found->webkitIsFullScreen();
     return false;
 }
 
-FullscreenElementStack::FullscreenElementStack(Document* document)
-    : DocumentLifecycleObserver(document)
+FullscreenElementStack::FullscreenElementStack(Document& document)
+    : DocumentLifecycleObserver(&document)
     , m_areKeysEnabledInFullScreen(false)
     , m_fullScreenRenderer(0)
     , m_fullScreenChangeDelayTimer(this, &FullscreenElementStack::fullScreenChangeDelayTimerFired)
 {
-    document->setHasFullscreenElementStack();
+    document.setHasFullscreenElementStack();
 }
 
 FullscreenElementStack::~FullscreenElementStack()
@@ -126,18 +133,22 @@ void FullscreenElementStack::documentWasDetached()
 
 void FullscreenElementStack::documentWasDisposed()
 {
-    m_fullScreenElement = 0;
+    m_fullScreenElement = nullptr;
     m_fullScreenElementStack.clear();
 }
 
 bool FullscreenElementStack::fullScreenIsAllowedForElement(Element* element) const
 {
     ASSERT(element);
-    return isAttributeOnAllOwners(allowfullscreenAttr, webkitallowfullscreenAttr, element->document().ownerElement());
+    return fullscreenIsAllowedForAllOwners(element->document());
 }
 
 void FullscreenElementStack::requestFullScreenForElement(Element* element, unsigned short flags, FullScreenCheckType checkType)
 {
+    // Ignore this request if the document is not in a live frame.
+    if (!document()->isActive())
+        return;
+
     // The Mozilla Full Screen API <https://wiki.mozilla.org/Gecko:FullScreenAPI> has different requirements
     // for full screen mode, and do not have the concept of a full screen element stack.
     bool inLegacyMozillaMode = (flags & Element::LEGACY_MOZILLA_REQUEST);
@@ -170,8 +181,9 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
 
         // A descendant browsing context's document has a non-empty fullscreen element stack.
         bool descendentHasNonEmptyStack = false;
-        for (Frame* descendant = document()->frame() ? document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
-            if (fullscreenElementFrom(descendant->document())) {
+        for (LocalFrame* descendant = document()->frame() ? document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
+            ASSERT(descendant->document());
+            if (fullscreenElementFrom(*descendant->document())) {
                 descendentHasNonEmptyStack = true;
                 break;
             }
@@ -184,7 +196,7 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
         //   - an activation behavior is currently being processed whose click event was trusted, or
         //   - the event listener for a trusted click event is being handled.
         // FIXME: Does this need to null-check settings()?
-        if (!UserGestureIndicator::processingUserGesture() && (!element->isMediaElement() || document()->settings()->mediaFullscreenRequiresUserGesture()))
+        if (!UserGestureIndicator::processingUserGesture() && (!isHTMLMediaElement(*element) || document()->settings()->mediaFullscreenRequiresUserGesture()))
             break;
 
         // There is a previously-established user preference, security risk, or platform limitation.
@@ -217,19 +229,19 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
             // stack, and queue a task to fire an event named fullscreenchange with its bubbles attribute
             // set to true on the document.
             if (!followingDoc) {
-                from(currentDoc)->pushFullscreenElementStack(element);
+                from(*currentDoc).pushFullscreenElementStack(element);
                 addDocumentToFullScreenChangeEventQueue(currentDoc);
                 continue;
             }
 
             // 3. Otherwise, if document's fullscreen element stack is either empty or its top element
             // is not following document's browsing context container,
-            Element* topElement = fullscreenElementFrom(currentDoc);
+            Element* topElement = fullscreenElementFrom(*currentDoc);
             if (!topElement || topElement != followingDoc->ownerElement()) {
                 // ...push following document's browsing context container on document's fullscreen element
                 // stack, and queue a task to fire an event named fullscreenchange with its bubbles attribute
                 // set to true on document.
-                from(currentDoc)->pushFullscreenElementStack(followingDoc->ownerElement());
+                from(*currentDoc).pushFullscreenElementStack(followingDoc->ownerElement());
                 addDocumentToFullScreenChangeEventQueue(currentDoc);
                 continue;
             }
@@ -247,7 +259,7 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
     } while (0);
 
     m_fullScreenErrorEventTargetQueue.append(element ? element : document()->documentElement());
-    m_fullScreenChangeDelayTimer.startOneShot(0);
+    m_fullScreenChangeDelayTimer.startOneShot(0, FROM_HERE);
 }
 
 void FullscreenElementStack::webkitCancelFullScreen()
@@ -263,9 +275,9 @@ void FullscreenElementStack::webkitCancelFullScreen()
     // calling webkitExitFullscreen():
     Vector<RefPtr<Element> > replacementFullscreenElementStack;
     replacementFullscreenElementStack.append(fullscreenElementFrom(document()->topDocument()));
-    FullscreenElementStack* topFullscreenElementStack = from(document()->topDocument());
-    topFullscreenElementStack->m_fullScreenElementStack.swap(replacementFullscreenElementStack);
-    topFullscreenElementStack->webkitExitFullscreen();
+    FullscreenElementStack& topFullscreenElementStack = from(document()->topDocument());
+    topFullscreenElementStack.m_fullScreenElementStack.swap(replacementFullscreenElementStack);
+    topFullscreenElementStack.webkitExitFullscreen();
 }
 
 void FullscreenElementStack::webkitExitFullscreen()
@@ -274,7 +286,8 @@ void FullscreenElementStack::webkitExitFullscreen()
 
     // 1. Let doc be the context object. (i.e. "this")
     Document* currentDoc = document();
-    ASSERT(currentDoc->isActive());
+    if (!currentDoc->isActive())
+        return;
 
     // 2. If doc's fullscreen element stack is empty, terminate these steps.
     if (m_fullScreenElementStack.isEmpty())
@@ -284,15 +297,17 @@ void FullscreenElementStack::webkitExitFullscreen()
     // element stack (if any), ordered so that the child of the doc is last and the document furthest
     // away from the doc is first.
     Deque<RefPtr<Document> > descendants;
-    for (Frame* descendant = document()->frame() ?  document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
-        if (fullscreenElementFrom(descendant->document()))
+    for (LocalFrame* descendant = document()->frame() ?  document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
+        ASSERT(descendant->document());
+        if (fullscreenElementFrom(*descendant->document()))
             descendants.prepend(descendant->document());
     }
 
     // 4. For each descendant in descendants, empty descendant's fullscreen element stack, and queue a
     // task to fire an event named fullscreenchange with its bubbles attribute set to true on descendant.
     for (Deque<RefPtr<Document> >::iterator i = descendants.begin(); i != descendants.end(); ++i) {
-        from(i->get())->clearFullscreenElementStack();
+        ASSERT(*i);
+        from(**i).clearFullscreenElementStack();
         addDocumentToFullScreenChangeEventQueue(i->get());
     }
 
@@ -300,11 +315,11 @@ void FullscreenElementStack::webkitExitFullscreen()
     Element* newTop = 0;
     while (currentDoc) {
         // 1. Pop the top element of doc's fullscreen element stack.
-        from(currentDoc)->popFullscreenElementStack();
+        from(*currentDoc).popFullscreenElementStack();
 
         //    If doc's fullscreen element stack is non-empty and the element now at the top is either
         //    not in a document or its node document is not doc, repeat this substep.
-        newTop = fullscreenElementFrom(currentDoc);
+        newTop = fullscreenElementFrom(*currentDoc);
         if (newTop && (!newTop->inDocument() || newTop->document() != currentDoc))
             continue;
 
@@ -345,14 +360,13 @@ void FullscreenElementStack::webkitExitFullscreen()
     host->chrome().client().enterFullScreenForElement(newTop);
 }
 
-bool FullscreenElementStack::webkitFullscreenEnabled(Document* document)
+bool FullscreenElementStack::webkitFullscreenEnabled(Document& document)
 {
     // 4. The fullscreenEnabled attribute must return true if the context object and all ancestor
     // browsing context's documents have their fullscreen enabled flag set, or false otherwise.
 
     // Top-level browsing contexts are implied to have their allowFullScreen attribute set.
-    return isAttributeOnAllOwners(allowfullscreenAttr, webkitallowfullscreenAttr, document->ownerElement());
-
+    return fullscreenIsAllowedForAllOwners(document);
 }
 
 void FullscreenElementStack::webkitWillEnterFullScreenForElement(Element* element)
@@ -387,7 +401,7 @@ void FullscreenElementStack::webkitWillEnterFullScreenForElement(Element* elemen
 
     // FIXME: This should not call updateStyleIfNeeded.
     document()->setNeedsStyleRecalc(SubtreeStyleChange);
-    document()->updateStyleIfNeeded();
+    document()->updateRenderTreeIfNeeded();
 }
 
 void FullscreenElementStack::webkitDidEnterFullScreenForElement(Element*)
@@ -400,7 +414,7 @@ void FullscreenElementStack::webkitDidEnterFullScreenForElement(Element*)
 
     m_fullScreenElement->didBecomeFullscreenElement();
 
-    m_fullScreenChangeDelayTimer.startOneShot(0);
+    m_fullScreenChangeDelayTimer.startOneShot(0, FROM_HERE);
 }
 
 void FullscreenElementStack::webkitWillExitFullScreenForElement(Element*)
@@ -429,7 +443,7 @@ void FullscreenElementStack::webkitDidExitFullScreenForElement(Element*)
     if (m_fullScreenRenderer)
         m_fullScreenRenderer->unwrapRenderer();
 
-    m_fullScreenElement = 0;
+    m_fullScreenElement = nullptr;
     document()->setNeedsStyleRecalc(SubtreeStyleChange);
 
     // When webkitCancelFullScreen is called, we call webkitExitFullScreen on the topDocument(). That
@@ -437,8 +451,9 @@ void FullscreenElementStack::webkitDidExitFullScreenForElement(Element*)
     // the exiting document.
     Document* exitingDocument = document();
     if (m_fullScreenChangeEventTargetQueue.isEmpty() && m_fullScreenErrorEventTargetQueue.isEmpty())
-        exitingDocument = document()->topDocument();
-    from(exitingDocument)->m_fullScreenChangeDelayTimer.startOneShot(0);
+        exitingDocument = &document()->topDocument();
+    ASSERT(exitingDocument);
+    from(*exitingDocument).m_fullScreenChangeDelayTimer.startOneShot(0, FROM_HERE);
 }
 
 void FullscreenElementStack::setFullScreenRenderer(RenderFullScreen* renderer)
@@ -557,7 +572,7 @@ void FullscreenElementStack::addDocumentToFullScreenChangeEventQueue(Document* d
     ASSERT(doc);
 
     Node* target = 0;
-    if (FullscreenElementStack* fullscreen = fromIfExists(doc)) {
+    if (FullscreenElementStack* fullscreen = fromIfExists(*doc)) {
         target = fullscreen->webkitFullscreenElement();
         if (!target)
             target = fullscreen->webkitCurrentFullScreenElement();

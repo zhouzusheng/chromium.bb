@@ -103,7 +103,7 @@ bool isOnAccessControlResponseHeaderWhitelist(const String& name)
 void updateRequestForAccessControl(ResourceRequest& request, SecurityOrigin* securityOrigin, StoredCredentials allowCredentials)
 {
     request.removeCredentials();
-    request.setAllowCookies(allowCredentials == AllowStoredCredentials);
+    request.setAllowStoredCredentials(allowCredentials == AllowStoredCredentials);
 
     if (securityOrigin)
         request.setHTTPOrigin(securityOrigin->toAtomicString());
@@ -152,16 +152,18 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
         return false;
     }
 
-    // A wildcard Access-Control-Allow-Origin can not be used if credentials are to be sent,
-    // even with Access-Control-Allow-Credentials set to true.
     const AtomicString& accessControlOriginString = response.httpHeaderField(accessControlAllowOrigin);
-    if (accessControlOriginString == starAtom && includeCredentials == DoNotAllowStoredCredentials)
-        return true;
-
-    if (accessControlOriginString != securityOrigin->toAtomicString()) {
-        if (accessControlOriginString == starAtom) {
+    if (accessControlOriginString == starAtom) {
+        // A wildcard Access-Control-Allow-Origin can not be used if credentials are to be sent,
+        // even with Access-Control-Allow-Credentials set to true.
+        if (includeCredentials == DoNotAllowStoredCredentials)
+            return true;
+        if (response.isHTTP()) {
             errorDescription = "A wildcard '*' cannot be used in the 'Access-Control-Allow-Origin' header when the credentials flag is true. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
-        } else if (accessControlOriginString.isEmpty()) {
+            return false;
+        }
+    } else if (accessControlOriginString != securityOrigin->toAtomicString()) {
+        if (accessControlOriginString.isEmpty()) {
             errorDescription = "No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
         } else if (accessControlOriginString.string().find(isOriginSeparator, 0) != kNotFound) {
             errorDescription = "The 'Access-Control-Allow-Origin' header contains multiple values '" + accessControlOriginString + "', but only one is allowed. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
@@ -240,7 +242,7 @@ bool CrossOriginAccessControl::handleRedirect(Resource* resource, SecurityOrigin
         bool allowRedirect = isLegalRedirectLocation(requestURL, errorDescription);
         if (allowRedirect) {
             // Step 5: perform resource sharing access check.
-            StoredCredentials withCredentials = resource->resourceRequest().allowCookies() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+            StoredCredentials withCredentials = resource->lastResourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
             allowRedirect = passesAccessControlCheck(redirectResponse, withCredentials, securityOrigin, errorDescription);
             if (allowRedirect) {
                 RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::create(originalURL);

@@ -37,6 +37,7 @@
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
+#include "wtf/RefCountedLeakCounter.h"
 
 using blink::WebExternalTextureLayer;
 using blink::WebGraphicsContext3D;
@@ -45,6 +46,8 @@ namespace {
 enum {
     InvalidMailboxIndex = -1,
 };
+
+DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, canvas2DLayerBridgeInstanceCounter, ("Canvas2DLayerBridge"));
 }
 
 namespace WebCore {
@@ -52,7 +55,7 @@ namespace WebCore {
 static PassRefPtr<SkSurface> createSkSurface(GrContext* gr, const IntSize& size, int msaaSampleCount = 0)
 {
     if (!gr)
-        return 0;
+        return nullptr;
     gr->resetContext();
     SkImageInfo info;
     info.fWidth = size.width();
@@ -67,10 +70,10 @@ PassRefPtr<Canvas2DLayerBridge> Canvas2DLayerBridge::create(const IntSize& size,
     TRACE_EVENT_INSTANT0("test_gpu", "Canvas2DLayerBridgeCreation");
     OwnPtr<blink::WebGraphicsContext3DProvider> contextProvider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
     if (!contextProvider)
-        return 0;
+        return nullptr;
     RefPtr<SkSurface> surface(createSkSurface(contextProvider->grContext(), size, msaaSampleCount));
     if (!surface)
-        return 0;
+        return nullptr;
     RefPtr<Canvas2DLayerBridge> layerBridge;
     OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
     layerBridge = adoptRef(new Canvas2DLayerBridge(contextProvider.release(), canvas.release(), msaaSampleCount, opacityMode));
@@ -104,6 +107,9 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(PassOwnPtr<blink::WebGraphicsContext3DP
     GraphicsLayer::registerContentsLayer(m_layer->layer());
     m_layer->setRateLimitContext(m_rateLimitingEnabled);
     m_canvas->setNotificationClient(this);
+#ifndef NDEBUG
+    canvas2DLayerBridgeInstanceCounter.increment();
+#endif
 }
 
 Canvas2DLayerBridge::~Canvas2DLayerBridge()
@@ -119,25 +125,35 @@ Canvas2DLayerBridge::~Canvas2DLayerBridge()
     }
 #endif
     m_mailboxes.clear();
+#ifndef NDEBUG
+    canvas2DLayerBridgeInstanceCounter.decrement();
+#endif
 }
 
 void Canvas2DLayerBridge::beginDestruction()
 {
     ASSERT(!m_destructionInProgress);
-    m_destructionInProgress = true;
+    setRateLimitingEnabled(false);
+    m_canvas->silentFlush();
     freeTransientResources();
     setIsHidden(true);
+    m_destructionInProgress = true;
     GraphicsLayer::unregisterContentsLayer(m_layer->layer());
     m_canvas->setNotificationClient(0);
+    m_canvas.clear();
     m_layer->clearTexture();
     // Orphaning the layer is required to trigger the recration of a new layer
     // in the case where destruction is caused by a canvas resize. Test:
     // virtual/gpu/fast/canvas/canvas-resize-after-paint-without-layout.html
     m_layer->layer()->removeFromParent();
+    // To anyone who ever hits this assert: Please update crbug.com/344666
+    // with repro steps.
+    ASSERT(!m_bytesAllocated);
 }
 
 void Canvas2DLayerBridge::setIsHidden(bool hidden)
 {
+    ASSERT(!m_destructionInProgress);
     bool newHiddenValue = hidden || m_destructionInProgress;
     if (m_isHidden == newHiddenValue)
         return;
@@ -150,6 +166,7 @@ void Canvas2DLayerBridge::setIsHidden(bool hidden)
 
 void Canvas2DLayerBridge::freeTransientResources()
 {
+    ASSERT(!m_destructionInProgress);
     freeReleasedMailbox();
     flush();
     freeMemoryIfPossible(bytesAllocated());
@@ -158,7 +175,7 @@ void Canvas2DLayerBridge::freeTransientResources()
 
 bool Canvas2DLayerBridge::hasTransientResources() const
 {
-    return hasReleasedMailbox() || bytesAllocated();
+    return !m_destructionInProgress && (hasReleasedMailbox() || bytesAllocated());
 }
 
 void Canvas2DLayerBridge::limitPendingFrames()
@@ -188,8 +205,9 @@ void Canvas2DLayerBridge::limitPendingFrames()
 
 void Canvas2DLayerBridge::prepareForDraw()
 {
+    ASSERT(!m_destructionInProgress);
     ASSERT(m_layer);
-    if (!isValid()) {
+    if (!surfaceIsValid() && !recoverSurface()) {
         if (m_canvas) {
             // drop pending commands because there is no surface to draw to
             m_canvas->silentFlush();
@@ -201,6 +219,7 @@ void Canvas2DLayerBridge::prepareForDraw()
 
 void Canvas2DLayerBridge::storageAllocatedForRecordingChanged(size_t bytesAllocated)
 {
+    ASSERT(!m_destructionInProgress);
     intptr_t delta = (intptr_t)bytesAllocated - (intptr_t)m_bytesAllocated;
     m_bytesAllocated = bytesAllocated;
     Canvas2DLayerManager::get().layerTransientResourceAllocationChanged(this, delta);
@@ -213,12 +232,14 @@ size_t Canvas2DLayerBridge::storageAllocatedForRecording()
 
 void Canvas2DLayerBridge::flushedDrawCommands()
 {
+    ASSERT(!m_destructionInProgress);
     storageAllocatedForRecordingChanged(storageAllocatedForRecording());
     m_framesPending = 0;
 }
 
 void Canvas2DLayerBridge::skippedPendingDrawCommands()
 {
+    ASSERT(!m_destructionInProgress);
     // Stop triggering the rate limiter if SkDeferredCanvas is detecting
     // and optimizing overdraw.
     setRateLimitingEnabled(false);
@@ -227,7 +248,7 @@ void Canvas2DLayerBridge::skippedPendingDrawCommands()
 
 void Canvas2DLayerBridge::setRateLimitingEnabled(bool enabled)
 {
-    ASSERT(!m_destructionInProgress || !enabled);
+    ASSERT(!m_destructionInProgress);
     if (m_rateLimitingEnabled != enabled) {
         m_rateLimitingEnabled = enabled;
         m_layer->setRateLimitContext(m_rateLimitingEnabled);
@@ -236,6 +257,7 @@ void Canvas2DLayerBridge::setRateLimitingEnabled(bool enabled)
 
 size_t Canvas2DLayerBridge::freeMemoryIfPossible(size_t bytesToFree)
 {
+    ASSERT(!m_destructionInProgress);
     size_t bytesFreed = m_canvas->freeMemoryIfPossible(bytesToFree);
     m_bytesAllocated -= bytesFreed;
     if (bytesFreed)
@@ -245,6 +267,7 @@ size_t Canvas2DLayerBridge::freeMemoryIfPossible(size_t bytesToFree)
 
 void Canvas2DLayerBridge::flush()
 {
+    ASSERT(!m_destructionInProgress);
     if (m_canvas->hasPendingCommands()) {
         TRACE_EVENT0("cc", "Canvas2DLayerBridge::flush");
         freeReleasedMailbox(); // To avoid unnecessary triple-buffering
@@ -272,6 +295,8 @@ bool Canvas2DLayerBridge::hasReleasedMailbox() const
 
 void Canvas2DLayerBridge::freeReleasedMailbox()
 {
+    if (!m_surfaceIsValid || m_contextProvider->context3d()->isContextLost())
+        return;
     MailboxInfo* mailboxInfo = releasedMailboxInfo();
     if (!mailboxInfo)
         return;
@@ -297,59 +322,69 @@ blink::WebGraphicsContext3D* Canvas2DLayerBridge::context()
 {
     // Check on m_layer is necessary because context() may be called during
     // the destruction of m_layer
-    if (m_layer) {
-        isValid(); // To ensure rate limiter is disabled if context is lost.
+    if (m_layer && !m_destructionInProgress && !surfaceIsValid()) {
+        recoverSurface(); // To ensure rate limiter is disabled if context is lost.
     }
-    return m_contextProvider->context3d();
+    return m_contextProvider ? m_contextProvider->context3d() : 0;
 }
 
-bool Canvas2DLayerBridge::isValid()
+bool Canvas2DLayerBridge::surfaceIsValid()
 {
-    ASSERT(m_layer);
+    ASSERT(!m_destructionInProgress);
+    return !m_destructionInProgress && m_surfaceIsValid && !m_contextProvider->context3d()->isContextLost();
+}
+
+bool Canvas2DLayerBridge::recoverSurface()
+{
+    ASSERT(!m_destructionInProgress);
+    ASSERT(m_layer && !surfaceIsValid());
     if (m_destructionInProgress)
         return false;
-    if (!m_contextProvider || m_contextProvider->context3d()->isContextLost() || !m_surfaceIsValid) {
-        // Attempt to recover.
-        blink::WebGraphicsContext3D* sharedContext = 0;
-        m_mailboxes.clear();
-        m_releasedMailboxInfoIndex = InvalidMailboxIndex;
-        m_layer->clearTexture();
-        m_contextProvider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
-        if (m_contextProvider)
-            sharedContext = m_contextProvider->context3d();
 
-        if (!sharedContext || sharedContext->isContextLost()) {
-            m_surfaceIsValid = false;
+    blink::WebGraphicsContext3D* sharedContext = 0;
+    // We must clear the mailboxes before calling m_layer->clearTexture() to prevent
+    // re-entry via mailboxReleased from operating on defunct GrContext objects.
+    m_mailboxes.clear();
+    m_releasedMailboxInfoIndex = InvalidMailboxIndex;
+    m_layer->clearTexture();
+    m_contextProvider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    if (m_contextProvider)
+        sharedContext = m_contextProvider->context3d();
+
+    if (!sharedContext || sharedContext->isContextLost()) {
+        m_surfaceIsValid = false;
+    } else {
+        IntSize size(m_canvas->getTopDevice()->width(), m_canvas->getTopDevice()->height());
+        RefPtr<SkSurface> surface(createSkSurface(m_contextProvider->grContext(), size, m_msaaSampleCount));
+        if (surface.get()) {
+            m_canvas->setSurface(surface.get());
+            m_surfaceIsValid = true;
+            // FIXME: draw sad canvas picture into new buffer crbug.com/243842
         } else {
-            IntSize size(m_canvas->getTopDevice()->width(), m_canvas->getTopDevice()->height());
-            RefPtr<SkSurface> surface(createSkSurface(m_contextProvider->grContext(), size, m_msaaSampleCount));
-            if (surface.get()) {
-                m_canvas->setSurface(surface.get());
-                m_surfaceIsValid = true;
-                // FIXME: draw sad canvas picture into new buffer crbug.com/243842
-            } else {
-                // Surface allocation failed. Set m_surfaceIsValid to false to
-                // trigger subsequent retry.
-                m_surfaceIsValid = false;
-            }
+            // Surface allocation failed. Set m_surfaceIsValid to false to
+            // trigger subsequent retry.
+            m_surfaceIsValid = false;
         }
     }
     if (!m_surfaceIsValid)
         setRateLimitingEnabled(false);
+
     return m_surfaceIsValid;
 }
 
 bool Canvas2DLayerBridge::prepareMailbox(blink::WebExternalTextureMailbox* outMailbox, blink::WebExternalBitmap* bitmap)
 {
+    ASSERT(!m_destructionInProgress);
     if (bitmap) {
         // Using accelerated 2d canvas with software renderer, which
-        // should only happen in tests that use fake graphics contexts.
-        // In this case, we do not care about producing any results for
-        // compositing.
+        // should only happen in tests that use fake graphics contexts
+        // or in Android WebView in software mode. In this case, we do
+        // not care about producing any results for this canvas.
         m_canvas->silentFlush();
+        m_lastImageId = 0;
         return false;
     }
-    if (!isValid())
+    if (!surfaceIsValid() && !recoverSurface())
         return false;
 
     blink::WebGraphicsContext3D* webContext = context();
@@ -460,6 +495,7 @@ void Canvas2DLayerBridge::mailboxReleased(const blink::WebExternalTextureMailbox
 
 blink::WebLayer* Canvas2DLayerBridge::layer() const
 {
+    ASSERT(!m_destructionInProgress);
     ASSERT(m_layer);
     return m_layer->layer();
 }
@@ -474,7 +510,7 @@ void Canvas2DLayerBridge::willUse()
 Platform3DObject Canvas2DLayerBridge::getBackingTexture()
 {
     ASSERT(!m_destructionInProgress);
-    if (!isValid())
+    if (!surfaceIsValid() && !recoverSurface())
         return 0;
     willUse();
     m_canvas->flush();

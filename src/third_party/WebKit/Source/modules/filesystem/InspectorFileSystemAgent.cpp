@@ -38,10 +38,11 @@
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReader.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/VoidCallback.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorState.h"
+#include "heap/Handle.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryReader.h"
@@ -131,7 +132,7 @@ private:
 
     bool didGetEntry(Entry*);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<TypeBuilder::FileSystem::Entry> entry = 0)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<TypeBuilder::FileSystem::Entry> entry = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), entry);
     }
@@ -164,7 +165,7 @@ void FileSystemRootRequest::start(ExecutionContext* executionContext)
 
     OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileSystemRootRequest::didGetEntry);
     OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
-    LocalFileSystem::from(executionContext)->resolveURL(executionContext, rootURL, fileSystemCallbacks.release());
+    LocalFileSystem::from(*executionContext)->resolveURL(executionContext, rootURL, fileSystemCallbacks.release());
 }
 
 bool FileSystemRootRequest::didGetEntry(Entry* entry)
@@ -200,9 +201,9 @@ private:
     }
 
     bool didGetEntry(Entry*);
-    bool didReadDirectoryEntries(const EntryVector&);
+    bool didReadDirectoryEntries(const EntryHeapVector&);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries = 0)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), entries);
     }
@@ -216,7 +217,7 @@ private:
     RefPtr<RequestDirectoryContentCallback> m_requestCallback;
     KURL m_url;
     RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
-    RefPtr<DirectoryReader> m_directoryReader;
+    RefPtrWillBePersistent<DirectoryReader> m_directoryReader;
 };
 
 void DirectoryContentRequest::start(ExecutionContext* executionContext)
@@ -228,7 +229,7 @@ void DirectoryContentRequest::start(ExecutionContext* executionContext)
 
     OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
 
-    LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
+    LocalFileSystem::from(*executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
 
 bool DirectoryContentRequest::didGetEntry(Entry* entry)
@@ -256,7 +257,7 @@ void DirectoryContentRequest::readDirectoryEntries()
     m_directoryReader->readEntries(successCallback.release(), errorCallback.release());
 }
 
-bool DirectoryContentRequest::didReadDirectoryEntries(const EntryVector& entries)
+bool DirectoryContentRequest::didReadDirectoryEntries(const EntryHeapVector& entries)
 {
     if (entries.isEmpty()) {
         reportResult(static_cast<FileError::ErrorCode>(0), m_entries);
@@ -264,7 +265,7 @@ bool DirectoryContentRequest::didReadDirectoryEntries(const EntryVector& entries
     }
 
     for (size_t i = 0; i < entries.size(); ++i) {
-        RefPtr<Entry> entry = entries[i];
+        RefPtrWillBeRawPtr<Entry> entry = entries[i];
         RefPtr<TypeBuilder::FileSystem::Entry> entryForFrontend = TypeBuilder::FileSystem::Entry::create()
             .setUrl(entry->toURL())
             .setName(entry->name())
@@ -323,7 +324,7 @@ private:
     bool didGetEntry(Entry*);
     bool didGetMetadata(Metadata*);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<TypeBuilder::FileSystem::Metadata> metadata = 0)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<TypeBuilder::FileSystem::Metadata> metadata = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), metadata);
     }
@@ -344,7 +345,7 @@ void MetadataRequest::start(ExecutionContext* executionContext)
     OwnPtr<ErrorCallback> errorCallback = CallbackDispatcherFactory<ErrorCallback>::create(this, &MetadataRequest::didHitError);
     OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &MetadataRequest::didGetEntry);
     OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
-    LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
+    LocalFileSystem::from(*executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
 
 bool MetadataRequest::didGetEntry(Entry* entry)
@@ -432,7 +433,7 @@ private:
     String m_mimeType;
     String m_charset;
 
-    RefPtr<FileReader> m_reader;
+    RefPtrWillBePersistent<FileReader> m_reader;
 };
 
 void FileContentRequest::start(ExecutionContext* executionContext)
@@ -443,7 +444,7 @@ void FileContentRequest::start(ExecutionContext* executionContext)
     OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &FileContentRequest::didGetEntry);
 
     OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
-    LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
+    LocalFileSystem::from(*executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
 }
 
 bool FileContentRequest::didGetEntry(Entry* entry)
@@ -470,7 +471,7 @@ bool FileContentRequest::didGetEntry(Entry* entry)
 
 bool FileContentRequest::didGetFile(File* file)
 {
-    RefPtr<Blob> blob = file->slice(m_start, m_end);
+    RefPtrWillBeRawPtr<Blob> blob = static_cast<Blob*>(file)->slice(m_start, m_end, IGNORE_EXCEPTION);
     m_reader->setOnload(this);
     m_reader->setOnerror(this);
 
@@ -564,12 +565,12 @@ void DeleteEntryRequest::start(ExecutionContext* executionContext)
 
     if (path == "/") {
         OwnPtr<VoidCallback> successCallback = adoptPtr(new VoidCallbackImpl(this));
-        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(successCallback.release(), errorCallback.release(), 0);
-        LocalFileSystem::from(executionContext)->deleteFileSystem(executionContext, type, fileSystemCallbacks.release());
+        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(successCallback.release(), errorCallback.release(), nullptr);
+        LocalFileSystem::from(*executionContext)->deleteFileSystem(executionContext, type, fileSystemCallbacks.release());
     } else {
         OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DeleteEntryRequest::didGetEntry);
         OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback.release(), errorCallback.release(), executionContext);
-        LocalFileSystem::from(executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
+        LocalFileSystem::from(*executionContext)->resolveURL(executionContext, m_url, fileSystemCallbacks.release());
     }
 }
 
@@ -714,7 +715,7 @@ bool InspectorFileSystemAgent::assertEnabled(ErrorString* error)
 
 ExecutionContext* InspectorFileSystemAgent::assertExecutionContextForOrigin(ErrorString* error, SecurityOrigin* origin)
 {
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (LocalFrame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->document() && frame->document()->securityOrigin()->isSameSchemeHostPort(origin))
             return frame->document();
     }

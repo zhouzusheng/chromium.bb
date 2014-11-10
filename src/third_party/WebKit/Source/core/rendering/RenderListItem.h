@@ -69,8 +69,6 @@ private:
 
     virtual void layout() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
     virtual LayoutUnit additionalMarginStart() const OVERRIDE;
 
     void positionListMarker();

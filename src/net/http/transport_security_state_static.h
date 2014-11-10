@@ -383,7 +383,6 @@ static const char* const kLavabitAcceptableCerts[] = {
 static const struct HSTSPreload kPreloadedSTS[] = {
   {25, true, "\013pinningtest\007appspot\003com", false, kTestPins, DOMAIN_APPSPOT_COM },
   {12, true, "\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
-  {18, true, "\005admin\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006wallet\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {21, true, "\010checkout\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006chrome\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -406,6 +405,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\004goto\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {18, true, "\005cloud\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {18, true, "\005glass\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {18, true, "\005admin\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {17, false, "\004play\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\006market\007android\003com", true, kGooglePins, DOMAIN_ANDROID_COM },
   {26, true, "\003ssl\020google-analytics\003com", true, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
@@ -438,6 +438,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {8, true, "\003goo\002gl", false, kGooglePins, DOMAIN_GOO_GL },
   {6, true, "\001g\002co", false, kGooglePins, DOMAIN_G_CO },
   {22, true, "\020googletagmanager\003com", false, kGooglePins, DOMAIN_GOOGLETAGMANAGER_COM },
+  {23, true, "\021googletagservices\003com", false, kGooglePins, DOMAIN_GOOGLETAGSERVICES_COM },
   {11, true, "\006google\002ac", false, kGooglePins, DOMAIN_GOOGLE_AC },
   {11, true, "\006google\002ad", false, kGooglePins, DOMAIN_GOOGLE_AD },
   {11, true, "\006google\002ae", false, kGooglePins, DOMAIN_GOOGLE_AE },
@@ -906,6 +907,24 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {24, false, "\003www\016calyxinstitute\003org", true, kNoPins, DOMAIN_NOT_PINNED },
   {15, true, "\011blacklane\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, true, "\012boxcryptor\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {10, false, "\004aclu\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\003www\004aclu\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\007prodpad\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\007mailbox\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\006roddis\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false, "\003www\006roddis\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {10, true, "\005fiken\002no", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, true, "\010fairbill\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {11, true, "\005nexth\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {10, true, "\005nexth\002us", true, kNoPins, DOMAIN_NOT_PINNED },
+  {10, true, "\005nexth\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006souyar\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {11, true, "\006souyar\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {11, true, "\006souyar\002us", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, false, "\003www\007banking\002co\002at", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, false, "\003mbp\007banking\002co\002at", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, false, "\007feedbin\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, true, "\004heha\002co", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 
@@ -917,6 +936,7 @@ static const struct HSTSPreload kPreloadedSNISTS[] = {
   {22, true, "\020google-analytics\003com", false, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\014googlegroups\003com", false, kGooglePins, DOMAIN_GOOGLEGROUPS_COM },
   {13, true, "\007mykolab\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\013semenkovich\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 

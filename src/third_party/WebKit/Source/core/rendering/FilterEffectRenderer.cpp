@@ -45,7 +45,6 @@
 #include "platform/graphics/filters/FEComponentTransfer.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
-#include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
@@ -64,14 +63,6 @@ static inline void lastMatrixRow(Vector<float>& parameters)
     parameters.append(0);
     parameters.append(1);
     parameters.append(0);
-}
-
-inline bool isFilterSizeValid(FloatRect rect)
-{
-    if (rect.width() < 0 || rect.width() > kMaxFilterSize
-        || rect.height() < 0 || rect.height() > kMaxFilterSize)
-        return false;
-    return true;
 }
 
 FilterEffectRenderer::FilterEffectRenderer()
@@ -99,9 +90,11 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
 
     // Inverse zoom the pre-zoomed CSS shorthand filters, so that they are in the same zoom as the unzoomed reference filters.
     const RenderStyle* style = renderer->style();
-    // FIXME: The effects now contain high dpi information, but the software path doesn't (yet) scale its backing.
-    //        When the proper dpi dependant backing size is allocated, we should remove deviceScaleFactor(...) here.
+#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
     float invZoom = 1.0f / ((style ? style->effectiveZoom() : 1.0f) * deviceScaleFactor(renderer->frame()));
+#else
+    float invZoom = style ? 1.0f / style->effectiveZoom() : 1.0f;
+#endif
 
     RefPtr<FilterEffect> previousEffect = m_sourceGraphic;
     for (size_t i = 0; i < operations.operations().size(); ++i) {
@@ -266,7 +259,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
 bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& floatFilterRect)
 {
     IntRect filterRect = enclosingIntRect(floatFilterRect);
-    if (!filterRect.isEmpty() && isFilterSizeValid(filterRect)) {
+    if (!filterRect.isEmpty() && FilterEffect::isFilterSizeValid(filterRect)) {
         FloatRect currentSourceRect = sourceImageRect();
         if (filterRect != currentSourceRect) {
             setSourceImageRect(filterRect);
@@ -284,13 +277,7 @@ void FilterEffectRenderer::allocateBackingStoreIfNeeded()
     if (!m_graphicsBufferAttached) {
         IntSize logicalSize(m_sourceDrawingRegion.width(), m_sourceDrawingRegion.height());
         if (!sourceImage() || sourceImage()->size() != logicalSize) {
-            OwnPtr<ImageBufferSurface> surface;
-            if (isAccelerated()) {
-                surface = adoptPtr(new AcceleratedImageBufferSurface(logicalSize));
-            }
-            if (!surface || !surface->isValid()) {
-                surface = adoptPtr(new UnacceleratedImageBufferSurface(logicalSize));
-            }
+            OwnPtr<ImageBufferSurface> surface = adoptPtr(new UnacceleratedImageBufferSurface(logicalSize));
             setSourceImage(ImageBuffer::create(surface.release()));
         }
         m_graphicsBufferAttached = true;
@@ -340,7 +327,8 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
     // Prepare a transformation that brings the coordinates into the space
     // filter coordinates are defined in.
     AffineTransform absoluteTransform;
-    absoluteTransform.translate(filterBoxRect.x(), filterBoxRect.y());
+    // FIXME: Should these really be upconverted to doubles and not rounded? crbug.com/350474
+    absoluteTransform.translate(filterBoxRect.x().toDouble(), filterBoxRect.y().toDouble());
     absoluteTransform.scale(zoom, zoom);
 
     FilterEffectRenderer* filter = renderLayer->filterRenderer();
@@ -377,7 +365,7 @@ GraphicsContext* FilterEffectRendererHelper::beginFilterEffect(GraphicsContext* 
     filter->allocateBackingStoreIfNeeded();
     // Paint into the context that represents the SourceGraphic of the filter.
     GraphicsContext* sourceGraphicsContext = filter->inputContext();
-    if (!sourceGraphicsContext || !isFilterSizeValid(filter->absoluteFilterRegion())) {
+    if (!sourceGraphicsContext || !FilterEffect::isFilterSizeValid(filter->absoluteFilterRegion())) {
         // Disable the filters and continue.
         m_haveFilterEffect = false;
         return oldContext;

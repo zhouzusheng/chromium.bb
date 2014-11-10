@@ -508,6 +508,13 @@ class RtpRtcp : public Module {
     virtual int32_t RemoveRTCPReportBlock(const uint32_t SSRC) = 0;
 
     /*
+    *   Get number of sent and received RTCP packet types.
+    */
+    virtual void GetRtcpPacketTypeCounters(
+        RtcpPacketTypeCounter* packets_sent,
+        RtcpPacketTypeCounter* packets_received) const = 0;
+
+    /*
     *   (APP) Application specific data
     *
     *   return -1 on failure else 0
@@ -662,25 +669,6 @@ class RtpRtcp : public Module {
     */
      virtual int32_t SendREDPayloadType(
          int8_t& payloadType) const = 0;
-
-     /*
-     * Set status and ID for header-extension-for-audio-level-indication.
-     * See http://tools.ietf.org/html/rfc6464 for more details.
-     *
-     * return -1 on failure else 0
-     */
-     virtual int32_t SetRTPAudioLevelIndicationStatus(
-         const bool enable,
-         const uint8_t ID) = 0;
-
-     /*
-     * Get status and ID for header-extension-for-audio-level-indication.
-     *
-     * return -1 on failure else 0
-     */
-     virtual int32_t GetRTPAudioLevelIndicationStatus(
-         bool& enable,
-         uint8_t& ID) const = 0;
 
      /*
      * Store the audio level in dBov for header-extension-for-audio-level-

@@ -83,6 +83,7 @@ private:
 
     explicit TextAutosizer(Document*);
 
+    bool isApplicable() const;
     float clusterMultiplier(WritingMode, const TextAutosizingWindowInfo&, float textWidth) const;
 
     void processClusterInternal(TextAutosizingClusterInfo&, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&, float multiplier);
@@ -138,6 +139,8 @@ private:
 
     // Mapping from a cluster hash to the corresponding cluster infos which have not been autosized yet.
     HashMap<unsigned, OwnPtr<Vector<TextAutosizingClusterInfo> > > m_nonAutosizedClusters;
+
+    bool m_previouslyAutosized;
 };
 
 } // namespace WebCore

@@ -66,7 +66,7 @@ WebInspector.ShortcutsScreen.prototype = {
 
         var view = new WebInspector.View();
 
-        view.element.className = "settings-tab-container";
+        view.element.className = "settings-tab-container"; // Override
         view.element.createChild("header").createChild("h3").appendChild(document.createTextNode(WebInspector.UIString("Shortcuts")));
         var scrollPane = view.element.createChild("div", "help-container-wrapper");
         var container = scrollPane.createChild("div");
@@ -251,7 +251,6 @@ WebInspector.ShortcutsScreen.registerShortcuts = function()
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.PauseContinue, WebInspector.UIString("Pause/Continue"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepOver, WebInspector.UIString("Step over"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepInto, WebInspector.UIString("Step into"));
-    section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepIntoSelection, WebInspector.UIString("Step into selection"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.StepOut, WebInspector.UIString("Step out"));
 
     var nextAndPrevFrameKeys = WebInspector.ShortcutsScreen.SourcesPanelShortcuts.NextCallFrame.concat(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.PrevCallFrame);
@@ -260,6 +259,7 @@ WebInspector.ShortcutsScreen.registerShortcuts = function()
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.EvaluateSelectionInConsole, WebInspector.UIString("Evaluate selection in console"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.AddSelectionToWatch, WebInspector.UIString("Add selection to watch"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.GoToMember, WebInspector.UIString("Go to member"));
+    section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.GoToLine, WebInspector.UIString("Go to line"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.ToggleBreakpoint, WebInspector.UIString("Toggle breakpoint"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.ToggleComment, WebInspector.UIString("Toggle comment"));
     section.addAlternateKeys(WebInspector.ShortcutsScreen.SourcesPanelShortcuts.CloseEditorTab, WebInspector.UIString("Close editor tab"));
@@ -390,11 +390,6 @@ WebInspector.ShortcutsScreen.SourcesPanelShortcuts = {
         WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.Semicolon, WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)
     ],
 
-    StepIntoSelection: [
-        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.F11, WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta),
-        WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.F11, WebInspector.KeyboardShortcut.Modifiers.Shift | WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)
-    ],
-
     StepOut: [
         WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.F11, WebInspector.KeyboardShortcut.Modifiers.Shift),
         WebInspector.KeyboardShortcut.makeDescriptor(WebInspector.KeyboardShortcut.Keys.Semicolon, WebInspector.KeyboardShortcut.Modifiers.Shift | WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)
@@ -410,6 +405,10 @@ WebInspector.ShortcutsScreen.SourcesPanelShortcuts = {
 
     GoToMember: [
         WebInspector.KeyboardShortcut.makeDescriptor("o", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta | WebInspector.KeyboardShortcut.Modifiers.Shift)
+    ],
+
+    GoToLine: [
+        WebInspector.KeyboardShortcut.makeDescriptor("g", WebInspector.KeyboardShortcut.Modifiers.Ctrl)
     ],
 
     ToggleBreakpoint: [
@@ -438,6 +437,10 @@ WebInspector.ShortcutsScreen.SourcesPanelShortcuts = {
 
     CloseEditorTab: [
         WebInspector.KeyboardShortcut.makeDescriptor("w", WebInspector.KeyboardShortcut.Modifiers.Alt)
+    ],
+
+    Save: [
+        WebInspector.KeyboardShortcut.makeDescriptor("s", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)
     ],
 };
 

@@ -28,7 +28,9 @@
 #include <string>
 #include <vector>
 
+namespace base {
 class CommandLine;
+}  // close namespace base
 
 namespace blpwtk2 {
 
@@ -48,7 +50,7 @@ struct ChannelInfo {
 
     // Load switches from the specified 'commandLine' into the 'd_switches'
     // array.
-    void loadSwitchesFromCommandLine(const CommandLine& commandLine);
+    void loadSwitchesFromCommandLine(const base::CommandLine& commandLine);
 
     // Serialize this 'ChannelInfo' into a string that can be passed to another
     // process.

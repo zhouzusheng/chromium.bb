@@ -16,11 +16,15 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/request_info.h"
 #include "content/child/site_isolation_policy.h"
 #include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/resource_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/child/resource_dispatcher_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/resource_response.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
@@ -28,7 +32,6 @@
 #include "webkit/common/resource_type.h"
 
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::ResourceRequestBody;
 using webkit_glue::ResourceResponseInfo;
 
 namespace content {
@@ -69,7 +72,7 @@ static int MakeRequestID() {
 class IPCResourceLoaderBridge : public ResourceLoaderBridge {
  public:
   IPCResourceLoaderBridge(ResourceDispatcher* dispatcher,
-      const ResourceLoaderBridge::RequestInfo& request_info);
+                          const RequestInfo& request_info);
   virtual ~IPCResourceLoaderBridge();
 
   // ResourceLoaderBridge
@@ -105,7 +108,7 @@ class IPCResourceLoaderBridge : public ResourceLoaderBridge {
 
 IPCResourceLoaderBridge::IPCResourceLoaderBridge(
     ResourceDispatcher* dispatcher,
-    const ResourceLoaderBridge::RequestInfo& request_info)
+    const RequestInfo& request_info)
     : peer_(NULL),
       dispatcher_(dispatcher),
       request_id_(-1),
@@ -132,9 +135,8 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
     request_.visiblity_state = extra_data->visibility_state();
     request_.render_frame_id = extra_data->render_frame_id();
     request_.is_main_frame = extra_data->is_main_frame();
-    request_.frame_id = extra_data->frame_id();
     request_.parent_is_main_frame = extra_data->parent_is_main_frame();
-    request_.parent_frame_id = extra_data->parent_frame_id();
+    request_.parent_render_frame_id = extra_data->parent_render_frame_id();
     request_.allow_download = extra_data->allow_download();
     request_.transition_type = extra_data->transition_type();
     request_.should_replace_current_entry =
@@ -143,19 +145,21 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
         extra_data->transferred_request_child_id();
     request_.transferred_request_request_id =
         extra_data->transferred_request_request_id();
+    request_.service_worker_provider_id =
+        extra_data->service_worker_provider_id();
     frame_origin_ = extra_data->frame_origin();
   } else {
     request_.visiblity_state = blink::WebPageVisibilityStateVisible;
     request_.render_frame_id = MSG_ROUTING_NONE;
     request_.is_main_frame = false;
-    request_.frame_id = -1;
     request_.parent_is_main_frame = false;
-    request_.parent_frame_id = -1;
+    request_.parent_render_frame_id = -1;
     request_.allow_download = true;
     request_.transition_type = PAGE_TRANSITION_LINK;
     request_.should_replace_current_entry = false;
     request_.transferred_request_child_id = -1;
     request_.transferred_request_request_id = -1;
+    request_.service_worker_provider_id = kInvalidServiceWorkerProviderId;
   }
 }
 
@@ -361,12 +365,12 @@ void ResourceDispatcher::OnReceivedResponse(
 
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
-  SiteIsolationPolicy::OnReceivedResponse(request_id,
-                                          request_info->frame_origin,
-                                          request_info->response_url,
-                                          request_info->resource_type,
-                                          request_info->origin_pid,
-                                          renderer_response_info);
+  request_info->site_isolation_metadata =
+      SiteIsolationPolicy::OnReceivedResponse(request_info->frame_origin,
+                                              request_info->response_url,
+                                              request_info->resource_type,
+                                              request_info->origin_pid,
+                                              renderer_response_info);
   request_info->peer->OnReceivedResponse(renderer_response_info);
 }
 
@@ -434,13 +438,18 @@ void ResourceDispatcher::OnReceivedData(int request_id,
     CHECK(data_ptr + data_offset);
 
     // Check whether this response data is compliant with our cross-site
-    // document blocking policy.
+    // document blocking policy. We only do this for the first packet.
     std::string alternative_data;
-    bool blocked_response = SiteIsolationPolicy::ShouldBlockResponse(
-        request_id, data_ptr + data_offset, data_length, &alternative_data);
+    if (request_info->site_isolation_metadata.get()) {
+      request_info->blocked_response =
+          SiteIsolationPolicy::ShouldBlockResponse(
+              request_info->site_isolation_metadata, data_ptr + data_offset,
+              data_length, &alternative_data);
+      request_info->site_isolation_metadata.reset();
+    }
 
     // When the response is not blocked.
-    if (!blocked_response) {
+    if (!request_info->blocked_response) {
       request_info->peer->OnReceivedData(
           data_ptr + data_offset, data_length, encoded_data_length);
     } else if (alternative_data.size() > 0) {
@@ -523,7 +532,6 @@ void ResourceDispatcher::OnRequestComplete(
     int request_id,
     const ResourceMsg_RequestCompleteData& request_complete_data) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnRequestComplete");
-  SiteIsolationPolicy::OnRequestComplete(request_id);
 
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
@@ -574,7 +582,6 @@ bool ResourceDispatcher::RemovePendingRequest(int request_id) {
   if (it == pending_requests_.end())
     return false;
 
-  SiteIsolationPolicy::OnRequestComplete(request_id);
   PendingRequestInfo& request_info = it->second;
   ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
   pending_requests_.erase(it);
@@ -627,6 +634,7 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       resource_type(ResourceType::SUB_RESOURCE),
       is_deferred(false),
+      blocked_response(false),
       buffer_size(0) {
 }
 
@@ -643,7 +651,8 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
       url(request_url),
       frame_origin(frame_origin),
       response_url(request_url),
-      request_start(base::TimeTicks::Now()) {
+      request_start(base::TimeTicks::Now()),
+      blocked_response(false) {
 }
 
 ResourceDispatcher::PendingRequestInfo::~PendingRequestInfo() {}
@@ -694,7 +703,11 @@ void ResourceDispatcher::FlushDeferredMessages(int request_id) {
 }
 
 ResourceLoaderBridge* ResourceDispatcher::CreateBridge(
-    const ResourceLoaderBridge::RequestInfo& request_info) {
+    const RequestInfo& request_info) {
+  ResourceLoaderBridge* bridge =
+      GetContentClient()->renderer()->OverrideResourceLoaderBridge(request_info);
+  if (bridge)
+    return bridge;
   return new IPCResourceLoaderBridge(this, request_info);
 }
 

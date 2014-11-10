@@ -29,13 +29,13 @@
  */
 
 /**
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @constructor
  */
 WebInspector.TabbedPane = function()
 {
-    WebInspector.View.call(this);
-    this.element.classList.add("tabbed-pane", "vbox");
+    WebInspector.VBox.call(this);
+    this.element.classList.add("tabbed-pane");
     this._headerElement = this.element.createChild("div", "tabbed-pane-header");
     this._headerContentsElement = this._headerElement.createChild("div", "tabbed-pane-header-contents");
     this._tabsElement = this._headerContentsElement.createChild("div", "tabbed-pane-header-tabs");
@@ -83,6 +83,7 @@ WebInspector.TabbedPane.prototype = {
     set verticalTabLayout(verticalTabLayout)
     {
         this._verticalTabLayout = verticalTabLayout;
+        this.invalidateMinimumSize();
     },
 
     /**
@@ -286,7 +287,7 @@ WebInspector.TabbedPane.prototype = {
         this._hideCurrentTab();
         this._showTab(tab);
         this._currentTab = tab;
-        
+
         this._tabsHistory.splice(this._tabsHistory.indexOf(tab), 1);
         this._tabsHistory.splice(0, 0, tab);
         
@@ -375,6 +376,20 @@ WebInspector.TabbedPane.prototype = {
         var effectiveTab = this._currentTab || this._tabsHistory[0];
         if (effectiveTab)
             this.selectTab(effectiveTab.id);
+        this.invalidateMinimumSize();
+    },
+
+    /**
+     * @return {!Size}
+     */
+    calculateMinimumSize: function()
+    {
+        var size = WebInspector.VBox.prototype.calculateMinimumSize.call(this);
+        if (this._verticalTabLayout)
+            size.width += this._headerElement.offsetWidth;
+        else
+            size.height += this._headerElement.offsetHeight;
+        return size;
     },
 
     _updateTabElements: function()
@@ -444,10 +459,21 @@ WebInspector.TabbedPane.prototype = {
         dropDownContainer.classList.add("tabbed-pane-header-tabs-drop-down-container");
         var dropDownButton = dropDownContainer.createChild("div", "tabbed-pane-header-tabs-drop-down");
         dropDownButton.appendChild(document.createTextNode("\u00bb"));
-        this._tabsSelect = dropDownButton.createChild("select", "tabbed-pane-header-tabs-drop-down-select");
-        this._tabsSelect.addEventListener("change", this._tabsSelectChanged.bind(this), false);
-        this._tabsSelect.addEventListener("mousedown", consumeEvent, false);
+
+        this._dropDownMenu = new WebInspector.DropDownMenu();
+        this._dropDownMenu.addEventListener(WebInspector.DropDownMenu.Events.ItemSelected, this._dropDownMenuItemSelected, this);
+        dropDownButton.appendChild(this._dropDownMenu.element);
+
         return dropDownContainer;
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _dropDownMenuItemSelected: function(event)
+    {
+        var tabId = /** @type {string} */ (event.data);
+        this.selectTab(tabId, true);
     },
 
     _totalWidth: function()
@@ -477,7 +503,8 @@ WebInspector.TabbedPane.prototype = {
         if (this._dropDownButton.parentElement)
             this._headerContentsElement.removeChild(this._dropDownButton);
 
-        this._tabsSelect.removeChildren();
+        this._dropDownMenu.clear();
+
         var tabsToShow = [];
         for (var i = 0; i < this._tabs.length; ++i) {
             if (!this._tabs[i]._shown)
@@ -492,25 +519,17 @@ WebInspector.TabbedPane.prototype = {
         if (!this._retainTabOrder)
             tabsToShow.sort(compareFunction);
 
-        var selectedIndex = -1;
+        var selectedId = null;
         for (var i = 0; i < tabsToShow.length; ++i) {
-            var option = new Option(tabsToShow[i].title);
-            option.tab = tabsToShow[i];
-            this._tabsSelect.appendChild(option);
-            if (this._tabsHistory[0] === tabsToShow[i])
-                selectedIndex = i;
+            var tab = tabsToShow[i];
+            this._dropDownMenu.addItem(tab.id, tab.title);
+            if (this._tabsHistory[0] === tab)
+                selectedId = tab.id;
         }
-        if (this._tabsSelect.options.length) {
+        if (tabsToShow.length) {
             this._headerContentsElement.appendChild(this._dropDownButton);
-            this._tabsSelect.selectedIndex = selectedIndex;
+            this._dropDownMenu.selectItem(selectedId);
         }
-    },
-
-    _tabsSelectChanged: function()
-    {
-        var options = this._tabsSelect.options;
-        var selectedOption = options[this._tabsSelect.selectedIndex];
-        this.selectTab(selectedOption.tab.id, true);
     },
 
     _measureDropDownButton: function()
@@ -653,24 +672,6 @@ WebInspector.TabbedPane.prototype = {
     },
 
     /**
-     * @override
-     * @return {boolean}
-     */
-    canHighlightPosition: function()
-    {
-        return !!(this._currentTab && this._currentTab.view && this._currentTab.view.canHighlightPosition());
-    },
-
-    /**
-     * @override
-     */
-    highlightPosition: function(line, column)
-    {
-        if (this.canHighlightPosition())
-            this._currentTab.view.highlightPosition(line, column);
-    },
-
-    /**
      * @return {!Array.<!Element>}
      */
     elementsToRestoreScrollPositionsFor: function()
@@ -692,9 +693,8 @@ WebInspector.TabbedPane.prototype = {
         this._tabs.splice(index, 0, tab);
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }
-
 
 /**
  * @constructor
@@ -1052,4 +1052,86 @@ WebInspector.TabbedPaneTabDelegate.prototype = {
      * @param {!Array.<string>} ids
      */
     closeTabs: function(tabbedPane, ids) { }
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.TabbedPane} tabbedPane
+ * @param {string} extensionPoint
+ * @param {function(string, !WebInspector.View)=} viewCallback
+ */
+WebInspector.ExtensibleTabbedPaneController = function(tabbedPane, extensionPoint, viewCallback)
+{
+    this._tabbedPane = tabbedPane;
+    this._extensionPoint = extensionPoint;
+    this._viewCallback = viewCallback;
+
+    this._tabbedPane.setRetainTabOrder(true, WebInspector.moduleManager.orderComparator(extensionPoint, "name", "order"));
+    this._tabbedPane.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._tabSelected, this);
+    /** @type {!StringMap.<?WebInspector.View>} */
+    this._views = new StringMap();
+    this._initialize();
+}
+
+WebInspector.ExtensibleTabbedPaneController.prototype = {
+    _initialize: function()
+    {
+        this._extensions = {};
+        var extensions = WebInspector.moduleManager.extensions(this._extensionPoint);
+
+        for (var i = 0; i < extensions.length; ++i) {
+            var descriptor = extensions[i].descriptor();
+            var id = descriptor["name"];
+            var title = WebInspector.UIString(descriptor["title"]);
+            var settingName = descriptor["setting"];
+            var setting = settingName ? /** @type {!WebInspector.Setting|undefined} */ (WebInspector.settings[settingName]) : null;
+
+            this._extensions[id] = extensions[i];
+
+            if (setting) {
+                setting.addChangeListener(this._toggleSettingBasedView.bind(this, id, title, setting));
+                if (setting.get())
+                    this._tabbedPane.appendTab(id, title, new WebInspector.View());
+            } else {
+                this._tabbedPane.appendTab(id, title, new WebInspector.View());
+            }
+        }
+    },
+
+    /**
+     * @param {string} id
+     * @param {string} title
+     * @param {!WebInspector.Setting} setting
+     */
+    _toggleSettingBasedView: function(id, title, setting)
+    {
+        this._tabbedPane.closeTab(id);
+        if (setting.get())
+            this._tabbedPane.appendTab(id, title, new WebInspector.View());
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _tabSelected: function(event)
+    {
+        var tabId = this._tabbedPane.selectedTabId;
+        var view = this._viewForId(tabId);
+        if (view)
+            this._tabbedPane.changeTabView(tabId, view);
+    },
+
+    /**
+     * @return {?WebInspector.View}
+     */
+    _viewForId: function(id)
+    {
+        if (this._views.contains(id))
+            return /** @type {!WebInspector.View} */ (this._views.get(id));
+        var view = this._extensions[id] ? /** @type {!WebInspector.View} */ (this._extensions[id].instance()) : null;
+        this._views.put(id, view);
+        if (this._viewCallback && view)
+            this._viewCallback(id, view);
+        return view;
+    }
 }

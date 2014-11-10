@@ -47,7 +47,7 @@ CSSPropertyID StylePropertyMetadata::shorthandID() const
 
 void CSSProperty::wrapValueInCommaSeparatedList()
 {
-    RefPtr<CSSValue> value = m_value.release();
+    RefPtrWillBeRawPtr<CSSValue> value = m_value.release();
     m_value = CSSValueList::createCommaSeparated();
     toCSSValueList(m_value.get())->append(value.release());
 }
@@ -524,6 +524,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitAnimationPlayState:
     case CSSPropertyWebkitAnimationTimingFunction:
     case CSSPropertyWebkitAppearance:
+    case CSSPropertyBackfaceVisibility:
     case CSSPropertyWebkitBackfaceVisibility:
     case CSSPropertyWebkitBackgroundClip:
     case CSSPropertyWebkitBackgroundComposite:
@@ -560,14 +561,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBoxShadow:
     case CSSPropertyInternalCallback:
     case CSSPropertyWebkitClipPath:
-    case CSSPropertyWebkitColumnAxis:
     case CSSPropertyWebkitColumnBreakAfter:
     case CSSPropertyWebkitColumnBreakBefore:
     case CSSPropertyWebkitColumnBreakInside:
     case CSSPropertyWebkitColumnCount:
     case CSSPropertyColumnFill:
     case CSSPropertyWebkitColumnGap:
-    case CSSPropertyWebkitColumnProgression:
     case CSSPropertyWebkitColumnRule:
     case CSSPropertyWebkitColumnRuleColor:
     case CSSPropertyWebkitColumnRuleStyle:
@@ -642,15 +641,20 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitPaddingBefore:
     case CSSPropertyWebkitPaddingEnd:
     case CSSPropertyWebkitPaddingStart:
+    case CSSPropertyPerspective:
     case CSSPropertyWebkitPerspective:
+    case CSSPropertyPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOriginX:
     case CSSPropertyWebkitPerspectiveOriginY:
+    case CSSPropertyTransform:
     case CSSPropertyWebkitTransform:
+    case CSSPropertyTransformOrigin:
     case CSSPropertyWebkitTransformOrigin:
     case CSSPropertyWebkitTransformOriginX:
     case CSSPropertyWebkitTransformOriginY:
     case CSSPropertyWebkitTransformOriginZ:
+    case CSSPropertyTransformStyle:
     case CSSPropertyWebkitTransformStyle:
     case CSSPropertyWebkitTransition:
     case CSSPropertyWebkitTransitionDelay:
@@ -662,11 +666,11 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyShapeMargin:
     case CSSPropertyShapeImageThreshold:
     case CSSPropertyShapePadding:
-    case CSSPropertyShapeInside:
     case CSSPropertyShapeOutside:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitAppRegion:
     case CSSPropertyWidth:
+    case CSSPropertyWillChange:
     case CSSPropertyMaxZoom:
     case CSSPropertyMinZoom:
     case CSSPropertyOrientation:

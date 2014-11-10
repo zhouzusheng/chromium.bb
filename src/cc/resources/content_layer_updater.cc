@@ -9,7 +9,6 @@
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/layer_painter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
@@ -24,8 +23,9 @@ ContentLayerUpdater::ContentLayerUpdater(
     int layer_id)
     : rendering_stats_instrumentation_(stats_instrumentation),
       layer_id_(layer_id),
-      painter_(painter.Pass()),
-      layer_is_opaque_(false) {}
+      layer_is_opaque_(false),
+      layer_fills_bounds_completely_(false),
+      painter_(painter.Pass()) {}
 
 ContentLayerUpdater::~ContentLayerUpdater() {}
 
@@ -35,7 +35,7 @@ void ContentLayerUpdater::set_rendering_stats_instrumentation(
 }
 
 void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
-                                        gfx::Point origin,
+                                        const gfx::Point& origin,
                                         float contents_width_scale,
                                         float contents_height_scale,
                                         gfx::Rect* resulting_opaque_rect) {
@@ -44,8 +44,8 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
   canvas->translate(SkFloatToScalar(-origin.x()),
                     SkFloatToScalar(-origin.y()));
 
-  SkBaseDevice* device = canvas->getDevice();
-  gfx::Rect content_rect(origin, gfx::Size(device->width(), device->height()));
+  SkISize size = canvas->getDeviceSize();
+  gfx::Rect content_rect(origin, gfx::Size(size.width(), size.height()));
 
   gfx::Rect layer_rect = content_rect;
 
@@ -62,9 +62,9 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
 
   canvas->clipRect(layer_sk_rect);
 
-  // If the layer has opaque contents then there is no need to
-  // clear the canvas before painting.
-  if (!layer_is_opaque_) {
+  // If the layer has opaque contents or will fill the bounds completely there
+  // is no need to clear the canvas before painting.
+  if (!layer_is_opaque_ && !layer_fills_bounds_completely_) {
     TRACE_EVENT0("cc", "Clear");
     canvas->drawColor(SK_ColorTRANSPARENT, SkXfermode::kSrc_Mode);
   }
@@ -82,6 +82,10 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
 
 void ContentLayerUpdater::SetOpaque(bool opaque) {
   layer_is_opaque_ = opaque;
+}
+
+void ContentLayerUpdater::SetFillsBoundsCompletely(bool fills_bounds) {
+  layer_fills_bounds_completely_ = fills_bounds;
 }
 
 }  // namespace cc

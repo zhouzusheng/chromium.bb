@@ -32,6 +32,7 @@
 
 #include "assembler.h"
 #include "factory.h"
+#include "feedback-slots.h"
 #include "isolate.h"
 #include "jsregexp.h"
 #include "list-inl.h"
@@ -181,7 +182,7 @@ class AstProperties V8_FINAL BASE_EMBEDDED {
  public:
   class Flags : public EnumSet<AstPropertiesFlag, int> {};
 
-  AstProperties() : node_count_(0) { }
+  AstProperties() : node_count_(0) {}
 
   Flags* flags() { return &flags_; }
   int node_count() { return node_count_; }
@@ -214,9 +215,14 @@ class AstNode: public ZoneObject {
   int position() const { return position_; }
 
   // Type testing & conversion functions overridden by concrete subclasses.
-#define DECLARE_NODE_FUNCTIONS(type)                  \
-  bool Is##type() { return node_type() == AstNode::k##type; }          \
-  type* As##type() { return Is##type() ? reinterpret_cast<type*>(this) : NULL; }
+#define DECLARE_NODE_FUNCTIONS(type) \
+  bool Is##type() const { return node_type() == AstNode::k##type; } \
+  type* As##type() { \
+    return Is##type() ? reinterpret_cast<type*>(this) : NULL; \
+  } \
+  const type* As##type() const { \
+    return Is##type() ? reinterpret_cast<const type*>(this) : NULL; \
+  }
   AST_NODE_LIST(DECLARE_NODE_FUNCTIONS)
 #undef DECLARE_NODE_FUNCTIONS
 
@@ -324,35 +330,35 @@ class Expression : public AstNode {
     kTest
   };
 
-  virtual bool IsValidLeftHandSide() { return false; }
+  virtual bool IsValidReferenceExpression() const { return false; }
 
   // Helpers for ToBoolean conversion.
-  virtual bool ToBooleanIsTrue() { return false; }
-  virtual bool ToBooleanIsFalse() { return false; }
+  virtual bool ToBooleanIsTrue() const { return false; }
+  virtual bool ToBooleanIsFalse() const { return false; }
 
   // Symbols that cannot be parsed as array indices are considered property
   // names.  We do not treat symbols that can be array indexes as property
   // names because [] for string objects is handled only by keyed ICs.
-  virtual bool IsPropertyName() { return false; }
+  virtual bool IsPropertyName() const { return false; }
 
   // True iff the result can be safely overwritten (to avoid allocation).
   // False for operations that can return one of their operands.
-  virtual bool ResultOverwriteAllowed() { return false; }
+  virtual bool ResultOverwriteAllowed() const { return false; }
 
   // True iff the expression is a literal represented as a smi.
-  bool IsSmiLiteral();
+  bool IsSmiLiteral() const;
 
   // True iff the expression is a string literal.
-  bool IsStringLiteral();
+  bool IsStringLiteral() const;
 
   // True iff the expression is the null literal.
-  bool IsNullLiteral();
+  bool IsNullLiteral() const;
 
   // True if we can prove that the expression is the undefined literal.
-  bool IsUndefinedLiteral(Isolate* isolate);
+  bool IsUndefinedLiteral(Isolate* isolate) const;
 
   // Expression type bounds
-  Bounds bounds() { return bounds_; }
+  Bounds bounds() const { return bounds_; }
   void set_bounds(Bounds bounds) { bounds_ = bounds; }
 
   // Type feedback information for assignments and properties.
@@ -914,7 +920,8 @@ class ForEachStatement : public IterationStatement {
 };
 
 
-class ForInStatement V8_FINAL : public ForEachStatement {
+class ForInStatement V8_FINAL : public ForEachStatement,
+    public FeedbackSlotInterface {
  public:
   DECLARE_NODE_TYPE(ForInStatement)
 
@@ -922,7 +929,16 @@ class ForInStatement V8_FINAL : public ForEachStatement {
     return subject();
   }
 
-  TypeFeedbackId ForInFeedbackId() const { return reuse(PrepareId()); }
+  // Type feedback information.
+  virtual ComputablePhase GetComputablePhase() { return DURING_PARSE; }
+  virtual int ComputeFeedbackSlotCount(Isolate* isolate) { return 1; }
+  virtual void SetFirstFeedbackSlot(int slot) { for_in_feedback_slot_ = slot; }
+
+  int ForInFeedbackSlot() {
+    ASSERT(for_in_feedback_slot_ != kInvalidFeedbackSlot);
+    return for_in_feedback_slot_;
+  }
+
   enum ForInType { FAST_FOR_IN, SLOW_FOR_IN };
   ForInType for_in_type() const { return for_in_type_; }
   void set_for_in_type(ForInType type) { for_in_type_ = type; }
@@ -936,11 +952,13 @@ class ForInStatement V8_FINAL : public ForEachStatement {
   ForInStatement(Zone* zone, ZoneStringList* labels, int pos)
       : ForEachStatement(zone, labels, pos),
         for_in_type_(SLOW_FOR_IN),
+        for_in_feedback_slot_(kInvalidFeedbackSlot),
         body_id_(GetNextId(zone)),
         prepare_id_(GetNextId(zone)) {
   }
 
   ForInType for_in_type_;
+  int for_in_feedback_slot_;
   const BailoutId body_id_;
   const BailoutId prepare_id_;
 };
@@ -1333,7 +1351,7 @@ class Literal V8_FINAL : public Expression {
  public:
   DECLARE_NODE_TYPE(Literal)
 
-  virtual bool IsPropertyName() V8_OVERRIDE {
+  virtual bool IsPropertyName() const V8_OVERRIDE {
     if (value_->IsInternalizedString()) {
       uint32_t ignored;
       return !String::cast(*value_)->AsArrayIndex(&ignored);
@@ -1346,10 +1364,10 @@ class Literal V8_FINAL : public Expression {
     return Handle<String>::cast(value_);
   }
 
-  virtual bool ToBooleanIsTrue() V8_OVERRIDE {
+  virtual bool ToBooleanIsTrue() const V8_OVERRIDE {
     return value_->BooleanValue();
   }
-  virtual bool ToBooleanIsFalse() V8_OVERRIDE {
+  virtual bool ToBooleanIsFalse() const V8_OVERRIDE {
     return !value_->BooleanValue();
   }
 
@@ -1624,19 +1642,17 @@ class VariableProxy V8_FINAL : public Expression {
  public:
   DECLARE_NODE_TYPE(VariableProxy)
 
-  virtual bool IsValidLeftHandSide() V8_OVERRIDE {
-    return var_ == NULL ? true : var_->IsValidLeftHandSide();
+  virtual bool IsValidReferenceExpression() const V8_OVERRIDE {
+    return var_ == NULL ? true : var_->IsValidReference();
   }
 
-  bool IsVariable(Handle<String> n) {
+  bool IsVariable(Handle<String> n) const {
     return !is_this() && name().is_identical_to(n);
   }
 
-  bool IsArguments() { return var_ != NULL && var_->is_arguments(); }
+  bool IsArguments() const { return var_ != NULL && var_->is_arguments(); }
 
-  bool IsLValue() {
-    return is_lvalue_;
-  }
+  bool IsLValue() const { return is_lvalue_; }
 
   Handle<String> name() const { return name_; }
   Variable* var() const { return var_; }
@@ -1674,7 +1690,7 @@ class Property V8_FINAL : public Expression {
  public:
   DECLARE_NODE_TYPE(Property)
 
-  virtual bool IsValidLeftHandSide() V8_OVERRIDE { return true; }
+  virtual bool IsValidReferenceExpression() const V8_OVERRIDE { return true; }
 
   Expression* obj() const { return obj_; }
   Expression* key() const { return key_; }
@@ -1733,7 +1749,7 @@ class Property V8_FINAL : public Expression {
 };
 
 
-class Call V8_FINAL : public Expression {
+class Call V8_FINAL : public Expression, public FeedbackSlotInterface {
  public:
   DECLARE_NODE_TYPE(Call)
 
@@ -1741,7 +1757,16 @@ class Call V8_FINAL : public Expression {
   ZoneList<Expression*>* arguments() const { return arguments_; }
 
   // Type feedback information.
-  TypeFeedbackId CallFeedbackId() const { return reuse(id()); }
+  virtual ComputablePhase GetComputablePhase() { return AFTER_SCOPING; }
+  virtual int ComputeFeedbackSlotCount(Isolate* isolate);
+  virtual void SetFirstFeedbackSlot(int slot) {
+    call_feedback_slot_ = slot;
+  }
+
+  bool HasCallFeedbackSlot() const {
+    return call_feedback_slot_ != kInvalidFeedbackSlot;
+  }
+  int CallFeedbackSlot() const { return call_feedback_slot_; }
 
   virtual SmallMapList* GetReceiverTypes() V8_OVERRIDE {
     if (expression()->IsProperty()) {
@@ -1790,6 +1815,7 @@ class Call V8_FINAL : public Expression {
       : Expression(zone, pos),
         expression_(expression),
         arguments_(arguments),
+        call_feedback_slot_(kInvalidFeedbackSlot),
         return_id_(GetNextId(zone)) {
     if (expression->IsProperty()) {
       expression->AsProperty()->mark_for_call();
@@ -1802,12 +1828,13 @@ class Call V8_FINAL : public Expression {
 
   Handle<JSFunction> target_;
   Handle<Cell> cell_;
+  int call_feedback_slot_;
 
   const BailoutId return_id_;
 };
 
 
-class CallNew V8_FINAL : public Expression {
+class CallNew V8_FINAL : public Expression, public FeedbackSlotInterface {
  public:
   DECLARE_NODE_TYPE(CallNew)
 
@@ -1815,7 +1842,24 @@ class CallNew V8_FINAL : public Expression {
   ZoneList<Expression*>* arguments() const { return arguments_; }
 
   // Type feedback information.
-  TypeFeedbackId CallNewFeedbackId() const { return reuse(id()); }
+  virtual ComputablePhase GetComputablePhase() { return DURING_PARSE; }
+  virtual int ComputeFeedbackSlotCount(Isolate* isolate) {
+    return FLAG_pretenuring_call_new ? 2 : 1;
+  }
+  virtual void SetFirstFeedbackSlot(int slot) {
+    callnew_feedback_slot_ = slot;
+  }
+
+  int CallNewFeedbackSlot() {
+    ASSERT(callnew_feedback_slot_ != kInvalidFeedbackSlot);
+    return callnew_feedback_slot_;
+  }
+  int AllocationSiteFeedbackSlot() {
+    ASSERT(callnew_feedback_slot_ != kInvalidFeedbackSlot);
+    ASSERT(FLAG_pretenuring_call_new);
+    return callnew_feedback_slot_ + 1;
+  }
+
   void RecordTypeFeedback(TypeFeedbackOracle* oracle);
   virtual bool IsMonomorphic() V8_OVERRIDE { return is_monomorphic_; }
   Handle<JSFunction> target() const { return target_; }
@@ -1823,6 +1867,8 @@ class CallNew V8_FINAL : public Expression {
   Handle<AllocationSite> allocation_site() const {
     return allocation_site_;
   }
+
+  static int feedback_slots() { return 1; }
 
   BailoutId ReturnId() const { return return_id_; }
 
@@ -1836,6 +1882,7 @@ class CallNew V8_FINAL : public Expression {
         arguments_(arguments),
         is_monomorphic_(false),
         elements_kind_(GetInitialFastElementsKind()),
+        callnew_feedback_slot_(kInvalidFeedbackSlot),
         return_id_(GetNextId(zone)) { }
 
  private:
@@ -1846,6 +1893,7 @@ class CallNew V8_FINAL : public Expression {
   Handle<JSFunction> target_;
   ElementsKind elements_kind_;
   Handle<AllocationSite> allocation_site_;
+  int callnew_feedback_slot_;
 
   const BailoutId return_id_;
 };
@@ -1925,7 +1973,7 @@ class BinaryOperation V8_FINAL : public Expression {
  public:
   DECLARE_NODE_TYPE(BinaryOperation)
 
-  virtual bool ResultOverwriteAllowed();
+  virtual bool ResultOverwriteAllowed() const V8_OVERRIDE;
 
   Token::Value op() const { return op_; }
   Expression* left() const { return left_; }
@@ -2276,8 +2324,7 @@ class FunctionLiteral V8_FINAL : public Expression {
   int SourceSize() const { return end_position() - start_position(); }
   bool is_expression() const { return IsExpression::decode(bitfield_); }
   bool is_anonymous() const { return IsAnonymous::decode(bitfield_); }
-  bool is_classic_mode() const { return language_mode() == CLASSIC_MODE; }
-  LanguageMode language_mode() const;
+  StrictMode strict_mode() const;
 
   int materialized_literal_count() { return materialized_literal_count_; }
   int expected_property_count() { return expected_property_count_; }
@@ -2332,7 +2379,15 @@ class FunctionLiteral V8_FINAL : public Expression {
   void set_ast_properties(AstProperties* ast_properties) {
     ast_properties_ = *ast_properties;
   }
-
+  void set_slot_processor(DeferredFeedbackSlotProcessor* slot_processor) {
+    slot_processor_ = *slot_processor;
+  }
+  void ProcessFeedbackSlots(Isolate* isolate) {
+    slot_processor_.ProcessFeedbackSlots(isolate);
+  }
+  int slot_count() {
+    return slot_processor_.slot_count();
+  }
   bool dont_optimize() { return dont_optimize_reason_ != kNoReason; }
   BailoutReason dont_optimize_reason() { return dont_optimize_reason_; }
   void set_dont_optimize_reason(BailoutReason reason) {
@@ -2382,6 +2437,7 @@ class FunctionLiteral V8_FINAL : public Expression {
   ZoneList<Statement*>* body_;
   Handle<String> inferred_name_;
   AstProperties ast_properties_;
+  DeferredFeedbackSlotProcessor slot_processor_;
   BailoutReason dont_optimize_reason_;
 
   int materialized_literal_count_;
@@ -2856,10 +2912,13 @@ private:                                                            \
 
 class AstConstructionVisitor BASE_EMBEDDED {
  public:
-  AstConstructionVisitor() : dont_optimize_reason_(kNoReason) { }
+  explicit AstConstructionVisitor(Zone* zone)
+    : dont_optimize_reason_(kNoReason),
+      zone_(zone) { }
 
   AstProperties* ast_properties() { return &properties_; }
   BailoutReason dont_optimize_reason() { return dont_optimize_reason_; }
+  DeferredFeedbackSlotProcessor* slot_processor() { return &slot_processor_; }
 
  private:
   template<class> friend class AstNodeFactory;
@@ -2876,13 +2935,21 @@ class AstConstructionVisitor BASE_EMBEDDED {
       dont_optimize_reason_ = reason;
   }
 
+  void add_slot_node(FeedbackSlotInterface* slot_node) {
+    slot_processor_.add_slot_node(zone_, slot_node);
+  }
+
   AstProperties properties_;
+  DeferredFeedbackSlotProcessor slot_processor_;
   BailoutReason dont_optimize_reason_;
+  Zone* zone_;
 };
 
 
 class AstNullVisitor BASE_EMBEDDED {
  public:
+  explicit AstNullVisitor(Zone* zone) {}
+
   // Node visitors.
 #define DEF_VISIT(type) \
   void Visit##type(type* node) {}
@@ -2898,7 +2965,9 @@ class AstNullVisitor BASE_EMBEDDED {
 template<class Visitor>
 class AstNodeFactory V8_FINAL BASE_EMBEDDED {
  public:
-  explicit AstNodeFactory(Zone* zone) : zone_(zone) { }
+  explicit AstNodeFactory(Zone* zone)
+    : zone_(zone),
+      visitor_(zone) { }
 
   Visitor* visitor() { return &visitor_; }
 

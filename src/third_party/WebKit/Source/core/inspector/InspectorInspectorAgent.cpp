@@ -35,7 +35,7 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorController.h"
@@ -66,7 +66,7 @@ InspectorInspectorAgent::~InspectorInspectorAgent()
     m_instrumentingAgents->setInspectorInspectorAgent(0);
 }
 
-void InspectorInspectorAgent::didClearWindowObjectInMainWorld(Frame* frame)
+void InspectorInspectorAgent::didClearWindowObjectInMainWorld(LocalFrame* frame)
 {
     if (m_injectedScriptForOrigin.isEmpty())
         return;
@@ -103,7 +103,7 @@ void InspectorInspectorAgent::clearFrontend()
     disable(&error);
 }
 
-void InspectorInspectorAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void InspectorInspectorAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
     if (loader->frame() != frame->page()->mainFrame())
         return;
@@ -133,7 +133,7 @@ void InspectorInspectorAgent::reset(ErrorString*)
     m_inspectedPage->inspectorController().reconnectFrontend();
 }
 
-void InspectorInspectorAgent::domContentLoadedEventFired(Frame* frame)
+void InspectorInspectorAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
     if (frame->page()->mainFrame() != frame)
         return;
@@ -158,8 +158,8 @@ void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObj
 {
     if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled) && m_frontend) {
         m_frontend->inspector()->inspect(objectToInspect, hints);
-        m_pendingInspectData.first = 0;
-        m_pendingInspectData.second = 0;
+        m_pendingInspectData.first = nullptr;
+        m_pendingInspectData.second = nullptr;
         return;
     }
     m_pendingInspectData.first = objectToInspect;

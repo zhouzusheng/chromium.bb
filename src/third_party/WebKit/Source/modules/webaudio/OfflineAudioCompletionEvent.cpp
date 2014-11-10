@@ -28,18 +28,16 @@
 
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create()
+PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create()
 {
-    return adoptRef(new OfflineAudioCompletionEvent);
+    return adoptRefWillBeRefCountedGarbageCollected(new OfflineAudioCompletionEvent);
 }
 
-PassRefPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(PassRefPtr<AudioBuffer> renderedBuffer)
+PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(PassRefPtr<AudioBuffer> renderedBuffer)
 {
-    return adoptRef(new OfflineAudioCompletionEvent(renderedBuffer));
+    return adoptRefWillBeRefCountedGarbageCollected(new OfflineAudioCompletionEvent(renderedBuffer));
 }
 
 OfflineAudioCompletionEvent::OfflineAudioCompletionEvent()
@@ -61,6 +59,11 @@ OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
 const AtomicString& OfflineAudioCompletionEvent::interfaceName() const
 {
     return EventNames::OfflineAudioCompletionEvent;
+}
+
+void OfflineAudioCompletionEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

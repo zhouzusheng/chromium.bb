@@ -36,6 +36,7 @@
 #include "media/base/pipeline.h"
 #include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 #include "media/filters/blocking_url_protocol.h"
 
 // FFmpeg forward declarations.
@@ -49,9 +50,8 @@ class MediaLog;
 class FFmpegDemuxer;
 class FFmpegGlue;
 class FFmpegH264ToAnnexBBitstreamConverter;
-class ScopedPtrAVFreePacket;
 
-typedef scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
+typedef scoped_ptr<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
 
 class FFmpegDemuxerStream : public DemuxerStream {
  public:
@@ -81,6 +81,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual Type type() OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void EnableBitstreamConverter() OVERRIDE;
+  virtual bool SupportsConfigChanges() OVERRIDE;
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
 
@@ -93,6 +94,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   // Returns true if this stream has capacity for additional data.
   bool HasAvailableCapacity();
+
+  // Returns the total buffer size FFMpegDemuxerStream is holding onto.
+  size_t MemoryUsage() const;
 
   TextKind GetTextKind() const;
 
@@ -182,6 +186,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // go over capacity depending on how the file is muxed.
   bool StreamsHaveAvailableCapacity();
 
+  // Returns true if the maximum allowed memory usage has been reached.
+  bool IsMaxMemoryUsageReached() const;
+
   // Signal all FFmpegDemuxerStreams that the stream has ended.
   void StreamHasEnded();
 
@@ -199,8 +206,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   DemuxerHost* host_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
-  base::WeakPtr<FFmpegDemuxer> weak_this_;
 
   // Thread on which all blocking FFmpeg operations are executed.
   base::Thread blocking_thread_;
@@ -257,6 +262,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   scoped_ptr<FFmpegGlue> glue_;
 
   const NeedKeyCB need_key_cb_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxer);
 };

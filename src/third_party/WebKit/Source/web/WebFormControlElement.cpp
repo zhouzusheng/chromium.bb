@@ -33,6 +33,10 @@
 
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLSelectElement.h"
+#include "core/html/HTMLTextAreaElement.h"
+
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
@@ -77,6 +81,101 @@ void WebFormControlElement::setAutofilled(bool autofilled)
 WebString WebFormControlElement::nameForAutofill() const
 {
     return constUnwrap<HTMLFormControlElement>()->nameForAutofill();
+}
+
+bool WebFormControlElement::autoComplete() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->shouldAutocomplete();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->shouldAutocomplete();
+    return false;
+}
+
+void WebFormControlElement::setValue(const WebString& value, bool sendEvents)
+{
+    if (isHTMLInputElement(*m_private))
+        unwrap<HTMLInputElement>()->setValue(value, sendEvents ? DispatchInputAndChangeEvent : DispatchNoEvent);
+    else if (isHTMLTextAreaElement(*m_private))
+        unwrap<HTMLTextAreaElement>()->setValue(value, sendEvents ? DispatchInputAndChangeEvent : DispatchNoEvent);
+    else if (isHTMLSelectElement(*m_private))
+        unwrap<HTMLSelectElement>()->setValue(value, sendEvents);
+}
+
+WebString WebFormControlElement::value() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->value();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->value();
+    if (isHTMLSelectElement(*m_private))
+        return constUnwrap<HTMLSelectElement>()->value();
+    return WebString();
+}
+
+void WebFormControlElement::setSuggestedValue(const WebString& value)
+{
+    if (isHTMLInputElement(*m_private))
+        unwrap<HTMLInputElement>()->setSuggestedValue(value);
+    else if (isHTMLTextAreaElement(*m_private))
+        unwrap<HTMLTextAreaElement>()->setSuggestedValue(value);
+    else if (isHTMLSelectElement(*m_private))
+        unwrap<HTMLSelectElement>()->setSuggestedValue(value);
+}
+
+WebString WebFormControlElement::suggestedValue() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->suggestedValue();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->suggestedValue();
+    if (isHTMLSelectElement(*m_private))
+        return constUnwrap<HTMLSelectElement>()->suggestedValue();
+    return WebString();
+}
+
+WebString WebFormControlElement::editingValue() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->innerTextValue();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->innerTextValue();
+    return WebString();
+}
+
+void WebFormControlElement::setSelectionRange(int start, int end)
+{
+    if (isHTMLInputElement(*m_private))
+        unwrap<HTMLInputElement>()->setSelectionRange(start, end);
+    else if (isHTMLTextAreaElement(*m_private))
+        unwrap<HTMLTextAreaElement>()->setSelectionRange(start, end);
+}
+
+int WebFormControlElement::selectionStart() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->selectionStart();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->selectionStart();
+    return 0;
+}
+
+int WebFormControlElement::selectionEnd() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->selectionEnd();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->selectionEnd();
+    return 0;
+}
+
+WebString WebFormControlElement::directionForFormData() const
+{
+    if (isHTMLInputElement(*m_private))
+        return constUnwrap<HTMLInputElement>()->directionForFormData();
+    if (isHTMLTextAreaElement(*m_private))
+        return constUnwrap<HTMLTextAreaElement>()->directionForFormData();
+    return WebString();
 }
 
 WebFormElement WebFormControlElement::form() const

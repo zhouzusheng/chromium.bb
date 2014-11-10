@@ -36,13 +36,13 @@ class DeviceOrientationData;
 class DeviceOrientationEvent FINAL : public Event {
 public:
     virtual ~DeviceOrientationEvent();
-    static PassRefPtr<DeviceOrientationEvent> create()
+    static PassRefPtrWillBeRawPtr<DeviceOrientationEvent> create()
     {
-        return adoptRef(new DeviceOrientationEvent);
+        return adoptRefWillBeRefCountedGarbageCollected(new DeviceOrientationEvent);
     }
-    static PassRefPtr<DeviceOrientationEvent> create(const AtomicString& eventType, DeviceOrientationData* orientation)
+    static PassRefPtrWillBeRawPtr<DeviceOrientationEvent> create(const AtomicString& eventType, DeviceOrientationData* orientation)
     {
-        return adoptRef(new DeviceOrientationEvent(eventType, orientation));
+        return adoptRefWillBeRefCountedGarbageCollected(new DeviceOrientationEvent(eventType, orientation));
     }
 
     void initDeviceOrientationEvent(const AtomicString& type, bool bubbles, bool cancelable, DeviceOrientationData*);
@@ -56,11 +56,13 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     DeviceOrientationEvent();
     DeviceOrientationEvent(const AtomicString& eventType, DeviceOrientationData*);
 
-    RefPtrWillBePersistent<DeviceOrientationData> m_orientation;
+    RefPtrWillBeMember<DeviceOrientationData> m_orientation;
 };
 
 DEFINE_TYPE_CASTS(DeviceOrientationEvent, Event, event, event->interfaceName() == EventNames::DeviceOrientationEvent, event.interfaceName() == EventNames::DeviceOrientationEvent);

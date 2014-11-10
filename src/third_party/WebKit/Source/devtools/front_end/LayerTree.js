@@ -105,9 +105,8 @@ WebInspector.LayerTree.prototype = {
                 node = new WebInspector.LayerTreeElement(this, layer);
                 parent.appendChild(node);
             } else {
-                var oldParentId = node.parent.representedObject && node.parent.representedObject.id();
-                if (oldParentId !== layer.parentId()) {
-                    (node.parent || this._treeOutline).removeChild(node);
+                if (node.parent !== parent) {
+                    node.parent.removeChild(node);
                     parent.appendChild(node);
                 }
                 node._update();
@@ -160,10 +159,10 @@ WebInspector.LayerTree.prototype = {
         var layer = /** @type {!WebInspector.Layer} */ (node.representedObject);
         if (!layer)
             return;
-        var nodeId = layer.nodeId();
+        var nodeId = layer.nodeIdForSelfOrAncestor();
         if (!nodeId)
             return;
-        var domNode = WebInspector.domAgent.nodeForId(nodeId);
+        var domNode = WebInspector.domModel.nodeForId(nodeId);
         if (!domNode)
             return;
         var contextMenu = new WebInspector.ContextMenu(event);
@@ -199,10 +198,10 @@ WebInspector.LayerTreeElement.prototype = {
     {
         var layer = /** @type {!WebInspector.Layer} */ (this.representedObject);
         var nodeId = layer.nodeIdForSelfOrAncestor();
-        var node = nodeId ? WebInspector.domAgent.nodeForId(nodeId) : null;
+        var node = nodeId ? WebInspector.domModel.nodeForId(nodeId) : null;
         var title = document.createDocumentFragment();
         title.createChild("div", "selection");
-        title.appendChild(document.createTextNode(node ? WebInspector.DOMPresentationUtils.fullQualifiedSelector(node, false) :  "#" + layer.id()));
+        title.appendChild(document.createTextNode(node ? WebInspector.DOMPresentationUtils.simpleSelector(node) : "#" + layer.id()));
         var details = title.createChild("span", "dimmed");
         details.textContent = WebInspector.UIString(" (%d × %d)", layer.width(), layer.height());
         this.title = title;
@@ -223,7 +222,7 @@ WebInspector.LayerTreeElement.prototype = {
      */
     setHovered: function(hovered)
     {
-        this.listItemElement.enableStyleClass("hovered", hovered);
+        this.listItemElement.classList.toggle("hovered", hovered);
     },
 
     __proto__: TreeElement.prototype

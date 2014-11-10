@@ -54,21 +54,21 @@ bool ContextFeatures::dialogElementEnabled(Document* document)
 {
     if (!document)
         return RuntimeEnabledFeatures::dialogElementEnabled();
-    return document->contextFeatures()->isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
+    return document->contextFeatures().isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
 }
 
 bool ContextFeatures::styleScopedEnabled(Document* document)
 {
     if (!document)
         return RuntimeEnabledFeatures::styleScopedEnabled();
-    return document->contextFeatures()->isEnabled(document, StyleScoped, RuntimeEnabledFeatures::styleScopedEnabled());
+    return document->contextFeatures().isEnabled(document, StyleScoped, RuntimeEnabledFeatures::styleScopedEnabled());
 }
 
 bool ContextFeatures::pagePopupEnabled(Document* document)
 {
     if (!document)
         return false;
-    return document->contextFeatures()->isEnabled(document, PagePopup, false);
+    return document->contextFeatures().isEnabled(document, PagePopup, false);
 }
 
 bool ContextFeatures::mutationEventsEnabled(Document* document)
@@ -76,25 +76,25 @@ bool ContextFeatures::mutationEventsEnabled(Document* document)
     ASSERT(document);
     if (!document)
         return true;
-    return document->contextFeatures()->isEnabled(document, MutationEvents, true);
+    return document->contextFeatures().isEnabled(document, MutationEvents, true);
 }
 
 bool ContextFeatures::pushStateEnabled(Document* document)
 {
-    return document->contextFeatures()->isEnabled(document, PushState, true);
+    return document->contextFeatures().isEnabled(document, PushState, true);
 }
 
-void provideContextFeaturesTo(Page* page, ContextFeaturesClient* client)
+void provideContextFeaturesTo(Page& page, ContextFeaturesClient* client)
 {
     RefCountedSupplement<Page, ContextFeatures>::provideTo(page, ContextFeatures::supplementName(), ContextFeatures::create(client));
 }
 
-void provideContextFeaturesToDocumentFrom(Document* document, Page* page)
+void provideContextFeaturesToDocumentFrom(Document& document, Page& page)
 {
     ContextFeatures* provided = static_cast<ContextFeatures*>(RefCountedSupplement<Page, ContextFeatures>::from(page, ContextFeatures::supplementName()));
     if (!provided)
         return;
-    document->setContextFeatures(provided);
+    document.setContextFeatures(*provided);
 }
 
 }

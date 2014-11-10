@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -73,13 +74,61 @@ class WebGraphicsContext3DCommandBufferImpl
     size_t mapped_memory_reclaim_limit;
   };
 
+  class ShareGroup : public base::RefCountedThreadSafe<ShareGroup> {
+   public:
+    ShareGroup();
+
+    WebGraphicsContext3DCommandBufferImpl* GetAnyContextLocked() {
+      // In order to ensure that the context returned is not removed while
+      // in use, the share group's lock should be aquired before calling this
+      // function.
+      lock_.AssertAcquired();
+      if (contexts_.empty())
+        return NULL;
+      return contexts_.front();
+    }
+
+    void AddContextLocked(WebGraphicsContext3DCommandBufferImpl* context) {
+      lock_.AssertAcquired();
+      contexts_.push_back(context);
+    }
+
+    void RemoveContext(WebGraphicsContext3DCommandBufferImpl* context) {
+      base::AutoLock auto_lock(lock_);
+      contexts_.erase(std::remove(contexts_.begin(), contexts_.end(), context),
+          contexts_.end());
+    }
+
+    void RemoveAllContexts() {
+      base::AutoLock auto_lock(lock_);
+      contexts_.clear();
+    }
+
+    base::Lock& lock() {
+      return lock_;
+    }
+
+   private:
+    friend class base::RefCountedThreadSafe<ShareGroup>;
+    virtual ~ShareGroup();
+
+    std::vector<WebGraphicsContext3DCommandBufferImpl*> contexts_;
+    base::Lock lock_;
+
+    DISALLOW_COPY_AND_ASSIGN(ShareGroup);
+  };
+
   WebGraphicsContext3DCommandBufferImpl(
       int surface_id,
       const GURL& active_url,
       GpuChannelHost* host,
       const Attributes& attributes,
+#if !defined(OS_CHROMEOS)
       bool bind_generates_resources,
-      const SharedMemoryLimits& limits);
+#endif
+      bool lose_context_when_out_of_memory,
+      const SharedMemoryLimits& limits,
+      WebGraphicsContext3DCommandBufferImpl* share_context);
 
   virtual ~WebGraphicsContext3DCommandBufferImpl();
 
@@ -103,8 +152,10 @@ class WebGraphicsContext3DCommandBufferImpl
       CreateOffscreenContext(
           GpuChannelHost* host,
           const WebGraphicsContext3D::Attributes& attributes,
+          bool lose_context_when_out_of_memory,
           const GURL& active_url,
-          const SharedMemoryLimits& limits);
+          const SharedMemoryLimits& limits,
+          WebGraphicsContext3DCommandBufferImpl* share_context);
 
   size_t GetMappedMemoryLimit() {
     return mem_limits_.mapped_memory_reclaim_limit;
@@ -640,20 +691,21 @@ class WebGraphicsContext3DCommandBufferImpl
   // gpu/command_buffer/common/gles2_cmd_utils.cc and to
   // gpu/command_buffer/client/gl_in_process_context.cc
   enum Attribute {
-    ALPHA_SIZE                = 0x3021,
-    BLUE_SIZE                 = 0x3022,
-    GREEN_SIZE                = 0x3023,
-    RED_SIZE                  = 0x3024,
-    DEPTH_SIZE                = 0x3025,
-    STENCIL_SIZE              = 0x3026,
-    SAMPLES                   = 0x3031,
-    SAMPLE_BUFFERS            = 0x3032,
-    HEIGHT                    = 0x3056,
-    WIDTH                     = 0x3057,
-    NONE                      = 0x3038,  // Attrib list = terminator
-    SHARE_RESOURCES           = 0x10000,
-    BIND_GENERATES_RESOURCES  = 0x10001,
-    FAIL_IF_MAJOR_PERF_CAVEAT = 0x10002
+    ALPHA_SIZE = 0x3021,
+    BLUE_SIZE = 0x3022,
+    GREEN_SIZE = 0x3023,
+    RED_SIZE = 0x3024,
+    DEPTH_SIZE = 0x3025,
+    STENCIL_SIZE = 0x3026,
+    SAMPLES = 0x3031,
+    SAMPLE_BUFFERS = 0x3032,
+    HEIGHT = 0x3056,
+    WIDTH = 0x3057,
+    NONE = 0x3038,  // Attrib list = terminator
+    SHARE_RESOURCES = 0x10000,
+    BIND_GENERATES_RESOURCES = 0x10001,
+    FAIL_IF_MAJOR_PERF_CAVEAT = 0x10002,
+    LOSE_CONTEXT_WHEN_OUT_OF_MEMORY = 0x10003,
   };
   friend class WebGraphicsContext3DErrorMessageCallback;
 
@@ -663,7 +715,8 @@ class WebGraphicsContext3DCommandBufferImpl
   // thread).
   bool MaybeInitializeGL();
 
-  bool InitializeCommandBuffer(bool onscreen);
+  bool InitializeCommandBuffer(bool onscreen,
+      WebGraphicsContext3DCommandBufferImpl* share_context);
 
   void Destroy();
 
@@ -718,10 +771,14 @@ class WebGraphicsContext3DCommandBufferImpl
   scoped_ptr<gpu::gles2::GLES2Implementation> real_gl_;
   scoped_ptr<gpu::gles2::GLES2Interface> trace_gl_;
   Error last_error_;
+#if !defined(OS_CHROMEOS)
   bool bind_generates_resources_;
+#endif
+  bool lose_context_when_out_of_memory_;
   SharedMemoryLimits mem_limits_;
 
   uint32_t flush_id_;
+  scoped_refptr<ShareGroup> share_group_;
 };
 
 }  // namespace content

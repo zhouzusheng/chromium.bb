@@ -42,7 +42,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_draggableRegionMode(DraggableRegionNone)
     , m_mask(MaskFillLayer, true)
     , m_pageSize()
-    , m_shapeInside(RenderStyle::initialShapeInside())
     , m_shapeOutside(RenderStyle::initialShapeOutside())
     , m_shapeMargin(RenderStyle::initialShapeMargin())
     , m_shapePadding(RenderStyle::initialShapePadding())
@@ -105,6 +104,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_marquee(o.m_marquee)
     , m_multiCol(o.m_multiCol)
     , m_transform(o.m_transform)
+    , m_willChange(o.m_willChange)
     , m_filter(o.m_filter)
     , m_grid(o.m_grid)
     , m_gridItem(o.m_gridItem)
@@ -112,12 +112,11 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_counterDirectives(o.m_counterDirectives ? clone(*o.m_counterDirectives) : nullptr)
     , m_boxShadow(o.m_boxShadow)
     , m_boxReflect(o.m_boxReflect)
-    , m_animations(o.m_animations ? adoptPtr(new CSSAnimationDataList(*o.m_animations)) : nullptr)
-    , m_transitions(o.m_transitions ? adoptPtr(new CSSAnimationDataList(*o.m_transitions)) : nullptr)
+    , m_animations(o.m_animations ? adoptPtrWillBeNoop(new CSSAnimationDataList(*o.m_animations)) : nullptr)
+    , m_transitions(o.m_transitions ? adoptPtrWillBeNoop(new CSSAnimationDataList(*o.m_transitions)) : nullptr)
     , m_mask(o.m_mask)
     , m_maskBoxImage(o.m_maskBoxImage)
     , m_pageSize(o.m_pageSize)
-    , m_shapeInside(o.m_shapeInside)
     , m_shapeOutside(o.m_shapeOutside)
     , m_shapeMargin(o.m_shapeMargin)
     , m_shapePadding(o.m_shapePadding)
@@ -186,6 +185,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_marquee == o.m_marquee
         && m_multiCol == o.m_multiCol
         && m_transform == o.m_transform
+        && m_willChange == o.m_willChange
         && m_filter == o.m_filter
         && m_grid == o.m_grid
         && m_gridItem == o.m_gridItem
@@ -198,7 +198,6 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_mask == o.m_mask
         && m_maskBoxImage == o.m_maskBoxImage
         && m_pageSize == o.m_pageSize
-        && m_shapeInside == o.m_shapeInside
         && m_shapeOutside == o.m_shapeOutside
         && m_shapeMargin == o.m_shapeMargin
         && m_shapePadding == o.m_shapePadding

@@ -35,27 +35,27 @@ typedef DOMWindow AbstractView;
 struct UIEventInit : public EventInit {
     UIEventInit();
 
-    RefPtr<AbstractView> view;
+    RefPtrWillBeMember<AbstractView> view;
     int detail;
 };
 
 class UIEvent : public Event {
 public:
-    static PassRefPtr<UIEvent> create()
+    static PassRefPtrWillBeRawPtr<UIEvent> create()
     {
-        return adoptRef(new UIEvent);
+        return adoptRefWillBeRefCountedGarbageCollected(new UIEvent);
     }
-    static PassRefPtr<UIEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view, int detail)
+    static PassRefPtrWillBeRawPtr<UIEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view, int detail)
     {
-        return adoptRef(new UIEvent(type, canBubble, cancelable, view, detail));
+        return adoptRefWillBeRefCountedGarbageCollected(new UIEvent(type, canBubble, cancelable, view, detail));
     }
-    static PassRefPtr<UIEvent> create(const AtomicString& type, const UIEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<UIEvent> create(const AtomicString& type, const UIEventInit& initializer)
     {
-        return adoptRef(new UIEvent(type, initializer));
+        return adoptRefWillBeRefCountedGarbageCollected(new UIEvent(type, initializer));
     }
     virtual ~UIEvent();
 
-    void initUIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, int detail);
+    void initUIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int detail);
 
     AbstractView* view() const { return m_view.get(); }
     AbstractView* view(bool& isNull) const { isNull = !m_view; return m_view.get(); }
@@ -75,13 +75,15 @@ public:
 
     virtual int which() const;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     UIEvent();
-    UIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, int detail);
+    UIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int detail);
     UIEvent(const AtomicString&, const UIEventInit&);
 
 private:
-    RefPtr<AbstractView> m_view;
+    RefPtrWillBeMember<AbstractView> m_view;
     int m_detail;
 };
 

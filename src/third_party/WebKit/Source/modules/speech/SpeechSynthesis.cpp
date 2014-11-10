@@ -34,11 +34,9 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(SpeechSynthesis);
-
 PassRefPtrWillBeRawPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
 {
-    return adoptRefCountedWillBeRefCountedGarbageCollected(new SpeechSynthesis(context));
+    return adoptRefWillBeRefCountedGarbageCollected(new SpeechSynthesis(context));
 }
 
 SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)

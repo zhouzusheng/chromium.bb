@@ -69,7 +69,7 @@ void ScriptProfiler::start(const String& title)
     if (!profiler)
         return;
     v8::HandleScope handleScope(isolate);
-    profiler->StartCpuProfiling(v8String(isolate, title), true);
+    profiler->StartProfiling(v8String(isolate, title), true);
 }
 
 PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
@@ -77,11 +77,11 @@ PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::CpuProfiler* profiler = isolate->GetCpuProfiler();
     if (!profiler)
-        return 0;
+        return nullptr;
     v8::HandleScope handleScope(isolate);
-    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(isolate, title));
+    v8::CpuProfile* profile = profiler->StopProfiling(v8String(isolate, title));
     if (!profile)
-        return 0;
+        return nullptr;
 
     String profileTitle = toCoreString(profile->GetTitle());
     double idleTime = 0.0;
@@ -233,13 +233,13 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
     if (!profiler)
-        return 0;
+        return nullptr;
     v8::HandleScope handleScope(isolate);
     ASSERT(control);
     ActivityControlAdapter adapter(control);
     GlobalObjectNameResolver resolver;
     const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(isolate, title), &adapter, &resolver);
-    return snapshot ? ScriptHeapSnapshot::create(snapshot) : 0;
+    return snapshot ? ScriptHeapSnapshot::create(snapshot) : nullptr;
 }
 
 static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::Value> wrapper)

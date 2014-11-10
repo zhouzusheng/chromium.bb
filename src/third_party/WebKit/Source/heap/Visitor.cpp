@@ -37,35 +37,24 @@
 namespace WebCore {
 
 #ifndef NDEBUG
-void Visitor::checkTypeMarker(const void* payload, const char* marker)
+void Visitor::checkGCInfo(const void* payload, const GCInfo* gcInfo)
 {
     FinalizedHeapObjectHeader::fromPayload(payload)->checkHeader();
-    ASSERT(FinalizedHeapObjectHeader::fromPayload(payload)->typeMarker() == marker);
+    ASSERT(FinalizedHeapObjectHeader::fromPayload(payload)->gcInfo() == gcInfo);
 }
 
 #define DEFINE_VISITOR_CHECK_MARKER(Type)                                    \
-    void Visitor::checkTypeMarker(const Type* payload, const char* marker)   \
+    void Visitor::checkGCInfo(const Type* payload, const GCInfo* gcInfo)     \
     {                                                                        \
         HeapObjectHeader::fromPayload(payload)->checkHeader();               \
         Type* object = const_cast<Type*>(payload);                           \
         Address addr = pageHeaderAddress(reinterpret_cast<Address>(object)); \
         BaseHeapPage* page = reinterpret_cast<BaseHeapPage*>(addr);          \
-        ASSERT(page->gcInfo());                                              \
-        ASSERT(page->gcInfo()->m_typeMarker == marker);                      \
+        ASSERT(page->gcInfo() == gcInfo);                                    \
     }
 
 FOR_EACH_TYPED_HEAP(DEFINE_VISITOR_CHECK_MARKER)
 #undef DEFINE_VISITOR_CHECK_MARKER
 #endif
-
-#define DEFINE_DO_NOTHING_TRAIT(type)                  \
-const GCInfo GCInfoTrait<type>::info = {               \
-    #type,                                             \
-    doNothingTrace,                                    \
-    0, /* no finalizer method */                       \
-    false                                              \
-};
-
-ITERATE_DO_NOTHING_TYPES(DEFINE_DO_NOTHING_TRAIT)
 
 }

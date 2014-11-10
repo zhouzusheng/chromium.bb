@@ -10,6 +10,8 @@
 
 #include "base/debug/trace_event.h"
 #include "cc/base/math_util.h"
+#include "cc/resources/tile.h"
+#include "cc/resources/tile_priority.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/safe_integer_conversions.h"
@@ -64,16 +66,9 @@ gfx::SizeF PictureLayerTiling::ContentSizeF() const {
   return gfx::ScaleSize(layer_bounds_, contents_scale_);
 }
 
-Tile* PictureLayerTiling::TileAt(int i, int j) const {
-  TileMap::const_iterator iter = tiles_.find(TileMapKey(i, j));
-  if (iter == tiles_.end())
-    return NULL;
-  return iter->second.get();
-}
-
-void PictureLayerTiling::CreateTile(int i,
-                                    int j,
-                                    const PictureLayerTiling* twin_tiling) {
+Tile* PictureLayerTiling::CreateTile(int i,
+                                     int j,
+                                     const PictureLayerTiling* twin_tiling) {
   TileMapKey key(i, j);
   DCHECK(tiles_.find(key) == tiles_.end());
 
@@ -90,7 +85,7 @@ void PictureLayerTiling::CreateTile(int i,
           gfx::ScaleToEnclosingRect(paint_rect, 1.0f / contents_scale_);
       if (!client_->GetInvalidation()->Intersects(rect)) {
         tiles_[key] = candidate_tile;
-        return;
+        return candidate_tile;
       }
     }
   }
@@ -99,6 +94,7 @@ void PictureLayerTiling::CreateTile(int i,
   scoped_refptr<Tile> tile = client_->CreateTile(this, tile_rect);
   if (tile.get())
     tiles_[key] = tile;
+  return tile.get();
 }
 
 Region PictureLayerTiling::OpaqueRegionInContentRect(
@@ -115,7 +111,10 @@ void PictureLayerTiling::SetCanUseLCDText(bool can_use_lcd_text) {
 
 void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
-  for (TilingData::Iterator iter(&tiling_data_, live_tiles_rect_); iter;
+  bool include_borders = true;
+  for (TilingData::Iterator iter(
+           &tiling_data_, live_tiles_rect_, include_borders);
+       iter;
        ++iter) {
     TileMapKey key = iter.index();
     TileMap::iterator find = tiles_.find(key);
@@ -159,14 +158,22 @@ void PictureLayerTiling::SetLayerBounds(const gfx::Size& layer_bounds) {
 
 void PictureLayerTiling::Invalidate(const Region& layer_region) {
   std::vector<TileMapKey> new_tile_keys;
+  gfx::Rect expanded_live_tiles_rect(
+      tiling_data_.ExpandRectToTileBoundsWithBorders(live_tiles_rect_));
   for (Region::Iterator iter(layer_region); iter.has_rect(); iter.next()) {
     gfx::Rect layer_rect = iter.rect();
     gfx::Rect content_rect =
         gfx::ScaleToEnclosingRect(layer_rect, contents_scale_);
-    content_rect.Intersect(live_tiles_rect_);
+    // Avoid needless work by not bothering to invalidate where there aren't
+    // tiles.
+    content_rect.Intersect(expanded_live_tiles_rect);
     if (content_rect.IsEmpty())
       continue;
-    for (TilingData::Iterator iter(&tiling_data_, content_rect); iter; ++iter) {
+    bool include_borders = true;
+    for (TilingData::Iterator iter(
+             &tiling_data_, content_rect, include_borders);
+         iter;
+         ++iter) {
       TileMapKey key(iter.index());
       TileMap::iterator find = tiles_.find(key);
       if (find == tiles_.end())
@@ -430,9 +437,18 @@ void PictureLayerTiling::UpdateTilePriorities(
   last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
   last_visible_rect_in_content_space_ = visible_rect_in_content_space;
 
-  // Assign now priority to all visible tiles.
+  current_visible_rect_in_content_space_ = visible_rect_in_content_space;
+  current_skewport_ = skewport;
+  current_eventually_rect_ = eventually_rect;
+
   TilePriority now_priority(resolution_, TilePriority::NOW, 0);
-  for (TilingData::Iterator iter(&tiling_data_, visible_rect_in_content_space);
+  float content_to_screen_scale =
+      1.0f / (contents_scale_ * layer_contents_scale);
+
+  // Assign now priority to all visible tiles.
+  bool include_borders = true;
+  for (TilingData::Iterator iter(
+           &tiling_data_, visible_rect_in_content_space, include_borders);
        iter;
        ++iter) {
     TileMap::iterator find = tiles_.find(iter.index());
@@ -443,9 +459,7 @@ void PictureLayerTiling::UpdateTilePriorities(
     tile->SetPriority(tree, now_priority);
   }
 
-  // Assign soon priority to all tiles in the skewport that are not visible.
-  float content_to_screen_scale =
-      1.0f / (contents_scale_ * layer_contents_scale);
+  // Assign soon priority to skewport tiles.
   for (TilingData::DifferenceIterator iter(
            &tiling_data_, skewport, visible_rect_in_content_space);
        iter;
@@ -466,8 +480,7 @@ void PictureLayerTiling::UpdateTilePriorities(
     tile->SetPriority(tree, priority);
   }
 
-  // Assign eventually priority to all tiles in the eventually rect that are not
-  // in the skewport.
+  // Assign eventually priority to interest rect tiles.
   for (TilingData::DifferenceIterator iter(
            &tiling_data_, eventually_rect, skewport);
        iter;
@@ -721,6 +734,101 @@ gfx::Rect PictureLayerTiling::ExpandRectEquallyToAreaBoundedBy(
   if (cache)
     cache->previous_result = result;
   return result;
+}
+
+PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator()
+    : tiling_(NULL), current_tile_(NULL) {}
+
+PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator(
+    PictureLayerTiling* tiling,
+    WhichTree tree)
+    : tiling_(tiling),
+      type_(VISIBLE),
+      visible_rect_in_content_space_(
+          tiling_->current_visible_rect_in_content_space_),
+      skewport_in_content_space_(tiling_->current_skewport_),
+      eventually_rect_in_content_space_(tiling_->current_eventually_rect_),
+      tree_(tree),
+      current_tile_(NULL),
+      visible_iterator_(&tiling->tiling_data_,
+                        visible_rect_in_content_space_,
+                        true /* include_borders */),
+      spiral_iterator_(&tiling->tiling_data_,
+                       skewport_in_content_space_,
+                       visible_rect_in_content_space_,
+                       visible_rect_in_content_space_) {
+  if (!visible_iterator_) {
+    AdvancePhase();
+    return;
+  }
+
+  current_tile_ =
+      tiling_->TileAt(visible_iterator_.index_x(), visible_iterator_.index_y());
+  if (!current_tile_ || !TileNeedsRaster(current_tile_))
+    ++(*this);
+}
+
+PictureLayerTiling::TilingRasterTileIterator::~TilingRasterTileIterator() {}
+
+void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
+  DCHECK_LT(type_, EVENTUALLY);
+
+  do {
+    type_ = static_cast<Type>(type_ + 1);
+    if (type_ == EVENTUALLY) {
+      spiral_iterator_ = TilingData::SpiralDifferenceIterator(
+          &tiling_->tiling_data_,
+          eventually_rect_in_content_space_,
+          skewport_in_content_space_,
+          visible_rect_in_content_space_);
+    }
+
+    while (spiral_iterator_) {
+      current_tile_ = tiling_->TileAt(spiral_iterator_.index_x(),
+                                      spiral_iterator_.index_y());
+      if (current_tile_ && TileNeedsRaster(current_tile_))
+        break;
+      ++spiral_iterator_;
+    }
+
+    if (!spiral_iterator_ && type_ == EVENTUALLY)
+      break;
+  } while (!spiral_iterator_);
+}
+
+PictureLayerTiling::TilingRasterTileIterator&
+PictureLayerTiling::TilingRasterTileIterator::
+operator++() {
+  current_tile_ = NULL;
+  while (!current_tile_ || !TileNeedsRaster(current_tile_)) {
+    std::pair<int, int> next_index;
+    switch (type_) {
+      case VISIBLE:
+        ++visible_iterator_;
+        if (!visible_iterator_) {
+          AdvancePhase();
+          return *this;
+        }
+        next_index = visible_iterator_.index();
+        break;
+      case SKEWPORT:
+        ++spiral_iterator_;
+        if (!spiral_iterator_) {
+          AdvancePhase();
+          return *this;
+        }
+        next_index = spiral_iterator_.index();
+        break;
+      case EVENTUALLY:
+        ++spiral_iterator_;
+        if (!spiral_iterator_)
+          return *this;
+        next_index = spiral_iterator_.index();
+        break;
+    }
+    current_tile_ = tiling_->TileAt(next_index.first, next_index.second);
+  }
+  return *this;
 }
 
 }  // namespace cc

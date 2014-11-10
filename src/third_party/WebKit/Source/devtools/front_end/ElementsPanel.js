@@ -51,18 +51,12 @@ WebInspector.ElementsPanel = function()
     this.registerRequiredCSS("textPrompt.css");
     this.setHideOnDetach();
 
-    const initialSidebarWidth = 325;
-    const minimumContentWidthPercent = 0.34;
-    const initialSidebarHeight = 325;
-    const minimumContentHeightPercent = 0.34;
-
-    this._splitView = new WebInspector.SplitView(true, true, "elementsSidebarWidth", initialSidebarWidth, initialSidebarHeight);
-    this._splitView.setSidebarElementConstraints(Preferences.minSidebarWidth, Preferences.minSidebarHeight);
-    this._splitView.setMainElementConstraints(minimumContentWidthPercent, minimumContentHeightPercent);
+    this._splitView = new WebInspector.SplitView(true, true, "elementsPanelSplitViewState", 325, 325);
     this._splitView.addEventListener(WebInspector.SplitView.Events.SidebarSizeChanged, this._updateTreeOutlineVisibleWidth.bind(this));
     this._splitView.show(this.element);
 
     this._searchableView = new WebInspector.SearchableView(this);
+    this._searchableView.setMinimumSize(25, 19);
     this._searchableView.show(this._splitView.mainElement());
     var stackElement = this._searchableView.element;
 
@@ -93,6 +87,13 @@ WebInspector.ElementsPanel = function()
     this.sidebarPanes.platformFonts = new WebInspector.PlatformFontsSidebarPane();
     this.sidebarPanes.computedStyle = new WebInspector.ComputedStyleSidebarPane();
     this.sidebarPanes.styles = new WebInspector.StylesSidebarPane(this.sidebarPanes.computedStyle, this._setPseudoClassForNodeId.bind(this));
+
+    this._matchedStylesFilterBoxContainer = document.createElement("div");
+    this._matchedStylesFilterBoxContainer.className = "sidebar-pane-filter-box";
+    this._computedStylesFilterBoxContainer = document.createElement("div");
+    this._computedStylesFilterBoxContainer.className = "sidebar-pane-filter-box";
+    this.sidebarPanes.styles.setFilterBoxContainers(this._matchedStylesFilterBoxContainer, this._computedStylesFilterBoxContainer);
+
     this.sidebarPanes.metrics = new WebInspector.MetricsSidebarPane();
     this.sidebarPanes.properties = new WebInspector.PropertiesSidebarPane();
     this.sidebarPanes.domBreakpoints = WebInspector.domBreakpointsSidebarPane.createProxy(this);
@@ -116,11 +117,8 @@ WebInspector.ElementsPanel = function()
     this._popoverHelper = new WebInspector.PopoverHelper(this.element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this));
     this._popoverHelper.setTimeout(0);
 
-    WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.DocumentUpdated, this._documentUpdatedEvent, this);
-    WebInspector.settings.showShadowDOM.addChangeListener(this._showShadowDOMChanged.bind(this));
-
-    if (WebInspector.domAgent.existingDocument())
-        this._documentUpdated(WebInspector.domAgent.existingDocument());
+    WebInspector.domModel.addEventListener(WebInspector.DOMModel.Events.DocumentUpdated, this._documentUpdatedEvent, this);
+    WebInspector.settings.showUAShadowDOM.addChangeListener(this._showUAShadowDOMChanged.bind(this));
 
     WebInspector.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.ModelWasEnabled, this._updateSidebars, this);
 }
@@ -135,8 +133,8 @@ WebInspector.ElementsPanel.prototype = {
         if (this._splitView.isVertical())
             width -= this._splitView.sidebarSize();
         this.treeOutline.setVisibleWidth(width);
-        this.updateBreadcrumbSizes();
         this.treeOutline.updateSelection();
+        this.updateBreadcrumbSizes();
     },
 
     /**
@@ -168,12 +166,15 @@ WebInspector.ElementsPanel.prototype = {
         this.treeOutline.setVisible(true);
 
         if (!this.treeOutline.rootDOMNode)
-            WebInspector.domAgent.requestDocument();
+            if (WebInspector.domModel.existingDocument())
+                this._documentUpdated(WebInspector.domModel.existingDocument());
+            else
+                WebInspector.domModel.requestDocument();
     },
 
     willHide: function()
     {
-        WebInspector.domAgent.hideDOMNodeHighlight();
+        WebInspector.domModel.hideDOMNodeHighlight();
         this.treeOutline.setVisible(false);
         this._popoverHelper.hidePopover();
 
@@ -188,6 +189,16 @@ WebInspector.ElementsPanel.prototype = {
         this._updateTreeOutlineVisibleWidth();
     },
 
+    omitDefaultSelection: function()
+    {
+        this._omitDefaultSelection = true;
+    },
+
+    stopOmittingDefaultSelection: function()
+    {
+        delete this._omitDefaultSelection;
+    },
+
     /**
      * @param {!DOMAgent.NodeId} nodeId
      * @param {string} pseudoClass
@@ -195,7 +206,7 @@ WebInspector.ElementsPanel.prototype = {
      */
     _setPseudoClassForNodeId: function(nodeId, pseudoClass, enable)
     {
-        var node = WebInspector.domAgent.nodeForId(nodeId);
+        var node = WebInspector.domModel.nodeForId(nodeId);
         if (!node)
             return;
 
@@ -275,7 +286,7 @@ WebInspector.ElementsPanel.prototype = {
 
         if (!inspectedRootDocument) {
             if (this.isShowing())
-                WebInspector.domAgent.requestDocument();
+                WebInspector.domModel.requestDocument();
             return;
         }
 
@@ -308,12 +319,15 @@ WebInspector.ElementsPanel.prototype = {
                 // Focused node has been explicitly set while reaching out for the last selected node.
                 return;
             }
-            var node = nodeId ? WebInspector.domAgent.nodeForId(nodeId) : null;
+            var node = nodeId ? WebInspector.domModel.nodeForId(nodeId) : null;
             selectNode.call(this, node);
         }
 
+        if (this._omitDefaultSelection)
+            return;
+
         if (this._selectedPathOnReset)
-            WebInspector.domAgent.pushNodeByPathToFrontend(this._selectedPathOnReset, selectLastSelectedNode.bind(this));
+            WebInspector.domModel.pushNodeByPathToFrontend(this._selectedPathOnReset, selectLastSelectedNode.bind(this));
         else
             selectNode.call(this, null);
         delete this._selectedPathOnReset;
@@ -328,7 +342,7 @@ WebInspector.ElementsPanel.prototype = {
 
         delete this._currentSearchResultIndex;
         delete this._searchResults;
-        WebInspector.domAgent.cancelSearch();
+        WebInspector.domModel.cancelSearch();
     },
 
     /**
@@ -361,22 +375,13 @@ WebInspector.ElementsPanel.prototype = {
             if (shouldJump)
                 this.jumpToNextSearchResult();
         }
-        WebInspector.domAgent.performSearch(whitespaceTrimmedQuery, resultCountCallback.bind(this));
+        WebInspector.domModel.performSearch(whitespaceTrimmedQuery, resultCountCallback.bind(this));
     },
 
     _contextMenuEventFired: function(event)
     {
-        function toggleWordWrap()
-        {
-            WebInspector.settings.domWordWrap.set(!WebInspector.settings.domWordWrap.get());
-        }
-
         var contextMenu = new WebInspector.ContextMenu(event);
         this.treeOutline.populateContextMenu(contextMenu, event);
-
-        contextMenu.appendSeparator();
-        contextMenu.appendCheckboxItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Word wrap" : "Word Wrap"), toggleWordWrap.bind(this), WebInspector.settings.domWordWrap.get());
-
         contextMenu.show();
     },
 
@@ -427,7 +432,7 @@ WebInspector.ElementsPanel.prototype = {
         }
         return anchor;
     },
-    
+
     _loadDimensionsForNode: function(treeElement, callback)
     {
         // We get here for CSS properties, too, so bail out early for non-DOM treeElements.
@@ -435,7 +440,7 @@ WebInspector.ElementsPanel.prototype = {
             callback();
             return;
         }
-        
+
         var node = /** @type {!WebInspector.DOMNode} */ (treeElement.representedObject);
 
         if (!node.nodeName() || node.nodeName().toLowerCase() !== "img") {
@@ -457,6 +462,7 @@ WebInspector.ElementsPanel.prototype = {
 
             /**
              * @return {!{offsetWidth: number, offsetHeight: number, naturalWidth: number, naturalHeight: number}}
+             * @suppressReceiverCheck
              * @this {!Element}
              */
             function dimensions()
@@ -537,7 +543,7 @@ WebInspector.ElementsPanel.prototype = {
 
         if (typeof searchResult === "undefined") {
             // No data for slot, request it.
-            WebInspector.domAgent.searchResult(index, searchCallback.bind(this));
+            WebInspector.domModel.searchResult(index, searchCallback.bind(this));
             return;
         }
 
@@ -620,7 +626,7 @@ WebInspector.ElementsPanel.prototype = {
         var nodeUnderMouse = document.elementFromPoint(event.pageX, event.pageY);
         var crumbElement = nodeUnderMouse.enclosingNodeOrSelfWithClass("crumb");
 
-        WebInspector.domAgent.highlightDOMNode(crumbElement ? crumbElement.representedObject.id : 0);
+        WebInspector.domModel.highlightDOMNode(crumbElement ? crumbElement.representedObject.id : 0);
 
         if ("_mouseOutOfCrumbsTimeout" in this) {
             clearTimeout(this._mouseOutOfCrumbsTimeout);
@@ -634,7 +640,7 @@ WebInspector.ElementsPanel.prototype = {
         if (nodeUnderMouse && nodeUnderMouse.isDescendant(this.crumbsElement))
             return;
 
-        WebInspector.domAgent.hideDOMNodeHighlight();
+        WebInspector.domModel.hideDOMNodeHighlight();
 
         this._mouseOutOfCrumbsTimeout = setTimeout(this.updateBreadcrumbSizes.bind(this), 1000);
     },
@@ -746,14 +752,8 @@ WebInspector.ElementsPanel.prototype = {
 
             if (current === this.selectedDOMNode())
                 crumb.classList.add("selected");
-            if (!crumbs.childNodes.length)
-                crumb.classList.add("end");
-
             crumbs.insertBefore(crumb, crumbs.firstChild);
         }
-
-        if (crumbs.hasChildNodes())
-            crumbs.lastChild.classList.add("start");
 
         this.updateBreadcrumbSizes();
     },
@@ -766,24 +766,17 @@ WebInspector.ElementsPanel.prototype = {
         if (!this.isShowing())
             return;
 
-        if (document.body.offsetWidth <= 0) {
-            // The stylesheet hasn't loaded yet or the window is closed,
-            // so we can't calculate what is need. Return early.
-            return;
-        }
-
         var crumbs = this.crumbsElement;
-        if (!crumbs.childNodes.length || crumbs.offsetWidth <= 0)
-            return; // No crumbs, do nothing.
+        if (!crumbs.firstChild)
+            return;
 
-        // A Zero index is the right most child crumb in the breadcrumb.
         var selectedIndex = 0;
         var focusedIndex = 0;
         var selectedCrumb;
 
-        var i = 0;
-        var crumb = crumbs.firstChild;
-        while (crumb) {
+        // Reset crumb styles.
+        for (var i = 0; i < crumbs.childNodes.length; ++i) {
+            var crumb = crumbs.childNodes[i];
             // Find the selected crumb and index.
             if (!selectedCrumb && crumb.classList.contains("selected")) {
                 selectedCrumb = crumb;
@@ -794,31 +787,53 @@ WebInspector.ElementsPanel.prototype = {
             if (crumb === focusedCrumb)
                 focusedIndex = i;
 
-            // Remove any styles that affect size before
-            // deciding to shorten any crumbs.
-            if (crumb !== crumbs.lastChild)
-                crumb.classList.remove("start");
-            if (crumb !== crumbs.firstChild)
-                crumb.classList.remove("end");
-
-            crumb.classList.remove("compact");
-            crumb.classList.remove("collapsed");
-            crumb.classList.remove("hidden");
-
-            crumb = crumb.nextSibling;
-            ++i;
+            crumb.classList.remove("compact", "collapsed", "hidden");
         }
 
-        // Restore the start and end crumb classes in case they got removed in coalesceCollapsedCrumbs().
-        // The order of the crumbs in the document is opposite of the visual order.
-        crumbs.firstChild.classList.add("end");
-        crumbs.lastChild.classList.add("start");
+        // Layout 1: Measure total and normal crumb sizes
+        var contentElementWidth = this.contentElement.offsetWidth;
+        var normalSizes = [];
+        for (var i = 0; i < crumbs.childNodes.length; ++i) {
+            var crumb = crumbs.childNodes[i];
+            normalSizes[i] = crumb.offsetWidth;
+        }
 
-        var contentElement = this.contentElement;
+        // Layout 2: Measure collapsed crumb sizes
+        var compactSizes = [];
+        for (var i = 0; i < crumbs.childNodes.length; ++i) {
+            var crumb = crumbs.childNodes[i];
+            crumb.classList.add("compact");
+        }
+        for (var i = 0; i < crumbs.childNodes.length; ++i) {
+            var crumb = crumbs.childNodes[i];
+            compactSizes[i] = crumb.offsetWidth;
+        }
+
+        // Layout 3: Measure collapsed crumb size
+        crumbs.firstChild.classList.add("collapsed");
+        var collapsedSize = crumbs.firstChild.offsetWidth;
+
+        // Clean up.
+        for (var i = 0; i < crumbs.childNodes.length; ++i) {
+            var crumb = crumbs.childNodes[i];
+            crumb.classList.remove("compact", "collapsed");
+        }
+
         function crumbsAreSmallerThanContainer()
         {
+            var totalSize = 0;
+            for (var i = 0; i < crumbs.childNodes.length; ++i) {
+                var crumb = crumbs.childNodes[i];
+                if (crumb.classList.contains("hidden"))
+                    continue;
+                if (crumb.classList.contains("collapsed")) {
+                    totalSize += collapsedSize;
+                    continue;
+                }
+                totalSize += crumb.classList.contains("compact") ? compactSizes[i] : normalSizes[i];
+            }
             const rightPadding = 10;
-            return crumbs.offsetWidth + rightPadding < contentElement.offsetWidth;
+            return totalSize + rightPadding < contentElementWidth;
         }
 
         if (crumbsAreSmallerThanContainer())
@@ -829,26 +844,13 @@ WebInspector.ElementsPanel.prototype = {
         var ChildSide = 1;
 
         /**
-         * @param {boolean=} significantCrumb
+         * @param {function(!Element)} shrinkingFunction
+         * @param {number} direction
          */
-        function makeCrumbsSmaller(shrinkingFunction, direction, significantCrumb)
+        function makeCrumbsSmaller(shrinkingFunction, direction)
         {
-            if (!significantCrumb)
-                significantCrumb = (focusedCrumb || selectedCrumb);
-
-            if (significantCrumb === selectedCrumb)
-                var significantIndex = selectedIndex;
-            else if (significantCrumb === focusedCrumb)
-                var significantIndex = focusedIndex;
-            else {
-                var significantIndex = 0;
-                for (var i = 0; i < crumbs.childNodes.length; ++i) {
-                    if (crumbs.childNodes[i] === significantCrumb) {
-                        significantIndex = i;
-                        break;
-                    }
-                }
-            }
+            var significantCrumb = focusedCrumb || selectedCrumb;
+            var significantIndex = significantCrumb === selectedCrumb ? selectedIndex : focusedIndex;
 
             function shrinkCrumbAtIndex(index)
             {
@@ -942,6 +944,9 @@ WebInspector.ElementsPanel.prototype = {
             }
         }
 
+        /**
+         * @param {!Element} crumb
+         */
         function compact(crumb)
         {
             if (crumb.classList.contains("hidden"))
@@ -949,6 +954,10 @@ WebInspector.ElementsPanel.prototype = {
             crumb.classList.add("compact");
         }
 
+        /**
+         * @param {!Element} crumb
+         * @param {boolean=} dontCoalesce
+         */
         function collapse(crumb, dontCoalesce)
         {
             if (crumb.classList.contains("hidden"))
@@ -973,11 +982,11 @@ WebInspector.ElementsPanel.prototype = {
         }
 
         // Compact ancestor crumbs, or from both sides if focused.
-        if (makeCrumbsSmaller(compact, (focusedCrumb ? BothSides : AncestorSide)))
+        if (makeCrumbsSmaller(compact, focusedCrumb ? BothSides : AncestorSide))
             return;
 
         // Collapse ancestor crumbs, or from both sides if focused.
-        if (makeCrumbsSmaller(collapse, (focusedCrumb ? BothSides : AncestorSide)))
+        if (makeCrumbsSmaller(collapse, focusedCrumb ? BothSides : AncestorSide))
             return;
 
         if (!selectedCrumb)
@@ -1063,7 +1072,7 @@ WebInspector.ElementsPanel.prototype = {
         function handleUndoRedo()
         {
             if (WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && !event.shiftKey && event.keyIdentifier === "U+005A") { // Z key
-                WebInspector.domAgent.undo(this._updateSidebars.bind(this));
+                WebInspector.domModel.undo(this._updateSidebars.bind(this));
                 event.handled = true;
                 return;
             }
@@ -1099,18 +1108,29 @@ WebInspector.ElementsPanel.prototype = {
         this.selectedDOMNode().copyNode();
     },
 
+    /**
+     * @param {!WebInspector.DOMNode} node
+     * @return {!WebInspector.DOMNode}
+     */
+    _leaveUserAgentShadowDOM: function(node)
+    {
+        var userAgentShadowRoot = node.ancestorUserAgentShadowRoot();
+        return userAgentShadowRoot ? /** @type {!WebInspector.DOMNode} */ (userAgentShadowRoot.parentNode) : node;
+    },
+
+    /**
+     * @param {!DOMAgent.NodeId} nodeId
+     */
     revealAndSelectNode: function(nodeId)
     {
         WebInspector.inspectorView.setCurrentPanel(this);
 
-        var node = WebInspector.domAgent.nodeForId(nodeId);
+        var node = WebInspector.domModel.nodeForId(nodeId);
         if (!node)
             return;
 
-        while (!WebInspector.ElementsTreeOutline.showShadowDOM() && node && node.isInShadowTree())
-            node = node.parentNode;
-
-        WebInspector.domAgent.highlightDOMNodeForTwoSeconds(nodeId);
+        node = WebInspector.settings.showUAShadowDOM.get() ? node : this._leaveUserAgentShadowDOM(node);
+        WebInspector.domModel.highlightDOMNodeForTwoSeconds(nodeId);
         this.selectDOMNode(node, true);
     },
 
@@ -1126,7 +1146,7 @@ WebInspector.ElementsPanel.prototype = {
         function selectNode(nodeId)
         {
             if (nodeId)
-                WebInspector.domAgent.inspectElement(nodeId);
+                WebInspector.domModel.inspectElement(nodeId);
         }
 
         /**
@@ -1141,11 +1161,11 @@ WebInspector.ElementsPanel.prototype = {
         if (target instanceof WebInspector.RemoteObject) {
             var remoteObject = /** @type {!WebInspector.RemoteObject} */ (target);
             if (remoteObject.subtype === "node")
-                commandCallback = revealElement.bind(this, remoteObject);
+                commandCallback = revealElement.bind(null, remoteObject);
         } else if (target instanceof WebInspector.DOMNode) {
             var domNode = /** @type {!WebInspector.DOMNode} */ (target);
             if (domNode.id)
-                commandCallback = WebInspector.domAgent.inspectElement.bind(WebInspector.domAgent, domNode.id);
+                commandCallback = WebInspector.domModel.inspectElement.bind(WebInspector.domModel, domNode.id);
         }
         if (!commandCallback)
             return;
@@ -1167,7 +1187,7 @@ WebInspector.ElementsPanel.prototype = {
         this._splitVertically(vertically);
     },
 
-    _showShadowDOMChanged: function()
+    _showUAShadowDOMChanged: function()
     {
         this.treeOutline.update();
     },
@@ -1192,21 +1212,24 @@ WebInspector.ElementsPanel.prototype = {
         computedPane.element.classList.add("fill");
         var expandComputed = computedPane.expand.bind(computedPane);
 
-        computedPane.bodyElement.appendChild(this.sidebarPanes.computedStyle.titleElement);
         computedPane.bodyElement.classList.add("metrics-and-computed");
-        this.sidebarPanes.computedStyle.show(computedPane.bodyElement);
         this.sidebarPanes.computedStyle.setExpandCallback(expandComputed);
 
-        this.sidebarPanes.platformFonts.show(computedPane.bodyElement);
+        var matchedStylePanesWrapper = document.createElement("div");
+        matchedStylePanesWrapper.className = "style-panes-wrapper";
+        var computedStylePanesWrapper = document.createElement("div");
+        computedStylePanesWrapper.className = "style-panes-wrapper";
 
         /**
-         * @param {!WebInspector.SidebarPane} pane
-         * @param {!Element=} beforeElement
+         * @param {boolean} inComputedStyle
          * @this {WebInspector.ElementsPanel}
          */
-        function showMetrics(pane, beforeElement)
+        function showMetrics(inComputedStyle)
         {
-            this.sidebarPanes.metrics.show(pane.bodyElement, beforeElement);
+            if (inComputedStyle)
+                this.sidebarPanes.metrics.show(computedStylePanesWrapper, this.sidebarPanes.computedStyle.element);
+            else
+                this.sidebarPanes.metrics.show(matchedStylePanesWrapper);
         }
 
         /**
@@ -1217,16 +1240,15 @@ WebInspector.ElementsPanel.prototype = {
         {
             var tabId = /** @type {string} */ (event.data.tabId);
             if (tabId === computedPane.title())
-                showMetrics.call(this, computedPane, this.sidebarPanes.computedStyle.element);
-            if (tabId === stylesPane.title())
-                showMetrics.call(this, stylesPane);
+                showMetrics.call(this, true);
+            else if (tabId === stylesPane.title())
+                showMetrics.call(this, false);
         }
 
         this.sidebarPaneView = new WebInspector.SidebarTabbedPane();
 
         if (vertically) {
             this._splitView.installResizer(this.sidebarPaneView.headerElement());
-            this.sidebarPanes.metrics.show(computedPane.bodyElement, this.sidebarPanes.computedStyle.element);
             this.sidebarPanes.metrics.setExpandCallback(expandComputed);
 
             var compositePane = new WebInspector.SidebarPane(this.sidebarPanes.styles.title());
@@ -1234,15 +1256,19 @@ WebInspector.ElementsPanel.prototype = {
             compositePane.element.classList.add("fill");
             var expandComposite = compositePane.expand.bind(compositePane);
 
-            var splitView = new WebInspector.SplitView(true, true, "StylesPaneSplitRatio", 0.5);
+            var splitView = new WebInspector.SplitView(true, true, "stylesPaneSplitViewState", 0.5);
             splitView.show(compositePane.bodyElement);
 
-            this.sidebarPanes.styles.show(splitView.mainElement());
-            splitView.mainElement().appendChild(this.sidebarPanes.styles.titleElement);
+            splitView.mainElement().appendChild(matchedStylePanesWrapper);
+            splitView.sidebarElement().appendChild(computedStylePanesWrapper);
+
             this.sidebarPanes.styles.setExpandCallback(expandComposite);
 
-            computedPane.show(splitView.sidebarElement());
+            computedPane.show(computedStylePanesWrapper);
             computedPane.setExpandCallback(expandComposite);
+
+            splitView.mainElement().appendChild(this._matchedStylesFilterBoxContainer);
+            splitView.sidebarElement().appendChild(this._computedStylesFilterBoxContainer);
 
             this.sidebarPaneView.addPane(compositePane);
         } else {
@@ -1251,17 +1277,27 @@ WebInspector.ElementsPanel.prototype = {
             stylesPane.element.classList.add("fill");
             var expandStyles = stylesPane.expand.bind(stylesPane);
             stylesPane.bodyElement.classList.add("metrics-and-styles");
-            this.sidebarPanes.styles.show(stylesPane.bodyElement);
+
+            stylesPane.bodyElement.appendChild(matchedStylePanesWrapper);
+            computedPane.bodyElement.appendChild(computedStylePanesWrapper);
+
             this.sidebarPanes.styles.setExpandCallback(expandStyles);
             this.sidebarPanes.metrics.setExpandCallback(expandStyles);
-            stylesPane.bodyElement.appendChild(this.sidebarPanes.styles.titleElement);
 
             this.sidebarPaneView.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, tabSelected, this);
 
-            showMetrics.call(this, stylesPane);
+            stylesPane.bodyElement.appendChild(this._matchedStylesFilterBoxContainer);
+            computedPane.bodyElement.appendChild(this._computedStylesFilterBoxContainer);
+
             this.sidebarPaneView.addPane(stylesPane);
             this.sidebarPaneView.addPane(computedPane);
         }
+
+        this.sidebarPanes.styles.show(matchedStylePanesWrapper);
+        this.sidebarPanes.computedStyle.show(computedStylePanesWrapper);
+        matchedStylePanesWrapper.appendChild(this.sidebarPanes.styles.titleElement);
+        showMetrics.call(this, vertically);
+        this.sidebarPanes.platformFonts.show(computedStylePanesWrapper);
 
         this.sidebarPaneView.addPane(this.sidebarPanes.eventListeners);
         this.sidebarPaneView.addPane(this.sidebarPanes.domBreakpoints);
@@ -1304,36 +1340,8 @@ WebInspector.ElementsPanel.ContextMenuProvider.prototype = {
      */
     appendApplicableItems: function(event, contextMenu, target)
     {
-        WebInspector.panel("elements").appendApplicableItems(event, contextMenu, target);
+        /** @type {!WebInspector.ElementsPanel} */ (WebInspector.inspectorView.panel("elements")).appendApplicableItems(event, contextMenu, target);
     }
-}
-
-
-/**
- * @constructor
- * @extends {WebInspector.Drawer.SingletonViewFactory}
- */
-WebInspector.ElementsPanel.OverridesViewFactory = function()
-{
-    WebInspector.Drawer.SingletonViewFactory.call(this, WebInspector.OverridesView);
-}
-
-WebInspector.ElementsPanel.OverridesViewFactory.prototype = {
-    __proto__: WebInspector.Drawer.SingletonViewFactory.prototype
-}
-
-
-/**
- * @constructor
- * @extends {WebInspector.Drawer.SingletonViewFactory}
- */
-WebInspector.ElementsPanel.RenderingViewFactory = function()
-{
-    WebInspector.Drawer.SingletonViewFactory.call(this, WebInspector.RenderingOptionsView);
-}
-
-WebInspector.ElementsPanel.RenderingViewFactory.prototype = {
-    __proto__: WebInspector.Drawer.SingletonViewFactory.prototype
 }
 
 /**
@@ -1350,7 +1358,14 @@ WebInspector.ElementsPanel.DOMNodeRevealer.prototype = {
      */
     reveal: function(node)
     {
-        if (node instanceof WebInspector.DOMNode)
-            /** @type {!WebInspector.ElementsPanel} */ (WebInspector.showPanel("elements")).revealAndSelectNode(node.id);
+        if (!(node instanceof WebInspector.DOMNode))
+            return;
+
+        if (WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.enabled()) {
+            InspectorFrontendHost.bringToFront();
+            WebInspector.inspectElementModeController.disable();
+        }
+
+        /** @type {!WebInspector.ElementsPanel} */ (WebInspector.inspectorView.panel("elements")).revealAndSelectNode(node.id);
     }
 }

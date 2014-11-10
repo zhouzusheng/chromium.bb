@@ -425,6 +425,12 @@ enum NotificationType {
   // string with details about why the load failed.
   NOTIFICATION_EXTENSION_LOAD_ERROR,
 
+  // Sent when an unpacked extension fails to load. The details are a std::pair,
+  // the first object is a boolean signifying the user's retry response value,
+  // and the second object is a const base::FilePath& of the extension that
+  // failed to load. Source is a Profile.
+  NOTIFICATION_EXTENSION_LOAD_RETRY,
+
   // Sent when an extension is enabled. Under most circumstances, listeners
   // will want to use NOTIFICATION_EXTENSION_LOADED. This notification is only
   // fired when the "Enable" button is hit in the extensions tab.  The details
@@ -456,13 +462,15 @@ enum NotificationType {
   // Profile.
   NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when an extension is unloaded. This happens when an extension is
   // uninstalled or disabled. The details are an UnloadedExtensionInfo, and
   // the source is a Profile.
   //
   // Note that when this notification is sent, ExtensionService has already
   // removed the extension from its internal state.
-  NOTIFICATION_EXTENSION_UNLOADED,
+  NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
 
   // Sent when an Extension object is removed from ExtensionService. This
   // can happen when an extension is uninstalled, upgraded, or blacklisted,
@@ -621,6 +629,10 @@ enum NotificationType {
 
   // Sent when the current install is outdated. No details are expected.
   NOTIFICATION_OUTDATED_INSTALL,
+
+  // Sent when the current install is outdated and auto-update (AU) is disabled.
+  // No details are expected.
+  NOTIFICATION_OUTDATED_INSTALL_NO_AU,
 
   // Software incompatibility notifications ----------------------------------
 
@@ -853,22 +865,6 @@ enum NotificationType {
   // EnterPuk dialog, either because the user cancelled, or entered a
   // PIN or PUK.
   NOTIFICATION_ENTER_PIN_ENDED,
-
-  // Sent when large cursor is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
-
-  // Sent when high contrast mode is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
-
-  // Sent when screen magnifier is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
-
-  // Sent when spoken feedback is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-
-  // Sent when a11y on-screen keyboard is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-
 #endif
 
 #if defined(TOOLKIT_VIEWS)

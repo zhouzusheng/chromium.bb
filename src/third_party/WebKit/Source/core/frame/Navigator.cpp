@@ -25,11 +25,11 @@
 
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/NavigatorID.h"
+#include "core/frame/Settings.h"
 #include "core/loader/CookieJar.h"
 #include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
-#include "core/frame/Settings.h"
 #include "core/plugins/DOMMimeTypeArray.h"
 #include "core/plugins/DOMPluginArray.h"
 #include "platform/Language.h"
@@ -48,7 +48,7 @@
 
 namespace WebCore {
 
-Navigator::Navigator(Frame* frame)
+Navigator::Navigator(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
     ScriptWrappable::init(this);
@@ -127,6 +127,15 @@ bool Navigator::javaEnabled() const
 void Navigator::getStorageUpdates()
 {
     // FIXME: Remove this method or rename to yieldForStorageUpdates.
+}
+
+void Navigator::trace(Visitor* visitor)
+{
+    visitor->trace(m_plugins);
+    visitor->trace(m_mimeTypes);
+#if ENABLE(OILPAN)
+    HeapSupplementable<Navigator>::trace(visitor);
+#endif
 }
 
 } // namespace WebCore

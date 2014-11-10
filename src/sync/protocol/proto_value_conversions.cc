@@ -503,6 +503,7 @@ base::DictionaryValue* ExperimentsSpecificsToValue(
   SET(favicon_sync, FaviconSyncFlagsToValue);
   SET_EXPERIMENT_ENABLED_FIELD(gcm_channel);
   SET_EXPERIMENT_ENABLED_FIELD(enhanced_bookmarks);
+  SET_EXPERIMENT_ENABLED_FIELD(gcm_invalidations);
   return value;
 }
 
@@ -1015,7 +1016,7 @@ base::DictionaryValue* DatatypeAssociationStatsToValue(
 base::DictionaryValue* DebugEventInfoToValue(
     const sync_pb::DebugEventInfo& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
-  SET_ENUM(singleton_event, SingletonEventTypeString);
+  SET_ENUM(singleton_event, SingletonDebugEventTypeString);
   SET(sync_cycle_completed_event_info, SyncCycleCompletedEventInfoToValue);
   SET_INT32(nudging_datatype);
   SET_INT32_REP(datatypes_notified_from_server);
@@ -1049,12 +1050,6 @@ base::DictionaryValue* ClientConfigParamsToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_INT32_REP(enabled_type_ids);
   SET_BOOL(tabs_datatype_enabled);
-  return value;
-}
-
-base::DictionaryValue* AttachmentIdToValue(const sync_pb::AttachmentId& proto) {
-  base::DictionaryValue* value = new base::DictionaryValue();
-  SET_STR(unique_id);
   return value;
 }
 

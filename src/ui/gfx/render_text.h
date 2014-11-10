@@ -13,6 +13,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -73,11 +74,35 @@ class SkiaTextRenderer {
   //   third_party/skia/src/core/SkTextFormatParams.h
   void DrawDecorations(int x, int y, int width, bool underline, bool strike,
                        bool diagonal_strike);
+  // Finishes any ongoing diagonal strike run.
+  void EndDiagonalStrike();
   void DrawUnderline(int x, int y, int width);
   void DrawStrike(int x, int y, int width) const;
-  void DrawDiagonalStrike(int x, int y, int width) const;
 
  private:
+  // Helper class to draw a diagonal line with multiple pieces of different
+  // lengths and colors; to support text selection appearances.
+  class DiagonalStrike {
+   public:
+    DiagonalStrike(Canvas* canvas, Point start, const SkPaint& paint);
+    ~DiagonalStrike();
+
+    void AddPiece(int length, SkColor color);
+    void Draw();
+
+   private:
+    typedef std::pair<int, SkColor> Piece;
+
+    Canvas* canvas_;
+    const Point start_;
+    SkPaint paint_;
+    int total_length_;
+    std::vector<Piece> pieces_;
+
+    DISALLOW_COPY_AND_ASSIGN(DiagonalStrike);
+  };
+
+  Canvas* canvas_;
   SkCanvas* canvas_skia_;
   bool started_drawing_;
   SkPaint paint_;
@@ -85,6 +110,7 @@ class SkiaTextRenderer {
   skia::RefPtr<SkShader> deferred_fade_shader_;
   SkScalar underline_thickness_;
   SkScalar underline_position_;
+  scoped_ptr<DiagonalStrike> diagonal_;
 
   DISALLOW_COPY_AND_ASSIGN(SkiaTextRenderer);
 };
@@ -349,10 +375,6 @@ class GFX_EXPORT RenderText {
   // Draws a cursor at |position|.
   void DrawCursor(Canvas* canvas, const SelectionModel& position);
 
-  // Draw the selected text without a cursor or selection highlight. Subpixel
-  // antialiasing is disabled and foreground color is forced to black.
-  void DrawSelectedTextForDrag(Canvas* canvas);
-
   // Gets the SelectionModel from a visual point in local coordinates.
   virtual SelectionModel FindCursorPosition(const Point& point) = 0;
 
@@ -397,6 +419,12 @@ class GFX_EXPORT RenderText {
   // specifies the character range for which the corresponding font has been
   // chosen.
   virtual std::vector<FontSpan> GetFontSpansForTesting() = 0;
+
+  // Gets the horizontal bounds (relative to the left of the text, not the view)
+  // of the glyph starting at |index|. If the glyph is RTL then the returned
+  // Range will have is_reversed() true.  (This does not return a Rect because a
+  // Rect can't have a negative width.)
+  virtual Range GetGlyphBounds(size_t index) = 0;
 
  protected:
   RenderText();
@@ -461,12 +489,6 @@ class GFX_EXPORT RenderText {
 
   // Sets the selection model, the argument is assumed to be valid.
   virtual void SetSelectionModel(const SelectionModel& model);
-
-  // Get the horizontal bounds (relative to the left of the text, not the view)
-  // of the glyph starting at |index|. If the glyph is RTL then the returned
-  // Range will have is_reversed() true.  (This does not return a Rect because a
-  // Rect can't have a negative width.)
-  virtual Range GetGlyphBounds(size_t index) = 0;
 
   // Get the visual bounds containing the logical substring within the |range|.
   // If |range| is empty, the result is empty. These bounds could be visually

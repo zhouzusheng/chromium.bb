@@ -26,6 +26,6 @@ _Resharper.*/
 # Special cases
 /build/util/LASTCHANGE
 /build/util/LASTCHANGE.blink
-/third_party/WebKit/Source/bindings/idl_files_list.tmp
 /third_party/WebKit/Source/bindings/main_interface_idl_files_list.tmp
+/third_party/WebKit/Source/bindings/static_idl_files_list.tmp
 

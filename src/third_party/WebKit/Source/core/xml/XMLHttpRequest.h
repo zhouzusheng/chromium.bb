@@ -26,10 +26,10 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/xml/XMLHttpRequestEventTarget.h"
 #include "core/xml/XMLHttpRequestProgressEventThrottle.h"
+#include "heap/Handle.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/network/FormData.h"
 #include "platform/network/ResourceResponse.h"
@@ -53,11 +53,11 @@ class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class XMLHttpRequest FINAL : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
-    WTF_MAKE_FAST_ALLOCATED;
-    REFCOUNTED_EVENT_TARGET(XMLHttpRequest);
+class XMLHttpRequest FINAL : public RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>, public ScriptWrappable, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>);
 public:
-    static PassRefPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = 0);
+    static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = nullptr);
     virtual ~XMLHttpRequest();
 
     // These exact numeric values are important because JS expects them.
@@ -143,6 +143,8 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
+    void trace(Visitor*);
+
 private:
     XMLHttpRequest(ExecutionContext*, PassRefPtr<SecurityOrigin>);
 
@@ -216,8 +218,8 @@ private:
     bool m_async;
     bool m_includeCredentials;
     unsigned long m_timeoutMilliseconds;
-    RefPtr<Blob> m_responseBlob;
-    RefPtr<Stream> m_responseStream;
+    RefPtrWillBeMember<Blob> m_responseBlob;
+    RefPtrWillBeMember<Stream> m_responseStream;
 
     RefPtr<ThreadableLoader> m_loader;
     State m_state;

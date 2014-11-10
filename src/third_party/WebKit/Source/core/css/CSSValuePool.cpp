@@ -32,8 +32,6 @@
 
 namespace WebCore {
 
-DEFINE_GC_INFO(CSSValuePool);
-
 CSSValuePool& cssValuePool()
 {
 #if ENABLE(OILPAN)
@@ -90,7 +88,7 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createColorValue(unsigne
     if (m_colorValueCache.size() > maximumColorCacheSize)
         m_colorValueCache.clear();
 
-    RefPtrWillBeRawPtr<CSSPrimitiveValue> dummyValue;
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> dummyValue = nullptr;
     ColorValueCache::AddResult entry = m_colorValueCache.add(rgbValue, dummyValue);
     if (entry.isNewEntry)
         entry.storedValue->value = CSSPrimitiveValue::createColor(rgbValue);
@@ -131,7 +129,7 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createValue(const Length
 
 PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createFontFamilyValue(const String& familyName)
 {
-    RefPtrWillBeMember<CSSPrimitiveValue>& value = m_fontFamilyValueCache.add(familyName, 0).storedValue->value;
+    RefPtrWillBeMember<CSSPrimitiveValue>& value = m_fontFamilyValueCache.add(familyName, nullptr).storedValue->value;
     if (!value)
         value = CSSPrimitiveValue::create(familyName, CSSPrimitiveValue::CSS_STRING);
     return value;
@@ -144,7 +142,7 @@ PassRefPtrWillBeRawPtr<CSSValueList> CSSValuePool::createFontFaceValue(const Ato
     if (m_fontFaceValueCache.size() > maximumFontFaceCacheSize)
         m_fontFaceValueCache.clear();
 
-    RefPtrWillBeMember<CSSValueList>& value = m_fontFaceValueCache.add(string, 0).storedValue->value;
+    RefPtrWillBeMember<CSSValueList>& value = m_fontFaceValueCache.add(string, nullptr).storedValue->value;
     if (!value)
         value = BisonCSSParser::parseFontFaceValue(string);
     return value;

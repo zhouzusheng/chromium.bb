@@ -86,6 +86,13 @@ WebGestureEvent SyntheticWebGestureEventBuilder::Build(
   WebGestureEvent result;
   result.type = type;
   result.sourceDevice = source_device;
+  if (type == WebInputEvent::GestureTap ||
+      type == WebInputEvent::GestureTapUnconfirmed ||
+      type == WebInputEvent::GestureDoubleTap) {
+    result.data.tap.tapCount = 1;
+    result.data.tap.width = 10;
+    result.data.tap.height = 10;
+  }
   return result;
 }
 
@@ -152,7 +159,7 @@ void SyntheticWebTouchEvent::ResetPoints() {
   type = WebInputEvent::Undefined;
 }
 
-int SyntheticWebTouchEvent::PressPoint(int x, int y) {
+int SyntheticWebTouchEvent::PressPoint(float x, float y) {
   if (touchesLength == touchesLengthCap)
     return -1;
   WebTouchPoint& point = touches[touchesLength];
@@ -166,7 +173,7 @@ int SyntheticWebTouchEvent::PressPoint(int x, int y) {
   return point.id;
 }
 
-void SyntheticWebTouchEvent::MovePoint(int index, int x, int y) {
+void SyntheticWebTouchEvent::MovePoint(int index, float x, float y) {
   CHECK(index >= 0 && index < touchesLengthCap);
   WebTouchPoint& point = touches[index];
   point.position.x = point.screenPosition.x = x;

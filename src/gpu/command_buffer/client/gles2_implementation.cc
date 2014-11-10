@@ -66,8 +66,11 @@ GLES2Implementation::GLStaticState::IntState::IntState()
       max_vertex_texture_image_units(0),
       max_vertex_uniform_vectors(0),
       num_compressed_texture_formats(0),
-      num_shader_binary_formats(0) {
-}
+      num_shader_binary_formats(0)
+#if defined(OS_CHROMEOS)
+      , bind_generates_resource_chromium(0)
+#endif
+{}
 
 GLES2Implementation::SingleThreadChecker::SingleThreadChecker(
     GLES2Implementation* gles2_implementation)
@@ -82,12 +85,12 @@ GLES2Implementation::SingleThreadChecker::~SingleThreadChecker() {
 }
 
 GLES2Implementation::GLES2Implementation(
-      GLES2CmdHelper* helper,
-      ShareGroup* share_group,
-      TransferBufferInterface* transfer_buffer,
-      bool bind_generates_resource,
-      bool free_everything_when_invisible,
-      GpuControl* gpu_control)
+    GLES2CmdHelper* helper,
+    ShareGroup* share_group,
+    TransferBufferInterface* transfer_buffer,
+    bool bind_generates_resource,
+    bool lose_context_when_out_of_memory,
+    GpuControl* gpu_control)
     : helper_(helper),
       transfer_buffer_(transfer_buffer),
       angle_pack_reverse_row_order_status_(kUnknownExtensionStatus),
@@ -109,11 +112,10 @@ GLES2Implementation::GLES2Implementation(
       bound_pixel_unpack_transfer_buffer_id_(0),
       error_bits_(0),
       debug_(false),
+      lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
       use_count_(0),
       error_message_callback_(NULL),
       gpu_control_(gpu_control),
-      surface_visible_(true),
-      free_everything_when_invisible_(free_everything_when_invisible),
       capabilities_(gpu_control->GetCapabilities()),
       weak_ptr_factory_(this) {
   DCHECK(helper);
@@ -189,6 +191,17 @@ bool GLES2Implementation::Initialize(
       reserved_ids_[0],
       reserved_ids_[1]));
 
+#if defined(OS_CHROMEOS)
+  // GL_BIND_GENERATES_RESOURCE_CHROMIUM state must be the same
+  // on Client & Service.
+  if (static_state_.int_state.bind_generates_resource_chromium !=
+      (share_group_->bind_generates_resource() ? 1 : 0)) {
+    SetGLError(GL_INVALID_OPERATION,
+               "Initialize",
+               "Service bind_generates_resource mismatch.");
+    return false;
+  }
+#endif
   return true;
 }
 
@@ -207,6 +220,9 @@ bool GLES2Implementation::QueryAndCacheStaticState() {
     GL_MAX_VERTEX_UNIFORM_VECTORS,
     GL_NUM_COMPRESSED_TEXTURE_FORMATS,
     GL_NUM_SHADER_BINARY_FORMATS,
+#if defined(OS_CHROMEOS)
+    GL_BIND_GENERATES_RESOURCE_CHROMIUM,
+#endif
   };
 
   GetMultipleIntegervState integerv_state(
@@ -275,6 +291,10 @@ GLES2Implementation::~GLES2Implementation() {
 #if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
   DeleteBuffers(arraysize(reserved_ids_), &reserved_ids_[0]);
 #endif
+
+  // Release any per-context data in share group.
+  share_group_->FreeContext(this);
+
   buffer_tracker_.reset();
 
   // Make sure the commands make it the service.
@@ -342,7 +362,6 @@ void GLES2Implementation::SignalQuery(uint32 query,
 void GLES2Implementation::SetSurfaceVisible(bool visible) {
   // TODO(piman): This probably should be ShallowFlushCHROMIUM().
   Flush();
-  surface_visible_ = visible;
   gpu_control_->SetSurfaceVisible(visible);
   if (!visible)
     FreeEverything();
@@ -483,6 +502,11 @@ void GLES2Implementation::SetGLError(
     error_message_callback_->OnErrorMessage(temp.c_str(), 0);
   }
   error_bits_ |= GLES2Util::GLErrorToErrorBit(error);
+
+  if (error == GL_OUT_OF_MEMORY && lose_context_when_out_of_memory_) {
+    helper_->LoseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
+                                 GL_UNKNOWN_CONTEXT_RESET_ARB);
+  }
 }
 
 void GLES2Implementation::SetGLErrorInvalidEnum(
@@ -846,8 +870,6 @@ void GLES2Implementation::Flush() {
   // Flush our command buffer
   // (tell the service to execute up to the flush cmd.)
   helper_->CommandBufferHelper::Flush();
-  if (!surface_visible_ && free_everything_when_invisible_)
-    FreeEverything();
 }
 
 void GLES2Implementation::ShallowFlushCHROMIUM() {
@@ -862,8 +884,6 @@ void GLES2Implementation::ShallowFlushCHROMIUM() {
 void GLES2Implementation::Finish() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   FinishHelper();
-  if (!surface_visible_ && free_everything_when_invisible_)
-    FreeEverything();
 }
 
 void GLES2Implementation::ShallowFinishCHROMIUM() {
@@ -872,16 +892,6 @@ void GLES2Implementation::ShallowFinishCHROMIUM() {
   // Flush our command buffer (tell the service to execute up to the flush cmd
   // and don't return until it completes).
   helper_->CommandBufferHelper::Finish();
-}
-
-bool GLES2Implementation::MustBeContextLost() {
-  bool context_lost = helper_->IsContextLost();
-  if (!context_lost) {
-    WaitForCmd();
-    context_lost = helper_->IsContextLost();
-  }
-  CHECK(context_lost);
-  return context_lost;
 }
 
 void GLES2Implementation::FinishHelper() {
@@ -1144,16 +1154,6 @@ GLint GLES2Implementation::GetUniformLocation(
   GPU_CLIENT_LOG("returned " << loc);
   CheckGLError();
   return loc;
-}
-
-void GLES2Implementation::UseProgram(GLuint program) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glUseProgram(" << program << ")");
-  if (current_program_ != program) {
-    current_program_ = program;
-    helper_->UseProgram(program);
-  }
-  CheckGLError();
 }
 
 bool GLES2Implementation::GetProgramivHelper(
@@ -2530,7 +2530,7 @@ bool GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
   return changed;
 }
 
-bool GLES2Implementation::BindVertexArrayHelper(GLuint array) {
+bool GLES2Implementation::BindVertexArrayOESHelper(GLuint array) {
   // TODO(gman): See note #1 above.
   bool changed = false;
   if (!vertex_array_object_manager_->BindVertexArray(array, &changed)) {
@@ -2542,6 +2542,15 @@ bool GLES2Implementation::BindVertexArrayHelper(GLuint array) {
   // because unlike other resources VertexArrayObject ids must
   // be generated by GenVertexArrays. A random id to Bind will not
   // generate a new object.
+  return changed;
+}
+
+bool GLES2Implementation::UseProgramHelper(GLuint program) {
+  bool changed = false;
+  if (current_program_ != program) {
+    current_program_ = program;
+    changed = true;
+  }
   return changed;
 }
 
@@ -2794,6 +2803,14 @@ void GLES2Implementation::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
 void GLES2Implementation::SetSwapBuffersCompleteCallback(
       const base::Closure& swap_buffers_complete_callback) {
   swap_buffers_complete_callback_ = swap_buffers_complete_callback;
+}
+
+void GLES2Implementation::ScheduleOverlayPlane(int plane_z_order,
+                                               unsigned plane_transform,
+                                               unsigned overlay_texture_id,
+                                               const gfx::Rect& display_bounds,
+                                               const gfx::RectF& uv_rect) {
+  NOTREACHED() << "Overlay supported isn't finished.";
 }
 
 void GLES2Implementation::OnSwapBuffersComplete() {
@@ -3289,7 +3306,9 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
   if (!query) {
     query = query_tracker_->CreateQuery(id, target);
     if (!query) {
-      MustBeContextLost();
+      SetGLError(GL_OUT_OF_MEMORY,
+                 "glBeginQueryEXT",
+                 "transfer buffer allocation failed");
       return;
     }
   } else if (query->target() != target) {
@@ -3901,6 +3920,12 @@ void GLES2Implementation::GetImageParameterivCHROMIUMHelper(
   if (!gpu_buffer) {
     SetGLError(GL_INVALID_OPERATION, "glGetImageParameterivCHROMIUM",
                "invalid image");
+    return;
+  }
+
+  if (!gpu_buffer->IsMapped()) {
+    SetGLError(
+        GL_INVALID_OPERATION, "glGetImageParameterivCHROMIUM", "not mapped");
     return;
   }
 

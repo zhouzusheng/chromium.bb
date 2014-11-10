@@ -13,9 +13,8 @@
 #include "content/shell/browser/shell_platform_data_aura.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -42,7 +41,6 @@
 #include "ui/views/widget/native_widget_aura.h"
 
 #include "ui/views/view.h"
-#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -50,6 +48,8 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/wm/test/wm_test_helper.h"
+#else  // !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #endif
 
 #if defined(OS_WIN)
@@ -93,7 +93,7 @@ class ShellViewsDelegateAura : public views::ViewsDelegate {
       ui::WindowShowState* show_state) const OVERRIDE { return false; }
   virtual void NotifyAccessibilityEvent(
       views::View* view,
-      ui::AccessibilityTypes::Event event_type) OVERRIDE {}
+      ui::AXEvent event_type) OVERRIDE{}
   virtual void NotifyMenuItemFocused(const base::string16& menu_name,
       const base::string16& menu_item_name,
       int item_index,
@@ -219,7 +219,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     // Resizing a widget on chromeos doesn't automatically resize the root, need
     // to explicitly do that.
 #if defined(OS_CHROMEOS)
-    GetWidget()->GetNativeWindow()->GetDispatcher()->host()->SetBounds(bounds);
+    GetWidget()->GetNativeWindow()->GetHost()->SetBounds(bounds);
 #endif
   }
 
@@ -573,7 +573,7 @@ void Shell::PlatformCreateWindow(int width, int height) {
   window_ = window_widget_->GetNativeWindow();
   // Call ShowRootWindow on RootWindow created by WMTestHelper without
   // which XWindow owned by RootWindow doesn't get mapped.
-  window_->GetDispatcher()->host()->Show();
+  window_->GetHost()->Show();
   window_widget_->Show();
 }
 
@@ -581,7 +581,7 @@ void Shell::PlatformSetContents() {
   if (headless_) {
     CHECK(platform_);
     aura::Window* content = web_contents_->GetView()->GetNativeView();
-    aura::Window* parent = platform_->window()->window();
+    aura::Window* parent = platform_->host()->window();
     if (!parent->Contains(content)) {
       parent->AddChild(content);
       content->Show();

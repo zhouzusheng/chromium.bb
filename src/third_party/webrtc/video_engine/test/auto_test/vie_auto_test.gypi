@@ -20,7 +20,6 @@
         '<(webrtc_root)/test/metrics.gyp:metrics',
         '<(webrtc_root)/test/test.gyp:channel_transport',
         '<(webrtc_root)/test/test.gyp:test_support',
-        '<(webrtc_root)/test/libtest/libtest.gyp:libtest',
         'video_engine_core',
         'libvietest',
       ],
@@ -41,6 +40,7 @@
         'automated/two_windows_fixture.cc',
         'automated/vie_api_integration_test.cc',
         'automated/vie_extended_integration_test.cc',
+        'automated/vie_network_test.cc',
         'automated/vie_standard_integration_test.cc',
         'automated/vie_video_verification_test.cc',
 

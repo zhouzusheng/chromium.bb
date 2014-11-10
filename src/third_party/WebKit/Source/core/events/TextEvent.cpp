@@ -31,29 +31,29 @@
 
 namespace WebCore {
 
-PassRefPtr<TextEvent> TextEvent::create()
+PassRefPtrWillBeRawPtr<TextEvent> TextEvent::create()
 {
-    return adoptRef(new TextEvent);
+    return adoptRefWillBeRefCountedGarbageCollected(new TextEvent);
 }
 
-PassRefPtr<TextEvent> TextEvent::create(PassRefPtr<AbstractView> view, const String& data, TextEventInputType inputType)
+PassRefPtrWillBeRawPtr<TextEvent> TextEvent::create(PassRefPtrWillBeRawPtr<AbstractView> view, const String& data, TextEventInputType inputType)
 {
-    return adoptRef(new TextEvent(view, data, inputType));
+    return adoptRefWillBeRefCountedGarbageCollected(new TextEvent(view, data, inputType));
 }
 
-PassRefPtr<TextEvent> TextEvent::createForPlainTextPaste(PassRefPtr<AbstractView> view, const String& data, bool shouldSmartReplace)
+PassRefPtrWillBeRawPtr<TextEvent> TextEvent::createForPlainTextPaste(PassRefPtrWillBeRawPtr<AbstractView> view, const String& data, bool shouldSmartReplace)
 {
-    return adoptRef(new TextEvent(view, data, 0, shouldSmartReplace, false));
+    return adoptRefWillBeRefCountedGarbageCollected(new TextEvent(view, data, nullptr, shouldSmartReplace, false));
 }
 
-PassRefPtr<TextEvent> TextEvent::createForFragmentPaste(PassRefPtr<AbstractView> view, PassRefPtr<DocumentFragment> data, bool shouldSmartReplace, bool shouldMatchStyle)
+PassRefPtrWillBeRawPtr<TextEvent> TextEvent::createForFragmentPaste(PassRefPtrWillBeRawPtr<AbstractView> view, PassRefPtr<DocumentFragment> data, bool shouldSmartReplace, bool shouldMatchStyle)
 {
-    return adoptRef(new TextEvent(view, "", data, shouldSmartReplace, shouldMatchStyle));
+    return adoptRefWillBeRefCountedGarbageCollected(new TextEvent(view, "", data, shouldSmartReplace, shouldMatchStyle));
 }
 
-PassRefPtr<TextEvent> TextEvent::createForDrop(PassRefPtr<AbstractView> view, const String& data)
+PassRefPtrWillBeRawPtr<TextEvent> TextEvent::createForDrop(PassRefPtrWillBeRawPtr<AbstractView> view, const String& data)
 {
-    return adoptRef(new TextEvent(view, data, TextEventInputDrop));
+    return adoptRefWillBeRefCountedGarbageCollected(new TextEvent(view, data, TextEventInputDrop));
 }
 
 TextEvent::TextEvent()
@@ -64,18 +64,18 @@ TextEvent::TextEvent()
     ScriptWrappable::init(this);
 }
 
-TextEvent::TextEvent(PassRefPtr<AbstractView> view, const String& data, TextEventInputType inputType)
+TextEvent::TextEvent(PassRefPtrWillBeRawPtr<AbstractView> view, const String& data, TextEventInputType inputType)
     : UIEvent(EventTypeNames::textInput, true, true, view, 0)
     , m_inputType(inputType)
     , m_data(data)
-    , m_pastingFragment(0)
+    , m_pastingFragment(nullptr)
     , m_shouldSmartReplace(false)
     , m_shouldMatchStyle(false)
 {
     ScriptWrappable::init(this);
 }
 
-TextEvent::TextEvent(PassRefPtr<AbstractView> view, const String& data, PassRefPtr<DocumentFragment> pastingFragment,
+TextEvent::TextEvent(PassRefPtrWillBeRawPtr<AbstractView> view, const String& data, PassRefPtr<DocumentFragment> pastingFragment,
                      bool shouldSmartReplace, bool shouldMatchStyle)
     : UIEvent(EventTypeNames::textInput, true, true, view, 0)
     , m_inputType(TextEventInputPaste)
@@ -91,7 +91,7 @@ TextEvent::~TextEvent()
 {
 }
 
-void TextEvent::initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view, const String& data)
+void TextEvent::initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view, const String& data)
 {
     if (dispatched())
         return;
@@ -104,6 +104,11 @@ void TextEvent::initTextEvent(const AtomicString& type, bool canBubble, bool can
 const AtomicString& TextEvent::interfaceName() const
 {
     return EventNames::TextEvent;
+}
+
+void TextEvent::trace(Visitor* visitor)
+{
+    UIEvent::trace(visitor);
 }
 
 } // namespace WebCore

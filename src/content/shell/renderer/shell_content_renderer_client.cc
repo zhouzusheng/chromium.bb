@@ -53,17 +53,7 @@ using WebTestRunner::WebTestProxyBase;
 
 namespace content {
 
-namespace {
-ShellContentRendererClient* g_renderer_client;
-}
-
-ShellContentRendererClient* ShellContentRendererClient::Get() {
-  return g_renderer_client;
-}
-
 ShellContentRendererClient::ShellContentRendererClient() {
-  DCHECK(!g_renderer_client);
-  g_renderer_client = this;
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     // SHEZ: Disable the following (used for test only)
     //EnableWebTestProxyCreation(
@@ -73,7 +63,6 @@ ShellContentRendererClient::ShellContentRendererClient() {
 }
 
 ShellContentRendererClient::~ShellContentRendererClient() {
-  g_renderer_client = NULL;
 }
 
 void ShellContentRendererClient::RenderThreadStarted() {

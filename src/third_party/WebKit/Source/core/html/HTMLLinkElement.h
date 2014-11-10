@@ -109,7 +109,7 @@ private:
     void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
     Document& document();
 
-    RefPtr<CSSStyleSheet> m_sheet;
+    RefPtrWillBePersistent<CSSStyleSheet> m_sheet;
     DisabledState m_disabledState;
     PendingSheetType m_pendingSheetType;
     bool m_loading;
@@ -133,8 +133,10 @@ public:
 
     IconType iconType() const;
 
-    // the icon size string as parsed from the HTML attribute
-    const AtomicString& iconSizes() const;
+    // the icon sizes as parsed from the HTML attribute
+    const Vector<IntSize>& iconSizes() const;
+
+    bool async() const;
 
     CSSStyleSheet* sheet() const { return linkStyle() ? linkStyle()->sheet() : 0; }
     Document* import() const;
@@ -161,6 +163,10 @@ public:
     bool shouldProcessStyle() { return linkResourceToProcess() && linkStyle(); }
     bool isCreatedByParser() const { return m_createdByParser; }
 
+    // Parse the icon size attribute into |iconSizes|, make this method public
+    // visible for testing purpose.
+    static void parseSizesAttribute(const AtomicString& value, Vector<IntSize>& iconSizes);
+
 private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
@@ -175,6 +181,8 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
     virtual bool sheetLoaded() OVERRIDE;
     virtual void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred) OVERRIDE;
     virtual void startLoadingDynamicSheet() OVERRIDE;
@@ -197,14 +205,12 @@ private:
     String m_type;
     String m_media;
     RefPtr<DOMSettableTokenList> m_sizes;
+    Vector<IntSize> m_iconSizes;
     LinkRelAttribute m_relAttribute;
 
     bool m_createdByParser;
     bool m_isInShadowTree;
-    int m_beforeLoadRecurseCount;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLLinkElement, hasTagName(HTMLNames::linkTag));
 
 } //namespace
 

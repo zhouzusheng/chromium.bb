@@ -74,6 +74,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     , m_injectedScriptManager(InjectedScriptManager::createForPage())
     , m_state(adoptPtr(new InspectorCompositeState(inspectorClient)))
     , m_overlay(InspectorOverlay::create(page, inspectorClient))
+    , m_layerTreeAgent(0)
     , m_page(page)
     , m_inspectorClient(inspectorClient)
     , m_agents(m_instrumentingAgents.get(), m_state.get())
@@ -93,8 +94,13 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_domAgent = domAgentPtr.get();
     m_agents.append(domAgentPtr.release());
 
-    OwnPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_pageAgent, m_domAgent, overlay,
-        InspectorTimelineAgent::PageInspector, inspectorClient));
+
+    OwnPtr<InspectorLayerTreeAgent> layerTreeAgentPtr(InspectorLayerTreeAgent::create(m_domAgent, m_page));
+    m_layerTreeAgent = layerTreeAgentPtr.get();
+    m_agents.append(layerTreeAgentPtr.release());
+
+    OwnPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_pageAgent, m_domAgent, m_layerTreeAgent,
+        overlay, InspectorTimelineAgent::PageInspector, inspectorClient));
     m_timelineAgent = timelineAgentPtr.get();
     m_agents.append(timelineAgentPtr.release());
 
@@ -114,7 +120,6 @@ InspectorController::~InspectorController()
 {
     m_instrumentingAgents->reset();
     m_agents.discardAgents();
-    ASSERT(!m_inspectorClient);
 }
 
 PassOwnPtr<InspectorController> InspectorController::create(Page* page, InspectorClient* client)
@@ -168,8 +173,6 @@ void InspectorController::initializeDeferredAgents()
     m_agents.append(InspectorCanvasAgent::create(m_pageAgent, injectedScriptManager));
 
     m_agents.append(InspectorInputAgent::create(m_page, m_inspectorClient));
-
-    m_agents.append(InspectorLayerTreeAgent::create(m_domAgent, m_page));
 }
 
 void InspectorController::inspectedPageDestroyed()
@@ -178,6 +181,7 @@ void InspectorController::inspectedPageDestroyed()
     m_injectedScriptManager->disconnect();
     m_inspectorClient = 0;
     m_page = 0;
+    m_instrumentingAgents->reset();
 }
 
 void InspectorController::registerModuleAgent(PassOwnPtr<InspectorAgent> agent)
@@ -191,7 +195,7 @@ void InspectorController::setInspectorFrontendClient(PassOwnPtr<InspectorFronten
     m_inspectorFrontendClient = inspectorFrontendClient;
 }
 
-void InspectorController::didClearWindowObjectInMainWorld(Frame* frame)
+void InspectorController::didClearWindowObjectInMainWorld(LocalFrame* frame)
 {
     // If the page is supposed to serve as InspectorFrontend notify inspector frontend
     // client that it's cleared so that the client can expose inspector bindings.
@@ -245,7 +249,7 @@ void InspectorController::reconnectFrontend()
 {
     if (!m_inspectorFrontend)
         return;
-    InspectorFrontendChannel* frontendChannel = m_inspectorFrontend->inspector()->getInspectorFrontendChannel();
+    InspectorFrontendChannel* frontendChannel = m_inspectorFrontend->channel();
     disconnectFrontend();
     connectFrontend(frontendChannel);
 }
@@ -288,8 +292,6 @@ void InspectorController::evaluateForTestInFrontend(long callId, const String& s
 
 void InspectorController::drawHighlight(GraphicsContext& context) const
 {
-    // https://code.google.com/p/chromium/issues/detail?id=343757
-    DisableCompositingQueryAsserts disabler;
     m_overlay->paint(context);
 }
 
@@ -305,7 +307,7 @@ void InspectorController::inspect(Node* node)
     Document* document = node->ownerDocument();
     if (!document)
         return;
-    Frame* frame = document->frame();
+    LocalFrame* frame = document->frame();
     if (!frame)
         return;
 
@@ -340,7 +342,7 @@ Node* InspectorController::highlightedNode() const
     return m_overlay->highlightedNode();
 }
 
-bool InspectorController::handleGestureEvent(Frame* frame, const PlatformGestureEvent& event)
+bool InspectorController::handleGestureEvent(LocalFrame* frame, const PlatformGestureEvent& event)
 {
     // Overlay should not consume events.
     m_overlay->handleGestureEvent(event);
@@ -349,7 +351,7 @@ bool InspectorController::handleGestureEvent(Frame* frame, const PlatformGesture
     return false;
 }
 
-bool InspectorController::handleMouseEvent(Frame* frame, const PlatformMouseEvent& event)
+bool InspectorController::handleMouseEvent(LocalFrame* frame, const PlatformMouseEvent& event)
 {
     // Overlay should not consume events.
     m_overlay->handleMouseEvent(event);
@@ -366,7 +368,7 @@ bool InspectorController::handleMouseEvent(Frame* frame, const PlatformMouseEven
     return false;
 }
 
-bool InspectorController::handleTouchEvent(Frame* frame, const PlatformTouchEvent& event)
+bool InspectorController::handleTouchEvent(LocalFrame* frame, const PlatformTouchEvent& event)
 {
     // Overlay should not consume events.
     m_overlay->handleTouchEvent(event);
@@ -375,7 +377,7 @@ bool InspectorController::handleTouchEvent(Frame* frame, const PlatformTouchEven
     return false;
 }
 
-bool InspectorController::handleKeyboardEvent(Frame* frame, const PlatformKeyboardEvent& event)
+bool InspectorController::handleKeyboardEvent(LocalFrame* frame, const PlatformKeyboardEvent& event)
 {
     // Overlay should not consume events.
     m_overlay->handleKeyboardEvent(event);
@@ -426,6 +428,11 @@ void InspectorController::didProcessTask()
         domDebuggerAgent->didProcessTask();
 }
 
+void InspectorController::flushPendingFrontendMessages()
+{
+    m_agents.flushPendingFrontendMessages();
+}
+
 void InspectorController::didCommitLoadForMainFrame()
 {
     Vector<InspectorAgent*> agents = m_moduleAgents;
@@ -469,6 +476,18 @@ void InspectorController::scriptsEnabled(bool  enabled)
 {
     if (InspectorPageAgent* pageAgent = m_instrumentingAgents->inspectorPageAgent())
         pageAgent->scriptsEnabled(enabled);
+}
+
+void InspectorController::willAddPageOverlay(const GraphicsLayer* layer)
+{
+    if (m_layerTreeAgent)
+        m_layerTreeAgent->willAddPageOverlay(layer);
+}
+
+void InspectorController::didRemovePageOverlay(const GraphicsLayer* layer)
+{
+    if (m_layerTreeAgent)
+        m_layerTreeAgent->didRemovePageOverlay(layer);
 }
 
 } // namespace WebCore

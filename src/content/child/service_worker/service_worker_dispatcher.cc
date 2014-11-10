@@ -14,7 +14,6 @@
 using blink::WebServiceWorkerError;
 using blink::WebServiceWorkerProvider;
 using base::ThreadLocalPointer;
-using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 
@@ -78,6 +77,25 @@ void ServiceWorkerDispatcher::UnregisterServiceWorker(
       CurrentWorkerId(), request_id, pattern));
 }
 
+void ServiceWorkerDispatcher::AddScriptClient(
+    int provider_id,
+    blink::WebServiceWorkerProviderClient* client) {
+  DCHECK(client);
+  DCHECK(!ContainsKey(script_clients_, provider_id));
+  script_clients_[provider_id] = client;
+  thread_safe_sender_->Send(new ServiceWorkerHostMsg_AddScriptClient(
+      CurrentWorkerId(), provider_id));
+}
+
+void ServiceWorkerDispatcher::RemoveScriptClient(int provider_id) {
+  // This could be possibly called multiple times to ensure termination.
+  if (ContainsKey(script_clients_, provider_id)) {
+    script_clients_.erase(provider_id);
+    thread_safe_sender_->Send(new ServiceWorkerHostMsg_RemoveScriptClient(
+        CurrentWorkerId(), provider_id));
+  }
+}
+
 ServiceWorkerDispatcher* ServiceWorkerDispatcher::ThreadSpecificInstance(
     ThreadSafeSender* thread_safe_sender) {
   if (g_dispatcher_tls.Pointer()->Get() == kHasBeenDeleted) {
@@ -90,7 +108,7 @@ ServiceWorkerDispatcher* ServiceWorkerDispatcher::ThreadSpecificInstance(
   ServiceWorkerDispatcher* dispatcher =
       new ServiceWorkerDispatcher(thread_safe_sender);
   if (WorkerTaskRunner::Instance()->CurrentWorkerId())
-    webkit_glue::WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
+    WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
   return dispatcher;
 }
 
@@ -110,7 +128,7 @@ void ServiceWorkerDispatcher::OnRegistered(int32 thread_id,
   // duplicate registration. So for now we mint a new object each
   // time.
   scoped_ptr<WebServiceWorkerImpl> worker(
-      new WebServiceWorkerImpl(registration_id));
+      new WebServiceWorkerImpl(registration_id, thread_safe_sender_));
   callbacks->onSuccess(worker.release());
   pending_callbacks_.Remove(request_id);
 }

@@ -73,7 +73,7 @@ bool NodeIterator::NodePointer::moveToPrevious(Node* root)
 }
 
 NodeIterator::NodeIterator(PassRefPtr<Node> rootNode, unsigned whatToShow, PassRefPtr<NodeFilter> filter)
-    : Traversal(rootNode, whatToShow, filter)
+    : NodeIteratorBase(rootNode, whatToShow, filter)
     , m_referenceNode(root(), true)
     , m_detached(false)
 {
@@ -90,7 +90,7 @@ PassRefPtr<Node> NodeIterator::nextNode(ScriptState* state, ExceptionState& exce
 {
     if (m_detached) {
         exceptionState.throwDOMException(InvalidStateError, "The iterator is detached.");
-        return 0;
+        return nullptr;
     }
 
     RefPtr<Node> result;
@@ -119,7 +119,7 @@ PassRefPtr<Node> NodeIterator::previousNode(ScriptState* state, ExceptionState& 
 {
     if (m_detached) {
         exceptionState.throwDOMException(InvalidStateError, "The iterator is detached.");
-        return 0;
+        return nullptr;
     }
 
     RefPtr<Node> result;

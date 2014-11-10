@@ -57,11 +57,11 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionSt
     if (string.isEmpty())
         return;
 
-    RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create();
     if (BisonCSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, HTMLStandardMode, 0)) {
         // Convert to TransformOperations. This can fail if a property
         // requires style (i.e., param uses 'ems' or 'exs')
-        RefPtr<CSSValue> value = styleDeclaration->getPropertyCSSValue(CSSPropertyWebkitTransform);
+        RefPtrWillBeRawPtr<CSSValue> value = styleDeclaration->getPropertyCSSValue(CSSPropertyWebkitTransform);
 
         // Check for a "none" or empty transform. In these cases we can use the default identity matrix.
         if (!value || (value->isPrimitiveValue() && (toCSSPrimitiveValue(value.get()))->getValueID() == CSSValueNone))
@@ -89,25 +89,25 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionSt
 }
 
 // Perform a concatenation of the matrices (this * secondMatrix)
-PassRefPtr<CSSMatrix> CSSMatrix::multiply(CSSMatrix* secondMatrix) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::multiply(CSSMatrix* secondMatrix) const
 {
     if (!secondMatrix)
-        return 0;
+        return nullptr;
 
     return CSSMatrix::create(TransformationMatrix(m_matrix).multiply(secondMatrix->m_matrix));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::inverse(ExceptionState& exceptionState) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::inverse(ExceptionState& exceptionState) const
 {
     if (!m_matrix.isInvertible()) {
         exceptionState.throwDOMException(NotSupportedError, "The matrix is not invertable.");
-        return 0;
+        return nullptr;
     }
 
     return CSSMatrix::create(m_matrix.inverse());
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::translate(double x, double y, double z) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::translate(double x, double y, double z) const
 {
     if (std::isnan(x))
         x = 0;
@@ -118,7 +118,7 @@ PassRefPtr<CSSMatrix> CSSMatrix::translate(double x, double y, double z) const
     return CSSMatrix::create(TransformationMatrix(m_matrix).translate3d(x, y, z));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::scale(double scaleX, double scaleY, double scaleZ) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::scale(double scaleX, double scaleY, double scaleZ) const
 {
     if (std::isnan(scaleX))
         scaleX = 1;
@@ -129,7 +129,7 @@ PassRefPtr<CSSMatrix> CSSMatrix::scale(double scaleX, double scaleY, double scal
     return CSSMatrix::create(TransformationMatrix(m_matrix).scale3d(scaleX, scaleY, scaleZ));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::rotate(double rotX, double rotY, double rotZ) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::rotate(double rotX, double rotY, double rotZ) const
 {
     if (std::isnan(rotX))
         rotX = 0;
@@ -147,7 +147,7 @@ PassRefPtr<CSSMatrix> CSSMatrix::rotate(double rotX, double rotY, double rotZ) c
     return CSSMatrix::create(TransformationMatrix(m_matrix).rotate3d(rotX, rotY, rotZ));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::rotateAxisAngle(double x, double y, double z, double angle) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::rotateAxisAngle(double x, double y, double z, double angle) const
 {
     if (std::isnan(x))
         x = 0;
@@ -162,14 +162,14 @@ PassRefPtr<CSSMatrix> CSSMatrix::rotateAxisAngle(double x, double y, double z, d
     return CSSMatrix::create(TransformationMatrix(m_matrix).rotate3d(x, y, z, angle));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::skewX(double angle) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::skewX(double angle) const
 {
     if (std::isnan(angle))
         angle = 0;
     return CSSMatrix::create(TransformationMatrix(m_matrix).skewX(angle));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::skewY(double angle) const
+PassRefPtrWillBeRawPtr<CSSMatrix> CSSMatrix::skewY(double angle) const
 {
     if (std::isnan(angle))
         angle = 0;

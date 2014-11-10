@@ -72,6 +72,7 @@ private:
 
     class GridIterator;
     struct GridSizingData;
+    bool gridElementIsShrinkToFit();
     void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&);
     void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
     LayoutUnit computeUsedBreadthOfMinLength(GridTrackSizingDirection, const GridLength&) const;
@@ -79,7 +80,7 @@ private:
     LayoutUnit computeUsedBreadthOfSpecifiedLength(GridTrackSizingDirection, const Length&) const;
     void resolveContentBasedTrackSizingFunctions(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
 
-    void growGrid(GridTrackSizingDirection);
+    void growGrid(GridTrackSizingDirection, size_t maximumPosition);
     void insertItemIntoGrid(RenderBox*, size_t rowTrack, size_t columnTrack);
     void insertItemIntoGrid(RenderBox*, const GridCoordinate&);
     void placeItemsOnGrid();
@@ -92,8 +93,6 @@ private:
 
     void layoutGridItems();
     void populateGridPositions(const GridSizingData&);
-
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
     typedef LayoutUnit (RenderGrid::* SizingFunction)(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>&);
     typedef LayoutUnit (GridTrack::* AccumulatorGetter)() const;

@@ -51,6 +51,7 @@
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread_restrictions.h>
 #include <chrome/common/chrome_paths.h>
+#include <content/public/app/content_main.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <content/public/browser/render_process_host.h>
@@ -63,13 +64,13 @@ extern HANDLE g_instDLL;  // set in DllMain
 
 namespace blpwtk2 {
 
-static base::MessagePump* messagePumpForUIFactory()
+static scoped_ptr<base::MessagePump> messagePumpForUIFactory()
 {
     if (Statics::isInApplicationMainThread()) {
-        return new MainMessagePump();
+        return scoped_ptr<base::MessagePump>(new MainMessagePump());
     }
 
-    return new base::MessagePumpForUI();
+    return scoped_ptr<base::MessagePump>(new base::MessagePumpForUI());
 }
 
 static bool loadRunningProcessIds(std::set<int>* pids)
@@ -255,7 +256,10 @@ void ToolkitImpl::startupThreads()
     }
 
     d_mainRunner.reset(content::ContentMainRunner::Create());
-    int rc = d_mainRunner->Initialize((HINSTANCE)g_instDLL, &d_sandboxInfo, &d_mainDelegate);
+    content::ContentMainParams mainParams(&d_mainDelegate);
+    mainParams.instance = (HINSTANCE)g_instDLL;
+    mainParams.sandbox_info = &d_sandboxInfo;
+    int rc = d_mainRunner->Initialize(mainParams);
     DCHECK(-1 == rc);  // it returns -1 for success!!
 
     if (!d_dictionaryPath.empty()) {
@@ -448,7 +452,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
         profile = d_defaultProfile;
     }
 
-    bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+    bool singleProcess = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
     int rendererAffinity = singleProcess ? Constants::IN_PROCESS_RENDERER

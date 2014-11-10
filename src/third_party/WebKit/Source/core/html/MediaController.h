@@ -41,7 +41,6 @@ namespace WebCore {
 class Clock;
 class Event;
 class ExceptionState;
-class HTMLMediaElement;
 class ExecutionContext;
 
 class MediaController FINAL : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
@@ -62,16 +61,16 @@ public:
     virtual double currentTime() const OVERRIDE;
     virtual void setCurrentTime(double, ExceptionState&) OVERRIDE;
 
-    virtual bool paused() const OVERRIDE { return m_paused; }
-    virtual void play() OVERRIDE;
-    virtual void pause() OVERRIDE;
+    bool paused() const { return m_paused; }
+    void play();
+    void pause();
     void unpause();
 
     double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
-    void setDefaultPlaybackRate(double);
+    void setDefaultPlaybackRate(double, ExceptionState&);
 
     double playbackRate() const;
-    void setPlaybackRate(double);
+    void setPlaybackRate(double, ExceptionState&);
 
     virtual double volume() const OVERRIDE { return m_volume; }
     virtual void setVolume(double, ExceptionState&) OVERRIDE;
@@ -85,19 +84,9 @@ public:
     enum PlaybackState { WAITING, PLAYING, ENDED };
     const AtomicString& playbackState() const;
 
-    virtual void enterFullscreen() OVERRIDE { }
-
     virtual bool hasAudio() const OVERRIDE;
-    virtual bool hasVideo() const OVERRIDE;
-    virtual bool hasClosedCaptions() const OVERRIDE;
-    virtual void setClosedCaptionsVisible(bool) OVERRIDE;
-    virtual bool closedCaptionsVisible() const OVERRIDE { return m_closedCaptionsVisible; }
 
-    virtual void beginScrubbing() OVERRIDE;
-    virtual void endScrubbing() OVERRIDE;
-
-    virtual bool canPlay() const OVERRIDE;
-
+    bool isRestrained() const;
     bool isBlocked() const;
 
     void clearExecutionContext() { m_executionContext = 0; }
@@ -134,7 +123,6 @@ private:
     Vector<RefPtr<Event> > m_pendingEvents;
     Timer<MediaController> m_asyncEventTimer;
     mutable Timer<MediaController> m_clearPositionTimer;
-    bool m_closedCaptionsVisible;
     OwnPtr<Clock> m_clock;
     ExecutionContext* m_executionContext;
     Timer<MediaController> m_timeupdateTimer;

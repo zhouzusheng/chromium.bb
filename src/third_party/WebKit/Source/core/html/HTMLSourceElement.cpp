@@ -28,7 +28,6 @@
 
 #include "HTMLNames.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLMediaElement.h"
 #include "platform/Logging.h"
 
@@ -55,8 +54,8 @@ Node::InsertionNotificationRequest HTMLSourceElement::insertedInto(ContainerNode
 {
     HTMLElement::insertedInto(insertionPoint);
     Element* parent = parentElement();
-    if (parent && parent->isMediaElement())
-        toHTMLMediaElement(parentNode())->sourceWasAdded(this);
+    if (isHTMLMediaElement(parent))
+        toHTMLMediaElement(parent)->sourceWasAdded(this);
     return InsertionDone;
 }
 
@@ -65,7 +64,7 @@ void HTMLSourceElement::removedFrom(ContainerNode* removalRoot)
     Element* parent = parentElement();
     if (!parent && removalRoot->isElementNode())
         parent = toElement(removalRoot);
-    if (parent && parent->isMediaElement())
+    if (isHTMLMediaElement(parent))
         toHTMLMediaElement(parent)->sourceWasRemoved(this);
     HTMLElement::removedFrom(removalRoot);
 }
@@ -101,7 +100,7 @@ void HTMLSourceElement::scheduleErrorEvent()
     if (m_errorEventTimer.isActive())
         return;
 
-    m_errorEventTimer.startOneShot(0);
+    m_errorEventTimer.startOneShot(0, FROM_HERE);
 }
 
 void HTMLSourceElement::cancelPendingErrorEvent()

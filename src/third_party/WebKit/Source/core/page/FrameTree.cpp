@@ -22,11 +22,10 @@
 #include "core/page/FrameTree.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -41,7 +40,7 @@ const unsigned invalidChildCount = ~0;
 
 } // namespace
 
-FrameTree::FrameTree(Frame* thisFrame)
+FrameTree::FrameTree(LocalFrame* thisFrame)
     : m_thisFrame(thisFrame)
     , m_scopedChildCount(invalidChildCount)
 {
@@ -49,12 +48,12 @@ FrameTree::FrameTree(Frame* thisFrame)
 
 FrameTree::~FrameTree()
 {
-    // FIXME: Why is this here? Doesn't this parallel what we already do in ~Frame?
-    for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        child->setView(0);
+    // FIXME: Why is this here? Doesn't this parallel what we already do in ~LocalFrame?
+    for (LocalFrame* child = firstChild(); child; child = child->tree().nextSibling())
+        child->setView(nullptr);
 }
 
-void FrameTree::setName(const AtomicString& name)
+void FrameTree::setName(const AtomicString& name, const AtomicString& fallbackName)
 {
     m_name = name;
     if (!parent()) {
@@ -62,58 +61,73 @@ void FrameTree::setName(const AtomicString& name)
         return;
     }
     m_uniqueName = AtomicString(); // Remove our old frame name so it's not considered in uniqueChildName.
-    m_uniqueName = parent()->tree().uniqueChildName(name);
+    m_uniqueName = parent()->tree().uniqueChildName(name.isEmpty() ? fallbackName : name);
 }
 
-Frame* FrameTree::parent() const
+LocalFrame* FrameTree::parent() const
 {
     if (!m_thisFrame->loader().client())
         return 0;
-    return m_thisFrame->loader().client()->parent();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    return toLocalFrame(m_thisFrame->loader().client()->parent());
 }
 
-Frame* FrameTree::top() const
+LocalFrame* FrameTree::top() const
 {
     // FIXME: top() should never return null, so here are some hacks to deal
     // with EmptyFrameLoaderClient and cases where the frame is detached
     // already...
     if (!m_thisFrame->loader().client())
         return m_thisFrame;
-    Frame* candidate = m_thisFrame->loader().client()->top();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    LocalFrame* candidate = toLocalFrame(m_thisFrame->loader().client()->top());
     return candidate ? candidate : m_thisFrame;
 }
 
-Frame* FrameTree::previousSibling() const
+LocalFrame* FrameTree::previousSibling() const
 {
     if (!m_thisFrame->loader().client())
         return 0;
-    return m_thisFrame->loader().client()->previousSibling();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    return toLocalFrame(m_thisFrame->loader().client()->previousSibling());
 }
 
-Frame* FrameTree::nextSibling() const
+LocalFrame* FrameTree::nextSibling() const
 {
     if (!m_thisFrame->loader().client())
         return 0;
-    return m_thisFrame->loader().client()->nextSibling();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    return toLocalFrame(m_thisFrame->loader().client()->nextSibling());
 }
 
-Frame* FrameTree::firstChild() const
+LocalFrame* FrameTree::firstChild() const
 {
     if (!m_thisFrame->loader().client())
         return 0;
-    return m_thisFrame->loader().client()->firstChild();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    return toLocalFrame(m_thisFrame->loader().client()->firstChild());
 }
 
-Frame* FrameTree::lastChild() const
+LocalFrame* FrameTree::lastChild() const
 {
     if (!m_thisFrame->loader().client())
         return 0;
-    return m_thisFrame->loader().client()->lastChild();
+    // FIXME: Temporary hack to stage converting locations that really should be Frame.
+    return toLocalFrame(m_thisFrame->loader().client()->lastChild());
+}
+
+bool FrameTree::uniqueNameExists(const AtomicString& name) const
+{
+    for (LocalFrame* frame = top(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->tree().uniqueName() == name)
+            return true;
+    }
+    return false;
 }
 
 AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
 {
-    if (!requestedName.isEmpty() && !child(requestedName) && requestedName != "_blank")
+    if (!requestedName.isEmpty() && !uniqueNameExists(requestedName) && requestedName != "_blank")
         return requestedName;
 
     // Create a repeatable name for a child about to be added to us. The name must be
@@ -128,8 +142,8 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     const int framePathSuffixLength = 3;
 
     // Find the nearest parent that has a frame with a path in it.
-    Vector<Frame*, 16> chain;
-    Frame* frame;
+    Vector<LocalFrame*, 16> chain;
+    LocalFrame* frame;
     for (frame = m_thisFrame; frame; frame = frame->tree().parent()) {
         if (frame->tree().uniqueName().startsWith(framePathPrefix))
             break;
@@ -154,14 +168,14 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     return name.toAtomicString();
 }
 
-Frame* FrameTree::scopedChild(unsigned index) const
+LocalFrame* FrameTree::scopedChild(unsigned index) const
 {
     TreeScope* scope = m_thisFrame->document();
     if (!scope)
         return 0;
 
     unsigned scopedIndex = 0;
-    for (Frame* result = firstChild(); result; result = result->tree().nextSibling()) {
+    for (LocalFrame* result = firstChild(); result; result = result->tree().nextSibling()) {
         if (result->inScope(scope)) {
             if (scopedIndex == index)
                 return result;
@@ -172,14 +186,14 @@ Frame* FrameTree::scopedChild(unsigned index) const
     return 0;
 }
 
-Frame* FrameTree::scopedChild(const AtomicString& name) const
+LocalFrame* FrameTree::scopedChild(const AtomicString& name) const
 {
     TreeScope* scope = m_thisFrame->document();
     if (!scope)
         return 0;
 
-    for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        if (child->tree().uniqueName() == name && child->inScope(scope))
+    for (LocalFrame* child = firstChild(); child; child = child->tree().nextSibling())
+        if (child->tree().name() == name && child->inScope(scope))
             return child;
     return 0;
 }
@@ -190,7 +204,7 @@ inline unsigned FrameTree::scopedChildCount(TreeScope* scope) const
         return 0;
 
     unsigned scopedCount = 0;
-    for (Frame* result = firstChild(); result; result = result->tree().nextSibling()) {
+    for (LocalFrame* result = firstChild(); result; result = result->tree().nextSibling()) {
         if (result->inScope(scope))
             scopedCount++;
     }
@@ -213,20 +227,20 @@ void FrameTree::invalidateScopedChildCount()
 unsigned FrameTree::childCount() const
 {
     unsigned count = 0;
-    for (Frame* result = firstChild(); result; result = result->tree().nextSibling())
+    for (LocalFrame* result = firstChild(); result; result = result->tree().nextSibling())
         ++count;
     return count;
 }
 
-Frame* FrameTree::child(const AtomicString& name) const
+LocalFrame* FrameTree::child(const AtomicString& name) const
 {
-    for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        if (child->tree().uniqueName() == name)
+    for (LocalFrame* child = firstChild(); child; child = child->tree().nextSibling())
+        if (child->tree().name() == name)
             return child;
     return 0;
 }
 
-Frame* FrameTree::find(const AtomicString& name) const
+LocalFrame* FrameTree::find(const AtomicString& name) const
 {
     if (name == "_self" || name == "_current" || name.isEmpty())
         return m_thisFrame;
@@ -242,8 +256,8 @@ Frame* FrameTree::find(const AtomicString& name) const
         return 0;
 
     // Search subtree starting with this frame first.
-    for (Frame* frame = m_thisFrame; frame; frame = frame->tree().traverseNext(m_thisFrame))
-        if (frame->tree().uniqueName() == name)
+    for (LocalFrame* frame = m_thisFrame; frame; frame = frame->tree().traverseNext(m_thisFrame))
+        if (frame->tree().name() == name)
             return frame;
 
     // Search the entire tree for this page next.
@@ -253,19 +267,19 @@ Frame* FrameTree::find(const AtomicString& name) const
     if (!page)
         return 0;
 
-    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
-        if (frame->tree().uniqueName() == name)
+    for (LocalFrame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
+        if (frame->tree().name() == name)
             return frame;
 
     // Search the entire tree of each of the other pages in this namespace.
     // FIXME: Is random order OK?
-    const HashSet<Page*>& pages = page->group().pages();
+    const HashSet<Page*>& pages = Page::ordinaryPages();
     HashSet<Page*>::const_iterator end = pages.end();
     for (HashSet<Page*>::const_iterator it = pages.begin(); it != end; ++it) {
         Page* otherPage = *it;
         if (otherPage != page) {
-            for (Frame* frame = otherPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                if (frame->tree().uniqueName() == name)
+            for (LocalFrame* frame = otherPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+                if (frame->tree().name() == name)
                     return frame;
             }
         }
@@ -274,7 +288,7 @@ Frame* FrameTree::find(const AtomicString& name) const
     return 0;
 }
 
-bool FrameTree::isDescendantOf(const Frame* ancestor) const
+bool FrameTree::isDescendantOf(const LocalFrame* ancestor) const
 {
     if (!ancestor)
         return false;
@@ -282,15 +296,15 @@ bool FrameTree::isDescendantOf(const Frame* ancestor) const
     if (m_thisFrame->page() != ancestor->page())
         return false;
 
-    for (Frame* frame = m_thisFrame; frame; frame = frame->tree().parent())
+    for (LocalFrame* frame = m_thisFrame; frame; frame = frame->tree().parent())
         if (frame == ancestor)
             return true;
     return false;
 }
 
-Frame* FrameTree::traverseNext(const Frame* stayWithin) const
+LocalFrame* FrameTree::traverseNext(const LocalFrame* stayWithin) const
 {
-    Frame* child = firstChild();
+    LocalFrame* child = firstChild();
     if (child) {
         ASSERT(!stayWithin || child->tree().isDescendantOf(stayWithin));
         return child;
@@ -299,13 +313,13 @@ Frame* FrameTree::traverseNext(const Frame* stayWithin) const
     if (m_thisFrame == stayWithin)
         return 0;
 
-    Frame* sibling = nextSibling();
+    LocalFrame* sibling = nextSibling();
     if (sibling) {
         ASSERT(!stayWithin || sibling->tree().isDescendantOf(stayWithin));
         return sibling;
     }
 
-    Frame* frame = m_thisFrame;
+    LocalFrame* frame = m_thisFrame;
     while (!sibling && (!stayWithin || frame->tree().parent() != stayWithin)) {
         frame = frame->tree().parent();
         if (!frame)
@@ -321,9 +335,9 @@ Frame* FrameTree::traverseNext(const Frame* stayWithin) const
     return 0;
 }
 
-Frame* FrameTree::traverseNextWithWrap(bool wrap) const
+LocalFrame* FrameTree::traverseNextWithWrap(bool wrap) const
 {
-    if (Frame* result = traverseNext())
+    if (LocalFrame* result = traverseNext())
         return result;
 
     if (wrap)
@@ -332,13 +346,13 @@ Frame* FrameTree::traverseNextWithWrap(bool wrap) const
     return 0;
 }
 
-Frame* FrameTree::traversePreviousWithWrap(bool wrap) const
+LocalFrame* FrameTree::traversePreviousWithWrap(bool wrap) const
 {
     // FIXME: besides the wrap feature, this is just the traversePreviousNode algorithm
 
-    if (Frame* prevSibling = previousSibling())
+    if (LocalFrame* prevSibling = previousSibling())
         return prevSibling->tree().deepLastChild();
-    if (Frame* parentFrame = parent())
+    if (LocalFrame* parentFrame = parent())
         return parentFrame;
 
     // no siblings, no parent, self==top
@@ -349,10 +363,10 @@ Frame* FrameTree::traversePreviousWithWrap(bool wrap) const
     return 0;
 }
 
-Frame* FrameTree::deepLastChild() const
+LocalFrame* FrameTree::deepLastChild() const
 {
-    Frame* result = m_thisFrame;
-    for (Frame* last = lastChild(); last; last = last->tree().lastChild())
+    LocalFrame* result = m_thisFrame;
+    for (LocalFrame* last = lastChild(); last; last = last->tree().lastChild())
         result = last;
 
     return result;
@@ -368,7 +382,7 @@ static void printIndent(int indent)
         printf("    ");
 }
 
-static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targetFrame, int indent)
+static void printFrames(const WebCore::LocalFrame* frame, const WebCore::LocalFrame* targetFrame, int indent)
 {
     if (frame == targetFrame) {
         printf("--> ");
@@ -377,7 +391,7 @@ static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targe
         printIndent(indent);
 
     WebCore::FrameView* view = frame->view();
-    printf("Frame %p %dx%d\n", frame, view ? view->width() : 0, view ? view->height() : 0);
+    printf("LocalFrame %p %dx%d\n", frame, view ? view->width() : 0, view ? view->height() : 0);
     printIndent(indent);
     printf("  ownerElement=%p\n", frame->ownerElement());
     printIndent(indent);
@@ -387,11 +401,11 @@ static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targe
     printIndent(indent);
     printf("  uri=%s\n\n", frame->document()->url().string().utf8().data());
 
-    for (WebCore::Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
+    for (WebCore::LocalFrame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
         printFrames(child, targetFrame, indent + 1);
 }
 
-void showFrameTree(const WebCore::Frame* frame)
+void showFrameTree(const WebCore::LocalFrame* frame)
 {
     if (!frame) {
         printf("Null input frame\n");

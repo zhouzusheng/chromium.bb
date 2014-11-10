@@ -117,9 +117,9 @@ bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
 void SpellCheckProvider::FocusedNodeChanged(const blink::WebNode& unused) {
 #if defined(OS_MACOSX)
   bool enabled = false;
-  blink::WebNode node = render_view()->GetFocusedNode();
-  if (!node.isNull())
-    enabled = render_view()->IsEditableNode(node);
+  blink::WebElement element = render_view()->GetFocusedElement();
+  if (!element.isNull())
+    enabled = render_view()->IsEditableNode(element);
 
   bool checked = false;
   if (enabled && render_view()->GetWebView()) {

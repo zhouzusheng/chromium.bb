@@ -134,7 +134,7 @@ String.prototype.escapeCharacters = function(chars)
  */
 String.regexSpecialCharacters = function()
 {
-    return "^[]{}()\\.$*+?|-,";
+    return "^[]{}()\\.^$*+?|-,";
 }
 
 /**
@@ -370,28 +370,60 @@ Date.prototype.toISO8601Compact = function()
            leadZero(this.getSeconds());
 }
 
+/**
+ * @return {string}
+ */
+ Date.prototype.toConsoleTime = function()
+{
+    /**
+     * @param {number} x
+     * @return {string}
+     */
+    function leadZero2(x)
+    {
+        return (x > 9 ? "" : "0") + x;
+    }
+
+    /**
+     * @param {number} x
+     * @return {string}
+     */
+    function leadZero3(x)
+    {
+        return (Array(4 - x.toString().length)).join('0') + x;
+    }
+
+    return this.getFullYear() + "-" +
+           leadZero2(this.getMonth() + 1) + "-" +
+           leadZero2(this.getDate()) + " " +
+           leadZero2(this.getHours()) + ":" +
+           leadZero2(this.getMinutes()) + ":" +
+           leadZero2(this.getSeconds()) + "." +
+           leadZero3(this.getMilliseconds());
+}
+
 Object.defineProperty(Array.prototype, "remove",
 {
     /**
      * @param {!T} value
-     * @param {boolean=} onlyFirst
+     * @param {boolean=} firstOnly
      * @this {Array.<!T>}
      * @template T
      */
-    value: function(value, onlyFirst)
+    value: function(value, firstOnly)
     {
-        if (onlyFirst) {
-            var index = this.indexOf(value);
-            if (index !== -1)
-                this.splice(index, 1);
+        var index = this.indexOf(value);
+        if (index === -1)
+            return;
+        if (firstOnly) {
+            this.splice(index, 1);
             return;
         }
-
-        var length = this.length;
-        for (var i = 0; i < length; ++i) {
-            if (this[i] === value)
-                this.splice(i, 1);
+        for (var i = index + 1, n = this.length; i < n; ++i) {
+            if (this[i] !== value)
+                this[index++] = this[i];
         }
+        this.length = index;
     }
 });
 
@@ -1358,6 +1390,64 @@ StringMap.prototype = {
 }
 
 /**
+ * @constructor
+ */
+var StringSet = function()
+{
+    /** @type {!StringMap.<boolean>} */
+    this._map = new StringMap();
+}
+
+StringSet.prototype = {
+    /**
+     * @param {string} value
+     */
+    put: function(value)
+    {
+        this._map.put(value, true);
+    },
+
+    /**
+     * @param {string} value
+     * @return {boolean}
+     */
+    remove: function(value)
+    {
+        return !!this._map.remove(value);
+    },
+
+    /**
+     * @return {!Array.<string>}
+     */
+    values: function()
+    {
+        return this._map.keys();
+    },
+
+    /**
+     * @param {string} value
+     * @return {boolean}
+     */
+    contains: function(value)
+    {
+        return this._map.contains(value);
+    },
+
+    /**
+     * @return {number}
+     */
+    size: function()
+    {
+        return this._map.size();
+    },
+
+    clear: function()
+    {
+        this._map.clear();
+    }
+}
+
+/**
  * @param {string} url
  * @param {boolean=} async
  * @param {function(?string)=} callback
@@ -1390,61 +1480,6 @@ function loadXHR(url, async, callback)
         return null;
     }
     return null;
-}
-
-/**
- * @constructor
- */
-function StringPool()
-{
-    this.reset();
-}
-
-StringPool.prototype = {
-    /**
-     * @param {string} string
-     * @return {string}
-     */
-    intern: function(string)
-    {
-        // Do not mess with setting __proto__ to anything but null, just handle it explicitly.
-        if (string === "__proto__")
-            return "__proto__";
-        var result = this._strings[string];
-        if (result === undefined) {
-            this._strings[string] = string;
-            result = string;
-        }
-        return result;
-    },
-
-    reset: function()
-    {
-        this._strings = Object.create(null);
-    },
-
-    /**
-     * @param {!Object} obj
-     * @param {number=} depthLimit
-     */
-    internObjectStrings: function(obj, depthLimit)
-    {
-        if (typeof depthLimit !== "number")
-            depthLimit = 100;
-        else if (--depthLimit < 0)
-            throw "recursion depth limit reached in StringPool.deepIntern(), perhaps attempting to traverse cyclical references?";
-
-        for (var field in obj) {
-            switch (typeof obj[field]) {
-            case "string":
-                obj[field] = this.intern(obj[field]);
-                break;
-            case "object":
-                this.internObjectStrings(obj[field], depthLimit);
-                break;
-            }
-        }
-    }
 }
 
 var _importedScripts = {};

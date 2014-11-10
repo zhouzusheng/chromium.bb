@@ -156,7 +156,8 @@ class WebViewImpl : public WebView,
     // Notifies the delegate that this contents is starting or is done loading
     // some resource. The delegate should use this notification to represent
     // loading feedback. See WebContents::IsLoading()
-    virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
+    virtual void LoadingStateChanged(content::WebContents* source,
+                                     bool to_different_document) OVERRIDE;
 
     // Invoked when a main frame navigation occurs.
     virtual void DidNavigateMainFramePostCommit(content::WebContents* source) OVERRIDE;
@@ -179,7 +180,7 @@ class WebViewImpl : public WebView,
     // Notifies the delegate about the creation of a new WebContents. This
     // typically happens when popups are created.
     virtual void WebContentsCreated(content::WebContents* source_contents,
-                                    int64 source_frame_id,
+                                    int opener_render_frame_id,
                                     const base::string16& frame_name,
                                     const GURL& target_url,
                                     const content::ContentCreatedParams& params,

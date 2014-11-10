@@ -30,16 +30,15 @@
 
 /**
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @implements {WebInspector.DOMNodeHighlighter}
- * @param {!Element} statusBarButtonPlaceholder
  */
-WebInspector.ScreencastView = function(statusBarButtonPlaceholder)
+WebInspector.ScreencastView = function()
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
+    this.setMinimumSize(150, 150);
     this.registerRequiredCSS("screencastView.css");
-    this._statusBarButtonPlaceholder = statusBarButtonPlaceholder;
-}
+};
 
 WebInspector.ScreencastView._bordersSize = 40;
 
@@ -100,29 +99,6 @@ WebInspector.ScreencastView.prototype = {
         this._profilerActive = WebInspector.cpuProfilerModel.isRecordingProfile();
 
         this._updateGlasspane();
-
-        this._currentScreencastState = WebInspector.settings.createSetting("currentScreencastState", "");
-        this._lastScreencastState = WebInspector.settings.createSetting("lastScreencastState", "");
-        this._toggleScreencastButton = new WebInspector.StatusBarStatesSettingButton(
-            "screencast-status-bar-item",
-            ["disabled", "left", "top"],
-            [WebInspector.UIString("Disable screencast."), WebInspector.UIString("Switch to portrait screencast."), WebInspector.UIString("Switch to landscape screencast.")],
-            this._currentScreencastState,
-            this._lastScreencastState,
-            this._toggleScreencastButtonClicked.bind(this));
-        this._statusBarButtonPlaceholder.parentElement.insertBefore(this._toggleScreencastButton.element, this._statusBarButtonPlaceholder);
-        this._statusBarButtonPlaceholder.parentElement.removeChild(this._statusBarButtonPlaceholder);
-    },
-
-    /**
-     * @param {string} state
-     */
-    _toggleScreencastButtonClicked: function(state)
-    {
-        if (state === "disabled")
-            WebInspector.inspectorView.hideScreencastView();
-        else
-            WebInspector.inspectorView.showScreencastView(this, state === "left");
     },
 
     wasShown: function()
@@ -152,7 +128,7 @@ WebInspector.ScreencastView.prototype = {
         dimensions.width *= WebInspector.zoomManager.zoomFactor();
         dimensions.height *= WebInspector.zoomManager.zoomFactor();
         PageAgent.startScreencast("jpeg", 80, Math.min(maxImageDimension, dimensions.width), Math.min(maxImageDimension, dimensions.height));
-        WebInspector.domAgent.setHighlighter(this);
+        WebInspector.domModel.setHighlighter(this);
     },
 
     _stopCasting: function()
@@ -161,7 +137,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         this._isCasting = false;
         PageAgent.stopScreencast();
-        WebInspector.domAgent.setHighlighter(null);
+        WebInspector.domModel.setHighlighter(null);
     },
 
     /**
@@ -303,7 +279,7 @@ WebInspector.ScreencastView.prototype = {
             if (event.type === "mousemove")
                 this.highlightDOMNode(nodeId, this._inspectModeConfig);
             else if (event.type === "click")
-                WebInspector.domAgent.dispatchEventToListeners(WebInspector.DOMAgent.Events.InspectNodeRequested, nodeId);
+                WebInspector.Revealer.reveal(WebInspector.domModel.nodeForId(nodeId));
         }
     },
 
@@ -478,7 +454,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         }
 
-        this._node = WebInspector.domAgent.nodeForId(nodeId);
+        this._node = WebInspector.domModel.nodeForId(nodeId);
         DOMAgent.getBoxModel(nodeId, callback.bind(this));
 
         /**
@@ -743,11 +719,11 @@ WebInspector.ScreencastView.prototype = {
 
     /**
      * @param {boolean} enabled
-     * @param {boolean} inspectShadowDOM
+     * @param {boolean} inspectUAShadowDOM
      * @param {!DOMAgent.HighlightConfig} config
      * @param {function(?Protocol.Error)=} callback
      */
-    setInspectModeEnabled: function(enabled, inspectShadowDOM, config, callback)
+    setInspectModeEnabled: function(enabled, inspectUAShadowDOM, config, callback)
     {
         this._inspectModeConfig = enabled ? config : null;
         if (callback)
@@ -856,7 +832,7 @@ WebInspector.ScreencastView.prototype = {
         return true;
     },
 
-  __proto__: WebInspector.View.prototype
+  __proto__: WebInspector.VBox.prototype
 }
 
 /**
@@ -936,5 +912,80 @@ WebInspector.ScreencastView.ProgressTracker.prototype = {
     _displayProgress: function(progress)
     {
         this._element.style.width = (100 * progress) + "%";
+    }
+};
+
+/**
+ * @constructor
+ */
+WebInspector.ScreencastController = function()
+{
+    var rootView = new WebInspector.RootView();
+
+    this._rootSplitView = new WebInspector.SplitView(false, true, "InspectorView.screencastSplitViewState", 300, 300);
+    this._rootSplitView.show(rootView.element);
+
+    WebInspector.inspectorView.show(this._rootSplitView.sidebarElement());
+    this._screencastView = new WebInspector.ScreencastView();
+    this._screencastView.show(this._rootSplitView.mainElement());
+
+    this._onStatusBarButtonStateChanged("disabled");
+    rootView.attachToBody();
+
+    this._initialized = false;
+};
+
+WebInspector.ScreencastController.prototype = {
+    /**
+     * @param {string} state
+     */
+    _onStatusBarButtonStateChanged: function(state)
+    {
+        if (state === "disabled") {
+            this._rootSplitView.toggleResizer(this._rootSplitView.resizerElement(), false);
+            this._rootSplitView.toggleResizer(WebInspector.inspectorView.topResizerElement(), false);
+            this._rootSplitView.hideMain();
+            return;
+        }
+
+        this._rootSplitView.setVertical(state === "left");
+        this._rootSplitView.setSecondIsSidebar(true);
+        this._rootSplitView.toggleResizer(this._rootSplitView.resizerElement(), true);
+        this._rootSplitView.toggleResizer(WebInspector.inspectorView.topResizerElement(), state === "top");
+        this._rootSplitView.showBoth();
+    },
+
+    initialize: function()
+    {
+        this._screencastView.initialize();
+
+        this._currentScreencastState = WebInspector.settings.createSetting("currentScreencastState", "");
+        this._lastScreencastState = WebInspector.settings.createSetting("lastScreencastState", "");
+        this._toggleScreencastButton = new WebInspector.StatusBarStatesSettingButton(
+            "screencast-status-bar-item",
+            ["disabled", "left", "top"],
+            [WebInspector.UIString("Disable screencast."), WebInspector.UIString("Switch to portrait screencast."), WebInspector.UIString("Switch to landscape screencast.")],
+            this._currentScreencastState,
+            this._lastScreencastState,
+            this._onStatusBarButtonStateChanged.bind(this));
+
+        if (this._statusBarPlaceholder) {
+            this._statusBarPlaceholder.parentElement.insertBefore(this._toggleScreencastButton.element, this._statusBarPlaceholder);
+            this._statusBarPlaceholder.parentElement.removeChild(this._statusBarPlaceholder);
+            delete this._statusBarPlaceholder;
+        }
+
+        this._initialized = true;
+    },
+
+    /**
+     * @return {!Element}
+     */
+    statusBarItem: function()
+    {
+        if (this._initialized)
+            return this._toggleScreencastButton.element;
+        this._statusBarPlaceholder = document.createElement("div");
+        return this._statusBarPlaceholder;
     }
 };

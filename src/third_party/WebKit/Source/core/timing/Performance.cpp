@@ -33,6 +33,7 @@
 #include "core/timing/Performance.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/timing/ResourceTimingInfo.h"
 #include "core/timing/PerformanceResourceTiming.h"
@@ -40,19 +41,16 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 
-#include "core/frame/Frame.h"
-
 namespace WebCore {
 
 static const size_t defaultResourceTimingBufferSize = 150;
 
-Performance::Performance(Frame* frame)
+Performance::Performance(LocalFrame* frame)
     : DOMWindowProperty(frame)
     , m_resourceTimingBufferSize(defaultResourceTimingBufferSize)
-    , m_referenceTime(frame->document()->loader()->timing()->referenceMonotonicTime())
-    , m_userTiming(0)
+    , m_referenceTime(frame && frame->host() ? frame->document()->loader()->timing()->referenceMonotonicTime() : 0.0)
+    , m_userTiming(nullptr)
 {
-    ASSERT(m_referenceTime);
     ScriptWrappable::init(this);
 }
 
@@ -72,7 +70,7 @@ ExecutionContext* Performance::executionContext() const
     return frame()->document();
 }
 
-PassRefPtr<MemoryInfo> Performance::memory() const
+PassRefPtrWillBeRawPtr<MemoryInfo> Performance::memory() const
 {
     return MemoryInfo::create(m_frame);
 }
@@ -93,54 +91,54 @@ PerformanceTiming* Performance::timing() const
     return m_timing.get();
 }
 
-Vector<RefPtr<PerformanceEntry> > Performance::getEntries() const
+PerformanceEntryVector Performance::getEntries() const
 {
-    Vector<RefPtr<PerformanceEntry> > entries;
+    PerformanceEntryVector entries;
 
-    entries.append(m_resourceTimingBuffer);
+    entries.appendVector(m_resourceTimingBuffer);
 
     if (m_userTiming) {
-        entries.append(m_userTiming->getMarks());
-        entries.append(m_userTiming->getMeasures());
+        entries.appendVector(m_userTiming->getMarks());
+        entries.appendVector(m_userTiming->getMeasures());
     }
 
     std::sort(entries.begin(), entries.end(), PerformanceEntry::startTimeCompareLessThan);
     return entries;
 }
 
-Vector<RefPtr<PerformanceEntry> > Performance::getEntriesByType(const String& entryType)
+PerformanceEntryVector Performance::getEntriesByType(const String& entryType)
 {
-    Vector<RefPtr<PerformanceEntry> > entries;
+    PerformanceEntryVector entries;
 
     if (equalIgnoringCase(entryType, "resource"))
-        for (Vector<RefPtr<PerformanceEntry> >::const_iterator resource = m_resourceTimingBuffer.begin(); resource != m_resourceTimingBuffer.end(); ++resource)
+        for (PerformanceEntryVector::const_iterator resource = m_resourceTimingBuffer.begin(); resource != m_resourceTimingBuffer.end(); ++resource)
             entries.append(*resource);
 
     if (m_userTiming) {
         if (equalIgnoringCase(entryType, "mark"))
-            entries.append(m_userTiming->getMarks());
+            entries.appendVector(m_userTiming->getMarks());
         else if (equalIgnoringCase(entryType, "measure"))
-            entries.append(m_userTiming->getMeasures());
+            entries.appendVector(m_userTiming->getMeasures());
     }
 
     std::sort(entries.begin(), entries.end(), PerformanceEntry::startTimeCompareLessThan);
     return entries;
 }
 
-Vector<RefPtr<PerformanceEntry> > Performance::getEntriesByName(const String& name, const String& entryType)
+PerformanceEntryVector Performance::getEntriesByName(const String& name, const String& entryType)
 {
-    Vector<RefPtr<PerformanceEntry> > entries;
+    PerformanceEntryVector entries;
 
     if (entryType.isNull() || equalIgnoringCase(entryType, "resource"))
-        for (Vector<RefPtr<PerformanceEntry> >::const_iterator resource = m_resourceTimingBuffer.begin(); resource != m_resourceTimingBuffer.end(); ++resource)
+        for (PerformanceEntryVector::const_iterator resource = m_resourceTimingBuffer.begin(); resource != m_resourceTimingBuffer.end(); ++resource)
             if ((*resource)->name() == name)
                 entries.append(*resource);
 
     if (m_userTiming) {
         if (entryType.isNull() || equalIgnoringCase(entryType, "mark"))
-            entries.append(m_userTiming->getMarks(name));
+            entries.appendVector(m_userTiming->getMarks(name));
         if (entryType.isNull() || equalIgnoringCase(entryType, "measure"))
-            entries.append(m_userTiming->getMeasures(name));
+            entries.appendVector(m_userTiming->getMeasures(name));
     }
 
     std::sort(entries.begin(), entries.end(), PerformanceEntry::startTimeCompareLessThan);
@@ -208,7 +206,7 @@ void Performance::addResourceTiming(const ResourceTimingInfo& info, Document* in
     double startTime = info.initialTime();
 
     if (info.redirectChain().isEmpty()) {
-        RefPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, allowTimingDetails);
+        RefPtrWillBeRawPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, allowTimingDetails);
         addResourceTimingBuffer(entry);
         return;
     }
@@ -227,11 +225,11 @@ void Performance::addResourceTiming(const ResourceTimingInfo& info, Document* in
     ASSERT(lastRedirectTiming);
     double lastRedirectEndTime = lastRedirectTiming->receiveHeadersEnd;
 
-    RefPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, lastRedirectEndTime, allowTimingDetails, allowRedirectDetails);
+    RefPtrWillBeRawPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, lastRedirectEndTime, allowTimingDetails, allowRedirectDetails);
     addResourceTimingBuffer(entry);
 }
 
-void Performance::addResourceTimingBuffer(PassRefPtr<PerformanceEntry> entry)
+void Performance::addResourceTimingBuffer(PassRefPtrWillBeRawPtr<PerformanceEntry> entry)
 {
     m_resourceTimingBuffer.append(entry);
 
@@ -275,6 +273,14 @@ void Performance::clearMeasures(const String& measureName)
 double Performance::now() const
 {
     return 1000.0 * (monotonicallyIncreasingTime() - m_referenceTime);
+}
+
+void Performance::trace(Visitor* visitor)
+{
+    visitor->trace(m_navigation);
+    visitor->trace(m_timing);
+    visitor->trace(m_resourceTimingBuffer);
+    visitor->trace(m_userTiming);
 }
 
 } // namespace WebCore

@@ -59,11 +59,6 @@ public:
         ScopeIsShadowHostInPseudoHostParameter = ScopeIsShadowHost | TreatShadowHostAsNormalScope
     };
 
-    enum MatchingTagType {
-        MatchingElement = 0,
-        MatchingHostInItsShadowTree
-    };
-
     struct SelectorCheckingContext {
         // Initial selector constructor
         SelectorCheckingContext(const CSSSelector& selector, Element* element, VisitedMatchType visitedMatchType)
@@ -114,7 +109,7 @@ public:
 
     Mode mode() const { return m_mode; }
 
-    static bool tagMatches(const Element&, const QualifiedName&, MatchingTagType = MatchingElement);
+    static bool tagMatches(const Element&, const QualifiedName&);
     static bool isCommonPseudoClassSelector(const CSSSelector&);
     static bool matchesFocusPseudoClass(const Element&);
     static bool checkExactAttribute(const Element&, const QualifiedName& selectorAttributeName, const StringImpl* value);
@@ -131,6 +126,8 @@ private:
     Match matchForRelation(const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
     template<typename SiblingTraversalStrategy>
     Match matchForShadowDistributed(const Element*, const SiblingTraversalStrategy&, SelectorCheckingContext& nextContext, MatchResult* = 0) const;
+    template<typename SiblingTraversalStrategy>
+    Match matchForPseudoShadow(const ContainerNode*, const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
 
     bool checkScrollbarPseudoClass(const SelectorCheckingContext&, Document*, const CSSSelector&) const;
     Element* parentElement(const SelectorCheckingContext&, bool allowToCrossBoundary = false) const;
@@ -154,12 +151,12 @@ inline bool SelectorChecker::isCommonPseudoClassSelector(const CSSSelector& sele
         || pseudoType == CSSSelector::PseudoFocus;
 }
 
-inline bool SelectorChecker::tagMatches(const Element& element, const QualifiedName& tagQName, MatchingTagType matchingTagType)
+inline bool SelectorChecker::tagMatches(const Element& element, const QualifiedName& tagQName)
 {
     if (tagQName == anyQName())
         return true;
     const AtomicString& localName = tagQName.localName();
-    if (localName != starAtom && (localName != element.localName() || matchingTagType == MatchingHostInItsShadowTree))
+    if (localName != starAtom && localName != element.localName())
         return false;
     const AtomicString& namespaceURI = tagQName.namespaceURI();
     return namespaceURI == starAtom || namespaceURI == element.namespaceURI();
@@ -171,8 +168,8 @@ inline bool SelectorChecker::checkExactAttribute(const Element& element, const Q
         return false;
     unsigned size = element.attributeCount();
     for (unsigned i = 0; i < size; ++i) {
-        const Attribute* attribute = element.attributeItem(i);
-        if (attribute->matches(selectorAttributeName) && (!value || attribute->value().impl() == value))
+        const Attribute& attribute = element.attributeItem(i);
+        if (attribute.matches(selectorAttributeName) && (!value || attribute.value().impl() == value))
             return true;
     }
     return false;
@@ -180,7 +177,11 @@ inline bool SelectorChecker::checkExactAttribute(const Element& element, const Q
 
 inline bool SelectorChecker::isHostInItsShadowTree(const Element& element, BehaviorAtBoundary behaviorAtBoundary, const ContainerNode* scope)
 {
-    return (behaviorAtBoundary & (ScopeIsShadowHost | TreatShadowHostAsNormalScope)) == ScopeIsShadowHost && scope == element;
+    if ((behaviorAtBoundary & (ScopeIsShadowHost | TreatShadowHostAsNormalScope)) == ScopeIsShadowHost)
+        return scope == element;
+    if (scope && scope->isInShadowTree())
+        return scope->shadowHost() == element;
+    return false;
 }
 
 }

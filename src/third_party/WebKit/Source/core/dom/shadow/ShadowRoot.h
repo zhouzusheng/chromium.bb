@@ -113,9 +113,6 @@ public:
     bool applyAuthorStyles() const { return m_applyAuthorStyles; }
     void setApplyAuthorStyles(bool);
 
-    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
-    void setResetStyleInheritance(bool);
-
     ShadowRoot* olderShadowRoot() const { return next(); }
 
     String innerHTML() const;
@@ -125,7 +122,6 @@ public:
     PassRefPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
 
     StyleSheetList* styleSheets();
-    bool isActiveForStyling() const;
 
 private:
     ShadowRoot(Document&, ShadowRootType);
@@ -141,7 +137,7 @@ private:
     void invalidateDescendantInsertionPoints();
 
     // ShadowRoots should never be cloned.
-    virtual PassRefPtr<Node> cloneNode(bool) OVERRIDE { return 0; }
+    virtual PassRefPtr<Node> cloneNode(bool) OVERRIDE { return nullptr; }
 
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
     bool isOrphan() const { return !host(); }
@@ -151,7 +147,6 @@ private:
     OwnPtr<ShadowRootRareData> m_shadowRootRareData;
     unsigned m_numberOfStyles : 27;
     unsigned m_applyAuthorStyles : 1;
-    unsigned m_resetStyleInheritance : 1;
     unsigned m_type : 1;
     unsigned m_registeredWithParentShadowRoot : 1;
     unsigned m_descendantInsertionPointsIsValid : 1;

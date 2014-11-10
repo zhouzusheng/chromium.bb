@@ -23,6 +23,7 @@
 
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGText.h"
+#include "core/rendering/svg/SVGTextMetricsBuilder.h"
 #include "core/svg/SVGTextPositioningElement.h"
 
 namespace WebCore {
@@ -53,7 +54,7 @@ void SVGTextLayoutAttributesBuilder::buildLayoutAttributesForTextRenderer(Render
         buildCharacterDataMap(textRoot);
     }
 
-    m_metricsBuilder.buildMetricsAndLayoutAttributes(textRoot, text, m_characterDataMap);
+    SVGTextMetricsBuilder::buildMetricsAndLayoutAttributes(textRoot, text, m_characterDataMap);
 }
 
 bool SVGTextLayoutAttributesBuilder::buildLayoutAttributesForForSubtree(RenderSVGText* textRoot)
@@ -72,14 +73,14 @@ bool SVGTextLayoutAttributesBuilder::buildLayoutAttributesForForSubtree(RenderSV
         return false;
 
     buildCharacterDataMap(textRoot);
-    m_metricsBuilder.buildMetricsAndLayoutAttributes(textRoot, 0, m_characterDataMap);
+    SVGTextMetricsBuilder::buildMetricsAndLayoutAttributes(textRoot, 0, m_characterDataMap);
     return true;
 }
 
 void SVGTextLayoutAttributesBuilder::rebuildMetricsForTextRenderer(RenderSVGInlineText* text)
 {
     ASSERT(text);
-    m_metricsBuilder.measureTextRenderer(text);
+    SVGTextMetricsBuilder::measureTextRenderer(text);
 }
 
 static inline void processRenderSVGInlineText(RenderSVGInlineText* text, unsigned& atCharacter, UChar& lastCharacter)
@@ -184,11 +185,11 @@ void SVGTextLayoutAttributesBuilder::fillCharacterDataMap(const TextPosition& po
     RefPtr<SVGLengthList> dyList = position.element->dy()->currentValue();
     RefPtr<SVGNumberList> rotateList = position.element->rotate()->currentValue();
 
-    unsigned xListSize = xList->numberOfItems();
-    unsigned yListSize = yList->numberOfItems();
-    unsigned dxListSize = dxList->numberOfItems();
-    unsigned dyListSize = dyList->numberOfItems();
-    unsigned rotateListSize = rotateList->numberOfItems();
+    unsigned xListSize = xList->length();
+    unsigned yListSize = yList->length();
+    unsigned dxListSize = dxList->length();
+    unsigned dyListSize = dyList->length();
+    unsigned rotateListSize = rotateList->length();
     if (!xListSize && !yListSize && !dxListSize && !dyListSize && !rotateListSize)
         return;
 
@@ -218,7 +219,7 @@ void SVGTextLayoutAttributesBuilder::fillCharacterDataMap(const TextPosition& po
     if (lastRotation == SVGTextLayoutAttributes::emptyValue())
         return;
 
-    for (unsigned i = rotateList->numberOfItems(); i < position.length; ++i) {
+    for (unsigned i = rotateList->length(); i < position.length; ++i) {
         SVGCharacterDataMap::iterator it = m_characterDataMap.find(position.start + i + 1);
         if (it == m_characterDataMap.end()) {
             SVGCharacterData data;

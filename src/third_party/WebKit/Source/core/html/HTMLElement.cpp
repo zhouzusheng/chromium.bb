@@ -42,8 +42,7 @@
 #include "core/editing/SpellChecker.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -101,7 +100,6 @@ bool HTMLElement::ieForbidsInsertHTML() const
         || hasLocalName(imageTag)
         || hasLocalName(imgTag)
         || hasLocalName(inputTag)
-        || hasLocalName(isindexTag)
         || hasLocalName(linkTag)
         || hasLocalName(metaTag)
         || hasLocalName(paramTag)
@@ -340,9 +338,9 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
 PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& exceptionState)
 {
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(document());
-    unsigned int i, length = text.length();
+    unsigned i, length = text.length();
     UChar c = 0;
-    for (unsigned int start = 0; start < length; ) {
+    for (unsigned start = 0; start < length; ) {
 
         // Find next line break.
         for (i = start; i < length; i++) {
@@ -353,12 +351,12 @@ PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, Exc
 
         fragment->appendChild(Text::create(document(), text.substring(start, i - start)), exceptionState);
         if (exceptionState.hadException())
-            return 0;
+            return nullptr;
 
         if (c == '\r' || c == '\n') {
             fragment->appendChild(HTMLBRElement::create(document()), exceptionState);
             if (exceptionState.hadException())
-                return 0;
+                return nullptr;
             // Make sure \r\n doesn't result in two line breaks.
             if (c == '\r' && i + 1 < length && text[i + 1] == '\n')
                 i++;
@@ -625,13 +623,11 @@ TranslateAttributeMode HTMLElement::translateAttributeMode() const
 
 bool HTMLElement::translate() const
 {
-    for (const Node* n = this; n; n = n->parentNode()) {
-        if (n->isHTMLElement()) {
-            TranslateAttributeMode mode = toHTMLElement(n)->translateAttributeMode();
-            if (mode != TranslateAttributeInherit) {
-                ASSERT(mode == TranslateAttributeYes || mode == TranslateAttributeNo);
-                return mode == TranslateAttributeYes;
-            }
+    for (const HTMLElement* element = this; element; element = Traversal<HTMLElement>::firstAncestor(*element)) {
+        TranslateAttributeMode mode = element->translateAttributeMode();
+        if (mode != TranslateAttributeInherit) {
+            ASSERT(mode == TranslateAttributeYes || mode == TranslateAttributeNo);
+            return mode == TranslateAttributeYes;
         }
     }
 
@@ -646,16 +642,12 @@ void HTMLElement::setTranslate(bool enable)
 
 HTMLFormElement* HTMLElement::findFormAncestor() const
 {
-    for (ContainerNode* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-        if (ancestor->hasTagName(formTag))
-            return toHTMLFormElement(ancestor);
-    }
-    return 0;
+    return Traversal<HTMLFormElement>::firstAncestor(*this);
 }
 
 static inline bool elementAffectsDirectionality(const Node* node)
 {
-    return node->isHTMLElement() && (node->hasTagName(bdiTag) || toHTMLElement(node)->hasAttribute(dirAttr));
+    return node->isHTMLElement() && (isHTMLBDIElement(*node) || toHTMLElement(node)->hasAttribute(dirAttr));
 }
 
 static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastNode = 0)
@@ -690,7 +682,7 @@ void HTMLElement::childrenChanged(bool changedByParser, Node* beforeChange, Node
 bool HTMLElement::hasDirectionAuto() const
 {
     const AtomicString& direction = fastGetAttribute(dirAttr);
-    return (hasTagName(bdiTag) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
+    return (isHTMLBDIElement(*this) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
 }
 
 TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) const
@@ -706,7 +698,7 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
 
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
 {
-    if (hasTagName(inputTag)) {
+    if (isHTMLInputElement(*this)) {
         HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
         TextDirection textDirection = determineDirectionality(inputElement->value(), hasStrongDirectionality);
@@ -718,7 +710,7 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
     Node* node = firstChild();
     while (node) {
         // Skip bdi, script, style and text form controls.
-        if (equalIgnoringCase(node->nodeName(), "bdi") || node->hasTagName(scriptTag) || node->hasTagName(styleTag)
+        if (equalIgnoringCase(node->nodeName(), "bdi") || isHTMLScriptElement(*node) || isHTMLStyleElement(*node)
             || (node->isElementNode() && toElement(node)->isTextFormControl())) {
             node = NodeTraversal::nextSkippingChildren(*node, this);
             continue;
@@ -823,25 +815,25 @@ void HTMLElement::addHTMLLengthToStyle(MutableStylePropertySet* style, CSSProper
     // strip attribute garbage..
     StringImpl* v = value.impl();
     if (v) {
-        unsigned int l = 0;
+        unsigned length = 0;
 
-        while (l < v->length() && (*v)[l] <= ' ')
-            l++;
+        while (length < v->length() && (*v)[length] <= ' ')
+            length++;
 
-        for (; l < v->length(); l++) {
-            UChar cc = (*v)[l];
+        for (; length < v->length(); length++) {
+            UChar cc = (*v)[length];
             if (cc > '9')
                 break;
             if (cc < '0') {
                 if (cc == '%' || cc == '*')
-                    l++;
+                    length++;
                 if (cc != '.')
                     break;
             }
         }
 
-        if (l != v->length()) {
-            addPropertyToPresentationAttributeStyle(style, propertyID, v->substring(0, l));
+        if (length != v->length()) {
+            addPropertyToPresentationAttributeStyle(style, propertyID, v->substring(0, length));
             return;
         }
     }
@@ -940,6 +932,25 @@ void HTMLElement::defaultEventHandler(Event* event)
     }
 
     Element::defaultEventHandler(event);
+}
+
+bool HTMLElement::matchesReadOnlyPseudoClass() const
+{
+    return !matchesReadWritePseudoClass();
+}
+
+bool HTMLElement::matchesReadWritePseudoClass() const
+{
+    const AtomicString& value = fastGetAttribute(contenteditableAttr);
+    if (!value.isNull()) {
+        if (value.isEmpty() || equalIgnoringCase(value, "true") || equalIgnoringCase(value, "plaintext-only"))
+            return true;
+        if (equalIgnoringCase(value, "false"))
+            return false;
+        // All other values should be treated as "inherit".
+    }
+
+    return parentElement() && parentElement()->rendererIsEditable();
 }
 
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)

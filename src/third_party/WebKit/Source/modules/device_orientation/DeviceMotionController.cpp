@@ -29,7 +29,6 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/page/Page.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
@@ -37,9 +36,9 @@
 
 namespace WebCore {
 
-DeviceMotionController::DeviceMotionController(Document* document)
+DeviceMotionController::DeviceMotionController(Document& document)
     : DeviceSensorEventController(document)
-    , DOMWindowLifecycleObserver(document->domWindow())
+    , DOMWindowLifecycleObserver(document.domWindow())
 {
 }
 
@@ -58,14 +57,14 @@ const char* DeviceMotionController::supplementName()
     return "DeviceMotionController";
 }
 
-DeviceMotionController* DeviceMotionController::from(Document* document)
+DeviceMotionController& DeviceMotionController::from(Document& document)
 {
     DeviceMotionController* controller = static_cast<DeviceMotionController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new DeviceMotionController(document);
         DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
     }
-    return controller;
+    return *controller;
 }
 
 bool DeviceMotionController::hasLastData()

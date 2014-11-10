@@ -401,7 +401,6 @@ bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
     default:
       return false;
   }
-  return false;
 }
 
 }  // namespace gfx

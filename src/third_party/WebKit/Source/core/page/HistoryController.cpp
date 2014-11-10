@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/page/HistoryController.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
@@ -51,14 +51,14 @@ HistoryNode* HistoryNode::addChild(PassRefPtr<HistoryItem> item, int64_t frameID
     return m_children.last().get();
 }
 
-PassOwnPtr<HistoryNode> HistoryNode::cloneAndReplace(HistoryEntry* newEntry, HistoryItem* newItem, bool clipAtTarget, Frame* targetFrame, Frame* currentFrame)
+PassOwnPtr<HistoryNode> HistoryNode::cloneAndReplace(HistoryEntry* newEntry, HistoryItem* newItem, bool clipAtTarget, LocalFrame* targetFrame, LocalFrame* currentFrame)
 {
     bool isNodeBeingNavigated = targetFrame == currentFrame;
     HistoryItem* itemForCreate = isNodeBeingNavigated ? newItem : m_value.get();
     OwnPtr<HistoryNode> newHistoryNode = create(newEntry, itemForCreate, currentFrame->frameID());
 
     if (!clipAtTarget || !isNodeBeingNavigated) {
-        for (Frame* child = currentFrame->tree().firstChild(); child; child = child->tree().nextSibling()) {
+        for (LocalFrame* child = currentFrame->tree().firstChild(); child; child = child->tree().nextSibling()) {
             HistoryNode* childHistoryNode = m_entry->historyNodeForFrame(child);
             if (!childHistoryNode)
                 continue;
@@ -110,14 +110,14 @@ PassOwnPtr<HistoryEntry> HistoryEntry::create(HistoryItem* root, int64_t frameID
     return adoptPtr(new HistoryEntry(root, frameID));
 }
 
-PassOwnPtr<HistoryEntry> HistoryEntry::cloneAndReplace(HistoryItem* newItem, bool clipAtTarget, Frame* targetFrame, Page* page)
+PassOwnPtr<HistoryEntry> HistoryEntry::cloneAndReplace(HistoryItem* newItem, bool clipAtTarget, LocalFrame* targetFrame, Page* page)
 {
     OwnPtr<HistoryEntry> newEntry = adoptPtr(new HistoryEntry());
     newEntry->m_root = m_root->cloneAndReplace(newEntry.get(), newItem, clipAtTarget, targetFrame, page->mainFrame());
     return newEntry.release();
 }
 
-HistoryNode* HistoryEntry::historyNodeForFrame(Frame* frame)
+HistoryNode* HistoryEntry::historyNodeForFrame(LocalFrame* frame)
 {
     if (HistoryNode* historyNode = m_framesToItems.get(frame->frameID()))
         return historyNode;
@@ -127,7 +127,7 @@ HistoryNode* HistoryEntry::historyNodeForFrame(Frame* frame)
     return m_uniqueNamesToItems.get(target);
 }
 
-HistoryItem* HistoryEntry::itemForFrame(Frame* frame)
+HistoryItem* HistoryEntry::itemForFrame(LocalFrame* frame)
 {
     if (HistoryNode* historyNode = historyNodeForFrame(frame))
         return historyNode->value();
@@ -136,8 +136,6 @@ HistoryItem* HistoryEntry::itemForFrame(Frame* frame)
 
 HistoryController::HistoryController(Page* page)
     : m_page(page)
-    , m_defersLoading(false)
-    , m_deferredCachePolicy(UseProtocolCachePolicy)
 {
 }
 
@@ -145,43 +143,41 @@ HistoryController::~HistoryController()
 {
 }
 
-void HistoryController::updateBackForwardListForFragmentScroll(Frame* frame, HistoryItem* item)
+void HistoryController::updateBackForwardListForFragmentScroll(LocalFrame* frame, HistoryItem* item)
 {
     createNewBackForwardItem(frame, item, false);
 }
 
 void HistoryController::goToEntry(PassOwnPtr<HistoryEntry> targetEntry, ResourceRequestCachePolicy cachePolicy)
 {
-    ASSERT(m_sameDocumentLoadsInProgress.isEmpty());
-    ASSERT(m_differentDocumentLoadsInProgress.isEmpty());
+    HistoryFrameLoadSet sameDocumentLoads;
+    HistoryFrameLoadSet differentDocumentLoads;
 
     m_provisionalEntry = targetEntry;
     if (m_currentEntry)
-        recursiveGoToEntry(m_page->mainFrame());
+        recursiveGoToEntry(m_page->mainFrame(), sameDocumentLoads, differentDocumentLoads);
     else
-        m_differentDocumentLoadsInProgress.set(m_page->mainFrame(), m_provisionalEntry->root());
+        differentDocumentLoads.set(m_page->mainFrame(), m_provisionalEntry->root());
 
-    if (m_sameDocumentLoadsInProgress.isEmpty() && m_differentDocumentLoadsInProgress.isEmpty())
-        m_sameDocumentLoadsInProgress.set(m_page->mainFrame(), m_provisionalEntry->root());
+    if (sameDocumentLoads.isEmpty() && differentDocumentLoads.isEmpty())
+        sameDocumentLoads.set(m_page->mainFrame(), m_provisionalEntry->root());
 
-    if (m_differentDocumentLoadsInProgress.isEmpty()) {
+    if (differentDocumentLoads.isEmpty()) {
         m_previousEntry = m_currentEntry.release();
         m_currentEntry = m_provisionalEntry.release();
     }
 
-    for (HistoryFrameLoadSet::iterator it = m_sameDocumentLoadsInProgress.begin(); it != m_sameDocumentLoadsInProgress.end(); ++it) {
+    for (HistoryFrameLoadSet::iterator it = sameDocumentLoads.begin(); it != sameDocumentLoads.end(); ++it) {
         if (it->key->host())
             it->key->loader().loadHistoryItem(it->value.get(), HistorySameDocumentLoad, cachePolicy);
     }
-    for (HistoryFrameLoadSet::iterator it = m_differentDocumentLoadsInProgress.begin(); it != m_differentDocumentLoadsInProgress.end(); ++it) {
+    for (HistoryFrameLoadSet::iterator it = differentDocumentLoads.begin(); it != differentDocumentLoads.end(); ++it) {
         if (it->key->host())
             it->key->loader().loadHistoryItem(it->value.get(), HistoryDifferentDocumentLoad, cachePolicy);
     }
-    m_sameDocumentLoadsInProgress.clear();
-    m_differentDocumentLoadsInProgress.clear();
 }
 
-void HistoryController::recursiveGoToEntry(Frame* frame)
+void HistoryController::recursiveGoToEntry(LocalFrame* frame, HistoryFrameLoadSet& sameDocumentLoads, HistoryFrameLoadSet& differentDocumentLoads)
 {
     ASSERT(m_provisionalEntry);
     ASSERT(m_currentEntry);
@@ -192,24 +188,18 @@ void HistoryController::recursiveGoToEntry(Frame* frame)
 
     if (!oldItem || (newItem != oldItem && newItem->itemSequenceNumber() != oldItem->itemSequenceNumber())) {
         if (oldItem && newItem->documentSequenceNumber() == oldItem->documentSequenceNumber())
-            m_sameDocumentLoadsInProgress.set(frame, newItem);
+            sameDocumentLoads.set(frame, newItem);
         else
-            m_differentDocumentLoadsInProgress.set(frame, newItem);
+            differentDocumentLoads.set(frame, newItem);
         return;
     }
 
-    for (Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
-        recursiveGoToEntry(child);
+    for (LocalFrame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
+        recursiveGoToEntry(child, sameDocumentLoads, differentDocumentLoads);
 }
 
 void HistoryController::goToItem(HistoryItem* targetItem, ResourceRequestCachePolicy cachePolicy)
 {
-    if (m_defersLoading) {
-        m_deferredItem = targetItem;
-        m_deferredCachePolicy = cachePolicy;
-        return;
-    }
-
     // We don't have enough information to set a correct frame id here. This might be a restore from
     // disk, and the frame ids might not match up if the state was saved from a different process.
     // Ensure the HistoryEntry's main frame id matches the actual main frame id. Its subframe ids
@@ -232,17 +222,7 @@ void HistoryController::goToItem(HistoryItem* targetItem, ResourceRequestCachePo
     goToEntry(newEntry.release(), cachePolicy);
 }
 
-void HistoryController::setDefersLoading(bool defer)
-{
-    m_defersLoading = defer;
-    if (!defer && m_deferredItem) {
-        goToItem(m_deferredItem.get(), m_deferredCachePolicy);
-        m_deferredItem = 0;
-        m_deferredCachePolicy = UseProtocolCachePolicy;
-    }
-}
-
-void HistoryController::updateForInitialLoadInChildFrame(Frame* frame, HistoryItem* item)
+void HistoryController::updateForInitialLoadInChildFrame(LocalFrame* frame, HistoryItem* item)
 {
     ASSERT(frame->tree().parent());
     if (!m_currentEntry)
@@ -253,7 +233,7 @@ void HistoryController::updateForInitialLoadInChildFrame(Frame* frame, HistoryIt
         parentHistoryNode->addChild(item, frame->frameID());
 }
 
-void HistoryController::updateForCommit(Frame* frame, HistoryItem* item, HistoryCommitType commitType)
+void HistoryController::updateForCommit(LocalFrame* frame, HistoryItem* item, HistoryCommitType commitType)
 {
     if (commitType == BackForwardCommit) {
         if (!m_provisionalEntry)
@@ -285,23 +265,23 @@ static PassRefPtr<HistoryItem> itemForExport(HistoryNode* historyNode)
 PassRefPtr<HistoryItem> HistoryController::currentItemForExport()
 {
     if (!m_currentEntry)
-        return 0;
+        return nullptr;
     return itemForExport(m_currentEntry->rootHistoryNode());
 }
 
 PassRefPtr<HistoryItem> HistoryController::previousItemForExport()
 {
     if (!m_previousEntry)
-        return 0;
+        return nullptr;
     return itemForExport(m_previousEntry->rootHistoryNode());
 }
 
-HistoryItem* HistoryController::itemForNewChildFrame(Frame* frame) const
+HistoryItem* HistoryController::itemForNewChildFrame(LocalFrame* frame) const
 {
     return m_currentEntry ? m_currentEntry->itemForFrame(frame) : 0;
 }
 
-void HistoryController::removeChildrenForRedirect(Frame* frame)
+void HistoryController::removeChildrenForRedirect(LocalFrame* frame)
 {
     if (!m_provisionalEntry)
         return;
@@ -309,7 +289,7 @@ void HistoryController::removeChildrenForRedirect(Frame* frame)
         node->removeChildren();
 }
 
-void HistoryController::createNewBackForwardItem(Frame* targetFrame, HistoryItem* item, bool clipAtTarget)
+void HistoryController::createNewBackForwardItem(LocalFrame* targetFrame, HistoryItem* item, bool clipAtTarget)
 {
     RefPtr<HistoryItem> newItem = item;
     if (!m_currentEntry) {

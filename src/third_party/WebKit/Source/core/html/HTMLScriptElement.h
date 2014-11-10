@@ -54,6 +54,8 @@ private:
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
     virtual String sourceAttributeValue() const OVERRIDE;
     virtual String charsetAttributeValue() const OVERRIDE;
@@ -71,8 +73,6 @@ private:
 
     OwnPtr<ScriptLoader> m_loader;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLScriptElement, hasTagName(HTMLNames::scriptTag));
 
 } //namespace
 

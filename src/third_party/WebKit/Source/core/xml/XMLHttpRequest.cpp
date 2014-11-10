@@ -36,7 +36,7 @@
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/Stream.h"
-#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/DOMFormData.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/TextResourceDecoder.h"
@@ -113,7 +113,7 @@ static bool isSetCookieHeader(const AtomicString& name)
 
 static void replaceCharsetInMediaType(String& mediaType, const String& charsetValue)
 {
-    unsigned int pos = 0, len = 0;
+    unsigned pos = 0, len = 0;
 
     findCharsetInMediaType(mediaType, pos, len);
 
@@ -125,7 +125,7 @@ static void replaceCharsetInMediaType(String& mediaType, const String& charsetVa
     // Found at least one existing charset, replace all occurrences with new charset.
     while (len) {
         mediaType.replace(pos, len, charsetValue);
-        unsigned int start = pos + charsetValue.length();
+        unsigned start = pos + charsetValue.length();
         findCharsetInMediaType(mediaType, pos, len, start);
     }
 }
@@ -154,9 +154,9 @@ static void logConsoleError(ExecutionContext* context, const String& message)
     context->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 }
 
-PassRefPtr<XMLHttpRequest> XMLHttpRequest::create(ExecutionContext* context, PassRefPtr<SecurityOrigin> securityOrigin)
+PassRefPtrWillBeRawPtr<XMLHttpRequest> XMLHttpRequest::create(ExecutionContext* context, PassRefPtr<SecurityOrigin> securityOrigin)
 {
-    RefPtr<XMLHttpRequest> xmlHttpRequest(adoptRef(new XMLHttpRequest(context, securityOrigin)));
+    RefPtrWillBeRawPtr<XMLHttpRequest> xmlHttpRequest = adoptRefWillBeRefCountedGarbageCollected(new XMLHttpRequest(context, securityOrigin));
     xmlHttpRequest->suspendIfNeeded();
 
     return xmlHttpRequest.release();
@@ -249,7 +249,7 @@ Document* XMLHttpRequest::responseXML(ExceptionState& exceptionState)
         if ((m_response.isHTTP() && !responseIsXML() && !isHTML)
             || (isHTML && m_responseTypeCode == ResponseTypeDefault)
             || executionContext()->isWorkerGlobalScope()) {
-            m_responseDocument = 0;
+            m_responseDocument = nullptr;
         } else {
             DocumentInit init = DocumentInit::fromContext(document()->contextDocument(), m_url);
             if (isHTML)
@@ -261,7 +261,7 @@ Document* XMLHttpRequest::responseXML(ExceptionState& exceptionState)
             m_responseDocument->setSecurityOrigin(securityOrigin());
             m_responseDocument->setContextFeatures(document()->contextFeatures());
             if (!m_responseDocument->wellFormed())
-                m_responseDocument = 0;
+                m_responseDocument = nullptr;
         }
         m_createdDocument = true;
     }
@@ -346,9 +346,7 @@ void XMLHttpRequest::setResponseType(const String& responseType, ExceptionState&
 
     // Newer functionality is not available to synchronous requests in window contexts, as a spec-mandated
     // attempt to discourage synchronous XHR use. responseType is one such piece of functionality.
-    // We'll only disable this functionality for HTTP(S) requests since sync requests for local protocols
-    // such as file: and data: still make sense to allow.
-    if (!m_async && executionContext()->isDocument() && m_url.protocolIsInHTTPFamily()) {
+    if (!m_async && executionContext()->isDocument()) {
         exceptionState.throwDOMException(InvalidAccessError, "The response type can only be changed for asynchronous HTTP requests made from a document.");
         return;
     }
@@ -557,10 +555,8 @@ void XMLHttpRequest::open(const AtomicString& method, const KURL& url, bool asyn
 
         // Newer functionality is not available to synchronous requests in window contexts, as a spec-mandated
         // attempt to discourage synchronous XHR use. responseType is one such piece of functionality.
-        // We'll only disable this functionality for HTTP(S) requests since sync requests for local protocols
-        // such as file: and data: still make sense to allow.
-        if (url.protocolIsInHTTPFamily() && m_responseTypeCode != ResponseTypeDefault) {
-            exceptionState.throwDOMException(InvalidAccessError, "Synchronous HTTP requests from a document must not set a response type.");
+        if (m_responseTypeCode != ResponseTypeDefault) {
+            exceptionState.throwDOMException(InvalidAccessError, "Synchronous requests from a document must not set a response type.");
             return;
         }
 
@@ -765,7 +761,7 @@ void XMLHttpRequest::sendBytesData(const void* data, size_t length, ExceptionSta
 
 void XMLHttpRequest::sendForInspectorXHRReplay(PassRefPtr<FormData> formData, ExceptionState& exceptionState)
 {
-    m_requestEntityBody = formData ? formData->deepCopy() : 0;
+    m_requestEntityBody = formData ? formData->deepCopy() : nullptr;
     createRequest(exceptionState);
     m_exceptionCode = exceptionState.code();
 }
@@ -800,7 +796,7 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
     request.setHTTPMethod(m_method);
     request.setTargetType(ResourceRequest::TargetIsXHR);
 
-    InspectorInstrumentation::willLoadXHR(executionContext(), this, this, m_method, m_url, m_async, m_requestEntityBody ? m_requestEntityBody->deepCopy() : 0, m_requestHeaders, m_includeCredentials);
+    InspectorInstrumentation::willLoadXHR(executionContext(), this, this, m_method, m_url, m_async, m_requestEntityBody ? m_requestEntityBody->deepCopy() : nullptr, m_requestHeaders, m_includeCredentials);
 
     if (m_requestEntityBody) {
         ASSERT(m_method != "GET");
@@ -850,7 +846,7 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
     if (!m_exceptionCode && m_error)
         m_exceptionCode = NetworkError;
     if (m_exceptionCode)
-        exceptionState.throwUninformativeAndGenericDOMException(m_exceptionCode);
+        exceptionState.throwDOMException(m_exceptionCode, "Failed to load '" + m_url.elidedString() + "'.");
 }
 
 void XMLHttpRequest::abort()
@@ -858,7 +854,7 @@ void XMLHttpRequest::abort()
     WTF_LOG(Network, "XMLHttpRequest %p abort()", this);
 
     // internalAbort() calls dropProtection(), which may release the last reference.
-    RefPtr<XMLHttpRequest> protect(this);
+    RefPtrWillBeRawPtr<XMLHttpRequest> protect(this);
 
     bool sendFlag = m_loader;
 
@@ -944,11 +940,11 @@ void XMLHttpRequest::clearResponse()
     m_responseText.clear();
 
     m_createdDocument = false;
-    m_responseDocument = 0;
+    m_responseDocument = nullptr;
 
     m_responseBlob = nullptr;
 
-    m_responseStream = 0;
+    m_responseStream = nullptr;
 
     // These variables may referred by the response accessors. So, we can clear
     // this only when we clear the response holder variables above.
@@ -959,7 +955,7 @@ void XMLHttpRequest::clearResponse()
 void XMLHttpRequest::clearRequest()
 {
     m_requestHeaders.clear();
-    m_requestEntityBody = 0;
+    m_requestEntityBody = nullptr;
 }
 
 void XMLHttpRequest::handleDidFailGeneric()
@@ -1252,10 +1248,10 @@ void XMLHttpRequest::didFinishLoading(unsigned long identifier, double)
     InspectorInstrumentation::didFinishXHRLoading(executionContext(), this, this, identifier, m_responseText, m_method, m_url, m_lastSendURL, m_lastSendLineNumber);
 
     // Prevent dropProtection releasing the last reference, and retain |this| until the end of this method.
-    RefPtr<XMLHttpRequest> protect(this);
+    RefPtrWillBeRawPtr<XMLHttpRequest> protect(this);
 
     if (m_loader) {
-        m_loader = 0;
+        m_loader = nullptr;
         dropProtection();
     }
 
@@ -1349,7 +1345,7 @@ void XMLHttpRequest::handleDidTimeout()
     WTF_LOG(Network, "XMLHttpRequest %p handleDidTimeout()", this);
 
     // internalAbort() calls dropProtection(), which may release the last reference.
-    RefPtr<XMLHttpRequest> protect(this);
+    RefPtrWillBeRawPtr<XMLHttpRequest> protect(this);
 
     // Response is cleared next, save needed progress event data.
     long long expectedLength = m_response.expectedContentLength();
@@ -1391,6 +1387,12 @@ const AtomicString& XMLHttpRequest::interfaceName() const
 ExecutionContext* XMLHttpRequest::executionContext() const
 {
     return ActiveDOMObject::executionContext();
+}
+
+void XMLHttpRequest::trace(Visitor* visitor)
+{
+    visitor->trace(m_responseBlob);
+    visitor->trace(m_responseStream);
 }
 
 } // namespace WebCore

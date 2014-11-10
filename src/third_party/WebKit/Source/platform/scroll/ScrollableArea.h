@@ -47,6 +47,11 @@ enum ScrollBehavior {
     ScrollBehaviorSmooth,
 };
 
+enum IncludeScrollbarsInRect {
+    ExcludeScrollbars,
+    IncludeScrollbars,
+};
+
 class PLATFORM_EXPORT ScrollableArea {
     WTF_MAKE_NONCOPYABLE(ScrollableArea);
 public:
@@ -109,6 +114,7 @@ public:
     const IntPoint& scrollOrigin() const { return m_scrollOrigin; }
     bool scrollOriginChanged() const { return m_scrollOriginChanged; }
 
+    // FIXME(bokan): Meaningless name, rename to isActiveFocus
     virtual bool isActive() const = 0;
     virtual int scrollSize(ScrollbarOrientation) const = 0;
     virtual void invalidateScrollbar(Scrollbar*, const IntRect&);
@@ -146,7 +152,6 @@ public:
     virtual IntPoint minimumScrollPosition() const = 0;
     virtual IntPoint maximumScrollPosition() const = 0;
 
-    enum IncludeScrollbarsInRect { ExcludeScrollbars, IncludeScrollbars };
     virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual int visibleHeight() const = 0;
     virtual int visibleWidth() const = 0;
@@ -158,9 +163,6 @@ public:
     virtual void scrollbarStyleChanged(int /*newStyle*/, bool /*forceUpdate*/) { }
 
     virtual bool scrollbarsCanBeActive() const = 0;
-
-    // Note that this only returns scrollable areas that can actually be scrolled.
-    virtual ScrollableArea* enclosingScrollableArea() const = 0;
 
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
     virtual IntRect scrollableAreaBoundingBox() const = 0;
@@ -213,6 +215,14 @@ public:
         m_hasVerticalBarDamage = false;
         m_hasHorizontalBarDamage = false;
     }
+    virtual GraphicsLayer* layerForContainer() const;
+    virtual GraphicsLayer* layerForScrolling() const { return 0; }
+    virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
+    virtual GraphicsLayer* layerForVerticalScrollbar() const { return 0; }
+    virtual GraphicsLayer* layerForScrollCorner() const { return 0; }
+    bool hasLayerForHorizontalScrollbar() const;
+    bool hasLayerForVerticalScrollbar() const;
+    bool hasLayerForScrollCorner() const;
 
 protected:
     ScrollableArea();
@@ -223,15 +233,6 @@ protected:
 
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) = 0;
     virtual void invalidateScrollCornerRect(const IntRect&) = 0;
-
-    friend class ScrollingCoordinator;
-    virtual GraphicsLayer* layerForScrolling() const { return 0; }
-    virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
-    virtual GraphicsLayer* layerForVerticalScrollbar() const { return 0; }
-    virtual GraphicsLayer* layerForScrollCorner() const { return 0; }
-    bool hasLayerForHorizontalScrollbar() const;
-    bool hasLayerForVerticalScrollbar() const;
-    bool hasLayerForScrollCorner() const;
 
     // For repaint after layout, stores the damage to be repainted for the
     // scrollbars.
@@ -252,7 +253,7 @@ private:
     virtual void setScrollOffset(const IntPoint&) = 0;
 
     virtual int lineStep(ScrollbarOrientation) const;
-    virtual int pageStep(ScrollbarOrientation) const = 0;
+    virtual int pageStep(ScrollbarOrientation) const;
     virtual int documentStep(ScrollbarOrientation) const;
     virtual float pixelStep(ScrollbarOrientation) const;
 

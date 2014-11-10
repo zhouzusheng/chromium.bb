@@ -27,7 +27,7 @@
 #include "core/css/CSSFontFeatureValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/FontSize.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -63,6 +63,7 @@ FontBuilder::FontBuilder()
     : m_document(0)
     , m_useSVGZoomRules(false)
     , m_fontSizehasViewportUnits(false)
+    , m_style(0)
     , m_fontDirty(false)
 {
 }
@@ -79,6 +80,21 @@ void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* sty
     m_fontDirty = false;
 }
 
+inline static void setFontFamilyToStandard(FontDescription& fontDescription, const Document* document)
+{
+    if (!document || !document->settings())
+        return;
+
+    fontDescription.setGenericFamily(FontDescription::StandardFamily);
+    const AtomicString& standardFontFamily = document->settings()->genericFontFamilySettings().standard();
+    if (standardFontFamily.isEmpty())
+        return;
+
+    fontDescription.firstFamily().setFamily(standardFontFamily);
+    // FIXME: Why is this needed here?
+    fontDescription.firstFamily().appendFamily(nullptr);
+}
+
 void FontBuilder::setInitial(float effectiveZoom)
 {
     ASSERT(m_document && m_document->settings());
@@ -88,13 +104,8 @@ void FontBuilder::setInitial(float effectiveZoom)
     FontDescriptionChangeScope scope(this);
 
     scope.reset();
-    scope.fontDescription().setGenericFamily(FontDescription::StandardFamily);
     scope.fontDescription().setUsePrinterFont(m_document->printing());
-    const AtomicString& standardFontFamily = m_document->settings()->genericFontFamilySettings().standard();
-    if (!standardFontFamily.isEmpty()) {
-        scope.fontDescription().firstFamily().setFamily(standardFontFamily);
-        scope.fontDescription().firstFamily().appendFamily(0);
-    }
+    setFontFamilyToStandard(scope.fontDescription(), m_document);
     scope.fontDescription().setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);
     setSize(scope.fontDescription(), effectiveZoom, FontSize::fontSizeForKeyword(m_document, CSSValueMedium, false));
 }
@@ -134,18 +145,11 @@ void FontBuilder::fromSystemFont(CSSValueID valueId, float effectiveZoom)
     scope.set(fontDescription);
 }
 
-void FontBuilder::setFontFamilyInitial(float effectiveZoom)
+void FontBuilder::setFontFamilyInitial()
 {
     FontDescriptionChangeScope scope(this);
 
-    FontDescription initialDesc = FontDescription();
-
-    // We need to adjust the size to account for the generic family change from monospace to non-monospace.
-    if (scope.fontDescription().keywordSize() && scope.fontDescription().useFixedDefaultSize())
-        setSize(scope.fontDescription(), effectiveZoom, FontSize::fontSizeForKeyword(m_document, CSSValueXxSmall + scope.fontDescription().keywordSize() - 1, false));
-    scope.fontDescription().setGenericFamily(initialDesc.genericFamily());
-    if (!initialDesc.firstFamily().familyIsEmpty())
-        scope.fontDescription().setFamily(initialDesc.firstFamily());
+    setFontFamilyToStandard(scope.fontDescription(), m_document);
 }
 
 void FontBuilder::setFontFamilyInherit(const FontDescription& parentFontDescription)
@@ -154,11 +158,10 @@ void FontBuilder::setFontFamilyInherit(const FontDescription& parentFontDescript
 
     scope.fontDescription().setGenericFamily(parentFontDescription.genericFamily());
     scope.fontDescription().setFamily(parentFontDescription.family());
-    scope.fontDescription().setIsSpecifiedFont(parentFontDescription.isSpecifiedFont());
 }
 
 // FIXME: I am not convinced FontBuilder needs to know anything about CSSValues.
-void FontBuilder::setFontFamilyValue(CSSValue* value, float effectiveZoom)
+void FontBuilder::setFontFamilyValue(CSSValue* value)
 {
     FontDescriptionChangeScope scope(this);
 
@@ -219,9 +222,8 @@ void FontBuilder::setFontFamilyValue(CSSValue* value, float effectiveZoom)
             if (!currFamily) {
                 // Filling in the first family.
                 firstFamily.setFamily(face);
-                firstFamily.appendFamily(0); // Remove any inherited family-fallback list.
+                firstFamily.appendFamily(nullptr); // Remove any inherited family-fallback list.
                 currFamily = &firstFamily;
-                scope.fontDescription().setIsSpecifiedFont(scope.fontDescription().genericFamily() == FontDescription::NoFamily);
             } else {
                 RefPtr<SharedFontFamily> newFamily = SharedFontFamily::create();
                 newFamily->setFamily(face);
@@ -237,10 +239,10 @@ void FontBuilder::setFontFamilyValue(CSSValue* value, float effectiveZoom)
         return;
 
     if (scope.fontDescription().keywordSize() && scope.fontDescription().useFixedDefaultSize() != oldFamilyUsedFixedDefaultSize)
-        setSize(scope.fontDescription(), effectiveZoom, FontSize::fontSizeForKeyword(m_document, CSSValueXxSmall + scope.fontDescription().keywordSize() - 1, !oldFamilyUsedFixedDefaultSize));
+        scope.fontDescription().setSpecifiedSize(FontSize::fontSizeForKeyword(m_document, CSSValueXxSmall + scope.fontDescription().keywordSize() - 1, !oldFamilyUsedFixedDefaultSize));
 }
 
-void FontBuilder::setFontSizeInitial(float effectiveZoom)
+void FontBuilder::setFontSizeInitial()
 {
     FontDescriptionChangeScope scope(this);
 
@@ -250,10 +252,10 @@ void FontBuilder::setFontSizeInitial(float effectiveZoom)
         return;
 
     scope.fontDescription().setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);
-    setSize(scope.fontDescription(), effectiveZoom, size);
+    scope.fontDescription().setSpecifiedSize(size);
 }
 
-void FontBuilder::setFontSizeInherit(const FontDescription& parentFontDescription, float effectiveZoom)
+void FontBuilder::setFontSizeInherit(const FontDescription& parentFontDescription)
 {
     FontDescriptionChangeScope scope(this);
 
@@ -263,7 +265,7 @@ void FontBuilder::setFontSizeInherit(const FontDescription& parentFontDescriptio
         return;
 
     scope.fontDescription().setKeywordSize(parentFontDescription.keywordSize());
-    setSize(scope.fontDescription(), effectiveZoom, size);
+    scope.fontDescription().setSpecifiedSize(size);
 }
 
 // FIXME: Figure out where we fall in the size ranges (xx-small to xxx-large)
@@ -279,7 +281,7 @@ static float smallerFontSize(float size)
 }
 
 // FIXME: Have to pass RenderStyles here for calc/computed values. This shouldn't be neecessary.
-void FontBuilder::setFontSizeValue(CSSValue* value, RenderStyle* parentStyle, const RenderStyle* rootElementStyle, float effectiveZoom)
+void FontBuilder::setFontSizeValue(CSSValue* value, RenderStyle* parentStyle, const RenderStyle* rootElementStyle)
 {
     if (!value->isPrimitiveValue())
         return;
@@ -350,7 +352,8 @@ void FontBuilder::setFontSizeValue(CSSValue* value, RenderStyle* parentStyle, co
     // Cap font size here to make sure that doesn't happen.
     size = std::min(maximumAllowedFontSize, size);
 
-    setSize(scope.fontDescription(), effectiveZoom, size);
+
+    scope.fontDescription().setSpecifiedSize(size);
 }
 
 void FontBuilder::setWeight(FontWeight fontWeight)
@@ -381,6 +384,7 @@ void FontBuilder::setFontVariantLigaturesInitial()
     scope.fontDescription().setCommonLigaturesState(FontDescription::NormalLigaturesState);
     scope.fontDescription().setDiscretionaryLigaturesState(FontDescription::NormalLigaturesState);
     scope.fontDescription().setHistoricalLigaturesState(FontDescription::NormalLigaturesState);
+    scope.fontDescription().setContextualLigaturesState(FontDescription::NormalLigaturesState);
 }
 
 void FontBuilder::setFontVariantLigaturesInherit(const FontDescription& parentFontDescription)
@@ -390,6 +394,7 @@ void FontBuilder::setFontVariantLigaturesInherit(const FontDescription& parentFo
     scope.fontDescription().setCommonLigaturesState(parentFontDescription.commonLigaturesState());
     scope.fontDescription().setDiscretionaryLigaturesState(parentFontDescription.discretionaryLigaturesState());
     scope.fontDescription().setHistoricalLigaturesState(parentFontDescription.historicalLigaturesState());
+    scope.fontDescription().setContextualLigaturesState(parentFontDescription.historicalLigaturesState());
 }
 
 void FontBuilder::setFontVariantLigaturesValue(CSSValue* value)
@@ -399,6 +404,7 @@ void FontBuilder::setFontVariantLigaturesValue(CSSValue* value)
     FontDescription::LigaturesState commonLigaturesState = FontDescription::NormalLigaturesState;
     FontDescription::LigaturesState discretionaryLigaturesState = FontDescription::NormalLigaturesState;
     FontDescription::LigaturesState historicalLigaturesState = FontDescription::NormalLigaturesState;
+    FontDescription::LigaturesState contextualLigaturesState = FontDescription::NormalLigaturesState;
 
     if (value->isValueList()) {
         CSSValueList* valueList = toCSSValueList(value);
@@ -426,6 +432,12 @@ void FontBuilder::setFontVariantLigaturesValue(CSSValue* value)
                 case CSSValueHistoricalLigatures:
                     historicalLigaturesState = FontDescription::EnabledLigaturesState;
                     break;
+                case CSSValueNoContextual:
+                    contextualLigaturesState = FontDescription::DisabledLigaturesState;
+                    break;
+                case CSSValueContextual:
+                    contextualLigaturesState = FontDescription::EnabledLigaturesState;
+                    break;
                 default:
                     ASSERT_NOT_REACHED();
                     break;
@@ -443,6 +455,7 @@ void FontBuilder::setFontVariantLigaturesValue(CSSValue* value)
     scope.fontDescription().setCommonLigaturesState(commonLigaturesState);
     scope.fontDescription().setDiscretionaryLigaturesState(discretionaryLigaturesState);
     scope.fontDescription().setHistoricalLigaturesState(historicalLigaturesState);
+    scope.fontDescription().setContextualLigaturesState(contextualLigaturesState);
 }
 
 void FontBuilder::setScript(const String& locale)
@@ -452,25 +465,25 @@ void FontBuilder::setScript(const String& locale)
     scope.fontDescription().setScript(localeToScriptCodeForFontSelection(locale));
 }
 
-void FontBuilder::setItalic(FontItalic italic)
+void FontBuilder::setStyle(FontStyle italic)
 {
     FontDescriptionChangeScope scope(this);
 
-    scope.fontDescription().setItalic(italic);
+    scope.fontDescription().setStyle(italic);
 }
 
-void FontBuilder::setSmallCaps(FontSmallCaps smallCaps)
+void FontBuilder::setVariant(FontVariant smallCaps)
 {
     FontDescriptionChangeScope scope(this);
 
-    scope.fontDescription().setSmallCaps(smallCaps);
+    scope.fontDescription().setVariant(smallCaps);
 }
 
-void FontBuilder::setTextRenderingMode(TextRenderingMode textRenderingMode)
+void FontBuilder::setTextRendering(TextRenderingMode textRenderingMode)
 {
     FontDescriptionChangeScope scope(this);
 
-    scope.fontDescription().setTextRenderingMode(textRenderingMode);
+    scope.fontDescription().setTextRendering(textRenderingMode);
 }
 
 void FontBuilder::setKerning(FontDescription::Kerning kerning)
@@ -524,7 +537,7 @@ float FontBuilder::getComputedSizeFromSpecifiedSize(FontDescription& fontDescrip
     if (!m_useSVGZoomRules) {
         zoomFactor = effectiveZoom;
         // FIXME: Why is this here!!!!?!
-        if (Frame* frame = m_document->frame())
+        if (LocalFrame* frame = m_document->frame())
             zoomFactor *= frame->textZoomFactor();
     }
 
@@ -621,14 +634,11 @@ void FontBuilder::checkForGenericFamilyChange(RenderStyle* style, const RenderSt
     setSize(scope.fontDescription(), style->effectiveZoom(), size);
 }
 
-void FontBuilder::checkForZoomChange(RenderStyle* style, const RenderStyle* parentStyle)
+void FontBuilder::updateComputedSize(RenderStyle* style, const RenderStyle* parentStyle)
 {
     FontDescriptionChangeScope scope(this);
 
-    if (style->effectiveZoom() == parentStyle->effectiveZoom())
-        return;
-
-    setSize(scope.fontDescription(), style->effectiveZoom(), scope.fontDescription().specifiedSize());
+    scope.fontDescription().setComputedSize(getComputedSizeFromSpecifiedSize(scope.fontDescription(), style->effectiveZoom(), scope.fontDescription().specifiedSize()));
 }
 
 // FIXME: style param should come first
@@ -637,8 +647,8 @@ void FontBuilder::createFont(PassRefPtr<FontSelector> fontSelector, const Render
     if (!m_fontDirty)
         return;
 
+    updateComputedSize(style, parentStyle);
     checkForGenericFamilyChange(style, parentStyle);
-    checkForZoomChange(style, parentStyle);
     checkForOrientationChange(style);
     style->font().update(fontSelector);
     m_fontDirty = false;
@@ -648,21 +658,13 @@ void FontBuilder::createFontForDocument(PassRefPtr<FontSelector> fontSelector, R
 {
     FontDescription fontDescription = FontDescription();
     fontDescription.setScript(localeToScriptCodeForFontSelection(documentStyle->locale()));
-    if (Settings* settings = m_document->settings()) {
-        fontDescription.setUsePrinterFont(m_document->printing());
-        const AtomicString& standardFont = settings->genericFontFamilySettings().standard(fontDescription.script());
-        if (!standardFont.isEmpty()) {
-            fontDescription.setGenericFamily(FontDescription::StandardFamily);
-            fontDescription.firstFamily().setFamily(standardFont);
-            fontDescription.firstFamily().appendFamily(0);
-        }
-        fontDescription.setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);
-        int size = FontSize::fontSizeForKeyword(m_document, CSSValueMedium, false);
-        fontDescription.setSpecifiedSize(size);
-        fontDescription.setComputedSize(getComputedSizeFromSpecifiedSize(fontDescription, documentStyle->effectiveZoom(), size));
-    } else {
-        fontDescription.setUsePrinterFont(m_document->printing());
-    }
+    fontDescription.setUsePrinterFont(m_document->printing());
+
+    setFontFamilyToStandard(fontDescription, m_document);
+    fontDescription.setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);
+    int size = FontSize::fontSizeForKeyword(m_document, CSSValueMedium, false);
+    fontDescription.setSpecifiedSize(size);
+    fontDescription.setComputedSize(getComputedSizeFromSpecifiedSize(fontDescription, documentStyle->effectiveZoom(), size));
 
     FontOrientation fontOrientation;
     NonCJKGlyphOrientation glyphOrientation;

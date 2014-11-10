@@ -29,8 +29,10 @@
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/cert/asn1_util.h"
+#include "net/http/http_log_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
+#include "net/http/http_util.h"
 #include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_frame_builder.h"
 #include "net/spdy/spdy_http_utils.h"
@@ -54,13 +56,14 @@ const SpdyStreamId kFirstStreamId = 1;
 const int kMinPushedStreamLifetimeSeconds = 300;
 
 scoped_ptr<base::ListValue> SpdyHeaderBlockToListValue(
-    const SpdyHeaderBlock& headers) {
+    const SpdyHeaderBlock& headers,
+    net::NetLog::LogLevel log_level) {
   scoped_ptr<base::ListValue> headers_list(new base::ListValue());
   for (SpdyHeaderBlock::const_iterator it = headers.begin();
        it != headers.end(); ++it) {
     headers_list->AppendString(
         it->first + ": " +
-        (ShouldShowHttpHeaderValue(it->first) ? it->second : "[elided]"));
+        ElideHeaderValueForNetLog(log_level, it->first, it->second));
   }
   return headers_list.Pass();
 }
@@ -70,9 +73,10 @@ base::Value* NetLogSpdySynStreamSentCallback(const SpdyHeaderBlock* headers,
                                              bool unidirectional,
                                              SpdyPriority spdy_priority,
                                              SpdyStreamId stream_id,
-                                             NetLog::LogLevel /* log_level */) {
+                                             NetLog::LogLevel log_level) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers", SpdyHeaderBlockToListValue(*headers).release());
+  dict->Set("headers",
+            SpdyHeaderBlockToListValue(*headers, log_level).release());
   dict->SetBoolean("fin", fin);
   dict->SetBoolean("unidirectional", unidirectional);
   dict->SetInteger("spdy_priority", static_cast<int>(spdy_priority));
@@ -87,9 +91,10 @@ base::Value* NetLogSpdySynStreamReceivedCallback(
     SpdyPriority spdy_priority,
     SpdyStreamId stream_id,
     SpdyStreamId associated_stream,
-    NetLog::LogLevel /* log_level */) {
+    NetLog::LogLevel log_level) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers", SpdyHeaderBlockToListValue(*headers).release());
+  dict->Set("headers",
+            SpdyHeaderBlockToListValue(*headers, log_level).release());
   dict->SetBoolean("fin", fin);
   dict->SetBoolean("unidirectional", unidirectional);
   dict->SetInteger("spdy_priority", static_cast<int>(spdy_priority));
@@ -102,9 +107,10 @@ base::Value* NetLogSpdySynReplyOrHeadersReceivedCallback(
     const SpdyHeaderBlock* headers,
     bool fin,
     SpdyStreamId stream_id,
-    NetLog::LogLevel /* log_level */) {
+    NetLog::LogLevel log_level) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers", SpdyHeaderBlockToListValue(*headers).release());
+  dict->Set("headers",
+            SpdyHeaderBlockToListValue(*headers, log_level).release());
   dict->SetBoolean("fin", fin);
   dict->SetInteger("stream_id", stream_id);
   return dict;
@@ -206,11 +212,13 @@ base::Value* NetLogSpdyRstCallback(SpdyStreamId stream_id,
 }
 
 base::Value* NetLogSpdyPingCallback(SpdyPingId unique_id,
+                                    bool is_ack,
                                     const char* type,
                                     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("unique_id", unique_id);
   dict->SetString("type", type);
+  dict->SetBoolean("is_ack", is_ack);
   return dict;
 }
 
@@ -284,6 +292,8 @@ SpdyProtocolErrorDetails MapFramerErrorToProtocolError(
       return SPDY_ERROR_INVALID_DATA_FRAME_FLAGS;
     case SpdyFramer::SPDY_INVALID_CONTROL_FRAME_FLAGS:
       return SPDY_ERROR_INVALID_CONTROL_FRAME_FLAGS;
+    case SpdyFramer::SPDY_UNEXPECTED_FRAME:
+      return SPDY_ERROR_UNEXPECTED_FRAME;
     default:
       NOTREACHED();
       return static_cast<SpdyProtocolErrorDetails>(-1);
@@ -522,7 +532,7 @@ SpdySession::~SpdySession() {
   net_log_.EndEvent(NetLog::TYPE_SPDY_SESSION);
 }
 
-Error SpdySession::InitializeWithSocket(
+void SpdySession::InitializeWithSocket(
     scoped_ptr<ClientSocketHandle> connection,
     SpdySessionPool* pool,
     bool is_secure,
@@ -583,19 +593,17 @@ Error SpdySession::InitializeWithSocket(
       NetLog::TYPE_SPDY_SESSION_INITIALIZED,
       connection_->socket()->NetLog().source().ToEventParametersCallback());
 
-  int error = DoReadLoop(READ_STATE_DO_READ, OK);
-  if (error == ERR_IO_PENDING)
-    error = OK;
-  if (error == OK) {
-    DCHECK_NE(availability_state_, STATE_CLOSED);
-    connection_->AddHigherLayeredPool(this);
-    if (enable_sending_initial_data_)
-      SendInitialData();
-    pool_ = pool;
-  } else {
-    DcheckClosed();
-  }
-  return static_cast<Error>(error);
+  DCHECK_NE(availability_state_, STATE_CLOSED);
+  connection_->AddHigherLayeredPool(this);
+  if (enable_sending_initial_data_)
+    SendInitialData();
+  pool_ = pool;
+
+  // Bootstrap the read loop.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&SpdySession::PumpReadLoop,
+                 weak_factory_.GetWeakPtr(), READ_STATE_DO_READ, OK));
 }
 
 bool SpdySession::VerifyDomainAuthentication(const std::string& domain) {
@@ -752,17 +760,17 @@ void SpdySession::CancelStreamRequest(
   CHECK_GE(priority, MINIMUM_PRIORITY);
   CHECK_LE(priority, MAXIMUM_PRIORITY);
 
-  if (DCHECK_IS_ON()) {
-    // |request| should not be in a queue not matching its priority.
-    for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
-      if (priority == i)
-        continue;
-      PendingStreamRequestQueue* queue = &pending_create_stream_queues_[i];
-      DCHECK(std::find_if(queue->begin(),
-                          queue->end(),
-                          RequestEquals(request)) == queue->end());
-    }
+#if DCHECK_IS_ON
+  // |request| should not be in a queue not matching its priority.
+  for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
+    if (priority == i)
+      continue;
+    PendingStreamRequestQueue* queue = &pending_create_stream_queues_[i];
+    DCHECK(std::find_if(queue->begin(),
+                        queue->end(),
+                        RequestEquals(request)) == queue->end());
   }
+#endif
 
   PendingStreamRequestQueue* queue =
       &pending_create_stream_queues_[priority];
@@ -880,7 +888,7 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
   spdy_requests.Increment();
   streams_initiated_count_++;
 
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_SYN_STREAM,
         base::Bind(&NetLogSpdySynStreamSentCallback, &headers,
@@ -989,7 +997,7 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
   if (effective_len < len)
     flags = static_cast<SpdyDataFlags>(flags & ~DATA_FLAG_FIN);
 
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_SEND_DATA,
         base::Bind(&NetLogSpdyDataCallback, stream_id, effective_len,
@@ -1256,7 +1264,7 @@ int SpdySession::DoReadComplete(int result) {
     DCHECK_EQ(error_on_close_, result);
     return result;
   }
-
+  CHECK_LE(result, kReadBufferSize);
   total_bytes_received_ += result;
 
   last_activity_time_ = time_func_();
@@ -1455,13 +1463,13 @@ int SpdySession::DoWriteComplete(int result) {
 }
 
 void SpdySession::DcheckGoingAway() const {
+#if DCHECK_IS_ON
   DCHECK_GE(availability_state_, STATE_GOING_AWAY);
-  if (DCHECK_IS_ON()) {
-    for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
-      DCHECK(pending_create_stream_queues_[i].empty());
-    }
+  for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
+    DCHECK(pending_create_stream_queues_[i].empty());
   }
   DCHECK(created_streams_.empty());
+#endif
 }
 
 void SpdySession::DcheckClosed() const {
@@ -1544,9 +1552,8 @@ SpdySession::CloseSessionResult SpdySession::DoCloseSession(
   UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SpdySession.BytesRead.OtherErrors",
                               total_bytes_received_, 1, 100000000, 50);
 
-  // |pool_| will be NULL when |InitializeWithSocket()| is in the
-  // call stack.
-  if (pool_ && availability_state_ != STATE_GOING_AWAY)
+  DCHECK(pool_);
+  if (availability_state_ != STATE_GOING_AWAY)
     pool_->MakeSessionUnavailable(GetWeakPtr());
 
   availability_state_ = STATE_CLOSED;
@@ -1618,10 +1625,8 @@ void SpdySession::CloseSessionOnError(Error err,
 void SpdySession::MakeUnavailable() {
   if (availability_state_ < STATE_GOING_AWAY) {
     availability_state_ = STATE_GOING_AWAY;
-    // |pool_| will be NULL when |InitializeWithSocket()| is in the
-    // call stack.
-    if (pool_)
-      pool_->MakeSessionUnavailable(GetWeakPtr());
+    DCHECK(pool_);
+    pool_->MakeSessionUnavailable(GetWeakPtr());
   }
 }
 
@@ -1676,7 +1681,8 @@ base::Value* SpdySession::GetInfoAsValue() const {
 }
 
 bool SpdySession::IsReused() const {
-  return buffered_spdy_framer_->frames_received() > 0;
+  return buffered_spdy_framer_->frames_received() > 0 ||
+      connection_->reuse_type() == ClientSocketHandle::UNUSED_IDLE;
 }
 
 bool SpdySession::GetLoadTimingInfo(SpdyStreamId stream_id,
@@ -1907,7 +1913,7 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
     return;
 
   DCHECK_LT(len, 1u << 24);
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_RECV_DATA,
         base::Bind(&NetLogSpdyDataCallback, stream_id, len, fin));
@@ -1921,6 +1927,7 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
   scoped_ptr<SpdyBuffer> buffer;
   if (data) {
     DCHECK_GT(len, 0u);
+    CHECK_LE(len, static_cast<size_t>(kReadBufferSize));
     buffer.reset(new SpdyBuffer(data, len));
 
     if (flow_control_state_ == FLOW_CONTROL_STREAM_AND_SESSION) {
@@ -1963,7 +1970,7 @@ void SpdySession::OnSettings(bool clear_persisted) {
   if (clear_persisted)
     http_server_properties_->ClearSpdySettings(host_port_pair());
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_SPDY_SESSION_RECV_SETTINGS,
         base::Bind(&NetLogSpdySettingsCallback, host_port_pair(),
@@ -2052,7 +2059,7 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   base::Time response_time = base::Time::Now();
   base::TimeTicks recv_first_byte_time = time_func_();
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_SPDY_SESSION_PUSHED_SYN_STREAM,
         base::Bind(&NetLogSpdySynStreamReceivedCallback,
@@ -2240,7 +2247,7 @@ void SpdySession::OnSynReply(SpdyStreamId stream_id,
   base::Time response_time = base::Time::Now();
   base::TimeTicks recv_first_byte_time = time_func_();
 
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_SYN_REPLY,
         base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
@@ -2287,7 +2294,7 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
   if (availability_state_ == STATE_CLOSED)
     return;
 
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_RECV_HEADERS,
         base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
@@ -2390,7 +2397,7 @@ void SpdySession::OnGoAway(SpdyStreamId last_accepted_stream_id,
   MaybeFinishGoingAway();
 }
 
-void SpdySession::OnPing(SpdyPingId unique_id) {
+void SpdySession::OnPing(SpdyPingId unique_id, bool is_ack) {
   CHECK(in_io_loop_);
 
   if (availability_state_ == STATE_CLOSED)
@@ -2398,11 +2405,12 @@ void SpdySession::OnPing(SpdyPingId unique_id) {
 
   net_log_.AddEvent(
       NetLog::TYPE_SPDY_SESSION_PING,
-      base::Bind(&NetLogSpdyPingCallback, unique_id, "received"));
+      base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "received"));
 
   // Send response to a PING from server.
-  if (unique_id % 2 == 0) {
-    WritePingFrame(unique_id);
+  if ((protocol_ >= kProtoSPDY4a2 && !is_ack) ||
+      (protocol_ < kProtoSPDY4a2 && unique_id % 2 == 0)) {
+    WritePingFrame(unique_id, true);
     return;
   }
 
@@ -2647,7 +2655,7 @@ void SpdySession::SendPrefacePingIfNoneInFlight() {
 }
 
 void SpdySession::SendPrefacePing() {
-  WritePingFrame(next_ping_id_);
+  WritePingFrame(next_ping_id_, false);
 }
 
 void SpdySession::SendWindowUpdateFrame(SpdyStreamId stream_id,
@@ -2673,18 +2681,18 @@ void SpdySession::SendWindowUpdateFrame(SpdyStreamId stream_id,
   EnqueueSessionWrite(priority, WINDOW_UPDATE, window_update_frame.Pass());
 }
 
-void SpdySession::WritePingFrame(uint32 unique_id) {
+void SpdySession::WritePingFrame(uint32 unique_id, bool is_ack) {
   DCHECK(buffered_spdy_framer_.get());
   scoped_ptr<SpdyFrame> ping_frame(
-      buffered_spdy_framer_->CreatePingFrame(unique_id));
+      buffered_spdy_framer_->CreatePingFrame(unique_id, is_ack));
   EnqueueSessionWrite(HIGHEST, PING, ping_frame.Pass());
 
-  if (net_log().IsLoggingAllEvents()) {
+  if (net_log().IsLogging()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_PING,
-        base::Bind(&NetLogSpdyPingCallback, unique_id, "sent"));
+        base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "sent"));
   }
-  if (unique_id % 2 != 0) {
+  if (!is_ack) {
     next_ping_id_ += 2;
     ++pings_in_flight_;
     PlanToCheckPingStatus();
@@ -2720,9 +2728,7 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
 
   if (delay.InMilliseconds() < 0 || last_activity_time_ < last_check_time) {
     // Track all failed PING messages in a separate bucket.
-    const base::TimeDelta kFailedPing =
-        base::TimeDelta::FromInternalValue(INT_MAX);
-    RecordPingRTTHistogram(kFailedPing);
+    RecordPingRTTHistogram(base::TimeDelta::Max());
     CloseSessionResult result =
         DoCloseSession(ERR_SPDY_PING_FAILED, "Failed ping.");
     DCHECK_EQ(result, SESSION_CLOSED_AND_REMOVED);
@@ -3011,8 +3017,9 @@ void SpdySession::ResumeSendStalledStreams() {
 
   while (availability_state_ != STATE_CLOSED && !IsSendStalled()) {
     size_t old_size = 0;
-    if (DCHECK_IS_ON())
-      old_size = GetTotalSize(stream_send_unstall_queue_);
+#if DCHECK_IS_ON
+    old_size = GetTotalSize(stream_send_unstall_queue_);
+#endif
 
     SpdyStreamId stream_id = PopStreamToPossiblyResume();
     if (stream_id == 0)

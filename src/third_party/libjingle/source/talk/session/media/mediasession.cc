@@ -398,9 +398,9 @@ class UsedRtpHeaderExtensionIds : public UsedIds<RtpHeaderExtension> {
   }
 
  private:
-  // Min and Max local identifier as specified by RFC5285.
+  // Min and Max local identifier for one-byte header extensions, per RFC5285.
   static const int kLocalIdMin = 1;
-  static const int kLocalIdMax = 255;
+  static const int kLocalIdMax = 14;
 };
 
 static bool IsSctp(const MediaContentDescription* desc) {
@@ -691,7 +691,7 @@ template <class C>
 static bool CreateMediaContentOffer(
     const MediaSessionOptions& options,
     const std::vector<C>& codecs,
-    const SecureMediaPolicy& secure_policy,
+    const SecurePolicy& secure_policy,
     const CryptoParamsVec* current_cryptos,
     const std::vector<std::string>& crypto_suites,
     const RtpHeaderExtensions& rtp_extensions,
@@ -701,7 +701,9 @@ static bool CreateMediaContentOffer(
   offer->AddCodecs(codecs);
   offer->SortCodecs();
 
-  offer->set_crypto_required(secure_policy == SEC_REQUIRED);
+  if (secure_policy == SEC_REQUIRED) {
+    offer->set_crypto_required(CT_SDES);
+  }
   offer->set_rtcp_mux(options.rtcp_mux_enabled);
   offer->set_multistream(options.is_muc);
   offer->set_rtp_header_extensions(rtp_extensions);
@@ -725,7 +727,7 @@ static bool CreateMediaContentOffer(
   }
 #endif
 
-  if (offer->crypto_required() && offer->cryptos().empty()) {
+  if (offer->crypto_required() == CT_SDES && offer->cryptos().empty()) {
     return false;
   }
   return true;
@@ -841,7 +843,7 @@ static bool FindByUri(const RtpHeaderExtensions& extensions,
     // We assume that all URIs are given in a canonical format.
     if (it->uri == ext_to_match.uri) {
       if (found_extension != NULL) {
-        *found_extension= *it;
+        *found_extension = *it;
       }
       return true;
     }
@@ -852,12 +854,16 @@ static bool FindByUri(const RtpHeaderExtensions& extensions,
 static void FindAndSetRtpHdrExtUsed(
   const RtpHeaderExtensions& reference_extensions,
   RtpHeaderExtensions* offered_extensions,
+  const RtpHeaderExtensions& other_extensions,
   UsedRtpHeaderExtensionIds* used_extensions) {
   for (RtpHeaderExtensions::const_iterator it = reference_extensions.begin();
       it != reference_extensions.end(); ++it) {
     if (!FindByUri(*offered_extensions, *it, NULL)) {
-      RtpHeaderExtension ext = *it;
-      used_extensions->FindAndSetIdUsed(&ext);
+      RtpHeaderExtension ext;
+      if (!FindByUri(other_extensions, *it, &ext)) {
+        ext = *it;
+        used_extensions->FindAndSetIdUsed(&ext);
+      }
       offered_extensions->push_back(ext);
     }
   }
@@ -903,7 +909,7 @@ static bool CreateMediaContentAnswer(
     const MediaContentDescriptionImpl<C>* offer,
     const MediaSessionOptions& options,
     const std::vector<C>& local_codecs,
-    const SecureMediaPolicy& sdes_policy,
+    const SecurePolicy& sdes_policy,
     const CryptoParamsVec* current_cryptos,
     const RtpHeaderExtensions& local_rtp_extenstions,
     StreamParamsVec* current_streams,
@@ -934,7 +940,7 @@ static bool CreateMediaContentAnswer(
   }
 
   if (answer->cryptos().empty() &&
-      (offer->crypto_required() || sdes_policy == SEC_REQUIRED)) {
+      (offer->crypto_required() == CT_SDES || sdes_policy == SEC_REQUIRED)) {
     return false;
   }
 
@@ -1507,6 +1513,8 @@ void MediaSessionDescriptionFactory::GetRtpHdrExtsToOffer(
     const SessionDescription* current_description,
     RtpHeaderExtensions* audio_extensions,
     RtpHeaderExtensions* video_extensions) const {
+  // All header extensions allocated from the same range to avoid potential
+  // issues when using BUNDLE.
   UsedRtpHeaderExtensionIds used_ids;
   audio_extensions->clear();
   video_extensions->clear();
@@ -1533,9 +1541,9 @@ void MediaSessionDescriptionFactory::GetRtpHdrExtsToOffer(
   // Add our default RTP header extensions that are not in
   // |current_description|.
   FindAndSetRtpHdrExtUsed(audio_rtp_header_extensions(), audio_extensions,
-                          &used_ids);
+                          *video_extensions, &used_ids);
   FindAndSetRtpHdrExtUsed(video_rtp_header_extensions(), video_extensions,
-                          &used_ids);
+                          *audio_extensions, &used_ids);
 }
 
 bool MediaSessionDescriptionFactory::AddTransportOffer(

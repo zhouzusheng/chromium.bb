@@ -29,9 +29,9 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/html/HTMLVideoElement.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFullScreen.h"
@@ -274,6 +274,20 @@ LayoutUnit RenderVideo::offsetHeight() const
     if (const RenderBlock* block = rendererPlaceholder(this))
         return block->offsetHeight();
     return RenderMedia::offsetHeight();
+}
+
+CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+{
+    if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
+        HTMLMediaElement* media = toHTMLMediaElement(node());
+        if (media->isFullscreen())
+            return CompositingReasonVideo;
+    }
+
+    if ((triggers & VideoTrigger) && shouldDisplayVideo() && supportsAcceleratedRendering())
+        return CompositingReasonVideo;
+
+    return CompositingReasonNone;
 }
 
 } // namespace WebCore

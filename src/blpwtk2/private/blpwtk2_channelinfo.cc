@@ -27,22 +27,22 @@
 #include <base/base64.h>
 #include <base/command_line.h>
 #include <base/pickle.h>
-#include <base/strings/string_util.h>
+#include <base/strings/utf_string_conversions.h>
 
 namespace blpwtk2 {
 
 const uint16 PICKLE_VERSION = 1;  // Increment this version whenever the
                                   // serialization format changes.
 
-void ChannelInfo::loadSwitchesFromCommandLine(const CommandLine& commandLine)
+void ChannelInfo::loadSwitchesFromCommandLine(const base::CommandLine& commandLine)
 {
     d_switches.clear();
-    typedef CommandLine::SwitchMap::const_iterator SwitchIterator;
-    const CommandLine::SwitchMap& switches = commandLine.GetSwitches();
+    typedef base::CommandLine::SwitchMap::const_iterator SwitchIterator;
+    const base::CommandLine::SwitchMap& switches = commandLine.GetSwitches();
     for (SwitchIterator it = switches.begin(); it != switches.end(); ++it) {
         d_switches.push_back(Switch());
         d_switches.back().d_key = it->first;
-        d_switches.back().d_value = WideToASCII(it->second);
+        d_switches.back().d_value = base::WideToUTF8(it->second);
     }
 }
 

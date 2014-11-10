@@ -33,21 +33,21 @@
 #include "core/dom/Document.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/MessageEvent.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/PageGroup.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/DedicatedWorkerThread.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
+#include "heap/Handle.h"
 #include "platform/NotImplemented.h"
 #include "wtf/Functional.h"
 #include "wtf/MainThread.h"
@@ -111,7 +111,7 @@ void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const S
     ASSERT(m_executionContext->isDocument());
     Document* document = toDocument(m_executionContext.get());
 
-    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, startMode, document->contentSecurityPolicy()->deprecatedHeader(), document->contentSecurityPolicy()->deprecatedHeaderType(), m_workerClients.release());
+    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, startMode, document->contentSecurityPolicy()->deprecatedHeader(), document->contentSecurityPolicy()->deprecatedHeaderType(), m_workerClients.release());
     double originTime = document->loader() ? document->loader()->timing()->referenceMonotonicTime() : monotonicallyIncreasingTime();
 
     RefPtr<DedicatedWorkerThread> thread = DedicatedWorkerThread::create(*this, *m_workerObjectProxy.get(), originTime, startupData.release());
@@ -169,7 +169,7 @@ void WorkerMessagingProxy::reportException(const String& errorMessage, int lineN
     RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, 0);
     bool errorHandled = !m_workerObject->dispatchEvent(event);
     if (!errorHandled)
-        m_executionContext->reportException(event, 0, NotSharableCrossOrigin);
+        m_executionContext->reportException(event, nullptr, NotSharableCrossOrigin);
 }
 
 void WorkerMessagingProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
@@ -224,7 +224,7 @@ void WorkerMessagingProxy::connectToInspector(WorkerGlobalScopeProxy::PageInspec
         return;
     ASSERT(!m_pageInspector);
     m_pageInspector = pageInspector;
-    m_workerThread->runLoop().postTaskForMode(createCallbackTask(connectToWorkerGlobalScopeInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(connectToWorkerGlobalScopeInspectorTask, true));
 }
 
 static void disconnectFromWorkerGlobalScopeInspectorTask(ExecutionContext* context, bool)
@@ -237,7 +237,7 @@ void WorkerMessagingProxy::disconnectFromInspector()
     m_pageInspector = 0;
     if (m_askedToTerminate)
         return;
-    m_workerThread->runLoop().postTaskForMode(createCallbackTask(disconnectFromWorkerGlobalScopeInspectorTask, true), WorkerDebuggerAgent::debuggerTaskMode);
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(disconnectFromWorkerGlobalScopeInspectorTask, true));
 }
 
 static void dispatchOnInspectorBackendTask(ExecutionContext* context, const String& message)
@@ -249,7 +249,7 @@ void WorkerMessagingProxy::sendMessageToInspector(const String& message)
 {
     if (m_askedToTerminate)
         return;
-    m_workerThread->runLoop().postTaskForMode(createCallbackTask(dispatchOnInspectorBackendTask, String(message)), WorkerDebuggerAgent::debuggerTaskMode);
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(dispatchOnInspectorBackendTask, String(message)));
     WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(m_workerThread.get());
 }
 
@@ -258,7 +258,7 @@ void WorkerMessagingProxy::workerGlobalScopeDestroyed()
     // This method is always the last to be performed, so the proxy is not needed for communication
     // in either side any more. However, the Worker object may still exist, and it assumes that the proxy exists, too.
     m_askedToTerminate = true;
-    m_workerThread = 0;
+    m_workerThread = nullptr;
 
     InspectorInstrumentation::workerGlobalScopeTerminated(m_executionContext.get(), this);
 

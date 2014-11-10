@@ -49,9 +49,24 @@ static void fixNANs(double &x)
 PannerNode::PannerNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
     , m_panningModel(Panner::PanningModelHRTF)
+    , m_distanceModel(DistanceEffect::ModelInverse)
+    , m_position(0, 0, 0)
+    , m_orientation(1, 0, 0)
+    , m_velocity(0, 0, 0)
+    , m_cachedPosition(0, 0, 0)
+    , m_cachedOrientation(1, 0, 0)
+    , m_cachedVelocity(0, 0, 0)
     , m_lastGain(-1.0)
+    , m_cachedAzimuth(0)
+    , m_cachedElevation(0)
+    , m_cachedDistanceConeGain(1.0f)
+    , m_cachedDopplerRate(1)
     , m_connectionCount(0)
 {
+    // Load the HRTF database asynchronously so we don't block the Javascript thread while creating the HRTF database.
+    // The HRTF panner will return zeroes until the database is loaded.
+    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(context->sampleRate());
+
     ScriptWrappable::init(this);
     addInput(adoptPtr(new AudioNodeInput(this)));
     addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
@@ -64,9 +79,7 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
     m_distanceGain = AudioParam::create(context, "distanceGain", 1.0, 0.0, 1.0);
     m_coneGain = AudioParam::create(context, "coneGain", 1.0, 0.0, 1.0);
 
-    m_position = FloatPoint3D(0, 0, 0);
-    m_orientation = FloatPoint3D(1, 0, 0);
-    m_velocity = FloatPoint3D(0, 0, 0);
+    m_cachedListener = AudioListener::create();
 
     setNodeType(NodeTypePanner);
 
@@ -106,23 +119,33 @@ void PannerNode::process(size_t framesToProcess)
     }
 
     AudioBus* source = input(0)->bus();
-
     if (!source) {
         destination->zero();
         return;
     }
 
     // The audio thread can't block on this lock, so we call tryLock() instead.
-    MutexTryLocker tryLocker(m_pannerLock);
+    MutexTryLocker tryLocker(m_processLock);
     if (tryLocker.locked()) {
+        // HRTFDatabase should be loaded before proceeding for offline audio context when panningModel() is "HRTF".
+        if (panningModel() == "HRTF" && !m_hrtfDatabaseLoader->isLoaded()) {
+            if (context()->isOfflineContext()) {
+                m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
+            } else {
+                destination->zero();
+                return;
+            }
+        }
+
         // Apply the panning effect.
         double azimuth;
         double elevation;
-        getAzimuthElevation(&azimuth, &elevation);
+        azimuthElevation(&azimuth, &elevation);
+
         m_panner->pan(azimuth, elevation, source, destination, framesToProcess);
 
         // Get the distance and cone gain.
-        double totalGain = distanceConeGain();
+        float totalGain = distanceConeGain();
 
         // Snap to desired gain at the beginning.
         if (m_lastGain == -1.0)
@@ -130,8 +153,14 @@ void PannerNode::process(size_t framesToProcess)
 
         // Apply gain in-place with de-zippering.
         destination->copyWithGainFrom(*destination, &m_lastGain, totalGain);
+
+        // Update the cached listener in case listener has moved.
+        updateCachedListener();
+        // Now update the cached source location in case the source has changed.
+        updateCachedSourceLocationInfo();
     } else {
-        // Too bad - The tryLock() failed. We must be in the middle of changing the panner.
+        // Too bad - The tryLock() failed.
+        // We must be in the middle of changing the panning model, the distance model, or the source's location information.
         destination->zero();
     }
 }
@@ -141,7 +170,7 @@ void PannerNode::initialize()
     if (isInitialized())
         return;
 
-    m_panner = Panner::create(m_panningModel, sampleRate(), context()->hrtfDatabaseLoader());
+    m_panner = Panner::create(m_panningModel, sampleRate(), m_hrtfDatabaseLoader.get());
 
     AudioNode::initialize();
 }
@@ -167,8 +196,6 @@ String PannerNode::panningModel() const
         return "equalpower";
     case HRTF:
         return "HRTF";
-    case SOUNDFIELD:
-        return "soundfield";
     default:
         ASSERT_NOT_REACHED();
         return "HRTF";
@@ -181,8 +208,6 @@ void PannerNode::setPanningModel(const String& model)
         setPanningModel(EQUALPOWER);
     else if (model == "HRTF")
         setPanningModel(HRTF);
-    else if (model == "soundfield")
-        setPanningModel(SOUNDFIELD);
     else
         ASSERT_NOT_REACHED();
 }
@@ -194,22 +219,57 @@ bool PannerNode::setPanningModel(unsigned model)
     case HRTF:
         if (!m_panner.get() || model != m_panningModel) {
             // This synchronizes with process().
-            MutexLocker processLocker(m_pannerLock);
+            MutexLocker processLocker(m_processLock);
 
-            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), context()->hrtfDatabaseLoader());
+            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), m_hrtfDatabaseLoader.get());
             m_panner = newPanner.release();
             m_panningModel = model;
         }
-        break;
-    case SOUNDFIELD:
-        // FIXME: Implement sound field model. See // https://bugs.webkit.org/show_bug.cgi?id=77367.
-        context()->executionContext()->addConsoleMessage(JSMessageSource, WarningMessageLevel, "'soundfield' panning model not implemented.");
         break;
     default:
         return false;
     }
 
     return true;
+}
+
+void PannerNode::setPosition(float x, float y, float z)
+{
+    FloatPoint3D position = FloatPoint3D(x, y, z);
+
+    if (m_position == position)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+
+    m_position = position;
+}
+
+void PannerNode::setOrientation(float x, float y, float z)
+{
+    FloatPoint3D orientation = FloatPoint3D(x, y, z);
+
+    if (m_orientation == orientation)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+
+    m_orientation = orientation;
+}
+
+void PannerNode::setVelocity(float x, float y, float z)
+{
+    FloatPoint3D velocity = FloatPoint3D(x, y, z);
+
+    if (m_velocity == velocity)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+
+    m_velocity = velocity;
 }
 
 String PannerNode::distanceModel() const
@@ -245,7 +305,12 @@ bool PannerNode::setDistanceModel(unsigned model)
     case DistanceEffect::ModelLinear:
     case DistanceEffect::ModelInverse:
     case DistanceEffect::ModelExponential:
-        m_distanceEffect.setModel(static_cast<DistanceEffect::ModelType>(model), true);
+        if (model != m_distanceModel) {
+            // This synchronizes with process().
+            MutexLocker processLocker(m_processLock);
+            m_distanceEffect.setModel(static_cast<DistanceEffect::ModelType>(model), true);
+            m_distanceModel = model;
+        }
         break;
     default:
         return false;
@@ -254,10 +319,8 @@ bool PannerNode::setDistanceModel(unsigned model)
     return true;
 }
 
-void PannerNode::getAzimuthElevation(double* outAzimuth, double* outElevation)
+void PannerNode::calculateAzimuthElevation(double* outAzimuth, double* outElevation)
 {
-    // FIXME: we should cache azimuth and elevation (if possible), so we only re-calculate if a change has been made.
-
     double azimuth = 0.0;
 
     // Calculate the source-listener vector
@@ -318,11 +381,9 @@ void PannerNode::getAzimuthElevation(double* outAzimuth, double* outElevation)
         *outElevation = elevation;
 }
 
-float PannerNode::dopplerRate()
+double PannerNode::calculateDopplerRate()
 {
     double dopplerShift = 1.0;
-
-    // FIXME: optimize for case when neither source nor listener has changed...
     double dopplerFactor = listener()->dopplerFactor();
 
     if (dopplerFactor > 0.0) {
@@ -363,10 +424,10 @@ float PannerNode::dopplerRate()
         }
     }
 
-    return static_cast<float>(dopplerShift);
+    return dopplerShift;
 }
 
-float PannerNode::distanceConeGain()
+float PannerNode::calculateDistanceConeGain()
 {
     FloatPoint3D listenerPosition = listener()->position();
 
@@ -375,12 +436,83 @@ float PannerNode::distanceConeGain()
 
     m_distanceGain->setValue(static_cast<float>(distanceGain));
 
-    // FIXME: could optimize by caching coneGain
     double coneGain = m_coneEffect.gain(m_position, m_orientation, listenerPosition);
 
     m_coneGain->setValue(static_cast<float>(coneGain));
 
     return float(distanceGain * coneGain);
+}
+
+void PannerNode::azimuthElevation(double* outAzimuth, double* outElevation)
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isAzimuthElevationDirty())
+        calculateAzimuthElevation(&m_cachedAzimuth, &m_cachedElevation);
+
+    *outAzimuth = m_cachedAzimuth;
+    *outElevation = m_cachedElevation;
+}
+
+double PannerNode::dopplerRate()
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isDopplerRateDirty())
+        m_cachedDopplerRate = calculateDopplerRate();
+
+    return m_cachedDopplerRate;
+}
+
+float PannerNode::distanceConeGain()
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isDistanceConeGainDirty())
+        m_cachedDistanceConeGain = calculateDistanceConeGain();
+
+    return m_cachedDistanceConeGain;
+}
+
+bool PannerNode::isAzimuthElevationDirty()
+{
+    // Do a quick test and return if possible.
+    if (m_cachedPosition != m_position)
+        return true;
+
+    if (m_cachedListener->position() != listener()->position()
+        || m_cachedListener->orientation() != listener()->orientation()
+        || m_cachedListener->upVector() != listener()->upVector())
+        return true;
+
+    return false;
+}
+
+bool PannerNode::isDistanceConeGainDirty()
+{
+    // Do a quick test and return if possible.
+    if (m_cachedPosition != m_position || m_cachedOrientation != m_orientation)
+        return true;
+
+    if (m_cachedListener->position() != listener()->position())
+        return true;
+
+    return false;
+}
+
+bool PannerNode::isDopplerRateDirty()
+{
+    // Do a quick test and return if possible.
+    if (m_cachedPosition != m_position || m_cachedVelocity != m_velocity)
+        return true;
+
+    if (m_cachedListener->position() != listener()->position()
+        || m_cachedListener->velocity() != listener()->velocity()
+        || m_cachedListener->dopplerFactor() != listener()->dopplerFactor()
+        || m_cachedListener->speedOfSound() != listener()->speedOfSound())
+        return true;
+
+    return false;
 }
 
 void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node, HashMap<AudioNode*, bool>& visitedNodes)
@@ -413,6 +545,27 @@ void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node, HashMap<Audi
             }
         }
     }
+}
+
+void PannerNode::updateCachedListener()
+{
+    ASSERT(context()->isAudioThread());
+
+    m_cachedListener->setPosition(listener()->position());
+    m_cachedListener->setOrientation(listener()->orientation());
+    m_cachedListener->setUpVector(listener()->upVector());
+    m_cachedListener->setVelocity(listener()->velocity());
+    m_cachedListener->setDopplerFactor(listener()->dopplerFactor());
+    m_cachedListener->setSpeedOfSound(listener()->speedOfSound());
+}
+
+void PannerNode::updateCachedSourceLocationInfo()
+{
+    ASSERT(context()->isAudioThread());
+
+    m_cachedPosition = m_position;
+    m_cachedOrientation = m_orientation;
+    m_cachedVelocity = m_velocity;
 }
 
 } // namespace WebCore

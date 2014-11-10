@@ -36,6 +36,7 @@
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
+#include "core/svg/SVGForeignObjectElement.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -89,7 +90,7 @@ PassRefPtr<Node> Text::mergeNextSiblingNodesIfPossible()
         nextText->setDataWithoutUpdate(emptyString());
         nextText->updateTextRenderer(0, nextTextData.length());
 
-        document().didMergeTextNodes(nextText.get(), offset);
+        document().didMergeTextNodes(*nextText, offset);
 
         // Restore nextText for mutation event.
         nextText->setDataWithoutUpdate(nextTextData);
@@ -109,7 +110,7 @@ PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState
     // the number of 16-bit units in data.
     if (offset > length()) {
         exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than the Text node's length.");
-        return 0;
+        return nullptr;
     }
 
     EventQueueScope scope;
@@ -122,13 +123,13 @@ PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState
     if (parentNode())
         parentNode()->insertBefore(newText.get(), nextSibling(), exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     if (renderer())
         toRenderText(renderer())->setTextWithOffset(dataImpl(), 0, oldStr.length());
 
     if (parentNode())
-        document().didSplitTextNode(this);
+        document().didSplitTextNode(*this);
 
     return newText.release();
 }
@@ -218,7 +219,7 @@ PassRefPtr<Text> Text::replaceWholeText(const String& newText)
     if (newText.isEmpty()) {
         if (parent && parentNode() == parent)
             parent->removeChild(this, IGNORE_EXCEPTION);
-        return 0;
+        return nullptr;
     }
 
     setData(newText);
@@ -290,7 +291,8 @@ bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& pa
 static bool isSVGText(Text* text)
 {
     Node* parentOrShadowHostNode = text->parentOrShadowHostNode();
-    return parentOrShadowHostNode->isSVGElement() && !parentOrShadowHostNode->hasTagName(SVGNames::foreignObjectTag);
+    ASSERT(parentOrShadowHostNode);
+    return parentOrShadowHostNode->isSVGElement() && !isSVGForeignObjectElement(*parentOrShadowHostNode);
 }
 
 RenderText* Text::createTextRenderer(RenderStyle* style)
@@ -343,7 +345,7 @@ void Text::updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfRe
         lazyReattachIfAttached();
         // FIXME: Editing should be updated so this is not neccesary.
         if (recalcStyleBehavior == DeprecatedRecalcStyleImmediatlelyForEditing)
-            document().updateStyleIfNeeded();
+            document().updateRenderTreeIfNeeded();
         return;
     }
     textRenderer->setTextWithOffset(dataImpl(), offsetOfReplacedData, lengthOfReplacedData);

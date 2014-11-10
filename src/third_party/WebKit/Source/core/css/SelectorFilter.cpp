@@ -146,7 +146,6 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector& selector, unsign
             break;
         case CSSSelector::DirectAdjacent:
         case CSSSelector::IndirectAdjacent:
-        case CSSSelector::ShadowPseudo:
             skipOverSubselectors = true;
             break;
         case CSSSelector::Descendant:
@@ -157,8 +156,8 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector& selector, unsign
                 return;
             }
             // Fall through.
-        case CSSSelector::ChildTree:
-        case CSSSelector::DescendantTree:
+        case CSSSelector::ShadowPseudo:
+        case CSSSelector::ShadowDeep:
             skipOverSubselectors = false;
             collectDescendantSelectorIdentifierHashes(*current, hash);
             break;

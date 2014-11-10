@@ -39,6 +39,7 @@
 #include "WebDragOperation.h"
 #include "WebFileChooserCompletion.h"
 #include "WebFileChooserParams.h"
+#include "WebFrame.h"
 #include "WebNavigatorContentUtilsClient.h"
 #include "WebPageVisibilityState.h"
 #include "WebPopupType.h"
@@ -58,11 +59,9 @@ class WebElement;
 class WebExternalPopupMenu;
 class WebExternalPopupMenuClient;
 class WebFileChooserCompletion;
-class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationService;
 class WebGestureEvent;
-class WebHelperPlugin;
 class WebHitTestResult;
 class WebImage;
 class WebInputElement;
@@ -82,7 +81,6 @@ class WebView;
 class WebWidget;
 struct WebColorSuggestion;
 struct WebConsoleMessage;
-struct WebContextMenuData;
 struct WebDateTimeChooserParams;
 struct WebPoint;
 struct WebPopupMenuInfo;
@@ -104,7 +102,7 @@ public:
     // could be fulfilled.  The client should not load the request.
     // The policy parameter indicates how the new view will be displayed in
     // WebWidgetClient::show.
-    virtual WebView* createView(WebFrame* creator,
+    virtual WebView* createView(WebLocalFrame* creator,
                                 const WebURLRequest& request,
                                 const WebWindowFeatures& features,
                                 const WebString& name,
@@ -137,7 +135,7 @@ public:
     // non-null, then it selects a particular frame, including its
     // children, to print.  Otherwise, the main frame and its children
     // should be printed.
-    virtual void printPage(WebFrame*) { }
+    virtual void printPage(WebLocalFrame*) { }
 
     // Called to retrieve the provider of desktop notifications.
     virtual WebNotificationPresenter* notificationPresenter() { return 0; }
@@ -148,10 +146,6 @@ public:
     // will never be called.
     virtual bool enumerateChosenDirectory(const WebString& path, WebFileChooserCompletion*) { return false; }
 
-    // Creates the main WebFrame for the specified WebHelperPlugin.
-    // Called by WebHelperPlugin to provide the WebFrameClient interface for the WebFrame.
-    virtual void initializeHelperPluginWebFrame(WebHelperPlugin*) { }
-
     // Navigational --------------------------------------------------------
 
     // These notifications bracket any loading that occurs in the WebView.
@@ -161,14 +155,13 @@ public:
     // Notification that some progress was made loading the current page.
     // loadProgress is a value between 0 (nothing loaded) and 1.0 (frame fully
     // loaded).
-    virtual void didChangeLoadProgress(WebFrame*, double loadProgress) { }
+    virtual void didChangeLoadProgress(WebLocalFrame*, double loadProgress) { }
 
     // Editing -------------------------------------------------------------
 
     // These methods allow the client to intercept and overrule editing
     // operations.
     virtual void didCancelCompositionOnSelectionChange() { }
-    virtual void didChangeSelection(bool isSelectionEmpty) { }
     virtual void didChangeContents() { }
     virtual void didExecuteCommand(const WebString& commandName) { }
 
@@ -226,13 +219,13 @@ public:
     // Displays a modal alert dialog containing the given message.  Returns
     // once the user dismisses the dialog.
     virtual void runModalAlertDialog(
-        WebFrame*, const WebString& message) { }
+        WebLocalFrame*, const WebString& message) { }
 
     // Displays a modal confirmation dialog with the given message as
     // description and OK/Cancel choices.  Returns true if the user selects
     // 'OK' or false otherwise.
     virtual bool runModalConfirmDialog(
-        WebFrame*, const WebString& message) { return false; }
+        WebLocalFrame*, const WebString& message) { return false; }
 
     // Displays a modal input dialog with the given message as description
     // and OK/Cancel choices.  The input field is pre-filled with
@@ -240,7 +233,7 @@ public:
     // otherwise.  Upon returning true, actualValue contains the value of
     // the input field.
     virtual bool runModalPromptDialog(
-        WebFrame*, const WebString& message, const WebString& defaultValue,
+        WebLocalFrame*, const WebString& message, const WebString& defaultValue,
         WebString* actualValue) { return false; }
 
     // Displays a modal confirmation dialog containing the given message as
@@ -248,7 +241,7 @@ public:
     // to proceed with closing the view.  Returns true if the user selects
     // 'OK' or false otherwise.
     virtual bool runModalBeforeUnloadDialog(
-        WebFrame*, const WebString& message) { return true; }
+        WebLocalFrame*, const WebString& message) { return true; }
 
 
     // UI ------------------------------------------------------------------
@@ -262,16 +255,8 @@ public:
     // Called when keyboard focus switches to an anchor with the given URL.
     virtual void setKeyboardFocusURL(const WebURL&) { }
 
-    // Shows a context menu with commands relevant to a specific element on
-    // the given frame. Additional context data is supplied.
-    virtual void showContextMenu(WebFrame*, const WebContextMenuData&) { }
-
-    // Called when the data attached to the currently displayed context menu is
-    // invalidated. The context menu may be closed if possible.
-    virtual void clearContextMenu() { }
-
     // Called when a drag-n-drop operation should begin.
-    virtual void startDragging(WebFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
+    virtual void startDragging(WebLocalFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
 
     // Called to determine if drag-n-drop operations may initiate a page
     // navigation.

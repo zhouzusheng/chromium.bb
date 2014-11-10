@@ -96,7 +96,24 @@ int StreamListenSocket::GetLocalAddress(IPEndPoint* address) {
     return MapSystemError(err);
   }
   if (!address->FromSockAddr(storage.addr, storage.addr_len))
-    return ERR_FAILED;
+    return ERR_ADDRESS_INVALID;
+  return OK;
+}
+
+int StreamListenSocket::GetPeerAddress(IPEndPoint* address) {
+  SockaddrStorage storage;
+  if (getpeername(socket_, storage.addr, &storage.addr_len)) {
+#if defined(OS_WIN)
+    int err = WSAGetLastError();
+#else
+    int err = errno;
+#endif
+    return MapSystemError(err);
+  }
+
+  if (!address->FromSockAddr(storage.addr, storage.addr_len))
+    return ERR_ADDRESS_INVALID;
+
   return OK;
 }
 

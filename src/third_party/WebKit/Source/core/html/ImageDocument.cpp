@@ -30,8 +30,10 @@
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/events/EventListener.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -40,9 +42,6 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
-#include "core/frame/Settings.h"
 #include "wtf/text/StringBuilder.h"
 
 using std::min;
@@ -101,7 +100,7 @@ private:
 
 static float pageZoomFactor(const Document* document)
 {
-    Frame* frame = document->frame();
+    LocalFrame* frame = document->frame();
     return frame ? frame->pageZoomFactor() : 1;
 }
 
@@ -124,12 +123,15 @@ void ImageDocumentParser::appendBytes(const char* data, size_t length)
     if (!length)
         return;
 
-    Frame* frame = document()->frame();
+    LocalFrame* frame = document()->frame();
     Settings* settings = frame->settings();
     if (!frame->loader().client()->allowImage(!settings || settings->imagesEnabled(), document()->url()))
         return;
 
     document()->cachedImage()->appendData(data, length);
+    // Make sure the image renderer gets created because we need the renderer
+    // to read the aspect ratio. See crbug.com/320244
+    document()->updateRenderTreeIfNeeded();
     document()->imageUpdated();
 }
 
@@ -162,7 +164,7 @@ void ImageDocumentParser::finish()
 
 ImageDocument::ImageDocument(const DocumentInit& initializer)
     : HTMLDocument(initializer, ImageDocumentClass)
-    , m_imageElement(0)
+    , m_imageElement(nullptr)
     , m_imageSizeIsKnown(false)
     , m_didShrinkImage(false)
     , m_shouldShrinkImage(shouldShrinkToFit())
@@ -224,8 +226,8 @@ float ImageDocument::scale() const
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
     LayoutSize windowSize = LayoutSize(view->width(), view->height());
 
-    float widthScale = (float)windowSize.width() / imageSize.width();
-    float heightScale = (float)windowSize.height() / imageSize.height();
+    float widthScale = windowSize.width().toFloat() / imageSize.width().toFloat();
+    float heightScale = windowSize.height().toFloat() / imageSize.height().toFloat();
 
     return min(widthScale, heightScale);
 }
@@ -365,7 +367,7 @@ bool ImageDocument::shouldShrinkToFit() const
 
 void ImageDocument::dispose()
 {
-    m_imageElement = 0;
+    m_imageElement = nullptr;
     HTMLDocument::dispose();
 }
 

@@ -47,9 +47,10 @@ public:
 
 private:
     explicit HTMLTableRowElement(Document&);
-};
 
-DEFINE_NODE_TYPE_CASTS(HTMLTableRowElement, hasTagName(HTMLNames::trTag));
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
+};
 
 } // namespace
 

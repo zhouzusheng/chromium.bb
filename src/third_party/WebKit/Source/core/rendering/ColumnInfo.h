@@ -38,7 +38,6 @@ public:
         : m_desiredColumnWidth(0)
         , m_desiredColumnCount(1)
         , m_progressionAxis(InlineAxis)
-        , m_progressionIsReversed(false)
         , m_spanningHeaderSizeChanged(false)
         , m_columnCount(1)
         , m_columnHeight(0)
@@ -61,9 +60,6 @@ public:
 
     Axis progressionAxis() const { return m_progressionAxis; }
     void setProgressionAxis(Axis progressionAxis) { m_progressionAxis = progressionAxis; }
-
-    bool progressionIsReversed() const { return m_progressionIsReversed; }
-    void setProgressionIsReversed(bool reversed) { m_progressionIsReversed = reversed; }
 
     unsigned columnCount() const { return m_columnCount; }
     LayoutUnit columnHeight() const { return m_columnHeight; }
@@ -125,7 +121,6 @@ private:
     LayoutUnit m_desiredColumnWidth;
     unsigned m_desiredColumnCount;
     Axis m_progressionAxis;
-    bool m_progressionIsReversed;
     bool m_spanningHeaderSizeChanged;
 
     unsigned m_columnCount;

@@ -21,8 +21,8 @@ namespace content {
 namespace {
 
 // This value was determined experimentally. It was sufficient to not cause a
-// fling on Android.
-const int kPointerAssumedStoppedTimeMs = 50;
+// fling on Android and Aura.
+const int kPointerAssumedStoppedTimeMs = 100;
 
 // SyntheticGestureTargetBase passes input events straight on to the renderer
 // without going through a gesture recognition framework. There is thus no touch
@@ -42,7 +42,7 @@ SyntheticGestureTargetBase::~SyntheticGestureTargetBase() {
 
 void SyntheticGestureTargetBase::DispatchInputEventToPlatform(
     const WebInputEvent& event) {
-  TRACE_EVENT1("benchmark",
+  TRACE_EVENT1("input",
                "SyntheticGestureTarget::DispatchInputEventToPlatform",
                "type", WebInputEventTraits::GetName(event.type));
 
@@ -91,11 +91,6 @@ void SyntheticGestureTargetBase::DispatchWebMouseEventToPlatform(
       const blink::WebMouseEvent& web_mouse,
       const ui::LatencyInfo& latency_info) {
   host_->ForwardMouseEventWithLatencyInfo(web_mouse, latency_info);
-}
-
-void SyntheticGestureTargetBase::OnSyntheticGestureCompleted(
-    SyntheticGesture::Result result) {
-  host_->Send(new InputMsg_SyntheticGestureCompleted(host_->GetRoutingID()));
 }
 
 void SyntheticGestureTargetBase::SetNeedsFlush() {

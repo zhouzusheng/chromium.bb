@@ -54,7 +54,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(gpu::error::ContextLostReason,
 IPC_ENUM_TRAITS_MAX_VALUE(media::VideoEncodeAccelerator::Error,
                           media::VideoEncodeAccelerator::kErrorMax)
 IPC_ENUM_TRAITS_MAX_VALUE(media::VideoFrame::Format,
-                          media::VideoFrame::HISTOGRAM_MAX)
+                          media::VideoFrame::FORMAT_MAX)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(media::VideoCodecProfile,
                               media::VIDEO_CODEC_PROFILE_MIN,
                               media::VIDEO_CODEC_PROFILE_MAX)
@@ -146,6 +146,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo::GPUDevice)
   IPC_STRUCT_TRAITS_MEMBER(vendor_id)
   IPC_STRUCT_TRAITS_MEMBER(device_id)
+  IPC_STRUCT_TRAITS_MEMBER(active)
   IPC_STRUCT_TRAITS_MEMBER(vendor_string)
   IPC_STRUCT_TRAITS_MEMBER(device_string)
 IPC_STRUCT_TRAITS_END()
@@ -177,6 +178,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(can_lose_context)
   IPC_STRUCT_TRAITS_MEMBER(performance_stats)
   IPC_STRUCT_TRAITS_MEMBER(software_rendering)
+  IPC_STRUCT_TRAITS_MEMBER(direct_rendering)
   IPC_STRUCT_TRAITS_MEMBER(sandboxed)
 #if defined(OS_WIN)
   IPC_STRUCT_TRAITS_MEMBER(dx_diagnostics)

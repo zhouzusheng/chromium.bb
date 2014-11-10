@@ -133,7 +133,11 @@ DirectRenderer::DirectRenderer(RendererClient* client,
                                ResourceProvider* resource_provider)
     : Renderer(client, settings),
       output_surface_(output_surface),
-      resource_provider_(resource_provider) {}
+      resource_provider_(resource_provider),
+      overlay_processor_(
+          new OverlayProcessor(output_surface, resource_provider)) {
+  overlay_processor_->Initialize();
+}
 
 DirectRenderer::~DirectRenderer() {}
 
@@ -198,7 +202,6 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                float device_scale_factor,
                                const gfx::Rect& device_viewport_rect,
                                const gfx::Rect& device_clip_rect,
-                               bool allow_partial_swap,
                                bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
   UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount",
@@ -209,16 +212,18 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
 
   DrawingFrame frame;
   frame.root_render_pass = root_render_pass;
-  frame.root_damage_rect =
-      Capabilities().using_partial_swap && allow_partial_swap
-          ? root_render_pass->damage_rect
-          : root_render_pass->output_rect;
+  frame.root_damage_rect = Capabilities().using_partial_swap
+                               ? root_render_pass->damage_rect
+                               : root_render_pass->output_rect;
   frame.root_damage_rect.Intersect(gfx::Rect(device_viewport_rect.size()));
   frame.device_viewport_rect = device_viewport_rect;
   frame.device_clip_rect = device_clip_rect;
   frame.offscreen_context_provider = offscreen_context_provider;
   frame.disable_picture_quad_image_filtering =
       disable_picture_quad_image_filtering;
+
+  overlay_processor_->ProcessForOverlays(render_passes_in_draw_order,
+                                         &frame.overlay_list);
 
   EnsureBackbuffer();
 
@@ -230,7 +235,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   BeginDrawingFrame(&frame);
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
     RenderPass* pass = render_passes_in_draw_order->at(i);
-    DrawRenderPass(&frame, pass, allow_partial_swap);
+    DrawRenderPass(&frame, pass);
 
     for (ScopedPtrVector<CopyOutputRequest>::iterator it =
              pass->copy_requests.begin();
@@ -331,14 +336,12 @@ void DirectRenderer::SetScissorTestRectInDrawSpace(
 void DirectRenderer::FinishDrawingQuadList() {}
 
 void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
-                                    const RenderPass* render_pass,
-                                    bool allow_partial_swap) {
+                                    const RenderPass* render_pass) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawRenderPass");
   if (!UseRenderPass(frame, render_pass))
     return;
 
-  bool using_scissor_as_optimization =
-      Capabilities().using_partial_swap && allow_partial_swap;
+  bool using_scissor_as_optimization = Capabilities().using_partial_swap;
   gfx::RectF render_pass_scissor;
   bool draw_rect_covers_full_surface = true;
   if (frame->current_render_pass == frame->root_render_pass &&
@@ -436,7 +439,7 @@ void DirectRenderer::RunOnDemandRasterTask(
                                 0u));
 
   // Schedule task and wait for task graph runner to finish running it.
-  task_graph_runner->SetTaskGraph(on_demand_task_namespace_, &graph);
+  task_graph_runner->ScheduleTasks(on_demand_task_namespace_, &graph);
   task_graph_runner->WaitForTasksToFinishRunning(on_demand_task_namespace_);
 
   // Collect task now that it has finished running.

@@ -48,4 +48,14 @@ bool HTMLQuoteElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == citeAttr || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLQuoteElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == citeAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLQuoteElement::subResourceAttributeName() const
+{
+    return citeAttr;
+}
+
 }

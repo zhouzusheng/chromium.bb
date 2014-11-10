@@ -65,7 +65,7 @@ void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(bool lengthCompu
         ASSERT(!m_total);
 
         dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, lengthComputable, loaded, total));
-        startRepeating(minimumProgressEventDispatchingIntervalInSeconds);
+        startRepeating(minimumProgressEventDispatchingIntervalInSeconds, FROM_HERE);
         return;
     }
 
@@ -111,7 +111,7 @@ bool XMLHttpRequestProgressEventThrottle::flushDeferredProgressEvent()
     if (m_deferEvents && m_deferredProgressEvent) {
         // Move the progress event to the queue, to get it in the right order on resume.
         m_deferredEvents.append(m_deferredProgressEvent);
-        m_deferredProgressEvent = 0;
+        m_deferredProgressEvent = nullptr;
         return true;
     }
     return false;
@@ -143,7 +143,7 @@ void XMLHttpRequestProgressEventThrottle::dispatchDeferredEvents(Timer<XMLHttpRe
     m_deferredEvents.swap(deferredEvents);
 
     RefPtr<Event> deferredProgressEvent = m_deferredProgressEvent;
-    m_deferredProgressEvent = 0;
+    m_deferredProgressEvent = nullptr;
 
     Vector<RefPtr<Event> >::const_iterator it = deferredEvents.begin();
     const Vector<RefPtr<Event> >::const_iterator end = deferredEvents.end();
@@ -213,7 +213,7 @@ void XMLHttpRequestProgressEventThrottle::resume()
     // the list of active DOM objects to resume them, and any activated JS event-handler
     // could insert new active DOM objects to the list.
     // m_deferEvents is kept true until all deferred events have been dispatched.
-    m_dispatchDeferredEventsTimer.startOneShot(0);
+    m_dispatchDeferredEventsTimer.startOneShot(0, FROM_HERE);
 }
 
 } // namespace WebCore

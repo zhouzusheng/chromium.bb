@@ -71,17 +71,6 @@ enum {
   MSG_SET_SESSIONDESCRIPTION_SUCCESS = 0,
   MSG_SET_SESSIONDESCRIPTION_FAILED,
   MSG_GETSTATS,
-  MSG_ICECONNECTIONCHANGE,
-  MSG_ICEGATHERINGCHANGE,
-  MSG_ICECANDIDATE,
-  MSG_ICECOMPLETE,
-};
-
-struct CandidateMsg : public talk_base::MessageData {
-  explicit CandidateMsg(const webrtc::JsepIceCandidate* candidate)
-      : candidate(candidate) {
-  }
-  talk_base::scoped_ptr<const webrtc::JsepIceCandidate> candidate;
 };
 
 struct SetSessionDescriptionMsg : public talk_base::MessageData {
@@ -459,11 +448,6 @@ talk_base::scoped_refptr<DtmfSenderInterface> PeerConnection::CreateDtmfSender(
 }
 
 bool PeerConnection::GetStats(StatsObserver* observer,
-                              webrtc::MediaStreamTrackInterface* track) {
-  return GetStats(observer, track, kStatsOutputLevelStandard);
-}
-
-bool PeerConnection::GetStats(StatsObserver* observer,
                               MediaStreamTrackInterface* track,
                               StatsOutputLevel level) {
   if (!VERIFY(observer != NULL)) {
@@ -669,24 +653,6 @@ void PeerConnection::OnMessage(talk_base::Message* msg) {
       delete param;
       break;
     }
-    case MSG_ICECONNECTIONCHANGE: {
-      observer_->OnIceConnectionChange(ice_connection_state_);
-      break;
-    }
-    case MSG_ICEGATHERINGCHANGE: {
-      observer_->OnIceGatheringChange(ice_gathering_state_);
-      break;
-    }
-    case MSG_ICECANDIDATE: {
-      CandidateMsg* data = static_cast<CandidateMsg*>(msg->pdata);
-      observer_->OnIceCandidate(data->candidate.get());
-      delete data;
-      break;
-    }
-    case MSG_ICECOMPLETE: {
-      observer_->OnIceComplete();
-      break;
-    }
     default:
       ASSERT(false && "Not implemented");
       break;
@@ -735,6 +701,7 @@ void PeerConnection::OnAddLocalAudioTrack(MediaStreamInterface* stream,
                                           AudioTrackInterface* audio_track,
                                           uint32 ssrc) {
   stream_handler_container_->AddLocalAudioTrack(stream, audio_track, ssrc);
+  stats_.AddLocalAudioTrack(audio_track, ssrc);
 }
 void PeerConnection::OnAddLocalVideoTrack(MediaStreamInterface* stream,
                                           VideoTrackInterface* video_track,
@@ -743,8 +710,10 @@ void PeerConnection::OnAddLocalVideoTrack(MediaStreamInterface* stream,
 }
 
 void PeerConnection::OnRemoveLocalAudioTrack(MediaStreamInterface* stream,
-                                             AudioTrackInterface* audio_track) {
+                                             AudioTrackInterface* audio_track,
+                                             uint32 ssrc) {
   stream_handler_container_->RemoveLocalTrack(stream, audio_track);
+  stats_.RemoveLocalAudioTrack(audio_track, ssrc);
 }
 
 void PeerConnection::OnRemoveLocalVideoTrack(MediaStreamInterface* stream,
@@ -758,35 +727,29 @@ void PeerConnection::OnRemoveLocalStream(MediaStreamInterface* stream) {
 
 void PeerConnection::OnIceConnectionChange(
     PeerConnectionInterface::IceConnectionState new_state) {
+  ASSERT(signaling_thread()->IsCurrent());
   ice_connection_state_ = new_state;
-  signaling_thread()->Post(this, MSG_ICECONNECTIONCHANGE);
+  observer_->OnIceConnectionChange(ice_connection_state_);
 }
 
 void PeerConnection::OnIceGatheringChange(
     PeerConnectionInterface::IceGatheringState new_state) {
+  ASSERT(signaling_thread()->IsCurrent());
   if (IsClosed()) {
     return;
   }
   ice_gathering_state_ = new_state;
-  signaling_thread()->Post(this, MSG_ICEGATHERINGCHANGE);
+  observer_->OnIceGatheringChange(ice_gathering_state_);
 }
 
 void PeerConnection::OnIceCandidate(const IceCandidateInterface* candidate) {
-  JsepIceCandidate* candidate_copy = NULL;
-  if (candidate) {
-    // TODO(ronghuawu): Make IceCandidateInterface reference counted instead
-    // of making a copy.
-    candidate_copy = new JsepIceCandidate(candidate->sdp_mid(),
-                                          candidate->sdp_mline_index(),
-                                          candidate->candidate());
-  }
-  // The Post takes the ownership of the |candidate_copy|.
-  signaling_thread()->Post(this, MSG_ICECANDIDATE,
-                           new CandidateMsg(candidate_copy));
+  ASSERT(signaling_thread()->IsCurrent());
+  observer_->OnIceCandidate(candidate);
 }
 
 void PeerConnection::OnIceComplete() {
-  signaling_thread()->Post(this, MSG_ICECOMPLETE);
+  ASSERT(signaling_thread()->IsCurrent());
+  observer_->OnIceComplete();
 }
 
 void PeerConnection::ChangeSignalingState(

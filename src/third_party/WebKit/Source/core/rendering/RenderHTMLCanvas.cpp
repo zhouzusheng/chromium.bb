@@ -28,8 +28,8 @@
 
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
@@ -73,8 +73,13 @@ void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& pa
         paintInfo.context->clip(pixelSnappedIntRect(contentRect));
     }
 
-    bool useLowQualityScale = style()->imageRendering() == ImageRenderingOptimizeContrast;
-    toHTMLCanvasElement(node())->paint(context, paintRect, useLowQualityScale);
+    // FIXME: InterpolationNone should be used if ImageRenderingOptimizeContrast is set.
+    // See bug for more details: crbug.com/353716.
+    InterpolationQuality interpolationQuality = style()->imageRendering() == ImageRenderingOptimizeContrast ? InterpolationLow : CanvasDefaultInterpolationQuality;
+    InterpolationQuality previousInterpolationQuality = context->imageInterpolationQuality();
+    context->setImageInterpolationQuality(interpolationQuality);
+    toHTMLCanvasElement(node())->paint(context, paintRect);
+    context->setImageInterpolationQuality(previousInterpolationQuality);
 
     if (clip)
         context->restore();
@@ -104,6 +109,18 @@ void RenderHTMLCanvas::canvasSizeChanged()
 
     if (!selfNeedsLayout())
         setNeedsLayout();
+}
+
+CompositingReasons RenderHTMLCanvas::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+{
+    if (!(triggers & CanvasTrigger))
+        return CompositingReasonNone;
+
+    HTMLCanvasElement* canvas = toHTMLCanvasElement(node());
+    if (canvas->renderingContext() && canvas->renderingContext()->isAccelerated())
+        return CompositingReasonCanvas;
+
+    return CompositingReasonNone;
 }
 
 } // namespace WebCore

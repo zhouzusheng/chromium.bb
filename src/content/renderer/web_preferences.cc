@@ -161,6 +161,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setCaretBrowsingEnabled(prefs.caret_browsing_enabled);
   settings->setHyperlinkAuditingEnabled(prefs.hyperlink_auditing_enabled);
   settings->setCookieEnabled(prefs.cookie_enabled);
+  settings->setNavigateOnDragDrop(prefs.navigate_on_drag_drop);
 
   // This setting affects the behavior of links in an editable region:
   // clicking the link should select it rather than navigate to it.
@@ -227,9 +228,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setAccelerated2dCanvasMSAASampleCount(
       prefs.accelerated_2d_canvas_msaa_sample_count);
 
-  // Enable gpu-accelerated filters if requested on the command line.
-  settings->setAcceleratedFiltersEnabled(prefs.accelerated_filters_enabled);
-
   // Enable deferred filter rendering if requested on the command line.
   settings->setDeferredFiltersEnabled(prefs.deferred_filters_enabled);
 
@@ -253,9 +251,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setAcceleratedCompositingForCanvasEnabled(
       prefs.experimental_webgl_enabled || prefs.accelerated_2d_canvas_enabled);
 
-  // Enable memory info reporting to page if requested on the command line.
-  settings->setMemoryInfoEnabled(prefs.memory_info_enabled);
-
   settings->setAsynchronousSpellCheckingEnabled(
       prefs.asynchronous_spell_checking_enabled);
   settings->setUnifiedTextCheckerEnabled(prefs.unified_textchecker_enabled);
@@ -272,7 +267,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // ChromeClient::tabsToLinks which is part of the glue code.
   web_view->setTabsToLinks(prefs.tabs_to_links);
 
-  settings->setFullScreenEnabled(prefs.fullscreen_enabled);
+  // TODO(scheib): crbug.com/344002 Remove FullScreenEnabled from Blink
+  settings->setFullScreenEnabled(true);
   settings->setAllowDisplayOfInsecureContent(
       prefs.allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(

@@ -10,31 +10,33 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "media/base/audio_splicer.h"
 
 namespace media {
 
+typedef StreamParser::BufferQueue BufferQueue;
+
 // Buffers with the same timestamp are only allowed under certain conditions.
-// Video: Allowed when the previous frame and current frame are NOT keyframes.
-//        This is the situation for VP8 Alt-Ref frames.
-// Otherwise: Allowed in all situations except where a non-keyframe is followed
-//            by a keyframe.
+// More precisely, it is allowed in all situations except when the previous
+// frame is not a key frame and the current is a key frame.
+// Examples of situations where DTS of two consecutive frames can be equal:
+// - Video: VP8 Alt-Ref frames.
+// - Video: IPBPBP...: DTS for I frame and for P frame can be equal.
+// - Text track cues that start at same time.
 // Returns true if |prev_is_keyframe| and |current_is_keyframe| indicate a
 // same timestamp situation that is allowed. False is returned otherwise.
 static bool AllowSameTimestamp(
     bool prev_is_keyframe, bool current_is_keyframe,
     SourceBufferStream::Type type) {
-  if (type == SourceBufferStream::kVideo)
-    return !prev_is_keyframe && !current_is_keyframe;
-
   return prev_is_keyframe || !current_is_keyframe;
 }
 
-// Returns the config ID of |buffer| if |buffer| has no fade out preroll or
+// Returns the config ID of |buffer| if |buffer| has no splice buffers or
 // |index| is out of range.  Otherwise returns the config ID for the fade out
 // preroll buffer at position |index|.
 static int GetConfigId(StreamParserBuffer* buffer, size_t index) {
-  return index < buffer->GetFadeOutPreroll().size()
-             ? buffer->GetFadeOutPreroll()[index]->GetConfigId()
+  return index < buffer->get_splice_buffers().size()
+             ? buffer->get_splice_buffers()[index]->GetConfigId()
              : buffer->GetConfigId();
 }
 
@@ -43,8 +45,6 @@ static int GetConfigId(StreamParserBuffer* buffer, size_t index) {
 // gaps.
 class SourceBufferRange {
  public:
-  typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
-
   // Returns the maximum distance in time between any buffer seen in this
   // stream. Used to estimate the duration of a buffer if its duration is not
   // known.
@@ -197,6 +197,11 @@ class SourceBufferRange {
   // sequence after |buffers_.back()|, false otherwise.
   bool IsNextInSequence(base::TimeDelta timestamp, bool is_keyframe) const;
 
+  // Adds all buffers which overlap [start, end) to the end of |buffers|.  If
+  // no buffers exist in the range returns false, true otherwise.
+  bool GetBuffersInRange(base::TimeDelta start, base::TimeDelta end,
+                         BufferQueue* buffers);
+
   int size_in_bytes() const { return size_in_bytes_; }
 
  private:
@@ -295,11 +300,16 @@ static bool IsRangeListSorted(
   return true;
 }
 
-// Comparison function for two Buffers based on timestamp.
-static bool BufferComparator(
-    const scoped_refptr<media::StreamParserBuffer>& first,
-    const scoped_refptr<media::StreamParserBuffer>& second) {
-  return first->GetDecodeTimestamp() < second->GetDecodeTimestamp();
+// Comparison operators for std::upper_bound() and std::lower_bound().
+static bool CompareTimeDeltaToStreamParserBuffer(
+    const base::TimeDelta& decode_timestamp,
+    const scoped_refptr<media::StreamParserBuffer>& buffer) {
+  return decode_timestamp < buffer->GetDecodeTimestamp();
+}
+static bool CompareStreamParserBufferToTimeDelta(
+    const scoped_refptr<media::StreamParserBuffer>& buffer,
+    const base::TimeDelta& decode_timestamp) {
+  return buffer->GetDecodeTimestamp() < decode_timestamp;
 }
 
 // Returns an estimate of how far from the beginning or end of a range a buffer
@@ -330,7 +340,8 @@ static int kDefaultVideoMemoryLimit = 150 * 1024 * 1024;
 namespace media {
 
 SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
-                                       const LogCB& log_cb)
+                                       const LogCB& log_cb,
+                                       bool splice_frames_enabled)
     : log_cb_(log_cb),
       current_config_index_(0),
       append_config_index_(0),
@@ -347,13 +358,15 @@ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultAudioMemoryLimit),
       config_change_pending_(false),
-      fade_out_preroll_index_(0) {
+      splice_buffers_index_(0),
+      splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(audio_config.IsValidConfig());
   audio_configs_.push_back(audio_config);
 }
 
 SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
-                                       const LogCB& log_cb)
+                                       const LogCB& log_cb,
+                                       bool splice_frames_enabled)
     : log_cb_(log_cb),
       current_config_index_(0),
       append_config_index_(0),
@@ -370,13 +383,15 @@ SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultVideoMemoryLimit),
       config_change_pending_(false),
-      fade_out_preroll_index_(0) {
+      splice_buffers_index_(0),
+      splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(video_config.IsValidConfig());
   video_configs_.push_back(video_config);
 }
 
 SourceBufferStream::SourceBufferStream(const TextTrackConfig& text_config,
-                                       const LogCB& log_cb)
+                                       const LogCB& log_cb,
+                                       bool splice_frames_enabled)
     : log_cb_(log_cb),
       current_config_index_(0),
       append_config_index_(0),
@@ -394,8 +409,8 @@ SourceBufferStream::SourceBufferStream(const TextTrackConfig& text_config,
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kDefaultAudioMemoryLimit),
       config_change_pending_(false),
-      fade_out_preroll_index_(0) {
-}
+      splice_buffers_index_(0),
+      splice_frames_enabled_(splice_frames_enabled) {}
 
 SourceBufferStream::~SourceBufferStream() {
   while (!ranges_.empty()) {
@@ -425,8 +440,7 @@ void SourceBufferStream::OnNewMediaSegment(
   }
 }
 
-bool SourceBufferStream::Append(
-    const SourceBufferStream::BufferQueue& buffers) {
+bool SourceBufferStream::Append(const BufferQueue& buffers) {
   TRACE_EVENT2("media", "SourceBufferStream::Append",
                "stream type", GetStreamTypeName(),
                "buffers to append", buffers.size());
@@ -673,8 +687,8 @@ void SourceBufferStream::ResetSeekState() {
   track_buffer_.clear();
   config_change_pending_ = false;
   last_output_buffer_timestamp_ = kNoTimestamp();
-  fade_out_preroll_index_ = 0;
-  fade_in_buffer_ = NULL;
+  splice_buffers_index_ = 0;
+  splice_buffer_ = NULL;
 }
 
 bool SourceBufferStream::ShouldSeekToStartOfBuffered(
@@ -953,6 +967,12 @@ void SourceBufferStream::PrepareRangesForNextAppend(
     }
   }
 
+  // Handle splices between the existing buffers and the new buffers.  If a
+  // splice is generated the timestamp and duration of the first buffer in
+  // |new_buffers| will be modified.
+  if (splice_frames_enabled_)
+    GenerateSpliceFrame(new_buffers);
+
   base::TimeDelta prev_timestamp = last_appended_buffer_timestamp_;
   bool prev_is_keyframe = last_appended_buffer_is_keyframe_;
   base::TimeDelta next_timestamp = new_buffers.front()->GetDecodeTimestamp();
@@ -1102,55 +1122,56 @@ void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
 
 SourceBufferStream::Status SourceBufferStream::GetNextBuffer(
     scoped_refptr<StreamParserBuffer>* out_buffer) {
-  if (!fade_in_buffer_) {
+  if (!splice_buffer_) {
     const SourceBufferStream::Status status = GetNextBufferInternal(out_buffer);
 
     // Just return if GetNextBufferInternal() failed or there's no fade out
     // preroll, there's nothing else to do.
     if (status != SourceBufferStream::kSuccess ||
-        (*out_buffer)->GetFadeOutPreroll().empty()) {
+        (*out_buffer)->get_splice_buffers().empty()) {
       return status;
     }
 
-    // Setup fade in buffer and fall through into splice frame buffer handling.
-    fade_out_preroll_index_ = 0;
-    fade_in_buffer_.swap(*out_buffer);
+    // Fall through into splice buffer processing.
+    splice_buffers_index_ = 0;
+    splice_buffer_.swap(*out_buffer);
   }
 
-  DCHECK(fade_in_buffer_);
-  const std::vector<scoped_refptr<StreamParserBuffer> >& fade_out_preroll =
-      fade_in_buffer_->GetFadeOutPreroll();
+  DCHECK(splice_buffer_);
+  const BufferQueue& splice_buffers = splice_buffer_->get_splice_buffers();
+  const size_t last_splice_buffer_index = splice_buffers.size() - 1;
 
-  // Are there any fade out buffers left to hand out?
-  if (fade_out_preroll_index_ < fade_out_preroll.size()) {
+  // Are there any splice buffers left to hand out?  The last buffer should be
+  // handed out separately since it represents the first post-splice buffer.
+  if (splice_buffers_index_ < last_splice_buffer_index) {
     // Account for config changes which occur between fade out buffers.
     if (current_config_index_ !=
-        fade_out_preroll[fade_out_preroll_index_]->GetConfigId()) {
+        splice_buffers[splice_buffers_index_]->GetConfigId()) {
       config_change_pending_ = true;
-      DVLOG(1) << "Config change (fade out preroll config ID does not match).";
+      DVLOG(1) << "Config change (splice buffer config ID does not match).";
       return SourceBufferStream::kConfigChange;
     }
 
-    *out_buffer = fade_out_preroll[fade_out_preroll_index_++];
+    *out_buffer = splice_buffers[splice_buffers_index_++];
     return SourceBufferStream::kSuccess;
   }
 
-  // Did we hand out the last fade out buffer on the last call?
-  if (fade_out_preroll_index_ == fade_out_preroll.size()) {
-    fade_out_preroll_index_++;
+  // Did we hand out the last pre-splice buffer on the previous call?
+  if (splice_buffers_index_ == last_splice_buffer_index) {
+    splice_buffers_index_++;
     config_change_pending_ = true;
     DVLOG(1) << "Config change (forced for fade in of splice frame).";
     return SourceBufferStream::kConfigChange;
   }
 
-  // All fade out buffers have been handed out and a config change completed, so
-  // hand out the final buffer for fade in.  Because a config change is always
-  // issued prior to handing out this buffer, any changes in config id have been
-  // inherently handled.
-  DCHECK_GT(fade_out_preroll_index_, fade_out_preroll.size());
-  out_buffer->swap(fade_in_buffer_);
-  fade_in_buffer_ = NULL;
-  fade_out_preroll_index_ = 0;
+  // All pre-splice buffers have been handed out and a config change completed,
+  // so hand out the final buffer for fade in.  Because a config change is
+  // always issued prior to handing out this buffer, any changes in config id
+  // have been inherently handled.
+  DCHECK_GE(splice_buffers_index_, splice_buffers.size());
+  *out_buffer = splice_buffers.back();
+  splice_buffer_ = NULL;
+  splice_buffers_index_ = 0;
   return SourceBufferStream::kSuccess;
 }
 
@@ -1163,7 +1184,7 @@ SourceBufferStream::Status SourceBufferStream::GetNextBufferInternal(
     scoped_refptr<StreamParserBuffer>& next_buffer = track_buffer_.front();
 
     // If the next buffer is an audio splice frame, the next effective config id
-    // comes from the first fade out preroll buffer.
+    // comes from the first splice buffer.
     if (GetConfigId(next_buffer, 0) != current_config_index_) {
       config_change_pending_ = true;
       DVLOG(1) << "Config change (track buffer config ID does not match).";
@@ -1331,21 +1352,6 @@ bool SourceBufferStream::UpdateAudioConfig(const AudioDecoderConfig& config) {
     return false;
   }
 
-  if (audio_configs_[0].samples_per_second() != config.samples_per_second()) {
-    MEDIA_LOG(log_cb_) << "Audio sample rate changes not allowed.";
-    return false;
-  }
-
-  if (audio_configs_[0].channel_layout() != config.channel_layout()) {
-    MEDIA_LOG(log_cb_) << "Audio channel layout changes not allowed.";
-    return false;
-  }
-
-  if (audio_configs_[0].bits_per_channel() != config.bits_per_channel()) {
-    MEDIA_LOG(log_cb_) << "Audio bits per channel changes not allowed.";
-    return false;
-  }
-
   if (audio_configs_[0].is_encrypted() != config.is_encrypted()) {
     MEDIA_LOG(log_cb_) << "Audio encryption changes not allowed.";
     return false;
@@ -1406,9 +1412,9 @@ bool SourceBufferStream::UpdateVideoConfig(const VideoDecoderConfig& config) {
 void SourceBufferStream::CompleteConfigChange() {
   config_change_pending_ = false;
 
-  if (fade_in_buffer_) {
+  if (splice_buffer_) {
     current_config_index_ =
-        GetConfigId(fade_in_buffer_, fade_out_preroll_index_);
+        GetConfigId(splice_buffer_, splice_buffers_index_);
     return;
   }
 
@@ -1582,6 +1588,69 @@ void SourceBufferStream::DeleteAndRemoveRange(RangeList::iterator* itr) {
   *itr = ranges_.erase(*itr);
 }
 
+void SourceBufferStream::GenerateSpliceFrame(const BufferQueue& new_buffers) {
+  DCHECK(!new_buffers.empty());
+
+  // Splice frames are only supported for audio.
+  if (GetType() != kAudio)
+    return;
+
+  // Find the overlapped range (if any).
+  const base::TimeDelta splice_timestamp = new_buffers.front()->timestamp();
+  RangeList::iterator range_itr = FindExistingRangeFor(splice_timestamp);
+  if (range_itr == ranges_.end())
+    return;
+
+  const base::TimeDelta max_splice_end_timestamp =
+      splice_timestamp + base::TimeDelta::FromMilliseconds(
+                             AudioSplicer::kCrossfadeDurationInMilliseconds);
+
+  // Find all buffers involved before the splice point.
+  BufferQueue pre_splice_buffers;
+  if (!(*range_itr)->GetBuffersInRange(
+          splice_timestamp, max_splice_end_timestamp, &pre_splice_buffers)) {
+    return;
+  }
+
+  // If there are gaps in the timeline, it's possible that we only find buffers
+  // after the splice point but within the splice range.  For simplicity, we do
+  // not generate splice frames in this case.
+  if (pre_splice_buffers.front()->timestamp() > splice_timestamp)
+    return;
+
+  // Sanitize |pre_splice_buffers| so that there are no recursive splices.
+  for (size_t i = 0; i < pre_splice_buffers.size(); ++i) {
+    const BufferQueue& original_splice_buffers =
+        pre_splice_buffers[i]->get_splice_buffers();
+    if (original_splice_buffers.empty())
+      continue;
+
+    // Remove the original splice and move our index back to compensate.  NOTE:
+    // |i| will underflow if the splice is the first buffer, this is okay.  It
+    // will be corrected below or on the next loop iteration.
+    pre_splice_buffers.erase(pre_splice_buffers.begin() + i--);
+
+    // Cull all buffers which start after the end of the new splice point or
+    // after original overlapping buffer; this may introduce gaps, but no more
+    // than Remove() does currently.
+    const scoped_refptr<StreamParserBuffer>& overlapping_buffer =
+        original_splice_buffers.back();
+    for (BufferQueue::const_iterator it = original_splice_buffers.begin();
+         it != original_splice_buffers.end();
+         ++it) {
+      const scoped_refptr<StreamParserBuffer>& buffer = *it;
+      if (buffer->timestamp() <= max_splice_end_timestamp &&
+          (buffer->timestamp() < overlapping_buffer->timestamp() ||
+           buffer == overlapping_buffer)) {
+        // Add the buffer and adjust the index forward to compensate.
+        pre_splice_buffers.insert(pre_splice_buffers.begin() + ++i, buffer);
+      }
+    }
+  }
+
+  new_buffers.front()->ConvertToSpliceBuffer(pre_splice_buffers);
+}
+
 SourceBufferRange::SourceBufferRange(
     SourceBufferStream::Type type, const BufferQueue& new_buffers,
     base::TimeDelta media_segment_start_time,
@@ -1600,7 +1669,6 @@ SourceBufferRange::SourceBufferRange(
 
 void SourceBufferRange::AppendBuffersToEnd(const BufferQueue& new_buffers) {
   DCHECK(buffers_.empty() || CanAppendBuffersToEnd(new_buffers));
-
   for (BufferQueue::const_iterator itr = new_buffers.begin();
        itr != new_buffers.end(); ++itr) {
     DCHECK((*itr)->GetDecodeTimestamp() != kNoTimestamp());
@@ -1690,20 +1758,18 @@ SourceBufferRange* SourceBufferRange::SplitRange(
   return split_range;
 }
 
-SourceBufferRange::BufferQueue::iterator SourceBufferRange::GetBufferItrAt(
-    base::TimeDelta timestamp, bool skip_given_timestamp) {
-  // Need to make a dummy buffer with timestamp |timestamp| in order to search
-  // the |buffers_| container.
-  scoped_refptr<StreamParserBuffer> dummy_buffer =
-      StreamParserBuffer::CopyFrom(NULL, 0, false, DemuxerStream::UNKNOWN, 0);
-  dummy_buffer->SetDecodeTimestamp(timestamp);
-
-  if (skip_given_timestamp) {
-    return std::upper_bound(
-        buffers_.begin(), buffers_.end(), dummy_buffer, BufferComparator);
-  }
-  return std::lower_bound(
-      buffers_.begin(), buffers_.end(), dummy_buffer, BufferComparator);
+BufferQueue::iterator SourceBufferRange::GetBufferItrAt(
+    base::TimeDelta timestamp,
+    bool skip_given_timestamp) {
+  return skip_given_timestamp
+             ? std::upper_bound(buffers_.begin(),
+                                buffers_.end(),
+                                timestamp,
+                                CompareTimeDeltaToStreamParserBuffer)
+             : std::lower_bound(buffers_.begin(),
+                                buffers_.end(),
+                                timestamp,
+                                CompareStreamParserBufferToTimeDelta);
 }
 
 SourceBufferRange::KeyframeMap::iterator
@@ -2082,6 +2148,34 @@ base::TimeDelta SourceBufferRange::GetApproximateDuration() const {
   base::TimeDelta max_interbuffer_distance = interbuffer_distance_cb_.Run();
   DCHECK(max_interbuffer_distance != kNoTimestamp());
   return max_interbuffer_distance;
+}
+
+bool SourceBufferRange::GetBuffersInRange(base::TimeDelta start,
+                                          base::TimeDelta end,
+                                          BufferQueue* buffers) {
+  // Find the nearest buffer with a decode timestamp <= start.
+  const base::TimeDelta first_timestamp = KeyframeBeforeTimestamp(start);
+  if (first_timestamp == kNoTimestamp())
+    return false;
+
+  // Find all buffers involved in the range.
+  const size_t previous_size = buffers->size();
+  for (BufferQueue::iterator it = GetBufferItrAt(first_timestamp, false);
+       it != buffers_.end();
+       ++it) {
+    const scoped_refptr<StreamParserBuffer>& buffer = *it;
+    // Buffers without duration are not supported, so bail if we encounter any.
+    if (buffer->duration() == kNoTimestamp() ||
+        buffer->duration() <= base::TimeDelta()) {
+      return false;
+    }
+    if (buffer->end_of_stream() || buffer->timestamp() >= end)
+      break;
+    if (buffer->timestamp() + buffer->duration() <= start)
+      continue;
+    buffers->push_back(buffer);
+  }
+  return previous_size < buffers->size();
 }
 
 }  // namespace media

@@ -37,7 +37,7 @@ namespace WebCore {
 
 void CachedMatchedProperties::set(const RenderStyle* style, const RenderStyle* parentStyle, const MatchResult& matchResult)
 {
-    matchedProperties.append(matchResult.matchedProperties);
+    matchedProperties.appendVector(matchResult.matchedProperties);
     ranges = matchResult.ranges;
 
     // Note that we don't cache the original RenderStyle instance. It may be further modified.
@@ -49,8 +49,8 @@ void CachedMatchedProperties::set(const RenderStyle* style, const RenderStyle* p
 void CachedMatchedProperties::clear()
 {
     matchedProperties.clear();
-    renderStyle = 0;
-    parentRenderStyle = 0;
+    renderStyle = nullptr;
+    parentRenderStyle = nullptr;
 }
 
 MatchedPropertiesCache::MatchedPropertiesCache()
@@ -89,7 +89,7 @@ void MatchedPropertiesCache::add(const RenderStyle* style, const RenderStyle* pa
     if (++m_additionsSinceLastSweep >= maxAdditionsBetweenSweeps
         && !m_sweepTimer.isActive()) {
         static const unsigned sweepTimeInSeconds = 60;
-        m_sweepTimer.startOneShot(sweepTimeInSeconds);
+        m_sweepTimer.startOneShot(sweepTimeInSeconds, FROM_HERE);
     }
 
     ASSERT(hash);

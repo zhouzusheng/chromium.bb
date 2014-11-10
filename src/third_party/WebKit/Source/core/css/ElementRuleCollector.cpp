@@ -37,7 +37,6 @@
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
-#include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -66,13 +65,13 @@ MatchResult& ElementRuleCollector::matchedResult()
     return m_result;
 }
 
-PassRefPtr<StyleRuleList> ElementRuleCollector::matchedStyleRuleList()
+PassRefPtrWillBeRawPtr<StyleRuleList> ElementRuleCollector::matchedStyleRuleList()
 {
     ASSERT(m_mode == SelectorChecker::CollectingStyleRules);
     return m_styleRuleList.release();
 }
 
-PassRefPtr<CSSRuleList> ElementRuleCollector::matchedCSSRuleList()
+PassRefPtrWillBeRawPtr<CSSRuleList> ElementRuleCollector::matchedCSSRuleList()
 {
     ASSERT(m_mode == SelectorChecker::CollectingCSSRules);
     return m_cssRuleList.release();
@@ -81,7 +80,7 @@ PassRefPtr<CSSRuleList> ElementRuleCollector::matchedCSSRuleList()
 inline void ElementRuleCollector::addMatchedRule(const RuleData* rule, unsigned specificity, CascadeScope cascadeScope, CascadeOrder cascadeOrder, unsigned styleSheetIndex, const CSSStyleSheet* parentStyleSheet)
 {
     if (!m_matchedRules)
-        m_matchedRules = adoptPtr(new Vector<MatchedRule, 32>);
+        m_matchedRules = adoptPtrWillBeNoop(new WillBeHeapVector<MatchedRule, 32>);
     m_matchedRules->append(MatchedRule(rule, specificity, cascadeScope, cascadeOrder, styleSheetIndex, parentStyleSheet));
 }
 
@@ -110,9 +109,8 @@ void ElementRuleCollector::addElementStyleProperties(const StylePropertySet* pro
 {
     if (!propertySet)
         return;
-    m_result.ranges.lastAuthorRule = m_result.matchedProperties.size();
-    if (m_result.ranges.firstAuthorRule == -1)
-        m_result.ranges.firstAuthorRule = m_result.ranges.lastAuthorRule;
+
+    m_result.ranges.authorRuleRange().shiftLast(m_result.matchedProperties.size());
     m_result.addMatchedProperties(propertySet);
     if (!isCacheable)
         m_result.isCacheable = false;
@@ -218,7 +216,11 @@ void ElementRuleCollector::appendCSSOMWrapperForRule(CSSStyleSheet* parentStyleS
     // |parentStyleSheet| is 0 if and only if the |rule| is coming from User Agent. In this case,
     // it is safe to create CSSOM wrappers without parentStyleSheets as they will be used only
     // by inspector which will not try to edit them.
-    RefPtr<CSSRule> cssRule = parentStyleSheet ? findStyleRule(parentStyleSheet, rule) : rule->createCSSOMWrapper();
+    RefPtrWillBeRawPtr<CSSRule> cssRule = nullptr;
+    if (parentStyleSheet)
+        cssRule = findStyleRule(parentStyleSheet, rule);
+    else
+        cssRule = rule->createCSSOMWrapper();
     ASSERT(!parentStyleSheet || cssRule);
     ensureRuleList()->rules().append(cssRule);
 }
@@ -230,7 +232,7 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
 
     sortMatchedRules();
 
-    Vector<MatchedRule, 32>& matchedRules = *m_matchedRules;
+    WillBeHeapVector<MatchedRule, 32>& matchedRules = *m_matchedRules;
     if (m_mode == SelectorChecker::CollectingStyleRules) {
         for (unsigned i = 0; i < matchedRules.size(); ++i)
             ensureStyleRuleList()->m_list.append(matchedRules[i].ruleData()->rule());
@@ -249,35 +251,12 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
         const RuleData* ruleData = matchedRules[i].ruleData();
         if (m_style && ruleData->containsUncommonAttributeSelector())
             m_style->setUnique();
-        m_result.addMatchedProperties(ruleData->rule()->properties(), ruleData->rule(), ruleData->linkMatchType(), ruleData->propertyWhitelistType(m_matchingUARules));
+        m_result.addMatchedProperties(&ruleData->rule()->properties(), ruleData->rule(), ruleData->linkMatchType(), ruleData->propertyWhitelistType(m_matchingUARules));
     }
 }
 
 inline bool ElementRuleCollector::ruleMatches(const RuleData& ruleData, const ContainerNode* scope, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary, SelectorChecker::MatchResult* result)
 {
-    // Scoped rules can't match because the fast path uses a pool of tag/class/ids, collected from
-    // elements in that tree and those will never match the host, since it's in a different pool.
-    if (ruleData.hasFastCheckableSelector() && !scope) {
-        // We know this selector does not include any pseudo elements.
-        if (m_pseudoStyleRequest.pseudoId != NOPSEUDO)
-            return false;
-        // We know a sufficiently simple single part selector matches simply because we found it from the rule hash.
-        // This is limited to HTML only so we don't need to check the namespace.
-        ASSERT(m_context.element());
-        if (ruleData.hasRightmostSelectorMatchingHTMLBasedOnRuleHash() && m_context.element()->isHTMLElement()) {
-            if (!ruleData.hasMultipartSelector())
-                return true;
-        }
-        if (ruleData.selector().m_match == CSSSelector::Tag && !SelectorChecker::tagMatches(*m_context.element(), ruleData.selector().tagQName()))
-            return false;
-        SelectorCheckerFastPath selectorCheckerFastPath(ruleData.selector(), *m_context.element());
-        if (!selectorCheckerFastPath.matchesRightmostAttributeSelector())
-            return false;
-
-        return selectorCheckerFastPath.matches();
-    }
-
-    // Slow path.
     SelectorChecker selectorChecker(m_context.element()->document(), m_mode);
     SelectorChecker::SelectorCheckingContext context(ruleData.selector(), m_context.element(), SelectorChecker::VisitedMatchEnabled);
     context.elementStyle = m_style.get();
@@ -303,8 +282,8 @@ void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, Select
     SelectorChecker::MatchResult result;
     if (ruleMatches(ruleData, matchRequest.scope, behaviorAtBoundary, &result)) {
         // If the rule has no properties to apply, then ignore it in the non-debug mode.
-        const StylePropertySet* properties = rule->properties();
-        if (!properties || (properties->isEmpty() && !matchRequest.includeEmptyRules))
+        const StylePropertySet& properties = rule->properties();
+        if (properties.isEmpty() && !matchRequest.includeEmptyRules)
             return;
         // FIXME: Exposing the non-standard getMatchedCSSRules API to web is the only reason this is needed.
         if (m_sameOriginOnly && !ruleData.hasDocumentSecurityOrigin())
@@ -321,33 +300,12 @@ void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, Select
                 m_style->setHasPseudoStyle(dynamicPseudo);
         } else {
             // Update our first/last rule indices in the matched rules array.
-            ++ruleRange.lastRuleIndex;
-            if (ruleRange.firstRuleIndex == -1)
-                ruleRange.firstRuleIndex = ruleRange.lastRuleIndex;
-
+            ruleRange.shiftLastByOne();
             // Add this rule to our list of matched rules.
             addMatchedRule(&ruleData, result.specificity, cascadeScope, cascadeOrder, matchRequest.styleSheetIndex, matchRequest.styleSheet);
             return;
         }
     }
-}
-
-void ElementRuleCollector::collectMatchingRulesForList(const RuleData* rules, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
-{
-    if (!rules)
-        return;
-    while (!rules->isLastInArray())
-        collectRuleIfMatches(*rules++, behaviorAtBoundary, cascadeScope, cascadeOrder, matchRequest, ruleRange);
-    collectRuleIfMatches(*rules, behaviorAtBoundary, cascadeScope, cascadeOrder, matchRequest, ruleRange);
-}
-
-void ElementRuleCollector::collectMatchingRulesForList(const Vector<RuleData>* rules, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
-{
-    if (!rules)
-        return;
-    unsigned size = rules->size();
-    for (unsigned i = 0; i < size; ++i)
-        collectRuleIfMatches(rules->at(i), behaviorAtBoundary, cascadeScope, cascadeOrder, matchRequest, ruleRange);
 }
 
 static inline bool compareRules(const MatchedRule& matchedRule1, const MatchedRule& matchedRule2)
@@ -377,9 +335,8 @@ bool ElementRuleCollector::hasAnyMatchingRules(RuleSet* ruleSet)
     // To check whether a given RuleSet has any rule matching a given element,
     // should not see the element's treescope. Because RuleSet has no
     // information about "scope".
-    int firstRuleIndex = -1, lastRuleIndex = -1;
-    RuleRange ruleRange(firstRuleIndex, lastRuleIndex);
     // FIXME: Verify whether it's ok to ignore CascadeScope here.
+    RuleRange ruleRange;
     collectMatchingRules(MatchRequest(ruleSet), ruleRange, SelectorChecker::StaysWithinTreeScope);
 
     return m_matchedRules && !m_matchedRules->isEmpty();

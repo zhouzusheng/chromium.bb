@@ -26,13 +26,10 @@
 #include "config.h"
 #include "core/css/CSSKeyframesRule.h"
 
-#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleSheet.h"
-#include "core/dom/Document.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/UseCounter.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -55,14 +52,14 @@ StyleRuleKeyframes::~StyleRuleKeyframes()
 {
 }
 
-void StyleRuleKeyframes::parserAppendKeyframe(PassRefPtr<StyleKeyframe> keyframe)
+void StyleRuleKeyframes::parserAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe> keyframe)
 {
     if (!keyframe)
         return;
     m_keyframes.append(keyframe);
 }
 
-void StyleRuleKeyframes::wrapperAppendKeyframe(PassRefPtr<StyleKeyframe> keyframe)
+void StyleRuleKeyframes::wrapperAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe> keyframe)
 {
     m_keyframes.append(keyframe);
 }
@@ -89,6 +86,12 @@ int StyleRuleKeyframes::findKeyframeIndex(const String& key) const
     return -1;
 }
 
+void StyleRuleKeyframes::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_keyframes);
+    StyleRuleBase::traceAfterDispatch(visitor);
+}
+
 CSSKeyframesRule::CSSKeyframesRule(StyleRuleKeyframes* keyframesRule, CSSStyleSheet* parent)
     : CSSRule(parent)
     , m_keyframesRule(keyframesRule)
@@ -99,12 +102,13 @@ CSSKeyframesRule::CSSKeyframesRule(StyleRuleKeyframes* keyframesRule, CSSStyleSh
 
 CSSKeyframesRule::~CSSKeyframesRule()
 {
+#if !ENABLE(OILPAN)
     ASSERT(m_childRuleCSSOMWrappers.size() == m_keyframesRule->keyframes().size());
-
     for (unsigned i = 0; i < m_childRuleCSSOMWrappers.size(); ++i) {
         if (m_childRuleCSSOMWrappers[i])
             m_childRuleCSSOMWrappers[i]->setParentRule(0);
     }
+#endif
 }
 
 void CSSKeyframesRule::setName(const String& name)
@@ -114,23 +118,14 @@ void CSSKeyframesRule::setName(const String& name)
     m_keyframesRule->setName(name);
 }
 
-void CSSKeyframesRule::insertRule(const String& ruleText, ExceptionState& exceptionState)
+void CSSKeyframesRule::insertRule(const String& ruleText)
 {
     ASSERT(m_childRuleCSSOMWrappers.size() == m_keyframesRule->keyframes().size());
 
     CSSStyleSheet* styleSheet = parentStyleSheet();
-    if (styleSheet) {
-        if (Document* document = styleSheet->ownerDocument()) {
-            if (!document->contentSecurityPolicy()->allowStyleEval()) {
-                exceptionState.throwSecurityError(document->contentSecurityPolicy()->styleEvalDisabledErrorMessage());
-                return;
-            }
-        }
-    }
-
     CSSParserContext context(parserContext(), UseCounter::getFrom(styleSheet));
     BisonCSSParser parser(context);
-    RefPtr<StyleKeyframe> keyframe = parser.parseKeyframeRule(styleSheet ? styleSheet->contents() : 0, ruleText);
+    RefPtrWillBeRawPtr<StyleKeyframe> keyframe = parser.parseKeyframeRule(styleSheet ? styleSheet->contents() : 0, ruleText);
     if (!keyframe)
         return;
 
@@ -195,9 +190,9 @@ CSSKeyframeRule* CSSKeyframesRule::item(unsigned index) const
         return 0;
 
     ASSERT(m_childRuleCSSOMWrappers.size() == m_keyframesRule->keyframes().size());
-    RefPtr<CSSKeyframeRule>& rule = m_childRuleCSSOMWrappers[index];
+    RefPtrWillBeMember<CSSKeyframeRule>& rule = m_childRuleCSSOMWrappers[index];
     if (!rule)
-        rule = adoptRef(new CSSKeyframeRule(m_keyframesRule->keyframes()[index].get(), const_cast<CSSKeyframesRule*>(this)));
+        rule = adoptRefWillBeNoop(new CSSKeyframeRule(m_keyframesRule->keyframes()[index].get(), const_cast<CSSKeyframesRule*>(this)));
 
     return rule.get();
 }
@@ -205,7 +200,7 @@ CSSKeyframeRule* CSSKeyframesRule::item(unsigned index) const
 CSSRuleList* CSSKeyframesRule::cssRules()
 {
     if (!m_ruleListCSSOMWrapper)
-        m_ruleListCSSOMWrapper = adoptPtr(new LiveCSSRuleList<CSSKeyframesRule>(this));
+        m_ruleListCSSOMWrapper = LiveCSSRuleList<CSSKeyframesRule>::create(this);
     return m_ruleListCSSOMWrapper.get();
 }
 
@@ -213,6 +208,16 @@ void CSSKeyframesRule::reattach(StyleRuleBase* rule)
 {
     ASSERT(rule);
     m_keyframesRule = toStyleRuleKeyframes(rule);
+}
+
+void CSSKeyframesRule::trace(Visitor* visitor)
+{
+    CSSRule::trace(visitor);
+#if ENABLE(OILPAN)
+    visitor->trace(m_childRuleCSSOMWrappers);
+#endif
+    visitor->trace(m_keyframesRule);
+    visitor->trace(m_ruleListCSSOMWrapper);
 }
 
 } // namespace WebCore

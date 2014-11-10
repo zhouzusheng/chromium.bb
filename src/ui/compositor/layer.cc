@@ -14,6 +14,7 @@
 #include "cc/base/scoped_ptr_algorithm.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_renderer_layer.h"
+#include "cc/layers/picture_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/copy_output_request.h"
@@ -40,6 +41,15 @@ const ui::Layer* GetRoot(const ui::Layer* layer) {
   return layer;
 }
 
+struct UIImplSidePaintingStatus {
+  UIImplSidePaintingStatus()
+      : enabled(ui::IsUIImplSidePaintingEnabled()) {
+  }
+  bool enabled;
+};
+base::LazyInstance<UIImplSidePaintingStatus> g_ui_impl_side_painting_status =
+    LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 namespace ui {
@@ -51,6 +61,7 @@ Layer::Layer()
       visible_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
+      fills_bounds_completely_(false),
       background_blur_radius_(0),
       layer_saturation_(0.0f),
       layer_brightness_(0.0f),
@@ -61,6 +72,7 @@ Layer::Layer()
       zoom_(1),
       zoom_inset_(0),
       delegate_(NULL),
+      owner_(NULL),
       cc_layer_(NULL),
       scale_content_(true),
       device_scale_factor_(1.0f) {
@@ -74,6 +86,7 @@ Layer::Layer(LayerType type)
       visible_(true),
       force_render_surface_(false),
       fills_bounds_opaquely_(true),
+      fills_bounds_completely_(false),
       background_blur_radius_(0),
       layer_saturation_(0.0f),
       layer_brightness_(0.0f),
@@ -84,6 +97,7 @@ Layer::Layer(LayerType type)
       zoom_(1),
       zoom_inset_(0),
       delegate_(NULL),
+      owner_(NULL),
       cc_layer_(NULL),
       scale_content_(true),
       device_scale_factor_(1.0f) {
@@ -109,6 +123,11 @@ Layer::~Layer() {
     children_[i]->parent_ = NULL;
   cc_layer_->RemoveLayerAnimationEventObserver(this);
   cc_layer_->RemoveFromParent();
+}
+
+// static
+bool Layer::UsingPictureLayer() {
+  return g_ui_impl_side_painting_status.Get().enabled;
 }
 
 Compositor* Layer::GetCompositor() {
@@ -427,6 +446,10 @@ void Layer::SetFillsBoundsOpaquely(bool fills_bounds_opaquely) {
   cc_layer_->SetContentsOpaque(fills_bounds_opaquely);
 }
 
+void Layer::SetFillsBoundsCompletely(bool fills_bounds_completely) {
+  fills_bounds_completely_ = fills_bounds_completely;
+}
+
 void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   // Finish animations being handled by cc_layer_.
   if (animator_.get()) {
@@ -469,7 +492,11 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
 }
 
 void Layer::SwitchCCLayerForTest() {
-  scoped_refptr<cc::ContentLayer> new_layer = cc::ContentLayer::Create(this);
+  scoped_refptr<cc::Layer> new_layer;
+  if (Layer::UsingPictureLayer())
+    new_layer = cc::PictureLayer::Create(this);
+  else
+    new_layer = cc::ContentLayer::Create(this);
   SwitchToLayer(new_layer);
   content_layer_ = new_layer;
 }
@@ -536,7 +563,11 @@ void Layer::SetShowPaintedContent() {
   if (content_layer_.get())
     return;
 
-  scoped_refptr<cc::ContentLayer> new_layer = cc::ContentLayer::Create(this);
+  scoped_refptr<cc::Layer> new_layer;
+  if (Layer::UsingPictureLayer())
+    new_layer = cc::PictureLayer::Create(this);
+  else
+    new_layer = cc::ContentLayer::Create(this);
   SwitchToLayer(new_layer);
   content_layer_ = new_layer;
 
@@ -636,6 +667,8 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
   if (scale_content)
     canvas->Restore();
 }
+
+bool Layer::FillsBoundsCompletely() const { return fills_bounds_completely_; }
 
 unsigned Layer::PrepareTexture() {
   DCHECK(texture_layer_.get());
@@ -882,7 +915,10 @@ void Layer::CreateWebLayer() {
     solid_color_layer_ = cc::SolidColorLayer::Create();
     cc_layer_ = solid_color_layer_.get();
   } else {
-    content_layer_ = cc::ContentLayer::Create(this);
+    if (Layer::UsingPictureLayer())
+      content_layer_ = cc::PictureLayer::Create(this);
+    else
+      content_layer_ = cc::ContentLayer::Create(this);
     cc_layer_ = content_layer_.get();
   }
   cc_layer_->SetAnchorPoint(gfx::PointF());

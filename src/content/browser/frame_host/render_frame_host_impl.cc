@@ -9,12 +9,17 @@
 #include "base/metrics/user_metrics_action.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
+#include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "content/browser/renderer_host/input/input_router.h"
+#include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/frame_messages.h"
+#include "content/common/input_messages.h"
+#include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -23,6 +28,8 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/url_constants.h"
 #include "url/gurl.h"
+
+using base::TimeDelta;
 
 namespace content {
 
@@ -81,6 +88,10 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   frame_tree_->UnregisterRenderFrameHost(this);
 }
 
+int RenderFrameHostImpl::GetRoutingID() {
+  return routing_id_;
+}
+
 SiteInstance* RenderFrameHostImpl::GetSiteInstance() {
   return render_view_host_->GetSiteInstance();
 }
@@ -91,8 +102,27 @@ RenderProcessHost* RenderFrameHostImpl::GetProcess() {
   return render_view_host_->GetProcess();
 }
 
-int RenderFrameHostImpl::GetRoutingID() {
-  return routing_id_;
+RenderFrameHost* RenderFrameHostImpl::GetParent() {
+  FrameTreeNode* parent_node = frame_tree_node_->parent();
+  if (!parent_node)
+    return NULL;
+  return parent_node->current_frame_host();
+}
+
+const std::string& RenderFrameHostImpl::GetFrameName() {
+  return frame_tree_node_->frame_name();
+}
+
+bool RenderFrameHostImpl::IsCrossProcessSubframe() {
+  FrameTreeNode* parent_node = frame_tree_node_->parent();
+  if (!parent_node)
+    return false;
+  return GetSiteInstance() !=
+      parent_node->current_frame_host()->GetSiteInstance();
+}
+
+GURL RenderFrameHostImpl::GetLastCommittedURL() {
+  return frame_tree_node_->current_url();
 }
 
 gfx::NativeView RenderFrameHostImpl::GetNativeView() {
@@ -100,6 +130,49 @@ gfx::NativeView RenderFrameHostImpl::GetNativeView() {
   if (!view)
     return NULL;
   return view->GetNativeView();
+}
+
+void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
+  // TODO(creis): Support subframes.
+  DCHECK(!GetParent());
+
+  if (!render_view_host_->IsRenderViewLive()) {
+    // We don't have a live renderer, so just skip running beforeunload.
+    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        for_cross_site_transition;
+    base::TimeTicks now = base::TimeTicks::Now();
+    OnBeforeUnloadACK(true, now, now);
+    return;
+  }
+
+  // This may be called more than once (if the user clicks the tab close button
+  // several times, or if she clicks the tab close button then the browser close
+  // button), and we only send the message once.
+  if (render_view_host_->is_waiting_for_beforeunload_ack_) {
+    // Some of our close messages could be for the tab, others for cross-site
+    // transitions. We always want to think it's for closing the tab if any
+    // of the messages were, since otherwise it might be impossible to close
+    // (if there was a cross-site "close" request pending when the user clicked
+    // the close button). We want to keep the "for cross site" flag only if
+    // both the old and the new ones are also for cross site.
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        render_view_host_->unload_ack_is_for_cross_site_transition_ &&
+        for_cross_site_transition;
+  } else {
+    // Start the hang monitor in case the renderer hangs in the beforeunload
+    // handler.
+    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
+    render_view_host_->unload_ack_is_for_cross_site_transition_ =
+        for_cross_site_transition;
+    // Increment the in-flight event count, to ensure that input events won't
+    // cancel the timeout timer.
+    render_view_host_->increment_in_flight_event_count();
+    render_view_host_->StartHangMonitorTimeout(
+        TimeDelta::FromMilliseconds(RenderViewHostImpl::kUnloadTimeoutMS));
+    send_before_unload_start_time_ = base::TimeTicks::Now();
+    Send(new FrameMsg_BeforeUnload(routing_id_));
+  }
 }
 
 void RenderFrameHostImpl::NotifyContextMenuClosed(
@@ -112,11 +185,91 @@ void RenderFrameHostImpl::ExecuteCustomContextMenuCommand(
   Send(new FrameMsg_CustomContextMenuAction(routing_id_, context, action));
 }
 
+void RenderFrameHostImpl::Undo() {
+  Send(new InputMsg_Undo(routing_id_));
+  RecordAction(base::UserMetricsAction("Undo"));
+}
+
+void RenderFrameHostImpl::Redo() {
+  Send(new InputMsg_Redo(routing_id_));
+  RecordAction(base::UserMetricsAction("Redo"));
+}
+
+void RenderFrameHostImpl::Cut() {
+  Send(new InputMsg_Cut(routing_id_));
+  RecordAction(base::UserMetricsAction("Cut"));
+}
+
+void RenderFrameHostImpl::Copy() {
+  Send(new InputMsg_Copy(routing_id_));
+  RecordAction(base::UserMetricsAction("Copy"));
+}
+
+void RenderFrameHostImpl::CopyToFindPboard() {
+#if defined(OS_MACOSX)
+  // Windows/Linux don't have the concept of a find pasteboard.
+  Send(new InputMsg_CopyToFindPboard(routing_id_));
+  RecordAction(base::UserMetricsAction("CopyToFindPboard"));
+#endif
+}
+
+void RenderFrameHostImpl::Paste() {
+  Send(new InputMsg_Paste(routing_id_));
+  RecordAction(base::UserMetricsAction("Paste"));
+}
+
+void RenderFrameHostImpl::PasteAndMatchStyle() {
+  Send(new InputMsg_PasteAndMatchStyle(routing_id_));
+  RecordAction(base::UserMetricsAction("PasteAndMatchStyle"));
+}
+
+void RenderFrameHostImpl::Delete() {
+  Send(new InputMsg_Delete(routing_id_));
+  RecordAction(base::UserMetricsAction("DeleteSelection"));
+}
+
+void RenderFrameHostImpl::SelectAll() {
+  Send(new InputMsg_SelectAll(routing_id_));
+  RecordAction(base::UserMetricsAction("SelectAll"));
+}
+
+void RenderFrameHostImpl::Unselect() {
+  Send(new InputMsg_Unselect(routing_id_));
+  RecordAction(base::UserMetricsAction("Unselect"));
+}
+
+void RenderFrameHostImpl::InsertCSS(const std::string& css) {
+  Send(new FrameMsg_CSSInsertRequest(routing_id_, css));
+}
+
+void RenderFrameHostImpl::ExecuteJavaScript(
+    const base::string16& javascript) {
+  Send(new FrameMsg_JavaScriptExecuteRequest(routing_id_,
+                                             javascript,
+                                             0, false));
+}
+
+void RenderFrameHostImpl::ExecuteJavaScript(
+     const base::string16& javascript,
+     const JavaScriptResultCallback& callback) {
+  static int next_id = 1;
+  int key = next_id++;
+  Send(new FrameMsg_JavaScriptExecuteRequest(routing_id_,
+                                             javascript,
+                                             key, true));
+  javascript_callbacks_.insert(std::make_pair(key, callback));
+}
+
 RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
   return render_view_host_;
 }
 
 bool RenderFrameHostImpl::Send(IPC::Message* message) {
+  if (IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart) {
+    return render_view_host_->input_router()->SendInput(
+        make_scoped_ptr(message));
+  }
+
   return GetProcess()->Send(message);
 }
 
@@ -152,6 +305,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderFrameHostImpl, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_FrameFocused, OnFrameFocused)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidStartProvisionalLoadForFrame,
                         OnDidStartProvisionalLoadForFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFailProvisionalLoadWithError,
@@ -164,8 +318,12 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                                 OnNavigate(msg))
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidStartLoading, OnDidStartLoading)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidStopLoading, OnDidStopLoading)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_BeforeUnload_ACK, OnBeforeUnloadACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_ContextMenu, OnContextMenu)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_JavaScriptExecuteResponse,
+                        OnJavaScriptExecuteResponse)
   IPC_END_MESSAGE_MAP_EX()
 
   if (!msg_is_ok) {
@@ -182,27 +340,37 @@ void RenderFrameHostImpl::Init() {
   GetProcess()->ResumeRequestsForView(routing_id_);
 }
 
-void RenderFrameHostImpl::OnCreateChildFrame(int new_frame_routing_id,
-                                             int64 parent_frame_id,
-                                             int64 frame_id,
+void RenderFrameHostImpl::OnCreateChildFrame(int new_routing_id,
                                              const std::string& frame_name) {
   RenderFrameHostImpl* new_frame = frame_tree_->AddFrame(
-      new_frame_routing_id, parent_frame_id, frame_id, frame_name);
+      frame_tree_node_, new_routing_id, frame_name);
   if (delegate_)
     delegate_->RenderFrameCreated(new_frame);
 }
 
-void RenderFrameHostImpl::OnDetach(int64 parent_frame_id, int64 frame_id) {
-  frame_tree_->RemoveFrame(this, parent_frame_id, frame_id);
+void RenderFrameHostImpl::OnDetach() {
+  frame_tree_->RemoveFrame(frame_tree_node_);
+}
+
+void RenderFrameHostImpl::OnFrameFocused() {
+  frame_tree_->SetFocusedFrame(frame_tree_node_);
+}
+
+void RenderFrameHostImpl::OnOpenURL(
+    const FrameHostMsg_OpenURL_Params& params) {
+  GURL validated_url(params.url);
+  GetProcess()->FilterURL(false, &validated_url);
+
+  frame_tree_node_->navigator()->RequestOpenURL(
+      this, validated_url, params.referrer, params.disposition,
+      params.should_replace_current_entry, params.user_gesture);
 }
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
-    int64 frame_id,
-    int64 parent_frame_id,
-    bool is_main_frame,
+    int parent_routing_id,
     const GURL& url) {
   frame_tree_node_->navigator()->DidStartProvisionalLoad(
-      this, frame_id, parent_frame_id, is_main_frame, url);
+      this, parent_routing_id, url);
 }
 
 void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
@@ -211,17 +379,14 @@ void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
 }
 
 void RenderFrameHostImpl::OnDidFailLoadWithError(
-    int64 frame_id,
     const GURL& url,
-    bool is_main_frame,
     int error_code,
     const base::string16& error_description) {
   GURL validated_url(url);
   GetProcess()->FilterURL(false, &validated_url);
 
   frame_tree_node_->navigator()->DidFailLoadWithError(
-      this, frame_id, validated_url, is_main_frame, error_code,
-      error_description);
+      this, validated_url, error_code, error_description);
 }
 
 void RenderFrameHostImpl::OnDidRedirectProvisionalLoad(
@@ -258,9 +423,8 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   if (render_view_host_->is_waiting_for_beforeunload_ack_ &&
       render_view_host_->unload_ack_is_for_cross_site_transition_ &&
       PageTransitionIsMainFrame(validated_params.transition)) {
-    render_view_host_->OnShouldCloseACK(
-        true, render_view_host_->send_should_close_start_time_,
-        base::TimeTicks::Now());
+    OnBeforeUnloadACK(true, send_before_unload_start_time_,
+                      base::TimeTicks::Now());
     return;
   }
 
@@ -272,18 +436,6 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   if (render_view_host_->IsWaitingForUnloadACK())
     return;
 
-  // Cache the main frame id, so we can use it for creating the frame tree
-  // root node when needed.
-  if (PageTransitionIsMainFrame(validated_params.transition)) {
-    if (render_view_host_->main_frame_id_ == -1) {
-      render_view_host_->main_frame_id_ = validated_params.frame_id;
-    } else {
-      // TODO(nasko): We plan to remove the usage of frame_id in navigation
-      // and move to routing ids. This is in place to ensure that a
-      // renderer is not misbehaving and sending us incorrect data.
-      DCHECK_EQ(render_view_host_->main_frame_id_, validated_params.frame_id);
-    }
-  }
   RenderProcessHost* process = GetProcess();
 
   // Attempts to commit certain off-limits URL should be caught more strictly
@@ -327,22 +479,104 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   frame_tree_node()->navigator()->DidNavigate(this, validated_params);
 }
 
-void RenderFrameHostImpl::SwapOut() {
-  if (render_view_host_->IsRenderViewLive()) {
-    Send(new FrameMsg_SwapOut(routing_id_));
-  } else {
-    // Our RenderViewHost doesn't have a live renderer, so just skip the unload
-    // event.
-    OnSwappedOut(true);
-  }
+int RenderFrameHostImpl::GetEnabledBindings() {
+  return render_view_host_->GetEnabledBindings();
 }
 
-void RenderFrameHostImpl::OnDidStartLoading() {
-  delegate_->DidStartLoading(this);
+void RenderFrameHostImpl::OnCrossSiteResponse(
+    const GlobalRequestID& global_request_id,
+    scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
+    const std::vector<GURL>& transfer_url_chain,
+    const Referrer& referrer,
+    PageTransition page_transition,
+    bool should_replace_current_entry) {
+  frame_tree_node_->render_manager()->OnCrossSiteResponse(
+      this, global_request_id, cross_site_transferring_request.Pass(),
+      transfer_url_chain, referrer, page_transition,
+      should_replace_current_entry);
+}
+
+void RenderFrameHostImpl::SwapOut() {
+  // TODO(creis): Move swapped out state to RFH.  Until then, only update it
+  // when swapping out the main frame.
+  if (!GetParent()) {
+    // If this RenderViewHost is not in the default state, it must have already
+    // gone through this, therefore just return.
+    if (render_view_host_->rvh_state_ != RenderViewHostImpl::STATE_DEFAULT)
+      return;
+
+    render_view_host_->SetState(
+        RenderViewHostImpl::STATE_WAITING_FOR_UNLOAD_ACK);
+    render_view_host_->unload_event_monitor_timeout_->Start(
+        base::TimeDelta::FromMilliseconds(
+            RenderViewHostImpl::kUnloadTimeoutMS));
+  }
+
+  if (render_view_host_->IsRenderViewLive())
+    Send(new FrameMsg_SwapOut(routing_id_));
+
+  if (!GetParent())
+    delegate_->SwappedOut(this);
+
+  // Allow the navigation to proceed.
+  frame_tree_node_->render_manager()->SwappedOut(this);
+}
+
+void RenderFrameHostImpl::OnDidStartLoading(bool to_different_document) {
+  delegate_->DidStartLoading(this, to_different_document);
 }
 
 void RenderFrameHostImpl::OnDidStopLoading() {
   delegate_->DidStopLoading(this);
+}
+
+void RenderFrameHostImpl::OnBeforeUnloadACK(
+    bool proceed,
+    const base::TimeTicks& renderer_before_unload_start_time,
+    const base::TimeTicks& renderer_before_unload_end_time) {
+  // TODO(creis): Support beforeunload on subframes.
+  if (GetParent()) {
+    NOTREACHED() << "Should only receive BeforeUnload_ACK from the main frame.";
+    return;
+  }
+
+  render_view_host_->decrement_in_flight_event_count();
+  render_view_host_->StopHangMonitorTimeout();
+  // If this renderer navigated while the beforeunload request was in flight, we
+  // may have cleared this state in OnNavigate, in which case we can ignore
+  // this message.
+  if (!render_view_host_->is_waiting_for_beforeunload_ack_ ||
+      render_view_host_->rvh_state_ != RenderViewHostImpl::STATE_DEFAULT) {
+    return;
+  }
+
+  render_view_host_->is_waiting_for_beforeunload_ack_ = false;
+
+  base::TimeTicks before_unload_end_time;
+  if (!send_before_unload_start_time_.is_null() &&
+      !renderer_before_unload_start_time.is_null() &&
+      !renderer_before_unload_end_time.is_null()) {
+    // When passing TimeTicks across process boundaries, we need to compensate
+    // for any skew between the processes. Here we are converting the
+    // renderer's notion of before_unload_end_time to TimeTicks in the browser
+    // process. See comments in inter_process_time_ticks_converter.h for more.
+    InterProcessTimeTicksConverter converter(
+        LocalTimeTicks::FromTimeTicks(send_before_unload_start_time_),
+        LocalTimeTicks::FromTimeTicks(base::TimeTicks::Now()),
+        RemoteTimeTicks::FromTimeTicks(renderer_before_unload_start_time),
+        RemoteTimeTicks::FromTimeTicks(renderer_before_unload_end_time));
+    LocalTimeTicks browser_before_unload_end_time =
+        converter.ToLocalTimeTicks(
+            RemoteTimeTicks::FromTimeTicks(renderer_before_unload_end_time));
+    before_unload_end_time = browser_before_unload_end_time.ToTimeTicks();
+  }
+  frame_tree_node_->render_manager()->OnBeforeUnloadACK(
+      render_view_host_->unload_ack_is_for_cross_site_transition_, proceed,
+      before_unload_end_time);
+
+  // If canceled, notify the delegate to cancel its pending navigation entry.
+  if (!proceed)
+    render_view_host_->GetDelegate()->DidCancelLoading();
 }
 
 void RenderFrameHostImpl::OnSwapOutACK() {
@@ -350,7 +584,12 @@ void RenderFrameHostImpl::OnSwapOutACK() {
 }
 
 void RenderFrameHostImpl::OnSwappedOut(bool timed_out) {
-  frame_tree_node_->render_manager()->SwappedOutFrame(this);
+  // For now, we only need to update the RVH state machine for top-level swaps.
+  // Subframe swaps (in --site-per-process) can just continue via RFHM.
+  if (!GetParent())
+    render_view_host_->OnSwappedOut(timed_out);
+  else
+    frame_tree_node_->render_manager()->SwappedOut(this);
 }
 
 void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
@@ -367,6 +606,25 @@ void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
   process->FilterURL(true, &validated_params.frame_url);
 
   delegate_->ShowContextMenu(this, validated_params);
+}
+
+void RenderFrameHostImpl::OnJavaScriptExecuteResponse(
+    int id, const base::ListValue& result) {
+  const base::Value* result_value;
+  if (!result.Get(0, &result_value)) {
+    // Programming error or rogue renderer.
+    NOTREACHED() << "Got bad arguments for OnJavaScriptExecuteResponse";
+    return;
+  }
+
+  std::map<int, JavaScriptResultCallback>::iterator it =
+      javascript_callbacks_.find(id);
+  if (it != javascript_callbacks_.end()) {
+    it->second.Run(result_value);
+    javascript_callbacks_.erase(it);
+  } else {
+    NOTREACHED() << "Received script response for unknown request";
+  }
 }
 
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
@@ -413,7 +671,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
     // completing a RVH swap or unload handler.
     render_view_host_->SetState(RenderViewHostImpl::STATE_DEFAULT);
 
-    Send(new FrameMsg_Navigate(GetRoutingID(), params));
+    Send(new FrameMsg_Navigate(routing_id_, params));
   }
 
   // Force the throbber to start. We do this because Blink's "started
@@ -428,7 +686,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
   if (!params.url.SchemeIs(kJavaScriptScheme))
-    delegate_->DidStartLoading(this);
+    delegate_->DidStartLoading(this, true);
 }
 
 void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
@@ -441,6 +699,16 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   params.transition = PAGE_TRANSITION_LINK;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
   Navigate(params);
+}
+
+void RenderFrameHostImpl::SelectRange(const gfx::Point& start,
+                                      const gfx::Point& end) {
+  Send(new InputMsg_SelectRange(routing_id_, start, end));
+}
+
+void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
+                                                   size_t after) {
+  Send(new FrameMsg_ExtendSelectionAndDelete(routing_id_, before, after));
 }
 
 }  // namespace content

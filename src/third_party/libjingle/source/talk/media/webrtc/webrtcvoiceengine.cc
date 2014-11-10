@@ -107,12 +107,6 @@ static const int kDefaultSoundclipDeviceId = -2;
 static const int kDefaultAudioDeviceId = 0;
 #endif
 
-// extension header for audio levels, as defined in
-// http://tools.ietf.org/html/draft-ietf-avtext-client-to-mixer-audio-level-03
-static const char kRtpAudioLevelHeaderExtension[] =
-    "urn:ietf:params:rtp-hdrext:ssrc-audio-level";
-static const int kRtpAudioLevelHeaderExtensionId = 1;
-
 static const char kIsacCodecName[] = "ISAC";
 static const char kL16CodecName[] = "L16";
 // Codec parameters for Opus.
@@ -192,6 +186,18 @@ static bool IsCodecMultiRate(const webrtc::CodecInst& codec) {
     }
   }
   return false;
+}
+
+static bool IsTelephoneEventCodec(const std::string& name) {
+  return _stricmp(name.c_str(), "telephone-event") == 0;
+}
+
+static bool IsCNCodec(const std::string& name) {
+  return _stricmp(name.c_str(), "CN") == 0;
+}
+
+static bool IsRedCodec(const std::string& name) {
+  return _stricmp(name.c_str(), "red") == 0;
 }
 
 static bool FindCodec(const std::vector<AudioCodec>& codecs,
@@ -379,7 +385,12 @@ void WebRtcVoiceEngine::Construct() {
   // Load our RTP Header extensions.
   rtp_header_extensions_.push_back(
       RtpHeaderExtension(kRtpAudioLevelHeaderExtension,
-                         kRtpAudioLevelHeaderExtensionId));
+                         kRtpAudioLevelHeaderExtensionDefaultId));
+#ifdef USE_WEBRTC_DEV_BRANCH
+  rtp_header_extensions_.push_back(
+      RtpHeaderExtension(kRtpAbsoluteSenderTimeHeaderExtension,
+                         kRtpAbsoluteSenderTimeHeaderExtensionDefaultId));
+#endif
   options_ = GetDefaultEngineOptions();
 
   // Initialize the VoE Configuration to the default ACM.
@@ -1675,10 +1686,12 @@ class WebRtcVoiceMediaChannel::WebRtcVoiceChannelRenderer
 
   // Starts the rendering by setting a sink to the renderer to get data
   // callback.
+  // This method is called on the libjingle worker thread.
   // TODO(xians): Make sure Start() is called only once.
   void Start(AudioRenderer* renderer) {
+    talk_base::CritScope lock(&lock_);
     ASSERT(renderer != NULL);
-    if (renderer_) {
+    if (renderer_ != NULL) {
       ASSERT(renderer_ == renderer);
       return;
     }
@@ -1692,8 +1705,10 @@ class WebRtcVoiceMediaChannel::WebRtcVoiceChannelRenderer
 
   // Stops rendering by setting the sink of the renderer to NULL. No data
   // callback will be received after this method.
+  // This method is called on the libjingle worker thread.
   void Stop() {
-    if (!renderer_)
+    talk_base::CritScope lock(&lock_);
+    if (renderer_ == NULL)
       return;
 
     renderer_->RemoveChannel(channel_);
@@ -1702,13 +1717,29 @@ class WebRtcVoiceMediaChannel::WebRtcVoiceChannelRenderer
   }
 
   // AudioRenderer::Sink implementation.
+  // This method is called on the audio thread.
   virtual void OnData(const void* audio_data,
                       int bits_per_sample,
                       int sample_rate,
                       int number_of_channels,
                       int number_of_frames) OVERRIDE {
-    // TODO(xians): Make new interface in AudioTransport to pass the data to
-    // WebRtc VoE channel.
+#ifdef USE_WEBRTC_DEV_BRANCH
+    voe_audio_transport_->OnData(channel_,
+                                 audio_data,
+                                 bits_per_sample,
+                                 sample_rate,
+                                 number_of_channels,
+                                 number_of_frames);
+#endif
+  }
+
+  // Callback from the |renderer_| when it is going away. In case Start() has
+  // never been called, this callback won't be triggered.
+  virtual void OnClose() OVERRIDE {
+    talk_base::CritScope lock(&lock_);
+    // Set |renderer_| to NULL to make sure no more callback will get into
+    // the renderer.
+    renderer_ = NULL;
   }
 
   // Accessor to the VoE channel ID.
@@ -1722,6 +1753,9 @@ class WebRtcVoiceMediaChannel::WebRtcVoiceChannelRenderer
   // PeerConnection will make sure invalidating the pointer before the object
   // goes away.
   AudioRenderer* renderer_;
+
+  // Protects |renderer_| in Start(), Stop() and OnClose().
+  talk_base::CriticalSection lock_;
 };
 
 // WebRtcVoiceMediaChannel
@@ -1943,10 +1977,11 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
 
   // Scan through the list to figure out the codec to use for sending, along
   // with the proper configuration for VAD and DTMF.
-  bool first = true;
+  bool found_send_codec = false;
   webrtc::CodecInst send_codec;
   memset(&send_codec, 0, sizeof(send_codec));
 
+  // Set send codec (the first non-telephone-event/CN codec)
   for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
        it != codecs.end(); ++it) {
     // Ignore codecs we don't know about. The negotiation step should prevent
@@ -1954,6 +1989,11 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
     webrtc::CodecInst voe_codec;
     if (!engine()->FindWebRtcCodec(*it, &voe_codec)) {
       LOG(LS_WARNING) << "Unknown codec " << ToString(*it);
+      continue;
+    }
+
+    if (IsTelephoneEventCodec(it->name) || IsCNCodec(it->name)) {
+      // Skip telephone-event/CN codec, which will be handled later.
       continue;
     }
 
@@ -1992,21 +2032,73 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
       }
     }
 
+    // We'll use the first codec in the list to actually send audio data.
+    // Be sure to use the payload type requested by the remote side.
+    // "red", for FEC audio, is a special case where the actual codec to be
+    // used is specified in params.
+    if (IsRedCodec(it->name)) {
+      // Parse out the RED parameters. If we fail, just ignore RED;
+      // we don't support all possible params/usage scenarios.
+      if (!GetRedSendCodec(*it, codecs, &send_codec)) {
+        continue;
+      }
+
+      // Enable redundant encoding of the specified codec. Treat any
+      // failure as a fatal internal error.
+      LOG(LS_INFO) << "Enabling FEC";
+      if (engine()->voe()->rtp()->SetFECStatus(channel, true, it->id) == -1) {
+        LOG_RTCERR3(SetFECStatus, channel, true, it->id);
+        return false;
+      }
+    } else {
+      send_codec = voe_codec;
+      nack_enabled_ = IsNackEnabled(*it);
+      SetNack(channel, nack_enabled_);
+    }
+    found_send_codec = true;
+    break;
+  }
+
+  if (!found_send_codec) {
+    LOG(LS_WARNING) << "Received empty list of codecs.";
+    return false;
+  }
+
+  // Set the codec immediately, since SetVADStatus() depends on whether
+  // the current codec is mono or stereo.
+  if (!SetSendCodec(channel, send_codec))
+    return false;
+
+  // Always update the |send_codec_| to the currently set send codec.
+  send_codec_.reset(new webrtc::CodecInst(send_codec));
+
+  if (send_bw_setting_) {
+    SetSendBandwidthInternal(send_bw_bps_);
+  }
+
+  // Loop through the codecs list again to config the telephone-event/CN codec.
+  for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
+       it != codecs.end(); ++it) {
+    // Ignore codecs we don't know about. The negotiation step should prevent
+    // this, but double-check to be sure.
+    webrtc::CodecInst voe_codec;
+    if (!engine()->FindWebRtcCodec(*it, &voe_codec)) {
+      LOG(LS_WARNING) << "Unknown codec " << ToString(*it);
+      continue;
+    }
+
     // Find the DTMF telephone event "codec" and tell VoiceEngine channels
     // about it.
-    if (_stricmp(it->name.c_str(), "telephone-event") == 0 ||
-        _stricmp(it->name.c_str(), "audio/telephone-event") == 0) {
+    if (IsTelephoneEventCodec(it->name)) {
       if (engine()->voe()->dtmf()->SetSendTelephoneEventPayloadType(
               channel, it->id) == -1) {
         LOG_RTCERR2(SetSendTelephoneEventPayloadType, channel, it->id);
         return false;
       }
-    }
-
-    // Turn voice activity detection/comfort noise on if supported.
-    // Set the wideband CN payload type appropriately.
-    // (narrowband always uses the static payload type 13).
-    if (_stricmp(it->name.c_str(), "CN") == 0) {
+    } else if (IsCNCodec(it->name)) {
+      // Turn voice activity detection/comfort noise on if supported.
+      // Set the wideband CN payload type appropriately.
+      // (narrowband always uses the static payload type 13).
       webrtc::PayloadFrequencies cn_freq;
       switch (it->clockrate) {
         case 8000:
@@ -2039,7 +2131,6 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
           // send the offer.
         }
       }
-
       // Only turn on VAD if we have a CN payload type that matches the
       // clockrate for the codec we are going to use.
       if (it->clockrate == send_codec.plfreq) {
@@ -2050,54 +2141,6 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
         }
       }
     }
-
-    // We'll use the first codec in the list to actually send audio data.
-    // Be sure to use the payload type requested by the remote side.
-    // "red", for FEC audio, is a special case where the actual codec to be
-    // used is specified in params.
-    if (first) {
-      if (_stricmp(it->name.c_str(), "red") == 0) {
-        // Parse out the RED parameters. If we fail, just ignore RED;
-        // we don't support all possible params/usage scenarios.
-        if (!GetRedSendCodec(*it, codecs, &send_codec)) {
-          continue;
-        }
-
-        // Enable redundant encoding of the specified codec. Treat any
-        // failure as a fatal internal error.
-        LOG(LS_INFO) << "Enabling FEC";
-        if (engine()->voe()->rtp()->SetFECStatus(channel, true, it->id) == -1) {
-          LOG_RTCERR3(SetFECStatus, channel, true, it->id);
-          return false;
-        }
-      } else {
-        send_codec = voe_codec;
-        nack_enabled_ = IsNackEnabled(*it);
-        SetNack(channel, nack_enabled_);
-      }
-      first = false;
-      // Set the codec immediately, since SetVADStatus() depends on whether
-      // the current codec is mono or stereo.
-      if (!SetSendCodec(channel, send_codec))
-        return false;
-    }
-  }
-
-  // If we're being asked to set an empty list of codecs, due to a buggy client,
-  // choose the most common format: PCMU
-  if (first) {
-    LOG(LS_WARNING) << "Received empty list of codecs; using PCMU/8000";
-    AudioCodec codec(0, "PCMU", 8000, 0, 1, 0);
-    engine()->FindWebRtcCodec(codec, &send_codec);
-    if (!SetSendCodec(channel, send_codec))
-      return false;
-  }
-
-  // Always update the |send_codec_| to the currently set send codec.
-  send_codec_.reset(new webrtc::CodecInst(send_codec));
-
-  if (send_bw_setting_) {
-    SetSendBandwidthInternal(send_bw_bps_);
   }
 
   return true;
@@ -2174,43 +2217,74 @@ bool WebRtcVoiceMediaChannel::SetSendCodec(
 
 bool WebRtcVoiceMediaChannel::SetRecvRtpHeaderExtensions(
     const std::vector<RtpHeaderExtension>& extensions) {
-  // We don't support any incoming extensions headers right now.
+#ifdef USE_WEBRTC_DEV_BRANCH
+  const RtpHeaderExtension* send_time_extension =
+      FindHeaderExtension(extensions, kRtpAbsoluteSenderTimeHeaderExtension);
+
+  // Loop through all receive channels and enable/disable the extensions.
+  for (ChannelMap::const_iterator channel_it = receive_channels_.begin();
+       channel_it != receive_channels_.end(); ++channel_it) {
+    int channel_id = channel_it->second->channel();
+    if (!SetHeaderExtension(
+        &webrtc::VoERTP_RTCP::SetReceiveAbsoluteSenderTimeStatus, channel_id,
+        send_time_extension)) {
+      return false;
+    }
+  }
+#endif
   return true;
 }
 
 bool WebRtcVoiceMediaChannel::SetSendRtpHeaderExtensions(
     const std::vector<RtpHeaderExtension>& extensions) {
-  // Enable the audio level extension header if requested.
-  std::vector<RtpHeaderExtension>::const_iterator it;
-  for (it = extensions.begin(); it != extensions.end(); ++it) {
-    if (it->uri == kRtpAudioLevelHeaderExtension) {
-      break;
-    }
+  const RtpHeaderExtension* audio_level_extension =
+      FindHeaderExtension(extensions, kRtpAudioLevelHeaderExtension);
+#ifdef USE_WEBRTC_DEV_BRANCH
+  const RtpHeaderExtension* send_time_extension =
+      FindHeaderExtension(extensions, kRtpAbsoluteSenderTimeHeaderExtension);
+#endif
+
+#ifndef USE_WEBRTC_DEV_BRANCH
+  if (!SetHeaderExtension(
+      &webrtc::VoERTP_RTCP::SetRTPAudioLevelIndicationStatus, voe_channel(),
+      audio_level_extension)) {
+    return false;
   }
+#else
+  if (!SetHeaderExtension(
+      &webrtc::VoERTP_RTCP::SetSendAudioLevelIndicationStatus, voe_channel(),
+      audio_level_extension)) {
+    return false;
+  }
+  if (!SetHeaderExtension(
+      &webrtc::VoERTP_RTCP::SetSendAbsoluteSenderTimeStatus, voe_channel(),
+      send_time_extension)) {
+    return false;
+  }
+#endif
 
-  bool enable = (it != extensions.end());
-  int id = 0;
-
-  if (enable) {
-    id = it->id;
-    if (id < kMinRtpHeaderExtensionId ||
-        id > kMaxRtpHeaderExtensionId) {
-      LOG(LS_WARNING) << "Invalid RTP header extension id " << id;
+  for (ChannelMap::const_iterator channel_it = send_channels_.begin();
+       channel_it != send_channels_.end(); ++channel_it) {
+    int channel_id = channel_it->second->channel();
+#ifndef USE_WEBRTC_DEV_BRANCH
+    if (!SetHeaderExtension(
+        &webrtc::VoERTP_RTCP::SetRTPAudioLevelIndicationStatus, channel_id,
+        audio_level_extension)) {
       return false;
     }
-  }
-
-  LOG(LS_INFO) << "Enabling audio level header extension with ID " << id;
-  for (ChannelMap::const_iterator iter = send_channels_.begin();
-       iter != send_channels_.end(); ++iter) {
-    if (engine()->voe()->rtp()->SetRTPAudioLevelIndicationStatus(
-            iter->second->channel(), enable, id) == -1) {
-      LOG_RTCERR3(SetRTPAudioLevelIndicationStatus,
-                  iter->second->channel(), enable, id);
+#else
+    if (!SetHeaderExtension(
+        &webrtc::VoERTP_RTCP::SetSendAudioLevelIndicationStatus, channel_id,
+        audio_level_extension)) {
       return false;
     }
+    if (!SetHeaderExtension(
+        &webrtc::VoERTP_RTCP::SetSendAbsoluteSenderTimeStatus, channel_id,
+        send_time_extension)) {
+      return false;
+    }
+#endif
   }
-
   return true;
 }
 
@@ -3439,6 +3513,21 @@ VoiceMediaChannel::Error
     default:
       return VoiceMediaChannel::ERROR_OTHER;
   }
+}
+
+bool WebRtcVoiceMediaChannel::SetHeaderExtension(ExtensionSetterFunction setter,
+    int channel_id, const RtpHeaderExtension* extension) {
+  bool enable = false;
+  unsigned char id = 0;
+  if (extension) {
+    enable = true;
+    id = extension->id;
+  }
+  if ((engine()->voe()->rtp()->*setter)(channel_id, enable, id) != 0) {
+    LOG_RTCERR4(*setter, extension->uri, channel_id, enable, id);
+    return false;
+  }
+  return true;
 }
 
 int WebRtcSoundclipStream::Read(void *buf, int len) {

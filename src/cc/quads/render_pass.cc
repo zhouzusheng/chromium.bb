@@ -33,16 +33,13 @@ scoped_ptr<RenderPass> RenderPass::Create(size_t num_layers) {
   return make_scoped_ptr(new RenderPass(num_layers));
 }
 
-RenderPass::RenderPass()
-    : id(Id(-1, -1)),
-      has_transparent_background(true) {
+RenderPass::RenderPass() : id(Id(-1, -1)), has_transparent_background(true) {
   shared_quad_state_list.reserve(kDefaultNumSharedQuadStatesToReserve);
   quad_list.reserve(kDefaultNumQuadsToReserve);
 }
 
 RenderPass::RenderPass(size_t num_layers)
-    : id(Id(-1, -1)),
-      has_transparent_background(true) {
+    : id(Id(-1, -1)), has_transparent_background(true) {
   // Each layer usually produces one shared quad state, so the number of layers
   // is a good hint for what to reserve here.
   shared_quad_state_list.reserve(num_layers);

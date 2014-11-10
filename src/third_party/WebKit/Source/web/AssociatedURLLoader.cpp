@@ -31,7 +31,6 @@
 #include "config.h"
 #include "AssociatedURLLoader.h"
 
-#include "WebApplicationCacheHost.h"
 #include "WebDataSource.h"
 #include "WebFrameImpl.h"
 #include "core/fetch/CrossOriginAccessControl.h"
@@ -281,7 +280,7 @@ void AssociatedURLLoader::ClientAdapter::enableErrorNotifications()
     // If an error has already been received, start a timer to report it to the client
     // after AssociatedURLLoader::loadAsynchronously has returned to the caller.
     if (m_didFail)
-        m_errorTimer.startOneShot(0);
+        m_errorTimer.startOneShot(0, FROM_HERE);
 }
 
 void AssociatedURLLoader::ClientAdapter::notifyError(Timer<ClientAdapter>* timer)

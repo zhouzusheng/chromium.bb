@@ -63,7 +63,6 @@ public:
     void adjustForRelatedTarget(Node*, EventTarget* relatedTarget);
     void adjustForTouchEvent(Node*, TouchEvent&);
 
-    static Node* parent(Node*);
     static EventTarget* eventTargetRespectingTargetRules(Node*);
 
 private:
@@ -75,12 +74,12 @@ private:
 
     void calculatePath();
     void calculateAdjustedTargets();
-    void calculateAdjustedEventPath();
+    void calculateTreeScopePrePostOrderNumbers();
 
     void shrink(size_t newSize) { m_nodeEventContexts.shrink(newSize); }
     void shrinkIfNeeded(const Node* target, const EventTarget* relatedTarget);
 
-    void adjustTouchList(const Node*, const TouchList*, Vector<TouchList*> adjustedTouchList, const Vector<TreeScope*>& treeScopes);
+    void adjustTouchList(const Node*, const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const Vector<TreeScope*>& treeScopes);
 
     typedef HashMap<TreeScope*, RefPtr<TreeScopeEventContext> > TreeScopeEventContextMap;
     TreeScopeEventContext* ensureTreeScopeEventContext(Node* currentTarget, TreeScope*, TreeScopeEventContextMap&);

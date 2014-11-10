@@ -28,6 +28,7 @@
 #ifndef DatabaseThread_h
 #define DatabaseThread_h
 
+#include "heap/Handle.h"
 #include "public/platform/WebThread.h"
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
@@ -45,13 +46,16 @@ class DatabaseBackend;
 class DatabaseTask;
 class DatabaseTaskSynchronizer;
 class Document;
+class MessageLoopInterruptor;
+class PendingGCRunner;
 class SQLTransactionClient;
 class SQLTransactionCoordinator;
 
-class DatabaseThread : public ThreadSafeRefCounted<DatabaseThread> {
+class DatabaseThread : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<DatabaseThread> {
 public:
-    static PassRefPtr<DatabaseThread> create() { return adoptRef(new DatabaseThread); }
+    static PassRefPtrWillBeRawPtr<DatabaseThread> create() { return adoptRefWillBeNoop(new DatabaseThread); }
     ~DatabaseThread();
+    void trace(Visitor*);
 
     void start();
     void requestTermination(DatabaseTaskSynchronizer* cleanupSync);
@@ -71,20 +75,25 @@ public:
 private:
     DatabaseThread();
 
+    void setupDatabaseThread();
     void cleanupDatabaseThread();
+    void cleanupDatabaseThreadCompleted();
 
     OwnPtr<blink::WebThread> m_thread;
 
     // This set keeps track of the open databases that have been used on this thread.
-    typedef HashSet<RefPtr<DatabaseBackend> > DatabaseSet;
-    DatabaseSet m_openDatabaseSet;
+    // This must be updated in the database thread though it is constructed and
+    // destructed in the context thread.
+    WillBeHeapHashSet<RefPtrWillBeMember<DatabaseBackend> > m_openDatabaseSet;
 
     OwnPtr<SQLTransactionClient> m_transactionClient;
-    OwnPtr<SQLTransactionCoordinator> m_transactionCoordinator;
+    OwnPtrWillBeMember<SQLTransactionCoordinator> m_transactionCoordinator;
     DatabaseTaskSynchronizer* m_cleanupSync;
 
     mutable Mutex m_terminationRequestedMutex;
     bool m_terminationRequested;
+    OwnPtr<PendingGCRunner> m_pendingGCRunner;
+    OwnPtr<MessageLoopInterruptor> m_messageLoopInterruptor;
 };
 
 } // namespace WebCore

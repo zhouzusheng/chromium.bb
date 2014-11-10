@@ -53,16 +53,21 @@ using namespace WTF;
 
 namespace WebCore {
 
-#if !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
+#if !OS(WIN)
 FontCache::FontCache()
     : m_purgePreventCount(0)
 {
 }
-#endif // !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
+#endif // !OS(WIN)
 
 typedef HashMap<FontCacheKey, OwnPtr<FontPlatformData>, FontCacheKeyHash, FontCacheKeyTraits> FontPlatformDataCache;
 
 static FontPlatformDataCache* gFontPlatformDataCache = 0;
+
+#if OS(WIN)
+bool FontCache::s_useDirectWrite = false;
+bool FontCache::s_useSubpixelPositioning = false;
+#endif // OS(WIN)
 
 FontCache* FontCache::fontCache()
 {
@@ -145,7 +150,7 @@ PassRefPtr<SimpleFontData> FontCache::getFontData(const FontDescription& fontDes
     if (FontPlatformData* platformData = getFontPlatformData(fontDescription, adjustFamilyNameToAvoidUnsupportedFonts(family), checkingAlternateName))
         return fontDataFromFontPlatformData(platformData, shouldRetain);
 
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPlatformData* platformData, ShouldRetain shouldRetain)

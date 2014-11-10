@@ -163,23 +163,23 @@ void RenderTableRow::layout()
     LayoutRectRecorder recorder(*this);
 
     // Table rows do not add translation.
-    LayoutStateMaintainer statePusher(view(), this, LayoutSize(), style()->isFlippedBlocksWritingMode());
-
-    bool paginated = view()->layoutState()->isPaginated();
+    LayoutStateMaintainer statePusher(*this, LayoutSize());
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
         if (child->isTableCell()) {
             SubtreeLayoutScope layouter(child);
             RenderTableCell* cell = toRenderTableCell(child);
-            if (!cell->needsLayout() && paginated && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                layouter.setChildNeedsLayout(cell);
-
-            if (child->needsLayout()) {
+            if (!cell->needsLayout())
+                cell->markForPaginationRelayoutIfNeeded(layouter);
+            if (cell->needsLayout()) {
                 cell->computeAndSetBlockDirectionMargins(table());
                 cell->layout();
             }
         }
     }
+
+    m_overflow.clear();
+    addVisualEffectOverflow();
 
     // We only ever need to repaint if our cells didn't, which means that they didn't need
     // layout, so we know that our bounds didn't change. This code is just making up for
@@ -199,7 +199,6 @@ void RenderTableRow::layout()
         }
     }
 
-    statePusher.pop();
     // RenderTableSection::layoutRows will set our logical height and width later, so it calls updateLayerTransform().
     clearNeedsLayout();
 }

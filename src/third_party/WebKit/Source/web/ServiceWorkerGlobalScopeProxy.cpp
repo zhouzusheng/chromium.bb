@@ -32,12 +32,16 @@
 #include "ServiceWorkerGlobalScopeProxy.h"
 
 #include "WebEmbeddedWorkerImpl.h"
+#include "WebSerializedScriptValue.h"
 #include "WebServiceWorkerContextClient.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/dom/MessagePort.h"
+#include "core/events/MessageEvent.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "modules/serviceworkers/FetchEvent.h"
 #include "modules/serviceworkers/InstallEvent.h"
+#include "modules/serviceworkers/InstallPhaseEvent.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
 #include "wtf/Functional.h"
@@ -59,10 +63,43 @@ ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 void ServiceWorkerGlobalScopeProxy::dispatchInstallEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
-    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, eventID);
+    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Install, eventID);
     observer->willDispatchEvent();
     m_workerGlobalScope->dispatchEvent(InstallEvent::create(EventTypeNames::install, EventInit(), observer));
     observer->didDispatchEvent();
+}
+
+void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)
+{
+    ASSERT(m_workerGlobalScope);
+    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Activate, eventID);
+    observer->willDispatchEvent();
+    m_workerGlobalScope->dispatchEvent(InstallPhaseEvent::create(EventTypeNames::activate, EventInit(), observer));
+    observer->didDispatchEvent();
+}
+
+void ServiceWorkerGlobalScopeProxy::dispatchFetchEvent(int eventID)
+{
+    ASSERT(m_workerGlobalScope);
+    RefPtr<RespondWithObserver> observer = RespondWithObserver::create(m_workerGlobalScope, eventID);
+    m_workerGlobalScope->dispatchEvent(FetchEvent::create(observer));
+    observer->didDispatchEvent();
+}
+
+void ServiceWorkerGlobalScopeProxy::dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& webChannels)
+{
+    ASSERT(m_workerGlobalScope);
+
+    OwnPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
+    WebSerializedScriptValue value = WebSerializedScriptValue::fromString(message);
+    m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports.release(), value));
+}
+
+void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID)
+{
+    ASSERT(m_workerGlobalScope);
+    m_workerGlobalScope->dispatchEvent(Event::create(EventTypeNames::sync));
+    ServiceWorkerGlobalScopeClient::from(m_workerGlobalScope)->didHandleSyncEvent(eventID);
 }
 
 void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL)

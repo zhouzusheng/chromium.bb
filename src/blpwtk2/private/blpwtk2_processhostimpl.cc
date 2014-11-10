@@ -100,7 +100,7 @@ const std::string& ProcessHostImpl::channelId() const
 
 std::string ProcessHostImpl::channelInfo() const
 {
-    CommandLine commandLine(CommandLine::NO_PROGRAM);
+    base::CommandLine commandLine(base::CommandLine::NO_PROGRAM);
 
     // TODO(SHEZ): We are missing kDisableDatabases for incognito profiles
     //             because we don't know yet which profile will be used for the

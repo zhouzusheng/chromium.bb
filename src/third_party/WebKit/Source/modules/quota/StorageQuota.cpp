@@ -70,8 +70,6 @@ blink::WebStorageQuotaType stringToStorageQuotaType(const String& type)
 
 } // namespace
 
-DEFINE_GC_INFO(StorageQuota);
-
 StorageQuota::StorageQuota()
 {
     ScriptWrappable::init(this);
@@ -89,8 +87,8 @@ ScriptPromise StorageQuota::queryInfo(ExecutionContext* executionContext, String
 {
     ASSERT(executionContext);
 
-    ScriptPromise promise = ScriptPromise::createPending(executionContext);
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(promise, executionContext);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(executionContext);
+    ScriptPromise promise = resolver->promise();
 
     SecurityOrigin* securityOrigin = executionContext->securityOrigin();
     if (securityOrigin->isUnique()) {
@@ -108,7 +106,14 @@ ScriptPromise StorageQuota::requestPersistentQuota(ExecutionContext* executionCo
 {
     ASSERT(executionContext);
 
-    return StorageQuotaClient::from(executionContext)->requestPersistentQuota(executionContext, newQuota);
+    StorageQuotaClient* client = StorageQuotaClient::from(executionContext);
+    if (!client) {
+        RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(executionContext);
+        resolver->reject(DOMError::create(NotSupportedError));
+        return resolver->promise();
+    }
+
+    return client->requestPersistentQuota(executionContext, newQuota);
 }
 
 StorageQuota::~StorageQuota()

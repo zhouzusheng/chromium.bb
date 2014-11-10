@@ -32,8 +32,10 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -78,7 +80,7 @@ public:
     };
     void addInspectedObject(PassOwnPtr<InspectableObject>);
     void clearInspectedObjects();
-    InspectableObject* inspectedObject(unsigned int num);
+    InspectableObject* inspectedObject(unsigned num);
 
     void inspectImpl(PassRefPtr<JSONValue> objectToInspect, PassRefPtr<JSONValue> hints);
     void getEventListenersImpl(EventTarget*, Vector<EventListenerInfo>& listenersArray);

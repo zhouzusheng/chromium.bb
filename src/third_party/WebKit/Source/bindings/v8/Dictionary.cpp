@@ -28,6 +28,7 @@
 
 #include "V8DOMError.h"
 #include "V8EventTarget.h"
+#include "V8Gamepad.h"
 #include "V8IDBKeyRange.h"
 #include "V8MIDIPort.h"
 #include "V8MediaKeyError.h"
@@ -42,9 +43,9 @@
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
+#include "modules/gamepad/Gamepad.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
@@ -319,7 +320,7 @@ bool Dictionary::get(const String& key, unsigned long long& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtr<DOMWindow>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<DOMWindow>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -331,15 +332,13 @@ bool Dictionary::get(const String& key, RefPtr<DOMWindow>& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeRawPtr<Storage>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<Storage>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8Storage::hasInstance(v8Value, m_isolate))
-        value = V8Storage::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8Storage::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -427,9 +426,7 @@ bool Dictionary::get(const String& key, RefPtr<Uint8Array>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8Uint8Array::hasInstance(v8Value, m_isolate))
-        value = V8Uint8Array::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8Uint8Array::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -439,9 +436,7 @@ bool Dictionary::get(const String& key, RefPtr<ArrayBufferView>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8ArrayBufferView::hasInstance(v8Value, m_isolate))
-        value = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8ArrayBufferView::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -451,9 +446,7 @@ bool Dictionary::get(const String& key, RefPtr<MIDIPort>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8MIDIPort::hasInstance(v8Value, m_isolate))
-        value = V8MIDIPort::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8MIDIPort::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -463,9 +456,7 @@ bool Dictionary::get(const String& key, RefPtr<MediaKeyError>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8MediaKeyError::hasInstance(v8Value, m_isolate))
-        value = V8MediaKeyError::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8MediaKeyError::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -481,7 +472,7 @@ bool Dictionary::get(const String& key, RefPtr<TrackBase>& value) const
 
         // FIXME: this will need to be changed so it can also return an AudioTrack or a VideoTrack once
         // we add them.
-        v8::Handle<v8::Object> track = wrapper->FindInstanceInPrototypeChain(V8TextTrack::domTemplate(m_isolate, worldType(m_isolate)));
+        v8::Handle<v8::Object> track = V8TextTrack::findInstanceInPrototypeChain(wrapper, m_isolate);
         if (!track.IsEmpty())
             source = V8TextTrack::toNative(track);
     }
@@ -495,33 +486,37 @@ bool Dictionary::get(const String& key, RefPtr<SpeechRecognitionError>& value) c
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8SpeechRecognitionError::hasInstance(v8Value, m_isolate))
-        value = V8SpeechRecognitionError::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8SpeechRecognitionError::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeRawPtr<SpeechRecognitionResult>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionResult>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8SpeechRecognitionResult::hasInstance(v8Value, m_isolate))
-        value = V8SpeechRecognitionResult::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8SpeechRecognitionResult::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeRawPtr<SpeechRecognitionResultList>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionResultList>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8SpeechRecognitionResultList::hasInstance(v8Value, m_isolate))
-        value = V8SpeechRecognitionResultList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8SpeechRecognitionResultList::toNativeWithTypeCheck(m_isolate, v8Value);
+    return true;
+}
+
+bool Dictionary::get(const String& key, RefPtrWillBeMember<Gamepad>& value) const
+{
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return false;
+
+    value = V8Gamepad::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -531,9 +526,7 @@ bool Dictionary::get(const String& key, RefPtr<MediaStream>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
-    if (V8MediaStream::hasInstance(v8Value, m_isolate))
-        value = V8MediaStream::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    value = V8MediaStream::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -543,12 +536,12 @@ bool Dictionary::get(const String& key, RefPtr<EventTarget>& value) const
     if (!getKey(key, v8Value))
         return false;
 
-    value = 0;
+    value = nullptr;
     // We need to handle a DOMWindow specially, because a DOMWindow wrapper
     // exists on a prototype chain of v8Value.
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::domTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
+        v8::Handle<v8::Object> window = V8Window::findInstanceInPrototypeChain(wrapper, m_isolate);
         if (!window.IsEmpty()) {
             value = toWrapperTypeInfo(window)->toEventTarget(window);
             return true;
@@ -667,20 +660,13 @@ bool Dictionary::convert(ConversionContext& context, const String& key, ArrayVal
     return get(key, value);
 }
 
-bool Dictionary::get(const String& key, RefPtr<DOMError>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<DOMError>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
         return false;
 
-    DOMError* error = 0;
-    if (v8Value->IsObject()) {
-        v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> domError = wrapper->FindInstanceInPrototypeChain(V8DOMError::domTemplate(m_isolate, worldType(m_isolate)));
-        if (!domError.IsEmpty())
-            error = V8DOMError::toNative(domError);
-    }
-    value = error;
+    value = V8DOMError::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -768,12 +754,7 @@ Dictionary::ConversionContext& Dictionary::ConversionContext::setConversionType(
 
 void Dictionary::ConversionContext::throwTypeError(const String& detail)
 {
-    if (forConstructor()) {
-        exceptionState().throwTypeError(detail);
-    } else {
-        ASSERT(!methodName().isEmpty());
-        exceptionState().throwTypeError(ExceptionMessages::failedToExecute(interfaceName(), methodName(), detail));
-    }
+    exceptionState().throwTypeError(detail);
 }
 
 } // namespace WebCore

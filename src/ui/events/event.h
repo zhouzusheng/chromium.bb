@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/gesture_event_details.h"
 #include "ui/events/gestures/gesture_types.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/latency_info.h"
@@ -415,11 +416,9 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
   template <class T>
   MouseWheelEvent(const MouseWheelEvent& model,
                   T* source,
-                  T* target,
-                  EventType type,
-                  int flags)
-      : MouseEvent(model, source, target, type, flags),
-        offset_(model.x_offset(), model.y_offset()){
+                  T* target)
+      : MouseEvent(model, source, target, model.type(), model.flags()),
+        offset_(model.x_offset(), model.y_offset()) {
   }
 
   // The amount to scroll. This is in multiples of kWheelDelta.

@@ -35,9 +35,9 @@
 #include "core/dom/Document.h"
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/loader/FrameLoader.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "wtf/text/AtomicString.h"
@@ -63,7 +63,7 @@ void FontLoader::addFontToBeginLoading(FontResource* fontResource)
     // after this font has been requested but before it began loading. Balanced by
     // decrementRequestCount() in beginLoadTimerFired() and in clearDocument().
     m_resourceFetcher->incrementRequestCount(fontResource);
-    m_beginLoadingTimer.startOneShot(0);
+    m_beginLoadingTimer.startOneShot(0, FROM_HERE);
 }
 
 void FontLoader::beginLoadTimerFired(Timer<WebCore::FontLoader>*)
@@ -115,7 +115,7 @@ CSSFontSelector::CSSFontSelector(Document* document)
     ASSERT(m_document);
     ASSERT(m_document->frame());
     FontCache::fontCache()->addClient(this);
-    FontFaceSet::from(document)->addFontFacesToFontFaceCache(&m_fontFaceCache, this);
+    FontFaceSet::from(*document)->addFontFacesToFontFaceCache(&m_fontFaceCache, this);
 }
 
 CSSFontSelector::~CSSFontSelector()
@@ -129,14 +129,16 @@ void CSSFontSelector::registerForInvalidationCallbacks(CSSFontSelectorClient* cl
     m_clients.add(client);
 }
 
+#if !ENABLE(OILPAN)
 void CSSFontSelector::unregisterForInvalidationCallbacks(CSSFontSelectorClient* client)
 {
     m_clients.remove(client);
 }
+#endif
 
 void CSSFontSelector::dispatchInvalidationCallbacks()
 {
-    Vector<CSSFontSelectorClient*> clients;
+    WillBeHeapVector<RawPtrWillBeMember<CSSFontSelectorClient> > clients;
     copyToVector(m_clients, clients);
     for (size_t i = 0; i < clients.size(); ++i)
         clients[i]->fontsNeedUpdate(this);
@@ -157,13 +159,13 @@ static AtomicString familyNameFromSettings(const GenericFontFamilySettings& sett
     UScriptCode script = fontDescription.script();
 
 #if OS(ANDROID)
-    if (fontDescription.genericFamily() == FontDescription::StandardFamily && !fontDescription.isSpecifiedFont())
+    if (fontDescription.genericFamily() == FontDescription::StandardFamily)
         return FontCache::getGenericFamilyNameForScript(FontFamilyNames::webkit_standard, script);
 
     if (genericFamilyName.startsWith("-webkit-"))
         return FontCache::getGenericFamilyNameForScript(genericFamilyName, script);
 #else
-    if (fontDescription.genericFamily() == FontDescription::StandardFamily && !fontDescription.isSpecifiedFont())
+    if (fontDescription.genericFamily() == FontDescription::StandardFamily)
         return settings.standard(script);
     if (genericFamilyName == FontFamilyNames::webkit_serif)
         return settings.serif(script);
@@ -191,7 +193,7 @@ PassRefPtr<FontData> CSSFontSelector::getFontData(const FontDescription& fontDes
     // Try to return the correct font based off our settings, in case we were handed the generic font family name.
     AtomicString settingsFamilyName = familyNameFromSettings(m_genericFontFamilySettings, fontDescription, familyName);
     if (settingsFamilyName.isEmpty())
-        return 0;
+        return nullptr;
 
     return FontCache::fontCache()->getFontData(fontDescription, settingsFamilyName);
 }

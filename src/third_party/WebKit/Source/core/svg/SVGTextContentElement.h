@@ -36,35 +36,7 @@ enum SVGLengthAdjustType {
     SVGLengthAdjustSpacing,
     SVGLengthAdjustSpacingAndGlyphs
 };
-
-template<>
-struct SVGPropertyTraits<SVGLengthAdjustType> {
-    static unsigned highestEnumValue() { return SVGLengthAdjustSpacingAndGlyphs; }
-
-    static String toString(SVGLengthAdjustType type)
-    {
-        switch (type) {
-        case SVGLengthAdjustUnknown:
-            return emptyString();
-        case SVGLengthAdjustSpacing:
-            return "spacing";
-        case SVGLengthAdjustSpacingAndGlyphs:
-            return "spacingAndGlyphs";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static SVGLengthAdjustType fromString(const String& value)
-    {
-        if (value == "spacingAndGlyphs")
-            return SVGLengthAdjustSpacingAndGlyphs;
-        if (value == "spacing")
-            return SVGLengthAdjustSpacing;
-        return SVGLengthAdjustUnknown;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAdjustType>();
 
 class SVGAnimatedTextLength;
 
@@ -91,6 +63,7 @@ public:
 
     SVGAnimatedLength* textLength() { return m_textLength.get(); }
     bool textLengthIsSpecifiedByUser() { return m_textLengthIsSpecifiedByUser; }
+    SVGAnimatedEnumeration<SVGLengthAdjustType>* lengthAdjust() { return m_lengthAdjust.get(); }
 
 protected:
     SVGTextContentElement(const QualifiedName&, Document&);
@@ -108,9 +81,7 @@ private:
 
     RefPtr<SVGAnimatedLength> m_textLength;
     bool m_textLengthIsSpecifiedByUser;
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextContentElement)
-        DECLARE_ANIMATED_ENUMERATION(LengthAdjust, lengthAdjust, SVGLengthAdjustType)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedEnumeration<SVGLengthAdjustType> > m_lengthAdjust;
 };
 
 inline bool isSVGTextContentElement(const Node& node)
@@ -118,7 +89,7 @@ inline bool isSVGTextContentElement(const Node& node)
     return node.isSVGElement() && toSVGElement(node).isTextContent();
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
 
 } // namespace WebCore
 

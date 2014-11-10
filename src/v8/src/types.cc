@@ -141,29 +141,32 @@ int TypeImpl<Config>::LubBitset() {
     }
     return bitset;
   } else if (this->IsClass()) {
-    return LubBitset(*this->AsClass());
+    int bitset = Config::lub_bitset(this);
+    return bitset ? bitset : LubBitset(*this->AsClass());
   } else {
-    return LubBitset(*this->AsConstant());
+    int bitset = Config::lub_bitset(this);
+    return bitset ? bitset : LubBitset(*this->AsConstant());
   }
 }
 
 
 template<class Config>
 int TypeImpl<Config>::LubBitset(i::Object* value) {
-  if (value->IsSmi()) return kSmi;
+  if (value->IsSmi()) return kSignedSmall & kTaggedInt;
   i::Map* map = i::HeapObject::cast(value)->map();
   if (map->instance_type() == HEAP_NUMBER_TYPE) {
     int32_t i;
     uint32_t u;
-    if (value->ToInt32(&i)) return Smi::IsValid(i) ? kSmi : kOtherSigned32;
-    if (value->ToUint32(&u)) return kUnsigned32;
-    return kDouble;
+    return kTaggedPtr & (
+        value->ToInt32(&i) ? (Smi::IsValid(i) ? kSignedSmall : kOtherSigned32) :
+        value->ToUint32(&u) ? kUnsigned32 : kFloat);
   }
   if (map->instance_type() == ODDBALL_TYPE) {
     if (value->IsUndefined()) return kUndefined;
     if (value->IsNull()) return kNull;
     if (value->IsBoolean()) return kBoolean;
     if (value->IsTheHole()) return kAny;  // TODO(rossberg): kNone?
+    if (value->IsUninitialized()) return kNone;
     UNREACHABLE();
   }
   return LubBitset(map);
@@ -201,7 +204,7 @@ int TypeImpl<Config>::LubBitset(i::Map* map) {
     case ODDBALL_TYPE:
       return kOddball;
     case HEAP_NUMBER_TYPE:
-      return kDouble;
+      return kFloat & kTaggedPtr;
     case JS_VALUE_TYPE:
     case JS_DATE_TYPE:
     case JS_OBJECT_TYPE:
@@ -244,7 +247,7 @@ int TypeImpl<Config>::LubBitset(i::Map* map) {
     case EXECUTABLE_ACCESSOR_INFO_TYPE:
     case ACCESSOR_PAIR_TYPE:
     case FIXED_ARRAY_TYPE:
-      return kInternal;
+      return kInternal & kTaggedPtr;
     default:
       UNREACHABLE();
       return kNone;
@@ -270,13 +273,12 @@ int TypeImpl<Config>::GlbBitset() {
 template<class Config>
 typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::OfCurrently(
     i::Handle<i::Object> value, Region* region) {
-  if (value->IsSmi()) return Smi(region);
-  i::Map* map = i::HeapObject::cast(*value)->map();
-  if (map->instance_type() == HEAP_NUMBER_TYPE ||
-      map->instance_type() == ODDBALL_TYPE) {
+  if (value->IsSmi() ||
+      i::HeapObject::cast(*value)->map()->instance_type() == HEAP_NUMBER_TYPE ||
+      i::HeapObject::cast(*value)->map()->instance_type() == ODDBALL_TYPE) {
     return Of(value, region);
   }
-  return Class(i::handle(map), region);
+  return Class(i::handle(i::HeapObject::cast(*value)->map()), region);
 }
 
 
@@ -335,14 +337,6 @@ bool TypeImpl<Config>::IsCurrently(TypeImpl* that) {
 // Check this overlaps that.
 template<class Config>
 bool TypeImpl<Config>::Maybe(TypeImpl* that) {
-  // Fast path for bitsets.
-  if (this->IsBitset()) {
-    return (this->AsBitset() & that->LubBitset()) != 0;
-  }
-  if (that->IsBitset()) {
-    return (this->LubBitset() & that->AsBitset()) != 0;
-  }
-
   // (T1 \/ ... \/ Tn) overlaps T <=> (T1 overlaps T) \/ ... \/ (Tn overlaps T)
   if (this->IsUnion()) {
     UnionedHandle unioned = this->AsUnion();
@@ -364,6 +358,12 @@ bool TypeImpl<Config>::Maybe(TypeImpl* that) {
   }
 
   ASSERT(!this->IsUnion() && !that->IsUnion());
+  if (this->IsBitset()) {
+    return IsInhabited(this->AsBitset() & that->LubBitset());
+  }
+  if (that->IsBitset()) {
+    return IsInhabited(this->LubBitset() & that->AsBitset());
+  }
   if (this->IsClass()) {
     return that->IsClass() && *this->AsClass() == *that->AsClass();
   }
@@ -422,10 +422,8 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Union(
   }
 
   // Fast case: top or bottom types.
-  if (type1->IsAny()) return type1;
-  if (type2->IsAny()) return type2;
-  if (type1->IsNone()) return type2;
-  if (type2->IsNone()) return type1;
+  if (type1->IsAny() || type2->IsNone()) return type1;
+  if (type2->IsAny() || type1->IsNone()) return type2;
 
   // Semi-fast case: Unioned objects are neither involved nor produced.
   if (!(type1->IsUnion() || type2->IsUnion())) {
@@ -434,18 +432,19 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Union(
   }
 
   // Slow case: may need to produce a Unioned object.
-  int size = type1->IsBitset() || type2->IsBitset() ? 1 : 0;
+  int size = 0;
   if (!type1->IsBitset()) {
     size += (type1->IsUnion() ? Config::union_length(type1->AsUnion()) : 1);
   }
   if (!type2->IsBitset()) {
     size += (type2->IsUnion() ? Config::union_length(type2->AsUnion()) : 1);
   }
-  ASSERT(size >= 2);
-  UnionedHandle unioned = Config::union_create(size, region);
-  size = 0;
-
   int bitset = type1->GlbBitset() | type2->GlbBitset();
+  if (bitset != kNone) ++size;
+  ASSERT(size >= 1);
+  UnionedHandle unioned = Config::union_create(size, region);
+
+  size = 0;
   if (bitset != kNone) {
     Config::union_set(unioned, size++, Config::from_bitset(bitset, region));
   }
@@ -498,10 +497,8 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Intersect(
   }
 
   // Fast case: top or bottom types.
-  if (type1->IsNone()) return type1;
-  if (type2->IsNone()) return type2;
-  if (type1->IsAny()) return type2;
-  if (type2->IsAny()) return type1;
+  if (type1->IsNone() || type2->IsAny()) return type1;
+  if (type2->IsNone() || type1->IsAny()) return type2;
 
   // Semi-fast case: Unioned objects are neither involved nor produced.
   if (!(type1->IsUnion() || type2->IsUnion())) {
@@ -512,17 +509,17 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Intersect(
   // Slow case: may need to produce a Unioned object.
   int size = 0;
   if (!type1->IsBitset()) {
-    size = (type1->IsUnion() ? Config::union_length(type1->AsUnion()) : 2);
+    size += (type1->IsUnion() ? Config::union_length(type1->AsUnion()) : 1);
   }
   if (!type2->IsBitset()) {
-    int size2 = (type2->IsUnion() ? Config::union_length(type2->AsUnion()) : 2);
-    size = (size == 0 ? size2 : Min(size, size2));
+    size += (type2->IsUnion() ? Config::union_length(type2->AsUnion()) : 1);
   }
-  ASSERT(size >= 2);
-  UnionedHandle unioned = Config::union_create(size, region);
-  size = 0;
-
   int bitset = type1->GlbBitset() & type2->GlbBitset();
+  if (bitset != kNone) ++size;
+  ASSERT(size >= 1);
+  UnionedHandle unioned = Config::union_create(size, region);
+
+  size = 0;
   if (bitset != kNone) {
     Config::union_set(unioned, size++, Config::from_bitset(bitset, region));
   }
@@ -547,9 +544,9 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Convert(
   if (type->IsBitset()) {
     return Config::from_bitset(type->AsBitset(), region);
   } else if (type->IsClass()) {
-    return Config::from_class(type->AsClass(), region);
+    return Config::from_class(type->AsClass(), type->LubBitset(), region);
   } else if (type->IsConstant()) {
-    return Config::from_constant(type->AsConstant(), region);
+    return Config::from_constant(type->AsConstant(), type->LubBitset(), region);
   } else {
     ASSERT(type->IsUnion());
     typename OtherType::UnionedHandle unioned = type->AsUnion();
@@ -567,7 +564,7 @@ typename TypeImpl<Config>::TypeHandle TypeImpl<Config>::Convert(
 // TODO(rossberg): this does not belong here.
 Representation Representation::FromType(Type* type) {
   if (type->Is(Type::None())) return Representation::None();
-  if (type->Is(Type::Smi())) return Representation::Smi();
+  if (type->Is(Type::SignedSmall())) return Representation::Smi();
   if (type->Is(Type::Signed32())) return Representation::Integer32();
   if (type->Is(Type::Number())) return Representation::Double();
   return Representation::Tagged();
@@ -576,8 +573,8 @@ Representation Representation::FromType(Type* type) {
 
 #ifdef OBJECT_PRINT
 template<class Config>
-void TypeImpl<Config>::TypePrint() {
-  TypePrint(stdout);
+void TypeImpl<Config>::TypePrint(PrintDimension dim) {
+  TypePrint(stdout, dim);
   PrintF(stdout, "\n");
   Flush(stdout);
 }
@@ -586,9 +583,17 @@ void TypeImpl<Config>::TypePrint() {
 template<class Config>
 const char* TypeImpl<Config>::bitset_name(int bitset) {
   switch (bitset) {
-    #define PRINT_COMPOSED_TYPE(type, value) case k##type: return #type;
-    BITSET_TYPE_LIST(PRINT_COMPOSED_TYPE)
+    case kAny & kRepresentation: return "Any";
+    #define PRINT_COMPOSED_TYPE(type, value) \
+    case k##type & kRepresentation: return #type;
+    REPRESENTATION_BITSET_TYPE_LIST(PRINT_COMPOSED_TYPE)
     #undef PRINT_COMPOSED_TYPE
+
+    #define PRINT_COMPOSED_TYPE(type, value) \
+    case k##type & kSemantic: return #type;
+    SEMANTIC_BITSET_TYPE_LIST(PRINT_COMPOSED_TYPE)
+    #undef PRINT_COMPOSED_TYPE
+
     default:
       return NULL;
   }
@@ -596,39 +601,70 @@ const char* TypeImpl<Config>::bitset_name(int bitset) {
 
 
 template<class Config>
-void TypeImpl<Config>::TypePrint(FILE* out) {
+void TypeImpl<Config>::BitsetTypePrint(FILE* out, int bitset) {
+  const char* name = bitset_name(bitset);
+  if (name != NULL) {
+    PrintF(out, "%s", name);
+  } else {
+    static const int named_bitsets[] = {
+      #define BITSET_CONSTANT(type, value) k##type & kRepresentation,
+      REPRESENTATION_BITSET_TYPE_LIST(BITSET_CONSTANT)
+      #undef BITSET_CONSTANT
+
+      #define BITSET_CONSTANT(type, value) k##type & kSemantic,
+      SEMANTIC_BITSET_TYPE_LIST(BITSET_CONSTANT)
+      #undef BITSET_CONSTANT
+    };
+
+    bool is_first = true;
+    PrintF(out, "(");
+    for (int i(ARRAY_SIZE(named_bitsets) - 1); bitset != 0 && i >= 0; --i) {
+      int subset = named_bitsets[i];
+      if ((bitset & subset) == subset) {
+        if (!is_first) PrintF(out, " | ");
+        is_first = false;
+        PrintF(out, "%s", bitset_name(subset));
+        bitset -= subset;
+      }
+    }
+    ASSERT(bitset == 0);
+    PrintF(out, ")");
+  }
+}
+
+
+template<class Config>
+void TypeImpl<Config>::TypePrint(FILE* out, PrintDimension dim) {
   if (this->IsBitset()) {
     int bitset = this->AsBitset();
-    const char* name = bitset_name(bitset);
-    if (name != NULL) {
-      PrintF(out, "%s", name);
-    } else {
-      bool is_first = true;
-      PrintF(out, "(");
-      for (int mask = 1; mask != 0; mask = mask << 1) {
-        if ((bitset & mask) != 0) {
-          if (!is_first) PrintF(out, " | ");
-          is_first = false;
-          PrintF(out, "%s", bitset_name(mask));
-        }
-      }
-      PrintF(out, ")");
+    switch (dim) {
+      case BOTH_DIMS:
+        BitsetTypePrint(out, bitset & kSemantic);
+        PrintF(out, "/");
+        BitsetTypePrint(out, bitset & kRepresentation);
+        break;
+      case SEMANTIC_DIM:
+        BitsetTypePrint(out, bitset & kSemantic);
+        break;
+      case REPRESENTATION_DIM:
+        BitsetTypePrint(out, bitset & kRepresentation);
+        break;
     }
   } else if (this->IsConstant()) {
     PrintF(out, "Constant(%p : ", static_cast<void*>(*this->AsConstant()));
-    Config::from_bitset(this->LubBitset())->TypePrint(out);
-    PrintF(")");
+    Config::from_bitset(this->LubBitset())->TypePrint(out, dim);
+    PrintF(out, ")");
   } else if (this->IsClass()) {
     PrintF(out, "Class(%p < ", static_cast<void*>(*this->AsClass()));
-    Config::from_bitset(this->LubBitset())->TypePrint(out);
-    PrintF(")");
+    Config::from_bitset(this->LubBitset())->TypePrint(out, dim);
+    PrintF(out, ")");
   } else if (this->IsUnion()) {
     PrintF(out, "(");
     UnionedHandle unioned = this->AsUnion();
     for (int i = 0; i < Config::union_length(unioned); ++i) {
       TypeHandle type_i = Config::union_get(unioned, i);
       if (i > 0) PrintF(out, " | ");
-      type_i->TypePrint(out);
+      type_i->TypePrint(out, dim);
     }
     PrintF(out, ")");
   }

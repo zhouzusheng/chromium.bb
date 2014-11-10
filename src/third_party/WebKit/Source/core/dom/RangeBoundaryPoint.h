@@ -49,8 +49,8 @@ public:
     void setOffset(int offset);
 
     void setToBeforeChild(Node&);
-    void setToStartOfNode(PassRefPtr<Node>);
-    void setToEndOfNode(PassRefPtr<Node>);
+    void setToStartOfNode(Node&);
+    void setToEndOfNode(Node&);
 
     void childBeforeWillBeRemoved();
     void invalidateOffset() const;
@@ -67,7 +67,7 @@ private:
 inline RangeBoundaryPoint::RangeBoundaryPoint(PassRefPtr<Node> container)
     : m_containerNode(container)
     , m_offsetInContainer(0)
-    , m_childBeforeBoundary(0)
+    , m_childBeforeBoundary(nullptr)
 {
     ASSERT(m_containerNode);
 }
@@ -114,14 +114,14 @@ inline void RangeBoundaryPoint::clear()
 {
     m_containerNode.clear();
     m_offsetInContainer = 0;
-    m_childBeforeBoundary = 0;
+    m_childBeforeBoundary = nullptr;
 }
 
 inline void RangeBoundaryPoint::set(PassRefPtr<Node> container, int offset, Node* childBefore)
 {
     ASSERT(container);
     ASSERT(offset >= 0);
-    ASSERT(childBefore == (offset ? container->childNode(offset - 1) : 0));
+    ASSERT(childBefore == (offset ? container->traverseToChildAt(offset - 1) : 0));
     m_containerNode = container;
     m_offsetInContainer = offset;
     m_childBeforeBoundary = childBefore;
@@ -144,21 +144,19 @@ inline void RangeBoundaryPoint::setToBeforeChild(Node& child)
     m_offsetInContainer = m_childBeforeBoundary ? invalidOffset : 0;
 }
 
-inline void RangeBoundaryPoint::setToStartOfNode(PassRefPtr<Node> container)
+inline void RangeBoundaryPoint::setToStartOfNode(Node& container)
 {
-    ASSERT(container);
-    m_containerNode = container;
+    m_containerNode = PassRefPtr<Node>(container);
     m_offsetInContainer = 0;
-    m_childBeforeBoundary = 0;
+    m_childBeforeBoundary = nullptr;
 }
 
-inline void RangeBoundaryPoint::setToEndOfNode(PassRefPtr<Node> container)
+inline void RangeBoundaryPoint::setToEndOfNode(Node& container)
 {
-    ASSERT(container);
-    m_containerNode = container;
+    m_containerNode = PassRefPtr<Node>(container);
     if (m_containerNode->offsetInCharacters()) {
         m_offsetInContainer = m_containerNode->maxCharacterOffset();
-        m_childBeforeBoundary = 0;
+        m_childBeforeBoundary = nullptr;
     } else {
         m_childBeforeBoundary = m_containerNode->lastChild();
         m_offsetInContainer = m_childBeforeBoundary ? invalidOffset : 0;

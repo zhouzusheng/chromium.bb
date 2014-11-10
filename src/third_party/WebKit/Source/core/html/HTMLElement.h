@@ -79,6 +79,7 @@ public:
     TextDirection directionalityIfhasDirAutoAttribute(bool& isAuto) const;
 
     virtual bool isHTMLUnknownElement() const { return false; }
+    virtual bool isPluginElement() const { return false; }
 
     virtual bool isLabelable() const { return false; }
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/elements.html#interactive-content
@@ -86,6 +87,9 @@ public:
     virtual void defaultEventHandler(Event*) OVERRIDE;
 
     static const AtomicString& eventNameForAttributeName(const QualifiedName& attrName);
+
+    virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
+    virtual bool matchesReadWritePseudoClass() const OVERRIDE;
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
@@ -122,7 +126,11 @@ private:
     bool supportsSpatialNavigationFocus() const;
 };
 
-DEFINE_NODE_TYPE_CASTS(HTMLElement, isHTMLElement());
+DEFINE_ELEMENT_TYPE_CASTS(HTMLElement, isHTMLElement());
+
+template <> inline bool isElementOfType<const HTMLElement>(const Node& node) { return node.isHTMLElement(); }
+template <typename T> bool isElementOfType(const HTMLElement&);
+template <> inline bool isElementOfType<const HTMLElement>(const HTMLElement&) { return true; }
 
 inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document, ConstructionType type = CreateHTMLElement)
     : Element(tagName, &document, type)
@@ -131,6 +139,22 @@ inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document
     ScriptWrappable::init(this);
 }
 
+// This requires isHTML*Element(const Element&) and isHTML*Element(const HTMLElement&).
+// When the input element is an HTMLElement, we don't need to check the namespace URI, just the local name.
+#define DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType) \
+    inline bool is##thisType(const thisType* element); \
+    inline bool is##thisType(const thisType& element); \
+    inline bool is##thisType(const HTMLElement* element) { return element && is##thisType(*element); } \
+    inline bool is##thisType(const Element* element) { return element && is##thisType(*element); } \
+    inline bool is##thisType(const Node& node) { return node.isElementNode() ? is##thisType(toElement(node)) : false; } \
+    inline bool is##thisType(const Node* node) { return node && node->isElementNode() ? is##thisType(*toElement(node)) : false; } \
+    template<typename T> inline bool is##thisType(const PassRefPtr<T>& node) { return is##thisType(node.get()); } \
+    template<typename T> inline bool is##thisType(const RefPtr<T>& node) { return is##thisType(node.get()); } \
+    template <> inline bool isElementOfType<const thisType>(const HTMLElement& element) { return is##thisType(element); } \
+    DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType)
+
 } // namespace WebCore
+
+#include "HTMLElementTypeHelpers.h"
 
 #endif // HTMLElement_h

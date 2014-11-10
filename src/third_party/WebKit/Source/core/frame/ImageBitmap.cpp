@@ -30,7 +30,7 @@ static inline PassRefPtr<Image> cropImage(Image* image, const IntRect& cropRect)
 {
     IntRect intersectRect = intersection(IntRect(IntPoint(), image->size()), cropRect);
     if (!intersectRect.width() || !intersectRect.height())
-        return 0;
+        return nullptr;
 
     SkBitmap cropped;
     image->nativeImageForCurrentFrame()->bitmap().extractSubset(&cropped, intersectRect);
@@ -39,7 +39,7 @@ static inline PassRefPtr<Image> cropImage(Image* image, const IntRect& cropRect)
 
 ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
     : m_imageElement(image)
-    , m_bitmap(0)
+    , m_bitmap(nullptr)
     , m_cropRect(cropRect)
 {
     IntRect srcRect = intersection(cropRect, IntRect(0, 0, image->width(), image->height()));
@@ -47,7 +47,7 @@ ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
     m_bitmapOffset = srcRect.location();
 
     if (!srcRect.width() || !srcRect.height())
-        m_imageElement = 0;
+        m_imageElement = nullptr;
     else
         m_imageElement->addClient(this);
 
@@ -55,7 +55,7 @@ ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
 }
 
 ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
-    : m_imageElement(0)
+    : m_imageElement(nullptr)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
@@ -77,7 +77,7 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
 }
 
 ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect)
-    : m_imageElement(0)
+    : m_imageElement(nullptr)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
@@ -93,7 +93,7 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect)
 }
 
 ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
-    : m_imageElement(0)
+    : m_imageElement(nullptr)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
@@ -113,7 +113,7 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
 
 ImageBitmap::ImageBitmap(ImageBitmap* bitmap, const IntRect& cropRect)
     : m_imageElement(bitmap->imageElement())
-    , m_bitmap(0)
+    , m_bitmap(nullptr)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
@@ -133,7 +133,7 @@ ImageBitmap::ImageBitmap(ImageBitmap* bitmap, const IntRect& cropRect)
 }
 
 ImageBitmap::ImageBitmap(Image* image, const IntRect& cropRect)
-    : m_imageElement(0)
+    : m_imageElement(nullptr)
     , m_cropRect(cropRect)
 {
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), image->size()));
@@ -149,47 +149,47 @@ ImageBitmap::~ImageBitmap()
         m_imageElement->removeClient(this);
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(HTMLImageElement* image, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(HTMLImageElement* image, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(image, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(image, normalizedCropRect));
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(HTMLVideoElement* video, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(HTMLVideoElement* video, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(video, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(video, normalizedCropRect));
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(HTMLCanvasElement* canvas, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(HTMLCanvasElement* canvas, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(canvas, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(canvas, normalizedCropRect));
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(ImageData* data, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(ImageData* data, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(data, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(data, normalizedCropRect));
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(ImageBitmap* bitmap, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(ImageBitmap* bitmap, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(bitmap, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(bitmap, normalizedCropRect));
 }
 
-PassRefPtr<ImageBitmap> ImageBitmap::create(Image* image, const IntRect& cropRect)
+PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(Image* image, const IntRect& cropRect)
 {
     IntRect normalizedCropRect = normalizeRect(cropRect);
-    return adoptRef(new ImageBitmap(image, normalizedCropRect));
+    return adoptRefWillBeNoop(new ImageBitmap(image, normalizedCropRect));
 }
 
 void ImageBitmap::notifyImageSourceChanged()
 {
     m_bitmap = cropImage(m_imageElement->cachedImage()->image(), m_cropRect);
     m_bitmapOffset = IntPoint();
-    m_imageElement = 0;
+    m_imageElement = nullptr;
 }
 
 PassRefPtr<Image> ImageBitmap::bitmapImage() const
@@ -198,6 +198,34 @@ PassRefPtr<Image> ImageBitmap::bitmapImage() const
     if (m_imageElement)
         return m_imageElement->cachedImage()->image();
     return m_bitmap;
+}
+
+PassRefPtr<Image> ImageBitmap::getSourceImageForCanvas(SourceImageMode, SourceImageStatus* status) const
+{
+    *status = NormalSourceImageStatus;
+    return bitmapImage();
+}
+
+void ImageBitmap::adjustDrawRects(FloatRect* srcRect, FloatRect* dstRect) const
+{
+    FloatRect intersectRect = intersection(m_bitmapRect, *srcRect);
+    FloatRect newSrcRect = intersectRect;
+    newSrcRect.move(m_bitmapOffset - m_bitmapRect.location());
+    FloatRect newDstRect(FloatPoint(intersectRect.location() - srcRect->location()), m_bitmapRect.size());
+    newDstRect.scale(dstRect->width() / srcRect->width() * intersectRect.width() / m_bitmapRect.width(),
+        dstRect->height() / srcRect->height() * intersectRect.height() / m_bitmapRect.height());
+    newDstRect.moveBy(dstRect->location());
+    *srcRect = newSrcRect;
+    *dstRect = newDstRect;
+}
+
+FloatSize ImageBitmap::sourceSize() const
+{
+    return FloatSize(width(), height());
+}
+
+void ImageBitmap::trace(Visitor*)
+{
 }
 
 }

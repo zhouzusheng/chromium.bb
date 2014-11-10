@@ -40,7 +40,6 @@ public:
     }
 private:
     virtual bool isRenderFullScreenPlaceholder() const OVERRIDE { return true; }
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
     virtual void willBeDestroyed() OVERRIDE;
     RenderFullScreen* m_owner;
 };
@@ -76,9 +75,9 @@ void RenderFullScreen::willBeDestroyed()
 
     // RenderObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
     // if it's RenderFullScreen is destroyed.
-    FullscreenElementStack* controller = FullscreenElementStack::from(&document());
-    if (controller->fullScreenRenderer() == this)
-        controller->fullScreenRendererDestroyed();
+    FullscreenElementStack& controller = FullscreenElementStack::from(document());
+    if (controller.fullScreenRenderer() == this)
+        controller.fullScreenRendererDestroyed();
 
     RenderFlexibleBox::willBeDestroyed();
 }
@@ -91,7 +90,7 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
     fullscreenStyle->setZIndex(INT_MAX);
 
     fullscreenStyle->setFontDescription(FontDescription());
-    fullscreenStyle->font().update(0);
+    fullscreenStyle->font().update(nullptr);
 
     fullscreenStyle->setDisplay(FLEX);
     fullscreenStyle->setJustifyContent(JustifyCenter);
@@ -140,7 +139,8 @@ RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject*
         fullscreenRenderer->setNeedsLayoutAndPrefWidthsRecalc();
     }
 
-    FullscreenElementStack::from(document)->setFullScreenRenderer(fullscreenRenderer);
+    ASSERT(document);
+    FullscreenElementStack::from(*document).setFullScreenRenderer(fullscreenRenderer);
     return fullscreenRenderer;
 }
 
@@ -162,7 +162,7 @@ void RenderFullScreen::unwrapRenderer()
     if (placeholder())
         placeholder()->remove();
     remove();
-    FullscreenElementStack::from(&document())->setFullScreenRenderer(0);
+    FullscreenElementStack::from(document()).setFullScreenRenderer(0);
 }
 
 void RenderFullScreen::setPlaceholder(RenderBlock* placeholder)

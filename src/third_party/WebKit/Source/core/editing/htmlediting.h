@@ -117,7 +117,7 @@ bool isTableStructureNode(const Node*);
 bool isListElement(const Node*);
 bool isListItem(const Node*);
 bool isNodeRendered(const Node*);
-bool isNodeVisiblyContainedWithin(Node*, const Range*);
+bool isNodeVisiblyContainedWithin(Node&, const Range&);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool areIdenticalElements(const Node*, const Node*);
 bool isNonTableCellHTMLBlockElement(const Node*);
@@ -173,7 +173,7 @@ bool isAtUnsplittableElement(const Position&);
 // miscellaneous functions on Position
 
 unsigned numEnclosingMailBlockquotes(const Position&);
-void updatePositionForNodeRemoval(Position&, Node*);
+void updatePositionForNodeRemoval(Position&, Node&);
 
 // -------------------------------------------------------------------------
 // VisiblePosition
@@ -183,8 +183,8 @@ void updatePositionForNodeRemoval(Position&, Node*);
 
 VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
 VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
-VisiblePosition visiblePositionBeforeNode(Node*);
-VisiblePosition visiblePositionAfterNode(Node*);
+VisiblePosition visiblePositionBeforeNode(Node&);
+VisiblePosition visiblePositionAfterNode(Node&);
 
 bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
 

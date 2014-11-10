@@ -30,7 +30,7 @@
 #include "modules/webdatabase/InspectorDatabaseAgent.h"
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorState.h"
 #include "core/loader/DocumentLoader.h"
@@ -64,7 +64,7 @@ void reportTransactionFailed(ExecuteSQLCallback* requestCallback, SQLError* erro
     RefPtr<TypeBuilder::Database::Error> errorObject = TypeBuilder::Database::Error::create()
         .setMessage(error->message())
         .setCode(error->code());
-    requestCallback->sendSuccess(0, 0, errorObject.release());
+    requestCallback->sendSuccess(nullptr, nullptr, errorObject.release());
 }
 
 class StatementCallback FINAL : public SQLStatementCallback {
@@ -95,7 +95,7 @@ public:
             case SQLValue::NullValue: values->addItem(JSONValue::null()); break;
             }
         }
-        m_requestCallback->sendSuccess(columnNames.release(), values.release(), 0);
+        m_requestCallback->sendSuccess(columnNames.release(), values.release(), nullptr);
         return true;
     }
 
@@ -191,28 +191,22 @@ private:
 
 } // namespace
 
-void InspectorDatabaseAgent::didOpenDatabase(PassRefPtr<Database> database, const String& domain, const String& name, const String& version)
+void InspectorDatabaseAgent::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
 {
     if (InspectorDatabaseResource* resource = findByFileName(database->fileName())) {
         resource->setDatabase(database);
         return;
     }
 
-    RefPtr<InspectorDatabaseResource> resource = InspectorDatabaseResource::create(database, domain, name, version);
+    RefPtrWillBeRawPtr<InspectorDatabaseResource> resource = InspectorDatabaseResource::create(database, domain, name, version);
     m_resources.set(resource->id(), resource);
     // Resources are only bound while visible.
     if (m_frontend && m_enabled)
         resource->bind(m_frontend);
 }
 
-void InspectorDatabaseAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void InspectorDatabaseAgent::didCommitLoadForMainFrame()
 {
-    // FIXME: If "frame" is always guarenteed to be in the same Page as loader->frame()
-    // then all we need to check here is loader->frame()->isMainFrame()
-    // and we don't need "frame" at all.
-    if (loader->frame() != frame->page()->mainFrame())
-        return;
-
     m_resources.clear();
 }
 
@@ -245,8 +239,8 @@ void InspectorDatabaseAgent::enable(ErrorString*)
     m_enabled = true;
     m_state->setBoolean(DatabaseAgentState::databaseAgentEnabled, m_enabled);
 
-    DatabaseResourcesMap::iterator databasesEnd = m_resources.end();
-    for (DatabaseResourcesMap::iterator it = m_resources.begin(); it != databasesEnd; ++it)
+    DatabaseResourcesHeapMap::iterator databasesEnd = m_resources.end();
+    for (DatabaseResourcesHeapMap::iterator it = m_resources.begin(); it != databasesEnd; ++it)
         it->value->bind(m_frontend);
 }
 
@@ -304,7 +298,7 @@ void InspectorDatabaseAgent::executeSQL(ErrorString*, const String& databaseId, 
 
 InspectorDatabaseResource* InspectorDatabaseAgent::findByFileName(const String& fileName)
 {
-    for (DatabaseResourcesMap::iterator it = m_resources.begin(); it != m_resources.end(); ++it) {
+    for (DatabaseResourcesHeapMap::iterator it = m_resources.begin(); it != m_resources.end(); ++it) {
         if (it->value->database()->fileName() == fileName)
             return it->value.get();
     }
@@ -313,7 +307,7 @@ InspectorDatabaseResource* InspectorDatabaseAgent::findByFileName(const String& 
 
 Database* InspectorDatabaseAgent::databaseForId(const String& databaseId)
 {
-    DatabaseResourcesMap::iterator it = m_resources.find(databaseId);
+    DatabaseResourcesHeapMap::iterator it = m_resources.find(databaseId);
     if (it == m_resources.end())
         return 0;
     return it->value->database();

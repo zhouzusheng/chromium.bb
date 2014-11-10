@@ -26,6 +26,14 @@
 {
   'actions': [
     {
+      'variables' : {
+        'ar_cmd': [],
+	'conditions': [
+          ['android_webview_build==1', {
+            'ar_cmd': ['-r', '<(android_src)/$(TARGET_AR)'],
+          }],
+        ],
+      },
       'action_name': 'unpack_lib_posix',
       'inputs': [
         'unpack_lib_posix.sh',
@@ -38,6 +46,7 @@
         '-d', '<(unpack_lib_output_dir)',
         '-f', '<(unpack_lib_name)',
         '<@(unpack_lib_search_path_list)',
+        '<@(ar_cmd)',
       ],
       'process_output_as_sources': 1,
     },

@@ -102,13 +102,16 @@ public:
     virtual void stopAnimation() {}
     virtual void resetAnimation() {}
 
+    // True if this image can potentially animate.
+    virtual bool maybeAnimated() { return false; }
+
     // Typically the ImageResource that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
     void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return 0; }
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return nullptr; }
 
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, CompositeOperator,

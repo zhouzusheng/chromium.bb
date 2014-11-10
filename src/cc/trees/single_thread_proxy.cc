@@ -222,7 +222,7 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
     layer_tree_host_impl_->CommitComplete();
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON
     // In the single-threaded case, the scale and scroll deltas should never be
     // touched on the impl layer tree.
     scoped_ptr<ScrollAndScaleSet> scroll_info =
@@ -323,13 +323,12 @@ void SingleThreadProxy::SetNeedsCommitOnImplThread() {
 }
 
 void SingleThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
-    scoped_ptr<AnimationEventsVector> events,
-    base::Time wall_clock_time) {
+    scoped_ptr<AnimationEventsVector> events) {
   TRACE_EVENT0(
       "cc", "SingleThreadProxy::PostAnimationEventsToMainThreadOnImplThread");
   DCHECK(Proxy::IsImplThread());
   DebugScopedSetMainThread main(this);
-  layer_tree_host_->SetAnimationEvents(events.Pass(), wall_clock_time);
+  layer_tree_host_->SetAnimationEvents(events.Pass());
 }
 
 bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
@@ -534,8 +533,7 @@ bool SingleThreadProxy::DoComposite(
     }
 
     layer_tree_host_impl_->Animate(
-        layer_tree_host_impl_->CurrentFrameTimeTicks(),
-        layer_tree_host_impl_->CurrentFrameTime());
+        layer_tree_host_impl_->CurrentFrameTimeTicks());
     UpdateBackgroundAnimateTicking();
 
     if (!layer_tree_host_impl_->IsContextLost()) {

@@ -46,6 +46,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptGroupElement.h"
+#include "core/html/HTMLOptionElement.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/svg/SVGElement.h"
 #include "wtf/HashSet.h"
@@ -57,7 +58,7 @@ using namespace HTMLNames;
 
 bool SharedStyleFinder::canShareStyleWithControl(Element& candidate) const
 {
-    if (!candidate.hasTagName(inputTag) || !element().hasTagName(inputTag))
+    if (!isHTMLInputElement(candidate) || !isHTMLInputElement(element()))
         return false;
 
     HTMLInputElement& candidateInput = toHTMLInputElement(candidate);
@@ -122,7 +123,7 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Ele
     if (element().fastGetAttribute(langAttr) != candidate.fastGetAttribute(langAttr))
         return false;
 
-    // These two checks must be here since RuleSet has a specail case to allow style sharing between elements
+    // These two checks must be here since RuleSet has a special case to allow style sharing between elements
     // with type and readonly attributes whereas other attribute selectors prevent sharing.
     if (typeAttributeValue(element()) != typeAttributeValue(candidate))
         return false;
@@ -150,8 +151,15 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Ele
     // FIXME: Consider removing this, it's unlikely we'll have so many progress elements
     // that sharing the style makes sense. Instead we should just not support style sharing
     // for them.
-    if (element().hasTagName(progressTag)) {
+    if (isHTMLProgressElement(element())) {
         if (element().shouldAppearIndeterminate() != candidate.shouldAppearIndeterminate())
+            return false;
+    }
+
+    if (isHTMLOptGroupElement(element()) || isHTMLOptionElement(element())) {
+        if (element().isDisabledFormControl() != candidate.isDisabledFormControl())
+            return false;
+        if (isHTMLOptionElement(element()) && toHTMLOptionElement(element()).selected() != toHTMLOptionElement(candidate).selected())
             return false;
     }
 
@@ -331,7 +339,7 @@ RenderStyle* SharedStyleFinder::findSharedStyle()
     }
 
     // Tracking child index requires unique style for each node. This may get set by the sibling rule match above.
-    if (!element().parentOrShadowHostElement()->childrenSupportStyleSharing()) {
+    if (!element().parentElementOrShadowRoot()->childrenSupportStyleSharing()) {
         INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleRejectedByParent);
         return 0;
     }

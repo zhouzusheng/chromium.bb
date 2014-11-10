@@ -27,6 +27,8 @@
 #define MediaKeys_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/events/EventTarget.h"
 #include "heap/Handle.h"
 #include "modules/encryptedmedia/MediaKeySession.h"
@@ -45,23 +47,21 @@ class WebContentDecryptionModule;
 
 namespace WebCore {
 
-class ContentDecryptionModule;
 class HTMLMediaElement;
 class ExceptionState;
 
 // References are held by JS and HTMLMediaElement.
-// The ContentDecryptionModule has the same lifetime as this object.
-// Maintains a reference to all MediaKeySessions created to ensure they live as
-// long as this object unless explicitly close()'d.
-class MediaKeys : public RefCountedWillBeGarbageCollectedFinalized<MediaKeys>, public ScriptWrappable {
-    DECLARE_GC_INFO;
+// The WebContentDecryptionModule has the same lifetime as this object.
+class MediaKeys : public RefCountedWillBeGarbageCollectedFinalized<MediaKeys>, public ContextLifecycleObserver, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<MediaKeys> create(const String& keySystem, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<MediaKeys> create(ExecutionContext*, const String& keySystem, ExceptionState&);
     ~MediaKeys();
+
+    const String& keySystem() const { return m_keySystem; }
 
     PassRefPtrWillBeRawPtr<MediaKeySession> createSession(ExecutionContext*, const String& contentType, Uint8Array* initData, ExceptionState&);
 
-    const String& keySystem() const { return m_keySystem; }
+    static bool isTypeSupported(const String& keySystem, const String& contentType);
 
     void setMediaElement(HTMLMediaElement*);
 
@@ -69,18 +69,21 @@ public:
 
     void trace(Visitor*);
 
-protected:
-    MediaKeys(const String& keySystem, PassOwnPtr<ContentDecryptionModule>);
-    void initializeNewSessionTimerFired(Timer<MediaKeys>*);
+    // ContextLifecycleObserver
+    virtual void contextDestroyed() OVERRIDE;
 
-    Vector<RefPtr<MediaKeySession> > m_sessions;
+protected:
+    MediaKeys(ExecutionContext*, const String& keySystem, PassOwnPtr<blink::WebContentDecryptionModule>);
+    void initializeNewSessionTimerFired(Timer<MediaKeys>*);
 
     HTMLMediaElement* m_mediaElement;
     const String m_keySystem;
-    OwnPtr<ContentDecryptionModule> m_cdm;
+    OwnPtr<blink::WebContentDecryptionModule> m_cdm;
 
     // FIXME: Check whether |initData| can be changed by JS. Maybe we should not pass it as a pointer.
     struct InitializeNewSessionData {
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
         InitializeNewSessionData(PassRefPtrWillBeRawPtr<MediaKeySession> session, const String& contentType, PassRefPtr<Uint8Array> initData)
             : session(session)
             , contentType(contentType)
@@ -94,6 +97,8 @@ protected:
     };
     Deque<InitializeNewSessionData> m_pendingInitializeNewSessionData;
     Timer<MediaKeys> m_initializeNewSessionTimer;
+
+    WeakPtrFactory<MediaKeys> m_weakFactory;
 };
 
 }

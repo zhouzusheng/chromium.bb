@@ -45,7 +45,7 @@ using namespace Unicode;
 namespace WebCore {
 
 SVGFontData::SVGFontData(SVGFontFaceElement* fontFaceElement)
-    : CustomFontData(false)
+    : CustomFontData()
     , m_svgFontFaceElement(fontFaceElement)
     , m_horizontalOriginX(fontFaceElement->horizontalOriginX())
     , m_horizontalOriginY(fontFaceElement->horizontalOriginY())
@@ -62,7 +62,7 @@ void SVGFontData::initializeFontData(SimpleFontData* fontData, float fontSize)
     ASSERT(fontData);
 
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
-    ASSERT(svgFontFaceElement);
+    ASSERT(svgFontFaceElement && svgFontFaceElement->inDocument());
 
     SVGFontElement* svgFontElement = svgFontFaceElement->associatedFontElement();
     ASSERT(svgFontElement);
@@ -123,6 +123,13 @@ float SVGFontData::widthForSVGGlyph(Glyph glyph, float fontSize) const
 {
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
     ASSERT(svgFontFaceElement);
+    // RenderView::clearSelection is invoked while removing some element, e.g.
+    // Document::nodeWillBeRemoved => FrameSelection::nodeWillBeRemoved => RenderView::clearSelection.
+    // Since recalc style has not been executed yet, RenderStyle might have some reference to
+    // SVGFontFaceElement which was also removed.
+    // In this case, use default horizontalAdvanceX instead of associatedFontElement's one.
+    if (!svgFontFaceElement->inDocument())
+        return m_horizontalAdvanceX * scaleEmToUnits(fontSize, svgFontFaceElement->unitsPerEm());
 
     SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
     ASSERT(associatedFontElement);
@@ -155,7 +162,7 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
         arabicForms = charactersWithArabicForm(remainingTextInRun, mirror);
 
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
-    ASSERT(svgFontFaceElement);
+    ASSERT(svgFontFaceElement && svgFontFaceElement->inDocument());
 
     SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
     ASSERT(associatedFontElement);
@@ -176,8 +183,8 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
         if (Element* parentRenderObjectElement = toElement(parentRenderObject->node())) {
             language = parentRenderObjectElement->getAttribute(XMLNames::langAttr);
 
-            if (parentRenderObjectElement->hasTagName(SVGNames::altGlyphTag)) {
-                if (!toSVGAltGlyphElement(parentRenderObjectElement)->hasValidGlyphElements(altGlyphNames))
+            if (isSVGAltGlyphElement(*parentRenderObjectElement)) {
+                if (!toSVGAltGlyphElement(*parentRenderObjectElement).hasValidGlyphElements(altGlyphNames))
                     altGlyphNames.clear();
             }
         }
@@ -187,7 +194,7 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
     size_t altGlyphNamesSize = altGlyphNames.size();
     if (altGlyphNamesSize) {
         for (size_t index = 0; index < altGlyphNamesSize; ++index)
-            associatedFontElement->collectGlyphsForGlyphName(altGlyphNames[index], glyphs);
+            associatedFontElement->collectGlyphsForAltGlyphReference(altGlyphNames[index], glyphs);
 
         // Assign the unicodeStringLength now that its known.
         size_t glyphsSize = glyphs.size();
@@ -198,7 +205,6 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
         // Later code will fail if we do not do this and the glyph is incompatible.
         if (glyphsSize) {
             SVGGlyph& svgGlyph = glyphs[0];
-            iterator.setLastGlyphName(svgGlyph.glyphName);
             glyphData.glyph = svgGlyph.tableEntry;
             advanceLength = svgGlyph.unicodeStringLength;
             return true;
@@ -213,13 +219,11 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
             continue;
         if (!isCompatibleGlyph(svgGlyph, isVerticalText, language, arabicForms, currentCharacter, currentCharacter + svgGlyph.unicodeStringLength))
             continue;
-        iterator.setLastGlyphName(svgGlyph.glyphName);
         glyphData.glyph = svgGlyph.tableEntry;
         advanceLength = svgGlyph.unicodeStringLength;
         return true;
     }
 
-    iterator.setLastGlyphName(String());
     return false;
 }
 
@@ -229,7 +233,7 @@ bool SVGFontData::fillSVGGlyphPage(GlyphPage* pageToFill, unsigned offset, unsig
     ASSERT(fontData->isSVGFont());
 
     SVGFontFaceElement* fontFaceElement = this->svgFontFaceElement();
-    ASSERT(fontFaceElement);
+    ASSERT(fontFaceElement && fontFaceElement->inDocument());
 
     SVGFontElement* fontElement = fontFaceElement->associatedFontElement();
     ASSERT(fontElement);

@@ -31,6 +31,7 @@
 #ifndef MIDIClientMock_h
 #define MIDIClientMock_h
 
+#include "heap/Handle.h"
 #include "modules/webmidi/MIDIClient.h"
 
 namespace WebCore {
@@ -41,12 +42,12 @@ public:
     MIDIClientMock();
     virtual ~MIDIClientMock();
 
-    void setSysExPermission(bool);
+    void setSysexPermission(bool);
     void resetMock();
 
     // MIDIClient
-    virtual void requestSysExPermission(PassRefPtr<MIDIAccess>) OVERRIDE;
-    virtual void cancelSysExPermissionRequest(MIDIAccess*) OVERRIDE;
+    virtual void requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess>) OVERRIDE;
+    virtual void cancelSysexPermissionRequest(MIDIAccess*) OVERRIDE;
 
 private:
     bool m_allowed;

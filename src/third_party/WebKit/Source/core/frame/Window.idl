@@ -31,6 +31,7 @@
     CheckSecurity=Frame,
     Custom=ToV8,
     ImplementedAs=DOMWindow,
+    WillBeGarbageCollected,
 ] interface Window : EventTarget {
     // DOM Level 0
     [Replaceable] readonly attribute Screen screen;
@@ -172,9 +173,9 @@
 
     [MeasureAs=UnprefixedRequestAnimationFrame] long requestAnimationFrame(RequestAnimationFrameCallback callback);
     void cancelAnimationFrame(long id);
-    [MeasureAs=PrefixedRequestAnimationFrame] long webkitRequestAnimationFrame(RequestAnimationFrameCallback callback);
-    [ImplementedAs=cancelAnimationFrame] void webkitCancelAnimationFrame(long id);
-    [ImplementedAs=cancelAnimationFrame] void webkitCancelRequestAnimationFrame(long id); // This is a deprecated alias for webkitCancelAnimationFrame(). Remove this when removing vendor prefix.
+    [DeprecateAs=PrefixedRequestAnimationFrame] long webkitRequestAnimationFrame(RequestAnimationFrameCallback callback);
+    [DeprecateAs=PrefixedCancelAnimationFrame, ImplementedAs=cancelAnimationFrame] void webkitCancelAnimationFrame(long id);
+    [DeprecateAs=PrefixedCancelRequestAnimationFrame, ImplementedAs=cancelAnimationFrame] void webkitCancelRequestAnimationFrame(long id);
 
     [Replaceable] readonly attribute CSS CSS;
 
@@ -182,8 +183,6 @@
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationend;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationiteration;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationstart;
-    [RuntimeEnabled=DeviceMotion] attribute EventHandler ondevicemotion;
-    [RuntimeEnabled=DeviceOrientation] attribute EventHandler ondeviceorientation;
     [RuntimeEnabled=OrientationEvent] attribute EventHandler onorientationchange;
     attribute EventHandler onsearch;
     [RuntimeEnabled=Touch] attribute EventHandler ontouchcancel;
@@ -197,13 +196,13 @@
     attribute EventHandler onwebkittransitionend;
     [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onwheel;
 
-    [DeprecateAs=CaptureEvents] void captureEvents();
-    [DeprecateAs=ReleaseEvents] void releaseEvents();
+    [MeasureAs=WindowCaptureEvents] void captureEvents();
+    [MeasureAs=WindowReleaseEvents] void releaseEvents();
 
     // Additional constructors.
     attribute TransitionEventConstructor WebKitTransitionEvent;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute WebKitAnimationEventConstructor AnimationEvent;
-    attribute URLConstructor webkitURL; // FIXME: deprecate this.
+    [MeasureAs=PrefixedWindowURL] attribute URLConstructor webkitURL; // FIXME: deprecate this.
     attribute MutationObserverConstructor WebKitMutationObserver; // FIXME: Add metrics to determine when we can remove this.
     attribute IDBCursorConstructor webkitIDBCursor;
     attribute IDBDatabaseConstructor webkitIDBDatabase;
@@ -217,8 +216,12 @@
     // Constructors whose name does not match the interface name.
     // FIXME: Remove these once [ImplementedAs] is used and once constructor names match interface names.
     [RuntimeEnabled=MediaStream] attribute MediaStreamConstructor webkitMediaStream;
+
+    // Support both unprefixed and prefixed AudioContext and OfflineAudioContext
     [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute AudioContextConstructor webkitAudioContext;
     [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute OfflineAudioContextConstructor webkitOfflineAudioContext;
+    [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute AudioContextConstructor AudioContext;
+    [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute OfflineAudioContextConstructor OfflineAudioContext;
     [RuntimeEnabled=PeerConnection] attribute RTCPeerConnectionConstructor webkitRTCPeerConnection;
     [RuntimeEnabled=ScriptedSpeech] attribute SpeechGrammarConstructor webkitSpeechGrammar;
     [RuntimeEnabled=ScriptedSpeech] attribute SpeechGrammarListConstructor webkitSpeechGrammarList;
@@ -231,7 +234,7 @@
     // Unprefixed ShadowRoot constructor should be visible when the feature flag is enabled.
     // FIXME: When it's ready to remove WebKitShadowRoot, get rid of both constructors from Window.idl and remove
     // [NoInterfaceObject] from ShadowRoot interface definition.
-    [RuntimeEnabled=ShadowDOM] attribute ShadowRootConstructor ShadowRoot;
+    attribute ShadowRootConstructor ShadowRoot;
     [MeasureAs=PrefixedShadowRootConstructor] attribute ShadowRootConstructor WebKitShadowRoot;
 
     // window.toString() requires special handling in V8

@@ -29,12 +29,11 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderPart.h"
 
@@ -63,7 +62,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
             return false;
     }
 
-    Frame* parentFrame = document().frame();
+    LocalFrame* parentFrame = document().frame();
     if (parentFrame)
         return parentFrame->isURLAllowed(completeURL);
 
@@ -78,7 +77,7 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
     if (m_URL.isEmpty())
         m_URL = AtomicString(blankURL().string());
 
-    Frame* parentFrame = document().frame();
+    LocalFrame* parentFrame = document().frame();
     if (!parentFrame)
         return;
 
@@ -125,9 +124,7 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
         else if (equalIgnoringCase(value, "no"))
             m_scrolling = ScrollbarAlwaysOff;
         // FIXME: If we are already attached, this has no effect.
-    } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
-    else if (name == onbeforeunloadAttr) {
+    } else if (name == onbeforeunloadAttr) {
         // FIXME: should <frame> elements have beforeunload handlers?
         setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value));
     } else
@@ -137,8 +134,6 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
 void HTMLFrameElementBase::setNameAndOpenURL()
 {
     m_frameName = getNameAttribute();
-    if (m_frameName.isNull())
-        m_frameName = getIdAttribute();
     openURL();
 }
 
@@ -164,7 +159,7 @@ void HTMLFrameElementBase::attach(const AttachContext& context)
     HTMLFrameOwnerElement::attach(context);
 
     if (RenderPart* part = renderPart()) {
-        if (Frame* frame = contentFrame())
+        if (LocalFrame* frame = contentFrame())
             part->setWidget(frame->view());
     }
 }
@@ -196,7 +191,7 @@ void HTMLFrameElementBase::setFocus(bool received)
         if (received)
             page->focusController().setFocusedFrame(contentFrame());
         else if (page->focusController().focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
-            page->focusController().setFocusedFrame(0);
+            page->focusController().setFocusedFrame(nullptr);
     }
 }
 
@@ -204,6 +199,11 @@ bool HTMLFrameElementBase::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == longdescAttr || attribute.name() == srcAttr
         || HTMLFrameOwnerElement::isURLAttribute(attribute);
+}
+
+bool HTMLFrameElementBase::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLFrameOwnerElement::hasLegalLinkAttribute(name);
 }
 
 bool HTMLFrameElementBase::isHTMLContentAttribute(const Attribute& attribute) const

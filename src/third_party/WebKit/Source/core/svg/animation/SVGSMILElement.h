@@ -205,7 +205,7 @@ private:
     float calculateAnimationPercentAndRepeat(SMILTime elapsed, unsigned& repeat) const;
     SMILTime calculateNextProgressTime(SMILTime elapsed) const;
 
-    mutable SVGElement* m_targetElement;
+    SVGElement* m_targetElement;
 
     Vector<Condition> m_conditions;
     bool m_syncBaseConditionsConnected;
@@ -252,7 +252,7 @@ inline bool isSVGSMILElement(const Node& node)
         || node.hasTagName(SVGNames::animateTransformTag) || node.hasTagName((SVGNames::discardTag));
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
 
 }
 

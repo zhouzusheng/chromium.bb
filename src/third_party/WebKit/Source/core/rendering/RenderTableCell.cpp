@@ -75,16 +75,16 @@ void RenderTableCell::willBeRemovedFromTree()
 unsigned RenderTableCell::parseColSpanFromDOM() const
 {
     ASSERT(node());
-    if (node()->hasTagName(tdTag) || node()->hasTagName(thTag))
-        return min<unsigned>(toHTMLTableCellElement(node())->colSpan(), maxColumnIndex);
+    if (isHTMLTableCellElement(*node()))
+        return min<unsigned>(toHTMLTableCellElement(*node()).colSpan(), maxColumnIndex);
     return 1;
 }
 
 unsigned RenderTableCell::parseRowSpanFromDOM() const
 {
     ASSERT(node());
-    if (node()->hasTagName(tdTag) || node()->hasTagName(thTag))
-        return min<unsigned>(toHTMLTableCellElement(node())->rowSpan(), maxRowIndex);
+    if (isHTMLTableCellElement(*node()))
+        return min<unsigned>(toHTMLTableCellElement(*node()).rowSpan(), maxRowIndex);
     return 1;
 }
 
@@ -99,7 +99,7 @@ void RenderTableCell::updateColAndRowSpanFlags()
 void RenderTableCell::colSpanOrRowSpanChanged()
 {
     ASSERT(node());
-    ASSERT(node()->hasTagName(tdTag) || node()->hasTagName(thTag));
+    ASSERT(isHTMLTableCellElement(*node()));
 
     updateColAndRowSpanFlags();
 
@@ -255,6 +255,10 @@ void RenderTableCell::layout()
         layouter.setNeedsLayout(this);
         layoutBlock(cellWidthChanged());
     }
+
+    // FIXME: This value isn't the intrinsic content logical height, but we need
+    // to update the value as its used by flexbox layout. crbug.com/367324
+    updateIntrinsicContentLogicalHeight(contentLogicalHeight());
 
     setCellWidthChanged(false);
 }
@@ -1107,14 +1111,11 @@ void RenderTableCell::paintCollapsedBorders(PaintInfo& paintInfo, const LayoutPo
     if (!paintInfo.shouldPaintWithinRoot(this) || style()->visibility() != VISIBLE)
         return;
 
-    LayoutRect localRepaintRect = paintInfo.rect;
-    localRepaintRect.inflate(maximalOutlineSize(paintInfo.phase));
-
     LayoutRect paintRect = LayoutRect(paintOffset + location(), pixelSnappedSize());
-    if (paintRect.y() - table()->outerBorderTop() >= localRepaintRect.maxY())
+    if (paintRect.y() - table()->outerBorderTop() >= paintInfo.rect.maxY())
         return;
 
-    if (paintRect.maxY() + table()->outerBorderBottom() <= localRepaintRect.y())
+    if (paintRect.maxY() + table()->outerBorderBottom() <= paintInfo.rect.y())
         return;
 
     GraphicsContext* graphicsContext = paintInfo.context;

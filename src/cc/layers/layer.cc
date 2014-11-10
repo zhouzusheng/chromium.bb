@@ -672,11 +672,6 @@ void Layer::RemoveClipChild(Layer* child) {
 void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
   DCHECK(IsPropertyChangeAllowed());
 
-  if (layer_tree_host()) {
-    scroll_offset = layer_tree_host()->DistributeScrollOffsetToViewports(
-        scroll_offset, this);
-  }
-
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
@@ -955,22 +950,33 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->set_user_scrollable_vertical(user_scrollable_vertical_);
 
   LayerImpl* scroll_parent = NULL;
-  if (scroll_parent_)
+  if (scroll_parent_) {
     scroll_parent = layer->layer_tree_impl()->LayerById(scroll_parent_->id());
+    DCHECK(scroll_parent);
+  }
 
   layer->SetScrollParent(scroll_parent);
   if (scroll_children_) {
     std::set<LayerImpl*>* scroll_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = scroll_children_->begin();
-        it != scroll_children_->end(); ++it)
-      scroll_children->insert(layer->layer_tree_impl()->LayerById((*it)->id()));
+         it != scroll_children_->end();
+         ++it) {
+      DCHECK_EQ((*it)->scroll_parent(), this);
+      LayerImpl* scroll_child =
+          layer->layer_tree_impl()->LayerById((*it)->id());
+      DCHECK(scroll_child);
+      scroll_children->insert(scroll_child);
+    }
     layer->SetScrollChildren(scroll_children);
+  } else {
+    layer->SetScrollChildren(NULL);
   }
 
   LayerImpl* clip_parent = NULL;
   if (clip_parent_) {
     clip_parent =
         layer->layer_tree_impl()->LayerById(clip_parent_->id());
+    DCHECK(clip_parent);
   }
 
   layer->SetClipParent(clip_parent);
@@ -978,11 +984,14 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     std::set<LayerImpl*>* clip_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = clip_children_->begin();
         it != clip_children_->end(); ++it) {
+      DCHECK_EQ((*it)->clip_parent(), this);
       LayerImpl* clip_child = layer->layer_tree_impl()->LayerById((*it)->id());
       DCHECK(clip_child);
       clip_children->insert(clip_child);
     }
     layer->SetClipChildren(clip_children);
+  } else {
+    layer->SetClipChildren(NULL);
   }
 
   // Adjust the scroll delta to be just the scrolls that have happened since
@@ -1055,7 +1064,7 @@ void Layer::SavePaintProperties() {
 }
 
 bool Layer::Update(ResourceUpdateQueue* queue,
-                   const OcclusionTracker* occlusion) {
+                   const OcclusionTracker<Layer>* occlusion) {
   DCHECK(layer_tree_host_);
   DCHECK_EQ(layer_tree_host_->source_frame_number(),
             paint_properties_.source_frame_number) <<

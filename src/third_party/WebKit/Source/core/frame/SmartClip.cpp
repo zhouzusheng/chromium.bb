@@ -38,6 +38,7 @@
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
+#include "core/rendering/RenderObject.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -89,7 +90,7 @@ String SmartClipData::toString()
     return result.toString();
 }
 
-SmartClip::SmartClip(PassRefPtr<Frame> frame)
+SmartClip::SmartClip(PassRefPtr<LocalFrame> frame)
     : m_frame(frame)
 {
 }
@@ -111,7 +112,7 @@ SmartClipData SmartClip::dataForRect(const IntRect& cropRect)
     Vector<Node*> hitNodes;
     collectOverlappingChildNodes(bestNode, resizedCropRect, hitNodes);
 
-    if (hitNodes.isEmpty() || hitNodes.size() == bestNode->childNodeCount()) {
+    if (hitNodes.isEmpty() || hitNodes.size() == bestNode->countChildren()) {
         hitNodes.clear();
         hitNodes.append(bestNode);
     }
@@ -220,8 +221,9 @@ Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRect
 // CSS background images but to skip actual backgrounds.
 bool SmartClip::shouldSkipBackgroundImage(Node* node)
 {
+    ASSERT(node);
     // Apparently we're only interested in background images on spans and divs.
-    if (!node->hasTagName(HTMLNames::spanTag) && !node->hasTagName(HTMLNames::divTag))
+    if (!isHTMLSpanElement(*node) && !isHTMLDivElement(*node))
         return true;
 
     // This check actually makes a bit of sense. If you're going to sprite an

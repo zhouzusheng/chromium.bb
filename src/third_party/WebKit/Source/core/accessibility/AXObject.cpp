@@ -33,7 +33,7 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -43,7 +43,6 @@
 #include "wtf/text/WTFString.h"
 
 using blink::WebLocalizedString;
-using namespace std;
 
 namespace WebCore {
 
@@ -70,7 +69,7 @@ static ARIARoleMap* createARIARoleMap()
         { "contentinfo", ContentInfoRole },
         { "dialog", DialogRole },
         { "directory", DirectoryRole },
-        { "grid", TableRole },
+        { "grid", GridRole },
         { "gridcell", CellRole },
         { "columnheader", ColumnHeaderRole },
         { "combobox", ComboBoxRole },
@@ -393,15 +392,6 @@ AccessibilityButtonState AXObject::checkboxOrRadioValue() const
         return ButtonStateMixed;
 
     return ButtonStateOff;
-}
-
-const AtomicString& AXObject::placeholderValue() const
-{
-    const AtomicString& placeholder = getAttribute(placeholderAttr);
-    if (!placeholder.isEmpty())
-        return placeholder;
-
-    return nullAtom;
 }
 
 bool AXObject::ariaIsMultiline() const

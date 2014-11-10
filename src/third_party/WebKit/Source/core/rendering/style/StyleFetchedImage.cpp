@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 
+#include "core/css/CSSImageValue.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/RenderObject.h"
 
@@ -41,9 +42,9 @@ StyleFetchedImage::~StyleFetchedImage()
     m_image->removeClient(this);
 }
 
-PassRefPtr<CSSValue> StyleFetchedImage::cssValue() const
+PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImage::cssValue() const
 {
-    return CSSPrimitiveValue::create(m_image->url().string(), CSSPrimitiveValue::CSS_URI);
+    return CSSImageValue::create(m_image->url(), const_cast<StyleFetchedImage*>(this));
 }
 
 bool StyleFetchedImage::canRender(const RenderObject* renderer, float multiplier) const

@@ -115,7 +115,7 @@ bool Target::Close() const {
 DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
 {
     int port = 0;
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
     if (command_line.HasSwitch(switches::kRemoteDebuggingPort)) {
         int temp_port;
         std::string port_str =

@@ -215,7 +215,7 @@ void SpellCheck::Init(const std::vector<FileLanguagePair>& languages,
     SpellcheckLanguage *language = new SpellcheckLanguage();
     spellcheck_.push_back(language);
     const FileLanguagePair& flp = languages[langIndex];
-    language->Init(IPC::PlatformFileForTransitToPlatformFile(flp.first),
+    language->Init(IPC::PlatformFileForTransitToFile(flp.first),
                    flp.second);
   }
 

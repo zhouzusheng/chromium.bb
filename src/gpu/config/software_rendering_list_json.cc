@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "7.1",
+  "version": "7.6",
   "entries": [
     {
       "id": 1,
@@ -1032,8 +1032,39 @@ LONG_STRING_CONST(
       "features": [
         "accelerated_video_decode"
       ]
+    },
+    {
+      "id": 93,
+      "description": "GLX indirect rendering (X remoting) is not supported",
+      "cr_bugs": [72373],
+      "os": {
+        "type": "linux"
+      },
+      "direct_rendering": false,
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 95,
+      "description": "AMD driver version 13.101 is unstable on linux.",
+      "cr_bugs": [363378],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "driver_vendor": {
+        "op": "contains",
+        "value": "AMD"
+      },
+      "driver_version": {
+        "op": "=",
+        "value": "13.101"
+      },
+      "features": [
+        "all"
+      ]
     }
-
   ]
 }
 

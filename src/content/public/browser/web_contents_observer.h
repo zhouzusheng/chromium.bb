@@ -22,6 +22,7 @@ class RenderFrameHost;
 class RenderViewHost;
 class WebContents;
 class WebContentsImpl;
+struct AXEventNotificationDetails;
 struct FaviconURL;
 struct FrameNavigateParams;
 struct LoadCommittedDetails;
@@ -308,6 +309,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void DidShowFullscreenWidget(int routing_id) {}
   virtual void DidDestroyFullscreenWidget(int routing_id) {}
 
+  // Invoked when the renderer has toggled the tab into/out of fullscreen mode.
+  virtual void DidToggleFullscreenModeForTab(bool entered_fullscreen) {}
+
   // Invoked when visible SSL state (as defined by SSLStatus) changes.
   virtual void DidChangeVisibleSSLState() {}
 
@@ -323,6 +327,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // Invoked when a user cancels a before unload dialog.
   virtual void BeforeUnloadDialogCancelled() {}
+
+  // Invoked when an accessibility event is received from the renderer.
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

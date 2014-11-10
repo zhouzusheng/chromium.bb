@@ -10,7 +10,6 @@
 #include "base/time/time.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -20,6 +19,7 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/corewm/tooltip.h"
 #include "ui/views/widget/tooltip_manager.h"
+#include "ui/wm/public/drag_drop_client.h"
 
 namespace views {
 namespace corewm {
@@ -288,7 +288,8 @@ void TooltipController::UpdateIfRequired() {
     // If the string consists entirely of whitespace, then don't both showing it
     // (an empty tooltip is useless).
     base::string16 whitespace_removed_text;
-    TrimWhitespace(trimmed_text, TRIM_ALL, &whitespace_removed_text);
+    base::TrimWhitespace(trimmed_text, base::TRIM_ALL,
+                         &whitespace_removed_text);
     if (whitespace_removed_text.empty()) {
       tooltip_->Hide();
     } else {

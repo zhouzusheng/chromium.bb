@@ -252,8 +252,8 @@ WebInspector.OverviewGrid.Window.prototype = {
     {
         if (!this._enabled)
             return false;
-        this._offsetLeft = event.pageX - event.offsetX;
-        var position = event.pageX - this._offsetLeft;
+        this._offsetLeft = this._parentElement.totalOffsetLeft();
+        var position = event.x - this._offsetLeft;
         this._overviewWindowSelector = new WebInspector.OverviewGrid.WindowSelector(this._parentElement, position);
         return true;
     },
@@ -263,7 +263,7 @@ WebInspector.OverviewGrid.Window.prototype = {
      */
     _windowSelectorDragging: function(event)
     {
-        this._overviewWindowSelector._updatePosition(event.pageX - this._offsetLeft);
+        this._overviewWindowSelector._updatePosition(event.x - this._offsetLeft);
         event.preventDefault();
     },
 
@@ -272,7 +272,7 @@ WebInspector.OverviewGrid.Window.prototype = {
      */
     _endWindowSelectorDragging: function(event)
     {
-        var window = this._overviewWindowSelector._close(event.pageX - this._offsetLeft);
+        var window = this._overviewWindowSelector._close(event.x - this._offsetLeft);
         delete this._overviewWindowSelector;
         if (window.end === window.start) { // Click, not drag.
             var middle = window.end;
@@ -459,18 +459,6 @@ WebInspector.OverviewGrid.WindowSelector = function(parent, position)
 }
 
 WebInspector.OverviewGrid.WindowSelector.prototype = {
-    _createSelectorElement: function(parent, left, width, height)
-    {
-        var selectorElement = document.createElement("div");
-        selectorElement.className = "overview-grid-window-selector";
-        selectorElement.style.left = left + "px";
-        selectorElement.style.width = width + "px";
-        selectorElement.style.top = "0px";
-        selectorElement.style.height = height + "px";
-        parent.appendChild(selectorElement);
-        return selectorElement;
-    },
-
     _close: function(position)
     {
         position = Math.max(0, Math.min(position, this._width));

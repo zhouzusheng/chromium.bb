@@ -34,7 +34,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/MessageEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/frame/DOMWindow.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "public/platform/WebString.h"
@@ -74,7 +73,7 @@ void MessagePort::postMessage(PassRefPtr<SerializedScriptValue> message, const M
     OwnPtr<MessagePortChannelArray> channels;
     // Make sure we aren't connected to any of the passed-in ports.
     if (ports) {
-        for (unsigned int i = 0; i < ports->size(); ++i) {
+        for (unsigned i = 0; i < ports->size(); ++i) {
             MessagePort* dataPort = (*ports)[i].get();
             if (dataPort == this) {
                 exceptionState.throwDOMException(DataCloneError, "Port at index " + String::number(i) + " contains the source port.");
@@ -87,13 +86,33 @@ void MessagePort::postMessage(PassRefPtr<SerializedScriptValue> message, const M
     }
 
     blink::WebString messageString = message->toWireString();
-    blink::WebMessagePortChannelArray* webChannels = 0;
+    OwnPtr<blink::WebMessagePortChannelArray> webChannels = toWebMessagePortChannelArray(channels.release());
+    m_entangledChannel->postMessage(messageString, webChannels.leakPtr());
+}
+
+// static
+PassOwnPtr<blink::WebMessagePortChannelArray> MessagePort::toWebMessagePortChannelArray(PassOwnPtr<MessagePortChannelArray> channels)
+{
+    OwnPtr<blink::WebMessagePortChannelArray> webChannels;
     if (channels && channels->size()) {
-        webChannels = new blink::WebMessagePortChannelArray(channels->size());
+        webChannels = adoptPtr(new blink::WebMessagePortChannelArray(channels->size()));
         for (size_t i = 0; i < channels->size(); ++i)
             (*webChannels)[i] = (*channels)[i].leakPtr();
     }
-    m_entangledChannel->postMessage(messageString, webChannels);
+    return webChannels.release();
+}
+
+// static
+PassOwnPtr<MessagePortArray> MessagePort::toMessagePortArray(ExecutionContext* context, const blink::WebMessagePortChannelArray& webChannels)
+{
+    OwnPtr<MessagePortArray> ports;
+    if (!webChannels.isEmpty()) {
+        OwnPtr<MessagePortChannelArray> channels = adoptPtr(new MessagePortChannelArray(webChannels.size()));
+        for (size_t i = 0; i < webChannels.size(); ++i)
+            (*channels)[i] = adoptPtr(webChannels[i]);
+        ports = MessagePort::entanglePorts(*context, channels.release());
+    }
+    return ports.release();
 }
 
 PassOwnPtr<blink::WebMessagePortChannel> MessagePort::disentangle()
@@ -229,7 +248,7 @@ PassOwnPtr<MessagePortArray> MessagePort::entanglePorts(ExecutionContext& contex
         return nullptr;
 
     OwnPtr<MessagePortArray> portArray = adoptPtr(new MessagePortArray(channels->size()));
-    for (unsigned int i = 0; i < channels->size(); ++i) {
+    for (unsigned i = 0; i < channels->size(); ++i) {
         RefPtr<MessagePort> port = MessagePort::create(context);
         port->entangle((*channels)[i].release());
         (*portArray)[i] = port.release();

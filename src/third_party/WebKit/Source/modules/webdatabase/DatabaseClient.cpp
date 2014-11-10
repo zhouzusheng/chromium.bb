@@ -57,7 +57,7 @@ const char* DatabaseClient::supplementName()
     return "DatabaseClient";
 }
 
-void DatabaseClient::didOpenDatabase(PassRefPtr<Database> database, const String& domain, const String& name, const String& version)
+void DatabaseClient::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
 {
     if (m_inspectorAgent)
         m_inspectorAgent->didOpenDatabase(database, domain, name, version);
@@ -71,11 +71,11 @@ void DatabaseClient::createInspectorAgentFor(Page* page)
     page->inspectorController().registerModuleAgent(inspectorAgent.release());
 }
 
-void provideDatabaseClientTo(Page* page, PassOwnPtr<DatabaseClient> client)
+void provideDatabaseClientTo(Page& page, PassOwnPtr<DatabaseClient> client)
 {
     DatabaseClient* clientPtr = client.get();
-    page->provideSupplement(DatabaseClient::supplementName(), client);
-    clientPtr->createInspectorAgentFor(page);
+    page.provideSupplement(DatabaseClient::supplementName(), client);
+    clientPtr->createInspectorAgentFor(&page);
 }
 
 void provideDatabaseClientToWorker(WorkerClients* workerClients, PassOwnPtr<DatabaseClient> client)

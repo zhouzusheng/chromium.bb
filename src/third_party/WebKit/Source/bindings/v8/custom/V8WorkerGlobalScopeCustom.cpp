@@ -34,13 +34,12 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScheduledAction.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/V8WorkerGlobalScopeEventListener.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindowTimers.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/websockets/WebSocket.h"
 #include "wtf/OwnPtr.h"
@@ -50,6 +49,7 @@ namespace WebCore {
 void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot)
 {
     WorkerGlobalScope* workerGlobalScope = V8WorkerGlobalScope::toNative(info.Holder());
+    ASSERT(workerGlobalScope);
 
     int argumentCount = info.Length();
     if (argumentCount < 1)
@@ -65,7 +65,7 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
     v8::Handle<v8::Context> v8Context = script->context();
     if (function->IsString()) {
         if (ContentSecurityPolicy* policy = workerGlobalScope->contentSecurityPolicy()) {
-            if (!policy->allowScriptEval()) {
+            if (!policy->allowEval()) {
                 v8SetReturnValue(info, 0);
                 return;
             }
@@ -87,9 +87,9 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
     int32_t timeout = argumentCount >= 2 ? info[1]->Int32Value() : 0;
     int timerId;
     if (singleShot)
-        timerId = DOMWindowTimers::setTimeout(workerGlobalScope, action.release(), timeout);
+        timerId = DOMWindowTimers::setTimeout(*workerGlobalScope, action.release(), timeout);
     else
-        timerId = DOMWindowTimers::setInterval(workerGlobalScope, action.release(), timeout);
+        timerId = DOMWindowTimers::setInterval(*workerGlobalScope, action.release(), timeout);
 
     v8SetReturnValue(info, timerId);
 }

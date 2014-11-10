@@ -35,12 +35,14 @@ class RTCIceCandidateEvent FINAL : public Event {
 public:
     virtual ~RTCIceCandidateEvent();
 
-    static PassRefPtr<RTCIceCandidateEvent> create();
-    static PassRefPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate>);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create();
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate>);
 
     RTCIceCandidate* candidate() const;
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     RTCIceCandidateEvent();

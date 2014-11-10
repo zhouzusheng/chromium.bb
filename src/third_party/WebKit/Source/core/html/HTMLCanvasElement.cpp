@@ -36,13 +36,14 @@
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
 #include "core/html/canvas/WebGLContextAttributes.h"
+#include "core/html/canvas/WebGLContextEvent.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
-#include "core/frame/Frame.h"
-#include "core/frame/Settings.h"
 #include "core/rendering/RenderHTMLCanvas.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/graphics/Canvas2DImageBufferSurface.h"
@@ -91,7 +92,7 @@ PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(Document& document)
 
 HTMLCanvasElement::~HTMLCanvasElement()
 {
-    setExternallyAllocatedMemory(0);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-m_externallyAllocatedMemory);
     HashSet<CanvasObserver*>::iterator end = m_observers.end();
     for (HashSet<CanvasObserver*>::iterator it = m_observers.begin(); it != end; ++it)
         (*it)->canvasDestroyed(this);
@@ -108,7 +109,7 @@ void HTMLCanvasElement::parseAttribute(const QualifiedName& name, const AtomicSt
 
 RenderObject* HTMLCanvasElement::createRenderer(RenderStyle* style)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (frame && frame->script().canExecuteScripts(NotAboutToExecuteScript)) {
         m_rendererIsCanvas = true;
         return new RenderHTMLCanvas(this);
@@ -174,32 +175,33 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
         return m_context.get();
     }
 
-    Settings* settings = document().settings();
-    if (settings && settings->webGLEnabled()) {
-        // Accept the legacy "webkit-3d" name as well as the provisional "experimental-webgl" name.
-        // Now that WebGL is ratified, we will also accept "webgl" as the context name in Chrome.
-        ContextType contextType;
-        bool is3dContext = true;
-        if (type == "webkit-3d")
-            contextType = ContextWebkit3d;
-        else if (type == "experimental-webgl")
-            contextType = ContextExperimentalWebgl;
-        else if (type == "webgl")
-            contextType = ContextWebgl;
-        else
-            is3dContext = false;
+    // Accept the legacy "webkit-3d" name as well as the provisional "experimental-webgl" name.
+    // Now that WebGL is ratified, we will also accept "webgl" as the context name in Chrome.
+    ContextType contextType;
+    bool is3dContext = true;
+    if (type == "webkit-3d")
+        contextType = ContextWebkit3d;
+    else if (type == "experimental-webgl")
+        contextType = ContextExperimentalWebgl;
+    else if (type == "webgl")
+        contextType = ContextWebgl;
+    else
+        is3dContext = false;
 
-        if (is3dContext) {
-            if (m_context && !m_context->is3d())
-                return 0;
-            if (!m_context) {
-                blink::Platform::current()->histogramEnumeration("Canvas.ContextType", contextType, ContextTypeCount);
-                m_context = WebGLRenderingContext::create(this, static_cast<WebGLContextAttributes*>(attrs));
-                if (m_context)
-                    scheduleLayerUpdate();
-            }
-            return m_context.get();
+    if (is3dContext) {
+        if (m_context && !m_context->is3d()) {
+            dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Canvas has an existing, non-WebGL context"));
+            return 0;
         }
+        if (!m_context) {
+            blink::Platform::current()->histogramEnumeration("Canvas.ContextType", contextType, ContextTypeCount);
+            m_context = WebGLRenderingContext::create(this, static_cast<WebGLContextAttributes*>(attrs));
+            if (m_context) {
+                scheduleLayerUpdate();
+                updateExternallyAllocatedMemory();
+            }
+        }
+        return m_context.get();
     }
     return 0;
 }
@@ -301,7 +303,7 @@ bool HTMLCanvasElement::paintsIntoCanvasBuffer() const
 }
 
 
-void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, bool useLowQualityScale)
+void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r)
 {
     // Clear the dirty rect
     m_dirtyRect = FloatRect();
@@ -320,9 +322,9 @@ void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, boo
         if (imageBuffer) {
             CompositeOperator compositeOperator = !m_context || m_context->hasAlpha() ? CompositeSourceOver : CompositeCopy;
             if (m_presentedImage)
-                context->drawImage(m_presentedImage.get(), pixelSnappedIntRect(r), compositeOperator, DoNotRespectImageOrientation, useLowQualityScale);
+                context->drawImage(m_presentedImage.get(), pixelSnappedIntRect(r), compositeOperator, DoNotRespectImageOrientation);
             else
-                context->drawImageBuffer(imageBuffer, pixelSnappedIntRect(r), compositeOperator, blink::WebBlendModeNormal, useLowQualityScale);
+                context->drawImageBuffer(imageBuffer, pixelSnappedIntRect(r), compositeOperator, blink::WebBlendModeNormal);
         }
     }
 
@@ -340,12 +342,14 @@ void HTMLCanvasElement::makePresentationCopy()
     if (!m_presentedImage) {
         // The buffer contains the last presented data, so save a copy of it.
         m_presentedImage = buffer()->copyImage(CopyBackingStore, Unscaled);
+        updateExternallyAllocatedMemory();
     }
 }
 
 void HTMLCanvasElement::clearPresentationCopy()
 {
     m_presentedImage.clear();
+    updateExternallyAllocatedMemory();
 }
 
 void HTMLCanvasElement::setSurfaceSize(const IntSize& size)
@@ -353,7 +357,6 @@ void HTMLCanvasElement::setSurfaceSize(const IntSize& size)
     m_size = size;
     m_didFailToCreateImageBuffer = false;
     discardImageBuffer();
-    setExternallyAllocatedMemory(0);
     clearCopiedImage();
 }
 
@@ -395,7 +398,7 @@ String HTMLCanvasElement::toDataURL(const String& mimeType, const double* qualit
 PassRefPtr<ImageData> HTMLCanvasElement::getImageData()
 {
     if (!m_context || !m_context->is3d())
-       return 0;
+        return nullptr;
     return toWebGLRenderingContext(m_context.get())->paintRenderingResultsToImageData();
 }
 
@@ -471,7 +474,7 @@ void HTMLCanvasElement::createImageBuffer()
 
     m_didFailToCreateImageBuffer = false;
 
-    setExternallyAllocatedMemory(4 * width() * height());
+    updateExternallyAllocatedMemory();
 
     if (is3D()) {
         // Early out for WebGL canvases
@@ -479,7 +482,7 @@ void HTMLCanvasElement::createImageBuffer()
     }
 
     m_imageBuffer->context()->setShouldClampToSourceRect(false);
-    m_imageBuffer->context()->setImageInterpolationQuality(DefaultInterpolationQuality);
+    m_imageBuffer->context()->setImageInterpolationQuality(CanvasDefaultInterpolationQuality);
     // Enabling MSAA overrides a request to disable antialiasing. This is true regardless of whether the
     // rendering mode is accelerated or not. For consistency, we don't want to apply AA in accelerated
     // canvases but not in unaccelerated canvases.
@@ -496,8 +499,26 @@ void HTMLCanvasElement::createImageBuffer()
         scheduleLayerUpdate();
 }
 
-void HTMLCanvasElement::setExternallyAllocatedMemory(intptr_t externallyAllocatedMemory)
+void HTMLCanvasElement::updateExternallyAllocatedMemory() const
 {
+    int bufferCount = 0;
+    if (m_imageBuffer)
+        bufferCount++;
+    if (is3D())
+        bufferCount += 2;
+    if (m_copiedImage)
+        bufferCount++;
+    if (m_presentedImage)
+        bufferCount++;
+
+    Checked<intptr_t, RecordOverflow> checkedExternallyAllocatedMemory = 4 * bufferCount;
+    checkedExternallyAllocatedMemory *= width();
+    checkedExternallyAllocatedMemory *= height();
+    intptr_t externallyAllocatedMemory;
+    if (checkedExternallyAllocatedMemory.safeGet(externallyAllocatedMemory) == CheckedState::DidOverflow)
+        externallyAllocatedMemory = std::numeric_limits<intptr_t>::max();
+
+    // Subtracting two intptr_t that are known to be positive will never underflow.
     v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(externallyAllocatedMemory - m_externallyAllocatedMemory);
     m_externallyAllocatedMemory = externallyAllocatedMemory;
 }
@@ -540,6 +561,7 @@ Image* HTMLCanvasElement::copiedImage() const
         if (m_context)
             m_context->paintRenderingResultsToCanvas();
         m_copiedImage = buffer()->copyImage(CopyBackingStore, Unscaled);
+        updateExternallyAllocatedMemory();
     }
     return m_copiedImage.get();
 }
@@ -563,12 +585,14 @@ void HTMLCanvasElement::discardImageBuffer()
 {
     m_contextStateSaver.clear(); // uses context owned by m_imageBuffer
     m_imageBuffer.clear();
+    updateExternallyAllocatedMemory();
 }
 
 void HTMLCanvasElement::clearCopiedImage()
 {
     m_copiedImage.clear();
     m_didClearImageBuffer = false;
+    updateExternallyAllocatedMemory();
 }
 
 AffineTransform HTMLCanvasElement::baseTransform() const
@@ -597,6 +621,42 @@ void HTMLCanvasElement::didMoveToNewDocument(Document& oldDocument)
 {
     setObservedDocument(document());
     HTMLElement::didMoveToNewDocument(oldDocument);
+}
+
+PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageMode mode, SourceImageStatus* status) const
+{
+    if (!width() || !height()) {
+        *status = ZeroSizeCanvasSourceImageStatus;
+        return nullptr;
+    }
+
+    if (!buffer()) {
+        *status = InvalidSourceImageStatus;
+        return nullptr;
+    }
+
+    if (mode == CopySourceImageIfVolatile) {
+        *status = NormalSourceImageStatus;
+        return copiedImage();
+    }
+
+    if (m_context && m_context->is3d()) {
+        m_context->paintRenderingResultsToCanvas();
+        *status = ExternalSourceImageStatus;
+    } else {
+        *status = NormalSourceImageStatus;
+    }
+    return m_imageBuffer->copyImage(DontCopyBackingStore, Unscaled);
+}
+
+bool HTMLCanvasElement::wouldTaintOrigin(SecurityOrigin*) const
+{
+    return !originClean();
+}
+
+FloatSize HTMLCanvasElement::sourceSize() const
+{
+    return FloatSize(width(), height());
 }
 
 }

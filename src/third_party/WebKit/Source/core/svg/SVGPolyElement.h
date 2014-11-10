@@ -45,13 +45,9 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
 
-    virtual bool supportsMarkers() const OVERRIDE FINAL { return true; }
-
 private:
     RefPtr<SVGAnimatedPointList> m_points;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPolyElement)
-    END_DECLARE_ANIMATED_PROPERTIES
 };
 
 inline bool isSVGPolyElement(const Node& node)
@@ -59,7 +55,7 @@ inline bool isSVGPolyElement(const Node& node)
     return node.hasTagName(SVGNames::polygonTag) || node.hasTagName(SVGNames::polylineTag);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGPolyElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGPolyElement);
 
 } // namespace WebCore
 

@@ -149,7 +149,7 @@ bool SVGTextLayoutEngine::parentDefinesTextLength(RenderObject* parent) const
     while (currentParent) {
         if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromRenderer(currentParent)) {
             SVGLengthContext lengthContext(textContentElement);
-            if (textContentElement->lengthAdjustCurrentValue() == SVGLengthAdjustSpacing && textContentElement->textLengthIsSpecifiedByUser())
+            if (textContentElement->lengthAdjust()->currentValue()->enumValue() == SVGLengthAdjustSpacing && textContentElement->textLengthIsSpecifiedByUser())
                 return true;
         }
 
@@ -208,7 +208,7 @@ void SVGTextLayoutEngine::beginTextPathLayout(RenderObject* object, SVGTextLayou
 
     if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromRenderer(textPath)) {
         SVGLengthContext lengthContext(textContentElement);
-        lengthAdjust = textContentElement->lengthAdjustCurrentValue();
+        lengthAdjust = textContentElement->lengthAdjust()->currentValue()->enumValue();
         if (textContentElement->textLengthIsSpecifiedByUser())
             desiredTextLength = textContentElement->textLength()->currentValue()->value(lengthContext);
         else
@@ -240,18 +240,17 @@ void SVGTextLayoutEngine::layoutInlineTextBox(SVGInlineTextBox* textBox)
 {
     ASSERT(textBox);
 
-    RenderSVGInlineText* text = toRenderSVGInlineText(textBox->textRenderer());
-    ASSERT(text);
-    ASSERT(text->parent());
-    ASSERT(text->parent()->node());
-    ASSERT(text->parent()->node()->isSVGElement());
+    RenderSVGInlineText& text = toRenderSVGInlineText(textBox->textRenderer());
+    ASSERT(text.parent());
+    ASSERT(text.parent()->node());
+    ASSERT(text.parent()->node()->isSVGElement());
 
-    const RenderStyle* style = text->style();
+    const RenderStyle* style = text.style();
     ASSERT(style);
 
     textBox->clearTextFragments();
     m_isVerticalText = style->svgStyle()->isVerticalWritingMode();
-    layoutTextOnLineOrPath(textBox, text, style);
+    layoutTextOnLineOrPath(textBox, &text, style);
 
     if (m_inPathLayout) {
         m_pathLayoutBoxes.append(textBox);

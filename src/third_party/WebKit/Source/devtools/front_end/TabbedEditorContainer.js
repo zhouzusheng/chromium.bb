@@ -36,7 +36,7 @@ WebInspector.TabbedEditorContainerDelegate.prototype = {
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @return {!WebInspector.SourceFrame}
      */
-    viewForFile: function(uiSourceCode) { }
+    viewForFile: function(uiSourceCode) { },
 }
 
 /**
@@ -143,7 +143,7 @@ WebInspector.TabbedEditorContainer.prototype = {
         return result;
     },
 
-    _addScrollAndSelectionListeners: function()
+    _addViewListeners: function()
     {
         if (!this._currentView)
             return;
@@ -151,7 +151,7 @@ WebInspector.TabbedEditorContainer.prototype = {
         this._currentView.addEventListener(WebInspector.SourceFrame.Events.SelectionChanged, this._selectionChanged, this);
     },
 
-    _removeScrollAndSelectionListeners: function()
+    _removeViewListeners: function()
     {
         if (!this._currentView)
             return;
@@ -159,6 +159,9 @@ WebInspector.TabbedEditorContainer.prototype = {
         this._currentView.removeEventListener(WebInspector.SourceFrame.Events.SelectionChanged, this._selectionChanged, this);
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
     _scrollChanged: function(event)
     {
         var lineNumber = /** @type {number} */ (event.data);
@@ -166,6 +169,9 @@ WebInspector.TabbedEditorContainer.prototype = {
         this._history.save(this._previouslyViewedFilesSetting);
     },
 
+    /**
+     * @param {!WebInspector.Event} event
+     */
     _selectionChanged: function(event)
     {
         var range = /** @type {!WebInspector.TextRange} */ (event.data);
@@ -182,7 +188,7 @@ WebInspector.TabbedEditorContainer.prototype = {
         if (this._currentFile === uiSourceCode)
             return;
 
-        this._removeScrollAndSelectionListeners();
+        this._removeViewListeners();
         this._currentFile = uiSourceCode;
 
         var tabId = this._tabIds.get(uiSourceCode) || this._appendFileTab(uiSourceCode, userGesture);
@@ -192,7 +198,7 @@ WebInspector.TabbedEditorContainer.prototype = {
             this._editorSelectedByUserAction();
         
         this._currentView = this.visibleView;
-        this._addScrollAndSelectionListeners();
+        this._addViewListeners();
 
         var eventData = { currentFile: this._currentFile, userGesture: userGesture };
         this.dispatchEventToListeners(WebInspector.TabbedEditorContainer.Events.EditorSelected, eventData);
@@ -390,7 +396,7 @@ WebInspector.TabbedEditorContainer.prototype = {
 
         var uiSourceCode = this._files[tabId];
         if (this._currentFile === uiSourceCode) {
-            this._removeScrollAndSelectionListeners();
+            this._removeViewListeners();
             delete this._currentView;
             delete this._currentFile;
         }
@@ -426,7 +432,6 @@ WebInspector.TabbedEditorContainer.prototype = {
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._uiSourceCodeWorkingCopyChanged, this);
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._uiSourceCodeWorkingCopyCommitted, this);
         uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._uiSourceCodeSavedStateUpdated, this);
-        uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.FormattedChanged, this._uiSourceCodeFormattedChanged, this);
     },
 
     /**
@@ -438,7 +443,6 @@ WebInspector.TabbedEditorContainer.prototype = {
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._uiSourceCodeWorkingCopyChanged, this);
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._uiSourceCodeWorkingCopyCommitted, this);
         uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._uiSourceCodeSavedStateUpdated, this);
-        uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.FormattedChanged, this._uiSourceCodeFormattedChanged, this);
     },
 
     /**
@@ -477,12 +481,6 @@ WebInspector.TabbedEditorContainer.prototype = {
     },
 
     _uiSourceCodeSavedStateUpdated: function(event)
-    {
-        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.target);
-        this._updateFileTitle(uiSourceCode);
-    },
-
-    _uiSourceCodeFormattedChanged: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.target);
         this._updateFileTitle(uiSourceCode);

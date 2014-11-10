@@ -18,7 +18,7 @@
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/common/accessibility_messages.h"
 #include "content/public/common/content_client.h"
-#include "ui/base/accessibility/accessible_text_utils.h"
+#include "ui/accessibility/ax_text_utils.h"
 #include "ui/base/win/accessibility_ids_win.h"
 #include "ui/base/win/accessibility_misc_utils.h"
 
@@ -3568,10 +3568,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_role_ = ROLE_SYSTEM_LISTITEM;
       ia_state_ |= STATE_SYSTEM_READONLY;
       break;
-    case ui::AX_ROLE_LIST_MARKER:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia_state_ |= STATE_SYSTEM_READONLY;
-      break;
     case ui::AX_ROLE_MATH_ELEMENT:
       ia_role_ = ROLE_SYSTEM_EQUATION;
       ia_state_ |= STATE_SYSTEM_READONLY;
@@ -3669,9 +3665,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_ANNOTATION:
+    case ui::AX_ROLE_LIST_MARKER:
     case ui::AX_ROLE_STATIC_TEXT:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role_ = ROLE_SYSTEM_STATICTEXT;
       break;
     case ui::AX_ROLE_STATUS:
       ia_role_ = ROLE_SYSTEM_STATUSBAR;

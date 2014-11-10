@@ -379,6 +379,8 @@ class MsvsSettings(object):
         map={'false': '-', 'true': ''}, prefix='/Zc:wchar_t')
     cl('EnablePREfast', map={'true': '/analyze'})
     cl('AdditionalOptions', prefix='')
+    cl('EnableEnhancedInstructionSet',
+       map={'1': 'SSE', '2': 'SSE2', '3': 'AVX', '4': 'IA32'}, prefix='/arch:')
     cflags.extend(['/FI' + f for f in self._Setting(
         ('VCCLCompilerTool', 'ForcedIncludeFiles'), config, default=[])])
     if self.vs_version.short_name in ('2013', '2013e'):
@@ -387,12 +389,6 @@ class MsvsSettings(object):
     # ninja handles parallelism by itself, don't have the compiler do it too.
     cflags = filter(lambda x: not x.startswith('/MP'), cflags)
     return cflags
-
-  def GetPrecompiledHeader(self, config, gyp_to_build_path):
-    """Returns an object that handles the generation of precompiled header
-    build steps."""
-    config = self._TargetConfig(config)
-    return _PchHelper(self, config, gyp_to_build_path)
 
   def _GetPchFlags(self, config, extension):
     """Get the flags to be added to the cflags for precompiled header support.
@@ -787,7 +783,7 @@ class PrecompiledHeader(object):
   def GetObjDependencies(self, sources, objs, arch):
     """Given a list of sources files and the corresponding object files,
     returns a list of the pch files that should be depended upon. The
-    additional wrapping in the return value is for interface compatability
+    additional wrapping in the return value is for interface compatibility
     with make.py on Mac, and xcode_emulation.py."""
     assert arch is None
     if not self._PchHeader():

@@ -28,12 +28,12 @@
 #include "core/html/canvas/OESVertexArrayObject.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
 
 namespace WebCore {
 
-OESVertexArrayObject::OESVertexArrayObject(WebGLRenderingContext* context)
+OESVertexArrayObject::OESVertexArrayObject(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
@@ -44,12 +44,12 @@ OESVertexArrayObject::~OESVertexArrayObject()
 {
 }
 
-WebGLExtension::ExtensionName OESVertexArrayObject::name() const
+WebGLExtensionName OESVertexArrayObject::name() const
 {
     return OESVertexArrayObjectName;
 }
 
-PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingContext* context)
+PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESVertexArrayObject(context));
 }
@@ -57,7 +57,7 @@ PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingCont
 PassRefPtr<WebGLVertexArrayObjectOES> OESVertexArrayObject::createVertexArrayOES()
 {
     if (isLost())
-        return 0;
+        return nullptr;
 
     RefPtr<WebGLVertexArrayObjectOES> o = WebGLVertexArrayObjectOES::create(m_context, WebGLVertexArrayObjectOES::VaoTypeUser);
     m_context->addContextObject(o.get());
@@ -70,7 +70,7 @@ void OESVertexArrayObject::deleteVertexArrayOES(WebGLVertexArrayObjectOES* array
         return;
 
     if (!arrayObject->isDefaultObject() && arrayObject == m_context->m_boundVertexArrayObject)
-        m_context->setBoundVertexArrayObject(0);
+        m_context->setBoundVertexArrayObject(nullptr);
 
     arrayObject->deleteObject(m_context->webGraphicsContext3D());
 }
@@ -103,11 +103,11 @@ void OESVertexArrayObject::bindVertexArrayOES(WebGLVertexArrayObjectOES* arrayOb
         m_context->setBoundVertexArrayObject(arrayObject);
     } else {
         m_context->webGraphicsContext3D()->bindVertexArrayOES(0);
-        m_context->setBoundVertexArrayObject(0);
+        m_context->setBoundVertexArrayObject(nullptr);
     }
 }
 
-bool OESVertexArrayObject::supported(WebGLRenderingContext* context)
+bool OESVertexArrayObject::supported(WebGLRenderingContextBase* context)
 {
     return context->extensionsUtil()->supportsExtension("GL_OES_vertex_array_object");
 }

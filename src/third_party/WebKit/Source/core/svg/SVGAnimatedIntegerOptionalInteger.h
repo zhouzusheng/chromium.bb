@@ -41,7 +41,7 @@ namespace WebCore {
 // while DOM attribute and SMIL animations operate on this class.
 // From Javascript, the two SVGAnimatedIntegers |firstInteger| and |secondInteger| are used.
 // For example, see SVGFEDropShadowElement::stdDeviation{X,Y}()
-class SVGAnimatedIntegerOptionalInteger : public NewSVGAnimatedPropertyCommon<SVGIntegerOptionalInteger> {
+class SVGAnimatedIntegerOptionalInteger : public SVGAnimatedPropertyCommon<SVGIntegerOptionalInteger> {
 public:
     static PassRefPtr<SVGAnimatedIntegerOptionalInteger> create(SVGElement* contextElement, const QualifiedName& attributeName, float initialFirstValue = 0, float initialSecondValue = 0)
     {
@@ -49,11 +49,9 @@ public:
     }
 
     virtual void animationStarted() OVERRIDE;
-    virtual void setAnimatedValue(PassRefPtr<NewSVGPropertyBase>) OVERRIDE;
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) OVERRIDE;
     virtual bool needsSynchronizeAttribute() OVERRIDE;
     virtual void animationEnded() OVERRIDE;
-    virtual void animValWillChange() OVERRIDE;
-    virtual void animValDidChange() OVERRIDE;
 
     SVGAnimatedInteger* firstInteger() { return m_firstInteger.get(); }
     SVGAnimatedInteger* secondInteger() { return m_secondInteger.get(); }

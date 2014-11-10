@@ -74,6 +74,10 @@ public:
     void endElement();
     void endElementAt(float offset);
 
+    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(begin, beginEvent);
+    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(end, endEvent);
+    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(repeat, repeatEvent);
+
     static bool isTargetAttributeCSSProperty(SVGElement*, const QualifiedName&);
 
     virtual bool isAdditive() const;
@@ -92,15 +96,6 @@ public:
     AnimatedPropertyValueType fromPropertyValueType() const { return m_fromPropertyValueType; }
     AnimatedPropertyValueType toPropertyValueType() const { return m_toPropertyValueType; }
 
-    // FIXME: In C++11, remove this as we can use default template argument.
-    template<typename AnimatedType>
-    void adjustForInheritance(AnimatedType (*parseTypeFromString)(SVGAnimationElement*, const String&),
-                              AnimatedPropertyValueType valueType, AnimatedType& animatedType, SVGElement* contextElement)
-    {
-        ASSERT(parseTypeFromString);
-        adjustForInheritance<AnimatedType, AnimatedType (*)(SVGAnimationElement*, const String&)>(parseTypeFromString, valueType, animatedType, contextElement);
-    }
-
     template<typename AnimatedType, typename ParseTypeFromStringType>
     void adjustForInheritance(ParseTypeFromStringType parseTypeFromString, AnimatedPropertyValueType valueType, AnimatedType& animatedType, SVGElement* contextElement)
     {
@@ -110,33 +105,6 @@ public:
         String typeString;
         adjustForInheritance(contextElement, attributeName(), typeString);
         animatedType = parseTypeFromString(this, typeString);
-    }
-
-    template<typename AnimatedType>
-    bool adjustFromToListValues(const AnimatedType& fromList, const AnimatedType& toList, AnimatedType& animatedList, float percentage, bool resizeAnimatedListIfNeeded = true)
-    {
-        // If no 'to' value is given, nothing to animate.
-        unsigned toListSize = toList.size();
-        if (!toListSize)
-            return false;
-
-        // If the 'from' value is given and it's length doesn't match the 'to' value list length, fallback to a discrete animation.
-        unsigned fromListSize = fromList.size();
-        if (fromListSize != toListSize && fromListSize) {
-            if (percentage < 0.5) {
-                if (animationMode() != ToAnimation)
-                    animatedList = AnimatedType(fromList);
-            } else
-                animatedList = AnimatedType(toList);
-
-            return false;
-        }
-
-        ASSERT(!fromListSize || fromListSize == toListSize);
-        if (resizeAnimatedListIfNeeded && animatedList.size() < toListSize)
-            animatedList.resize(toListSize);
-
-        return true;
     }
 
     template<typename AnimatedType>
@@ -196,6 +164,8 @@ protected:
 
     virtual void setTargetElement(SVGElement*) OVERRIDE;
     virtual void setAttributeName(const QualifiedName&) OVERRIDE;
+    AnimatedPropertyType determineAnimatedPropertyType() const;
+
     bool hasInvalidCSSAttributeType() const { return m_hasInvalidCSSAttributeType; }
 
     virtual void updateAnimationMode();
@@ -223,9 +193,6 @@ private:
     unsigned calculateKeyTimesIndex(float percent) const;
 
     void adjustForInheritance(SVGElement* targetElement, const QualifiedName& attributeName, String&);
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGAnimationElement)
-    END_DECLARE_ANIMATED_PROPERTIES
 
     void setCalcMode(const AtomicString&);
 

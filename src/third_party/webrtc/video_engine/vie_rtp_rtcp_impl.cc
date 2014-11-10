@@ -850,6 +850,29 @@ int ViERTP_RTCPImpl::SetTransmissionSmoothingStatus(int video_channel,
   return 0;
 }
 
+int ViERTP_RTCPImpl::SetMinTransmitBitrate(int video_channel,
+                                           int min_transmit_bitrate_kbps) {
+  ViEChannelManagerScoped cs(*(shared_data_->channel_manager()));
+  ViEEncoder* vie_encoder = cs.Encoder(video_channel);
+  if (vie_encoder == NULL)
+    return -1;
+  vie_encoder->SetMinTransmitBitrate(min_transmit_bitrate_kbps);
+  return 0;
+}
+
+int ViERTP_RTCPImpl::SetReservedTransmitBitrate(
+    int video_channel, unsigned int reserved_transmit_bitrate_bps) {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVideo,
+               ViEId(shared_data_->instance_id(), video_channel),
+               "ViERTP_RTCPImpl::SetReservedTransmitBitrate(%d, %d)",
+               video_channel, reserved_transmit_bitrate_bps);
+  if (!shared_data_->channel_manager()->SetReservedTransmitBitrate(
+      video_channel, reserved_transmit_bitrate_bps)) {
+    return -1;
+  }
+  return 0;
+}
+
 int ViERTP_RTCPImpl::GetReceiveChannelRtcpStatistics(
     const int video_channel,
     RtcpStatistics& basic_stats,
@@ -938,6 +961,23 @@ int ViERTP_RTCPImpl::GetRtpStatistics(const int video_channel,
   return 0;
 }
 
+int ViERTP_RTCPImpl::GetRtcpPacketTypeCounters(
+    int video_channel,
+    RtcpPacketTypeCounter* packets_sent,
+    RtcpPacketTypeCounter* packets_received) const {
+  ViEChannelManagerScoped cs(*(shared_data_->channel_manager()));
+  ViEChannel* vie_channel = cs.Channel(video_channel);
+  if (!vie_channel) {
+    WEBRTC_TRACE(kTraceError, kTraceVideo,
+                 ViEId(shared_data_->instance_id(), video_channel),
+                 "%s: Channel %d doesn't exist", __FUNCTION__, video_channel);
+    shared_data_->SetLastError(kViERtpRtcpInvalidChannelId);
+    return -1;
+  }
+  vie_channel->GetRtcpPacketTypeCounters(packets_sent, packets_received);
+  return 0;
+}
+
 int ViERTP_RTCPImpl::GetBandwidthUsage(const int video_channel,
                                        unsigned int& total_bitrate_sent,
                                        unsigned int& video_bitrate_sent,
@@ -1020,6 +1060,25 @@ int ViERTP_RTCPImpl::GetReceiveBandwidthEstimatorStats(
     return -1;
   }
   vie_channel->GetReceiveBandwidthEstimatorStats(output);
+  return 0;
+}
+
+int ViERTP_RTCPImpl::GetPacerQueuingDelayMs(
+    const int video_channel, int* delay_ms) const {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVideo,
+               ViEId(shared_data_->instance_id(), video_channel),
+               "%s(channel: %d)", __FUNCTION__, video_channel);
+  ViEChannelManagerScoped cs(*(shared_data_->channel_manager()));
+  ViEEncoder* vie_encoder = cs.Encoder(video_channel);
+  if (!vie_encoder) {
+    WEBRTC_TRACE(kTraceError, kTraceVideo,
+                 ViEId(shared_data_->instance_id(), video_channel),
+                 "%s: Could not get encoder for channel %d", __FUNCTION__,
+                 video_channel);
+    shared_data_->SetLastError(kViERtpRtcpInvalidChannelId);
+    return -1;
+  }
+  *delay_ms = vie_encoder->PacerQueuingDelayMs();
   return 0;
 }
 
@@ -1343,5 +1402,4 @@ int ViERTP_RTCPImpl::DeregisterSendFrameCountObserver(
   vie_channel->RegisterSendFrameCountObserver(NULL);
   return 0;
 }
-
 }  // namespace webrtc

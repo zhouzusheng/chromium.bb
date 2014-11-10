@@ -51,9 +51,7 @@
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/sad_plugin.h"
 #include "media/base/audio_hardware_config.h"
-#include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
-#include "ppapi/c/dev/ppp_find_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
 #include "ppapi/c/dev/ppp_text_input_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
@@ -65,6 +63,8 @@
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
+#include "ppapi/c/private/ppb_find_private.h"
+#include "ppapi/c/private/ppp_find_private.h"
 #include "ppapi/c/private/ppp_instance_private.h"
 #include "ppapi/c/private/ppp_pdf.h"
 #include "ppapi/host/ppapi_host.h"
@@ -631,6 +631,11 @@ PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
 void PepperPluginInstanceImpl::Delete() {
   is_deleted_ = true;
 
+  if (render_frame_ &&
+      render_frame_->render_view()->plugin_find_handler() == this) {
+    render_frame_->render_view()->set_plugin_find_handler(NULL);
+  }
+
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
   // Force the MessageChannel to release its "passthrough object" which should
@@ -725,8 +730,6 @@ void PepperPluginInstanceImpl::ScrollRect(int dx,
   }
 }
 
-static void IgnoreCallback(uint32, bool) {}
-
 void PepperPluginInstanceImpl::CommitBackingTexture() {
   if (!texture_layer_.get())
     return;
@@ -736,9 +739,8 @@ void PepperPluginInstanceImpl::CommitBackingTexture() {
   context->GetBackingMailbox(&mailbox, &sync_point);
   DCHECK(!mailbox.IsZero());
   DCHECK_NE(sync_point, 0u);
-  texture_layer_->SetTextureMailbox(
-      cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
-      cc::SingleReleaseCallback::Create(base::Bind(&IgnoreCallback)));
+  texture_layer_->SetTextureMailboxWithoutReleaseCallback(
+      cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point));
   texture_layer_->SetNeedsDisplay();
 }
 
@@ -1366,7 +1368,7 @@ bool PepperPluginInstanceImpl::StartFind(const base::string16& search_text,
   return PP_ToBool(
       plugin_find_interface_->StartFind(
           pp_instance(),
-          base::UTF16ToUTF8(search_text.c_str()).c_str(),
+          base::UTF16ToUTF8(search_text).c_str(),
           PP_FromBool(case_sensitive)));
 }
 
@@ -1388,10 +1390,12 @@ void PepperPluginInstanceImpl::StopFind() {
 }
 
 bool PepperPluginInstanceImpl::LoadFindInterface() {
+  if (!module_->permissions().HasPermission(ppapi::PERMISSION_PRIVATE))
+    return false;
   if (!plugin_find_interface_) {
     plugin_find_interface_ =
-        static_cast<const PPP_Find_Dev*>(module_->GetPluginInterface(
-            PPP_FIND_DEV_INTERFACE));
+        static_cast<const PPP_Find_Private*>(module_->GetPluginInterface(
+            PPP_FIND_PRIVATE_INTERFACE));
   }
 
   return !!plugin_find_interface_;
@@ -1963,9 +1967,8 @@ void PepperPluginInstanceImpl::UpdateLayer() {
       DCHECK(bound_graphics_3d_.get());
       texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
       opaque = bound_graphics_3d_->IsOpaque();
-      texture_layer_->SetTextureMailbox(
-          cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
-          cc::SingleReleaseCallback::Create(base::Bind(&IgnoreCallback)));
+      texture_layer_->SetTextureMailboxWithoutReleaseCallback(
+          cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point));
     } else {
       DCHECK(bound_graphics_2d_platform_);
       texture_layer_ = cc::TextureLayer::CreateForMailbox(this);
@@ -2335,7 +2338,7 @@ void PepperPluginInstanceImpl::SessionClosed(PP_Instance instance,
 void PepperPluginInstanceImpl::SessionError(PP_Instance instance,
                                             uint32_t session_id,
                                             int32_t media_error,
-                                            int32_t system_code) {
+                                            uint32_t system_code) {
   content_decryptor_delegate_->OnSessionError(
       session_id, media_error, system_code);
 }
@@ -2384,6 +2387,17 @@ void PepperPluginInstanceImpl::DeliverSamples(
     PP_Resource audio_frames,
     const PP_DecryptedSampleInfo* sample_info) {
   content_decryptor_delegate_->DeliverSamples(audio_frames, sample_info);
+}
+
+void PepperPluginInstanceImpl::SetPluginToHandleFindRequests(
+    PP_Instance instance) {
+  if (!LoadFindInterface())
+    return;
+  bool is_main_frame = render_frame_ &&
+      render_frame_->GetRenderView()->GetMainRenderFrame() == render_frame_;
+  if (!is_main_frame)
+    return;
+  render_frame_->render_view()->set_plugin_find_handler(this);
 }
 
 void PepperPluginInstanceImpl::NumberOfFindResultsChanged(
@@ -2543,8 +2557,7 @@ PP_Bool PepperPluginInstanceImpl::SetCursor(PP_Instance instance,
   const SkBitmap* bitmap = image_data->GetMappedBitmap();
   // Make a deep copy, so that the cursor remains valid even after the original
   // image data gets freed.
-  if (!bitmap->copyTo(&custom_cursor->customImage.getSkBitmap(),
-                      bitmap->config())) {
+  if (!bitmap->copyTo(&custom_cursor->customImage.getSkBitmap())) {
     return PP_FALSE;
   }
 

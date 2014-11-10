@@ -44,10 +44,11 @@
 #include "config.h"
 #include "core/rendering/RenderLayerRepainter.h"
 
-#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/FilterEffectRenderer.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
 
 namespace WebCore {
 
@@ -59,6 +60,9 @@ RenderLayerRepainter::RenderLayerRepainter(RenderLayerModelObject* renderer)
 
 void RenderLayerRepainter::repaintAfterLayout(RenderGeometryMap* geometryMap, bool shouldCheckForRepaint)
 {
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+        return;
+
     // FIXME: really, we're in the repaint phase here, and the following queries are legal.
     // Until those states are fully fledged, I'll just disable the ASSERTS.
     DisableCompositingQueryAsserts disabler;
@@ -74,6 +78,7 @@ void RenderLayerRepainter::repaintAfterLayout(RenderGeometryMap* geometryMap, bo
         LayoutRect oldRepaintRect = m_repaintRect;
         LayoutRect oldOutlineBox = m_outlineBox;
         computeRepaintRects(repaintContainer, geometryMap);
+        shouldCheckForRepaint &= shouldRepaintLayer();
 
         // FIXME: Should ASSERT that value calculated for m_outlineBox using the cached offset is the same
         // as the value not using the cached offset, but we can't due to https://bugs.webkit.org/show_bug.cgi?id=37048
@@ -83,7 +88,7 @@ void RenderLayerRepainter::repaintAfterLayout(RenderGeometryMap* geometryMap, bo
                     m_renderer->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldRepaintRect));
                     if (m_repaintRect != oldRepaintRect)
                         m_renderer->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(m_repaintRect));
-                } else if (shouldRepaintAfterLayout()) {
+                } else {
                     m_renderer->repaintAfterLayoutIfNeeded(repaintContainer, m_renderer->selfNeedsLayout(), oldRepaintRect, oldOutlineBox, &m_repaintRect, &m_outlineBox);
                 }
             }
@@ -106,29 +111,45 @@ void RenderLayerRepainter::clearRepaintRects()
 
 void RenderLayerRepainter::computeRepaintRects(const RenderLayerModelObject* repaintContainer, const RenderGeometryMap* geometryMap)
 {
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+        return;
+
     m_repaintRect = m_renderer->clippedOverflowRectForRepaint(repaintContainer);
     m_outlineBox = m_renderer->outlineBoundsForRepaint(repaintContainer, geometryMap);
 }
 
 void RenderLayerRepainter::computeRepaintRectsIncludingDescendants()
 {
-    // FIXME: computeRepaintRects() has to walk up the parent chain for every layer to compute the rects.
-    // We should make this more efficient.
-    // FIXME: it's wrong to call this when layout is not up-to-date, which we do.
-    computeRepaintRects(m_renderer->containerForRepaint());
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
+        // FIXME: We want RenderLayerRepainter to go away when
+        // repaint-after-layout is on by default so we need to figure out how to
+        // handle this update.
+        //
+        // This is a little silly as we create and immediately destroy the RAII
+        // object but it makes sure we correctly set all of the repaint flags.
+        LayoutRectRecorder recorder(*m_renderer);
+
+    } else {
+        // FIXME: computeRepaintRects() has to walk up the parent chain for every layer to compute the rects.
+        // We should make this more efficient.
+        // FIXME: it's wrong to call this when layout is not up-to-date, which we do.
+        computeRepaintRects(m_renderer->containerForRepaint());
+    }
 
     for (RenderLayer* layer = m_renderer->layer()->firstChild(); layer; layer = layer->nextSibling())
         layer->repainter().computeRepaintRectsIncludingDescendants();
 }
 
-inline bool RenderLayerRepainter::shouldRepaintAfterLayout() const
+inline bool RenderLayerRepainter::shouldRepaintLayer() const
 {
-    if (m_repaintStatus == NeedsNormalRepaint)
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+        return false;
+
+    if (m_repaintStatus != NeedsFullRepaintForPositionedMovementLayout)
         return true;
 
     // Composited layers that were moved during a positioned movement only
     // layout, don't need to be repainted. They just need to be recomposited.
-    ASSERT(m_repaintStatus == NeedsFullRepaintForPositionedMovementLayout);
     return m_renderer->compositingState() != PaintsIntoOwnBacking;
 }
 
@@ -145,7 +166,12 @@ void RenderLayerRepainter::repaintIncludingNonCompositingDescendants(RenderLayer
 
 LayoutRect RenderLayerRepainter::repaintRectIncludingNonCompositingDescendants() const
 {
-    LayoutRect repaintRect = m_repaintRect;
+    LayoutRect repaintRect;
+    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+        repaintRect = m_renderer->newRepaintRect();
+    else
+        repaintRect = m_repaintRect;
+
     for (RenderLayer* child = m_renderer->layer()->firstChild(); child; child = child->nextSibling()) {
         // Don't include repaint rects for composited child layers; they will paint themselves and have a different origin.
         if (child->hasCompositedLayerMapping())

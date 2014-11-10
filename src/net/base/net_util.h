@@ -515,12 +515,14 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
   NetworkInterface(const std::string& name,
+                   const std::string& friendly_name,
                    uint32 interface_index,
                    const IPAddressNumber& address,
                    size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  std::string friendly_name;  // Same as |name| on non-Windows.
   uint32 interface_index;  // Always 0 on Android.
   IPAddressNumber address;
   size_t network_prefix;
@@ -528,10 +530,13 @@ struct NET_EXPORT NetworkInterface {
 
 typedef std::vector<NetworkInterface> NetworkInterfaceList;
 
-// Policy settings to include/exclude VMWare host only network interfaces.
-enum HostScopeVirtualInterfacePolicy {
-  INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
-  EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+// Policy settings to include/exclude network interfaces.
+enum HostAddressSelectionPolicy {
+  EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x1,
+  INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x2,
+  // Include temp address only when interface has both permanent and
+  // temp addresses.
+  INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE      = 0x4,
 };
 
 // Returns list of network interfaces except loopback interface. If an
@@ -539,13 +544,13 @@ enum HostScopeVirtualInterfacePolicy {
 // the list for each address.
 // Can be called only on a thread that allows IO.
 NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
-                               HostScopeVirtualInterfacePolicy policy);
+                               int policy);
 
 // General category of the IEEE 802.11 (wifi) physical layer operating mode.
 enum WifiPHYLayerProtocol {
   // No wifi support or no associated AP.
   WIFI_PHY_LAYER_PROTOCOL_NONE,
-  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS,
+  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS.
   WIFI_PHY_LAYER_PROTOCOL_ANCIENT,
   // 802.11a, OFDM-based rates.
   WIFI_PHY_LAYER_PROTOCOL_A,

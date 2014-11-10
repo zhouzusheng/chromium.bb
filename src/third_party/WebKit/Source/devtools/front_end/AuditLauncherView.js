@@ -31,11 +31,12 @@
 /**
  * @constructor
  * @param {!WebInspector.AuditController} auditController
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  */
 WebInspector.AuditLauncherView = function(auditController)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
+    this.setMinimumSize(100, 25);
 
     this._auditController = auditController;
 
@@ -323,5 +324,5 @@ WebInspector.AuditLauncherView.prototype = {
         this._launchButton.disabled = !this._currentCategoriesCount;
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.VBox.prototype
 }

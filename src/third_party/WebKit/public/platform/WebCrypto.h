@@ -32,8 +32,10 @@
 #define WebCrypto_h
 
 #include "WebCommon.h"
+#include "WebCryptoAlgorithm.h"
 #include "WebCryptoKey.h"
 #include "WebPrivatePtr.h"
+#include "WebVector.h"
 
 namespace WebCore { class CryptoResult; }
 
@@ -93,6 +95,27 @@ private:
     WebPrivatePtr<WebCore::CryptoResult> m_impl;
 };
 
+class WebCryptoDigestor {
+public:
+    virtual ~WebCryptoDigestor() { }
+
+    // consume() will return |true| on the successful addition of data to the
+    // partially generated digest. It will return |false| when that fails. After
+    // a return of |false|, consume() should not be called again (nor should
+    // finish() be called).
+    virtual bool consume(const unsigned char* data, unsigned dataSize) { return false; }
+
+    // finish() will return |true| if the digest has been successfully computed
+    // and put into the result buffer, otherwise it will return |false|. In
+    // either case, neither finish() nor consume() should be called again after
+    // a call to finish(). resultData is valid until the WebCrytpoDigestor
+    // object is destroyed.
+    virtual bool finish(unsigned char*& resultData, unsigned& resultDataSize) { return false; }
+
+protected:
+    WebCryptoDigestor() { }
+};
+
 class WebCrypto {
 public:
     // WebCrypto is the interface for starting one-shot cryptographic
@@ -143,8 +166,6 @@ public:
     //   * All WebCryptoKeys are guaranteeed to be !isNull().
     //
     //   * All WebCryptoAlgorithms are guaranteed to be !isNull()
-    //     unless noted otherwise. Being "null" means that it was unspecified
-    //     by the caller.
     //
     //   * Look to the Web Crypto spec for an explanation of the parameter. The
     //     method names here have a 1:1 correspondence with those of
@@ -171,12 +192,70 @@ public:
     virtual void verifySignature(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* signature, unsigned signatureSize, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
     virtual void digest(const WebCryptoAlgorithm&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
     virtual void generateKey(const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
-    // It is possible for the WebCryptoAlgorithm to be "isNull()"
     virtual void importKey(WebCryptoKeyFormat, const unsigned char* keyData, unsigned keyDataSize, const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
     virtual void exportKey(WebCryptoKeyFormat, const WebCryptoKey&, WebCryptoResult result) { result.completeWithError(); }
     virtual void wrapKey(WebCryptoKeyFormat, const WebCryptoKey& key, const WebCryptoKey& wrappingKey, const WebCryptoAlgorithm&, WebCryptoResult result) { result.completeWithError(); }
-    // It is possible that unwrappedKeyAlgorithm.isNull()
     virtual void unwrapKey(WebCryptoKeyFormat, const unsigned char* wrappedKey, unsigned wrappedKeySize, const WebCryptoKey&, const WebCryptoAlgorithm& unwrapAlgorithm, const WebCryptoAlgorithm& unwrappedKeyAlgorithm, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
+
+    // This is the exception to the "Completing the request" guarantees
+    // outlined above. This is useful for Blink internal crypto and is not part
+    // of the WebCrypto standard. digestSynchronous returns |true| if the
+    // digest was successfully computed and put into result. Otherwise, returns
+    // |false|. It must compute the digest or fail synchronously.
+    // createDigestor must provide the result via the WebCryptoDigestor object
+    // synchronously. createDigestor may return 0 if it fails to create a
+    // WebCryptoDigestor. If it succeeds, the WebCryptoDigestor returned by
+    // createDigestor must be freed by the caller.
+    virtual bool digestSynchronous(const WebCryptoAlgorithmId algorithmId, const unsigned char* data, unsigned dataSize, WebArrayBuffer& result) { return false; }
+    virtual WebCryptoDigestor* createDigestor(WebCryptoAlgorithmId algorithmId) { return 0; }
+
+    // -----------------------
+    // Structured clone
+    // -----------------------
+    //
+    // deserializeKeyForClone() and serializeKeyForClone() are used for
+    // implementing structured cloning of WebCryptoKey.
+    //
+    // Blink is responsible for saving and restoring all of the attributes of
+    // WebCryptoKey EXCEPT for the actual key data:
+    //
+    // In other words, Blink takes care of serializing:
+    //   * Key usages
+    //   * Key extractability
+    //   * Key algorithm
+    //   * Key type (public, private, secret)
+    //
+    // The embedder is responsible for saving the key data itself.
+    //
+    // Visibility of the serialized key data:
+    //
+    // The serialized key data will NOT be visible to web pages. So if the
+    // serialized format were to include key bytes as plain text, this wouldn't
+    // make it available to web pages.
+    //
+    // Longevity of the key data:
+    //
+    // The serialized key data is intended to be long lived (years) and MUST
+    // be using a stable format. For instance a key might be persisted to
+    // IndexedDB and should be able to be deserialized correctly in the
+    // future.
+    //
+    // Error handling and asynchronous completion:
+    //
+    // Serialization/deserialization must complete synchronously, and will
+    // block the JavaScript thread.
+    //
+    // The only reasons to fail serialization/deserialization are:
+    //   * Key serialization not yet implemented
+    //   * The bytes to deserialize were corrupted
+
+    // Creates a new key given key data which was written using
+    // serializeKeyForClone(). Returns true on success.
+    virtual bool deserializeKeyForClone(const WebCryptoKeyAlgorithm&, WebCryptoKeyType, bool extractable, WebCryptoKeyUsageMask, const unsigned char* keyData, unsigned keyDataSize, WebCryptoKey&) { return false; }
+
+    // Writes the key data into the given WebVector.
+    // Returns true on success.
+    virtual bool serializeKeyForClone(const WebCryptoKey&, WebVector<unsigned char>&) { return false; }
 
 protected:
     virtual ~WebCrypto() { }

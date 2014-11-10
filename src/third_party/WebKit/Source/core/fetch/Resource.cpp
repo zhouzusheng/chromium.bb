@@ -35,7 +35,6 @@
 #include "core/fetch/ResourcePtr.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "platform/Logging.h"
-#include "platform/PurgeableBuffer.h"
 #include "platform/SharedBuffer.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
@@ -103,29 +102,21 @@ Resource::Resource(const ResourceRequest& request, Type type)
     , m_identifier(0)
     , m_encodedSize(0)
     , m_decodedSize(0)
-    , m_accessCount(0)
     , m_handleCount(0)
     , m_preloadCount(0)
     , m_protectorCount(0)
     , m_preloadResult(PreloadNotReferenced)
     , m_cacheLiveResourcePriority(CacheLiveResourcePriorityLow)
-    , m_inLiveDecodedResourcesList(false)
     , m_requestedFromNetworkingLayer(false)
-    , m_inCache(false)
     , m_loading(false)
     , m_switchingClientsToRevalidatedResource(false)
     , m_type(type)
     , m_status(Pending)
     , m_wasPurged(false)
     , m_needsSynchronousCacheHit(false)
-#ifndef NDEBUG
+#ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
     , m_deleted(false)
-    , m_lruIndex(0)
 #endif
-    , m_nextInAllResourcesList(0)
-    , m_prevInAllResourcesList(0)
-    , m_nextInLiveResourcesList(0)
-    , m_prevInLiveResourcesList(0)
     , m_resourceToRevalidate(0)
     , m_proxyResource(0)
 {
@@ -147,12 +138,15 @@ Resource::~Resource()
 {
     ASSERT(!m_resourceToRevalidate); // Should be true because canDelete() checks this.
     ASSERT(canDelete());
-    ASSERT(!inCache());
-    ASSERT(!m_deleted);
+    RELEASE_ASSERT(!memoryCache()->contains(this));
+    RELEASE_ASSERT(!ResourceCallback::callbackHandler()->isScheduled(this));
     ASSERT(url().isNull() || memoryCache()->resourceForURL(KURL(ParsedURLString, url())) != this);
+    assertAlive();
 
-#ifndef NDEBUG
+#ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
     m_deleted = true;
+#endif
+#ifndef NDEBUG
     cachedResourceLeakCounter.decrement();
 #endif
 }
@@ -215,7 +209,7 @@ void Resource::appendData(const char* data, int length)
     if (m_data)
         m_data->append(data, length);
     else
-        m_data = SharedBuffer::create(data, length);
+        m_data = SharedBuffer::createPurgeable(data, length);
     setEncodedSize(m_data->size());
 }
 
@@ -275,81 +269,101 @@ bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
 
 bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription)
 {
-    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowCookies() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
 }
 
-bool Resource::isExpired() const
-{
-    if (m_response.isNull())
-        return false;
-
-    return currentAge() > freshnessLifetime();
-}
-
-double Resource::currentAge() const
+static double currentAge(const ResourceResponse& response, double responseTimestamp)
 {
     // RFC2616 13.2.3
     // No compensation for latency as that is not terribly important in practice
-    double dateValue = m_response.date();
-    double apparentAge = std::isfinite(dateValue) ? std::max(0., m_responseTimestamp - dateValue) : 0;
-    double ageValue = m_response.age();
+    double dateValue = response.date();
+    double apparentAge = std::isfinite(dateValue) ? std::max(0., responseTimestamp - dateValue) : 0;
+    double ageValue = response.age();
     double correctedReceivedAge = std::isfinite(ageValue) ? std::max(apparentAge, ageValue) : apparentAge;
-    double residentTime = currentTime() - m_responseTimestamp;
+    double residentTime = currentTime() - responseTimestamp;
     return correctedReceivedAge + residentTime;
 }
 
-double Resource::freshnessLifetime() const
+static double freshnessLifetime(const ResourceResponse& response, double responseTimestamp)
 {
 #if !OS(ANDROID)
     // On desktop, local files should be reloaded in case they change.
-    if (m_response.url().isLocalFile())
+    if (response.url().isLocalFile())
         return 0;
 #endif
 
     // Cache other non-http / non-filesystem resources liberally.
-    if (!m_response.url().protocolIsInHTTPFamily()
-        && !m_response.url().protocolIs("filesystem"))
+    if (!response.url().protocolIsInHTTPFamily()
+        && !response.url().protocolIs("filesystem"))
         return std::numeric_limits<double>::max();
 
     // RFC2616 13.2.4
-    double maxAgeValue = m_response.cacheControlMaxAge();
+    double maxAgeValue = response.cacheControlMaxAge();
     if (std::isfinite(maxAgeValue))
         return maxAgeValue;
-    double expiresValue = m_response.expires();
-    double dateValue = m_response.date();
-    double creationTime = std::isfinite(dateValue) ? dateValue : m_responseTimestamp;
+    double expiresValue = response.expires();
+    double dateValue = response.date();
+    double creationTime = std::isfinite(dateValue) ? dateValue : responseTimestamp;
     if (std::isfinite(expiresValue))
         return expiresValue - creationTime;
-    double lastModifiedValue = m_response.lastModified();
+    double lastModifiedValue = response.lastModified();
     if (std::isfinite(lastModifiedValue))
         return (creationTime - lastModifiedValue) * 0.1;
     // If no cache headers are present, the specification leaves the decision to the UA. Other browsers seem to opt for 0.
     return 0;
 }
 
-bool Resource::unlock()
+static bool canUseResponse(const ResourceResponse& response, double responseTimestamp)
 {
-    if (hasClients() || m_proxyResource || m_resourceToRevalidate || !m_loadFinishTime || !isSafeToUnlock())
+    if (response.isNull())
         return false;
 
-    if (m_purgeableData) {
-        ASSERT(!m_data);
-        return true;
+    // FIXME: Why isn't must-revalidate considered a reason we can't use the response?
+    if (response.cacheControlContainsNoCache() || response.cacheControlContainsNoStore())
+        return false;
+
+    if (response.httpStatusCode() == 303)  {
+        // Must not be cached.
+        return false;
     }
+
+    if (response.httpStatusCode() == 302 || response.httpStatusCode() == 307) {
+        // Default to not cacheable unless explicitly allowed.
+        bool hasMaxAge = std::isfinite(response.cacheControlMaxAge());
+        bool hasExpires = std::isfinite(response.expires());
+        // TODO: consider catching Cache-Control "private" and "public" here.
+        if (!hasMaxAge && !hasExpires)
+            return false;
+    }
+
+    return currentAge(response, responseTimestamp) <= freshnessLifetime(response, responseTimestamp);
+}
+
+const ResourceRequest& Resource::lastResourceRequest()
+{
+    if (!m_redirectChain.size())
+        return m_resourceRequest;
+    return m_redirectChain.last().m_request;
+}
+
+void Resource::willSendRequest(ResourceRequest& request, const ResourceResponse& response)
+{
+    m_redirectChain.append(RedirectPair(request, response));
+    m_requestedFromNetworkingLayer = true;
+}
+
+bool Resource::unlock()
+{
     if (!m_data)
         return false;
 
-    // Should not make buffer purgeable if it has refs other than this since we don't want two copies.
-    if (!m_data->hasOneRef())
+    if (!m_data->isLocked())
+        return true;
+
+    if (!memoryCache()->contains(this) || hasClients() || m_handleCount > 1 || m_proxyResource || m_resourceToRevalidate || !m_loadFinishTime || !isSafeToUnlock())
         return false;
 
-    m_data->createPurgeableBuffer();
-    if (!m_data->hasPurgeableBuffer())
-        return false;
-
-    m_purgeableData = m_data->releasePurgeableBuffer();
-    m_purgeableData->unlock();
-    m_data.clear();
+    m_data->unlock();
     return true;
 }
 
@@ -401,7 +415,7 @@ CachedMetadata* Resource::cachedMetadata(unsigned dataTypeID) const
 
 void Resource::setCacheLiveResourcePriority(CacheLiveResourcePriority priority)
 {
-    if (inCache() && m_inLiveDecodedResourcesList && cacheLiveResourcePriority() != static_cast<unsigned>(priority)) {
+    if (memoryCache()->contains(this) && memoryCache()->isInLiveDecodedResourcesList(this) && cacheLiveResourcePriority() != static_cast<unsigned>(priority)) {
         memoryCache()->removeFromLiveDecodedResourcesList(this);
         m_cacheLiveResourcePriority = priority;
         memoryCache()->insertInLiveDecodedResourcesList(this);
@@ -411,7 +425,7 @@ void Resource::setCacheLiveResourcePriority(CacheLiveResourcePriority priority)
 
 void Resource::clearLoader()
 {
-    m_loader = 0;
+    m_loader = nullptr;
 }
 
 void Resource::addClient(ResourceClient* client)
@@ -457,7 +471,7 @@ bool Resource::addClientToSet(ResourceClient* client)
         else
             m_preloadResult = PreloadReferenced;
     }
-    if (!hasClients() && inCache())
+    if (!hasClients() && memoryCache()->contains(this))
         memoryCache()->addToLiveResourcesSize(this);
 
     // If we have existing data to send to the new client and the resource type supprts it, send it asynchronously.
@@ -476,29 +490,31 @@ void Resource::removeClient(ResourceClient* client)
     if (m_clientsAwaitingCallback.contains(client)) {
         ASSERT(!m_clients.contains(client));
         m_clientsAwaitingCallback.remove(client);
-        if (m_clientsAwaitingCallback.isEmpty())
-            ResourceCallback::callbackHandler()->cancel(this);
     } else {
         ASSERT(m_clients.contains(client));
         m_clients.remove(client);
         didRemoveClient(client);
     }
 
+    if (m_clientsAwaitingCallback.isEmpty())
+        ResourceCallback::callbackHandler()->cancel(this);
+
     bool deleted = deleteIfPossible();
     if (!deleted && !hasClients()) {
-        if (inCache()) {
+        if (memoryCache()->contains(this)) {
             memoryCache()->removeFromLiveResourcesSize(this);
             memoryCache()->removeFromLiveDecodedResourcesList(this);
         }
         if (!m_switchingClientsToRevalidatedResource)
             allClientsRemoved();
-        if (response().cacheControlContainsNoStore()) {
-            // RFC2616 14.9.2:
-            // "no-store: ... MUST make a best-effort attempt to remove the information from volatile storage as promptly as possible"
-            // "... History buffers MAY store such responses as part of their normal operation."
-            // We allow non-secure content to be reused in history, but we do not allow secure content to be reused.
-            if (url().protocolIs("https"))
-                memoryCache()->remove(this);
+
+        // RFC2616 14.9.2:
+        // "no-store: ... MUST make a best-effort attempt to remove the information from volatile storage as promptly as possible"
+        // "... History buffers MAY store such responses as part of their normal operation."
+        // We allow non-secure content to be reused in history, but we do not allow secure content to be reused.
+        if (response().cacheControlContainsNoStore() && url().protocolIs("https")) {
+            memoryCache()->remove(this);
+            memoryCache()->prune();
         } else {
             memoryCache()->prune(this);
         }
@@ -513,7 +529,9 @@ void Resource::allClientsRemoved()
     if (m_type == MainResource || m_type == Raw)
         cancelTimerFired(&m_cancelTimer);
     else if (!m_cancelTimer.isActive())
-        m_cancelTimer.startOneShot(0);
+        m_cancelTimer.startOneShot(0, FROM_HERE);
+
+    unlock();
 }
 
 void Resource::cancelTimerFired(Timer<Resource>* timer)
@@ -529,7 +547,7 @@ void Resource::cancelTimerFired(Timer<Resource>* timer)
 
 bool Resource::deleteIfPossible()
 {
-    if (canDelete() && !inCache()) {
+    if (canDelete() && !memoryCache()->contains(this)) {
         InspectorInstrumentation::willDestroyResource(this);
         delete this;
         return true;
@@ -537,25 +555,14 @@ bool Resource::deleteIfPossible()
     return false;
 }
 
-void Resource::setDecodedSize(size_t size)
+void Resource::setDecodedSize(size_t decodedSize)
 {
-    if (size == m_decodedSize)
+    if (decodedSize == m_decodedSize)
         return;
+    size_t oldSize = size();
+    m_decodedSize = decodedSize;
 
-    ptrdiff_t delta = size - m_decodedSize;
-
-    // The object must now be moved to a different queue, since its size has been changed.
-    // We have to remove explicitly before updating m_decodedSize, so that we find the correct previous
-    // queue.
-    if (inCache())
-        memoryCache()->removeFromLRUList(this);
-
-    m_decodedSize = size;
-
-    if (inCache()) {
-        // Now insert into the new LRU list.
-        memoryCache()->insertInLRUList(this);
-
+    if (memoryCache()->contains(this)) {
         // Insert into or remove from the live decoded list if necessary.
         // When inserting into the LiveDecodedResourcesList it is possible
         // that the m_lastDecodedAccessTime is still zero or smaller than
@@ -563,45 +570,31 @@ void Resource::setDecodedSize(size_t size)
         // violation of the invariant that the list is to be kept sorted
         // by access time. The weakening of the invariant does not pose
         // a problem. For more details please see: https://bugs.webkit.org/show_bug.cgi?id=30209
-        if (m_decodedSize && !m_inLiveDecodedResourcesList && hasClients())
+        if (m_decodedSize && !memoryCache()->isInLiveDecodedResourcesList(this) && hasClients())
             memoryCache()->insertInLiveDecodedResourcesList(this);
-        else if (!m_decodedSize && m_inLiveDecodedResourcesList)
+        else if (!m_decodedSize && memoryCache()->isInLiveDecodedResourcesList(this))
             memoryCache()->removeFromLiveDecodedResourcesList(this);
 
         // Update the cache's size totals.
-        memoryCache()->adjustSize(hasClients(), delta);
+        memoryCache()->update(this, oldSize, size());
     }
 }
 
-void Resource::setEncodedSize(size_t size)
+void Resource::setEncodedSize(size_t encodedSize)
 {
-    if (size == m_encodedSize)
+    if (encodedSize == m_encodedSize)
         return;
-
-    ptrdiff_t delta = size - m_encodedSize;
-
-    // The object must now be moved to a different queue, since its size has been changed.
-    // We have to remove explicitly before updating m_encodedSize, so that we find the correct previous
-    // queue.
-    if (inCache())
-        memoryCache()->removeFromLRUList(this);
-
-    m_encodedSize = size;
-
-    if (inCache()) {
-        // Now insert into the new LRU list.
-        memoryCache()->insertInLRUList(this);
-
-        // Update the cache's size totals.
-        memoryCache()->adjustSize(hasClients(), delta);
-    }
+    size_t oldSize = size();
+    m_encodedSize = encodedSize;
+    if (memoryCache()->contains(this))
+        memoryCache()->update(this, oldSize, size());
 }
 
 void Resource::didAccessDecodedData(double timeStamp)
 {
     m_lastDecodedAccessTime = timeStamp;
-    if (inCache()) {
-        if (m_inLiveDecodedResourcesList) {
+    if (memoryCache()->contains(this)) {
+        if (memoryCache()->isInLiveDecodedResourcesList(this)) {
             memoryCache()->removeFromLiveDecodedResourcesList(this);
             memoryCache()->insertInLiveDecodedResourcesList(this);
         }
@@ -611,12 +604,36 @@ void Resource::didAccessDecodedData(double timeStamp)
 
 void Resource::finishPendingClients()
 {
-    while (!m_clientsAwaitingCallback.isEmpty()) {
-        ResourceClient* client = m_clientsAwaitingCallback.begin()->key;
-        m_clientsAwaitingCallback.remove(client);
+    // We're going to notify clients one by one. It is simple if the client does nothing.
+    // However there are a couple other things that can happen.
+    //
+    // 1. Clients can be added during the loop. Make sure they are not processed.
+    // 2. Clients can be removed during the loop. Make sure they are always available to be
+    //    removed. Also don't call removed clients or add them back.
+
+    // Handle case (1) by saving a list of clients to notify. A separate list also ensure
+    // a client is either in m_clients or m_clientsAwaitingCallback.
+    Vector<ResourceClient*> clientsToNotify;
+    copyToVector(m_clientsAwaitingCallback, clientsToNotify);
+
+    for (size_t i = 0; i < clientsToNotify.size(); ++i) {
+        ResourceClient* client = clientsToNotify[i];
+
+        // Handle case (2) to skip removed clients.
+        if (!m_clientsAwaitingCallback.remove(client))
+            continue;
         m_clients.add(client);
         didAddClient(client);
     }
+
+    // It is still possible for the above loop to finish a new client synchronously.
+    // If there's no client waiting we should deschedule.
+    bool scheduled = ResourceCallback::callbackHandler()->isScheduled(this);
+    if (scheduled && m_clientsAwaitingCallback.isEmpty())
+        ResourceCallback::callbackHandler()->cancel(this);
+
+    // Prevent the case when there are clients waiting but no callback scheduled.
+    ASSERT(m_clientsAwaitingCallback.isEmpty() || scheduled);
 }
 
 void Resource::prune()
@@ -663,8 +680,8 @@ void Resource::clearResourceToRevalidate()
 void Resource::switchClientsToRevalidatedResource()
 {
     ASSERT(m_resourceToRevalidate);
-    ASSERT(m_resourceToRevalidate->inCache());
-    ASSERT(!inCache());
+    ASSERT(memoryCache()->contains(m_resourceToRevalidate));
+    ASSERT(!memoryCache()->contains(this));
 
     WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
 
@@ -733,9 +750,9 @@ void Resource::updateResponseAfterRevalidation(const ResourceResponse& validatin
 void Resource::revalidationSucceeded(const ResourceResponse& response)
 {
     ASSERT(m_resourceToRevalidate);
-    ASSERT(!m_resourceToRevalidate->inCache());
+    ASSERT(!memoryCache()->contains(m_resourceToRevalidate));
     ASSERT(m_resourceToRevalidate->isLoaded());
-    ASSERT(inCache());
+    ASSERT(memoryCache()->contains(this));
 
     // Calling evict() can potentially delete revalidatingResource, which we use
     // below. This mustn't be the case since revalidation means it is loaded
@@ -746,7 +763,7 @@ void Resource::revalidationSucceeded(const ResourceResponse& response)
     memoryCache()->replace(m_resourceToRevalidate, this);
 
     switchClientsToRevalidatedResource();
-    ASSERT(!m_deleted);
+    assertAlive();
     // clearResourceToRevalidate deletes this.
     clearResourceToRevalidate();
 }
@@ -759,24 +776,9 @@ void Resource::revalidationFailed()
     clearResourceToRevalidate();
 }
 
-void Resource::updateForAccess()
-{
-    ASSERT(inCache());
-
-    // Need to make sure to remove before we increase the access count, since
-    // the queue will possibly change.
-    memoryCache()->removeFromLRUList(this);
-
-    // If this is the first time the resource has been accessed, adjust the size of the cache to account for its initial size.
-    if (!m_accessCount)
-        memoryCache()->adjustSize(hasClients(), size());
-
-    m_accessCount++;
-    memoryCache()->insertInLRUList(this);
-}
-
 void Resource::registerHandle(ResourcePtrBase* h)
 {
+    assertAlive();
     ++m_handleCount;
     if (m_resourceToRevalidate)
         m_handlesToRevalidate.add(h);
@@ -784,14 +786,34 @@ void Resource::registerHandle(ResourcePtrBase* h)
 
 void Resource::unregisterHandle(ResourcePtrBase* h)
 {
+    assertAlive();
     ASSERT(m_handleCount > 0);
     --m_handleCount;
 
     if (m_resourceToRevalidate)
         m_handlesToRevalidate.remove(h);
 
-    if (!m_handleCount)
-        deleteIfPossible();
+    if (!m_handleCount) {
+        if (deleteIfPossible())
+            return;
+        unlock();
+    } else if (m_handleCount == 1 && memoryCache()->contains(this)) {
+        unlock();
+    }
+}
+
+bool Resource::canReuseRedirectChain() const
+{
+    for (size_t i = 0; i < m_redirectChain.size(); ++i) {
+        if (!canUseResponse(m_redirectChain[i].m_redirectResponse, m_responseTimestamp))
+            return false;
+    }
+    return true;
+}
+
+bool Resource::mustRevalidateDueToCacheHeaders() const
+{
+    return !canUseResponse(m_response, m_responseTimestamp);
 }
 
 bool Resource::canUseCacheValidator() const
@@ -804,24 +826,9 @@ bool Resource::canUseCacheValidator() const
     return m_response.hasCacheValidatorFields();
 }
 
-bool Resource::mustRevalidateDueToCacheHeaders() const
-{
-    if (m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()) {
-        WTF_LOG(ResourceLoading, "Resource %p mustRevalidate because of m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()\n", this);
-        return true;
-    }
-
-    if (isExpired()) {
-        WTF_LOG(ResourceLoading, "Resource %p mustRevalidate because of isExpired()\n", this);
-        return true;
-    }
-
-    return false;
-}
-
 bool Resource::isPurgeable() const
 {
-    return m_purgeableData && !m_purgeableData->isLocked();
+    return m_data && !m_data->isLocked();
 }
 
 bool Resource::wasPurged() const
@@ -831,18 +838,17 @@ bool Resource::wasPurged() const
 
 bool Resource::lock()
 {
-    if (!m_purgeableData)
+    if (!m_data)
+        return true;
+    if (m_data->isLocked())
         return true;
 
-    ASSERT(!m_data);
     ASSERT(!hasClients());
 
-    if (!m_purgeableData->lock()) {
+    if (!m_data->lock()) {
         m_wasPurged = true;
         return false;
     }
-
-    m_data = SharedBuffer::adoptPurgeableBuffer(m_purgeableData.release());
     return true;
 }
 
@@ -852,10 +858,10 @@ size_t Resource::overheadSize() const
     return sizeof(Resource) + m_response.memoryUsage() + kAverageClientsHashMapSize + m_resourceRequest.url().string().length() * 2;
 }
 
-void Resource::didChangePriority(ResourceLoadPriority loadPriority)
+void Resource::didChangePriority(ResourceLoadPriority loadPriority, int intraPriorityValue)
 {
     if (m_loader)
-        m_loader->didChangePriority(loadPriority);
+        m_loader->didChangePriority(loadPriority, intraPriorityValue);
 }
 
 Resource::ResourceCallback* Resource::ResourceCallback::callbackHandler()
@@ -872,15 +878,22 @@ Resource::ResourceCallback::ResourceCallback()
 void Resource::ResourceCallback::schedule(Resource* resource)
 {
     if (!m_callbackTimer.isActive())
-        m_callbackTimer.startOneShot(0);
+        m_callbackTimer.startOneShot(0, FROM_HERE);
+    resource->assertAlive();
     m_resourcesWithPendingClients.add(resource);
 }
 
 void Resource::ResourceCallback::cancel(Resource* resource)
 {
+    resource->assertAlive();
     m_resourcesWithPendingClients.remove(resource);
     if (m_callbackTimer.isActive() && m_resourcesWithPendingClients.isEmpty())
         m_callbackTimer.stop();
+}
+
+bool Resource::ResourceCallback::isScheduled(Resource* resource) const
+{
+    return m_resourcesWithPendingClients.contains(resource);
 }
 
 void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
@@ -890,8 +903,15 @@ void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
     for (HashSet<Resource*>::iterator it = m_resourcesWithPendingClients.begin(); it != end; ++it)
         resources.append(*it);
     m_resourcesWithPendingClients.clear();
-    for (size_t i = 0; i < resources.size(); i++)
+
+    for (size_t i = 0; i < resources.size(); i++) {
+        resources[i]->assertAlive();
         resources[i]->finishPendingClients();
+        resources[i]->assertAlive();
+    }
+
+    for (size_t i = 0; i < resources.size(); i++)
+        resources[i]->assertAlive();
 }
 
 static const char* initatorTypeNameToString(const AtomicString& initiatorTypeName)

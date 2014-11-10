@@ -76,21 +76,37 @@ private:
 #endif
 };
 
+enum DynamicRestyleFlags {
+    ChildrenAffectedByFocus = 1 << 0,
+    ChildrenAffectedByHover = 1 << 1,
+    ChildrenAffectedByActive = 1 << 2,
+    ChildrenAffectedByDrag = 1 << 3,
+    ChildrenAffectedByFirstChildRules = 1 << 4,
+    ChildrenAffectedByLastChildRules = 1 << 5,
+    ChildrenAffectedByDirectAdjacentRules = 1 << 6,
+    ChildrenAffectedByIndirectAdjacentRules = 1 << 7,
+    ChildrenAffectedByForwardPositionalRules = 1 << 8,
+    ChildrenAffectedByBackwardPositionalRules = 1 << 9,
+
+    NumberOfDynamicRestyleFlags = 10,
+};
+
 class ContainerNode : public Node {
 public:
     virtual ~ContainerNode();
 
     Node* firstChild() const { return m_firstChild; }
     Node* lastChild() const { return m_lastChild; }
-    bool hasChildNodes() const { return m_firstChild; }
+    bool hasChildren() const { return m_firstChild; }
 
     bool hasOneChild() const { return m_firstChild && !m_firstChild->nextSibling(); }
     bool hasOneTextChild() const { return hasOneChild() && m_firstChild->isTextNode(); }
+    bool hasChildCount(unsigned) const;
 
     PassRefPtr<HTMLCollection> children();
 
-    unsigned childNodeCount() const;
-    Node* childNode(unsigned index) const;
+    unsigned countChildren() const;
+    Node* traverseToChildAt(unsigned index) const;
 
     PassRefPtr<Element> querySelector(const AtomicString& selectors, ExceptionState&);
     PassRefPtr<NodeList> querySelectorAll(const AtomicString& selectors, ExceptionState&);
@@ -108,7 +124,6 @@ public:
 
     // These methods are only used during parsing.
     // They don't send DOM mutation events or handle reparenting.
-    // However, arbitrary code may be run by beforeload handlers.
     void parserAppendChild(PassRefPtr<Node>);
     void parserRemoveChild(Node&);
     void parserInsertBefore(PassRefPtr<Node> newChild, Node& refChild);
@@ -125,6 +140,42 @@ public:
     void focusStateChanged();
     virtual void setActive(bool = true) OVERRIDE;
     virtual void setHovered(bool = true) OVERRIDE;
+
+    bool childrenAffectedByFocus() const { return hasRestyleFlag(ChildrenAffectedByFocus); }
+    void setChildrenAffectedByFocus() { setRestyleFlag(ChildrenAffectedByFocus); }
+
+    bool childrenAffectedByHover() const { return hasRestyleFlag(ChildrenAffectedByHover); }
+    void setChildrenAffectedByHover() { setRestyleFlag(ChildrenAffectedByHover); }
+
+    bool childrenAffectedByActive() const { return hasRestyleFlag(ChildrenAffectedByActive); }
+    void setChildrenAffectedByActive() { setRestyleFlag(ChildrenAffectedByActive); }
+
+    bool childrenAffectedByDrag() const { return hasRestyleFlag(ChildrenAffectedByDrag); }
+    void setChildrenAffectedByDrag() { setRestyleFlag(ChildrenAffectedByDrag); }
+
+    bool childrenAffectedByPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByForwardPositionalRules) || hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
+
+    bool childrenAffectedByFirstChildRules() const { return hasRestyleFlag(ChildrenAffectedByFirstChildRules); }
+    void setChildrenAffectedByFirstChildRules() { setRestyleFlag(ChildrenAffectedByFirstChildRules); }
+
+    bool childrenAffectedByLastChildRules() const { return hasRestyleFlag(ChildrenAffectedByLastChildRules); }
+    void setChildrenAffectedByLastChildRules() { setRestyleFlag(ChildrenAffectedByLastChildRules); }
+
+    bool childrenAffectedByDirectAdjacentRules() const { return hasRestyleFlag(ChildrenAffectedByDirectAdjacentRules); }
+    void setChildrenAffectedByDirectAdjacentRules() { setRestyleFlag(ChildrenAffectedByDirectAdjacentRules); }
+
+    bool childrenAffectedByIndirectAdjacentRules() const { return hasRestyleFlag(ChildrenAffectedByIndirectAdjacentRules); }
+    void setChildrenAffectedByIndirectAdjacentRules() { setRestyleFlag(ChildrenAffectedByIndirectAdjacentRules); }
+
+    bool childrenAffectedByForwardPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByForwardPositionalRules); }
+    void setChildrenAffectedByForwardPositionalRules() { setRestyleFlag(ChildrenAffectedByForwardPositionalRules); }
+
+    bool childrenAffectedByBackwardPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
+    void setChildrenAffectedByBackwardPositionalRules() { setRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
+
+    void checkForChildrenAdjacentRuleChanges();
+
+    bool childrenSupportStyleSharing() const { return !hasRestyleFlags(); }
 
     // -----------------------------------------------------------------------------
     // Notification of document structure changes (see core/dom/Node.h for more notification methods)
@@ -155,6 +206,12 @@ private:
     void willRemoveChildren();
     void willRemoveChild(Node& child);
 
+    bool hasRestyleFlag(DynamicRestyleFlags mask) const { return hasRareData() && hasRestyleFlagInternal(mask); }
+    bool hasRestyleFlags() const { return hasRareData() && hasRestyleFlagsInternal(); }
+    void setRestyleFlag(DynamicRestyleFlags);
+    bool hasRestyleFlagInternal(DynamicRestyleFlags) const;
+    bool hasRestyleFlagsInternal() const;
+
     inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState&) const;
     inline bool checkAcceptChild(const Node* newChild, const Node* oldChild, ExceptionState&) const;
     inline bool containsConsideringHostElements(const Node&) const;
@@ -175,6 +232,16 @@ bool childAttachedAllowedWhenAttachingChildren(ContainerNode*);
 #endif
 
 DEFINE_NODE_TYPE_CASTS(ContainerNode, isContainerNode());
+
+inline bool ContainerNode::hasChildCount(unsigned count) const
+{
+    Node* child = m_firstChild;
+    while (count && child) {
+        child = child->nextSibling();
+        --count;
+    }
+    return !count && !child;
+}
 
 inline ContainerNode::ContainerNode(TreeScope* treeScope, ConstructionType type)
     : Node(treeScope, type)
@@ -204,18 +271,18 @@ inline void ContainerNode::detachChildren(const AttachContext& context)
         child->detach(childrenContext);
 }
 
-inline unsigned Node::childNodeCount() const
+inline unsigned Node::countChildren() const
 {
     if (!isContainerNode())
         return 0;
-    return toContainerNode(this)->childNodeCount();
+    return toContainerNode(this)->countChildren();
 }
 
-inline Node* Node::childNode(unsigned index) const
+inline Node* Node::traverseToChildAt(unsigned index) const
 {
     if (!isContainerNode())
         return 0;
-    return toContainerNode(this)->childNode(index);
+    return toContainerNode(this)->traverseToChildAt(index);
 }
 
 inline Node* Node::firstChild() const
@@ -232,13 +299,19 @@ inline Node* Node::lastChild() const
     return toContainerNode(this)->lastChild();
 }
 
-inline Node* Node::highestAncestor() const
+inline Node& Node::highestAncestor() const
 {
     Node* node = const_cast<Node*>(this);
     Node* highest = node;
     for (; node; node = node->parentNode())
         highest = node;
-    return highest;
+    return *highest;
+}
+
+inline ContainerNode* Node::parentElementOrShadowRoot() const
+{
+    ContainerNode* parent = parentNode();
+    return parent && (parent->isElementNode() || parent->isShadowRoot()) ? parent : 0;
 }
 
 // This constant controls how much buffer is initially allocated
@@ -282,7 +355,7 @@ public:
         }
         Vector<RefPtr<Node> >& nodeVector = *m_childNodes;
         if (m_currentIndex >= nodeVector.size())
-            return 0;
+            return nullptr;
         return nodeVector[m_currentIndex++];
     }
 

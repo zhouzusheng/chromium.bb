@@ -19,12 +19,15 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "webkit/child/resource_loader_bridge.h"
+#include "webkit/common/resource_type.h"
 
 struct ResourceMsg_RequestCompleteData;
 
 namespace content {
 class ResourceDispatcherDelegate;
+struct RequestInfo;
 struct ResourceResponseHead;
+struct SiteIsolationResponseMetaData;
 
 // This class serves as a communication interface between the
 // ResourceDispatcherHost in the browser process and the ResourceLoaderBridge in
@@ -41,7 +44,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // this can be tested regardless of the ResourceLoaderBridge::Create
   // implementation.
   webkit_glue::ResourceLoaderBridge* CreateBridge(
-      const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info);
+      const RequestInfo& request_info);
 
   // Adds a request from the pending_requests_ list, returning the new
   // requests' ID
@@ -114,6 +117,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     base::TimeTicks response_start;
     base::TimeTicks completion_time;
     linked_ptr<base::SharedMemory> buffer;
+    linked_ptr<SiteIsolationResponseMetaData> site_isolation_metadata;
+    bool blocked_response;
     int buffer_size;
   };
   typedef base::hash_map<int, PendingRequestInfo> PendingRequestList;

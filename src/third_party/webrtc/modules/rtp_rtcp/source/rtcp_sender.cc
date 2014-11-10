@@ -156,10 +156,7 @@ RTCPSender::RTCPSender(const int32_t id,
 
     xrSendReceiverReferenceTimeEnabled_(false),
     _xrSendVoIPMetric(false),
-    _xrVoIPMetric(),
-    _nackCount(0),
-    _pliCount(0),
-    _fullIntraRequestCount(0)
+    _xrVoIPMetric()
 {
     memset(_CNAME, 0, sizeof(_CNAME));
     memset(_lastSendReport, 0, sizeof(_lastSendReport));
@@ -239,10 +236,7 @@ RTCPSender::Init()
     memset(_lastRTCPTime, 0, sizeof(_lastRTCPTime));
     last_xr_rr_.clear();
 
-    _nackCount = 0;
-    _pliCount = 0;
-    _fullIntraRequestCount = 0;
-
+    memset(&packet_type_counter_, 0, sizeof(packet_type_counter_));
     return 0;
 }
 
@@ -354,6 +348,9 @@ RTCPSender::SetREMBData(const uint32_t bitrate,
         _rembSSRC[i] = SSRC[i];
     }
     _sendREMB = true;
+    // Send a REMB immediately if we have a new REMB. The frequency of REMBs is
+    // throttled by the caller.
+    _nextTimeToSendRTCP = _clock->TimeInMilliseconds();
     return 0;
 }
 
@@ -489,14 +486,15 @@ RTCPSender::TimeToSendRTCPReport(const bool sendKeyframeBeforeRTP) const
     For audio we use a fix 5 sec interval
 
     For video we use 1 sec interval fo a BW smaller than 360 kbit/s,
-        technicaly we break the max 5% RTCP BW for video below 10 kbit/s but that should be extreamly rare
+        technicaly we break the max 5% RTCP BW for video below 10 kbit/s but
+        that should be extremely rare
 
 
 From RFC 3550
 
     MAX RTCP BW is 5% if the session BW
         A send report is approximately 65 bytes inc CNAME
-        A report report is approximately 28 bytes
+        A receiver report is approximately 28 bytes
 
     The RECOMMENDED value for the reduced minimum in seconds is 360
       divided by the session bandwidth in kilobits/second.  This minimum
@@ -558,7 +556,7 @@ From RFC 3550
         now += RTCP_SEND_BEFORE_KEY_FRAME_MS;
     }
 
-    if(now > _nextTimeToSendRTCP)
+    if(now >= _nextTimeToSendRTCP)
     {
         return true;
 
@@ -614,6 +612,12 @@ bool RTCPSender::SendTimeOfXrRrReport(uint32_t mid_ntp,
   }
   *time_ms = it->second;
   return true;
+}
+
+void RTCPSender::GetPacketTypeCounter(
+    RtcpPacketTypeCounter* packet_counter) const {
+  CriticalSectionScoped lock(_criticalSectionRTCPSender);
+  *packet_counter = packet_type_counter_;
 }
 
 int32_t RTCPSender::AddExternalReportBlock(
@@ -1919,8 +1923,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         return position;
       }
       TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::PLI");
-      _pliCount++;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_PLICount", _SSRC, _pliCount);
+      ++packet_type_counter_.pli_packets;
+      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_PLICount", _SSRC,
+                        packet_type_counter_.pli_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpFir)
   {
@@ -1931,9 +1936,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         return position;
       }
       TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::FIR");
-      _fullIntraRequestCount++;
+      ++packet_type_counter_.fir_packets;
       TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_FIRCount", _SSRC,
-                        _fullIntraRequestCount);
+                        packet_type_counter_.fir_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpSli)
   {
@@ -2016,8 +2021,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       }
       TRACE_EVENT_INSTANT1("webrtc_rtp", "RTCPSender::NACK",
                            "nacks", TRACE_STR_COPY(nackString.c_str()));
-      _nackCount++;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_NACKCount", _SSRC, _nackCount);
+      ++packet_type_counter_.nack_packets;
+      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_NACKCount", _SSRC,
+                        packet_type_counter_.nack_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpXrVoipMetric)
   {

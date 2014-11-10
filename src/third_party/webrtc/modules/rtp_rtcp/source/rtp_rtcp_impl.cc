@@ -983,6 +983,13 @@ int32_t ModuleRtpRtcpImpl::RemoveRTCPReportBlock(
   return rtcp_sender_.RemoveExternalReportBlock(ssrc);
 }
 
+void ModuleRtpRtcpImpl::GetRtcpPacketTypeCounters(
+    RtcpPacketTypeCounter* packets_sent,
+    RtcpPacketTypeCounter* packets_received) const {
+  rtcp_sender_.GetPacketTypeCounter(packets_sent);
+  rtcp_receiver_.GetPacketTypeCounter(packets_received);
+}
+
 // (REMB) Receiver Estimated Max Bitrate.
 bool ModuleRtpRtcpImpl::REMB() const {
   WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_, "REMB()");
@@ -1200,29 +1207,6 @@ int32_t ModuleRtpRtcpImpl::SetAudioPacketSize(
                "SetAudioPacketSize(%u)",
                packet_size_samples);
   return rtp_sender_.SetAudioPacketSize(packet_size_samples);
-}
-
-int32_t ModuleRtpRtcpImpl::SetRTPAudioLevelIndicationStatus(
-    const bool enable,
-    const uint8_t id) {
-
-  WEBRTC_TRACE(kTraceModuleCall,
-               kTraceRtpRtcp,
-               id_,
-               "SetRTPAudioLevelIndicationStatus(enable=%d, ID=%u)",
-               enable,
-               id);
-  return rtp_sender_.SetAudioLevelIndicationStatus(enable, id);
-}
-
-int32_t ModuleRtpRtcpImpl::GetRTPAudioLevelIndicationStatus(
-    bool& enable,
-    uint8_t& id) const {
-  WEBRTC_TRACE(kTraceModuleCall,
-               kTraceRtpRtcp,
-               id_,
-               "GetRTPAudioLevelIndicationStatus()");
-  return rtp_sender_.AudioLevelIndicationStatus(&enable, &id);
 }
 
 int32_t ModuleRtpRtcpImpl::SetAudioLevel(

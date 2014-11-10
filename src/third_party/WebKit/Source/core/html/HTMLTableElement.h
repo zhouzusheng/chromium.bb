@@ -75,6 +75,8 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
     // Used to obtain either a solid or outset border decl and to deal with the frame and rules attributes.
     virtual const StylePropertySet* additionalPresentationAttributeStyle() OVERRIDE;
@@ -88,6 +90,8 @@ private:
 
     HTMLTableSectionElement* lastBody() const;
 
+    void setNeedsTableStyleRecalc() const;
+
     bool m_borderAttr;          // Sets a precise border width and creates an outset border for the table and for its cells.
     bool m_borderColorAttr;     // Overrides the outset border and makes it solid for the table and cells instead.
     bool m_frameAttr;           // Implies a thin border width if no border is set and then a certain set of solid/hidden borders based off the value.
@@ -97,8 +101,6 @@ private:
     unsigned short m_padding;
     RefPtr<StylePropertySet> m_sharedCellStyle;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLTableElement, hasTagName(HTMLNames::tableTag));
 
 } //namespace
 

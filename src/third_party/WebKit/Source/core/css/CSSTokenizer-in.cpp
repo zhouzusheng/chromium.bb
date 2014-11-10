@@ -727,8 +727,8 @@ inline bool CSSTokenizer::detectFunctionTypeToken(int length)
             m_token = HOSTFUNCTION;
             return true;
         }
-        CASE("ancestor") {
-            m_token = ANCESTORFUNCTION;
+        CASE("host-context") {
+            m_token = HOSTCONTEXTFUNCTION;
             return true;
         }
         CASE("nth-child") {
@@ -887,9 +887,6 @@ inline void CSSTokenizer::detectDashToken(int length)
         }
         CASE("webkit-calc") {
             m_token = CALCFUNCTION;
-        }
-        CASE("webkit-distributed") {
-            m_token = DISTRIBUTEDFUNCTION;
         }
     }
 }

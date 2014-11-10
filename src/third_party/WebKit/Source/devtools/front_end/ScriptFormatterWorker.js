@@ -203,41 +203,44 @@ FormatterWorker.javaScriptOutline = function(params)
 FormatterWorker.CSSParserStates = {
     Initial: "Initial",
     Selector: "Selector",
+    Style: "Style",
+    PropertyName: "PropertyName",
+    PropertyValue: "PropertyValue",
     AtRule: "AtRule",
 };
 
-FormatterWorker.cssOutline = function(params)
+FormatterWorker.parseCSS = function(params)
 {
     var chunkSize = 100000; // characters per data chunk
-    var totalLength = params.content.length;
     var lines = params.content.split("\n");
-    var chunkCount = FormatterWorker._chunkCount(totalLength, chunkSize);
     var rules = [];
     var processedChunkCharacters = 0;
-    var currentChunk = 0;
 
     var state = FormatterWorker.CSSParserStates.Initial;
     var rule;
     var property;
+    var UndefTokenType = {};
 
     /**
      * @param {string} tokenValue
-     * @param {?string} tokenType
+     * @param {?string} tokenTypes
      * @param {number} column
      * @param {number} newColumn
      */
-    function processToken(tokenValue, tokenType, column, newColumn)
+    function processToken(tokenValue, tokenTypes, column, newColumn)
     {
+        var tokenType = tokenTypes ? tokenTypes.split(" ").keySet() : UndefTokenType;
         switch (state) {
         case FormatterWorker.CSSParserStates.Initial:
-            if (tokenType === "qualifier" || tokenType === "builtin" || tokenType === "tag") {
+            if (tokenType["qualifier"] || tokenType["builtin"] || tokenType["tag"]) {
                 rule = {
                     selectorText: tokenValue,
                     lineNumber: lineNumber,
                     columNumber: column,
+                    properties: [],
                 };
                 state = FormatterWorker.CSSParserStates.Selector;
-            } else if (tokenType === "def") {
+            } else if (tokenType["def"]) {
                 rule = {
                     atRule: tokenValue,
                     lineNumber: lineNumber,
@@ -247,16 +250,15 @@ FormatterWorker.cssOutline = function(params)
             }
             break;
         case FormatterWorker.CSSParserStates.Selector:
-            if (tokenValue === "{" && tokenType === null) {
+            if (tokenValue === "{" && tokenType === UndefTokenType) {
                 rule.selectorText = rule.selectorText.trim();
-                rules.push(rule);
-                state = FormatterWorker.CSSParserStates.Initial;
+                state = FormatterWorker.CSSParserStates.Style;
             } else {
                 rule.selectorText += tokenValue;
             }
             break;
         case FormatterWorker.CSSParserStates.AtRule:
-            if ((tokenValue === ";" || tokenValue === "{") && tokenType === null) {
+            if ((tokenValue === ";" || tokenValue === "{") && tokenType === UndefTokenType) {
                 rule.atRule = rule.atRule.trim();
                 rules.push(rule);
                 state = FormatterWorker.CSSParserStates.Initial;
@@ -264,12 +266,46 @@ FormatterWorker.cssOutline = function(params)
                 rule.atRule += tokenValue;
             }
             break;
+        case FormatterWorker.CSSParserStates.Style:
+            if (tokenType["meta"] || tokenType["property"]) {
+                property = {
+                    name: tokenValue,
+                    value: "",
+                };
+                state = FormatterWorker.CSSParserStates.PropertyName;
+            } else if (tokenValue === "}" && tokenType === UndefTokenType) {
+                rules.push(rule);
+                state = FormatterWorker.CSSParserStates.Initial;
+            }
+            break;
+        case FormatterWorker.CSSParserStates.PropertyName:
+            if (tokenValue === ":" && tokenType["operator"]) {
+                property.name = property.name.trim();
+                state = FormatterWorker.CSSParserStates.PropertyValue;
+            } else if (tokenType["property"]) {
+                property.name += tokenValue;
+            }
+            break;
+        case FormatterWorker.CSSParserStates.PropertyValue:
+            if (tokenValue === ";" && tokenType === UndefTokenType) {
+                property.value = property.value.trim();
+                rule.properties.push(property);
+                state = FormatterWorker.CSSParserStates.Style;
+            } else if (tokenValue === "}" && tokenType === UndefTokenType) {
+                property.value = property.value.trim();
+                rule.properties.push(property);
+                rules.push(rule);
+                state = FormatterWorker.CSSParserStates.Initial;
+            } else if (!tokenType["comment"]) {
+                property.value += tokenValue;
+            }
+            break;
         default:
             console.assert(false, "Unknown CSS parser state.");
         }
         processedChunkCharacters += newColumn - column;
         if (processedChunkCharacters > chunkSize) {
-            postMessage({ chunk: rules, total: chunkCount, index: currentChunk++ });
+            postMessage({ chunk: rules, isLastChunk: false });
             rules = [];
             processedChunkCharacters = 0;
         }
@@ -280,7 +316,7 @@ FormatterWorker.cssOutline = function(params)
         var line = lines[lineNumber];
         tokenizer(line, processToken);
     }
-    postMessage({ chunk: rules, total: chunkCount, index: currentChunk++ });
+    postMessage({ chunk: rules, isLastChunk: true });
 }
 
 /**

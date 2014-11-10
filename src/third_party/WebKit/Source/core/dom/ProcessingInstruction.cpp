@@ -122,8 +122,6 @@ void ProcessingInstruction::checkStyleSheet()
             clearResource();
 
             String url = document().completeURL(href).string();
-            if (!dispatchBeforeLoadEvent(url))
-                return;
 
             ResourcePtr<StyleSheetResource> resource;
             FetchRequest request(ResourceRequest(document().completeURL(href)), FetchInitiatorTypeNames::processinginstruction);
@@ -174,9 +172,9 @@ void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& bas
     ASSERT(m_isCSS);
     CSSParserContext parserContext(document(), 0, baseURL, charset);
 
-    RefPtr<StyleSheetContents> newSheet = StyleSheetContents::create(href, parserContext);
+    RefPtrWillBeRawPtr<StyleSheetContents> newSheet = StyleSheetContents::create(href, parserContext);
 
-    RefPtr<CSSStyleSheet> cssSheet = CSSStyleSheet::create(newSheet, this);
+    RefPtrWillBeRawPtr<CSSStyleSheet> cssSheet = CSSStyleSheet::create(newSheet, this);
     cssSheet->setDisabled(m_alternate);
     cssSheet->setTitle(m_title);
     cssSheet->setMediaQueries(MediaQuerySet::create(m_media));
@@ -212,7 +210,7 @@ void ProcessingInstruction::parseStyleSheet(const String& sheet)
         toXSLStyleSheet(m_sheet.get())->checkLoaded();
 }
 
-void ProcessingInstruction::setCSSStyleSheet(PassRefPtr<CSSStyleSheet> sheet)
+void ProcessingInstruction::setCSSStyleSheet(PassRefPtrWillBeRawPtr<CSSStyleSheet> sheet)
 {
     ASSERT(!resource());
     ASSERT(!m_loading);
@@ -239,12 +237,12 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
 
     document().styleEngine()->removeStyleSheetCandidateNode(this);
 
-    RefPtr<StyleSheet> removedSheet = m_sheet;
+    RefPtrWillBeRawPtr<StyleSheet> removedSheet = m_sheet;
 
     if (m_sheet) {
         ASSERT(m_sheet->ownerNode() == this);
         m_sheet->clearOwnerNode();
-        m_sheet = 0;
+        m_sheet = nullptr;
     }
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.

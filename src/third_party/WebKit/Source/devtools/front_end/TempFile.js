@@ -47,7 +47,7 @@ WebInspector.TempFile = function(dirPath, name, callback)
      */
     function didInitFs(fs)
     {
-        fs.root.getDirectory(dirPath, { create: true }, didGetDir.bind(this), boundErrorHandler);
+        fs.root.getDirectory(dirPath, { create: true }, didGetDir.bind(this), errorHandler);
     }
 
     /**
@@ -56,7 +56,7 @@ WebInspector.TempFile = function(dirPath, name, callback)
      */
     function didGetDir(dir)
     {
-        dir.getFile(name, { create: true }, didCreateFile.bind(this), boundErrorHandler);
+        dir.getFile(name, { create: true }, didCreateFile.bind(this), errorHandler);
     }
 
     /**
@@ -66,7 +66,7 @@ WebInspector.TempFile = function(dirPath, name, callback)
     function didCreateFile(fileEntry)
     {
         this._fileEntry = fileEntry;
-        fileEntry.createWriter(didCreateWriter.bind(this), boundErrorHandler);
+        fileEntry.createWriter(didCreateWriter.bind(this), errorHandler);
     }
 
     /**
@@ -85,15 +85,17 @@ WebInspector.TempFile = function(dirPath, name, callback)
             writer.onerror = null;
             callback(this);
         }
+
         function onTruncateError(e)
         {
-            WebInspector.log("Failed to truncate temp file " + e.code + " : " + e.message,
+            WebInspector.console.log("Failed to truncate temp file " + e.code + " : " + e.message,
                              WebInspector.ConsoleMessage.MessageLevel.Error);
             callback(null);
         }
+
         if (writer.length) {
             writer.onwrite = didTruncate.bind(this);
-            writer.onerror = onTruncateError.bind(this);
+            writer.onerror = onTruncateError;
             writer.truncate(0);
         } else {
             this._writer = writer;
@@ -103,18 +105,17 @@ WebInspector.TempFile = function(dirPath, name, callback)
 
     function errorHandler(e)
     {
-        WebInspector.log("Failed to create temp file " + e.code + " : " + e.message,
+        WebInspector.console.log("Failed to create temp file " + e.code + " : " + e.message,
                          WebInspector.ConsoleMessage.MessageLevel.Error);
         callback(null);
     }
 
-    var boundErrorHandler = errorHandler.bind(this)
     /**
      * @this {WebInspector.TempFile}
      */
     function didClearTempStorage()
     {
-        window.requestFileSystem(window.TEMPORARY, 10, didInitFs.bind(this), boundErrorHandler);
+        window.requestFileSystem(window.TEMPORARY, 10, didInitFs.bind(this), errorHandler);
     }
     WebInspector.TempFile._ensureTempStorageCleared(didClearTempStorage.bind(this));
 }
@@ -129,7 +130,7 @@ WebInspector.TempFile.prototype = {
         var blob = new Blob([data], {type: 'text/plain'});
         this._writer.onerror = function(e)
         {
-            WebInspector.log("Failed to write into a temp file: " + e.message,
+            WebInspector.console.log("Failed to write into a temp file: " + e.message,
                              WebInspector.ConsoleMessage.MessageLevel.Error);
             callback(false);
         }
@@ -152,7 +153,6 @@ WebInspector.TempFile.prototype = {
     {
         /**
          * @param {!File} file
-         * @this {WebInspector.TempFile}
          */
         function didGetFile(file)
         {
@@ -167,18 +167,18 @@ WebInspector.TempFile.prototype = {
             }
             reader.onerror = function(error)
             {
-                WebInspector.log("Failed to read from temp file: " + error.message,
+                WebInspector.console.log("Failed to read from temp file: " + error.message,
                                  WebInspector.ConsoleMessage.MessageLevel.Error);
             }
             reader.readAsText(file);
         }
         function didFailToGetFile(error)
         {
-            WebInspector.log("Failed to load temp file: " + error.message,
+            WebInspector.console.log("Failed to load temp file: " + error.message,
                               WebInspector.ConsoleMessage.MessageLevel.Error);
             callback(null);
         }
-        this._fileEntry.file(didGetFile.bind(this), didFailToGetFile.bind(this));
+        this._fileEntry.file(didGetFile, didFailToGetFile);
     },
 
     /**
@@ -189,20 +189,21 @@ WebInspector.TempFile.prototype = {
     {
         /**
          * @param {!File} file
-         * @this {WebInspector.TempFile}
          */
         function didGetFile(file)
         {
             var reader = new WebInspector.ChunkedFileReader(file, 10*1000*1000, delegate);
             reader.start(outputStream);
         }
+
         function didFailToGetFile(error)
         {
-            WebInspector.log("Failed to load temp file: " + error.message,
+            WebInspector.console.log("Failed to load temp file: " + error.message,
                              WebInspector.ConsoleMessage.MessageLevel.Error);
             outputStream.close();
         }
-        this._fileEntry.file(didGetFile.bind(this), didFailToGetFile.bind(this));
+
+        this._fileEntry.file(didGetFile, didFailToGetFile);
     },
 
     remove: function()
@@ -333,14 +334,14 @@ WebInspector.TempStorageCleaner.prototype = {
     {
         if (event.data.type === "tempStorageCleared") {
             if (event.data.error)
-                WebInspector.log(event.data.error, WebInspector.ConsoleMessage.MessageLevel.Error);
+                WebInspector.console.log(event.data.error, WebInspector.ConsoleMessage.MessageLevel.Error);
             this._notifyCallbacks();
         }
     },
 
     _handleError: function(event)
     {
-        WebInspector.log(WebInspector.UIString("Failed to clear temp storage: %s", event.data),
+        WebInspector.console.log(WebInspector.UIString("Failed to clear temp storage: %s", event.data),
                          WebInspector.ConsoleMessage.MessageLevel.Error);
         this._notifyCallbacks();
     },

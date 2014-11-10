@@ -26,7 +26,7 @@
 
 [
     DoNotCheckConstants,
-    NoInterfaceObject,  // testing interfaces do not appear on global objects
+    WillBeGarbageCollected,
 ] interface Internals {
     DOMString address(Node node);
 
@@ -139,6 +139,7 @@
     sequence<DOMString> userPreferredLanguages();
     void setUserPreferredLanguages(sequence<DOMString> languages);
 
+    [RaisesException] unsigned long activeDOMObjectCount(Document document);
     [RaisesException] unsigned long wheelEventHandlerCount(Document document);
     [RaisesException] unsigned long touchEventHandlerCount(Document document);
     [RaisesException] LayerRectList touchEventTargetLayerRects(Document document);
@@ -227,6 +228,8 @@
     void webkitWillExitFullScreenForElement(Document document, Element element);
     void webkitDidExitFullScreenForElement(Document document, Element element);
 
+    void mediaPlayerRequestFullscreen(HTMLMediaElement mediaElement);
+
     void registerURLSchemeAsBypassingContentSecurityPolicy(DOMString scheme);
     void removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(DOMString scheme);
 
@@ -276,5 +279,13 @@
 
     [RaisesException] void setShouldRevealPassword(Element element, boolean reveal);
 
+    [CallWith=ExecutionContext] Promise createPromise();
+    [CallWith=ExecutionContext] Promise createResolvedPromise(any value);
+    [CallWith=ExecutionContext] Promise createRejectedPromise(any reason);
     [CallWith=ExecutionContext] Promise addOneToPromise(Promise promise);
+
+    void startSpeechInput(Element element);
+    void setValueForUser(Element element, DOMString value);
+
+    DOMString textSurroundingNode(Node node, long x, long y, unsigned long maxLength);
 };

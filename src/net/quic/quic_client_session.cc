@@ -13,16 +13,48 @@
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
+#include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_default_packet_writer.h"
+#include "net/quic/quic_session_key.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
 
 namespace net {
 
 namespace {
+
+// Histograms for tracking down the crashes from http://crbug.com/354669
+// Note: these values must be kept in sync with the corresponding values in:
+// tools/metrics/histograms/histograms.xml
+enum Location {
+  DESTRUCTOR = 0,
+  ADD_OBSERVER = 1,
+  TRY_CREATE_STREAM = 2,
+  CREATE_OUTGOING_RELIABLE_STREAM = 3,
+  NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER = 4,
+  NOTIFY_FACTORY_OF_SESSION_CLOSED = 5,
+  NUM_LOCATIONS = 6,
+};
+
+void RecordUnexpectedOpenStreams(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedOpenStreams", location,
+                            NUM_LOCATIONS);
+}
+
+void RecordUnexpectedObservers(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedObservers", location,
+                            NUM_LOCATIONS);
+}
+
+void RecordUnexpectedNotGoingAway(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedNotGoingAway", location,
+                            NUM_LOCATIONS);
+}
 
 // Note: these values must be kept in sync with the corresponding values in:
 // tools/metrics/histograms/histograms.xml
@@ -86,36 +118,48 @@ QuicClientSession::QuicClientSession(
     scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
-    const string& server_hostname,
+    scoped_ptr<QuicServerInfo> server_info,
+    const QuicSessionKey& server_key,
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
-    : QuicSession(connection, config),
+    : QuicClientSessionBase(connection, config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
       writer_(writer.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
+      server_info_(server_info.Pass()),
       read_pending_(false),
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_),
       num_packets_read_(0),
+      going_away_(false),
       weak_factory_(this) {
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
-              server_hostname, this, crypto_config) :
-          new QuicCryptoClientStream(server_hostname, this, crypto_config));
+              server_key, this, crypto_config) :
+          new QuicCryptoClientStream(server_key, this,
+                                     new ProofVerifyContextChromium(net_log_),
+                                     crypto_config));
 
   connection->set_debug_visitor(&logger_);
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
       NetLog::TYPE_QUIC_SESSION,
-      NetLog::StringCallback("host", &server_hostname));
+      NetLog::StringCallback("host", &server_key.host()));
 }
 
 QuicClientSession::~QuicClientSession() {
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(DESTRUCTOR);
+  if (!observers_.empty())
+    RecordUnexpectedObservers(DESTRUCTOR);
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(DESTRUCTOR);
+
   // The session must be closed before it is destroyed.
   DCHECK(streams()->empty());
   CloseAllStreams(ERR_UNEXPECTED);
@@ -154,7 +198,7 @@ QuicClientSession::~QuicClientSession() {
 
   bool port_selected = stream_factory_->enable_port_selection();
   SSLInfo ssl_info;
-  if (!crypto_stream_->GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+  if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
     if (port_selected) {
       UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTP",
                                   round_trip_handshakes, 0, 3, 4);
@@ -194,6 +238,9 @@ bool QuicClientSession::OnStreamFrames(
 }
 
 void QuicClientSession::AddObserver(Observer* observer) {
+  if (going_away_)
+    RecordUnexpectedObservers(ADD_OBSERVER);
+
   DCHECK(!ContainsKey(observers_, observer));
   observers_.insert(observer);
 }
@@ -217,6 +264,11 @@ int QuicClientSession::TryCreateStream(StreamRequest* request,
 
   if (!connection()->connected()) {
     DVLOG(1) << "Already closed.";
+    return ERR_CONNECTION_CLOSED;
+  }
+
+  if (going_away_) {
+    RecordUnexpectedOpenStreams(TRY_CREATE_STREAM);
     return ERR_CONNECTION_CLOSED;
   }
 
@@ -254,7 +306,10 @@ QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
                << "Already received goaway.";
     return NULL;
   }
-
+  if (going_away_) {
+    RecordUnexpectedOpenStreams(CREATE_OUTGOING_RELIABLE_STREAM);
+    return NULL;
+  }
   return CreateOutgoingReliableStreamImpl();
 }
 
@@ -273,9 +328,40 @@ QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
   return crypto_stream_.get();
 };
 
-bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) {
-  DCHECK(crypto_stream_.get());
-  return crypto_stream_->GetSSLInfo(ssl_info);
+// TODO(rtenneti): Add unittests for GetSSLInfo which exercise the various ways
+// we learn about SSL info (sync vs async vs cached).
+bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
+  ssl_info->Reset();
+  if (!cert_verify_result_) {
+    return false;
+  }
+
+  ssl_info->cert_status = cert_verify_result_->cert_status;
+  ssl_info->cert = cert_verify_result_->verified_cert;
+
+  // TODO(rtenneti): Figure out what to set for the following.
+  // Temporarily hard coded cipher_suite as 0xc031 to represent
+  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (from
+  // net/ssl/ssl_cipher_suite_names.cc) and encryption as 256.
+  int cipher_suite = 0xc02f;
+  int ssl_connection_status = 0;
+  ssl_connection_status |=
+      (cipher_suite & SSL_CONNECTION_CIPHERSUITE_MASK) <<
+       SSL_CONNECTION_CIPHERSUITE_SHIFT;
+  ssl_connection_status |=
+      (SSL_CONNECTION_VERSION_TLS1_2 & SSL_CONNECTION_VERSION_MASK) <<
+       SSL_CONNECTION_VERSION_SHIFT;
+
+  ssl_info->public_key_hashes = cert_verify_result_->public_key_hashes;
+  ssl_info->is_issued_by_known_root =
+      cert_verify_result_->is_issued_by_known_root;
+
+  ssl_info->connection_status = ssl_connection_status;
+  ssl_info->client_cert_sent = false;
+  ssl_info->channel_id_sent = false;
+  ssl_info->security_bits = 256;
+  ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
+  return true;
 }
 
 int QuicClientSession::CryptoConnect(bool require_confirmation,
@@ -308,8 +394,7 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
   DCHECK(connection()->connected());
   SSLInfo ssl_info;
   bool unused = false;
-  DCHECK(crypto_stream_);
-  if (!crypto_stream_->GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+  if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
     // We can always pool with insecure QUIC sessions.
     return true;
   }
@@ -340,6 +425,7 @@ void QuicClientSession::OnClosedStream() {
       !stream_requests_.empty() &&
       crypto_stream_->encryption_established() &&
       !goaway_received() &&
+      !going_away_ &&
       connection()->connected()) {
     StreamRequest* request = stream_requests_.front();
     stream_requests_.pop_front();
@@ -426,6 +512,34 @@ void QuicClientSession::OnSuccessfulVersionNegotiation(
   QuicSession::OnSuccessfulVersionNegotiation(version);
 }
 
+void QuicClientSession::OnProofValid(
+    const QuicCryptoClientConfig::CachedState& cached) {
+  DCHECK(cached.proof_valid());
+
+  if (!server_info_ || !server_info_->IsReadyToPersist()) {
+    return;
+  }
+
+  QuicServerInfo::State* state = server_info_->mutable_state();
+
+  state->server_config = cached.server_config();
+  state->source_address_token = cached.source_address_token();
+  state->server_config_sig = cached.signature();
+  state->certs = cached.certs();
+
+  server_info_->Persist();
+}
+
+void QuicClientSession::OnProofVerifyDetailsAvailable(
+    const ProofVerifyDetails& verify_details) {
+  const CertVerifyResult* cert_verify_result_other =
+      &(reinterpret_cast<const ProofVerifyDetailsChromium*>(
+          &verify_details))->cert_verify_result;
+  CertVerifyResult* result_copy = new CertVerifyResult;
+  result_copy->CopyFrom(*cert_verify_result_other);
+  cert_verify_result_.reset(result_copy);
+}
+
 void QuicClientSession::StartReading() {
   if (read_pending_) {
     return;
@@ -493,21 +607,23 @@ void QuicClientSession::CloseAllObservers(int net_error) {
 }
 
 base::Value* QuicClientSession::GetInfoAsValue(
-    const std::set<HostPortProxyPair>& aliases) const {
+    const std::set<HostPortPair>& aliases) const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
-  dict->SetString("host_port_pair", aliases.begin()->first.ToString());
+  dict->SetString("host_port_pair", aliases.begin()->ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
-  dict->SetString("guid", base::Uint64ToString(guid()));
+  dict->SetString("connection_id", base::Uint64ToString(connection_id()));
   dict->SetBoolean("connected", connection()->connected());
+  SSLInfo ssl_info;
+  dict->SetBoolean("secure", GetSSLInfo(&ssl_info) && ssl_info.cert);
 
   base::ListValue* alias_list = new base::ListValue();
-  for (std::set<HostPortProxyPair>::const_iterator it = aliases.begin();
+  for (std::set<HostPortPair>::const_iterator it = aliases.begin();
        it != aliases.end(); it++) {
-    alias_list->Append(new base::StringValue(it->first.ToString()));
+    alias_list->Append(new base::StringValue(it->ToString()));
   }
   dict->Set("aliases", alias_list);
 
@@ -550,11 +666,19 @@ void QuicClientSession::OnReadComplete(int result) {
 }
 
 void QuicClientSession::NotifyFactoryOfSessionGoingAway() {
+  going_away_ = true;
   if (stream_factory_)
     stream_factory_->OnSessionGoingAway(this);
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
+
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
+
+  going_away_ = true;
   DCHECK_EQ(0u, GetNumOpenStreams());
   DCHECK(!connection()->connected());
   base::MessageLoop::current()->PostTask(
@@ -564,6 +688,13 @@ void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosed() {
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED);
+
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED);
+
+  going_away_ = true;
   DCHECK_EQ(0u, GetNumOpenStreams());
   // Will delete |this|.
   if (stream_factory_)

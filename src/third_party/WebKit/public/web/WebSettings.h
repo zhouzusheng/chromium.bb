@@ -66,13 +66,14 @@ public:
     virtual void setAcceleratedCompositingForFiltersEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) = 0;
+    virtual void setAcceleratedCompositingForGpuRasterizationHintEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) = 0;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForTransitionEnabled(bool)  = 0;
+    // Not implemented yet, see http://crbug.com/178119
+    virtual void setAcceleratedCompositingForTransitionEnabled(bool) { };
     virtual void setAcceleratedCompositingForPluginsEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForVideoEnabled(bool) = 0;
-    virtual void setAcceleratedFiltersEnabled(bool) = 0;
     virtual void setAllowDisplayOfInsecureContent(bool) = 0;
     virtual void setAllowFileAccessFromFileURLs(bool) = 0;
     virtual void setAllowCustomScrollbarInMainFrame(bool) = 0;
@@ -86,7 +87,9 @@ public:
     virtual void setClobberUserAgentInitialScaleQuirk(bool) = 0;
     virtual void setCompositedScrollingForFramesEnabled(bool) = 0;
     virtual void setCompositorTouchHitTesting(bool) = 0;
+    virtual void setContainerCullingEnabled(bool) = 0;
     virtual void setCookieEnabled(bool) = 0;
+    virtual void setNavigateOnDragDrop(bool) = 0;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setDNSPrefetchingEnabled(bool) = 0;
     virtual void setDOMPasteAllowed(bool) = 0;
@@ -111,7 +114,6 @@ public:
     virtual void setExperimentalWebSocketEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
-    virtual void setFixedPositionCreatesStackingContext(bool) = 0;
     virtual void setForceCompositingMode(bool) = 0;
     virtual void setFullScreenEnabled(bool) = 0;
     virtual void setGestureTapHighlightEnabled(bool) = 0;
@@ -132,7 +134,6 @@ public:
     virtual void setMaxTouchPoints(int) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
     virtual void setMediaFullscreenRequiresUserGesture(bool) = 0;
-    virtual void setMemoryInfoEnabled(bool) = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
@@ -198,6 +199,9 @@ public:
     virtual void setWebSecurityEnabled(bool) = 0;
     virtual void setWideViewportQuirkEnabled(bool) = 0;
     virtual void setXSSAuditorEnabled(bool) = 0;
+
+    // FIXME: Remove these unused settings.
+    virtual void setFixedPositionCreatesStackingContext(bool) { }
 
 protected:
     ~WebSettings() { }

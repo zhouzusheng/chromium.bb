@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderGeometryMap.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/TransformState.h"
@@ -170,7 +170,7 @@ FloatQuad RenderGeometryMap::mapToContainer(const FloatRect& rect, const RenderL
         // Bounds for invisible layers are intentionally not calculated, and are
         // therefore not necessarily expected to be correct here. This is ok,
         // because they will be recomputed if the layer becomes visible.
-        if (!layer || !layer->subtreeIsInvisible()) {
+        if (!layer->subtreeIsInvisible() && lastRenderer->style()->visibility() == VISIBLE) {
             FloatRect rendererMappedResult = lastRenderer->localToContainerQuad(rect, container, m_mapCoordinatesFlags).boundingBox();
 
             // Inspector creates renderers with negative width <https://bugs.webkit.org/show_bug.cgi?id=87194>.

@@ -43,6 +43,7 @@
       'includes': [
         'audio_coding/codecs/isac/isac_test.gypi',
         'audio_coding/codecs/isac/isacfix_test.gypi',
+        'audio_coding/codecs/tools/audio_codec_speed_tests.gypi',
         'audio_processing/audio_processing_tests.gypi',
         'rtp_rtcp/test/testFec/test_fec.gypi',
         'video_coding/main/source/video_coding_test.gypi',
@@ -70,7 +71,6 @@
           'dependencies': [
             'audio_coding_module',
             'audio_processing',
-            'audioproc_unittest_proto',
             'bitrate_controller',
             'CNG',
             'desktop_capture',
@@ -97,6 +97,7 @@
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support_main',
             '<(webrtc_root)/test/test.gyp:frame_generator',
+            '<(webrtc_root)/test/test.gyp:rtcp_packet_parser',
           ],
           'sources': [
             'audio_coding/main/acm2/acm_receiver_unittest.cc',
@@ -111,6 +112,7 @@
             'audio_coding/codecs/isac/fix/source/transform_unittest.cc',
             'audio_coding/codecs/isac/main/source/isac_unittest.cc',
             'audio_coding/codecs/opus/opus_unittest.cc',
+            'audio_coding/neteq4/audio_classifier_unittest.cc',
             'audio_coding/neteq4/audio_multi_vector_unittest.cc',
             'audio_coding/neteq4/audio_vector_unittest.cc',
             'audio_coding/neteq4/background_noise_unittest.cc',
@@ -150,10 +152,7 @@
             'audio_coding/neteq4/mock/mock_payload_splitter.h',
             'audio_processing/aec/system_delay_unittest.cc',
             'audio_processing/aec/echo_cancellation_unittest.cc',
-            'audio_processing/audio_processing_impl_unittest.cc',
             'audio_processing/echo_cancellation_impl_unittest.cc',
-            'audio_processing/test/audio_processing_unittest.cc',
-            'audio_processing/test/test_utils.h',
             'audio_processing/utility/delay_estimator_unittest.cc',
             'audio_processing/utility/ring_buffer_unittest.cc',
             'bitrate_controller/bitrate_controller_unittest.cc',
@@ -201,8 +200,9 @@
             'rtp_rtcp/source/producer_fec_unittest.cc',
             'rtp_rtcp/source/receive_statistics_unittest.cc',
             'rtp_rtcp/source/rtcp_format_remb_unittest.cc',
-            'rtp_rtcp/source/rtcp_sender_unittest.cc',
+            'rtp_rtcp/source/rtcp_packet_unittest.cc',
             'rtp_rtcp/source/rtcp_receiver_unittest.cc',
+            'rtp_rtcp/source/rtcp_sender_unittest.cc',
             'rtp_rtcp/source/rtp_fec_unittest.cc',
             'rtp_rtcp/source/rtp_format_vp8_unittest.cc',
             'rtp_rtcp/source/rtp_format_vp8_test_helper.cc',
@@ -279,6 +279,14 @@
             }],
             ['enable_protobuf==1', {
               'defines': [ 'WEBRTC_AUDIOPROC_DEBUG_DUMP' ],
+              'dependencies': [
+                'audioproc_unittest_proto',
+              ],
+              'sources': [
+                'audio_processing/audio_processing_impl_unittest.cc',
+                'audio_processing/test/audio_processing_unittest.cc',
+                'audio_processing/test/test_utils.h',
+              ],
             }],
             ['build_libvpx==1', {
               'dependencies': [

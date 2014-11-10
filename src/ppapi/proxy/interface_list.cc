@@ -21,6 +21,7 @@
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_printing_dev.h"
+#include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
@@ -28,6 +29,8 @@
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
+#include "ppapi/c/dev/ppb_widget_dev.h"
+#include "ppapi/c/dev/ppb_zoom_dev.h"
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_buffer.h"
@@ -72,6 +75,7 @@
 #include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
+#include "ppapi/c/private/ppb_find_private.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_file.h"
 #include "ppapi/c/private/ppb_flash_font_file.h"
@@ -121,6 +125,7 @@
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/ppp_class_proxy.h"
 #include "ppapi/proxy/ppp_content_decryptor_private_proxy.h"
+#include "ppapi/proxy/ppp_find_proxy.h"
 #include "ppapi/proxy/ppp_graphics_3d_proxy.h"
 #include "ppapi/proxy/ppp_input_event_proxy.h"
 #include "ppapi/proxy/ppp_instance_private_proxy.h"
@@ -235,8 +240,12 @@ InterfaceList::InterfaceList() {
          PPB_OpenGLES2_Shared::GetChromiumMapSubInterface(), PERMISSION_NONE);
   AddPPB(PPB_OPENGLES2_QUERY_INTERFACE_1_0,
          PPB_OpenGLES2_Shared::GetQueryInterface(), PERMISSION_NONE);
+  AddPPB(PPB_OPENGLES2_DRAWBUFFERS_DEV_INTERFACE_1_0,
+         PPB_OpenGLES2_Shared::GetDrawBuffersInterface(),
+         PERMISSION_DEV);
   AddPPB(PPB_VAR_ARRAY_BUFFER_INTERFACE_1_0,
-         PPB_Var_Shared::GetVarArrayBufferInterface1_0(), PERMISSION_NONE);
+         PPB_Var_Shared::GetVarArrayBufferInterface1_0(),
+         PERMISSION_NONE);
   AddPPB(PPB_VAR_INTERFACE_1_2,
          PPB_Var_Shared::GetVarInterface1_2(), PERMISSION_NONE);
   AddPPB(PPB_VAR_INTERFACE_1_1,
@@ -291,9 +300,11 @@ InterfaceList::InterfaceList() {
   AddPPP(PPP_PRINTING_DEV_INTERFACE, PPP_Printing_Proxy::GetProxyInterface());
   AddProxy(API_ID_PPP_TEXT_INPUT, &ProxyFactory<PPP_TextInput_Proxy>);
   AddPPP(PPP_TEXTINPUT_DEV_INTERFACE, PPP_TextInput_Proxy::GetProxyInterface());
+#if !defined(OS_NACL)
   AddProxy(API_ID_PPP_PDF, &ProxyFactory<PPP_Pdf_Proxy>);
   AddPPP(PPP_PDF_INTERFACE, PPP_Pdf_Proxy::GetProxyInterface());
-#if !defined(OS_NACL)
+  AddProxy(API_ID_PPP_FIND_PRIVATE, &ProxyFactory<PPP_Find_Proxy>);
+  AddPPP(PPP_FIND_PRIVATE_INTERFACE, PPP_Find_Proxy::GetProxyInterface());
   AddProxy(API_ID_PPP_VIDEO_DECODER_DEV, &ProxyFactory<PPP_VideoDecoder_Proxy>);
   AddPPP(PPP_VIDEODECODER_DEV_INTERFACE,
          PPP_VideoDecoder_Proxy::GetProxyInterface());

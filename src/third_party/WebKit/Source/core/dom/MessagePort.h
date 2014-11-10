@@ -45,7 +45,7 @@ namespace WebCore {
 
 class Event;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class MessagePort;
 class ExecutionContext;
 class SerializedScriptValue;
@@ -73,6 +73,9 @@ public:
 
     void entangle(PassOwnPtr<blink::WebMessagePortChannel>);
     PassOwnPtr<blink::WebMessagePortChannel> disentangle();
+
+    static PassOwnPtr<blink::WebMessagePortChannelArray> toWebMessagePortChannelArray(PassOwnPtr<MessagePortChannelArray>);
+    static PassOwnPtr<MessagePortArray> toMessagePortArray(ExecutionContext*, const blink::WebMessagePortChannelArray&);
 
     // Returns 0 if there is an exception, or if the passed-in array is 0/empty.
     static PassOwnPtr<MessagePortChannelArray> disentanglePorts(const MessagePortArray*, ExceptionState&);

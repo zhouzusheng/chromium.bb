@@ -160,7 +160,8 @@ namespace internal {
 const SkScalar kUnderlineMetricsNotSet = -1.0f;
 
 SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
-    : canvas_skia_(canvas->sk_canvas()),
+    : canvas_(canvas),
+      canvas_skia_(canvas->sk_canvas()),
       started_drawing_(false),
       underline_thickness_(kUnderlineMetricsNotSet),
       underline_position_(0.0f) {
@@ -279,8 +280,20 @@ void SkiaTextRenderer::DrawDecorations(int x, int y, int width, bool underline,
     DrawUnderline(x, y, width);
   if (strike)
     DrawStrike(x, y, width);
-  if (diagonal_strike)
-    DrawDiagonalStrike(x, y, width);
+  if (diagonal_strike) {
+    if (!diagonal_)
+      diagonal_.reset(new DiagonalStrike(canvas_, Point(x, y), paint_));
+    diagonal_->AddPiece(width, paint_.getColor());
+  } else if (diagonal_) {
+    EndDiagonalStrike();
+  }
+}
+
+void SkiaTextRenderer::EndDiagonalStrike() {
+  if (diagonal_) {
+    diagonal_->Draw();
+    diagonal_.reset();
+  }
 }
 
 void SkiaTextRenderer::DrawUnderline(int x, int y, int width) {
@@ -302,15 +315,51 @@ void SkiaTextRenderer::DrawStrike(int x, int y, int width) const {
   canvas_skia_->drawRect(r, paint_);
 }
 
-void SkiaTextRenderer::DrawDiagonalStrike(int x, int y, int width) const {
+SkiaTextRenderer::DiagonalStrike::DiagonalStrike(Canvas* canvas,
+                                                 Point start,
+                                                 const SkPaint& paint)
+    : canvas_(canvas),
+      start_(start),
+      paint_(paint),
+      total_length_(0) {
+}
+
+SkiaTextRenderer::DiagonalStrike::~DiagonalStrike() {
+}
+
+void SkiaTextRenderer::DiagonalStrike::AddPiece(int length, SkColor color) {
+  pieces_.push_back(Piece(length, color));
+  total_length_ += length;
+}
+
+void SkiaTextRenderer::DiagonalStrike::Draw() {
   const SkScalar text_size = paint_.getTextSize();
   const SkScalar offset = SkScalarMul(text_size, kDiagonalStrikeMarginOffset);
+  const int thickness =
+      SkScalarCeilToInt(SkScalarMul(text_size, kLineThickness) * 2);
+  const int height = SkScalarCeilToInt(text_size - offset);
+  const Point end = start_ + Vector2d(total_length_, -height);
 
-  SkPaint paint(paint_);
-  paint.setAntiAlias(true);
-  paint.setStyle(SkPaint::kFill_Style);
-  paint.setStrokeWidth(SkScalarMul(text_size, kLineThickness) * 2);
-  canvas_skia_->drawLine(x, y, x + width, y - text_size + offset, paint);
+  paint_.setAntiAlias(true);
+  paint_.setStrokeWidth(thickness);
+
+  const bool clipped = pieces_.size() > 1;
+  int x = start_.x();
+  for (size_t i = 0; i < pieces_.size(); ++i) {
+    paint_.setColor(pieces_[i].second);
+
+    if (clipped) {
+      canvas_->Save();
+      canvas_->ClipRect(Rect(x, 0, pieces_[i].first, start_.y() + thickness));
+    }
+
+    canvas_->DrawLine(start_, end, paint_);
+
+    if (clipped)
+      canvas_->Restore();
+
+    x += pieces_[i].first;
+  }
 }
 
 StyleIterator::StyleIterator(const BreakList<SkColor>& colors,
@@ -718,29 +767,6 @@ void RenderText::DrawCursor(Canvas* canvas, const SelectionModel& position) {
   canvas->FillRect(GetCursorBounds(position, true), cursor_color_);
 }
 
-void RenderText::DrawSelectedTextForDrag(Canvas* canvas) {
-  EnsureLayout();
-  const std::vector<Rect> sel = GetSubstringBounds(selection());
-
-  // Override the selection color with black, and force the background to be
-  // transparent so that it's rendered without subpixel antialiasing.
-  const bool saved_background_is_transparent = background_is_transparent();
-  const SkColor saved_selection_color = selection_color();
-  set_background_is_transparent(true);
-  set_selection_color(SK_ColorBLACK);
-
-  for (size_t i = 0; i < sel.size(); ++i) {
-    canvas->Save();
-    canvas->ClipRect(sel[i]);
-    DrawVisualText(canvas);
-    canvas->Restore();
-  }
-
-  // Restore saved transparency and selection color.
-  set_selection_color(saved_selection_color);
-  set_background_is_transparent(saved_background_is_transparent);
-}
-
 Rect RenderText::GetCursorBounds(const SelectionModel& caret,
                                  bool insert_mode) {
   // TODO(ckocagil): Support multiline. This function should return the height
@@ -878,7 +904,7 @@ void RenderText::SetSelectionModel(const SelectionModel& model) {
 }
 
 const base::string16& RenderText::GetLayoutText() const {
-  return layout_text_.empty() ? text_ : layout_text_;
+  return layout_text_;
 }
 
 const BreakList<size_t>& RenderText::GetLineBreaks() {
@@ -1112,9 +1138,11 @@ void RenderText::UpdateLayoutText() {
       if (layout_text_.length() > cp_start)
         layout_text_.replace(cp_start, 1, text_.substr(start, end - start));
     }
+  } else {
+    layout_text_ = text_;
   }
 
-  const base::string16& text = GetLayoutText();
+  const base::string16& text = layout_text_;
   if (truncate_length_ > 0 && truncate_length_ < text.length()) {
     // Truncate the text at a valid character break and append an ellipsis.
     icu::StringCharacterIterator iter(text.c_str());
@@ -1123,13 +1151,12 @@ void RenderText::UpdateLayoutText() {
   }
 
   if (elide_behavior_ != NO_ELIDE && display_rect_.width() > 0 &&
-      !GetLayoutText().empty() && GetContentWidth() > display_rect_.width()) {
-    base::string16 elided_text = ElideText(GetLayoutText());
-
+      !layout_text_.empty() && GetContentWidth() > display_rect_.width()) {
     // This doesn't trim styles so ellipsis may get rendered as a different
     // style than the preceding text. See crbug.com/327850.
-    layout_text_.assign(elided_text);
+    layout_text_.assign(ElideText(layout_text_));
   }
+
   ResetLayout();
 }
 
@@ -1177,6 +1204,7 @@ base::string16 RenderText::ElideText(const base::string16& text) {
   // Use binary search to compute the elided text.
   size_t lo = 0;
   size_t hi = text.length() - 1;
+  const base::i18n::TextDirection text_direction = GetTextDirection();
   for (size_t guess = (lo + hi) / 2; lo <= hi; guess = (lo + hi) / 2) {
     // Restore styles and colors. They will be truncated to size by SetText.
     render_text->styles_ = styles_;
@@ -1192,12 +1220,10 @@ base::string16 RenderText::ElideText(const base::string16& text) {
       // whole text. Since we want ellipsis to indicate continuation of the
       // preceding text, we force the directionality of ellipsis to be same as
       // the preceding text using LTR or RTL markers.
-      base::i18n::TextDirection leading_text_direction =
-          base::i18n::GetFirstStrongCharacterDirection(new_text);
       base::i18n::TextDirection trailing_text_direction =
           base::i18n::GetLastStrongCharacterDirection(new_text);
       new_text.append(ellipsis);
-      if (trailing_text_direction != leading_text_direction) {
+      if (trailing_text_direction != text_direction) {
         if (trailing_text_direction == base::i18n::LEFT_TO_RIGHT)
           new_text += base::i18n::kLeftToRightMark;
         else
@@ -1235,7 +1261,8 @@ void RenderText::UpdateCachedBoundsAndOffset() {
   // the stale |display_offset_|. Applying |delta_offset| at the end of this
   // function will set |cursor_bounds_| and |display_offset_| to correct values.
   cached_bounds_and_offset_valid_ = true;
-  cursor_bounds_ = GetCursorBounds(selection_model_, insert_mode_);
+  if (cursor_enabled())
+    cursor_bounds_ = GetCursorBounds(selection_model_, insert_mode_);
 
   // Update |display_offset_| to ensure the current cursor is visible.
   const int display_width = display_rect_.width();

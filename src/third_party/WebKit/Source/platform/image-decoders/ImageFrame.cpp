@@ -100,7 +100,7 @@ bool ImageFrame::copyBitmapData(const ImageFrame& other)
     m_hasAlpha = other.m_hasAlpha;
     m_bitmap->bitmap().reset();
     const NativeImageSkia* otherBitmap = other.m_bitmap.get();
-    return otherBitmap->bitmap().copyTo(&m_bitmap->bitmap(), otherBitmap->bitmap().config());
+    return otherBitmap->bitmap().copyTo(&m_bitmap->bitmap(), otherBitmap->bitmap().colorType());
 }
 
 bool ImageFrame::setSize(int newWidth, int newHeight)
@@ -108,7 +108,7 @@ bool ImageFrame::setSize(int newWidth, int newHeight)
     // setSize() should only be called once, it leaks memory otherwise.
     ASSERT(!width() && !height());
 
-    m_bitmap->bitmap().setConfig(SkBitmap::kARGB_8888_Config, newWidth, newHeight);
+    m_bitmap->bitmap().setConfig(SkImageInfo::MakeN32Premul(newWidth, newHeight));
     if (!m_bitmap->bitmap().allocPixels(m_allocator, 0))
         return false;
 

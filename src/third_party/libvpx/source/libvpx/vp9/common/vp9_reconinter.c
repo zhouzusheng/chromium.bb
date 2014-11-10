@@ -139,9 +139,6 @@ MV clamp_mv_to_umv_border_sb(const MACROBLOCKD *xd, const MV *src_mv,
   return clamped_mv;
 }
 
-// TODO(jkoleszar): In principle, pred_w, pred_h are unnecessary, as we could
-// calculate the subsampled BLOCK_SIZE, but that type isn't defined for
-// sizes smaller than 16x16 yet.
 static void build_inter_predictors(MACROBLOCKD *xd, int plane, int block,
                                    int bw, int bh,
                                    int x, int y, int w, int h,
@@ -247,7 +244,6 @@ void vp9_build_inter_predictors_sb(MACROBLOCKD *xd, int mi_row, int mi_col,
 // TODO(jingning): This function serves as a placeholder for decoder prediction
 // using on demand border extension. It should be moved to /decoder/ directory.
 static void dec_build_inter_predictors(MACROBLOCKD *xd, int plane, int block,
-                                       int bw, int bh,
                                        int x, int y, int w, int h,
                                        int mi_x, int mi_y) {
   struct macroblockd_plane *const pd = &xd->plane[plane];
@@ -381,10 +377,10 @@ void vp9_dec_build_inter_predictors_sb(MACROBLOCKD *xd, int mi_row, int mi_col,
       assert(bsize == BLOCK_8X8);
       for (y = 0; y < num_4x4_h; ++y)
         for (x = 0; x < num_4x4_w; ++x)
-          dec_build_inter_predictors(xd, plane, i++, bw, bh,
+          dec_build_inter_predictors(xd, plane, i++,
                                      4 * x, 4 * y, 4, 4, mi_x, mi_y);
     } else {
-      dec_build_inter_predictors(xd, plane, 0, bw, bh,
+      dec_build_inter_predictors(xd, plane, 0,
                                  0, 0, bw, bh, mi_x, mi_y);
     }
   }

@@ -42,7 +42,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/SpellCheckRequester.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
@@ -136,14 +136,14 @@ WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->localName();
+    return constUnwrap<Element>()->attributeItem(index).localName();
 }
 
 WebString WebElement::attributeValue(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->value();
+    return constUnwrap<Element>()->attributeItem(index).value();
 }
 
 WebString WebElement::innerText()

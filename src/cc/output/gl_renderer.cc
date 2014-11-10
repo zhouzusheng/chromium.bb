@@ -31,6 +31,7 @@
 #include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/layer_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/trees/damage_tracker.h"
@@ -93,12 +94,15 @@ class OnDemandRasterTaskImpl : public internal::Task {
   }
 
   // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-    SkBitmapDevice device(*bitmap_);
-    SkCanvas canvas(&device);
-    picture_pile_->RasterToBitmap(
-        &canvas, content_rect_, contents_scale_, NULL);
+    SkCanvas canvas(*bitmap_);
+
+    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
+        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
+    DCHECK(picture_pile);
+
+    picture_pile->RasterToBitmap(&canvas, content_rect_, contents_scale_, NULL);
   }
 
  protected:
@@ -253,6 +257,8 @@ GLRenderer::~GLRenderer() {
     pending_read->finished_read_pixels_callback.Cancel();
     pending_async_read_pixels_.pop_back();
   }
+
+  in_use_overlay_resources_.clear();
 
   CleanupSharedObjects();
 }
@@ -484,7 +490,7 @@ void GLRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
 
 static SkBitmap ApplyImageFilter(GLRenderer* renderer,
                                  ContextProvider* offscreen_contexts,
-                                 gfx::Point origin,
+                                 const gfx::Point& origin,
                                  SkImageFilter* filter,
                                  ScopedResource* source_texture_resource) {
   if (!filter)
@@ -1627,8 +1633,9 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
     DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), a_plane_lock->target());
   }
 
-  int tex_scale_location = -1;
   int matrix_location = -1;
+  int tex_scale_location = -1;
+  int tex_offset_location = -1;
   int y_texture_location = -1;
   int u_texture_location = -1;
   int v_texture_location = -1;
@@ -1640,8 +1647,9 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
     const VideoYUVAProgram* program = GetVideoYUVAProgram(tex_coord_precision);
     DCHECK(program && (program->initialized() || IsContextLost()));
     SetUseProgram(program->program());
-    tex_scale_location = program->vertex_shader().tex_scale_location();
     matrix_location = program->vertex_shader().matrix_location();
+    tex_scale_location = program->vertex_shader().tex_scale_location();
+    tex_offset_location = program->vertex_shader().tex_offset_location();
     y_texture_location = program->fragment_shader().y_texture_location();
     u_texture_location = program->fragment_shader().u_texture_location();
     v_texture_location = program->fragment_shader().v_texture_location();
@@ -1653,8 +1661,9 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
     const VideoYUVProgram* program = GetVideoYUVProgram(tex_coord_precision);
     DCHECK(program && (program->initialized() || IsContextLost()));
     SetUseProgram(program->program());
-    tex_scale_location = program->vertex_shader().tex_scale_location();
     matrix_location = program->vertex_shader().matrix_location();
+    tex_scale_location = program->vertex_shader().tex_scale_location();
+    tex_offset_location = program->vertex_shader().tex_offset_location();
     y_texture_location = program->fragment_shader().y_texture_location();
     u_texture_location = program->fragment_shader().u_texture_location();
     v_texture_location = program->fragment_shader().v_texture_location();
@@ -1665,8 +1674,12 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
 
   GLC(gl_,
       gl_->Uniform2f(tex_scale_location,
-                     quad->tex_scale.width(),
-                     quad->tex_scale.height()));
+                     quad->tex_coord_rect.width(),
+                     quad->tex_coord_rect.height()));
+  GLC(gl_,
+      gl_->Uniform2f(tex_offset_location,
+                     quad->tex_coord_rect.x(),
+                     quad->tex_coord_rect.y()));
   GLC(gl_, gl_->Uniform1i(y_texture_location, 1));
   GLC(gl_, gl_->Uniform1i(u_texture_location, 2));
   GLC(gl_, gl_->Uniform1i(v_texture_location, 3));
@@ -1735,10 +1748,8 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  const PictureDrawQuad* quad) {
   if (on_demand_tile_raster_bitmap_.width() != quad->texture_size.width() ||
       on_demand_tile_raster_bitmap_.height() != quad->texture_size.height()) {
-    on_demand_tile_raster_bitmap_.setConfig(SkBitmap::kARGB_8888_Config,
-                                            quad->texture_size.width(),
-                                            quad->texture_size.height());
-    on_demand_tile_raster_bitmap_.allocPixels();
+    on_demand_tile_raster_bitmap_.allocN32Pixels(quad->texture_size.width(),
+                                                 quad->texture_size.height());
 
     if (on_demand_tile_raster_resource_id_)
       resource_provider_->DeleteResource(on_demand_tile_raster_resource_id_);
@@ -1762,10 +1773,10 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
-  SkBitmap::Config config = SkBitmapConfig(quad->texture_format);
-  if (on_demand_tile_raster_bitmap_.getConfig() != config) {
+  SkColorType colorType = ResourceFormatToSkColorType(quad->texture_format);
+  if (on_demand_tile_raster_bitmap_.colorType() != colorType) {
     on_demand_tile_raster_bitmap_.copyTo(&on_demand_tile_raster_bitmap_dest,
-                                         config);
+                                         colorType);
     // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
     // bitmap data. This check will be removed once crbug.com/293728 is fixed.
     CHECK_EQ(0u, on_demand_tile_raster_bitmap_dest.rowBytes() % 4);
@@ -1996,6 +2007,8 @@ void GLRenderer::FinishDrawingFrame(DrawingFrame* frame) {
 
   GLC(gl_, gl_->Disable(GL_BLEND));
   blend_shadow_ = false;
+
+  ScheduleOverlays(frame);
 }
 
 void GLRenderer::FinishDrawingQuadList() { FlushTextureQuadCache(); }
@@ -2167,6 +2180,11 @@ void GLRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   }
   output_surface_->SwapBuffers(&compositor_frame);
 
+  // Release previously used overlay resources and hold onto the pending ones
+  // until the next swap buffers.
+  in_use_overlay_resources_.clear();
+  in_use_overlay_resources_.swap(pending_overlay_resources_);
+
   swap_buffer_rect_ = gfx::Rect();
 
   // We don't have real fences, so we mark read fences as passed
@@ -2294,9 +2312,7 @@ void GLRenderer::GetFramebufferPixelsAsync(
   DCHECK(request->force_bitmap_result());
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(
-      SkBitmap::kARGB_8888_Config, window_rect.width(), window_rect.height());
-  bitmap->allocPixels();
+  bitmap->allocN32Pixels(window_rect.width(), window_rect.height());
 
   scoped_ptr<SkAutoLockPixels> lock(new SkAutoLockPixels(*bitmap));
 
@@ -3041,6 +3057,32 @@ void GLRenderer::ReinitializeGLState() {
 
 bool GLRenderer::IsContextLost() {
   return output_surface_->context_provider()->IsContextLost();
+}
+
+void GLRenderer::ScheduleOverlays(DrawingFrame* frame) {
+  if (!frame->overlay_list.size())
+    return;
+
+  ResourceProvider::ResourceIdArray resources;
+  OverlayCandidateList& overlays = frame->overlay_list;
+  OverlayCandidateList::iterator it;
+  for (it = overlays.begin(); it != overlays.end(); ++it) {
+    const OverlayCandidate& overlay = *it;
+    // Skip primary plane.
+    if (overlay.plane_z_order == 0)
+      continue;
+
+    pending_overlay_resources_.push_back(
+        make_scoped_ptr(new ResourceProvider::ScopedReadLockGL(
+            resource_provider(), overlay.resource_id)));
+
+    context_support_->ScheduleOverlayPlane(
+        overlay.plane_z_order,
+        overlay.transform,
+        pending_overlay_resources_.back()->texture_id(),
+        overlay.display_rect,
+        overlay.uv_rect);
+  }
 }
 
 }  // namespace cc

@@ -37,31 +37,31 @@ namespace {
 PassRefPtrWillBeRawPtr<DeviceMotionData::Acceleration> readAccelerationArgument(v8::Local<v8::Value> value, v8::Isolate* isolate)
 {
     if (isUndefinedOrNull(value))
-        return 0;
+        return nullptr;
 
     // Given the test above, this will always yield an object.
     v8::Local<v8::Object> object = value->ToObject();
 
     v8::Local<v8::Value> xValue = object->Get(v8AtomicString(isolate, "x"));
     if (xValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideX = !isUndefinedOrNull(xValue);
     double x = xValue->NumberValue();
 
     v8::Local<v8::Value> yValue = object->Get(v8AtomicString(isolate, "y"));
     if (yValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideY = !isUndefinedOrNull(yValue);
     double y = yValue->NumberValue();
 
     v8::Local<v8::Value> zValue = object->Get(v8AtomicString(isolate, "z"));
     if (zValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideZ = !isUndefinedOrNull(zValue);
     double z = zValue->NumberValue();
 
     if (!canProvideX && !canProvideY && !canProvideZ)
-        return 0;
+        return nullptr;
 
     return DeviceMotionData::Acceleration::create(canProvideX, x, canProvideY, y, canProvideZ, z);
 }
@@ -69,31 +69,31 @@ PassRefPtrWillBeRawPtr<DeviceMotionData::Acceleration> readAccelerationArgument(
 PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate> readRotationRateArgument(v8::Local<v8::Value> value, v8::Isolate* isolate)
 {
     if (isUndefinedOrNull(value))
-        return 0;
+        return nullptr;
 
     // Given the test above, this will always yield an object.
     v8::Local<v8::Object> object = value->ToObject();
 
     v8::Local<v8::Value> alphaValue = object->Get(v8AtomicString(isolate, "alpha"));
     if (alphaValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideAlpha = !isUndefinedOrNull(alphaValue);
     double alpha = alphaValue->NumberValue();
 
     v8::Local<v8::Value> betaValue = object->Get(v8AtomicString(isolate, "beta"));
     if (betaValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideBeta = !isUndefinedOrNull(betaValue);
     double beta = betaValue->NumberValue();
 
     v8::Local<v8::Value> gammaValue = object->Get(v8AtomicString(isolate, "gamma"));
     if (gammaValue.IsEmpty())
-        return 0;
+        return nullptr;
     bool canProvideGamma = !isUndefinedOrNull(gammaValue);
     double gamma = gammaValue->NumberValue();
 
     if (!canProvideAlpha && !canProvideBeta && !canProvideGamma)
-        return 0;
+        return nullptr;
 
     return DeviceMotionData::RotationRate::create(canProvideAlpha, alpha, canProvideBeta, beta, canProvideGamma, gamma);
 }
@@ -102,7 +102,7 @@ PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate> readRotationRateArgument(
 
 void V8DeviceMotionEvent::initDeviceMotionEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    DeviceMotionEvent* imp = V8DeviceMotionEvent::toNative(info.Holder());
+    DeviceMotionEvent* impl = V8DeviceMotionEvent::toNative(info.Holder());
     v8::Isolate* isolate = info.GetIsolate();
     V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, info[0]);
     bool bubbles = info[1]->BooleanValue();
@@ -113,7 +113,7 @@ void V8DeviceMotionEvent::initDeviceMotionEventMethodCustom(const v8::FunctionCa
     bool intervalProvided = !isUndefinedOrNull(info[6]);
     double interval = info[6]->NumberValue();
     RefPtrWillBeRawPtr<DeviceMotionData> deviceMotionData = DeviceMotionData::create(acceleration.release(), accelerationIncludingGravity.release(), rotationRate.release(), intervalProvided, interval);
-    imp->initDeviceMotionEvent(type, bubbles, cancelable, deviceMotionData.get());
+    impl->initDeviceMotionEvent(type, bubbles, cancelable, deviceMotionData.get());
 }
 
 } // namespace WebCore

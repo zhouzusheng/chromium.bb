@@ -52,6 +52,7 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
 
     float parsePositiveNumber(const String& key, const String& value, bool* ok = 0);
 
@@ -65,8 +66,6 @@ private:
     void process();
     void processViewportContentAttribute(const String& content, ViewportDescription::Type origin);
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLMetaElement, hasTagName(HTMLNames::metaTag));
 
 } // namespace WebCore
 

@@ -87,7 +87,8 @@ extern PrintJobManager* g_print_job_manager;
 }
 
 PrintingMessageFilter::PrintingMessageFilter(int render_process_id)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(PrintMsgStart),
+      render_process_id_(render_process_id),
       queue_(printing::g_print_job_manager->queue()) {
   DCHECK(queue_);
 }
@@ -240,8 +241,7 @@ void PrintingMessageFilter::CreatePrintDialogForFile(
       path,
       wc->GetTitle(),
       base::string16(),
-      std::string("application/pdf"),
-      false);
+      std::string("application/pdf"));
 }
 #endif  // defined(OS_CHROMEOS)
 

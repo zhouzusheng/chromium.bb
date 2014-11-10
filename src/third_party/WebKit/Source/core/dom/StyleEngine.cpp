@@ -33,7 +33,6 @@
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/FontFaceCache.h"
-#include "core/css/StyleInvalidationAnalysis.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/DocumentStyleSheetCollector.h"
 #include "core/dom/Element.h"
@@ -41,11 +40,11 @@
 #include "core/dom/ShadowTreeStyleSheetCollection.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLImport.h"
 #include "core/html/HTMLLinkElement.h"
+#include "core/html/imports/HTMLImport.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/InjectedStyleSheets.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "core/frame/Settings.h"
 #include "core/svg/SVGStyleElement.h"
 #include "platform/URLPatternMatcher.h"
@@ -53,20 +52,6 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-
-static HashMap<AtomicString, StyleSheetContents*>& textToSheetCache()
-{
-    typedef HashMap<AtomicString, StyleSheetContents*> TextToSheetCache;
-    DEFINE_STATIC_LOCAL(TextToSheetCache, cache, ());
-    return cache;
-}
-
-static HashMap<StyleSheetContents*, AtomicString>& sheetToTextCache()
-{
-    typedef HashMap<StyleSheetContents*, AtomicString> SheetToTextCache;
-    DEFINE_STATIC_LOCAL(SheetToTextCache, cache, ());
-    return cache;
-}
 
 StyleEngine::StyleEngine(Document& document)
     : m_document(document)
@@ -85,12 +70,19 @@ StyleEngine::StyleEngine(Document& document)
     , m_didCalculateResolver(false)
     // We don't need to create CSSFontSelector for imported document or
     // HTMLTemplateElement's document, because those documents have no frame.
-    , m_fontSelector(document.frame() ? CSSFontSelector::create(&document) : 0)
+    , m_fontSelector(document.frame() ? CSSFontSelector::create(&document) : nullptr)
 {
 }
 
 StyleEngine::~StyleEngine()
 {
+}
+
+void StyleEngine::detachFromDocument()
+{
+    // Cleanup is performed eagerly when the StyleEngine is removed from the
+    // document. The StyleEngine is unreachable after this, since only the
+    // document has a reference to it.
     for (unsigned i = 0; i < m_injectedAuthorStyleSheets.size(); ++i)
         m_injectedAuthorStyleSheets[i]->clearOwnerNode();
     for (unsigned i = 0; i < m_authorStyleSheets.size(); ++i)
@@ -98,9 +90,16 @@ StyleEngine::~StyleEngine()
 
     if (m_fontSelector) {
         m_fontSelector->clearDocument();
+#if !ENABLE(OILPAN)
         if (m_resolver)
             m_fontSelector->unregisterForInvalidationCallbacks(m_resolver.get());
+#endif
     }
+
+    // Decrement reference counts for things we could be keeping alive.
+    m_fontSelector.clear();
+    m_resolver.clear();
+    m_styleSheetCollectionMap.clear();
 }
 
 inline Document* StyleEngine::master()
@@ -145,9 +144,9 @@ TreeScopeStyleSheetCollection* StyleEngine::ensureStyleSheetCollectionFor(TreeSc
     if (treeScope == m_document)
         return &m_documentStyleSheetCollection;
 
-    HashMap<TreeScope*, OwnPtr<TreeScopeStyleSheetCollection> >::AddResult result = m_styleSheetCollectionMap.add(&treeScope, nullptr);
+    WillBeHeapHashMap<TreeScope*, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> >::AddResult result = m_styleSheetCollectionMap.add(&treeScope, nullptr);
     if (result.isNewEntry)
-        result.storedValue->value = adoptPtr(new ShadowTreeStyleSheetCollection(toShadowRoot(treeScope)));
+        result.storedValue->value = adoptPtrWillBeNoop(new ShadowTreeStyleSheetCollection(toShadowRoot(treeScope)));
     return result.storedValue->value.get();
 }
 
@@ -156,13 +155,13 @@ TreeScopeStyleSheetCollection* StyleEngine::styleSheetCollectionFor(TreeScope& t
     if (treeScope == m_document)
         return &m_documentStyleSheetCollection;
 
-    HashMap<TreeScope*, OwnPtr<TreeScopeStyleSheetCollection> >::iterator it = m_styleSheetCollectionMap.find(&treeScope);
+    WillBeHeapHashMap<TreeScope*, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> >::iterator it = m_styleSheetCollectionMap.find(&treeScope);
     if (it == m_styleSheetCollectionMap.end())
         return 0;
     return it->value.get();
 }
 
-const Vector<RefPtr<StyleSheet> >& StyleEngine::styleSheetsForStyleSheetList(TreeScope& treeScope)
+const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& StyleEngine::styleSheetsForStyleSheetList(TreeScope& treeScope)
 {
     if (treeScope == m_document)
         return m_documentStyleSheetCollection.styleSheetsForStyleSheetList();
@@ -170,7 +169,7 @@ const Vector<RefPtr<StyleSheet> >& StyleEngine::styleSheetsForStyleSheetList(Tre
     return ensureStyleSheetCollectionFor(treeScope)->styleSheetsForStyleSheetList();
 }
 
-const Vector<RefPtr<CSSStyleSheet> >& StyleEngine::activeAuthorStyleSheets() const
+const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& StyleEngine::activeAuthorStyleSheets() const
 {
     return m_documentStyleSheetCollection.activeAuthorStyleSheets();
 }
@@ -190,7 +189,7 @@ void StyleEngine::resetCSSFeatureFlags(const RuleFeatureSet& features)
     m_maxDirectAdjacentSelectors = features.maxDirectAdjacentSelectors();
 }
 
-const Vector<RefPtr<CSSStyleSheet> >& StyleEngine::injectedAuthorStyleSheets() const
+const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& StyleEngine::injectedAuthorStyleSheets() const
 {
     updateInjectedStyleSheetCache();
     return m_injectedAuthorStyleSheets;
@@ -214,7 +213,7 @@ void StyleEngine::updateInjectedStyleSheetCache() const
             continue;
         if (!URLPatternMatcher::matchesPatterns(m_document.url(), entry->whitelist()))
             continue;
-        RefPtr<CSSStyleSheet> groupSheet = CSSStyleSheet::createInline(const_cast<Document*>(&m_document), KURL());
+        RefPtrWillBeRawPtr<CSSStyleSheet> groupSheet = CSSStyleSheet::createInline(const_cast<Document*>(&m_document), KURL());
         m_injectedAuthorStyleSheets.append(groupSheet);
         groupSheet->contents()->parseString(entry->source());
     }
@@ -229,7 +228,7 @@ void StyleEngine::invalidateInjectedStyleSheetCache()
     m_document.styleResolverChanged(RecalcStyleDeferred);
 }
 
-void StyleEngine::addAuthorSheet(PassRefPtr<StyleSheetContents> authorSheet)
+void StyleEngine::addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet)
 {
     m_authorStyleSheets.append(CSSStyleSheet::create(authorSheet, &m_document));
     m_document.addedStyleSheet(m_authorStyleSheets.last().get(), RecalcStyleImmediately);
@@ -238,26 +237,16 @@ void StyleEngine::addAuthorSheet(PassRefPtr<StyleSheetContents> authorSheet)
 
 void StyleEngine::addPendingSheet()
 {
-    master()->styleEngine()->notifyPendingStyleSheetAdded();
+    m_pendingStylesheets++;
 }
 
 // This method is called whenever a top-level stylesheet has finished loading.
 void StyleEngine::removePendingSheet(Node* styleSheetCandidateNode, RemovePendingSheetNotificationType notification)
 {
-    TreeScope* treeScope = styleSheetCandidateNode->hasTagName(styleTag) ? &styleSheetCandidateNode->treeScope() : &m_document;
+    ASSERT(styleSheetCandidateNode);
+    TreeScope* treeScope = isHTMLStyleElement(*styleSheetCandidateNode) ? &styleSheetCandidateNode->treeScope() : &m_document;
     markTreeScopeDirty(*treeScope);
-    master()->styleEngine()->notifyPendingStyleSheetRemoved(notification);
-}
 
-void StyleEngine::notifyPendingStyleSheetAdded()
-{
-    ASSERT(isMaster());
-    m_pendingStylesheets++;
-}
-
-void StyleEngine::notifyPendingStyleSheetRemoved(RemovePendingSheetNotificationType notification)
-{
-    ASSERT(isMaster());
     // Make sure we knew this sheet was pending, and that our count isn't out of sync.
     ASSERT(m_pendingStylesheets > 0);
 
@@ -284,8 +273,8 @@ void StyleEngine::modifiedStyleSheet(StyleSheet* sheet)
     if (!node || !node->inDocument())
         return;
 
-    TreeScope& treeScope = node->hasTagName(styleTag) ? node->treeScope() : m_document;
-    ASSERT(node->hasTagName(styleTag) || treeScope == m_document);
+    TreeScope& treeScope = isHTMLStyleElement(*node) ? node->treeScope() : m_document;
+    ASSERT(isHTMLStyleElement(node) || treeScope == m_document);
 
     markTreeScopeDirty(treeScope);
 }
@@ -295,8 +284,8 @@ void StyleEngine::addStyleSheetCandidateNode(Node* node, bool createdByParser)
     if (!node->inDocument())
         return;
 
-    TreeScope& treeScope = node->hasTagName(styleTag) ? node->treeScope() : m_document;
-    ASSERT(node->hasTagName(styleTag) || treeScope == m_document);
+    TreeScope& treeScope = isHTMLStyleElement(*node) ? node->treeScope() : m_document;
+    ASSERT(isHTMLStyleElement(node) || treeScope == m_document);
 
     TreeScopeStyleSheetCollection* collection = ensureStyleSheetCollectionFor(treeScope);
     ASSERT(collection);
@@ -314,7 +303,7 @@ void StyleEngine::removeStyleSheetCandidateNode(Node* node)
 
 void StyleEngine::removeStyleSheetCandidateNode(Node* node, ContainerNode* scopingNode, TreeScope& treeScope)
 {
-    ASSERT(node->hasTagName(styleTag) || treeScope == m_document);
+    ASSERT(isHTMLStyleElement(node) || treeScope == m_document);
 
     TreeScopeStyleSheetCollection* collection = styleSheetCollectionFor(treeScope);
     ASSERT(collection);
@@ -329,8 +318,8 @@ void StyleEngine::modifiedStyleSheetCandidateNode(Node* node)
     if (!node->inDocument())
         return;
 
-    TreeScope& treeScope = node->hasTagName(styleTag) ? node->treeScope() : m_document;
-    ASSERT(node->hasTagName(styleTag) || treeScope == m_document);
+    TreeScope& treeScope = isHTMLStyleElement(*node) ? node->treeScope() : m_document;
+    ASSERT(isHTMLStyleElement(node) || treeScope == m_document);
     markTreeScopeDirty(treeScope);
 }
 
@@ -360,7 +349,7 @@ void StyleEngine::clearMediaQueryRuleSetStyleSheets()
 void StyleEngine::updateStyleSheetsInImport(DocumentStyleSheetCollector& parentCollector)
 {
     ASSERT(!isMaster());
-    Vector<RefPtr<StyleSheet> > sheetsForList;
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > sheetsForList;
     ImportedDocumentStyleSheetCollector subcollector(parentCollector, sheetsForList);
     m_documentStyleSheetCollection.collectStyleSheets(this, subcollector);
     m_documentStyleSheetCollection.swapSheetsForSheetList(sheetsForList);
@@ -405,20 +394,20 @@ bool StyleEngine::updateActiveStyleSheets(StyleResolverUpdateMode updateMode)
     return requiresFullStyleRecalc;
 }
 
-const Vector<RefPtr<StyleSheet> > StyleEngine::activeStyleSheetsForInspector() const
+const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > StyleEngine::activeStyleSheetsForInspector() const
 {
     if (m_activeTreeScopes.isEmpty())
         return m_documentStyleSheetCollection.styleSheetsForStyleSheetList();
 
-    Vector<RefPtr<StyleSheet> > activeStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > activeStyleSheets;
 
-    activeStyleSheets.append(m_documentStyleSheetCollection.styleSheetsForStyleSheetList());
+    activeStyleSheets.appendVector(m_documentStyleSheetCollection.styleSheetsForStyleSheetList());
 
     TreeScopeSet::const_iterator begin = m_activeTreeScopes.begin();
     TreeScopeSet::const_iterator end = m_activeTreeScopes.end();
     for (TreeScopeSet::const_iterator it = begin; it != end; ++it) {
         if (TreeScopeStyleSheetCollection* collection = m_styleSheetCollectionMap.get(*it))
-            activeStyleSheets.append(collection->styleSheetsForStyleSheetList());
+            activeStyleSheets.appendVector(collection->styleSheetsForStyleSheetList());
     }
 
     // FIXME: Inspector needs a vector which has all active stylesheets.
@@ -460,10 +449,10 @@ void StyleEngine::createResolver()
     ASSERT(m_document.frame());
     ASSERT(m_fontSelector);
 
-    m_resolver = adoptPtr(new StyleResolver(m_document));
+    m_resolver = adoptPtrWillBeNoop(new StyleResolver(m_document));
     appendActiveAuthorStyleSheets();
     m_fontSelector->registerForInvalidationCallbacks(m_resolver.get());
-    combineCSSFeatureFlags(m_resolver->ensureRuleFeatureSet());
+    combineCSSFeatureFlags(m_resolver->ensureUpdatedRuleFeatureSet());
 }
 
 void StyleEngine::clearResolver()
@@ -471,8 +460,12 @@ void StyleEngine::clearResolver()
     ASSERT(!m_document.inStyleRecalc());
     ASSERT(isMaster() || !m_resolver);
     ASSERT(m_fontSelector || !m_resolver);
-    if (m_resolver)
+    if (m_resolver) {
+        m_document.updateStyleInvalidationIfNeeded();
+#if !ENABLE(OILPAN)
         m_fontSelector->unregisterForInvalidationCallbacks(m_resolver.get());
+#endif
+    }
     m_resolver.clear();
 }
 
@@ -543,7 +536,7 @@ void StyleEngine::updateGenericFontFamilySettings()
         m_resolver->invalidateMatchedPropertiesCache();
 }
 
-void StyleEngine::removeFontFaceRules(const Vector<const StyleRuleFontFace*>& fontFaceRules)
+void StyleEngine::removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
 {
     if (!m_fontSelector)
         return;
@@ -572,25 +565,43 @@ void StyleEngine::markDocumentDirty()
         m_document.import()->master()->styleEngine()->markDocumentDirty();
 }
 
-PassRefPtr<CSSStyleSheet> StyleEngine::createSheet(Element* e, const String& text, TextPosition startPosition, bool createdByParser)
+static bool isCacheableForStyleElement(const StyleSheetContents& contents)
 {
-    RefPtr<CSSStyleSheet> styleSheet;
+    // FIXME: Support copying import rules.
+    if (!contents.importRules().isEmpty())
+        return false;
+    // Until import rules are supported in cached sheets it's not possible for loading to fail.
+    ASSERT(!contents.didLoadErrorOccur());
+    // It is not the original sheet anymore.
+    if (contents.isMutable())
+        return false;
+    if (!contents.hasSyntacticallyValidCSSHeader())
+        return false;
+    return true;
+}
+
+PassRefPtrWillBeRawPtr<CSSStyleSheet> StyleEngine::createSheet(Element* e, const String& text, TextPosition startPosition, bool createdByParser)
+{
+    RefPtrWillBeRawPtr<CSSStyleSheet> styleSheet = nullptr;
 
     e->document().styleEngine()->addPendingSheet();
 
     if (!e->document().inQuirksMode()) {
         AtomicString textContent(text);
 
-        HashMap<AtomicString, StyleSheetContents*>::AddResult result = textToSheetCache().add(textContent, 0);
+        WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<StyleSheetContents> >::AddResult result = m_textToSheetCache.add(textContent, nullptr);
         if (result.isNewEntry || !result.storedValue->value) {
             styleSheet = StyleEngine::parseSheet(e, text, startPosition, createdByParser);
-            if (result.isNewEntry && styleSheet->contents()->maybeCacheable()) {
+            if (result.isNewEntry && isCacheableForStyleElement(*styleSheet->contents())) {
                 result.storedValue->value = styleSheet->contents();
-                sheetToTextCache().add(styleSheet->contents(), textContent);
+                m_sheetToTextCache.add(styleSheet->contents(), textContent);
             }
         } else {
-            ASSERT(result.storedValue->value->maybeCacheable());
-            styleSheet = CSSStyleSheet::createInline(result.storedValue->value, e, startPosition);
+            StyleSheetContents* contents = result.storedValue->value;
+            ASSERT(contents);
+            ASSERT(isCacheableForStyleElement(*contents));
+            ASSERT(contents->singleOwnerDocument() == e->document());
+            styleSheet = CSSStyleSheet::createInline(contents, e, startPosition);
         }
     } else {
         // FIXME: currently we don't cache StyleSheetContents inQuirksMode.
@@ -602,9 +613,9 @@ PassRefPtr<CSSStyleSheet> StyleEngine::createSheet(Element* e, const String& tex
     return styleSheet;
 }
 
-PassRefPtr<CSSStyleSheet> StyleEngine::parseSheet(Element* e, const String& text, TextPosition startPosition, bool createdByParser)
+PassRefPtrWillBeRawPtr<CSSStyleSheet> StyleEngine::parseSheet(Element* e, const String& text, TextPosition startPosition, bool createdByParser)
 {
-    RefPtr<CSSStyleSheet> styleSheet;
+    RefPtrWillBeRawPtr<CSSStyleSheet> styleSheet = nullptr;
     styleSheet = CSSStyleSheet::createInline(e, KURL(), startPosition, e->document().inputEncoding());
     styleSheet->contents()->parseStringAtPosition(text, startPosition, createdByParser);
     return styleSheet;
@@ -612,12 +623,23 @@ PassRefPtr<CSSStyleSheet> StyleEngine::parseSheet(Element* e, const String& text
 
 void StyleEngine::removeSheet(StyleSheetContents* contents)
 {
-    HashMap<StyleSheetContents*, AtomicString>::iterator it = sheetToTextCache().find(contents);
-    if (it == sheetToTextCache().end())
+    WillBeHeapHashMap<RawPtrWillBeMember<StyleSheetContents>, AtomicString>::iterator it = m_sheetToTextCache.find(contents);
+    if (it == m_sheetToTextCache.end())
         return;
 
-    textToSheetCache().remove(it->value);
-    sheetToTextCache().remove(contents);
+    m_textToSheetCache.remove(it->value);
+    m_sheetToTextCache.remove(contents);
+}
+
+void StyleEngine::trace(Visitor* visitor)
+{
+    visitor->trace(m_injectedAuthorStyleSheets);
+    visitor->trace(m_authorStyleSheets);
+    visitor->trace(m_documentStyleSheetCollection);
+    visitor->trace(m_styleSheetCollectionMap);
+    visitor->trace(m_resolver);
+    visitor->trace(m_textToSheetCache);
+    visitor->trace(m_sheetToTextCache);
 }
 
 }

@@ -46,7 +46,7 @@ StyleResourceLoader::StyleResourceLoader(ResourceFetcher* fetcher)
 {
 }
 
-void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, const ElementStyleResources& elementStyleResources)
+void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, ElementStyleResources& elementStyleResources)
 {
     if (!renderStyle->hasFilter() || elementStyleResources.pendingSVGDocuments().isEmpty())
         return;
@@ -68,6 +68,8 @@ void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, cons
             ReferenceFilterBuilder::setDocumentResourceReference(referenceFilter, adoptPtr(new DocumentResourceReference(resource)));
         }
     }
+
+    elementStyleResources.clearPendingSVGDocuments();
 }
 
 static PassRefPtr<StyleImage> doLoadPendingImage(ResourceFetcher* fetcher, StylePendingImage* pendingImage, float deviceScaleFactor, const ResourceLoaderOptions& options)
@@ -88,7 +90,7 @@ static PassRefPtr<StyleImage> doLoadPendingImage(ResourceFetcher* fetcher, Style
     if (CSSImageSetValue* imageSetValue = pendingImage->cssImageSetValue())
         return imageSetValue->cachedImageSet(fetcher, deviceScaleFactor, options);
 
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<StyleImage> StyleResourceLoader::loadPendingImage(StylePendingImage* pendingImage, float deviceScaleFactor)
@@ -107,12 +109,13 @@ void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeV
 
     ResourceLoaderOptions options = ResourceFetcher::defaultResourceOptions();
     options.allowCredentials = DoNotAllowStoredCredentials;
+    options.credentialsRequested  = ClientDidNotRequestCredentials;
     options.corsEnabled = IsCORSEnabled;
 
     shapeValue->setImage(doLoadPendingImage(m_fetcher, toStylePendingImage(image), deviceScaleFactor, options));
 }
 
-void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementStyleResources& elementStyleResources)
+void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleResources& elementStyleResources)
 {
     if (elementStyleResources.pendingImageProperties().isEmpty())
         return;
@@ -186,9 +189,6 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementSty
             }
             break;
         }
-        case CSSPropertyShapeInside:
-            loadPendingShapeImage(style, style->shapeInside(), elementStyleResources.deviceScaleFactor());
-            break;
         case CSSPropertyShapeOutside:
             loadPendingShapeImage(style, style->shapeOutside(), elementStyleResources.deviceScaleFactor());
             break;
@@ -196,6 +196,8 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementSty
             ASSERT_NOT_REACHED();
         }
     }
+
+    elementStyleResources.clearPendingImageProperties();
 }
 
 void StyleResourceLoader::loadPendingResources(RenderStyle* renderStyle, ElementStyleResources& elementStyleResources)

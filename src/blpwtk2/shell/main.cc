@@ -152,7 +152,8 @@ void testV8AppendElement(blpwtk2::WebView* webView)
         "document.body.appendChild(div);\n";
 
     v8::Context::Scope contextScope(context);
-    v8::Local<v8::Script> script = v8::Script::New(v8::String::NewFromUtf8(isolate, SCRIPT));
+    v8::ScriptCompiler::Source compilerSource(v8::String::NewFromUtf8(isolate, SCRIPT));
+    v8::Local<v8::Script> script = v8::ScriptCompiler::Compile(isolate, &compilerSource);
     assert(!script.IsEmpty());  // this should never fail to compile
 
     v8::TryCatch tryCatch;

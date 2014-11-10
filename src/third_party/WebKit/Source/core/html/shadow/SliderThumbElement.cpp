@@ -36,12 +36,12 @@
 #include "core/events/Event.h"
 #include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/RenderFlexibleBox.h"
 #include "core/rendering/RenderSlider.h"
 #include "core/rendering/RenderTheme.h"
@@ -128,11 +128,18 @@ void RenderSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
         if (zoomFactor != 1.0)
             trackHeight *= zoomFactor;
 
+        // FIXME: The trackHeight should have been added before updateLogicalHeight was called to avoid this hack.
+        updateIntrinsicContentLogicalHeight(trackHeight);
+
         RenderBox::computeLogicalHeight(trackHeight, logicalTop, computedValues);
         return;
     }
     if (isVertical)
         logicalHeight = RenderSlider::defaultTrackLength;
+
+    // FIXME: The trackHeight should have been added before updateLogicalHeight was called to avoid this hack.
+    updateIntrinsicContentLogicalHeight(logicalHeight);
+
     RenderBox::computeLogicalHeight(logicalHeight, logicalTop, computedValues);
 }
 
@@ -226,12 +233,12 @@ bool SliderThumbElement::isDisabledFormControl() const
 
 bool SliderThumbElement::matchesReadOnlyPseudoClass() const
 {
-    return hostInput()->matchesReadOnlyPseudoClass();
+    return hostInput() && hostInput()->matchesReadOnlyPseudoClass();
 }
 
 bool SliderThumbElement::matchesReadWritePseudoClass() const
 {
-    return hostInput()->matchesReadWritePseudoClass();
+    return hostInput() && hostInput()->matchesReadWritePseudoClass();
 }
 
 Node* SliderThumbElement::focusDelegate()
@@ -306,7 +313,7 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 
 void SliderThumbElement::startDragging()
 {
-    if (Frame* frame = document().frame()) {
+    if (LocalFrame* frame = document().frame()) {
         frame->eventHandler().setCapturingMouseEventsNode(this);
         m_inDragMode = true;
     }
@@ -317,12 +324,13 @@ void SliderThumbElement::stopDragging()
     if (!m_inDragMode)
         return;
 
-    if (Frame* frame = document().frame())
-        frame->eventHandler().setCapturingMouseEventsNode(0);
+    if (LocalFrame* frame = document().frame())
+        frame->eventHandler().setCapturingMouseEventsNode(nullptr);
     m_inDragMode = false;
     if (renderer())
         renderer()->setNeedsLayout();
-    hostInput()->dispatchFormControlChangeEvent();
+    if (hostInput())
+        hostInput()->dispatchFormControlChangeEvent();
 }
 
 void SliderThumbElement::defaultEventHandler(Event* event)
@@ -384,8 +392,8 @@ bool SliderThumbElement::willRespondToMouseClickEvents()
 void SliderThumbElement::detach(const AttachContext& context)
 {
     if (m_inDragMode) {
-        if (Frame* frame = document().frame())
-            frame->eventHandler().setCapturingMouseEventsNode(0);
+        if (LocalFrame* frame = document().frame())
+            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
     }
     HTMLDivElement::detach(context);
 }
@@ -412,7 +420,7 @@ static const AtomicString& mediaSliderThumbShadowPartId()
 const AtomicString& SliderThumbElement::shadowPseudoId() const
 {
     HTMLInputElement* input = hostInput();
-    if (!input)
+    if (!input || !input->renderer())
         return sliderThumbShadowPartId();
 
     RenderStyle* sliderStyle = input->renderer()->style();
@@ -451,10 +459,10 @@ const AtomicString& SliderContainerElement::shadowPseudoId() const
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));
 
-    if (!shadowHost()->hasTagName(inputTag))
+    if (!shadowHost() || !shadowHost()->renderer())
         return sliderContainer;
 
-    RenderStyle* sliderStyle = toHTMLInputElement(shadowHost())->renderer()->style();
+    RenderStyle* sliderStyle = shadowHost()->renderer()->style();
     switch (sliderStyle->appearance()) {
     case MediaSliderPart:
     case MediaSliderThumbPart:

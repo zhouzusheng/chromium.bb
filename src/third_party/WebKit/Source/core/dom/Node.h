@@ -57,7 +57,7 @@ class EventDispatchMediator;
 class EventListener;
 class ExceptionState;
 class FloatPoint;
-class Frame;
+class LocalFrame;
 class HTMLInputElement;
 class IntRect;
 class KeyboardEvent;
@@ -91,13 +91,6 @@ enum StyleChangeType {
     LocalStyleChange = 1 << nodeStyleChangeShift,
     SubtreeStyleChange = 2 << nodeStyleChangeShift,
     NeedsReattachStyleChange = 3 << nodeStyleChangeShift,
-};
-
-// If the style change is from the renderer then we'll call setStyle on the
-// renderer even if the style computed from CSS is identical.
-enum StyleChangeSource {
-    StyleChangeFromCSS,
-    StyleChangeFromRenderer
 };
 
 class NodeRareDataBase {
@@ -172,6 +165,7 @@ public:
     virtual NodeType nodeType() const = 0;
     ContainerNode* parentNode() const;
     Element* parentElement() const;
+    ContainerNode* parentElementOrShadowRoot() const;
     Node* previousSibling() const { return m_previous; }
     Node* nextSibling() const { return m_next; }
     PassRefPtr<NodeList> childNodes();
@@ -194,7 +188,7 @@ public:
     void removeChild(Node* child, ExceptionState&);
     void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
 
-    bool hasChildNodes() const { return firstChild(); }
+    bool hasChildren() const { return firstChild(); }
     virtual PassRefPtr<Node> cloneNode(bool deep = false) = 0;
     virtual const AtomicString& localName() const;
     virtual const AtomicString& namespaceURI() const;
@@ -244,7 +238,6 @@ public:
     virtual bool isAttributeNode() const { return false; }
     virtual bool isCharacterDataNode() const { return false; }
     virtual bool isFrameOwnerElement() const { return false; }
-    virtual bool isPluginElement() const { return false; }
 
     // StyledElements allow inline style (style="border: 1px"), presentational attributes (ex. color),
     // class names (ex. class="foo bar") and other non-basic styling features. They and also control
@@ -282,7 +275,7 @@ public:
     ContainerNode* parentOrShadowHostNode() const;
     Element* parentOrShadowHostElement() const;
     void setParentOrShadowHostNode(ContainerNode*);
-    Node* highestAncestor() const;
+    Node& highestAncestor() const;
 
     // Knows about all kinds of hosts.
     ContainerNode* parentOrShadowHostOrTemplateHostNode() const;
@@ -357,7 +350,7 @@ public:
     void setChildNeedsStyleRecalc() { setFlag(ChildNeedsStyleRecalcFlag); }
     void clearChildNeedsStyleRecalc() { clearFlag(ChildNeedsStyleRecalcFlag); }
 
-    void setNeedsStyleRecalc(StyleChangeType, StyleChangeSource = StyleChangeFromCSS);
+    void setNeedsStyleRecalc(StyleChangeType);
     void clearNeedsStyleRecalc();
 
     bool childNeedsDistributionRecalc() const { return getFlag(ChildNeedsDistributionRecalc); }
@@ -370,11 +363,14 @@ public:
     void clearChildNeedsStyleInvalidation()  { clearFlag(ChildNeedsStyleInvalidation); }
     void markAncestorsWithChildNeedsStyleInvalidation();
     bool needsStyleInvalidation() { return getFlag(NeedsStyleInvalidation); }
+    void clearNeedsStyleInvalidation() { clearFlag(NeedsStyleInvalidation); }
     void setNeedsStyleInvalidation();
 
     void recalcDistribution();
 
-    bool shouldNotifyRendererWithIdenticalStyles() const { return getFlag(NotifyRendererWithIdenticalStyles); }
+    bool needsLayerUpdate() const { return getFlag(NeedsLayerUpdateFlag); }
+    void setNeedsLayerUpdate() { setFlag(NeedsLayerUpdateFlag); }
+    void clearNeedsLayerUpdate() { clearFlag(NeedsLayerUpdateFlag); }
 
     void setIsLink(bool f);
 
@@ -473,8 +469,8 @@ public:
 
     bool isDocumentTypeNode() const { return nodeType() == DOCUMENT_TYPE_NODE; }
     virtual bool childTypeAllowed(NodeType) const { return false; }
-    unsigned childNodeCount() const;
-    Node* childNode(unsigned index) const;
+    unsigned countChildren() const;
+    Node* traverseToChildAt(unsigned index) const;
 
     bool isDescendantOf(const Node*) const;
     bool contains(const Node*) const;
@@ -560,7 +556,7 @@ public:
     //
     // There are another callback named didNotifySubtreeInsertionsToDocument(), which is called after all the descendant is notified,
     // if this node was inserted into the document tree. Only a few subclasses actually need this. To utilize this, the node should
-    // return InsertionShouldCallDidNotifySubtreeInsertions from insrtedInto().
+    // return InsertionShouldCallDidNotifySubtreeInsertions from insertedInto().
     //
     enum InsertionNotificationRequest {
         InsertionDone,
@@ -611,8 +607,8 @@ public:
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture) OVERRIDE;
-    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture) OVERRIDE;
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
+    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false) OVERRIDE;
     virtual void removeAllEventListeners() OVERRIDE;
 
     // Handlers to do/undo actions on the target node before an event is dispatched to it and after the event
@@ -639,7 +635,6 @@ public:
 
     void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents);
 
-    virtual bool dispatchBeforeLoadEvent(const String& sourceURL);
     void dispatchInputEvent();
 
     // Perform the default action for an event.
@@ -650,7 +645,7 @@ public:
     virtual EventTargetData& ensureEventTargetData() OVERRIDE;
 
     void getRegisteredMutationObserversOfType(HashMap<MutationObserver*, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
-    void registerMutationObserver(MutationObserver*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
+    void registerMutationObserver(MutationObserver&, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     void unregisterMutationObserver(MutationObserverRegistration*);
     void registerTransientMutationObserver(MutationObserverRegistration*);
     void unregisterTransientMutationObserver(MutationObserverRegistration*);
@@ -670,6 +665,8 @@ public:
 
     void setAlreadySpellChecked(bool flag) { setFlag(flag, AlreadySpellCheckedFlag); }
     bool isAlreadySpellChecked() { return getFlag(AlreadySpellCheckedFlag); }
+
+    bool isFinishedParsingChildren() const { return getFlag(IsFinishedParsingChildrenFlag); }
 
 private:
     enum NodeFlags {
@@ -709,7 +706,7 @@ private:
         IsInsertionPointFlag = 1 << 24,
         IsInShadowTreeFlag = 1 << 25,
 
-        NotifyRendererWithIdenticalStyles = 1 << 26,
+        NeedsLayerUpdateFlag = 1 << 26,
 
         CustomElement = 1 << 27,
         CustomElementUpgraded = 1 << 28,
@@ -785,7 +782,6 @@ protected:
 
     void markAncestorsWithChildNeedsStyleRecalc();
 
-    bool isFinishedParsingChildren() const { return getFlag(IsFinishedParsingChildrenFlag); }
     void setIsFinishedParsingChildren(bool value) { setFlag(value, IsFinishedParsingChildrenFlag); }
 
 private:
@@ -907,6 +903,7 @@ inline bool operator!=(const Node& a, const PassRefPtr<Node>& b) { return !(a ==
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
+void showNode(const WebCore::Node*);
 void showTree(const WebCore::Node*);
 void showNodePath(const WebCore::Node*);
 #endif

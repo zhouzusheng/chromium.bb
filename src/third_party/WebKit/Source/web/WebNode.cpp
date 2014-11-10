@@ -50,6 +50,7 @@
 #include "core/editing/markup.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLElement.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
 #include "platform/Widget.h"
@@ -127,7 +128,7 @@ WebNode WebNode::nextSibling() const
 
 bool WebNode::hasChildNodes() const
 {
-    return m_private->hasChildNodes();
+    return m_private->hasChildren();
 }
 
 WebNodeList WebNode::childNodes()
@@ -236,9 +237,9 @@ WebPluginContainer* WebNode::pluginContainer() const
 {
     if (isNull())
         return 0;
-    const Node* coreNode = constUnwrap<Node>();
-    if (coreNode->hasTagName(HTMLNames::objectTag) || coreNode->hasTagName(HTMLNames::embedTag)) {
-        RenderObject* object = coreNode->renderer();
+    const Node& coreNode = *constUnwrap<Node>();
+    if (isHTMLObjectElement(coreNode) || isHTMLEmbedElement(coreNode)) {
+        RenderObject* object = coreNode.renderer();
         if (object && object->isWidget()) {
             Widget* widget = WebCore::toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer())

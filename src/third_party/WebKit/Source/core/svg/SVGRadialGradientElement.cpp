@@ -32,20 +32,14 @@
 
 namespace WebCore {
 
-// Animated property definitions
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGRadialGradientElement)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGradientElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     : SVGGradientElement(SVGNames::radialGradientTag, document)
-    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(LengthModeWidth)))
-    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight)))
-    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther)))
-    , m_fx(SVGAnimatedLength::create(this, SVGNames::fxAttr, SVGLength::create(LengthModeWidth)))
-    , m_fy(SVGAnimatedLength::create(this, SVGNames::fyAttr, SVGLength::create(LengthModeHeight)))
-    , m_fr(SVGAnimatedLength::create(this, SVGNames::frAttr, SVGLength::create(LengthModeOther)))
+    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
+    , m_fx(SVGAnimatedLength::create(this, SVGNames::fxAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_fy(SVGAnimatedLength::create(this, SVGNames::fyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_fr(SVGAnimatedLength::create(this, SVGNames::frAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
 {
     ScriptWrappable::init(this);
 
@@ -63,7 +57,6 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     addToPropertyMap(m_fx);
     addToPropertyMap(m_fy);
     addToPropertyMap(m_fr);
-    registerAnimatedPropertiesForSVGRadialGradientElement();
 }
 
 PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(Document& document)
@@ -92,17 +85,17 @@ void SVGRadialGradientElement::parseAttribute(const QualifiedName& name, const A
     if (!isSupportedAttribute(name))
         SVGGradientElement::parseAttribute(name, value);
     else if (name == SVGNames::cxAttr)
-        m_cx->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_cx->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::cyAttr)
-        m_cy->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_cy->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::rAttr)
-        m_r->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+        m_r->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::fxAttr)
-        m_fx->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_fx->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::fyAttr)
-        m_fy->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_fy->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::frAttr)
-        m_fr->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+        m_fr->setBaseValueAsString(value, parseError);
     else
         ASSERT_NOT_REACHED();
 
@@ -132,15 +125,15 @@ RenderObject* SVGRadialGradientElement::createRenderer(RenderStyle*)
 
 static void setGradientAttributes(SVGGradientElement* element, RadialGradientAttributes& attributes, bool isRadial = true)
 {
-    if (!attributes.hasSpreadMethod() && element->spreadMethodSpecified())
-        attributes.setSpreadMethod(element->spreadMethodCurrentValue());
+    if (!attributes.hasSpreadMethod() && element->spreadMethod()->isSpecified())
+        attributes.setSpreadMethod(element->spreadMethod()->currentValue()->enumValue());
 
-    if (!attributes.hasGradientUnits() && element->gradientUnitsSpecified())
-        attributes.setGradientUnits(element->gradientUnitsCurrentValue());
+    if (!attributes.hasGradientUnits() && element->gradientUnits()->isSpecified())
+        attributes.setGradientUnits(element->gradientUnits()->currentValue()->enumValue());
 
-    if (!attributes.hasGradientTransform() && element->gradientTransformSpecified()) {
+    if (!attributes.hasGradientTransform() && element->gradientTransform()->isSpecified()) {
         AffineTransform transform;
-        element->gradientTransformCurrentValue().concatenate(transform);
+        element->gradientTransform()->currentValue()->concatenate(transform);
         attributes.setGradientTransform(transform);
     }
 
@@ -197,7 +190,7 @@ bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttribute
             if (!current->renderer())
                 return false;
 
-            setGradientAttributes(current, attributes, current->hasTagName(SVGNames::radialGradientTag));
+            setGradientAttributes(current, attributes, isSVGRadialGradientElement(*current));
             processedGradients.add(current);
         } else {
             break;

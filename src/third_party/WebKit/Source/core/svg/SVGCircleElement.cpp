@@ -29,23 +29,17 @@
 
 namespace WebCore {
 
-// Animated property definitions
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGCircleElement)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGCircleElement::SVGCircleElement(Document& document)
     : SVGGeometryElement(SVGNames::circleTag, document)
-    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(LengthModeWidth)))
-    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight)))
-    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther)))
+    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
 {
     ScriptWrappable::init(this);
 
     addToPropertyMap(m_cx);
     addToPropertyMap(m_cy);
     addToPropertyMap(m_r);
-    registerAnimatedPropertiesForSVGCircleElement();
 }
 
 PassRefPtr<SVGCircleElement> SVGCircleElement::create(Document& document)
@@ -71,11 +65,11 @@ void SVGCircleElement::parseAttribute(const QualifiedName& name, const AtomicStr
     if (!isSupportedAttribute(name))
         SVGGeometryElement::parseAttribute(name, value);
     else if (name == SVGNames::cxAttr)
-        m_cx->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_cx->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::cyAttr)
-        m_cy->setBaseValueAsString(value, AllowNegativeLengths, parseError);
+        m_cy->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::rAttr)
-        m_r->setBaseValueAsString(value, ForbidNegativeLengths, parseError);
+        m_r->setBaseValueAsString(value, parseError);
     else
         ASSERT_NOT_REACHED();
 

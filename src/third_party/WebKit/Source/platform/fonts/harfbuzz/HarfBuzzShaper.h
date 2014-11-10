@@ -33,6 +33,7 @@
 
 #include "hb.h"
 #include "platform/fonts/GlyphBuffer.h"
+#include "platform/geometry/FloatBoxExtent.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
@@ -45,15 +46,14 @@ namespace WebCore {
 
 class Font;
 class SimpleFontData;
-
 class HarfBuzzShaper FINAL {
 public:
-    enum NormalizeMode {
-        DoNotNormalizeMirrorChars,
-        NormalizeMirrorChars
+    enum ForTextEmphasisOrNot {
+        NotForTextEmphasis,
+        ForTextEmphasis
     };
 
-    HarfBuzzShaper(const Font*, const TextRun&);
+    HarfBuzzShaper(const Font*, const TextRun&, ForTextEmphasisOrNot = NotForTextEmphasis);
 
     void setDrawRange(int from, int to);
     bool shape(GlyphBuffer* = 0);
@@ -61,6 +61,7 @@ public:
     float totalWidth() { return m_totalWidth; }
     int offsetForPosition(float targetX);
     FloatRect selectionRect(const FloatPoint&, int height, int from, int to);
+    FloatBoxExtent glyphBoundingBox() const { return m_glyphBoundingBox; }
 
 private:
     class HarfBuzzRun {
@@ -116,8 +117,6 @@ private:
         float m_width;
     };
 
-    void setNormalizedBuffer(NormalizeMode = DoNotNormalizeMirrorChars);
-
     bool isWordEnd(unsigned);
     int determineWordBreakSpacing();
     // setPadding sets a number of pixels to be distributed across the TextRun.
@@ -133,6 +132,7 @@ private:
     bool shapeHarfBuzzRuns();
     bool fillGlyphBuffer(GlyphBuffer*);
     void fillGlyphBufferFromHarfBuzzRun(GlyphBuffer*, HarfBuzzRun*, FloatPoint& firstOffsetOfNextRun);
+    void fillGlyphBufferForTextEmphasis(GlyphBuffer*, HarfBuzzRun* currentRun);
     void setGlyphPositionsForHarfBuzzRun(HarfBuzzRun*, hb_buffer_t*);
     void addHarfBuzzRun(unsigned startCharacter, unsigned endCharacter, const SimpleFontData*, UScriptCode);
 
@@ -157,7 +157,10 @@ private:
     int m_fromIndex;
     int m_toIndex;
 
+    ForTextEmphasisOrNot m_forTextEmphasis;
+
     float m_totalWidth;
+    FloatBoxExtent m_glyphBoundingBox;
 
     friend struct CachedShapingResults;
 };

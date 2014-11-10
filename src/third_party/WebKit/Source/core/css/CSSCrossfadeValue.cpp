@@ -167,7 +167,7 @@ void CSSCrossfadeValue::loadSubimages(ResourceFetcher* fetcher)
 PassRefPtr<Image> CSSCrossfadeValue::image(RenderObject* renderer, const IntSize& size)
 {
     if (size.isEmpty())
-        return 0;
+        return nullptr;
 
     ResourceFetcher* fetcher = renderer->document().fetcher();
     ImageResource* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), fetcher);
@@ -220,6 +220,8 @@ bool CSSCrossfadeValue::equals(const CSSCrossfadeValue& other) const
 
 void CSSCrossfadeValue::traceAfterDispatch(Visitor* visitor)
 {
+    visitor->trace(m_fromValue);
+    visitor->trace(m_toValue);
     visitor->trace(m_percentageValue);
     CSSImageGeneratorValue::traceAfterDispatch(visitor);
 }

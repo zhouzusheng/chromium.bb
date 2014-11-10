@@ -69,7 +69,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Return an encoded output buffer to WebRTC.
   void ReturnEncodedImage(scoped_ptr<webrtc::EncodedImage> image,
-                          int32 bitstream_buffer_id);
+                          int32 bitstream_buffer_id,
+                          uint16 picture_id);
 
   void NotifyError(int32_t error);
 
@@ -100,7 +101,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Weak pointer factory for posting back VEA::Client notifications to
   // RTCVideoEncoder.
-  base::WeakPtrFactory<RTCVideoEncoder> weak_this_factory_;
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<RTCVideoEncoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoEncoder);
 };

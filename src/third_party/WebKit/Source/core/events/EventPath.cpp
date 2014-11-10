@@ -44,12 +44,6 @@
 
 namespace WebCore {
 
-Node* EventPath::parent(Node* node)
-{
-    EventPath eventPath(node);
-    return eventPath.size() > 1 ? eventPath[1].node() : 0;
-}
-
 EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 {
     ASSERT(referenceNode);
@@ -65,10 +59,10 @@ EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
     Node& rootNode = referenceNode->treeScope().rootNode();
     Element* shadowHostElement = rootNode.isShadowRoot() ? toShadowRoot(rootNode).host() : 0;
     // At this time, SVG nodes are not supported in non-<use> shadow trees.
-    if (!shadowHostElement || !shadowHostElement->hasTagName(SVGNames::useTag))
+    if (!isSVGUseElement(shadowHostElement))
         return referenceNode;
-    SVGUseElement* useElement = toSVGUseElement(shadowHostElement);
-    if (SVGElementInstance* instance = useElement->instanceForShadowTreeElement(referenceNode))
+    SVGUseElement& useElement = toSVGUseElement(*shadowHostElement);
+    if (SVGElementInstance* instance = useElement.instanceForShadowTreeElement(referenceNode))
         return instance;
 
     return referenceNode;
@@ -81,15 +75,6 @@ static inline bool inTheSameScope(ShadowRoot* shadowRoot, EventTarget* target)
 
 static inline EventDispatchBehavior determineDispatchBehavior(Event* event, ShadowRoot* shadowRoot, EventTarget* target)
 {
-    // Video-only full screen is a mode where we use the shadow DOM as an implementation
-    // detail that should not be detectable by the web content.
-    if (Element* element = FullscreenElementStack::currentFullScreenElementFrom(&target->toNode()->document())) {
-        // FIXME: We assume that if the full screen element is a media element that it's
-        // the video-only full screen. Both here and elsewhere. But that is probably wrong.
-        if (element->isMediaElement() && shadowRoot && shadowRoot->host() == element)
-            return StayInsideShadowDOM;
-    }
-
     // WebKit never allowed selectstart event to cross the the shadow DOM boundary.
     // Changing this breaks existing sites.
     // See https://bugs.webkit.org/show_bug.cgi?id=52195 for details.
@@ -130,7 +115,8 @@ void EventPath::resetWith(Node* node)
     m_treeScopeEventContexts.clear();
     calculatePath();
     calculateAdjustedTargets();
-    calculateAdjustedEventPath();
+    if (!node->isSVGElement())
+        calculateTreeScopePrePostOrderNumbers();
 }
 
 void EventPath::addNodeEventContext(Node* node)
@@ -178,25 +164,30 @@ void EventPath::calculatePath()
     }
 }
 
-void EventPath::calculateAdjustedEventPath()
+void EventPath::calculateTreeScopePrePostOrderNumbers()
 {
-    if (!RuntimeEnabledFeatures::shadowDOMEnabled())
-        return;
+    // Precondition:
+    //   - TreeScopes in m_treeScopeEventContexts must be *connected* in the same tree of trees.
+    //   - The root tree must be included.
+    HashMap<const TreeScope*, TreeScopeEventContext*> treeScopeEventContextMap;
+    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i)
+        treeScopeEventContextMap.add(&m_treeScopeEventContexts[i]->treeScope(), m_treeScopeEventContexts[i].get());
+    TreeScopeEventContext* rootTree = 0;
     for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
         TreeScopeEventContext* treeScopeEventContext = m_treeScopeEventContexts[i].get();
-        Vector<RefPtr<Node> > nodes;
-        nodes.reserveInitialCapacity(size());
-        for (size_t i = 0; i < size(); ++i) {
-            if (at(i).node()->treeScope().isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(treeScopeEventContext->treeScope())) {
-                ASSERT(!at(i).node()->containingShadowRoot()
-                    || at(i).node()->treeScope() == treeScopeEventContext->treeScope()
-                    || toShadowRoot(treeScopeEventContext->treeScope().rootNode()).type() == ShadowRoot::UserAgentShadowRoot
-                    || at(i).node()->containingShadowRoot()->type() != ShadowRoot::UserAgentShadowRoot);
-                nodes.append(at(i).node());
-            }
+        // Use olderShadowRootOrParentTreeScope here for parent-child relationships.
+        // See the definition of trees of trees in the Shado DOM spec: http://w3c.github.io/webcomponents/spec/shadow/
+        TreeScope* parent = treeScopeEventContext->treeScope().olderShadowRootOrParentTreeScope();
+        if (!parent) {
+            ASSERT(!rootTree);
+            rootTree = treeScopeEventContext;
+            continue;
         }
-        treeScopeEventContext->adoptEventPath(nodes);
+        ASSERT(treeScopeEventContextMap.find(parent) != treeScopeEventContextMap.end());
+        treeScopeEventContextMap.find(parent)->value->addChild(*treeScopeEventContext);
     }
+    ASSERT(rootTree);
+    rootTree->calculatePrePostOrderNumber(0);
 }
 
 TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarget, TreeScope* treeScope, TreeScopeEventContextMap& treeScopeEventContextMap)
@@ -324,9 +315,9 @@ void EventPath::shrinkIfNeeded(const Node* target, const EventTarget* relatedTar
 
 void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
 {
-    Vector<TouchList*> adjustedTouches;
-    Vector<TouchList*> adjustedTargetTouches;
-    Vector<TouchList*> adjustedChangedTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTargetTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedChangedTouches;
     Vector<TreeScope*> treeScopes;
 
     for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
@@ -352,7 +343,7 @@ void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
 #endif
 }
 
-void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, Vector<TouchList*> adjustedTouchList, const Vector<TreeScope*>& treeScopes)
+void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const Vector<TreeScope*>& treeScopes)
 {
     if (!touchList)
         return;

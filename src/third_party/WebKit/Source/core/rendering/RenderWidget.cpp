@@ -25,13 +25,13 @@
 #include "core/rendering/RenderWidget.h"
 
 #include "core/accessibility/AXObjectCache.h"
-#include "core/frame/Frame.h"
-#include "core/rendering/CompositedLayerMapping.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -86,7 +86,7 @@ static void moveWidgetToParentSoon(Widget* child, FrameView* parent)
 
 RenderWidget::RenderWidget(Element* element)
     : RenderReplaced(element)
-    , m_widget(0)
+    , m_widget(nullptr)
     // Reference counting is used to prevent the widget from being
     // destroyed while inside the Widget code, which might not be
     // able to handle that.
@@ -105,7 +105,7 @@ void RenderWidget::willBeDestroyed()
         cache->remove(this);
     }
 
-    setWidget(0);
+    setWidget(nullptr);
 
     RenderReplaced::willBeDestroyed();
 }
@@ -343,7 +343,7 @@ void RenderWidget::widgetPositionsUpdated()
 
 void RenderWidget::clearWidget()
 {
-    m_widget = 0;
+    m_widget = nullptr;
 }
 
 bool RenderWidget::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)

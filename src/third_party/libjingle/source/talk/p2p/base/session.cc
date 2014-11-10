@@ -548,6 +548,8 @@ TransportProxy* BaseSession::GetOrCreateTransportProxy(
                                   new TransportWrapper(transport));
   transproxy->SignalCandidatesReady.connect(
       this, &BaseSession::OnTransportProxyCandidatesReady);
+  if (identity_)
+    transproxy->SetIdentity(identity_);
   transports_[content_name] = transproxy;
 
   return transproxy;
@@ -760,9 +762,9 @@ void BaseSession::OnTransportCandidatesAllocationDone(Transport* transport) {
   // Transport, since this removes the need to manually iterate over all
   // the transports, as is needed to make sure signals are handled properly
   // when BUNDLEing.
-#if 0
-  ASSERT(!IsCandidateAllocationDone());
-#endif
+  // TODO(juberti): Per b/7998978, devs and QA are hitting this assert in ways
+  // that make it prohibitively difficult to run dbg builds. Disabled for now.
+  //ASSERT(!IsCandidateAllocationDone());
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     if (iter->second->impl() == transport) {

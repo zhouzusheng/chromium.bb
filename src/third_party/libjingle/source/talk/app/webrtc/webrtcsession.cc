@@ -27,8 +27,9 @@
 
 #include "talk/app/webrtc/webrtcsession.h"
 
+#include <limits.h>
+
 #include <algorithm>
-#include <climits>
 #include <vector>
 
 #include "talk/app/webrtc/jsepicecandidate.h"
@@ -64,11 +65,12 @@ const char kMlineMismatch[] =
     "Offer and answer descriptions m-lines are not matching. Rejecting answer.";
 const char kPushDownTDFailed[] =
     "Failed to push down transport description:";
-const char kSdpWithoutCrypto[] = "Called with a SDP without crypto enabled.";
+const char kSdpWithoutDtlsFingerprint[] =
+    "Called with SDP without DTLS fingerprint.";
+const char kSdpWithoutSdesCrypto[] =
+    "Called with SDP without SDES crypto.";
 const char kSdpWithoutIceUfragPwd[] =
-    "Called with a SDP without ice-ufrag and ice-pwd.";
-const char kSdpWithoutSdesAndDtlsDisabled[] =
-    "Called with a SDP without SDES crypto and DTLS disabled locally.";
+    "Called with SDP without ice-ufrag and ice-pwd.";
 const char kSessionError[] = "Session error code: ";
 const char kSessionErrorDesc[] = "Session error description: ";
 
@@ -112,17 +114,18 @@ static bool VerifyCrypto(const SessionDescription* desc,
       *error = kInvalidSdp;
       return false;
     }
-    if (media->cryptos().empty()) {
+    if (dtls_enabled) {
       if (!tinfo->description.identity_fingerprint) {
-        // Crypto must be supplied.
-        LOG(LS_WARNING) << "Session description must have SDES or DTLS-SRTP.";
-        *error = kSdpWithoutCrypto;
+        LOG(LS_WARNING) <<
+            "Session description must have DTLS fingerprint if DTLS enabled.";
+        *error = kSdpWithoutDtlsFingerprint;
         return false;
       }
-      if (!dtls_enabled) {
+    } else {
+      if (media->cryptos().empty()) {
         LOG(LS_WARNING) <<
             "Session description must have SDES when DTLS disabled.";
-        *error = kSdpWithoutSdesAndDtlsDisabled;
+        *error = kSdpWithoutSdesCrypto;
         return false;
       }
     }
@@ -160,9 +163,8 @@ static bool VerifyIceUfragPwdPresent(const SessionDescription* desc) {
 // current security policy, to ensure a failure occurs if there is an error
 // in crypto negotiation.
 // Called when processing the local session description.
-static void UpdateSessionDescriptionSecurePolicy(
-    cricket::SecureMediaPolicy secure_policy,
-    SessionDescription* sdesc) {
+static void UpdateSessionDescriptionSecurePolicy(cricket::CryptoType type,
+                                                 SessionDescription* sdesc) {
   if (!sdesc) {
     return;
   }
@@ -175,7 +177,7 @@ static void UpdateSessionDescriptionSecurePolicy(
       MediaContentDescription* mdesc =
           static_cast<MediaContentDescription*> (iter->description);
       if (mdesc) {
-        mdesc->set_crypto_required(secure_policy == cricket::SEC_REQUIRED);
+        mdesc->set_crypto_required(type);
       }
     }
   }
@@ -357,6 +359,23 @@ static std::string MakeTdErrorString(const std::string& desc) {
   return MakeErrorString(kPushDownTDFailed, desc);
 }
 
+// Set |option| to the highest-priority value of |key| in the optional
+// constraints if the key is found and has a valid value.
+static void SetOptionFromOptionalConstraint(
+    const MediaConstraintsInterface* constraints,
+    const std::string& key, cricket::Settable<int>* option) {
+  if (!constraints) {
+    return;
+  }
+  std::string string_value;
+  int value;
+  if (constraints->GetOptional().FindFirst(key, &string_value)) {
+    if (talk_base::FromString(string_value, &value)) {
+      option->Set(value);
+    }
+  }
+}
+
 // Help class used to remember if a a remote peer has requested ice restart by
 // by sending a description with new ice ufrag and password.
 class IceRestartAnswerLatch {
@@ -432,7 +451,6 @@ WebRtcSession::WebRtcSession(
       ice_connection_state_(PeerConnectionInterface::kIceConnectionNew),
       older_version_remote_peer_(false),
       dtls_enabled_(false),
-      dscp_enabled_(false),
       data_channel_type_(cricket::DCT_NONE),
       ice_restart_latch_(new IceRestartAnswerLatch) {
 }
@@ -465,14 +483,18 @@ bool WebRtcSession::Initialize(
   // can be null.
   bool value;
 
-  // Enable DTLS by default if |dtls_identity_service| is valid.
-  dtls_enabled_ = (dtls_identity_service != NULL);
-  // |constraints| can override the default |dtls_enabled_| value.
-  if (FindConstraint(
-        constraints,
-        MediaConstraintsInterface::kEnableDtlsSrtp,
-        &value, NULL)) {
-    dtls_enabled_ = value;
+  if (options.disable_encryption) {
+    dtls_enabled_ = false;
+  } else {
+    // Enable DTLS by default if |dtls_identity_service| is valid.
+    dtls_enabled_ = (dtls_identity_service != NULL);
+    // |constraints| can override the default |dtls_enabled_| value.
+    if (FindConstraint(
+          constraints,
+          MediaConstraintsInterface::kEnableDtlsSrtp,
+          &value, NULL)) {
+      dtls_enabled_ = value;
+    }
   }
 
   // Enable creation of RTP data channels if the kEnableRtpDataChannels is set.
@@ -499,7 +521,85 @@ bool WebRtcSession::Initialize(
         constraints,
         MediaConstraintsInterface::kEnableDscp,
         &value, NULL)) {
-    dscp_enabled_ = value;
+    audio_options_.dscp.Set(value);
+    video_options_.dscp.Set(value);
+  }
+
+  // Find Suspend Below Min Bitrate constraint.
+  if (FindConstraint(
+          constraints,
+          MediaConstraintsInterface::kEnableVideoSuspendBelowMinBitrate,
+          &value,
+          NULL)) {
+    video_options_.suspend_below_min_bitrate.Set(value);
+  }
+
+  if (FindConstraint(
+      constraints,
+      MediaConstraintsInterface::kSkipEncodingUnusedStreams,
+      &value,
+      NULL)) {
+    video_options_.skip_encoding_unused_streams.Set(value);
+  }
+
+  SetOptionFromOptionalConstraint(constraints,
+      MediaConstraintsInterface::kScreencastMinBitrate,
+      &video_options_.screencast_min_bitrate);
+
+  // Find constraints for cpu overuse detection.
+  SetOptionFromOptionalConstraint(constraints,
+      MediaConstraintsInterface::kCpuUnderuseThreshold,
+      &video_options_.cpu_underuse_threshold);
+  SetOptionFromOptionalConstraint(constraints,
+      MediaConstraintsInterface::kCpuOveruseThreshold,
+      &video_options_.cpu_overuse_threshold);
+
+  if (FindConstraint(
+      constraints,
+      MediaConstraintsInterface::kCpuOveruseDetection,
+      &value,
+      NULL)) {
+    video_options_.cpu_overuse_detection.Set(value);
+  }
+  if (FindConstraint(
+      constraints,
+      MediaConstraintsInterface::kCpuOveruseEncodeUsage,
+      &value,
+      NULL)) {
+    video_options_.cpu_overuse_encode_usage.Set(value);
+  }
+
+  // Find improved wifi bwe constraint.
+  if (FindConstraint(
+        constraints,
+        MediaConstraintsInterface::kImprovedWifiBwe,
+        &value,
+        NULL)) {
+    video_options_.use_improved_wifi_bandwidth_estimator.Set(value);
+  }
+
+  if (FindConstraint(
+        constraints,
+        MediaConstraintsInterface::kHighStartBitrate,
+        &value,
+        NULL)) {
+    video_options_.video_start_bitrate.Set(cricket::kHighStartBitrate);
+  }
+
+  if (FindConstraint(
+      constraints,
+      MediaConstraintsInterface::kVeryHighBitrate,
+      &value,
+      NULL)) {
+    video_options_.video_highest_bitrate.Set(
+        cricket::VideoOptions::VERY_HIGH);
+  } else if (FindConstraint(
+      constraints,
+      MediaConstraintsInterface::kHighBitrate,
+      &value,
+      NULL)) {
+    video_options_.video_highest_bitrate.Set(
+        cricket::VideoOptions::HIGH);
   }
 
   const cricket::VideoCodec default_codec(
@@ -526,7 +626,7 @@ bool WebRtcSession::Initialize(
       this, &WebRtcSession::OnIdentityReady);
 
   if (options.disable_encryption) {
-    webrtc_session_desc_factory_->SetSecure(cricket::SEC_DISABLED);
+    webrtc_session_desc_factory_->SetSdesPolicy(cricket::SEC_DISABLED);
   }
 
   return true;
@@ -554,13 +654,12 @@ bool WebRtcSession::StartCandidatesAllocation() {
   return true;
 }
 
-void WebRtcSession::SetSecurePolicy(
-    cricket::SecureMediaPolicy secure_policy) {
-  webrtc_session_desc_factory_->SetSecure(secure_policy);
+void WebRtcSession::SetSdesPolicy(cricket::SecurePolicy secure_policy) {
+  webrtc_session_desc_factory_->SetSdesPolicy(secure_policy);
 }
 
-cricket::SecureMediaPolicy WebRtcSession::SecurePolicy() const {
-  return webrtc_session_desc_factory_->Secure();
+cricket::SecurePolicy WebRtcSession::SdesPolicy() const {
+  return webrtc_session_desc_factory_->SdesPolicy();
 }
 
 bool WebRtcSession::GetSslRole(talk_base::SSLRole* role) {
@@ -609,10 +708,13 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
     set_initiator(true);
   }
 
-  cricket::SecureMediaPolicy secure_policy =
-      webrtc_session_desc_factory_->Secure();
+  cricket::SecurePolicy sdes_policy =
+      webrtc_session_desc_factory_->SdesPolicy();
+  cricket::CryptoType crypto_required = dtls_enabled_ ?
+      cricket::CT_DTLS : (sdes_policy == cricket::SEC_REQUIRED ?
+          cricket::CT_SDES : cricket::CT_NONE);
   // Update the MediaContentDescription crypto settings as per the policy set.
-  UpdateSessionDescriptionSecurePolicy(secure_policy, desc->description());
+  UpdateSessionDescriptionSecurePolicy(crypto_required, desc->description());
 
   set_local_description(desc->description()->Copy());
   local_desc_.reset(desc_temp.release());
@@ -1151,23 +1253,8 @@ void WebRtcSession::OnTransportConnecting(cricket::Transport* transport) {
 
 void WebRtcSession::OnTransportWritable(cricket::Transport* transport) {
   ASSERT(signaling_thread()->IsCurrent());
-  // TODO(bemasc): Expose more API from Transport to detect when
-  // candidate selection starts or stops, due to success or failure.
   if (transport->all_channels_writable()) {
-    // By the time |SignalTransportWritable| arrives, the excess channels may
-    // already have been pruned, so that the Transport is Completed.  The
-    // specification requires that transitions from Checking to Completed pass
-    // through Connected.  This check enforces that requirement.
-    // (Direct transitions from Connected and Disconnected to Completed are
-    // allowed.)
-    if (ice_connection_state_ ==
-            PeerConnectionInterface::kIceConnectionChecking) {
-      SetIceConnectionState(PeerConnectionInterface::kIceConnectionConnected);
-    }
-
-    SetIceConnectionState(transport->completed() ?
-        PeerConnectionInterface::kIceConnectionCompleted :
-        PeerConnectionInterface::kIceConnectionConnected);
+    SetIceConnectionState(PeerConnectionInterface::kIceConnectionConnected);
   } else if (transport->HasChannels()) {
     // If the current state is Connected or Completed, then there were writable
     // channels but now there are not, so the next state must be Disconnected.
@@ -1393,11 +1480,7 @@ bool WebRtcSession::CreateVoiceChannel(const cricket::ContentInfo* content) {
   if (!voice_channel_.get())
     return false;
 
-  if (dscp_enabled_) {
-    cricket::AudioOptions options;
-    options.dscp.Set(true);
-    voice_channel_->SetChannelOptions(options);
-  }
+  voice_channel_->SetChannelOptions(audio_options_);
   return true;
 }
 
@@ -1407,11 +1490,7 @@ bool WebRtcSession::CreateVideoChannel(const cricket::ContentInfo* content) {
   if (!video_channel_.get())
     return false;
 
-  if (dscp_enabled_) {
-    cricket::VideoOptions options;
-    options.dscp.Set(true);
-    video_channel_->SetChannelOptions(options);
-  }
+  video_channel_->SetChannelOptions(video_options_);
   return true;
 }
 
@@ -1512,7 +1591,8 @@ bool WebRtcSession::ValidateSessionDescription(
 
   // Verify crypto settings.
   std::string crypto_error;
-  if (webrtc_session_desc_factory_->Secure() == cricket::SEC_REQUIRED &&
+  if ((webrtc_session_desc_factory_->SdesPolicy() == cricket::SEC_REQUIRED ||
+       dtls_enabled_) &&
       !VerifyCrypto(sdesc->description(), dtls_enabled_, &crypto_error)) {
     return BadSdp(source, type, crypto_error, err_desc);
   }

@@ -122,8 +122,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool deferred_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
-  bool memory_info_enabled;
-  bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
   bool password_echo_enabled;
@@ -157,6 +155,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
   bool compositor_touch_hit_testing;
+  bool navigate_on_drag_drop;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly

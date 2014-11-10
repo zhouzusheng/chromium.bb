@@ -85,9 +85,7 @@ private:
     void updateNonRenderStyle();
     virtual RenderStyle* nonRendererStyle() const OVERRIDE;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
-
     virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
-    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
     String collectOptionInnerText() const;
 
@@ -95,8 +93,6 @@ private:
     bool m_isSelected;
     RefPtr<RenderStyle> m_style;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLOptionElement, hasTagName(HTMLNames::optionTag));
 
 } // namespace WebCore
 

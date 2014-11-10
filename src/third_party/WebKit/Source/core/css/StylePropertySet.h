@@ -41,12 +41,20 @@ class MutableStylePropertySet;
 class StylePropertyShorthand;
 class StyleSheetContents;
 
-class StylePropertySet : public RefCounted<StylePropertySet> {
+class StylePropertySet : public RefCountedWillBeRefCountedGarbageCollected<StylePropertySet> {
     friend class PropertyReference;
 public:
+
+#if ENABLE(OILPAN)
+    // When oilpan is enabled override the finalize method to dispatch to the subclasses'
+    // destructor. This can be removed once the MutableStylePropertySet's OwnPtr is moved
+    // to the heap.
+    void finalizeGarbageCollectedObject();
+#else
     // Override RefCounted's deref() to ensure operator delete is called on
     // the appropriate subclass type.
     void deref();
+#endif
 
     class PropertyReference {
     public:
@@ -87,21 +95,21 @@ public:
     PropertyReference propertyAt(unsigned index) const { return PropertyReference(*this, index); }
     int findPropertyIndex(CSSPropertyID) const;
 
-    PassRefPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
+    PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
     String getPropertyValue(CSSPropertyID) const;
 
     bool propertyIsImportant(CSSPropertyID) const;
     CSSPropertyID getPropertyShorthand(CSSPropertyID) const;
     bool isPropertyImplicit(CSSPropertyID) const;
 
-    PassRefPtr<MutableStylePropertySet> copyBlockProperties() const;
+    PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyBlockProperties() const;
 
     CSSParserMode cssParserMode() const { return static_cast<CSSParserMode>(m_cssParserMode); }
 
-    PassRefPtr<MutableStylePropertySet> mutableCopy() const;
+    PassRefPtrWillBeRawPtr<MutableStylePropertySet> mutableCopy() const;
     PassRefPtr<ImmutableStylePropertySet> immutableCopyIfNeeded() const;
 
-    PassRefPtr<MutableStylePropertySet> copyPropertiesInSet(const Vector<CSSPropertyID>&) const;
+    PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyPropertiesInSet(const Vector<CSSPropertyID>&) const;
 
     String asText() const;
 
@@ -116,6 +124,9 @@ public:
 #endif
 
     bool propertyMatches(CSSPropertyID, const CSSValue*) const;
+
+    void trace(Visitor*);
+    void traceAfterDispatch(Visitor*) { }
 
 protected:
 
@@ -147,8 +158,16 @@ public:
 
     unsigned propertyCount() const { return m_arraySize; }
 
-    const CSSValue** valueArray() const;
+    const RawPtrWillBeMember<CSSValue>* valueArray() const;
     const StylePropertyMetadata* metadataArray() const;
+    int findPropertyIndex(CSSPropertyID) const;
+
+    void traceAfterDispatch(Visitor*);
+
+    void* operator new(std::size_t, void* location)
+    {
+        return location;
+    }
 
     void* m_storage;
 
@@ -156,14 +175,14 @@ private:
     ImmutableStylePropertySet(const CSSProperty*, unsigned count, CSSParserMode);
 };
 
-inline const CSSValue** ImmutableStylePropertySet::valueArray() const
+inline const RawPtrWillBeMember<CSSValue>* ImmutableStylePropertySet::valueArray() const
 {
-    return reinterpret_cast<const CSSValue**>(const_cast<const void**>(&(this->m_storage)));
+    return reinterpret_cast<const RawPtrWillBeMember<CSSValue>*>(const_cast<const void**>(&(this->m_storage)));
 }
 
 inline const StylePropertyMetadata* ImmutableStylePropertySet::metadataArray() const
 {
-    return reinterpret_cast<const StylePropertyMetadata*>(&reinterpret_cast<const char*>(&(this->m_storage))[m_arraySize * sizeof(CSSValue*)]);
+    return reinterpret_cast<const StylePropertyMetadata*>(&reinterpret_cast<const char*>(&(this->m_storage))[m_arraySize * sizeof(RawPtrWillBeMember<CSSValue>)]);
 }
 
 DEFINE_TYPE_CASTS(ImmutableStylePropertySet, StylePropertySet, set, !set->isMutable(), !set.isMutable());
@@ -176,17 +195,17 @@ inline ImmutableStylePropertySet* toImmutableStylePropertySet(const RefPtr<Style
 class MutableStylePropertySet : public StylePropertySet {
 public:
     ~MutableStylePropertySet() { }
-    static PassRefPtr<MutableStylePropertySet> create(CSSParserMode = HTMLQuirksMode);
-    static PassRefPtr<MutableStylePropertySet> create(const CSSProperty* properties, unsigned count);
+    static PassRefPtrWillBeRawPtr<MutableStylePropertySet> create(CSSParserMode = HTMLQuirksMode);
+    static PassRefPtrWillBeRawPtr<MutableStylePropertySet> create(const CSSProperty* properties, unsigned count);
 
     unsigned propertyCount() const { return m_propertyVector.size(); }
 
-    void addParsedProperties(const Vector<CSSProperty, 256>&);
+    void addParsedProperties(const WillBeHeapVector<CSSProperty, 256>&);
     void addParsedProperty(const CSSProperty&);
 
     // These expand shorthand properties into multiple properties.
     bool setProperty(CSSPropertyID, const String& value, bool important = false, StyleSheetContents* contextStyleSheet = 0);
-    void setProperty(CSSPropertyID, PassRefPtr<CSSValue>, bool important = false);
+    void setProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important = false);
 
     // These do not. FIXME: This is too messy, we can do better.
     bool setProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
@@ -208,8 +227,9 @@ public:
     void parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet);
 
     CSSStyleDeclaration* ensureCSSStyleDeclaration();
+    int findPropertyIndex(CSSPropertyID) const;
 
-    Vector<CSSProperty, 4> m_propertyVector;
+    void traceAfterDispatch(Visitor*);
 
 private:
     explicit MutableStylePropertySet(CSSParserMode);
@@ -221,6 +241,8 @@ private:
     OwnPtr<PropertySetCSSStyleDeclaration> m_cssomWrapper;
 
     friend class StylePropertySet;
+
+    WillBeHeapVector<CSSProperty, 4> m_propertyVector;
 };
 
 DEFINE_TYPE_CASTS(MutableStylePropertySet, StylePropertySet, set, set->isMutable(), set.isMutable());
@@ -256,6 +278,7 @@ inline bool StylePropertySet::isEmpty() const
     return !propertyCount();
 }
 
+#if !ENABLE(OILPAN)
 inline void StylePropertySet::deref()
 {
     if (!derefBase())
@@ -265,6 +288,14 @@ inline void StylePropertySet::deref()
         delete toMutableStylePropertySet(this);
     else
         delete toImmutableStylePropertySet(this);
+}
+#endif // !ENABLE(OILPAN)
+
+inline int StylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
+{
+    if (m_isMutable)
+        return toMutableStylePropertySet(this)->findPropertyIndex(propertyID);
+    return toImmutableStylePropertySet(this)->findPropertyIndex(propertyID);
 }
 
 } // namespace WebCore

@@ -36,12 +36,12 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoader.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/CookieJar.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/UniqueIdentifier.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Logging.h"
@@ -177,7 +177,7 @@ void MainThreadWebSocketChannel::close(int code, const String& reason)
         return;
     startClosingHandshake(code, reason);
     if (!m_closingTimer.isActive())
-        m_closingTimer.startOneShot(2 * TCPMaximumSegmentLifetime);
+        m_closingTimer.startOneShot(2 * TCPMaximumSegmentLifetime, FROM_HERE);
 }
 
 void MainThreadWebSocketChannel::clearDocument()
@@ -193,6 +193,14 @@ void MainThreadWebSocketChannel::disconnectHandle()
         return;
     m_hasCalledDisconnectOnHandle = true;
     m_handle->disconnect();
+}
+
+void MainThreadWebSocketChannel::callDidReceiveMessageError()
+{
+    if (!m_client || m_didFailOfClientAlreadyRun)
+        return;
+    m_didFailOfClientAlreadyRun = true;
+    m_client->didReceiveMessageError();
 }
 
 void MainThreadWebSocketChannel::fail(const String& reason, MessageLevel level, const String& sourceURL, unsigned lineNumber)
@@ -213,11 +221,9 @@ void MainThreadWebSocketChannel::fail(const String& reason, MessageLevel level, 
     m_perMessageDeflate.didFail();
     m_hasContinuousFrame = false;
     m_continuousFrameData.clear();
-    if (!m_didFailOfClientAlreadyRun) {
-        m_didFailOfClientAlreadyRun = true;
-        if (m_client)
-            m_client->didReceiveMessageError();
-    }
+
+    callDidReceiveMessageError();
+
     if (m_state != ChannelClosed)
         disconnectHandle(); // Will call didCloseSocketStream().
 }
@@ -243,7 +249,7 @@ void MainThreadWebSocketChannel::resume()
 {
     m_suspended = false;
     if ((!m_buffer.isEmpty() || (m_state == ChannelClosed)) && m_client && !m_resumeTimer.isActive())
-        m_resumeTimer.startOneShot(0);
+        m_resumeTimer.startOneShot(0, FROM_HERE);
 }
 
 void MainThreadWebSocketChannel::willOpenSocketStream(SocketStreamHandle* handle)
@@ -261,7 +267,7 @@ void MainThreadWebSocketChannel::didOpenSocketStream(SocketStreamHandle* handle)
     if (!m_document)
         return;
     if (m_identifier)
-        InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_document, m_identifier, *m_handshake->clientHandshakeRequest());
+        InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_document, m_identifier, m_handshake->clientHandshakeRequest().get());
     CString handshakeMessage = m_handshake->clientHandshakeMessage();
     if (!handle->send(handshakeMessage.data(), handshakeMessage.length()))
         failAsError("Failed to send WebSocket handshake.");
@@ -291,7 +297,7 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
         WebSocketChannelClient* client = m_client;
         m_client = 0;
         clearDocument();
-        m_handle = 0;
+        m_handle = nullptr;
         if (client)
             client->didClose(m_unhandledBufferedAmount, m_receivedClosingHandshake ? WebSocketChannelClient::ClosingHandshakeComplete : WebSocketChannelClient::ClosingHandshakeIncomplete, m_closeEventCode, m_closeEventReason);
     }
@@ -347,11 +353,12 @@ void MainThreadWebSocketChannel::didFailSocketStream(SocketStreamHandle* handle,
     if (failingURL.isNull())
         failingURL = m_handshake->url().string();
     WTF_LOG(Network, "Error Message: '%s', FailURL: '%s'", message.utf8().data(), failingURL.utf8().data());
+
     RefPtr<WebSocketChannel> protect(this);
-    if (m_client && (m_state != ChannelClosing && m_state != ChannelClosed) && !m_didFailOfClientAlreadyRun) {
-        m_didFailOfClientAlreadyRun = true;
-        m_client->didReceiveMessageError();
-    }
+
+    if (m_state != ChannelClosing && m_state != ChannelClosed)
+        callDidReceiveMessageError();
+
     if (m_state != ChannelClosed)
         disconnectHandle();
 }
@@ -440,7 +447,7 @@ bool MainThreadWebSocketChannel::processOneItemFromBuffer()
             return false;
         if (m_handshake->mode() == WebSocketHandshake::Connected) {
             if (m_identifier)
-                InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(m_document, m_identifier, m_handshake->serverHandshakeResponse());
+                InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(m_document, m_identifier, 0, &m_handshake->serverHandshakeResponse());
 
             if (m_deflateFramer.enabled() && m_document) {
                 const String message = "WebSocket extension \"x-webkit-deflate-frame\" is deprecated";
@@ -608,8 +615,9 @@ bool MainThreadWebSocketChannel::processFrame()
                     failAsError("Could not decode a text frame as UTF-8.");
                 else
                     m_client->didReceiveMessage(message);
-            } else if (m_continuousFrameOpCode == WebSocketFrame::OpCodeBinary)
+            } else if (m_continuousFrameOpCode == WebSocketFrame::OpCodeBinary) {
                 m_client->didReceiveBinaryData(continuousFrameData.release());
+            }
         }
         break;
 
@@ -650,9 +658,9 @@ bool MainThreadWebSocketChannel::processFrame()
         break;
 
     case WebSocketFrame::OpCodeClose:
-        if (!frame.payloadLength)
+        if (!frame.payloadLength) {
             m_closeEventCode = CloseEventCodeNoStatusRcvd;
-        else if (frame.payloadLength == 1) {
+        } else if (frame.payloadLength == 1) {
             m_closeEventCode = CloseEventCodeAbnormalClosure;
             failAsError("Received a broken close frame containing an invalid size body.");
             return false;

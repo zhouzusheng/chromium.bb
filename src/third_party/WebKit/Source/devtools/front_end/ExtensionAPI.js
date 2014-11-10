@@ -364,16 +364,21 @@ function ExtensionViewImpl(id)
         else
             this._fire();
     }
-    this.onShown = new EventSink(events.ViewShown + id, dispatchShowEvent);
-    this.onHidden = new EventSink(events.ViewHidden + id);
+
+    if (id) {
+        this.onShown = new EventSink(events.ViewShown + id, dispatchShowEvent);
+        this.onHidden = new EventSink(events.ViewHidden + id);
+    }
 }
 
 /**
  * @constructor
  * @extends {ExtensionViewImpl}
+ * @param {string} hostPanelName
  */
 function PanelWithSidebarImpl(hostPanelName)
 {
+    ExtensionViewImpl.call(this, null);
     this._hostPanelName = hostPanelName;
     this.onSelectionChanged = new EventSink(events.PanelObjectSelected + hostPanelName);
 }
@@ -624,11 +629,11 @@ function AuditResultImpl(id)
 {
     this._id = id;
 
-    this.createURL = this._nodeFactory.bind(null, "url");
-    this.createSnippet = this._nodeFactory.bind(null, "snippet");
-    this.createText = this._nodeFactory.bind(null, "text");
-    this.createObject = this._nodeFactory.bind(null, "object");
-    this.createNode = this._nodeFactory.bind(null, "node");
+    this.createURL = this._nodeFactory.bind(this, "url");
+    this.createSnippet = this._nodeFactory.bind(this, "snippet");
+    this.createText = this._nodeFactory.bind(this, "text");
+    this.createObject = this._nodeFactory.bind(this, "object");
+    this.createNode = this._nodeFactory.bind(this, "node");
 }
 
 AuditResultImpl.prototype = {
@@ -840,22 +845,38 @@ function TimelineImpl()
     this.onEventRecorded = new EventSink(events.TimelineEventRecorded);
 }
 
+var keyboardEventRequestQueue = [];
+var forwardTimer = null;
+
 function forwardKeyboardEvent(event)
 {
     const Esc = "U+001B";
     // We only care about global hotkeys, not about random text
     if (!event.ctrlKey && !event.altKey && !event.metaKey && !/^F\d+$/.test(event.keyIdentifier) && event.keyIdentifier !== Esc)
         return;
-    var request = {
-        command: commands.ForwardKeyboardEvent,
+    var requestPayload = {
         eventType: event.type,
         ctrlKey: event.ctrlKey,
         altKey: event.altKey,
         metaKey: event.metaKey,
         keyIdentifier: event.keyIdentifier,
-        location: event.location
+        location: event.location,
+        keyCode: event.keyCode
+    };
+    keyboardEventRequestQueue.push(requestPayload);
+    if (!forwardTimer)
+        forwardTimer = setTimeout(forwardEventQueue, 0);
+}
+
+function forwardEventQueue()
+{
+    forwardTimer = null;
+    var request = {
+        command: commands.ForwardKeyboardEvent,
+        entries: keyboardEventRequestQueue
     };
     extensionServer.sendRequest(request);
+    keyboardEventRequestQueue = [];
 }
 
 document.addEventListener("keydown", forwardKeyboardEvent, false);

@@ -36,7 +36,6 @@
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/WheelEvent.h"
 #include "core/rendering/RenderObject.h"
@@ -156,6 +155,8 @@ PlatformWheelEventBuilder::PlatformWheelEventBuilder(Widget* widget, const WebMo
     m_scrollCount = 0;
     m_unacceleratedScrollingDeltaX = e.deltaX;
     m_unacceleratedScrollingDeltaY = e.deltaY;
+    m_canRubberbandLeft = e.canRubberbandLeft;
+    m_canRubberbandRight = e.canRubberbandRight;
 #endif
 }
 
@@ -407,7 +408,7 @@ PlatformTouchPointBuilder::PlatformTouchPointBuilder(Widget* widget, const WebTo
     m_id = point.id;
     m_state = toPlatformTouchPointState(point.state);
     m_pos = widget->convertFromContainingWindow(IntPoint((point.position.x - offset.width()) / scale, (point.position.y - offset.height()) / scale));
-    m_screenPos = point.screenPosition;
+    m_screenPos = IntPoint(point.screenPosition.x, point.screenPosition.y);
     m_radiusY = point.radiusY / scale;
     m_radiusX = point.radiusX / scale;
     m_rotationAngle = point.rotationAngle;
@@ -704,7 +705,7 @@ static void addTouchPoints(const Widget* widget, const AtomicString& touchType, 
 
         WebTouchPoint point;
         point.id = touch->identifier();
-        point.screenPosition = WebPoint(touch->screenX(), touch->screenY());
+        point.screenPosition = WebFloatPoint(touch->screenX(), touch->screenY());
         point.position = convertAbsoluteLocationForRenderObject(touch->absoluteLocation(), *renderObject);
         point.radiusX = touch->webkitRadiusX();
         point.radiusY = touch->webkitRadiusY();

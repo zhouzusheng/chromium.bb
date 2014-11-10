@@ -82,6 +82,10 @@ inline DOMWindow* EventTarget::executingWindow()
 
 bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
+    // FIXME: listener null check should throw TypeError (and be done in
+    // generated bindings), but breaks legacy content. http://crbug.com/249598
+    if (!listener)
+        return false;
     EventListener* eventListener = listener.get();
     if (ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture)) {
         InspectorInstrumentation::didAddEventListener(this, eventType, eventListener, useCapture);
@@ -98,6 +102,7 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, EventListen
 
     size_t indexOfRemovedListener;
 
+    RefPtr<EventListener> protect(listener);
     if (!d->eventListenerMap.remove(eventType, listener, useCapture, indexOfRemovedListener))
         return false;
     InspectorInstrumentation::didRemoveEventListener(this, eventType, listener, useCapture);

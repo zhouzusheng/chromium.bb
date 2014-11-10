@@ -26,6 +26,7 @@
 #ifndef DatabaseManager_h
 #define DatabaseManager_h
 
+#include "heap/Handle.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "wtf/Assertions.h"
@@ -54,10 +55,6 @@ class DatabaseManager {
 public:
     static DatabaseManager& manager();
 
-    // This gets a DatabaseContext for the specified ExecutionContext.
-    // If one doesn't already exist, it will create a new one.
-    PassRefPtr<DatabaseContext> databaseContextFor(ExecutionContext*);
-
     // These 2 methods are for DatabaseContext (un)registration, and should only
     // be called by the DatabaseContext constructor and destructor.
     void registerDatabaseContext(DatabaseContext*);
@@ -73,26 +70,27 @@ public:
 
     static void throwExceptionForDatabaseError(DatabaseError, const String& errorMessage, ExceptionState&);
 
-    PassRefPtr<Database> openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
-    PassRefPtr<DatabaseSync> openDatabaseSync(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
-
-    void stopDatabases(ExecutionContext*, DatabaseTaskSynchronizer*);
+    PassRefPtrWillBeRawPtr<Database> openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
+    PassRefPtrWillBeRawPtr<DatabaseSync> openDatabaseSync(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
 
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
     void closeDatabasesImmediately(const String& originIdentifier, const String& name);
 
-    void interruptAllDatabasesForContext(ExecutionContext*);
+    void interruptAllDatabasesForContext(DatabaseContext*);
 
 private:
     DatabaseManager();
-    ~DatabaseManager() { }
+    ~DatabaseManager();
 
+    // This gets a DatabaseContext for the specified ExecutionContext.
+    // If one doesn't already exist, it will create a new one.
+    DatabaseContext* databaseContextFor(ExecutionContext*);
     // This gets a DatabaseContext for the specified ExecutionContext if
     // it already exist previously. Otherwise, it returns 0.
-    PassRefPtr<DatabaseContext> existingDatabaseContextFor(ExecutionContext*);
+    DatabaseContext* existingDatabaseContextFor(ExecutionContext*);
 
-    PassRefPtr<DatabaseBackendBase> openDatabaseBackend(ExecutionContext*,
+    PassRefPtrWillBeRawPtr<DatabaseBackendBase> openDatabaseBackend(ExecutionContext*,
         DatabaseType, const String& name, const String& expectedVersion, const String& displayName,
         unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
 
@@ -101,7 +99,12 @@ private:
     AbstractDatabaseServer* m_server;
 
     // Access to the following fields require locking m_contextMapLock:
-    typedef HashMap<ExecutionContext*, DatabaseContext*> ContextMap;
+#if ENABLE(OILPAN)
+    // We can't use PersistentHeapHashMap because multiple threads update the map.
+    typedef HashMap<ExecutionContext*, OwnPtr<Persistent<DatabaseContext> > > ContextMap;
+#else
+    typedef HashMap<ExecutionContext*, RefPtr<DatabaseContext> > ContextMap;
+#endif
     ContextMap m_contextMap;
 #if !ASSERT_DISABLED
     int m_databaseContextRegisteredCount;

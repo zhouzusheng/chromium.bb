@@ -27,6 +27,7 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableCellElement.h"
@@ -43,6 +44,16 @@ HTMLTableRowElement::HTMLTableRowElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+bool HTMLTableRowElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == backgroundAttr || HTMLTablePartElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLTableRowElement::subResourceAttributeName() const
+{
+    return backgroundAttr;
+}
+
 PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
 {
     return adoptRef(new HTMLTableRowElement(document));
@@ -54,7 +65,7 @@ int HTMLTableRowElement::rowIndex() const
     if (!table)
         return -1;
     table = table->parentNode();
-    if (!table || !table->hasTagName(tableTag))
+    if (!isHTMLTableElement(table))
         return -1;
 
     // To match Firefox, the row indices work like this:
@@ -65,32 +76,29 @@ int HTMLTableRowElement::rowIndex() const
     int rIndex = 0;
 
     if (HTMLTableSectionElement* head = toHTMLTableElement(table)->tHead()) {
-        for (Node *row = head->firstChild(); row; row = row->nextSibling()) {
+        for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*head); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
             if (row == this)
                 return rIndex;
-            if (row->hasTagName(trTag))
-                ++rIndex;
+            ++rIndex;
         }
     }
 
-    for (Node *node = table->firstChild(); node; node = node->nextSibling()) {
-        if (node->hasTagName(tbodyTag)) {
-            HTMLTableSectionElement* section = toHTMLTableSectionElement(node);
-            for (Node* row = section->firstChild(); row; row = row->nextSibling()) {
+    for (Element* child = ElementTraversal::firstWithin(*table); child; child = ElementTraversal::nextSibling(*child)) {
+        if (child->hasTagName(tbodyTag)) {
+            HTMLTableSectionElement* section = toHTMLTableSectionElement(child);
+            for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*section); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
                 if (row == this)
                     return rIndex;
-                if (row->hasTagName(trTag))
-                    ++rIndex;
+                ++rIndex;
             }
         }
     }
 
     if (HTMLTableSectionElement* foot = toHTMLTableElement(table)->tFoot()) {
-        for (Node *row = foot->firstChild(); row; row = row->nextSibling()) {
+        for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*foot); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
             if (row == this)
                 return rIndex;
-            if (row->hasTagName(trTag))
-                ++rIndex;
+            ++rIndex;
         }
     }
 
@@ -101,13 +109,12 @@ int HTMLTableRowElement::rowIndex() const
 int HTMLTableRowElement::sectionRowIndex() const
 {
     int rIndex = 0;
-    const Node *n = this;
+    const Node* n = this;
     do {
         n = n->previousSibling();
-        if (n && n->hasTagName(trTag))
-            rIndex++;
-    }
-    while (n);
+        if (n && isHTMLTableRowElement(*n))
+            ++rIndex;
+    } while (n);
 
     return rIndex;
 }
@@ -118,7 +125,7 @@ PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionStat
     int numCells = children ? children->length() : 0;
     if (index < -1 || index > numCells) {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [-1, " + String::number(numCells) + "].");
-        return 0;
+        return nullptr;
     }
 
     RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());

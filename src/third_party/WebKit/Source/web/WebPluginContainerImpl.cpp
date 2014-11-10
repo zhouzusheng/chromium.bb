@@ -52,7 +52,6 @@
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/WheelEvent.h"
 #include "core/html/HTMLFormElement.h"
@@ -60,8 +59,8 @@
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginOcclusionSupport.h"
@@ -174,33 +173,10 @@ void WebPluginContainerImpl::hide()
     Widget::hide();
 }
 
-static bool eventHasUserGesture(const WebInputEvent* webEvent, const Event* event)
-{
-    if (!WebInputEvent::isUserGestureEventType(webEvent->type))
-        return false;
-    if (WebInputEvent::isKeyboardEventType(webEvent->type))
-        return event->isKeyboardEvent();
-    switch (webEvent->type) {
-    case WebInputEvent::MouseDown:
-        return event->type() == EventTypeNames::mousedown;
-    case WebInputEvent::MouseUp:
-        return event->type() == EventTypeNames::mouseup;
-    case WebInputEvent::TouchStart:
-        return event->type() == EventTypeNames::touchstart;
-    case WebInputEvent::TouchEnd:
-        return event->type() == EventTypeNames::touchend;
-    default:
-        return false;
-    }
-}
-
 void WebPluginContainerImpl::handleEvent(Event* event)
 {
     if (!m_webPlugin->acceptsInputEvents())
         return;
-
-    const WebInputEvent* currentInputEvent = WebViewImpl::currentInputEvent();
-    UserGestureIndicator gestureIndicator(currentInputEvent && eventHasUserGesture(currentInputEvent, event) ? DefinitelyProcessingUserGesture : PossiblyProcessingUserGesture);
 
     RefPtr<WebPluginContainerImpl> protector(this);
     // The events we pass are defined at:
@@ -299,7 +275,7 @@ float WebPluginContainerImpl::pageScaleFactor()
 
 float WebPluginContainerImpl::pageZoomFactor()
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return 1.0;
     return frame->pageZoomFactor();
@@ -433,7 +409,7 @@ void WebPluginContainerImpl::allowScriptObjects()
 
 void WebPluginContainerImpl::clearScriptObjects()
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return;
     frame->script().cleanupScriptObjectsForPlugin(this);
@@ -446,7 +422,7 @@ NPObject* WebPluginContainerImpl::scriptableObjectForElement()
 
 WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popupsAllowed)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return WebString();
 
@@ -467,7 +443,7 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
 
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame || !frame->loader().documentLoader())
         return;  // FIXME: send a notification in this case?
 
@@ -494,7 +470,7 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return false;
 
@@ -743,7 +719,7 @@ void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)
         return;
 
     Clipboard* clipboard = event->dataTransfer();
-    WebDragData dragData = clipboard->dataObject();
+    WebDragData dragData(clipboard->dataObject());
     WebDragOperationsMask dragOperationMask = static_cast<WebDragOperationsMask>(clipboard->sourceOperation());
     WebPoint dragScreenLocation(event->screenX(), event->screenY());
     WebPoint dragLocation(event->absoluteLocation().x() - location().x(), event->absoluteLocation().y() - location().y());
@@ -873,7 +849,7 @@ void WebPluginContainerImpl::synthesizeMouseEventIfPossible(TouchEvent* event)
 
 void WebPluginContainerImpl::focusPlugin()
 {
-    Frame& containingFrame = toFrameView(parent())->frame();
+    LocalFrame& containingFrame = toFrameView(parent())->frame();
     if (Page* currentPage = containingFrame.page())
         currentPage->focusController().setFocusedElement(m_element, &containingFrame);
     else
@@ -910,7 +886,7 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
         clipRect.intersect(
-            m_element->document().view()->windowClipRectForFrameOwner(m_element, true));
+            m_element->document().view()->windowClipRectForFrameOwner(m_element));
     }
 
     return clipRect;

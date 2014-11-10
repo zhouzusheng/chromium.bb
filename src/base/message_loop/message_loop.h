@@ -38,7 +38,7 @@
 #include "base/message_loop/message_pump_x11.h"
 #elif defined(USE_OZONE) && !defined(OS_NACL)
 #include "base/message_loop/message_pump_ozone.h"
-#else
+#elif !defined(OS_ANDROID_HOST)
 #define USE_GTK_MESSAGE_PUMP
 #include "base/message_loop/message_pump_gtk.h"
 #if defined(TOOLKIT_GTK)
@@ -57,6 +57,8 @@ class RunLoop;
 class ThreadTaskRunnerHandle;
 #if defined(OS_ANDROID)
 class MessagePumpForUI;
+#elif defined(OS_ANDROID_HOST)
+typedef MessagePumpLibevent MessagePumpForUI;
 #endif
 class WaitableEvent;
 
@@ -154,7 +156,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   static void EnableHistogrammer(bool enable_histogrammer);
 
-  typedef MessagePump* (MessagePumpFactory)();
+  typedef scoped_ptr<MessagePump> (MessagePumpFactory)();
   // Uses the given base::MessagePumpForUIFactory to override the default
   // MessagePump implementation for 'TYPE_UI'. Returns true if the factory
   // was successfully registered.
@@ -162,10 +164,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   // Creates the default MessagePump based on |type|. Caller owns return
   // value.
-  // TODO(sky): convert this and InitMessagePumpForUIFactory() to return a
-  // scoped_ptr.
-  static MessagePump* CreateMessagePumpForType(Type type);
-
+  static scoped_ptr<MessagePump> CreateMessagePumpForType(Type type);
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These observers are notified prior to MessageLoop::current()
   // being changed to return NULL.  This gives interested parties the chance to

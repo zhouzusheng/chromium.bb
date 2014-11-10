@@ -136,6 +136,17 @@
     },
 
     {
+      'target_name': 'audio_classifier_test',
+      'type': 'executable',
+      'dependencies': [
+        'NetEq4',
+      ],
+      'sources': [
+        'test/audio_classifier_test.cc',
+      ],
+    },
+
+    {
       'target_name': 'neteq4_speed_test',
       'type': 'executable',
       'dependencies': [
@@ -147,6 +158,21 @@
       ],
       'sources': [
         'test/neteq_speed_test.cc',
+      ],
+    },
+
+    {
+      'target_name': 'neteq4_opus_fec_quality_test',
+      'type': 'executable',
+      'dependencies': [
+        'NetEq4',
+        'neteq_unittest_tools',
+        'webrtc_opus',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        '<(webrtc_root)/test/test.gyp:test_support_main',
+      ],
+      'sources': [
+        'test/neteq_opus_fec_quality_test.cc',
       ],
     },
 

@@ -55,14 +55,19 @@ public:
         ErrorCodeLanguageNotSupported = 8
     };
 
-    static PassRefPtr<SpeechRecognitionError> create(ErrorCode, const String&);
-    static PassRefPtr<SpeechRecognitionError> create();
-    static PassRefPtr<SpeechRecognitionError> create(const AtomicString&, const SpeechRecognitionErrorInit&);
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create(ErrorCode, const String&);
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create();
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create(const AtomicString&, const SpeechRecognitionErrorInit&);
 
     const String& error() { return m_error; }
     const String& message() { return m_message; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        Event::trace(visitor);
+    }
 
 private:
     SpeechRecognitionError(const String&, const String&);

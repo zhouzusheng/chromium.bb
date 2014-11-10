@@ -27,7 +27,7 @@
 
 #include "core/clipboard/Pasteboard.h"
 #include "core/events/Event.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/ColumnInfo.h"
@@ -259,7 +259,7 @@ static WebCore::IntRect getRubberbandRect(const WebCore::IntPoint& start, const 
     return rc;
 }
 
-void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, WebCore::Frame* frame, const WebCore::LayoutPoint& clientTopLeft)
+void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, WebCore::LocalFrame* frame, const WebCore::LayoutPoint& clientTopLeft)
 {
     frame->document()->updateLayout();
 
@@ -417,8 +417,8 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
 
         WTF::String text(renderText->text());
         for (WebCore::InlineTextBox* textBox = renderText->firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
-            LayoutUnit textBoxTop = textBox->root()->lineTop();
-            LayoutUnit textBoxHeight = textBox->root()->lineBottom() - textBoxTop;
+            LayoutUnit textBoxTop = textBox->root().lineTop();
+            LayoutUnit textBoxHeight = textBox->root().lineBottom() - textBoxTop;
             LayoutUnit textBoxLeft = textBox->x();
             LayoutUnit textBoxWidth = textBox->width();
 

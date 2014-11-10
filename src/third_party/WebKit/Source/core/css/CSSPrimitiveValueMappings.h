@@ -3492,15 +3492,15 @@ template<> inline CSSPrimitiveValue::operator FontWeight() const
     return FontWeightNormal;
 }
 
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontItalic italic)
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontStyle italic)
     : CSSValue(PrimitiveClass)
 {
     m_primitiveUnitType = CSS_VALUE_ID;
     switch (italic) {
-    case FontItalicOff:
+    case FontStyleNormal:
         m_value.valueID = CSSValueNormal;
         return;
-    case FontItalicOn:
+    case FontStyleItalic:
         m_value.valueID = CSSValueItalic;
         return;
     }
@@ -3509,32 +3509,32 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontItalic italic)
     m_value.valueID = CSSValueNormal;
 }
 
-template<> inline CSSPrimitiveValue::operator FontItalic() const
+template<> inline CSSPrimitiveValue::operator FontStyle() const
 {
     ASSERT(isValueID());
     switch (m_value.valueID) {
     case CSSValueOblique:
     // FIXME: oblique is the same as italic for the moment...
     case CSSValueItalic:
-        return FontItalicOn;
+        return FontStyleItalic;
     case CSSValueNormal:
-        return FontItalicOff;
+        return FontStyleNormal;
     default:
         break;
     }
     ASSERT_NOT_REACHED();
-    return FontItalicOff;
+    return FontStyleNormal;
 }
 
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontSmallCaps smallCaps)
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontVariant smallCaps)
     : CSSValue(PrimitiveClass)
 {
     m_primitiveUnitType = CSS_VALUE_ID;
     switch (smallCaps) {
-    case FontSmallCapsOff:
+    case FontVariantNormal:
         m_value.valueID = CSSValueNormal;
         return;
-    case FontSmallCapsOn:
+    case FontVariantSmallCaps:
         m_value.valueID = CSSValueSmallCaps;
         return;
     }
@@ -3543,19 +3543,19 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontSmallCaps smallCaps)
     m_value.valueID = CSSValueNormal;
 }
 
-template<> inline CSSPrimitiveValue::operator FontSmallCaps() const
+template<> inline CSSPrimitiveValue::operator FontVariant() const
 {
     ASSERT(isValueID());
     switch (m_value.valueID) {
     case CSSValueSmallCaps:
-        return FontSmallCapsOn;
+        return FontVariantSmallCaps;
     case CSSValueNormal:
-        return FontSmallCapsOff;
+        return FontVariantNormal;
     default:
         break;
     }
     ASSERT_NOT_REACHED();
-    return FontSmallCapsOff;
+    return FontVariantNormal;
 }
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TextRenderingMode e)
@@ -4087,71 +4087,6 @@ template<> inline CSSPrimitiveValue::operator ETransformStyle3D() const
 
     ASSERT_NOT_REACHED();
     return TransformStyle3DFlat;
-}
-
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnAxis e)
-    : CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_VALUE_ID;
-    switch (e) {
-    case HorizontalColumnAxis:
-        m_value.valueID = CSSValueHorizontal;
-        break;
-    case VerticalColumnAxis:
-        m_value.valueID = CSSValueVertical;
-        break;
-    case AutoColumnAxis:
-        m_value.valueID = CSSValueAuto;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator ColumnAxis() const
-{
-    ASSERT(isValueID());
-    switch (m_value.valueID) {
-    case CSSValueHorizontal:
-        return HorizontalColumnAxis;
-    case CSSValueVertical:
-        return VerticalColumnAxis;
-    case CSSValueAuto:
-        return AutoColumnAxis;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return AutoColumnAxis;
-}
-
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnProgression e)
-    : CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_VALUE_ID;
-    switch (e) {
-    case NormalColumnProgression:
-        m_value.valueID = CSSValueNormal;
-        break;
-    case ReverseColumnProgression:
-        m_value.valueID = CSSValueReverse;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator ColumnProgression() const
-{
-    ASSERT(isValueID());
-    switch (m_value.valueID) {
-    case CSSValueNormal:
-        return NormalColumnProgression;
-    case CSSValueReverse:
-        return ReverseColumnProgression;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return NormalColumnProgression;
 }
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(WrapFlow wrapFlow)
@@ -4712,6 +4647,8 @@ template<> inline CSSPrimitiveValue::operator TouchAction() const
         return TouchActionPanX;
     case CSSValuePanY:
         return TouchActionPanY;
+    case CSSValueManipulation:
+        return TouchActionPanX | TouchActionPanY | TouchActionPinchZoom;
     default:
         break;
     }

@@ -25,7 +25,7 @@
 #       Note that including an empty value in the list, as in [Attr=X||Y],
 #       is NOT valid: the value is optional, but empty values are not allowed.
 #     - "Attr=*" means that Attr takes a required value, which can be
-#       arbitrary and combinations thereof, e.g. [Attr=IndexedDB],
+#       arbitrary, and combinations thereof, e.g. [Attr=IndexedDB],
 #       [Attr=DeleteFunction], [Attr=X|Y].
 #     - "Attr=|*" means that Attr takes an optional value, which can be
 #       arbitrary, e.g. [Attr], [Attr=X].
@@ -47,7 +47,7 @@ ConstructorCallWith=ExecutionContext|Document
 Custom=|Getter|Setter|LegacyCallAsFunction|ToV8|VisitDOMWrapper|Wrap|PropertyGetter|PropertyEnumerator|PropertyQuery
 CustomConstructor
 CustomElementCallbacks
-Default=NullString|Undefined
+Default=Null|NullString|Undefined
 DependentLifetime
 DeprecateAs=*
 DoNotCheckConstants
@@ -60,6 +60,7 @@ WillBeGarbageCollected
 GlobalContext=Window|WorkerGlobalScope|SharedWorkerGlobalScope|DedicatedWorkerGlobalScope|ServiceWorkerGlobalScope
 Immutable
 ImplementedAs=*
+ImplementedInBaseClass
 InitializedByEventConstructor
 MeasureAs=*
 NamedConstructor=*
@@ -82,7 +83,7 @@ Replaceable
 # Valid values for [RuntimeEnabled] are the Runtime Enabled Features, listed in
 # Source/core/page/RuntimeEnabledFeatures.in
 RuntimeEnabled=*
-SetWrapperReferenceFrom=document|element|owner|ownerNode|virtualOwnerNode
+SetWrapperReferenceFrom=*
 SetWrapperReferenceTo=*
 SetterCallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow
 SpecialWrapFor=*

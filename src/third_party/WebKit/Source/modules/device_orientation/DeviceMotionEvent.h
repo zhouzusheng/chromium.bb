@@ -38,13 +38,13 @@ class DeviceRotationRate;
 class DeviceMotionEvent FINAL : public Event {
 public:
     virtual ~DeviceMotionEvent();
-    static PassRefPtr<DeviceMotionEvent> create()
+    static PassRefPtrWillBeRawPtr<DeviceMotionEvent> create()
     {
-        return adoptRef(new DeviceMotionEvent);
+        return adoptRefWillBeRefCountedGarbageCollected(new DeviceMotionEvent);
     }
-    static PassRefPtr<DeviceMotionEvent> create(const AtomicString& eventType, DeviceMotionData* deviceMotionData)
+    static PassRefPtrWillBeRawPtr<DeviceMotionEvent> create(const AtomicString& eventType, DeviceMotionData* deviceMotionData)
     {
-        return adoptRef(new DeviceMotionEvent(eventType, deviceMotionData));
+        return adoptRefWillBeRefCountedGarbageCollected(new DeviceMotionEvent(eventType, deviceMotionData));
     }
 
     void initDeviceMotionEvent(const AtomicString& type, bool bubbles, bool cancelable, DeviceMotionData*);
@@ -58,15 +58,16 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     DeviceMotionEvent();
     DeviceMotionEvent(const AtomicString& eventType, DeviceMotionData*);
 
-    RefPtrWillBePersistent<DeviceMotionData> m_deviceMotionData;
-
-    RefPtrWillBePersistent<DeviceAcceleration> m_acceleration;
-    RefPtrWillBePersistent<DeviceAcceleration> m_accelerationIncludingGravity;
-    RefPtrWillBePersistent<DeviceRotationRate> m_rotationRate;
+    RefPtrWillBeMember<DeviceMotionData> m_deviceMotionData;
+    RefPtrWillBeMember<DeviceAcceleration> m_acceleration;
+    RefPtrWillBeMember<DeviceAcceleration> m_accelerationIncludingGravity;
+    RefPtrWillBeMember<DeviceRotationRate> m_rotationRate;
 };
 
 DEFINE_TYPE_CASTS(DeviceMotionEvent, Event, event, event->interfaceName() == EventNames::DeviceMotionEvent, event.interfaceName() == EventNames::DeviceMotionEvent);

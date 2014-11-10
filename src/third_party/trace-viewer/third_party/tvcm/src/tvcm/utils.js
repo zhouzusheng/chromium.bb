@@ -21,7 +21,10 @@ tvcm.exportTo('tvcm', function() {
   }
 
   function instantiateTemplate(selector) {
-    return document.querySelector(selector).content.cloneNode(true);
+    var el = document.querySelector(selector);
+    if (!el)
+      throw new Error('Element not found');
+    return el.content.cloneNode(true);
   }
 
   function tracedFunction(fn, name, opt_this) {
@@ -91,6 +94,22 @@ tvcm.exportTo('tvcm', function() {
     }
   }
 
+  function getUsingPath(path, from_dict) {
+    var parts = path.split('.');
+    var cur = from_dict;
+
+    for (var part; parts.length && (part = parts.shift());) {
+      if (!parts.length) {
+        return cur[part];
+      } else if (part in cur) {
+        cur = cur[part];
+      } else {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
   return {
     addSingletonGetter: addSingletonGetter,
 
@@ -105,6 +124,8 @@ tvcm.exportTo('tvcm', function() {
 
     clamp: clamp,
     lerp: lerp,
-    deg2rad: deg2rad
+    deg2rad: deg2rad,
+
+    getUsingPath: getUsingPath
   };
 });

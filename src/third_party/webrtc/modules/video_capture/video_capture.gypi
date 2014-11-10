@@ -108,11 +108,14 @@
                 'ios/device_info_ios.mm',
                 'ios/device_info_ios_objc.h',
                 'ios/device_info_ios_objc.mm',
+                'ios/rtc_video_capture_ios_objc.h',
+                'ios/rtc_video_capture_ios_objc.mm',
                 'ios/video_capture_ios.h',
                 'ios/video_capture_ios.mm',
-                'ios/video_capture_ios_objc.h',
-                'ios/video_capture_ios_objc.mm',
               ],
+              'xcode_settings': {
+                'CLANG_ENABLE_OBJC_ARC': 'YES',
+              },
               'all_dependent_settings': {
                 'xcode_settings': {
                   'OTHER_LDFLAGS': [

@@ -181,8 +181,12 @@
         'services/broker_process.h',
         'services/init_process_reaper.cc',
         'services/init_process_reaper.h',
+        'services/scoped_process.cc',
+        'services/scoped_process.h',
         'services/thread_helpers.cc',
         'services/thread_helpers.h',
+        'services/yama.h',
+        'services/yama.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -253,40 +257,5 @@
     },
   ],
   'conditions': [
-    [ 'OS=="android"', {
-      'targets': [
-        {
-        'target_name': 'sandbox_linux_unittests_stripped',
-        'type': 'none',
-        'dependencies': [ 'sandbox_linux_unittests' ],
-        'actions': [{
-          'action_name': 'strip sandbox_linux_unittests',
-          'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
-          'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
-          'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
-          }],
-        }
-      ],
-    }],
-    # Strategy copied from base_unittests_apk in base/base.gyp.
-    [ 'OS=="android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-        'target_name': 'sandbox_linux_jni_unittests_apk',
-        'type': 'none',
-        'variables': {
-          'test_suite_name': 'sandbox_linux_jni_unittests',
-          'input_shlib_path':
-              '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)'
-              'sandbox_linux_jni_unittests'
-              '<(SHARED_LIB_SUFFIX)',
-        },
-        'dependencies': [
-          'sandbox_linux_jni_unittests',
-        ],
-        'includes': [ '../../build/apk_test.gypi' ],
-        }
-      ],
-    }],
   ],
 }

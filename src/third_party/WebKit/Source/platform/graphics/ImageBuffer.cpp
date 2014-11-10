@@ -33,6 +33,7 @@
 #include "config.h"
 #include "platform/graphics/ImageBuffer.h"
 
+#include "GrContext.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/BitmapImage.h"
@@ -47,6 +48,7 @@
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
 #include "platform/image-encoders/skia/WEBPImageEncoder.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebExternalTextureMailbox.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
 #include "third_party/skia/include/effects/SkTableColorFilter.h"
@@ -108,8 +110,8 @@ bool ImageBuffer::isValid() const
 static SkBitmap deepSkBitmapCopy(const SkBitmap& bitmap)
 {
     SkBitmap tmp;
-    if (!bitmap.deepCopyTo(&tmp, bitmap.config()))
-        bitmap.copyTo(&tmp, bitmap.config());
+    if (!bitmap.deepCopyTo(&tmp))
+        bitmap.copyTo(&tmp, bitmap.colorType());
 
     return tmp;
 }
@@ -138,22 +140,55 @@ bool ImageBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Pl
     if (!m_surface->isAccelerated() || !platformLayer() || !isValid())
         return false;
 
+    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, destType, level))
+        return false;
+
+    OwnPtr<blink::WebGraphicsContext3DProvider> provider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    if (!provider)
+        return false;
+    blink::WebGraphicsContext3D* sharedContext = provider->context3d();
+    if (!sharedContext || !sharedContext->makeContextCurrent())
+        return false;
+
+    OwnPtr<blink::WebExternalTextureMailbox> mailbox = adoptPtr(new blink::WebExternalTextureMailbox);
+
+    // Contexts may be in a different share group. We must transfer the texture through a mailbox first
+    sharedContext->genMailboxCHROMIUM(mailbox->name);
+    sharedContext->bindTexture(GL_TEXTURE_2D, getBackingTexture());
+    sharedContext->produceTextureCHROMIUM(GL_TEXTURE_2D, mailbox->name);
+    sharedContext->flush();
+
+    mailbox->syncPoint = sharedContext->insertSyncPoint();
+
     if (!context->makeContextCurrent())
         return false;
 
-    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, destType, level))
-        return false;
+    Platform3DObject sourceTexture = context->createTexture();
+
+    context->bindTexture(GL_TEXTURE_2D, sourceTexture);
+
+    context->waitSyncPoint(mailbox->syncPoint);
+    context->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox->name);
 
     // The canvas is stored in a premultiplied format, so unpremultiply if necessary.
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, !premultiplyAlpha);
 
     // The canvas is stored in an inverted position, so the flip semantics are reversed.
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, !flipY);
-    context->copyTextureCHROMIUM(GL_TEXTURE_2D, getBackingTexture(), texture, level, internalFormat, destType);
+    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, level, internalFormat, destType);
 
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, false);
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
+
+    context->bindTexture(GL_TEXTURE_2D, 0);
+    context->deleteTexture(sourceTexture);
+
     context->flush();
+    sharedContext->waitSyncPoint(context->insertSyncPoint());
+
+    // Undo grContext texture binding changes introduced in this function
+    provider->grContext()->resetContext(kTextureBinding_GrGLBackendState);
+
     return true;
 }
 
@@ -184,8 +219,7 @@ bool ImageBuffer::copyRenderingResultsFromDrawingBuffer(DrawingBuffer* drawingBu
         GL_UNSIGNED_BYTE, 0, true, false);
 }
 
-void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect,
-    CompositeOperator op, blink::WebBlendMode blendMode, bool useLowQualityScale)
+void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator op, blink::WebBlendMode blendMode)
 {
     if (!isValid())
         return;
@@ -200,7 +234,7 @@ void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, cons
 
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
 
-    context->drawImage(image.get(), destRect, srcRect, op, blendMode, DoNotRespectImageOrientation, useLowQualityScale);
+    context->drawImage(image.get(), destRect, srcRect, op, blendMode, DoNotRespectImageOrientation);
 }
 
 void ImageBuffer::flush()
@@ -235,7 +269,7 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
     if (bitmap.isNull())
         return;
 
-    ASSERT(bitmap.config() == SkBitmap::kARGB_8888_Config);
+    ASSERT(bitmap.colorType() == kPMColor_SkColorType);
     IntSize size = m_surface->size();
     SkAutoLockPixels bitmapLock(bitmap);
     for (int y = 0; y < size.height(); ++y) {
@@ -256,7 +290,7 @@ PassRefPtr<SkColorFilter> ImageBuffer::createColorSpaceFilter(ColorSpace srcColo
 {
     const uint8_t* lut = ColorSpaceUtilities::getConversionLUT(dstColorSpace, srcColorSpace);
     if (!lut)
-        return 0;
+        return nullptr;
 
     return adoptRef(SkTableColorFilter::CreateARGB(0, lut, lut, lut));
 }
@@ -266,11 +300,9 @@ PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext*
 {
     float area = 4.0f * rect.width() * rect.height();
     if (area > static_cast<float>(std::numeric_limits<int>::max()))
-        return 0;
+        return nullptr;
 
     RefPtr<Uint8ClampedArray> result = Uint8ClampedArray::createUninitialized(rect.width() * rect.height() * 4);
-
-    unsigned char* data = result->data();
 
     if (rect.x() < 0
         || rect.y() < 0
@@ -278,18 +310,10 @@ PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext*
         || rect.maxY() > size.height())
         result->zeroFill();
 
-    unsigned destBytesPerRow = 4 * rect.width();
-    SkBitmap destBitmap;
-    destBitmap.setConfig(SkBitmap::kARGB_8888_Config, rect.width(), rect.height(), destBytesPerRow);
-    destBitmap.setPixels(data);
+    SkAlphaType alphaType = (multiplied == Premultiplied) ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
+    SkImageInfo info = SkImageInfo::Make(rect.width(), rect.height(), kRGBA_8888_SkColorType, alphaType);
 
-    SkCanvas::Config8888 config8888;
-    if (multiplied == Premultiplied)
-        config8888 = SkCanvas::kRGBA_Premul_Config8888;
-    else
-        config8888 = SkCanvas::kRGBA_Unpremul_Config8888;
-
-    context->readPixels(&destBitmap, rect.x(), rect.y(), config8888);
+    context->readPixels(info, result->data(), 4 * rect.width(), rect.x(), rect.y());
     return result.release();
 }
 
@@ -322,11 +346,6 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
     ASSERT(originX >= 0);
     ASSERT(originX < sourceRect.maxX());
 
-    int endX = destPoint.x() + sourceRect.maxX();
-    ASSERT(endX <= m_surface->size().width());
-
-    int numColumns = endX - destX;
-
     int originY = sourceRect.y();
     int destY = destPoint.y() + sourceRect.y();
     ASSERT(destY >= 0);
@@ -334,22 +353,12 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
     ASSERT(originY >= 0);
     ASSERT(originY < sourceRect.maxY());
 
-    int endY = destPoint.y() + sourceRect.maxY();
-    ASSERT(endY <= m_surface->size().height());
-    int numRows = endY - destY;
+    const size_t srcBytesPerRow = 4 * sourceSize.width();
+    const void* srcAddr = source->data() + originY * srcBytesPerRow + originX * 4;
+    const SkAlphaType alphaType = (multiplied == Premultiplied) ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
+    SkImageInfo info = SkImageInfo::Make(sourceRect.width(), sourceRect.height(), kRGBA_8888_SkColorType, alphaType);
 
-    unsigned srcBytesPerRow = 4 * sourceSize.width();
-    SkBitmap srcBitmap;
-    srcBitmap.setConfig(SkBitmap::kARGB_8888_Config, numColumns, numRows, srcBytesPerRow);
-    srcBitmap.setPixels(source->data() + originY * srcBytesPerRow + originX * 4);
-
-    SkCanvas::Config8888 config8888;
-    if (multiplied == Premultiplied)
-        config8888 = SkCanvas::kRGBA_Premul_Config8888;
-    else
-        config8888 = SkCanvas::kRGBA_Unpremul_Config8888;
-
-    context()->writePixels(srcBitmap, destX, destY, config8888);
+    context()->writePixels(info, srcAddr, srcBytesPerRow, destX, destY);
 }
 
 template <typename T>

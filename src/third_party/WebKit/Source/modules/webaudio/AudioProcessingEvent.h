@@ -36,8 +36,8 @@ class AudioBuffer;
 
 class AudioProcessingEvent FINAL : public Event {
 public:
-    static PassRefPtr<AudioProcessingEvent> create();
-    static PassRefPtr<AudioProcessingEvent> create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer);
+    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create();
+    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer);
 
     virtual ~AudioProcessingEvent();
 
@@ -45,6 +45,8 @@ public:
     AudioBuffer* outputBuffer() { return m_outputBuffer.get(); }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     AudioProcessingEvent();

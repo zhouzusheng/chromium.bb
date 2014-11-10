@@ -46,7 +46,6 @@ enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
     WebCryptoAlgorithmIdRsaEsPkcs1v1_5,
     WebCryptoAlgorithmIdSha1,
-    WebCryptoAlgorithmIdSha224,
     WebCryptoAlgorithmIdSha256,
     WebCryptoAlgorithmIdSha384,
     WebCryptoAlgorithmIdSha512,
@@ -55,7 +54,7 @@ enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdAesCtr,
     WebCryptoAlgorithmIdAesKw,
 #if INSIDE_BLINK
-    NumberOfWebCryptoAlgorithmId,
+    WebCryptoAlgorithmIdLast = WebCryptoAlgorithmIdAesKw,
 #endif
 };
 
@@ -63,10 +62,11 @@ enum WebCryptoAlgorithmParamsType {
     WebCryptoAlgorithmParamsTypeNone,
     WebCryptoAlgorithmParamsTypeAesCbcParams,
     WebCryptoAlgorithmParamsTypeAesKeyGenParams,
-    WebCryptoAlgorithmParamsTypeHmacParams,
-    WebCryptoAlgorithmParamsTypeHmacKeyParams,
-    WebCryptoAlgorithmParamsTypeRsaSsaParams,
+    WebCryptoAlgorithmParamsTypeHmacImportParams,
+    WebCryptoAlgorithmParamsTypeHmacKeyGenParams,
     WebCryptoAlgorithmParamsTypeRsaKeyGenParams,
+    WebCryptoAlgorithmParamsTypeRsaHashedKeyGenParams,
+    WebCryptoAlgorithmParamsTypeRsaHashedImportParams,
     WebCryptoAlgorithmParamsTypeAesGcmParams,
     WebCryptoAlgorithmParamsTypeRsaOaepParams,
     WebCryptoAlgorithmParamsTypeAesCtrParams,
@@ -74,13 +74,14 @@ enum WebCryptoAlgorithmParamsType {
 
 class WebCryptoAesCbcParams;
 class WebCryptoAesKeyGenParams;
-class WebCryptoHmacParams;
-class WebCryptoHmacKeyParams;
-class WebCryptoRsaSsaParams;
+class WebCryptoHmacImportParams;
+class WebCryptoHmacKeyGenParams;
 class WebCryptoRsaKeyGenParams;
 class WebCryptoAesGcmParams;
 class WebCryptoRsaOaepParams;
 class WebCryptoAesCtrParams;
+class WebCryptoRsaHashedKeyGenParams;
+class WebCryptoRsaHashedImportParams;
 
 class WebCryptoAlgorithmParams;
 class WebCryptoAlgorithmPrivate;
@@ -121,13 +122,17 @@ public:
     // type of parameters. Retrieving an invalid parameter will return 0.
     BLINK_PLATFORM_EXPORT const WebCryptoAesCbcParams* aesCbcParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesKeyGenParams* aesKeyGenParams() const;
-    BLINK_PLATFORM_EXPORT const WebCryptoHmacParams* hmacParams() const;
-    BLINK_PLATFORM_EXPORT const WebCryptoHmacKeyParams* hmacKeyParams() const;
-    BLINK_PLATFORM_EXPORT const WebCryptoRsaSsaParams* rsaSsaParams() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoHmacImportParams* hmacImportParams() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoHmacKeyGenParams* hmacKeyGenParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoRsaKeyGenParams* rsaKeyGenParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesGcmParams* aesGcmParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoRsaOaepParams* rsaOaepParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesCtrParams* aesCtrParams() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoRsaHashedImportParams* rsaHashedImportParams() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoRsaHashedKeyGenParams* rsaHashedKeyGenParams() const;
+
+    // Returns true if the provided algorithm ID is for a hash (in other words, SHA-*)
+    BLINK_PLATFORM_EXPORT static bool isHash(WebCryptoAlgorithmId);
 
 private:
     BLINK_PLATFORM_EXPORT void assign(const WebCryptoAlgorithm& other);

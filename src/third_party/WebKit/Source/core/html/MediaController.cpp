@@ -55,7 +55,6 @@ MediaController::MediaController(ExecutionContext* context)
     , m_playbackState(WAITING)
     , m_asyncEventTimer(this, &MediaController::asyncEventTimerFired)
     , m_clearPositionTimer(this, &MediaController::clearPositionTimerFired)
-    , m_closedCaptionsVisible(false)
     , m_clock(Clock::create())
     , m_executionContext(context)
     , m_timeupdateTimer(this, &MediaController::timeupdateTimerFired)
@@ -153,7 +152,7 @@ double MediaController::currentTime() const
     if (m_position == MediaPlayer::invalidTime()) {
         // Some clocks may return times outside the range of [0..duration].
         m_position = max(0.0, min(duration(), m_clock->currentTime()));
-        m_clearPositionTimer.startOneShot(0);
+        m_clearPositionTimer.startOneShot(0, FROM_HERE);
     }
 
     return m_position;
@@ -161,6 +160,12 @@ double MediaController::currentTime() const
 
 void MediaController::setCurrentTime(double time, ExceptionState& exceptionState)
 {
+    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
+    if (!std::isfinite(time)) {
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(time));
+        return;
+    }
+
     // When the user agent is to seek the media controller to a particular new playback position,
     // it must follow these steps:
     // If the new playback position is less than zero, then set it to zero.
@@ -219,8 +224,14 @@ void MediaController::pause()
     reportControllerState();
 }
 
-void MediaController::setDefaultPlaybackRate(double rate)
+void MediaController::setDefaultPlaybackRate(double rate, ExceptionState& exceptionState)
 {
+    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
+    if (!std::isfinite(rate)) {
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(rate));
+        return;
+    }
+
     if (m_defaultPlaybackRate == rate)
         return;
 
@@ -237,8 +248,14 @@ double MediaController::playbackRate() const
     return m_clock->playRate();
 }
 
-void MediaController::setPlaybackRate(double rate)
+void MediaController::setPlaybackRate(double rate, ExceptionState& exceptionState)
 {
+    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
+    if (!std::isfinite(rate)) {
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(rate));
+        return;
+    }
+
     if (m_clock->playRate() == rate)
         return;
 
@@ -255,13 +272,19 @@ void MediaController::setPlaybackRate(double rate)
 
 void MediaController::setVolume(double level, ExceptionState& exceptionState)
 {
+    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
+    if (!std::isfinite(level)) {
+        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(level));
+        return;
+    }
+
     if (m_volume == level)
         return;
 
     // If the new value is outside the range 0.0 to 1.0 inclusive, then, on setting, an
     // IndexSizeError exception must be raised instead.
     if (level < 0 || level > 1) {
-        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::failedToSet("volume", "MediaController", "The value provided (" + String::number(level) + ") is not in the range [0.0, 1.0]."));
+        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexOutsideRange("volume", level, 0.0, ExceptionMessages::InclusiveBound, 1.0, ExceptionMessages::InclusiveBound));
         return;
     }
 
@@ -486,20 +509,51 @@ void MediaController::bringElementUpToSpeed(HTMLMediaElement* element)
     element->seek(currentTime(), IGNORE_EXCEPTION);
 }
 
+bool MediaController::isRestrained() const
+{
+    ASSERT(!m_mediaElements.isEmpty());
+
+    // A MediaController is a restrained media controller if the MediaController is a playing media
+    // controller,
+    if (m_paused)
+        return false;
+
+    bool anyAutoplayingAndPaused = false;
+    bool allPaused = true;
+    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
+        HTMLMediaElement* element = m_mediaElements[index];
+
+        // and none of its slaved media elements are blocked media elements,
+        if (element->isBlocked())
+            return false;
+
+        if (element->isAutoplaying() && element->paused())
+            anyAutoplayingAndPaused = true;
+
+        if (!element->paused())
+            allPaused = false;
+    }
+
+    // but either at least one of its slaved media elements whose autoplaying flag is true still has
+    // its paused attribute set to true, or, all of its slaved media elements have their paused
+    // attribute set to true.
+    return anyAutoplayingAndPaused || allPaused;
+}
+
 bool MediaController::isBlocked() const
 {
+    ASSERT(!m_mediaElements.isEmpty());
+
     // A MediaController is a blocked media controller if the MediaController is a paused media
     // controller,
     if (m_paused)
         return true;
 
-    if (m_mediaElements.isEmpty())
-        return false;
-
     bool allPaused = true;
     for (size_t index = 0; index < m_mediaElements.size(); ++index) {
         HTMLMediaElement* element = m_mediaElements[index];
-        //  or if any of its slaved media elements are blocked media elements,
+
+        // or if any of its slaved media elements are blocked media elements,
         if (element->isBlocked())
             return true;
 
@@ -539,7 +593,7 @@ void MediaController::scheduleEvent(const AtomicString& eventName)
 {
     m_pendingEvents.append(Event::createCancelable(eventName));
     if (!m_asyncEventTimer.isActive())
-        m_asyncEventTimer.startOneShot(0);
+        m_asyncEventTimer.startOneShot(0, FROM_HERE);
 }
 
 void MediaController::asyncEventTimerFired(Timer<MediaController>*)
@@ -566,59 +620,6 @@ bool MediaController::hasAudio() const
     return false;
 }
 
-bool MediaController::hasVideo() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasVideo())
-            return true;
-    }
-    return false;
-}
-
-bool MediaController::hasClosedCaptions() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasClosedCaptions())
-            return true;
-    }
-    return false;
-}
-
-void MediaController::setClosedCaptionsVisible(bool visible)
-{
-    m_closedCaptionsVisible = visible;
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->setClosedCaptionsVisible(visible);
-}
-
-void MediaController::beginScrubbing()
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->beginScrubbing();
-    if (m_playbackState == PLAYING)
-        m_clock->stop();
-}
-
-void MediaController::endScrubbing()
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->endScrubbing();
-    if (m_playbackState == PLAYING)
-        m_clock->start();
-}
-
-bool MediaController::canPlay() const
-{
-    if (m_paused)
-        return true;
-
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->canPlay())
-            return false;
-    }
-    return true;
-}
-
 const AtomicString& MediaController::interfaceName() const
 {
     return EventTargetNames::MediaController;
@@ -633,7 +634,7 @@ void MediaController::startTimeupdateTimer()
     if (m_timeupdateTimer.isActive())
         return;
 
-    m_timeupdateTimer.startRepeating(maxTimeupdateEventFrequency);
+    m_timeupdateTimer.startRepeating(maxTimeupdateEventFrequency, FROM_HERE);
 }
 
 void MediaController::timeupdateTimerFired(Timer<MediaController>*)

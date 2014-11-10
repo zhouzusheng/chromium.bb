@@ -114,14 +114,13 @@ static inline void appendArc(Vector<FloatPoint>& vertices, const FloatPoint& arc
 {
     float startAngle = atan2(startArcVertex.y() - arcCenter.y(), startArcVertex.x() - arcCenter.x());
     float endAngle = atan2(endArcVertex.y() - arcCenter.y(), endArcVertex.x() - arcCenter.x());
-    const float twoPI = piFloat * 2;
     if (startAngle < 0)
-        startAngle += twoPI;
+        startAngle += twoPiFloat;
     if (endAngle < 0)
-        endAngle += twoPI;
-    float angle = (startAngle > endAngle) ? (startAngle - endAngle) : (startAngle + twoPI - endAngle);
+        endAngle += twoPiFloat;
+    float angle = (startAngle > endAngle) ? (startAngle - endAngle) : (startAngle + twoPiFloat - endAngle);
     const float arcSegmentCount = 6; // An even number so that one arc vertex will be eactly arcRadius from arcCenter.
-    float arcSegmentAngle =  ((padding) ? -angle : twoPI - angle) / arcSegmentCount;
+    float arcSegmentAngle =  ((padding) ? -angle : twoPiFloat - angle) / arcSegmentCount;
 
     vertices.append(startArcVertex);
     for (unsigned i = 1; i < arcSegmentCount; ++i) {
@@ -369,8 +368,8 @@ void PolygonShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logica
     if (polygon.isEmpty())
         return;
 
-    float y1 = logicalTop;
-    float y2 = logicalTop + logicalHeight;
+    float y1 = logicalTop.toFloat();
+    float y2 = (logicalTop + logicalHeight).toFloat();
 
     FloatShapeIntervals y1XIntervals, y2XIntervals;
     computeXIntersections(polygon, y1, true, y1XIntervals);
@@ -397,8 +396,8 @@ void PolygonShape::getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logica
     if (polygon.isEmpty())
         return;
 
-    float y1 = logicalTop;
-    float y2 = logicalTop + logicalHeight;
+    float y1 = logicalTop.toFloat();
+    float y2 = (logicalTop + logicalHeight).toFloat();
 
     FloatShapeIntervals y1XIntervals, y2XIntervals;
     computeXIntersections(polygon, y1, true, y1XIntervals);
@@ -445,7 +444,7 @@ static inline bool aboveOrToTheLeft(const FloatRect& r1, const FloatRect& r2)
 
 bool PolygonShape::firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const FloatSize& minLogicalIntervalSize, LayoutUnit& result) const
 {
-    float minIntervalTop = minLogicalIntervalTop;
+    float minIntervalTop = minLogicalIntervalTop.toFloat();
     float minIntervalHeight = minLogicalIntervalSize.height();
     float minIntervalWidth = minLogicalIntervalSize.width();
 

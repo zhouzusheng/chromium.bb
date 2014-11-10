@@ -97,6 +97,7 @@ private:
     virtual void setActive(bool = true) OVERRIDE FINAL;
     virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE FINAL;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE FINAL;
     virtual bool canStartSelection() const OVERRIDE FINAL;
     virtual short tabIndex() const OVERRIDE FINAL;
     virtual bool draggable() const OVERRIDE FINAL;
@@ -139,8 +140,6 @@ inline LinkHash HTMLAnchorElement::visitedLinkHash() const
 
 bool isEnterKeyKeydownEvent(Event*);
 bool isLinkClick(Event*);
-
-DEFINE_NODE_TYPE_CASTS(HTMLAnchorElement, hasTagName(HTMLNames::aTag));
 
 } // namespace WebCore
 

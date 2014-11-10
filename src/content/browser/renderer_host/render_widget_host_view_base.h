@@ -66,6 +66,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void OnDidFlushInput() OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
+  virtual void SetRubberbandRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void HideRubberbandRect() OVERRIDE;
   virtual void SetPopupType(blink::WebPopupType popup_type) OVERRIDE;
   virtual blink::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*

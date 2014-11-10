@@ -324,6 +324,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitUserDrag,
     CSSPropertyWebkitUserModify,
     CSSPropertyWebkitUserSelect,
+    CSSPropertyBbRubberbandable,
     CSSPropertyWebkitWritingMode,
     CSSPropertyWebkitAppRegion,
     CSSPropertyWebkitWrapFlow,
@@ -2528,6 +2529,8 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
             return cssValuePool().createValue(style->userDrag());
         case CSSPropertyWebkitUserSelect:
             return cssValuePool().createValue(style->userSelect());
+        case CSSPropertyBbRubberbandable:
+            return cssValuePool().createValue(style->rubberbandable());
         case CSSPropertyBorderBottomLeftRadius:
             return valueForBorderRadiusCorner(style->borderBottomLeftRadius(), *style);
         case CSSPropertyBorderBottomRightRadius:

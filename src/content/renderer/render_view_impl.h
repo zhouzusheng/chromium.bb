@@ -493,6 +493,8 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebGestureEvent& event,
       const blink::WebVector<blink::WebRect>& target_rects);
 #endif
+  virtual void setRubberbandRect(const blink::WebRect&);
+  virtual void hideRubberbandRect();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
@@ -946,6 +948,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnUpdateTargetURLAck();
   void OnUpdateWebPreferences(const WebPreferences& prefs);
   void OnZoom(PageZoom zoom);
+  void OnEnableAltDragRubberbanding(bool enable);
   void OnEnableViewSourceMode();
   void OnDisownOpener();
   void OnWindowSnapshotCompleted(const int snapshot_id,

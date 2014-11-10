@@ -409,6 +409,7 @@ transform-style
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
+-bb-rubberbandable
 -webkit-shape-outside alias_for=shape-outside
 -webkit-shape-margin alias_for=shape-margin
 -webkit-shape-padding alias_for=shape-padding

@@ -1725,7 +1725,7 @@ void RenderBlock::markForPaginationRelayoutIfNeeded(SubtreeLayoutScope& layoutSc
     if (needsLayout())
         return;
 
-    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(*this, logicalTop()) != pageLogicalOffset()) || (view()->layoutState()->m_columnInfo && view()->layoutState()->m_columnInfo->spanningHeaderSizeChanged()))
+    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(*this, logicalTop()) != pageLogicalOffset()) || (view()->layoutState()->columnInfo() && view()->layoutState()->columnInfo()->spanningHeaderSizeChanged()))
         layoutScope.setChildNeedsLayout(this);
 }
 
@@ -4601,8 +4601,8 @@ LayoutUnit RenderBlock::nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundar
     // The logicalOffset is in our coordinate space.  We can add in our pushed offset.
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset);
     LayoutUnit spanningHeaderHeight = 0;
-    if (view()->layoutState()->m_columnInfo) {
-        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
         LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
         unsigned nextColumn = (totalOffset + remainingLogicalHeight + 1) / pageLogicalHeight;
         if (nextColumn < colInfo->spanningHeaderColumnCount()) {
@@ -4678,8 +4678,8 @@ LayoutUnit RenderBlock::adjustForUnsplittableChild(RenderBox* child, LayoutUnit 
         return logicalOffset;
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
     LayoutUnit spanningHeaderHeight = 0;
-    if (view()->layoutState()->m_columnInfo) {
-        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
         LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
         unsigned currentColumn = (totalOffset + childLogicalHeight) / pageLogicalHeight;
         if (currentColumn < colInfo->spanningHeaderColumnCount()) {
@@ -4771,8 +4771,8 @@ void RenderBlock::adjustLinePositionForPagination(RootInlineBox* lineBox, Layout
         return;
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
     LayoutUnit spanningHeaderHeight = 0;
-    if (view()->layoutState()->m_columnInfo) {
-        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
         LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
         unsigned currentColumn = (totalOffset + lineHeight) / pageLogicalHeight;
         if (currentColumn < colInfo->spanningHeaderColumnCount()) {

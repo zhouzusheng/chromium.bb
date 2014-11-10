@@ -639,7 +639,7 @@ static LayoutUnit shezOffsetFromLogicalTopOfFirstPage(LayoutState* layoutState)
 {
     ASSERT(layoutState);
     ASSERT(layoutState->isPaginated());
-    LayoutSize offsetDelta = layoutState->m_layoutOffset - layoutState->m_pageOffset;
+    LayoutSize offsetDelta = layoutState->layoutOffset() - layoutState->pageOffset();
     return offsetDelta.height();
 }
 
@@ -647,7 +647,7 @@ static LayoutUnit shezPageRemainingLogicalHeightForOffset(LayoutState* layoutSta
 {
     offset += shezOffsetFromLogicalTopOfFirstPage(layoutState);
 
-    LayoutUnit pageLogicalHeight = layoutState->m_pageLogicalHeight;
+    LayoutUnit pageLogicalHeight = layoutState->pageLogicalHeight();
     LayoutUnit remainingHeight = pageLogicalHeight - intMod(offset, pageLogicalHeight);
 
     // If includeBoundaryPoint is true the line exactly on the top edge of a

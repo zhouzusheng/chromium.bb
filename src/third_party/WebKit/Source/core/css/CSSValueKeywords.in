@@ -622,6 +622,14 @@ continuous
 skip-white-space
 
 //
+// CSS_PROP_BB_RUBBERBANDABLE
+//
+// auto
+// none
+// text
+text-with-leading-tab
+
+//
 // CSS_PROP_WORD_BREAK
 //
 break-all

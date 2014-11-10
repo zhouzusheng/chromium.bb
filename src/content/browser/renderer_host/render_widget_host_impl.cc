@@ -507,6 +507,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
                         OnCompositorSurfaceBuffersSwapped)
 #endif
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SetRubberbandRect, OnSetRubberbandRect)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_HideRubberbandRect, OnHideRubberbandRect)
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
@@ -1309,6 +1311,14 @@ void RenderWidgetHostImpl::OnSnapshot(bool success,
   }
 
   callback.Run(success, bitmap);
+}
+
+void RenderWidgetHostImpl::OnSetRubberbandRect(const gfx::Rect& rect) {
+  view_->SetRubberbandRect(rect);
+}
+
+void RenderWidgetHostImpl::OnHideRubberbandRect() {
+  view_->HideRubberbandRect();
 }
 
 void RenderWidgetHostImpl::UpdateVSyncParameters(base::TimeTicks timebase,

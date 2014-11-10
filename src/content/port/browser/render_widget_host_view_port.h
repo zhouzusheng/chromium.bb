@@ -312,6 +312,10 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) = 0;
 
+  // Show/hide a rubberband rect
+  virtual void SetRubberbandRect(const gfx::Rect& rect) = 0;
+  virtual void HideRubberbandRect() = 0;
+
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) = 0;
 

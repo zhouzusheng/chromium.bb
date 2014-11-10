@@ -239,6 +239,7 @@ transform-style name_for_methods=TransformStyle3D
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
+-bb-rubberbandable name_for_methods=Rubberbandable
 -webkit-wrap-flow type_name=WrapFlow
 -webkit-wrap-through type_name=WrapThrough
 

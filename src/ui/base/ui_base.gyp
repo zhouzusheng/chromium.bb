@@ -306,6 +306,8 @@
         'win/message_box_win.h',
         'win/mouse_wheel_util.cc',
         'win/mouse_wheel_util.h',
+        'win/rubberband_windows.cc',
+        'win/rubberband_windows.h',
         'win/scoped_ole_initializer.cc',
         'win/scoped_ole_initializer.h',
         'win/shell.cc',

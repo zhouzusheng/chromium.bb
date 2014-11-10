@@ -358,7 +358,7 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
     // Check spelling of one word
     RefPtr<Range> misspellingRange;
     VisiblePosition checkStartPos = startOfWord(wordStart, LeftWordIfOnBoundary);
-    VisiblePosition checkEndPos = selectionAfterTyping.start();
+    VisiblePosition checkEndPos = selectionAfterTyping.visibleStart();
     markMisspellings(VisibleSelection(checkStartPos, checkEndPos), misspellingRange);
 
     // Autocorrect the misspelled word.
@@ -378,8 +378,8 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
         // Extend the selection to include the space that was typed.  This is so that the user
         // can continue typing after undo then right-arrow.
         int positionsAfterMisspelling = 0;
-        VisiblePosition extent = newSelection.extent();
-        VisiblePosition desiredExtent = selectionAfterTyping.start();
+        VisiblePosition extent = newSelection.visibleExtent();
+        VisiblePosition desiredExtent = selectionAfterTyping.visibleStart();
         // Do a sanity check to verify that the misspelled range comes before the desired extent.
         if (0 > comparePositions(extent.deepEquivalent(), desiredExtent.deepEquivalent())) {
             while (extent != desiredExtent) {

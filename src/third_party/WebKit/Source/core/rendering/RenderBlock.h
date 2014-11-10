@@ -341,6 +341,10 @@ protected:
     virtual bool isInlineBlockOrInlineTable() const OVERRIDE FINAL { return isInline() && isReplaced(); }
 
 private:
+    LayoutUnit adjustLogicalTopForSpanningHeader(RenderBox* child,
+                                                 ColumnInfo* colInfo,
+                                                 LayoutUnit logicalTop);
+
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
 

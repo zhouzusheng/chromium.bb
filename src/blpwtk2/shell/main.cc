@@ -44,6 +44,7 @@ int g_autoCorrectBehavior;
 std::set<std::string> g_languages;
 std::string g_url;
 std::string g_dataDir;
+std::string g_dictDir;
 bool g_no_disk_cache = false;
 bool g_no_disk_cookies = false;
 bool g_in_process_renderer = false;
@@ -807,6 +808,10 @@ HANDLE spawnProcess()
         cmdline.append(" --data-dir=");
         cmdline.append(g_dataDir);
     }
+    if (!g_dictDir.empty()) {
+        cmdline.append(" --dict-dir=");
+        cmdline.append(g_dictDir);
+    }
     if (g_no_disk_cache) {
         cmdline.append(" --no-disk-cache");
     }
@@ -943,6 +948,11 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
                 sprintf_s(buf, sizeof(buf), "%S", argv[i]+11);
                 g_dataDir = buf;
             }
+            else if (0 == wcsncmp(L"--dict-dir=", argv[i], 11)) {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i] + 11);
+                g_dictDir = buf;
+            }
             else if (0 == wcscmp(L"--no-disk-cache", argv[i])) {
                 g_no_disk_cache = true;
             }
@@ -994,6 +1004,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         toolkitParams.disablePluginDiscovery();
     }
 
+    toolkitParams.setDictionaryPath(g_dictDir);
     g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
 
     if (isHost) {

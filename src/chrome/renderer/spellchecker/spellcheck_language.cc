@@ -124,3 +124,7 @@ bool SpellcheckLanguage::IsEnabled() {
   DCHECK(platform_spelling_engine_.get());
   return platform_spelling_engine_->IsEnabled();
 }
+
+UScriptCode SpellcheckLanguage::GetScriptCode() const {
+  return character_attributes_.GetScriptCode();
+}

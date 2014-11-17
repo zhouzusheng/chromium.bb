@@ -181,6 +181,8 @@
         'private/blpwtk2_inprocessresourceloaderbridge.h',
         'private/blpwtk2_ipcparamtraits.cc',
         'private/blpwtk2_ipcparamtraits.h',
+        'private/blpwtk2_jswidget.cc',
+        'private/blpwtk2_jswidget.h',
         'private/blpwtk2_mainmessagepump.cc',
         'private/blpwtk2_mainmessagepump.h',
         'private/blpwtk2_managedrenderprocesshost.cc',

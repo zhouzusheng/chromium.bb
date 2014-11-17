@@ -48,6 +48,9 @@ class SpellcheckLanguage {
   // Return true if the underlying spellcheck engine is enabled.
   bool IsEnabled();
 
+  // Returns the script code the language is based on
+  UScriptCode GetScriptCode() const;
+
  private:
   friend class SpellCheckTest;
 

@@ -32,6 +32,7 @@
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <ui/gl/gl_implementation.h>
+#include <ui/views/corewm/tooltip_win.h>
 
 namespace blpwtk2 {
 
@@ -83,6 +84,8 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::threadMode = params.threadMode();
     Statics::pumpMode = params.pumpMode();
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
+
+    views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
 
     DCHECK(!Statics::inProcessResourceLoader ||
             Statics::isRendererMainThreadMode());

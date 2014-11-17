@@ -23,6 +23,7 @@
 #include <blpwtk2_contentrendererclientimpl.h>
 
 #include <blpwtk2_inprocessresourceloaderbridge.h>
+#include <blpwtk2_jswidget.h>
 #include <blpwtk2_renderviewobserverimpl.h>
 #include <blpwtk2_resourceloader.h>
 #include <blpwtk2_statics.h>
@@ -37,6 +38,7 @@
 #include <net/base/net_errors.h>
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
+#include <third_party/WebKit/public/web/WebPluginParams.h>
 
 namespace blpwtk2 {
 
@@ -135,9 +137,23 @@ ContentRendererClientImpl::OverrideResourceLoaderBridge(
     if (!Statics::inProcessResourceLoader ||
         !Statics::inProcessResourceLoader->canHandleURL(url))
     {
-        return false;
+        return nullptr;
     }
     return new InProcessResourceLoaderBridge(request_info);
+}
+
+bool ContentRendererClientImpl::OverrideCreatePlugin(
+    content::RenderFrame* render_frame,
+    blink::WebFrame* frame,
+    const blink::WebPluginParams& params,
+    blink::WebPlugin** plugin)
+{
+    if (base::UTF16ToASCII(params.mimeType) != "application/x-bloomberg-jswidget") {
+        return false;
+    }
+
+    *plugin = new JsWidget(frame);
+    return true;
 }
 
 }  // close namespace blpwtk2

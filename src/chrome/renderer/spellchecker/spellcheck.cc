@@ -213,10 +213,11 @@ void SpellCheck::Init(const std::vector<FileLanguagePair>& languages,
 
   for (size_t langIndex = 0; langIndex < langCount; langIndex++) {
     SpellcheckLanguage *language = new SpellcheckLanguage();
-    spellcheck_.push_back(language);
     const FileLanguagePair& flp = languages[langIndex];
     language->Init(IPC::PlatformFileForTransitToFile(flp.first),
                    flp.second);
+
+    spellcheck_[language->GetScriptCode()].push_back(language);
   }
 
   custom_dictionary_.Init(custom_words);
@@ -228,6 +229,91 @@ void SpellCheck::Init(const std::vector<FileLanguagePair>& languages,
     base::string16 badWord = base::UTF8ToUTF16(it->first);
     autocorrect_words_[badWord] = base::UTF8ToUTF16(it->second);
   }
+}
+
+bool SpellCheck::SpellCheckWordInScript(
+    const ScopedVector<SpellcheckLanguage>& languages,
+    const base::char16* in_word,
+    int in_word_len,
+    int tag,
+    int* misspelling_start,
+    int* misspelling_len,
+    bool checkForContractions,
+    std::set<base::string16>* suggestions_set) {
+  DCHECK(in_word_len >= 0);
+  DCHECK(misspelling_start && misspelling_len) << "Out vars must be given.";
+
+  *misspelling_start = *misspelling_len = 0;
+
+  int checked_offset = 0;
+  while (checked_offset < in_word_len) {
+    // Find the first misspelled word in the first language.
+
+    SpellcheckLanguage *firstLang = languages[0];
+    std::vector<base::string16> suggestions_vector;
+    int segment_misspelling_start;
+    int segment_misspelling_len;
+
+    if (firstLang->SpellCheckWord(
+        in_word + checked_offset,
+        in_word_len - checked_offset,
+        tag,
+        &segment_misspelling_start,
+        &segment_misspelling_len,
+        checkForContractions,
+        suggestions_set ? &suggestions_vector : 0)) {
+      // Everything is OK in the first language, no need to check the other
+      // languages.
+      return true;
+    }
+
+    if (suggestions_set) {
+      for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
+        suggestions_set->insert(suggestions_vector[i]);
+      }
+    }
+
+    // We have a misspelling in the first language!  See if this word is
+    // recognized in the custom dictionary or any of the other languages.
+
+    bool alternativeFound =
+        custom_dictionary_.SpellCheckWord(in_word + checked_offset,
+                                          segment_misspelling_start,
+                                          segment_misspelling_len);
+
+    for (size_t langIndex = 1;
+        langIndex < languages.size() && !alternativeFound;
+        ++langIndex) {
+      SpellcheckLanguage *language = languages[langIndex];
+      suggestions_vector.clear();
+
+      int tmpStart, tmpLen;
+      alternativeFound = language->SpellCheckWord(
+          in_word + checked_offset + segment_misspelling_start,
+          segment_misspelling_len,
+          tag,
+          &tmpStart, &tmpLen,
+          checkForContractions,
+          suggestions_set ? &suggestions_vector : 0);
+
+      if (suggestions_set) {
+        for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
+          suggestions_set->insert(suggestions_vector[i]);
+        }
+      }
+    }
+
+    if (!alternativeFound) {
+      *misspelling_start = checked_offset + segment_misspelling_start;
+      *misspelling_len = segment_misspelling_len;
+      return false;
+    }
+    else {
+      checked_offset += segment_misspelling_start + segment_misspelling_len;
+    }
+  }
+
+  return true;
 }
 
 bool SpellCheck::SpellCheckWord(
@@ -251,83 +337,41 @@ bool SpellCheck::SpellCheckWord(
     return true;
   }
 
-  int checked_offset = 0;
-  while (checked_offset < in_word_len) {
-    // Find the first misspelled word in the first language.
+  std::set<base::string16> suggestions_set;
+  std::map<UScriptCode, ScopedVector<SpellcheckLanguage> >::iterator it;
 
-    SpellcheckLanguage *firstLang = spellcheck_[0];
-    std::vector<base::string16> suggestions_vector;
-    std::set<base::string16> suggestions_set;
-    int segment_misspelling_start;
-    int segment_misspelling_len;
+  for (it = spellcheck_.begin(); it != spellcheck_.end(); ++it) {
+    int tmp_misspelling_start, tmp_misspelling_len;
 
-    if (firstLang->SpellCheckWord(
-        in_word + checked_offset,
-        in_word_len - checked_offset,
-        tag,
-        &segment_misspelling_start,
-        &segment_misspelling_len,
-        checkForContractions,
-        optional_suggestions ? &suggestions_vector : 0)) {
-      // Everything is OK in the first language, no need to check the other
-      // languages.
-      return true;
-    }
-
-    if (optional_suggestions) {
-      for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
-        suggestions_set.insert(suggestions_vector[i]);
-      }
-    }
-
-    // We have a misspelling in the first language!  See if this word is
-    // recognized in the custom dictionary or any of the other languages.
-
-    bool alternativeFound =
-        custom_dictionary_.SpellCheckWord(in_word + checked_offset,
-                                          segment_misspelling_start,
-                                          segment_misspelling_len);
-
-    for (size_t langIndex = 1;
-        langIndex < spellcheck_.size() && !alternativeFound;
-        ++langIndex) {
-      SpellcheckLanguage *language = spellcheck_[langIndex];
-      suggestions_vector.clear();
-
-      int tmpStart, tmpLen;
-      alternativeFound = language->SpellCheckWord(
-          in_word + checked_offset + segment_misspelling_start,
-          segment_misspelling_len,
+    bool found_misspelling = !SpellCheckWordInScript(
+          it->second,
+          in_word,
+          in_word_len,
           tag,
-          &tmpStart, &tmpLen,
+          &tmp_misspelling_start,
+          &tmp_misspelling_len,
           checkForContractions,
-          optional_suggestions ? &suggestions_vector : 0);
+          optional_suggestions ? &suggestions_set : 0);
 
-      if (optional_suggestions) {
-        for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
-          suggestions_set.insert(suggestions_vector[i]);
-        }
-      }
-    }
+    if (!found_misspelling)
+      continue;
 
-    if (!alternativeFound) {
-      if (optional_suggestions) {
-        for (std::set<base::string16>::const_iterator it = suggestions_set.begin();
-            it != suggestions_set.end();
-            ++it) {
-          optional_suggestions->push_back(*it);
-        }
-      }
-      *misspelling_start = checked_offset + segment_misspelling_start;
-      *misspelling_len = segment_misspelling_len;
-      return false;
-    }
-    else {
-      checked_offset += segment_misspelling_start + segment_misspelling_len;
+    if (!*misspelling_len || tmp_misspelling_start < *misspelling_start) {
+      *misspelling_start = tmp_misspelling_start;
+      *misspelling_len = tmp_misspelling_len;
     }
   }
 
-  return true;
+  if (optional_suggestions) {
+    for (std::set<base::string16>::const_iterator it = suggestions_set.begin();
+         it != suggestions_set.end();
+         ++it)
+    {
+      optional_suggestions->push_back(*it);
+    }
+  }
+
+  return !*misspelling_len;
 }
 
 bool SpellCheck::SpellCheckParagraph(
@@ -461,10 +505,14 @@ void SpellCheck::RequestTextChecking(
 
 bool SpellCheck::InitializeIfNeeded() {
   bool inited = true;
-  ScopedVector<SpellcheckLanguage>::iterator it;
+  std::map<UScriptCode, ScopedVector<SpellcheckLanguage> >::iterator it1;
 
-  for (it = spellcheck_.begin(); it != spellcheck_.end(); it++) {
-    inited &= (*it)->InitializeIfNeeded();
+  for (it1 = spellcheck_.begin(); it1 != spellcheck_.end(); ++it1) {
+    ScopedVector<SpellcheckLanguage>::iterator it2;
+
+    for (it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
+      inited &= (*it2)->InitializeIfNeeded();
+    }
   }
 
   return inited;
@@ -487,9 +535,13 @@ void SpellCheck::PerformSpellCheck(SpellcheckRequest* param) {
   DCHECK(param);
 
   bool allEnabled = !spellcheck_.empty();
-  ScopedVector<SpellcheckLanguage>::iterator it;
-  for (it = spellcheck_.begin(); it != spellcheck_.end(); it++) {
-    allEnabled &= (*it)->IsEnabled();
+  std::map<UScriptCode, ScopedVector<SpellcheckLanguage> >::iterator it1;
+  for (it1 = spellcheck_.begin(); it1 != spellcheck_.end(); ++it1) {
+    ScopedVector<SpellcheckLanguage>::iterator it2;
+
+    for (it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
+      allEnabled &= (*it2)->IsEnabled();
+    }
   }
 
   if (!allEnabled) {

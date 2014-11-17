@@ -44,12 +44,14 @@ struct ToolkitCreateParamsImpl {
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
     std::string d_hostChannel;
+    NativeFont d_tooltipFont;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
+    , d_tooltipFont(0)
     {
     }
 };
@@ -146,6 +148,11 @@ bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelInfo
          expected.equals(StringRef(channelId.data(), expected.length())));
 }
 
+void ToolkitCreateParams::setTooltipStyle(NativeFont font)
+{
+    d_impl->d_tooltipFont = font;
+}
+
 ThreadMode::Value ToolkitCreateParams::threadMode() const
 {
     return d_impl->d_threadMode;
@@ -202,6 +209,11 @@ StringRef ToolkitCreateParams::dictionaryPath() const
 StringRef ToolkitCreateParams::hostChannel() const
 {
     return d_impl->d_hostChannel;
+}
+
+NativeFont ToolkitCreateParams::tooltipFont() const
+{
+    return d_impl->d_tooltipFont;
 }
 
 }  // close namespace blpwtk2

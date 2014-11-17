@@ -102,6 +102,8 @@ class ToolkitCreateParams {
     BLPWTK2_EXPORT static bool isValidHostChannelVersion(
         const StringRef& channelInfoString);
 
+    BLPWTK2_EXPORT void setTooltipStyle(NativeFont font);
+
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
@@ -114,6 +116,7 @@ class ToolkitCreateParams {
     ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;
+    NativeFont tooltipFont() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

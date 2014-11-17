@@ -112,6 +112,7 @@ class WebViewImpl : public WebView,
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;
+    virtual void embedChild(NativeView child) OVERRIDE;
     virtual void move(int left, int top, int width, int height) OVERRIDE;
     virtual void cutSelection() OVERRIDE;
     virtual void copySelection() OVERRIDE;

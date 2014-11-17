@@ -117,6 +117,16 @@ class SpellCheck : public content::RenderProcessObserver,
    FRIEND_TEST_ALL_PREFIXES(SpellCheckTest,
        RequestSpellCheckMultipleTimesWithoutInitialization);
 
+   bool SpellCheckWordInScript(
+       const ScopedVector<SpellcheckLanguage>& languages,
+       const base::char16* in_word,
+       int in_word_len,
+       int tag,
+       int* misspelling_start,
+       int* misspelling_len,
+       bool checkForContractions,
+       std::set<base::string16>* suggestions_set);
+
   // RenderProcessObserver implementation:
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -151,7 +161,7 @@ class SpellCheck : public content::RenderProcessObserver,
   scoped_ptr<SpellcheckRequest> pending_request_param_;
 #endif
 
-  ScopedVector<SpellcheckLanguage> spellcheck_;  // Language-specific spellchecking code.
+  std::map<UScriptCode,ScopedVector<SpellcheckLanguage> > spellcheck_;  // Language-specific spellchecking code.
 
   // Custom dictionary spelling engine.
   CustomDictionaryEngine custom_dictionary_;

@@ -418,6 +418,14 @@ void WebViewImpl::setParent(NativeView parent)
         d_widget->setParent(parent);
 }
 
+void WebViewImpl::embedChild(NativeView child)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    ::SetParent(child, d_widget->getNativeWidgetView());
+}
+
 void WebViewImpl::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInBrowserMainThread());

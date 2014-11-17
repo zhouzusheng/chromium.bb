@@ -123,6 +123,10 @@ public:
     // Reparent this WebView into the specified 'parent'.
     virtual void setParent(NativeView parent) = 0;
 
+    // Embed the specified 'child' into this WebView.  This method can only be
+    // called after the document has finished loading.
+    virtual void embedChild(NativeView child) = 0;
+
     // Move this WebView to the specified 'left' and the specified 'top'
     // position, and resize it to have the specified 'width' and the specified
     // 'height'.

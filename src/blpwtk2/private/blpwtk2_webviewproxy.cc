@@ -350,6 +350,13 @@ void WebViewProxy::setParent(NativeView parent)
     }
 }
 
+void WebViewProxy::embedChild(NativeView child)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_nativeWebView);
+    ::SetParent(child, d_nativeWebView);
+}
+
 void WebViewProxy::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInApplicationMainThread());

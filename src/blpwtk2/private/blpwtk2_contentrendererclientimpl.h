@@ -65,6 +65,15 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
         const content::RequestInfo& request_info) OVERRIDE;
 
+    // Allows the embedder to override creating a plugin. If it returns true, then
+    // |plugin| will contain the created plugin, although it could be NULL. If it
+    // returns false, the content layer will create the plugin.
+    virtual bool OverrideCreatePlugin(
+        content::RenderFrame* render_frame,
+        blink::WebFrame* frame,
+        const blink::WebPluginParams& params,
+        blink::WebPlugin** plugin) OVERRIDE;
+
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentRendererClientImpl);
 

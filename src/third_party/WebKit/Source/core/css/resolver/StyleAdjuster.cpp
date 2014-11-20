@@ -34,7 +34,6 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableCellElement.h"
@@ -46,7 +45,6 @@
 #include "core/rendering/style/GridPosition.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include "core/svg/SVGDocument.h"
 #include "core/svg/SVGSVGElement.h"
 #include "platform/Length.h"
 #include "platform/transforms/TransformOperations.h"
@@ -275,18 +273,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         if (!(isSVGSVGElement(*e) && e->parentNode() && !e->parentNode()->isSVGElement()))
             style->setPosition(RenderStyle::initialPosition());
 
-        // propagate the zoom from parent document into the svg element
-        if (e->hasTagName(SVGNames::svgTag)) {
-            if (e->document().frame() &&
-                e->document().frame()->ownerElement() &&
-                e->document().frame()->ownerElement()->renderer()) {
-                float ownerEffectiveZoom
-                    = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
-                float childZoom = style->zoom();
-                style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
-            }
-        }
-
         // RenderSVGRoot handles zooming for the whole SVG subtree, so foreignObject content should
         // not be scaled again.
         if (isSVGForeignObjectElement(*e))
@@ -322,26 +308,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             }
         }
     }
-
-    // mark the EMBEDed svg element dirty if zoom needs to be reevaluated
-    if (e && e->hasTagName(embedTag)) {
-        HTMLEmbedElement* embed = static_cast<HTMLEmbedElement*>(e);
-        Document *doc = embed->contentDocument();
-        if (doc && doc->isSVGDocument()) {
-            SVGDocument *svgDoc = toSVGDocument(doc);
-            if (svgDoc && svgDoc->rootElement() &&
-                svgDoc->rootElement()->renderer()) {
-                RenderStyle *renderStyle = svgDoc->rootElement()->renderer()->style();
-                float childZoom = renderStyle->zoom();
-                float ownerEffectiveZoom = style->effectiveZoom();
-                float childEffectiveZoom = renderStyle->effectiveZoom();
-                if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
-                    svgDoc->rootElement()->setNeedsStyleRecalc(SubtreeStyleChange);
-                }
-            }
-        }
-    }
-
 }
 
 void StyleAdjuster::adjustStyleForTagName(RenderStyle* style, RenderStyle* parentStyle, Element& element)

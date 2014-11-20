@@ -25,6 +25,7 @@
 #include "net/base/filename_util.h"
 #include "net/base/net_module.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/wm/core/wm_state.h"
 #include "url/gurl.h"
 #include "webkit/browser/quota/quota_manager.h"
 
@@ -105,6 +106,10 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_ANDROID)
   base::MessageLoopForUI::current()->Start();
 #endif
+}
+
+void ShellBrowserMainParts::ToolkitInitialized() {
+  wm_state_.reset(new wm::WMState);
 }
 
 void ShellBrowserMainParts::PreEarlyInitialization() {

@@ -64,8 +64,8 @@ V8PerIsolateData::V8PerIsolateData(v8::Isolate* isolate)
 {
 #ifndef NDEBUG
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
-    if (blink::Platform::current()->currentThread())
-        isolate->AddCallCompletedCallback(&assertV8RecursionScope);
+    //if (blink::Platform::current()->currentThread())
+    //    isolate->AddCallCompletedCallback(&assertV8RecursionScope);
 #endif
     if (isMainThread()) {
         mainThreadPerIsolateData = this;
@@ -107,8 +107,8 @@ v8::Persistent<v8::Value>& V8PerIsolateData::ensureLiveRoot()
 void V8PerIsolateData::dispose(v8::Isolate* isolate)
 {
 #ifndef NDEBUG
-    if (blink::Platform::current()->currentThread())
-        isolate->RemoveCallCompletedCallback(&assertV8RecursionScope);
+    //if (blink::Platform::current()->currentThread())
+    //    isolate->RemoveCallCompletedCallback(&assertV8RecursionScope);
 #endif
     void* data = isolate->GetData(gin::kEmbedderBlink);
     delete static_cast<V8PerIsolateData*>(data);

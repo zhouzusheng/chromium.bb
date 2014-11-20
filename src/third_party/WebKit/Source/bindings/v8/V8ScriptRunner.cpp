@@ -63,18 +63,19 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
     v8::ScriptOrigin origin(name, line, column, isSharedCrossOrigin);
 
     v8::ScriptCompiler::CompileOptions options = v8::ScriptCompiler::kNoCompileOptions;
-    OwnPtr<v8::ScriptCompiler::CachedData> cachedData;
+    v8::ScriptCompiler::CachedData* cachedData = 0;
     if (resource) {
         CachedMetadata* cachedMetadata = resource->cachedMetadata(dataTypeID);
         if (cachedMetadata) {
             // Ownership of the buffer is not transferred to CachedData.
-            cachedData = adoptPtr(new v8::ScriptCompiler::CachedData(reinterpret_cast<const uint8_t*>(cachedMetadata->data()), cachedMetadata->size()));
+            cachedData = v8::ScriptCompiler::CachedData::create(reinterpret_cast<const uint8_t*>(cachedMetadata->data()), cachedMetadata->size());
         } else if (code->Length() >= minLengthForCachedData) {
             options = v8::ScriptCompiler::kProduceDataToCache;
         }
     }
     // source takes ownership of cachedData.
-    v8::ScriptCompiler::Source source(code, origin, cachedData.leakPtr());
+    v8::ScriptCompiler::Source source(code, origin, cachedData);
+    cachedData = 0;
     v8::Local<v8::Script> script = v8::ScriptCompiler::Compile(isolate, &source, options);
     if (options == v8::ScriptCompiler::kProduceDataToCache) {
         const v8::ScriptCompiler::CachedData* newCachedData = source.GetCachedData();

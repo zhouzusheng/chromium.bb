@@ -51,7 +51,8 @@ static int timerNestingLevel = 0;
 
 static inline bool shouldForwardUserGesture(int interval, int nestingLevel)
 {
-    return UserGestureIndicator::processingUserGesture()
+    return isMainThread()
+        && UserGestureIndicator::processingUserGesture()
         && interval <= maxIntervalForUserGestureForwarding
         && nestingLevel == 1; // Gestures should not be forwarded to nested timers.
 }

@@ -46,6 +46,14 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   // be accessed when running on the render thread itself.
   static RenderThread* Get();
 
+  // Initialize and cleanup the in-process renderer so that embedders can
+  // implement --single-process functionality.  The channel_id can be provided
+  // at init time, or later by calling SetInProcessRendererChannelName.
+  static void InitInProcessRenderer(const std::string& channel_id);
+  static void SetInProcessRendererChannelName(const std::string& channel_id);
+  static base::SingleThreadTaskRunner* IPCTaskRunner();
+  static void CleanUpInProcessRenderer();
+
   RenderThread();
   virtual ~RenderThread();
 

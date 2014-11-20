@@ -103,6 +103,10 @@ class DebugColors {
   static int WheelEventHandlerRectBorderWidth();
   static SkColor WheelEventHandlerRectFillColor();
 
+  static SkColor ScrollEventHandlerRectBorderColor();
+  static int ScrollEventHandlerRectBorderWidth();
+  static SkColor ScrollEventHandlerRectFillColor();
+
   static SkColor NonFastScrollableRectBorderColor();
   static int NonFastScrollableRectBorderWidth();
   static SkColor NonFastScrollableRectFillColor();
@@ -113,6 +117,7 @@ class DebugColors {
 
   static SkColor NonPaintedFillColor();
   static SkColor MissingPictureFillColor();
+  static SkColor MissingResizeInvalidations();
   static SkColor PictureBorderColor();
 
   static SkColor HUDBackgroundColor();

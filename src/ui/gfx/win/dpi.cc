@@ -20,9 +20,6 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
-const wchar_t kRegistryProfilePath[] = L"SOFTWARE\\Google\\Chrome\\Profile";
-const wchar_t kHighDPISupportW[] = L"high-dpi-support";
-
 bool force_highdpi_for_testing = false;
 
 BOOL IsProcessDPIAwareWrapper() {
@@ -44,6 +41,10 @@ float GetUnforcedDeviceScaleFactor() {
 
 float GetModernUIScaleWrapper() {
   float result = 1.0f;
+  // TODO(cpu) : Fix scale for Win7.
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return result;
+
   typedef float(WINAPI *GetModernUIScalePtr)(VOID);
   HMODULE lib = LoadLibraryA("metro_driver.dll");
   if (lib) {
@@ -167,8 +168,8 @@ bool IsHighDPIEnabled() {
   // under the DWORD value high-dpi-support.
   // Default is disabled.
   static DWORD value = ReadRegistryValue(
-      HKEY_CURRENT_USER, kRegistryProfilePath,
-      kHighDPISupportW, FALSE);
+      HKEY_CURRENT_USER, gfx::win::kRegistryProfilePath,
+      gfx::win::kHighDPISupportW, FALSE);
   return force_highdpi_for_testing || (value == 1);
 }
 
@@ -185,18 +186,18 @@ void EnableHighDPISupport() {
 
 namespace win {
 
+GFX_EXPORT const wchar_t kRegistryProfilePath[] =
+    L"Software\\Google\\Chrome\\Profile";
+GFX_EXPORT const wchar_t kHighDPISupportW[] = L"high-dpi-support";
+
 float GetDeviceScaleFactor() {
   DCHECK_NE(0.0f, g_device_scale_factor);
   return g_device_scale_factor;
 }
 
 Point ScreenToDIPPoint(const Point& pixel_point) {
-  static float scaling_factor =
-      GetDeviceScaleFactor() > GetUnforcedDeviceScaleFactor() ?
-      1.0f / GetDeviceScaleFactor() :
-      1.0f;
   return ToFlooredPoint(ScalePoint(pixel_point,
-      scaling_factor));
+      1.0f / GetDeviceScaleFactor()));
 }
 
 Point DIPToScreenPoint(const Point& dip_point) {
@@ -210,9 +211,17 @@ Rect ScreenToDIPRect(const Rect& pixel_bounds) {
 }
 
 Rect DIPToScreenRect(const Rect& dip_bounds) {
-  // TODO(kevers): Switch to non-deprecated method for float to int conversions.
-  return ToFlooredRectDeprecated(
-      ScaleRect(dip_bounds, GetDeviceScaleFactor()));
+  // We scale the origin by the scale factor and round up via ceil. This
+  // ensures that we get the original logical origin back when we scale down.
+  // We round the size down after scaling. It may be better to round this up
+  // on the same lines as the origin.
+  // TODO(ananta)
+  // Investigate if rounding size up on the same lines as origin is workable.
+  return gfx::Rect(
+      gfx::ToCeiledPoint(gfx::ScalePoint(
+          dip_bounds.origin(), GetDeviceScaleFactor())),
+      gfx::ToFlooredSize(gfx::ScaleSize(
+          dip_bounds.size(), GetDeviceScaleFactor())));
 }
 
 Size ScreenToDIPSize(const Size& size_in_pixels) {

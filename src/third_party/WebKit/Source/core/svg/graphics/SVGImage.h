@@ -28,6 +28,8 @@
 #define SVGImage_h
 
 #include "platform/graphics/Image.h"
+#include "platform/heap/Handle.h"
+#include "platform/weborigin/KURL.h"
 
 namespace WebCore {
 
@@ -46,19 +48,17 @@ public:
         return adoptRef(new SVGImage(observer));
     }
 
-    static bool isInSVGImage(const Element*);
+    static bool isInSVGImage(const Node*);
 
     RenderBox* embeddedContentBox() const;
 
     virtual bool isSVGImage() const OVERRIDE { return true; }
     virtual IntSize size() const OVERRIDE { return m_intrinsicSize; }
+    void setURL(const KURL& url) { m_url = url; }
 
     virtual bool currentFrameHasSingleSecurityOrigin() const OVERRIDE;
 
-    virtual bool hasRelativeWidth() const OVERRIDE;
-    virtual bool hasRelativeHeight() const OVERRIDE;
-
-    virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) OVERRIDE;
+    virtual void startAnimation(CatchUpAnimation = CatchUp) OVERRIDE;
     virtual void stopAnimation() OVERRIDE;
     virtual void resetAnimation() OVERRIDE;
 
@@ -101,8 +101,9 @@ private:
         CompositeOperator, const FloatRect&, blink::WebBlendMode, const IntSize& repeatSpacing);
 
     OwnPtr<SVGImageChromeClient> m_chromeClient;
-    OwnPtr<Page> m_page;
+    OwnPtrWillBePersistent<Page> m_page;
     IntSize m_intrinsicSize;
+    KURL m_url;
 };
 
 DEFINE_IMAGE_TYPE_CASTS(SVGImage);

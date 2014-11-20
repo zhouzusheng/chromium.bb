@@ -144,6 +144,11 @@ namespace WTF {
 
         static EmptyValueType emptyValue() { return nullptr; }
 
+        static const bool hasIsEmptyValueFunction = true;
+        static bool isEmptyValue(const OwnPtr<P>& value) { return !value; }
+
+        typedef typename OwnPtr<P>::PtrType PeekInType;
+
         typedef PassOwnPtr<P> PassInType;
         static void store(PassOwnPtr<P> value, OwnPtr<P>& storage) { storage = value; }
 
@@ -206,10 +211,10 @@ namespace WTF {
         static void store(const U& value, RawPtr<T>& storage) { storage = value; }
 
         static PeekOutType peek(const RawPtr<T>& value) { return value; }
-        static PeekOutType peek(std::nullptr_t) { return 0; }
+        static PeekOutType peek(std::nullptr_t) { return nullptr; }
 
         static PassOutType passOut(const RawPtr<T>& value) { return value; }
-        static PassOutType passOut(std::nullptr_t) { return 0; }
+        static PassOutType passOut(std::nullptr_t) { return nullptr; }
     };
 
     template<> struct HashTraits<String> : SimpleClassHashTraits<String> {

@@ -46,7 +46,7 @@ namespace WebCore {
 
 SVGFontData::SVGFontData(SVGFontFaceElement* fontFaceElement)
     : CustomFontData()
-    , m_svgFontFaceElement(fontFaceElement)
+    , m_svgFontFaceElement(fontFaceElement->createWeakRef())
     , m_horizontalOriginX(fontFaceElement->horizontalOriginX())
     , m_horizontalOriginY(fontFaceElement->horizontalOriginY())
     , m_horizontalAdvanceX(fontFaceElement->horizontalAdvanceX())
@@ -57,12 +57,15 @@ SVGFontData::SVGFontData(SVGFontFaceElement* fontFaceElement)
     ASSERT_ARG(fontFaceElement, fontFaceElement);
 }
 
+SVGFontData::~SVGFontData()
+{
+}
+
 void SVGFontData::initializeFontData(SimpleFontData* fontData, float fontSize)
 {
     ASSERT(fontData);
 
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
-    ASSERT(svgFontFaceElement && svgFontFaceElement->inDocument());
 
     SVGFontElement* svgFontElement = svgFontFaceElement->associatedFontElement();
     ASSERT(svgFontElement);
@@ -121,8 +124,13 @@ void SVGFontData::initializeFontData(SimpleFontData* fontData, float fontSize)
 
 float SVGFontData::widthForSVGGlyph(Glyph glyph, float fontSize) const
 {
+    // FIXME: (http://crbug.com/359380) Width calculation may be triggered after removeNode from the current editing impl.
+    // The retrieved width is not being used, so here we return a dummy value.
+    if (shouldSkipDrawing())
+        return 0.0;
+
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
-    ASSERT(svgFontFaceElement);
+
     // RenderView::clearSelection is invoked while removing some element, e.g.
     // Document::nodeWillBeRemoved => FrameSelection::nodeWillBeRemoved => RenderView::clearSelection.
     // Since recalc style has not been executed yet, RenderStyle might have some reference to
@@ -162,8 +170,6 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
         arabicForms = charactersWithArabicForm(remainingTextInRun, mirror);
 
     SVGFontFaceElement* svgFontFaceElement = this->svgFontFaceElement();
-    ASSERT(svgFontFaceElement && svgFontFaceElement->inDocument());
-
     SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
     ASSERT(associatedFontElement);
 
@@ -233,8 +239,6 @@ bool SVGFontData::fillSVGGlyphPage(GlyphPage* pageToFill, unsigned offset, unsig
     ASSERT(fontData->isSVGFont());
 
     SVGFontFaceElement* fontFaceElement = this->svgFontFaceElement();
-    ASSERT(fontFaceElement && fontFaceElement->inDocument());
-
     SVGFontElement* fontElement = fontFaceElement->associatedFontElement();
     ASSERT(fontElement);
 
@@ -252,10 +256,8 @@ bool SVGFontData::fillBMPGlyphs(SVGFontElement* fontElement, GlyphPage* pageToFi
     for (unsigned i = 0; i < length; ++i) {
         String lookupString(buffer + i, 1);
         fontElement->collectGlyphsForString(lookupString, glyphs);
-        if (glyphs.isEmpty()) {
-            pageToFill->setGlyphDataForIndex(offset + i, 0, 0);
+        if (glyphs.isEmpty())
             continue;
-        }
 
         // Associate entry in glyph page with first valid SVGGlyph.
         // If there are multiple valid ones, just take the first one. WidthIterator will take
@@ -277,10 +279,8 @@ bool SVGFontData::fillNonBMPGlyphs(SVGFontElement* fontElement, GlyphPage* pageT
         // Each character here consists of a surrogate pair
         String lookupString(buffer + i * 2, 2);
         fontElement->collectGlyphsForString(lookupString, glyphs);
-        if (glyphs.isEmpty()) {
-            pageToFill->setGlyphDataForIndex(offset + i, 0, 0);
+        if (glyphs.isEmpty())
             continue;
-        }
 
         // Associate entry in glyph page with first valid SVGGlyph.
         // If there are multiple valid ones, just take the first one. WidthIterator will take
@@ -319,6 +319,19 @@ String SVGFontData::createStringWithMirroredCharacters(const String& string) con
     }
 
     return mirroredCharacters.toString();
+}
+
+SVGFontFaceElement* SVGFontData::svgFontFaceElement() const
+{
+    // FIXME: SVGFontData should be only used from the document with the SVGFontFaceElement.
+    RELEASE_ASSERT(m_svgFontFaceElement && m_svgFontFaceElement->inDocument());
+    return m_svgFontFaceElement.get();
+}
+
+bool SVGFontData::shouldSkipDrawing() const
+{
+    // FIXME: (http://crbug.com/359380) Glyph may be referenced after removeNode from the current editing impl.
+    return !m_svgFontFaceElement || !m_svgFontFaceElement->inDocument();
 }
 
 } // namespace WebCore

@@ -35,14 +35,15 @@
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/imports/HTMLImportChild.h"
+#include "core/html/imports/HTMLImportLoader.h"
 #include "core/html/imports/HTMLImportsController.h"
 
 
 namespace WebCore {
 
-PassOwnPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
+PassOwnPtrWillBeRawPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
 {
-    return adoptPtr(new LinkImport(owner));
+    return adoptPtrWillBeNoop(new LinkImport(owner));
 }
 
 LinkImport::LinkImport(HTMLLinkElement* owner)
@@ -53,7 +54,10 @@ LinkImport::LinkImport(HTMLLinkElement* owner)
 
 LinkImport::~LinkImport()
 {
-    clear();
+    if (m_child) {
+        m_child->clearClient();
+        m_child = 0;
+    }
 }
 
 Document* LinkImport::importedDocument() const
@@ -72,7 +76,7 @@ void LinkImport::process()
     if (!shouldLoadResource())
         return;
 
-    if (!m_owner->document().import()) {
+    if (!m_owner->document().importsController()) {
         ASSERT(m_owner->document().frame()); // The document should be the master.
         HTMLImportsController::provideTo(m_owner->document());
     }
@@ -83,21 +87,13 @@ void LinkImport::process()
         return;
     }
 
-    HTMLImport* parent = m_owner->document().import();
-    HTMLImportsController* controller = parent->controller();
+    HTMLImportsController* controller = m_owner->document().importsController();
+    HTMLImportLoader* loader = m_owner->document().importLoader();
+    HTMLImport* parent = loader ? static_cast<HTMLImport*>(loader->firstImport()) : static_cast<HTMLImport*>(controller);
     m_child = controller->load(parent, this, builder.build(true));
     if (!m_child) {
         didFinish();
         return;
-    }
-}
-
-void LinkImport::clear()
-{
-    m_owner = 0;
-    if (m_child) {
-        m_child->clearClient();
-        m_child = 0;
     }
 }
 
@@ -112,12 +108,12 @@ void LinkImport::importChildWasDestroyed(HTMLImportChild* child)
 {
     ASSERT(m_child == child);
     m_child = 0;
-    clear();
+    m_owner = nullptr;
 }
 
 bool LinkImport::isSync() const
 {
-    return m_owner && m_owner->isCreatedByParser() && !m_owner->async();
+    return m_owner && !m_owner->async();
 }
 
 HTMLLinkElement* LinkImport::link()
@@ -130,9 +126,9 @@ bool LinkImport::hasLoaded() const
     return m_child && m_child->isDone() && !m_child->loaderHasError();
 }
 
-bool LinkImport::ownsLoader() const
+void LinkImport::trace(Visitor* visitor)
 {
-    return m_child && m_child->hasLoader() && m_child->ownsLoader();
+    LinkResource::trace(visitor);
 }
 
 } // namespace WebCore

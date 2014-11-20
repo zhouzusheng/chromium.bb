@@ -24,10 +24,11 @@
 #include <algorithm>
 
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLElement.h"
-#include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/Page.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
@@ -231,7 +232,6 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
         return false;
 
     TRACE_EVENT0("webkit", "TextAutosizer: process root cluster");
-    InspectorInstrumentation::willAutosizeText(layoutRoot);
     UseCounter::count(*m_document, UseCounter::TextAutosizing);
 
     TextAutosizingClusterInfo clusterInfo(cluster);
@@ -245,7 +245,6 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
     m_hashesToAutosizeSecondPass.clear();
     m_nonAutosizedClusters.clear();
 #endif
-    InspectorInstrumentation::didAutosizeText(layoutRoot);
     m_previouslyAutosized = true;
     return true;
 }
@@ -273,7 +272,7 @@ void TextAutosizer::processClusterInternal(TextAutosizingClusterInfo& clusterInf
 {
     processContainer(multiplier, container, clusterInfo, subtreeRoot, windowInfo);
 #ifdef AUTOSIZING_DOM_DEBUG_INFO
-    writeDebugInfo(clusterInfo.root, String::format("cluster:%f", multiplier));
+    writeDebugInfo(clusterInfo.root, AtomicString(String::format("cluster:%f", multiplier)));
 #endif
 
     Vector<Vector<TextAutosizingClusterInfo> > narrowDescendantsGroups;
@@ -690,7 +689,7 @@ bool TextAutosizer::contentHeightIsConstrained(const RenderBlock* container)
         if (style->height().isSpecified() || style->maxHeight().isSpecified() || container->isOutOfFlowPositioned()) {
             // Some sites (e.g. wikipedia) set their html and/or body elements to height:100%,
             // without intending to constrain the height of the content within them.
-            return !container->isRoot() && !container->isBody();
+            return !container->isDocumentElement() && !container->isBody();
         }
         if (container->isFloating())
             return false;
@@ -798,8 +797,8 @@ const RenderBlock* TextAutosizer::findDeepestBlockContainingAllText(const Render
 
 const RenderObject* TextAutosizer::findFirstTextLeafNotInCluster(const RenderObject* parent, size_t& depth, TraversalDirection direction)
 {
-    if (parent->isEmpty())
-        return parent->isText() ? parent : 0;
+    if (parent->isText())
+        return parent;
 
     ++depth;
     const RenderObject* child = (direction == FirstToLast) ? parent->firstChild() : parent->lastChild();

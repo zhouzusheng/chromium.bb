@@ -29,11 +29,10 @@
  */
 
 #include "config.h"
-#include "WebInputElement.h"
+#include "public/web/WebInputElement.h"
 
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebElementCollection.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
@@ -41,6 +40,7 @@
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebElementCollection.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
@@ -80,11 +80,6 @@ bool WebInputElement::isCheckbox() const
 int WebInputElement::maxLength() const
 {
     return constUnwrap<HTMLInputElement>()->maxLength();
-}
-
-bool WebInputElement::isActivatedSubmit() const
-{
-    return constUnwrap<HTMLInputElement>()->isActivatedSubmit();
 }
 
 void WebInputElement::setActivatedSubmit(bool activated)
@@ -134,48 +129,6 @@ WebString WebInputElement::localizeValue(const WebString& proposedValue) const
     return constUnwrap<HTMLInputElement>()->localizeValue(proposedValue);
 }
 
-bool WebInputElement::isSpeechInputEnabled() const
-{
-#if ENABLE(INPUT_SPEECH)
-    return constUnwrap<HTMLInputElement>()->isSpeechEnabled();
-#else
-    return false;
-#endif
-}
-
-#if ENABLE(INPUT_SPEECH)
-static inline InputFieldSpeechButtonElement* speechButtonElement(const WebInputElement* webInput)
-{
-    return toInputFieldSpeechButtonElement(webInput->constUnwrap<HTMLInputElement>()->userAgentShadowRoot()->getElementById(ShadowElementNames::speechButton()));
-}
-#endif
-
-WebInputElement::SpeechInputState WebInputElement::getSpeechInputState() const
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        return static_cast<WebInputElement::SpeechInputState>(speechButton->state());
-#endif
-
-    return Idle;
-}
-
-void WebInputElement::startSpeechInput()
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        speechButton->startSpeechInput();
-#endif
-}
-
-void WebInputElement::stopSpeechInput()
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        speechButton->stopSpeechInput();
-#endif
-}
-
 int WebInputElement::defaultMaxLength()
 {
     return HTMLInputElement::maximumLength;
@@ -197,18 +150,18 @@ void WebInputElement::setShouldRevealPassword(bool value)
     unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
 }
 
-WebInputElement::WebInputElement(const PassRefPtr<HTMLInputElement>& elem)
+WebInputElement::WebInputElement(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
     : WebFormControlElement(elem)
 {
 }
 
-WebInputElement& WebInputElement::operator=(const PassRefPtr<HTMLInputElement>& elem)
+WebInputElement& WebInputElement::operator=(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebInputElement::operator PassRefPtr<HTMLInputElement>() const
+WebInputElement::operator PassRefPtrWillBeRawPtr<HTMLInputElement>() const
 {
     return toHTMLInputElement(m_private.get());
 }

@@ -32,10 +32,8 @@ class ACMGenericCodec;
 
 class AudioCodingModuleImpl : public AudioCodingModule {
  public:
-  explicit AudioCodingModuleImpl(int id);
+  explicit AudioCodingModuleImpl(const AudioCodingModule::Config& config);
   ~AudioCodingModuleImpl();
-
-  virtual const char* Version() const;
 
   // Change the unique identifier of this object.
   virtual int32_t ChangeUniqueId(const int32_t id);

@@ -23,6 +23,8 @@ class NET_EXPORT_PRIVATE TimeLossAlgorithm : public LossDetectionInterface {
   TimeLossAlgorithm();
   virtual ~TimeLossAlgorithm() {}
 
+  virtual LossDetectionType GetLossDetectionType() const OVERRIDE;
+
   // Declares pending packets less than the largest observed lost when it has
   // been 1.25 RTT since they were sent.  Packets larger than the largest
   // observed are retransmitted via TLP.
@@ -41,6 +43,8 @@ class NET_EXPORT_PRIVATE TimeLossAlgorithm : public LossDetectionInterface {
 
  private:
   QuicTime loss_detection_timeout_;
+
+  DISALLOW_COPY_AND_ASSIGN(TimeLossAlgorithm);
 };
 
 }  // namespace net

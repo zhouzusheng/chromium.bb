@@ -98,6 +98,7 @@ HttpStreamFactoryImpl::Job::Job(HttpStreamFactoryImpl* stream_factory,
       using_spdy_(false),
       using_quic_(false),
       quic_request_(session_->quic_stream_factory()),
+      using_existing_quic_session_(false),
       force_spdy_always_(HttpStreamFactory::force_spdy_always()),
       force_spdy_over_ssl_(HttpStreamFactory::force_spdy_over_ssl()),
       spdy_certificate_error_(OK),
@@ -668,6 +669,11 @@ int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
       // No proxies/direct to choose from. This happens when we don't support
       // any of the proxies in the returned list.
       result = ERR_NO_SUPPORTED_PROXIES;
+    } else if (using_quic_ &&
+               (!proxy_info_.is_quic() && !proxy_info_.is_direct())) {
+      // QUIC can not be spoken to non-QUIC proxies.  This error should not be
+      // user visible, because the non-alternate job should be resumed.
+      result = ERR_NO_SUPPORTED_PROXIES;
     }
   }
 
@@ -745,7 +751,9 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
     int rv = quic_request_.Request(
         destination, secure_quic, request_info_.privacy_mode,
         request_info_.method, net_log_, io_callback_);
-    if (rv != OK) {
+    if (rv == OK) {
+      using_existing_quic_session_ = true;
+    } else {
       // OK, there's no available QUIC session. Let |waiting_job_| resume
       // if it's paused.
       if (waiting_job_) {
@@ -771,7 +779,8 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
     next_state_ = STATE_CREATE_STREAM;
     existing_spdy_session_ = spdy_session;
     return OK;
-  } else if (request_ && (using_ssl_ || ShouldForceSpdyWithoutSSL())) {
+  } else if (request_ && !request_->HasSpdySessionKey() &&
+             (using_ssl_ || ShouldForceSpdyWithoutSSL())) {
     // Update the spdy session key for the request that launched this job.
     request_->SetSpdySessionKey(spdy_session_key);
   } else if (IsRequestEligibleForPipelining()) {
@@ -969,19 +978,21 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
     return result;
   }
 
-  if (!ssl_started && result < 0 && original_url_.get()) {
-    // Mark the alternate protocol as broken and fallback.
-    session_->http_server_properties()->SetBrokenAlternateProtocol(
-        HostPortPair::FromURL(*original_url_));
-    return result;
-  }
-
   if (using_quic_) {
     if (result < 0)
       return result;
     stream_ = quic_request_.ReleaseStream();
     next_state_ = STATE_NONE;
     return OK;
+  }
+
+  if (!ssl_started && result < 0 && original_url_.get()) {
+    HistogramBrokenAlternateProtocolLocation(
+        BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB);
+    // Mark the alternate protocol as broken and fallback.
+    session_->http_server_properties()->SetBrokenAlternateProtocol(
+        HostPortPair::FromURL(*original_url_));
+    return result;
   }
 
   if (result < 0 && !ssl_started)
@@ -1092,7 +1103,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     // We never use privacy mode for connection to proxy server.
     spdy_session_key = SpdySessionKey(proxy_server.host_port_pair(),
                                       ProxyServer::Direct(),
-                                      kPrivacyModeDisabled);
+                                      PRIVACY_MODE_DISABLED);
     direct = false;
   }
 
@@ -1278,7 +1289,7 @@ void HttpStreamFactoryImpl::Job::InitSSLConfig(
     ssl_config->verify_ev_cert = true;
 
   // Disable Channel ID if privacy mode is enabled.
-  if (request_info_.privacy_mode == kPrivacyModeEnabled)
+  if (request_info_.privacy_mode == PRIVACY_MODE_ENABLED)
     ssl_config->channel_id_enabled = false;
 }
 
@@ -1338,7 +1349,8 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
   }
 
   int rv = session_->proxy_service()->ReconsiderProxyAfterError(
-      request_info_.url, &proxy_info_, io_callback_, &pac_request_, net_log_);
+      request_info_.url, error, &proxy_info_, io_callback_, &pac_request_,
+      net_log_);
   if (rv == OK || rv == ERR_IO_PENDING) {
     // If the error was during connection setup, there is no socket to
     // disconnect.
@@ -1440,6 +1452,21 @@ bool HttpStreamFactoryImpl::Job::IsPreconnecting() const {
 
 bool HttpStreamFactoryImpl::Job::IsOrphaned() const {
   return !IsPreconnecting() && !request_;
+}
+
+void HttpStreamFactoryImpl::Job::ReportJobSuccededForRequest() {
+  if (using_existing_quic_session_) {
+    // If an existing session was used, then no TCP connection was
+    // started.
+    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_NO_RACE);
+  } else if (original_url_) {
+    // This job was the alternate protocol job, and hence won the race.
+    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_WON_RACE);
+  } else {
+    // This job was the normal job, and hence the alternate protocol job lost
+    // the race.
+    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_LOST_RACE);
+  }
 }
 
 bool HttpStreamFactoryImpl::Job::IsRequestEligibleForPipelining() {

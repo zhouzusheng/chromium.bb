@@ -74,7 +74,7 @@ public:
     virtual bool isCleanupTask() const { return true; }
 };
 
-WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, PassOwnPtr<WorkerClients> workerClients)
+WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_url(url)
     , m_userAgent(userAgent)
     , m_script(adoptPtr(new WorkerScriptController(*this)))
@@ -84,6 +84,7 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_workerClients(workerClients)
     , m_timeOrigin(timeOrigin)
+    , m_terminationObserver(0)
 {
     ScriptWrappable::init(this);
     setClient(this);
@@ -93,9 +94,6 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
 
 WorkerGlobalScope::~WorkerGlobalScope()
 {
-#if !ENABLE(OILPAN)
-    dispose();
-#endif
 }
 
 void WorkerGlobalScope::applyContentSecurityPolicyFromString(const String& policy, ContentSecurityPolicyHeaderType contentSecurityPolicyType)
@@ -187,9 +185,24 @@ void WorkerGlobalScope::clearInspector()
     m_workerInspectorController.clear();
 }
 
-void WorkerGlobalScope::willStopActiveDOMObjects()
+void WorkerGlobalScope::registerTerminationObserver(TerminationObserver* observer)
 {
-    lifecycleNotifier().notifyWillStopActiveDOMObjects();
+    ASSERT(!m_terminationObserver);
+    ASSERT(observer);
+    m_terminationObserver = observer;
+}
+
+void WorkerGlobalScope::unregisterTerminationObserver(TerminationObserver* observer)
+{
+    ASSERT(observer);
+    ASSERT(m_terminationObserver == observer);
+    m_terminationObserver = 0;
+}
+
+void WorkerGlobalScope::wasRequestedToTerminate()
+{
+    if (m_terminationObserver)
+        m_terminationObserver->wasRequestedToTerminate();
 }
 
 void WorkerGlobalScope::dispose()
@@ -211,12 +224,20 @@ void WorkerGlobalScope::dispose()
 void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState& exceptionState)
 {
     ASSERT(contentSecurityPolicy());
+    ASSERT(executionContext());
+
+    ExecutionContext& executionContext = *this->executionContext();
+
     Vector<String>::const_iterator urlsEnd = urls.end();
     Vector<KURL> completedURLs;
     for (Vector<String>::const_iterator it = urls.begin(); it != urlsEnd; ++it) {
-        const KURL& url = executionContext()->completeURL(*it);
+        const KURL& url = executionContext.completeURL(*it);
         if (!url.isValid()) {
             exceptionState.throwDOMException(SyntaxError, "The URL '" + *it + "' is invalid.");
+            return;
+        }
+        if (!contentSecurityPolicy()->allowScriptFromSource(url)) {
+            exceptionState.throwDOMException(NetworkError, "The script at '" + url.elidedString() + "' failed to load.");
             return;
         }
         completedURLs.append(url);
@@ -226,7 +247,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
     for (Vector<KURL>::const_iterator it = completedURLs.begin(); it != end; ++it) {
         RefPtr<WorkerScriptLoader> scriptLoader(WorkerScriptLoader::create());
         scriptLoader->setTargetType(ResourceRequest::TargetIsScript);
-        scriptLoader->loadSynchronously(executionContext(), *it, AllowCrossOriginRequests);
+        scriptLoader->loadSynchronously(executionContext, *it, AllowCrossOriginRequests);
 
         // If the fetching attempt failed, throw a NetworkError exception and abort all these steps.
         if (scriptLoader->failed()) {
@@ -234,9 +255,9 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
             return;
         }
 
-        InspectorInstrumentation::scriptImported(executionContext(), scriptLoader->identifier(), scriptLoader->script());
+        InspectorInstrumentation::scriptImported(&executionContext, scriptLoader->identifier(), scriptLoader->script());
 
-        RefPtr<ErrorEvent> errorEvent;
+        RefPtrWillBeRawPtr<ErrorEvent> errorEvent = nullptr;
         m_script->evaluate(ScriptSourceCode(scriptLoader->script(), scriptLoader->responseURL()), &errorEvent);
         if (errorEvent) {
             m_script->rethrowExceptionFromImportedScript(errorEvent.release());
@@ -260,23 +281,23 @@ void WorkerGlobalScope::reportBlockedScriptExecutionToInspector(const String& di
     InspectorInstrumentation::scriptExecutionBlockedByCSP(this, directiveText);
 }
 
-void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* state)
+void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* scriptState)
 {
     if (!isContextThread()) {
         postTask(AddConsoleMessageTask::create(source, level, message));
         return;
     }
     thread()->workerReportingProxy().reportConsoleMessage(source, level, message, lineNumber, sourceURL);
-    addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, nullptr, state);
+    addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, nullptr, scriptState);
 }
 
-void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* state)
+void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* scriptState)
 {
     ASSERT(isContextThread());
     if (callStack)
         InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, callStack);
     else
-        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, sourceURL, lineNumber, 0, state);
+        InspectorInstrumentation::addMessageToConsole(this, source, LogMessageType, level, message, sourceURL, lineNumber, 0, scriptState);
 }
 
 bool WorkerGlobalScope::isContextThread() const
@@ -304,9 +325,9 @@ void WorkerGlobalScope::trace(Visitor* visitor)
     visitor->trace(m_console);
     visitor->trace(m_location);
     visitor->trace(m_navigator);
-#if ENABLE(OILPAN)
-    HeapSupplementable<WorkerGlobalScope>::trace(visitor);
-#endif
+    visitor->trace(m_workerClients);
+    WillBeHeapSupplementable<WorkerGlobalScope>::trace(visitor);
+    ExecutionContext::trace(visitor);
 }
 
 } // namespace WebCore

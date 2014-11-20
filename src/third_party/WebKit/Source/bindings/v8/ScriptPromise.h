@@ -31,11 +31,9 @@
 #ifndef ScriptPromise_h
 #define ScriptPromise_h
 
-#include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/ScriptFunction.h"
 #include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/V8ScriptRunner.h"
-#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
 #include <v8.h>
 
 namespace WebCore {
@@ -54,7 +52,7 @@ public:
 
     // Constructs a ScriptPromise from |promise|.
     // If |promise| is not a Promise object, throws a v8 TypeError.
-    ScriptPromise(v8::Handle<v8::Value> promise, v8::Isolate*);
+    ScriptPromise(ScriptState*, v8::Handle<v8::Value> promise);
 
     ScriptPromise then(PassOwnPtr<ScriptFunction> onFulfilled, PassOwnPtr<ScriptFunction> onRejected = PassOwnPtr<ScriptFunction>());
 
@@ -83,9 +81,9 @@ public:
         return m_promise.isolate();
     }
 
-    bool hasNoValue() const
+    bool isEmpty() const
     {
-        return m_promise.hasNoValue();
+        return m_promise.isEmpty();
     }
 
     void clear()
@@ -99,6 +97,7 @@ public:
     static ScriptPromise cast(const ScriptValue& /*value*/);
 
 private:
+    RefPtr<ScriptState> m_scriptState;
     ScriptValue m_promise;
 };
 

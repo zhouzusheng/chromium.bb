@@ -74,9 +74,9 @@ static Decimal ensureMaximum(const Decimal& proposedValue, const Decimal& minimu
     return proposedValue >= minimum ? proposedValue : std::max(minimum, fallbackValue);
 }
 
-PassRefPtr<InputType> RangeInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> RangeInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new RangeInputType(element));
+    return adoptRefWillBeNoop(new RangeInputType(element));
 }
 
 RangeInputType::RangeInputType(HTMLInputElement& element)
@@ -250,7 +250,7 @@ void RangeInputType::createShadowSubtree()
     track->setShadowPseudoId(AtomicString("-webkit-slider-runnable-track", AtomicString::ConstructFromLiteral));
     track->setAttribute(idAttr, ShadowElementNames::sliderTrack());
     track->appendChild(SliderThumbElement::create(document));
-    RefPtr<HTMLElement> container = SliderContainerElement::create(document);
+    RefPtrWillBeRawPtr<HTMLElement> container = SliderContainerElement::create(document);
     container->appendChild(track.release());
     element().userAgentShadowRoot()->appendChild(container.release());
 }

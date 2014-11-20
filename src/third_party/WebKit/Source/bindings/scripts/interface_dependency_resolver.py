@@ -112,10 +112,11 @@ def merge_interface_dependencies(definitions, target_interface, dependency_idl_f
         dependency_interface = next(dependency_definitions.interfaces.itervalues())
         dependency_interface_basename, _ = os.path.splitext(os.path.basename(dependency_idl_filename))
 
-        transfer_extended_attributes(dependency_interface, dependency_interface_basename)
-        definitions.update(dependency_definitions)
+        transfer_extended_attributes(dependency_interface,
+                                     dependency_interface_basename)
+        definitions.update(dependency_definitions)  # merges partial interfaces
         if not dependency_interface.is_partial:
-            # Implemented interfaces (non-partial dependencies) are merged
+            # Implemented interfaces (non-partial dependencies) are also merged
             # into the target interface, so Code Generator can just iterate
             # over one list (and not need to handle 'implements' itself).
             target_interface.merge(dependency_interface)
@@ -132,7 +133,7 @@ def transfer_extended_attributes(dependency_interface, dependency_interface_base
     * applying certain extended attributes from the dependency interface
       to its members
     * storing the C++ class of the implementation in an internal
-      extended attribute of each member, [ImplementedBy]
+      extended attribute of each member, [PartialInterfaceImplementedAs]
 
     No return: modifies dependency_interface in place.
     """
@@ -141,17 +142,32 @@ def transfer_extended_attributes(dependency_interface, dependency_interface_base
         for key, value in dependency_interface.extended_attributes.iteritems()
         if key in DEPENDENCY_EXTENDED_ATTRIBUTES)
 
-    # C++ class name of the implementation, stored in [ImplementedBy], which
-    # defaults to the basename of dependency IDL file.
-    # This can be overridden by [ImplementedAs] on the dependency interface,
-    # and omitted entirely by [ImplementedInBaseClass].
+    # A partial interface's members are implemented as static member functions
+    # in a separate C++ class. This class name is stored in
+    # [PartialInterfaceImplementedAs] which defaults to the basename of
+    # dependency IDL file.
+    # This class name can be overridden by [ImplementedAs] on the partial
+    # interface definition.
+    #
+    # Note that implemented interfaces do *not* need [ImplementedAs], since
+    # they are implemented on the C++ object |impl| itself, just like members of
+    # the main interface definition, so the bindings do not need to know in
+    # which class implemented interfaces are implemented.
+    #
+    # Currently [LegacyTreatAsPartialInterface] can be used to have partial
+    # interface behavior on implemented interfaces, but this is being removed
+    # as legacy cruft:
+    # FIXME: Remove [LegacyTreatAsPartialInterface]
+    # http://crbug.com/360435
+    #
     # Note that [ImplementedAs] is used with different meanings on interfaces
     # and members:
     # for Blink class name and function name (or constant name), respectively.
     # Thus we do not want to copy this from the interface to the member, but
     # instead extract it and handle it separately.
-    if 'ImplementedInBaseClass' not in dependency_interface.extended_attributes:
-        merged_extended_attributes['ImplementedBy'] = (
+    if (dependency_interface.is_partial or
+        'LegacyTreatAsPartialInterface' in dependency_interface.extended_attributes):
+        merged_extended_attributes['PartialInterfaceImplementedAs'] = (
             dependency_interface.extended_attributes.get(
                 'ImplementedAs', dependency_interface_basename))
 

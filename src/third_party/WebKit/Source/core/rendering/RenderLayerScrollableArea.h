@@ -68,7 +68,9 @@ class RenderLayerScrollableArea FINAL : public ScrollableArea {
     friend class Internals;
 
 public:
-    RenderLayerScrollableArea(RenderBox*);
+    // FIXME: We should pass in the RenderBox but this opens a window
+    // for crashers during RenderLayer setup (see crbug.com/368062).
+    RenderLayerScrollableArea(RenderLayer&);
     virtual ~RenderLayerScrollableArea();
 
     bool hasHorizontalScrollbar() const { return horizontalScrollbar(); }
@@ -123,6 +125,9 @@ public:
 
     void updateAfterLayout();
     void updateAfterStyleChange(const RenderStyle*);
+    void updateAfterOverflowRecalc();
+
+    virtual void updateAfterCompositingChange() OVERRIDE;
 
     bool hasScrollbar() const { return m_hBar || m_vBar; }
 
@@ -169,7 +174,7 @@ public:
     // Returns true our scrollable area is in the FrameView's collection of scrollable areas. This can
     // only happen if we're both scrollable, and we do in fact overflow. This means that overflow: hidden
     // layers never get added to the FrameView's collection.
-    bool scrollsOverflow() const;
+    bool scrollsOverflow() const { return m_scrollsOverflow; }
 
     // Rectangle encompassing the scroll corner and resizer rect.
     IntRect scrollCornerAndResizerRect() const;
@@ -213,30 +218,27 @@ private:
     void updateResizerStyle();
     void drawPlatformResizerImage(GraphicsContext*, IntRect resizerCornerRect);
 
+    RenderBox& box() const;
     RenderLayer* layer() const;
 
     void updateScrollableAreaSet(bool hasOverflow);
 
     void updateCompositingLayersAfterScroll();
     virtual void updateNeedsCompositedScrolling() OVERRIDE;
-    bool setNeedsCompositedScrolling(bool);
-
-    virtual void updateHasVisibleNonLayerContent() OVERRIDE;
+    void setNeedsCompositedScrolling(bool needsCompositedScrolling) { m_needsCompositedScrolling = needsCompositedScrolling; }
 
     void setForceNeedsCompositedScrolling(ForceNeedsCompositedScrollingMode);
 
-    RenderBox* m_box;
+    RenderLayer& m_layer;
 
     // Keeps track of whether the layer is currently resizing, so events can cause resizing to start and stop.
     unsigned m_inResizeMode : 1;
+    unsigned m_scrollsOverflow : 1;
 
     unsigned m_scrollDimensionsDirty : 1;
     unsigned m_inOverflowRelayout : 1;
 
     unsigned m_needsCompositedScrolling : 1;
-    unsigned m_willUseCompositedScrollingHasBeenRecorded : 1;
-
-    unsigned m_isScrollableAreaHasBeenRecorded : 1;
 
     ForceNeedsCompositedScrollingMode m_forceNeedsCompositedScrolling;
 

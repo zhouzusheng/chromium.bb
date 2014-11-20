@@ -94,21 +94,33 @@ void VideoDecoderConfigToAVCodecContext(
     const VideoDecoderConfig& config,
     AVCodecContext* codec_context);
 
+MEDIA_EXPORT void AVCodecContextToAudioDecoderConfig(
+    const AVCodecContext* codec_context,
+    bool is_encrypted,
+    AudioDecoderConfig* config,
+    bool record_stats);
+
 // Converts FFmpeg's channel layout to chrome's ChannelLayout.  |channels| can
 // be used when FFmpeg's channel layout is not informative in order to make a
 // good guess about the plausible channel layout based on number of channels.
-ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
-                                                 int channels);
+MEDIA_EXPORT ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
+                                                              int channels);
 
 // Converts FFmpeg's audio sample format to Chrome's SampleFormat.
 MEDIA_EXPORT SampleFormat
     AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format);
+MEDIA_EXPORT VideoFrame::Format PixelFormatToVideoFormat(
+    PixelFormat pixel_format);
 
 // Converts video formats to its corresponding FFmpeg's pixel formats.
 PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
+
+// Convert FFmpeg UTC representation (YYYY-MM-DD HH:MM:SS) to base::Time.
+// Returns true and sets |*out| if |date_utc| contains a valid
+// date string. Otherwise returns fals and timeline_offset is unmodified.
+MEDIA_EXPORT bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out);
 
 }  // namespace media
 

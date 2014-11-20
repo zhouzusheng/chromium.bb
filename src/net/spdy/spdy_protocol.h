@@ -28,14 +28,15 @@ namespace net {
 
 // The major versions of SPDY. Major version differences indicate
 // framer-layer incompatibility, as opposed to minor version numbers
-// which indicate application-layer incompatibility. It is guaranteed
-// that the enum value SPDYn maps to the integer n.
+// which indicate application-layer incompatibility. Do not rely on
+// the mapping from enum value SPDYn to the integer n.
 enum SpdyMajorVersion {
   SPDY2 = 2,
   SPDY_MIN_VERSION = SPDY2,
   SPDY3 = 3,
   SPDY4 = 4,
-  SPDY_MAX_VERSION = SPDY4
+  SPDY5 = 5,
+  SPDY_MAX_VERSION = SPDY5
 };
 
 // A SPDY stream id is a 31 bit entity.
@@ -291,8 +292,11 @@ enum SpdyFrameType {
 
 // Flags on data packets.
 enum SpdyDataFlags {
-  DATA_FLAG_NONE = 0,
-  DATA_FLAG_FIN = 1,
+DATA_FLAG_NONE = 0x00,
+  DATA_FLAG_FIN = 0x01,
+  DATA_FLAG_END_SEGMENT = 0x02,
+  DATA_FLAG_PAD_LOW = 0x10,
+  DATA_FLAG_PAD_HIGH = 0x20
 };
 
 // Flags on control packets
@@ -331,19 +335,25 @@ enum SpdySettingsFlags {
   SETTINGS_FLAG_PERSISTED = 0x2
 };
 
-// List of known settings.
+// List of known settings. Avoid changing these enum values, as persisted
+// settings are keyed on them, and they are also exposed in net-internals.
 enum SpdySettingsIds {
   SETTINGS_UPLOAD_BANDWIDTH = 0x1,
   SETTINGS_DOWNLOAD_BANDWIDTH = 0x2,
   // Network round trip time in milliseconds.
   SETTINGS_ROUND_TRIP_TIME = 0x3,
+  // The maximum number of simultaneous live streams in each direction.
   SETTINGS_MAX_CONCURRENT_STREAMS = 0x4,
   // TCP congestion window in packets.
   SETTINGS_CURRENT_CWND = 0x5,
   // Downstream byte retransmission rate in percentage.
   SETTINGS_DOWNLOAD_RETRANS_RATE = 0x6,
   // Initial window size in bytes
-  SETTINGS_INITIAL_WINDOW_SIZE = 0x7
+  SETTINGS_INITIAL_WINDOW_SIZE = 0x7,
+  // HPACK header table maximum size.
+  SETTINGS_HEADER_TABLE_SIZE = 0x8,
+  // Whether or not server push (PUSH_PROMISE) is enabled.
+  SETTINGS_ENABLE_PUSH = 0x9,
 };
 
 // Status codes for RST_STREAM frames.
@@ -351,6 +361,7 @@ enum SpdyRstStreamStatus {
   RST_STREAM_INVALID = 0,
   RST_STREAM_PROTOCOL_ERROR = 1,
   RST_STREAM_INVALID_STREAM = 2,
+  RST_STREAM_STREAM_CLOSED = 2,  // Equivalent to INVALID_STREAM
   RST_STREAM_REFUSED_STREAM = 3,
   RST_STREAM_UNSUPPORTED_VERSION = 4,
   RST_STREAM_CANCEL = 5,
@@ -359,17 +370,33 @@ enum SpdyRstStreamStatus {
   RST_STREAM_STREAM_IN_USE = 8,
   RST_STREAM_STREAM_ALREADY_CLOSED = 9,
   RST_STREAM_INVALID_CREDENTIALS = 10,
+  // FRAME_TOO_LARGE (defined by SPDY versions 3.1 and below), and
+  // FRAME_SIZE_ERROR (defined by HTTP/2) are mapped to the same internal
+  // reset status.
   RST_STREAM_FRAME_TOO_LARGE = 11,
-  RST_STREAM_NUM_STATUS_CODES = 12
+  RST_STREAM_FRAME_SIZE_ERROR = 11,
+  RST_STREAM_SETTINGS_TIMEOUT = 12,
+  RST_STREAM_CONNECT_ERROR = 13,
+  RST_STREAM_ENHANCE_YOUR_CALM = 14,
+  RST_STREAM_NUM_STATUS_CODES = 15
 };
 
 // Status codes for GOAWAY frames.
 enum SpdyGoAwayStatus {
-  GOAWAY_INVALID = -1,
   GOAWAY_OK = 0,
+  GOAWAY_NO_ERROR = GOAWAY_OK,
   GOAWAY_PROTOCOL_ERROR = 1,
   GOAWAY_INTERNAL_ERROR = 2,
-  GOAWAY_NUM_STATUS_CODES = 3  // Must be last.
+  GOAWAY_FLOW_CONTROL_ERROR = 3,
+  GOAWAY_SETTINGS_TIMEOUT = 4,
+  GOAWAY_STREAM_CLOSED = 5,
+  GOAWAY_FRAME_SIZE_ERROR = 6,
+  GOAWAY_REFUSED_STREAM = 7,
+  GOAWAY_CANCEL = 8,
+  GOAWAY_COMPRESSION_ERROR = 9,
+  GOAWAY_CONNECT_ERROR = 10,
+  GOAWAY_ENHANCE_YOUR_CALM = 11,
+  GOAWAY_INADEQUATE_SECURITY = 12
 };
 
 // A SPDY priority is a number between 0 and 7 (inclusive).
@@ -380,6 +407,100 @@ typedef uint8 SpdyPriority;
 typedef std::map<std::string, std::string> SpdyNameValueBlock;
 
 typedef uint64 SpdyPingId;
+
+// TODO(hkhalil): Add direct testing for this? It won't increase coverage any,
+// but is good to do anyway.
+class NET_EXPORT_PRIVATE SpdyConstants {
+ public:
+  // Returns true if a given on-the-wire enumeration of a frame type is valid
+  // for a given protocol version, false otherwise.
+  static bool IsValidFrameType(SpdyMajorVersion version, int frame_type_field);
+
+  // Parses a frame type from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid frame type fields; consumers should first
+  // use IsValidFrameType() to verify validity of frame type fields.
+  static SpdyFrameType ParseFrameType(SpdyMajorVersion version,
+                                      int frame_type_field);
+
+  // Serializes a given frame type to the on-the-wire enumeration value for the
+  // given protocol version.
+  // Returns -1 on failure (I.E. Invalid frame type for the given version).
+  static int SerializeFrameType(SpdyMajorVersion version,
+                                SpdyFrameType frame_type);
+
+  // Returns true if a given on-the-wire enumeration of a setting id is valid
+  // for a given protocol version, false otherwise.
+  static bool IsValidSettingId(SpdyMajorVersion version, int setting_id_field);
+
+  // Parses a setting id from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid setting id fields; consumers should first
+  // use IsValidSettingId() to verify validity of setting id fields.
+  static SpdySettingsIds ParseSettingId(SpdyMajorVersion version,
+                                        int setting_id_field);
+
+  // Serializes a given setting id to the on-the-wire enumeration value for the
+  // given protocol version.
+  // Returns -1 on failure (I.E. Invalid setting id for the given version).
+  static int SerializeSettingId(SpdyMajorVersion version, SpdySettingsIds id);
+
+  // Returns true if a given on-the-wire enumeration of a RST_STREAM status code
+  // is valid for a given protocol version, false otherwise.
+  static bool IsValidRstStreamStatus(SpdyMajorVersion version,
+                                     int rst_stream_status_field);
+
+  // Parses a RST_STREAM status code from an on-the-wire enumeration of a given
+  // protocol version.
+  // Behavior is undefined for invalid RST_STREAM status code fields; consumers
+  // should first use IsValidRstStreamStatus() to verify validity of RST_STREAM
+  // status code fields..
+  static SpdyRstStreamStatus ParseRstStreamStatus(SpdyMajorVersion version,
+                                                  int rst_stream_status_field);
+
+  // Serializes a given RST_STREAM status code to the on-the-wire enumeration
+  // value for the given protocol version.
+  // Returns -1 on failure (I.E. Invalid RST_STREAM status code for the given
+  // version).
+  static int SerializeRstStreamStatus(SpdyMajorVersion version,
+                                      SpdyRstStreamStatus rst_stream_status);
+
+  // Returns true if a given on-the-wire enumeration of a GOAWAY status code is
+  // valid for the given protocol version, false otherwise.
+  static bool IsValidGoAwayStatus(SpdyMajorVersion version,
+                                  int goaway_status_field);
+
+  // Parses a GOAWAY status from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid GOAWAY status fields; consumers should
+  // first use IsValidGoAwayStatus() to verify validity of GOAWAY status fields.
+  static SpdyGoAwayStatus ParseGoAwayStatus(SpdyMajorVersion version,
+                                            int goaway_status_field);
+
+  // Serializes a given GOAWAY status to the on-the-wire enumeration value for
+  // the given protocol version.
+  // Returns -1 on failure (I.E. Invalid GOAWAY status for the given version).
+  static int SerializeGoAwayStatus(SpdyMajorVersion version,
+                                   SpdyGoAwayStatus status);
+
+  // Size, in bytes, of the data frame header. Future versions of SPDY
+  // will likely vary this, so we allow for the flexibility of a function call
+  // for this value as opposed to a constant.
+  static size_t GetDataFrameMinimumSize();
+
+  // Size, in bytes, of the control frame header.
+  static size_t GetControlFrameHeaderSize(SpdyMajorVersion version);
+
+  static size_t GetPrefixLength(SpdyFrameType type, SpdyMajorVersion version);
+
+  static size_t GetFrameMaximumSize(SpdyMajorVersion version);
+
+  static SpdyMajorVersion ParseMajorVersion(int version_number);
+
+  static int SerializeMajorVersion(SpdyMajorVersion version);
+
+  static std::string GetVersionString(SpdyMajorVersion version);
+};
 
 class SpdyFrame;
 typedef SpdyFrame SpdySerializedFrame;
@@ -459,6 +580,9 @@ class NET_EXPORT_PRIVATE SpdyFrameWithNameValueBlockIR
                  const base::StringPiece& value) {
     name_value_block_[name.as_string()] = value.as_string();
   }
+  SpdyNameValueBlock* mutable_name_value_block() {
+    return &name_value_block_;
+  }
 
  protected:
   explicit SpdyFrameWithNameValueBlockIR(SpdyStreamId stream_id);
@@ -483,6 +607,29 @@ class NET_EXPORT_PRIVATE SpdyDataIR
 
   base::StringPiece data() const { return data_; }
 
+  bool pad_low() const { return pad_low_; }
+
+  bool pad_high() const { return pad_high_; }
+
+  int padding_payload_len() const { return padding_payload_len_; }
+
+  void set_padding_len(int padding_len) {
+    // The padding_len should be in (0, 65535 + 2].
+    // Note that SpdyFramer::GetDataFrameMaximumPayload() enforces the overall
+    // payload size later so we actually can't pad more than 16375 bytes.
+    DCHECK_GT(padding_len, 0);
+    DCHECK_LT(padding_len, 65537);
+
+    if (padding_len <= 256) {
+      pad_low_ = true;
+      --padding_len;
+    } else {
+      pad_low_ = pad_high_ = true;
+      padding_len -= 2;
+    }
+    padding_payload_len_ = padding_len;
+  }
+
   // Deep-copy of data (keep private copy).
   void SetDataDeep(const base::StringPiece& data) {
     data_store_.reset(new std::string(data.data(), data.length()));
@@ -501,6 +648,11 @@ class NET_EXPORT_PRIVATE SpdyDataIR
   // Used to store data that this SpdyDataIR should own.
   scoped_ptr<std::string> data_store_;
   base::StringPiece data_;
+
+  bool pad_low_;
+  bool pad_high_;
+  // padding_payload_len_ = desired padding length - len(padding length field).
+  int padding_payload_len_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyDataIR);
 };
@@ -558,8 +710,6 @@ class NET_EXPORT_PRIVATE SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
     return status_;
   }
   void set_status(SpdyRstStreamStatus status) {
-    DCHECK_NE(status, RST_STREAM_INVALID);
-    DCHECK_LT(status, RST_STREAM_NUM_STATUS_CODES);
     status_ = status;
   }
 
@@ -601,8 +751,6 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
                   bool persist_value,
                   bool persisted,
                   int32 value) {
-    // TODO(hkhalil): DCHECK_LE(SETTINGS_UPLOAD_BANDWIDTH, id);
-    // TODO(hkhalil): DCHECK_GE(SETTINGS_INITIAL_WINDOW_SIZE, id);
     values_[id].persist_value = persist_value;
     values_[id].persisted = persisted;
     values_[id].value = value;

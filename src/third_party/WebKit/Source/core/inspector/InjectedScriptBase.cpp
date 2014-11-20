@@ -34,8 +34,8 @@
 #include "core/inspector/InjectedScriptBase.h"
 
 #include "bindings/v8/ScriptFunctionCall.h"
-#include "bindings/v8/ScriptState.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
@@ -75,7 +75,10 @@ const ScriptObject& InjectedScriptBase::injectedScriptObject() const
 ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& function, bool& hadException) const
 {
     ExecutionContext* executionContext = m_injectedScriptObject.scriptState()->executionContext();
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, name(), 1);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", InspectorFunctionCallEvent::data(executionContext, 0, name(), 1));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, 0, name(), 1);
 
     ScriptState* scriptState = m_injectedScriptObject.scriptState();
     bool evalIsDisabled = false;
@@ -92,12 +95,13 @@ ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& 
         scriptState->setEvalEnabled(false);
 
     InspectorInstrumentation::didCallFunction(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
     return resultValue;
 }
 
 void InjectedScriptBase::makeCall(ScriptFunctionCall& function, RefPtr<JSONValue>* result)
 {
-    if (hasNoValue() || !canAccessInspectedWindow()) {
+    if (isEmpty() || !canAccessInspectedWindow()) {
         *result = JSONValue::null();
         return;
     }

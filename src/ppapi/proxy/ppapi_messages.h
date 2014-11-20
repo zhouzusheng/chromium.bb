@@ -22,7 +22,6 @@
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/dev/pp_video_capture_dev.h"
 #include "ppapi/c/dev/pp_video_dev.h"
-#include "ppapi/c/dev/ppb_graphics_2d_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppp_printing_dev.h"
@@ -90,8 +89,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(PP_FileType, PP_FILETYPE_OTHER)
 IPC_ENUM_TRAITS(PP_Flash_BrowserOperations_Permission)
 IPC_ENUM_TRAITS(PP_Flash_BrowserOperations_SettingType)
 IPC_ENUM_TRAITS(PP_FlashSetting)
-IPC_ENUM_TRAITS_MAX_VALUE(PP_Graphics2D_Dev_ResizeMode,
-                          PP_GRAPHICS2D_DEV_RESIZEMODE_STRETCH)
 IPC_ENUM_TRAITS(PP_ImageDataFormat)
 IPC_ENUM_TRAITS(PP_InputEvent_MouseButton)
 IPC_ENUM_TRAITS(PP_InputEvent_Type)
@@ -653,6 +650,9 @@ IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_NumberOfFindResultsChanged,
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_SelectFindResultChanged,
                     PP_Instance /* instance */,
                     int32_t /* index */)
+IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_SetTickmarks,
+                    PP_Instance /* instance */,
+                    std::vector<PP_Rect> /* tickmarks */)
 
 // PPP_Printing
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiMsg_PPPPrinting_QuerySupportedFormats,
@@ -753,6 +753,14 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_Keepalive)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_ChannelCreated,
                      IPC::ChannelHandle /* handle */)
 
+// Notify the renderer that the PPAPI channel gets ready in the plugin.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_StartupInitializationComplete);
+
+// Calls renderer to open a resource file for nacl_irt_open_resource().
+IPC_SYNC_MESSAGE_CONTROL1_1(PpapiHostMsg_OpenResource,
+                            std::string /* key */,
+                            ppapi::proxy::SerializedHandle /* fd */)
+
 // Logs the given message to the console of all instances.
 IPC_MESSAGE_CONTROL4(PpapiHostMsg_LogWithSource,
                      PP_Instance /* instance */,
@@ -785,10 +793,6 @@ IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBGraphics3D_Create,
 IPC_SYNC_MESSAGE_ROUTED2_0(PpapiHostMsg_PPBGraphics3D_SetGetBuffer,
                            ppapi::HostResource /* context */,
                            int32 /* transfer_buffer_id */)
-IPC_SYNC_MESSAGE_ROUTED1_2(PpapiHostMsg_PPBGraphics3D_GetState,
-                           ppapi::HostResource /* context */,
-                           gpu::CommandBuffer::State /* state */,
-                           bool /* success */)
 IPC_SYNC_MESSAGE_ROUTED3_2(PpapiHostMsg_PPBGraphics3D_WaitForTokenInRange,
                            ppapi::HostResource /* context */,
                            int32 /* start */,
@@ -804,17 +808,14 @@ IPC_SYNC_MESSAGE_ROUTED3_2(PpapiHostMsg_PPBGraphics3D_WaitForGetOffsetInRange,
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBGraphics3D_AsyncFlush,
                     ppapi::HostResource /* context */,
                     int32 /* put_offset */)
-IPC_SYNC_MESSAGE_ROUTED2_1(PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer,
+IPC_SYNC_MESSAGE_ROUTED2_2(PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer,
                            ppapi::HostResource /* context */,
                            uint32 /* size */,
-                           int32 /* id */)
+                           int32 /* id */,
+                           ppapi::proxy::SerializedHandle /* transfer_buffer */)
 IPC_SYNC_MESSAGE_ROUTED2_0(PpapiHostMsg_PPBGraphics3D_DestroyTransferBuffer,
                            ppapi::HostResource /* context */,
                            int32 /* id */)
-IPC_SYNC_MESSAGE_ROUTED2_1(PpapiHostMsg_PPBGraphics3D_GetTransferBuffer,
-                           ppapi::HostResource /* context */,
-                           int32 /* id */,
-                           ppapi::proxy::SerializedHandle /* transfer_buffer */)
 IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBGraphics3D_SwapBuffers,
                     ppapi::HostResource /* graphics_3d */)
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertSyncPoint,
@@ -1304,12 +1305,12 @@ IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_GeneralReply)
 // FileRef
 // Creates a FileRef to a path on an external file system. This message may
 // only be sent from the renderer.
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileRef_CreateExternal,
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileRef_CreateForRawFS,
                      base::FilePath /* external_path */)
 
-// Creates a FileRef to a path on an internal file system. This message may
-// be sent from the renderer or the plugin.
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileRef_CreateInternal,
+// Creates a FileRef to a path on a file system that uses fileapi.
+// This message may be sent from the renderer or the plugin.
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileRef_CreateForFileAPI,
                      PP_Resource /* file_system */,
                      std::string /* internal_path */)
 
@@ -1413,16 +1414,11 @@ IPC_MESSAGE_CONTROL3(PpapiHostMsg_Graphics2D_Scroll,
                      PP_Point /* amount */)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_ReplaceContents,
                      ppapi::HostResource /* image_data */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_Dev_SetScale,
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_SetScale,
                      float /* scale */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_SetOffset,
-                     PP_Point /* offset */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_SetResizeMode,
-                     PP_Graphics2D_Dev_ResizeMode /* resize_mode */)
 
 // Graphics2D, plugin -> host -> plugin
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_Graphics2D_Flush,
-                     ppapi::ViewData /* view_data */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_Graphics2D_Flush)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Graphics2D_FlushAck)
 
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_Graphics2D_ReadImageData,
@@ -1442,20 +1438,25 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamAudioTrack_CreateFromPendingHost,
                      std::string /* track_id */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamVideoTrack_CreateFromPendingHost,
                      std::string /* track_id */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_MediaStreamVideoTrack_Create)
 IPC_MESSAGE_CONTROL1(
     PpapiHostMsg_MediaStreamVideoTrack_Configure,
     ppapi::MediaStreamVideoTrackShared::Attributes /* attributes */)
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_MediaStreamVideoTrack_ConfigureReply)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamVideoTrack_ConfigureReply,
+                     std::string /* track_id */)
 
 // Message for init buffers. It also takes a shared memory handle which is put
 // in the outer ResourceReplyMessage.
-IPC_MESSAGE_CONTROL2(PpapiPluginMsg_MediaStreamTrack_InitBuffers,
+IPC_MESSAGE_CONTROL3(PpapiPluginMsg_MediaStreamTrack_InitBuffers,
                      int32_t /* number_of_buffers */,
-                     int32_t /* buffer_size */)
+                     int32_t /* buffer_size */,
+                     bool /* readonly */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamTrack_EnqueueBuffer,
                      int32_t /* index */);
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_MediaStreamTrack_EnqueueBuffer,
                      int32_t /* index */);
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_MediaStreamTrack_EnqueueBuffers,
+                     std::vector<int32_t> /* indices */);
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_MediaStreamTrack_Close)
 
 // NetworkMonitor.

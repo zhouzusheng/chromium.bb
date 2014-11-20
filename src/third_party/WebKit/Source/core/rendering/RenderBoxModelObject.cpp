@@ -128,12 +128,19 @@ void RenderBoxModelObject::willBeDestroyed()
     RenderLayerModelObject::willBeDestroyed();
 }
 
+bool RenderBoxModelObject::calculateHasBoxDecorations() const
+{
+    RenderStyle* styleToUse = style();
+    ASSERT(styleToUse);
+    return hasBackground() || styleToUse->hasBorder() || styleToUse->hasAppearance() || styleToUse->boxShadow();
+}
+
 void RenderBoxModelObject::updateFromStyle()
 {
     RenderLayerModelObject::updateFromStyle();
 
     RenderStyle* styleToUse = style();
-    setHasBoxDecorations(hasBackground() || styleToUse->hasBorder() || styleToUse->hasAppearance() || styleToUse->boxShadow());
+    setHasBoxDecorations(calculateHasBoxDecorations());
     setInline(styleToUse->isDisplayInlineType());
     setPositionState(styleToUse->position());
     setHorizontalWritingMode(styleToUse->isHorizontalWritingMode());
@@ -178,6 +185,11 @@ bool RenderBoxModelObject::hasAutoHeightOrContainingBlockWithAutoHeight() const
     // what the CSS spec says to do with heights. Basically we
     // don't care if the cell specified a height or not.
     if (cb->isTableCell())
+        return false;
+
+    // Match RenderBox::availableLogicalHeightUsing by special casing
+    // the render view. The available height is taken from the frame.
+    if (cb->isRenderView())
         return false;
 
     if (!cb->style()->logicalHeight().isAuto() || (!cb->style()->logicalTop().isAuto() && !cb->style()->logicalBottom().isAuto()))
@@ -234,7 +246,7 @@ LayoutPoint RenderBoxModelObject::adjustedPositionRelativeToOffsetParent(const L
         return LayoutPoint();
 
     LayoutPoint referencePoint = startPoint;
-    referencePoint.move(parent()->offsetForColumns(referencePoint));
+    referencePoint.move(parent()->columnOffset(referencePoint));
 
     // If the offsetParent of the element is null, or is the HTML body element,
     // return the distance between the canvas origin and the left border edge
@@ -258,7 +270,7 @@ LayoutPoint RenderBoxModelObject::adjustedPositionRelativeToOffsetParent(const L
                 if (!isOutOfFlowPositioned()) {
                     if (current->isBox() && !current->isTableRow())
                         referencePoint.moveBy(toRenderBox(current)->topLeftLocation());
-                    referencePoint.move(current->parent()->offsetForColumns(referencePoint));
+                    referencePoint.move(current->parent()->columnOffset(referencePoint));
                 }
             }
 
@@ -495,11 +507,11 @@ void RenderBoxModelObject::paintFillLayerExtended(const PaintInfo& paintInfo, co
     bool hasRoundedBorder = style()->hasBorderRadius() && (includeLeftEdge || includeRightEdge);
     bool clippedWithLocalScrolling = hasOverflowClip() && bgLayer->attachment() == LocalBackgroundAttachment;
     bool isBorderFill = bgLayer->clip() == BorderFillBox;
-    bool isRoot = this->isRoot();
+    bool isRoot = this->isDocumentElement();
 
     Color bgColor = color;
     StyleImage* bgImage = bgLayer->image();
-    bool shouldPaintBackgroundImage = bgImage && bgImage->canRender(this, style()->effectiveZoom());
+    bool shouldPaintBackgroundImage = bgImage && bgImage->canRender(*this, style()->effectiveZoom());
 
     bool forceBackgroundToWhite = false;
     if (document().printing()) {
@@ -696,7 +708,7 @@ void RenderBoxModelObject::paintFillLayerExtended(const PaintInfo& paintInfo, co
     // no progressive loading of the background image
     if (shouldPaintBackgroundImage) {
         BackgroundImageGeometry geometry;
-        calculateBackgroundImageGeometry(bgLayer, scrolledPaintRect, geometry, backgroundObject);
+        calculateBackgroundImageGeometry(paintInfo.paintContainer(), bgLayer, scrolledPaintRect, geometry, backgroundObject);
         geometry.clip(paintInfo.rect);
         if (!geometry.destRect().isEmpty()) {
             CompositeOperator compositeOp = op == CompositeSourceOver ? bgLayer->composite() : op;
@@ -798,18 +810,10 @@ IntSize RenderBoxModelObject::calculateImageIntrinsicDimensions(StyleImage* imag
     FloatSize intrinsicRatio;
     image->computeIntrinsicDimensions(this, intrinsicWidth, intrinsicHeight, intrinsicRatio);
 
-    // Intrinsic dimensions expressed as percentages must be resolved relative to the dimensions of the rectangle
-    // that establishes the coordinate system for the 'background-position' property.
+    ASSERT(!intrinsicWidth.isPercent());
+    ASSERT(!intrinsicHeight.isPercent());
 
-    // FIXME: Remove unnecessary rounding when layout is off ints: webkit.org/b/63656
-    if (intrinsicWidth.isPercent() && intrinsicHeight.isPercent() && intrinsicRatio.isEmpty()) {
-        // Resolve width/height percentages against positioningAreaSize, only if no intrinsic ratio is provided.
-        int resolvedWidth = static_cast<int>(round(positioningAreaSize.width() * intrinsicWidth.percent() / 100));
-        int resolvedHeight = static_cast<int>(round(positioningAreaSize.height() * intrinsicHeight.percent() / 100));
-        return IntSize(resolvedWidth, resolvedHeight);
-    }
-
-    IntSize resolvedSize(intrinsicWidth.isFixed() ? intrinsicWidth.value() : 0, intrinsicHeight.isFixed() ? intrinsicHeight.value() : 0);
+    IntSize resolvedSize(intrinsicWidth.value(), intrinsicHeight.value());
     IntSize minimumSize(resolvedSize.width() > 0 ? 1 : 0, resolvedSize.height() > 0 ? 1 : 0);
     if (shouldScaleOrNot == ScaleByEffectiveZoom)
         resolvedSize.scale(style()->effectiveZoom());
@@ -940,7 +944,7 @@ IntPoint RenderBoxModelObject::BackgroundImageGeometry::relativePhase() const
 
 bool RenderBoxModelObject::fixedBackgroundPaintsInLocalCoordinates() const
 {
-    if (!isRoot())
+    if (!isDocumentElement())
         return false;
 
     if (view()->frameView() && view()->frameView()->paintBehavior() & PaintBehaviorFlattenCompositingLayers)
@@ -964,8 +968,8 @@ static inline int getSpace(int areaSize, int tileSize)
     return space;
 }
 
-void RenderBoxModelObject::calculateBackgroundImageGeometry(const FillLayer* fillLayer, const LayoutRect& paintRect,
-    BackgroundImageGeometry& geometry, RenderObject* backgroundObject)
+void RenderBoxModelObject::calculateBackgroundImageGeometry(const RenderLayerModelObject* paintContainer, const FillLayer* fillLayer, const LayoutRect& paintRect,
+    BackgroundImageGeometry& geometry, RenderObject* backgroundObject) const
 {
     LayoutUnit left = 0;
     LayoutUnit top = 0;
@@ -974,6 +978,7 @@ void RenderBoxModelObject::calculateBackgroundImageGeometry(const FillLayer* fil
 
     // Determine the background positioning area and set destRect to the background painting area.
     // destRect will be adjusted later if the background is non-repeating.
+    // FIXME: transforms spec says that fixed backgrounds behave like scroll inside transforms.
     bool fixedAttachment = fillLayer->attachment() == FixedBackgroundAttachment;
 
 #if ENABLE(FAST_MOBILE_SCROLLING)
@@ -1008,24 +1013,31 @@ void RenderBoxModelObject::calculateBackgroundImageGeometry(const FillLayer* fil
         // The background of the box generated by the root element covers the entire canvas including
         // its margins. Since those were added in already, we have to factor them out when computing
         // the background positioning area.
-        if (isRoot()) {
+        if (isDocumentElement()) {
             positioningAreaSize = pixelSnappedIntSize(toRenderBox(this)->size() - LayoutSize(left + right, top + bottom), toRenderBox(this)->location());
             left += marginLeft();
             top += marginTop();
         } else
             positioningAreaSize = pixelSnappedIntSize(paintRect.size() - LayoutSize(left + right, top + bottom), paintRect.location());
     } else {
+        geometry.setHasNonLocalGeometry();
+
         IntRect viewportRect = pixelSnappedIntRect(viewRect());
         if (fixedBackgroundPaintsInLocalCoordinates())
             viewportRect.setLocation(IntPoint());
         else if (FrameView* frameView = view()->frameView())
             viewportRect.setLocation(IntPoint(frameView->scrollOffsetForFixedPosition()));
 
+        if (paintContainer) {
+            IntPoint absoluteContainerOffset = roundedIntPoint(paintContainer->localToAbsolute(FloatPoint()));
+            viewportRect.moveBy(-absoluteContainerOffset);
+        }
+
         geometry.setDestRect(pixelSnappedIntRect(viewportRect));
         positioningAreaSize = geometry.destRect().size();
     }
 
-    RenderObject* clientForBackgroundImage = backgroundObject ? backgroundObject : this;
+    const RenderObject* clientForBackgroundImage = backgroundObject ? backgroundObject : this;
     IntSize fillTileSize = calculateFillTileSize(fillLayer, positioningAreaSize);
     fillLayer->image()->setContainerSizeForRenderer(clientForBackgroundImage, fillTileSize, style()->effectiveZoom());
     geometry.setTileSize(fillTileSize);
@@ -1131,7 +1143,7 @@ bool RenderBoxModelObject::paintNinePieceImage(GraphicsContext* graphicsContext,
     if (!styleImage->isLoaded())
         return true; // Never paint a nine-piece image incrementally, but don't paint the fallback borders either.
 
-    if (!styleImage->canRender(this, style->effectiveZoom()))
+    if (!styleImage->canRender(*this, style->effectiveZoom()))
         return false;
 
     // FIXME: border-image is broken with full page zooming when tiling has to happen, since the tiling function
@@ -1712,6 +1724,9 @@ void RenderBoxModelObject::paintBorder(const PaintInfo& info, const LayoutRect& 
     getBorderEdgeInfo(edges, style, includeLogicalLeftEdge, includeLogicalRightEdge);
     RoundedRect outerBorder = style->getRoundedBorderFor(rect, includeLogicalLeftEdge, includeLogicalRightEdge);
     RoundedRect innerBorder = style->getRoundedInnerBorderFor(borderInnerRectAdjustedForBleedAvoidance(graphicsContext, rect, bleedAvoidance), includeLogicalLeftEdge, includeLogicalRightEdge);
+
+    if (outerBorder.rect().isEmpty())
+        return;
 
     bool haveAlphaColor = false;
     bool haveAllSolidEdges = true;

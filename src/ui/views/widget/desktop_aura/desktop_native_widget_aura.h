@@ -83,7 +83,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
     return input_method_event_filter_.get();
   }
   wm::CompoundEventFilter* root_window_event_filter() {
-    return root_window_event_filter_;
+    return root_window_event_filter_.get();
   }
   aura::WindowTreeHost* host() {
     return host_.get();
@@ -121,6 +121,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual bool HasCapture() const OVERRIDE;
   virtual InputMethod* CreateInputMethod() OVERRIDE;
   virtual internal::InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
+  virtual ui::InputMethod* GetHostInputMethod() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
@@ -205,7 +206,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Overridden from aura::client::ActivationDelegate:
@@ -281,7 +281,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<FocusManagerEventHandler> focus_manager_event_handler_;
 
   // Toplevel event filter which dispatches to other event filters.
-  wm::CompoundEventFilter* root_window_event_filter_;
+  scoped_ptr<wm::CompoundEventFilter> root_window_event_filter_;
 
   scoped_ptr<wm::InputMethodEventFilter> input_method_event_filter_;
 
@@ -296,7 +296,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<wm::WindowModalityController>
       window_modality_controller_;
 
-  // See comments in OnLostActive().
   bool restore_focus_on_activate_;
 
   gfx::NativeCursor cursor_;

@@ -14,12 +14,15 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/process_handle.h"
+#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "ui/gfx/range/range.h"
 
 class TransportDIB;
@@ -28,9 +31,13 @@ struct FrameMsg_CompositorFrameSwapped_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace blink {
+class WebGeolocationClient;
 class WebInputEvent;
 class WebMouseEvent;
 class WebContentDecryptionModule;
+class WebMIDIClient;
+class WebMediaPlayer;
+class WebNotificationPresenter;
 class WebSecurityOrigin;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
@@ -46,6 +53,8 @@ class Rect;
 namespace content {
 
 class ChildFrameCompositingHelper;
+class MediaStreamClient;
+class NotificationProvider;
 class PepperPluginInstanceImpl;
 class RendererPpapiHost;
 class RenderFrameObserver;
@@ -56,7 +65,8 @@ struct CustomContextMenuContext;
 
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
-      NON_EXPORTED_BASE(public blink::WebFrameClient) {
+      NON_EXPORTED_BASE(public blink::WebFrameClient),
+      NON_EXPORTED_BASE(public WebMediaPlayerDelegate) {
  public:
   // Creates a new RenderFrame. |render_view| is the RenderView object that this
   // frame belongs to.
@@ -91,8 +101,14 @@ class CONTENT_EXPORT RenderFrameImpl
   // Returns the RenderWidget associated with this frame.
   RenderWidget* GetRenderWidget();
 
-  // This is called right after creation with the WebFrame for this RenderFrame.
-  void SetWebFrame(blink::WebFrame* web_frame);
+  // This is called right after creation with the WebLocalFrame for this
+  // RenderFrame. It must be called before Initialize.
+  void SetWebFrame(blink::WebLocalFrame* web_frame);
+
+  // This method must be called after the frame has been added to the frame
+  // tree. It creates all objects that depend on the frame being at its proper
+  // spot.
+  void Initialize();
 
   // Notification from RenderView.
   virtual void OnStop();
@@ -162,6 +178,10 @@ class CONTENT_EXPORT RenderFrameImpl
     bool keep_selection);
 #endif  // ENABLE_PLUGINS
 
+  // Overrides the MediaStreamClient used when creating MediaStream players.
+  // Must be called before any players are created.
+  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
+
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
@@ -181,165 +201,179 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebFrame* frame,
       const WebPluginInfo& info,
       const blink::WebPluginParams& params) OVERRIDE;
-  virtual void LoadURLExternally(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationPolicy policy) OVERRIDE;
+  virtual void LoadURLExternally(blink::WebLocalFrame* frame,
+                                 const blink::WebURLRequest& request,
+                                 blink::WebNavigationPolicy policy) OVERRIDE;
   virtual void ExecuteJavaScript(const base::string16& javascript) OVERRIDE;
 
-  // blink::WebFrameClient implementation -------------------------------------
-  virtual blink::WebPlugin* createPlugin(
-      blink::WebFrame* frame,
-      const blink::WebPluginParams& params);
+  // blink::WebFrameClient implementation:
+  virtual blink::WebPlugin* createPlugin(blink::WebLocalFrame* frame,
+                                         const blink::WebPluginParams& params);
   virtual blink::WebMediaPlayer* createMediaPlayer(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client);
   virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebSecurityOrigin& security_origin,
       const blink::WebString& key_system);
   virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       blink::WebApplicationCacheHostClient* client);
   virtual blink::WebWorkerPermissionClientProxy*
-      createWorkerPermissionClientProxy(blink::WebFrame* frame);
-  virtual blink::WebCookieJar* cookieJar(blink::WebFrame* frame);
+      createWorkerPermissionClientProxy(blink::WebLocalFrame* frame);
+  virtual blink::WebCookieJar* cookieJar(blink::WebLocalFrame* frame);
   virtual blink::WebServiceWorkerProvider* createServiceWorkerProvider(
-      blink::WebFrame* frame);
-  virtual void didAccessInitialDocument(blink::WebFrame* frame);
-  virtual blink::WebFrame* createChildFrame(blink::WebFrame* parent,
-                                             const blink::WebString& name);
-  virtual void didDisownOpener(blink::WebFrame* frame);
+      blink::WebLocalFrame* frame);
+  virtual void didAccessInitialDocument(blink::WebLocalFrame* frame);
+  virtual blink::WebFrame* createChildFrame(blink::WebLocalFrame* parent,
+                                            const blink::WebString& name);
+  virtual void didDisownOpener(blink::WebLocalFrame* frame);
   virtual void frameDetached(blink::WebFrame* frame);
   virtual void frameFocused();
   virtual void willClose(blink::WebFrame* frame);
-  virtual void didChangeName(blink::WebFrame* frame,
+  virtual void didChangeName(blink::WebLocalFrame* frame,
                              const blink::WebString& name);
   virtual void didMatchCSS(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebVector<blink::WebString>& newly_matching_selectors,
       const blink::WebVector<blink::WebString>& stopped_matching_selectors);
-  virtual void loadURLExternally(blink::WebFrame* frame,
+  virtual bool shouldReportDetailedMessageForSource(
+      const blink::WebString& source);
+  virtual void didAddMessageToConsole(const blink::WebConsoleMessage& message,
+                                      const blink::WebString& source_name,
+                                      unsigned source_line,
+                                      const blink::WebString& stack_trace);
+  virtual void loadURLExternally(blink::WebLocalFrame* frame,
                                  const blink::WebURLRequest& request,
-                                 blink::WebNavigationPolicy policy);
-  virtual void loadURLExternally(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationPolicy policy,
-      const blink::WebString& suggested_name);
+                                 blink::WebNavigationPolicy policy,
+                                 const blink::WebString& suggested_name);
   // The WebDataSource::ExtraData* is assumed to be a DocumentState* subclass.
   virtual blink::WebNavigationPolicy decidePolicyForNavigation(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       blink::WebDataSource::ExtraData* extra_data,
       const blink::WebURLRequest& request,
       blink::WebNavigationType type,
       blink::WebNavigationPolicy default_policy,
       bool is_redirect);
-  // DEPRECATED
-  virtual blink::WebNavigationPolicy decidePolicyForNavigation(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationType type,
-      blink::WebNavigationPolicy default_policy,
-      bool is_redirect);
-  virtual void willSendSubmitEvent(blink::WebFrame* frame,
-                                   const blink::WebFormElement& form);
-  virtual void willSubmitForm(blink::WebFrame* frame,
-                              const blink::WebFormElement& form);
-  virtual void didCreateDataSource(blink::WebFrame* frame,
-                                   blink::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(blink::WebFrame* frame);
-  virtual void didReceiveServerRedirectForProvisionalLoad(
+  virtual blink::WebHistoryItem historyItemForNewChildFrame(
       blink::WebFrame* frame);
+  virtual void willSendSubmitEvent(blink::WebLocalFrame* frame,
+                                   const blink::WebFormElement& form);
+  virtual void willSubmitForm(blink::WebLocalFrame* frame,
+                              const blink::WebFormElement& form);
+  virtual void didCreateDataSource(blink::WebLocalFrame* frame,
+                                   blink::WebDataSource* datasource);
+  virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame);
+  virtual void didReceiveServerRedirectForProvisionalLoad(
+      blink::WebLocalFrame* frame);
   virtual void didFailProvisionalLoad(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebURLError& error);
-  virtual void didCommitProvisionalLoad(blink::WebFrame* frame,
-                                        bool is_new_navigation);
-  virtual void didClearWindowObject(blink::WebFrame* frame, int world_id);
-  virtual void didCreateDocumentElement(blink::WebFrame* frame);
-  virtual void didReceiveTitle(blink::WebFrame* frame,
+  virtual void didCommitProvisionalLoad(
+      blink::WebLocalFrame* frame,
+      const blink::WebHistoryItem& item,
+      blink::WebHistoryCommitType commit_type);
+  virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
+  virtual void didReceiveTitle(blink::WebLocalFrame* frame,
                                const blink::WebString& title,
                                blink::WebTextDirection direction);
-  virtual void didChangeIcon(blink::WebFrame* frame,
+  virtual void didChangeIcon(blink::WebLocalFrame* frame,
                              blink::WebIconURL::Type icon_type);
-  virtual void didFinishDocumentLoad(blink::WebFrame* frame);
-  virtual void didHandleOnloadEvents(blink::WebFrame* frame);
-  virtual void didFailLoad(blink::WebFrame* frame,
+  virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame);
+  virtual void didHandleOnloadEvents(blink::WebLocalFrame* frame);
+  virtual void didFailLoad(blink::WebLocalFrame* frame,
                            const blink::WebURLError& error);
-  virtual void didFinishLoad(blink::WebFrame* frame);
-  virtual void didNavigateWithinPage(blink::WebFrame* frame,
-                                     bool is_new_navigation);
-  virtual void didUpdateCurrentHistoryItem(blink::WebFrame* frame);
+  virtual void didFinishLoad(blink::WebLocalFrame* frame);
+  virtual void didNavigateWithinPage(blink::WebLocalFrame* frame,
+                                     const blink::WebHistoryItem& item,
+                                     blink::WebHistoryCommitType commit_type);
+  virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual void didChangeSelection(bool is_empty_selection);
+  virtual blink::WebColorChooser* createColorChooser(
+      blink::WebColorChooserClient* client,
+      const blink::WebColor& initial_color,
+      const blink::WebVector<blink::WebColorSuggestion>& suggestions);
+  virtual void runModalAlertDialog(const blink::WebString& message);
+  virtual bool runModalConfirmDialog(const blink::WebString& message);
+  virtual bool runModalPromptDialog(const blink::WebString& message,
+                                    const blink::WebString& default_value,
+                                    blink::WebString* actual_value);
+  virtual bool runModalBeforeUnloadDialog(bool is_reload,
+                                          const blink::WebString& message);
   virtual void showContextMenu(const blink::WebContextMenuData& data);
   virtual void clearContextMenu();
-  virtual void willRequestAfterPreconnect(blink::WebFrame* frame,
+  virtual void willRequestAfterPreconnect(blink::WebLocalFrame* frame,
                                           blink::WebURLRequest& request);
-  virtual void willSendRequest(
-      blink::WebFrame* frame,
-      unsigned identifier,
-      blink::WebURLRequest& request,
-      const blink::WebURLResponse& redirect_response);
-  virtual void didReceiveResponse(
-      blink::WebFrame* frame,
-      unsigned identifier,
-      const blink::WebURLResponse& response);
-  virtual void didFinishResourceLoad(blink::WebFrame* frame,
+  virtual void willSendRequest(blink::WebLocalFrame* frame,
+                               unsigned identifier,
+                               blink::WebURLRequest& request,
+                               const blink::WebURLResponse& redirect_response);
+  virtual void didReceiveResponse(blink::WebLocalFrame* frame,
+                                  unsigned identifier,
+                                  const blink::WebURLResponse& response);
+  virtual void didFinishResourceLoad(blink::WebLocalFrame* frame,
                                      unsigned identifier);
   virtual void didLoadResourceFromMemoryCache(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebURLRequest& request,
       const blink::WebURLResponse& response);
-  virtual void didDisplayInsecureContent(blink::WebFrame* frame);
-  virtual void didRunInsecureContent(blink::WebFrame* frame,
+  virtual void didDisplayInsecureContent(blink::WebLocalFrame* frame);
+  virtual void didRunInsecureContent(blink::WebLocalFrame* frame,
                                      const blink::WebSecurityOrigin& origin,
                                      const blink::WebURL& target);
-  virtual void didAbortLoading(blink::WebFrame* frame);
-  virtual void didCreateScriptContext(blink::WebFrame* frame,
+  virtual void didAbortLoading(blink::WebLocalFrame* frame);
+  virtual void didCreateScriptContext(blink::WebLocalFrame* frame,
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
                                       int world_id);
-  virtual void willReleaseScriptContext(blink::WebFrame* frame,
+  virtual void willReleaseScriptContext(blink::WebLocalFrame* frame,
                                         v8::Handle<v8::Context> context,
                                         int world_id);
-  virtual void didFirstVisuallyNonEmptyLayout(blink::WebFrame* frame);
-  virtual void didChangeContentsSize(blink::WebFrame* frame,
+  virtual void didFirstVisuallyNonEmptyLayout(blink::WebLocalFrame* frame);
+  virtual void didChangeContentsSize(blink::WebLocalFrame* frame,
                                      const blink::WebSize& size);
-  virtual void didChangeScrollOffset(blink::WebFrame* frame);
-  virtual void willInsertBody(blink::WebFrame* frame);
+  virtual void didChangeScrollOffset(blink::WebLocalFrame* frame);
+  virtual void willInsertBody(blink::WebLocalFrame* frame);
   virtual void reportFindInPageMatchCount(int request_id,
                                           int count,
                                           bool final_update);
   virtual void reportFindInPageSelection(int request_id,
                                          int active_match_ordinal,
                                          const blink::WebRect& sel);
-  virtual void requestStorageQuota(
-      blink::WebFrame* frame,
-      blink::WebStorageQuotaType type,
-      unsigned long long requested_size,
-      blink::WebStorageQuotaCallbacks callbacks);
+  virtual void requestStorageQuota(blink::WebLocalFrame* frame,
+                                   blink::WebStorageQuotaType type,
+                                   unsigned long long requested_size,
+                                   blink::WebStorageQuotaCallbacks callbacks);
   virtual void willOpenSocketStream(
       blink::WebSocketStreamHandle* handle);
+  virtual blink::WebGeolocationClient* geolocationClient();
   virtual void willStartUsingPeerConnectionHandler(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       blink::WebRTCPeerConnectionHandler* handler);
+  virtual blink::WebUserMediaClient* userMediaClient();
+  virtual blink::WebMIDIClient* webMIDIClient();
   virtual bool willCheckAndDispatchMessageEvent(
-      blink::WebFrame* sourceFrame,
-      blink::WebFrame* targetFrame,
-      blink::WebSecurityOrigin targetOrigin,
+      blink::WebLocalFrame* source_frame,
+      blink::WebFrame* target_frame,
+      blink::WebSecurityOrigin target_origin,
       blink::WebDOMMessageEvent event);
-  virtual blink::WebString userAgentOverride(
-      blink::WebFrame* frame,
-      const blink::WebURL& url);
-  virtual blink::WebString doNotTrackValue(blink::WebFrame* frame);
-  virtual bool allowWebGL(blink::WebFrame* frame, bool default_value);
-  virtual void didLoseWebGLContext(blink::WebFrame* frame,
+  virtual blink::WebString userAgentOverride(blink::WebLocalFrame* frame,
+                                             const blink::WebURL& url);
+  virtual blink::WebString doNotTrackValue(blink::WebLocalFrame* frame);
+  virtual bool allowWebGL(blink::WebLocalFrame* frame, bool default_value);
+  virtual void didLoseWebGLContext(blink::WebLocalFrame* frame,
                                    int arb_robustness_status_code);
   virtual void forwardInputEvent(const blink::WebInputEvent* event);
   virtual void initializeChildFrame(const blink::WebRect& frame_rect,
                                     float scale_factor);
+
+  // WebMediaPlayerDelegate implementation:
+  virtual void DidPlay(blink::WebMediaPlayer* player) OVERRIDE;
+  virtual void DidPause(blink::WebMediaPlayer* player) OVERRIDE;
+  virtual void PlayerGone(blink::WebMediaPlayer* player) OVERRIDE;
 
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.
@@ -396,6 +430,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSelectAll();
   void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
   void OnUnselect();
+  void OnReplace(const base::string16& text);
+  void OnReplaceMisspelling(const base::string16& text);
   void OnCSSInsertRequest(const std::string& css);
   void OnJavaScriptExecuteRequest(const base::string16& javascript,
                                   int id,
@@ -405,6 +441,7 @@ class CONTENT_EXPORT RenderFrameImpl
       int start, int end,
       const std::vector<blink::WebCompositionUnderline>& underlines);
   void OnExtendSelectionAndDelete(int before, int after);
+  void OnReload(bool ignore_cache);
 #if defined(OS_MACOSX)
   void OnCopyToFindPboard();
 #endif
@@ -437,12 +474,37 @@ class CONTENT_EXPORT RenderFrameImpl
       const gfx::Range& selection_range,
       const ContextMenuParams& params);
 
-  // Stores the WebFrame we are associated with.
-  blink::WebFrame* frame_;
+  bool RunJavaScriptMessage(JavaScriptMessageType type,
+                            const base::string16& message,
+                            const base::string16& default_value,
+                            const GURL& frame_url,
+                            base::string16* result);
+
+  // Loads the appropriate error page for the specified failure into the frame.
+  void LoadNavigationErrorPage(const blink::WebURLRequest& failed_request,
+                               const blink::WebURLError& error,
+                               bool replace);
+
+  // Initializes |media_stream_client_|, returning true if successful. Returns
+  // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
+  // disabled) in which case |media_stream_client_| is NULL.
+  bool InitializeMediaStreamClient();
+
+  blink::WebMediaPlayer* CreateWebMediaPlayerForMediaStream(
+      const blink::WebURL& url,
+      blink::WebMediaPlayerClient* client);
+
+#if defined(OS_ANDROID)
+ blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
+      const blink::WebURL& url,
+      blink::WebMediaPlayerClient* client);
+#endif
+
+  // Stores the WebLocalFrame we are associated with.
+  blink::WebLocalFrame* frame_;
 
   base::WeakPtr<RenderViewImpl> render_view_;
   int routing_id_;
-  bool is_loading_;
   bool is_swapped_out_;
   bool is_detaching_;
 
@@ -489,6 +551,19 @@ class CONTENT_EXPORT RenderFrameImpl
   // Used to inform didChangeSelection() when it is called in the context
   // of handling a InputMsg_SelectRange IPC.
   bool handling_select_range_;
+
+  // The next group of objects all implement RenderFrameObserver, so are deleted
+  // along with the RenderFrame automatically.  This is why we just store weak
+  // references.
+
+  // Holds a reference to the service which provides desktop notifications.
+  NotificationProvider* notification_provider_;
+
+  // MediaStreamClient attached to this frame; lazily initialized.
+  MediaStreamClient* media_stream_client_;
+  blink::WebUserMediaClient* web_user_media_client_;
+
+  base::WeakPtrFactory<RenderFrameImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameImpl);
 };

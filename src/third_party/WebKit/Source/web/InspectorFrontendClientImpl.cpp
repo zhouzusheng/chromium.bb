@@ -29,18 +29,17 @@
  */
 
 #include "config.h"
-#include "InspectorFrontendClientImpl.h"
+#include "web/InspectorFrontendClientImpl.h"
 
 #include "V8InspectorFrontendHost.h"
-#include "WebDevToolsFrontendClient.h"
-#include "WebDevToolsFrontendImpl.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/Page.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebDevToolsFrontendClient.h"
+#include "web/WebDevToolsFrontendImpl.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
@@ -111,16 +110,21 @@ void InspectorFrontendClientImpl::windowObjectCleared()
             "     ['closeWindow', 0],"
             "     ['indexPath', 2],"
             "     ['inspectElementCompleted', 0],"
+            "     ['inspectedURLChanged', 1],"
             "     ['moveWindowBy', 2],"
             "     ['openInNewTab', 1],"
+            "     ['openUrlOnRemoteDeviceAndInspect', 2],"
             "     ['removeFileSystem', 1],"
             "     ['requestFileSystems', 0],"
             "     ['resetZoom', 0],"
             "     ['save', 3],"
             "     ['searchInPath', 3],"
+            "     ['setWhitelistedShortcuts', 1],"
             "     ['setContentsResizingStrategy', 2],"
             "     ['setIsDocked', 1],"
+            "     ['startRemoteDevicesListener', 0],"
             "     ['stopIndexing', 1],"
+            "     ['stopRemoteDevicesListener', 0],"
             "     ['zoomIn', 0],"
             "     ['zoomOut', 0]]);"
             ""
@@ -141,11 +145,6 @@ void InspectorFrontendClientImpl::windowObjectCleared()
             "InspectorFrontendHost.close = function(url) { };";
         scriptController->executeScriptInMainWorld(installAdditionalAPI, ScriptController::ExecuteScriptWhenScriptsDisabled);
     }
-}
-
-void InspectorFrontendClientImpl::inspectedURLChanged(const String& url)
-{
-    m_frontendPage->mainFrame()->document()->setTitle("Developer Tools - " + url);
 }
 
 void InspectorFrontendClientImpl::sendMessageToBackend(const String& message)

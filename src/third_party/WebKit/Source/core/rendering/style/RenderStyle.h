@@ -41,6 +41,7 @@
 #include "core/rendering/style/StyleBackgroundData.h"
 #include "core/rendering/style/StyleBoxData.h"
 #include "core/rendering/style/StyleDeprecatedFlexibleBoxData.h"
+#include "core/rendering/style/StyleDifference.h"
 #include "core/rendering/style/StyleFilterData.h"
 #include "core/rendering/style/StyleFlexibleBoxData.h"
 #include "core/rendering/style/StyleGridData.h"
@@ -360,7 +361,7 @@ public:
     static StyleRecalcChange stylePropagationDiff(const RenderStyle* oldStyle, const RenderStyle* newStyle);
 
     // Computes how much visual invalidation the style change causes: layout, repaint or recomposite.
-    StyleDifference visualInvalidationDiff(const RenderStyle*, unsigned& changedContextSensitiveProperties) const;
+    StyleDifference visualInvalidationDiff(const RenderStyle&, unsigned& changedContextSensitiveProperties) const;
 
     enum IsAtShadowBoundary {
         AtShadowBoundary,
@@ -562,6 +563,7 @@ public:
 
     EClear clear() const { return static_cast<EClear>(noninherited_flags._clear); }
     ETableLayout tableLayout() const { return static_cast<ETableLayout>(noninherited_flags._table_layout); }
+    bool isFixedTableLayout() const { return tableLayout() == TFIXED && !logicalWidth().isAuto(); }
 
     const Font& font() const;
     const FontMetrics& fontMetrics() const;
@@ -575,6 +577,7 @@ public:
 
     const Length& textIndent() const { return rareInheritedData->indent; }
     TextIndentLine textIndentLine() const { return static_cast<TextIndentLine>(rareInheritedData->m_textIndentLine); }
+    TextIndentType textIndentType() const { return static_cast<TextIndentType>(rareInheritedData->m_textIndentType); }
     ETextAlign textAlign() const { return static_cast<ETextAlign>(inherited_flags._text_align); }
     TextAlignLast textAlignLast() const { return static_cast<TextAlignLast>(rareInheritedData->m_textAlignLast); }
     TextJustify textJustify() const { return static_cast<TextJustify>(rareInheritedData->m_textJustify); }
@@ -862,7 +865,7 @@ public:
     const Length& transformOriginY() const { return rareNonInheritedData->m_transform->m_y; }
     float transformOriginZ() const { return rareNonInheritedData->m_transform->m_z; }
     bool hasTransform() const { return !rareNonInheritedData->m_transform->m_operations.operations().isEmpty(); }
-    bool transformDataEquivalent(const RenderStyle* otherStyle) const { return rareNonInheritedData->m_transform == otherStyle->rareNonInheritedData->m_transform; }
+    bool transformDataEquivalent(const RenderStyle& otherStyle) const { return rareNonInheritedData->m_transform == otherStyle.rareNonInheritedData->m_transform; }
 
     TextEmphasisFill textEmphasisFill() const { return static_cast<TextEmphasisFill>(rareInheritedData->textEmphasisFill); }
     TextEmphasisMark textEmphasisMark() const;
@@ -907,9 +910,6 @@ public:
 
     bool hasAnimations() const { return rareNonInheritedData->m_animations && rareNonInheritedData->m_animations->size() > 0; }
 
-    // return the first found Animation (including 'all' transitions)
-    const CSSAnimationData* transitionForProperty(CSSPropertyID) const;
-
     ETransformStyle3D transformStyle3D() const { return static_cast<ETransformStyle3D>(rareNonInheritedData->m_transformStyle3D); }
     bool preserves3D() const { return rareNonInheritedData->m_transformStyle3D == TransformStyle3DPreserve3D; }
 
@@ -921,8 +921,15 @@ public:
     const LengthSize& pageSize() const { return rareNonInheritedData->m_pageSize; }
     PageSizeType pageSizeType() const { return static_cast<PageSizeType>(rareNonInheritedData->m_pageSizeType); }
 
-    // When set, this ensures that styles compare as different. Used during accelerated animations.
-    bool isRunningAcceleratedAnimation() const { return rareNonInheritedData->m_runningAcceleratedAnimation; }
+    bool hasCurrentOpacityAnimation() const { return rareNonInheritedData->m_hasCurrentOpacityAnimation; }
+    bool hasCurrentTransformAnimation() const { return rareNonInheritedData->m_hasCurrentTransformAnimation; }
+    bool hasCurrentFilterAnimation() const { return rareNonInheritedData->m_hasCurrentFilterAnimation; }
+    bool shouldCompositeForCurrentAnimations() { return hasCurrentOpacityAnimation() || hasCurrentTransformAnimation() || hasCurrentFilterAnimation(); }
+
+    bool isRunningOpacityAnimationOnCompositor() const { return rareNonInheritedData->m_runningOpacityAnimationOnCompositor; }
+    bool isRunningTransformAnimationOnCompositor() const { return rareNonInheritedData->m_runningTransformAnimationOnCompositor; }
+    bool isRunningFilterAnimationOnCompositor() const { return rareNonInheritedData->m_runningFilterAnimationOnCompositor; }
+    bool isRunningAnimationOnCompositor() { return isRunningOpacityAnimationOnCompositor() || isRunningTransformAnimationOnCompositor() || isRunningFilterAnimationOnCompositor(); }
 
     LineBoxContain lineBoxContain() const { return rareInheritedData->m_lineBoxContain; }
     const LineClampValue& lineClamp() const { return rareNonInheritedData->lineClamp; }
@@ -961,7 +968,6 @@ public:
     bool willChangeContents() const { return rareNonInheritedData->m_willChange->m_contents; }
     bool willChangeScrollPosition() const { return rareNonInheritedData->m_willChange->m_scrollPosition; }
     bool hasWillChangeCompositingHint() const;
-    bool hasWillChangeGpuRasterizationHint() const;
 
 // attribute setter methods
 
@@ -1103,6 +1109,7 @@ public:
     void setColor(const Color&);
     void setTextIndent(Length v) { SET_VAR(rareInheritedData, indent, v); }
     void setTextIndentLine(TextIndentLine v) { SET_VAR(rareInheritedData, m_textIndentLine, v); }
+    void setTextIndentType(TextIndentType v) { SET_VAR(rareInheritedData, m_textIndentType, v); }
     void setTextAlign(ETextAlign v) { inherited_flags._text_align = v; }
     void setTextAlignLast(TextAlignLast v) { SET_VAR(rareInheritedData, m_textAlignLast, v); }
     void setTextJustify(TextJustify v) { SET_VAR(rareInheritedData, m_textJustify, v); }
@@ -1373,7 +1380,13 @@ public:
     void setPageSizeType(PageSizeType t) { SET_VAR(rareNonInheritedData, m_pageSizeType, t); }
     void resetPageSizeType() { SET_VAR(rareNonInheritedData, m_pageSizeType, PAGE_SIZE_AUTO); }
 
-    void setIsRunningAcceleratedAnimation(bool b = true) { SET_VAR(rareNonInheritedData, m_runningAcceleratedAnimation, b); }
+    void setHasCurrentOpacityAnimation(bool b = true) { SET_VAR(rareNonInheritedData, m_hasCurrentOpacityAnimation, b); }
+    void setHasCurrentTransformAnimation(bool b = true) { SET_VAR(rareNonInheritedData, m_hasCurrentTransformAnimation, b); }
+    void setHasCurrentFilterAnimation(bool b = true) { SET_VAR(rareNonInheritedData, m_hasCurrentFilterAnimation, b); }
+
+    void setIsRunningOpacityAnimationOnCompositor(bool b = true) { SET_VAR(rareNonInheritedData, m_runningOpacityAnimationOnCompositor, b); }
+    void setIsRunningTransformAnimationOnCompositor(bool b = true) { SET_VAR(rareNonInheritedData, m_runningTransformAnimationOnCompositor, b); }
+    void setIsRunningFilterAnimationOnCompositor(bool b = true) { SET_VAR(rareNonInheritedData, m_runningFilterAnimationOnCompositor, b); }
 
     void setLineBoxContain(LineBoxContain c) { SET_VAR(rareInheritedData, m_lineBoxContain, c); }
     void setLineClamp(LineClampValue c) { SET_VAR(rareNonInheritedData, lineClamp, c); }
@@ -1402,11 +1415,11 @@ public:
     void setStrokePaintColor(const Color& c) { accessSVGStyle()->setStrokePaint(SVGPaint::SVG_PAINTTYPE_RGBCOLOR, c, ""); }
     float strokeOpacity() const { return svgStyle()->strokeOpacity(); }
     void setStrokeOpacity(float f) { accessSVGStyle()->setStrokeOpacity(f); }
-    PassRefPtr<SVGLength> strokeWidth() const { return svgStyle()->strokeWidth(); }
+    SVGLength* strokeWidth() const { return svgStyle()->strokeWidth(); }
     void setStrokeWidth(PassRefPtr<SVGLength> w) { accessSVGStyle()->setStrokeWidth(w); }
-    PassRefPtr<SVGLengthList> strokeDashArray() const { return svgStyle()->strokeDashArray(); }
+    SVGLengthList* strokeDashArray() const { return svgStyle()->strokeDashArray(); }
     void setStrokeDashArray(PassRefPtr<SVGLengthList> array) { accessSVGStyle()->setStrokeDashArray(array); }
-    PassRefPtr<SVGLength> strokeDashOffset() const { return svgStyle()->strokeDashOffset(); }
+    SVGLength* strokeDashOffset() const { return svgStyle()->strokeDashOffset(); }
     void setStrokeDashOffset(PassRefPtr<SVGLength> d) { accessSVGStyle()->setStrokeDashOffset(d); }
     float strokeMiterLimit() const { return svgStyle()->strokeMiterLimit(); }
     void setStrokeMiterLimit(float f) { accessSVGStyle()->setStrokeMiterLimit(f); }
@@ -1421,10 +1434,8 @@ public:
     void setFloodColor(const Color& c) { accessSVGStyle()->setFloodColor(c); }
     void setLightingColor(const Color& c) { accessSVGStyle()->setLightingColor(c); }
 
-    PassRefPtr<SVGLength> baselineShiftValue() const { return svgStyle()->baselineShiftValue(); }
+    SVGLength* baselineShiftValue() const { return svgStyle()->baselineShiftValue(); }
     void setBaselineShiftValue(PassRefPtr<SVGLength> s) { accessSVGStyle()->setBaselineShiftValue(s); }
-    PassRefPtr<SVGLength> kerning() const { return svgStyle()->kerning(); }
-    void setKerning(PassRefPtr<SVGLength> k) { accessSVGStyle()->setKerning(k); }
 
     void setShapeOutside(PassRefPtr<ShapeValue> value)
     {
@@ -1444,10 +1455,6 @@ public:
     ClipPathOperation* clipPath() const { return rareNonInheritedData->m_clipPath.get(); }
 
     static ClipPathOperation* initialClipPath() { return 0; }
-
-    const Length& shapePadding() const { return rareNonInheritedData->m_shapePadding; }
-    void setShapePadding(Length shapePadding) { SET_VAR(rareNonInheritedData, m_shapePadding, shapePadding); }
-    static Length initialShapePadding() { return Length(0, Fixed); }
 
     const Length& shapeMargin() const { return rareNonInheritedData->m_shapeMargin; }
     void setShapeMargin(Length shapeMargin) { SET_VAR(rareNonInheritedData, m_shapeMargin, shapeMargin); }
@@ -1562,6 +1569,7 @@ public:
     static Length initialPadding() { return Length(Fixed); }
     static Length initialTextIndent() { return Length(Fixed); }
     static TextIndentLine initialTextIndentLine() { return TextIndentFirstLine; }
+    static TextIndentType initialTextIndentType() { return TextIndentNormal; }
     static EVerticalAlign initialVerticalAlign() { return BASELINE; }
     static short initialWidows() { return 2; }
     static short initialOrphans() { return 2; }
@@ -1772,22 +1780,30 @@ private:
     Color lightingColor() const { return svgStyle()->lightingColor(); }
 
     void appendContent(PassOwnPtr<ContentData>);
-    StyleDifference repaintOnlyDiff(const RenderStyle* other, unsigned& changedContextSensitiveProperties) const;
+
+    bool diffNeedsFullLayout(const RenderStyle& other) const;
+    bool diffNeedsRepaintLayer(const RenderStyle& other) const;
+    bool diffNeedsRepaintObject(const RenderStyle& other) const;
+    bool diffNeedsRecompositeLayer(const RenderStyle& other) const;
+    unsigned computeChangedContextSensitiveProperties(const RenderStyle& other, StyleDifference) const;
 };
 
+// FIXME: Reduce/remove the dependency on zoom adjusted int values.
+// The float or LayoutUnit versions of layout values should be used.
 inline int adjustForAbsoluteZoom(int value, float zoomFactor)
 {
     if (zoomFactor == 1)
         return value;
     // Needed because computeLengthInt truncates (rather than rounds) when scaling up.
+    float fvalue = value;
     if (zoomFactor > 1) {
         if (value < 0)
-            value--;
+            fvalue -= 0.5f;
         else
-            value++;
+            fvalue += 0.5f;
     }
 
-    return roundForImpreciseConversion<int>(value / zoomFactor);
+    return roundForImpreciseConversion<int>(fvalue / zoomFactor);
 }
 
 inline int adjustForAbsoluteZoom(int value, const RenderStyle* style)

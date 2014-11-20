@@ -34,7 +34,7 @@ class VisibleSelection;
 
 class HTMLTextAreaElement FINAL : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLTextAreaElement> create(Document&, HTMLFormElement*);
+    static PassRefPtrWillBeRawPtr<HTMLTextAreaElement> create(Document&, HTMLFormElement*);
 
     int cols() const { return m_cols; }
     int rows() const { return m_rows; }
@@ -74,12 +74,14 @@ private:
     void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) const;
     static String sanitizeUserInputValue(const String&, unsigned maxLength);
     void updateValue() const;
+    virtual void setInnerTextValue(const String&) OVERRIDE;
     void setNonDirtyValue(const String&);
     void setValueCommon(const String&, TextFieldEventBehavior);
 
     virtual bool supportsPlaceholder() const OVERRIDE { return true; }
     virtual void updatePlaceholderText() OVERRIDE;
     virtual bool isEmptyValue() const OVERRIDE { return value().isEmpty(); }
+    virtual bool isEmptySuggestedValue() const OVERRIDE FINAL { return suggestedValue().isEmpty(); }
 
     virtual bool isOptionalFormControl() const OVERRIDE { return !isRequiredFormControl(); }
     virtual bool isRequiredFormControl() const OVERRIDE { return isRequired(); }
@@ -127,6 +129,7 @@ private:
     WrapMethod m_wrap;
     mutable String m_value;
     mutable bool m_isDirty;
+    bool m_valueIsUpToDate;
     String m_suggestedValue;
 };
 

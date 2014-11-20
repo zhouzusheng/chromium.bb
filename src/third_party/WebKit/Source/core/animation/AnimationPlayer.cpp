@@ -33,6 +33,8 @@
 
 #include "core/animation/Animation.h"
 #include "core/animation/DocumentTimeline.h"
+#include "core/events/AnimationPlayerEvent.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -46,13 +48,16 @@ static unsigned nextSequenceNumber()
 
 }
 
-PassRefPtr<AnimationPlayer> AnimationPlayer::create(DocumentTimeline& timeline, TimedItem* content)
+PassRefPtr<AnimationPlayer> AnimationPlayer::create(ExecutionContext* executionContext, DocumentTimeline& timeline, TimedItem* content)
 {
-    return adoptRef(new AnimationPlayer(timeline, content));
+    RefPtr<AnimationPlayer> player = adoptRef(new AnimationPlayer(executionContext, timeline, content));
+    player->suspendIfNeeded();
+    return player.release();
 }
 
-AnimationPlayer::AnimationPlayer(DocumentTimeline& timeline, TimedItem* content)
-    : m_playbackRate(1)
+AnimationPlayer::AnimationPlayer(ExecutionContext* executionContext, DocumentTimeline& timeline, TimedItem* content)
+    : ActiveDOMObject(executionContext)
+    , m_playbackRate(1)
     , m_startTime(nullValue())
     , m_holdTime(nullValue())
     , m_storedTimeLag(0)
@@ -62,7 +67,8 @@ AnimationPlayer::AnimationPlayer(DocumentTimeline& timeline, TimedItem* content)
     , m_paused(false)
     , m_held(false)
     , m_isPausedForTesting(false)
-    , m_outdated(false)
+    , m_outdated(true)
+    , m_finished(false)
 {
     if (m_content) {
         if (m_content->player())
@@ -81,7 +87,7 @@ AnimationPlayer::~AnimationPlayer()
 
 double AnimationPlayer::sourceEnd() const
 {
-    return m_content ? m_content->endTime() : 0;
+    return m_content ? m_content->endTimeInternal() : 0;
 }
 
 bool AnimationPlayer::limited(double currentTime) const
@@ -116,6 +122,7 @@ void AnimationPlayer::updateTimingState(double newCurrentTime)
     } else {
         m_holdTime = nullValue();
         m_storedTimeLag = currentTimeWithoutLag() - newCurrentTime;
+        m_finished = false;
         setOutdated();
     }
 }
@@ -135,6 +142,11 @@ void AnimationPlayer::updateCurrentTimingState()
 
 double AnimationPlayer::currentTime()
 {
+    return currentTimeInternal() * 1000;
+}
+
+double AnimationPlayer::currentTimeInternal()
+{
     updateCurrentTimingState();
     if (m_held)
         return m_holdTime;
@@ -143,29 +155,51 @@ double AnimationPlayer::currentTime()
 
 void AnimationPlayer::setCurrentTime(double newCurrentTime)
 {
+    setCurrentTimeInternal(newCurrentTime / 1000);
+}
+
+void AnimationPlayer::setCurrentTimeInternal(double newCurrentTime)
+{
     if (!std::isfinite(newCurrentTime))
         return;
     updateTimingState(newCurrentTime);
+    cancelAnimationOnCompositor();
+    schedulePendingAnimationOnCompositor();
 }
 
-void AnimationPlayer::setStartTime(double newStartTime)
+void AnimationPlayer::setStartTimeInternal(double newStartTime, bool isUpdateFromCompositor)
 {
+    ASSERT(!isUpdateFromCompositor || !hasStartTime());
+
     if (!std::isfinite(newStartTime))
         return;
+    if (newStartTime == m_startTime)
+        return;
     updateCurrentTimingState(); // Update the value of held
+    bool hadStartTime = hasStartTime();
+    double previousCurrentTime = currentTimeInternal();
     m_startTime = newStartTime;
     m_sortInfo.m_startTime = newStartTime;
-    if (m_held)
-        return;
     updateCurrentTimingState();
-    setOutdated();
+    if (previousCurrentTime != currentTimeInternal()) {
+        setOutdated();
+    } else if (!hadStartTime && m_timeline) {
+        // Even though this player is not outdated, time to effect change is
+        // infinity until start time is set.
+        m_timeline->wake();
+    }
+    if (!isUpdateFromCompositor) {
+        cancelAnimationOnCompositor();
+        schedulePendingAnimationOnCompositor();
+    }
 }
 
 void AnimationPlayer::setSource(TimedItem* newSource)
 {
     if (m_content == newSource)
         return;
-    double storedCurrentTime = currentTime();
+    cancelAnimationOnCompositor();
+    double storedCurrentTime = currentTimeInternal();
     if (m_content)
         m_content->detach();
     m_content = newSource;
@@ -176,6 +210,7 @@ void AnimationPlayer::setSource(TimedItem* newSource)
         newSource->attach(this);
     }
     updateTimingState(storedCurrentTime);
+    schedulePendingAnimationOnCompositor();
 }
 
 void AnimationPlayer::pause()
@@ -183,8 +218,7 @@ void AnimationPlayer::pause()
     if (m_paused)
         return;
     m_paused = true;
-    updateTimingState(currentTime());
-    // FIXME: resume compositor animation rather than pull back to main-thread
+    updateTimingState(currentTimeInternal());
     cancelAnimationOnCompositor();
 }
 
@@ -193,19 +227,23 @@ void AnimationPlayer::unpause()
     if (!m_paused)
         return;
     m_paused = false;
-    updateTimingState(currentTime());
+    updateTimingState(currentTimeInternal());
+    schedulePendingAnimationOnCompositor();
 }
 
 void AnimationPlayer::play()
 {
+    cancelAnimationOnCompositor();
+    // Note, unpause schedules pending animation on compositor if necessary.
     unpause();
     if (!m_content)
         return;
-    double currentTime = this->currentTime();
+    double currentTime = this->currentTimeInternal();
     if (m_playbackRate > 0 && (currentTime < 0 || currentTime >= sourceEnd()))
-        setCurrentTime(0);
+        setCurrentTimeInternal(0);
     else if (m_playbackRate < 0 && (currentTime <= 0 || currentTime > sourceEnd()))
-        setCurrentTime(sourceEnd());
+        setCurrentTimeInternal(sourceEnd());
+    m_finished = false;
 }
 
 void AnimationPlayer::reverse()
@@ -213,12 +251,14 @@ void AnimationPlayer::reverse()
     if (!m_playbackRate)
         return;
     if (m_content) {
-        if (m_playbackRate > 0 && currentTime() > sourceEnd())
-            setCurrentTime(sourceEnd());
-        else if (m_playbackRate < 0 && currentTime() < 0)
-            setCurrentTime(0);
+        if (m_playbackRate > 0 && currentTimeInternal() > sourceEnd())
+            setCurrentTimeInternal(sourceEnd());
+        else if (m_playbackRate < 0 && currentTimeInternal() < 0)
+            setCurrentTimeInternal(0);
     }
     setPlaybackRate(-m_playbackRate);
+    cancelAnimationOnCompositor();
+    // Note, unpause schedules pending animation on compositor if necessary.
     unpause();
 }
 
@@ -227,24 +267,57 @@ void AnimationPlayer::finish(ExceptionState& exceptionState)
     if (!m_playbackRate)
         return;
     if (m_playbackRate < 0) {
-        setCurrentTime(0);
+        setCurrentTimeInternal(0);
     } else {
         if (sourceEnd() == std::numeric_limits<double>::infinity()) {
             exceptionState.throwDOMException(InvalidStateError, "AnimationPlayer has source content whose end time is infinity.");
             return;
         }
-        setCurrentTime(sourceEnd());
+        setCurrentTimeInternal(sourceEnd());
     }
     ASSERT(finished());
+    cancelAnimationOnCompositor();
+}
+
+const AtomicString& AnimationPlayer::interfaceName() const
+{
+    return EventTargetNames::AnimationPlayer;
+}
+
+ExecutionContext* AnimationPlayer::executionContext() const
+{
+    return ActiveDOMObject::executionContext();
+}
+
+bool AnimationPlayer::hasPendingActivity() const
+{
+    return m_pendingFinishedEvent || (!m_finished && hasEventListeners(EventTypeNames::finish));
+}
+
+void AnimationPlayer::stop()
+{
+    m_finished = true;
+    m_pendingFinishedEvent = nullptr;
+}
+
+bool AnimationPlayer::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+{
+    if (m_pendingFinishedEvent == event)
+        m_pendingFinishedEvent = nullptr;
+    return EventTargetWithInlineData::dispatchEvent(event);
 }
 
 void AnimationPlayer::setPlaybackRate(double playbackRate)
 {
     if (!std::isfinite(playbackRate))
         return;
-    double storedCurrentTime = currentTime();
+    double storedCurrentTime = currentTimeInternal();
+    if ((m_playbackRate < 0 && playbackRate >= 0) || (m_playbackRate > 0 && playbackRate <= 0))
+        m_finished = false;
     m_playbackRate = playbackRate;
     updateTimingState(storedCurrentTime);
+    cancelAnimationOnCompositor();
+    schedulePendingAnimationOnCompositor();
 }
 
 void AnimationPlayer::setOutdated()
@@ -254,21 +327,36 @@ void AnimationPlayer::setOutdated()
         m_timeline->setOutdatedAnimationPlayer(this);
 }
 
-bool AnimationPlayer::maybeStartAnimationOnCompositor()
+bool AnimationPlayer::canStartAnimationOnCompositor()
 {
-    // FIXME: Support starting compositor animations that have a fixed
-    // start time.
-    ASSERT(!hasStartTime());
-    if (!m_content || !m_content->isAnimation() || paused())
+    // FIXME: Need compositor support for playback rate != 1.
+    if (playbackRate() != 1)
         return false;
 
-    return toAnimation(m_content.get())->maybeStartAnimationOnCompositor();
+    return m_timeline && m_content && m_content->isAnimation() && !m_held;
+}
+
+bool AnimationPlayer::maybeStartAnimationOnCompositor()
+{
+    if (!canStartAnimationOnCompositor())
+        return false;
+
+    return toAnimation(m_content.get())->maybeStartAnimationOnCompositor(timeline()->zeroTime() + startTimeInternal() + timeLagInternal());
+}
+
+void AnimationPlayer::schedulePendingAnimationOnCompositor()
+{
+    ASSERT(!hasActiveAnimationsOnCompositor());
+
+    if (canStartAnimationOnCompositor())
+        timeline()->document()->compositorPendingAnimations().add(this);
 }
 
 bool AnimationPlayer::hasActiveAnimationsOnCompositor()
 {
     if (!m_content || !m_content->isAnimation())
         return false;
+
     return toAnimation(m_content.get())->hasActiveAnimationsOnCompositor();
 }
 
@@ -278,38 +366,49 @@ void AnimationPlayer::cancelAnimationOnCompositor()
         toAnimation(m_content.get())->cancelAnimationOnCompositor();
 }
 
-bool AnimationPlayer::update()
+bool AnimationPlayer::update(TimingUpdateReason reason)
 {
     m_outdated = false;
 
-    if (!m_timeline || !m_content)
+    if (!m_timeline)
         return false;
 
-    double inheritedTime = isNull(m_timeline->currentTime()) ? nullValue() : currentTime();
-    m_content->updateInheritedTime(inheritedTime);
+    if (m_content) {
+        double inheritedTime = isNull(m_timeline->currentTimeInternal()) ? nullValue() : currentTimeInternal();
+        m_content->updateInheritedTime(inheritedTime, reason);
+    }
 
+    if (finished() && !m_finished) {
+        if (reason == TimingUpdateForAnimationFrame && hasStartTime()) {
+            const AtomicString& eventType = EventTypeNames::finish;
+            if (executionContext() && hasEventListeners(eventType)) {
+                m_pendingFinishedEvent = AnimationPlayerEvent::create(eventType, currentTime(), timeline()->currentTime());
+                m_pendingFinishedEvent->setTarget(this);
+                m_pendingFinishedEvent->setCurrentTarget(this);
+                m_timeline->document()->enqueueAnimationFrameEvent(m_pendingFinishedEvent);
+            }
+            m_finished = true;
+        }
+    }
     ASSERT(!m_outdated);
-    return m_content->isCurrent() || m_content->isInEffect();
+    return !m_finished || !finished();
 }
 
 double AnimationPlayer::timeToEffectChange()
 {
     ASSERT(!m_outdated);
-    if (!m_content || !m_playbackRate)
+    if (m_held || !hasStartTime())
         return std::numeric_limits<double>::infinity();
+    if (!m_content)
+        return -currentTimeInternal() / m_playbackRate;
     if (m_playbackRate > 0)
         return m_content->timeToForwardsEffectChange() / m_playbackRate;
-    return m_content->timeToReverseEffectChange() / std::abs(m_playbackRate);
+    return m_content->timeToReverseEffectChange() / -m_playbackRate;
 }
 
 void AnimationPlayer::cancel()
 {
-    if (!m_content)
-        return;
-
-    ASSERT(m_content->player() == this);
-    m_content->detach();
-    m_content = nullptr;
+    setSource(0);
 }
 
 bool AnimationPlayer::SortInfo::operator<(const SortInfo& other) const
@@ -322,12 +421,25 @@ bool AnimationPlayer::SortInfo::operator<(const SortInfo& other) const
     return m_sequenceNumber < other.m_sequenceNumber;
 }
 
+bool AnimationPlayer::canFree() const
+{
+    ASSERT(m_content);
+    return hasOneRef() && m_content->isAnimation() && m_content->hasOneRef();
+}
+
+bool AnimationPlayer::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+{
+    if (eventType == EventTypeNames::finish)
+        UseCounter::count(executionContext(), UseCounter::AnimationPlayerFinishEvent);
+    return EventTargetWithInlineData::addEventListener(eventType, listener, useCapture);
+}
+
 void AnimationPlayer::pauseForTesting(double pauseTime)
 {
     RELEASE_ASSERT(!paused());
     updateTimingState(pauseTime);
     if (!m_isPausedForTesting && hasActiveAnimationsOnCompositor())
-        toAnimation(m_content.get())->pauseAnimationForTestingOnCompositor(currentTime());
+        toAnimation(m_content.get())->pauseAnimationForTestingOnCompositor(currentTimeInternal());
     m_isPausedForTesting = true;
     pause();
 }

@@ -165,7 +165,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
         return;
     }
 
-    RefPtr<Range> range = VisibleSelection::selectionFromContentsOfNode(holder.get()).toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> range = VisibleSelection::selectionFromContentsOfNode(holder.get()).toNormalizedRange();
     String text = plainText(range.get(), static_cast<TextIteratorBehavior>(TextIteratorEmitsOriginalText | TextIteratorIgnoresStyleVisibility));
 
     removeInterchangeNodes(holder.get());
@@ -173,7 +173,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
     restoreAndRemoveTestRenderingNodesToFragment(holder.get());
 
     // Give the root a chance to change the text.
-    RefPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
+    RefPtrWillBeRawPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
     editableRoot->dispatchEvent(evt, ASSERT_NO_EXCEPTION);
     if (text != evt->text() || !editableRoot->rendererIsRichlyEditable()) {
         restoreAndRemoveTestRenderingNodesToFragment(holder.get());
@@ -1447,8 +1447,10 @@ Node* ReplaceSelectionCommand::insertAsListItems(PassRefPtr<HTMLElement> prpList
         } else
             ASSERT_NOT_REACHED();
     }
-    if (isStart || isMiddle)
-        lastNode = lastNode->previousSibling();
+    if (isStart || isMiddle) {
+        if (Node* node = lastNode->previousSibling())
+            return node;
+    }
     return lastNode;
 }
 
@@ -1460,7 +1462,7 @@ void ReplaceSelectionCommand::updateNodesInserted(Node *node)
     if (m_startOfInsertedContent.isNull())
         m_startOfInsertedContent = firstPositionInOrBeforeNode(node);
 
-    m_endOfInsertedContent = lastPositionInOrAfterNode(&node->lastDescendant());
+    m_endOfInsertedContent = lastPositionInOrAfterNode(&node->lastDescendantOrSelf());
 }
 
 // During simple pastes, where we're just pasting a text node into a run of text, we insert the text node

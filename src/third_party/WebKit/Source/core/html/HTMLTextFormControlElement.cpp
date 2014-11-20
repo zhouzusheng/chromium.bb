@@ -42,6 +42,7 @@
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -52,8 +53,8 @@ using namespace std;
 HTMLTextFormControlElement::HTMLTextFormControlElement(const QualifiedName& tagName, Document& doc, HTMLFormElement* form)
     : HTMLFormControlElementWithState(tagName, doc, form)
     , m_lastChangeWasUserEdit(false)
-    , m_cachedSelectionStart(-1)
-    , m_cachedSelectionEnd(-1)
+    , m_cachedSelectionStart(0)
+    , m_cachedSelectionEnd(0)
     , m_cachedSelectionDirection(SelectionHasNoDirection)
 {
 }
@@ -181,11 +182,17 @@ void HTMLTextFormControlElement::select()
     setSelectionRange(0, numeric_limits<int>::max(), SelectionHasNoDirection);
 }
 
+bool HTMLTextFormControlElement::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
+{
+    return !equalIgnoringNullity(oldValue, newValue);
+}
+
 void HTMLTextFormControlElement::dispatchFormControlChangeEvent()
 {
-    if (m_textAsOfLastFormControlChangeEvent != value()) {
+    String newValue = value();
+    if (shouldDispatchFormControlChangeEvent(m_textAsOfLastFormControlChangeEvent, newValue)) {
+        setTextAsOfLastFormControlChangeEvent(newValue);
         dispatchChangeEvent();
-        setTextAsOfLastFormControlChangeEvent(value());
     }
     setChangedSinceLastFormControlChangeEvent(false);
 }
@@ -311,7 +318,7 @@ VisiblePosition HTMLTextFormControlElement::visiblePositionForIndex(int index) c
 {
     if (index <= 0)
         return VisiblePosition(firstPositionInNode(innerTextElement()), DOWNSTREAM);
-    RefPtr<Range> range = Range::create(document());
+    RefPtrWillBeRawPtr<Range> range = Range::create(document());
     range->selectNodeContents(innerTextElement(), ASSERT_NO_EXCEPTION);
     CharacterIterator it(range.get());
     it.advance(index - 1);
@@ -324,7 +331,7 @@ int HTMLTextFormControlElement::indexForVisiblePosition(const VisiblePosition& p
     if (enclosingTextFormControl(indexPosition) != this)
         return 0;
     ASSERT(indexPosition.document());
-    RefPtr<Range> range = Range::create(*indexPosition.document());
+    RefPtrWillBeRawPtr<Range> range = Range::create(*indexPosition.document());
     range->setStart(innerTextElement(), 0, ASSERT_NO_EXCEPTION);
     range->setEnd(indexPosition.containerNode(), indexPosition.offsetInContainerNode(), ASSERT_NO_EXCEPTION);
     return TextIterator::rangeLength(range.get());
@@ -334,7 +341,7 @@ int HTMLTextFormControlElement::selectionStart() const
 {
     if (!isTextFormControl())
         return 0;
-    if (document().focusedElement() != this && hasCachedSelection())
+    if (document().focusedElement() != this)
         return m_cachedSelectionStart;
 
     return computeSelectionStart();
@@ -354,7 +361,7 @@ int HTMLTextFormControlElement::selectionEnd() const
 {
     if (!isTextFormControl())
         return 0;
-    if (document().focusedElement() != this && hasCachedSelection())
+    if (document().focusedElement() != this)
         return m_cachedSelectionEnd;
     return computeSelectionEnd();
 }
@@ -392,7 +399,7 @@ const AtomicString& HTMLTextFormControlElement::selectionDirection() const
 {
     if (!isTextFormControl())
         return directionString(SelectionHasNoDirection);
-    if (document().focusedElement() != this && hasCachedSelection())
+    if (document().focusedElement() != this)
         return directionString(m_cachedSelectionDirection);
 
     return directionString(computeSelectionDirection());
@@ -420,9 +427,9 @@ static inline void setContainerAndOffsetForRange(Node* node, int offset, Node*& 
     }
 }
 
-PassRefPtr<Range> HTMLTextFormControlElement::selection() const
+PassRefPtrWillBeRawPtr<Range> HTMLTextFormControlElement::selection() const
 {
-    if (!renderer() || !isTextFormControl() || !hasCachedSelection())
+    if (!renderer() || !isTextFormControl())
         return nullptr;
 
     int start = m_cachedSelectionStart;
@@ -513,8 +520,6 @@ void HTMLTextFormControlElement::setInnerTextValue(const String& value)
         if (value.endsWith('\n') || value.endsWith('\r'))
             innerTextElement()->appendChild(HTMLBRElement::create(document()));
     }
-
-    setFormControlValueMatchesRenderer(true);
 }
 
 static String finishText(StringBuilder& result)

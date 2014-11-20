@@ -52,9 +52,13 @@ public:
         EndOfStreamStatusDecodeError,
     };
 
-    virtual ~WebMediaSource() { }
+    enum FrameProcessorChoice {
+        UseLegacyFrameProcessor,
+        UseNewFrameProcessor
+    };
 
-    virtual AddStatus addSourceBuffer(const WebString& type, const WebVector<WebString>& codecs, WebSourceBuffer**) = 0;
+    virtual ~WebMediaSource() { }
+    virtual AddStatus addSourceBuffer(const WebString& type, const WebVector<WebString>& codecs, const FrameProcessorChoice, WebSourceBuffer**) = 0;
     virtual double duration() = 0;
     virtual void setDuration(double) = 0;
     virtual void markEndOfStream(EndOfStreamStatus) = 0;

@@ -16,11 +16,9 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../third_party/khronos/khronos.gyp:khronos_headers',
-        '../ui/gl/gl.gyp:gl',
-        '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gl/gl.gyp:gl',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
@@ -29,11 +27,29 @@
       ],
       'sources': [
         '<@(gles2_implementation_source_files)',
-        'command_buffer/client/gl_in_process_context.h',
-        'command_buffer/client/gl_in_process_context.cc',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
+    },
+    {
+      'target_name': 'gl_in_process_context',
+      'type': '<(component)',
+      'dependencies': [
+        'gles2_implementation',
+        'gpu',
+        '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gl/gl.gyp:gl',
+      ],
+      'defines': [
+        'GL_IN_PROCESS_CONTEXT_IMPLEMENTATION',
+      ],
+      'sources': [
+        'command_buffer/client/gl_in_process_context.h',
+        'command_buffer/client/gl_in_process_context.cc',
+        'command_buffer/client/gl_in_process_context_export.h',
+      ],
     },
     {
       # Library emulates GLES2 using command_buffers.
@@ -207,6 +223,7 @@
         'command_buffer/service/feature_info_unittest.cc',
         'command_buffer/service/framebuffer_manager_unittest.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest.h',
         'command_buffer/service/gles2_cmd_decoder_unittest_0_autogen.h',
         'command_buffer/service/gles2_cmd_decoder_unittest_1.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_1_autogen.h',
@@ -214,8 +231,15 @@
         'command_buffer/service/gles2_cmd_decoder_unittest_2_autogen.h',
         'command_buffer/service/gles2_cmd_decoder_unittest_3.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_3_autogen.h',
+        'command_buffer/service/gles2_cmd_decoder_unittest_async_pixel.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.h',
+        'command_buffer/service/gles2_cmd_decoder_unittest_context_state.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_drawing.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_framebuffers.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_programs.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_textures.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc',
         'command_buffer/service/gl_surface_mock.cc',
         'command_buffer/service/gl_surface_mock.h',
         'command_buffer/service/gpu_scheduler_unittest.cc',
@@ -239,7 +263,6 @@
         'command_buffer/service/gpu_tracer_unittest.cc',
         'config/gpu_blacklist_unittest.cc',
         'config/gpu_control_list_entry_unittest.cc',
-        'config/gpu_control_list_machine_model_info_unittest.cc',
         'config/gpu_control_list_number_info_unittest.cc',
         'config/gpu_control_list_os_info_unittest.cc',
         'config/gpu_control_list_string_info_unittest.cc',
@@ -259,8 +282,7 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],

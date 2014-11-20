@@ -35,6 +35,12 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
+namespace blink {
+
+class WebBlobInfo;
+
+}
+
 namespace WebCore {
 
 class DOMStringList;
@@ -46,35 +52,41 @@ class IDBKeyPath;
 class IDBObjectStore;
 class IDBTransaction;
 
-class IDBAny : public RefCounted<IDBAny> {
+class IDBAny : public RefCountedWillBeGarbageCollectedFinalized<IDBAny> {
 public:
-    static PassRefPtr<IDBAny> createUndefined();
-    static PassRefPtr<IDBAny> createNull();
-    static PassRefPtr<IDBAny> createString(const String&);
+    static PassRefPtrWillBeRawPtr<IDBAny> createUndefined();
+    static PassRefPtrWillBeRawPtr<IDBAny> createNull();
+    static PassRefPtrWillBeRawPtr<IDBAny> createString(const String&);
     template<typename T>
-    static PassRefPtr<IDBAny> create(T* idbObject)
+    static PassRefPtrWillBeRawPtr<IDBAny> create(T* idbObject)
     {
-        return adoptRef(new IDBAny(idbObject));
-    }
-    template<typename T>
-    static PassRefPtr<IDBAny> create(const T& idbObject)
-    {
-        return adoptRef(new IDBAny(idbObject));
+        return adoptRefWillBeNoop(new IDBAny(idbObject));
     }
     template<typename T>
-    static PassRefPtr<IDBAny> create(PassRefPtr<T> idbObject)
+    static PassRefPtrWillBeRawPtr<IDBAny> create(const T& idbObject)
     {
-        return adoptRef(new IDBAny(idbObject));
+        return adoptRefWillBeNoop(new IDBAny(idbObject));
     }
-    static PassRefPtr<IDBAny> create(int64_t value)
+    static PassRefPtrWillBeRawPtr<IDBAny> create(PassRefPtr<SharedBuffer> value, const Vector<blink::WebBlobInfo>* blobInfo)
     {
-        return adoptRef(new IDBAny(value));
+        return adoptRefWillBeNoop(new IDBAny(value, blobInfo));
     }
-    static PassRefPtr<IDBAny> create(PassRefPtr<SharedBuffer> value, PassRefPtr<IDBKey> key, const IDBKeyPath& keyPath)
+    template<typename T>
+    static PassRefPtrWillBeRawPtr<IDBAny> create(PassRefPtr<T> idbObject)
     {
-        return adoptRef(new IDBAny(value, key, keyPath));
+        return adoptRefWillBeNoop(new IDBAny(idbObject));
+    }
+    static PassRefPtrWillBeRawPtr<IDBAny> create(int64_t value)
+    {
+        return adoptRefWillBeNoop(new IDBAny(value));
+    }
+    static PassRefPtrWillBeRawPtr<IDBAny> create(PassRefPtr<SharedBuffer> value, const Vector<blink::WebBlobInfo>* blobInfo, PassRefPtrWillBeRawPtr<IDBKey> key, const IDBKeyPath& keyPath)
+    {
+        return adoptRefWillBeNoop(new IDBAny(value, blobInfo, key, keyPath));
     }
     ~IDBAny();
+    void trace(Visitor*);
+    void contextWillBeDestroyed();
 
     enum Type {
         UndefinedType = 0,
@@ -104,6 +116,7 @@ public:
     IDBObjectStore* idbObjectStore() const;
     IDBTransaction* idbTransaction() const;
     SharedBuffer* buffer() const;
+    const Vector<blink::WebBlobInfo>* blobInfo() const;
     int64_t integer() const;
     const String& string() const;
     const IDBKey* key() const;
@@ -111,31 +124,32 @@ public:
 
 private:
     explicit IDBAny(Type);
-    explicit IDBAny(PassRefPtr<DOMStringList>);
-    explicit IDBAny(PassRefPtr<IDBCursor>);
-    explicit IDBAny(PassRefPtr<IDBDatabase>);
-    explicit IDBAny(PassRefPtr<IDBIndex>);
-    explicit IDBAny(PassRefPtr<IDBObjectStore>);
-    explicit IDBAny(PassRefPtr<IDBTransaction>);
-    explicit IDBAny(PassRefPtr<IDBKey>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<DOMStringList>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBCursor>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBDatabase>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBIndex>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBObjectStore>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBTransaction>);
+    explicit IDBAny(PassRefPtrWillBeRawPtr<IDBKey>);
     explicit IDBAny(const IDBKeyPath&);
     explicit IDBAny(const String&);
-    explicit IDBAny(PassRefPtr<SharedBuffer>);
-    explicit IDBAny(PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&);
+    IDBAny(PassRefPtr<SharedBuffer>, const Vector<blink::WebBlobInfo>*);
+    IDBAny(PassRefPtr<SharedBuffer>, const Vector<blink::WebBlobInfo>*, PassRefPtrWillBeRawPtr<IDBKey>, const IDBKeyPath&);
     explicit IDBAny(int64_t);
 
     const Type m_type;
 
-    // Only one of the following should ever be in use at any given time.
-    const RefPtr<DOMStringList> m_domStringList;
-    const RefPtr<IDBCursor> m_idbCursor;
-    const RefPtr<IDBDatabase> m_idbDatabase;
-    const RefPtr<IDBIndex> m_idbIndex;
-    const RefPtr<IDBObjectStore> m_idbObjectStore;
-    const RefPtr<IDBTransaction> m_idbTransaction;
-    const RefPtr<IDBKey> m_idbKey;
+    // Only one of the following should ever be in use at any given time, except that BufferType uses two and BufferKeyAndKeyPathType uses four.
+    const RefPtrWillBeMember<DOMStringList> m_domStringList;
+    const RefPtrWillBeMember<IDBCursor> m_idbCursor;
+    const RefPtrWillBeMember<IDBDatabase> m_idbDatabase;
+    const RefPtrWillBeMember<IDBIndex> m_idbIndex;
+    const RefPtrWillBeMember<IDBObjectStore> m_idbObjectStore;
+    const RefPtrWillBeMember<IDBTransaction> m_idbTransaction;
+    const RefPtrWillBeMember<IDBKey> m_idbKey;
     const IDBKeyPath m_idbKeyPath;
     const RefPtr<SharedBuffer> m_buffer;
+    const Vector<blink::WebBlobInfo>* m_blobInfo;
     const String m_string;
     const int64_t m_integer;
 };

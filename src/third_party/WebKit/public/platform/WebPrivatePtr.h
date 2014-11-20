@@ -34,7 +34,10 @@
 #include "WebCommon.h"
 
 #if INSIDE_BLINK
-#include "heap/Handle.h"
+
+namespace WebCore { template<typename T> class TreeShared; }
+
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/TypeTraits.h"
 #endif
@@ -54,7 +57,7 @@ class LifetimeOf {
     static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<T, WebCore::RefCountedGarbageCollected>::value;
 public:
     static const LifetimeManagementType value =
-        !isGarbageCollected          ? RefCountedLifetime :
+        !isGarbageCollected ? RefCountedLifetime :
         isRefCountedGarbageCollected ? RefCountedGarbageCollectedLifetime : GarbageCollectedLifetime;
 };
 

@@ -82,12 +82,7 @@ void windowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
         exceptionState.throwDOMException(InvalidAccessError, "No script context is available in which to execute the script.");
         return;
     }
-    v8::Handle<v8::Context> context = toV8Context(info.GetIsolate(), impl->frame(), DOMWrapperWorld::current(info.GetIsolate()));
-    if (context.IsEmpty()) {
-        exceptionState.throwDOMException(InvalidAccessError, "No script context is available in which to execute the script.");
-        return;
-    }
-
+    ScriptState* scriptState = ScriptState::current(info.GetIsolate());
     v8::Handle<v8::Value> function = info[0];
     String functionString;
     if (!function->IsFunction()) {
@@ -126,14 +121,14 @@ void windowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
 
         // params is passed to action, and released in action's destructor
         ASSERT(impl->frame());
-        action = adoptPtr(new ScheduledAction(context, v8::Handle<v8::Function>::Cast(function), paramCount, params.get(), info.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(scriptState, v8::Handle<v8::Function>::Cast(function), paramCount, params.get(), info.GetIsolate()));
     } else {
         if (impl->document() && !impl->document()->contentSecurityPolicy()->allowEval()) {
             v8SetReturnValue(info, 0);
             return;
         }
         ASSERT(impl->frame());
-        action = adoptPtr(new ScheduledAction(context, functionString, KURL(), info.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(scriptState, functionString, KURL(), info.GetIsolate()));
     }
 
     int32_t timeout = argumentCount >= 2 ? info[1]->Int32Value() : 0;
@@ -231,7 +226,8 @@ void V8Window::openerAttributeSetterCustom(v8::Local<v8::Value> value, const v8:
     info.Holder()->Delete(v8AtomicString(info.GetIsolate(), "opener"));
 
     // Put property on the front (this) object.
-    info.This()->Set(v8AtomicString(info.GetIsolate(), "opener"), value);
+    if (info.This()->IsObject())
+        v8::Handle<v8::Object>::Cast(info.This())->Set(v8AtomicString(info.GetIsolate(), "opener"), value);
 }
 
 static bool isLegacyTargetOriginDesignation(v8::Handle<v8::Value> value)
@@ -278,7 +274,7 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
             return;
         }
     }
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, targetOrigin, info[targetOriginArgIndex]);
+    TOSTRING_VOID(V8StringResource<WithUndefinedOrNullCheck>, targetOrigin, info[targetOriginArgIndex]);
 
     RefPtr<SerializedScriptValue> message = SerializedScriptValue::create(info[0], &portArray, &arrayBufferArray, exceptionState, info.GetIsolate());
     if (exceptionState.throwIfNeeded())
@@ -355,9 +351,9 @@ void V8Window::showModalDialogMethodCustom(const v8::FunctionCallbackInfo<v8::Va
         return;
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
+    TOSTRING_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
     DialogHandler handler(info[1]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, dialogFeaturesString, info[2]);
+    TOSTRING_VOID(V8StringResource<WithUndefinedOrNullCheck>, dialogFeaturesString, info[2]);
 
     impl->showModalDialog(urlString, dialogFeaturesString, callingDOMWindow(info.GetIsolate()), enteredDOMWindow(info.GetIsolate()), setUpDialog, &handler);
 
@@ -373,15 +369,15 @@ void V8Window::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
         return;
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
+    TOSTRING_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
     AtomicString frameName;
     if (info[1]->IsUndefined() || info[1]->IsNull()) {
         frameName = "_blank";
     } else {
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, frameNameResource, info[1]);
+        TOSTRING_VOID(V8StringResource<>, frameNameResource, info[1]);
         frameName = frameNameResource;
     }
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, windowFeaturesString, info[2]);
+    TOSTRING_VOID(V8StringResource<WithUndefinedOrNullCheck>, windowFeaturesString, info[2]);
 
     RefPtrWillBeRawPtr<DOMWindow> openedWindow = impl->open(urlString, frameName, windowFeaturesString, callingDOMWindow(info.GetIsolate()), enteredDOMWindow(info.GetIsolate()));
     if (!openedWindow)

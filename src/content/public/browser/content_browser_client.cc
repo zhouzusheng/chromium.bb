@@ -15,12 +15,6 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
   return NULL;
 }
 
-WebContentsViewPort* ContentBrowserClient::OverrideCreateWebContentsView(
-    WebContents* web_contents,
-    RenderViewHostDelegateView** render_view_host_delegate_view) {
-  return NULL;
-}
-
 WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
   return NULL;
@@ -268,11 +262,6 @@ BrowserPpapiHost*
   return NULL;
 }
 
-bool ContentBrowserClient::SupportsBrowserPlugin(
-    BrowserContext* browser_context, const GURL& site_url) {
-  return false;
-}
-
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
@@ -314,5 +303,13 @@ net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
     int render_process_id) {
   return NULL;
 }
+
+#if defined(VIDEO_HOLE)
+ExternalVideoSurfaceContainer*
+ContentBrowserClient::OverrideCreateExternalVideoSurfaceContainer(
+    WebContents* web_contents) {
+  return NULL;
+}
+#endif
 
 }  // namespace content

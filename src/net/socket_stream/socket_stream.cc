@@ -100,7 +100,7 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate,
       proxy_url_(url),
       pac_request_(NULL),
       connection_(new ClientSocketHandle),
-      privacy_mode_(kPrivacyModeDisabled),
+      privacy_mode_(PRIVACY_MODE_DISABLED),
       // Unretained() is required; without it, Bind() creates a circular
       // dependency and the SocketStream object will not be freed.
       io_callback_(base::Bind(&SocketStream::OnIOCompleted,
@@ -166,7 +166,7 @@ void SocketStream::CheckPrivacyMode() {
   if (context_ && context_->network_delegate()) {
     bool enable = context_->network_delegate()->CanEnablePrivacyMode(url_,
                                                                      url_);
-    privacy_mode_ = enable ? kPrivacyModeEnabled : kPrivacyModeDisabled;
+    privacy_mode_ = enable ? PRIVACY_MODE_ENABLED : PRIVACY_MODE_DISABLED;
     // Disable Channel ID if privacy mode is enabled.
     if (enable)
       server_ssl_config_.channel_id_enabled = false;
@@ -1337,12 +1337,12 @@ int SocketStream::HandleCertificateError(int result) {
   SSLInfo ssl_info;
   ssl_socket->GetSSLInfo(&ssl_info);
 
-  TransportSecurityState::DomainState domain_state;
-  const bool fatal = context_->transport_security_state() &&
-      context_->transport_security_state()->GetDomainState(url_.host(),
-          SSLConfigService::IsSNIAvailable(context_->ssl_config_service()),
-          &domain_state) &&
-      domain_state.ShouldSSLErrorsBeFatal();
+  TransportSecurityState* state = context_->transport_security_state();
+  const bool fatal =
+      state &&
+      state->ShouldSSLErrorsBeFatal(
+          url_.host(),
+          SSLConfigService::IsSNIAvailable(context_->ssl_config_service()));
 
   delegate_->OnSSLCertificateError(this, ssl_info, fatal);
   return ERR_IO_PENDING;

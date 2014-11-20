@@ -29,11 +29,8 @@
  */
 
 #include "config.h"
-#include "PageWidgetDelegate.h"
+#include "web/PageWidgetDelegate.h"
 
-#include "PageOverlayList.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/page/AutoscrollController.h"
@@ -41,6 +38,9 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "public/web/WebInputEvent.h"
+#include "web/PageOverlayList.h"
+#include "web/WebInputEventConversion.h"
 #include "wtf/CurrentTime.h"
 
 using namespace WebCore;

@@ -51,14 +51,17 @@ class RepeatEvent FINAL : public Event {
 public:
     static PassRefPtrWillBeRawPtr<RepeatEvent> create(const AtomicString& type, int repeat)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new RepeatEvent(type, false, false, repeat));
+        return adoptRefWillBeNoop(new RepeatEvent(type, false, false, repeat));
     }
 
     virtual ~RepeatEvent() { }
 
     int repeat() const { return m_repeat; }
 
-    virtual void trace(Visitor* visitor) { }
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        Event::trace(visitor);
+    }
 
 protected:
     RepeatEvent(const AtomicString& type, bool canBubble, bool cancelable, int repeat = -1)
@@ -166,7 +169,7 @@ SVGSMILElement::Condition::Condition(Type type, BeginOrEnd beginOrEnd, const Str
 SVGSMILElement::SVGSMILElement(const QualifiedName& tagName, Document& doc)
     : SVGElement(tagName, doc)
     , m_attributeName(anyQName())
-    , m_targetElement(0)
+    , m_targetElement(nullptr)
     , m_syncBaseConditionsConnected(false)
     , m_hasEndEventConditions(false)
     , m_isWaitingForFirstInterval(true)
@@ -189,14 +192,18 @@ SVGSMILElement::SVGSMILElement(const QualifiedName& tagName, Document& doc)
 
 SVGSMILElement::~SVGSMILElement()
 {
+#if !ENABLE(OILPAN)
     clearResourceAndEventBaseReferences();
+#endif
     smilEndEventSender().cancelEvent(this);
     smilBeginEventSender().cancelEvent(this);
     smilRepeatEventSender().cancelEvent(this);
     smilRepeatNEventSender().cancelEvent(this);
+#if !ENABLE(OILPAN)
     clearConditions();
     if (m_timeContainer && m_targetElement && hasValidAttributeName())
         m_timeContainer->unschedule(this, m_targetElement, m_attributeName);
+#endif
 }
 
 void SVGSMILElement::clearResourceAndEventBaseReferences()
@@ -227,7 +234,7 @@ void SVGSMILElement::buildPendingResource()
     if (href.isEmpty())
         target = parentNode() && parentNode()->isElementNode() ? toElement(parentNode()) : 0;
     else
-        target = SVGURIReference::targetElementFromIRIString(href, document(), &id);
+        target = SVGURIReference::targetElementFromIRIString(href, treeScope(), &id);
     SVGElement* svgTarget = target && target->isSVGElement() ? toSVGElement(target) : 0;
 
     if (svgTarget && !svgTarget->inDocument())
@@ -263,7 +270,7 @@ static inline QualifiedName constructQualifiedName(const SVGElement* svgElement,
 
     AtomicString prefix;
     AtomicString localName;
-    if (!Document::parseQualifiedName(attributeName, prefix, localName, ASSERT_NO_EXCEPTION))
+    if (!Document::parseQualifiedName(attributeName, prefix, localName, IGNORE_EXCEPTION))
         return anyQName();
 
     const AtomicString& namespaceURI = svgElement->lookupNamespaceURI(prefix);
@@ -299,11 +306,9 @@ void SVGSMILElement::reset()
 Node::InsertionNotificationRequest SVGSMILElement::insertedInto(ContainerNode* rootParent)
 {
     SVGElement::insertedInto(rootParent);
+
     if (!rootParent->inDocument())
         return InsertionDone;
-
-    // Verify we are not in <use> instance tree.
-    ASSERT(!isInShadowTree() || !parentOrShadowHostElement() || !parentOrShadowHostElement()->isSVGElement());
 
     setAttributeName(constructQualifiedName(this, fastGetAttribute(SVGNames::attributeNameAttr)));
     SVGSVGElement* owner = ownerSVGElement();
@@ -559,7 +564,7 @@ void SVGSMILElement::svgAttributeChanged(const QualifiedName& attrName)
     else if (attrName == SVGNames::attributeNameAttr)
         setAttributeName(constructQualifiedName(this, fastGetAttribute(SVGNames::attributeNameAttr)));
     else if (attrName.matches(XLinkNames::hrefAttr)) {
-        SVGElementInstance::InvalidationGuard invalidationGuard(this);
+        SVGElement::InvalidationGuard invalidationGuard(this);
         buildPendingResource();
         if (m_targetElement)
             clearAnimatedType(m_targetElement);
@@ -772,7 +777,7 @@ SMILTime SVGSMILElement::maxValue() const
         return m_cachedMax;
     const AtomicString& value = fastGetAttribute(SVGNames::maxAttr);
     SMILTime result = parseClockValue(value);
-    return m_cachedMax = (result.isUnresolved() || result < 0) ? SMILTime::indefinite() : result;
+    return m_cachedMax = (result.isUnresolved() || result <= 0) ? SMILTime::indefinite() : result;
 }
 
 SMILTime SVGSMILElement::minValue() const
@@ -1325,6 +1330,12 @@ void SVGSMILElement::dispatchPendingEvent(SMILEventSender* eventSender)
     } else {
         dispatchEvent(Event::create(eventType));
     }
+}
+
+void SVGSMILElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_targetElement);
+    SVGElement::trace(visitor);
 }
 
 }

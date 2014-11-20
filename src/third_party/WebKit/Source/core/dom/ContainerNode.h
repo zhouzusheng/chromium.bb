@@ -116,6 +116,7 @@ public:
     void removeChild(Node* child, ExceptionState& = ASSERT_NO_EXCEPTION);
     void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
 
+    Element* getElementById(const AtomicString& id) const;
     PassRefPtr<HTMLCollection> getElementsByTagName(const AtomicString&);
     PassRefPtr<HTMLCollection> getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName);
     PassRefPtr<NodeList> getElementsByName(const AtomicString& elementName);
@@ -173,7 +174,10 @@ public:
     bool childrenAffectedByBackwardPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
     void setChildrenAffectedByBackwardPositionalRules() { setRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
 
+    // FIXME: These methods should all be renamed to something better than "check",
+    // since it's not clear that they alter the style bits of siblings and children.
     void checkForChildrenAdjacentRuleChanges();
+    void checkForSiblingStyleChanges(bool finishedParsingCallback, Node* beforeChange, Node* afterChange, int childCountDelta);
 
     bool childrenSupportStyleSharing() const { return !hasRestyleFlags(); }
 
@@ -186,6 +190,8 @@ public:
 
     void disconnectDescendantFrames();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
 
@@ -195,7 +201,10 @@ protected:
     template<class GenericNode, class GenericNodeContainer>
     friend void Private::addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
 
+#if !ENABLE(OILPAN)
     void removeDetachedChildren();
+#endif
+
     void setFirstChild(Node* child) { m_firstChild = child; }
     void setLastChild(Node* child) { m_lastChild = child; }
 
@@ -223,8 +232,8 @@ private:
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
 
-    Node* m_firstChild;
-    Node* m_lastChild;
+    RawPtrWillBeMember<Node> m_firstChild;
+    RawPtrWillBeMember<Node> m_lastChild;
 };
 
 #ifndef NDEBUG
@@ -245,8 +254,8 @@ inline bool ContainerNode::hasChildCount(unsigned count) const
 
 inline ContainerNode::ContainerNode(TreeScope* treeScope, ConstructionType type)
     : Node(treeScope, type)
-    , m_firstChild(0)
-    , m_lastChild(0)
+    , m_firstChild(nullptr)
+    , m_lastChild(nullptr)
 {
 }
 
@@ -299,7 +308,7 @@ inline Node* Node::lastChild() const
     return toContainerNode(this)->lastChild();
 }
 
-inline Node& Node::highestAncestor() const
+inline Node& Node::highestAncestorOrSelf() const
 {
     Node* node = const_cast<Node*>(this);
     Node* highest = node;

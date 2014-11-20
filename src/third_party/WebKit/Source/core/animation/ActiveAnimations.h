@@ -44,17 +44,15 @@ class CSSAnimations;
 class RenderObject;
 class Element;
 
-// FIXME: Move these to CompositorAnimations
-bool shouldCompositeForActiveAnimations(const RenderObject&);
-bool hasActiveAnimations(const RenderObject&, CSSPropertyID);
-bool hasActiveAnimationsOnCompositor(const RenderObject&, CSSPropertyID);
-
 class ActiveAnimations : public NoBaseWillBeGarbageCollectedFinalized<ActiveAnimations> {
+    WTF_MAKE_NONCOPYABLE(ActiveAnimations);
 public:
     ActiveAnimations()
         : m_animationStyleChange(false)
     {
     }
+
+    ~ActiveAnimations();
 
     // Animations that are currently active for this element, their effects will be applied
     // during a style recalc. CSS Transitions are included in this stack.
@@ -65,20 +63,21 @@ public:
     CSSAnimations& cssAnimations() { return m_cssAnimations; }
     const CSSAnimations& cssAnimations() const { return m_cssAnimations; }
 
-    typedef HashCountedSet<AnimationPlayer*> AnimationPlayerSet;
+    typedef HashMap<AnimationPlayer*, int> AnimationPlayerCountedSet;
     // AnimationPlayers which have animations targeting this element.
-    const AnimationPlayerSet& players() const { return m_players; }
-    AnimationPlayerSet& players() { return m_players; }
+    const AnimationPlayerCountedSet& players() const { return m_players; }
+    void addPlayer(AnimationPlayer*);
+    void removePlayer(AnimationPlayer*);
 
-    bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty(); }
+    bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty() && m_animations.isEmpty(); }
 
-    // FIXME: This and most of this class needs to be renamed to consider 'current'
-    // rather than 'active' animations.
-    bool hasActiveAnimations(CSSPropertyID) const;
-    bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
 
+    void updateAnimationFlags(RenderStyle&);
     void setAnimationStyleChange(bool animationStyleChange) { m_animationStyleChange = animationStyleChange; }
+
+    void addAnimation(Animation* animation) { m_animations.append(animation); }
+    void notifyAnimationDestroyed(Animation* animation) { m_animations.remove(m_animations.find(animation)); }
 
     void trace(Visitor*);
 
@@ -87,8 +86,22 @@ private:
 
     AnimationStack m_defaultStack;
     CSSAnimations m_cssAnimations;
-    AnimationPlayerSet m_players;
+    AnimationPlayerCountedSet m_players;
     bool m_animationStyleChange;
+
+    // This is to avoid a reference cycle that keeps Elements alive and
+    // won't be needed once Element and Animation are moved to Oilpan.
+    Vector<Animation*> m_animations;
+
+#if ENABLE(OILPAN)
+    // Keep a back reference to the target Element, so that this object
+    // will be finalized during the same GC sweep as the target (as the
+    // Element keeps a reference in the other direction via its
+    // rare data.) This is done so that we can accurately notify the
+    // the Element as destroyed to the above vector of Animations in
+    // the ActiveAnimations finalizer.
+    Member<Element> m_target;
+#endif
 
     // CSSAnimations checks if a style change is due to animation.
     friend class CSSAnimations;

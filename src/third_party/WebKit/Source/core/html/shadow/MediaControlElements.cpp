@@ -38,6 +38,7 @@
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/html/MediaController.h"
 #include "core/html/shadow/MediaControls.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/vtt/VTTRegionList.h"
@@ -201,7 +202,7 @@ PassRefPtr<MediaControlMuteButtonElement> MediaControlMuteButtonElement::create(
 void MediaControlMuteButtonElement::defaultEventHandler(Event* event)
 {
     if (event->type() == EventTypeNames::click) {
-        mediaControllerInterface().setMuted(!mediaControllerInterface().muted());
+        mediaElement().setMuted(!mediaElement().muted());
         event->setDefaultHandled();
     }
 
@@ -210,7 +211,7 @@ void MediaControlMuteButtonElement::defaultEventHandler(Event* event)
 
 void MediaControlMuteButtonElement::updateDisplayType()
 {
-    setDisplayType(mediaControllerInterface().muted() ? MediaUnMuteButton : MediaMuteButton);
+    setDisplayType(mediaElement().muted() ? MediaUnMuteButton : MediaMuteButton);
 }
 
 const AtomicString& MediaControlMuteButtonElement::shadowPseudoId() const
@@ -277,7 +278,6 @@ void MediaControlOverlayPlayButtonElement::defaultEventHandler(Event* event)
         updateDisplayType();
         event->setDefaultHandled();
     }
-    HTMLInputElement::defaultEventHandler(event);
 }
 
 void MediaControlOverlayPlayButtonElement::updateDisplayType()
@@ -372,8 +372,14 @@ void MediaControlTimelineElement::defaultEventHandler(Event* event)
         return;
 
     double time = value().toDouble();
-    if (event->type() == EventTypeNames::input && time != mediaControllerInterface().currentTime())
-        mediaControllerInterface().setCurrentTime(time, IGNORE_EXCEPTION);
+    if (event->type() == EventTypeNames::input) {
+        // FIXME: This will need to take the timeline offset into consideration
+        // once that concept is supported, see https://crbug.com/312699
+        if (mediaElement().controller())
+            mediaElement().controller()->setCurrentTime(time, IGNORE_EXCEPTION);
+        else
+            mediaElement().setCurrentTime(time, IGNORE_EXCEPTION);
+    }
 
     RenderSlider* slider = toRenderSlider(renderer());
     if (slider && slider->inDragMode())
@@ -433,8 +439,8 @@ void MediaControlVolumeSliderElement::defaultEventHandler(Event* event)
         return;
 
     double volume = value().toDouble();
-    mediaControllerInterface().setVolume(volume, ASSERT_NO_EXCEPTION);
-    mediaControllerInterface().setMuted(false);
+    mediaElement().setVolume(volume, ASSERT_NO_EXCEPTION);
+    mediaElement().setMuted(false);
 }
 
 bool MediaControlVolumeSliderElement::willRespondToMouseMoveEvents()

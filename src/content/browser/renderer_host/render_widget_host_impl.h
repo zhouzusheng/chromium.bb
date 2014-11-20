@@ -23,13 +23,16 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "cc/resources/shared_bitmap.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
+#include "content/browser/renderer_host/input/touch_emulator_client.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_listener.h"
@@ -76,23 +79,26 @@ class WebLayer;
 #endif
 
 namespace content {
-class BackingStore;
 class InputRouter;
 class MockRenderWidgetHost;
 class OverscrollController;
 class RenderWidgetHostDelegate;
-class RenderWidgetHostViewPort;
+class RenderWidgetHostViewBase;
 class SyntheticGestureController;
 class TimeoutMonitor;
+class TouchEmulator;
 class WebCursor;
 struct EditCommand;
 
 // This implements the RenderWidgetHost interface that is exposed to
 // embedders of content, and adds things only visible to content.
-class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
-                                            public InputRouterClient,
-                                            public InputAckHandler,
-                                            public IPC::Listener {
+class CONTENT_EXPORT RenderWidgetHostImpl
+    : virtual public RenderWidgetHost,
+      public InputRouterClient,
+      public InputAckHandler,
+      public TouchEmulatorClient,
+      public IPC::Listener,
+      public BrowserAccessibilityDelegate {
  public:
   // routing_id can be MSG_ROUTING_NONE, in which case the next available
   // routing id is taken from the RenderProcessHost.
@@ -137,14 +143,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void LockBackingStore() OVERRIDE;
   virtual void UnlockBackingStore() OVERRIDE;
 #endif
-#if defined(TOOLKIT_GTK)
-  virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
-                                               GdkWindow* target) OVERRIDE;
-#elif defined(OS_MACOSX)
-  virtual gfx::Size GetBackingStoreSize() OVERRIDE;
-  virtual bool CopyFromBackingStoreToCGContext(const CGRect& dest_rect,
-                                               CGContextRef target) OVERRIDE;
-#endif
   virtual void EnableFullAccessibilityMode() OVERRIDE;
   virtual bool IsFullAccessibilityModeForTesting() OVERRIDE;
   virtual void EnableTreeOnlyAccessibilityMode() OVERRIDE;
@@ -161,8 +159,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual RenderWidgetHostView* GetView() const OVERRIDE;
   virtual bool IsLoading() const OVERRIDE;
   virtual bool IsRenderView() const OVERRIDE;
-  virtual void Replace(const base::string16& word) OVERRIDE;
-  virtual void ReplaceMisspelling(const base::string16& word) OVERRIDE;
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
@@ -177,11 +173,24 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void RemoveMouseEventCallback(
       const MouseEventCallback& callback) OVERRIDE;
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) OVERRIDE;
-  virtual void GetSnapshotFromRenderer(
-      const gfx::Rect& src_subrect,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // BrowserAccessibilityDelegate
+  virtual void AccessibilitySetFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
+  virtual void AccessibilityScrollToPoint(
+      int acc_obj_id, gfx::Point point) OVERRIDE;
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
+  virtual bool AccessibilityViewHasFocus() const OVERRIDE;
+  virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
+      const OVERRIDE;
+  virtual void AccessibilityFatalError() OVERRIDE;
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -194,7 +203,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void InvalidateScreenInfo();
 
   // Sets the View of this RenderWidgetHost.
-  void SetView(RenderWidgetHostView* view);
+  void SetView(RenderWidgetHostViewBase* view);
 
   int surface_id() const { return surface_id_; }
 
@@ -252,31 +261,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Whether pausing may be useful.
   bool CanPauseForPendingResizeOrRepaints();
 
-  // Check for the existance of a BackingStore of the given |desired_size| and
-  // return it if it exists. If the BackingStore is GPU, true is returned and
-  // |*backing_store| is set to NULL.
-  bool TryGetBackingStore(const gfx::Size& desired_size,
-                          BackingStore** backing_store);
-
-  // Get access to the widget's backing store matching the size of the widget's
-  // view. If you pass |force_create| as true, then GetBackingStore may block
-  // for the renderer to send a new frame. Otherwise, NULL will be returned if
-  // the backing store doesn't already exist. It will also return NULL if the
-  // backing store could not be created.
-  //
-  // Mac only: NULL may also be returned if the last frame was GPU accelerated.
-  // Call GetView()->HasAcceleratedSurface to determine if the last frame was
-  // accelerated.
-  BackingStore* GetBackingStore(bool force_create);
-
-  // Allocate a new backing store of the given size. Returns NULL on failure
-  // (for example, if we don't currently have a RenderWidgetHostView.)
-  BackingStore* AllocBackingStore(const gfx::Size& size);
-
-  // When a backing store does asynchronous painting, it will call this function
-  // when it is done with the DIB. We will then forward a message to the
-  // renderer to send another paint.
-  void DonePaintingToBackingStore();
+  // Wait for a surface matching the size of the widget's view, possibly
+  // blocking until the renderer sends a new frame.
+  void WaitForSurface();
 
   // GPU accelerated version of GetBackingStore function. This will
   // trigger a re-composite to the view. It may fail if a resize is pending, or
@@ -294,7 +281,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
-  void ForwardGestureEvent(const blink::WebGestureEvent& gesture_event);
   void ForwardGestureEventWithLatencyInfo(
       const blink::WebGestureEvent& gesture_event,
       const ui::LatencyInfo& ui_latency);
@@ -307,6 +293,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void ForwardWheelEventWithLatencyInfo(
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& ui_latency);
+
+  // TouchEmulatorClient overrides.
+  virtual void ForwardGestureEvent(
+      const blink::WebGestureEvent& gesture_event) OVERRIDE;
+  virtual void ForwardTouchEvent(
+      const blink::WebTouchEvent& touch_event) OVERRIDE;
+  virtual void SetCursor(const WebCursor& cursor) OVERRIDE;
 
   // Queues a synthetic gesture for testing purposes.  Invokes the on_complete
   // callback when the gesture is finished running.
@@ -417,33 +410,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // BrowserStateAccessibilityImpl.
   void ResetAccessibilityMode();
 
-  // Relay a request from assistive technology to perform the default action
-  // on a given node.
-  void AccessibilityDoDefaultAction(int object_id);
-
-  // Relay a request from assistive technology to set focus to a given node.
-  void AccessibilitySetFocus(int object_id);
-
-  // Relay a request from assistive technology to make a given object
-  // visible by scrolling as many scrollable containers as necessary.
-  // In addition, if it's not possible to make the entire object visible,
-  // scroll so that the |subfocus| rect is visible at least. The subfocus
-  // rect is in local coordinates of the object itself.
-  void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus);
-
-  // Relay a request from assistive technology to move a given object
-  // to a specific location, in the WebContents area coordinate space, i.e.
-  // (0, 0) is the top-left corner of the WebContents.
-  void AccessibilityScrollToPoint(int acc_obj_id, gfx::Point point);
-
-  // Relay a request from assistive technology to set text selection.
-  void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset);
-
-  // Kill the renderer because we got a fatal accessibility error.
-  void FatalAccessibilityTreeError();
-
 #if defined(OS_WIN)
   void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent);
@@ -493,16 +459,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                                              uint32 output_surface_id,
                                              int renderer_host_id,
                                              const cc::CompositorFrameAck& ack);
-
-  // Called by the view in response to AcceleratedSurfaceBuffersSwapped for
-  // platforms that support deferred GPU process descheduling. This does
-  // nothing if the compositor thread is enabled.
-  // TODO(jbates) Once the compositor thread is always on, this can be removed.
-  void AcknowledgeSwapBuffersToRenderer();
-
-  bool is_threaded_compositing_enabled() const {
-    return is_threaded_compositing_enabled_;
-  }
 
   void set_allow_privileged_mouse_lock(bool allow) {
     allow_privileged_mouse_lock_ = allow;
@@ -642,7 +598,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // crashes, its View is destroyed and this pointer becomes NULL, even though
   // render_view_host_ lives on to load another URL (creating a new View while
   // doing so).
-  RenderWidgetHostViewPort* view_;
+  RenderWidgetHostViewBase* view_;
 
   // true if a renderer has once been valid. We use this flag to display a sad
   // tab only when we lose our renderer and not if a paint occurs during
@@ -679,8 +635,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
 #endif
   bool OnSwapCompositorFrame(const IPC::Message& message);
-  void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
-                      gfx::Vector2dF current_fling_velocity);
   void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnUpdateIsDelayed();
@@ -688,10 +642,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
+  void OnSetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
   void OnTextInputTypeChanged(ui::TextInputType type,
                               ui::TextInputMode input_mode,
                               bool can_compose_inline);
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
@@ -704,7 +659,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnUnlockMouse();
   void OnShowDisambiguationPopup(const gfx::Rect& rect,
                                  const gfx::Size& size,
-                                 const TransportDIB::Id& id);
+                                 const cc::SharedBitmapId& id);
 #if defined(OS_WIN)
   void OnWindowlessPluginDummyWindowCreated(
       gfx::NativeViewId dummy_activation_window);
@@ -723,24 +678,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // again.
   void DidUpdateBackingStore(const ViewHostMsg_UpdateRect_Params& params,
                              const base::TimeTicks& paint_start);
-
-  // Paints the given bitmap to the current backing store at the given
-  // location.  Returns true if the passed callback was asynchronously
-  // scheduled in the future (and thus the caller must manually synchronously
-  // call the callback function).
-  bool PaintBackingStoreRect(TransportDIB::Id bitmap,
-                             const gfx::Rect& bitmap_rect,
-                             const std::vector<gfx::Rect>& copy_rects,
-                             const gfx::Size& view_size,
-                             float scale_factor,
-                             const base::Closure& completion_callback);
-
-  // Scrolls the given |clip_rect| in the backing by the given dx/dy amount. The
-  // |dib| and its corresponding location |bitmap_rect| in the backing store
-  // is the newly painted pixels by the renderer.
-  void ScrollBackingStoreRect(const gfx::Vector2d& delta,
-                              const gfx::Rect& clip_rect,
-                              const gfx::Size& view_size);
 
   // Give key press listeners a chance to handle this key press. This allow
   // widgets that don't have focus to still handle key presses.
@@ -805,9 +742,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // True when a page is rendered directly via the GPU process.
   bool is_accelerated_compositing_active_;
 
-  // True if threaded compositing is enabled on this view.
-  bool is_threaded_compositing_enabled_;
-
   // Set if we are waiting for a repaint ack for the view.
   bool repaint_ack_pending_;
 
@@ -831,6 +765,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // The height of the physical backing surface that is overdrawn opaquely in
   // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
   float overdraw_bottom_height_;
+
+  // The size of the visible viewport, which may be smaller than the view if the
+  // view is partially occluded (e.g. by a virtual keyboard).  The size is in
+  // DPI-adjusted pixels.
+  gfx::Size visible_viewport_size_;
 
   // The size we last sent as requested size to the renderer. |current_size_|
   // is only updated once the resize message has been ack'd. This on the other
@@ -936,6 +875,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   scoped_ptr<SyntheticGestureController> synthetic_gesture_controller_;
 
+  scoped_ptr<TouchEmulator> touch_emulator_;
+
   // Receives and handles all input events.
   scoped_ptr<InputRouter> input_router_;
 
@@ -946,9 +887,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 #if defined(OS_WIN)
   std::list<HWND> dummy_windows_for_activation_;
 #endif
-
-  // List of callbacks for pending snapshot requests to the renderer.
-  std::queue<base::Callback<void(bool, const SkBitmap&)> > pending_snapshots_;
 
   int64 last_input_number_;
 

@@ -69,6 +69,15 @@ public:
     void trace(Visitor*);
 };
 
+} // namespace WebCore
+
+
+// We have to declare the VectorTraits specialization before CSSGradientValue
+// declares its inline capacity vector below.
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::CSSGradientColorStop);
+
+namespace WebCore {
+
 class CSSGradientValue : public CSSImageGeneratorValue {
 public:
     PassRefPtr<Image> image(RenderObject*, const IntSize&);
@@ -149,7 +158,7 @@ public:
 
     static PassRefPtrWillBeRawPtr<CSSLinearGradientValue> create(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSLinearGradient)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new CSSLinearGradientValue(repeat, gradientType));
+        return adoptRefWillBeNoop(new CSSLinearGradientValue(repeat, gradientType));
     }
 
     void setAngle(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> val) { m_angle = val; }
@@ -161,7 +170,7 @@ public:
 
     PassRefPtrWillBeRawPtr<CSSLinearGradientValue> clone() const
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new CSSLinearGradientValue(*this));
+        return adoptRefWillBeNoop(new CSSLinearGradientValue(*this));
     }
 
     bool equals(const CSSLinearGradientValue&) const;
@@ -189,12 +198,12 @@ class CSSRadialGradientValue : public CSSGradientValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSRadialGradientValue> create(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSRadialGradient)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new CSSRadialGradientValue(repeat, gradientType));
+        return adoptRefWillBeNoop(new CSSRadialGradientValue(repeat, gradientType));
     }
 
     PassRefPtrWillBeRawPtr<CSSRadialGradientValue> clone() const
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new CSSRadialGradientValue(*this));
+        return adoptRefWillBeNoop(new CSSRadialGradientValue(*this));
     }
 
     String customCSSText() const;

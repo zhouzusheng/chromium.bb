@@ -43,7 +43,7 @@
 
 namespace WebCore {
 
-V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, DOMWrapperWorld* world, v8::Isolate* isolate)
+V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, DOMWrapperWorld& world, v8::Isolate* isolate)
     : EventListener(JSEventListenerType)
     , m_isAttribute(isAttribute)
     , m_world(world)
@@ -146,7 +146,7 @@ void V8AbstractEventListener::invokeEventHandler(ExecutionContext* context, Even
         return;
 
     if (m_isAttribute && !returnValue->IsNull() && !returnValue->IsUndefined() && event->isBeforeUnloadEvent()) {
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, stringReturnValue, returnValue);
+        TOSTRING_VOID(V8StringResource<>, stringReturnValue, returnValue);
         toBeforeUnloadEvent(event)->setReturnValue(stringReturnValue);
     }
 
@@ -177,7 +177,7 @@ v8::Local<v8::Object> V8AbstractEventListener::getReceiverObject(ExecutionContex
 
 bool V8AbstractEventListener::belongsToTheCurrentWorld() const
 {
-    return m_isolate->InContext() && m_world == DOMWrapperWorld::current(m_isolate);
+    return m_isolate->InContext() && m_world == &DOMWrapperWorld::current(m_isolate);
 }
 
 void V8AbstractEventListener::setWeakCallback(const v8::WeakCallbackData<v8::Object, V8AbstractEventListener> &data)

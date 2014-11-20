@@ -27,13 +27,7 @@ MessagePipeEndpoint::Type LocalMessagePipeEndpoint::GetType() const {
   return kTypeLocal;
 }
 
-void LocalMessagePipeEndpoint::Close() {
-  DCHECK(is_open_);
-  is_open_ = false;
-  message_queue_.Clear();
-}
-
-void LocalMessagePipeEndpoint::OnPeerClose() {
+bool LocalMessagePipeEndpoint::OnPeerClose() {
   DCHECK(is_open_);
   DCHECK(is_peer_open_);
 
@@ -48,6 +42,8 @@ void LocalMessagePipeEndpoint::OnPeerClose() {
     waiter_list_.AwakeWaitersForStateChange(new_satisfied_flags,
                                             new_satisfiable_flags);
   }
+
+  return true;
 }
 
 void LocalMessagePipeEndpoint::EnqueueMessage(
@@ -63,16 +59,22 @@ void LocalMessagePipeEndpoint::EnqueueMessage(
   }
 }
 
+void LocalMessagePipeEndpoint::Close() {
+  DCHECK(is_open_);
+  is_open_ = false;
+  message_queue_.Clear();
+}
+
 void LocalMessagePipeEndpoint::CancelAllWaiters() {
   DCHECK(is_open_);
   waiter_list_.CancelAllWaiters();
 }
 
-MojoResult LocalMessagePipeEndpoint::ReadMessage(
-    void* bytes, uint32_t* num_bytes,
-    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
-    uint32_t* num_dispatchers,
-    MojoReadMessageFlags flags) {
+MojoResult LocalMessagePipeEndpoint::ReadMessage(void* bytes,
+                                                 uint32_t* num_bytes,
+                                                 DispatcherVector* dispatchers,
+                                                 uint32_t* num_dispatchers,
+                                                 MojoReadMessageFlags flags) {
   DCHECK(is_open_);
   DCHECK(!dispatchers || dispatchers->empty());
 
@@ -95,8 +97,7 @@ MojoResult LocalMessagePipeEndpoint::ReadMessage(
   else
     enough_space = false;
 
-  if (std::vector<scoped_refptr<Dispatcher> >* queued_dispatchers =
-          message->dispatchers()) {
+  if (DispatcherVector* queued_dispatchers = message->dispatchers()) {
     if (num_dispatchers)
       *num_dispatchers = static_cast<uint32_t>(queued_dispatchers->size());
     if (enough_space) {

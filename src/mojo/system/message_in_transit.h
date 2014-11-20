@@ -5,11 +5,13 @@
 #ifndef MOJO_SYSTEM_MESSAGE_IN_TRANSIT_H_
 #define MOJO_SYSTEM_MESSAGE_IN_TRANSIT_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
 
 #include "base/macros.h"
+#include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/system_impl_export.h"
@@ -18,13 +20,14 @@ namespace mojo {
 namespace system {
 
 class Channel;
+class TransportData;
 
 // This class is used to represent data in transit. It is thread-unsafe.
 //
 // |MessageInTransit| buffers:
 //
 // A |MessageInTransit| can be serialized by writing the main buffer and then,
-// if it has one, the secondary buffer. Both buffers are
+// if it has one, the transport data buffer. Both buffers are
 // |kMessageAlignment|-byte aligned and a multiple of |kMessageAlignment| bytes
 // in size.
 //
@@ -34,11 +37,8 @@ class Channel;
 // |kMessageAlignment|-byte aligned), and then any padding needed to make the
 // main buffer a multiple of |kMessageAlignment| bytes in size.
 //
-// The secondary buffer consists first of a table of |HandleTableEntry|s (each
-// of which is already a multiple of |kMessageAlignment| in size), followed by
-// data needed for the |HandleTableEntry|s: A |HandleTableEntry| consists of an
-// offset (in bytes, relative to the start of the secondary buffer; we guarantee
-// that it's a multiple of |kMessageAlignment|), and a size (in bytes).
+// See |TransportData| for a description of the (serialized) transport data
+// buffer.
 class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
  public:
   typedef uint16_t Type;
@@ -53,9 +53,11 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // Subtypes for type |kTypeMessagePipeEndpoint|:
   static const Subtype kSubtypeMessagePipeEndpointData = 0;
   // Subtypes for type |kTypeMessagePipe|:
-  static const Subtype kSubtypeMessagePipePeerClosed = 0;
+  // Nothing currently.
   // Subtypes for type |kTypeChannel|:
   static const Subtype kSubtypeChannelRunMessagePipeEndpoint = 0;
+  static const Subtype kSubtypeChannelRemoveMessagePipeEndpoint = 1;
+  static const Subtype kSubtypeChannelRemoveMessagePipeEndpointAck = 2;
 
   typedef uint32_t EndpointId;
   // Never a valid endpoint ID.
@@ -64,10 +66,6 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // Messages (the header and data) must always be aligned to a multiple of this
   // quantity (which must be a power of 2).
   static const size_t kMessageAlignment = 8;
-
-  // The maximum size of a single serialized dispatcher. This must be a multiple
-  // of |kMessageAlignment|.
-  static const size_t kMaxSerializedDispatcherSize = 10000;
 
   // Forward-declare |Header| so that |View| can use it:
  private:
@@ -82,12 +80,10 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     // |buffer| should be |kMessageAlignment|-byte aligned.
     View(size_t message_size, const void* buffer);
 
-    // Checks the following things versus pre-determined limits:
-    //   - |num_bytes()| and |main_buffer_size()|,
-    //   - |num_handles()| and |secondary_buffer_size()|,
-    //   - the entries in the handle entry table (that the sizes and offsets are
-    //     valid).
-    // Note: It does not check the serialized dispatcher data itself.
+    // Checks that the given |View| appears to be for a valid message, within
+    // predetermined limits (e.g., |num_bytes()| and |main_buffer_size()|, that
+    // |transport_data_buffer()|/|transport_data_buffer_size()| is for valid
+    // transport data -- see |TransportData::ValidateBuffer()|).
     //
     // It returns true (and leaves |error_message| alone) if this object appears
     // to be a valid message (according to the above) and false, pointing
@@ -100,11 +96,11 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     size_t main_buffer_size() const {
       return RoundUpMessageAlignment(sizeof(Header) + header()->num_bytes);
     }
-    const void* secondary_buffer() const {
+    const void* transport_data_buffer() const {
       return (total_size() > main_buffer_size()) ?
           static_cast<const char*>(buffer_) + main_buffer_size() : NULL;
     }
-    size_t secondary_buffer_size() const {
+    size_t transport_data_buffer_size() const {
       return total_size() - main_buffer_size();
     }
     size_t total_size() const { return header()->total_size; }
@@ -112,7 +108,6 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     const void* bytes() const {
       return static_cast<const char*>(buffer_) + sizeof(Header);
     }
-    uint32_t num_handles() const { return header()->num_handles; }
     Type type() const { return header()->type; }
     Subtype subtype() const { return header()->subtype; }
     EndpointId source_id() const { return header()->source_id; }
@@ -133,7 +128,6 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   MessageInTransit(Type type,
                    Subtype subtype,
                    uint32_t num_bytes,
-                   uint32_t num_handles,
                    const void* bytes);
   // Constructs a |MessageInTransit| from a |View|.
   explicit MessageInTransit(const View& message_view);
@@ -155,8 +149,7 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // not be referenced from anywhere else (in particular, not from the handle
   // table), i.e., each dispatcher must have a reference count of 1. This
   // message must not already have dispatchers.
-  void SetDispatchers(
-      scoped_ptr<std::vector<scoped_refptr<Dispatcher> > > dispatchers);
+  void SetDispatchers(scoped_ptr<DispatcherVector> dispatchers);
 
   // Serializes any dispatchers to the secondary buffer. This message must not
   // already have a secondary buffer (so this must only be called once). The
@@ -164,19 +157,13 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // stays alive through the call.
   void SerializeAndCloseDispatchers(Channel* channel);
 
-  // Deserializes any dispatchers from the secondary buffer. This message must
-  // not have any dispatchers attached.
-  // TODO(vtl): Having to copy the secondary buffer (in the constructor from a
-  // |View|) is suboptimal. Maybe this should just be done in the constructor?
-  void DeserializeDispatchers(Channel* channel);
-
   // Gets the main buffer and its size (in number of bytes), respectively.
-  const void* main_buffer() const { return main_buffer_; }
+  const void* main_buffer() const { return main_buffer_.get(); }
   size_t main_buffer_size() const { return main_buffer_size_; }
 
-  // Gets the secondary buffer and its size (in number of bytes), respectively.
-  const void* secondary_buffer() const { return secondary_buffer_; }
-  size_t secondary_buffer_size() const { return secondary_buffer_size_; }
+  // Gets the transport data buffer (if any).
+  const TransportData* transport_data() const { return transport_data_.get(); }
+  TransportData* transport_data() { return transport_data_.get(); }
 
   // Gets the total size of the message (see comment in |Header|, below).
   size_t total_size() const { return header()->total_size; }
@@ -185,12 +172,8 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   uint32_t num_bytes() const { return header()->num_bytes; }
 
   // Gets the message data (of size |num_bytes()| bytes).
-  const void* bytes() const {
-    return static_cast<const char*>(main_buffer_) + sizeof(Header);
-  }
-  void* bytes() { return static_cast<char*>(main_buffer_) + sizeof(Header); }
-
-  uint32_t num_handles() const { return header()->num_handles; }
+  const void* bytes() const { return main_buffer_.get() + sizeof(Header); }
+  void* bytes() { return main_buffer_.get() + sizeof(Header); }
 
   Type type() const { return header()->type; }
   Subtype subtype() const { return header()->subtype; }
@@ -205,13 +188,11 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   // Gets the dispatchers attached to this message; this may return null if
   // there are none. Note that the caller may mutate the set of dispatchers
   // (e.g., take ownership of all the dispatchers, leaving the vector empty).
-  std::vector<scoped_refptr<Dispatcher> >* dispatchers() {
-    return dispatchers_.get();
-  }
+  DispatcherVector* dispatchers() { return dispatchers_.get(); }
 
   // Returns true if this message has dispatchers attached.
   bool has_dispatchers() const {
-    return dispatchers_.get() && !dispatchers_->empty();
+    return dispatchers_ && !dispatchers_->empty();
   }
 
   // Rounds |n| up to a multiple of |kMessageAlignment|.
@@ -220,11 +201,11 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
   }
 
  private:
-  // To allow us to make assertions about |Header| in the .cc file.
+  // To allow us to make compile-assertions about |Header| in the .cc file.
   struct PrivateStructForCompileAsserts;
 
-  // "Header" for the data. Must be a multiple of |kMessageAlignment| bytes in
-  // size. Must be POD.
+  // Header for the data (main buffer). Must be a multiple of
+  // |kMessageAlignment| bytes in size. Must be POD.
   struct Header {
     // Total size of the message, including the header, the message data
     // ("bytes") including padding (to make it a multiple of |kMessageAlignment|
@@ -238,45 +219,26 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     EndpointId destination_id;  // 4 bytes.
     // Size of actual message data.
     uint32_t num_bytes;
-    // Number of handles "attached".
-    uint32_t num_handles;
-  };
-
-  struct HandleTableEntry {
-    int32_t type;  // From |Dispatcher::Type| (|kTypeUnknown| for "invalid").
-    uint32_t offset;  // Relative to the start of the secondary buffer.
-    uint32_t size;  // (Not including any padding.)
     uint32_t unused;
   };
 
-  // The maximum possible size of a valid secondary buffer: for each handle,
-  // there'll be a handle table entry and its serialized data.
-  static const size_t kMaxSecondaryBufferSize;
-
-  // Validates the secondary buffer. Returns null on success, or a
-  // human-readable error message on error.
-  static const char* ValidateSecondaryBuffer(size_t num_handles,
-                                             const void* secondary_buffer,
-                                             size_t secondary_buffer_size);
-
   const Header* header() const {
-    return static_cast<const Header*>(main_buffer_);
+    return reinterpret_cast<const Header*>(main_buffer_.get());
   }
-  Header* header() { return static_cast<Header*>(main_buffer_); }
+  Header* header() { return reinterpret_cast<Header*>(main_buffer_.get()); }
 
   void UpdateTotalSize();
 
-  size_t main_buffer_size_;
-  void* main_buffer_;
+  const size_t main_buffer_size_;
+  const scoped_ptr<char, base::AlignedFreeDeleter> main_buffer_;  // Never null.
 
-  size_t secondary_buffer_size_;
-  void* secondary_buffer_;  // May be null.
+  scoped_ptr<TransportData> transport_data_;  // May be null.
 
   // Any dispatchers that may be attached to this message. These dispatchers
   // should be "owned" by this message, i.e., have a ref count of exactly 1. (We
   // allow a dispatcher entry to be null, in case it couldn't be duplicated for
   // some reason.)
-  scoped_ptr<std::vector<scoped_refptr<Dispatcher> > > dispatchers_;
+  scoped_ptr<DispatcherVector> dispatchers_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageInTransit);
 };

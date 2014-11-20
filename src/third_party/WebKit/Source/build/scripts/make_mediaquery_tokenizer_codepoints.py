@@ -28,9 +28,14 @@ const unsigned codePointsNumber = {array_size};
 def token_type(i):
     codepoints = {'(': 'leftParenthesis',
                   ')': 'rightParenthesis',
+                  '[': 'leftBracket',
+                  ']': 'rightBracket',
+                  '{': 'leftBrace',
+                  '}': 'rightBrace',
                   '+': 'plusOrFullStop',
                   '.': 'plusOrFullStop',
                   '-': 'hyphenMinus',
+                  '*': 'asterisk',
                   ',': 'comma',
                   '/': 'solidus',
                   '\\': 'reverseSolidus',
@@ -38,6 +43,7 @@ def token_type(i):
                   ';': 'semiColon',
                   }
     whitespace = '\n\r\t\f '
+    quotes = '"\''
     c = chr(i)
     if c in whitespace:
         return 'whiteSpace'
@@ -45,6 +51,8 @@ def token_type(i):
         return 'asciiDigit'
     if c.isalpha() or c == '_':
         return 'nameStart'
+    if c in quotes:
+        return 'stringStart'
     if i == 0:
         return 'endOfFile'
     return codepoints.get(c)

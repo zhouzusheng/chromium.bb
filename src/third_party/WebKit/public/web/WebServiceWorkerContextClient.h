@@ -32,18 +32,24 @@
 #define WebServiceWorkerContextClient_h
 
 #include "WebWorkerPermissionClientProxy.h"
+#include "public/platform/WebMessagePortChannel.h"
+#include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "public/platform/WebServiceWorkerEventResult.h"
+#include "public/platform/WebURL.h"
 
 namespace blink {
 
 class WebDataSource;
-class WebString;
 class WebServiceWorkerContextProxy;
 class WebServiceWorkerNetworkProvider;
 class WebServiceWorkerResponse;
+class WebString;
+
+// FIXME: Remove this after chromium-side code is cleaned up.
+#define HAS_SERVICE_WORKER_CONTEXT_DESTROYED 1
 
 // This interface is implemented by the client. It is supposed to be created
-// on the main thread and then passed on to the worker thread to be owned
+// on the main thread and then passed on to the worker thread.
 // by a newly created WorkerGlobalScope. All methods of this class, except
 // for createServiceWorkerNetworkProvider() and workerContextFailedToStart(),
 // are called on the worker thread.
@@ -54,16 +60,23 @@ class WebServiceWorkerContextClient {
 public:
     virtual ~WebServiceWorkerContextClient() { }
 
+    // ServiceWorker specific method. Called when script accesses the
+    // the |scope| attribute of the ServiceWorkerGlobalScope. Immutable per spec.
+    virtual WebURL scope() const { return WebURL(); }
+
     // A new WorkerGlobalScope is created and started to run on the
     // worker thread.
     // This also gives back a proxy to the client to talk to the
     // newly created WorkerGlobalScope. The proxy is held by WorkerGlobalScope
     // and should not be held by the caller. No proxy methods should be called
-    // after workerContextDestroyed() is called.
+    // after willDestroyWorkerContext() is called.
     virtual void workerContextStarted(WebServiceWorkerContextProxy*) { }
 
-    // WorkerGlobalScope is destroyed. The client should clear the
-    // WebServiceWorkerGlobalScopeProxy when this is called.
+    // WorkerGlobalScope is about to be destroyed. The client should clear
+    // the WebServiceWorkerGlobalScopeProxy when this is called.
+    virtual void willDestroyWorkerContext() { }
+
+    // WorkerGlobalScope is destroyed and the worker is ready to be terminated.
     virtual void workerContextDestroyed() { }
 
     // Starting worker context is failed. This could happen when loading
@@ -73,6 +86,9 @@ public:
 
     // Called when the WorkerGlobalScope had an error or an exception.
     virtual void reportException(const WebString& errorMessage, int lineNumber, int columnNumber, const WebString& sourceURL) { }
+
+    // Called when the console message is reported.
+    virtual void reportConsoleMessage(int source, int level, const WebString& message, int lineNumber, const WebString& sourceURL) { }
 
     // Inspector related messages.
     virtual void dispatchDevToolsMessage(const WebString&) { }
@@ -84,11 +100,7 @@ public:
     // ServiceWorker specific method. Called after InstallEvent (dispatched
     // via WebServiceWorkerContextProxy) is handled by the ServiceWorker's
     // script context.
-    virtual void didHandleInstallEvent(int installEventID) { }
-    virtual void didHandleInstallEvent(int installEventID, blink::WebServiceWorkerEventResult result)
-    {
-        didHandleInstallEvent(installEventID);
-    }
+    virtual void didHandleInstallEvent(int installEventID, blink::WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific methods. Called after FetchEvent is handled by the
     // ServiceWorker's script context. When no response is provided, the browser
@@ -96,13 +108,23 @@ public:
     virtual void didHandleFetchEvent(int fetchEventID) { }
     virtual void didHandleFetchEvent(int fetchEventID, const WebServiceWorkerResponse& response) { }
 
-    // Ownership of the returned object is transferred to the caller.
-    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(blink::WebDataSource*) { return 0; }
-
     // ServiceWorker specific method. Called after SyncEvent (dispatched via
     // WebServiceWorkerContextProxy) is handled by the ServiceWorker's script
     // context.
     virtual void didHandleSyncEvent(int syncEventID) { }
+
+    // Ownership of the returned object is transferred to the caller.
+    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(blink::WebDataSource*) { return 0; }
+
+    // Ownership of the passed callbacks is transferred to the callee, callee
+    // should delete the callbacks after calling either onSuccess or onError.
+    // WebServiceWorkerClientsInfo and WebServiceWorkerError ownerships are
+    // passed to the WebServiceWorkerClientsCallbacks implementation.
+    virtual void getClients(WebServiceWorkerClientsCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // Callee receives ownership of the passed vector.
+    // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
+    virtual void postMessageToClient(int clientID, const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

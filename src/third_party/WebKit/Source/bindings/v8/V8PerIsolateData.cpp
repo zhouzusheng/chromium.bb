@@ -27,23 +27,32 @@
 #include "bindings/v8/V8PerIsolateData.h"
 
 #include "bindings/v8/DOMDataStore.h"
+#include "bindings/v8/PageScriptDebugServer.h"
 #include "bindings/v8/ScriptGCEvent.h"
 #include "bindings/v8/ScriptProfiler.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/V8ObjectConstructor.h"
-#include "bindings/v8/V8PerContextData.h"
+#include "bindings/v8/V8RecursionScope.h"
 #include "bindings/v8/V8ScriptRunner.h"
+#include "public/platform/Platform.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
 
 static V8PerIsolateData* mainThreadPerIsolateData = 0;
 
+#ifndef NDEBUG
+static void assertV8RecursionScope()
+{
+    ASSERT(V8RecursionScope::properlyUsed(v8::Isolate::GetCurrent()));
+}
+#endif
+
 V8PerIsolateData::V8PerIsolateData(v8::Isolate* isolate)
     : m_isolate(isolate)
     , m_isolateHolder(adoptPtr(new gin::IsolateHolder(m_isolate, v8ArrayBufferAllocator())))
-    , m_stringCache(adoptPtr(new StringCache()))
+    , m_stringCache(adoptPtr(new StringCache(m_isolate)))
     , m_hiddenValue(adoptPtr(new V8HiddenValue()))
     , m_constructorMode(ConstructorMode::CreateNewObject)
     , m_recursionLevel(0)
@@ -53,12 +62,21 @@ V8PerIsolateData::V8PerIsolateData(v8::Isolate* isolate)
     , m_gcEventData(adoptPtr(new GCEventData()))
     , m_performingMicrotaskCheckpoint(false)
 {
-    if (isMainThread())
+#ifndef NDEBUG
+    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    if (blink::Platform::current()->currentThread())
+        isolate->AddCallCompletedCallback(&assertV8RecursionScope);
+#endif
+    if (isMainThread()) {
         mainThreadPerIsolateData = this;
+        PageScriptDebugServer::setMainThreadIsolate(isolate);
+    }
 }
 
 V8PerIsolateData::~V8PerIsolateData()
 {
+    if (m_blinkInJSScriptState)
+        m_blinkInJSScriptState->disposePerContextData();
     if (isMainThread())
         mainThreadPerIsolateData = 0;
 }
@@ -88,6 +106,10 @@ v8::Persistent<v8::Value>& V8PerIsolateData::ensureLiveRoot()
 
 void V8PerIsolateData::dispose(v8::Isolate* isolate)
 {
+#ifndef NDEBUG
+    if (blink::Platform::current()->currentThread())
+        isolate->RemoveCallCompletedCallback(&assertV8RecursionScope);
+#endif
     void* data = isolate->GetData(gin::kEmbedderBlink);
     delete static_cast<V8PerIsolateData*>(data);
     isolate->SetData(gin::kEmbedderBlink, 0);
@@ -95,7 +117,7 @@ void V8PerIsolateData::dispose(v8::Isolate* isolate)
 
 V8PerIsolateData::DOMTemplateMap& V8PerIsolateData::currentDOMTemplateMap()
 {
-    if (DOMWrapperWorld::current(m_isolate)->isMainWorld())
+    if (DOMWrapperWorld::current(m_isolate).isMainWorld())
         return m_domTemplateMapForMainWorld;
     return m_domTemplateMapForNonMainWorld;
 }
@@ -126,11 +148,14 @@ void V8PerIsolateData::setDOMTemplate(void* domTemplateKey, v8::Handle<v8::Funct
     currentDOMTemplateMap().add(domTemplateKey, v8::Eternal<v8::FunctionTemplate>(m_isolate, v8::Local<v8::FunctionTemplate>(templ)));
 }
 
-v8::Local<v8::Context> V8PerIsolateData::ensureRegexContext()
+v8::Local<v8::Context> V8PerIsolateData::ensureDomInJSContext()
 {
-    if (!m_perContextDataForRegex)
-        m_perContextDataForRegex = V8PerContextData::create(v8::Context::New(m_isolate), DOMWrapperWorld::create());
-    return m_perContextDataForRegex->context();
+    if (!m_blinkInJSScriptState) {
+        v8::Local<v8::Context> context(v8::Context::New(m_isolate));
+        if (!context.IsEmpty())
+            m_blinkInJSScriptState = ScriptState::create(context, DOMWrapperWorld::create());
+    }
+    return m_blinkInJSScriptState ? m_blinkInJSScriptState->context() : v8::Local<v8::Context>();
 }
 
 bool V8PerIsolateData::hasInstance(const WrapperTypeInfo* info, v8::Handle<v8::Value> value)
@@ -182,7 +207,7 @@ static void constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>& inf
         v8SetReturnValue(info, v8::String::Empty(info.GetIsolate()));
         return;
     }
-    v8SetReturnValue(info, V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function>::Cast(value), info.This(), 0, 0, v8::Isolate::GetCurrent()));
+    v8SetReturnValue(info, V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function>::Cast(value), info.This(), 0, 0, info.GetIsolate()));
 }
 
 v8::Handle<v8::FunctionTemplate> V8PerIsolateData::toStringTemplate()

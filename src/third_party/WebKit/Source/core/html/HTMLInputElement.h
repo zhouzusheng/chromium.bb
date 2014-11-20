@@ -46,8 +46,9 @@ struct DateTimeChooserParameters;
 
 class HTMLInputElement : public HTMLTextFormControlElement {
 public:
-    static PassRefPtr<HTMLInputElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLInputElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
 
@@ -112,10 +113,6 @@ public:
     bool isTimeField() const;
     bool isWeekField() const;
 
-#if ENABLE(INPUT_SPEECH)
-    bool isSpeechEnabled() const;
-#endif
-
     HTMLElement* passwordGeneratorButtonElement() const;
 
     bool checked() const { return m_isChecked; }
@@ -151,7 +148,7 @@ public:
 
     void setEditingValue(const String&);
 
-    double valueAsDate() const;
+    double valueAsDate(bool& isNull) const;
     void setValueAsDate(double, ExceptionState&);
 
     double valueAsNumber() const;
@@ -233,6 +230,8 @@ public:
     void setValueInternal(const String&, TextFieldEventBehavior);
     bool valueAttributeWasUpdatedAfterParsing() const { return m_valueAttributeWasUpdatedAfterParsing; }
     void updateView();
+    bool needsToUpdateViewValue() const { return m_needsToUpdateViewValue; }
+    virtual void setInnerTextValue(const String&) OVERRIDE;
 
     void cacheSelectionInResponseToSetValue(int caretOffset) { cacheSelection(caretOffset, caretOffset, SelectionHasNoDirection); }
 
@@ -286,7 +285,7 @@ private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE FINAL;
-    virtual void didAddShadowRoot(ShadowRoot&) OVERRIDE FINAL;
+    virtual void willAddFirstAuthorShadowRoot() OVERRIDE FINAL;
 
     virtual void willChangeForm() OVERRIDE FINAL;
     virtual void didChangeForm() OVERRIDE FINAL;
@@ -362,6 +361,7 @@ private:
 
     virtual void subtreeHasChanged() OVERRIDE FINAL;
 
+    void setListAttributeTargetObserver(PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver>);
     void resetListAttributeTargetObserver();
     void parseMaxLengthAttribute(const AtomicString&);
     void updateValueIfNeeded();
@@ -374,6 +374,8 @@ private:
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 #endif
 
+    virtual bool shouldDispatchFormControlChangeEvent(String&, String&) OVERRIDE;
+
     AtomicString m_name;
     String m_valueIfDirty;
     String m_suggestedValue;
@@ -383,7 +385,6 @@ private:
     bool m_isChecked : 1;
     bool m_reflectsCheckedAttribute : 1;
     bool m_isIndeterminate : 1;
-    bool m_hasType : 1;
     bool m_isActivatedSubmit : 1;
     unsigned m_autocomplete : 2; // AutoCompleteSetting
     bool m_hasNonEmptyList : 1;
@@ -393,13 +394,14 @@ private:
     bool m_canReceiveDroppedFiles : 1;
     bool m_hasTouchEventHandler : 1;
     bool m_shouldRevealPassword : 1;
-    RefPtr<InputType> m_inputType;
-    RefPtr<InputTypeView> m_inputTypeView;
+    bool m_needsToUpdateViewValue : 1;
+    RefPtrWillBeMember<InputType> m_inputType;
+    RefPtrWillBeMember<InputTypeView> m_inputTypeView;
     // The ImageLoader must be owned by this element because the loader code assumes
     // that it lives as long as its owning element lives. If we move the loader into
     // the ImageInput object we may delete the loader while this element lives on.
     OwnPtr<HTMLImageLoader> m_imageLoader;
-    OwnPtr<ListAttributeTargetObserver> m_listAttributeTargetObserver;
+    OwnPtrWillBeMember<ListAttributeTargetObserver> m_listAttributeTargetObserver;
 };
 
 } //namespace

@@ -43,6 +43,7 @@ public:
     static PassRefPtr<HTMLCollection> create(ContainerNode& base, CollectionType);
     virtual ~HTMLCollection();
     virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE;
+    void invalidateCacheForAttribute(const QualifiedName*) const;
 
     // DOM API
     unsigned length() const { return m_collectionIndexCache.nodeCount(*this); }
@@ -58,12 +59,40 @@ public:
 
     // CollectionIndexCache API.
     bool canTraverseBackward() const { return !overridesItemAfter(); }
-    Element* itemBefore(const Element* previousItem) const;
-    Element* traverseToFirstElement(const ContainerNode& root) const;
-    Element* traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset, const ContainerNode& root) const;
+    Element* traverseToFirstElement() const;
+    Element* traverseToLastElement() const;
+    Element* traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const;
+    Element* traverseBackwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const;
 
 protected:
     HTMLCollection(ContainerNode& base, CollectionType, ItemAfterOverrideType);
+
+    class NamedItemCache {
+    public:
+        static PassOwnPtr<NamedItemCache> create()
+        {
+            return adoptPtr(new NamedItemCache);
+        }
+
+        Vector<Element*>* getElementsById(const AtomicString& id) const { return m_idCache.get(id.impl()); }
+        Vector<Element*>* getElementsByName(const AtomicString& name) const { return m_nameCache.get(name.impl()); }
+        void addElementWithId(const AtomicString& id, Element* element) { addElementToMap(m_idCache, id, element); }
+        void addElementWithName(const AtomicString& name, Element* element) { addElementToMap(m_nameCache, name, element); }
+
+    private:
+        NamedItemCache();
+        typedef HashMap<StringImpl*, OwnPtr<Vector<Element*> > > StringToElementsMap;
+        static void addElementToMap(StringToElementsMap& map, const AtomicString& key, Element* element)
+        {
+            OwnPtr<Vector<Element*> >& vector = map.add(key.impl(), nullptr).storedValue->value;
+            if (!vector)
+                vector = adoptPtr(new Vector<Element*>);
+            vector->append(element);
+        }
+
+        StringToElementsMap m_idCache;
+        StringToElementsMap m_nameCache;
+    };
 
     bool overridesItemAfter() const { return m_overridesItemAfter; }
     virtual Element* virtualItemAfter(Element*) const;
@@ -71,27 +100,27 @@ protected:
     virtual void supportedPropertyNames(Vector<String>& names);
 
     virtual void updateIdNameCache() const;
-    bool hasValidIdNameCache() const { return m_hasValidIdNameCache; }
-    void setHasValidIdNameCache() const
+    bool hasValidIdNameCache() const { return m_namedItemCache; }
+
+    void setNamedItemCache(PassOwnPtr<NamedItemCache> cache) const
     {
-        ASSERT(!m_hasValidIdNameCache);
-        m_hasValidIdNameCache = true;
+        ASSERT(!m_namedItemCache);
         document().incrementNodeListWithIdNameCacheCount();
+        m_namedItemCache = cache;
     }
 
-    typedef HashMap<StringImpl*, OwnPtr<Vector<Element*> > > NodeCacheMap;
-    Vector<Element*>* idCache(const AtomicString& name) const { return m_idCache.get(name.impl()); }
-    Vector<Element*>* nameCache(const AtomicString& name) const { return m_nameCache.get(name.impl()); }
-    void appendIdCache(const AtomicString& name, Element* element) const { append(m_idCache, name, element); }
-    void appendNameCache(const AtomicString& name, Element* element) const { append(m_nameCache, name, element); }
+    NamedItemCache& namedItemCache() const
+    {
+        ASSERT(m_namedItemCache);
+        return *m_namedItemCache;
+    }
 
 private:
-    Element* traverseNextElement(Element& previous, const ContainerNode& root) const;
+    Element* traverseNextElement(Element& previous) const;
 
-    static void append(NodeCacheMap&, const AtomicString&, Element*);
     void invalidateIdNameCacheMaps(Document* oldDocument = 0) const
     {
-        if (!m_hasValidIdNameCache)
+        if (!hasValidIdNameCache())
             return;
 
         // Make sure we decrement the NodeListWithIdNameCache count from
@@ -99,26 +128,30 @@ private:
         // is moved to a new document.
         unregisterIdNameCacheFromDocument(oldDocument ? *oldDocument : document());
 
-        m_idCache.clear();
-        m_nameCache.clear();
-        m_hasValidIdNameCache = false;
+        m_namedItemCache.clear();
     }
 
     void unregisterIdNameCacheFromDocument(Document& document) const
     {
-        ASSERT(m_hasValidIdNameCache);
+        ASSERT(hasValidIdNameCache());
         document.decrementNodeListWithIdNameCacheCount();
     }
 
     const unsigned m_overridesItemAfter : 1;
     const unsigned m_shouldOnlyIncludeDirectChildren : 1;
-    mutable unsigned m_hasValidIdNameCache : 1;
-    mutable NodeCacheMap m_idCache;
-    mutable NodeCacheMap m_nameCache;
+    mutable OwnPtr<NamedItemCache> m_namedItemCache;
     mutable CollectionIndexCache<HTMLCollection, Element> m_collectionIndexCache;
-
-    friend class LiveNodeListBase;
 };
+
+DEFINE_TYPE_CASTS(HTMLCollection, LiveNodeListBase, collection, isHTMLCollectionType(collection->type()), isHTMLCollectionType(collection.type()));
+
+inline void HTMLCollection::invalidateCacheForAttribute(const QualifiedName* attrName) const
+{
+    if (!attrName || shouldInvalidateTypeOnAttributeChange(invalidationType(), *attrName))
+        invalidateCache();
+    else if (*attrName == HTMLNames::idAttr || *attrName == HTMLNames::nameAttr)
+        invalidateIdNameCacheMaps();
+}
 
 } // namespace
 

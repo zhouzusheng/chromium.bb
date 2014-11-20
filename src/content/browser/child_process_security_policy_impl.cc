@@ -19,7 +19,7 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/url_request/url_request.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
@@ -308,8 +308,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
 ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about these schemes and believe them to be safe.
-  RegisterWebSafeScheme(kHttpScheme);
-  RegisterWebSafeScheme(kHttpsScheme);
+  RegisterWebSafeScheme(url::kHttpScheme);
+  RegisterWebSafeScheme(url::kHttpsScheme);
   RegisterWebSafeScheme(kFtpScheme);
   RegisterWebSafeScheme(kDataScheme);
   RegisterWebSafeScheme("feed");
@@ -459,6 +459,16 @@ void ChildProcessSecurityPolicyImpl::GrantReadFile(int child_id,
 void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFile(
     int child_id, const base::FilePath& file) {
   GrantPermissionsForFile(child_id, file, CREATE_READ_WRITE_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCopyInto(int child_id,
+                                                   const base::FilePath& dir) {
+  GrantPermissionsForFile(child_id, dir, COPY_INTO_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantDeleteFrom(
+    int child_id, const base::FilePath& dir) {
+  GrantPermissionsForFile(child_id, dir, DELETE_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantPermissionsForFile(

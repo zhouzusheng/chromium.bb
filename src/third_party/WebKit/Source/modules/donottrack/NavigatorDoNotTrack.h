@@ -32,8 +32,8 @@
 #define NavigatorDoNotTrack_h
 
 #include "core/frame/DOMWindowProperty.h"
-#include "heap/Handle.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -51,7 +51,7 @@ public:
 
     String doNotTrack();
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Navigator>::trace(visitor); }
 
 private:
     explicit NavigatorDoNotTrack(LocalFrame*);

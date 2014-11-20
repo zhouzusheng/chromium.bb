@@ -56,31 +56,38 @@ namespace WebCore {
 using namespace HTMLNames;
 
 TreeScope::TreeScope(ContainerNode& rootNode, Document& document)
-    : m_rootNode(rootNode)
+    : m_rootNode(&rootNode)
     , m_document(&document)
     , m_parentTreeScope(&document)
+#if !ENABLE(OILPAN)
     , m_guardRefCount(0)
+#endif
     , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
     ASSERT(rootNode != document);
+#if !ENABLE(OILPAN)
     m_parentTreeScope->guardRef();
-    m_rootNode.setTreeScope(this);
+#endif
+    m_rootNode->setTreeScope(this);
 }
 
 TreeScope::TreeScope(Document& document)
     : m_rootNode(document)
     , m_document(&document)
-    , m_parentTreeScope(0)
+    , m_parentTreeScope(nullptr)
+#if !ENABLE(OILPAN)
     , m_guardRefCount(0)
+#endif
     , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
-    m_rootNode.setTreeScope(this);
+    m_rootNode->setTreeScope(this);
 }
 
 TreeScope::~TreeScope()
 {
+#if !ENABLE(OILPAN)
     ASSERT(!m_guardRefCount);
-    m_rootNode.setTreeScope(0);
+    m_rootNode->setTreeScope(0);
 
     if (m_selection) {
         m_selection->clearTreeScope();
@@ -89,6 +96,7 @@ TreeScope::~TreeScope()
 
     if (m_parentTreeScope)
         m_parentTreeScope->guardDeref();
+#endif
 }
 
 TreeScope* TreeScope::olderShadowRootOrParentTreeScope() const
@@ -114,21 +122,25 @@ bool TreeScope::rootNodeHasTreeSharedParent() const
     return rootNode().hasTreeSharedParent();
 }
 
+#if !ENABLE(OILPAN)
 void TreeScope::destroyTreeScopeData()
 {
     m_elementsById.clear();
     m_imageMapsByName.clear();
     m_labelsByForAttribute.clear();
 }
+#endif
 
 void TreeScope::setParentTreeScope(TreeScope& newParentScope)
 {
     // A document node cannot be re-parented.
     ASSERT(!rootNode().isDocumentNode());
 
+#if !ENABLE(OILPAN)
     newParentScope.guardRef();
     if (m_parentTreeScope)
         m_parentTreeScope->guardDeref();
+#endif
     m_parentTreeScope = &newParentScope;
     setDocument(newParentScope.document());
 }
@@ -319,14 +331,16 @@ Element* TreeScope::findAnchor(const String& name)
 
 bool TreeScope::applyAuthorStyles() const
 {
-    return !rootNode().isShadowRoot() || toShadowRoot(rootNode()).applyAuthorStyles();
+    return rootNode().isDocumentNode();
 }
 
 void TreeScope::adoptIfNeeded(Node& node)
 {
     ASSERT(this);
     ASSERT(!node.isDocumentNode());
+#if !ENABLE(OILPAN)
     ASSERT_WITH_SECURITY_IMPLICATION(!node.m_deletionHasBegun);
+#endif
     TreeScopeAdopter adopter(node, *this);
     if (adopter.needsScopeChange())
         adopter.execute();
@@ -345,8 +359,10 @@ Element* TreeScope::adjustedFocusedElement() const
 {
     Document& document = rootNode().document();
     Element* element = document.focusedElement();
+    // FIXME(kenrb): The toLocalFrame() cast should be removed when RemoteFrames can have FrameTrees.
+    // At that point, focusedFrameOwnerElement should take a Frame instead of a LocalFrame.
     if (!element && document.page())
-        element = focusedFrameOwnerElement(document.page()->focusController().focusedFrame(), document.frame());
+        element = focusedFrameOwnerElement(toLocalFrameTemporary(document.page()->focusController().focusedFrame()), document.frame());
     if (!element)
         return 0;
 
@@ -406,6 +422,32 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
         Node::DOCUMENT_POSITION_PRECEDING | Node::DOCUMENT_POSITION_CONTAINS;
 }
 
+const TreeScope* TreeScope::commonAncestorTreeScope(const TreeScope& other) const
+{
+    Vector<const TreeScope*, 16> thisChain;
+    for (const TreeScope* tree = this; tree; tree = tree->parentTreeScope())
+        thisChain.append(tree);
+
+    Vector<const TreeScope*, 16> otherChain;
+    for (const TreeScope* tree = &other; tree; tree = tree->parentTreeScope())
+        otherChain.append(tree);
+
+    // Keep popping out the last elements of these chains until a mismatched pair is found. If |this| and |other|
+    // belong to different documents, null will be returned.
+    const TreeScope* lastAncestor = 0;
+    while (!thisChain.isEmpty() && !otherChain.isEmpty() && thisChain.last() == otherChain.last()) {
+        lastAncestor = thisChain.last();
+        thisChain.removeLast();
+        otherChain.removeLast();
+    }
+    return lastAncestor;
+}
+
+TreeScope* TreeScope::commonAncestorTreeScope(TreeScope& other)
+{
+    return const_cast<TreeScope*>(static_cast<const TreeScope&>(*this).commonAncestorTreeScope(other));
+}
+
 static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)
 {
     while (true) {
@@ -439,7 +481,7 @@ TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
     return treeScopesA[indexA] == treeScopesB[indexB] ? treeScopesA[indexA] : 0;
 }
 
-#if SECURITY_ASSERT_ENABLED
+#if SECURITY_ASSERT_ENABLED && !ENABLE(OILPAN)
 bool TreeScope::deletionHasBegun()
 {
     return rootNode().m_deletionHasBegun;
@@ -451,10 +493,12 @@ void TreeScope::beginDeletion()
 }
 #endif
 
+#if !ENABLE(OILPAN)
 int TreeScope::refCount() const
 {
     return rootNode().refCount();
 }
+#endif
 
 bool TreeScope::isInclusiveAncestorOf(const TreeScope& scope) const
 {
@@ -491,6 +535,15 @@ void TreeScope::setNeedsStyleRecalcForViewportUnits()
         if (style && style->hasViewportUnits())
             element->setNeedsStyleRecalc(LocalStyleChange);
     }
+}
+
+void TreeScope::trace(Visitor* visitor)
+{
+    visitor->trace(m_rootNode);
+    visitor->trace(m_document);
+    visitor->trace(m_parentTreeScope);
+    visitor->trace(m_idTargetObserverRegistry);
+    visitor->trace(m_selection);
 }
 
 } // namespace WebCore

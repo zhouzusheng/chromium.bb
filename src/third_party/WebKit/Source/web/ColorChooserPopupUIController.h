@@ -26,8 +26,8 @@
 #ifndef ColorChooserPopupUIController_h
 #define ColorChooserPopupUIController_h
 
-#include "ColorChooserUIController.h"
 #include "core/page/PagePopupClient.h"
+#include "web/ColorChooserUIController.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -37,10 +37,12 @@ class PagePopup;
 
 namespace blink {
 
+class ChromeClientImpl;
+
 class ColorChooserPopupUIController FINAL : public ColorChooserUIController, public WebCore::PagePopupClient  {
 
 public:
-    ColorChooserPopupUIController(ChromeClientImpl*, WebCore::ColorChooserClient*);
+    ColorChooserPopupUIController(WebCore::LocalFrame*, ChromeClientImpl*, WebCore::ColorChooserClient*);
     virtual ~ColorChooserPopupUIController();
 
     // ColorChooserUIController functions:

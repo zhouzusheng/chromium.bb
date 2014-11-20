@@ -7,7 +7,6 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
@@ -20,11 +19,9 @@
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
-#include "media/base/media_switches.h"
 #include "media/base/scoped_histogram_timer.h"
-#include "media/video/capture/fake_video_capture_device.h"
-#include "media/video/capture/file_video_capture_device.h"
 #include "media/video/capture/video_capture_device.h"
+#include "media/video/capture/video_capture_device_factory.h"
 
 #if defined(ENABLE_SCREEN_CAPTURE)
 #include "content/browser/media/capture/desktop_capture_device.h"
@@ -95,10 +92,11 @@ VideoCaptureManager::DeviceInfo::DeviceInfo(
 
 VideoCaptureManager::DeviceInfo::~DeviceInfo() {}
 
-VideoCaptureManager::VideoCaptureManager()
+VideoCaptureManager::VideoCaptureManager(
+    scoped_ptr<media::VideoCaptureDeviceFactory> factory)
     : listener_(NULL),
       new_capture_session_id_(1),
-      artificial_device_source_for_testing_(DISABLED) {
+      video_capture_device_factory_(factory.Pass()) {
 }
 
 VideoCaptureManager::~VideoCaptureManager() {
@@ -108,7 +106,7 @@ VideoCaptureManager::~VideoCaptureManager() {
 void VideoCaptureManager::Register(
     MediaStreamProviderListener* listener,
     const scoped_refptr<base::SingleThreadTaskRunner>& device_task_runner) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!listener_);
   DCHECK(!device_task_runner_.get());
   listener_ = listener;
@@ -121,7 +119,7 @@ void VideoCaptureManager::Unregister() {
 }
 
 void VideoCaptureManager::EnumerateDevices(MediaStreamType stream_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureManager::EnumerateDevices, type " << stream_type;
   DCHECK(listener_);
   base::PostTaskAndReplyWithResult(
@@ -133,7 +131,7 @@ void VideoCaptureManager::EnumerateDevices(MediaStreamType stream_type) {
 }
 
 int VideoCaptureManager::Open(const StreamDeviceInfo& device_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(listener_);
 
   // Generate a new id for the session being opened.
@@ -156,12 +154,11 @@ int VideoCaptureManager::Open(const StreamDeviceInfo& device_info) {
 }
 
 void VideoCaptureManager::Close(int capture_session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(listener_);
   DVLOG(1) << "VideoCaptureManager::Close, id " << capture_session_id;
 
-  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator
-      session_it = sessions_.find(capture_session_id);
+  SessionMap::iterator session_it = sessions_.find(capture_session_id);
   if (session_it == sessions_.end()) {
     NOTREACHED();
     return;
@@ -186,15 +183,6 @@ void VideoCaptureManager::Close(int capture_session_id) {
   sessions_.erase(session_it);
 }
 
-void VideoCaptureManager::UseFakeDevice() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUseFileForFakeVideoCapture)) {
-    artificial_device_source_for_testing_ = Y4M_FILE;
-  } else {
-    artificial_device_source_for_testing_ = TEST_PATTERN;
-  }
-}
-
 void VideoCaptureManager::DoStartDeviceOnDeviceThread(
     media::VideoCaptureSessionId session_id,
     DeviceEntry* entry,
@@ -211,20 +199,10 @@ void VideoCaptureManager::DoStartDeviceOnDeviceThread(
       // held in the browser-side VideoCaptureDevice::Name structure.
       DeviceInfo* found = FindDeviceInfoById(entry->id, devices_info_cache_);
       if (found) {
-        switch (artificial_device_source_for_testing_) {
-          case DISABLED:
-            video_capture_device.reset(
-                media::VideoCaptureDevice::Create(found->name));
-            break;
-          case TEST_PATTERN:
-            video_capture_device.reset(
-                media::FakeVideoCaptureDevice::Create(found->name));
-            break;
-          case Y4M_FILE:
-            video_capture_device.reset(
-                media::FileVideoCaptureDevice::Create(found->name));
-            break;
-        }
+        video_capture_device =
+            video_capture_device_factory_->Create(
+                BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+                found->name);
       }
       break;
     }
@@ -275,7 +253,7 @@ void VideoCaptureManager::StartCaptureForClient(
     VideoCaptureControllerID client_id,
     VideoCaptureControllerEventHandler* client_handler,
     const DoneCB& done_cb) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureManager::StartCaptureForClient, "
            << params.requested_format.frame_size.ToString() << ", "
            << params.requested_format.frame_rate << ", #" << session_id << ")";
@@ -312,8 +290,9 @@ void VideoCaptureManager::StartCaptureForClient(
 void VideoCaptureManager::StopCaptureForClient(
     VideoCaptureController* controller,
     VideoCaptureControllerID client_id,
-    VideoCaptureControllerEventHandler* client_handler) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    VideoCaptureControllerEventHandler* client_handler,
+    bool aborted_due_to_error) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(controller);
   DCHECK(client_handler);
 
@@ -321,6 +300,16 @@ void VideoCaptureManager::StopCaptureForClient(
   if (!entry) {
     NOTREACHED();
     return;
+  }
+  if (aborted_due_to_error) {
+    SessionMap::iterator it;
+    for (it = sessions_.begin(); it != sessions_.end(); ++it) {
+      if (it->second.type == entry->stream_type &&
+          it->second.id == entry->id) {
+        listener_->Aborted(it->second.type, it->first);
+        break;
+      }
+    }
   }
 
   // Detach client from controller.
@@ -336,11 +325,10 @@ void VideoCaptureManager::StopCaptureForClient(
 bool VideoCaptureManager::GetDeviceSupportedFormats(
     media::VideoCaptureSessionId capture_session_id,
     media::VideoCaptureFormats* supported_formats) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(supported_formats->empty());
 
-  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator it =
-      sessions_.find(capture_session_id);
+  SessionMap::iterator it = sessions_.find(capture_session_id);
   if (it == sessions_.end())
     return false;
   DVLOG(1) << "GetDeviceSupportedFormats for device: " << it->second.name;
@@ -356,11 +344,10 @@ bool VideoCaptureManager::GetDeviceSupportedFormats(
 bool VideoCaptureManager::GetDeviceFormatsInUse(
     media::VideoCaptureSessionId capture_session_id,
     media::VideoCaptureFormats* formats_in_use) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(formats_in_use->empty());
 
-  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator it =
-      sessions_.find(capture_session_id);
+  SessionMap::iterator it = sessions_.find(capture_session_id);
   if (it == sessions_.end())
     return false;
   DVLOG(1) << "GetDeviceFormatsInUse for device: " << it->second.name;
@@ -379,9 +366,8 @@ bool VideoCaptureManager::GetDeviceFormatsInUse(
 void VideoCaptureManager::SetDesktopCaptureWindowId(
     media::VideoCaptureSessionId session_id,
     gfx::NativeViewId window_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator
-      session_it = sessions_.find(session_id);
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  SessionMap::iterator session_it = sessions_.find(session_id);
   if (session_it == sessions_.end()) {
     device_task_runner_->PostTask(
         FROM_HERE,
@@ -425,7 +411,7 @@ void VideoCaptureManager::DoStopDeviceOnDeviceThread(DeviceEntry* entry) {
 void VideoCaptureManager::OnOpened(
     MediaStreamType stream_type,
     media::VideoCaptureSessionId capture_session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!listener_) {
     // Listener has been removed.
     return;
@@ -436,7 +422,7 @@ void VideoCaptureManager::OnOpened(
 void VideoCaptureManager::OnClosed(
     MediaStreamType stream_type,
     media::VideoCaptureSessionId capture_session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!listener_) {
     // Listener has been removed.
     return;
@@ -447,7 +433,7 @@ void VideoCaptureManager::OnClosed(
 void VideoCaptureManager::OnDevicesInfoEnumerated(
     MediaStreamType stream_type,
     const DeviceInfos& new_devices_info_cache) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!listener_) {
     // Listener has been removed.
@@ -483,23 +469,11 @@ VideoCaptureManager::GetAvailableDevicesInfoOnDeviceThread(
       // Cache the latest enumeration of video capture devices.
       // We'll refer to this list again in OnOpen to avoid having to
       // enumerate the devices again.
-      switch (artificial_device_source_for_testing_) {
-        case DISABLED:
-          media::VideoCaptureDevice::GetDeviceNames(&names_snapshot);
-          break;
-        case TEST_PATTERN:
-          media::FakeVideoCaptureDevice::GetDeviceNames(&names_snapshot);
-          break;
-        case Y4M_FILE:
-          media::FileVideoCaptureDevice::GetDeviceNames(&names_snapshot);
-          break;
-      }
+      video_capture_device_factory_->GetDeviceNames(&names_snapshot);
       break;
-
     case MEDIA_DESKTOP_VIDEO_CAPTURE:
       // Do nothing.
       break;
-
     default:
       NOTREACHED();
       break;
@@ -529,20 +503,8 @@ VideoCaptureManager::GetAvailableDevicesInfoOnDeviceThread(
        it != names_snapshot.end(); ++it) {
     media::VideoCaptureFormats supported_formats;
     DeviceInfo device_info(*it, media::VideoCaptureFormats());
-    switch (artificial_device_source_for_testing_) {
-      case DISABLED:
-        media::VideoCaptureDevice::GetDeviceSupportedFormats(
-            *it, &(device_info.supported_formats));
-        break;
-      case TEST_PATTERN:
-        media::FakeVideoCaptureDevice::GetDeviceSupportedFormats(
-            *it, &(device_info.supported_formats));
-        break;
-      case Y4M_FILE:
-        media::FileVideoCaptureDevice::GetDeviceSupportedFormats(
-            *it, &(device_info.supported_formats));
-        break;
-    }
+    video_capture_device_factory_->GetDeviceSupportedFormats(
+        *it, &(device_info.supported_formats));
     ConsolidateCaptureFormats(&device_info.supported_formats);
     new_devices_info_cache.push_back(device_info);
   }
@@ -552,7 +514,7 @@ VideoCaptureManager::GetAvailableDevicesInfoOnDeviceThread(
 VideoCaptureManager::DeviceEntry*
 VideoCaptureManager::GetDeviceEntryForMediaStreamDevice(
     const MediaStreamDevice& device_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   for (DeviceEntries::iterator it = devices_.begin();
        it != devices_.end(); ++it) {
@@ -567,9 +529,9 @@ VideoCaptureManager::GetDeviceEntryForMediaStreamDevice(
 
 VideoCaptureManager::DeviceEntry*
 VideoCaptureManager::GetDeviceEntryForController(
-    const VideoCaptureController* controller) {
+    const VideoCaptureController* controller) const {
   // Look up |controller| in |devices_|.
-  for (DeviceEntries::iterator it = devices_.begin();
+  for (DeviceEntries::const_iterator it = devices_.begin();
        it != devices_.end(); ++it) {
     if ((*it)->video_capture_controller.get() == controller) {
       return *it;
@@ -579,7 +541,7 @@ VideoCaptureManager::GetDeviceEntryForController(
 }
 
 void VideoCaptureManager::DestroyDeviceEntryIfNoClients(DeviceEntry* entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Removal of the last client stops the device.
   if (entry->video_capture_controller->GetClientCount() == 0) {
     DVLOG(1) << "VideoCaptureManager stopping device (type = "
@@ -600,10 +562,9 @@ void VideoCaptureManager::DestroyDeviceEntryIfNoClients(DeviceEntry* entry) {
 
 VideoCaptureManager::DeviceEntry* VideoCaptureManager::GetOrCreateDeviceEntry(
     media::VideoCaptureSessionId capture_session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  std::map<media::VideoCaptureSessionId, MediaStreamDevice>::iterator
-      session_it = sessions_.find(capture_session_id);
+  SessionMap::iterator session_it = sessions_.find(capture_session_id);
   if (session_it == sessions_.end()) {
     return NULL;
   }

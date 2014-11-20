@@ -52,6 +52,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+	'../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
         '../gpu/gpu.gyp:command_buffer_common',
@@ -218,6 +219,8 @@
         'base/audio_decoder.h',
         'base/audio_decoder_config.cc',
         'base/audio_decoder_config.h',
+        'base/audio_discard_helper.cc',
+        'base/audio_discard_helper.h',
         'base/audio_fifo.cc',
         'base/audio_fifo.h',
         'base/audio_hardware_config.cc',
@@ -354,6 +357,8 @@
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'ffmpeg/ffmpeg_deleters.h',
+        'filters/audio_clock.cc',
+        'filters/audio_clock.h',
         'filters/audio_file_reader.cc',
         'filters/audio_file_reader.h',
         'filters/audio_renderer_algorithm.cc',
@@ -382,12 +387,12 @@
         'filters/ffmpeg_demuxer.h',
         'filters/ffmpeg_glue.cc',
         'filters/ffmpeg_glue.h',
-        'filters/ffmpeg_h264_to_annex_b_bitstream_converter.cc',
-        'filters/ffmpeg_h264_to_annex_b_bitstream_converter.h',
         'filters/ffmpeg_video_decoder.cc',
         'filters/ffmpeg_video_decoder.h',
         'filters/file_data_source.cc',
         'filters/file_data_source.h',
+        'filters/frame_processor.cc',
+        'filters/frame_processor.h',
         'filters/frame_processor_base.cc',
         'filters/frame_processor_base.h',
         'filters/gpu_video_accelerator_factories.cc',
@@ -398,8 +403,6 @@
         'filters/h264_bit_reader.h',
         'filters/h264_parser.cc',
         'filters/h264_parser.h',
-        'filters/h264_to_annex_b_bitstream_converter.cc',
-        'filters/h264_to_annex_b_bitstream_converter.h',
         'filters/in_memory_url_protocol.cc',
         'filters/in_memory_url_protocol.h',
         'filters/legacy_frame_processor.cc',
@@ -412,6 +415,11 @@
         'filters/source_buffer_stream.h',
         'filters/stream_parser_factory.cc',
         'filters/stream_parser_factory.h',
+        'filters/video_frame_scheduler.h',
+        'filters/video_frame_scheduler_impl.cc',
+        'filters/video_frame_scheduler_impl.h',
+        'filters/video_frame_scheduler_proxy.cc',
+        'filters/video_frame_scheduler_proxy.h',
         'filters/video_renderer_impl.cc',
         'filters/video_renderer_impl.h',
         'filters/vpx_video_decoder.cc',
@@ -450,12 +458,20 @@
         'midi/usb_midi_output_stream.h',
         'video/capture/android/video_capture_device_android.cc',
         'video/capture/android/video_capture_device_android.h',
+        'video/capture/android/video_capture_device_factory_android.cc',
+        'video/capture/android/video_capture_device_factory_android.h',
         'video/capture/fake_video_capture_device.cc',
         'video/capture/fake_video_capture_device.h',
+        'video/capture/fake_video_capture_device_factory.h',
+        'video/capture/fake_video_capture_device_factory.cc',
         'video/capture/file_video_capture_device.cc',
         'video/capture/file_video_capture_device.h',
+        'video/capture/file_video_capture_device_factory.h',
+        'video/capture/file_video_capture_device_factory.cc',
         'video/capture/linux/video_capture_device_linux.cc',
         'video/capture/linux/video_capture_device_linux.h',
+        'video/capture/linux/video_capture_device_chromeos.cc',
+        'video/capture/linux/video_capture_device_chromeos.h',
         'video/capture/mac/avfoundation_glue.h',
         'video/capture/mac/avfoundation_glue.mm',
         'video/capture/mac/coremedia_glue.h',
@@ -467,11 +483,10 @@
         'video/capture/mac/video_capture_device_mac.mm',
         'video/capture/mac/video_capture_device_qtkit_mac.h',
         'video/capture/mac/video_capture_device_qtkit_mac.mm',
-        'video/capture/video_capture.h',
         'video/capture/video_capture_device.cc',
         'video/capture/video_capture_device.h',
-        'video/capture/video_capture_proxy.cc',
-        'video/capture/video_capture_proxy.h',
+        'video/capture/video_capture_device_factory.cc',
+        'video/capture/video_capture_device_factory.h',
         'video/capture/video_capture_types.cc',
         'video/capture/video_capture_types.h',
         'video/capture/win/capability_list_win.cc',
@@ -833,6 +848,10 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'filters/ffmpeg_h264_to_annex_b_bitstream_converter.cc',
+            'filters/ffmpeg_h264_to_annex_b_bitstream_converter.h',
+            'filters/h264_to_annex_b_bitstream_converter.cc',
+            'filters/h264_to_annex_b_bitstream_converter.h',
             'formats/mp2t/es_parser.h',
             'formats/mp2t/es_parser_adts.cc',
             'formats/mp2t/es_parser_adts.h',
@@ -866,6 +885,8 @@
             'formats/mp4/es_descriptor.h',
             'formats/mp4/mp4_stream_parser.cc',
             'formats/mp4/mp4_stream_parser.h',
+            'formats/mp4/sample_to_group_iterator.cc',
+            'formats/mp4/sample_to_group_iterator.h',
             'formats/mp4/track_run_iterator.cc',
             'formats/mp4/track_run_iterator.h',
             'formats/mpeg/adts_constants.cc',
@@ -877,10 +898,12 @@
             'formats/mpeg/mpeg_audio_stream_parser_base.cc',
             'formats/mpeg/mpeg_audio_stream_parser_base.h',
           ],
-        }],
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
+          'conditions': [
+            ['enable_mpeg2ts_stream_parser==1', {
+              'defines': [
+                'ENABLE_MPEG2TS_STREAM_PARSER',
+              ],
+            }],
           ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {
@@ -956,6 +979,7 @@
         'base/audio_buffer_queue_unittest.cc',
         'base/audio_bus_unittest.cc',
         'base/audio_converter_unittest.cc',
+        'base/audio_discard_helper_unittest.cc',
         'base/audio_fifo_unittest.cc',
         'base/audio_hardware_config_unittest.cc',
         'base/audio_hash_unittest.cc',
@@ -999,6 +1023,7 @@
         'cdm/aes_decryptor_unittest.cc',
         'cdm/json_web_key_unittest.cc',
         'ffmpeg/ffmpeg_common_unittest.cc',
+        'filters/audio_clock_unittest.cc',
         'filters/audio_decoder_selector_unittest.cc',
         'filters/audio_file_reader_unittest.cc',
         'filters/audio_renderer_algorithm_unittest.cc',
@@ -1017,20 +1042,23 @@
         'filters/ffmpeg_audio_decoder_unittest.cc',
         'filters/ffmpeg_demuxer_unittest.cc',
         'filters/ffmpeg_glue_unittest.cc',
-        'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
         'filters/ffmpeg_video_decoder_unittest.cc',
         'filters/file_data_source_unittest.cc',
+        'filters/frame_processor_unittest.cc',
         'filters/h264_bit_reader_unittest.cc',
         'filters/h264_parser_unittest.cc',
-        'filters/h264_to_annex_b_bitstream_converter_unittest.cc',
         'filters/in_memory_url_protocol_unittest.cc',
+        'filters/opus_audio_decoder_unittest.cc',
         'filters/pipeline_integration_test.cc',
         'filters/pipeline_integration_test_base.cc',
         'filters/skcanvas_video_renderer_unittest.cc',
         'filters/source_buffer_stream_unittest.cc',
         'filters/video_decoder_selector_unittest.cc',
+        'filters/video_frame_scheduler_impl_unittest.cc',
+        'filters/video_frame_scheduler_unittest.cc',
         'filters/video_frame_stream_unittest.cc',
         'filters/video_renderer_impl_unittest.cc',
+        'midi/midi_manager_unittest.cc',
         'midi/midi_manager_usb_unittest.cc',
         'midi/midi_message_queue_unittest.cc',
         'midi/midi_message_util_unittest.cc',
@@ -1081,8 +1109,7 @@
         }],
         ['os_posix==1 and OS!="mac"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -1102,6 +1129,7 @@
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
             'filters/ffmpeg_video_decoder_unittest.cc',
             'filters/in_memory_url_protocol_unittest.cc',
+            'filters/opus_audio_decoder_unittest.cc',
             'filters/pipeline_integration_test.cc',
             'filters/pipeline_integration_test_base.cc',
           ],
@@ -1140,6 +1168,8 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
+            'filters/h264_to_annex_b_bitstream_converter_unittest.cc',
             'formats/common/stream_parser_test_base.cc',
             'formats/common/stream_parser_test_base.h',
             'formats/mp2t/es_parser_h264_unittest.cc',
@@ -1149,9 +1179,15 @@
             'formats/mp4/box_reader_unittest.cc',
             'formats/mp4/es_descriptor_unittest.cc',
             'formats/mp4/mp4_stream_parser_unittest.cc',
+            'formats/mp4/sample_to_group_iterator_unittest.cc',
             'formats/mp4/track_run_iterator_unittest.cc',
             'formats/mpeg/adts_stream_parser_unittest.cc',
             'formats/mpeg/mp3_stream_parser_unittest.cc',
+          ],
+        }],
+        ['enable_mpeg2ts_stream_parser==1', {
+          'defines': [
+            'ENABLE_MPEG2TS_STREAM_PARSER',
           ],
         }],
         # TODO(wolenetz): Fix size_t to int truncations in win64. See
@@ -1180,6 +1216,7 @@
         'base/run_all_perftests.cc',
         'base/sinc_resampler_perftest.cc',
         'base/vector_math_perftest.cc',
+        'base/yuv_convert_perftest.cc',
         'filters/pipeline_integration_perftest.cc',
         'filters/pipeline_integration_test_base.cc',
       ],
@@ -1236,8 +1273,6 @@
         'base/gmock_callback_support.h',
         'base/mock_audio_renderer_sink.cc',
         'base/mock_audio_renderer_sink.h',
-        'base/mock_data_source_host.cc',
-        'base/mock_data_source_host.h',
         'base/mock_demuxer_host.cc',
         'base/mock_demuxer_host.h',
         'base/mock_filters.cc',
@@ -1246,10 +1281,12 @@
         'base/test_data_util.h',
         'base/test_helpers.cc',
         'base/test_helpers.h',
+        'filters/clockless_video_frame_scheduler.cc',
+        'filters/clockless_video_frame_scheduler.h',
         'filters/mock_gpu_video_accelerator_factories.cc',
         'filters/mock_gpu_video_accelerator_factories.h',
-        'video/capture/mock_video_capture_event_handler.cc',
-        'video/capture/mock_video_capture_event_handler.h',
+        'filters/test_video_frame_scheduler.cc',
+        'filters/test_video_frame_scheduler.h',
         'video/mock_video_decode_accelerator.cc',
         'video/mock_video_decode_accelerator.h',
       ],
@@ -1500,25 +1537,6 @@
           'sources': [
             'ffmpeg/ffmpeg_unittest.cc',
           ],
-          'conditions': [
-            ['toolkit_uses_gtk==1', {
-              'dependencies': [
-                # Needed for the following #include chain:
-                #   base/run_all_unittests.cc
-                #   ../base/test_suite.h
-                #   gtk/gtk.h
-                '../build/linux/system.gyp:gtk',
-              ],
-              'conditions': [
-                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
-                  'dependencies': [
-                    '../base/allocator/allocator.gyp:allocator',
-                  ],
-                }],
-              ],
-            }],
-          ],
         },
         {
           'target_name': 'ffmpeg_regression_tests',
@@ -1537,8 +1555,7 @@
           'conditions': [
             ['os_posix==1 and OS!="mac"', {
               'conditions': [
-                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+                ['use_allocator!="none"', {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
                   ],

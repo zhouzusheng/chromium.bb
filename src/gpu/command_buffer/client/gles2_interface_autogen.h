@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -381,7 +381,7 @@ virtual void RegisterSharedIdsCHROMIUM(GLuint namespace_id,
 virtual GLboolean EnableFeatureCHROMIUM(const char* feature) = 0;
 virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) = 0;
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) = 0;
-virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) = 0;
+virtual void* MapImageCHROMIUM(GLuint image_id) = 0;
 virtual void UnmapImageCHROMIUM(GLuint image_id) = 0;
 virtual void* MapBufferSubDataCHROMIUM(GLuint target,
                                        GLintptr offset,
@@ -415,7 +415,8 @@ virtual void GetProgramInfoCHROMIUM(GLuint program,
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) = 0;
 virtual GLuint CreateImageCHROMIUM(GLsizei width,
                                    GLsizei height,
-                                   GLenum internalformat) = 0;
+                                   GLenum internalformat,
+                                   GLenum usage) = 0;
 virtual void DestroyImageCHROMIUM(GLuint image_id) = 0;
 virtual void GetImageParameterivCHROMIUM(GLuint image_id,
                                          GLenum pname,
@@ -478,6 +479,7 @@ virtual void AsyncTexImage2DCHROMIUM(GLenum target,
                                      GLenum type,
                                      const void* pixels) = 0;
 virtual void WaitAsyncTexImage2DCHROMIUM(GLenum target) = 0;
+virtual void WaitAllAsyncTexImage2DCHROMIUM() = 0;
 virtual void DiscardFramebufferEXT(GLenum target,
                                    GLsizei count,
                                    const GLenum* attachments) = 0;
@@ -486,4 +488,15 @@ virtual GLuint InsertSyncPointCHROMIUM() = 0;
 virtual void WaitSyncPointCHROMIUM(GLuint sync_point) = 0;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) = 0;
 virtual void DiscardBackbufferCHROMIUM() = 0;
+virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
+                                          GLenum plane_transform,
+                                          GLuint overlay_texture_id,
+                                          GLint bounds_x,
+                                          GLint bounds_y,
+                                          GLint bounds_width,
+                                          GLint bounds_height,
+                                          GLfloat uv_x,
+                                          GLfloat uv_y,
+                                          GLfloat uv_width,
+                                          GLfloat uv_height) = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_AUTOGEN_H_

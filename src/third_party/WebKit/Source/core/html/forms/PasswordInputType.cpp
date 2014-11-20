@@ -47,9 +47,9 @@
 
 namespace WebCore {
 
-PassRefPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new PasswordInputType(element));
+    return adoptRefWillBeNoop(new PasswordInputType(element));
 }
 
 void PasswordInputType::countUsage()
@@ -85,7 +85,7 @@ void PasswordInputType::createShadowSubtree()
     BaseTextInputType::createShadowSubtree();
     if (!isPasswordGenerationEnabled())
         return;
-    RefPtr<PasswordGeneratorButtonElement> generatorButton = PasswordGeneratorButtonElement::create(element().document());
+    RefPtrWillBeRawPtr<PasswordGeneratorButtonElement> generatorButton = PasswordGeneratorButtonElement::create(element().document());
     if (!isPasswordGenerationDecorationEnabled())
         generatorButton->setInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
     containerElement()->appendChild(generatorButton.release());

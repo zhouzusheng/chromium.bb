@@ -98,10 +98,11 @@ public:
 
     bool initialized() const;
 
-    void setData(SharedBuffer* data, bool allDataReceived);
+    void setData(SharedBuffer& data, bool allDataReceived);
     String filenameExtension() const;
 
     bool isSizeAvailable();
+    bool hasColorProfile() const;
     IntSize size(RespectImageOrientationEnum = DoNotRespectImageOrientation) const;
     IntSize frameSizeAtIndex(size_t, RespectImageOrientationEnum = DoNotRespectImageOrientation) const;
 

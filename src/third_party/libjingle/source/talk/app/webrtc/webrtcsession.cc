@@ -41,6 +41,7 @@
 #include "talk/base/helpers.h"
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
+#include "talk/base/stringutils.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/videocapturer.h"
 #include "talk/session/media/channel.h"
@@ -84,6 +85,15 @@ static bool VerifyMediaDescriptions(
 
   for (size_t i = 0; i < offer->contents().size(); ++i) {
     if ((offer->contents()[i].name) != answer->contents()[i].name) {
+      return false;
+    }
+    const MediaContentDescription* offer_mdesc =
+        static_cast<const MediaContentDescription*>(
+            offer->contents()[i].description);
+    const MediaContentDescription* answer_mdesc =
+        static_cast<const MediaContentDescription*>(
+            answer->contents()[i].description);
+    if (offer_mdesc->type() != answer_mdesc->type()) {
       return false;
     }
   }
@@ -476,8 +486,9 @@ WebRtcSession::~WebRtcSession() {
 
 bool WebRtcSession::Initialize(
     const PeerConnectionFactoryInterface::Options& options,
-    const MediaConstraintsInterface* constraints,
-    DTLSIdentityServiceInterface* dtls_identity_service) {
+    const MediaConstraintsInterface*  constraints,
+    DTLSIdentityServiceInterface* dtls_identity_service,
+    PeerConnectionInterface::IceTransportsType ice_transport) {
   // TODO(perkj): Take |constraints| into consideration. Return false if not all
   // mandatory constraints can be fulfilled. Note that |constraints|
   // can be null.
@@ -576,6 +587,9 @@ bool WebRtcSession::Initialize(
         &value,
         NULL)) {
     video_options_.use_improved_wifi_bandwidth_estimator.Set(value);
+  } else {
+    // Enable by default if the constraint is not set.
+    video_options_.use_improved_wifi_bandwidth_estimator.Set(true);
   }
 
   if (FindConstraint(
@@ -873,9 +887,32 @@ bool WebRtcSession::ProcessIceMessage(const IceCandidateInterface* candidate) {
     return false;
   }
 
-  if (!local_description() || !remote_description()) {
-    LOG(LS_INFO) << "ProcessIceMessage: Remote description not set, "
-                 << "save the candidate for later use.";
+  cricket::TransportProxy* transport_proxy = NULL;
+  if (remote_description()) {
+    size_t mediacontent_index =
+        static_cast<size_t>(candidate->sdp_mline_index());
+    size_t remote_content_size =
+        BaseSession::remote_description()->contents().size();
+    if (mediacontent_index >= remote_content_size) {
+      LOG(LS_ERROR)
+          << "ProcessIceMessage: Invalid candidate media index.";
+      return false;
+    }
+
+    cricket::ContentInfo content =
+        BaseSession::remote_description()->contents()[mediacontent_index];
+    transport_proxy = GetTransportProxy(content.name);
+  }
+
+  // We need to check the local/remote description for the Transport instead of
+  // the session, because a new Transport added during renegotiation may have
+  // them unset while the session has them set from the previou negotiation. Not
+  // doing so may trigger the auto generation of transport description and mess
+  // up DTLS identity information, ICE credential, etc.
+  if (!transport_proxy || !(transport_proxy->local_description_set() &&
+                            transport_proxy->remote_description_set())) {
+    LOG(LS_INFO) << "ProcessIceMessage: Local/Remote description not set "
+                 << "on the Transport, save the candidate for later use.";
     saved_candidates_.push_back(
         new JsepIceCandidate(candidate->sdp_mid(), candidate->sdp_mline_index(),
                              candidate->candidate()));
@@ -889,6 +926,10 @@ bool WebRtcSession::ProcessIceMessage(const IceCandidateInterface* candidate) {
   }
 
   return UseCandidate(candidate);
+}
+
+bool WebRtcSession::UpdateIce(PeerConnectionInterface::IceTransportsType type) {
+  return false;
 }
 
 bool WebRtcSession::GetTrackIdBySsrc(uint32 ssrc, std::string* id) {
@@ -1397,7 +1438,9 @@ bool WebRtcSession::UseCandidate(
     }
     // TODO(bemasc): If state is Completed, go back to Connected.
   } else {
-    LOG(LS_WARNING) << error;
+    if (!error.empty()) {
+      LOG(LS_WARNING) << error;
+    }
   }
   return true;
 }

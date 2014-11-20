@@ -30,6 +30,7 @@
 #include "content/child/child_shared_bitmap_manager.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
+#include "content/child/mojo/mojo_application.h"
 #include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
@@ -45,7 +46,6 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "webkit/child/resource_loader_bridge.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -71,8 +71,11 @@ base::LazyInstance<base::ThreadLocalPointer<ChildThread> > g_lazy_tls =
 // plugins), PluginThread has EnsureTerminateMessageFilter.
 #if defined(OS_POSIX)
 
-// A thread delegate that waits for |duration| and then signals the process
-// with SIGALRM.
+// TODO(earthdok): Re-enable on CrOS http://crbug.com/360622
+#if (defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) || \
+    defined(THREAD_SANITIZER)) && !defined(OS_CHROMEOS)
+// A thread delegate that waits for |duration| and then exits the process with
+// _exit(0).
 class WaitAndExitDelegate : public base::PlatformThread::Delegate {
  public:
   explicit WaitAndExitDelegate(base::TimeDelta duration)
@@ -81,13 +84,6 @@ class WaitAndExitDelegate : public base::PlatformThread::Delegate {
 
   virtual void ThreadMain() OVERRIDE {
     base::PlatformThread::Sleep(duration_);
-    // This used to be implemented with alarm(2). Make sure to not break
-    // anything that requires the process being signaled.
-    CHECK_EQ(0, raise(SIGALRM));
-
-    base::PlatformThread::Sleep((base::TimeDelta::FromSeconds(10)));
-    // If something erroneously blocked SIGALRM, this will trigger.
-    NOTREACHED();
     _exit(0);
   }
 
@@ -96,13 +92,11 @@ class WaitAndExitDelegate : public base::PlatformThread::Delegate {
   DISALLOW_COPY_AND_ASSIGN(WaitAndExitDelegate);
 };
 
-// This is similar to using alarm(2), except it will spawn a thread
-// which will sleep for |duration| before raising SIGALRM.
-bool CreateAlarmThread(base::TimeDelta duration) {
+bool CreateWaitAndExitThread(base::TimeDelta duration) {
   scoped_ptr<WaitAndExitDelegate> delegate(new WaitAndExitDelegate(duration));
 
-  const bool thread_created = base::PlatformThread::CreateNonJoinable(
-      0 /* stack_size */, delegate.get());
+  const bool thread_created =
+      base::PlatformThread::CreateNonJoinable(0, delegate.get());
   if (!thread_created)
     return false;
 
@@ -114,10 +108,11 @@ bool CreateAlarmThread(base::TimeDelta duration) {
   ignore_result(leaking_delegate);
   return true;
 }
+#endif
 
-class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
+class SuicideOnChannelErrorFilter : public IPC::MessageFilter {
  public:
-  // IPC::ChannelProxy::MessageFilter
+  // IPC::MessageFilter
   virtual void OnChannelError() OVERRIDE {
     // For renderer/worker processes:
     // On POSIX, at least, one can install an unload handler which loops
@@ -134,21 +129,21 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
     //
     // So, we install a filter on the channel so that we can process this event
     // here and kill the process.
-    if (CommandLine::ForCurrentProcess()->
-        HasSwitch(switches::kChildCleanExit)) {
-      // If clean exit is requested, we want to kill this process after giving
-      // it 60 seconds to run exit handlers. Exit handlers may including ones
-      // that write profile data to disk (which happens under profile collection
-      // mode).
-      CHECK(CreateAlarmThread(base::TimeDelta::FromSeconds(60)));
+    // TODO(earthdok): Re-enable on CrOS http://crbug.com/360622
+#if (defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) || \
+    defined(THREAD_SANITIZER)) && !defined(OS_CHROMEOS)
+    // Some sanitizer tools rely on exit handlers (e.g. to run leak detection,
+    // or dump code coverage data to disk). Instead of exiting the process
+    // immediately, we give it 60 seconds to run exit handlers.
+    CHECK(CreateWaitAndExitThread(base::TimeDelta::FromSeconds(60)));
 #if defined(LEAK_SANITIZER)
-      // Invoke LeakSanitizer early to avoid detecting shutdown-only leaks. If
-      // leaks are found, the process will exit here.
-      __lsan_do_leak_check();
+    // Invoke LeakSanitizer early to avoid detecting shutdown-only leaks. If
+    // leaks are found, the process will exit here.
+    __lsan_do_leak_check();
 #endif
-    } else {
-      _exit(0);
-    }
+#else
+    _exit(0);
+#endif
   }
 
  protected:
@@ -241,6 +236,8 @@ void ChildThread::Init() {
   if (!in_browser_process_)
     IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
+
+  mojo_application_.reset(new MojoApplication(this));
 
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
@@ -356,6 +353,13 @@ void ChildThread::OnChannelError() {
   base::MessageLoop::current()->Quit();
 }
 
+void ChildThread::AcceptConnection(
+    const mojo::String& service_name,
+    mojo::ScopedMessagePipeHandle message_pipe) {
+  // By default, we don't expect incoming connections.
+  NOTREACHED();
+}
+
 bool ChildThread::Send(IPC::Message* msg) {
   DCHECK(base::MessageLoop::current() == message_loop());
   if (!channel_) {
@@ -369,11 +373,6 @@ bool ChildThread::Send(IPC::Message* msg) {
 MessageRouter* ChildThread::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());
   return &router_;
-}
-
-webkit_glue::ResourceLoaderBridge* ChildThread::CreateBridge(
-    const RequestInfo& request_info) {
-  return resource_dispatcher()->CreateBridge(request_info);
 }
 
 base::SharedMemory* ChildThread::AllocateSharedMemory(size_t buf_size) {
@@ -416,6 +415,9 @@ base::SharedMemory* ChildThread::AllocateSharedMemory(
 }
 
 bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
+  if (mojo_application_->OnMessageReceived(msg))
+    return true;
+
   // Resource responses are sent to the resource dispatcher.
   if (resource_dispatcher_->OnMessageReceived(msg))
     return true;

@@ -22,6 +22,7 @@
 #include "core/svg/SVGForeignObjectElement.h"
 
 #include "XLinkNames.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -43,6 +44,8 @@ inline SVGForeignObjectElement::SVGForeignObjectElement(Document& document)
     addToPropertyMap(m_y);
     addToPropertyMap(m_width);
     addToPropertyMap(m_height);
+
+    UseCounter::count(document, UseCounter::SVGForeignObjectElement);
 }
 
 PassRefPtr<SVGForeignObjectElement> SVGForeignObjectElement::create(Document& document)
@@ -82,6 +85,30 @@ void SVGForeignObjectElement::parseAttribute(const QualifiedName& name, const At
     reportAttributeParsingError(parseError, name, value);
 }
 
+bool SVGForeignObjectElement::isPresentationAttribute(const QualifiedName& name) const
+{
+    if (name == SVGNames::widthAttr || name == SVGNames::heightAttr)
+        return true;
+    return SVGGraphicsElement::isPresentationAttribute(name);
+}
+
+void SVGForeignObjectElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+{
+    if (name == SVGNames::widthAttr || name == SVGNames::heightAttr) {
+        RefPtr<SVGLength> length = SVGLength::create(LengthModeOther);
+        TrackExceptionState exceptionState;
+        length->setValueAsString(value, exceptionState);
+        if (!exceptionState.hadException()) {
+            if (name == SVGNames::widthAttr)
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyWidth, value);
+            else if (name == SVGNames::heightAttr)
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyHeight, value);
+        }
+    } else {
+        SVGGraphicsElement::collectStyleForPresentationAttribute(name, value, style);
+    }
+}
+
 void SVGForeignObjectElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
@@ -89,7 +116,12 @@ void SVGForeignObjectElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    if (attrName == SVGNames::widthAttr || attrName == SVGNames::heightAttr) {
+        invalidateSVGPresentationAttributeStyle();
+        setNeedsStyleRecalc(LocalStyleChange);
+    }
+
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     bool isLengthAttribute = attrName == SVGNames::xAttr
                           || attrName == SVGNames::yAttr

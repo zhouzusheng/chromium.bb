@@ -12,10 +12,18 @@
   'includes': [
     #'auto_login_parser.gypi',
     #'autofill.gypi',
+    #'bookmarks.gypi',
     'breakpad.gypi',
+    #'captive_portal.gypi',
     #'cloud_devices.gypi',
+    #'cronet.gypi',
+    #'data_reduction_proxy.gypi',
     #'dom_distiller.gypi',
     #'domain_reliability.gypi',
+    #'favicon.gypi',
+    #'favicon_base.gypi',
+    #'feedback.gypi',  # crbug.com/368738
+    #'infobars.gypi',
     #'json_schema.gypi',
     'keyed_service.gypi',
     #'language_usage_metrics.gypi',
@@ -26,7 +34,9 @@
     #'password_manager.gypi',
     #'policy.gypi',
     #'precache.gypi',
+    #'query_parser.gypi',
     #'rappor.gypi',
+    #'search_provider_logos.gypi',
     #'signin.gypi',
     #'startup_metric_utils.gypi',
     #'translate.gypi',
@@ -38,6 +48,7 @@
   'conditions': [
     ['OS != "ios"', {
       'includes': [
+        #'cdm.gypi',
         #'navigation_interception.gypi',
         #'plugins.gypi',
         #'sessions.gypi',
@@ -45,14 +56,24 @@
         #'visitedlink.gypi',
         #'web_contents_delegate_android.gypi',
         #'web_modal.gypi',
+      ],
+    }],
+    ['OS == "win" or OS == "mac"', {
+      'includes': [
         #'wifi.gypi',
       ],
     }],
+    ['OS != "ios" and OS != "android"', {
+      'includes': [
+        #'usb_service.gypi',
+      ]
+    }],
     ['android_webview_build == 0', {
-      # Android WebView fails to build if a dependency on sync.gyp:sync is
+      # Android WebView fails to build if a dependency on these targets is
       # introduced.
       'includes': [
         #'sync_driver.gypi',
+        #'invalidation.gypi',
       ],
     }],
   ],

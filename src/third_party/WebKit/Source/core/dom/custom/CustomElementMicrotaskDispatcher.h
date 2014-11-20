@@ -5,35 +5,44 @@
 #ifndef CustomElementMicrotaskDispatcher_h
 #define CustomElementMicrotaskDispatcher_h
 
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class CustomElementAsyncImportMicrotaskQueue;
 class CustomElementCallbackQueue;
 class CustomElementMicrotaskImportStep;
+class CustomElementMicrotaskQueue;
 class CustomElementMicrotaskStep;
-class HTMLImport;
+class HTMLImportLoader;
 
 class CustomElementMicrotaskDispatcher {
     WTF_MAKE_NONCOPYABLE(CustomElementMicrotaskDispatcher);
 public:
-    ~CustomElementMicrotaskDispatcher() { }
+    ~CustomElementMicrotaskDispatcher();
 
     static CustomElementMicrotaskDispatcher& instance();
 
-    void enqueue(HTMLImport*, PassOwnPtr<CustomElementMicrotaskStep>);
+    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskStep>);
+    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskImportStep>, bool importIsSync);
     void enqueue(CustomElementCallbackQueue*);
+
 
     void importDidFinish(CustomElementMicrotaskImportStep*);
 
     bool elementQueueIsEmpty() { return m_elements.isEmpty(); }
 
+#if !defined(NDEBUG)
+    void show();
+#endif
+
 private:
     CustomElementMicrotaskDispatcher();
 
+    void ensureMicrotaskScheduledForElementQueue();
+    void ensureMicrotaskScheduledForMicrotaskSteps();
     void ensureMicrotaskScheduled();
 
     static void dispatch();
@@ -46,10 +55,15 @@ private:
         DispatchingCallbacks
     } m_phase;
 
-    CustomElementMicrotaskQueue m_resolutionAndImports;
+    RefPtr<CustomElementMicrotaskQueue> m_resolutionAndImports;
+    RefPtr<CustomElementAsyncImportMicrotaskQueue> m_asyncImports;
     Vector<CustomElementCallbackQueue*> m_elements;
 };
 
 }
+
+#if !defined(NDEBUG)
+void showCEMD();
+#endif
 
 #endif // CustomElementMicrotaskDispatcher_h

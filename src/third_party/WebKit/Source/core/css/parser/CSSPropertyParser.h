@@ -29,6 +29,7 @@
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSGradientValue.h"
+#include "core/css/CSSGridTemplateAreasValue.h"
 #include "core/css/CSSParserMode.h"
 #include "core/css/CSSParserValues.h"
 #include "core/css/CSSProperty.h"
@@ -50,6 +51,7 @@ class CSSValue;
 class CSSValueList;
 class CSSBasicShape;
 class CSSBasicShapeInset;
+class CSSGridLineNamesValue;
 class Document;
 class Element;
 class ImmutableStylePropertySet;
@@ -66,7 +68,7 @@ class CSSPropertyParser {
 public:
     CSSPropertyParser(OwnPtr<CSSParserValueList>&,
         const CSSParserContext&, bool inViewport, bool savedImportant,
-        WillBeHeapVector<CSSProperty, 256>&, bool& hasFontFaceOnlyValues);
+        WillBeHeapVector<CSSProperty, 256>&, CSSRuleSourceData::Type);
     ~CSSPropertyParser();
 
     // FIXME: Should this be on a separate ColorParser object?
@@ -137,7 +139,7 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty(AnimationParseContext&);
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationTimingFunction();
 
-    bool parseTransformOriginShorthand(RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
+    bool parseWebkitTransformOriginShorthand(RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
     bool parseCubicBezierTimingFunctionValue(CSSParserValueList*& args, double& result);
     bool parseAnimationProperty(CSSPropertyID, RefPtrWillBeRawPtr<CSSValue>&, AnimationParseContext&);
     bool parseTransitionShorthand(CSSPropertyID, bool important);
@@ -150,14 +152,18 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseGridPosition();
     bool parseIntegerOrStringFromGridPosition(RefPtrWillBeRawPtr<CSSPrimitiveValue>& numericValue, RefPtrWillBeRawPtr<CSSPrimitiveValue>& gridLineName);
     bool parseGridItemPositionShorthand(CSSPropertyID, bool important);
+    bool parseGridTemplateRowsAndAreas(PassRefPtrWillBeRawPtr<CSSValue>, bool important);
+    bool parseGridTemplateShorthand(bool important);
+    bool parseGridShorthand(bool important);
     bool parseGridAreaShorthand(bool important);
     bool parseSingleGridAreaLonghand(RefPtrWillBeRawPtr<CSSValue>&);
-    bool parseGridTrackList(CSSPropertyID, bool important);
+    PassRefPtrWillBeRawPtr<CSSValue> parseGridTrackList(bool important);
     bool parseGridTrackRepeatFunction(CSSValueList&);
     PassRefPtrWillBeRawPtr<CSSValue> parseGridTrackSize(CSSParserValueList& inputList);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseGridBreadth(CSSParserValue*);
+    bool parseGridTemplateAreasRow(NamedGridAreaMap&, const size_t, size_t&);
     PassRefPtrWillBeRawPtr<CSSValue> parseGridTemplateAreas();
-    void parseGridLineNames(CSSParserValueList* inputList, CSSValueList&);
+    void parseGridLineNames(CSSParserValueList&, CSSValueList&, CSSGridLineNamesValue* = 0);
 
     bool parseClipShape(CSSPropertyID, bool important);
 
@@ -234,13 +240,11 @@ private:
     PassRefPtrWillBeRawPtr<CSSValueList> parseFilter();
     PassRefPtrWillBeRawPtr<CSSFilterValue> parseBuiltinFilterArguments(CSSParserValueList*, CSSFilterValue::FilterOperationType);
 
-    static bool isBlendMode(CSSValueID);
-    static bool isCompositeOperator(CSSValueID);
-
-    PassRefPtrWillBeRawPtr<CSSValueList> parseTransform();
-    PassRefPtrWillBeRawPtr<CSSValue> parseTransformValue(CSSParserValue*);
-    bool parseTransformOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2, CSSPropertyID& propId3, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
-    bool parsePerspectiveOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2,  RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
+    PassRefPtrWillBeRawPtr<CSSValueList> parseTransformOrigin();
+    PassRefPtrWillBeRawPtr<CSSValueList> parseTransform(CSSPropertyID);
+    PassRefPtrWillBeRawPtr<CSSValue> parseTransformValue(CSSPropertyID, CSSParserValue*);
+    bool parseWebkitTransformOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2, CSSPropertyID& propId3, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
+    bool parseWebkitPerspectiveOrigin(CSSPropertyID propId, CSSPropertyID& propId1, CSSPropertyID& propId2,  RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
 
     bool parseTextEmphasisStyle(bool important);
 
@@ -373,7 +377,7 @@ private:
 
     // Outputs:
     WillBeHeapVector<CSSProperty, 256>& m_parsedProperties;
-    bool m_hasFontFaceOnlyValues;
+    CSSRuleSourceData::Type m_ruleType;
 
     // Locals during parsing:
     int m_inParseShorthand;

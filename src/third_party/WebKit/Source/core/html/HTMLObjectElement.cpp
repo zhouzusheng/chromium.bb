@@ -58,14 +58,22 @@ inline HTMLObjectElement::HTMLObjectElement(Document& document, HTMLFormElement*
 
 inline HTMLObjectElement::~HTMLObjectElement()
 {
+#if !ENABLE(OILPAN)
     setForm(0);
+#endif
 }
 
-PassRefPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    RefPtr<HTMLObjectElement> element = adoptRef(new HTMLObjectElement(document, form, createdByParser));
+    RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLObjectElement(document, form, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
+}
+
+void HTMLObjectElement::trace(Visitor* visitor)
+{
+    FormAssociatedElement::trace(visitor);
+    HTMLPlugInElement::trace(visitor);
 }
 
 RenderWidget* HTMLObjectElement::existingRenderWidget() const
@@ -97,7 +105,11 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
+        // FIXME: What is the right thing to do here? Should we supress the
+        // reload stuff when a persistable widget-type is specified?
         reloadPluginOnAttributeChange(name);
+        if (!renderer())
+            requestPluginCreationWithoutRendererIfPossible();
     } else if (name == dataAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
         if (renderer() && isImageType()) {

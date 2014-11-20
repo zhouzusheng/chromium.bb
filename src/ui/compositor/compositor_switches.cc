@@ -8,6 +8,10 @@
 
 namespace switches {
 
+// Enable compositing individual elements via hardware overlays when
+// permitted by device.
+const char kEnableHardwareOverlays[] = "enable-hardware-overlays";
+
 // Forces tests to produce pixel output when they normally wouldn't.
 const char kEnablePixelOutputInTests[] = "enable-pixel-output-in-tests";
 
@@ -15,7 +19,7 @@ const char kUIDisableThreadedCompositing[] = "ui-disable-threaded-compositing";
 
 const char kUIEnableImplSidePainting[] = "ui-enable-impl-side-painting";
 
-const char kUIEnableMapImage[] = "ui-enable-map-image";
+const char kUIEnableZeroCopy[] = "ui-enable-zero-copy";
 
 const char kUIShowPaintRects[] = "ui-show-paint-rects";
 
@@ -29,10 +33,10 @@ bool IsUIImplSidePaintingEnabled() {
   return command_line.HasSwitch(switches::kUIEnableImplSidePainting);
 }
 
-bool IsUIMapImageEnabled() {
+bool IsUIZeroCopyEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  return command_line.HasSwitch(switches::kUIEnableMapImage);
+  return command_line.HasSwitch(switches::kUIEnableZeroCopy);
 }
 
 }  // namespace ui

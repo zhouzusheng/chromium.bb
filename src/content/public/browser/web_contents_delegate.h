@@ -173,6 +173,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Default is false.
   virtual bool ShouldSuppressDialogs();
 
+  // Returns whether pending NavigationEntries for aborted browser-initiated
+  // navigations should be preserved (and thus returned from GetVisibleURL).
+  // Defaults to false.
+  virtual bool ShouldPreserveAbortedURLs(WebContents* source);
+
   // Add a message to the console. Returning true indicates that the delegate
   // handled the message. If false is returned the default logging mechanism
   // will be used for the message.
@@ -442,8 +447,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // This is optional for implementations of WebContentsDelegate; if the
   // delegate doesn't provide a size, the current WebContentsView's size will be
   // used.
-  virtual gfx::Size GetSizeForNewRenderView(
-      const WebContents* web_contents) const;
+  virtual gfx::Size GetSizeForNewRenderView(WebContents* web_contents) const;
 
   // Notification that validation of a form displayed by the |web_contents|
   // has failed. There can only be one message per |web_contents| at a time.
@@ -460,6 +464,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // has moved.
   virtual void MoveValidationMessage(WebContents* web_contents,
                                      const gfx::Rect& anchor_in_root_view) {}
+
+  // Returns true if the WebContents is never visible.
+  virtual bool IsNeverVisible(WebContents* web_contents);
 
  protected:
   virtual ~WebContentsDelegate();

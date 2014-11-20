@@ -37,8 +37,8 @@
 
 #if ENABLE(SVG_FONTS)
 #include "SVGNames.h"
+#include "core/dom/XMLDocument.h"
 #include "core/html/HTMLCollection.h"
-#include "core/svg/SVGDocument.h"
 #include "core/svg/SVGFontElement.h"
 #endif
 
@@ -50,6 +50,7 @@ FontResource::FontResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Font)
     , m_loadInitiated(false)
     , m_exceedsFontLoadWaitLimit(false)
+    , m_corsFailed(false)
     , m_fontLoadWaitLimitTimer(this, &FontResource::fontLoadWaitLimitCallback)
 {
 }
@@ -112,7 +113,7 @@ bool FontResource::ensureSVGFontData()
 {
     if (!m_externalSVGDocument && !errorOccurred() && !isLoading()) {
         if (m_data) {
-            m_externalSVGDocument = SVGDocument::create();
+            m_externalSVGDocument = XMLDocument::createSVG();
 
             OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
             String svgSource = decoder->decode(m_data->data(), m_data->size());
@@ -184,9 +185,16 @@ void FontResource::allClientsRemoved()
 void FontResource::checkNotify()
 {
     m_fontLoadWaitLimitTimer.stop();
+
     ResourceClientWalker<FontResourceClient> w(m_clients);
-    while (FontResourceClient* c = w.next())
-        c->fontLoaded(this);
+    // FIXME: Remove this CORS fallback once we have enough UMA to make a decision.
+    if (m_corsFailed) {
+        while (FontResourceClient* client = w.next())
+            client->corsFailed(this);
+    } else {
+        while (FontResourceClient* c = w.next())
+            c->fontLoaded(this);
+    }
 }
 
 }

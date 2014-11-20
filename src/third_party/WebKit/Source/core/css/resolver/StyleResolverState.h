@@ -113,7 +113,7 @@ public:
     // sites are extremely verbose.
     PassRefPtr<StyleImage> styleImage(CSSPropertyID propertyId, CSSValue* value)
     {
-        return m_elementStyleResources.styleImage(document().textLinkColors(), style()->color(), propertyId, value);
+        return m_elementStyleResources.styleImage(document(), document().textLinkColors(), style()->color(), propertyId, value);
     }
 
     FontBuilder& fontBuilder() { return m_fontBuilder; }
@@ -139,8 +139,6 @@ public:
     bool useSVGZoomRules() const { return element() && element()->isSVGElement(); }
 
 private:
-    friend class StyleResolveScope;
-
     ElementResolveContext m_elementContext;
     Document& m_document;
 

@@ -32,8 +32,8 @@
 #define Key_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebCryptoKey.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -45,11 +45,11 @@ namespace WebCore {
 class CryptoResult;
 class KeyAlgorithm;
 
-class Key : public RefCountedWillBeGarbageCollectedFinalized<Key>, public ScriptWrappable {
+class Key : public GarbageCollectedFinalized<Key>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<Key> create(const blink::WebCryptoKey& key)
+    static Key* create(const blink::WebCryptoKey& key)
     {
-        return adoptRefWillBeNoop(new Key(key));
+        return new Key(key);
     }
 
     ~Key();
@@ -75,7 +75,7 @@ protected:
     explicit Key(const blink::WebCryptoKey&);
 
     const blink::WebCryptoKey m_key;
-    RefPtrWillBeMember<KeyAlgorithm> m_algorithm;
+    Member<KeyAlgorithm> m_algorithm;
 };
 
 } // namespace WebCore

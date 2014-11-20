@@ -47,9 +47,6 @@ class SyntheticGestureTargetBase : public SyntheticGestureTarget {
 
   virtual SyntheticGestureParams::GestureSourceType
       GetDefaultSyntheticGestureSourceType() const OVERRIDE;
-  virtual bool SupportsSyntheticGestureSourceType(
-      SyntheticGestureParams::GestureSourceType gesture_source_type) const
-      OVERRIDE;
 
   virtual base::TimeDelta PointerAssumedStoppedTime() const OVERRIDE;
 
@@ -59,6 +56,8 @@ class SyntheticGestureTargetBase : public SyntheticGestureTarget {
   RenderWidgetHostImpl* render_widget_host() const { return host_; }
 
  private:
+  bool PointIsWithinContents(int x, int y) const;
+
   RenderWidgetHostImpl* host_;
 
   DISALLOW_COPY_AND_ASSIGN(SyntheticGestureTargetBase);

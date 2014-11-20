@@ -158,6 +158,7 @@ static const MimeInfo secondary_mappings[] = {
   { "image/tiff", "tiff,tif" },
   { "image/x-xbitmap", "xbm" },
   { "image/svg+xml", "svg,svgz" },
+  { "image/x-png", "png"},
   { "message/rfc822", "eml" },
   { "text/plain", "txt,text" },
   { "text/html", "ehtml" },
@@ -260,7 +261,8 @@ static const char* const supported_image_types[] = {
   "image/bmp",
   "image/vnd.microsoft.icon",    // ico
   "image/x-icon",    // ico
-  "image/x-xbitmap"  // xbm
+  "image/x-xbitmap",  // xbm
+  "image/x-png"
 };
 
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
@@ -434,7 +436,19 @@ struct MediaFormatStrict {
 static const MediaFormatStrict format_codec_mappings[] = {
   { "video/webm", "opus,vorbis,vp8,vp8.0,vp9,vp9.0" },
   { "audio/webm", "opus,vorbis" },
-  { "audio/wav", "1" }
+  { "audio/wav", "1" },
+  { "audio/x-wav", "1" },
+  { "video/ogg", "opus,theora,vorbis" },
+  { "audio/ogg", "opus,vorbis" },
+  { "application/ogg", "opus,theora,vorbis" },
+  { "audio/mpeg", ",mp3" }, // Note: The comma before the 'mp3'results in an
+                            // empty string codec ID and indicates
+                            // a missing codecs= parameter is also valid.
+                            // The presense of 'mp3' is not RFC compliant,
+                            // but is common in the wild so it is a defacto
+                            // standard.
+  { "audio/mp3", "" },
+  { "audio/x-mp3", "" }
 };
 
 MimeUtil::MimeUtil() {
@@ -444,11 +458,22 @@ MimeUtil::MimeUtil() {
 // static
 bool MimeUtil::AreSupportedCodecs(const MimeMappings& supported_codecs,
                                   const std::vector<std::string>& codecs) {
+  if (supported_codecs.empty())
+    return codecs.empty();
+
+  // If no codecs are specified in the mimetype, check to see if a missing
+  // codecs parameter is allowed.
+  if (codecs.empty())
+    return supported_codecs.find(std::string()) != supported_codecs.end();
+
   for (size_t i = 0; i < codecs.size(); ++i) {
-    if (supported_codecs.find(codecs[i]) == supported_codecs.end())
+    if (codecs[i].empty() ||
+        supported_codecs.find(codecs[i]) == supported_codecs.end()) {
       return false;
+    }
   }
-  return !codecs.empty();
+
+  return true;
 }
 
 void MimeUtil::InitializeMimeTypeMaps() {
@@ -640,7 +665,7 @@ static const char* legal_top_level_types[] = {
 bool MimeUtil::IsMimeType(const std::string& type_string) const {
   // MIME types are always ASCII and case-insensitive (at least, the top-level
   // and secondary types we care about).
-  if (!IsStringASCII(type_string))
+  if (!base::IsStringASCII(type_string))
     return false;
 
   if (type_string == "*/*" || type_string == "*")

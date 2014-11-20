@@ -161,8 +161,12 @@ AXObject* AXObjectCache::focusedUIElementForPage(const Page* page)
     if (!gAccessibilityEnabled)
         return 0;
 
+    // Cross-process accessibility is not yet implemented.
+    if (!page->focusController().focusedOrMainFrame()->isLocalFrame())
+        return 0;
+
     // get the focused node in the page
-    Document* focusedDocument = page->focusController().focusedOrMainFrame()->document();
+    Document* focusedDocument = toLocalFrame(page->focusController().focusedOrMainFrame())->document();
     Node* focusedNode = focusedDocument->focusedElement();
     if (!focusedNode)
         focusedNode = focusedDocument;
@@ -567,6 +571,18 @@ void AXObjectCache::remove(AbstractInlineTextBox* inlineTextBox)
     m_inlineTextBoxObjectMapping.remove(inlineTextBox);
 }
 
+// FIXME: Oilpan: Use a weak hashmap for this instead.
+void AXObjectCache::clearWeakMembers(Visitor* visitor)
+{
+    Vector<Node*> deadNodes;
+    for (HashMap<Node*, AXID>::iterator it = m_nodeObjectMapping.begin(); it != m_nodeObjectMapping.end(); ++it) {
+        if (!visitor->isAlive(it->key))
+            deadNodes.append(it->key);
+    }
+    for (unsigned i = 0; i < deadNodes.size(); ++i)
+        remove(deadNodes[i]);
+}
+
 AXID AXObjectCache::platformGenerateAXID() const
 {
     static AXID lastUsedID = 0;
@@ -868,71 +884,19 @@ void AXObjectCache::recomputeIsIgnored(RenderObject* renderer)
         obj->notifyIfIgnoredValueChanged();
 }
 
-void AXObjectCache::startCachingComputedObjectAttributesUntilTreeMutates()
+void AXObjectCache::inlineTextBoxesUpdated(RenderObject* renderer)
 {
-    // FIXME: no longer needed. When Chromium no longer calls
-    // WebAXObject::startCachingComputedObjectAttributesUntilTreeMutates,
-    // delete this function and the WebAXObject interfaces.
-}
-
-void AXObjectCache::stopCachingComputedObjectAttributes()
-{
-    // FIXME: no longer needed (see above).
-}
-
-VisiblePosition AXObjectCache::visiblePositionForTextMarkerData(TextMarkerData& textMarkerData)
-{
-    if (!isNodeInUse(textMarkerData.node))
-        return VisiblePosition();
-
-    // FIXME: Accessability should make it clear these are DOM-compliant offsets or store Position objects.
-    VisiblePosition visiblePos = VisiblePosition(createLegacyEditingPosition(textMarkerData.node, textMarkerData.offset), textMarkerData.affinity);
-    Position deepPos = visiblePos.deepEquivalent();
-    if (deepPos.isNull())
-        return VisiblePosition();
-
-    RenderObject* renderer = deepPos.deprecatedNode()->renderer();
-    if (!renderer)
-        return VisiblePosition();
-
-    AXObjectCache* cache = renderer->document().axObjectCache();
-    if (!cache->isIDinUse(textMarkerData.axID))
-        return VisiblePosition();
-
-    if (deepPos.deprecatedNode() != textMarkerData.node || deepPos.deprecatedEditingOffset() != textMarkerData.offset)
-        return VisiblePosition();
-
-    return visiblePos;
-}
-
-void AXObjectCache::textMarkerDataForVisiblePosition(TextMarkerData& textMarkerData, const VisiblePosition& visiblePos)
-{
-    // This memory must be bzero'd so instances of TextMarkerData can be tested for byte-equivalence.
-    // This also allows callers to check for failure by looking at textMarkerData upon return.
-    memset(&textMarkerData, 0, sizeof(TextMarkerData));
-
-    if (visiblePos.isNull())
+    if (!gInlineTextBoxAccessibility)
         return;
 
-    Position deepPos = visiblePos.deepEquivalent();
-    Node* domNode = deepPos.deprecatedNode();
-    ASSERT(domNode);
-    if (!domNode)
-        return;
-
-    if (isHTMLInputElement(*domNode) && toHTMLInputElement(*domNode).isPasswordField())
-        return;
-
-    // find or create an accessibility object for this node
-    AXObjectCache* cache = domNode->document().axObjectCache();
-    RefPtr<AXObject> obj = cache->getOrCreate(domNode);
-
-    textMarkerData.axID = obj.get()->axObjectID();
-    textMarkerData.node = domNode;
-    textMarkerData.offset = deepPos.deprecatedEditingOffset();
-    textMarkerData.affinity = visiblePos.affinity();
-
-    cache->setNodeInUse(domNode);
+    // Only update if the accessibility object already exists and it's
+    // not already marked as dirty.
+    if (AXObject* obj = get(renderer)) {
+        if (!obj->needsToUpdateChildren()) {
+            obj->setNeedsToUpdateChildren();
+            postNotification(renderer, AXChildrenChanged, true);
+        }
+    }
 }
 
 const Element* AXObjectCache::rootAXEditableElement(const Node* node)

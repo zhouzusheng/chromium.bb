@@ -16,24 +16,17 @@
 
 namespace cc {
 
-QuadCuller::QuadCuller(QuadList* quad_list,
-                       SharedQuadStateList* shared_quad_state_list,
+QuadCuller::QuadCuller(RenderPass* render_pass,
                        const LayerImpl* layer,
-                       const OcclusionTracker<LayerImpl>& occlusion_tracker,
-                       bool for_surface)
-    : quad_list_(quad_list),
-      shared_quad_state_list_(shared_quad_state_list),
+                       const OcclusionTracker<LayerImpl>& occlusion_tracker)
+    : render_pass_(render_pass),
       layer_(layer),
       occlusion_tracker_(occlusion_tracker),
-      current_shared_quad_state_(NULL),
-      for_surface_(for_surface) {}
+      current_shared_quad_state_(NULL) {
+}
 
-SharedQuadState* QuadCuller::UseSharedQuadState(
-    scoped_ptr<SharedQuadState> shared_quad_state) {
-  // TODO(danakj): If all quads are culled for the shared_quad_state, we can
-  // drop it from the list.
-  current_shared_quad_state_ = shared_quad_state.get();
-  shared_quad_state_list_->push_back(shared_quad_state.Pass());
+SharedQuadState* QuadCuller::CreateSharedQuadState() {
+  current_shared_quad_state_ = render_pass_->CreateAndAppendSharedQuadState();
   return current_shared_quad_state_;
 }
 
@@ -51,53 +44,14 @@ gfx::Rect QuadCuller::UnoccludedContributingSurfaceContentRect(
       layer_, content_rect, draw_transform);
 }
 
-static inline bool AppendQuadInternal(
-    scoped_ptr<DrawQuad> draw_quad,
-    const gfx::Rect& culled_rect,
-    QuadList* quad_list,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
-    const LayerImpl* layer) {
-  bool keep_quad = !culled_rect.IsEmpty();
-  if (keep_quad) {
-    draw_quad->visible_rect = culled_rect;
-    quad_list->push_back(draw_quad.Pass());
-  }
-  return keep_quad;
-}
-
-bool QuadCuller::MaybeAppend(scoped_ptr<DrawQuad> draw_quad) {
-  DCHECK(draw_quad->shared_quad_state == current_shared_quad_state_);
-  DCHECK(!shared_quad_state_list_->empty());
-  DCHECK(shared_quad_state_list_->back() == current_shared_quad_state_);
-
-  gfx::Rect culled_rect;
-  if (for_surface_) {
-    RenderSurfaceImpl* surface = layer_->render_surface();
-    const RenderPassDrawQuad* rpdq =
-        RenderPassDrawQuad::MaterialCast(draw_quad.get());
-    gfx::Transform draw_transform = rpdq->is_replica
-                                        ? surface->replica_draw_transform()
-                                        : surface->draw_transform();
-    culled_rect = occlusion_tracker_.UnoccludedContributingSurfaceContentRect(
-        layer_, draw_quad->visible_rect, draw_transform);
-  } else {
-    culled_rect =
-        occlusion_tracker_.UnoccludedContentRect(layer_->render_target(),
-                                                 draw_quad->visible_rect,
-                                                 draw_quad->quadTransform());
-  }
-
-  return AppendQuadInternal(
-      draw_quad.Pass(), culled_rect, quad_list_, occlusion_tracker_, layer_);
-}
-
 void QuadCuller::Append(scoped_ptr<DrawQuad> draw_quad) {
   DCHECK(draw_quad->shared_quad_state == current_shared_quad_state_);
-  DCHECK(!shared_quad_state_list_->empty());
-  DCHECK(shared_quad_state_list_->back() == current_shared_quad_state_);
+  DCHECK(!render_pass_->shared_quad_state_list.empty());
+  DCHECK(render_pass_->shared_quad_state_list.back() ==
+         current_shared_quad_state_);
   DCHECK(!draw_quad->rect.IsEmpty());
   DCHECK(!draw_quad->visible_rect.IsEmpty());
-  quad_list_->push_back(draw_quad.Pass());
+  render_pass_->quad_list.push_back(draw_quad.Pass());
 }
 
 }  // namespace cc

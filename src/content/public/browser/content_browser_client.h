@@ -87,19 +87,20 @@ class BrowserMainParts;
 class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
+class DesktopNotificationDelegate;
+class ExternalVideoSurfaceContainer;
 class LocationProvider;
 class MediaObserver;
 class QuotaPermissionContext;
+class RenderFrameHost;
 class RenderProcessHost;
 class RenderViewHost;
-class RenderViewHostDelegateView;
 class ResourceContext;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
 class VibrationProvider;
 class WebContents;
 class WebContentsViewDelegate;
-class WebContentsViewPort;
 struct MainFunctionParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
@@ -131,14 +132,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // browser_main_parts.h.
   virtual BrowserMainParts* CreateBrowserMainParts(
       const MainFunctionParams& parameters);
-
-  // Allows an embedder to return their own WebContentsViewPort implementation.
-  // Return NULL to let the default one for the platform be created. Otherwise
-  // |render_view_host_delegate_view| also needs to be provided, and it is
-  // owned by the embedder.
-  virtual WebContentsViewPort* OverrideCreateWebContentsView(
-      WebContents* web_contents,
-      RenderViewHostDelegateView** render_view_host_delegate_view);
 
   // If content creates the WebContentsView implementation, it will ask the
   // embedder to return an (optional) delegate to customize it. The view will
@@ -447,12 +440,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // return NULL if they're not interested.
   virtual MediaObserver* GetMediaObserver();
 
-  // Asks permission to show desktop notifications.
+  // Asks permission to show desktop notifications. |callback| needs to be run
+  // when the user approves the request.
   virtual void RequestDesktopNotificationPermission(
       const GURL& source_origin,
-      int callback_context,
-      int render_process_id,
-      int render_view_id) {}
+      RenderFrameHost* render_frame_host,
+      base::Closure& callback) {}
 
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
@@ -462,19 +455,13 @@ class CONTENT_EXPORT ContentBrowserClient {
           ResourceContext* context,
           int render_process_id);
 
-  // Show a desktop notification.  If |worker| is true, the request came from an
-  // HTML5 web worker, otherwise, it came from a renderer.
+  // Show a desktop notification. If |cancel_callback| is non-null, it's set to
+  // a callback which can be used to cancel the notification.
   virtual void ShowDesktopNotification(
       const ShowDesktopNotificationHostMsgParams& params,
-      int render_process_id,
-      int render_view_id,
-      bool worker) {}
-
-  // Cancels a displayed desktop notification.
-  virtual void CancelDesktopNotification(
-      int render_process_id,
-      int render_view_id,
-      int notification_id) {}
+      RenderFrameHost* render_frame_host,
+      DesktopNotificationDelegate* delegate,
+      base::Closure* cancel_callback) {}
 
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
@@ -559,11 +546,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
 
-  // Returns true if the given browser_context and site_url support hosting
-  // BrowserPlugins.
-  virtual bool SupportsBrowserPlugin(BrowserContext* browser_context,
-                                     const GURL& site_url);
-
   // Returns true if the socket operation specified by |params| is allowed from
   // the given |browser_context| and |url|. If |params| is NULL, this method
   // checks the basic "socket" permission, which is for those operations that
@@ -645,6 +627,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
       int render_process_id_);
+
+#if defined(VIDEO_HOLE)
+  // Allows an embedder to provide its own ExternalVideoSurfaceContainer
+  // implementation.  Return NULL to disable external surface video.
+  virtual ExternalVideoSurfaceContainer*
+  OverrideCreateExternalVideoSurfaceContainer(WebContents* web_contents);
+#endif
 };
 
 }  // namespace content

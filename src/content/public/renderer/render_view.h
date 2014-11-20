@@ -20,6 +20,7 @@ struct WebPreferences;
 namespace blink {
 class WebElement;
 class WebFrame;
+class WebLocalFrame;
 class WebNode;
 class WebString;
 class WebURLRequest;
@@ -102,11 +103,6 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Returns the current visibility of the WebView.
   virtual blink::WebPageVisibilityState GetVisibilityState() const = 0;
-
-  // Displays a modal alert dialog containing the given message.  Returns
-  // once the user dismisses the dialog.
-  virtual void RunModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message) = 0;
 
   // Used by plugins that load data in this RenderView to update the loading
   // notifications.

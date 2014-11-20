@@ -45,7 +45,7 @@ class CC_EXPORT TextureMailbox {
 
   base::SharedMemory* shared_memory() const { return shared_memory_; }
   gfx::Size shared_memory_size() const { return shared_memory_size_; }
-  size_t shared_memory_size_in_bytes() const;
+  size_t SharedMemorySizeInBytes() const;
 
  private:
   gpu::MailboxHolder mailbox_holder_;

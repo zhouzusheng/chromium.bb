@@ -6,10 +6,12 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/observer_list.h"
 #include "sync/engine/directory_commit_contributor.h"
 #include "sync/engine/directory_update_handler.h"
 #include "sync/engine/non_blocking_type_processor_core.h"
 #include "sync/internal_api/public/non_blocking_type_processor.h"
+#include "sync/sessions/directory_type_debug_info_emitter.h"
 
 namespace syncer {
 
@@ -29,7 +31,9 @@ ModelTypeRegistry::~ModelTypeRegistry() {}
 
 void ModelTypeRegistry::SetEnabledDirectoryTypes(
     const ModelSafeRoutingInfo& routing_info) {
-  // Remove all existing directory processors and delete them.
+  // Remove all existing directory processors and delete them.  The
+  // DebugInfoEmitters are not deleted here, since we want to preserve their
+  // counters.
   for (ModelTypeSet::Iterator it = enabled_directory_types_.First();
        it.Good(); it.Inc()) {
     size_t result1 = update_handler_map_.erase(it.Get());
@@ -53,10 +57,24 @@ void ModelTypeRegistry::SetEnabledDirectoryTypes(
     DCHECK(worker_it != workers_map_.end());
     scoped_refptr<ModelSafeWorker> worker = worker_it->second;
 
+    // DebugInfoEmitters are never deleted.  Use existing one if we have it.
+    DirectoryTypeDebugInfoEmitter* emitter = NULL;
+    DirectoryTypeDebugInfoEmitterMap::iterator it =
+        directory_type_debug_info_emitter_map_.find(type);
+    if (it != directory_type_debug_info_emitter_map_.end()) {
+      emitter = it->second;
+    } else {
+      emitter = new DirectoryTypeDebugInfoEmitter(directory_, type,
+                                                  &type_debug_info_observers_);
+      directory_type_debug_info_emitter_map_.insert(
+          std::make_pair(type, emitter));
+      directory_type_debug_info_emitters_.push_back(emitter);
+    }
+
     DirectoryCommitContributor* committer =
-        new DirectoryCommitContributor(directory_, type);
+        new DirectoryCommitContributor(directory_, type, emitter);
     DirectoryUpdateHandler* updater =
-        new DirectoryUpdateHandler(directory_, type, worker);
+        new DirectoryUpdateHandler(directory_, type, worker, emitter);
 
     // These containers take ownership of their contents.
     directory_commit_contributors_.push_back(committer);
@@ -90,7 +108,7 @@ void ModelTypeRegistry::InitializeNonBlockingType(
   type_task_runner->PostTask(
       FROM_HERE,
       base::Bind(&NonBlockingTypeProcessor::OnConnect,
-                 processor->AsWeakPtr(),
+                 processor,
                  core->AsWeakPtr(),
                  scoped_refptr<base::SequencedTaskRunner>(
                      base::MessageLoopProxy::current())));
@@ -140,6 +158,37 @@ UpdateHandlerMap* ModelTypeRegistry::update_handler_map() {
 
 CommitContributorMap* ModelTypeRegistry::commit_contributor_map() {
   return &commit_contributor_map_;
+}
+
+DirectoryTypeDebugInfoEmitterMap*
+ModelTypeRegistry::directory_type_debug_info_emitter_map() {
+  return &directory_type_debug_info_emitter_map_;
+}
+
+void ModelTypeRegistry::RegisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  if (!type_debug_info_observers_.HasObserver(observer))
+    type_debug_info_observers_.AddObserver(observer);
+}
+
+void ModelTypeRegistry::UnregisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  type_debug_info_observers_.RemoveObserver(observer);
+}
+
+bool ModelTypeRegistry::HasDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  return type_debug_info_observers_.HasObserver(observer);
+}
+
+void ModelTypeRegistry::RequestEmitDebugInfo() {
+  for (DirectoryTypeDebugInfoEmitterMap::iterator it =
+       directory_type_debug_info_emitter_map_.begin();
+       it != directory_type_debug_info_emitter_map_.end(); ++it) {
+    it->second->EmitCommitCountersUpdate();
+    it->second->EmitUpdateCountersUpdate();
+    it->second->EmitStatusCountersUpdate();
+  }
 }
 
 ModelTypeSet ModelTypeRegistry::GetEnabledDirectoryTypes() const {

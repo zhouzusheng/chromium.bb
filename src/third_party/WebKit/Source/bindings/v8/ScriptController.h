@@ -49,12 +49,12 @@ namespace WebCore {
 class DOMWrapperWorld;
 class ExecutionContext;
 class Event;
-class LocalFrame;
 class HTMLDocument;
 class HTMLPlugInElement;
 class KURL;
-class ScriptSourceCode;
+class LocalFrame;
 class ScriptState;
+class ScriptSourceCode;
 class SecurityOrigin;
 class V8WindowShell;
 class Widget;
@@ -77,8 +77,8 @@ public:
     ~ScriptController();
 
     bool initializeMainWorld();
-    V8WindowShell* windowShell(DOMWrapperWorld*);
-    V8WindowShell* existingWindowShell(DOMWrapperWorld*);
+    V8WindowShell* windowShell(DOMWrapperWorld&);
+    V8WindowShell* existingWindowShell(DOMWrapperWorld&);
 
     // Evaluate JavaScript in the main world.
     void executeScriptInMainWorld(const String&, ExecuteScriptPolicy = DoNotExecuteScriptWhenScriptsDisabled);

@@ -119,7 +119,7 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
             return ScriptObject();
     }
 
-    ScriptState* scriptState = ScriptState::forContext(object->CreationContext());
+    ScriptState* scriptState = ScriptState::from(object->CreationContext());
     return ScriptObject(scriptState, object);
 }
 

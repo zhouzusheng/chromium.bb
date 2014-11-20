@@ -61,14 +61,14 @@ MediaKeySession::PendingAction::~PendingAction()
 {
 }
 
-PassRefPtrWillBeRawPtr<MediaKeySession> MediaKeySession::create(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtr<MediaKeys> keys)
+PassRefPtrWillBeRawPtr<MediaKeySession> MediaKeySession::create(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtrWillBeRawPtr<MediaKeys> keys)
 {
     RefPtrWillBeRawPtr<MediaKeySession> session(adoptRefWillBeRefCountedGarbageCollected(new MediaKeySession(context, cdm, keys)));
     session->suspendIfNeeded();
     return session.release();
 }
 
-MediaKeySession::MediaKeySession(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtr<MediaKeys> keys)
+MediaKeySession::MediaKeySession(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtrWillBeRawPtr<MediaKeys> keys)
     : ActiveDOMObject(context)
     , m_keySystem(keys->keySystem())
     , m_asyncEventQueue(GenericEventQueue::create(this))
@@ -111,9 +111,9 @@ void MediaKeySession::update(Uint8Array* response, ExceptionState& exceptionStat
 
     // From <https://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#dom-update>:
     // The update(response) method must run the following steps:
-    // 1. If response is null or an empty array, throw an INVALID_ACCESS_ERR
+    // 1. If response is an empty array, throw an INVALID_ACCESS_ERR
     //    exception and abort these steps.
-    if (!response || !response->length()) {
+    if (!response->length()) {
         exceptionState.throwDOMException(InvalidAccessError, String::format("The response argument provided is %s.", response ? "an empty array" : "invalid"));
         return;
     }
@@ -185,7 +185,7 @@ void MediaKeySession::message(const unsigned char* message, size_t messageLength
     init.message = Uint8Array::create(message, messageLength);
     init.destinationURL = destinationURL.string();
 
-    RefPtr<MediaKeyMessageEvent> event = MediaKeyMessageEvent::create(EventTypeNames::message, init);
+    RefPtrWillBeRawPtr<MediaKeyMessageEvent> event = MediaKeyMessageEvent::create(EventTypeNames::message, init);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
@@ -194,7 +194,7 @@ void MediaKeySession::ready()
 {
     WTF_LOG(Media, "MediaKeySession::ready");
 
-    RefPtr<Event> event = Event::create(EventTypeNames::ready);
+    RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::ready);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
@@ -203,7 +203,7 @@ void MediaKeySession::close()
 {
     WTF_LOG(Media, "MediaKeySession::close");
 
-    RefPtr<Event> event = Event::create(EventTypeNames::close);
+    RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::close);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 
@@ -234,7 +234,7 @@ void MediaKeySession::error(MediaKeyErrorCode errorCode, unsigned long systemCod
     m_error = MediaKeyError::create(mediaKeyErrorCode, systemCode);
 
     // 3. queue a task to fire a simple event named keyerror at the MediaKeySession object.
-    RefPtr<Event> event = Event::create(EventTypeNames::error);
+    RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::error);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
@@ -269,6 +269,11 @@ void MediaKeySession::stop()
         m_actionTimer.stop();
     m_pendingActions.clear();
     m_asyncEventQueue->close();
+}
+
+void MediaKeySession::trace(Visitor* visitor)
+{
+    visitor->trace(m_keys);
 }
 
 }

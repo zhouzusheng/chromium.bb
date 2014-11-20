@@ -30,42 +30,10 @@
  */
 
 #include "config.h"
-#include "ChromeClientImpl.h"
+#include "web/ChromeClientImpl.h"
 
-#include "ColorChooserPopupUIController.h"
-#include "ColorChooserUIController.h"
-#include "DateTimeChooserImpl.h"
-#include "ExternalDateTimeChooser.h"
-#include "ExternalPopupMenu.h"
 #include "HTMLNames.h"
-#include "PopupMenuChromium.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebAXObject.h"
-#include "WebAutofillClient.h"
-#include "WebColorChooser.h"
-#include "WebColorSuggestion.h"
-#include "WebConsoleMessage.h"
-#include "WebFileChooserCompletionImpl.h"
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
-#include "WebInputElement.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebKit.h"
-#include "WebNode.h"
-#include "WebPasswordGeneratorClient.h"
-#include "WebPlugin.h"
-#include "WebPluginContainerImpl.h"
-#include "WebPopupMenuImpl.h"
-#include "WebPopupMenuInfo.h"
-#include "WebSettings.h"
-#include "WebSettingsImpl.h"
-#include "WebTextDirection.h"
-#include "WebUserGestureIndicator.h"
-#include "WebUserGestureToken.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
-#include "WebWindowFeatures.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
@@ -75,14 +43,14 @@
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/WheelEvent.h"
+#include "core/frame/Console.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/frame/Console.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupDriver.h"
-#include "core/frame/Settings.h"
 #include "core/page/WindowFeatures.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
@@ -102,7 +70,39 @@
 #include "public/platform/WebCursorInfo.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/web/WebAXObject.h"
+#include "public/web/WebAutofillClient.h"
+#include "public/web/WebColorChooser.h"
+#include "public/web/WebColorSuggestion.h"
+#include "public/web/WebConsoleMessage.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebInputElement.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebKit.h"
+#include "public/web/WebNode.h"
+#include "public/web/WebPasswordGeneratorClient.h"
+#include "public/web/WebPlugin.h"
+#include "public/web/WebPopupMenuInfo.h"
+#include "public/web/WebSettings.h"
+#include "public/web/WebTextDirection.h"
 #include "public/web/WebTouchAction.h"
+#include "public/web/WebUserGestureIndicator.h"
+#include "public/web/WebUserGestureToken.h"
+#include "public/web/WebViewClient.h"
+#include "public/web/WebWindowFeatures.h"
+#include "web/ColorChooserPopupUIController.h"
+#include "web/ColorChooserUIController.h"
+#include "web/DateTimeChooserImpl.h"
+#include "web/ExternalDateTimeChooser.h"
+#include "web/ExternalPopupMenu.h"
+#include "web/PopupMenuChromium.h"
+#include "web/WebFileChooserCompletionImpl.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPluginContainerImpl.h"
+#include "web/WebPopupMenuImpl.h"
+#include "web/WebSettingsImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringConcatenate.h"
@@ -215,7 +215,7 @@ void ChromeClientImpl::focusedNodeChanged(Node* node)
 
 void ChromeClientImpl::focusedFrameChanged(WebCore::LocalFrame* frame)
 {
-    WebFrameImpl* webframe = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
     if (webframe && webframe->client())
         webframe->client()->frameFocused();
 }
@@ -234,7 +234,7 @@ Page* ChromeClientImpl::createWindow(LocalFrame* frame, const FrameLoadRequest& 
     DocumentFullscreen::webkitCancelFullScreen(*frame->document());
 
     WebViewImpl* newView = toWebViewImpl(
-        m_webView->client()->createView(WebFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSendReferrer == NeverSendReferrer));
+        m_webView->client()->createView(WebLocalFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSendReferrer == NeverSendReferrer));
     if (!newView)
         return 0;
     return newView->page();
@@ -338,7 +338,7 @@ bool ChromeClientImpl::statusbarVisible()
 void ChromeClientImpl::setScrollbarsVisible(bool value)
 {
     m_scrollbarsVisible = value;
-    WebFrameImpl* webFrame = toWebFrameImpl(m_webView->mainFrame());
+    WebLocalFrameImpl* webFrame = toWebLocalFrameImpl(m_webView->mainFrame());
     if (webFrame)
         webFrame->setCanHaveScrollbars(value);
 }
@@ -365,13 +365,15 @@ void ChromeClientImpl::setResizable(bool value)
 
 bool ChromeClientImpl::shouldReportDetailedMessageForSource(const String& url)
 {
-    return m_webView->client() && m_webView->client()->shouldReportDetailedMessageForSource(url);
+    WebLocalFrameImpl* webframe = m_webView->mainFrameImpl();
+    return webframe->client() && webframe->client()->shouldReportDetailedMessageForSource(url);
 }
 
-void ChromeClientImpl::addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace)
+void ChromeClientImpl::addMessageToConsole(LocalFrame* localFrame, MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace)
 {
-    if (m_webView->client()) {
-        m_webView->client()->didAddMessageToConsole(
+    WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(localFrame);
+    if (frame && frame->client()) {
+        frame->client()->didAddMessageToConsole(
             WebConsoleMessage(static_cast<WebConsoleMessage::Level>(level), message),
             sourceID,
             lineNumber,
@@ -386,10 +388,15 @@ bool ChromeClientImpl::canRunBeforeUnloadConfirmPanel()
 
 bool ChromeClientImpl::runBeforeUnloadConfirmPanel(const String& message, LocalFrame* frame)
 {
-    if (m_webView->client()) {
-        return m_webView->client()->runModalBeforeUnloadDialog(
-            WebFrameImpl::fromFrame(frame), message);
-    }
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
+
+    bool isReload = false;
+    WebDataSource* ds = webframe->provisionalDataSource();
+    if (ds)
+        isReload = (ds->navigationType() == blink::WebNavigationTypeReload);
+
+    if (webframe->client())
+        return webframe->client()->runModalBeforeUnloadDialog(isReload, message);
     return false;
 }
 
@@ -409,22 +416,22 @@ void ChromeClientImpl::closeWindowSoon()
 // already know our own m_webView.
 void ChromeClientImpl::runJavaScriptAlert(LocalFrame* frame, const String& message)
 {
-    if (m_webView->client()) {
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
+    if (webframe->client()) {
         if (WebUserGestureIndicator::isProcessingUserGesture())
             WebUserGestureIndicator::currentUserGestureToken().setJavascriptPrompt();
-        m_webView->client()->runModalAlertDialog(
-            WebFrameImpl::fromFrame(frame), message);
+        webframe->client()->runModalAlertDialog(message);
     }
 }
 
 // See comments for runJavaScriptAlert().
 bool ChromeClientImpl::runJavaScriptConfirm(LocalFrame* frame, const String& message)
 {
-    if (m_webView->client()) {
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
+    if (webframe->client()) {
         if (WebUserGestureIndicator::isProcessingUserGesture())
             WebUserGestureIndicator::currentUserGestureToken().setJavascriptPrompt();
-        return m_webView->client()->runModalConfirmDialog(
-            WebFrameImpl::fromFrame(frame), message);
+        return webframe->client()->runModalConfirmDialog(message);
     }
     return false;
 }
@@ -435,12 +442,12 @@ bool ChromeClientImpl::runJavaScriptPrompt(LocalFrame* frame,
                                            const String& defaultValue,
                                            String& result)
 {
-    if (m_webView->client()) {
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
+    if (webframe->client()) {
         if (WebUserGestureIndicator::isProcessingUserGesture())
             WebUserGestureIndicator::currentUserGestureToken().setJavascriptPrompt();
         WebString actualValue;
-        bool ok = m_webView->client()->runModalPromptDialog(
-            WebFrameImpl::fromFrame(frame),
+        bool ok = webframe->client()->runModalPromptDialog(
             message,
             defaultValue,
             &actualValue);
@@ -528,7 +535,7 @@ void ChromeClientImpl::contentsSizeChanged(LocalFrame* frame, const IntSize& siz
 {
     m_webView->didChangeContentsSize();
 
-    WebFrameImpl* webframe = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
     webframe->didChangeContentsSize(size);
     if (webframe->client())
         webframe->client()->didChangeContentsSize(webframe, size);
@@ -543,7 +550,7 @@ void ChromeClientImpl::deviceOrPageScaleFactorChanged() const
 
 void ChromeClientImpl::layoutUpdated(LocalFrame* frame) const
 {
-    m_webView->layoutUpdated(WebFrameImpl::fromFrame(frame));
+    m_webView->layoutUpdated(WebLocalFrameImpl::fromFrame(frame));
 }
 
 void ChromeClientImpl::mouseDidMoveOverElement(
@@ -591,16 +598,16 @@ void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportDescrip
 void ChromeClientImpl::print(LocalFrame* frame)
 {
     if (m_webView->client())
-        m_webView->client()->printPage(WebFrameImpl::fromFrame(frame));
+        m_webView->client()->printPage(WebLocalFrameImpl::fromFrame(frame));
 }
 
-PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(ColorChooserClient* chooserClient, const Color&)
+PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(LocalFrame* frame, ColorChooserClient* chooserClient, const Color&)
 {
     OwnPtr<ColorChooserUIController> controller;
     if (RuntimeEnabledFeatures::pagePopupEnabled())
-        controller = adoptPtr(new ColorChooserPopupUIController(this, chooserClient));
+        controller = adoptPtr(new ColorChooserPopupUIController(frame, this, chooserClient));
     else
-        controller = adoptPtr(new ColorChooserUIController(this, chooserClient));
+        controller = adoptPtr(new ColorChooserUIController(frame, chooserClient));
     controller->openUI();
     return controller.release();
 }
@@ -695,7 +702,7 @@ String ChromeClientImpl::acceptLanguages()
 bool ChromeClientImpl::paintCustomOverhangArea(GraphicsContext* context, const IntRect& horizontalOverhangArea, const IntRect& verticalOverhangArea, const IntRect& dirtyRect)
 {
     LocalFrame* frame = m_webView->mainFrameImpl()->frame();
-    WebPluginContainerImpl* pluginContainer = WebFrameImpl::pluginContainerFromFrame(frame);
+    WebPluginContainerImpl* pluginContainer = WebLocalFrameImpl::pluginContainerFromFrame(frame);
     if (pluginContainer)
         return pluginContainer->paintCustomOverhangArea(context, horizontalOverhangArea, verticalOverhangArea, dirtyRect);
     return false;
@@ -709,33 +716,6 @@ GraphicsLayerFactory* ChromeClientImpl::graphicsLayerFactory() const
 void ChromeClientImpl::attachRootGraphicsLayer(GraphicsLayer* rootLayer)
 {
     m_webView->setRootGraphicsLayer(rootLayer);
-}
-
-WebCore::CompositingTriggerFlags ChromeClientImpl::allowedCompositingTriggers() const
-{
-    if (!m_webView->allowsAcceleratedCompositing())
-        return 0;
-
-    WebCore::CompositingTriggerFlags flags = 0;
-    Settings& settings = m_webView->page()->settings();
-    if (settings.acceleratedCompositingFor3DTransformsEnabled())
-        flags |= WebCore::ThreeDTransformTrigger;
-    if (settings.acceleratedCompositingForVideoEnabled())
-        flags |= WebCore::VideoTrigger;
-    if (settings.acceleratedCompositingForPluginsEnabled())
-        flags |= WebCore::PluginTrigger;
-    if (settings.acceleratedCompositingForAnimationEnabled())
-        flags |= WebCore::AnimationTrigger;
-    if (settings.acceleratedCompositingForCanvasEnabled())
-        flags |= WebCore::CanvasTrigger;
-    if (settings.acceleratedCompositingForScrollableFramesEnabled())
-        flags |= WebCore::ScrollableInnerFrameTrigger;
-    if (settings.acceleratedCompositingForFiltersEnabled())
-        flags |= WebCore::FilterTrigger;
-    if (settings.acceleratedCompositingForGpuRasterizationHintEnabled())
-        flags |= WebCore::GPURasterizationTrigger;
-
-    return flags;
 }
 
 void ChromeClientImpl::enterFullScreenForElement(Element* element)
@@ -872,7 +852,7 @@ void ChromeClientImpl::didAssociateFormControls(const Vector<RefPtr<Element> >& 
     WebVector<WebNode> elementVector(static_cast<size_t>(elements.size()));
     size_t elementsCount = elements.size();
     for (size_t i = 0; i < elementsCount; ++i)
-        elementVector[i] = elements[i];
+        elementVector[i] = elements[i].get();
     m_webView->autofillClient()->didAssociateFormControls(elementVector);
 }
 
@@ -888,6 +868,12 @@ void ChromeClientImpl::willSetInputMethodState()
         m_webView->client()->resetInputMethod();
 }
 
+void ChromeClientImpl::didUpdateTextOfFocusedElementByNonUserInput()
+{
+    if (m_webView->client())
+        m_webView->client()->didUpdateTextOfFocusedElementByNonUserInput();
+}
+
 void ChromeClientImpl::handleKeyboardEventOnTextField(HTMLInputElement& inputElement, KeyboardEvent& event)
 {
     if (!m_webView->autofillClient())
@@ -898,9 +884,9 @@ void ChromeClientImpl::handleKeyboardEventOnTextField(HTMLInputElement& inputEle
 // FIXME: Remove this code once we have input routing in the browser
 // process. See http://crbug.com/339659.
 void ChromeClientImpl::forwardInputEvent(
-    WebCore::Document* document, WebCore::Event* event)
+    WebCore::Frame* frame, WebCore::Event* event)
 {
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(toLocalFrameTemporary(frame));
 
     // This is only called when we have out-of-process iframes, which
     // need to forward input events across processes.
@@ -909,14 +895,14 @@ void ChromeClientImpl::forwardInputEvent(
         WebKeyboardEventBuilder webEvent(*static_cast<WebCore::KeyboardEvent*>(event));
         webFrame->client()->forwardInputEvent(&webEvent);
     } else if (event->isMouseEvent()) {
-        WebMouseEventBuilder webEvent(webFrame->frameView(), document->renderer(), *static_cast<WebCore::MouseEvent*>(event));
+        WebMouseEventBuilder webEvent(webFrame->frameView(), frame->ownerRenderer(), *static_cast<WebCore::MouseEvent*>(event));
         // Internal Blink events should not be forwarded.
         if (webEvent.type == WebInputEvent::Undefined)
             return;
 
         webFrame->client()->forwardInputEvent(&webEvent);
     } else if (event->isWheelEvent()) {
-        WebMouseWheelEventBuilder webEvent(webFrame->frameView(), document->renderer(), *static_cast<WebCore::WheelEvent*>(event));
+        WebMouseWheelEventBuilder webEvent(webFrame->frameView(), frame->ownerRenderer(), *static_cast<WebCore::WheelEvent*>(event));
         if (webEvent.type == WebInputEvent::Undefined)
             return;
         webFrame->client()->forwardInputEvent(&webEvent);

@@ -116,8 +116,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // defined as the Window that has a dispatcher. These functions return NULL if
   // the Window is contained in a hierarchy that does not have a dispatcher at
   // its root.
-  virtual Window* GetRootWindow();
-  virtual const Window* GetRootWindow() const;
+  Window* GetRootWindow();
+  const Window* GetRootWindow() const;
 
   WindowTreeHost* GetHost();
   const WindowTreeHost* GetHost() const;
@@ -147,7 +147,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // |aura::client::ScreenPositionClient| interface.
   gfx::Rect GetBoundsInScreen() const;
 
-  virtual void SetTransform(const gfx::Transform& transform);
+  void SetTransform(const gfx::Transform& transform);
 
   // Assigns a LayoutManager to size and place child windows.
   // The Window takes ownership of the LayoutManager.
@@ -215,16 +215,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
                                   gfx::Rect* rect);
 
   // Moves the cursor to the specified location relative to the window.
-  virtual void MoveCursorTo(const gfx::Point& point_in_window);
+  void MoveCursorTo(const gfx::Point& point_in_window);
 
   // Returns the cursor for the specified point, in window coordinates.
   gfx::NativeCursor GetCursor(const gfx::Point& point) const;
-
-  // Sets an 'event filter' for the window. An 'event filter' for a Window is
-  // a pre-target event handler, where the window owns the handler. A window
-  // can have only one such event filter. Setting a new filter removes and
-  // destroys any previously installed filter.
-  void SetEventFilter(ui::EventHandler* event_filter);
 
   // Add/remove observer.
   void AddObserver(WindowObserver* observer);
@@ -272,10 +266,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   bool HasFocus() const;
 
   // Returns true if the Window can be focused.
-  virtual bool CanFocus() const;
+  bool CanFocus() const;
 
   // Returns true if the Window can receive events.
-  virtual bool CanReceiveEvents() const;
+  bool CanReceiveEvents() const;
 
   // Does a capture on the window. This does nothing if the window isn't showing
   // (VISIBILITY_SHOWN) or isn't contained in a valid window hierarchy.
@@ -325,6 +319,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   std::string GetDebugInfo() const;
   void PrintWindowHierarchy(int depth) const;
 #endif
+
+  // Returns true if there was state needing to be cleaned up.
+  bool CleanupGestureState();
 
  protected:
   // Deletes (or removes if not owned by parent) all child windows. Intended for
@@ -515,7 +512,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Whether layer is initialized as non-opaque.
   bool transparent_;
 
-  scoped_ptr<ui::EventHandler> event_filter_;
   scoped_ptr<LayoutManager> layout_manager_;
   scoped_ptr<ui::EventTargeter> targeter_;
 

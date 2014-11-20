@@ -173,8 +173,6 @@ public:
     virtual void setScrollPosition(WebPoint) = 0;
     virtual WebPoint scrollPosition() const = 0;
 
-    virtual WebSize maxScrollPosition() const = 0;
-
     // To set a WebLayer as scrollable we must specify the corresponding clip layer.
     virtual void setScrollClipLayer(WebLayer*) = 0;
     virtual bool scrollable() const = 0;
@@ -184,6 +182,9 @@ public:
 
     virtual void setHaveWheelEventHandlers(bool) = 0;
     virtual bool haveWheelEventHandlers() const = 0;
+
+    virtual void setHaveScrollEventHandlers(bool) = 0;
+    virtual bool haveScrollEventHandlers() const = 0;
 
     virtual void setShouldScrollOnMainThread(bool) = 0;
     virtual bool shouldScrollOnMainThread() const = 0;

@@ -30,7 +30,7 @@
         'ar_cmd': [],
 	'conditions': [
           ['android_webview_build==1', {
-            'ar_cmd': ['-r', '<(android_src)/$(TARGET_AR)'],
+            'ar_cmd': ['-r', '$(realpath $($(GYP_VAR_PREFIX)TARGET_AR))'],
           }],
         ],
       },

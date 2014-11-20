@@ -389,7 +389,7 @@ void WebSocketJob::AddCookieHeaderAndSend() {
 void WebSocketJob::LoadCookieCallback(const std::string& cookie) {
   if (!cookie.empty())
     // TODO(tyoshino): Sending cookie means that connection doesn't need
-    // kPrivacyModeEnabled as cookies may be server-bound and channel id
+    // PRIVACY_MODE_ENABLED as cookies may be server-bound and channel id
     // wouldn't negatively affect privacy anyway. Need to restart connection
     // or refactor to determine cookie status prior to connecting.
     handshake_request_->AppendHeaderIfMissing("Cookie", cookie);
@@ -566,9 +566,8 @@ void WebSocketJob::OnCookieSaved(bool cookie_status) {
 GURL WebSocketJob::GetURLForCookies() const {
   GURL url = socket_->url();
   std::string scheme = socket_->is_secure() ? "https" : "http";
-  url_canon::Replacements<char> replacements;
-  replacements.SetScheme(scheme.c_str(),
-                         url_parse::Component(0, scheme.length()));
+  url::Replacements<char> replacements;
+  replacements.SetScheme(scheme.c_str(), url::Component(0, scheme.length()));
   return url.ReplaceComponents(replacements);
 }
 

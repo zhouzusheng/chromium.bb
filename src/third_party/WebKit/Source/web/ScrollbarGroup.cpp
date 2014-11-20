@@ -24,13 +24,13 @@
  */
 
 #include "config.h"
-#include "ScrollbarGroup.h"
+#include "web/ScrollbarGroup.h"
 
-#include "WebPluginScrollbarImpl.h"
 #include "core/frame/FrameView.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/WebRect.h"
+#include "web/WebPluginScrollbarImpl.h"
 
 using namespace WebCore;
 
@@ -238,11 +238,8 @@ bool ScrollbarGroup::shouldSuspendScrollAnimations() const
     return false;
 }
 
-void ScrollbarGroup::scrollbarStyleChanged(int, bool forceUpdate)
+void ScrollbarGroup::scrollbarStyleChanged()
 {
-    if (!forceUpdate)
-        return;
-
     if (m_horizontalScrollbar)
         m_horizontalScrollbar->scrollbarStyleChanged();
     if (m_verticalScrollbar)

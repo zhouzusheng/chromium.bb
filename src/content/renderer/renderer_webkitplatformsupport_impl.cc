@@ -38,8 +38,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/device_orientation/device_motion_event_pump.h"
-#include "content/renderer/device_orientation/device_orientation_event_pump.h"
+#include "content/renderer/device_sensors/device_motion_event_pump.h"
+#include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
@@ -78,6 +78,7 @@
 #include "webkit/common/quota/quota_types.h"
 
 #if defined(OS_ANDROID)
+#include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/audio_decoder_android.h"
 #endif
 
@@ -107,7 +108,7 @@
 #include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
 #endif
 
-#if defined(TOOLKIT_GTK) || defined(USE_AURA)
+#if defined(USE_AURA)
 #include "content/renderer/webscrollbarbehavior_impl_gtkoraura.h"
 #elif !defined(OS_MACOSX)
 #include "third_party/WebKit/public/platform/WebScrollbarBehavior.h"
@@ -144,8 +145,8 @@ base::LazyInstance<blink::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
     g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<blink::WebScreenOrientation>::Leaky
-    g_test_screen_orientation_value = LAZY_INSTANCE_INITIALIZER;
+static blink::WebScreenOrientationListener*
+    g_test_screen_orientation_listener = NULL;
 
 //------------------------------------------------------------------------------
 
@@ -314,9 +315,11 @@ bool RendererWebKitPlatformSupportImpl::isLinkVisited(
   return GetContentClient()->renderer()->IsLinkVisited(link_hash);
 }
 
-blink::WebMessagePortChannel*
-RendererWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl(child_thread_loop_.get());
+void RendererWebKitPlatformSupportImpl::createMessageChannel(
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl::CreatePair(
+      child_thread_loop_.get(), channel1, channel2);
 }
 
 blink::WebPrescientNetworking*
@@ -410,7 +413,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     // Check whether the key system is supported with the mime_type and codecs.
 
     // Chromium only supports ASCII parameters.
-    if (!IsStringASCII(key_system))
+    if (!base::IsStringASCII(key_system))
       return IsNotSupported;
 
     std::string key_system_ascii =
@@ -429,18 +432,17 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
 
   // Check list of strict codecs to see if it is supported.
   if (net::IsStrictMediaMimeType(mime_type_ascii)) {
+    // Check if the codecs are a perfect match.
+    std::vector<std::string> strict_codecs;
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
+    if (net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
+      return IsSupported;
+
     // We support the container, but no codecs were specified.
     if (codecs.isNull())
       return MayBeSupported;
 
-    // Check if the codecs are a perfect match.
-    std::vector<std::string> strict_codecs;
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (!net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsNotSupported;
-
-    // Good to go!
-    return IsSupported;
+    return IsNotSupported;
   }
 
   // If we don't recognize the codec, it's possible we support it.
@@ -472,8 +474,8 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsEncryptedMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs) {
   // Chromium only supports ASCII parameters.
-  if (!IsStringASCII(key_system) || !IsStringASCII(mime_type) ||
-      !IsStringASCII(codecs)) {
+  if (!base::IsStringASCII(key_system) || !base::IsStringASCII(mime_type) ||
+      !base::IsStringASCII(codecs)) {
     return false;
   }
 
@@ -667,7 +669,9 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
 }
 
 bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
-  return !!RenderThreadImpl::current()->compositor_message_loop_proxy().get();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  // thread can be NULL in tests.
+  return thread && thread->compositor_message_loop_proxy().get();
 }
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
@@ -687,29 +691,6 @@ unsigned RendererWebKitPlatformSupportImpl::audioHardwareOutputChannels() {
 
 WebDatabaseObserver* RendererWebKitPlatformSupportImpl::databaseObserver() {
   return web_database_observer_impl_.get();
-}
-
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, 0, channels, sample_rate, callback, "default");
-}
-
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned input_channels,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, input_channels, channels, sample_rate, callback, "default");
 }
 
 WebAudioDevice*
@@ -903,7 +884,8 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
   if (g_test_gamepads == 0) {
-    RenderThreadImpl::current()->SampleGamepads(&gamepads);
+    RenderThreadImpl::current()->gamepad_shared_memory_reader()->
+        SampleGamepads(gamepads);
   } else {
     gamepads = g_test_gamepads.Get();
   }
@@ -912,6 +894,8 @@ void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
 void RendererWebKitPlatformSupportImpl::setGamepadListener(
       blink::WebGamepadListener* listener) {
   web_gamepad_listener = listener;
+  RenderThreadImpl::current()->gamepad_shared_memory_reader()->
+      SetGamepadListener(listener);
 }
 
 //------------------------------------------------------------------------------
@@ -1012,6 +996,13 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
     blink::WebGraphicsContext3D* share_context) {
   if (!RenderThreadImpl::current())
     return NULL;
+
+#if defined(OS_ANDROID)
+  if (SynchronousCompositorFactory* factory =
+          SynchronousCompositorFactory::GetInstance()) {
+    return factory->CreateOffscreenGraphicsContext3D(attributes);
+  }
+#endif
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(
@@ -1132,18 +1123,13 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 
 void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
     blink::WebScreenOrientationListener* listener) {
-  if (!(g_test_screen_orientation_value == 0)) {
-    if (!listener)
-      return;
-
-    // When testing, we only pretend that the screen orientation is now set to
-    // g_test_screen_orientation_value.
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(
-            &blink::WebScreenOrientationListener::didChangeScreenOrientation,
-            base::Unretained(listener),
-            g_test_screen_orientation_value.Get()));
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
+    // If we are in test mode, we want to fully disable the screen orientation
+    // backend in order to let Blink get tested properly, That means that screen
+    // orientation updates have to be done manually instead of from signals sent
+    // by the browser process.
+    g_test_screen_orientation_listener = listener;
     return;
   }
 
@@ -1156,24 +1142,28 @@ void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
 }
 
 void RendererWebKitPlatformSupportImpl::lockOrientation(
-    blink::WebScreenOrientations orientations) {
-  // No-op if we are currently using mock values.
-  if (!(g_test_screen_orientation_value == 0))
+    blink::WebScreenOrientationLockType orientation) {
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
     return;
-  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientations));
+  }
+  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientation));
 }
 
 void RendererWebKitPlatformSupportImpl::unlockOrientation() {
-  // No-op if we are currently using mock values.
-  if (!(g_test_screen_orientation_value == 0))
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
     return;
+  }
   RenderThread::Get()->Send(new ScreenOrientationHostMsg_Unlock);
 }
 
 // static
 void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
-    blink::WebScreenOrientation orientation) {
-  g_test_screen_orientation_value.Get() = orientation;
+    blink::WebScreenOrientationType orientation) {
+  if (!g_test_screen_orientation_listener)
+    return;
+  g_test_screen_orientation_listener->didChangeScreenOrientation(orientation);
 }
 
 //------------------------------------------------------------------------------

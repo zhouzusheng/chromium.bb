@@ -29,7 +29,6 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLElement.h"
-#include "core/html/MediaControllerInterface.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCue.h"
 #include "core/html/track/vtt/VTTCue.h"
@@ -47,7 +46,7 @@ namespace WebCore {
 
 #if ENABLE(WEB_AUDIO)
 class AudioSourceProvider;
-class MediaElementAudioSourceNode;
+class AudioSourceProviderClient;
 #endif
 class ContentType;
 class Event;
@@ -71,13 +70,16 @@ typedef Vector<CueInterval> CueList;
 // But it can't be until the Chromium WebMediaPlayerClientImpl class is fixed so it
 // no longer depends on typecasting a MediaPlayerClient to an HTMLMediaElement.
 
-class HTMLMediaElement : public Supplementable<HTMLMediaElement>, public HTMLElement, public MediaPlayerClient, public ActiveDOMObject, public MediaControllerInterface
+class HTMLMediaElement : public HTMLElement, public WillBeHeapSupplementable<HTMLMediaElement>, public MediaPlayerClient, public ActiveDOMObject
 {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLMediaElement);
 public:
     static blink::WebMimeRegistry::SupportsType supportsType(const ContentType&, const String& keySystem = String());
 
     static void setMediaStreamRegistry(URLRegistry*);
     static bool isMediaStreamURL(const String& url);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Do not use player().
     // FIXME: Replace all uses with webMediaPlayer() and remove this API.
@@ -85,7 +87,7 @@ public:
     blink::WebMediaPlayer* webMediaPlayer() const { return m_player ? m_player->webMediaPlayer() : 0; }
 
     virtual bool hasVideo() const { return false; }
-    virtual bool hasAudio() const OVERRIDE FINAL;
+    bool hasAudio() const;
 
     bool supportsSave() const;
 
@@ -123,14 +125,14 @@ public:
     bool seeking() const;
 
     // playback state
-    virtual double currentTime() const OVERRIDE FINAL;
-    virtual void setCurrentTime(double, ExceptionState&) OVERRIDE FINAL;
-    virtual double duration() const OVERRIDE FINAL;
+    double currentTime() const;
+    void setCurrentTime(double, ExceptionState&);
+    double duration() const;
     bool paused() const;
     double defaultPlaybackRate() const;
-    void setDefaultPlaybackRate(double, ExceptionState&);
+    void setDefaultPlaybackRate(double);
     double playbackRate() const;
-    void setPlaybackRate(double, ExceptionState&);
+    void setPlaybackRate(double);
     void updatePlaybackRate();
     PassRefPtr<TimeRanges> played();
     PassRefPtr<TimeRanges> seekable() const;
@@ -152,19 +154,19 @@ public:
     // controls
     bool controls() const;
     void setControls(bool);
-    virtual double volume() const OVERRIDE FINAL;
-    virtual void setVolume(double, ExceptionState&) OVERRIDE FINAL;
-    virtual bool muted() const OVERRIDE FINAL;
-    virtual void setMuted(bool) OVERRIDE FINAL;
+    double volume() const;
+    void setVolume(double, ExceptionState&);
+    bool muted() const;
+    void setMuted(bool);
 
     // play/pause toggling that uses the media controller if present. togglePlayStateWillPlay() is
     // true if togglePlayState() will call play() or unpause() on the media element or controller.
     bool togglePlayStateWillPlay() const;
     void togglePlayState();
 
-    PassRefPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, ExceptionState&);
-    PassRefPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, ExceptionState& exceptionState) { return addTextTrack(kind, label, emptyAtom, exceptionState); }
-    PassRefPtr<TextTrack> addTextTrack(const AtomicString& kind, ExceptionState& exceptionState) { return addTextTrack(kind, emptyAtom, emptyAtom, exceptionState); }
+    PassRefPtrWillBeRawPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, ExceptionState&);
+    PassRefPtrWillBeRawPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, ExceptionState& exceptionState) { return addTextTrack(kind, label, emptyAtom, exceptionState); }
+    PassRefPtrWillBeRawPtr<TextTrack> addTextTrack(const AtomicString& kind, ExceptionState& exceptionState) { return addTextTrack(kind, emptyAtom, emptyAtom, exceptionState); }
 
     TextTrackList* textTracks();
     CueList currentlyActiveCues() const { return m_currentlyActiveCues; }
@@ -185,10 +187,12 @@ public:
     // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
     virtual KURL mediaPlayerPosterURL() OVERRIDE { return KURL(); }
 
-    struct TrackGroup {
+    class TrackGroup {
+        STACK_ALLOCATED();
+    public:
         enum GroupKind { CaptionsAndSubtitles, Description, Chapter, Metadata, Other };
 
-        TrackGroup(GroupKind kind)
+        explicit TrackGroup(GroupKind kind)
             : visibleTrack(nullptr)
             , defaultTrack(nullptr)
             , kind(kind)
@@ -196,9 +200,9 @@ public:
         {
         }
 
-        Vector<RefPtr<TextTrack> > tracks;
-        RefPtr<TextTrack> visibleTrack;
-        RefPtr<TextTrack> defaultTrack;
+        WillBeHeapVector<RefPtrWillBeMember<TextTrack> > tracks;
+        RefPtrWillBeMember<TextTrack> visibleTrack;
+        RefPtrWillBeMember<TextTrack> defaultTrack;
         GroupKind kind;
         bool hasSrcLang;
     };
@@ -220,8 +224,8 @@ public:
     void textTrackModeChanged(TextTrack*);
     void textTrackAddCues(TextTrack*, const TextTrackCueList*);
     void textTrackRemoveCues(TextTrack*, const TextTrackCueList*);
-    void textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue>);
-    void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>);
+    void textTrackAddCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue>);
+    void textTrackRemoveCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue>);
 
     // EventTarget function.
     // Both Node (via HTMLElement) and ActiveDOMObject define this method, which
@@ -252,8 +256,8 @@ public:
     virtual void contextDestroyed() OVERRIDE FINAL;
 
 #if ENABLE(WEB_AUDIO)
-    MediaElementAudioSourceNode* audioSourceNode() { return m_audioSourceNode; }
-    void setAudioSourceNode(MediaElementAudioSourceNode*);
+    AudioSourceProviderClient* audioSourceNode() { return m_audioSourceNode; }
+    void setAudioSourceNode(AudioSourceProviderClient*);
 
     AudioSourceProvider* audioSourceProvider();
 #endif
@@ -264,7 +268,7 @@ public:
     MediaController* controller() const;
     void setController(PassRefPtr<MediaController>); // Resets the MediaGroup and sets the MediaController.
 
-    void scheduleEvent(PassRefPtr<Event>);
+    void scheduleEvent(PassRefPtrWillBeRawPtr<Event>);
 
     // Current volume that should be used by the webMediaPlayer(). This method takes muted state
     // and m_mediaController multipliers into account.
@@ -303,6 +307,7 @@ private:
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE FINAL;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE FINAL;
     virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE FINAL;
 
@@ -328,7 +333,6 @@ private:
     virtual void mediaPlayerRepaint() OVERRIDE FINAL;
     virtual void mediaPlayerSizeChanged() OVERRIDE FINAL;
     virtual void mediaPlayerSetWebLayer(blink::WebLayer*) OVERRIDE FINAL;
-    virtual void mediaPlayerSetOpaque(bool) OVERRIDE FINAL;
     virtual void mediaPlayerMediaSourceOpened(blink::WebMediaSource*) OVERRIDE FINAL;
 
     void loadTimerFired(Timer<HTMLMediaElement>*);
@@ -447,12 +451,11 @@ private:
     // Loading state.
     enum LoadState { WaitingForSource, LoadingFromSrcAttr, LoadingFromSourceElement };
     LoadState m_loadState;
-    RefPtr<HTMLSourceElement> m_currentSourceNode;
-    RefPtr<Node> m_nextChildNodeToConsider;
+    RefPtrWillBeMember<HTMLSourceElement> m_currentSourceNode;
+    RefPtrWillBeMember<Node> m_nextChildNodeToConsider;
 
     OwnPtr<MediaPlayer> m_player;
     blink::WebLayer* m_webLayer;
-    bool m_opaque;
 
     MediaPlayer::Preload m_preload;
 
@@ -500,8 +503,8 @@ private:
     bool m_processingPreferenceChange : 1;
     double m_lastTextTrackUpdateTime;
 
-    RefPtr<TextTrackList> m_textTracks;
-    Vector<RefPtr<TextTrack> > m_textTracksWhenResourceSelectionBegan;
+    RefPtrWillBeMember<TextTrackList> m_textTracks;
+    WillBeHeapVector<RefPtrWillBeMember<TextTrack> > m_textTracksWhenResourceSelectionBegan;
 
     CueIntervalTree m_cueTree;
 
@@ -510,9 +513,7 @@ private:
 
 #if ENABLE(WEB_AUDIO)
     // This is a weak reference, since m_audioSourceNode holds a reference to us.
-    // The value is set just after the MediaElementAudioSourceNode is created.
-    // The value is cleared in MediaElementAudioSourceNode::~MediaElementAudioSourceNode().
-    MediaElementAudioSourceNode* m_audioSourceNode;
+    AudioSourceProviderClient* m_audioSourceNode;
 #endif
 
     friend class MediaController;

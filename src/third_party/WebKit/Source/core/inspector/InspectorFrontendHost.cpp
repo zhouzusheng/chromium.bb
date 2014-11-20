@@ -144,12 +144,6 @@ float InspectorFrontendHost::zoomFactor()
     return m_frontendPage->mainFrame()->pageZoomFactor();
 }
 
-void InspectorFrontendHost::inspectedURLChanged(const String& newURL)
-{
-    if (m_client)
-        m_client->inspectedURLChanged(newURL);
-}
-
 void InspectorFrontendHost::setInjectedScriptForOrigin(const String& origin, const String& script)
 {
     m_frontendPage->inspectorController().setInjectedScriptForOrigin(origin, script);
@@ -195,7 +189,7 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
         return;
 
     ASSERT(m_frontendPage);
-    ScriptState* frontendScriptState = mainWorldScriptState(m_frontendPage->mainFrame());
+    ScriptState* frontendScriptState = ScriptState::forMainWorld(m_frontendPage->mainFrame());
     ScriptObject frontendApiObject;
     if (!ScriptGlobalObject::get(frontendScriptState, "InspectorFrontendAPI", frontendApiObject)) {
         ASSERT_NOT_REACHED();

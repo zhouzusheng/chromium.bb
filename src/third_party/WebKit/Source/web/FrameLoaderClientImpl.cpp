@@ -30,52 +30,34 @@
  */
 
 #include "config.h"
-#include "FrameLoaderClientImpl.h"
+#include "web/FrameLoaderClientImpl.h"
 
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
-#include "SharedWorkerRepositoryClientImpl.h"
-#include "WebAutofillClient.h"
-#include "WebCachedURLRequest.h"
-#include "WebDOMEvent.h"
-#include "WebDataSourceImpl.h"
-#include "WebDevToolsAgentPrivate.h"
-#include "WebDocument.h"
-#include "WebFormElement.h"
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
-#include "WebNode.h"
-#include "WebPermissionClient.h"
-#include "WebPlugin.h"
-#include "WebPluginContainerImpl.h"
-#include "WebPluginLoadObserver.h"
-#include "WebPluginParams.h"
-#include "WebSecurityOrigin.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
+#include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFullscreen.h"
+#include "core/dom/WheelController.h"
 #include "core/events/MessageEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/dom/WheelController.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLAppletElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
-#include "core/loader/ProgressTracker.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/page/WindowFeatures.h"
 #include "core/rendering/HitTestResult.h"
 #include "modules/device_orientation/DeviceMotionController.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
 #include "modules/gamepad/NavigatorGamepad.h"
 #include "modules/screen_orientation/ScreenOrientationController.h"
+#include "modules/serviceworkers/NavigatorServiceWorker.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/exported/WrappedResourceRequest.h"
@@ -93,6 +75,26 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebAutocompleteParams.h"
+#include "public/web/WebAutofillClient.h"
+#include "public/web/WebCachedURLRequest.h"
+#include "public/web/WebDOMEvent.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebNode.h"
+#include "public/web/WebPermissionClient.h"
+#include "public/web/WebPlugin.h"
+#include "public/web/WebPluginParams.h"
+#include "public/web/WebSecurityOrigin.h"
+#include "public/web/WebViewClient.h"
+#include "web/SharedWorkerRepositoryClientImpl.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebDevToolsAgentPrivate.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPluginContainerImpl.h"
+#include "web/WebPluginLoadObserver.h"
+#include "web/WebViewImpl.h"
 #include "wtf/StringExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
@@ -102,7 +104,7 @@ using namespace WebCore;
 
 namespace blink {
 
-FrameLoaderClientImpl::FrameLoaderClientImpl(WebFrameImpl* frame)
+FrameLoaderClientImpl::FrameLoaderClientImpl(WebLocalFrameImpl* frame)
     : m_webFrame(frame)
 {
 }
@@ -111,10 +113,10 @@ FrameLoaderClientImpl::~FrameLoaderClientImpl()
 {
 }
 
-void FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld* world)
+void FrameLoaderClientImpl::dispatchDidClearWindowObjectInMainWorld()
 {
     if (m_webFrame->client()) {
-        m_webFrame->client()->didClearWindowObject(m_webFrame, world->worldId());
+        m_webFrame->client()->didClearWindowObject(m_webFrame);
         Document* document = m_webFrame->frame()->document();
         if (document) {
             WheelController::from(*document);
@@ -126,6 +128,8 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*
                 ScreenOrientationController::from(*document);
             if (RuntimeEnabledFeatures::gamepadEnabled())
                 NavigatorGamepad::from(*document);
+            if (RuntimeEnabledFeatures::serviceWorkerEnabled())
+                NavigatorServiceWorker::from(*document);
         }
     }
 }
@@ -156,7 +160,7 @@ bool FrameLoaderClientImpl::allowScriptExtension(const String& extensionName,
                                                  int worldId)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowScriptExtension(m_webFrame, extensionName, extensionGroup, worldId);
+        return m_webFrame->permissionClient()->allowScriptExtension(extensionName, extensionGroup, worldId);
 
     return true;
 }
@@ -176,7 +180,7 @@ void FrameLoaderClientImpl::didUpdateCurrentHistoryItem()
 bool FrameLoaderClientImpl::allowScript(bool enabledPerSettings)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowScript(m_webFrame, enabledPerSettings);
+        return m_webFrame->permissionClient()->allowScript(enabledPerSettings);
 
     return enabledPerSettings;
 }
@@ -184,7 +188,7 @@ bool FrameLoaderClientImpl::allowScript(bool enabledPerSettings)
 bool FrameLoaderClientImpl::allowScriptFromSource(bool enabledPerSettings, const KURL& scriptURL)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowScriptFromSource(m_webFrame, enabledPerSettings, scriptURL);
+        return m_webFrame->permissionClient()->allowScriptFromSource(enabledPerSettings, scriptURL);
 
     return enabledPerSettings;
 }
@@ -192,7 +196,7 @@ bool FrameLoaderClientImpl::allowScriptFromSource(bool enabledPerSettings, const
 bool FrameLoaderClientImpl::allowPlugins(bool enabledPerSettings)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowPlugins(m_webFrame, enabledPerSettings);
+        return m_webFrame->permissionClient()->allowPlugins(enabledPerSettings);
 
     return enabledPerSettings;
 }
@@ -200,7 +204,7 @@ bool FrameLoaderClientImpl::allowPlugins(bool enabledPerSettings)
 bool FrameLoaderClientImpl::allowImage(bool enabledPerSettings, const KURL& imageURL)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowImage(m_webFrame, enabledPerSettings, imageURL);
+        return m_webFrame->permissionClient()->allowImage(enabledPerSettings, imageURL);
 
     return enabledPerSettings;
 }
@@ -208,7 +212,7 @@ bool FrameLoaderClientImpl::allowImage(bool enabledPerSettings, const KURL& imag
 bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowDisplayingInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
+        return m_webFrame->permissionClient()->allowDisplayingInsecureContent(enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
 
     return enabledPerSettings;
 }
@@ -216,7 +220,7 @@ bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettin
 bool FrameLoaderClientImpl::allowRunningInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
 {
     if (m_webFrame->permissionClient())
-        return m_webFrame->permissionClient()->allowRunningInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
+        return m_webFrame->permissionClient()->allowRunningInsecureContent(enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
 
     return enabledPerSettings;
 }
@@ -224,13 +228,13 @@ bool FrameLoaderClientImpl::allowRunningInsecureContent(bool enabledPerSettings,
 void FrameLoaderClientImpl::didNotAllowScript()
 {
     if (m_webFrame->permissionClient())
-        m_webFrame->permissionClient()->didNotAllowScript(m_webFrame);
+        m_webFrame->permissionClient()->didNotAllowScript();
 }
 
 void FrameLoaderClientImpl::didNotAllowPlugins()
 {
     if (m_webFrame->permissionClient())
-        m_webFrame->permissionClient()->didNotAllowPlugins(m_webFrame);
+        m_webFrame->permissionClient()->didNotAllowPlugins();
 
 }
 
@@ -241,49 +245,49 @@ bool FrameLoaderClientImpl::hasWebView() const
 
 Frame* FrameLoaderClientImpl::opener() const
 {
-    WebFrameImpl* opener = toWebFrameImpl(m_webFrame->opener());
+    WebLocalFrameImpl* opener = toWebLocalFrameImpl(m_webFrame->opener());
     return opener ? opener->frame() : 0;
 }
 
 void FrameLoaderClientImpl::setOpener(Frame* opener)
 {
     // FIXME: Temporary hack to stage converting locations that really should be Frame.
-    m_webFrame->setOpener(WebFrameImpl::fromFrame(toLocalFrame(opener)));
+    m_webFrame->setOpener(WebLocalFrameImpl::fromFrame(toLocalFrame(opener)));
 }
 
 Frame* FrameLoaderClientImpl::parent() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->parent());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->parent());
     return frame ? frame->frame() : 0;
 }
 
 Frame* FrameLoaderClientImpl::top() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->top());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->top());
     return frame ? frame->frame() : 0;
 }
 
 Frame* FrameLoaderClientImpl::previousSibling() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->previousSibling());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->previousSibling());
     return frame ? frame->frame() : 0;
 }
 
 Frame* FrameLoaderClientImpl::nextSibling() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->nextSibling());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->nextSibling());
     return frame ? frame->frame() : 0;
 }
 
 Frame* FrameLoaderClientImpl::firstChild() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->firstChild());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->firstChild());
     return frame ? frame->frame() : 0;
 }
 
 Frame* FrameLoaderClientImpl::lastChild() const
 {
-    WebFrameImpl* frame = toWebFrameImpl(m_webFrame->lastChild());
+    WebLocalFrameImpl* frame = toWebLocalFrameImpl(m_webFrame->lastChild());
     return frame ? frame->frame() : 0;
 }
 
@@ -291,7 +295,7 @@ void FrameLoaderClientImpl::detachedFromParent()
 {
     // Alert the client that the frame is being detached. This is the last
     // chance we have to communicate with the client.
-    RefPtr<WebFrameImpl> protector(m_webFrame);
+    RefPtr<WebLocalFrameImpl> protector(m_webFrame);
 
     WebFrameClient* client = m_webFrame->client();
     if (!client)
@@ -376,17 +380,14 @@ void FrameLoaderClientImpl::dispatchDidReceiveServerRedirectForProvisionalLoad()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didReceiveServerRedirectForProvisionalLoad(m_webFrame);
-    m_webFrame->frame()->page()->historyController().removeChildrenForRedirect(m_webFrame->frame());
 }
 
 void FrameLoaderClientImpl::dispatchDidNavigateWithinPage(HistoryItem* item, HistoryCommitType commitType)
 {
     bool shouldCreateHistoryEntry = commitType == StandardCommit;
-    if (shouldCreateHistoryEntry)
-        m_webFrame->frame()->page()->historyController().updateBackForwardListForFragmentScroll(m_webFrame->frame(), item);
     m_webFrame->viewImpl()->didCommitLoad(shouldCreateHistoryEntry, true);
     if (m_webFrame->client())
-        m_webFrame->client()->didNavigateWithinPage(m_webFrame, shouldCreateHistoryEntry);
+        m_webFrame->client()->didNavigateWithinPage(m_webFrame, WebHistoryItem(item), static_cast<WebHistoryCommitType>(commitType));
 }
 
 void FrameLoaderClientImpl::dispatchWillClose()
@@ -415,10 +416,9 @@ void FrameLoaderClientImpl::dispatchDidChangeIcons(WebCore::IconType type)
 
 void FrameLoaderClientImpl::dispatchDidCommitLoad(LocalFrame* frame, HistoryItem* item, HistoryCommitType commitType)
 {
-    m_webFrame->frame()->page()->historyController().updateForCommit(frame, item, commitType);
     m_webFrame->viewImpl()->didCommitLoad(commitType == StandardCommit, false);
     if (m_webFrame->client())
-        m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, commitType == StandardCommit);
+        m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, WebHistoryItem(item), static_cast<WebHistoryCommitType>(commitType));
 }
 
 void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
@@ -493,28 +493,22 @@ void FrameLoaderClientImpl::dispatchWillSubmitForm(HTMLFormElement* form)
         m_webFrame->client()->willSubmitForm(m_webFrame, WebFormElement(form));
 }
 
-void FrameLoaderClientImpl::postProgressStartedNotification(LoadStartType loadStartType)
+void FrameLoaderClientImpl::didStartLoading(LoadStartType loadStartType)
 {
-    WebViewImpl* webview = m_webFrame->viewImpl();
-    if (webview && webview->client())
-        webview->client()->didStartLoading(loadStartType == NavigationToDifferentDocument);
+    if (m_webFrame->client())
+        m_webFrame->client()->didStartLoading(loadStartType == NavigationToDifferentDocument);
 }
 
-void FrameLoaderClientImpl::postProgressEstimateChangedNotification()
+void FrameLoaderClientImpl::progressEstimateChanged(double progressEstimate)
 {
-    WebViewImpl* webview = m_webFrame->viewImpl();
-    if (webview && webview->client()) {
-        webview->client()->didChangeLoadProgress(
-            m_webFrame, m_webFrame->frame()->page()->progress().estimatedProgress());
-    }
+    if (m_webFrame->client())
+        m_webFrame->client()->didChangeLoadProgress(progressEstimate);
 }
 
-void FrameLoaderClientImpl::postProgressFinishedNotification()
+void FrameLoaderClientImpl::didStopLoading()
 {
-    // FIXME: why might the webview be null?  http://b/1234461
-    WebViewImpl* webview = m_webFrame->viewImpl();
-    if (webview && webview->client())
-        webview->client()->didStopLoading();
+    if (m_webFrame->client())
+        m_webFrame->client()->didStopLoading();
 }
 
 void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName)
@@ -620,6 +614,14 @@ PassRefPtr<LocalFrame> FrameLoaderClientImpl::createFrame(
     FrameLoadRequest frameRequest(m_webFrame->frame()->document(),
         ResourceRequest(url, referrer), name);
     return m_webFrame->createChildFrame(frameRequest, ownerElement);
+}
+
+bool FrameLoaderClientImpl::canCreatePluginWithoutRenderer(const String& mimeType) const
+{
+    if (!m_webFrame->client())
+        return false;
+
+    return m_webFrame->client()->canCreatePluginWithoutRenderer(mimeType);
 }
 
 PassRefPtr<Widget> FrameLoaderClientImpl::createPlugin(
@@ -729,9 +731,9 @@ bool FrameLoaderClientImpl::willCheckAndDispatchMessageEvent(
     if (!m_webFrame->client())
         return false;
 
-    WebFrame* source = 0;
+    WebLocalFrame* source = 0;
     if (event && event->source() && event->source()->toDOMWindow() && event->source()->toDOMWindow()->document())
-        source = WebFrameImpl::fromFrame(event->source()->toDOMWindow()->document()->frame());
+        source = WebLocalFrameImpl::fromFrame(event->source()->toDOMWindow()->document()->frame());
     return m_webFrame->client()->willCheckAndDispatchMessageEvent(
         source, m_webFrame, WebSecurityOrigin(target), WebDOMMessageEvent(event));
 }
@@ -753,10 +755,10 @@ void FrameLoaderClientImpl::dispatchWillStartUsingPeerConnectionHandler(blink::W
     m_webFrame->client()->willStartUsingPeerConnectionHandler(webFrame(), handler);
 }
 
-void FrameLoaderClientImpl::didRequestAutocomplete(HTMLFormElement* form)
+void FrameLoaderClientImpl::didRequestAutocomplete(HTMLFormElement* form, const WebCore::Dictionary& details)
 {
     if (m_webFrame->viewImpl() && m_webFrame->viewImpl()->autofillClient())
-        m_webFrame->viewImpl()->autofillClient()->didRequestAutocomplete(m_webFrame, WebFormElement(form));
+        m_webFrame->viewImpl()->autofillClient()->didRequestAutocomplete(WebFormElement(form), WebAutocompleteParams(details));
 }
 
 bool FrameLoaderClientImpl::allowWebGL(bool enabledPerSettings)
@@ -805,6 +807,12 @@ void FrameLoaderClientImpl::didStopAllLoaders()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didAbortLoading(m_webFrame);
+}
+
+void FrameLoaderClientImpl::dispatchDidChangeManifest()
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didChangeManifest(m_webFrame);
 }
 
 } // namespace blink

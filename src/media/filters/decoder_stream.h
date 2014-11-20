@@ -58,6 +58,7 @@ class MEDIA_EXPORT DecoderStream {
   // Initializes the DecoderStream and returns the initialization result
   // through |init_cb|. Note that |init_cb| is always called asynchronously.
   void Initialize(DemuxerStream* stream,
+                  bool low_delay,
                   const StatisticsCB& statistics_cb,
                   const InitCB& init_cb);
 
@@ -87,12 +88,14 @@ class MEDIA_EXPORT DecoderStream {
   // behavior.
   bool CanReadWithoutStalling() const;
 
-  // TODO(rileya): Remove this once channel_layout/bits_per_channel/etc getters
-  // have been removed from AudioDecoder and plumbed elsewhere.
-  Decoder* decoder() { return decoder_.get(); }
+  // Returns true if one more decode request can be submitted to the decoder.
+  bool CanDecodeMore() const;
 
   // Allows callers to register for notification of splice buffers from the
   // demuxer.  I.e., DecoderBuffer::splice_timestamp() is not kNoTimestamp().
+  //
+  // The observer will be notified of all buffers with a splice_timestamp() and
+  // the first buffer after which has a splice_timestamp() of kNoTimestamp().
   typedef base::Callback<void(base::TimeDelta)> SpliceObserverCB;
   void set_splice_observer(const SpliceObserverCB& splice_observer) {
     splice_observer_cb_ = splice_observer;
@@ -130,9 +133,6 @@ class MEDIA_EXPORT DecoderStream {
   void SatisfyRead(Status status,
                    const scoped_refptr<Output>& output);
 
-  // Abort pending |read_cb_|.
-  void AbortRead();
-
   // Decodes |buffer| and returns the result via OnDecodeOutputReady().
   void Decode(const scoped_refptr<DecoderBuffer>& buffer);
 
@@ -161,7 +161,6 @@ class MEDIA_EXPORT DecoderStream {
   void OnDecoderReset();
 
   void StopDecoder();
-  void OnDecoderStopped();
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
@@ -175,6 +174,7 @@ class MEDIA_EXPORT DecoderStream {
   base::Closure stop_cb_;
 
   DemuxerStream* stream_;
+  bool low_delay_;
 
   scoped_ptr<DecoderSelector<StreamType> > decoder_selector_;
 
@@ -184,6 +184,17 @@ class MEDIA_EXPORT DecoderStream {
 
   SpliceObserverCB splice_observer_cb_;
   ConfigChangeObserverCB config_change_observer_cb_;
+
+  // If a splice_timestamp() has been seen, this is true until a
+  // splice_timestamp() of kNoTimestamp() is encountered.
+  bool active_splice_;
+
+  // Decoded buffers that haven't been read yet. Used when the decoder supports
+  // parallel decoding.
+  std::list<scoped_refptr<Output> > ready_outputs_;
+
+  // Number of outstanding decode requests sent to the |decoder_|.
+  int pending_decode_requests_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<DecoderStream<StreamType> > weak_factory_;
@@ -195,6 +206,9 @@ class MEDIA_EXPORT DecoderStream {
 
 template <>
 bool DecoderStream<DemuxerStream::AUDIO>::CanReadWithoutStalling() const;
+
+template <>
+bool DecoderStream<DemuxerStream::AUDIO>::CanDecodeMore() const;
 
 typedef DecoderStream<DemuxerStream::VIDEO> VideoFrameStream;
 typedef DecoderStream<DemuxerStream::AUDIO> AudioBufferStream;

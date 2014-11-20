@@ -5,6 +5,7 @@
 #ifndef CC_SCHEDULER_SCHEDULER_H_
 #define CC_SCHEDULER_SCHEDULER_H_
 
+#include <deque>
 #include <string>
 
 #include "base/basictypes.h"
@@ -16,24 +17,27 @@
 #include "cc/scheduler/draw_swap_readback_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "cc/scheduler/scheduler_state_machine.h"
+#include "cc/scheduler/time_source.h"
 #include "cc/trees/layer_tree_host.h"
 
 namespace cc {
 
 class Thread;
+class SyntheticBeginFrameSource;
 
 class SchedulerClient {
  public:
-  virtual void SetNeedsBeginImplFrame(bool enable) = 0;
+  virtual void SetNeedsBeginFrame(bool enable) = 0;
+  virtual void WillBeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void ScheduledActionSendBeginMainFrame() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() = 0;
+  virtual void ScheduledActionAnimate() = 0;
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivatePendingTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
-  virtual void ScheduledActionAcquireLayerTexturesForMainThread() = 0;
   virtual void ScheduledActionManageTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
@@ -51,12 +55,18 @@ class CC_EXPORT Scheduler {
       SchedulerClient* client,
       const SchedulerSettings& scheduler_settings,
       int layer_tree_host_id,
-      const scoped_refptr<base::SequencedTaskRunner>& impl_task_runner) {
+      const scoped_refptr<base::SingleThreadTaskRunner>& impl_task_runner) {
     return make_scoped_ptr(new Scheduler(
         client, scheduler_settings, layer_tree_host_id, impl_task_runner));
   }
 
   virtual ~Scheduler();
+
+  const SchedulerSettings& settings() const { return settings_; }
+
+  void CommitVSyncParameters(base::TimeTicks timebase,
+                             base::TimeDelta interval);
+  void SetEstimatedParentDrawTime(base::TimeDelta draw_time);
 
   void SetCanStart();
 
@@ -72,11 +82,14 @@ class CC_EXPORT Scheduler {
 
   void SetNeedsRedraw();
 
+  void SetNeedsAnimate();
+
   void SetNeedsManageTiles();
 
-  void SetMainThreadNeedsLayerTextures();
-
+  void SetMaxSwapsPending(int max);
+  void DidSwapBuffers();
   void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
+  void DidSwapBuffersComplete();
 
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
 
@@ -99,7 +112,7 @@ class CC_EXPORT Scheduler {
     return state_machine_.MainThreadIsInHighLatencyMode();
   }
   bool BeginImplFrameDeadlinePending() const {
-    return !begin_impl_frame_deadline_closure_.IsCancelled();
+    return !begin_impl_frame_deadline_task_.IsCancelled();
   }
 
   bool WillDrawIfNeeded() const;
@@ -109,10 +122,20 @@ class CC_EXPORT Scheduler {
   void NotifyBeginMainFrameStarted();
 
   base::TimeTicks LastBeginImplFrameTime();
+  base::TimeDelta VSyncInterval() { return vsync_interval_; }
+  base::TimeDelta EstimatedParentDrawTime() {
+    return estimated_parent_draw_time_;
+  }
+
+  void BeginFrame(const BeginFrameArgs& args);
+  void PostBeginRetroFrame();
+  void BeginRetroFrame();
+  void BeginUnthrottledFrame();
 
   void BeginImplFrame(const BeginFrameArgs& args);
   void OnBeginImplFrameDeadline();
   void PollForAnticipatedDrawTriggers();
+  void PollToAdvanceCommitState();
 
   scoped_ptr<base::Value> StateAsValue() const;
 
@@ -121,16 +144,26 @@ class CC_EXPORT Scheduler {
   }
 
   bool IsBeginMainFrameSent() const;
+  void SetContinuousPainting(bool continuous_painting) {
+    state_machine_.SetContinuousPainting(continuous_painting);
+  }
 
  private:
-  Scheduler(SchedulerClient* client,
-            const SchedulerSettings& scheduler_settings,
-            int layer_tree_host_id,
-            const scoped_refptr<base::SequencedTaskRunner>& impl_task_runner);
+  Scheduler(
+      SchedulerClient* client,
+      const SchedulerSettings& scheduler_settings,
+      int layer_tree_host_id,
+      const scoped_refptr<base::SingleThreadTaskRunner>& impl_task_runner);
 
-  base::TimeTicks AdjustedBeginImplFrameDeadline() const;
+  base::TimeTicks AdjustedBeginImplFrameDeadline(
+      const BeginFrameArgs& args,
+      base::TimeDelta draw_duration_estimate) const;
   void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
-  void SetupNextBeginImplFrameIfNeeded();
+  void SetupNextBeginFrameIfNeeded();
+  void PostBeginRetroFrameIfNeeded();
+  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
+  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
+  void SetupPollingMechanisms(bool needs_begin_frame);
   void ActivatePendingTree();
   void DrawAndSwapIfPossible();
   void DrawAndSwapForced();
@@ -145,13 +178,29 @@ class CC_EXPORT Scheduler {
   const SchedulerSettings settings_;
   SchedulerClient* client_;
   int layer_tree_host_id_;
-  scoped_refptr<base::SequencedTaskRunner> impl_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
 
-  bool last_set_needs_begin_impl_frame_;
-  BeginFrameArgs last_begin_impl_frame_args_;
-  base::CancelableClosure begin_impl_frame_deadline_closure_;
-  base::CancelableClosure poll_for_draw_triggers_closure_;
-  base::RepeatingTimer<Scheduler> advance_commit_state_timer_;
+  base::TimeDelta vsync_interval_;
+  base::TimeDelta estimated_parent_draw_time_;
+
+  bool last_set_needs_begin_frame_;
+  bool begin_unthrottled_frame_posted_;
+  bool begin_retro_frame_posted_;
+  std::deque<BeginFrameArgs> begin_retro_frame_args_;
+  BeginFrameArgs begin_impl_frame_args_;
+
+  void SetupSyntheticBeginFrames();
+  scoped_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source_;
+
+  base::Closure begin_retro_frame_closure_;
+  base::Closure begin_unthrottled_frame_closure_;
+
+  base::Closure begin_impl_frame_deadline_closure_;
+  base::Closure poll_for_draw_triggers_closure_;
+  base::Closure advance_commit_state_closure_;
+  base::CancelableClosure begin_impl_frame_deadline_task_;
+  base::CancelableClosure poll_for_draw_triggers_task_;
+  base::CancelableClosure advance_commit_state_task_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;

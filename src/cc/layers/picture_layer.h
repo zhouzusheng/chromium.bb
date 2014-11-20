@@ -35,12 +35,15 @@ class CC_EXPORT PictureLayer : public Layer {
   virtual void SetIsMask(bool is_mask) OVERRIDE;
   virtual bool SupportsLCDText() const OVERRIDE;
   virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
+  virtual bool IsSuitableForGpuRasterization() const OVERRIDE;
 
   virtual void RunMicroBenchmark(MicroBenchmark* benchmark) OVERRIDE;
 
   ContentLayerClient* client() { return client_; }
 
-  void SetHasGpuRasterizationHint(bool has_hint);
+  Picture::RecordingMode RecordingMode() const;
+
+  PicturePile* GetPicturePileForTesting() const { return pile_.get(); }
 
  protected:
   explicit PictureLayer(ContentLayerClient* client);
@@ -57,7 +60,6 @@ class CC_EXPORT PictureLayer : public Layer {
   Region pile_invalidation_;
   gfx::Rect last_updated_visible_content_rect_;
   bool is_mask_;
-  bool has_gpu_rasterization_hint_;
 
   int update_source_frame_number_;
 

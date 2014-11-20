@@ -33,6 +33,7 @@
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
 #include "SVGNames.h"
+#include "core/rendering/RenderView.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGGraphicsElement.h"
@@ -69,18 +70,6 @@ const RenderObject* RenderSVGModelObject::pushMappingToContainer(const RenderLay
     return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
 
-// Copied from RenderBox, this method likely requires further refactoring to work easily for both SVG and CSS Box Model content.
-// FIXME: This may also need to move into SVGRenderSupport as the RenderBox version depends
-// on borderBoundingBox() which SVG RenderBox subclases (like SVGRenderBlock) do not implement.
-LayoutRect RenderSVGModelObject::outlineBoundsForRepaint(const RenderLayerModelObject* repaintContainer, const RenderGeometryMap*) const
-{
-    LayoutRect box = enclosingLayoutRect(repaintRectInLocalCoordinates());
-    adjustRectForOutline(box);
-
-    FloatQuad containerRelativeQuad = localToContainerQuad(FloatRect(box), repaintContainer);
-    return containerRelativeQuad.enclosingBoundingBox();
-}
-
 void RenderSVGModelObject::absoluteRects(Vector<IntRect>& rects, const LayoutPoint& accumulatedOffset) const
 {
     IntRect rect = enclosingIntRect(strokeBoundingBox());
@@ -112,7 +101,7 @@ void RenderSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const Render
 
 void RenderSVGModelObject::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    if (diff == StyleDifferenceLayout) {
+    if (diff.needsFullLayout()) {
         setNeedsBoundariesUpdate();
         if (style()->hasTransform())
             setNeedsTransformUpdate();
@@ -133,6 +122,40 @@ bool RenderSVGModelObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, co
 void RenderSVGModelObject::absoluteFocusRingQuads(Vector<FloatQuad>& quads)
 {
     quads.append(localToAbsoluteQuad(FloatQuad(repaintRectInLocalCoordinates())));
+}
+
+void RenderSVGModelObject::repaintTreeAfterLayout()
+{
+    // Note: This is a reduced version of RenderBox::repaintTreeAfterLayout().
+    // FIXME: Should share code with RenderBox::repaintTreeAfterLayout().
+    ASSERT(RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
+    ASSERT(!needsLayout());
+
+    if (!shouldCheckForInvalidationAfterLayout())
+        return;
+
+    LayoutStateDisabler layoutStateDisabler(*this);
+
+    const LayoutRect oldRepaintRect = previousRepaintRect();
+    const LayoutPoint oldPositionFromRepaintContainer = previousPositionFromRepaintContainer();
+    const RenderLayerModelObject* repaintContainer = containerForRepaint();
+    setPreviousRepaintRect(clippedOverflowRectForRepaint(repaintContainer));
+    setPreviousPositionFromRepaintContainer(positionFromRepaintContainer(repaintContainer));
+
+    // If we are set to do a full repaint that means the RenderView will be
+    // invalidated. We can then skip issuing of invalidations for the child
+    // renderers as they'll be covered by the RenderView.
+    if (view()->doingFullRepaint()) {
+        RenderObject::repaintTreeAfterLayout();
+        return;
+    }
+
+    const LayoutRect& newRepaintRect = previousRepaintRect();
+    const LayoutPoint& newPositionFromRepaintContainer = previousPositionFromRepaintContainer();
+    repaintAfterLayoutIfNeeded(containerForRepaint(),
+        shouldDoFullRepaintAfterLayout(), oldRepaintRect, oldPositionFromRepaintContainer, &newRepaintRect, &newPositionFromRepaintContainer);
+
+    RenderObject::repaintTreeAfterLayout();
 }
 
 } // namespace WebCore

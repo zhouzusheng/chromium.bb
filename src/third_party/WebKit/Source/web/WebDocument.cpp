@@ -29,16 +29,8 @@
  */
 
 #include "config.h"
-#include "WebDocument.h"
+#include "public/web/WebDocument.h"
 
-#include "WebAXObject.h"
-#include "WebDOMEvent.h"
-#include "WebDocumentType.h"
-#include "WebElement.h"
-#include "WebElementCollection.h"
-#include "WebFormElement.h"
-#include "WebFrameImpl.h"
-#include "WebNodeList.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptState.h"
@@ -63,6 +55,14 @@
 #include "core/rendering/RenderObject.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebAXObject.h"
+#include "public/web/WebDOMEvent.h"
+#include "public/web/WebDocumentType.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebElementCollection.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebNodeList.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
 
@@ -102,9 +102,9 @@ WebURL WebDocument::openSearchDescriptionURL() const
     return const_cast<Document*>(constUnwrap<Document>())->openSearchDescriptionURL();
 }
 
-WebFrame* WebDocument::frame() const
+WebLocalFrame* WebDocument::frame() const
 {
-    return WebFrameImpl::fromFrame(constUnwrap<Document>()->frame());
+    return WebLocalFrameImpl::fromFrame(constUnwrap<Document>()->frame());
 }
 
 bool WebDocument::isHTMLDocument() const
@@ -254,7 +254,12 @@ WebReferrerPolicy WebDocument::referrerPolicy() const
 WebElement WebDocument::createElement(const WebString& tagName)
 {
     TrackExceptionState exceptionState;
+#if ENABLE(OILPAN)
+    // FIXME: Document::createElement should return a raw pointer.
+    WebElement element(unwrap<Document>()->createElement(tagName, exceptionState).get());
+#else
     WebElement element(unwrap<Document>()->createElement(tagName, exceptionState));
+#endif
     if (exceptionState.hadException())
         return WebElement();
     return element;
@@ -290,28 +295,29 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
 
 v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
 {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     Document* document = unwrap<Document>();
-    Dictionary dictionary(options, v8::Isolate::GetCurrent());
+    Dictionary dictionary(options, isolate);
     TrackExceptionState exceptionState;
-    ScriptValue constructor = document->registerElement(ScriptState::current(), name, dictionary, exceptionState, CustomElement::EmbedderNames);
+    ScriptValue constructor = document->registerElement(ScriptState::current(isolate), name, dictionary, exceptionState, CustomElement::EmbedderNames);
     ec = exceptionState.code();
     if (exceptionState.hadException())
         return v8::Handle<v8::Value>();
     return constructor.v8Value();
 }
 
-WebDocument::WebDocument(const PassRefPtr<Document>& elem)
+WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)
     : WebNode(elem)
 {
 }
 
-WebDocument& WebDocument::operator=(const PassRefPtr<Document>& elem)
+WebDocument& WebDocument::operator=(const PassRefPtrWillBeRawPtr<Document>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebDocument::operator PassRefPtr<Document>() const
+WebDocument::operator PassRefPtrWillBeRawPtr<Document>() const
 {
     return toDocument(m_private.get());
 }

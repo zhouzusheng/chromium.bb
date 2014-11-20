@@ -2859,6 +2859,7 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->client_cert_sent =
       ssl_config_.send_client_cert && ssl_config_.client_cert.get();
   ssl_info->channel_id_sent = WasChannelIDSent();
+  ssl_info->pinning_failure_log = pinning_failure_log_;
 
   PRUint16 cipher_suite = SSLConnectionStatusToCipherSuite(
       core_->state().ssl_connection_status);
@@ -3084,11 +3085,11 @@ int SSLClientSocketNSS::Write(IOBuffer* buf, int buf_len,
   return rv;
 }
 
-bool SSLClientSocketNSS::SetReceiveBufferSize(int32 size) {
+int SSLClientSocketNSS::SetReceiveBufferSize(int32 size) {
   return transport_->socket()->SetReceiveBufferSize(size);
 }
 
-bool SSLClientSocketNSS::SetSendBufferSize(int32 size) {
+int SSLClientSocketNSS::SetSendBufferSize(int32 size) {
   return transport_->socket()->SetSendBufferSize(size);
 }
 
@@ -3496,12 +3497,13 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
         ssl_config_.version_fallback;
     const std::string& host = host_and_port_.host();
 
-    TransportSecurityState::DomainState domain_state;
-    if (transport_security_state_->GetDomainState(host, sni_available,
-                                                  &domain_state) &&
-        domain_state.HasPublicKeyPins()) {
-      if (!domain_state.CheckPublicKeyPins(
-              server_cert_verify_result_.public_key_hashes)) {
+    if (transport_security_state_->HasPublicKeyPins(host, sni_available)) {
+      if (!transport_security_state_->CheckPublicKeyPins(
+              host,
+              sni_available,
+              server_cert_verify_result_.public_key_hashes,
+              &pinning_failure_log_)) {
+        LOG(ERROR) << pinning_failure_log_;
         result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
         UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", false);
         TransportSecurityState::ReportUMAOnPinFailure(host);

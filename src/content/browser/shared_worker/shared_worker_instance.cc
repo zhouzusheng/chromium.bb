@@ -5,7 +5,6 @@
 #include "content/browser/shared_worker/shared_worker_instance.h"
 
 #include "base/logging.h"
-#include "content/browser/worker_host/worker_document_set.h"
 
 namespace content {
 
@@ -15,42 +14,31 @@ SharedWorkerInstance::SharedWorkerInstance(
     const base::string16& content_security_policy,
     blink::WebContentSecurityPolicyType security_policy_type,
     ResourceContext* resource_context,
-    const WorkerStoragePartition& partition)
+    const WorkerStoragePartitionId& partition_id)
     : url_(url),
-      closed_(false),
       name_(name),
       content_security_policy_(content_security_policy),
       security_policy_type_(security_policy_type),
-      worker_document_set_(new WorkerDocumentSet()),
       resource_context_(resource_context),
-      partition_(partition),
-      load_failed_(false) {
+      partition_id_(partition_id) {
   DCHECK(resource_context_);
 }
 
-SharedWorkerInstance::~SharedWorkerInstance() {
+SharedWorkerInstance::SharedWorkerInstance(const SharedWorkerInstance& other)
+    : url_(other.url_),
+      name_(other.name_),
+      content_security_policy_(other.content_security_policy_),
+      security_policy_type_(other.security_policy_type_),
+      resource_context_(other.resource_context_),
+      partition_id_(other.partition_id_) {
 }
 
-void SharedWorkerInstance::SetMessagePortID(
-    SharedWorkerMessageFilter* filter,
-    int route_id,
-    int message_port_id) {
-  for (FilterList::iterator i = filters_.begin(); i != filters_.end(); ++i) {
-    if (i->filter() == filter && i->route_id() == route_id) {
-      i->set_message_port_id(message_port_id);
-      return;
-    }
-  }
-}
+SharedWorkerInstance::~SharedWorkerInstance() {}
 
 bool SharedWorkerInstance::Matches(const GURL& match_url,
                                    const base::string16& match_name,
-                                   const WorkerStoragePartition& partition,
-    ResourceContext* resource_context) const {
-  // Only match open shared workers.
-  if (closed_)
-    return false;
-
+                                   const WorkerStoragePartitionId& partition_id,
+                                   ResourceContext* resource_context) const {
   // ResourceContext equivalence is being used as a proxy to ensure we only
   // matched shared workers within the same BrowserContext.
   if (resource_context_ != resource_context)
@@ -58,7 +46,7 @@ bool SharedWorkerInstance::Matches(const GURL& match_url,
 
   // We must be in the same storage partition otherwise sharing will violate
   // isolation.
-  if (!partition_.Equals(partition))
+  if (!partition_id_.Equals(partition_id))
     return false;
 
   if (url_.GetOrigin() != match_url.GetOrigin())
@@ -70,32 +58,11 @@ bool SharedWorkerInstance::Matches(const GURL& match_url,
   return name_ == match_name;
 }
 
-void SharedWorkerInstance::AddFilter(SharedWorkerMessageFilter* filter,
-                                     int route_id) {
-  CHECK(filter);
-  if (!HasFilter(filter, route_id)) {
-    FilterInfo info(filter, route_id);
-    filters_.push_back(info);
-  }
-}
-
-void SharedWorkerInstance::RemoveFilters(SharedWorkerMessageFilter* filter) {
-  for (FilterList::iterator i = filters_.begin(); i != filters_.end();) {
-    if (i->filter() == filter)
-      i = filters_.erase(i);
-    else
-      ++i;
-  }
-}
-
-bool SharedWorkerInstance::HasFilter(SharedWorkerMessageFilter* filter,
-                                     int route_id) const {
-  for (FilterList::const_iterator i = filters_.begin(); i != filters_.end();
-       ++i) {
-    if (i->filter() == filter && i->route_id() == route_id)
-      return true;
-  }
-  return false;
+bool SharedWorkerInstance::Matches(const SharedWorkerInstance& other) const {
+  return Matches(other.url(),
+                 other.name(),
+                 other.partition_id(),
+                 other.resource_context());
 }
 
 }  // namespace content

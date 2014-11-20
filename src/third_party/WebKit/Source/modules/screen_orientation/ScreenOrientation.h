@@ -5,12 +5,11 @@
 #ifndef ScreenOrientation_h
 #define ScreenOrientation_h
 
-#include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowProperty.h"
-#include "heap/Handle.h"
 #include "platform/Supplementable.h"
 #include "platform/Timer.h"
-#include "public/platform/WebScreenOrientation.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebScreenOrientationLockType.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
@@ -25,25 +24,23 @@ public:
     static ScreenOrientation& from(Screen&);
     virtual ~ScreenOrientation();
 
-    DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-
     static const AtomicString& orientation(Screen&);
     static bool lockOrientation(Screen&, const AtomicString& orientation);
     static void unlockOrientation(Screen&);
 
-    virtual void trace(Visitor*) { }
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Screen>::trace(visitor); }
 
 private:
     explicit ScreenOrientation(Screen&);
 
-    void lockOrientationAsync(blink::WebScreenOrientations);
+    void lockOrientationAsync(blink::WebScreenOrientationLockType);
     void orientationLockTimerFired(Timer<ScreenOrientation>*);
 
     static const char* supplementName();
     Document* document() const;
 
     Timer<ScreenOrientation> m_orientationLockTimer;
-    blink::WebScreenOrientations m_lockedOrientations;
+    blink::WebScreenOrientationLockType m_prospectiveLock;
 };
 
 } // namespace WebCore

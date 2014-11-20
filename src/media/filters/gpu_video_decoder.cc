@@ -104,7 +104,7 @@ void GpuVideoDecoder::Reset(const base::Closure& closure)  {
   vda_->Reset();
 }
 
-void GpuVideoDecoder::Stop(const base::Closure& closure) {
+void GpuVideoDecoder::Stop() {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   if (vda_)
     DestroyVDA();
@@ -112,7 +112,6 @@ void GpuVideoDecoder::Stop(const base::Closure& closure) {
     EnqueueFrameAndTriggerFrameDelivery(VideoFrame::CreateEOSFrame());
   if (!pending_reset_cb_.is_null())
     base::ResetAndReturn(&pending_reset_cb_).Run();
-  BindToCurrentLoop(closure).Run();
 }
 
 static bool IsCodedSizeSupported(const gfx::Size& coded_size) {
@@ -143,6 +142,7 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
 }
 
 void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
+                                 bool live_mode,
                                  const PipelineStatusCB& orig_status_cb) {
   DVLOG(3) << "Initialize()";
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
@@ -181,7 +181,7 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  vda_ = factories_->CreateVideoDecodeAccelerator(config.profile()).Pass();
+  vda_ = factories_->CreateVideoDecodeAccelerator().Pass();
   if (!vda_ || !vda_->Initialize(config.profile(), this)) {
     status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
@@ -329,11 +329,6 @@ void GpuVideoDecoder::GetBufferData(int32 id, base::TimeDelta* timestamp,
   NOTREACHED() << "Missing bitstreambuffer id: " << id;
 }
 
-bool GpuVideoDecoder::HasAlpha() const {
-  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
-  return true;
-}
-
 bool GpuVideoDecoder::NeedsBitstreamConversion() const {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   return needs_bitstream_conversion_;
@@ -344,10 +339,6 @@ bool GpuVideoDecoder::CanReadWithoutStalling() const {
   return
       next_picture_buffer_id_ == 0 ||  // Decode() will ProvidePictureBuffers().
       available_pictures_ > 0 || !ready_video_frames_.empty();
-}
-
-void GpuVideoDecoder::NotifyInitializeDone() {
-  NOTREACHED() << "GpuVideoDecodeAcceleratorHost::Initialize is synchronous!";
 }
 
 void GpuVideoDecoder::ProvidePictureBuffers(uint32 count,
@@ -511,9 +502,11 @@ void GpuVideoDecoder::ReleaseMailbox(
     const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
     int64 picture_buffer_id,
     uint32 texture_id,
-    scoped_ptr<gpu::MailboxHolder> mailbox_holder) {
+    const std::vector<uint32>& release_sync_points) {
   DCHECK(factories->GetTaskRunner()->BelongsToCurrentThread());
-  factories->WaitSyncPoint(mailbox_holder->sync_point);
+
+  for (size_t i = 0; i < release_sync_points.size(); i++)
+    factories->WaitSyncPoint(release_sync_points[i]);
 
   if (decoder) {
     decoder->ReusePictureBuffer(picture_buffer_id);

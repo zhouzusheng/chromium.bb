@@ -154,12 +154,16 @@ QuicVersionVector QuicSupportedVersions() {
 
 QuicTag QuicVersionToQuicTag(const QuicVersion version) {
   switch (version) {
-    case QUIC_VERSION_13:
-      return MakeQuicTag('Q', '0', '1', '3');
     case QUIC_VERSION_15:
       return MakeQuicTag('Q', '0', '1', '5');
     case QUIC_VERSION_16:
       return MakeQuicTag('Q', '0', '1', '6');
+    case QUIC_VERSION_17:
+      return MakeQuicTag('Q', '0', '1', '7');
+    case QUIC_VERSION_18:
+      return MakeQuicTag('Q', '0', '1', '8');
+    case QUIC_VERSION_19:
+      return MakeQuicTag('Q', '0', '1', '9');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -186,9 +190,11 @@ return #x
 
 string QuicVersionToString(const QuicVersion version) {
   switch (version) {
-    RETURN_STRING_LITERAL(QUIC_VERSION_13);
     RETURN_STRING_LITERAL(QUIC_VERSION_15);
     RETURN_STRING_LITERAL(QUIC_VERSION_16);
+    RETURN_STRING_LITERAL(QUIC_VERSION_17);
+    RETURN_STRING_LITERAL(QUIC_VERSION_18);
+    RETURN_STRING_LITERAL(QUIC_VERSION_19);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -258,15 +264,6 @@ QuicStopWaitingFrame::~QuicStopWaitingFrame() {}
 
 QuicAckFrame::QuicAckFrame() {}
 
-QuicAckFrame::QuicAckFrame(QuicPacketSequenceNumber largest_observed,
-                           QuicTime largest_observed_receive_time,
-                           QuicPacketSequenceNumber least_unacked) {
-  received_info.largest_observed = largest_observed;
-  received_info.entropy_hash = 0;
-  sent_info.least_unacked = least_unacked;
-  sent_info.entropy_hash = 0;
-}
-
 CongestionFeedbackMessageTCP::CongestionFeedbackMessageTCP()
     : receive_window(0) {
 }
@@ -280,6 +277,21 @@ CongestionFeedbackMessageInterArrival::
 QuicCongestionFeedbackFrame::QuicCongestionFeedbackFrame() : type(kTCP) {}
 
 QuicCongestionFeedbackFrame::~QuicCongestionFeedbackFrame() {}
+
+QuicRstStreamErrorCode AdjustErrorForVersion(
+    QuicRstStreamErrorCode error_code,
+    QuicVersion version) {
+  switch (error_code) {
+    case QUIC_RST_FLOW_CONTROL_ACCOUNTING:
+      if (version <= QUIC_VERSION_17) {
+        return QUIC_STREAM_NO_ERROR;
+      }
+      break;
+    default:
+      return error_code;
+  }
+  return error_code;
+}
 
 QuicRstStreamFrame::QuicRstStreamFrame()
     : stream_id(0),
@@ -326,6 +338,11 @@ QuicFrame::QuicFrame(QuicStopWaitingFrame* frame)
       stop_waiting_frame(frame) {
 }
 
+QuicFrame::QuicFrame(QuicPingFrame* frame)
+    : type(PING_FRAME),
+      ping_frame(frame) {
+}
+
 QuicFrame::QuicFrame(QuicRstStreamFrame* frame)
     : type(RST_STREAM_FRAME),
       rst_stream_frame(frame) {
@@ -363,6 +380,8 @@ ostream& operator<<(ostream& os, const ReceivedPacketInfo& received_info) {
   os << "entropy_hash: " << static_cast<int>(received_info.entropy_hash)
      << " is_truncated: " << received_info.is_truncated
      << " largest_observed: " << received_info.largest_observed
+     << " delta_time_largest_observed: "
+     << received_info.delta_time_largest_observed.ToMicroseconds()
      << " missing_packets: [ ";
   for (SequenceNumberSet::const_iterator it =
            received_info.missing_packets.begin();
@@ -633,6 +652,9 @@ RetransmittableFrames::~RetransmittableFrames() {
       case STOP_WAITING_FRAME:
         delete it->stop_waiting_frame;
         break;
+      case PING_FRAME:
+        delete it->ping_frame;
+        break;
       case RST_STREAM_FRAME:
         delete it->rst_stream_frame;
         break;
@@ -714,6 +736,44 @@ ostream& operator<<(ostream& os, const QuicEncryptedPacket& s) {
   return os;
 }
 
+TransmissionInfo::TransmissionInfo()
+    : retransmittable_frames(NULL),
+      sequence_number_length(PACKET_1BYTE_SEQUENCE_NUMBER),
+      sent_time(QuicTime::Zero()),
+      bytes_sent(0),
+      nack_count(0),
+      all_transmissions(NULL),
+      pending(false) { }
+
+TransmissionInfo::TransmissionInfo(
+    RetransmittableFrames* retransmittable_frames,
+    QuicPacketSequenceNumber sequence_number,
+    QuicSequenceNumberLength sequence_number_length)
+    : retransmittable_frames(retransmittable_frames),
+      sequence_number_length(sequence_number_length),
+      sent_time(QuicTime::Zero()),
+      bytes_sent(0),
+      nack_count(0),
+      all_transmissions(new SequenceNumberSet),
+      pending(false) {
+  all_transmissions->insert(sequence_number);
+}
+
+TransmissionInfo::TransmissionInfo(
+    RetransmittableFrames* retransmittable_frames,
+    QuicPacketSequenceNumber sequence_number,
+    QuicSequenceNumberLength sequence_number_length,
+    SequenceNumberSet* all_transmissions)
+    : retransmittable_frames(retransmittable_frames),
+      sequence_number_length(sequence_number_length),
+      sent_time(QuicTime::Zero()),
+      bytes_sent(0),
+      nack_count(0),
+      all_transmissions(all_transmissions),
+      pending(false) {
+  all_transmissions->insert(sequence_number);
+}
+
 QuicConsumedData::QuicConsumedData(size_t bytes_consumed,
                                    bool fin_consumed)
       : bytes_consumed(bytes_consumed),
@@ -724,6 +784,11 @@ ostream& operator<<(ostream& os, const QuicConsumedData& s) {
   os << "bytes_consumed: " << s.bytes_consumed
      << " fin_consumed: " << s.fin_consumed;
   return os;
+}
+
+WriteResult::WriteResult()
+    : status(WRITE_STATUS_ERROR),
+      bytes_written(0) {
 }
 
 WriteResult::WriteResult(WriteStatus status,

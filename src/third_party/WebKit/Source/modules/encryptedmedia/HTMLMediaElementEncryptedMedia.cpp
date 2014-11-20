@@ -42,9 +42,7 @@ HTMLMediaElementEncryptedMedia::HTMLMediaElementEncryptedMedia()
 {
 }
 
-HTMLMediaElementEncryptedMedia::~HTMLMediaElementEncryptedMedia()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(HTMLMediaElementEncryptedMedia)
 
 const char* HTMLMediaElementEncryptedMedia::supplementName()
 {
@@ -53,10 +51,10 @@ const char* HTMLMediaElementEncryptedMedia::supplementName()
 
 HTMLMediaElementEncryptedMedia& HTMLMediaElementEncryptedMedia::from(HTMLMediaElement& element)
 {
-    HTMLMediaElementEncryptedMedia* supplement = static_cast<HTMLMediaElementEncryptedMedia*>(Supplement<HTMLMediaElement>::from(element, supplementName()));
+    HTMLMediaElementEncryptedMedia* supplement = static_cast<HTMLMediaElementEncryptedMedia*>(WillBeHeapSupplement<HTMLMediaElement>::from(element, supplementName()));
     if (!supplement) {
         supplement = new HTMLMediaElementEncryptedMedia();
-        provideTo(element, supplementName(), adoptPtr(supplement));
+        provideTo(element, supplementName(), adoptPtrWillBeNoop(supplement));
     }
     return *supplement;
 }
@@ -112,7 +110,7 @@ void HTMLMediaElementEncryptedMedia::setMediaKeys(HTMLMediaElement& element, Med
 }
 
 // Create a MediaKeyNeededEvent for WD EME.
-static PassRefPtr<Event> createNeedKeyEvent(const String& contentType, const unsigned char* initData, unsigned initDataLength)
+static PassRefPtrWillBeRawPtr<Event> createNeedKeyEvent(const String& contentType, const unsigned char* initData, unsigned initDataLength)
 {
     MediaKeyNeededEventInit initializer;
     initializer.contentType = contentType;
@@ -124,7 +122,7 @@ static PassRefPtr<Event> createNeedKeyEvent(const String& contentType, const uns
 }
 
 // Create a 'needkey' MediaKeyEvent for v0.1b EME.
-static PassRefPtr<Event> createWebkitNeedKeyEvent(const String& contentType, const unsigned char* initData, unsigned initDataLength)
+static PassRefPtrWillBeRawPtr<Event> createWebkitNeedKeyEvent(const String& contentType, const unsigned char* initData, unsigned initDataLength)
 {
     MediaKeyEventInit webkitInitializer;
     webkitInitializer.keySystem = String();
@@ -258,7 +256,7 @@ void HTMLMediaElementEncryptedMedia::keyAdded(HTMLMediaElement& element, const S
     initializer.bubbles = false;
     initializer.cancelable = false;
 
-    RefPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyadded, initializer);
+    RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyadded, initializer);
     event->setTarget(&element);
     element.scheduleEvent(event.release());
 }
@@ -297,7 +295,7 @@ void HTMLMediaElementEncryptedMedia::keyError(HTMLMediaElement& element, const S
     initializer.bubbles = false;
     initializer.cancelable = false;
 
-    RefPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyerror, initializer);
+    RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeyerror, initializer);
     event->setTarget(&element);
     element.scheduleEvent(event.release());
 }
@@ -314,7 +312,7 @@ void HTMLMediaElementEncryptedMedia::keyMessage(HTMLMediaElement& element, const
     initializer.bubbles = false;
     initializer.cancelable = false;
 
-    RefPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeymessage, initializer);
+    RefPtrWillBeRawPtr<Event> event = MediaKeyEvent::create(EventTypeNames::webkitkeymessage, initializer);
     event->setTarget(&element);
     element.scheduleEvent(event.release());
 }
@@ -325,14 +323,14 @@ void HTMLMediaElementEncryptedMedia::keyNeeded(HTMLMediaElement& element, const 
 
     if (RuntimeEnabledFeatures::encryptedMediaEnabled()) {
         // Send event for WD EME.
-        RefPtr<Event> event = createNeedKeyEvent(contentType, initData, initDataLength);
+        RefPtrWillBeRawPtr<Event> event = createNeedKeyEvent(contentType, initData, initDataLength);
         event->setTarget(&element);
         element.scheduleEvent(event.release());
     }
 
     if (RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled()) {
         // Send event for v0.1b EME.
-        RefPtr<Event> event = createWebkitNeedKeyEvent(contentType, initData, initDataLength);
+        RefPtrWillBeRawPtr<Event> event = createWebkitNeedKeyEvent(contentType, initData, initDataLength);
         event->setTarget(&element);
         element.scheduleEvent(event.release());
     }
@@ -348,6 +346,12 @@ blink::WebContentDecryptionModule* HTMLMediaElementEncryptedMedia::contentDecryp
 {
     HTMLMediaElementEncryptedMedia& thisElement = HTMLMediaElementEncryptedMedia::from(element);
     return thisElement.contentDecryptionModule();
+}
+
+void HTMLMediaElementEncryptedMedia::trace(Visitor* visitor)
+{
+    visitor->trace(m_mediaKeys);
+    WillBeHeapSupplement<HTMLMediaElement>::trace(visitor);
 }
 
 } // namespace WebCore

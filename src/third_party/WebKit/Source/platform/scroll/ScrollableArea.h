@@ -160,7 +160,7 @@ public:
     virtual IntPoint lastKnownMousePosition() const { return IntPoint(); }
 
     virtual bool shouldSuspendScrollAnimations() const { return true; }
-    virtual void scrollbarStyleChanged(int /*newStyle*/, bool /*forceUpdate*/) { }
+    virtual void scrollbarStyleChanged() { }
 
     virtual bool scrollbarsCanBeActive() const = 0;
 
@@ -184,7 +184,8 @@ public:
 
     virtual bool usesCompositedScrolling() const { return false; }
     virtual void updateNeedsCompositedScrolling() { }
-    virtual void updateHasVisibleNonLayerContent() { }
+
+    virtual void updateAfterCompositingChange() { }
 
     virtual bool userInputScrollable(ScrollbarOrientation) const = 0;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const = 0;

@@ -6,6 +6,7 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../components/tracing.gyp:tracing',
+    '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
     '../net/net.gyp:net',
     '../skia/skia.gyp:skia',
     '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
@@ -55,6 +56,7 @@
     'public/common/context_menu_params.h',
     'public/common/drop_data.cc',
     'public/common/drop_data.h',
+    'public/common/eme_codec.h',
     'public/common/favicon_url.cc',
     'public/common/favicon_url.h',
     'public/common/file_chooser_params.cc',
@@ -106,6 +108,7 @@
     'public/common/ssl_status.cc',
     'public/common/ssl_status.h',
     'public/common/stop_find_action.h',
+    'public/common/storage_quota_params.h',
     'public/common/three_d_api_types.h',
     'public/common/top_controls_state.h',
     'public/common/top_controls_state_list.h',
@@ -128,10 +131,12 @@
     'common/android/address_parser_internal.h',
     'common/android/common_jni_registrar.cc',
     'common/android/common_jni_registrar.h',
-    'common/android/device_telephony_info.cc',
-    'common/android/device_telephony_info.h',
+    'common/android/gin_java_bridge_value.cc',
+    'common/android/gin_java_bridge_value.h',
     'common/android/hash_set.cc',
     'common/android/hash_set.h',
+    'common/android/surface_texture_lookup.cc',
+    'common/android/surface_texture_lookup.h',
     'common/android/surface_texture_peer.cc',
     'common/android/surface_texture_peer.h',
     'common/appcache_messages.h',
@@ -168,18 +173,15 @@
     'common/cursors/webcursor_aura.cc',
     'common/cursors/webcursor_aurawin.cc',
     'common/cursors/webcursor_aurax11.cc',
-    'common/cursors/webcursor_gtk.cc',
-    'common/cursors/webcursor_gtk_data.h',
     'common/cursors/webcursor_mac.mm',
     'common/cursors/webcursor_ozone.cc',
-    'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
     'common/desktop_notification_messages.h',
-    'common/device_orientation/device_motion_hardware_buffer.h',
-    'common/device_orientation/device_motion_messages.h',
-    'common/device_orientation/device_orientation_hardware_buffer.h',
-    'common/device_orientation/device_orientation_messages.h',
+    'common/device_sensors/device_motion_hardware_buffer.h',
+    'common/device_sensors/device_motion_messages.h',
+    'common/device_sensors/device_orientation_hardware_buffer.h',
+    'common/device_sensors/device_orientation_messages.h',
     'common/devtools_messages.h',
     'common/dom_storage/dom_storage_map.cc',
     'common/dom_storage/dom_storage_map.h',
@@ -209,9 +211,12 @@
     'common/frame_param_macros.h',
     'common/gamepad_hardware_buffer.h',
     'common/gamepad_messages.h',
+    'common/gamepad_param_traits.cc',
+    'common/gamepad_param_traits.h',
     'common/gamepad_user_gesture.cc',
     'common/gamepad_user_gesture.h',
     'common/geolocation_messages.h',
+    'common/gin_java_bridge_messages.h',
     'common/gpu/client/command_buffer_proxy_impl.cc',
     'common/gpu/client/command_buffer_proxy_impl.h',
     'common/gpu/client/context_provider_command_buffer.cc',
@@ -294,10 +299,12 @@
     'common/indexed_db/indexed_db_messages.h',
     'common/indexed_db/indexed_db_param_traits.cc',
     'common/indexed_db/indexed_db_param_traits.h',
+    'common/input/did_overscroll_params.h',
     'common/input/gesture_event_stream_validator.cc',
     'common/input/gesture_event_stream_validator.h',
     'common/input/input_event.cc',
     'common/input/input_event.h',
+    'common/input/input_event_ack_state.h',
     'common/input/input_event_stream_validator.cc',
     'common/input/input_event_stream_validator.h',
     'common/input/input_param_traits.cc',
@@ -318,6 +325,8 @@
     'common/input/synthetic_web_input_event_builders.h',
     'common/input/web_input_event_traits.cc',
     'common/input/web_input_event_traits.h',
+    'common/input/web_touch_event_traits.cc',
+    'common/input/web_touch_event_traits.h',
     'common/input_messages.h',
     'common/inter_process_time_ticks_converter.cc',
     'common/inter_process_time_ticks_converter.h',
@@ -348,9 +357,9 @@
     'common/message_router.cc',
     'common/message_router.h',
     'common/mime_registry_messages.h',
-    'common/mojo/mojo_channel_init.cc',
-    'common/mojo/mojo_channel_init.h',
     'common/mojo/mojo_messages.h',
+    'common/mojo/mojo_service_names.cc',
+    'common/mojo/mojo_service_names.h',
     'common/navigation_gesture.h',
     'common/net/url_fetcher.cc',
     'common/net/url_request_user_data.cc',
@@ -378,6 +387,7 @@
     'common/plugin_process_messages.h',
     'common/power_monitor_messages.h',
     'common/process_type.cc',
+    'common/push_messaging_messages.h',
     'common/quota_messages.h',
     'common/resource_messages.cc',
     'common/resource_messages.h',
@@ -386,6 +396,8 @@
     'common/sandbox_init_mac.cc',
     'common/sandbox_init_mac.h',
     'common/sandbox_init_win.cc',
+    'common/sandbox_linux/android/sandbox_bpf_base_policy_android.cc',
+    'common/sandbox_linux/android/sandbox_bpf_base_policy_android.h',
     'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc',
     'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.h',
     'common/sandbox_linux/bpf_gpu_policy_linux.cc',
@@ -443,13 +455,19 @@
     'common/websocket_messages.h',
     'common/worker_messages.h',
     'common/zygote_commands_linux.h',
-    'port/common/input_event_ack_state.h',
+  ],
+  'target_conditions': [
+    ['OS=="android" and <(use_seccomp_bpf)==1', {
+      'sources/': [
+        ['include', '^common/sandbox_linux/sandbox_bpf_base_policy_linux\\.cc$'],
+        ['include', '^common/sandbox_linux/sandbox_bpf_base_policy_linux\\.h$'],
+      ],
+    }],
   ],
   'conditions': [
     ['use_aura==1', {
       'sources!': [
         'common/cursors/webcursor_mac.mm',
-        'common/cursors/webcursor_win.cc',
       ],
     }],
     ['OS=="ios"', {
@@ -490,11 +508,16 @@
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_c_lib',
         '../gpu/gpu.gyp:gles2_implementation',
+        # TODO: the dependency on gl_in_process_context should be decoupled from
+        # content and moved to android_webview. See crbug.com/365797.
+        '../gpu/gpu.gyp:gl_in_process_context',
         '../gpu/gpu.gyp:gpu_ipc',
         '../gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings',
         '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
+        '../mojo/mojo.gyp:mojo_environment_chromium',
+        '../mojo/mojo.gyp:mojo_system_impl',
         '../third_party/WebKit/public/blink.gyp:blink',
         '../ui/gl/gl.gyp:gl',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -503,18 +526,6 @@
         '../webkit/storage_common.gyp:webkit_storage_common',
         'content.gyp:webkit_version',
       ],
-    }],
-    ['use_mojo==0', {
-      'sources!': [
-        'common/mojo/mojo_channel_init.cc',
-        'common/mojo/mojo_channel_init.h',
-      ],
-    }, {
-      'dependencies': [
-        '../mojo/mojo.gyp:mojo_environment_chromium',
-        '../mojo/mojo.gyp:mojo_system',
-        '../mojo/mojo.gyp:mojo_system_impl',
-     ],
     }],
     ['OS=="mac"', {
       'dependencies': [
@@ -534,6 +545,10 @@
       },
     }],
     ['OS=="android"',{
+      'sources': [
+        'common/gpu/client/gpu_memory_buffer_impl_surface_texture.cc',
+        'common/gpu/client/gpu_memory_buffer_impl_surface_texture.h',
+      ],
       'link_settings': {
         'libraries': [
           '-landroid',  # ANativeWindow
@@ -542,11 +557,6 @@
      'dependencies': [
         'content.gyp:content_jni_headers',
         'content.gyp:common_aidl',
-      ],
-    }],
-    ['toolkit_uses_gtk == 1', {
-      'dependencies': [
-        '../build/linux/system.gyp:gtk',
       ],
     }],
     ['use_pango == 1', {
@@ -603,17 +613,20 @@
     ['target_arch=="arm" and chromeos == 1 and use_x11 == 1', {
       'dependencies': [
         '../media/media.gyp:media',
-        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
       ],
       'sources': [
         'common/gpu/media/exynos_v4l2_video_device.cc',
         'common/gpu/media/exynos_v4l2_video_device.h',
-        'common/gpu/media/exynos_video_encode_accelerator.cc',
-        'common/gpu/media/exynos_video_encode_accelerator.h',
+        'common/gpu/media/tegra_v4l2_video_device.cc',
+        'common/gpu/media/tegra_v4l2_video_device.h',
+        'common/gpu/media/v4l2_image_processor.cc',
+        'common/gpu/media/v4l2_image_processor.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
         'common/gpu/media/v4l2_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_device.cc',
         'common/gpu/media/v4l2_video_device.h',
+        'common/gpu/media/v4l2_video_encode_accelerator.cc',
+        'common/gpu/media/v4l2_video_encode_accelerator.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
@@ -626,9 +639,6 @@
       },
     }],
     ['target_arch != "arm" and chromeos == 1 and use_x11 == 1', {
-      'dependencies': [
-        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
-      ],
       'sources': [
         'common/gpu/media/h264_dpb.cc',
         'common/gpu/media/h264_dpb.h',
@@ -740,6 +750,8 @@
     }],
     ['use_seccomp_bpf==0', {
       'sources!': [
+        'common/sandbox_linux/android/sandbox_bpf_base_policy_android.cc',
+        'common/sandbox_linux/android/sandbox_bpf_base_policy_android.h',
         'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc',
         'common/sandbox_linux/bpf_cros_arm_gpu_policy_linux.h',
         'common/sandbox_linux/bpf_gpu_policy_linux.cc',

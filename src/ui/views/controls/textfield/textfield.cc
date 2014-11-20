@@ -25,13 +25,13 @@
 #include "ui/views/background.h"
 #include "ui/views/controls/focusable_border.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/metrics.h"
+#include "ui/views/native_cursor.h"
 #include "ui/views/painter.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
@@ -42,8 +42,8 @@
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "base/strings/utf_string_conversions.h"
-#include "ui/events/x/text_edit_command_x11.h"
-#include "ui/events/x/text_edit_key_bindings_delegate_x11.h"
+#include "ui/events/linux/text_edit_command_auralinux.h"
+#include "ui/events/linux/text_edit_key_bindings_delegate_auralinux.h"
 #endif
 
 namespace views {
@@ -63,6 +63,7 @@ void ConvertRectToScreen(const View* src, gfx::Rect* r) {
   r->set_origin(new_origin);
 }
 
+// Get the default command for a given key |event| and selection state.
 int GetCommandForKeyEvent(const ui::KeyEvent& event, bool has_selection) {
   if (event.type() != ui::ET_KEY_PRESSED || event.IsUnicodeKeyCode())
     return kNoCommand;
@@ -132,89 +133,89 @@ int GetCommandForKeyEvent(const ui::KeyEvent& event, bool has_selection) {
     default:
       return kNoCommand;
   }
-  return kNoCommand;
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-int GetViewsCommand(const ui::TextEditCommandX11& command, bool rtl) {
+// Convert a custom text edit |command| to the equivalent views command ID.
+int GetViewsCommand(const ui::TextEditCommandAuraLinux& command, bool rtl) {
   const bool select = command.extend_selection();
   switch (command.command_id()) {
-    case ui::TextEditCommandX11::COPY:
+    case ui::TextEditCommandAuraLinux::COPY:
       return IDS_APP_COPY;
-    case ui::TextEditCommandX11::CUT:
+    case ui::TextEditCommandAuraLinux::CUT:
       return IDS_APP_CUT;
-    case ui::TextEditCommandX11::DELETE_BACKWARD:
+    case ui::TextEditCommandAuraLinux::DELETE_BACKWARD:
       return IDS_DELETE_BACKWARD;
-    case ui::TextEditCommandX11::DELETE_FORWARD:
+    case ui::TextEditCommandAuraLinux::DELETE_FORWARD:
       return IDS_DELETE_FORWARD;
-    case ui::TextEditCommandX11::DELETE_TO_BEGINING_OF_LINE:
-    case ui::TextEditCommandX11::DELETE_TO_BEGINING_OF_PARAGRAPH:
+    case ui::TextEditCommandAuraLinux::DELETE_TO_BEGINING_OF_LINE:
+    case ui::TextEditCommandAuraLinux::DELETE_TO_BEGINING_OF_PARAGRAPH:
       return IDS_DELETE_TO_BEGINNING_OF_LINE;
-    case ui::TextEditCommandX11::DELETE_TO_END_OF_LINE:
-    case ui::TextEditCommandX11::DELETE_TO_END_OF_PARAGRAPH:
+    case ui::TextEditCommandAuraLinux::DELETE_TO_END_OF_LINE:
+    case ui::TextEditCommandAuraLinux::DELETE_TO_END_OF_PARAGRAPH:
       return IDS_DELETE_TO_END_OF_LINE;
-    case ui::TextEditCommandX11::DELETE_WORD_BACKWARD:
+    case ui::TextEditCommandAuraLinux::DELETE_WORD_BACKWARD:
       return IDS_DELETE_WORD_BACKWARD;
-    case ui::TextEditCommandX11::DELETE_WORD_FORWARD:
+    case ui::TextEditCommandAuraLinux::DELETE_WORD_FORWARD:
       return IDS_DELETE_WORD_FORWARD;
-    case ui::TextEditCommandX11::INSERT_TEXT:
+    case ui::TextEditCommandAuraLinux::INSERT_TEXT:
       return kNoCommand;
-    case ui::TextEditCommandX11::MOVE_BACKWARD:
+    case ui::TextEditCommandAuraLinux::MOVE_BACKWARD:
       if (rtl)
         return select ? IDS_MOVE_RIGHT_AND_MODIFY_SELECTION : IDS_MOVE_RIGHT;
       return select ? IDS_MOVE_LEFT_AND_MODIFY_SELECTION : IDS_MOVE_LEFT;
-    case ui::TextEditCommandX11::MOVE_DOWN:
+    case ui::TextEditCommandAuraLinux::MOVE_DOWN:
       return IDS_MOVE_DOWN;
-    case ui::TextEditCommandX11::MOVE_FORWARD:
+    case ui::TextEditCommandAuraLinux::MOVE_FORWARD:
       if (rtl)
         return select ? IDS_MOVE_LEFT_AND_MODIFY_SELECTION : IDS_MOVE_LEFT;
       return select ? IDS_MOVE_RIGHT_AND_MODIFY_SELECTION : IDS_MOVE_RIGHT;
-    case ui::TextEditCommandX11::MOVE_LEFT:
+    case ui::TextEditCommandAuraLinux::MOVE_LEFT:
       return select ? IDS_MOVE_LEFT_AND_MODIFY_SELECTION : IDS_MOVE_LEFT;
-    case ui::TextEditCommandX11::MOVE_PAGE_DOWN:
-    case ui::TextEditCommandX11::MOVE_PAGE_UP:
+    case ui::TextEditCommandAuraLinux::MOVE_PAGE_DOWN:
+    case ui::TextEditCommandAuraLinux::MOVE_PAGE_UP:
       return kNoCommand;
-    case ui::TextEditCommandX11::MOVE_RIGHT:
+    case ui::TextEditCommandAuraLinux::MOVE_RIGHT:
       return select ? IDS_MOVE_RIGHT_AND_MODIFY_SELECTION : IDS_MOVE_RIGHT;
-    case ui::TextEditCommandX11::MOVE_TO_BEGINING_OF_DOCUMENT:
-    case ui::TextEditCommandX11::MOVE_TO_BEGINING_OF_LINE:
-    case ui::TextEditCommandX11::MOVE_TO_BEGINING_OF_PARAGRAPH:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_BEGINING_OF_DOCUMENT:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_BEGINING_OF_LINE:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_BEGINING_OF_PARAGRAPH:
       return select ? IDS_MOVE_TO_BEGINNING_OF_LINE_AND_MODIFY_SELECTION :
                       IDS_MOVE_TO_BEGINNING_OF_LINE;
-    case ui::TextEditCommandX11::MOVE_TO_END_OF_DOCUMENT:
-    case ui::TextEditCommandX11::MOVE_TO_END_OF_LINE:
-    case ui::TextEditCommandX11::MOVE_TO_END_OF_PARAGRAPH:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_END_OF_DOCUMENT:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_END_OF_LINE:
+    case ui::TextEditCommandAuraLinux::MOVE_TO_END_OF_PARAGRAPH:
       return select ? IDS_MOVE_TO_END_OF_LINE_AND_MODIFY_SELECTION :
                       IDS_MOVE_TO_END_OF_LINE;
-    case ui::TextEditCommandX11::MOVE_UP:
+    case ui::TextEditCommandAuraLinux::MOVE_UP:
       return IDS_MOVE_UP;
-    case ui::TextEditCommandX11::MOVE_WORD_BACKWARD:
+    case ui::TextEditCommandAuraLinux::MOVE_WORD_BACKWARD:
       if (rtl) {
         return select ? IDS_MOVE_WORD_RIGHT_AND_MODIFY_SELECTION :
                         IDS_MOVE_WORD_RIGHT;
       }
       return select ? IDS_MOVE_WORD_LEFT_AND_MODIFY_SELECTION :
                       IDS_MOVE_WORD_LEFT;
-    case ui::TextEditCommandX11::MOVE_WORD_FORWARD:
+    case ui::TextEditCommandAuraLinux::MOVE_WORD_FORWARD:
       if (rtl) {
         return select ? IDS_MOVE_WORD_LEFT_AND_MODIFY_SELECTION :
                         IDS_MOVE_WORD_LEFT;
       }
       return select ? IDS_MOVE_WORD_RIGHT_AND_MODIFY_SELECTION :
                       IDS_MOVE_WORD_RIGHT;
-    case ui::TextEditCommandX11::MOVE_WORD_LEFT:
+    case ui::TextEditCommandAuraLinux::MOVE_WORD_LEFT:
       return select ? IDS_MOVE_WORD_LEFT_AND_MODIFY_SELECTION :
                       IDS_MOVE_WORD_LEFT;
-    case ui::TextEditCommandX11::MOVE_WORD_RIGHT:
+    case ui::TextEditCommandAuraLinux::MOVE_WORD_RIGHT:
       return select ? IDS_MOVE_WORD_RIGHT_AND_MODIFY_SELECTION :
                       IDS_MOVE_WORD_RIGHT;
-    case ui::TextEditCommandX11::PASTE:
+    case ui::TextEditCommandAuraLinux::PASTE:
       return IDS_APP_PASTE;
-    case ui::TextEditCommandX11::SELECT_ALL:
+    case ui::TextEditCommandAuraLinux::SELECT_ALL:
       return IDS_APP_SELECT_ALL;
-    case ui::TextEditCommandX11::SET_MARK:
-    case ui::TextEditCommandX11::UNSELECT:
-    case ui::TextEditCommandX11::INVALID_COMMAND:
+    case ui::TextEditCommandAuraLinux::SET_MARK:
+    case ui::TextEditCommandAuraLinux::UNSELECT:
+    case ui::TextEditCommandAuraLinux::INVALID_COMMAND:
       return kNoCommand;
   }
   return kNoCommand;
@@ -264,9 +265,6 @@ Textfield::Textfield()
     password_reveal_duration_ = ViewsDelegate::views_delegate->
         GetDefaultTextfieldObscuredRevealDuration();
   }
-
-  if (NativeViewHost::kRenderNativeControlFocus)
-    focus_painter_ = Painter::CreateDashedFocusPainter();
 }
 
 Textfield::~Textfield() {}
@@ -397,8 +395,17 @@ base::string16 Textfield::GetPlaceholderText() const {
   return placeholder_text_;
 }
 
+gfx::HorizontalAlignment Textfield::GetHorizontalAlignment() const {
+  return GetRenderText()->horizontal_alignment();
+}
+
+void Textfield::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
+  GetRenderText()->SetHorizontalAlignment(alignment);
+}
+
 void Textfield::ShowImeIfNeeded() {
-  GetInputMethod()->ShowImeIfNeeded();
+  if (enabled() && !read_only())
+    GetInputMethod()->ShowImeIfNeeded();
 }
 
 bool Textfield::IsIMEComposing() const {
@@ -490,7 +497,7 @@ gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
   bool in_selection = GetRenderText()->IsPointInSelection(event.location());
   bool drag_event = event.type() == ui::ET_MOUSE_DRAGGED;
   bool text_cursor = !initiating_drag_ && (drag_event || !in_selection);
-  return text_cursor ? ui::kCursorIBeam : ui::kCursorNull;
+  return text_cursor ? GetNativeIBeamCursor() : gfx::kNullCursor;
 }
 
 bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
@@ -543,7 +550,6 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
 #endif
   }
 
-  touch_selection_controller_.reset();
   return true;
 }
 
@@ -587,20 +593,15 @@ void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   bool handled = controller_ && controller_->HandleKeyEvent(this, event);
-  touch_selection_controller_.reset();
-  if (handled)
-    return true;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  ui::TextEditKeyBindingsDelegateX11* delegate =
+  ui::TextEditKeyBindingsDelegateAuraLinux* delegate =
       ui::GetTextEditKeyBindingsDelegate();
-  std::vector<ui::TextEditCommandX11> commands;
-  if (delegate) {
-    if (!delegate->MatchEvent(event, &commands))
-      return false;
+  std::vector<ui::TextEditCommandAuraLinux> commands;
+  if (!handled && delegate && delegate->MatchEvent(event, &commands)) {
     const bool rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
     for (size_t i = 0; i < commands.size(); ++i) {
-      int command = GetViewsCommand(commands[i], rtl);
+      const int command = GetViewsCommand(commands[i], rtl);
       if (IsCommandIdEnabled(command)) {
         ExecuteCommand(command);
         handled = true;
@@ -611,11 +612,11 @@ bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
 #endif
 
   const int command = GetCommandForKeyEvent(event, HasSelection());
-  if (IsCommandIdEnabled(command)) {
+  if (!handled && IsCommandIdEnabled(command)) {
     ExecuteCommand(command);
-    return true;
+    handled = true;
   }
-  return false;
+  return handled;
 }
 
 ui::TextInputClient* Textfield::GetTextInputClient() {
@@ -680,7 +681,7 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
           event->SetHandled();
       } else if (switches::IsTouchDragDropEnabled()) {
         initiating_drag_ = true;
-        touch_selection_controller_.reset();
+        DestroyTouchSelection();
       } else {
         if (!touch_selection_controller_)
           CreateTouchSelectionControllerAndNotifyIt();
@@ -710,9 +711,9 @@ void Textfield::AboutToRequestFocusFromTabTraversal(bool reverse) {
 bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Skip any accelerator handling that conflicts with custom keybindings.
-  ui::TextEditKeyBindingsDelegateX11* delegate =
+  ui::TextEditKeyBindingsDelegateAuraLinux* delegate =
       ui::GetTextEditKeyBindingsDelegate();
-  std::vector<ui::TextEditCommandX11> commands;
+  std::vector<ui::TextEditCommandAuraLinux> commands;
   if (delegate && delegate->MatchEvent(event, &commands)) {
     const bool rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
     for (size_t i = 0; i < commands.size(); ++i)
@@ -849,18 +850,10 @@ void Textfield::OnEnabledChanged() {
   SchedulePaint();
 }
 
-void Textfield::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
-  if (details.is_add && details.child == this)
-    UpdateColorsFromTheme(GetNativeTheme());
-}
-
 void Textfield::OnPaint(gfx::Canvas* canvas) {
   OnPaintBackground(canvas);
   PaintTextAndCursor(canvas);
   OnPaintBorder(canvas);
-  if (NativeViewHost::kRenderNativeControlFocus)
-    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
 void Textfield::OnFocus() {
@@ -890,7 +883,7 @@ void Textfield::OnBlur() {
     RepaintCursor();
   }
 
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
 
   // Border typically draws focus indicator.
   SchedulePaint();
@@ -901,7 +894,15 @@ gfx::Point Textfield::GetKeyboardContextMenuLocation() {
 }
 
 void Textfield::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  UpdateColorsFromTheme(theme);
+  gfx::RenderText* render_text = GetRenderText();
+  render_text->SetColor(GetTextColor());
+  UpdateBackgroundColor();
+  render_text->set_cursor_color(GetTextColor());
+  render_text->set_selection_color(theme->GetSystemColor(
+      ui::NativeTheme::kColorId_TextfieldSelectionColor));
+  render_text->set_selection_background_focused_color(theme->GetSystemColor(
+      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -919,8 +920,12 @@ void Textfield::ShowContextMenuForView(View* source,
                                        const gfx::Point& point,
                                        ui::MenuSourceType source_type) {
   UpdateContextMenu();
-  ignore_result(context_menu_runner_->RunMenuAt(GetWidget(), NULL,
-      gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, source_type,
+  ignore_result(context_menu_runner_->RunMenuAt(
+      GetWidget(),
+      NULL,
+      gfx::Rect(point, gfx::Size()),
+      MENU_ANCHOR_TOPLEFT,
+      source_type,
       MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));
 }
 
@@ -1027,8 +1032,12 @@ bool Textfield::DrawsHandles() {
 }
 
 void Textfield::OpenContextMenu(const gfx::Point& anchor) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   ShowContextMenu(anchor, ui::MENU_SOURCE_TOUCH_EDIT_MENU);
+}
+
+void Textfield::DestroyTouchSelection() {
+  touch_selection_controller_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1090,7 +1099,7 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
 }
 
 void Textfield::ExecuteCommand(int command_id, int event_flags) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   if (!IsCommandIdEnabled(command_id))
     return;
 
@@ -1099,7 +1108,7 @@ void Textfield::ExecuteCommand(int command_id, int event_flags) {
   bool rtl = GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
   gfx::VisualCursorDirection begin = rtl ? gfx::CURSOR_RIGHT : gfx::CURSOR_LEFT;
   gfx::VisualCursorDirection end = rtl ? gfx::CURSOR_LEFT : gfx::CURSOR_RIGHT;
-  gfx::Range selection_range = GetSelectedRange();
+  gfx::SelectionModel selection_model = GetSelectionModel();
 
   OnBeforeUserAction();
   switch (command_id) {
@@ -1187,7 +1196,7 @@ void Textfield::ExecuteCommand(int command_id, int event_flags) {
       break;
   }
 
-  cursor_changed |= GetSelectedRange() != selection_range;
+  cursor_changed |= GetSelectionModel() != selection_model;
   if (cursor_changed)
     UpdateSelectionClipboard();
   UpdateAfterChange(text_changed, cursor_changed);
@@ -1290,7 +1299,7 @@ gfx::NativeWindow Textfield::GetAttachedWindow() const {
   // IME may want to interact with the native view of [NativeWidget A] rather
   // than that of [NativeWidget B]. This is why we need to call
   // GetTopLevelWidget() here.
-  return GetWidget()->GetTopLevelWidget()->GetNativeView();
+  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 }
 
 ui::TextInputType Textfield::GetTextInputType() const {
@@ -1325,7 +1334,7 @@ bool Textfield::GetCompositionCharacterBounds(uint32 index,
   size_t text_index = composition_range.start() + index;
   if (composition_range.end() <= text_index)
     return false;
-  if (!render_text->IsCursorablePosition(text_index)) {
+  if (!render_text->IsValidCursorIndex(text_index)) {
     text_index = render_text->IndexOfAdjacentGrapheme(
         text_index, gfx::CURSOR_BACKWARD);
   }
@@ -1467,17 +1476,6 @@ void Textfield::UpdateBackgroundColor() {
   SchedulePaint();
 }
 
-void Textfield::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
-  gfx::RenderText* render_text = GetRenderText();
-  render_text->SetColor(GetTextColor());
-  UpdateBackgroundColor();
-  render_text->set_cursor_color(GetTextColor());
-  render_text->set_selection_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionColor));
-  render_text->set_selection_background_focused_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
-}
-
 void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
   if (text_changed) {
     if (controller_)
@@ -1488,7 +1486,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
     cursor_visible_ = true;
     RepaintCursor();
     if (cursor_repaint_timer_.IsRunning())
-    cursor_repaint_timer_.Reset();
+      cursor_repaint_timer_.Reset();
     if (!text_changed) {
       // TEXT_CHANGED implies SELECTION_CHANGED, so we only need to fire
       // this if only the selection changed.

@@ -142,7 +142,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void RestoreAllTextureUnitBindings(
       const ContextState* prev_state) const = 0;
   virtual void RestoreActiveTextureUnitBinding(unsigned int target) const = 0;
-  virtual void RestoreAttribute(unsigned index) const = 0;
   virtual void RestoreBufferBindings() const = 0;
   virtual void RestoreFramebufferBindings() const = 0;
   virtual void RestoreGlobalState() const = 0;
@@ -152,6 +151,8 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   virtual void ClearAllAttributes() const = 0;
   virtual void RestoreAllAttributes() const = 0;
+
+  virtual void SetIgnoreCachedStateForTest(bool ignore) = 0;
 
   // Gets the QueryManager for this context.
   virtual QueryManager* GetQueryManager() = 0;

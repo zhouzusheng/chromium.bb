@@ -59,6 +59,14 @@ namespace WebCore {
 
 namespace {
 
+struct PathApplyInfo {
+    FrameView* rootView;
+    FrameView* view;
+    TypeBuilder::Array<JSONValue>* array;
+    RenderObject* renderer;
+    const ShapeOutsideInfo* shapeOutsideInfo;
+};
+
 class InspectorOverlayChromeClient FINAL: public EmptyChromeClient {
 public:
     InspectorOverlayChromeClient(ChromeClient& client, InspectorOverlay* overlay)
@@ -246,6 +254,7 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     , m_overlayHost(InspectorOverlayHost::create())
     , m_drawViewSize(false)
     , m_drawViewSizeWithGrid(false)
+    , m_omitTooltip(false)
     , m_timer(this, &InspectorOverlay::onTimer)
     , m_activeProfilerCount(0)
 {
@@ -253,6 +262,7 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
 
 InspectorOverlay::~InspectorOverlay()
 {
+    ASSERT(!m_overlayPage);
 }
 
 void InspectorOverlay::paint(GraphicsContext& context)
@@ -325,18 +335,6 @@ void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& r
     drawOutlinedQuad(context, outlineRect, Color(), color);
 }
 
-void InspectorOverlay::getHighlight(Highlight* highlight) const
-{
-    if (!m_highlightNode && !m_highlightQuad)
-        return;
-
-    highlight->type = HighlightTypeRects;
-    if (m_highlightNode)
-        buildNodeHighlight(m_highlightNode.get(), m_nodeHighlightConfig, highlight);
-    else
-        buildQuadHighlight(m_page, *m_highlightQuad, m_quadHighlightConfig, highlight);
-}
-
 void InspectorOverlay::resize(const IntSize& size)
 {
     m_size = size;
@@ -363,11 +361,12 @@ void InspectorOverlay::hideHighlight()
     update();
 }
 
-void InspectorOverlay::highlightNode(Node* node, Node* eventTarget, const HighlightConfig& highlightConfig)
+void InspectorOverlay::highlightNode(Node* node, Node* eventTarget, const HighlightConfig& highlightConfig, bool omitTooltip)
 {
     m_nodeHighlightConfig = highlightConfig;
     m_highlightNode = node;
     m_eventTargetNode = eventTarget;
+    m_omitTooltip = omitTooltip;
     update();
 }
 
@@ -375,6 +374,7 @@ void InspectorOverlay::highlightQuad(PassOwnPtr<FloatQuad> quad, const Highlight
 {
     m_quadHighlightConfig = highlightConfig;
     m_highlightQuad = quad;
+    m_omitTooltip = false;
     update();
 }
 
@@ -491,6 +491,151 @@ static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
     return result.release();
 }
 
+// CSS shapes
+static void appendPathCommandAndPoints(PathApplyInfo* info, const String& command, const FloatPoint points[], unsigned length)
+{
+    FloatPoint point;
+    info->array->addItem(JSONString::create(command));
+    for (unsigned i = 0; i < length; i++) {
+        point = info->shapeOutsideInfo->shapeToRendererPoint(points[i]);
+        point = info->view->contentsToRootView(roundedIntPoint(info->renderer->localToAbsolute(point))) + info->rootView->scrollOffset();
+        info->array->addItem(JSONBasicValue::create(point.x()));
+        info->array->addItem(JSONBasicValue::create(point.y()));
+    }
+}
+
+static void appendPathSegment(void* info, const PathElement* pathElement)
+{
+    PathApplyInfo* pathApplyInfo = static_cast<PathApplyInfo*>(info);
+    FloatPoint point;
+    switch (pathElement->type) {
+    // The points member will contain 1 value.
+    case PathElementMoveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "M", pathElement->points, 1);
+        break;
+    // The points member will contain 1 value.
+    case PathElementAddLineToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "L", pathElement->points, 1);
+        break;
+    // The points member will contain 3 values.
+    case PathElementAddCurveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "C", pathElement->points, 3);
+        break;
+    // The points member will contain 2 values.
+    case PathElementAddQuadCurveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "Q", pathElement->points, 2);
+        break;
+    // The points member will contain no values.
+    case PathElementCloseSubpath:
+        appendPathCommandAndPoints(pathApplyInfo, "Z", 0, 0);
+        break;
+    }
+}
+
+static RefPtr<TypeBuilder::Array<double> > buildArrayForQuadTypeBuilder(const FloatQuad& quad)
+{
+    RefPtr<TypeBuilder::Array<double> > array = TypeBuilder::Array<double>::create();
+    array->addItem(quad.p1().x());
+    array->addItem(quad.p1().y());
+    array->addItem(quad.p2().x());
+    array->addItem(quad.p2().y());
+    array->addItem(quad.p3().x());
+    array->addItem(quad.p3().y());
+    array->addItem(quad.p4().x());
+    array->addItem(quad.p4().y());
+    return array.release();
+}
+
+PassRefPtr<TypeBuilder::DOM::ShapeOutsideInfo> InspectorOverlay::buildObjectForShapeOutside(Node* node)
+{
+    RenderObject* renderer = node->renderer();
+    if (!renderer || !renderer->isBox() || !toRenderBox(renderer)->shapeOutsideInfo())
+        return nullptr;
+
+    LocalFrame* containingFrame = node->document().frame();
+    RenderBox* renderBox = toRenderBox(renderer);
+    const ShapeOutsideInfo* shapeOutsideInfo = renderBox->shapeOutsideInfo();
+
+    LayoutRect shapeBounds = shapeOutsideInfo->computedShapePhysicalBoundingBox();
+    FloatQuad shapeQuad = renderBox->localToAbsoluteQuad(FloatRect(shapeBounds));
+    FrameView* mainView = containingFrame->page()->mainFrame()->view();
+    FrameView* containingView = containingFrame->view();
+    contentsQuadToPage(mainView, containingView, shapeQuad);
+
+    Shape::DisplayPaths paths;
+    shapeOutsideInfo->computedShape().buildDisplayPaths(paths);
+    RefPtr<TypeBuilder::Array<JSONValue> > shapePath = TypeBuilder::Array<JSONValue>::create();
+    RefPtr<TypeBuilder::Array<JSONValue> > marginShapePath = TypeBuilder::Array<JSONValue>::create();
+
+    if (paths.shape.length()) {
+        PathApplyInfo info;
+        info.rootView = mainView;
+        info.view = containingView;
+        info.array = shapePath.get();
+        info.renderer = renderBox;
+        info.shapeOutsideInfo = shapeOutsideInfo;
+        paths.shape.apply(&info, &appendPathSegment);
+
+        if (paths.marginShape.length()) {
+            info.array = marginShapePath.get();
+            paths.marginShape.apply(&info, &appendPathSegment);
+        }
+    }
+    RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeTypeBuilder = TypeBuilder::DOM::ShapeOutsideInfo::create()
+        .setBounds(buildArrayForQuadTypeBuilder(shapeQuad))
+        .setShape(shapePath)
+        .setMarginShape(marginShapePath);
+
+    return shapeTypeBuilder.release();
+}
+
+static void setElementInfo(RefPtr<JSONObject>& highlightObject, RefPtr<JSONObject>& shapeObject, Node* node)
+{
+    RefPtr<JSONObject> elementInfo = JSONObject::create();
+    Element* element = toElement(node);
+    Element* realElement = element;
+    PseudoElement* pseudoElement = 0;
+    if (element->isPseudoElement()) {
+        pseudoElement = toPseudoElement(element);
+        realElement = element->parentOrShadowHostElement();
+    }
+    bool isXHTML = realElement->document().isXHTMLDocument();
+    elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
+    elementInfo->setString("idValue", realElement->getIdAttribute());
+    StringBuilder classNames;
+    if (realElement->hasClass() && realElement->isStyledElement()) {
+        HashSet<AtomicString> usedClassNames;
+        const SpaceSplitString& classNamesString = realElement->classNames();
+        size_t classNameCount = classNamesString.size();
+        for (size_t i = 0; i < classNameCount; ++i) {
+            const AtomicString& className = classNamesString[i];
+            if (!usedClassNames.add(className).isNewEntry)
+                continue;
+            classNames.append('.');
+            classNames.append(className);
+        }
+    }
+    if (pseudoElement) {
+        if (pseudoElement->pseudoId() == BEFORE)
+            classNames.append("::before");
+        else if (pseudoElement->pseudoId() == AFTER)
+            classNames.append("::after");
+    }
+    if (!classNames.isEmpty())
+        elementInfo->setString("className", classNames.toString());
+
+    RenderObject* renderer = node->renderer();
+    LocalFrame* containingFrame = node->document().frame();
+    FrameView* containingView = containingFrame->view();
+    IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
+    RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
+    elementInfo->setString("nodeWidth", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width()));
+    elementInfo->setString("nodeHeight", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height()));
+    if (renderer->isBox() && shapeObject)
+        elementInfo->setObject("shapeOutsideInfo", shapeObject.release());
+    highlightObject->setObject("elementInfo", elementInfo.release());
+}
+
 void InspectorOverlay::drawNodeHighlight()
 {
     if (!m_highlightNode)
@@ -506,49 +651,10 @@ void InspectorOverlay::drawNodeHighlight()
     RefPtr<JSONObject> highlightObject = buildObjectForHighlight(highlight);
 
     Node* node = m_highlightNode.get();
-    if (node->isElementNode() && m_nodeHighlightConfig.showInfo && node->renderer() && node->document().frame()) {
-        RefPtr<JSONObject> elementInfo = JSONObject::create();
-        Element* element = toElement(node);
-        Element* realElement = element;
-        PseudoElement* pseudoElement = 0;
-        if (element->isPseudoElement()) {
-            pseudoElement = toPseudoElement(element);
-            realElement = element->parentOrShadowHostElement();
-        }
-        bool isXHTML = realElement->document().isXHTMLDocument();
-        elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
-        elementInfo->setString("idValue", realElement->getIdAttribute());
-        StringBuilder classNames;
-        if (realElement->hasClass() && realElement->isStyledElement()) {
-            HashSet<AtomicString> usedClassNames;
-            const SpaceSplitString& classNamesString = realElement->classNames();
-            size_t classNameCount = classNamesString.size();
-            for (size_t i = 0; i < classNameCount; ++i) {
-                const AtomicString& className = classNamesString[i];
-                if (!usedClassNames.add(className).isNewEntry)
-                    continue;
-                classNames.append('.');
-                classNames.append(className);
-            }
-        }
-        if (pseudoElement) {
-            if (pseudoElement->pseudoId() == BEFORE)
-                classNames.append("::before");
-            else if (pseudoElement->pseudoId() == AFTER)
-                classNames.append("::after");
-        }
-        if (!classNames.isEmpty())
-            elementInfo->setString("className", classNames.toString());
-
-        RenderObject* renderer = node->renderer();
-        LocalFrame* containingFrame = node->document().frame();
-        FrameView* containingView = containingFrame->view();
-        IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
-        RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
-        elementInfo->setString("nodeWidth", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width()));
-        elementInfo->setString("nodeHeight", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height()));
-        highlightObject->setObject("elementInfo", elementInfo.release());
-    }
+    RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeObject = buildObjectForShapeOutside(node);
+    RefPtr<JSONObject> shapeObjectJSON = shapeObject ? shapeObject->asObject() : nullptr;
+    if (node->isElementNode() && !m_omitTooltip && m_nodeHighlightConfig.showInfo && node->renderer() && node->document().frame())
+        setElementInfo(highlightObject, shapeObjectJSON, node);
     evaluateInOverlay("drawNodeHighlight", highlightObject);
 }
 
@@ -585,7 +691,7 @@ Page* InspectorOverlay::overlayPage()
     ASSERT(!m_overlayChromeClient);
     m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_page->chrome().client(), this));
     pageClients.chromeClient = m_overlayChromeClient.get();
-    m_overlayPage = adoptPtr(new Page(pageClients));
+    m_overlayPage = adoptPtrWillBeNoop(new Page(pageClients));
 
     Settings& settings = m_page->settings();
     Settings& overlaySettings = m_overlayPage->settings();
@@ -677,10 +783,14 @@ void InspectorOverlay::freePage()
         // FIXME: This logic is duplicated in SVGImage and WebViewImpl. Perhaps it can be combined
         // into Page's destructor.
         m_overlayPage->mainFrame()->loader().frameDetached();
+        m_overlayPage->willBeDestroyed();
         m_overlayPage.clear();
     }
     m_overlayChromeClient.clear();
     m_timer.stop();
+
+    // This will clear internal structures and issue update to the client. Safe to call last.
+    hideHighlight();
 }
 
 void InspectorOverlay::startedRecordingProfile()

@@ -45,24 +45,26 @@ void CreateNativeAudioMediaStreamTrack(
 }
 
 void CreateNativeVideoMediaStreamTrack(
-    const blink::WebMediaStreamTrack& track,
-    MediaStreamDependencyFactory* factory) {
+    const blink::WebMediaStreamTrack& track) {
   DCHECK(track.extraData() == NULL);
   blink::WebMediaStreamSource source = track.source();
   DCHECK_EQ(source.type(), blink::WebMediaStreamSource::TypeVideo);
   MediaStreamVideoSource* native_source =
       MediaStreamVideoSource::GetVideoSource(source);
-  if (!native_source) {
-    // TODO(perkj): Implement support for sources from
-    // remote MediaStreams.
-    NOTIMPLEMENTED();
-    return;
-  }
+  DCHECK(native_source);
   blink::WebMediaStreamTrack writable_track(track);
+  // TODO(perkj): The constraints to use here should be passed from blink when
+  // a new track is created. For cloning, it should be the constraints of the
+  // cloned track and not the originating source.
+  // Also - source.constraints() returns an uninitialized constraint if the
+  // source is coming from a remote video track. See http://crbug/287805.
+  blink::WebMediaConstraints constraints = source.constraints();
+  if (constraints.isNull())
+    constraints.initialize();
   writable_track.setExtraData(
-      new MediaStreamVideoTrack(native_source, source.constraints(),
+      new MediaStreamVideoTrack(native_source, constraints,
                                 MediaStreamVideoSource::ConstraintsCallback(),
-                                track.isEnabled(), factory));
+                                track.isEnabled()));
 }
 
 void CreateNativeMediaStreamTrack(const blink::WebMediaStreamTrack& track,
@@ -75,7 +77,7 @@ void CreateNativeMediaStreamTrack(const blink::WebMediaStreamTrack& track,
       CreateNativeAudioMediaStreamTrack(track, factory);
       break;
     case blink::WebMediaStreamSource::TypeVideo:
-      CreateNativeVideoMediaStreamTrack(track, factory);
+      CreateNativeVideoMediaStreamTrack(track);
       break;
   }
 }
@@ -126,15 +128,8 @@ void MediaStreamCenter::didDisableMediaStreamTrack(
 bool MediaStreamCenter::didStopMediaStreamTrack(
     const blink::WebMediaStreamTrack& track) {
   DVLOG(1) << "MediaStreamCenter::didStopMediaStreamTrack";
-  blink::WebMediaStreamSource source = track.source();
-  MediaStreamSource* extra_data =
-      static_cast<MediaStreamSource*>(source.extraData());
-  if (!extra_data) {
-    DVLOG(1) << "didStopMediaStreamTrack called on a remote track.";
-    return false;
-  }
-
-  extra_data->StopSource();
+  MediaStreamTrack* native_track = MediaStreamTrack::GetTrack(track);
+  native_track->Stop();
   return true;
 }
 
@@ -168,41 +163,24 @@ void MediaStreamCenter::didStopLocalMediaStream(
   }
 
   // TODO(perkj): MediaStream::Stop is being deprecated. But for the moment we
-  // need to support the old behavior and the new. Since we only create one
-  // source object per actual device- we need to fake stopping a
-  // MediaStreamTrack by disabling it if the same device is used as source by
-  // multiple tracks. Note that disabling a track here, don't affect the
-  // enabled property in JS.
+  // need to support both MediaStream::Stop and MediaStreamTrack::Stop.
   blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
   stream.audioTracks(audio_tracks);
   for (size_t i = 0; i < audio_tracks.size(); ++i)
-    didDisableMediaStreamTrack(audio_tracks[i]);
+    didStopMediaStreamTrack(audio_tracks[i]);
 
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   stream.videoTracks(video_tracks);
   for (size_t i = 0; i < video_tracks.size(); ++i)
-    didDisableMediaStreamTrack(video_tracks[i]);
-
-  native_stream->OnStreamStopped();
+    didStopMediaStreamTrack(video_tracks[i]);
 }
 
 void MediaStreamCenter::didCreateMediaStream(blink::WebMediaStream& stream) {
   DVLOG(1) << "MediaStreamCenter::didCreateMediaStream";
   blink::WebMediaStream writable_stream(stream);
   MediaStream* native_stream(
-      new MediaStream(rtc_factory_,
-                      MediaStream::StreamStopCallback(),
-                      stream));
+      new MediaStream(stream));
   writable_stream.setExtraData(native_stream);
-
-  // TODO(perkj): Remove track creation once crbug/294145 is fixed. A track
-  // should already have been created before reaching here.
-  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
-  stream.audioTracks(audio_tracks);
-  for (size_t i = 0; i < audio_tracks.size(); ++i) {
-    if (!MediaStreamTrack::GetTrack(audio_tracks[i]))
-      CreateNativeMediaStreamTrack(audio_tracks[i], rtc_factory_);
-  }
 
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   stream.videoTracks(video_tracks);
@@ -217,12 +195,8 @@ bool MediaStreamCenter::didAddMediaStreamTrack(
     const blink::WebMediaStream& stream,
     const blink::WebMediaStreamTrack& track) {
   DVLOG(1) << "MediaStreamCenter::didAddMediaStreamTrack";
-  // TODO(perkj): Remove track creation once crbug/294145 is fixed. A track
-  // should already have been created before reaching here.
-  if (!MediaStreamTrack::GetTrack(track))
-    CreateNativeMediaStreamTrack(track, rtc_factory_);
   MediaStream* native_stream = MediaStream::GetMediaStream(stream);
-  return native_stream->AddTrack(stream, track);
+  return native_stream->AddTrack(track);
 }
 
 bool MediaStreamCenter::didRemoveMediaStreamTrack(
@@ -230,7 +204,7 @@ bool MediaStreamCenter::didRemoveMediaStreamTrack(
     const blink::WebMediaStreamTrack& track) {
   DVLOG(1) << "MediaStreamCenter::didRemoveMediaStreamTrack";
   MediaStream* native_stream = MediaStream::GetMediaStream(stream);
-  return native_stream->RemoveTrack(stream, track);
+  return native_stream->RemoveTrack(track);
 }
 
 bool MediaStreamCenter::OnControlMessageReceived(const IPC::Message& message) {

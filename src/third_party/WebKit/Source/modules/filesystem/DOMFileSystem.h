@@ -35,9 +35,9 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "heap/Handle.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "modules/filesystem/EntriesCallback.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -71,6 +71,9 @@ public:
     // FIXME: move this to a more generic place.
     template <typename CB, typename CBArg>
     static void scheduleCallback(ExecutionContext*, PassOwnPtr<CB>, PassRefPtrWillBeRawPtr<CBArg>);
+
+    template <typename CB, typename CBArg>
+    static void scheduleCallback(ExecutionContext*, PassOwnPtr<CB>, const HeapVector<CBArg>&);
 
     template <typename CB, typename CBArg>
     static void scheduleCallback(ExecutionContext*, PassOwnPtr<CB>, const CBArg&);
@@ -138,6 +141,14 @@ void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, PassOwn
     ASSERT(executionContext->isContextThread());
     if (callback)
         executionContext->postTask(adoptPtr(new DispatchCallbacRefPtrArgTask<CB, CBArg>(callback, arg)));
+}
+
+template <typename CB, typename CBArg>
+void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, PassOwnPtr<CB> callback, const HeapVector<CBArg>& arg)
+{
+    ASSERT(executionContext->isContextThread());
+    if (callback)
+        executionContext->postTask(adoptPtr(new DispatchCallbackNonPtrArgTask<CB, PersistentHeapVector<CBArg> >(callback, arg)));
 }
 
 template <typename CB, typename CBArg>

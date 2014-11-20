@@ -71,6 +71,7 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
 
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
+  request_time_ = base::Time::Now();
   priority_ = priority;
 
   int rv = stream_request_.StartRequest(
@@ -425,11 +426,13 @@ int QuicHttpStream::DoSendHeaders() {
   // Log the actual request with the URL Request's net log.
   stream_net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS,
-      base::Bind(&QuicRequestNetLogCallback, &request_headers_, priority_));
+      base::Bind(&QuicRequestNetLogCallback, stream_->id(), &request_headers_,
+                 priority_));
   // Also log to the QuicSession's net log.
   stream_->net_log().AddEvent(
       NetLog::TYPE_QUIC_HTTP_STREAM_SEND_REQUEST_HEADERS,
-      base::Bind(&QuicRequestNetLogCallback, &request_headers_, priority_));
+      base::Bind(&QuicRequestNetLogCallback, stream_->id(), &request_headers_,
+                 priority_));
 
   bool has_upload_data = request_body_stream_ != NULL;
 
@@ -544,6 +547,8 @@ int QuicHttpStream::ParseResponseHeaders() {
       .Init(*request_info_, *response_info_->headers.get());
   response_info_->was_npn_negotiated = true;
   response_info_->npn_negotiated_protocol = "quic/1+spdy/3";
+  response_info_->response_time = base::Time::Now();
+  response_info_->request_time = request_time_;
   response_headers_received_ = true;
 
   return OK;

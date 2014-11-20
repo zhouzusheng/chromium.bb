@@ -101,6 +101,7 @@ class IdlDefinitions(object):
     def __init__(self, node):
         """Args: node: AST root node, class == 'File'"""
         self.callback_functions = {}
+        self.dictionaries = {}
         self.enumerations = {}
         self.interfaces = {}
 
@@ -134,6 +135,9 @@ class IdlDefinitions(object):
             elif child_class == 'Implements':
                 # Implements is handled at the interface merging step
                 pass
+            elif child_class == 'Dictionary':
+                dictionary = IdlDictionary(child)
+                self.dictionaries[dictionary.name] = dictionary
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
 
@@ -192,6 +196,43 @@ class IdlCallbackFunction(TypedObject):
         TypedObject.resolve_typedefs(self, typedefs)
         for argument in self.arguments:
             argument.resolve_typedefs(typedefs)
+
+
+################################################################################
+# Dictionary
+################################################################################
+
+class IdlDictionary(object):
+    def __init__(self, node):
+        self.parent = None
+        self.name = node.GetName()
+        self.members = []
+        for child in node.GetChildren():
+            child_class = child.GetClass()
+            if child_class == 'Inherit':
+                self.parent = child.GetName()
+            elif child_class == 'Key':
+                self.members.append(IdlDictionaryMember(child))
+            else:
+                raise ValueError('Unrecognized node class: %s' % child_class)
+
+
+class IdlDictionaryMember(object):
+    def __init__(self, node):
+        self.default_value = None
+        self.extended_attributes = {}
+        self.idl_type = None
+        self.name = node.GetName()
+        for child in node.GetChildren():
+            child_class = child.GetClass()
+            if child_class == 'Type':
+                self.idl_type = type_node_to_type(child)
+            elif child_class == 'Default':
+                self.default_value = child.GetProperty('VALUE')
+            elif child_class == 'ExtAttributes':
+                self.extended_attributes = ext_attributes_node_to_extended_attributes(child)
+            else:
+                raise ValueError('Unrecognized node class: %s' % child_class)
 
 
 ################################################################################
@@ -612,7 +653,9 @@ def type_node_inner_to_type(node, is_array=False, is_nullable=False):
     # either a typedef shorthand (but not a Typedef declaration itself) or an
     # interface type. We do not distinguish these, and just use the type name.
     if node_class in ['PrimitiveType', 'Typeref']:
-        return IdlType(node.GetName(), is_array=is_array, is_nullable=is_nullable)
+        # unrestricted syntax: unrestricted double | unrestricted float
+        is_unrestricted = node.GetProperty('UNRESTRICTED') or False
+        return IdlType(node.GetName(), is_array=is_array, is_nullable=is_nullable, is_unrestricted=is_unrestricted)
     elif node_class == 'Any':
         return IdlType('any', is_array=is_array, is_nullable=is_nullable)
     elif node_class == 'Sequence':

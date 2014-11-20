@@ -324,6 +324,17 @@ bool ScrollAnimatorNone::PerAxisData::updateDataFromParameters(float step, float
     return true;
 }
 
+inline double ScrollAnimatorNone::PerAxisData::newScrollAnimationPosition(double deltaTime)
+{
+    if (deltaTime < m_attackTime)
+        return attackCurve(m_attackCurve, deltaTime, m_attackTime, m_startPosition, m_attackPosition);
+    if (deltaTime < (m_animationTime - m_releaseTime))
+        return m_attackPosition + (deltaTime - m_attackTime) * m_desiredVelocity;
+    // release is based on targeting the exact final position.
+    double releaseDeltaT = deltaTime - (m_animationTime - m_releaseTime);
+    return releaseCurve(m_releaseCurve, releaseDeltaT, m_releaseTime, m_releasePosition, m_desiredPosition);
+}
+
 // FIXME: Add in jank detection trace events into this function.
 bool ScrollAnimatorNone::PerAxisData::animateScroll(double currentTime)
 {
@@ -334,23 +345,13 @@ bool ScrollAnimatorNone::PerAxisData::animateScroll(double currentTime)
     m_lastAnimationTime = currentTime;
 
     double deltaTime = currentTime - m_startTime;
-    double newPosition = *m_currentPosition;
 
     if (deltaTime > m_animationTime) {
         *m_currentPosition = m_desiredPosition;
         reset();
         return false;
     }
-    if (deltaTime < m_attackTime)
-        newPosition = attackCurve(m_attackCurve, deltaTime, m_attackTime, m_startPosition, m_attackPosition);
-    else if (deltaTime < (m_animationTime - m_releaseTime))
-        newPosition = m_attackPosition + (deltaTime - m_attackTime) * m_desiredVelocity;
-    else {
-        // release is based on targeting the exact final position.
-        double releaseDeltaT = deltaTime - (m_animationTime - m_releaseTime);
-        newPosition = releaseCurve(m_releaseCurve, releaseDeltaT, m_releaseTime, m_releasePosition, m_desiredPosition);
-    }
-
+    double newPosition = newScrollAnimationPosition(deltaTime);
     // Normalize velocity to a per second amount. Could be used to check for jank.
     if (lastScrollInterval > 0)
         m_currentVelocity = (newPosition - *m_currentPosition) / lastScrollInterval;
@@ -437,17 +438,17 @@ void ScrollAnimatorNone::scrollToOffsetWithoutAnimation(const FloatPoint& offset
 {
     stopAnimationTimerIfNeeded();
 
-    FloatSize delta = FloatSize(offset.x() - *m_horizontalData.m_currentPosition, offset.y() - *m_verticalData.m_currentPosition);
-
     m_horizontalData.reset();
     *m_horizontalData.m_currentPosition = offset.x();
     m_horizontalData.m_desiredPosition = offset.x();
+    m_currentPosX = offset.x();
 
     m_verticalData.reset();
     *m_verticalData.m_currentPosition = offset.y();
     m_verticalData.m_desiredPosition = offset.y();
+    m_currentPosY = offset.y();
 
-    notifyPositionChanged(delta);
+    notifyPositionChanged();
 }
 
 void ScrollAnimatorNone::cancelAnimations()
@@ -500,7 +501,7 @@ void ScrollAnimatorNone::animationTimerFired()
         m_animationActive = false;
 
     TRACE_EVENT0("webkit", "ScrollAnimatorNone::notifyPositionChanged");
-    notifyPositionChanged(FloatSize());
+    notifyPositionChanged();
 
     if (!continueAnimation)
         animationDidFinish();

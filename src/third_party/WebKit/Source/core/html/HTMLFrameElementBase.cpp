@@ -33,6 +33,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderPart.h"
@@ -91,9 +92,9 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
 
     if (!loadOrRedirectSubframe(url, m_frameName, lockBackForwardList))
         return;
-    if (!contentFrame() || scriptURL.isEmpty())
+    if (!contentFrame() || scriptURL.isEmpty() || !contentFrame()->isLocalFrame())
         return;
-    contentFrame()->script().executeScriptIfJavaScriptURL(scriptURL);
+    toLocalFrame(contentFrame())->script().executeScriptIfJavaScriptURL(scriptURL);
 }
 
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -158,17 +159,12 @@ void HTMLFrameElementBase::attach(const AttachContext& context)
 {
     HTMLFrameOwnerElement::attach(context);
 
-    if (RenderPart* part = renderPart()) {
-        if (LocalFrame* frame = contentFrame())
-            part->setWidget(frame->view());
+    if (renderPart()) {
+        if (Frame* frame = contentFrame()) {
+            if (frame->isLocalFrame())
+                setWidget(toLocalFrame(frame)->view());
+        }
     }
-}
-
-KURL HTMLFrameElementBase::location() const
-{
-    if (fastHasAttribute(srcdocAttr))
-        return KURL(ParsedURLString, "about:srcdoc");
-    return document().completeURL(getAttribute(srcAttr));
 }
 
 void HTMLFrameElementBase::setLocation(const String& str)
@@ -225,6 +221,17 @@ int HTMLFrameElementBase::height()
     if (!renderBox())
         return 0;
     return renderBox()->height();
+}
+
+// FIXME: Remove this code once we have input routing in the browser
+// process. See http://crbug.com/339659.
+void HTMLFrameElementBase::defaultEventHandler(Event* event)
+{
+    if (contentFrame() && contentFrame()->isRemoteFrameTemporary()) {
+        contentFrame()->chromeClient().forwardInputEvent(contentFrame(), event);
+        return;
+    }
+    HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
 } // namespace WebCore

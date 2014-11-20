@@ -43,6 +43,7 @@ class InsertionPoint;
 class ShadowRootRareData;
 
 class ShadowRoot FINAL : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
     friend class WTF::DoublyLinkedListNode<ShadowRoot>;
 public:
     // FIXME: We will support multiple shadow subtrees, however current implementation does not work well
@@ -63,6 +64,7 @@ public:
 
     // Disambiguate between Node and TreeScope hierarchies; TreeScope's implementation is simpler.
     using TreeScope::document;
+    using TreeScope::getElementById;
 
     Element* host() const { return toElement(parentOrShadowHostNode()); }
     ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
@@ -110,9 +112,6 @@ public:
 public:
     Element* activeElement() const;
 
-    bool applyAuthorStyles() const { return m_applyAuthorStyles; }
-    void setApplyAuthorStyles(bool);
-
     ShadowRoot* olderShadowRoot() const { return next(); }
 
     String innerHTML() const;
@@ -123,11 +122,16 @@ public:
 
     StyleSheetList* styleSheets();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     ShadowRoot(Document&, ShadowRootType);
     virtual ~ShadowRoot();
 
+#if !ENABLE(OILPAN)
     virtual void dispose() OVERRIDE;
+#endif
+
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
 
     ShadowRootRareData* ensureShadowRootRareData();
@@ -142,11 +146,10 @@ private:
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
     bool isOrphan() const { return !host(); }
 
-    ShadowRoot* m_prev;
-    ShadowRoot* m_next;
-    OwnPtr<ShadowRootRareData> m_shadowRootRareData;
+    RawPtrWillBeMember<ShadowRoot> m_prev;
+    RawPtrWillBeMember<ShadowRoot> m_next;
+    OwnPtrWillBeMember<ShadowRootRareData> m_shadowRootRareData;
     unsigned m_numberOfStyles : 27;
-    unsigned m_applyAuthorStyles : 1;
     unsigned m_type : 1;
     unsigned m_registeredWithParentShadowRoot : 1;
     unsigned m_descendantInsertionPointsIsValid : 1;

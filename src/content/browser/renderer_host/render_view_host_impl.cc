@@ -39,19 +39,20 @@
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_switches_internal.h"
-#include "content/common/desktop_notification_messages.h"
 #include "content/common/drag_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/render_widget_host_view_port.h"
+#include "content/common/web_ui_setup.mojom.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -63,6 +64,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
@@ -72,6 +74,7 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "net/base/filename_util.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -204,17 +207,16 @@ RenderViewHostImpl::RenderViewHostImpl(
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
       navigations_suspended_(false),
-      has_accessed_initial_document_(false),
       main_frame_routing_id_(main_frame_routing_id),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
       is_waiting_for_beforeunload_ack_(false),
       unload_ack_is_for_cross_site_transition_(false),
-      are_javascript_messages_suppressed_(false),
       sudden_termination_allowed_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
-      weak_factory_(this) {
+      weak_factory_(this),
+      is_focused_element_editable_(false) {
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -275,7 +277,8 @@ SiteInstance* RenderViewHostImpl::GetSiteInstance() const {
 bool RenderViewHostImpl::CreateRenderView(
     const base::string16& frame_name,
     int opener_route_id,
-    int32 max_page_id) {
+    int32 max_page_id,
+    bool window_was_created_with_opener) {
   TRACE_EVENT0("renderer_host", "RenderViewHostImpl::CreateRenderView");
   DCHECK(!IsRenderViewLive()) << "Creating view twice";
 
@@ -313,6 +316,8 @@ bool RenderViewHostImpl::CreateRenderView(
   params.opener_route_id = opener_route_id;
   params.swapped_out = !IsRVHStateActive(rvh_state_);
   params.hidden = is_hidden();
+  params.never_visible = delegate_->IsNeverVisible();
+  params.window_was_created_with_opener = window_was_created_with_opener;
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
   params.accessibility_mode = accessibility_mode();
@@ -368,10 +373,8 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       !command_line.HasSwitch(switches::kDisableLocalStorage);
   prefs.databases_enabled =
       !command_line.HasSwitch(switches::kDisableDatabases);
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-  prefs.webaudio_enabled =
-      command_line.HasSwitch(switches::kEnableWebAudio);
-#else
+#if defined(OS_ANDROID)
+  // WebAudio is enabled by default on x86 and ARM.
   prefs.webaudio_enabled =
       !command_line.HasSwitch(switches::kDisableWebAudio);
 #endif
@@ -403,20 +406,12 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.allow_file_access_from_file_urls =
       command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
 
-  prefs.layer_squashing_enabled = false;
+  prefs.layer_squashing_enabled = true;
   if (command_line.HasSwitch(switches::kEnableLayerSquashing))
       prefs.layer_squashing_enabled = true;
   if (command_line.HasSwitch(switches::kDisableLayerSquashing))
       prefs.layer_squashing_enabled = false;
 
-  prefs.show_paint_rects =
-      command_line.HasSwitch(switches::kShowPaintRects);
-  prefs.accelerated_compositing_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableAcceleratedCompositing);
-  prefs.force_compositing_mode =
-      content::IsForceCompositingModeEnabled() &&
-      !command_line.HasSwitch(switches::kDisableForceCompositingMode);
   prefs.accelerated_2d_canvas_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
@@ -427,21 +422,14 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
   prefs.deferred_filters_enabled =
       command_line.HasSwitch(switches::kEnableDeferredFilters);
-  prefs.accelerated_compositing_for_3d_transforms_enabled =
-      prefs.accelerated_compositing_for_animation_enabled =
-          !command_line.HasSwitch(switches::kDisableAcceleratedLayers);
-  prefs.accelerated_compositing_for_plugins_enabled = true;
-  prefs.accelerated_compositing_for_video_enabled =
-      !command_line.HasSwitch(switches::kDisableAcceleratedVideo);
+  prefs.container_culling_enabled =
+      command_line.HasSwitch(switches::kEnableContainerCulling);
   prefs.lazy_layout_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
-  prefs.threaded_html_parser =
-      !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
-  prefs.experimental_websocket_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebSocket);
-  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
+
+  if (IsPinchVirtualViewportEnabled()) {
     prefs.pinch_virtual_viewport_enabled = true;
     prefs.pinch_overlay_scrollbar_thickness = 10;
   }
@@ -450,8 +438,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
 #if defined(OS_ANDROID)
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
       switches::kDisableGestureRequirementForMediaPlayback);
-  prefs.user_gesture_required_for_media_fullscreen = !command_line.HasSwitch(
-      switches::kDisableGestureRequirementForMediaFullscreen);
 #endif
 
   prefs.touch_enabled = ui::AreTouchEventsEnabled();
@@ -466,10 +452,7 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
   prefs.compositor_touch_hit_testing =
-      !command_line.HasSwitch(
-           cc::switches::kDisableCompositorTouchHitTesting) &&
-      !command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths);
-
+      !command_line.HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
@@ -481,9 +464,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
     prefs.enable_scroll_animator = true;
   if (command_line.HasSwitch(switches::kDisableSmoothScrolling))
     prefs.enable_scroll_animator = false;
-
-  prefs.visual_word_movement_enabled =
-      command_line.HasSwitch(switches::kEnableVisualWordMovement);
 
   // Certain GPU features might have been blacklisted.
   GpuDataManagerImpl::GetInstance()->UpdateRendererWebPrefs(&prefs);
@@ -522,16 +502,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       switches::kEnableSpatialNavigation);
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
-
-  // Disable compositing in guests until we have compositing path implemented
-  // for guests.
-  bool guest_compositing_enabled = !command_line.HasSwitch(
-      switches::kDisableBrowserPluginCompositing);
-  if (GetProcess()->IsGuest() && !guest_compositing_enabled) {
-    prefs.force_compositing_mode = false;
-    prefs.accelerated_compositing_enabled = false;
-  }
-
   return prefs;
 }
 
@@ -703,24 +673,6 @@ void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
-#if defined(OS_ANDROID)
-void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
-                                                   float x,
-                                                   float y) {
-  Send(new InputMsg_ActivateNearestFindResult(GetRoutingID(),
-                                              request_id, x, y));
-}
-
-void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
-  Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
-}
-
-void RenderViewHostImpl::DisableFullscreenEncryptedMediaPlayback() {
-  media_player_manager_->DisableFullscreenEncryptedMediaPlayback();
-}
-#endif
-
-#if defined(USE_MOJO)
 void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
   // Never grant any bindings to browser plugin guests.
   if (GetProcess()->IsGuest()) {
@@ -734,9 +686,24 @@ void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
   }
 
   DCHECK(renderer_initialized_);
-  RenderProcessHostImpl* process =
-      static_cast<RenderProcessHostImpl*>(GetProcess());
-  process->SetWebUIHandle(GetRoutingID(), handle.Pass());
+
+  WebUISetupPtr web_ui_setup;
+  static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
+      kRendererService_WebUISetup, &web_ui_setup);
+
+  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
+}
+
+#if defined(OS_ANDROID)
+void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
+                                                   float x,
+                                                   float y) {
+  Send(new InputMsg_ActivateNearestFindResult(GetRoutingID(),
+                                              request_id, x, y));
+}
+
+void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
+  Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
 }
 #endif
 
@@ -804,6 +771,28 @@ void RenderViewHostImpl::DragTargetDragEnter(
   }
   filtered_data.filesystem_id = base::UTF8ToUTF16(filesystem_id);
 
+  fileapi::FileSystemContext* file_system_context =
+      BrowserContext::GetStoragePartition(
+          GetProcess()->GetBrowserContext(),
+          GetSiteInstance())->GetFileSystemContext();
+  for (size_t i = 0; i < filtered_data.file_system_files.size(); ++i) {
+    fileapi::FileSystemURL file_system_url =
+        file_system_context->CrackURL(filtered_data.file_system_files[i].url);
+
+    std::string register_name;
+    std::string filesystem_id = isolated_context->RegisterFileSystemForPath(
+        file_system_url.type(), file_system_url.path(), &register_name);
+    policy->GrantReadFileSystem(renderer_id, filesystem_id);
+
+    // Note: We are using the origin URL provided by the sender here. It may be
+    // different from the receiver's.
+    filtered_data.file_system_files[i].url = GURL(
+        fileapi::GetIsolatedFileSystemRootURIString(
+            file_system_url.origin(),
+            filesystem_id,
+            std::string()).append(register_name));
+  }
+
   Send(new DragMsg_TargetDragEnter(GetRoutingID(), filtered_data, client_pt,
                                    screen_pt, operations_allowed,
                                    key_modifiers));
@@ -830,100 +819,13 @@ void RenderViewHostImpl::DragTargetDrop(
                               key_modifiers));
 }
 
-void RenderViewHostImpl::DesktopNotificationPermissionRequestDone(
-    int callback_context) {
-  Send(new DesktopNotificationMsg_PermissionRequestDone(
-      GetRoutingID(), callback_context));
-}
-
-void RenderViewHostImpl::DesktopNotificationPostDisplay(int callback_context) {
-  Send(new DesktopNotificationMsg_PostDisplay(GetRoutingID(),
-                                              callback_context));
-}
-
-void RenderViewHostImpl::DesktopNotificationPostError(
-    int notification_id,
-    const base::string16& message) {
-  Send(new DesktopNotificationMsg_PostError(
-      GetRoutingID(), notification_id, message));
-}
-
-void RenderViewHostImpl::DesktopNotificationPostClose(int notification_id,
-                                                      bool by_user) {
-  Send(new DesktopNotificationMsg_PostClose(
-      GetRoutingID(), notification_id, by_user));
-}
-
-void RenderViewHostImpl::DesktopNotificationPostClick(int notification_id) {
-  Send(new DesktopNotificationMsg_PostClick(GetRoutingID(), notification_id));
-}
-
-void RenderViewHostImpl::ExecuteJavascriptInWebFrame(
-    const base::string16& frame_xpath,
-    const base::string16& jscript) {
-  Send(new ViewMsg_ScriptEvalRequest(GetRoutingID(), frame_xpath, jscript,
-                                     0, false));
-}
-
-void RenderViewHostImpl::ExecuteJavascriptInWebFrameCallbackResult(
-     const base::string16& frame_xpath,
-     const base::string16& jscript,
-     const JavascriptResultCallback& callback) {
-  static int next_id = 1;
-  int key = next_id++;
-  Send(new ViewMsg_ScriptEvalRequest(GetRoutingID(), frame_xpath, jscript,
-                                     key, true));
-  javascript_callbacks_.insert(std::make_pair(key, callback));
-}
-
-void RenderViewHostImpl::JavaScriptDialogClosed(
-    IPC::Message* reply_msg,
-    bool success,
-    const base::string16& user_input) {
-  GetProcess()->SetIgnoreInputEvents(false);
-  bool is_waiting = is_waiting_for_beforeunload_ack_ || IsWaitingForUnloadACK();
-
-  // If we are executing as part of (before)unload event handling, we don't
-  // want to use the regular hung_renderer_delay_ms_ if the user has agreed to
-  // leave the current page. In this case, use the regular timeout value used
-  // during the (before)unload handling.
-  if (is_waiting) {
-    StartHangMonitorTimeout(TimeDelta::FromMilliseconds(
-        success ? kUnloadTimeoutMS : hung_renderer_delay_ms_));
-  }
-
-  ViewHostMsg_RunJavaScriptMessage::WriteReplyParams(reply_msg,
-                                                     success, user_input);
-  Send(reply_msg);
-
-  // If we are waiting for an unload or beforeunload ack and the user has
-  // suppressed messages, kill the tab immediately; a page that's spamming
-  // alerts in onbeforeunload is presumably malicious, so there's no point in
-  // continuing to run its script and dragging out the process.
-  // This must be done after sending the reply since RenderView can't close
-  // correctly while waiting for a response.
-  if (is_waiting && are_javascript_messages_suppressed_)
-    delegate_->RendererUnresponsive(
-        this, is_waiting_for_beforeunload_ack_, IsWaitingForUnloadACK());
-}
-
 void RenderViewHostImpl::DragSourceEndedAt(
     int client_x, int client_y, int screen_x, int screen_y,
     WebDragOperation operation) {
-  Send(new DragMsg_SourceEndedOrMoved(
-      GetRoutingID(),
-      gfx::Point(client_x, client_y),
-      gfx::Point(screen_x, screen_y),
-      true, operation));
-}
-
-void RenderViewHostImpl::DragSourceMovedTo(
-    int client_x, int client_y, int screen_x, int screen_y) {
-  Send(new DragMsg_SourceEndedOrMoved(
-      GetRoutingID(),
-      gfx::Point(client_x, client_y),
-      gfx::Point(screen_x, screen_y),
-      false, WebDragOperationNone));
+  Send(new DragMsg_SourceEnded(GetRoutingID(),
+                               gfx::Point(client_x, client_y),
+                               gfx::Point(screen_x, screen_y),
+                               operation));
 }
 
 void RenderViewHostImpl::DragSourceSystemDragEnded() {
@@ -951,7 +853,9 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
     // than this single active view.
     RenderProcessHostImpl* process =
         static_cast<RenderProcessHostImpl*>(GetProcess());
-    if (process->GetActiveViewCount() > 1)
+    // --single-process only has one renderer.
+    if (process->GetActiveViewCount() > 1 &&
+        !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
       return;
   }
 
@@ -1098,18 +1002,13 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeLoadProgress,
                         OnDidChangeLoadProgress)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidDisownOpener, OnDidDisownOpener)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentAvailableInMainFrame,
                         OnDocumentAvailableInMainFrame)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentOnLoadCompletedInMainFrame,
-                        OnDocumentOnLoadCompletedInMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ToggleFullscreen, OnToggleFullscreen)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidContentsPreferredSizeChange,
                         OnDidContentsPreferredSizeChange)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffset,
                         OnDidChangeScrollOffset)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollbarsForMainFrame,
-                        OnDidChangeScrollbarsForMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
                         OnDidChangeScrollOffsetPinningForMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeNumWheelEvents,
@@ -1117,36 +1016,22 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteCloseEvent,
                         OnRouteCloseEvent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteMessageEvent, OnRouteMessageEvent)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunJavaScriptMessage,
-                                    OnRunJavaScriptMessage)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunBeforeUnloadConfirm,
-                                    OnRunBeforeUnloadConfirm)
     IPC_MESSAGE_HANDLER(DragHostMsg_StartDragging, OnStartDragging)
     IPC_MESSAGE_HANDLER(DragHostMsg_UpdateDragCursor, OnUpdateDragCursor)
     IPC_MESSAGE_HANDLER(DragHostMsg_TargetDrop_ACK, OnTargetDropACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionRootBoundsChanged,
                         OnSelectionRootBoundsChanged)
 #endif
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ScriptEvalResponse, OnScriptEvalResponse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
-                        OnRequestDesktopNotificationPermission)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
-                        OnShowDesktopNotification)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
-                        OnCancelDesktopNotification)
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowPopup, OnShowPopup)
     IPC_MESSAGE_HANDLER(ViewHostMsg_HidePopup, OnHidePopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidAccessInitialDocument,
-                        OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
                         OnAccessibilityLocationChanges)
@@ -1184,6 +1069,15 @@ void RenderViewHostImpl::Shutdown() {
       opener->increment_in_flight_event_count();
     }
     run_modal_opener_id_ = MSG_ROUTING_NONE;
+  }
+
+  // We can't release the SessionStorageNamespace until our peer
+  // in the renderer has wound down.
+  if (GetProcess()->HasConnection()) {
+    RenderProcessHostImpl::ReleaseOnCloseACK(
+        GetProcess(),
+        delegate_->GetSessionStorageNamespaceMap(),
+        GetRoutingID());
   }
 
   RenderWidgetHostImpl::Shutdown();
@@ -1347,21 +1241,12 @@ void RenderViewHostImpl::OnDidChangeLoadProgress(double load_progress) {
   delegate_->DidChangeLoadProgress(load_progress);
 }
 
-void RenderViewHostImpl::OnDidDisownOpener() {
-  delegate_->DidDisownOpener(this);
-}
-
 void RenderViewHostImpl::OnDocumentAvailableInMainFrame() {
   delegate_->DocumentAvailableInMainFrame(this);
 }
 
-void RenderViewHostImpl::OnDocumentOnLoadCompletedInMainFrame(
-    int32 page_id) {
-  delegate_->DocumentOnLoadCompletedInMainFrame(this, page_id);
-}
-
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   delegate_->ToggleFullscreenMode(enter_fullscreen);
   // We need to notify the contents that its fullscreen state has changed. This
   // is done as part of the resize message.
@@ -1380,12 +1265,6 @@ void RenderViewHostImpl::OnRenderAutoResized(const gfx::Size& new_size) {
 void RenderViewHostImpl::OnDidChangeScrollOffset() {
   if (view_)
     view_->ScrollOffsetChanged();
-}
-
-void RenderViewHostImpl::OnDidChangeScrollbarsForMainFrame(
-    bool has_horizontal_scrollbar, bool has_vertical_scrollbar) {
-  if (view_)
-    view_->SetHasHorizontalScrollbar(has_horizontal_scrollbar);
 }
 
 void RenderViewHostImpl::OnDidChangeScrollOffsetPinningForMainFrame(
@@ -1415,32 +1294,6 @@ void RenderViewHostImpl::OnRouteMessageEvent(
     const ViewMsg_PostMessage_Params& params) {
   // Give to the delegate to route to the active RenderViewHost.
   delegate_->RouteMessageEvent(this, params);
-}
-
-void RenderViewHostImpl::OnRunJavaScriptMessage(
-    const base::string16& message,
-    const base::string16& default_prompt,
-    const GURL& frame_url,
-    JavaScriptMessageType type,
-    IPC::Message* reply_msg) {
-  // While a JS message dialog is showing, tabs in the same process shouldn't
-  // process input events.
-  GetProcess()->SetIgnoreInputEvents(true);
-  StopHangMonitorTimeout();
-  delegate_->RunJavaScriptMessage(this, message, default_prompt, frame_url,
-                                  type, reply_msg,
-                                  &are_javascript_messages_suppressed_);
-}
-
-void RenderViewHostImpl::OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                                  const base::string16& message,
-                                                  bool is_reload,
-                                                  IPC::Message* reply_msg) {
-  // While a JS before unload dialog is showing, tabs in the same process
-  // shouldn't process input events.
-  GetProcess()->SetIgnoreInputEvents(true);
-  StopHangMonitorTimeout();
-  delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
 }
 
 void RenderViewHostImpl::OnStartDragging(
@@ -1478,6 +1331,19 @@ void RenderViewHostImpl::OnStartDragging(
     if (policy->CanReadFile(GetProcess()->GetID(), it->path))
       filtered_data.filenames.push_back(*it);
   }
+
+  fileapi::FileSystemContext* file_system_context =
+      BrowserContext::GetStoragePartition(
+          GetProcess()->GetBrowserContext(),
+          GetSiteInstance())->GetFileSystemContext();
+  filtered_data.file_system_files.clear();
+  for (size_t i = 0; i < drop_data.file_system_files.size(); ++i) {
+    fileapi::FileSystemURL file_system_url =
+        file_system_context->CrackURL(drop_data.file_system_files[i].url);
+    if (policy->CanReadFileSystemFile(GetProcess()->GetID(), file_system_url))
+      filtered_data.file_system_files.push_back(drop_data.file_system_files[i]);
+  }
+
   float scale = ui::GetImageScale(GetScaleFactorForView(GetView()));
   gfx::ImageSkia image(gfx::ImageSkiaRep(bitmap, scale));
   view->StartDragging(filtered_data, drag_operations_mask, image,
@@ -1504,6 +1370,7 @@ void RenderViewHostImpl::OnTakeFocus(bool reverse) {
 }
 
 void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
+  is_focused_element_editable_ = is_editable_node;
   if (view_)
     view_->FocusedNodeChanged(is_editable_node);
 #if defined(OS_WIN)
@@ -1519,23 +1386,6 @@ void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
       NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
       Source<RenderViewHost>(this),
       Details<const bool>(&is_editable_node));
-}
-
-void RenderViewHostImpl::OnAddMessageToConsole(
-    int32 level,
-    const base::string16& message,
-    int32 line_no,
-    const base::string16& source_id) {
-  if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
-    return;
-
-  // Pass through log level only on WebUI pages to limit console spew.
-  int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
-
-  if (resolved_level >= ::logging::GetMinLogLevel()) {
-    logging::LogMessage("CONSOLE", line_no, resolved_level).stream() << "\"" <<
-        message << "\", source: " << source_id << " (" << line_no << ")";
-  }
 }
 
 void RenderViewHostImpl::OnUserGesture() {
@@ -1646,14 +1496,6 @@ void RenderViewHostImpl::DidCancelPopupMenu() {
 }
 #endif
 
-void RenderViewHostImpl::SendOrientationChangeEvent(int orientation) {
-  Send(new ViewMsg_OrientationChangeEvent(GetRoutingID(), orientation));
-}
-
-void RenderViewHostImpl::ToggleSpeechInput() {
-  Send(new InputTagSpeechMsg_ToggleSpeechInput(GetRoutingID()));
-}
-
 bool RenderViewHostImpl::IsWaitingForUnloadACK() const {
   return rvh_state_ == STATE_WAITING_FOR_UNLOAD_ACK ||
          rvh_state_ == STATE_WAITING_FOR_CLOSE ||
@@ -1695,15 +1537,16 @@ void RenderViewHostImpl::GetAudioOutputControllers(
 }
 
 void RenderViewHostImpl::ClearFocusedElement() {
+  is_focused_element_editable_ = false;
   Send(new ViewMsg_ClearFocusedElement(GetRoutingID()));
+}
+
+bool RenderViewHostImpl::IsFocusedElementEditable() {
+  return is_focused_element_editable_;
 }
 
 void RenderViewHostImpl::Zoom(PageZoom zoom) {
   Send(new ViewMsg_Zoom(GetRoutingID(), zoom));
-}
-
-void RenderViewHostImpl::ReloadFrame() {
-  Send(new ViewMsg_ReloadFrame(GetRoutingID()));
 }
 
 void RenderViewHostImpl::DisableScrollbarsForThreshold(const gfx::Size& size) {
@@ -1727,6 +1570,10 @@ void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
 
 void RenderViewHostImpl::CopyImageAt(int x, int y) {
   Send(new ViewMsg_CopyImageAt(GetRoutingID(), x, y));
+}
+
+void RenderViewHostImpl::SaveImageAt(int x, int y) {
+  Send(new ViewMsg_SaveImageAt(GetRoutingID(), x, y));
 }
 
 void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(
@@ -1758,8 +1605,11 @@ void RenderViewHostImpl::OnAccessibilityEvents(
     std::vector<AXEventNotificationDetails> details;
     for (unsigned int i = 0; i < params.size(); ++i) {
       const AccessibilityHostMsg_EventParams& param = params[i];
-      AXEventNotificationDetails detail(
-          param.nodes, param.event_type, param.id, GetRoutingID());
+      AXEventNotificationDetails detail(param.update.nodes,
+                                        param.event_type,
+                                        param.id,
+                                        GetProcess()->GetID(),
+                                        GetRoutingID());
       details.push_back(detail);
     }
 
@@ -1778,12 +1628,10 @@ void RenderViewHostImpl::OnAccessibilityEvents(
     const AccessibilityHostMsg_EventParams& param = params[i];
     if (static_cast<int>(param.event_type) < 0)
       continue;
-    ui::AXTreeUpdate update;
-    update.nodes = param.nodes;
     if (!ax_tree_)
-      ax_tree_.reset(new ui::AXTree(update));
+      ax_tree_.reset(new ui::AXTree(param.update));
     else
-      CHECK(ax_tree_->Unserialize(update)) << ax_tree_->error();
+      CHECK(ax_tree_->Unserialize(param.update)) << ax_tree_->error();
     accessibility_testing_callback_.Run(param.event_type);
   }
 }
@@ -1802,26 +1650,6 @@ void RenderViewHostImpl::OnAccessibilityLocationChanges(
   }
 }
 
-void RenderViewHostImpl::OnScriptEvalResponse(int id,
-                                              const base::ListValue& result) {
-  const base::Value* result_value;
-  if (!result.Get(0, &result_value)) {
-    // Programming error or rogue renderer.
-    NOTREACHED() << "Got bad arguments for OnScriptEvalResponse";
-    return;
-  }
-
-  std::map<int, JavascriptResultCallback>::iterator it =
-      javascript_callbacks_.find(id);
-  if (it != javascript_callbacks_.end()) {
-    // ExecuteJavascriptInWebFrameCallbackResult was used; do callback.
-    it->second.Run(result_value);
-    javascript_callbacks_.erase(it);
-  } else {
-    NOTREACHED() << "Received script response for unknown request";
-  }
-}
-
 void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
                                       bool remember,
                                       const GURL& url) {
@@ -1836,30 +1664,8 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
   }
 }
 
-void RenderViewHostImpl::OnRequestDesktopNotificationPermission(
-    const GURL& source_origin, int callback_context) {
-  GetContentClient()->browser()->RequestDesktopNotificationPermission(
-      source_origin, callback_context, GetProcess()->GetID(), GetRoutingID());
-}
-
-void RenderViewHostImpl::OnShowDesktopNotification(
-    const ShowDesktopNotificationHostMsgParams& params) {
-  GetContentClient()->browser()->ShowDesktopNotification(
-      params, GetProcess()->GetID(), GetRoutingID(), false);
-}
-
-void RenderViewHostImpl::OnCancelDesktopNotification(int notification_id) {
-  GetContentClient()->browser()->CancelDesktopNotification(
-      GetProcess()->GetID(), GetRoutingID(), notification_id);
-}
-
 void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {
   delegate_->RunFileChooser(this, params);
-}
-
-void RenderViewHostImpl::OnDidAccessInitialDocument() {
-  has_accessed_initial_document_ = true;
-  delegate_->DidAccessInitialDocument();
 }
 
 void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {

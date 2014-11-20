@@ -35,6 +35,7 @@
 #include "WebCryptoAlgorithm.h"
 #include "WebCryptoKey.h"
 #include "WebPrivatePtr.h"
+#include "WebString.h"
 #include "WebVector.h"
 
 namespace WebCore { class CryptoResult; }
@@ -47,6 +48,17 @@ namespace blink {
 
 class WebArrayBuffer;
 class WebString;
+
+enum WebCryptoErrorType {
+    WebCryptoErrorTypeType,
+    WebCryptoErrorTypeNotSupported,
+    WebCryptoErrorTypeSyntax,
+    WebCryptoErrorTypeInvalidState,
+    WebCryptoErrorTypeInvalidAccess,
+    WebCryptoErrorTypeUnknown,
+    WebCryptoErrorTypeData,
+    WebCryptoErrorTypeOperation,
+};
 
 class WebCryptoResult {
 public:
@@ -66,15 +78,13 @@ public:
         return *this;
     }
 
-    BLINK_PLATFORM_EXPORT void completeWithError();
-
     // Note that WebString is NOT safe to pass across threads.
     //
-    // Error details are intended to be displayed to developers for debugging.
-    // They MUST NEVER reveal any secret information such as bytes of the key
-    // or plain text. An appropriate error would be something like:
+    // Error details are surfaced in an exception, and MUST NEVER reveal any
+    // secret information such as bytes of the key or plain text. An
+    // appropriate error would be something like:
     //   "iv must be 16 bytes long".
-    BLINK_PLATFORM_EXPORT void completeWithError(const WebString&);
+    BLINK_PLATFORM_EXPORT void completeWithError(WebCryptoErrorType, const WebString&);
 
     // Note that WebArrayBuffer is NOT safe to create from another thread.
     BLINK_PLATFORM_EXPORT void completeWithBuffer(const WebArrayBuffer&);
@@ -139,19 +149,21 @@ public:
     // Threading
     // -----------------------
     //
-    // The WebCrypto interface will only be called from the render's main
-    // thread. All communication back to Blink must be on this same thread.
+    // The WebCrypto interface will be called from blink threads (main or
+    // web worker). All communication back to Blink must be on this same thread.
+    //
     // Notably:
     //
-    //   * The WebCryptoResult is NOT threadsafe. It should only be used from
-    //     the Blink main thread.
+    //   * The WebCryptoResult can be copied between threads, however all
+    //     methods other than the destructor must be called from the origin
+    //     Blink thread.
     //
     //   * WebCryptoKey and WebCryptoAlgorithm ARE threadsafe. They can be
     //     safely copied between threads and accessed. Copying is cheap because
     //     they are internally reference counted.
     //
     //   * WebArrayBuffer is NOT threadsafe. It should only be created from the
-    //     Blink main thread. This means threaded implementations may have to
+    //     target Blink thread. This means threaded implementations may have to
     //     make a copy of the output buffer.
     //
     // -----------------------
@@ -180,33 +192,30 @@ public:
     // them, as they come directly from the user. Few checks have been done on
     // algorithm parameters prior to passing to the embedder.
     //
-    // Only the following checks can be assumed as having alread passed:
+    // Only the following checks can be assumed as having already passed:
     //
     //  * The key is extractable when calling into exportKey/wrapKey.
     //  * The key usages permit the operation being requested.
     //  * The key's algorithm matches that of the requested operation.
     //
-    virtual void encrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
-    virtual void decrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
-    virtual void sign(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
-    virtual void verifySignature(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* signature, unsigned signatureSize, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
-    virtual void digest(const WebCryptoAlgorithm&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
-    virtual void generateKey(const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
-    virtual void importKey(WebCryptoKeyFormat, const unsigned char* keyData, unsigned keyDataSize, const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
-    virtual void exportKey(WebCryptoKeyFormat, const WebCryptoKey&, WebCryptoResult result) { result.completeWithError(); }
-    virtual void wrapKey(WebCryptoKeyFormat, const WebCryptoKey& key, const WebCryptoKey& wrappingKey, const WebCryptoAlgorithm&, WebCryptoResult result) { result.completeWithError(); }
-    virtual void unwrapKey(WebCryptoKeyFormat, const unsigned char* wrappedKey, unsigned wrappedKeySize, const WebCryptoKey&, const WebCryptoAlgorithm& unwrapAlgorithm, const WebCryptoAlgorithm& unwrappedKeyAlgorithm, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
+    virtual void encrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void decrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void sign(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void verifySignature(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* signature, unsigned signatureSize, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void digest(const WebCryptoAlgorithm&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void generateKey(const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void importKey(WebCryptoKeyFormat, const unsigned char* keyData, unsigned keyDataSize, const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void exportKey(WebCryptoKeyFormat, const WebCryptoKey&, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void wrapKey(WebCryptoKeyFormat, const WebCryptoKey& key, const WebCryptoKey& wrappingKey, const WebCryptoAlgorithm&, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
+    virtual void unwrapKey(WebCryptoKeyFormat, const unsigned char* wrappedKey, unsigned wrappedKeySize, const WebCryptoKey&, const WebCryptoAlgorithm& unwrapAlgorithm, const WebCryptoAlgorithm& unwrappedKeyAlgorithm, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(WebCryptoErrorTypeNotSupported, ""); }
 
     // This is the exception to the "Completing the request" guarantees
     // outlined above. This is useful for Blink internal crypto and is not part
-    // of the WebCrypto standard. digestSynchronous returns |true| if the
-    // digest was successfully computed and put into result. Otherwise, returns
-    // |false|. It must compute the digest or fail synchronously.
-    // createDigestor must provide the result via the WebCryptoDigestor object
-    // synchronously. createDigestor may return 0 if it fails to create a
-    // WebCryptoDigestor. If it succeeds, the WebCryptoDigestor returned by
-    // createDigestor must be freed by the caller.
-    virtual bool digestSynchronous(const WebCryptoAlgorithmId algorithmId, const unsigned char* data, unsigned dataSize, WebArrayBuffer& result) { return false; }
+    // of the WebCrypto standard. createDigestor must provide the result via
+    // the WebCryptoDigestor object synchronously. createDigestor may return 0
+    // if it fails to create a WebCryptoDigestor. If it succeeds, the
+    // WebCryptoDigestor returned by createDigestor must be freed by the
+    // caller.
     virtual WebCryptoDigestor* createDigestor(WebCryptoAlgorithmId algorithmId) { return 0; }
 
     // -----------------------

@@ -10,9 +10,11 @@
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_param.h"
 #include "content/common/navigation_gesture.h"
+#include "content/public/common/color_suggestion.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_state.h"
 #include "ipc/ipc_message_macros.h"
 #include "url/gurl.h"
@@ -22,12 +24,19 @@
 
 #define IPC_MESSAGE_START FrameMsgStart
 
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::JavaScriptMessageType,
+                              content::JAVASCRIPT_MESSAGE_TYPE_ALERT,
+                              content::JAVASCRIPT_MESSAGE_TYPE_PROMPT)
 IPC_ENUM_TRAITS_MAX_VALUE(FrameMsg_Navigate_Type::Value,
                           FrameMsg_Navigate_Type::NAVIGATE_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::MediaType,
                           blink::WebContextMenuData::MediaTypeLast)
-
 IPC_ENUM_TRAITS_MAX_VALUE(ui::MenuSourceType, ui::MENU_SOURCE_TYPE_LAST)
+
+IPC_STRUCT_TRAITS_BEGIN(content::ColorSuggestion)
+  IPC_STRUCT_TRAITS_MEMBER(color)
+  IPC_STRUCT_TRAITS_MEMBER(label)
+IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(media_type)
@@ -47,7 +56,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(misspelled_word)
   IPC_STRUCT_TRAITS_MEMBER(misspelling_hash)
   IPC_STRUCT_TRAITS_MEMBER(dictionary_suggestions)
-  IPC_STRUCT_TRAITS_MEMBER(speech_input_enabled)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled)
   IPC_STRUCT_TRAITS_MEMBER(is_editable)
   IPC_STRUCT_TRAITS_MEMBER(writing_direction_default)
@@ -334,8 +342,27 @@ IPC_MESSAGE_ROUTED2(FrameMsg_ExtendSelectionAndDelete,
                     int /* before */,
                     int /* after */)
 
+// Tells the renderer to reload the frame, optionally ignoring the cache while
+// doing so.
+IPC_MESSAGE_ROUTED1(FrameMsg_Reload,
+                    bool /* ignore_cache */)
+
+// Notifies the color chooser client that the user selected a color.
+IPC_MESSAGE_ROUTED2(FrameMsg_DidChooseColorResponse, unsigned, SkColor)
+
+// Notifies the color chooser client that the color chooser has ended.
+IPC_MESSAGE_ROUTED1(FrameMsg_DidEndColorChooser, unsigned)
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
+
+// Blink and JavaScript error messages to log to the console
+// or debugger UI.
+IPC_MESSAGE_ROUTED4(FrameHostMsg_AddMessageToConsole,
+                    int32, /* log level */
+                    base::string16, /* msg */
+                    int32, /* line number */
+                    base::string16 /* source id */ )
 
 // Sent by the renderer when a child frame is created in the renderer.
 //
@@ -400,6 +427,19 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_OpenURL, FrameHostMsg_OpenURL_Params)
 // Notifies the browser that a frame finished loading.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFinishLoad,
                     GURL /* validated_url */)
+
+// Sent when after the onload handler has been invoked for the document
+// in this frame. Sent for top-level frames.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DocumentOnLoadCompleted)
+
+// Notifies that the initial empty document of a view has been accessed.
+// After this, it is no longer safe to show a pending navigation's URL without
+// making a URL spoof possible.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidAccessInitialDocument)
+
+// Sent when the frame sets its opener to null, disowning it for the lifetime of
+// the window. Sent for top-level frames.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidDisownOpener)
 
 // Following message is used to communicate the values received by the
 // callback binding the JS to Cpp.
@@ -507,3 +547,45 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_InitializeChildFrame,
 IPC_MESSAGE_ROUTED2(FrameHostMsg_JavaScriptExecuteResponse,
                     int  /* id */,
                     base::ListValue  /* result */)
+
+// A request to run a JavaScript dialog.
+IPC_SYNC_MESSAGE_ROUTED4_2(FrameHostMsg_RunJavaScriptMessage,
+                           base::string16     /* in - alert message */,
+                           base::string16     /* in - default prompt */,
+                           GURL               /* in - originating page URL */,
+                           content::JavaScriptMessageType /* in - type */,
+                           bool               /* out - success */,
+                           base::string16     /* out - user_input field */)
+
+// Displays a dialog to confirm that the user wants to navigate away from the
+// page. Replies true if yes, and false otherwise. The reply string is ignored,
+// but is included so that we can use OnJavaScriptMessageBoxClosed.
+IPC_SYNC_MESSAGE_ROUTED3_2(FrameHostMsg_RunBeforeUnloadConfirm,
+                           GURL,           /* in - originating frame URL */
+                           base::string16  /* in - alert message */,
+                           bool            /* in - is a reload */,
+                           bool            /* out - success */,
+                           base::string16  /* out - This is ignored.*/)
+
+// Asks the browser to open the color chooser.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_OpenColorChooser,
+                    int /* id */,
+                    SkColor /* color */,
+                    std::vector<content::ColorSuggestion> /* suggestions */)
+
+// Asks the browser to end the color chooser.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_EndColorChooser, int /* id */)
+
+// Change the selected color in the color chooser.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_SetSelectedColorInColorChooser,
+                    int /* id */,
+                    SkColor /* color */)
+
+// Notifies the browser that media has started/stopped playing.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
+                    int64 /* player_cookie, distinguishes instances */,
+                    bool /* has_video */,
+                    bool /* has_audio */)
+
+IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
+                    int64 /* player_cookie, distinguishes instances */)

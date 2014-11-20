@@ -30,6 +30,7 @@
 
 #include "platform/network/FormData.h"
 #include "platform/network/HTTPHeaderMap.h"
+#include "platform/network/HTTPParsers.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
@@ -135,7 +136,6 @@ public:
 
     const AtomicString& httpContentType() const { return httpHeaderField("Content-Type");  }
     void setHTTPContentType(const AtomicString& httpContentType) { setHTTPHeaderField("Content-Type", httpContentType); }
-    void clearHTTPContentType();
 
     const AtomicString& httpReferrer() const { return httpHeaderField("Referer"); }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
@@ -152,7 +152,6 @@ public:
 
     const AtomicString& httpAccept() const { return httpHeaderField("Accept"); }
     void setHTTPAccept(const AtomicString& httpAccept) { setHTTPHeaderField("Accept", httpAccept); }
-    void clearHTTPAccept();
 
     FormData* httpBody() const;
     void setHTTPBody(PassRefPtr<FormData> httpBody);
@@ -209,6 +208,10 @@ public:
     TargetType targetType() const { return m_targetType; }
     void setTargetType(TargetType type) { m_targetType = type; }
 
+    bool cacheControlContainsNoCache();
+    bool cacheControlContainsNoStore();
+    bool hasCacheValidatorFields();
+
     static double defaultTimeoutInterval(); // May return 0 when using platform default.
     static void setDefaultTimeoutInterval(double);
 
@@ -238,6 +241,7 @@ private:
     RefPtr<ExtraData> m_extraData;
     TargetType m_targetType;
     ReferrerPolicy m_referrerPolicy;
+    CacheControlHeader m_cacheControlHeader;
 
     static double s_defaultTimeoutInterval;
 };

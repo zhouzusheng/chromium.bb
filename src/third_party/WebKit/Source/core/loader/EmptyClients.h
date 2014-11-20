@@ -105,7 +105,7 @@ public:
     virtual void setResizable(bool) OVERRIDE { }
 
     virtual bool shouldReportDetailedMessageForSource(const String&) OVERRIDE { return false; }
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) OVERRIDE { }
+    virtual void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) OVERRIDE { }
 
     virtual bool canRunBeforeUnloadConfirmPanel() OVERRIDE { return false; }
     virtual bool runBeforeUnloadConfirmPanel(const String&, LocalFrame*) OVERRIDE { return true; }
@@ -146,7 +146,7 @@ public:
 
     virtual void enumerateChosenDirectory(FileChooser*) OVERRIDE { }
 
-    virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) OVERRIDE;
+    virtual PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) OVERRIDE;
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
     virtual void openTextDataListChooser(HTMLInputElement&) OVERRIDE;
 
@@ -212,9 +212,9 @@ public:
     virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) OVERRIDE;
     virtual void dispatchWillSubmitForm(HTMLFormElement*) OVERRIDE;
 
-    virtual void postProgressStartedNotification(LoadStartType) OVERRIDE { }
-    virtual void postProgressEstimateChangedNotification() OVERRIDE { }
-    virtual void postProgressFinishedNotification() OVERRIDE { }
+    virtual void didStartLoading(LoadStartType) OVERRIDE { }
+    virtual void progressEstimateChanged(double) OVERRIDE { }
+    virtual void didStopLoading() OVERRIDE { }
 
     virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& = String()) OVERRIDE { }
 
@@ -234,11 +234,12 @@ public:
     virtual void selectorMatchChanged(const Vector<String>&, const Vector<String>&) OVERRIDE { }
     virtual PassRefPtr<LocalFrame> createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*) OVERRIDE;
     virtual PassRefPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) OVERRIDE;
+    virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const OVERRIDE { return false; }
     virtual PassRefPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) OVERRIDE;
 
     virtual ObjectContentType objectContentType(const KURL&, const String&, bool) OVERRIDE { return ObjectContentType(); }
 
-    virtual void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*) OVERRIDE { }
+    virtual void dispatchDidClearWindowObjectInMainWorld() OVERRIDE { }
     virtual void documentElementAvailable() OVERRIDE { }
 
     virtual void didCreateScriptContext(v8::Handle<v8::Context>, int extensionGroup, int worldId) OVERRIDE { }
@@ -247,7 +248,7 @@ public:
 
     virtual blink::WebCookieJar* cookieJar() const OVERRIDE { return 0; }
 
-    virtual void didRequestAutocomplete(HTMLFormElement*) OVERRIDE;
+    virtual void didRequestAutocomplete(HTMLFormElement*, const Dictionary&) OVERRIDE;
 
     virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider() OVERRIDE;
     virtual PassOwnPtr<blink::WebApplicationCacheHost> createApplicationCacheHost(blink::WebApplicationCacheHostClient*) OVERRIDE;

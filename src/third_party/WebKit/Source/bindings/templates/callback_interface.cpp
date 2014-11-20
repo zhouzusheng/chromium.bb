@@ -16,10 +16,10 @@ namespace WebCore {
 
 {{v8_class}}::{{v8_class}}(v8::Handle<v8::Function> callback, ExecutionContext* context)
     : ActiveDOMCallback(context)
-    , m_isolate(toIsolate(context))
-    , m_callback(m_isolate, callback)
-    , m_world(DOMWrapperWorld::current(m_isolate))
 {
+    v8::Isolate* isolate = toIsolate(context);
+    m_callback.set(isolate, callback);
+    m_scriptState = ScriptState::current(isolate);
 }
 
 {{v8_class}}::~{{v8_class}}()
@@ -34,13 +34,11 @@ namespace WebCore {
     if (!canInvokeCallback())
         {{return_default}};
 
-    v8::HandleScope handleScope(m_isolate);
-
-    v8::Handle<v8::Context> v8Context = toV8Context(executionContext(), m_world.get());
-    if (v8Context.IsEmpty())
+    v8::Isolate* isolate = m_scriptState->isolate();
+    if (m_scriptState->contextIsEmpty())
         {{return_default}};
 
-    v8::Context::Scope scope(v8Context);
+    ScriptState::Scope scope(m_scriptState.get());
     {% if method.call_with_this_handle %}
     v8::Handle<v8::Value> thisHandle = thisValue.v8Value();
     if (thisHandle.IsEmpty()) {
@@ -59,16 +57,16 @@ namespace WebCore {
     }
     {% endfor %}
     {% if method.arguments %}
-    v8::Handle<v8::Value> argv[] = { {{method.arguments | join(', ', attribute='handle')}} };
+    v8::Handle<v8::Value> argv[] = { {{method.arguments | join(', ', 'handle')}} };
     {% else %}
     v8::Handle<v8::Value> *argv = 0;
     {% endif %}
 
     {% set this_handle_parameter = 'v8::Handle<v8::Object>::Cast(thisHandle), ' if method.call_with_this_handle else '' %}
     {% if method.idl_type == 'boolean' %}
-    return invokeCallback(m_callback.newLocal(m_isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), m_isolate);
+    return invokeCallback(m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), isolate);
     {% else %}{# void #}
-    invokeCallback(m_callback.newLocal(m_isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), m_isolate);
+    invokeCallback(m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), isolate);
     {% endif %}
 }
 

@@ -32,7 +32,6 @@
 #define ScriptObjectTraits_h
 
 #include "bindings/v8/ScriptObject.h"
-#include "bindings/v8/ScriptState.h"
 #include "wtf/HashTraits.h"
 
 namespace WebCore {
@@ -45,9 +44,9 @@ struct ScriptObjectHash {
 
 struct ScriptObjectHashTraits : WTF::GenericHashTraits<ScriptObject> {
     static const bool emptyValueIsZero = false;
-    static ScriptObject emptyValue() { return ScriptObject(ScriptState::current(), ScriptValue::createNull()); }
+    static ScriptObject emptyValue() { return ScriptObject(); }
     static void constructDeletedValue(ScriptObject& slot) { slot = ScriptObject(); }
-    static bool isDeletedValue(ScriptObject value) { return value.hasNoValue(); }
+    static bool isDeletedValue(ScriptObject value) { return value.isEmpty(); }
 };
 
 } // namespace WebCore

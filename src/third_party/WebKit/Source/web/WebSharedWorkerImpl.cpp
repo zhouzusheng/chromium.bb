@@ -29,17 +29,9 @@
  */
 
 #include "config.h"
-#include "WebSharedWorkerImpl.h"
+#include "web/WebSharedWorkerImpl.h"
 
-#include "DatabaseClientImpl.h"
-#include "LocalFileSystemClient.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebDataSourceImpl.h"
-#include "WebFrame.h"
-#include "WebFrameImpl.h"
-#include "WebSettings.h"
-#include "WebView.h"
-#include "WorkerPermissionClient.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
 #include "core/events/MessageEvent.h"
@@ -56,8 +48,8 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "heap/Handle.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
@@ -66,7 +58,15 @@
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebFrame.h"
+#include "public/web/WebSettings.h"
+#include "public/web/WebView.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
+#include "web/DatabaseClientImpl.h"
+#include "web/LocalFileSystemClient.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WorkerPermissionClient.h"
 #include "wtf/Functional.h"
 #include "wtf/MainThread.h"
 
@@ -89,11 +89,12 @@ public:
 
     void load(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& receiveResponseCallback, const Closure& finishCallback)
     {
+        ASSERT(loadingContext);
         m_receiveResponseCallback = receiveResponseCallback;
         m_finishCallback = finishCallback;
         m_scriptLoader->setTargetType(ResourceRequest::TargetIsSharedWorker);
         m_scriptLoader->loadAsynchronously(
-            loadingContext, scriptURL, DenyCrossOriginRequests, this);
+            *loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
 
     void didReceiveResponse(unsigned long identifier, const ResourceResponse& response) OVERRIDE
@@ -165,7 +166,7 @@ WebSharedWorkerImpl::~WebSharedWorkerImpl()
 {
     ASSERT(m_webView);
     // Detach the client before closing the view to avoid getting called back.
-    toWebFrameImpl(m_mainFrame)->setClient(0);
+    toWebLocalFrameImpl(m_mainFrame)->setClient(0);
 
     m_webView->close();
     m_mainFrame->close();
@@ -192,10 +193,10 @@ void WebSharedWorkerImpl::initializeLoader(const WebURL& url)
     m_webView->settings()->setOfflineWebApplicationCacheEnabled(RuntimeEnabledFeatures::applicationCacheEnabled());
     // FIXME: Settings information should be passed to the Worker process from Browser process when the worker
     // is created (similar to RenderThread::OnCreateNewView).
-    m_mainFrame = WebFrame::create(this);
+    m_mainFrame = WebLocalFrame::create(this);
     m_webView->setMainFrame(m_mainFrame);
 
-    WebFrameImpl* webFrame = toWebFrameImpl(m_webView->mainFrame());
+    WebLocalFrameImpl* webFrame = toWebLocalFrameImpl(m_webView->mainFrame());
 
     // Construct substitute data source for the 'shadow page'. We only need it
     // to have same origin as the worker so the loading checks work correctly.
@@ -205,19 +206,19 @@ void WebSharedWorkerImpl::initializeLoader(const WebURL& url)
     webFrame->frame()->loader().load(FrameLoadRequest(0, ResourceRequest(url), SubstituteData(buffer, "text/html", "UTF-8", KURL())));
 }
 
-WebApplicationCacheHost* WebSharedWorkerImpl::createApplicationCacheHost(WebFrame*, WebApplicationCacheHostClient* appcacheHostClient)
+WebApplicationCacheHost* WebSharedWorkerImpl::createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient* appcacheHostClient)
 {
     if (client())
         return client()->createApplicationCacheHost(appcacheHostClient);
     return 0;
 }
 
-void WebSharedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
+void WebSharedWorkerImpl::didFinishDocumentLoad(WebLocalFrame* frame)
 {
     ASSERT(!m_loadingDocument);
     ASSERT(!m_mainScriptLoader);
     m_mainScriptLoader = Loader::create();
-    m_loadingDocument = toWebFrameImpl(frame)->frame()->document();
+    m_loadingDocument = toWebLocalFrameImpl(frame)->frame()->document();
     m_mainScriptLoader->load(
         m_loadingDocument.get(),
         m_url,
@@ -289,7 +290,7 @@ void WebSharedWorkerImpl::workerGlobalScopeDestroyedOnMainThread()
 
 void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
-    toWebFrameImpl(m_mainFrame)->frame()->document()->postTask(task);
+    toWebLocalFrameImpl(m_mainFrame)->frame()->document()->postTask(task);
 }
 
 bool WebSharedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
@@ -346,7 +347,7 @@ void WebSharedWorkerImpl::onScriptLoaderFinished()
         return;
     }
     WorkerThreadStartMode startMode = m_pauseWorkerContextOnStart ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
-    OwnPtr<WorkerClients> workerClients = WorkerClients::create();
+    OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
     provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
     provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
     WebSecurityOrigin webSecurityOrigin(m_loadingDocument->securityOrigin());

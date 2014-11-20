@@ -9,9 +9,7 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
     {% endif %}
     {% if method.number_of_required_arguments %}
     if (UNLIKELY(info.Length() < {{method.number_of_required_arguments}})) {
-        {{throw_type_error(method,
-              'ExceptionMessages::notEnoughArguments(%s, info.Length())' %
-                  method.number_of_required_arguments) | indent(8)}}
+        {{throw_arity_type_error(method, method.number_of_required_arguments)}};
         return;
     }
     {% endif %}
@@ -94,9 +92,9 @@ if (UNLIKELY(info.Length() <= {{argument.index}})) {
     return;
 }
 {% endif %}
-{% if method.is_strict_type_checking and argument.is_wrapper_type %}
+{% if argument.has_type_checking_interface %}
 {# Type checking for wrapper interface types (if interface not implemented,
-   throw TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
+   throw a TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
 if (info.Length() > {{argument.index}} && {% if argument.is_nullable %}!isUndefinedOrNull(info[{{argument.index}}]) && {% endif %}!V8{{argument.idl_type}}::hasInstance(info[{{argument.index}}], info.GetIsolate())) {
     {{throw_type_error(method, '"parameter %s is not of type \'%s\'."' %
                                (argument.index + 1, argument.idl_type)) | indent}}
@@ -112,6 +110,8 @@ RefPtr<{{argument.idl_type}}> {{argument.name}} = V8EventListenerList::getEventL
 RefPtr<{{argument.idl_type}}> {{argument.name}} = V8EventListenerList::getEventListener(info[1], false, ListenerFindOrCreate);
 {% endif %}{# method.name #}
 {% else %}
+{# Callback functions must be functions:
+   http://www.w3.org/TR/WebIDL/#es-callback-function #}
 {% if argument.is_optional %}
 OwnPtr<{{argument.idl_type}}> {{argument.name}};
 if (info.Length() > {{argument.index}} && !isUndefinedOrNull(info[{{argument.index}}])) {
@@ -136,7 +136,7 @@ OwnPtr<{{argument.idl_type}}> {{argument.name}} = {% if argument.is_nullable %}i
 {% elif argument.is_clamp %}{# argument.is_callback_interface #}
 {# NaN is treated as 0: http://www.w3.org/TR/WebIDL/#es-type-mapping #}
 {{argument.cpp_type}} {{argument.name}} = 0;
-V8TRYCATCH_VOID(double, {{argument.name}}NativeValue, info[{{argument.index}}]->NumberValue());
+TONATIVE_VOID(double, {{argument.name}}NativeValue, info[{{argument.index}}]->NumberValue());
 if (!std::isnan({{argument.name}}NativeValue))
     {# IDL type is used for clamping, for the right bounds, since different
        IDL integer types have same internal C++ type (int or unsigned) #}
@@ -158,8 +158,19 @@ for (int i = {{argument.index}}; i < info.Length(); ++i) {
 {% else %}
 {{argument.v8_value_to_local_cpp_value}};
 {% endif %}
-{% if argument.enum_validation_expression %}
-{# Methods throw on invalid enum values: http://www.w3.org/TR/WebIDL/#idl-enums #}
+{# Type checking, possibly throw a TypeError, per:
+   http://www.w3.org/TR/WebIDL/#es-type-mapping #}
+{% if argument.has_type_checking_unrestricted %}
+{# Non-finite floating point values (NaN, +Infinity or −Infinity), per:
+   http://heycam.github.io/webidl/#es-float
+   http://heycam.github.io/webidl/#es-double #}
+if (!std::isfinite({{argument.name}})) {
+    {{throw_type_error(method, '"%s parameter %s is non-finite."' %
+                               (argument.idl_type, argument.index + 1)) | indent}}
+    return;
+}
+{% elif argument.enum_validation_expression %}
+{# Invalid enum values: http://www.w3.org/TR/WebIDL/#idl-enums #}
 String string = {{argument.name}};
 if (!({{argument.enum_validation_expression}})) {
     {{throw_type_error(method,
@@ -167,8 +178,11 @@ if (!({{argument.enum_validation_expression}})) {
               (argument.index + 1)) | indent}}
     return;
 }
-{% endif %}
-{% if argument.idl_type in ['Dictionary', 'Promise'] %}
+{% elif argument.idl_type in ['Dictionary', 'Promise'] %}
+{# Dictionaries must have type Undefined, Null or Object:
+http://heycam.github.io/webidl/#es-dictionary
+We also require this for our implementation of promises, though not in spec:
+http://heycam.github.io/webidl/#es-promise #}
 if (!{{argument.name}}.isUndefinedOrNull() && !{{argument.name}}.isObject()) {
     {{throw_type_error(method, '"parameter %s (\'%s\') is not an object."' %
                                (argument.index + 1, argument.name)) | indent}}
@@ -181,14 +195,12 @@ if (!{{argument.name}}.isUndefinedOrNull() && !{{argument.name}}.isObject()) {
 {######################################}
 {% macro cpp_method_call(method, v8_set_return_value, cpp_value) %}
 {# Local variables #}
-{% if method.is_implemented_by and not method.is_static %}
+{% if method.is_partial_interface_member and not method.is_static %}
+{# instance members (non-static members) in partial interface take |impl| #}
 ASSERT(impl);
 {% endif %}
 {% if method.is_call_with_script_state %}
-ScriptState* currentState = ScriptState::current();
-if (!currentState)
-    return;
-ScriptState& state = *currentState;
+ScriptState* state = ScriptState::current(info.GetIsolate());
 {% endif %}
 {% if method.is_call_with_execution_context %}
 ExecutionContext* scriptContext = currentExecutionContext(info.GetIsolate());
@@ -199,6 +211,8 @@ RefPtr<ScriptArguments> scriptArguments(createScriptArguments(info, {{method.num
 {# Call #}
 {% if method.idl_type == 'void' %}
 {{cpp_value}};
+{% elif method.is_constructor %}
+{{method.cpp_type}} impl = {{cpp_value}};
 {% elif method.is_call_with_script_state or method.is_raises_exception %}
 {# FIXME: consider always using a local variable #}
 {{method.cpp_type}} result = {{cpp_value}};
@@ -208,16 +222,9 @@ RefPtr<ScriptArguments> scriptArguments(createScriptArguments(info, {{method.num
 if (exceptionState.throwIfNeeded())
     return;
 {% endif %}
-{% if method.is_call_with_script_state %}
-if (state.hadException()) {
-    v8::Local<v8::Value> exception = state.exception();
-    state.clearException();
-    throwError(exception, info.GetIsolate());
-    return;
-}
-{% endif %}
 {# Set return value #}
-{% if method.union_arguments %}
+{% if method.is_constructor %}
+{{generate_constructor_wrapper(method)}}{% elif method.union_arguments %}
 {{union_type_method_call_and_set_return_value(method)}}
 {% elif v8_set_return_value %}{{v8_set_return_value}};{% endif %}{# None for void #}
 {% endmacro %}
@@ -258,12 +265,36 @@ throwTypeError(ExceptionMessages::failedToExecute("{{method.name}}", "{{interfac
 {% endmacro %}
 
 
+{######################################}
+{% macro throw_arity_type_error(method, number_of_required_arguments) %}
+{% if method.has_exception_state %}
+throwArityTypeError(exceptionState, {{number_of_required_arguments}}, info.Length())
+{%- elif method.is_constructor %}
+throwArityTypeErrorForConstructor("{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+{%- else %}
+throwArityTypeErrorForMethod("{{method.name}}", "{{interface_name}}", {{number_of_required_arguments}}, info.Length(), info.GetIsolate())
+{%- endif %}
+{% endmacro %}
+
+
 {##############################################################################}
 {% macro overload_resolution_method(overloads, world_suffix) %}
 static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    {% if overloads.measure_all_as %}
+    UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.measure_all_as}});
+    {% endif %}
+    {% if overloads.deprecate_all_as %}
+    UseCounter::countDeprecation(callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
+    {% endif %}
     {% for method in overloads.methods %}
     if ({{method.overload_resolution_expression}}) {
+        {% if method.measure_as and not overloads.measure_all_as %}
+        UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as}});
+        {% endif %}
+        {% if method.deprecate_as and not overloads.deprecate_all_as %}
+        UseCounter::countDeprecation(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+        {% endif %}
         {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
         return;
     }
@@ -271,9 +302,7 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
     {% if overloads.minimum_number_of_required_arguments %}
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{overloads.name}}", "{{interface_name}}", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < {{overloads.minimum_number_of_required_arguments}})) {
-        {{throw_type_error(overloads,
-              'ExceptionMessages::notEnoughArguments(%s, info.Length())' %
-              overloads.minimum_number_of_required_arguments) | indent(8)}}
+        {{throw_arity_type_error(overloads, overloads.minimum_number_of_required_arguments)}};
         return;
     }
     {% endif %}
@@ -288,19 +317,21 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
 static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     TRACE_EVENT_SET_SAMPLING_STATE("Blink", "DOMMethod");
+    {% if not method.overloads %}{# Overloaded methods are measured in overload_resolution_method() #}
     {% if method.measure_as %}
     UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as}});
     {% endif %}
     {% if method.deprecate_as %}
     UseCounter::countDeprecation(callingExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
     {% endif %}
+    {% endif %}{# not method.overloads #}
     {% if world_suffix in method.activity_logging_world_list %}
-    V8PerContextData* contextData = V8PerContextData::from(info.GetIsolate()->GetCurrentContext());
-    if (contextData && contextData->activityLogger()) {
+    DOMWrapperWorld& world = DOMWrapperWorld::current(info.GetIsolate());
+    if (world.activityLogger()) {
         {# FIXME: replace toVectorOfArguments with toNativeArguments(info, 0)
            and delete toVectorOfArguments #}
         Vector<v8::Handle<v8::Value> > loggerArgs = toNativeArguments<v8::Handle<v8::Value> >(info, 0);
-        contextData->activityLogger()->log("{{interface_name}}.{{method.name}}", info.Length(), loggerArgs.data(), "Method");
+        world.activityLogger()->logMethod("{{interface_name}}.{{method.name}}", info.Length(), loggerArgs.data());
     }
     {% endif %}
     {% if method.is_custom %}
@@ -342,7 +373,8 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
         return;
     }
 
-    v8::Local<v8::Value> hiddenValue = info.This()->GetHiddenValue(v8AtomicString(isolate, "{{method.name}}"));
+    {# The findInstanceInPrototypeChain() call above only returns a non-empty handle if info.This() is an Object. #}
+    v8::Local<v8::Value> hiddenValue = v8::Handle<v8::Object>::Cast(info.This())->GetHiddenValue(v8AtomicString(isolate, "{{method.name}}"));
     if (!hiddenValue.IsEmpty()) {
         v8SetReturnValue(info, hiddenValue);
         return;
@@ -371,9 +403,7 @@ static void constructor{{constructor.overload_index}}(const v8::FunctionCallback
     {% if interface_length and not constructor.overload_index %}
     {# FIXME: remove UNLIKELY: constructors are expensive, so no difference. #}
     if (UNLIKELY(info.Length() < {{interface_length}})) {
-        {{throw_type_error(constructor,
-            'ExceptionMessages::notEnoughArguments(%s, info.Length())' %
-                interface_length) | indent(8)}}
+        {{throw_arity_type_error(constructor, interface_length)}};
         return;
     }
     {% endif %}
@@ -386,20 +416,29 @@ static void constructor{{constructor.overload_index}}(const v8::FunctionCallback
     {% if is_constructor_call_with_document %}
     Document& document = *toDocument(currentExecutionContext(isolate));
     {% endif %}
-    {{ref_ptr}}<{{cpp_class}}> impl = {{cpp_class}}::create({{constructor.argument_list | join(', ')}});
+    {{constructor.cpp_type}} impl = {{cpp_class}}::create({{constructor.argument_list | join(', ')}});
     {% if is_constructor_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
     {% endif %}
 
-    {% if has_custom_wrap %}
-    v8::Handle<v8::Object> wrapper = wrap(impl.get(), info.Holder(), isolate);
-    {% else %}
-    v8::Handle<v8::Object> wrapper = info.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<{{v8_class}}>(impl.release(), &{{v8_class}}::wrapperTypeInfo, wrapper, isolate, {{wrapper_configuration}});
-    {% endif %}
-    v8SetReturnValue(info, wrapper);
+    {{generate_constructor_wrapper(constructor) | indent}}
 }
+{% endmacro %}
+
+
+{##############################################################################}
+{% macro generate_constructor_wrapper(constructor) %}
+{% if has_custom_wrap %}
+v8::Handle<v8::Object> wrapper = wrap(impl.get(), info.Holder(), isolate);
+{% else %}
+{% set constructor_class = v8_class + ('Constructor'
+                                       if constructor.is_named_constructor else
+                                       '') %}
+v8::Handle<v8::Object> wrapper = info.Holder();
+V8DOMWrapper::associateObjectWithWrapper<{{v8_class}}>(impl.release(), &{{constructor_class}}::wrapperTypeInfo, wrapper, isolate, {{wrapper_configuration}});
+{% endif %}
+v8SetReturnValue(info, wrapper);
 {% endmacro %}
 
 
@@ -407,49 +446,42 @@ static void constructor{{constructor.overload_index}}(const v8::FunctionCallback
 {% macro named_constructor_callback(constructor) %}
 static void {{v8_class}}ConstructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    v8::Isolate* isolate = info.GetIsolate();
     if (!info.IsConstructCall()) {
-        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("{{constructor.name}}"), info.GetIsolate());
+        throwTypeError(ExceptionMessages::constructorNotCallableAsFunction("{{constructor.name}}"), isolate);
         return;
     }
 
-    if (ConstructorMode::current() == ConstructorMode::WrapExistingObject) {
+    if (ConstructorMode::current(isolate) == ConstructorMode::WrapExistingObject) {
         v8SetReturnValue(info, info.Holder());
         return;
     }
 
-    Document* document = currentDOMWindow(info.GetIsolate())->document();
+    Document* document = currentDOMWindow(isolate)->document();
     ASSERT(document);
 
     // Make sure the document is added to the DOM Node map. Otherwise, the {{cpp_class}} instance
     // may end up being the only node in the map and get garbage-collected prematurely.
-    toV8(document, info.Holder(), info.GetIsolate());
+    toV8(document, info.Holder(), isolate);
 
     {% if constructor.has_exception_state %}
-    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), info.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), isolate);
     {% endif %}
     {% if constructor.number_of_required_arguments %}
     if (UNLIKELY(info.Length() < {{constructor.number_of_required_arguments}})) {
-        {{throw_type_error(constructor,
-              'ExceptionMessages::notEnoughArguments(%s, info.Length())' %
-                  constructor.number_of_required_arguments) | indent(8)}}
+        {{throw_arity_type_error(constructor, constructor.number_of_required_arguments)}};
         return;
     }
     {% endif %}
     {% for argument in constructor.arguments %}
     {{generate_argument(constructor, argument) | indent}}
     {% endfor %}
-    RefPtr<{{cpp_class}}> impl = {{cpp_class}}::createForJSConstructor({{constructor.argument_list | join(', ')}});
+    {{constructor.cpp_type}} impl = {{cpp_class}}::createForJSConstructor({{constructor.argument_list | join(', ')}});
     {% if is_constructor_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
     {% endif %}
 
-    {% if has_custom_wrap %}
-    v8::Handle<v8::Object> wrapper = wrap(impl.get(), info.Holder(), info.GetIsolate());
-    {% else %}
-    v8::Handle<v8::Object> wrapper = info.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<{{v8_class}}>(impl.release(), &{{v8_class}}Constructor::wrapperTypeInfo, wrapper, info.GetIsolate(), {{wrapper_configuration}});
-    {% endif %}
-    v8SetReturnValue(info, wrapper);
+    {{generate_constructor_wrapper(constructor) | indent}}
 }
 {% endmacro %}

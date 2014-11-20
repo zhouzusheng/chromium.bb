@@ -282,7 +282,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyGlyphOrientationHorizontal:
     case CSSPropertyGlyphOrientationVertical:
     case CSSPropertyImageRendering:
-    case CSSPropertyKerning:
     case CSSPropertyLetterSpacing:
     case CSSPropertyLineHeight:
     case CSSPropertyListStyle:
@@ -421,7 +420,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyClear:
     case CSSPropertyClip:
     case CSSPropertyClipPath:
-    case CSSPropertyColorProfile:
     case CSSPropertyContent:
     case CSSPropertyCounterIncrement:
     case CSSPropertyCounterReset:
@@ -588,6 +586,8 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyGridColumn:
     case CSSPropertyGridColumnEnd:
     case CSSPropertyGridColumnStart:
+    case CSSPropertyGrid:
+    case CSSPropertyGridTemplate:
     case CSSPropertyGridTemplateColumns:
     case CSSPropertyGridTemplateRows:
     case CSSPropertyGridRow:
@@ -663,7 +663,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyShapeMargin:
     case CSSPropertyShapeImageThreshold:
-    case CSSPropertyShapePadding:
     case CSSPropertyShapeOutside:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitAppRegion:

@@ -22,8 +22,8 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebImageCache.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkGraphics.h"
@@ -34,7 +34,7 @@
 #include "v8/include/v8.h"
 
 using blink::WebCanvas;
-using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebImageCache;
 using blink::WebPrivatePtr;
 using blink::WebSize;
@@ -151,7 +151,7 @@ class GpuBenchmarkingContext {
         compositor_(NULL) {}
 
   bool Init(bool init_compositor) {
-    web_frame_ = WebFrame::frameForCurrentContext();
+    web_frame_ = WebLocalFrame::frameForCurrentContext();
     if (!web_frame_)
       return false;
 
@@ -182,7 +182,7 @@ class GpuBenchmarkingContext {
     return true;
   }
 
-  WebFrame* web_frame() const {
+  WebLocalFrame* web_frame() const {
     DCHECK(web_frame_ != NULL);
     return web_frame_;
   }
@@ -200,7 +200,7 @@ class GpuBenchmarkingContext {
   }
 
  private:
-  WebFrame* web_frame_;
+  WebLocalFrame* web_frame_;
   WebView* web_view_;
   RenderViewImpl* render_view_impl_;
   RenderWidgetCompositor* compositor_;
@@ -235,6 +235,11 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "chrome.gpuBenchmarking.DEFAULT_INPUT = 0;"
           "chrome.gpuBenchmarking.TOUCH_INPUT = 1;"
           "chrome.gpuBenchmarking.MOUSE_INPUT = 2;"
+          "chrome.gpuBenchmarking.gestureSourceTypeSupported = "
+          "    function(gesture_source_type) {"
+          "  native function GestureSourceTypeSupported();"
+          "  return GestureSourceTypeSupported(gesture_source_type);"
+          "};"
           "chrome.gpuBenchmarking.smoothScrollBy = "
           "    function(pixels_to_scroll, opt_callback, opt_start_x,"
           "             opt_start_y, opt_gesture_source_type,"
@@ -250,10 +255,6 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "                           gesture_source_type, direction,"
           "                           speed_in_pixels_s, true,"
           "                           opt_start_x, opt_start_y);"
-          "};"
-          "chrome.gpuBenchmarking.smoothScrollBySendsTouch = function() {"
-          "  native function SmoothScrollSendsTouch();"
-          "  return SmoothScrollSendsTouch();"
           "};"
           "chrome.gpuBenchmarking.swipe = "
           "    function(direction, distance, opt_callback,"
@@ -337,11 +338,11 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(isolate, SetRasterizeOnlyVisibleContent);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "PrintToSkPicture")))
       return v8::FunctionTemplate::New(isolate, PrintToSkPicture);
+    if (name->Equals(
+            v8::String::NewFromUtf8(isolate, "GestureSourceTypeSupported")))
+      return v8::FunctionTemplate::New(isolate, GestureSourceTypeSupported);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "BeginSmoothScroll")))
       return v8::FunctionTemplate::New(isolate, BeginSmoothScroll);
-    if (name->Equals(
-            v8::String::NewFromUtf8(isolate, "SmoothScrollSendsTouch")))
-      return v8::FunctionTemplate::New(isolate, SmoothScrollSendsTouch);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "BeginScrollBounce")))
       return v8::FunctionTemplate::New(isolate, BeginScrollBounce);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "BeginPinch")))
@@ -418,7 +419,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
-    WebFrame* frame = WebFrame::frameForContext(context);
+    WebLocalFrame* frame = WebLocalFrame::frameForContext(context);
     if (frame) {
       frame->callFunctionEvenIfScriptDisabled(
           callback_and_context->GetCallback(),
@@ -428,14 +429,24 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     }
   }
 
-  static void SmoothScrollSendsTouch(
+  static void GestureSourceTypeSupported(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
-    // TODO(epenner): Should other platforms emulate touch events?
-#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
-    args.GetReturnValue().Set(true);
-#else
-    args.GetReturnValue().Set(false);
-#endif
+    if (args.Length() != 1 || !args[0]->IsNumber()) {
+      args.GetReturnValue().Set(false);
+      return;
+    }
+
+    int gesture_source_type = args[0]->IntegerValue();
+    if (gesture_source_type < 0 ||
+        gesture_source_type > SyntheticGestureParams::GESTURE_SOURCE_TYPE_MAX) {
+      args.GetReturnValue().Set(false);
+      return;
+    }
+
+    bool is_supported = SyntheticGestureParams::IsGestureSourceTypeSupported(
+        static_cast<SyntheticGestureParams::GestureSourceType>(
+            gesture_source_type));
+    args.GetReturnValue().Set(is_supported);
   }
 
   static void BeginSmoothScroll(
@@ -740,7 +751,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
-    WebFrame* frame = WebFrame::frameForContext(context);
+    WebLocalFrame* frame = WebLocalFrame::frameForContext(context);
     if (frame) {
 
       v8::Handle<v8::Value> result;
@@ -813,7 +824,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
-    WebFrame* frame = WebFrame::frameForContext(context);
+    WebLocalFrame* frame = WebLocalFrame::frameForContext(context);
     if (frame) {
       scoped_ptr<V8ValueConverter> converter =
           make_scoped_ptr(V8ValueConverter::create());

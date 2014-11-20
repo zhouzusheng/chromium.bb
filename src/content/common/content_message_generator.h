@@ -13,8 +13,8 @@
 #include "content/common/clipboard_messages.h"
 #include "content/common/database_messages.h"
 #include "content/common/desktop_notification_messages.h"
-#include "content/common/device_orientation/device_motion_messages.h"
-#include "content/common/device_orientation/device_orientation_messages.h"
+#include "content/common/device_sensors/device_motion_messages.h"
+#include "content/common/device_sensors/device_orientation_messages.h"
 #include "content/common/devtools_messages.h"
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/drag_messages.h"
@@ -40,10 +40,12 @@
 #include "content/common/memory_benchmark_messages.h"
 #include "content/common/message_port_messages.h"
 #include "content/common/mime_registry_messages.h"
+#include "content/common/mojo/mojo_messages.h"
 #include "content/common/p2p_messages.h"
 #include "content/common/pepper_messages.h"
 #include "content/common/plugin_process_messages.h"
 #include "content/common/power_monitor_messages.h"
+#include "content/common/push_messaging_messages.h"
 #include "content/common/quota_messages.h"
 #include "content/common/resource_messages.h"
 #include "content/common/screen_orientation_messages.h"
@@ -58,10 +60,7 @@
 #include "content/common/worker_messages.h"
 
 #if defined(OS_ANDROID)
+#include "content/common/gin_java_bridge_messages.h"
 #include "content/common/media/cdm_messages.h"
 #include "content/common/media/media_player_messages_android.h"
 #endif  // defined(OS_ANDROID)
-
-#if defined(USE_MOJO)
-#include "content/common/mojo/mojo_messages.h"
-#endif

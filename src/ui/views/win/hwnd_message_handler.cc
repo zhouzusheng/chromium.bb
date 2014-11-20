@@ -38,7 +38,6 @@
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/monitor_win.h"
 #include "ui/views/widget/widget_hwnd_utils.h"
-#include "ui/views/win/appbar.h"
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
@@ -256,6 +255,13 @@ void AddScrollStylesToWindow(HWND window) {
 
 const int kTouchDownContextResetTimeout = 500;
 
+// Windows does not flag synthesized mouse messages from touch in all cases.
+// This causes us grief as we don't want to process touch and mouse messages
+// concurrently. Hack as per msdn is to check if the time difference between
+// the touch message and the mouse move is within 500 ms and at the same
+// location as the cursor.
+const int kSynthesizedMouseTouchMessagesTimeDifference = 500;
+
 }  // namespace
 
 // A scoping class that prevents a window from being able to redraw in response
@@ -325,6 +331,8 @@ class HWNDMessageHandler::ScopedRedrawLock {
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, public:
 
+long HWNDMessageHandler::last_touch_message_time_ = 0;
+
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
     : delegate_(delegate),
       fullscreen_handler_(new FullscreenHandler),
@@ -332,7 +340,6 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       waiting_for_close_now_(false),
       remove_standard_frame_(false),
       use_system_default_icon_(false),
-      restore_focus_when_enabled_(false),
       restored_enabled_(false),
       current_cursor_(NULL),
       previous_cursor_(NULL),
@@ -350,7 +357,9 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       id_generator_(0),
       needs_scroll_styles_(false),
       in_size_loop_(false),
-      touch_down_context_(false) {
+      touch_down_context_(false),
+      last_mouse_hwheel_time_(0),
+      msg_handled_(FALSE) {
 }
 
 HWNDMessageHandler::~HWNDMessageHandler() {
@@ -909,17 +918,8 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
       delegate_->HandleDestroyed();
   }
 
-  // Only top level widget should store/restore focus.
-  if (message == WM_ACTIVATE && delegate_->CanSaveFocus())
+  if (message == WM_ACTIVATE && IsTopLevelWindow(window))
     PostProcessActivateMessage(LOWORD(w_param), !!HIWORD(w_param));
-
-  if (message == WM_ENABLE && restore_focus_when_enabled_) {
-    // This path should be executed only for top level as
-    // restore_focus_when_enabled_ is set in PostProcessActivateMessage.
-    DCHECK(delegate_->CanSaveFocus());
-    restore_focus_when_enabled_ = false;
-    delegate_->RestoreFocusOnEnable();
-  }
   return result;
 }
 
@@ -961,10 +961,12 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
 
 int HWNDMessageHandler::GetAppbarAutohideEdges(HMONITOR monitor) {
   autohide_factory_.InvalidateWeakPtrs();
-  return Appbar::instance()->GetAutohideEdges(
-      monitor,
-      base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
-                 autohide_factory_.GetWeakPtr()));
+  return ViewsDelegate::views_delegate ?
+      ViewsDelegate::views_delegate->GetAppbarAutohideEdges(
+          monitor,
+          base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
+                     autohide_factory_.GetWeakPtr())) :
+      ViewsDelegate::EDGE_BOTTOM;
 }
 
 void HWNDMessageHandler::OnAppbarAutohideEdgesChanged() {
@@ -986,33 +988,10 @@ void HWNDMessageHandler::SetInitialFocus() {
 
 void HWNDMessageHandler::PostProcessActivateMessage(int activation_state,
                                                     bool minimized) {
-  DCHECK(delegate_->CanSaveFocus());
-
-  bool active = activation_state != WA_INACTIVE && !minimized;
+  DCHECK(IsTopLevelWindow(hwnd()));
+  const bool active = activation_state != WA_INACTIVE && !minimized;
   if (delegate_->CanActivate())
     delegate_->HandleActivationChanged(active);
-
-  if (!active) {
-    // We might get activated/inactivated without being enabled, so we need to
-    // clear restore_focus_when_enabled_.
-    restore_focus_when_enabled_ = false;
-    delegate_->SaveFocusOnDeactivate();
-  } else {
-    // We must restore the focus after the message has been DefProc'ed as it
-    // does set the focus to the last focused HWND.
-    // Note that if the window is not enabled, we cannot restore the focus as
-    // calling ::SetFocus on a child of the non-enabled top-window would fail.
-    // This is the case when showing a modal dialog (such as 'open file',
-    // 'print'...) from a different thread.
-    // In that case we delay the focus restoration to when the window is enabled
-    // again.
-    if (!IsWindowEnabled(hwnd())) {
-      DCHECK(!restore_focus_when_enabled_);
-      restore_focus_when_enabled_ = true;
-      return;
-    }
-    delegate_->RestoreFocusOnActivate();
-  }
 }
 
 void HWNDMessageHandler::RestoreEnabledIfNecessary() {
@@ -1657,9 +1636,9 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
       }
     }
     const int autohide_edges = GetAppbarAutohideEdges(monitor);
-    if (autohide_edges & Appbar::EDGE_LEFT)
+    if (autohide_edges & ViewsDelegate::EDGE_LEFT)
       client_rect->left += kAutoHideTaskbarThicknessPx;
-    if (autohide_edges & Appbar::EDGE_TOP) {
+    if (autohide_edges & ViewsDelegate::EDGE_TOP) {
       if (!delegate_->IsUsingCustomFrame()) {
         // Tricky bit.  Due to a bug in DwmDefWindowProc()'s handling of
         // WM_NCHITTEST, having any nonclient area atop the window causes the
@@ -1675,9 +1654,9 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
         client_rect->top += kAutoHideTaskbarThicknessPx;
       }
     }
-    if (autohide_edges & Appbar::EDGE_RIGHT)
+    if (autohide_edges & ViewsDelegate::EDGE_RIGHT)
       client_rect->right -= kAutoHideTaskbarThicknessPx;
-    if (autohide_edges & Appbar::EDGE_BOTTOM)
+    if (autohide_edges & ViewsDelegate::EDGE_BOTTOM)
       client_rect->bottom -= kAutoHideTaskbarThicknessPx;
 
     // We cannot return WVR_REDRAW when there is nonclient area, or Windows
@@ -1960,6 +1939,9 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
     case HTCLIENT:
       SetCursor(current_cursor_);
       return 1;
+    case LOWORD(HTERROR):  // Use HTERROR's LOWORD value for valid comparison.
+      SetMsgHandled(FALSE);
+      break;
     default:
       // Use the default value, IDC_ARROW.
       break;
@@ -2116,6 +2098,8 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
 
       ScreenToClient(hwnd(), &point);
 
+      last_touch_message_time_ = ::GetMessageTime();
+
       ui::EventType touch_event_type = ui::ET_UNKNOWN;
 
       if (input[i].dwFlags & TOUCHEVENTF_DOWN) {
@@ -2134,12 +2118,27 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         touch_event_type = ui::ET_TOUCH_MOVED;
       }
       if (touch_event_type != ui::ET_UNKNOWN) {
-        ui::TouchEvent event(
-            touch_event_type,
-            gfx::Point(point.x, point.y),
-            id_generator_.GetGeneratedID(input[i].dwID),
-            base::TimeDelta::FromMilliseconds(input[i].dwTime));
+        base::TimeTicks now;
+        // input[i].dwTime doesn't necessarily relate to the system time at all,
+        // so use base::TimeTicks::HighResNow() if possible, or
+        // base::TimeTicks::Now() otherwise.
+        if (base::TimeTicks::IsHighResNowFastAndReliable())
+          now = base::TimeTicks::HighResNow();
+        else
+          now = base::TimeTicks::Now();
+        ui::TouchEvent event(touch_event_type,
+                             gfx::Point(point.x, point.y),
+                             id_generator_.GetGeneratedID(input[i].dwID),
+                             now - base::TimeTicks());
         event.set_flags(flags);
+        event.latency()->AddLatencyNumberWithTimestamp(
+            ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+            0,
+            0,
+            base::TimeTicks::FromInternalValue(
+                event.time_stamp().ToInternalValue()),
+            1);
+
         touch_events.push_back(event);
         if (touch_event_type == ui::ET_TOUCH_RELEASED)
           id_generator_.ReleaseNumber(input[i].dwID);
@@ -2224,6 +2223,9 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
     }
   }
 
+  if (DidClientAreaSizeChange(window_pos))
+    delegate_->HandleWindowSizeChanging();
+
   if (ScopedFullscreenVisibility::IsHiddenForFullscreen(hwnd())) {
     // Prevent the window from being made visible if we've been asked to do so.
     // See comment in header as to why we might want this.
@@ -2289,6 +2291,18 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
       return 0;
   }
 
+  // Certain logitech drivers send the WM_MOUSEHWHEEL message to the parent
+  // followed by WM_MOUSEWHEEL messages to the child window causing a vertical
+  // scroll. We treat these WM_MOUSEWHEEL messages as WM_MOUSEHWHEEL
+  // messages.
+  if (message == WM_MOUSEHWHEEL)
+    last_mouse_hwheel_time_ = ::GetMessageTime();
+
+  if (message == WM_MOUSEWHEEL &&
+      ::GetMessageTime() == last_mouse_hwheel_time_) {
+    message = WM_MOUSEHWHEEL;
+  }
+
   if (message == WM_RBUTTONUP && is_right_mouse_pressed_on_caption_) {
     is_right_mouse_pressed_on_caption_ = false;
     ReleaseCapture();
@@ -2332,10 +2346,11 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // be WM_RBUTTONUP instead of WM_NCRBUTTONUP.
     SetCapture();
   }
-  MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime(),
+  long message_time = GetMessageTime();
+  MSG msg = { hwnd(), message, w_param, l_param, message_time,
               { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
   ui::MouseEvent event(msg);
-  if (!touch_ids_.empty() || ui::IsMouseEventFromTouch(message))
+  if (IsSynthesizedMouseMessage(message, message_time, l_param))
     event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
 
   if (!(event.flags() & ui::EF_IS_NON_CLIENT))
@@ -2377,6 +2392,28 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   if (ref.get())
     SetMsgHandled(handled);
   return 0;
+}
+
+bool HWNDMessageHandler::IsSynthesizedMouseMessage(unsigned int message,
+                                                   int message_time,
+                                                   LPARAM l_param) {
+  if (ui::IsMouseEventFromTouch(message))
+    return true;
+  // Ignore mouse messages which occur at the same location as the current
+  // cursor position and within a time difference of 500 ms from the last
+  // touch message.
+  if (last_touch_message_time_ && message_time >= last_touch_message_time_ &&
+      ((message_time - last_touch_message_time_) <=
+          kSynthesizedMouseTouchMessagesTimeDifference)) {
+    POINT mouse_location = CR_POINT_INITIALIZER_FROM_LPARAM(l_param);
+    ::ClientToScreen(hwnd(), &mouse_location);
+    POINT cursor_pos = {0};
+    ::GetCursorPos(&cursor_pos);
+    if (memcmp(&cursor_pos, &mouse_location, sizeof(POINT)))
+      return false;
+    return true;
+  }
+  return false;
 }
 
 }  // namespace views

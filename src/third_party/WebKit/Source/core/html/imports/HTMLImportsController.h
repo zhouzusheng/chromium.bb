@@ -47,35 +47,46 @@ class ExecutionContext;
 class ResourceFetcher;
 class HTMLImportChild;
 class HTMLImportChildClient;
+class HTMLImportLoader;
 
-class HTMLImportsController FINAL : public HTMLImportRoot, public DocumentSupplement {
-    WTF_MAKE_FAST_ALLOCATED;
+class HTMLImportsController FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportsController>, public HTMLImport, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLImportsController);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static void provideTo(Document&);
 
     explicit HTMLImportsController(Document&);
     virtual ~HTMLImportsController();
 
-    // HTMLImport
-    virtual HTMLImportRoot* root() OVERRIDE;
-    virtual Document* document() const OVERRIDE;
-    virtual void wasDetachedFromDocument() OVERRIDE;
-    virtual bool isDone() const OVERRIDE;
-    virtual bool hasLoader() const OVERRIDE;
-    virtual void stateDidChange() OVERRIDE;
+    bool isMaster(const Document& document) const { return m_master == &document; }
+    bool shouldBlockScriptExecution(const Document&) const;
+    void wasDetachedFrom(const Document&);
 
-    // HTMLImportRoot
-    virtual void scheduleRecalcState() OVERRIDE;
-    virtual HTMLImportsController* toController() OVERRIDE { return this; }
-    virtual HTMLImportChild* findLinkFor(const KURL&, HTMLImport* excluding = 0) const OVERRIDE;
+    // HTMLImport
+    virtual Document* document() const OVERRIDE;
+    virtual bool isDone() const OVERRIDE;
+    virtual void stateWillChange() OVERRIDE;
+    virtual void stateDidChange() OVERRIDE;
 
     HTMLImportChild* load(HTMLImport* parent, HTMLImportChildClient*, FetchRequest);
     void showSecurityErrorMessage(const String&);
 
     SecurityOrigin* securityOrigin() const;
     ResourceFetcher* fetcher() const;
+    LocalFrame* frame() const;
+    Document* master() const { return m_master; }
 
     void recalcTimerFired(Timer<HTMLImportsController>*);
+
+    HTMLImportLoader* createLoader();
+
+    size_t loaderCount() const { return m_loaders.size(); }
+    HTMLImportLoader* loaderAt(size_t i) const { return m_loaders[i].get(); }
+    Document* loaderDocumentAt(size_t) const;
+    HTMLImportLoader* loaderFor(const Document&) const;
+
+    void scheduleRecalcState();
+    HTMLImportChild* findLinkFor(const KURL&, HTMLImport* excluding = 0) const;
 
 private:
     HTMLImportChild* createChild(const KURL&, HTMLImport* parent, HTMLImportChildClient*);
@@ -87,7 +98,12 @@ private:
     // List of import which has been loaded or being loaded.
     typedef Vector<OwnPtr<HTMLImportChild> > ImportList;
     ImportList m_imports;
+
+    typedef Vector<RefPtr<HTMLImportLoader> > LoaderList;
+    LoaderList m_loaders;
 };
+
+DEFINE_TYPE_CASTS(HTMLImportsController, HTMLImport, import, import->isRoot(), import.isRoot());
 
 } // namespace WebCore
 

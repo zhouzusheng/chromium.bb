@@ -32,8 +32,10 @@ class LocalFrame;
 class Navigator;
 
 class NavigatorVibration FINAL
-    : public Supplement<Page>
+    : public NoBaseWillBeGarbageCollectedFinalized<NavigatorVibration>
+    , public WillBeHeapSupplement<Page>
     , public PageLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorVibration);
 public:
     typedef Vector<unsigned> VibrationPattern;
 
@@ -55,6 +57,8 @@ public:
     bool isVibrating() const { return m_isVibrating; }
 
     VibrationPattern pattern() const { return m_pattern; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
 
 private:
     explicit NavigatorVibration(Page&);

@@ -30,7 +30,6 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTheme.h"
 #include "platform/PlatformKeyboardEvent.h"
@@ -94,8 +93,7 @@ LayoutUnit RenderTextControlSingleLine::computeLogicalHeightLimit() const
 
 void RenderTextControlSingleLine::layout()
 {
-    LayoutRectRecorder recorder(*this);
-    SubtreeLayoutScope layoutScope(this);
+    SubtreeLayoutScope layoutScope(*this);
 
     // FIXME: We should remove the height-related hacks in layout() and
     // styleDidChange(). We need them because
@@ -170,20 +168,9 @@ void RenderTextControlSingleLine::layout()
     } else
         centerContainerIfNeeded(containerRenderer);
 
-    // Ignores the paddings for the inner spin button.
-    if (RenderBox* innerSpinBox = innerSpinButtonElement() ? innerSpinButtonElement()->renderBox() : 0) {
-        RenderBox* parentBox = innerSpinBox->parentBox();
-        if (containerRenderer && !containerRenderer->style()->isLeftToRightDirection())
-            innerSpinBox->setLogicalLocation(LayoutPoint(-paddingLogicalLeft(), -paddingBefore()));
-        else
-            innerSpinBox->setLogicalLocation(LayoutPoint(parentBox->logicalWidth() - innerSpinBox->logicalWidth() + paddingLogicalRight(), -paddingBefore()));
-        innerSpinBox->setLogicalHeight(logicalHeight() - borderBefore() - borderAfter());
-    }
-
     HTMLElement* placeholderElement = inputElement()->placeholderElement();
     if (RenderBox* placeholderBox = placeholderElement ? placeholderElement->renderBox() : 0) {
         LayoutSize innerTextSize;
-        LayoutRectRecorder placeholderBoxRecorder(*placeholderBox);
 
         if (innerTextRenderer)
             innerTextSize = innerTextRenderer->size();
@@ -254,7 +241,7 @@ void RenderTextControlSingleLine::styleDidChange(StyleDifference diff, const Ren
         containerRenderer->style()->setWidth(Length());
     }
     RenderObject* innerTextRenderer = innerTextElement()->renderer();
-    if (innerTextRenderer && diff == StyleDifferenceLayout)
+    if (innerTextRenderer && diff.needsFullLayout())
         innerTextRenderer->setNeedsLayout();
     if (HTMLElement* placeholder = inputElement()->placeholderElement())
         placeholder->setInlineStyleProperty(CSSPropertyTextOverflow, textShouldBeTruncated() ? CSSValueEllipsis : CSSValueClip);

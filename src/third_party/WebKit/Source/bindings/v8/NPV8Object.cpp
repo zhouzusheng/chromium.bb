@@ -53,7 +53,7 @@ namespace WebCore {
 
 const WrapperTypeInfo* npObjectTypeInfo()
 {
-    static const WrapperTypeInfo typeInfo = { gin::kEmbedderBlink, 0, 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype, false };
+    static const WrapperTypeInfo typeInfo = { gin::kEmbedderBlink, 0, 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype, RefCountedObject };
     return &typeInfo;
 }
 
@@ -597,7 +597,7 @@ bool _NPN_Construct(NPP npp, NPObject* npObject, const NPVariant* arguments, uin
             LocalFrame* frame = object->rootObject->frame();
             ASSERT(frame);
             OwnPtr<v8::Handle<v8::Value>[]> argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
-            resultObject = V8ObjectConstructor::newInstanceInDocument(ctor, argumentCount, argv.get(), frame ? frame->document() : 0);
+            resultObject = V8ObjectConstructor::newInstanceInDocument(isolate, ctor, argumentCount, argv.get(), frame ? frame->document() : 0);
         }
 
         if (resultObject.IsEmpty())

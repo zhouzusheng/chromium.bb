@@ -32,6 +32,7 @@
 #include "core/html/ClassList.h"
 #include "core/html/ime/InputMethodContext.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -40,7 +41,10 @@ class HTMLElement;
 
 class ElementRareData : public NodeRareData {
 public:
-    static PassOwnPtr<ElementRareData> create(RenderObject* renderer) { return adoptPtr(new ElementRareData(renderer)); }
+    static ElementRareData* create(RenderObject* renderer)
+    {
+        return new ElementRareData(renderer);
+    }
 
     ~ElementRareData();
 
@@ -63,9 +67,6 @@ public:
         clearElementFlag(TabIndexWasSetExplicitly);
     }
 
-    unsigned childIndex() const { return m_childIndex; }
-    void setChildIndex(unsigned index) { m_childIndex = index; }
-
     CSSStyleDeclaration& ensureInlineCSSStyleDeclaration(Element* ownerElement);
 
     void clearShadow() { m_shadow = nullptr; }
@@ -78,14 +79,14 @@ public:
     }
 
     NamedNodeMap* attributeMap() const { return m_attributeMap.get(); }
-    void setAttributeMap(PassOwnPtr<NamedNodeMap> attributeMap) { m_attributeMap = attributeMap; }
+    void setAttributeMap(PassOwnPtrWillBeRawPtr<NamedNodeMap> attributeMap) { m_attributeMap = attributeMap; }
 
     RenderStyle* computedStyle() const { return m_computedStyle.get(); }
     void setComputedStyle(PassRefPtr<RenderStyle> computedStyle) { m_computedStyle = computedStyle; }
     void clearComputedStyle() { m_computedStyle = nullptr; }
 
     ClassList* classList() const { return m_classList.get(); }
-    void setClassList(PassOwnPtr<ClassList> classList) { m_classList = classList; }
+    void setClassList(PassOwnPtrWillBeRawPtr<ClassList> classList) { m_classList = classList; }
     void clearClassListValueForQuirksMode()
     {
         if (!m_classList)
@@ -94,7 +95,7 @@ public:
     }
 
     DatasetDOMStringMap* dataset() const { return m_dataset.get(); }
-    void setDataset(PassOwnPtr<DatasetDOMStringMap> dataset) { m_dataset = dataset; }
+    void setDataset(PassOwnPtrWillBeRawPtr<DatasetDOMStringMap> dataset) { m_dataset = dataset; }
 
     LayoutSize minimumSizeForResizing() const { return m_minimumSizeForResizing; }
     void setMinimumSizeForResizing(LayoutSize size) { m_minimumSizeForResizing = size; }
@@ -122,20 +123,21 @@ public:
     void setCustomElementDefinition(PassRefPtr<CustomElementDefinition> definition) { m_customElementDefinition = definition; }
     CustomElementDefinition* customElementDefinition() const { return m_customElementDefinition.get(); }
 
+    void traceAfterDispatch(Visitor*);
+
 private:
     short m_tabindex;
-    unsigned short m_childIndex;
 
     LayoutSize m_minimumSizeForResizing;
     IntSize m_savedLayerScrollOffset;
 
-    OwnPtr<DatasetDOMStringMap> m_dataset;
-    OwnPtr<ClassList> m_classList;
-    OwnPtr<ElementShadow> m_shadow;
-    OwnPtr<NamedNodeMap> m_attributeMap;
+    OwnPtrWillBeMember<DatasetDOMStringMap> m_dataset;
+    OwnPtrWillBeMember<ClassList> m_classList;
+    OwnPtrWillBeMember<ElementShadow> m_shadow;
+    OwnPtrWillBeMember<NamedNodeMap> m_attributeMap;
     OwnPtr<InputMethodContext> m_inputMethodContext;
-    OwnPtrWillBePersistent<ActiveAnimations> m_activeAnimations;
-    OwnPtr<InlineCSSStyleDeclaration> m_cssomWrapper;
+    OwnPtrWillBeMember<ActiveAnimations> m_activeAnimations;
+    OwnPtrWillBeMember<InlineCSSStyleDeclaration> m_cssomWrapper;
 
     RefPtr<RenderStyle> m_computedStyle;
     RefPtr<CustomElementDefinition> m_customElementDefinition;
@@ -155,14 +157,16 @@ inline IntSize defaultMinimumSizeForResizing()
 inline ElementRareData::ElementRareData(RenderObject* renderer)
     : NodeRareData(renderer)
     , m_tabindex(0)
-    , m_childIndex(0)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {
+    m_isElementRareData = true;
 }
 
 inline ElementRareData::~ElementRareData()
 {
+#if !ENABLE(OILPAN)
     ASSERT(!m_shadow);
+#endif
     ASSERT(!m_generatedBefore);
     ASSERT(!m_generatedAfter);
     ASSERT(!m_backdrop);
@@ -220,7 +224,6 @@ inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
 inline void ElementRareData::resetStyleState()
 {
     clearElementFlag(StyleAffectedByEmpty);
-    setChildIndex(0);
 }
 
 } // namespace

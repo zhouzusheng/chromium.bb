@@ -60,13 +60,15 @@ inline HTMLTrackElement::HTMLTrackElement(Document& document)
 
 HTMLTrackElement::~HTMLTrackElement()
 {
+#if !ENABLE(OILPAN)
     if (m_track)
         m_track->clearTrackElement();
+#endif
 }
 
-PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLTrackElement> HTMLTrackElement::create(Document& document)
 {
-    return adoptRef(new HTMLTrackElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTrackElement(document));
 }
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)
@@ -270,6 +272,12 @@ HTMLMediaElement* HTMLTrackElement::mediaElement() const
     if (isHTMLMediaElement(parent))
         return toHTMLMediaElement(parent);
     return 0;
+}
+
+void HTMLTrackElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_track);
+    HTMLElement::trace(visitor);
 }
 
 }

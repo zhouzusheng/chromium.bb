@@ -28,7 +28,6 @@
 #include "HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/html/HTMLTableCellElement.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderView.h"
@@ -237,8 +236,6 @@ void RenderTableCell::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-
     updateFirstLetter();
 
     int oldCellBaseline = cellBaselinePosition();
@@ -251,7 +248,7 @@ void RenderTableCell::layout()
     if (isBaselineAligned() && section()->rowBaseline(rowIndex()) && cellBaselinePosition() > section()->rowBaseline(rowIndex())) {
         int newIntrinsicPaddingBefore = max<LayoutUnit>(0, intrinsicPaddingBefore() - max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
         setIntrinsicPaddingBefore(newIntrinsicPaddingBefore);
-        SubtreeLayoutScope layouter(this);
+        SubtreeLayoutScope layouter(*this);
         layouter.setNeedsLayout(this);
         layoutBlock(cellWidthChanged());
     }
@@ -381,7 +378,7 @@ void RenderTableCell::computeRectForRepaint(const RenderLayerModelObject* repain
         return;
     r.setY(r.y());
     RenderView* v = view();
-    if ((!v || !v->layoutStateEnabled() || repaintContainer) && parent())
+    if ((!v || !v->canUseLayoutStateForContainer(repaintContainer)) && parent())
         r.moveBy(-parentBox()->location()); // Rows are in the same coordinate space, so don't add their offset in.
     RenderBlockFlow::computeRectForRepaint(repaintContainer, r, fixed);
 }

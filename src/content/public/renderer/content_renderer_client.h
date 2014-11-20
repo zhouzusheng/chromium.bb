@@ -30,6 +30,7 @@ namespace blink {
 class WebAudioDevice;
 class WebClipboard;
 class WebFrame;
+class WebLocalFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
 class WebMediaStreamCenter;
@@ -90,7 +91,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // returns false, the content layer will create the plugin.
   virtual bool OverrideCreatePlugin(
       RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin);
 

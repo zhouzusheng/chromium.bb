@@ -354,7 +354,7 @@ void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, boo
             m_selection.setWithoutValidation(m_selection.start(), m_selection.end());
         else
             m_selection.setWithoutValidation(m_selection.end(), m_selection.start());
-    } else if (RefPtr<Range> range = m_selection.firstRange()) {
+    } else if (RefPtrWillBeRawPtr<Range> range = m_selection.firstRange()) {
         TrackExceptionState exceptionState;
         Range::CompareResults compareResult = range->compareNode(&node, exceptionState);
         if (!exceptionState.hadException() && (compareResult == Range::NODE_BEFORE_AND_AFTER || compareResult == Range::NODE_INSIDE)) {
@@ -1409,29 +1409,24 @@ bool FrameSelection::setSelectedRange(Range* range, EAffinity affinity, SetSelec
 
     // Non-collapsed ranges are not allowed to start at the end of a line that is wrapped,
     // they start at the beginning of the next line instead
-    TrackExceptionState exceptionState;
-    bool collapsed = range->collapsed(exceptionState);
-    if (exceptionState.hadException())
-        return false;
-
     m_logicalRange = nullptr;
     stopObservingVisibleSelectionChangeIfNecessary();
 
     // FIXME: Can we provide extentAffinity?
-    VisiblePosition visibleStart(range->startPosition(), collapsed ? affinity : DOWNSTREAM);
+    VisiblePosition visibleStart(range->startPosition(), range->collapsed() ? affinity : DOWNSTREAM);
     VisiblePosition visibleEnd(range->endPosition(), SEL_DEFAULT_AFFINITY);
     setSelection(VisibleSelection(visibleStart, visibleEnd), options);
 
-    m_logicalRange = range->cloneRange(ASSERT_NO_EXCEPTION);
+    m_logicalRange = range->cloneRange();
     startObservingVisibleSelectionChange();
 
     return true;
 }
 
-PassRefPtr<Range> FrameSelection::firstRange() const
+PassRefPtrWillBeRawPtr<Range> FrameSelection::firstRange() const
 {
     if (m_logicalRange)
-        return m_logicalRange->cloneRange(ASSERT_NO_EXCEPTION);
+        return m_logicalRange->cloneRange();
     return m_selection.firstRange();
 }
 

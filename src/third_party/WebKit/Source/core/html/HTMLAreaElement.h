@@ -34,7 +34,7 @@ class Path;
 
 class HTMLAreaElement FINAL : public HTMLAnchorElement {
 public:
-    static PassRefPtr<HTMLAreaElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLAreaElement> create(Document&);
 
     bool isDefault() const { return m_shape == Default; }
 
@@ -50,7 +50,6 @@ private:
     explicit HTMLAreaElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool supportsFocus() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool rendererIsFocusable() const OVERRIDE;

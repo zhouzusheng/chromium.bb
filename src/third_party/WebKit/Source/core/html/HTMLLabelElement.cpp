@@ -49,9 +49,9 @@ inline HTMLLabelElement::HTMLLabelElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document)
 {
-    return adoptRef(new HTMLLabelElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLLabelElement(document));
 }
 
 bool HTMLLabelElement::rendererIsFocusable() const

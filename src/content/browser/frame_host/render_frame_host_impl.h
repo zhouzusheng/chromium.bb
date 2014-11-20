@@ -10,10 +10,12 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
 
 class GURL;
@@ -24,10 +26,6 @@ struct FrameMsg_Navigate_Params;
 namespace base {
 class FilePath;
 class ListValue;
-}
-
-namespace gfx {
-class Point;
 }
 
 namespace content {
@@ -42,6 +40,7 @@ class RenderViewHostImpl;
 struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
+struct ShowDesktopNotificationHostMsgParams;
 
 class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
  public:
@@ -58,22 +57,6 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   virtual bool IsCrossProcessSubframe() OVERRIDE;
   virtual GURL GetLastCommittedURL() OVERRIDE;
   virtual gfx::NativeView GetNativeView() OVERRIDE;
-  virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;
-  virtual void NotifyContextMenuClosed(
-      const CustomContextMenuContext& context) OVERRIDE;
-  virtual void ExecuteCustomContextMenuCommand(
-      int action, const CustomContextMenuContext& context) OVERRIDE;
-  virtual void Undo() OVERRIDE;
-  virtual void Redo() OVERRIDE;
-  virtual void Cut() OVERRIDE;
-  virtual void Copy() OVERRIDE;
-  virtual void CopyToFindPboard() OVERRIDE;
-  virtual void Paste() OVERRIDE;
-  virtual void PasteAndMatchStyle() OVERRIDE;
-  virtual void Delete() OVERRIDE;
-  virtual void SelectAll() OVERRIDE;
-  virtual void Unselect() OVERRIDE;
-  virtual void InsertCSS(const std::string& css) OVERRIDE;
   virtual void ExecuteJavaScript(
       const base::string16& javascript) OVERRIDE;
   virtual void ExecuteJavaScript(
@@ -161,12 +144,24 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // Load the specified URL; this is a shortcut for Navigate().
   void NavigateToURL(const GURL& url);
 
-  // Requests the renderer to select the region between two points.
-  void SelectRange(const gfx::Point& start, const gfx::Point& end);
+  // Runs the beforeunload handler for this frame. |for_cross_site_transition|
+  // indicates whether this call is for the current frame during a cross-process
+  // navigation. False means we're closing the entire tab.
+  void DispatchBeforeUnload(bool for_cross_site_transition);
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
   void ExtendSelectionAndDelete(size_t before, size_t after);
+
+  // Notifies the RenderFrame that the JavaScript message that was shown was
+  // closed by the user.
+  void JavaScriptDialogClosed(IPC::Message* reply_msg,
+                              bool success,
+                              const base::string16& user_input,
+                              bool dialog_was_suppressed);
+
+  // Called when an HTML5 notification is closed.
+  void NotificationClosed(int notification_id);
 
  protected:
   friend class RenderFrameHostFactory;
@@ -186,9 +181,14 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   friend class TestRenderViewHost;
 
   // IPC Message handlers.
+  void OnAddMessageToConsole(int32 level,
+                             const base::string16& message,
+                             int32 line_no,
+                             const base::string16& source_id);
   void OnDetach();
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
+  void OnDocumentOnLoadCompleted();
   void OnDidStartProvisionalLoadForFrame(int parent_routing_id,
                                          const GURL& url);
   void OnDidFailProvisionalLoadWithError(
@@ -209,11 +209,30 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void OnSwapOutACK();
   void OnContextMenu(const ContextMenuParams& params);
   void OnJavaScriptExecuteResponse(int id, const base::ListValue& result);
+  void OnRunJavaScriptMessage(const base::string16& message,
+                              const base::string16& default_prompt,
+                              const GURL& frame_url,
+                              JavaScriptMessageType type,
+                              IPC::Message* reply_msg);
+  void OnRunBeforeUnloadConfirm(const GURL& frame_url,
+                                const base::string16& message,
+                                bool is_reload,
+                                IPC::Message* reply_msg);
+  void OnRequestDesktopNotificationPermission(const GURL& origin,
+                                              int callback_id);
+  void OnShowDesktopNotification(
+      int notification_id,
+      const ShowDesktopNotificationHostMsgParams& params);
+  void OnCancelDesktopNotification(int notification_id);
+  void OnDidAccessInitialDocument();
+  void OnDidDisownOpener();
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
   // it will be used to kill processes that commit unauthorized URLs.
   bool CanCommitURL(const GURL& url);
+
+  void DesktopNotificationPermissionRequestDone(int callback_context);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -249,11 +268,16 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // ExecuteJavaScript and their corresponding callbacks.
   std::map<int, JavaScriptResultCallback> javascript_callbacks_;
 
+  // Map from notification_id to a callback to cancel them.
+  std::map<int, base::Closure> cancel_notification_callbacks_;
+
   int routing_id_;
   bool is_swapped_out_;
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;
+
+  base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameHostImpl);
 };

@@ -10,6 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "sync/internal_api/public/base/attachment_id_proto.h"
 #include "sync/internal_api/public/base/unique_position.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/syncable/entry.h"
@@ -39,19 +40,22 @@ Directory::PersistedKernelInfo::PersistedKernelInfo()
   ModelTypeSet protocol_types = ProtocolTypes();
   for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
        iter.Inc()) {
-    reset_download_progress(iter.Get());
+    ResetDownloadProgress(iter.Get());
     transaction_version[iter.Get()] = 0;
   }
 }
 
 Directory::PersistedKernelInfo::~PersistedKernelInfo() {}
 
-void Directory::PersistedKernelInfo::reset_download_progress(
+void Directory::PersistedKernelInfo::ResetDownloadProgress(
     ModelType model_type) {
+  // Clear everything except the data type id field.
+  download_progress[model_type].Clear();
   download_progress[model_type].set_data_type_id(
       GetSpecificsFieldNumberFromModelType(model_type));
-  // An empty-string token indicates no prior knowledge.
-  download_progress[model_type].set_token(std::string());
+
+  // Explicitly set an empty token field to denote no progress.
+  download_progress[model_type].set_token("");
 }
 
 Directory::SaveChangesSnapshot::SaveChangesSnapshot()
@@ -120,6 +124,7 @@ DirOpenResult Directory::Open(
 }
 
 void Directory::InitializeIndices(MetahandlesMap* handles_map) {
+  ScopedKernelLock lock(this);
   kernel_->metahandles_map.swap(*handles_map);
   for (MetahandlesMap::const_iterator it = kernel_->metahandles_map.begin();
        it != kernel_->metahandles_map.end(); ++it) {
@@ -149,6 +154,7 @@ void Directory::InitializeIndices(MetahandlesMap* handles_map) {
            kernel_->ids_map.end()) << "Unexpected duplicate use of ID";
     kernel_->ids_map[entry->ref(ID).value()] = entry;
     DCHECK(!entry->is_dirty());
+    AddToAttachmentIndex(metahandle, entry->ref(ATTACHMENT_METADATA), lock);
   }
 }
 
@@ -321,10 +327,6 @@ int Directory::GetPositionIndex(
   return std::distance(siblings->begin(), it);
 }
 
-EntryKernel* Directory::GetRootEntry() {
-  return GetEntryById(Id());
-}
-
 bool Directory::InsertEntry(BaseWriteTransaction* trans, EntryKernel* entry) {
   ScopedKernelLock lock(this);
   return InsertEntry(trans, entry, &lock);
@@ -363,6 +365,8 @@ bool Directory::InsertEntry(BaseWriteTransaction* trans,
       return false;
     }
   }
+  AddToAttachmentIndex(
+      entry->ref(META_HANDLE), entry->ref(ATTACHMENT_METADATA), *lock);
 
   // Should NEVER be created with a client tag or server tag.
   if (!SyncAssert(entry->ref(UNIQUE_SERVER_TAG).empty(), FROM_HERE,
@@ -407,6 +411,51 @@ bool Directory::ReindexParentId(BaseWriteTransaction* trans,
     entry->put(PARENT_ID, new_parent_id);
   }
   return true;
+}
+
+void Directory::RemoveFromAttachmentIndex(
+    const int64 metahandle,
+    const sync_pb::AttachmentMetadata& attachment_metadata,
+    const ScopedKernelLock& lock) {
+  for (int i = 0; i < attachment_metadata.record_size(); ++i) {
+    AttachmentIdUniqueId unique_id =
+        attachment_metadata.record(i).id().unique_id();
+    IndexByAttachmentId::iterator iter =
+        kernel_->index_by_attachment_id.find(unique_id);
+    if (iter != kernel_->index_by_attachment_id.end()) {
+      iter->second.erase(metahandle);
+      if (iter->second.empty()) {
+        kernel_->index_by_attachment_id.erase(iter);
+      }
+    }
+  }
+}
+
+void Directory::AddToAttachmentIndex(
+    const int64 metahandle,
+    const sync_pb::AttachmentMetadata& attachment_metadata,
+    const ScopedKernelLock& lock) {
+  for (int i = 0; i < attachment_metadata.record_size(); ++i) {
+    AttachmentIdUniqueId unique_id =
+        attachment_metadata.record(i).id().unique_id();
+    IndexByAttachmentId::iterator iter =
+        kernel_->index_by_attachment_id.find(unique_id);
+    if (iter == kernel_->index_by_attachment_id.end()) {
+      iter = kernel_->index_by_attachment_id.insert(std::make_pair(
+                                                        unique_id,
+                                                        MetahandleSet())).first;
+    }
+    iter->second.insert(metahandle);
+  }
+}
+
+void Directory::UpdateAttachmentIndex(
+    const int64 metahandle,
+    const sync_pb::AttachmentMetadata& old_metadata,
+    const sync_pb::AttachmentMetadata& new_metadata) {
+  ScopedKernelLock lock(this);
+  RemoveFromAttachmentIndex(metahandle, old_metadata, lock);
+  AddToAttachmentIndex(metahandle, new_metadata, lock);
 }
 
 bool Directory::unrecoverable_error_set(const BaseTransaction* trans) const {
@@ -549,6 +598,9 @@ bool Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
                       "Deleted entry still present",
                       (&trans)))
         return false;
+      RemoveFromAttachmentIndex(
+          entry->ref(META_HANDLE), entry->ref(ATTACHMENT_METADATA), lock);
+
       delete entry;
     }
     if (trans.unrecoverable_error_set())
@@ -608,7 +660,8 @@ void Directory::UnapplyEntry(EntryKernel* entry) {
 
 void Directory::DeleteEntry(bool save_to_journal,
                             EntryKernel* entry,
-                            EntryKernelSet* entries_to_journal) {
+                            EntryKernelSet* entries_to_journal,
+                            const ScopedKernelLock& lock) {
   int64 handle = entry->ref(META_HANDLE);
   ModelType server_type = GetModelTypeFromSpecifics(
       entry->ref(SERVER_SPECIFICS));
@@ -638,6 +691,7 @@ void Directory::DeleteEntry(bool save_to_journal,
         kernel_->server_tags_map.erase(entry->ref(UNIQUE_SERVER_TAG));
     DCHECK_EQ(1u, num_erased);
   }
+  RemoveFromAttachmentIndex(handle, entry->ref(ATTACHMENT_METADATA), lock);
 
   if (save_to_journal) {
     entries_to_journal->insert(entry);
@@ -705,7 +759,7 @@ bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet disabled_types,
                types_to_journal.Has(server_type)) &&
               (delete_journal_->IsDeleteJournalEnabled(local_type) ||
                delete_journal_->IsDeleteJournalEnabled(server_type));
-          DeleteEntry(save_to_journal, entry, &entries_to_journal);
+          DeleteEntry(save_to_journal, entry, &entries_to_journal, lock);
         }
       }
 
@@ -716,13 +770,62 @@ bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet disabled_types,
            it.Good(); it.Inc()) {
         kernel_->persisted_info.transaction_version[it.Get()] = 0;
 
-        // Don't discard progress markers for unapplied types.
-        if (!types_to_unapply.Has(it.Get()))
-          kernel_->persisted_info.reset_download_progress(it.Get());
+        // Don't discard progress markers or context for unapplied types.
+        if (!types_to_unapply.Has(it.Get())) {
+          kernel_->persisted_info.ResetDownloadProgress(it.Get());
+          kernel_->persisted_info.datatype_context[it.Get()].Clear();
+        }
       }
+
+      kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
     }
   }
   return true;
+}
+
+bool Directory::ResetVersionsForType(BaseWriteTransaction* trans,
+                                     ModelType type) {
+  if (!ProtocolTypes().Has(type))
+    return false;
+  DCHECK_NE(type, BOOKMARKS) << "Only non-hierarchical types are supported";
+
+  EntryKernel* type_root = GetEntryByServerTag(ModelTypeToRootTag(type));
+  if (!type_root)
+    return false;
+
+  ScopedKernelLock lock(this);
+  const Id& type_root_id = type_root->ref(ID);
+  Directory::Metahandles children;
+  AppendChildHandles(lock, type_root_id, &children);
+
+  for (Metahandles::iterator it = children.begin(); it != children.end();
+       ++it) {
+    EntryKernel* entry = GetEntryByHandle(*it, &lock);
+    if (!entry)
+      continue;
+    if (entry->ref(BASE_VERSION) > 1)
+      entry->put(BASE_VERSION, 1);
+    if (entry->ref(SERVER_VERSION) > 1)
+      entry->put(SERVER_VERSION, 1);
+
+    // Note that we do not unset IS_UNSYNCED or IS_UNAPPLIED_UPDATE in order
+    // to ensure no in-transit data is lost.
+
+    entry->mark_dirty(&kernel_->dirty_metahandles);
+  }
+
+  return true;
+}
+
+bool Directory::IsAttachmentLinked(
+    const sync_pb::AttachmentIdProto& attachment_id_proto) const {
+  ScopedKernelLock lock(this);
+  IndexByAttachmentId::const_iterator iter =
+      kernel_->index_by_attachment_id.find(attachment_id_proto.unique_id());
+  if (iter != kernel_->index_by_attachment_id.end() && !iter->second.empty()) {
+    return true;
+  }
+  return false;
 }
 
 void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
@@ -790,6 +893,22 @@ int64 Directory::GetTransactionVersion(ModelType type) const {
 void Directory::IncrementTransactionVersion(ModelType type) {
   kernel_->transaction_mutex.AssertAcquired();
   kernel_->persisted_info.transaction_version[type]++;
+}
+
+void Directory::GetDataTypeContext(BaseTransaction* trans,
+                                   ModelType type,
+                                   sync_pb::DataTypeContext* context) const {
+  ScopedKernelLock lock(this);
+  context->CopyFrom(kernel_->persisted_info.datatype_context[type]);
+}
+
+void Directory::SetDataTypeContext(
+    BaseWriteTransaction* trans,
+    ModelType type,
+    const sync_pb::DataTypeContext& context) {
+  ScopedKernelLock lock(this);
+  kernel_->persisted_info.datatype_context[type].CopyFrom(context);
+  kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
 ModelTypeSet Directory::InitialSyncEndedTypes() {
@@ -934,13 +1053,18 @@ void Directory::CollectMetaHandleCounts(
   }
 }
 
-scoped_ptr<base::ListValue> Directory::GetAllNodeDetails(
-    BaseTransaction* trans) {
+scoped_ptr<base::ListValue> Directory::GetNodeDetailsForType(
+    BaseTransaction* trans,
+    ModelType type) {
   scoped_ptr<base::ListValue> nodes(new base::ListValue());
 
   ScopedKernelLock lock(this);
   for (MetahandlesMap::iterator it = kernel_->metahandles_map.begin();
        it != kernel_->metahandles_map.end(); ++it) {
+    if (GetModelTypeFromSpecifics(it->second->ref(SPECIFICS)) != type) {
+      continue;
+    }
+
     EntryKernel* kernel = it->second;
     scoped_ptr<base::DictionaryValue> node(
         kernel->ToValue(GetCryptographer(trans)));

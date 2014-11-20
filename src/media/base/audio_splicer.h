@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "media/audio/audio_parameters.h"
+#include "media/base/buffers.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -44,10 +45,15 @@ class MEDIA_EXPORT AudioSplicer {
   // should only be called if HasNextBuffer() returns true.
   scoped_refptr<AudioBuffer> GetNextBuffer();
 
-  // Indicates that overlapping buffers are coming up and should be crossfaded.
-  // Once set, all buffers encountered after |splice_timestamp| will be queued
-  // internally until at least 5ms of overlapping buffers are received (or end
-  // of stream, whichever comes first).
+  // Indicates an upcoming splice point.  All buffers overlapping or after the
+  // |splice_timestamp| will be considered as "before the splice."  Clients must
+  // then call SetSpliceTimestamp(kNoTimestamp()) to signal that future buffers
+  // should be considered as "after the splice."
+  //
+  // Once |kCrossfadeDurationInMilliseconds| of buffers "after the splice" or
+  // end of stream has been received, the "after" buffers will be crossfaded
+  // with all "before" buffers which overlap them.  "before" buffers outside
+  // of the overlap range will be discarded.
   void SetSpliceTimestamp(base::TimeDelta splice_timestamp);
 
  private:
@@ -75,8 +81,14 @@ class MEDIA_EXPORT AudioSplicer {
   void CrossfadePostSplice(scoped_ptr<AudioBus> pre_splice_bus,
                            scoped_refptr<AudioBuffer> crossfade_buffer);
 
+  // Reset the splice and splice end timestamps.
+  void reset_splice_timestamps() {
+    splice_timestamp_ = max_splice_end_timestamp_ = kNoTimestamp();
+  }
+
   const base::TimeDelta max_crossfade_duration_;
   base::TimeDelta splice_timestamp_;
+  base::TimeDelta max_splice_end_timestamp_;
 
   // The various sanitizers for each stage of the crossfade process.  Buffers in
   // |output_sanitizer_| are immediately available for consumption by external
@@ -93,6 +105,10 @@ class MEDIA_EXPORT AudioSplicer {
   scoped_ptr<AudioStreamSanitizer> output_sanitizer_;
   scoped_ptr<AudioStreamSanitizer> pre_splice_sanitizer_;
   scoped_ptr<AudioStreamSanitizer> post_splice_sanitizer_;
+
+  // Whether all buffers which should go into |pre_splice_sanitizer_| have been
+  // received.  If true, buffers should now be put in |post_splice_sanitizer_|.
+  bool have_all_pre_splice_buffers_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AudioSplicer);
 };

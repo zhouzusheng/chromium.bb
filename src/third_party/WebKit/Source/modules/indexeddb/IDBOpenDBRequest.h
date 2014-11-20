@@ -35,18 +35,20 @@ class IDBDatabaseCallbacks;
 
 class IDBOpenDBRequest FINAL : public IDBRequest {
 public:
-    static PassRefPtr<IDBOpenDBRequest> create(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
+    static PassRefPtrWillBeRawPtr<IDBOpenDBRequest> create(ExecutionContext*, PassRefPtrWillBeRawPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
     virtual ~IDBOpenDBRequest();
+    virtual void trace(Visitor*) OVERRIDE;
 
     using IDBRequest::onSuccess;
 
     virtual void onBlocked(int64_t existingVersion) OVERRIDE;
     virtual void onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&, blink::WebIDBDataLoss, String dataLossMessage) OVERRIDE;
     virtual void onSuccess(PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&) OVERRIDE;
+    virtual void onSuccess(int64_t oldVersion) OVERRIDE;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(blocked);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(upgradeneeded);
@@ -55,9 +57,9 @@ protected:
     virtual bool shouldEnqueueEvent() const OVERRIDE;
 
 private:
-    IDBOpenDBRequest(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
+    IDBOpenDBRequest(ExecutionContext*, PassRefPtrWillBeRawPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
 
-    RefPtr<IDBDatabaseCallbacks> m_databaseCallbacks;
+    RefPtrWillBeMember<IDBDatabaseCallbacks> m_databaseCallbacks;
     const int64_t m_transactionId;
     int64_t m_version;
 };

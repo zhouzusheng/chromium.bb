@@ -42,7 +42,6 @@ public:
     AnimatableColorImpl(Color);
     Color toColor() const;
     AnimatableColorImpl interpolateTo(const AnimatableColorImpl&, double fraction) const;
-    AnimatableColorImpl addWith(const AnimatableColorImpl&) const;
     bool operator==(const AnimatableColorImpl&) const;
     double distanceTo(const AnimatableColorImpl&) const;
 
@@ -63,11 +62,10 @@ public:
     Color color() const { return m_color.toColor(); }
     Color visitedLinkColor() const { return m_visitedLinkColor.toColor(); }
 
-    virtual void trace(Visitor*) OVERRIDE { }
+    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
 
 protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableColor(const AnimatableColorImpl& color, const AnimatableColorImpl& visitedLinkColor)

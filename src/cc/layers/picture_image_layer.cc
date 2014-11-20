@@ -40,9 +40,11 @@ void PictureImageLayer::SetBitmap(const SkBitmap& bitmap) {
   SetNeedsDisplay();
 }
 
-void PictureImageLayer::PaintContents(SkCanvas* canvas,
-                                      const gfx::Rect& clip,
-                                      gfx::RectF* opaque) {
+void PictureImageLayer::PaintContents(
+    SkCanvas* canvas,
+    const gfx::Rect& clip,
+    gfx::RectF* opaque,
+    ContentLayerClient::GraphicsContextStatus gc_status) {
   if (!bitmap_.width() || !bitmap_.height())
     return;
 

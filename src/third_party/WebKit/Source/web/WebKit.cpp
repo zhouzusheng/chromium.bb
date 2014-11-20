@@ -29,29 +29,29 @@
  */
 
 #include "config.h"
-#include "WebKit.h"
+#include "public/web/WebKit.h"
 
-#include "IDBFactoryBackendProxy.h"
 #include "RuntimeEnabledFeatures.h"
-#include "WebMediaPlayerClientImpl.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Initializer.h"
-#include "bindings/v8/V8RecursionScope.h"
 #include "core/Init.h"
 #include "core/dom/Microtask.h"
-#include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/page/Page.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
-#include "heap/Heap.h"
-#include "heap/glue/MessageLoopInterruptor.h"
-#include "heap/glue/PendingGCRunner.h"
+#include "gin/public/v8_platform.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/Logging.h"
 #include "platform/graphics/ImageDecodingStore.h"
 #include "platform/graphics/media/MediaPlayer.h"
+#include "platform/heap/Heap.h"
+#include "platform/heap/glue/MessageLoopInterruptor.h"
+#include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
+#include "web/IndexedDBClientImpl.h"
+#include "web/WebMediaPlayerClientImpl.h"
 #include "wtf/Assertions.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MainThread.h"
@@ -93,18 +93,13 @@ static bool generateEntropy(unsigned char* buffer, size_t length)
     return false;
 }
 
-#ifndef NDEBUG
-static void assertV8RecursionScope()
-{
-    ASSERT(!isMainThread() || WebCore::V8RecursionScope::properlyUsed());
-}
-#endif
-
 void initialize(Platform* platform)
 {
     initializeWithoutV8(platform);
 
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::V8::InitializePlatform(gin::V8Platform::Get());
+    v8::Isolate* isolate = v8::Isolate::New();
+    isolate->Enter();
     WebCore::V8Initializer::initializeMainThreadIfNeeded(isolate);
     v8::V8::SetEntropySource(&generateEntropy);
     v8::V8::SetArrayBufferAllocator(WebCore::v8ArrayBufferAllocator());
@@ -116,9 +111,6 @@ void initialize(Platform* platform)
 
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = platform->currentThread()) {
-#ifndef NDEBUG
-        v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
-#endif
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
         currentThread->addTaskObserver(s_endOfTaskRunner);
@@ -162,6 +154,9 @@ void initializeWithoutV8(Platform* platform)
     WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction);
     WTF::initializeMainThread(callOnMainThreadFunction);
     WebCore::Heap::init();
+
+    WebCore::ThreadState::attachMainThread();
+    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_pendingGCRunner);
         s_pendingGCRunner = new WebCore::PendingGCRunner;
@@ -172,7 +167,6 @@ void initializeWithoutV8(Platform* platform)
         WebCore::ThreadState::current()->addInterruptor(s_messageLoopInterruptor);
     }
     WebCore::init();
-    WebCore::ImageDecodingStore::initializeOnce();
 
     // There are some code paths (for example, running WebKit in the browser
     // process and calling into LocalStorage before anything else) where the
@@ -183,7 +177,7 @@ void initializeWithoutV8(Platform* platform)
     // this, initializing this lazily probably doesn't buy us much.
     WTF::UTF8Encoding();
 
-    WebCore::setIDBFactoryBackendInterfaceCreateFunction(blink::IDBFactoryBackendProxy::create);
+    WebCore::setIndexedDBClientCreateFunction(blink::IndexedDBClientImpl::create);
 
     WebCore::MediaPlayer::setMediaEngineCreateFunction(blink::WebMediaPlayerClientImpl::create);
 }
@@ -193,9 +187,6 @@ void shutdown()
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (Platform::current()->currentThread()) {
         ASSERT(s_endOfTaskRunner);
-#ifndef NDEBUG
-        v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
-#endif
         Platform::current()->currentThread()->removeTaskObserver(s_endOfTaskRunner);
         delete s_endOfTaskRunner;
         s_endOfTaskRunner = 0;
@@ -204,17 +195,7 @@ void shutdown()
     ASSERT(s_isolateInterruptor);
     WebCore::ThreadState::current()->removeInterruptor(s_isolateInterruptor);
 
-    WebCore::V8PerIsolateData::dispose(WebCore::V8PerIsolateData::mainThreadIsolate());
-    v8::V8::Dispose();
-
-    shutdownWithoutV8();
-}
-
-void shutdownWithoutV8()
-{
-    ASSERT(!s_endOfTaskRunner);
-    WebCore::ImageDecodingStore::shutdown();
-    WebCore::shutdown();
+    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (Platform::current()->currentThread()) {
         ASSERT(s_pendingGCRunner);
         delete s_pendingGCRunner;
@@ -225,6 +206,23 @@ void shutdownWithoutV8()
         delete s_messageLoopInterruptor;
         s_messageLoopInterruptor = 0;
     }
+
+    // Detach the main thread before starting the shutdown sequence
+    // so that the main thread won't get involved in a GC during the shutdown.
+    WebCore::ThreadState::detachMainThread();
+
+    v8::Isolate* isolate = WebCore::V8PerIsolateData::mainThreadIsolate();
+    WebCore::V8PerIsolateData::dispose(isolate);
+    isolate->Exit();
+    isolate->Dispose();
+
+    shutdownWithoutV8();
+}
+
+void shutdownWithoutV8()
+{
+    ASSERT(!s_endOfTaskRunner);
+    WebCore::shutdown();
     WebCore::Heap::shutdown();
     WTF::shutdown();
     Platform::shutdown();
@@ -239,6 +237,16 @@ void setLayoutTestMode(bool value)
 bool layoutTestMode()
 {
     return WebCore::isRunningLayoutTest();
+}
+
+void setFontAntialiasingEnabledForTest(bool value)
+{
+    WebCore::setFontAntialiasingEnabledForTest(value);
+}
+
+bool fontAntialiasingEnabledForTest()
+{
+    return WebCore::isFontAntialiasingEnabledForTest();
 }
 
 void enableLogChannel(const char* name)

@@ -24,14 +24,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-[
-    NoInterfaceObject
-] interface ShadowRoot : DocumentFragment {
+interface ShadowRoot : DocumentFragment {
     readonly attribute Element activeElement;
 
     [ImplementedAs=olderShadowRootForBindings] readonly attribute ShadowRoot olderShadowRoot;
 
-    [TreatNullAs=NullString, CustomElementCallbacks, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds, RaisesException=Setter] attribute DOMString innerHTML;
+    [TreatNullAs=NullString, CustomElementCallbacks, PerWorldBindings, LogActivity=SetterOnly, RaisesException=Setter] attribute DOMString innerHTML;
 
     [RaisesException] Node cloneNode([Default=Undefined] optional boolean deep);
     Selection getSelection();

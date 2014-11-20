@@ -23,16 +23,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#mediacontroller
+
 [
     Constructor,
     ConstructorCallWith=ExecutionContext,
-    RuntimeEnabled=Media,
+    RuntimeEnabled=MediaController,
+    TypeChecking=Unrestricted,
 ] interface MediaController : EventTarget {
     readonly attribute TimeRanges buffered;
     readonly attribute TimeRanges seekable;
 
-    readonly attribute double duration;
-    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
+    readonly attribute unrestricted double duration;
     [RaisesException=Setter] attribute double currentTime;
 
     readonly attribute boolean paused;
@@ -42,8 +44,8 @@
     void pause();
     void unpause();
 
-    [RaisesException=Setter] attribute double defaultPlaybackRate;
-    [RaisesException=Setter] attribute double playbackRate;
+    attribute double defaultPlaybackRate;
+    attribute double playbackRate;
 
     [RaisesException=Setter] attribute double volume;
     attribute boolean muted;

@@ -16,7 +16,6 @@
 #include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_scan.h"
-#include "vp9/common/vp9_entropymode.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -176,13 +175,13 @@ static INLINE int get_entropy_context(TX_SIZE tx_size, const ENTROPY_CONTEXT *a,
 
 static const INLINE scan_order *get_scan(const MACROBLOCKD *xd, TX_SIZE tx_size,
                                          PLANE_TYPE type, int block_idx) {
-  const MODE_INFO *const mi = xd->mi_8x8[0];
+  const MODE_INFO *const mi = xd->mi[0];
 
   if (is_inter_block(&mi->mbmi) || type != PLANE_TYPE_Y || xd->lossless) {
     return &vp9_default_scan_orders[tx_size];
   } else {
-    const MB_PREDICTION_MODE mode = get_y_mode(mi, block_idx);
-    return &vp9_scan_orders[tx_size][mode2txfm_map[mode]];
+    const PREDICTION_MODE mode = get_y_mode(mi, block_idx);
+    return &vp9_scan_orders[tx_size][intra_mode_to_tx_type_lookup[mode]];
   }
 }
 

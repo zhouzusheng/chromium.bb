@@ -4,6 +4,7 @@
 
 #include "content/worker/websharedworker_stub.h"
 
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "content/child/child_process.h"
 #include "content/child/child_thread.h"
@@ -11,10 +12,11 @@
 #include "content/child/shared_worker_devtools_agent.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
+#include "content/public/common/content_switches.h"
 #include "content/worker/worker_thread.h"
-#include "third_party/WebKit/public/web/WebSharedWorker.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/web/WebSharedWorker.h"
 
 namespace content {
 
@@ -23,6 +25,7 @@ WebSharedWorkerStub::WebSharedWorkerStub(
     const base::string16& name,
     const base::string16& content_security_policy,
     blink::WebContentSecurityPolicyType security_policy_type,
+    bool pause_on_start,
     int route_id)
     : route_id_(route_id),
       client_(route_id, this),
@@ -37,6 +40,12 @@ WebSharedWorkerStub::WebSharedWorkerStub(
 
   // TODO(atwilson): Add support for NaCl when they support MessagePorts.
   impl_ = blink::WebSharedWorker::create(client());
+  if (pause_on_start) {
+    // Pause worker context when it starts and wait until either DevTools client
+    // is attached or explicit resume notification is received.
+    impl_->pauseWorkerContextOnStart();
+  }
+
   worker_devtools_agent_.reset(new SharedWorkerDevToolsAgent(route_id, impl_));
   client()->set_devtools_agent(worker_devtools_agent_.get());
   impl_->startWorkerContext(url_, name,

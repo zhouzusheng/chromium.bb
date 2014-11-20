@@ -10,6 +10,7 @@
 #include "gl/GrGLEffect.h"
 #include "gl/GrGLSL.h"
 #include "GrConvexPolyEffect.h"
+#include "GrOvalEffect.h"
 #include "GrTBackendEffectFactory.h"
 
 #include "SkRRect.h"
@@ -77,7 +78,9 @@ private:
 GrEffectRef* CircularRRectEffect::Create(GrEffectEdgeType edgeType,
                                  uint32_t circularCornerFlags,
                                  const SkRRect& rrect) {
-    SkASSERT(kFillAA_GrEffectEdgeType == edgeType || kInverseFillAA_GrEffectEdgeType == edgeType);
+    if (kFillAA_GrEffectEdgeType != edgeType && kInverseFillAA_GrEffectEdgeType != edgeType) {
+        return NULL;
+    }
     return CreateEffectRef(AutoEffectUnref(SkNEW_ARGS(CircularRRectEffect,
                                                       (edgeType, circularCornerFlags, rrect))));
 }
@@ -366,7 +369,7 @@ void GLCircularRRectEffect::setData(const GrGLUniformManager& uman,
                 rect.fBottom -= radius;
                 break;
             default:
-                GrCrash("Should have been one of the above cases.");
+                SkFAIL("Should have been one of the above cases.");
         }
         uman.set4f(fInnerRectUniform, rect.fLeft, rect.fTop, rect.fRight, rect.fBottom);
         uman.set1f(fRadiusPlusHalfUniform, radius + 0.5f);
@@ -410,7 +413,9 @@ private:
 };
 
 GrEffectRef* EllipticalRRectEffect::Create(GrEffectEdgeType edgeType, const SkRRect& rrect) {
-    SkASSERT(kFillAA_GrEffectEdgeType == edgeType || kInverseFillAA_GrEffectEdgeType == edgeType);
+    if (kFillAA_GrEffectEdgeType != edgeType && kInverseFillAA_GrEffectEdgeType != edgeType) {
+        return NULL;
+    }
     return CreateEffectRef(AutoEffectUnref(SkNEW_ARGS(EllipticalRRectEffect, (edgeType, rrect))));
 }
 
@@ -561,12 +566,13 @@ void GLEllipticalRRectEffect::emitCode(GrGLShaderBuilder* builder,
             break;
         }
         default:
-            GrCrash("RRect should always be simple or nine-patch.");
+            SkFAIL("RRect should always be simple or nine-patch.");
     }
     // implicit is the evaluation of (x/a)^2 + (y/b)^2 - 1.
     builder->fsCodeAppend("\t\tfloat implicit = dot(Z, dxy) - 1.0;\n");
     // grad_dot is the squared length of the gradient of the implicit.
     builder->fsCodeAppendf("\t\tfloat grad_dot = 4.0 * dot(Z, Z);\n");
+    // avoid calling inversesqrt on zero.
     builder->fsCodeAppend("\t\tgrad_dot = max(grad_dot, 1.0e-4);\n");
     builder->fsCodeAppendf("\t\tfloat approx_dist = implicit * inversesqrt(grad_dot);\n");
 
@@ -617,7 +623,7 @@ void GLEllipticalRRectEffect::setData(const GrGLUniformManager& uman,
                 break;
             }
         default:
-            GrCrash("RRect should always be simple or nine-patch.");
+            SkFAIL("RRect should always be simple or nine-patch.");
         }
         uman.set4f(fInnerRectUniform, rect.fLeft, rect.fTop, rect.fRight, rect.fBottom);
         fPrevRRect = rrect;
@@ -627,12 +633,12 @@ void GLEllipticalRRectEffect::setData(const GrGLUniformManager& uman,
 //////////////////////////////////////////////////////////////////////////////
 
 GrEffectRef* GrRRectEffect::Create(GrEffectEdgeType edgeType, const SkRRect& rrect) {
-    if (kFillAA_GrEffectEdgeType != edgeType && kInverseFillAA_GrEffectEdgeType != edgeType) {
-        return NULL;
-    }
-
     if (rrect.isRect()) {
         return GrConvexPolyEffect::Create(edgeType, rrect.getBounds());
+    }
+
+    if (rrect.isOval()) {
+        return GrOvalEffect::Create(edgeType, rrect.getBounds());
     }
 
     if (rrect.isSimple()) {

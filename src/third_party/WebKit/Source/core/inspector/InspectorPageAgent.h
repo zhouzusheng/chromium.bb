@@ -67,8 +67,10 @@ public:
         DocumentResource,
         StylesheetResource,
         ImageResource,
-        Font,
+        FontResource,
+        MediaResource,
         ScriptResource,
+        TextTrackResource,
         XHRResource,
         WebSocketResource,
         OtherResource
@@ -100,6 +102,7 @@ public:
     virtual void deleteCookie(ErrorString*, const String& cookieName, const String& url) OVERRIDE;
     virtual void getResourceTree(ErrorString*, RefPtr<TypeBuilder::Page::FrameResourceTree>&) OVERRIDE;
     virtual void getResourceContent(ErrorString*, const String& frameId, const String& url, String* content, bool* base64Encoded) OVERRIDE;
+    virtual void hasTouchInputs(ErrorString*, bool* result) OVERRIDE;
     virtual void searchInResource(ErrorString*, const String& frameId, const String& url, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> >&) OVERRIDE;
     virtual void setDocumentContent(ErrorString*, const String& frameId, const String& html) OVERRIDE;
     virtual void setDeviceMetricsOverride(ErrorString*, int width, int height, double deviceScaleFactor, bool emulateViewport, bool fitWindow, const bool* optionalTextAutosizing, const double* optionalFontScaleFactor) OVERRIDE;
@@ -115,7 +118,7 @@ public:
     virtual void setShowViewportSizeOnResize(ErrorString*, bool show, const bool* showGrid) OVERRIDE;
 
     // InspectorInstrumentation API
-    void didClearWindowObjectInMainWorld(LocalFrame*);
+    void didClearDocumentOfWindowObject(LocalFrame*);
     void domContentLoadedEventFired(LocalFrame*);
     void loadEventFired(LocalFrame*);
     void didCommitLoad(LocalFrame*, DocumentLoader*);
@@ -134,7 +137,7 @@ public:
     void didLayout(RenderObject*);
     void didScroll();
     void didResizeMainFrame();
-    void didRecalculateStyle();
+    void didRecalculateStyle(int);
     void scriptsEnabled(bool isEnabled);
 
     // Inspector Controller API
@@ -189,6 +192,12 @@ private:
     bool m_ignoreScriptsEnabledNotification;
     bool m_deviceMetricsOverridden;
     bool m_emulateViewportEnabled;
+
+    bool m_touchEmulationEnabled;
+    bool m_originalTouchEnabled;
+    bool m_originalDeviceSupportsMouse;
+    bool m_originalDeviceSupportsTouch;
+
     bool m_embedderTextAutosizingEnabled;
     double m_embedderFontScaleFactor;
 };

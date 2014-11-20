@@ -45,12 +45,12 @@ public:
 
     static Element* firstElementChild(ContainerNode& node)
     {
-        return ElementTraversal::firstWithin(node);
+        return ElementTraversal::firstChild(node);
     }
 
     static Element* lastElementChild(ContainerNode& node)
     {
-        return ElementTraversal::lastWithin(node);
+        return ElementTraversal::lastChild(node);
     }
 
     static unsigned childElementCount(ContainerNode& node)
@@ -59,6 +59,16 @@ public:
         for (Element* child = ElementTraversal::firstWithin(node); child; child = ElementTraversal::nextSibling(*child))
             ++count;
         return count;
+    }
+
+    static PassRefPtr<Element> querySelector(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
+    {
+        return node.querySelector(selectors, exceptionState);
+    }
+
+    static PassRefPtr<NodeList> querySelectorAll(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
+    {
+        return node.querySelectorAll(selectors, exceptionState);
     }
 };
 

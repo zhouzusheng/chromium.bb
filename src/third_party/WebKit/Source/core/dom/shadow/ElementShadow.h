@@ -30,6 +30,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "platform/heap/Handle.h"
 #include "wtf/DoublyLinkedList.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -39,10 +40,11 @@
 
 namespace WebCore {
 
-class ElementShadow {
-    WTF_MAKE_NONCOPYABLE(ElementShadow); WTF_MAKE_FAST_ALLOCATED;
+class ElementShadow FINAL : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
+    WTF_MAKE_NONCOPYABLE(ElementShadow);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<ElementShadow> create();
+    static PassOwnPtrWillBeRawPtr<ElementShadow> create();
     ~ElementShadow();
 
     Element* host() const;
@@ -52,15 +54,10 @@ public:
 
     ShadowRoot& addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType);
 
-    bool applyAuthorStyles() const { return m_applyAuthorStyles; }
-    bool didAffectApplyAuthorStyles();
-    bool containsActiveStyles() const;
-    bool hasSameStyles(ElementShadow *) const;
+    bool hasSameStyles(const ElementShadow*) const;
 
     void attach(const Node::AttachContext&);
     void detach(const Node::AttachContext&);
-
-    void removeAllEventListeners();
 
     void didAffectSelector(AffectedSelectorMask);
     void willAffectSelector();
@@ -74,11 +71,14 @@ public:
 
     void didDistributeNode(const Node*, InsertionPoint*);
 
+    void trace(Visitor*);
+
 private:
     ElementShadow();
 
+#if !ENABLE(OILPAN)
     void removeDetachedShadowRoots();
-    bool resolveApplyAuthorStyles() const;
+#endif
 
     void distribute();
     void clearDistribution();
@@ -93,9 +93,9 @@ private:
     NodeToDestinationInsertionPoints m_nodeToInsertionPoints;
 
     SelectRuleFeatureSet m_selectFeatures;
+    // FIXME: Oilpan: add a heap-based version of DoublyLinkedList<>.
     DoublyLinkedList<ShadowRoot> m_shadowRoots;
     bool m_needsDistributionRecalc;
-    bool m_applyAuthorStyles;
     bool m_needsSelectFeatureSet;
 };
 

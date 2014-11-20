@@ -14,6 +14,7 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
@@ -21,11 +22,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "ui/surface/transport_dib.h"
-
-#if defined(USE_MOJO)
-#include "mojo/public/cpp/system/core.h"
-#endif
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
@@ -44,8 +41,10 @@ class BrowserDemuxerAndroid;
 class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
+class MojoApplicationHost;
 class PeerConnectionTrackerHost;
 class RendererMainThread;
+class RenderProcessHostMojoImpl;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -54,9 +53,8 @@ class ScreenOrientationDispatcherHost;
 class StoragePartition;
 class StoragePartitionImpl;
 
-#if defined(USE_MOJO)
-class RenderProcessHostMojoImpl;
-#endif
+typedef base::Thread* (*RendererMainThreadFactoryFunction)(
+    const std::string& id);
 
 // Implements a concrete RenderProcessHost for the browser process for talking
 // to actual renderer processes (as opposed to mocks).
@@ -84,7 +82,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
-                        bool supports_browser_plugin,
                         bool is_guest);
   virtual ~RenderProcessHostImpl();
 
@@ -108,8 +105,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
   virtual base::ProcessHandle GetHandle() const OVERRIDE;
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
-  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual bool InSameStoragePartition(
       StoragePartition* partition) const OVERRIDE;
@@ -182,6 +177,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   scoped_refptr<ScreenOrientationDispatcherHost>
       screen_orientation_dispatcher_host() const;
 
+  // Used to extend the lifetime of the sessions until the render view
+  // in the renderer is fully closed. This is static because its also called
+  // with mock hosts as input in test cases.
+  static void ReleaseOnCloseACK(
+      RenderProcessHost* host,
+      const SessionStorageNamespaceMap& sessions,
+      int view_route_id);
+
   // Register/unregister the host identified by the host id in the global host
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
@@ -221,6 +224,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This forces a renderer that is running "in process" to shut down.
   static void ShutDownInProcessRenderer();
 
+  static void RegisterRendererMainThreadFactory(
+      RendererMainThreadFactoryFunction create);
+
 #if defined(OS_ANDROID)
   const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
     return browser_demuxer_android_;
@@ -241,10 +247,18 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
-#if defined(USE_MOJO)
-  void SetWebUIHandle(int32 view_routing_id,
-                      mojo::ScopedMessagePipeHandle handle);
-#endif
+  // Establish a connection to a renderer-provided service. See
+  // content/common/mojo/mojo_service_names.h for a list of services.
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::ScopedMessagePipeHandle handle);
+
+  template <typename Interface>
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::InterfacePtr<Interface>* ptr) {
+    mojo::MessagePipe pipe;
+    ptr->Bind(pipe.handle0.Pass());
+    ConnectTo(service_name, pipe.handle1.Pass());
+  }
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -270,6 +284,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
  private:
   friend class VisitRelayingRenderProcessHost;
 
+  void MaybeActivateMojo();
+
   // Creates and adds the IO thread message filters.
   void CreateMessageFilters();
 
@@ -279,6 +295,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
+  void OnCloseACK(int old_route_id);
 
   // CompositorSurfaceBuffersSwapped handler when there's no RWH.
   void OnCompositorSurfaceBuffersSwappedNoHost(
@@ -309,6 +326,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendDisableAecDumpToRenderer();
 #endif
 
+  scoped_ptr<MojoApplicationHost> mojo_application_host_;
+  bool mojo_activation_required_;
+
   // The registered IPC listener objects. When this list is empty, we should
   // delete ourselves.
   IDMap<IPC::Listener> listeners_;
@@ -335,18 +355,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // The filter for MessagePort messages coming from the renderer.
   scoped_refptr<MessagePortMessageFilter> message_port_message_filter_;
-
-  // A map of transport DIB ids to cached TransportDIBs
-  std::map<TransportDIB::Id, TransportDIB*> cached_dibs_;
-
-  enum {
-    // This is the maximum size of |cached_dibs_|
-    MAX_MAPPED_TRANSPORT_DIBS = 3,
-  };
-
-  void ClearTransportDIBCache();
-  // This is used to clear our cache five seconds after the last use.
-  base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
   // Used in single-process mode.
   scoped_ptr<base::Thread> in_process_renderer_;
@@ -390,10 +398,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
 
-  // Indicates whether this is a RenderProcessHost that has permission to embed
-  // Browser Plugins.
-  bool supports_browser_plugin_;
-
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
@@ -435,9 +439,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   int worker_ref_count_;
 
-#if defined(USE_MOJO)
-  scoped_ptr<RenderProcessHostMojoImpl> render_process_host_mojo_;
-#endif
+  // Records the time when the process starts surviving for workers for UMA.
+  base::TimeTicks survive_for_worker_start_time_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

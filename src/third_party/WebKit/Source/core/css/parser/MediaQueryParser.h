@@ -9,6 +9,7 @@
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaQueryExp.h"
+#include "core/css/parser/MediaQueryBlockWatcher.h"
 #include "core/css/parser/MediaQueryToken.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -31,7 +32,7 @@ public:
     MediaQueryData();
     void clear();
     bool addExpression();
-    void addParserValue(MediaQueryTokenType, MediaQueryToken&);
+    void addParserValue(MediaQueryTokenType, const MediaQueryToken&);
     void setMediaType(const String&);
     PassOwnPtrWillBeRawPtr<MediaQuery> takeMediaQuery();
 
@@ -48,38 +49,44 @@ public:
 class MediaQueryParser {
     STACK_ALLOCATED();
 public:
-    static PassRefPtrWillBeRawPtr<MediaQuerySet> parse(const String&);
+    static PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaQuerySet(const String&);
+    static PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaCondition(MediaQueryTokenIterator, MediaQueryTokenIterator endToken);
 
 private:
-    MediaQueryParser(const String&);
-    virtual ~MediaQueryParser() { };
+    enum ParserType {
+        MediaQuerySetParser,
+        MediaConditionParser,
+    };
 
-    PassRefPtrWillBeRawPtr<MediaQuerySet> parseImpl();
+    MediaQueryParser(ParserType);
+    virtual ~MediaQueryParser();
 
-    typedef Vector<MediaQueryToken>::iterator TokenIterator;
+    PassRefPtrWillBeRawPtr<MediaQuerySet> parseImpl(MediaQueryTokenIterator, MediaQueryTokenIterator endToken);
 
-    void processToken(TokenIterator&);
+    void processToken(const MediaQueryToken&);
 
-    void readRestrictor(MediaQueryTokenType, TokenIterator&);
-    void readMediaType(MediaQueryTokenType, TokenIterator&);
-    void readAnd(MediaQueryTokenType, TokenIterator&);
-    void readFeatureStart(MediaQueryTokenType, TokenIterator&);
-    void readFeature(MediaQueryTokenType, TokenIterator&);
-    void readFeatureColon(MediaQueryTokenType, TokenIterator&);
-    void readFeatureValue(MediaQueryTokenType, TokenIterator&);
-    void readFeatureEnd(MediaQueryTokenType, TokenIterator&);
-    void skipUntilComma(MediaQueryTokenType, TokenIterator&);
-    void skipUntilParenthesis(MediaQueryTokenType, TokenIterator&);
-    void done(MediaQueryTokenType, TokenIterator&);
+    void readRestrictor(MediaQueryTokenType, const MediaQueryToken&);
+    void readMediaType(MediaQueryTokenType, const MediaQueryToken&);
+    void readAnd(MediaQueryTokenType, const MediaQueryToken&);
+    void readFeatureStart(MediaQueryTokenType, const MediaQueryToken&);
+    void readFeature(MediaQueryTokenType, const MediaQueryToken&);
+    void readFeatureColon(MediaQueryTokenType, const MediaQueryToken&);
+    void readFeatureValue(MediaQueryTokenType, const MediaQueryToken&);
+    void readFeatureEnd(MediaQueryTokenType, const MediaQueryToken&);
+    void skipUntilComma(MediaQueryTokenType, const MediaQueryToken&);
+    void skipUntilBlockEnd(MediaQueryTokenType, const MediaQueryToken&);
+    void done(MediaQueryTokenType, const MediaQueryToken&);
 
-    typedef void (MediaQueryParser::*State)(MediaQueryTokenType, TokenIterator&);
+    typedef void (MediaQueryParser::*State)(MediaQueryTokenType, const MediaQueryToken&);
 
     void setStateAndRestrict(State, MediaQuery::Restrictor);
+    void handleBlocks(const MediaQueryToken&);
 
     State m_state;
-    Vector<MediaQueryToken> m_tokens;
+    ParserType m_parserType;
     MediaQueryData m_mediaQueryData;
     RefPtrWillBeMember<MediaQuerySet> m_querySet;
+    MediaQueryBlockWatcher m_blockWatcher;
 
     const static State ReadRestrictor;
     const static State ReadMediaType;
@@ -90,7 +97,7 @@ private:
     const static State ReadFeatureValue;
     const static State ReadFeatureEnd;
     const static State SkipUntilComma;
-    const static State SkipUntilParenthesis;
+    const static State SkipUntilBlockEnd;
     const static State Done;
 
 };

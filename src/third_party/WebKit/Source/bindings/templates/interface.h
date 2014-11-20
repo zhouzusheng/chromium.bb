@@ -115,7 +115,7 @@ public:
        FIXME: Remove this internal field, and share one field for either:
        * a persistent handle (if the object is in oilpan) or
        * a C++ pointer to the DOM object (if the object is not in oilpan) #}
-    {% if is_will_be_garbage_collected %}
+    {% if not gc_type == 'RefCountedObject' %}
     static const int persistentHandleIndex = v8DefaultWrapperInternalFieldCount + {{custom_internal_field_counter}};
     {% set custom_internal_field_counter = custom_internal_field_counter + 1 %}
     {% endif %}
@@ -166,7 +166,7 @@ public:
 private:
     {% if not has_custom_to_v8 %}
     friend v8::Handle<v8::Object> wrap({{cpp_class}}*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
-    static v8::Handle<v8::Object> createWrapper({{pass_ref_ptr}}<{{cpp_class}}>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    static v8::Handle<v8::Object> createWrapper({{pass_cpp_type}}, v8::Handle<v8::Object> creationContext, v8::Isolate*);
     {% endif %}
 };
 
@@ -229,7 +229,7 @@ inline void v8SetReturnValue(const CallbackInfo& callbackInfo, {{cpp_class}}* im
 template<typename CallbackInfo>
 inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, {{cpp_class}}* impl)
 {
-    ASSERT(DOMWrapperWorld::current(callbackInfo.GetIsolate())->isMainWorld());
+    ASSERT(DOMWrapperWorld::current(callbackInfo.GetIsolate()).isMainWorld());
     if (UNLIKELY(!impl)) {
         v8SetReturnValueNull(callbackInfo);
         return;
@@ -254,28 +254,30 @@ inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, {{cpp_class}}
 }
 {% endif %}{# has_custom_to_v8 #}
 
-inline v8::Handle<v8::Value> toV8({{pass_ref_ptr}}<{{cpp_class}}> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{% if gc_type != 'GarbageCollectedObject' %}
+inline v8::Handle<v8::Value> toV8({{pass_cpp_type}} impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     return toV8(impl.get(), creationContext, isolate);
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, {{pass_ref_ptr}}<{{cpp_class}}> impl)
+inline void v8SetReturnValue(const CallbackInfo& callbackInfo, {{pass_cpp_type}} impl)
 {
     v8SetReturnValue(callbackInfo, impl.get());
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, {{pass_ref_ptr}}<{{cpp_class}}> impl)
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, {{pass_cpp_type}} impl)
 {
     v8SetReturnValueForMainWorld(callbackInfo, impl.get());
 }
 
 template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, {{pass_ref_ptr}}<{{cpp_class}}> impl, Wrappable* wrappable)
+inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, {{pass_cpp_type}} impl, Wrappable* wrappable)
 {
     v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
 }
+{% endif %}{# if gc_type != 'GarbageCollectedObject' #}
 
 {% if has_event_constructor %}
 bool initialize{{cpp_class}}({{cpp_class}}Init&, const Dictionary&, ExceptionState&, const v8::FunctionCallbackInfo<v8::Value>& info, const String& = "");

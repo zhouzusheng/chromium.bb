@@ -52,6 +52,9 @@ public:
         , m_baselineType(AlphabeticBaseline)
         , m_hasAnnotationsBefore(false)
         , m_hasAnnotationsAfter(false)
+        , m_lineBreakBidiStatusEor(WTF::Unicode::LeftToRight)
+        , m_lineBreakBidiStatusLastStrong(WTF::Unicode::LeftToRight)
+        , m_lineBreakBidiStatusLast(WTF::Unicode::LeftToRight)
 #ifndef NDEBUG
         , m_hasBadChildList(false)
 #endif
@@ -197,7 +200,7 @@ public:
 
     void computeOverflow(LayoutUnit lineTop, LayoutUnit lineBottom, GlyphOverflowAndFallbackFontsMap&);
 
-    void removeChild(InlineBox* child);
+    void removeChild(InlineBox* child, MarkLineBoxes);
 
     virtual RenderObject::SelectionState selectionState() OVERRIDE;
 

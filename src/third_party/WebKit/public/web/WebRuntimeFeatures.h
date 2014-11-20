@@ -70,7 +70,7 @@ public:
 
     BLINK_EXPORT static void enableMediaPlayer(bool);
 
-    BLINK_EXPORT static void enableWebKitMediaSource(bool);
+    BLINK_EXPORT static void enableSubpixelFontScaling(bool);
 
     BLINK_EXPORT static void enableMediaSource(bool);
 
@@ -93,8 +93,6 @@ public:
     BLINK_EXPORT static void enableServiceWorker(bool);
 
     BLINK_EXPORT static void enableSessionStorage(bool);
-
-    BLINK_EXPORT static void enableSpeechInput(bool);
 
     BLINK_EXPORT static void enableSpeechSynthesis(bool);
 
@@ -126,6 +124,8 @@ public:
     BLINK_EXPORT static void enableExperimentalWebSocket(bool);
 
     BLINK_EXPORT static void enableTargetedStyleRecalc(bool);
+
+    BLINK_EXPORT static void enablePreciseMemoryInfo(bool);
 
 private:
     WebRuntimeFeatures();

@@ -28,7 +28,7 @@
 #ifndef Frame_h
 #define Frame_h
 
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefCounted.h"
@@ -39,14 +39,13 @@ class WebLayer;
 
 namespace WebCore {
 
-class Document;
 class DOMWindow;
 class ChromeClient;
 class FrameDestructionObserver;
 class FrameHost;
 class HTMLFrameOwnerElement;
 class Page;
-class RenderView;
+class RenderPart;
 class Settings;
 
 class Frame : public RefCounted<Frame> {
@@ -70,15 +69,18 @@ public:
 
     bool isMainFrame() const;
 
+    virtual void disconnectOwnerElement();
+
+    HTMLFrameOwnerElement* ownerElement() const;
+
     // FIXME: DOMWindow and Document should both be moved to LocalFrame
     // after RemoteFrame is complete enough to exist without them.
     virtual void setDOMWindow(PassRefPtrWillBeRawPtr<DOMWindow>);
     DOMWindow* domWindow() const;
-    Document* document() const;
 
     ChromeClient& chromeClient() const;
 
-    RenderView* contentRenderer() const; // Root of the render tree for the document contained in this frame.
+    RenderPart* ownerRenderer() const; // Renderer for the element that contains this frame.
 
     int64_t frameID() const { return m_frameID; }
 
@@ -87,6 +89,12 @@ public:
     blink::WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
 
     Settings* settings() const; // can be null
+
+    // FIXME: This method identifies a LocalFrame that is acting as a RemoteFrame.
+    // It is necessary only until we can instantiate a RemoteFrame, at which point
+    // it can be removed and its callers can be converted to use the isRemoteFrame()
+    // method.
+    bool isRemoteFrameTemporary() const { return m_remotePlatformLayer; }
 
 protected:
     Frame(FrameHost*, HTMLFrameOwnerElement*);
@@ -110,6 +118,12 @@ inline DOMWindow* Frame::domWindow() const
 {
     return m_domWindow.get();
 }
+
+inline HTMLFrameOwnerElement* Frame::ownerElement() const
+{
+    return m_ownerElement;
+}
+
 } // namespace WebCore
 
 #endif // Frame_h

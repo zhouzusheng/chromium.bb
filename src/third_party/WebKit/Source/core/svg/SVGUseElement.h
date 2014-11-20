@@ -55,12 +55,12 @@ public:
 
     virtual void buildPendingResource() OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     SVGUseElement(Document&, bool wasInsertedByParser);
 
     virtual bool isStructurallyExternal() const OVERRIDE { return !hrefString().isNull() && isExternalURIReference(hrefString(), document()); }
-
-    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -74,7 +74,6 @@ private:
 
     void clearResourceReferences();
     void buildShadowAndInstanceTree(SVGElement* target);
-    void detachInstance();
 
     void scheduleShadowTreeRecreation();
     virtual bool haveLoadedRequiredResources() OVERRIDE { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
@@ -87,7 +86,7 @@ private:
     bool hasCycleUseReferencing(SVGUseElement*, SVGElementInstance* targetInstance, SVGElement*& newTarget);
 
     // Shadow tree handling
-    void buildShadowTree(SVGElement* target, SVGElementInstance* targetInstance);
+    void buildShadowTree(SVGElement* target, SVGElementInstance* targetInstance, ShadowRoot* shadowTreeRootElement);
 
     void expandUseElementsInShadowTree(Node* element);
     void expandSymbolElementsInShadowTree(Node* element);
@@ -97,7 +96,7 @@ private:
     SVGElementInstance* instanceForShadowTreeElement(Node* element, SVGElementInstance* instance) const;
 
     void transferUseAttributesToReplacedElement(SVGElement* from, SVGElement* to) const;
-    void transferEventListenersToShadowTree(SVGElementInstance* target);
+    void transferEventListenersToShadowTree(SVGElement* shadowTreeTargetElement);
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -108,7 +107,7 @@ private:
     Document* externalDocument() const;
     bool instanceTreeIsLoading(SVGElementInstance*);
     virtual void notifyFinished(Resource*) OVERRIDE;
-    Document* referencedDocument() const;
+    TreeScope* referencedScope() const;
     void setDocumentResource(ResourcePtr<DocumentResource>);
 
     virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
@@ -116,7 +115,7 @@ private:
     bool m_wasInsertedByParser;
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
-    RefPtr<SVGElementInstance> m_targetElementInstance;
+    RefPtrWillBeMember<SVGElementInstance> m_targetElementInstance;
     ResourcePtr<DocumentResource> m_resource;
     Timer<SVGElement> m_svgLoadEventTimer;
 };

@@ -20,7 +20,6 @@
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input/synthetic_gesture_params.h"
-#include "content/renderer/paint_aggregator.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -51,6 +50,7 @@ class SyncMessage;
 }
 
 namespace blink {
+struct WebDeviceEmulationParams;
 class WebGestureEvent;
 class WebInputEvent;
 class WebKeyboardEvent;
@@ -95,7 +95,6 @@ class CONTENT_EXPORT RenderWidget
   int32 surface_id() const { return surface_id_; }
   blink::WebWidget* webwidget() const { return webwidget_; }
   gfx::Size size() const { return size_; }
-  float filtered_time_per_frame() const { return filtered_time_per_frame_; }
   bool has_focus() const { return has_focus_; }
   bool is_fullscreen() const { return is_fullscreen_; }
   bool is_hidden() const { return is_hidden_; }
@@ -126,11 +125,6 @@ class CONTENT_EXPORT RenderWidget
   virtual void didScrollRect(int dx, int dy,
                              const blink::WebRect& clipRect);
   virtual void didAutoResize(const blink::WebSize& new_size);
-  // FIXME: To be removed as soon as chromium and blink side changes land
-  // didActivateCompositor with parameters is still kept in order to land
-  // these changes s-chromium - https://codereview.chromium.org/137893025/.
-  // s-blink - https://codereview.chromium.org/138523003/
-  virtual void didActivateCompositor(int input_handler_identifier);
   virtual void didActivateCompositor() OVERRIDE;
   virtual void didDeactivateCompositor();
   virtual void initializeLayerTreeView();
@@ -157,6 +151,9 @@ class CONTENT_EXPORT RenderWidget
   virtual void resetInputMethod();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
+
+  // Begins the compositor's scheduler to start producing frames.
+  void StartCompositor();
 
   // Called when a plugin is moved.  These events are queued up and sent with
   // the next paint or scroll message to the host.
@@ -208,10 +205,7 @@ class CONTENT_EXPORT RenderWidget
   // Emulates screen and widget metrics. Supplied values override everything
   // coming from host.
   void EnableScreenMetricsEmulation(
-      const gfx::Rect& device_rect,
-      const gfx::Rect& widget_rect,
-      float device_scale_factor,
-      bool fit_to_view);
+      const blink::WebDeviceEmulationParams& params);
   void DisableScreenMetricsEmulation();
   void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
 
@@ -236,20 +230,39 @@ class CONTENT_EXPORT RenderWidget
   void OnShowHostContextMenu(ContextMenuParams* params);
 
 #if defined(OS_ANDROID) || defined(USE_AURA)
-  // |show_ime_if_needed| should be true iff the update may cause the ime to be
-  // displayed, e.g. after a tap on an input field on mobile.
-  // |send_ime_ack| should be true iff the browser side is required to
-  // acknowledge the change before the renderer handles any more IME events.
-  // This is when the event did not originate from the browser side IME, such as
-  // changes from JavaScript or autofill.
-  void UpdateTextInputState(bool show_ime_if_needed, bool send_ime_ack);
+  enum ShowIme {
+    SHOW_IME_IF_NEEDED,
+    NO_SHOW_IME,
+  };
+
+  enum ChangeSource {
+    FROM_NON_IME,
+    FROM_IME,
+  };
+
+  // |show_ime| should be SHOW_IME_IF_NEEDED iff the update may cause the ime to
+  // be displayed, e.g. after a tap on an input field on mobile.
+  // |change_source| should be FROM_NON_IME when the renderer has to wait for
+  // the browser to acknowledge the change before the renderer handles any more
+  // IME events. This is when the text change did not originate from the IME in
+  // the browser side, such as changes by JavaScript or autofill.
+  void UpdateTextInputState(ShowIme show_ime, ChangeSource change_source);
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   // Checks if the composition range or composition character bounds have been
   // changed. If they are changed, the new value will be sent to the browser
   // process.
   void UpdateCompositionInfo(bool should_update_range);
+#endif
+
+#if defined(OS_MACOSX)
+  void DidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
+                                       bool has_vertical_scrollbar);
+#endif  // defined(OS_MACOSX)
+
+#if defined(OS_ANDROID)
+  void DidChangeBodyBackgroundColor(SkColor bg_color);
 #endif
 
  protected:
@@ -267,7 +280,8 @@ class CONTENT_EXPORT RenderWidget
   RenderWidget(blink::WebPopupType popup_type,
                const blink::WebScreenInfo& screen_info,
                bool swapped_out,
-               bool hidden);
+               bool hidden,
+               bool never_visible);
 
   virtual ~RenderWidget();
 
@@ -289,25 +303,11 @@ class CONTENT_EXPORT RenderWidget
   // active RenderWidgets.
   void SetSwappedOut(bool is_swapped_out);
 
-  // Paints the given rectangular region of the WebWidget into canvas (a
-  // shared memory segment returned by AllocPaintBuf on Windows). The caller
-  // must ensure that the given rect fits within the bounds of the WebWidget.
-  void PaintRect(const gfx::Rect& rect, const gfx::Point& canvas_origin,
-                 SkCanvas* canvas);
-
-  // Paints a border at the given rect for debugging purposes.
-  void PaintDebugBorder(const gfx::Rect& rect, SkCanvas* canvas);
-
-  bool IsRenderingVSynced();
   void AnimationCallback();
-  void AnimateIfNeeded();
   void InvalidationCallback();
   void FlushPendingInputEventAck();
-  void DoDeferredUpdateAndSendInputAck();
-  void DoDeferredUpdate();
   void DoDeferredClose();
   void DoDeferredSetWindowRect(const blink::WebRect& pos);
-  virtual void Composite(base::TimeTicks frame_begin_time);
 
   // Set the background of the render widget to a bitmap. The bitmap will be
   // tiled in both directions if it isn't big enough to fill the area. This is
@@ -318,6 +318,7 @@ class CONTENT_EXPORT RenderWidget
   void Resize(const gfx::Size& new_size,
               const gfx::Size& physical_backing_size,
               float overdraw_bottom_height,
+              const gfx::Size& visible_viewport_size,
               const gfx::Rect& resizer_rect,
               bool is_fullscreen,
               ResizeAck resize_ack);
@@ -339,14 +340,13 @@ class CONTENT_EXPORT RenderWidget
   void OnCursorVisibilityChange(bool is_visible);
   void OnMouseCaptureLost();
   virtual void OnSetFocus(bool enable);
-  void OnClose();
+  virtual void OnClose();
   void OnCreatingNewAck();
   virtual void OnResize(const ViewMsg_Resize_Params& params);
   void OnChangeResizeRect(const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
   virtual void OnWasShown(bool needs_repainting);
   virtual void OnWasSwappedOut();
-  void OnUpdateRectAck();
   void OnCreateVideoAck(int32 video_id);
   void OnUpdateVideoAck(int32 video_id);
   void OnRequestMoveAck();
@@ -381,14 +381,14 @@ class CONTENT_EXPORT RenderWidget
   void OnImeEventAck();
 #endif
 
-  void OnSnapshot(const gfx::Rect& src_subrect);
-
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
   // go through OnResize.
   void AutoResizeCompositor();
 
   virtual void SetDeviceScaleFactor(float device_scale_factor);
+
+  virtual void OnOrientationChange();
 
   // Override points to notify derived classes that a paint has happened.
   // DidInitiatePaint happens when that has completed, and subsequent rendering
@@ -399,32 +399,9 @@ class CONTENT_EXPORT RenderWidget
   virtual void DidInitiatePaint() {}
   virtual void DidFlushPaint() {}
 
-  // Override and return true when the widget is rendered with a graphics
-  // context that supports asynchronous swapbuffers. When returning true, the
-  // subclass must call OnSwapBuffersPosted() when swap is posted,
-  // OnSwapBuffersComplete() when swaps complete, and OnSwapBuffersAborted if
-  // the context is lost.
-  virtual bool SupportsAsynchronousSwapBuffers();
   virtual GURL GetURLForGraphicsContext3D();
 
   virtual bool ForceCompositingModeEnabled();
-
-  // Detects if a suitable opaque plugin covers the given paint bounds with no
-  // compositing necessary.
-  //
-  // Returns the plugin instance that's the source of the paint if the paint
-  // can be handled by just blitting the plugin bitmap. In this case, the
-  // location, clipping, and ID of the backing store will be filled into the
-  // given output parameters.
-  //
-  // A return value of null means optimized painting can not be used and we
-  // should continue with the normal painting code path.
-  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor);
 
   // Gets the scroll offset of this widget, if this widget has a notion of
   // scroll offset.
@@ -439,9 +416,7 @@ class CONTENT_EXPORT RenderWidget
   void DidToggleFullscreen();
 
   bool next_paint_is_resize_ack() const;
-  bool next_paint_is_restore_ack() const;
   void set_next_paint_is_resize_ack();
-  void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
   // Override point to obtain that the current input method state and caret
@@ -450,7 +425,7 @@ class CONTENT_EXPORT RenderWidget
   virtual ui::TextInputType WebKitToUiTextInputType(
       blink::WebTextInputType type);
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   // Override point to obtain that the current composition character bounds.
   // In the case of surrogate pairs, the character is treated as two characters:
   // the bounds for first character is actual one, and the bounds for second
@@ -489,10 +464,6 @@ class CONTENT_EXPORT RenderWidget
   // just handled.
   virtual void DidHandleKeyEvent() {}
 
-  // Called by OnHandleInputEvent() to notify subclasses that a user gesture
-  // event will be processed.
-  virtual void WillProcessUserGesture() {}
-
   // Called by OnHandleInputEvent() to notify subclasses that a mouse event is
   // about to be handled.
   // Returns true if no further handling is needed. In that case, the event
@@ -523,6 +494,10 @@ class CONTENT_EXPORT RenderWidget
   // Tell the browser about the actions permitted for a new touch point.
   virtual void setTouchAction(blink::WebTouchAction touch_action);
 
+  // Called when value of focused text field gets dirty, e.g. value is modified
+  // by script, not by user input.
+  virtual void didUpdateTextOfFocusedElementByNonUserInput();
+
 #if defined(OS_ANDROID)
   // Checks if the selection root bounds have changed. If they have changed, the
   // new value will be sent to the browser process.
@@ -531,8 +506,6 @@ class CONTENT_EXPORT RenderWidget
 
   // Creates a 3D context associated with this view.
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateGraphicsContext3D();
-
-  bool OnSnapshotHelper(const gfx::Rect& src_subrect, SkBitmap* bitmap);
 
   // Routing ID that allows us to communicate to the parent browser process
   // RenderWidgetHost. When MSG_ROUTING_NONE, no messages may be sent.
@@ -568,11 +541,6 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
-  // The TransportDIB that is being used to transfer an image to the browser.
-  TransportDIB* current_paint_buf_;
-
-  PaintAggregator paint_aggregator_;
-
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 
@@ -580,18 +548,14 @@ class CONTENT_EXPORT RenderWidget
   // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
   float overdraw_bottom_height_;
 
+  // The size of the visible viewport in DPI-adjusted pixels.
+  gfx::Size visible_viewport_size_;
+
   // The area that must be reserved for drawing the resize corner.
   gfx::Rect resizer_rect_;
 
   // Flags for the next ViewHostMsg_UpdateRect message.
   int next_paint_flags_;
-
-  // Filtered time per frame based on UpdateRect messages.
-  float filtered_time_per_frame_;
-
-  // True if we are expecting an UpdateRect_ACK message (i.e., that a
-  // UpdateRect message has been sent).
-  bool update_reply_pending_;
 
   // Whether the WebWidget is in auto resize mode, which is used for example
   // by extension popups.
@@ -601,36 +565,17 @@ class CONTENT_EXPORT RenderWidget
   // an already-completed auto-resize.
   bool need_update_rect_for_auto_resize_;
 
-  // True if the underlying graphics context supports asynchronous swap.
-  // Cached on the RenderWidget because determining support is costly.
-  bool using_asynchronous_swapbuffers_;
-
-  // Number of OnSwapBuffersComplete we are expecting. Incremented each time
-  // WebWidget::composite has been been performed when the RenderWidget subclass
-  // SupportsAsynchronousSwapBuffers. Decremented in OnSwapBuffers. Will block
-  // rendering.
-  int num_swapbuffers_complete_pending_;
-
-  // When accelerated rendering is on, is the maximum number of swapbuffers that
-  // can be outstanding before we start throttling based on
-  // OnSwapBuffersComplete callback.
-  static const int kMaxSwapBuffersPending = 2;
-
   // Set to true if we should ignore RenderWidget::Show calls.
   bool did_show_;
 
   // Indicates that we shouldn't bother generated paint events.
   bool is_hidden_;
 
+  // Indicates that we are never visible, so never produce graphical output.
+  bool never_visible_;
+
   // Indicates that we are in fullscreen mode.
   bool is_fullscreen_;
-
-  // Indicates that we should be repainted when restored.  This flag is set to
-  // true if we receive an invalidation / scroll event from webkit while our
-  // is_hidden_ flag is set to true.  This is used to force a repaint once we
-  // restore to account for the fact that our host would not know about the
-  // invalidation / scroll event(s) from webkit while we are hidden.
-  bool needs_repainting_on_restore_;
 
   // Indicates whether we have been focused/unfocused by the browser.
   bool has_focus_;
@@ -714,32 +659,12 @@ class CONTENT_EXPORT RenderWidget
   // compositor.
   bool is_accelerated_compositing_active_;
 
-  // Set to true if compositing has ever been active for this widget. Once a
-  // widget has used compositing, it will act as though force compositing mode
-  // is on for the remainder of the widget's lifetime.
-  bool was_accelerated_compositing_ever_active_;
-
   base::OneShotTimer<RenderWidget> animation_timer_;
-  base::Time animation_floor_time_;
   bool animation_update_pending_;
   bool invalidation_task_posted_;
 
-  bool has_disable_gpu_vsync_switch_;
-  base::TimeTicks last_do_deferred_update_time_;
-
   // Stats for legacy software mode
   scoped_ptr<cc::RenderingStatsInstrumentation> legacy_software_mode_stats_;
-
-  // UpdateRect parameters for the current compositing pass. This is used to
-  // pass state between DoDeferredUpdate and OnSwapBuffersPosted.
-  scoped_ptr<ViewHostMsg_UpdateRect_Params> pending_update_params_;
-
-  // Queue of UpdateRect messages corresponding to a SwapBuffers. We want to
-  // delay sending of UpdateRect until the corresponding SwapBuffers has been
-  // executed. Since we can have several in flight, we need to keep them in a
-  // queue. Note: some SwapBuffers may not correspond to an update, in which
-  // case NULL is added to the queue.
-  std::deque<ViewHostMsg_UpdateRect*> updates_pending_swap_;
 
   // Properties of the screen hosting this RenderWidget instance.
   blink::WebScreenInfo screen_info_;
@@ -757,18 +682,29 @@ class CONTENT_EXPORT RenderWidget
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
 
-  // The latency information for any current non-accelerated-compositing
-  // frame.
-  std::vector<ui::LatencyInfo> latency_info_;
-
   uint32 next_output_surface_id_;
 
 #if defined(OS_ANDROID)
+  // Indicates value in the focused text field is in dirty state, i.e. modified
+  // by script etc., not by user input.
+  bool text_field_is_dirty_;
+
   // A counter for number of outstanding messages from the renderer to the
   // browser regarding IME-type events that have not been acknowledged by the
   // browser. If this value is not 0 IME events will be dropped.
   int outstanding_ime_acks_;
+
+  // The background color of the document body element. This is used as the
+  // default background color for filling the screen areas for which we don't
+  // have the actual content.
+  SkColor body_background_color_;
 #endif
+
+#if defined(OS_MACOSX)
+  // These store the "has scrollbars" state last sent to the browser.
+  bool cached_has_main_frame_horizontal_scrollbar_;
+  bool cached_has_main_frame_vertical_scrollbar_;
+#endif  // defined(OS_MACOSX)
 
   scoped_ptr<ScreenMetricsEmulator> screen_metrics_emulator_;
 

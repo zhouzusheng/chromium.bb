@@ -23,7 +23,10 @@ DirectoryCommitContribution::~DirectoryCommitContribution() {
 scoped_ptr<DirectoryCommitContribution> DirectoryCommitContribution::Build(
     syncable::Directory* dir,
     ModelType type,
-    size_t max_entries) {
+    size_t max_entries,
+    DirectoryTypeDebugInfoEmitter* debug_info_emitter) {
+  DCHECK(debug_info_emitter);
+
   std::vector<int64> metahandles;
 
   syncable::ModelNeutralWriteTransaction trans(FROM_HERE, SYNCER, dir);
@@ -41,8 +44,16 @@ scoped_ptr<DirectoryCommitContribution> DirectoryCommitContribution::Build(
     entry.PutSyncing(true);
   }
 
+  sync_pb::DataTypeContext context;
+  dir->GetDataTypeContext(&trans, type, &context);
+
   return scoped_ptr<DirectoryCommitContribution>(
-      new DirectoryCommitContribution(metahandles, entities, dir));
+      new DirectoryCommitContribution(
+          metahandles,
+          entities,
+          context,
+          dir,
+          debug_info_emitter));
 }
 
 void DirectoryCommitContribution::AddToCommitMessage(
@@ -53,6 +64,8 @@ void DirectoryCommitContribution::AddToCommitMessage(
   std::copy(entities_.begin(),
             entities_.end(),
             RepeatedPtrFieldBackInserter(commit_message->mutable_entries()));
+  if (!context_.context().empty())
+    commit_message->add_client_contexts()->Swap(&context_);
 }
 
 SyncerError DirectoryCommitContribution::ProcessCommitResponse(
@@ -144,13 +157,16 @@ size_t DirectoryCommitContribution::GetNumEntries() const {
 DirectoryCommitContribution::DirectoryCommitContribution(
     const std::vector<int64>& metahandles,
     const google::protobuf::RepeatedPtrField<sync_pb::SyncEntity>& entities,
-    syncable::Directory* dir)
-  : dir_(dir),
-    metahandles_(metahandles),
-    entities_(entities),
-    entries_start_index_(0xDEADBEEF),
-    syncing_bits_set_(true) {
-}
+    const sync_pb::DataTypeContext& context,
+    syncable::Directory* dir,
+    DirectoryTypeDebugInfoEmitter* debug_info_emitter)
+    : dir_(dir),
+      metahandles_(metahandles),
+      entities_(entities),
+      context_(context),
+      entries_start_index_(0xDEADBEEF),
+      syncing_bits_set_(true),
+      debug_info_emitter_(debug_info_emitter) {}
 
 void DirectoryCommitContribution::UnsetSyncingBits() {
   syncable::ModelNeutralWriteTransaction trans(FROM_HERE, SYNCER, dir_);

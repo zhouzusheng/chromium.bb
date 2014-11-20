@@ -69,7 +69,7 @@ public:
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
-    PassRefPtr<Range> selection() const;
+    PassRefPtrWillBeRawPtr<Range> selection() const;
 
     virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
 
@@ -79,7 +79,7 @@ public:
 
     void selectionChanged(bool userTriggered);
     bool lastChangeWasUserEdit() const;
-    void setInnerTextValue(const String&);
+    virtual void setInnerTextValue(const String&);
     String innerTextValue() const;
 
     String directionForFormData() const;
@@ -95,13 +95,13 @@ protected:
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {
+        ASSERT(start >= 0);
         m_cachedSelectionStart = start;
         m_cachedSelectionEnd = end;
         m_cachedSelectionDirection = direction;
     }
 
     void restoreCachedSelection();
-    bool hasCachedSelection() const { return m_cachedSelectionStart >= 0; }
 
     virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual void subtreeHasChanged() = 0;
@@ -109,6 +109,8 @@ protected:
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
 
     String valueWithHardLineBreaks() const;
+
+    virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
 
 private:
     int computeSelectionStart() const;

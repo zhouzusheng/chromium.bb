@@ -47,6 +47,8 @@
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
         'geometry/rect_f.h',
+        'geometry/r_tree.cc',
+        'geometry/r_tree.h',
         'geometry/safe_integer_conversions.h',
         'geometry/size.cc',
         'geometry/size.h',
@@ -125,8 +127,6 @@
         'canvas.cc',
         'canvas.h',
         'canvas_android.cc',
-        'canvas_paint_gtk.cc',
-        'canvas_paint_gtk.h',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -202,22 +202,13 @@
         'native_widget_types.h',
         'nine_image_painter.cc',
         'nine_image_painter.h',
-        'ozone/dri/dri_skbitmap.cc',
-        'ozone/dri/dri_skbitmap.h',
-        'ozone/dri/dri_surface.cc',
-        'ozone/dri/dri_surface.h',
-        'ozone/dri/dri_surface_factory.cc',
-        'ozone/dri/dri_surface_factory.h',
-        'ozone/dri/dri_vsync_provider.cc',
-        'ozone/dri/dri_vsync_provider.h',
-        'ozone/dri/dri_wrapper.cc',
-        'ozone/dri/dri_wrapper.h',
-        'ozone/dri/hardware_display_controller.cc',
-        'ozone/dri/hardware_display_controller.h',
+        'overlay_transform.h',
         'ozone/impl/file_surface_factory.cc',
         'ozone/impl/file_surface_factory.h',
         'ozone/surface_factory_ozone.cc',
         'ozone/surface_factory_ozone.h',
+        'ozone/surface_ozone_egl.h',
+        'ozone/surface_ozone_canvas.h',
         'ozone/overlay_candidates_ozone.cc',
         'ozone/overlay_candidates_ozone.h',
         'pango_util.cc',
@@ -225,7 +216,6 @@
         'path.cc',
         'path.h',
         'path_aura.cc',
-        'path_gtk.cc',
         'path_win.cc',
         'path_win.h',
         'path_x11.cc',
@@ -264,7 +254,6 @@
         'screen.h',
         'screen_android.cc',
         'screen_aura.cc',
-        'screen_gtk.cc',
         'screen_ios.mm',
         'screen_mac.mm',
         'screen_win.cc',
@@ -281,8 +270,6 @@
         'skbitmap_operations.h',
         'skia_util.cc',
         'skia_util.h',
-        'skia_utils_gtk.cc',
-        'skia_utils_gtk.h',
         'switches.cc',
         'switches.h',
         'sys_color_change_listener.cc',
@@ -312,12 +299,6 @@
         'win/singleton_hwnd.h',
         'win/window_impl.cc',
         'win/window_impl.h',
-        'x/x11_atom_cache.cc',
-        'x/x11_atom_cache.h',
-        'x/x11_error_tracker.cc',
-        'x/x11_error_tracker.h',
-        'x/x11_types.cc',
-        'x/x11_types.h',
       ],
       'conditions': [
         ['OS=="ios"', {
@@ -339,24 +320,6 @@
         }, {  # use_canvas_skia!=1
           'sources!': [
             'canvas_skia.cc',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'sources': [
-            'gtk_native_view_id_manager.cc',
-            'gtk_native_view_id_manager.h',
-            'gtk_preserve_window.cc',
-            'gtk_preserve_window.h',
-            'gdk_compat.h',
-            'gtk_compat.h',
-            'gtk_util.cc',
-            'gtk_util.h',
-            'image/cairo_cached_surface.cc',
-            'image/cairo_cached_surface.h',
-            'scoped_gobject.h',
           ],
         }],
         ['OS=="win"', {
@@ -387,7 +350,7 @@
             ],
           },
         }],
-        ['use_aura==0', {
+        ['use_aura==0 and toolkit_views==0', {
           'sources!': [
             'nine_image_painter.cc',
             'nine_image_painter.h',
@@ -417,7 +380,7 @@
         }],
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            'gfx_x11',
           ],
         }],
         ['use_pango==1', {
@@ -427,11 +390,6 @@
           'sources!': [
             'platform_font_ozone.cc',
             'render_text_ozone.cc',
-          ],
-        }],
-        ['ozone_platform_dri==1', {
-          'dependencies': [
-          '<(DEPTH)/build/linux/system.gyp:dridrm',
           ],
         }],
         ['desktop_linux==1 or chromeos==1', {
@@ -489,8 +447,31 @@
     },
     {
       'target_name': 'gfx_unittests',
-      'type': 'executable',
-      'sources': [
+      'type': '<(gtest_target_type)',
+      # iOS uses a small subset of ui. common_sources are the only files that
+      # are built on iOS.
+      'common_sources' : [
+        'image/image_family_unittest.cc',
+        'image/image_unittest.cc',
+        'image/image_unittest_util.cc',
+        'image/image_unittest_util.h',
+        'image/image_unittest_util_ios.mm',
+        'image/image_unittest_util_mac.mm',
+      ],
+      'all_sources': [
+        '<@(_common_sources)',
+        'animation/animation_container_unittest.cc',
+        'animation/animation_unittest.cc',
+        'animation/multi_animation_unittest.cc',
+        'animation/slide_animation_unittest.cc',
+        'animation/tween_unittest.cc',
+        'blit_unittest.cc',
+        'break_list_unittest.cc',
+        'codec/jpeg_codec_unittest.cc',
+        'codec/png_codec_unittest.cc',
+        'color_analysis_unittest.cc',
+        'color_utils_unittest.cc',
+        'display_unittest.cc',
         'geometry/box_unittest.cc',
         'geometry/cubic_bezier_unittest.cc',
         'geometry/insets_unittest.cc',
@@ -498,18 +479,49 @@
         'geometry/point_unittest.cc',
         'geometry/point3_unittest.cc',
         'geometry/quad_unittest.cc',
+        'geometry/r_tree_unittest.cc',
         'geometry/rect_unittest.cc',
         'geometry/safe_integer_conversions_unittest.cc',
         'geometry/size_unittest.cc',
         'geometry/vector2d_unittest.cc',
         'geometry/vector3d_unittest.cc',
+        'image/image_mac_unittest.mm',
+        'image/image_util_unittest.cc',
+        'range/range_mac_unittest.mm',
         'range/range_unittest.cc',
+        'range/range_win_unittest.cc',
+        'sequential_id_generator_unittest.cc',
+        'shadow_value_unittest.cc',
+        'skbitmap_operations_unittest.cc',
+        'skrect_conversion_unittest.cc',
+        'transform_util_unittest.cc',
+        'utf16_indexing_unittest.cc',
       ],
       'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:run_all_unittests',
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:run_all_unittests',
+        '../../skia/skia.gyp:skia',
+        '../../third_party/libpng/libpng.gyp:libpng',
         'gfx',
         'gfx_geometry',
+        'gfx_test_support',
+      ],
+      'conditions': [
+        ['OS == "ios"', {
+          'sources': ['<@(_common_sources)'],
+        }, {  # OS != "ios"
+          'sources': ['<@(_all_sources)'],
+        }],
+        ['OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+        }],
+        ['OS != "mac" and OS != "ios"', {
+          'sources': [
+            'transform_unittest.cc',
+            'interpolated_transform_unittest.cc',
+          ],
+        }],
       ],
     }
   ],
@@ -531,6 +543,32 @@
          'includes': [ '../../build/jni_generator.gypi' ],
        },
      ],
+    }],
+    ['use_x11 == 1', {
+      'targets': [
+        {
+          'target_name': 'gfx_x11',
+          'type': '<(component)',
+          'dependencies': [
+            '../../base/base.gyp:base',
+            '../../build/linux/system.gyp:x11',
+            'gfx_geometry',
+          ],
+          'defines': [
+            'GFX_IMPLEMENTATION',
+          ],
+          'sources': [
+            'x/x11_atom_cache.cc',
+            'x/x11_atom_cache.h',
+            'x/x11_connection.cc',
+            'x/x11_connection.h',
+            'x/x11_error_tracker.cc',
+            'x/x11_error_tracker.h',
+            'x/x11_types.cc',
+            'x/x11_types.h',
+          ],
+        },
+      ]
     }],
   ],
 }

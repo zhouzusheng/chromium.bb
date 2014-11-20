@@ -32,12 +32,12 @@
 #ifndef ChromeClientImpl_h
 #define ChromeClientImpl_h
 
-#include "WebNavigationPolicy.h"
 #include "core/page/ChromeClient.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include "platform/PopupMenu.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebColor.h"
+#include "public/web/WebNavigationPolicy.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
@@ -100,7 +100,7 @@ public:
     virtual void setResizable(bool) OVERRIDE;
     virtual bool shouldReportDetailedMessageForSource(const WTF::String&) OVERRIDE;
     virtual void addMessageToConsole(
-        WebCore::MessageSource, WebCore::MessageLevel,
+        WebCore::LocalFrame*, WebCore::MessageSource, WebCore::MessageLevel,
         const WTF::String& message, unsigned lineNumber,
         const WTF::String& sourceID, const WTF::String& stackTrace) OVERRIDE;
     virtual bool canRunBeforeUnloadConfirmPanel() OVERRIDE;
@@ -134,7 +134,7 @@ public:
     virtual void print(WebCore::LocalFrame*) OVERRIDE;
     virtual void annotatedRegionsChanged() OVERRIDE;
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&) OVERRIDE;
-    virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
+    virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::LocalFrame*, WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
     virtual PassRefPtr<WebCore::DateTimeChooser> openDateTimeChooser(WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&) OVERRIDE;
     virtual void openTextDataListChooser(WebCore::HTMLInputElement&) OVERRIDE;
     virtual void runOpenPanel(WebCore::LocalFrame*, PassRefPtr<WebCore::FileChooser>) OVERRIDE;
@@ -147,8 +147,6 @@ public:
 
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     virtual void attachRootGraphicsLayer(WebCore::GraphicsLayer*) OVERRIDE;
-
-    virtual WebCore::CompositingTriggerFlags allowedCompositingTriggers() const OVERRIDE;
 
     virtual void enterFullScreenForElement(WebCore::Element*) OVERRIDE;
     virtual void exitFullScreenForElement(WebCore::Element*) OVERRIDE;
@@ -186,10 +184,11 @@ public:
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
-    virtual void forwardInputEvent(WebCore::Document*, WebCore::Event*) OVERRIDE;
+    virtual void forwardInputEvent(WebCore::Frame*, WebCore::Event*) OVERRIDE;
 
     virtual void didCancelCompositionOnSelectionChange() OVERRIDE;
     virtual void willSetInputMethodState() OVERRIDE;
+    virtual void didUpdateTextOfFocusedElementByNonUserInput() OVERRIDE;
 
 private:
     virtual bool isChromeClientImpl() const OVERRIDE { return true; }

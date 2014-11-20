@@ -5,6 +5,7 @@
 #include "content/common/input/synthetic_web_input_event_builders.h"
 
 #include "base/logging.h"
+#include "content/common/input/web_touch_event_traits.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace content {
@@ -122,12 +123,15 @@ WebGestureEvent SyntheticWebGestureEventBuilder::BuildPinchUpdate(
     float scale,
     float anchor_x,
     float anchor_y,
-    int modifiers) {
-  WebGestureEvent result = Build(WebInputEvent::GesturePinchUpdate,
-                                 WebGestureEvent::Touchscreen);
+    int modifiers,
+    WebGestureEvent::SourceDevice source_device) {
+  WebGestureEvent result =
+      Build(WebInputEvent::GesturePinchUpdate, source_device);
   result.data.pinchUpdate.scale = scale;
   result.x = anchor_x;
   result.y = anchor_y;
+  result.globalX = anchor_x;
+  result.globalY = anchor_y;
   result.modifiers = modifiers;
   return result;
 }
@@ -169,7 +173,8 @@ int SyntheticWebTouchEvent::PressPoint(float x, float y) {
   point.state = WebTouchPoint::StatePressed;
   point.radiusX = point.radiusY = 1.f;
   ++touchesLength;
-  type = WebInputEvent::TouchStart;
+  WebTouchEventTraits::ResetType(
+      WebInputEvent::TouchStart, timeStampSeconds, this);
   return point.id;
 }
 
@@ -179,31 +184,26 @@ void SyntheticWebTouchEvent::MovePoint(int index, float x, float y) {
   point.position.x = point.screenPosition.x = x;
   point.position.y = point.screenPosition.y = y;
   touches[index].state = WebTouchPoint::StateMoved;
-  type = WebInputEvent::TouchMove;
+  WebTouchEventTraits::ResetType(
+      WebInputEvent::TouchMove, timeStampSeconds, this);
 }
 
 void SyntheticWebTouchEvent::ReleasePoint(int index) {
   CHECK(index >= 0 && index < touchesLengthCap);
   touches[index].state = WebTouchPoint::StateReleased;
-  type = WebInputEvent::TouchEnd;
+  WebTouchEventTraits::ResetType(
+      WebInputEvent::TouchEnd, timeStampSeconds, this);
 }
 
 void SyntheticWebTouchEvent::CancelPoint(int index) {
   CHECK(index >= 0 && index < touchesLengthCap);
   touches[index].state = WebTouchPoint::StateCancelled;
-  type = WebInputEvent::TouchCancel;
+  WebTouchEventTraits::ResetType(
+      WebInputEvent::TouchCancel, timeStampSeconds, this);
 }
 
 void SyntheticWebTouchEvent::SetTimestamp(base::TimeDelta timestamp) {
   timeStampSeconds = timestamp.InSecondsF();
 }
-
-SyntheticWebTouchEvent SyntheticWebTouchEventBuilder::Build(
-    WebInputEvent::Type type) {
-  DCHECK(WebInputEvent::isTouchEventType(type));
-  SyntheticWebTouchEvent result;
-  result.type = type;
-  return result;
-};
 
 }  // namespace content

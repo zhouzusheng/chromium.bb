@@ -59,6 +59,7 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
@@ -143,29 +144,18 @@ v8::Local<v8::Value> ScriptController::callFunction(v8::Handle<v8::Function> fun
     return ScriptController::callFunction(m_frame->document(), function, receiver, argc, info, m_isolate);
 }
 
-static bool resourceInfo(const v8::Handle<v8::Function> function, String& resourceName, int& lineNumber)
-{
-    v8::ScriptOrigin origin = function->GetScriptOrigin();
-    if (origin.ResourceName().IsEmpty()) {
-        resourceName = "undefined";
-        lineNumber = 1;
-    } else {
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringResourceName, origin.ResourceName(), false);
-        resourceName = stringResourceName;
-        lineNumber = function->GetScriptLineNumber() + 1;
-    }
-    return true;
-}
-
 v8::Local<v8::Value> ScriptController::callFunction(ExecutionContext* context, v8::Handle<v8::Function> function, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate* isolate)
 {
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", devToolsTraceEventData(context, function, isolate));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie;
     if (InspectorInstrumentation::timelineAgentEnabled(context)) {
+        int scriptId = 0;
         String resourceName;
-        int lineNumber;
-        if (!resourceInfo(getBoundFunction(function), resourceName, lineNumber))
-            return v8::Local<v8::Value>();
-        cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
+        int lineNumber = 1;
+        GetDevToolsFunctionInfo(function, isolate, scriptId, resourceName, lineNumber);
+        cookie = InspectorInstrumentation::willCallFunction(context, scriptId, resourceName, lineNumber);
     }
 
     v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, context, receiver, argc, info, isolate);
@@ -176,9 +166,10 @@ v8::Local<v8::Value> ScriptController::callFunction(ExecutionContext* context, v
 
 v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Handle<v8::Context> context, const ScriptSourceCode& source, AccessControlStatus corsStatus)
 {
-    v8::Context::Scope scope(context);
-
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(m_frame, source.url().isNull() ? String() : source.url().string(), source.startLine());
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(m_frame, source.url().string(), source.startLine()));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(m_frame, source.url().string(), source.startLine());
 
     v8::Local<v8::Value> result;
     {
@@ -198,6 +189,7 @@ v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Handle<v8
     }
 
     InspectorInstrumentation::didEvaluateScript(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 
     return result;
 }
@@ -209,38 +201,34 @@ bool ScriptController::initializeMainWorld()
     return windowShell(DOMWrapperWorld::mainWorld())->isContextInitialized();
 }
 
-V8WindowShell* ScriptController::existingWindowShell(DOMWrapperWorld* world)
+V8WindowShell* ScriptController::existingWindowShell(DOMWrapperWorld& world)
 {
-    ASSERT(world);
-
-    if (world->isMainWorld())
+    if (world.isMainWorld())
         return m_windowShell->isContextInitialized() ? m_windowShell.get() : 0;
 
-    IsolatedWorldMap::iterator iter = m_isolatedWorlds.find(world->worldId());
+    IsolatedWorldMap::iterator iter = m_isolatedWorlds.find(world.worldId());
     if (iter == m_isolatedWorlds.end())
         return 0;
     return iter->value->isContextInitialized() ? iter->value.get() : 0;
 }
 
-V8WindowShell* ScriptController::windowShell(DOMWrapperWorld* world)
+V8WindowShell* ScriptController::windowShell(DOMWrapperWorld& world)
 {
-    ASSERT(world);
-
     V8WindowShell* shell = 0;
-    if (world->isMainWorld())
+    if (world.isMainWorld())
         shell = m_windowShell.get();
     else {
-        IsolatedWorldMap::iterator iter = m_isolatedWorlds.find(world->worldId());
+        IsolatedWorldMap::iterator iter = m_isolatedWorlds.find(world.worldId());
         if (iter != m_isolatedWorlds.end())
             shell = iter->value.get();
         else {
             OwnPtr<V8WindowShell> isolatedWorldShell = V8WindowShell::create(m_frame, world, m_isolate);
             shell = isolatedWorldShell.get();
-            m_isolatedWorlds.set(world->worldId(), isolatedWorldShell.release());
+            m_isolatedWorlds.set(world.worldId(), isolatedWorldShell.release());
         }
     }
-    if (!shell->isContextInitialized() && shell->initializeIfNeeded())
-        m_frame->loader().dispatchDidClearWindowObjectInWorld(world);
+    if (!shell->isContextInitialized() && shell->initializeIfNeeded() && world.isMainWorld())
+        m_frame->loader().dispatchDidClearWindowObjectInMainWorld();
     return shell;
 }
 
@@ -249,8 +237,8 @@ bool ScriptController::shouldBypassMainWorldContentSecurityPolicy()
     v8::Handle<v8::Context> context = m_isolate->GetCurrentContext();
     if (context.IsEmpty() || !toDOMWindow(context))
         return false;
-    DOMWrapperWorld* world = DOMWrapperWorld::current(m_isolate);
-    return world->isIsolatedWorld() ? world->isolatedWorldHasContentSecurityPolicy() : false;
+    DOMWrapperWorld& world = DOMWrapperWorld::current(m_isolate);
+    return world.isIsolatedWorld() ? world.isolatedWorldHasContentSecurityPolicy() : false;
 }
 
 TextPosition ScriptController::eventHandlerPosition() const
@@ -449,13 +437,13 @@ void ScriptController::collectIsolatedContexts(Vector<std::pair<ScriptState*, Se
     v8::HandleScope handleScope(m_isolate);
     for (IsolatedWorldMap::iterator it = m_isolatedWorlds.begin(); it != m_isolatedWorlds.end(); ++it) {
         V8WindowShell* isolatedWorldShell = it->value.get();
-        SecurityOrigin* origin = isolatedWorldShell->world()->isolatedWorldSecurityOrigin();
+        SecurityOrigin* origin = isolatedWorldShell->world().isolatedWorldSecurityOrigin();
         if (!origin)
             continue;
         v8::Local<v8::Context> v8Context = isolatedWorldShell->context();
         if (v8Context.IsEmpty())
             continue;
-        ScriptState* scriptState = ScriptState::forContext(v8Context);
+        ScriptState* scriptState = ScriptState::from(v8Context);
         result.append(std::pair<ScriptState*, SecurityOrigin*>(scriptState, origin));
     }
 }
@@ -543,7 +531,7 @@ bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
         return true;
 
     String scriptResult;
-    if (!result.getString(scriptResult))
+    if (!result.toString(scriptResult))
         return true;
 
     // We're still in a frame, so there should be a DocumentLoader.
@@ -589,6 +577,7 @@ ScriptValue ScriptController::evaluateScriptInMainWorld(const ScriptSourceCode& 
     v8::Handle<v8::Context> v8Context = toV8Context(m_isolate, m_frame, DOMWrapperWorld::mainWorld());
     if (v8Context.IsEmpty())
         return ScriptValue();
+    v8::Context::Scope scope(v8Context);
 
     RefPtr<LocalFrame> protect(m_frame);
     if (m_frame->loader().stateMachine()->isDisplayingInitialEmptyDocument())
@@ -603,7 +592,7 @@ ScriptValue ScriptController::evaluateScriptInMainWorld(const ScriptSourceCode& 
     if (object.IsEmpty())
         return ScriptValue();
 
-    return ScriptValue(object, m_isolate);
+    return ScriptValue(ScriptState::from(v8Context), object);
 }
 
 void ScriptController::executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<ScriptValue>* results)
@@ -611,32 +600,25 @@ void ScriptController::executeScriptInIsolatedWorld(int worldID, const Vector<Sc
     ASSERT(worldID > 0);
 
     v8::HandleScope handleScope(m_isolate);
-    v8::Local<v8::Array> v8Results;
-    {
-        v8::EscapableHandleScope evaluateHandleScope(m_isolate);
-        RefPtr<DOMWrapperWorld> world = DOMWrapperWorld::ensureIsolatedWorld(worldID, extensionGroup);
-        V8WindowShell* isolatedWorldShell = windowShell(world.get());
+    RefPtr<DOMWrapperWorld> world = DOMWrapperWorld::ensureIsolatedWorld(worldID, extensionGroup);
+    V8WindowShell* isolatedWorldShell = windowShell(*world);
+    if (!isolatedWorldShell->isContextInitialized())
+        return;
 
-        if (!isolatedWorldShell->isContextInitialized())
-            return;
+    v8::Local<v8::Context> context = isolatedWorldShell->context();
+    v8::Context::Scope contextScope(context);
+    v8::Local<v8::Array> resultArray = v8::Array::New(m_isolate, sources.size());
 
-        v8::Local<v8::Context> context = isolatedWorldShell->context();
-        v8::Context::Scope contextScope(context);
-        v8::Local<v8::Array> resultArray = v8::Array::New(m_isolate, sources.size());
-
-        for (size_t i = 0; i < sources.size(); ++i) {
-            v8::Local<v8::Value> evaluationResult = executeScriptAndReturnValue(context, sources[i]);
-            if (evaluationResult.IsEmpty())
-                evaluationResult = v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
-            resultArray->Set(i, evaluationResult);
-        }
-
-        v8Results = evaluateHandleScope.Escape(resultArray);
+    for (size_t i = 0; i < sources.size(); ++i) {
+        v8::Local<v8::Value> evaluationResult = executeScriptAndReturnValue(context, sources[i]);
+        if (evaluationResult.IsEmpty())
+            evaluationResult = v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
+        resultArray->Set(i, evaluationResult);
     }
 
-    if (results && !v8Results.IsEmpty()) {
-        for (size_t i = 0; i < v8Results->Length(); ++i)
-            results->append(ScriptValue(v8Results->Get(i), m_isolate));
+    if (results) {
+        for (size_t i = 0; i < resultArray->Length(); ++i)
+            results->append(ScriptValue(ScriptState::from(context), resultArray->Get(i)));
     }
 }
 

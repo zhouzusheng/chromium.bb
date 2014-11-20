@@ -30,6 +30,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "platform/Clock.h"
@@ -53,7 +54,7 @@ MediaController::MediaController(ExecutionContext* context)
     , m_muted(false)
     , m_readyState(HTMLMediaElement::HAVE_NOTHING)
     , m_playbackState(WAITING)
-    , m_asyncEventTimer(this, &MediaController::asyncEventTimerFired)
+    , m_pendingEventsQueue(GenericEventQueue::create(this))
     , m_clearPositionTimer(this, &MediaController::clearPositionTimerFired)
     , m_clock(Clock::create())
     , m_executionContext(context)
@@ -81,11 +82,6 @@ void MediaController::removeMediaElement(HTMLMediaElement* element)
     ASSERT(element);
     ASSERT(m_mediaElements.contains(element));
     m_mediaElements.remove(m_mediaElements.find(element));
-}
-
-bool MediaController::containsMediaElement(HTMLMediaElement* element) const
-{
-    return m_mediaElements.contains(element);
 }
 
 PassRefPtr<TimeRanges> MediaController::buffered() const
@@ -160,12 +156,6 @@ double MediaController::currentTime() const
 
 void MediaController::setCurrentTime(double time, ExceptionState& exceptionState)
 {
-    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
-    if (!std::isfinite(time)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(time));
-        return;
-    }
-
     // When the user agent is to seek the media controller to a particular new playback position,
     // it must follow these steps:
     // If the new playback position is less than zero, then set it to zero.
@@ -176,6 +166,7 @@ void MediaController::setCurrentTime(double time, ExceptionState& exceptionState
     time = min(time, duration());
 
     // Set the media controller position to the new playback position.
+    m_position = time;
     m_clock->setCurrentTime(time);
 
     // Seek each slaved media element to the new playback position relative to the media element timeline.
@@ -224,14 +215,8 @@ void MediaController::pause()
     reportControllerState();
 }
 
-void MediaController::setDefaultPlaybackRate(double rate, ExceptionState& exceptionState)
+void MediaController::setDefaultPlaybackRate(double rate)
 {
-    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
-    if (!std::isfinite(rate)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(rate));
-        return;
-    }
-
     if (m_defaultPlaybackRate == rate)
         return;
 
@@ -248,14 +233,8 @@ double MediaController::playbackRate() const
     return m_clock->playRate();
 }
 
-void MediaController::setPlaybackRate(double rate, ExceptionState& exceptionState)
+void MediaController::setPlaybackRate(double rate)
 {
-    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
-    if (!std::isfinite(rate)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(rate));
-        return;
-    }
-
     if (m_clock->playRate() == rate)
         return;
 
@@ -272,12 +251,6 @@ void MediaController::setPlaybackRate(double rate, ExceptionState& exceptionStat
 
 void MediaController::setVolume(double level, ExceptionState& exceptionState)
 {
-    // FIXME: generated bindings should check isfinite: http://crbug.com/354298
-    if (!std::isfinite(level)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(level));
-        return;
-    }
-
     if (m_volume == level)
         return;
 
@@ -591,33 +564,12 @@ bool MediaController::hasEnded() const
 
 void MediaController::scheduleEvent(const AtomicString& eventName)
 {
-    m_pendingEvents.append(Event::createCancelable(eventName));
-    if (!m_asyncEventTimer.isActive())
-        m_asyncEventTimer.startOneShot(0, FROM_HERE);
-}
-
-void MediaController::asyncEventTimerFired(Timer<MediaController>*)
-{
-    Vector<RefPtr<Event> > pendingEvents;
-
-    m_pendingEvents.swap(pendingEvents);
-    size_t count = pendingEvents.size();
-    for (size_t index = 0; index < count; ++index)
-        dispatchEvent(pendingEvents[index].release(), IGNORE_EXCEPTION);
+    m_pendingEventsQueue->enqueueEvent(Event::createCancelable(eventName));
 }
 
 void MediaController::clearPositionTimerFired(Timer<MediaController>*)
 {
     m_position = MediaPlayer::invalidTime();
-}
-
-bool MediaController::hasAudio() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasAudio())
-            return true;
-    }
-    return false;
 }
 
 const AtomicString& MediaController::interfaceName() const

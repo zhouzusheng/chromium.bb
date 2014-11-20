@@ -16,7 +16,7 @@ namespace test {
 // TODO(vtl): Maybe this should be defined in a test-only file instead.
 DispatcherTransport DispatcherTryStartTransport(
     Dispatcher* dispatcher) {
-  return Dispatcher::CoreImplAccess::TryStartTransport(dispatcher);
+  return Dispatcher::HandleTableAccess::TryStartTransport(dispatcher);
 }
 
 }  // namespace test
@@ -24,7 +24,7 @@ DispatcherTransport DispatcherTryStartTransport(
 // Dispatcher ------------------------------------------------------------------
 
 // static
-DispatcherTransport Dispatcher::CoreImplAccess::TryStartTransport(
+DispatcherTransport Dispatcher::HandleTableAccess::TryStartTransport(
     Dispatcher* dispatcher) {
   DCHECK(dispatcher);
 
@@ -40,25 +40,29 @@ DispatcherTransport Dispatcher::CoreImplAccess::TryStartTransport(
 }
 
 // static
-size_t Dispatcher::MessageInTransitAccess::GetMaximumSerializedSize(
-    const Dispatcher* dispatcher,
-    const Channel* channel) {
+void Dispatcher::TransportDataAccess::StartSerialize(
+    Dispatcher* dispatcher,
+    Channel* channel,
+    size_t* max_size,
+    size_t* max_platform_handles) {
   DCHECK(dispatcher);
-  return dispatcher->GetMaximumSerializedSize(channel);
+  dispatcher->StartSerialize(channel, max_size, max_platform_handles);
 }
 
 // static
-bool Dispatcher::MessageInTransitAccess::SerializeAndClose(
+bool Dispatcher::TransportDataAccess::EndSerializeAndClose(
     Dispatcher* dispatcher,
     Channel* channel,
     void* destination,
-    size_t* actual_size) {
+    size_t* actual_size,
+    std::vector<embedder::PlatformHandle>* platform_handles) {
   DCHECK(dispatcher);
-  return dispatcher->SerializeAndClose(channel, destination, actual_size);
+  return dispatcher->EndSerializeAndClose(channel, destination, actual_size,
+                                          platform_handles);
 }
 
 // static
-scoped_refptr<Dispatcher> Dispatcher::MessageInTransitAccess::Deserialize(
+scoped_refptr<Dispatcher> Dispatcher::TransportDataAccess::Deserialize(
     Channel* channel,
     int32_t type,
     const void* source,
@@ -104,11 +108,10 @@ MojoResult Dispatcher::WriteMessage(
   return WriteMessageImplNoLock(bytes, num_bytes, transports, flags);
 }
 
-MojoResult Dispatcher::ReadMessage(
-    void* bytes,
-    uint32_t* num_bytes,
-    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
-    uint32_t* num_dispatchers,
+MojoResult Dispatcher::ReadMessage(void* bytes,
+                                   uint32_t* num_bytes,
+                                   DispatcherVector* dispatchers,
+                                   uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   DCHECK(!num_dispatchers || *num_dispatchers == 0 ||
          (dispatchers && dispatchers->empty()));
@@ -191,7 +194,7 @@ MojoResult Dispatcher::MapBuffer(
     uint64_t offset,
     uint64_t num_bytes,
     MojoMapBufferFlags flags,
-    scoped_ptr<RawSharedBuffer::Mapping>* mapping) {
+    scoped_ptr<RawSharedBufferMapping>* mapping) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
@@ -252,12 +255,11 @@ MojoResult Dispatcher::WriteMessageImplNoLock(
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::ReadMessageImplNoLock(
-    void* /*bytes*/,
-    uint32_t* /*num_bytes*/,
-    std::vector<scoped_refptr<Dispatcher> >* /*dispatchers*/,
-    uint32_t* /*num_dispatchers*/,
-    MojoReadMessageFlags /*flags*/) {
+MojoResult Dispatcher::ReadMessageImplNoLock(void* /*bytes*/,
+                                             uint32_t* /*num_bytes*/,
+                                             DispatcherVector* /*dispatchers*/,
+                                             uint32_t* /*num_dispatchers*/,
+                                             MojoReadMessageFlags /*flags*/) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for message pipe dispatchers.
@@ -327,7 +329,7 @@ MojoResult Dispatcher::MapBufferImplNoLock(
     uint64_t /*offset*/,
     uint64_t /*num_bytes*/,
     MojoMapBufferFlags /*flags*/,
-    scoped_ptr<RawSharedBuffer::Mapping>* /*mapping*/) {
+    scoped_ptr<RawSharedBufferMapping>* /*mapping*/) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for buffer dispatchers.
@@ -351,22 +353,25 @@ void Dispatcher::RemoveWaiterImplNoLock(Waiter* /*waiter*/) {
   // will do something nontrivial.
 }
 
-size_t Dispatcher::GetMaximumSerializedSizeImplNoLock(
-      const Channel* /*channel*/) const {
-  lock_.AssertAcquired();
+void Dispatcher::StartSerializeImplNoLock(Channel* /*channel*/,
+                                          size_t* max_size,
+                                          size_t* max_platform_handles) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(!is_closed_);
-  // By default, serializing isn't supported.
-  return 0;
+  *max_size = 0;
+  *max_platform_handles = 0;
 }
 
-bool Dispatcher::SerializeAndCloseImplNoLock(Channel* /*channel*/,
-                                             void* /*destination*/,
-                                             size_t* /*actual_size*/) {
-  lock_.AssertAcquired();
+bool Dispatcher::EndSerializeAndCloseImplNoLock(
+    Channel* /*channel*/,
+    void* /*destination*/,
+    size_t* /*actual_size*/,
+    std::vector<embedder::PlatformHandle>* /*platform_handles*/) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(is_closed_);
   // By default, serializing isn't supported, so just close.
   CloseImplNoLock();
-  return 0;
+  return false;
 }
 
 bool Dispatcher::IsBusyNoLock() const {
@@ -396,33 +401,26 @@ Dispatcher::CreateEquivalentDispatcherAndCloseNoLock() {
   return CreateEquivalentDispatcherAndCloseImplNoLock();
 }
 
-size_t Dispatcher::GetMaximumSerializedSize(const Channel* channel) const {
+void Dispatcher::StartSerialize(Channel* channel,
+                                size_t* max_size,
+                                size_t* max_platform_handles) {
   DCHECK(channel);
-  DCHECK(HasOneRef());
-
-  base::AutoLock locker(lock_);
+  DCHECK(max_size);
+  DCHECK(max_platform_handles);
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(!is_closed_);
-  return GetMaximumSerializedSizeImplNoLock(channel);
+  StartSerializeImplNoLock(channel, max_size, max_platform_handles);
 }
 
-bool Dispatcher::SerializeAndClose(Channel* channel,
-                                   void* destination,
-                                   size_t* actual_size) {
-  DCHECK(destination);
+bool Dispatcher::EndSerializeAndClose(
+    Channel* channel,
+    void* destination,
+    size_t* actual_size,
+    std::vector<embedder::PlatformHandle>* platform_handles) {
   DCHECK(channel);
   DCHECK(actual_size);
-  DCHECK(HasOneRef());
-
-  base::AutoLock locker(lock_);
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(!is_closed_);
-
-  // We have to call |GetMaximumSerializedSizeImplNoLock()| first, because we
-  // leave it to |SerializeAndCloseImplNoLock()| to close the thing.
-#if DCHECK_IS_ON
-  size_t max_size = GetMaximumSerializedSizeImplNoLock(channel);
-#else
-  size_t max_size = static_cast<size_t>(-1);
-#endif
 
   // Like other |...Close()| methods, we mark ourselves as closed before calling
   // the impl.
@@ -430,11 +428,15 @@ bool Dispatcher::SerializeAndClose(Channel* channel,
   // No need to cancel waiters: we shouldn't have any (and shouldn't be in
   // |Core|'s handle table.
 
-  if (!SerializeAndCloseImplNoLock(channel, destination, actual_size))
-    return false;
+#if !defined(NDEBUG)
+  // See the comment above |EndSerializeAndCloseImplNoLock()|. In brief: Locking
+  // isn't actually needed, but we need to satisfy assertions (which we don't
+  // want to remove or weaken).
+  base::AutoLock locker(lock_);
+#endif
 
-  DCHECK_LE(*actual_size, max_size);
-  return true;
+  return EndSerializeAndCloseImplNoLock(channel, destination, actual_size,
+                                        platform_handles);
 }
 
 // DispatcherTransport ---------------------------------------------------------

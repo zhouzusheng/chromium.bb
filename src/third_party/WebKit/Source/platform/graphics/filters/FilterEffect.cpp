@@ -198,13 +198,10 @@ void FilterEffect::applyRecursive()
     if (!isFilterSizeValid(m_absolutePaintRect))
         return;
 
-    if (requiresValidPreMultipliedPixels()) {
+    if (!mayProduceInvalidPreMultipliedPixels()) {
         for (unsigned i = 0; i < size; ++i)
             inputEffect(i)->correctFilterResultIfNeeded();
     }
-
-    if (applySkia())
-        return;
 
     applySoftware();
 }
@@ -268,6 +265,10 @@ void FilterEffect::clearResult()
         m_premultipliedImageResult.clear();
 
     m_absolutePaintRect = IntRect();
+    for (int i = 0; i < 4; i++) {
+        filter()->removeFromCache(m_imageFilters[i].get());
+        m_imageFilters[i] = nullptr;
+    }
 }
 
 void FilterEffect::clearResultsRecursive()
@@ -427,8 +428,9 @@ void FilterEffect::copyPremultipliedImage(Uint8ClampedArray* destination, const 
 ImageBuffer* FilterEffect::createImageBufferResult()
 {
     // Only one result type is allowed.
-    if (m_absolutePaintRect.isEmpty())
-        return 0;
+    ASSERT(!hasResult());
+    ASSERT(isFilterSizeValid(m_absolutePaintRect));
+
     OwnPtr<ImageBufferSurface> surface;
     surface = adoptPtr(new UnacceleratedImageBufferSurface(m_absolutePaintRect.size()));
     m_imageBufferResult = ImageBuffer::create(surface.release());
@@ -542,6 +544,11 @@ PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder
     return nullptr;
 }
 
+PassRefPtr<SkImageFilter> FilterEffect::createImageFilterWithoutValidation(SkiaImageFilterBuilder* builder)
+{
+    return createImageFilter(builder);
+}
+
 SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) const
 {
     FloatRect rect = filter()->filterRegion();
@@ -568,6 +575,29 @@ SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) c
     }
     rect = filter()->mapLocalRectToAbsoluteRect(rect);
     return SkImageFilter::CropRect(rect, flags);
+}
+
+static int getImageFilterIndex(ColorSpace colorSpace, bool requiresPMColorValidation)
+{
+    // Map the (colorspace, bool) tuple to an integer index as follows:
+    // 0 == linear colorspace, no PM validation
+    // 1 == device colorspace, no PM validation
+    // 2 == linear colorspace, PM validation
+    // 3 == device colorspace, PM validation
+    return (colorSpace == ColorSpaceLinearRGB ? 0x1 : 0x0) | (requiresPMColorValidation ? 0x2 : 0x0);
+}
+
+SkImageFilter* FilterEffect::getImageFilter(ColorSpace colorSpace, bool requiresPMColorValidation) const
+{
+    int index = getImageFilterIndex(colorSpace, requiresPMColorValidation);
+    return m_imageFilters[index].get();
+}
+
+void FilterEffect::setImageFilter(ColorSpace colorSpace, bool requiresPMColorValidation, PassRefPtr<SkImageFilter> imageFilter)
+{
+    int index = getImageFilterIndex(colorSpace, requiresPMColorValidation);
+    filter()->removeFromCache(m_imageFilters[index].get());
+    m_imageFilters[index] = imageFilter;
 }
 
 } // namespace WebCore

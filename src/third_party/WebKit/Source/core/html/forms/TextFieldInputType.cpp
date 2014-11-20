@@ -98,9 +98,9 @@ private:
     }
 
 public:
-    static PassRefPtr<DataListIndicatorElement> create(Document& document)
+    static PassRefPtrWillBeRawPtr<DataListIndicatorElement> create(Document& document)
     {
-        RefPtr<DataListIndicatorElement> element = adoptRef(new DataListIndicatorElement(document));
+        RefPtrWillBeRawPtr<DataListIndicatorElement> element = adoptRefWillBeRefCountedGarbageCollected(new DataListIndicatorElement(document));
         element->setShadowPseudoId(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
         element->setAttribute(idAttr, ShadowElementNames::pickerIndicator());
         return element.release();
@@ -115,8 +115,10 @@ TextFieldInputType::TextFieldInputType(HTMLInputElement& element)
 
 TextFieldInputType::~TextFieldInputType()
 {
+#if !ENABLE(OILPAN)
     if (SpinButtonElement* spinButton = spinButtonElement())
         spinButton->removeSpinButtonOwner();
+#endif
 }
 
 SpinButtonElement* TextFieldInputType::spinButtonElement() const
@@ -208,10 +210,11 @@ void TextFieldInputType::handleKeydownEventForSpinButton(KeyboardEvent* event)
     const String& key = event->keyIdentifier();
     if (key == "Up")
         spinButtonStepUp();
-    else if (key == "Down")
+    else if (key == "Down" && !event->altKey())
         spinButtonStepDown();
     else
         return;
+    element().dispatchFormControlChangeEvent();
     event->setDefaultHandled();
 }
 
@@ -254,6 +257,8 @@ void TextFieldInputType::handleBlurEvent()
 {
     InputType::handleBlurEvent();
     element().endEditing();
+    if (SpinButtonElement *spinButton = spinButtonElement())
+        spinButton->releaseCapture();
 }
 
 bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
@@ -264,15 +269,6 @@ bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
 RenderObject* TextFieldInputType::createRenderer(RenderStyle*) const
 {
     return new RenderTextControlSingleLine(&element());
-}
-
-bool TextFieldInputType::needsContainer() const
-{
-#if ENABLE(INPUT_SPEECH)
-    return element().isSpeechEnabled();
-#else
-    return false;
-#endif
 }
 
 bool TextFieldInputType::shouldHaveSpinButton() const
@@ -291,24 +287,19 @@ void TextFieldInputType::createShadowSubtree()
     bool shouldHaveDataListIndicator = element().hasValidDataListOptions();
     bool createsContainer = shouldHaveSpinButton || shouldHaveDataListIndicator || needsContainer();
 
-    RefPtr<TextControlInnerTextElement> innerEditor = TextControlInnerTextElement::create(document);
+    RefPtrWillBeRawPtr<TextControlInnerTextElement> innerEditor = TextControlInnerTextElement::create(document);
     if (!createsContainer) {
         shadowRoot->appendChild(innerEditor.release());
         return;
     }
 
-    RefPtr<TextControlInnerContainer> container = TextControlInnerContainer::create(document);
+    RefPtrWillBeRawPtr<TextControlInnerContainer> container = TextControlInnerContainer::create(document);
     container->setShadowPseudoId(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
     shadowRoot->appendChild(container);
 
-    RefPtr<EditingViewPortElement> editingViewPort = EditingViewPortElement::create(document);
+    RefPtrWillBeRawPtr<EditingViewPortElement> editingViewPort = EditingViewPortElement::create(document);
     editingViewPort->appendChild(innerEditor.release());
     container->appendChild(editingViewPort.release());
-
-#if ENABLE(INPUT_SPEECH)
-    if (element().isSpeechEnabled())
-        container->appendChild(InputFieldSpeechButtonElement::create(document));
-#endif
 
     if (shouldHaveDataListIndicator)
         container->appendChild(DataListIndicatorElement::create(document));
@@ -348,11 +339,11 @@ void TextFieldInputType::listAttributeTargetChanged()
             // FIXME: The following code is similar to createShadowSubtree(),
             // but they are different. We should simplify the code by making
             // containerElement mandatory.
-            RefPtr<Element> rpContainer = TextControlInnerContainer::create(document);
+            RefPtrWillBeRawPtr<Element> rpContainer = TextControlInnerContainer::create(document);
             rpContainer->setShadowPseudoId(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
-            RefPtr<Element> innerEditor = element().innerTextElement();
+            RefPtrWillBeRawPtr<Element> innerEditor = element().innerTextElement();
             innerEditor->parentNode()->replaceChild(rpContainer.get(), innerEditor.get());
-            RefPtr<Element> editingViewPort = EditingViewPortElement::create(document);
+            RefPtrWillBeRawPtr<Element> editingViewPort = EditingViewPortElement::create(document);
             editingViewPort->appendChild(innerEditor.release());
             rpContainer->appendChild(editingViewPort.release());
             rpContainer->appendChild(DataListIndicatorElement::create(document));
@@ -533,9 +524,13 @@ void TextFieldInputType::updateView()
     if (!element().suggestedValue().isNull()) {
         element().setInnerTextValue(element().suggestedValue());
         element().updatePlaceholderVisibility(false);
-    } else if (!element().formControlValueMatchesRenderer()) {
-        // Update the renderer value if the formControlValueMatchesRenderer() flag is false.
-        // It protects an unacceptable renderer value from being overwritten with the DOM value.
+    } else if (element().needsToUpdateViewValue()) {
+        // Update the view only if needsToUpdateViewValue is true. It protects
+        // an unacceptable view value from being overwritten with the DOM value.
+        //
+        // e.g. <input type=number> has a view value "abc", and input.max is
+        // updated. In this case, updateView() is called but we should not
+        // update the view value.
         element().setInnerTextValue(visibleValue());
         element().updatePlaceholderVisibility(false);
     }
@@ -556,6 +551,12 @@ bool TextFieldInputType::shouldSpinButtonRespondToMouseEvents()
 bool TextFieldInputType::shouldSpinButtonRespondToWheelEvents()
 {
     return shouldSpinButtonRespondToMouseEvents() && element().focused();
+}
+
+void TextFieldInputType::spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch eventDispatch)
+{
+    if (eventDispatch == SpinButtonElement::EventDispatchAllowed)
+        element().dispatchFormControlChangeEvent();
 }
 
 } // namespace WebCore

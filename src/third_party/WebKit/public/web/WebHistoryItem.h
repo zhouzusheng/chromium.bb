@@ -41,8 +41,14 @@ namespace blink {
 class WebHTTPBody;
 class WebString;
 class WebSerializedScriptValue;
+struct WebFloatPoint;
 struct WebPoint;
 template <typename T> class WebVector;
+
+enum WebHistoryLoadType {
+    WebHistorySameDocumentLoad,
+    WebHistoryDifferentDocumentLoad
+};
 
 // Represents a frame-level navigation entry in session history.  A
 // WebHistoryItem is a node in a tree.
@@ -77,6 +83,9 @@ public:
     BLINK_EXPORT WebString target() const;
     BLINK_EXPORT void setTarget(const WebString&);
 
+    BLINK_EXPORT WebFloatPoint pinchViewportScrollOffset() const;
+    BLINK_EXPORT void setPinchViewportScrollOffset(const WebFloatPoint&);
+
     BLINK_EXPORT WebPoint scrollOffset() const;
     BLINK_EXPORT void setScrollOffset(const WebPoint&);
 
@@ -101,10 +110,6 @@ public:
     BLINK_EXPORT WebHTTPBody httpBody() const;
     BLINK_EXPORT void setHTTPBody(const WebHTTPBody&);
 
-    BLINK_EXPORT WebVector<WebHistoryItem> children() const;
-    BLINK_EXPORT void setChildren(const WebVector<WebHistoryItem>&);
-    BLINK_EXPORT void appendToChildren(const WebHistoryItem&);
-
     BLINK_EXPORT WebVector<WebString> getReferencedFilePaths() const;
 
 #if BLINK_IMPLEMENTATION
@@ -114,7 +119,6 @@ public:
 #endif
 
 private:
-    void ensureMutable();
     WebPrivatePtr<WebCore::HistoryItem> m_private;
 };
 

@@ -4,8 +4,10 @@
 
 #include "net/http/http_server_properties_impl.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -13,16 +15,23 @@
 
 namespace net {
 
+namespace {
+
 // TODO(simonjam): Run experiments with different values of this to see what
 // value is good at avoiding evictions without eating too much memory. Until
 // then, this is just a bad guess.
-static const int kDefaultNumHostsToRemember = 200;
+const int kDefaultNumHostsToRemember = 200;
+
+const uint64 kBrokenAlternateProtocolDelaySecs = 300;
+
+}  // namespace
 
 HttpServerPropertiesImpl::HttpServerPropertiesImpl()
-    : alternate_protocol_map_(AlternateProtocolMap::NO_AUTO_EVICT),
+    : spdy_servers_map_(SpdyServerHostPortMap::NO_AUTO_EVICT),
+      alternate_protocol_map_(AlternateProtocolMap::NO_AUTO_EVICT),
       spdy_settings_map_(SpdySettingsMap::NO_AUTO_EVICT),
       pipeline_capability_map_(
-        new CachedPipelineCapabilityMap(kDefaultNumHostsToRemember)),
+          new CachedPipelineCapabilityMap(kDefaultNumHostsToRemember)),
       weak_ptr_factory_(this) {
   canoncial_suffixes_.push_back(".c.youtube.com");
   canoncial_suffixes_.push_back(".googlevideo.com");
@@ -35,12 +44,12 @@ void HttpServerPropertiesImpl::InitializeSpdyServers(
     std::vector<std::string>* spdy_servers,
     bool support_spdy) {
   DCHECK(CalledOnValidThread());
-  spdy_servers_table_.clear();
   if (!spdy_servers)
     return;
-  for (std::vector<std::string>::iterator it = spdy_servers->begin();
-       it != spdy_servers->end(); ++it) {
-    spdy_servers_table_[*it] = support_spdy;
+  // Add the entries from persisted data.
+  for (std::vector<std::string>::reverse_iterator it = spdy_servers->rbegin();
+       it != spdy_servers->rend(); ++it) {
+    spdy_servers_map_.Put(*it, support_spdy);
   }
 }
 
@@ -114,16 +123,20 @@ void HttpServerPropertiesImpl::SetNumPipelinedHostsToRemember(int max_size) {
 }
 
 void HttpServerPropertiesImpl::GetSpdyServerList(
-    base::ListValue* spdy_server_list) const {
+    base::ListValue* spdy_server_list,
+    size_t max_size) const {
   DCHECK(CalledOnValidThread());
   DCHECK(spdy_server_list);
   spdy_server_list->Clear();
+  size_t count = 0;
   // Get the list of servers (host/port) that support SPDY.
-  for (SpdyServerHostPortTable::const_iterator it = spdy_servers_table_.begin();
-       it != spdy_servers_table_.end(); ++it) {
+  for (SpdyServerHostPortMap::const_iterator it = spdy_servers_map_.begin();
+       it != spdy_servers_map_.end() && count < max_size; ++it) {
     const std::string spdy_server_host_port = it->first;
-    if (it->second)
+    if (it->second) {
       spdy_server_list->Append(new base::StringValue(spdy_server_host_port));
+      ++count;
+    }
   }
 }
 
@@ -160,22 +173,22 @@ base::WeakPtr<HttpServerProperties> HttpServerPropertiesImpl::GetWeakPtr() {
 
 void HttpServerPropertiesImpl::Clear() {
   DCHECK(CalledOnValidThread());
-  spdy_servers_table_.clear();
+  spdy_servers_map_.Clear();
   alternate_protocol_map_.Clear();
   spdy_settings_map_.Clear();
   pipeline_capability_map_->Clear();
 }
 
 bool HttpServerPropertiesImpl::SupportsSpdy(
-    const net::HostPortPair& host_port_pair) const {
+    const net::HostPortPair& host_port_pair) {
   DCHECK(CalledOnValidThread());
   if (host_port_pair.host().empty())
     return false;
   std::string spdy_server = GetFlattenedSpdyServer(host_port_pair);
 
-  SpdyServerHostPortTable::const_iterator spdy_host_port =
-      spdy_servers_table_.find(spdy_server);
-  if (spdy_host_port != spdy_servers_table_.end())
+  SpdyServerHostPortMap::iterator spdy_host_port =
+      spdy_servers_map_.Get(spdy_server);
+  if (spdy_host_port != spdy_servers_map_.end())
     return spdy_host_port->second;
   return false;
 }
@@ -188,14 +201,14 @@ void HttpServerPropertiesImpl::SetSupportsSpdy(
     return;
   std::string spdy_server = GetFlattenedSpdyServer(host_port_pair);
 
-  SpdyServerHostPortTable::iterator spdy_host_port =
-      spdy_servers_table_.find(spdy_server);
-  if ((spdy_host_port != spdy_servers_table_.end()) &&
+  SpdyServerHostPortMap::iterator spdy_host_port =
+      spdy_servers_map_.Get(spdy_server);
+  if ((spdy_host_port != spdy_servers_map_.end()) &&
       (spdy_host_port->second == support_spdy)) {
     return;
   }
   // Cache the data.
-  spdy_servers_table_[spdy_server] = support_spdy;
+  spdy_servers_map_.Put(spdy_server, support_spdy);
 }
 
 bool HttpServerPropertiesImpl::HasAlternateProtocol(
@@ -258,6 +271,11 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
                    << ", Protocol: " << alternate_protocol
                    << "].";
     }
+  } else {
+    // TODO(rch): Consider the case where multiple requests are started
+    // before the first completes. In this case, only one of the jobs
+    // would reach this code, whereas all of them should should have.
+    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING);
   }
 
   alternate_protocol_map_.Put(server, alternate);
@@ -284,6 +302,30 @@ void HttpServerPropertiesImpl::SetBrokenAlternateProtocol(
   PortAlternateProtocolPair alternate;
   alternate.protocol = ALTERNATE_PROTOCOL_BROKEN;
   alternate_protocol_map_.Put(server, alternate);
+
+  int count = ++broken_alternate_protocol_map_[server];
+  base::TimeDelta delay =
+      base::TimeDelta::FromSeconds(kBrokenAlternateProtocolDelaySecs);
+  BrokenAlternateProtocolEntry entry;
+  entry.server = server;
+  entry.when = base::TimeTicks::Now() + delay * (1 << (count - 1));
+  broken_alternate_protocol_list_.push_back(entry);
+  // If this is the only entry in the list, schedule an expiration task.
+  // Otherwse it will be rescheduled automatically when the pending
+  // task runs.
+  if (broken_alternate_protocol_list_.size() == 1) {
+    ScheduleBrokenAlternateProtocolMappingsExpiration();
+  }
+}
+
+bool HttpServerPropertiesImpl::WasAlternateProtocolRecentlyBroken(
+    const HostPortPair& server) {
+  return ContainsKey(broken_alternate_protocol_map_, server);
+}
+
+void HttpServerPropertiesImpl::ConfirmAlternateProtocol(
+    const HostPortPair& server) {
+  broken_alternate_protocol_map_.erase(server);
 }
 
 void HttpServerPropertiesImpl::ClearAlternateProtocol(
@@ -410,6 +452,37 @@ HttpServerPropertiesImpl::GetCanonicalHost(HostPortPair server) const {
   }
 
   return canonical_host_to_origin_map_.end();
+}
+
+void HttpServerPropertiesImpl::ExpireBrokenAlternateProtocolMappings() {
+  base::TimeTicks now = base::TimeTicks::Now();
+  while (!broken_alternate_protocol_list_.empty()) {
+    BrokenAlternateProtocolEntry entry =
+        broken_alternate_protocol_list_.front();
+    if (now < entry.when) {
+      break;
+    }
+
+    ClearAlternateProtocol(entry.server);
+    broken_alternate_protocol_list_.pop_front();
+  }
+  ScheduleBrokenAlternateProtocolMappingsExpiration();
+}
+
+void
+HttpServerPropertiesImpl::ScheduleBrokenAlternateProtocolMappingsExpiration() {
+  if (broken_alternate_protocol_list_.empty()) {
+    return;
+  }
+  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks when = broken_alternate_protocol_list_.front().when;
+  base::TimeDelta delay = when > now ? when - now : base::TimeDelta();
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(
+          &HttpServerPropertiesImpl::ExpireBrokenAlternateProtocolMappings,
+          weak_ptr_factory_.GetWeakPtr()),
+      delay);
 }
 
 }  // namespace net

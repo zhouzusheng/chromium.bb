@@ -29,7 +29,6 @@
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderFullScreen.h"
@@ -995,7 +994,7 @@ LayoutRect RenderInline::linesVisualOverflowBoundingBox() const
 
 LayoutRect RenderInline::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
 {
-    ASSERT(!view() || !view()->layoutStateEnabled() || LayoutRectRecorder::shouldRecordLayoutRects());
+    ASSERT(!view() || !view()->layoutStateEnabled());
 
     if (!firstLineBoxIncludingCulling() && !continuation())
         return LayoutRect();
@@ -1057,7 +1056,7 @@ void RenderInline::computeRectForRepaint(const RenderLayerModelObject* repaintCo
 {
     if (RenderView* v = view()) {
         // LayoutState is only valid for root-relative repainting
-        if (v->layoutStateEnabled() && !repaintContainer) {
+        if (v->canUseLayoutStateForContainer(repaintContainer)) {
             LayoutState* layoutState = v->layoutState();
             if (style()->hasInFlowPosition() && layer())
                 rect.move(layer()->offsetForInFlowPosition());
@@ -1124,7 +1123,7 @@ LayoutSize RenderInline::offsetFromContainer(RenderObject* container, const Layo
     if (isInFlowPositioned())
         offset += offsetForInFlowPosition();
 
-    container->adjustForColumns(offset, point);
+    offset += container->columnOffset(point);
 
     if (container->hasOverflowClip())
         offset -= toRenderBox(container)->scrolledContentOffset();
@@ -1144,7 +1143,7 @@ void RenderInline::mapLocalToContainer(const RenderLayerModelObject* repaintCont
         return;
 
     if (RenderView *v = view()) {
-        if (v->layoutStateEnabled() && !repaintContainer) {
+        if (v->canUseLayoutStateForContainer(repaintContainer)) {
             LayoutState* layoutState = v->layoutState();
             LayoutSize offset = layoutState->paintOffset();
             if (style()->hasInFlowPosition() && layer())
@@ -1461,6 +1460,8 @@ void RenderInline::paintOutlineForLine(GraphicsContext* graphicsContext, const L
         LayoutSize(thisline.width() + offset, thisline.height() + offset));
 
     IntRect pixelSnappedBox = pixelSnappedIntRect(box);
+    if (pixelSnappedBox.width() < 0 || pixelSnappedBox.height() < 0)
+        return;
     IntRect pixelSnappedLastLine = pixelSnappedIntRect(paintOffset.x() + lastline.x(), 0, lastline.width(), 0);
     IntRect pixelSnappedNextLine = pixelSnappedIntRect(paintOffset.x() + nextline.x(), 0, nextline.width(), 0);
 

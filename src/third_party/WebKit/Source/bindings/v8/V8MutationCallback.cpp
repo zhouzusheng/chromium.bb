@@ -39,31 +39,26 @@ namespace WebCore {
 V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, ExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
     : ActiveDOMCallback(context)
     , m_callback(isolate, callback)
-    , m_world(DOMWrapperWorld::current(isolate))
-    , m_isolate(isolate)
+    , m_scriptState(ScriptState::current(isolate))
 {
-    V8HiddenValue::setHiddenValue(m_isolate, owner, V8HiddenValue::callback(m_isolate), callback);
+    V8HiddenValue::setHiddenValue(isolate, owner, V8HiddenValue::callback(isolate), callback);
     m_callback.setWeak(this, &setWeakCallback);
 }
 
-void V8MutationCallback::call(const Vector<RefPtr<MutationRecord> >& mutations, MutationObserver* observer)
+void V8MutationCallback::call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord> >& mutations, MutationObserver* observer)
 {
     if (!canInvokeCallback())
         return;
 
-    v8::HandleScope handleScope(m_isolate);
+    v8::Isolate* isolate = m_scriptState->isolate();
 
-    v8::Handle<v8::Context> v8Context = toV8Context(executionContext(), m_world.get());
-    if (v8Context.IsEmpty())
+    if (m_scriptState->contextIsEmpty())
         return;
+    ScriptState::Scope scope(m_scriptState.get());
 
-    v8::Context::Scope scope(v8Context);
-
-    v8::Handle<v8::Function> callback = m_callback.newLocal(m_isolate);
-    if (callback.IsEmpty())
+    if (m_callback.isEmpty())
         return;
-
-    v8::Handle<v8::Value> observerHandle = toV8(observer, v8::Handle<v8::Object>(), m_isolate);
+    v8::Handle<v8::Value> observerHandle = toV8(observer, m_scriptState->context()->Global(), isolate);
     if (observerHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -74,11 +69,11 @@ void V8MutationCallback::call(const Vector<RefPtr<MutationRecord> >& mutations, 
         return;
 
     v8::Handle<v8::Object> thisObject = v8::Handle<v8::Object>::Cast(observerHandle);
-    v8::Handle<v8::Value> argv[] = { v8Array(mutations, m_isolate), observerHandle };
+    v8::Handle<v8::Value> argv[] = { v8Array(mutations, isolate), observerHandle };
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
-    ScriptController::callFunction(executionContext(), callback, thisObject, 2, argv, m_isolate);
+    ScriptController::callFunction(executionContext(), m_callback.newLocal(isolate), thisObject, WTF_ARRAY_LENGTH(argv), argv, isolate);
 }
 
 void V8MutationCallback::setWeakCallback(const v8::WeakCallbackData<v8::Function, V8MutationCallback>& data)

@@ -31,6 +31,7 @@
 #include "core/dom/Document.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -114,7 +115,7 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     // Unlike other SVG*Element classes, SVGAElement only listens to SVGURIReference changes
     // as none of the other properties changes the linking behaviour for our <a> element.
@@ -154,9 +155,6 @@ void SVGAElement::defaultEventHandler(Event* event)
                     event->setDefaultHandled();
                     return;
                 }
-                // Only allow navigation to internal <view> anchors.
-                if (targetElement && !isSVGViewElement(*targetElement))
-                    return;
             }
 
             AtomicString target(m_svgTarget->currentValue()->value());
@@ -177,11 +175,18 @@ void SVGAElement::defaultEventHandler(Event* event)
     SVGGraphicsElement::defaultEventHandler(event);
 }
 
+short SVGAElement::tabIndex() const
+{
+    // Skip the supportsFocus check in SVGElement.
+    return Element::tabIndex();
+}
+
 bool SVGAElement::supportsFocus() const
 {
     if (rendererIsEditable())
         return SVGGraphicsElement::supportsFocus();
-    return true;
+    // If not a link we should still be able to focus the element if it has tabIndex.
+    return isLink() || Element::supportsFocus();
 }
 
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const
@@ -191,17 +196,29 @@ bool SVGAElement::isURLAttribute(const Attribute& attribute) const
 
 bool SVGAElement::isMouseFocusable() const
 {
-    return false;
+    // Links are focusable by default, but only allow links with tabindex or contenteditable to be mouse focusable.
+    // https://bugs.webkit.org/show_bug.cgi?id=26856
+    if (isLink())
+        return Element::supportsFocus();
+
+    return SVGElement::isMouseFocusable();
 }
 
 bool SVGAElement::isKeyboardFocusable() const
 {
-    if (!isFocusable())
-        return false;
+    if (isFocusable() && Element::supportsFocus())
+        return SVGElement::isKeyboardFocusable();
 
-    if (Page* page = document().page())
-        return page->chrome().client().tabsToLinks();
-    return false;
+    if (isLink())
+        return document().frameHost()->chrome().client().tabsToLinks();
+    return SVGElement::isKeyboardFocusable();
+}
+
+bool SVGAElement::canStartSelection() const
+{
+    if (!isLink())
+        return SVGElement::canStartSelection();
+    return rendererIsEditable();
 }
 
 bool SVGAElement::willRespondToMouseClickEvents()

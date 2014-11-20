@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/wm/core/wm_core_export.h"
+#include "ui/wm/wm_export.h"
 
 namespace aura {
 class Window;
@@ -58,35 +58,34 @@ enum WindowVisibilityAnimationTransition {
 
 // These two methods use int for type rather than WindowVisibilityAnimationType
 // since downstream libraries can extend the set of animations.
-WM_CORE_EXPORT void SetWindowVisibilityAnimationType(aura::Window* window,
-                                                     int type);
-WM_CORE_EXPORT int GetWindowVisibilityAnimationType(aura::Window* window);
+WM_EXPORT void SetWindowVisibilityAnimationType(aura::Window* window, int type);
+WM_EXPORT int GetWindowVisibilityAnimationType(aura::Window* window);
 
-WM_CORE_EXPORT void SetWindowVisibilityAnimationTransition(
+WM_EXPORT void SetWindowVisibilityAnimationTransition(
     aura::Window* window,
     WindowVisibilityAnimationTransition transition);
 
-WM_CORE_EXPORT bool HasWindowVisibilityAnimationTransition(
+WM_EXPORT bool HasWindowVisibilityAnimationTransition(
     aura::Window* window,
     WindowVisibilityAnimationTransition transition);
 
-WM_CORE_EXPORT void SetWindowVisibilityAnimationDuration(
+WM_EXPORT void SetWindowVisibilityAnimationDuration(
     aura::Window* window,
     const base::TimeDelta& duration);
 
-WM_CORE_EXPORT base::TimeDelta GetWindowVisibilityAnimationDuration(
+WM_EXPORT base::TimeDelta GetWindowVisibilityAnimationDuration(
     const aura::Window& window);
 
-WM_CORE_EXPORT void SetWindowVisibilityAnimationVerticalPosition(
+WM_EXPORT void SetWindowVisibilityAnimationVerticalPosition(
     aura::Window* window,
     float position);
 
-class HidingWindowAnimationObserver;
-// A wrapper of ui::ScopedLayerAnimationSettings for hiding animations.
+class ImplicitHidingWindowAnimationObserver;
+// A wrapper of ui::ScopedLayerAnimationSettings for implicit hiding animations.
 // Use this to ensure that the hiding animation is visible even after
 // the window is deleted or deactivated, instead of using
 // ui::ScopedLayerAnimationSettings directly.
-class WM_CORE_EXPORT ScopedHidingAnimationSettings {
+class WM_EXPORT ScopedHidingAnimationSettings {
  public:
   explicit ScopedHidingAnimationSettings(aura::Window* window);
   ~ScopedHidingAnimationSettings();
@@ -98,21 +97,20 @@ class WM_CORE_EXPORT ScopedHidingAnimationSettings {
 
  private:
   ui::ScopedLayerAnimationSettings layer_animation_settings_;
-  HidingWindowAnimationObserver* observer_;
+  ImplicitHidingWindowAnimationObserver* observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedHidingAnimationSettings);
 };
 
 // Returns false if the |window| didn't animate.
-WM_CORE_EXPORT bool AnimateOnChildWindowVisibilityChanged(aura::Window* window,
-                                                          bool visible);
-WM_CORE_EXPORT bool AnimateWindow(aura::Window* window,
-                                  WindowAnimationType type);
+WM_EXPORT bool AnimateOnChildWindowVisibilityChanged(aura::Window* window,
+                                                     bool visible);
+WM_EXPORT bool AnimateWindow(aura::Window* window, WindowAnimationType type);
 
 // Returns true if window animations are disabled for |window|. Window
 // animations are enabled by default. If |window| is NULL, this just checks
 // if the global flag disabling window animations is present.
-WM_CORE_EXPORT bool WindowAnimationsDisabled(aura::Window* window);
+WM_EXPORT bool WindowAnimationsDisabled(aura::Window* window);
 
 }  // namespace wm
 

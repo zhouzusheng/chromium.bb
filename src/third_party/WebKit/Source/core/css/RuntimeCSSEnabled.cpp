@@ -52,7 +52,6 @@ static void setPropertySwitchesFromRuntimeFeatures()
     setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
     CSSPropertyID shapeProperties[] = {
         CSSPropertyShapeMargin,
-        CSSPropertyShapePadding,
         CSSPropertyShapeImageThreshold,
         CSSPropertyShapeOutside,
     };
@@ -83,6 +82,8 @@ static void setPropertySwitchesFromRuntimeFeatures()
         CSSPropertyGridArea,
         CSSPropertyGridAutoFlow,
         CSSPropertyGridTemplateAreas,
+        CSSPropertyGridTemplate,
+        CSSPropertyGrid,
         CSSPropertyJustifySelf
     };
     setCSSPropertiesEnabled(cssGridLayoutProperties, WTF_ARRAY_LENGTH(cssGridLayoutProperties), RuntimeEnabledFeatures::cssGridLayoutEnabled());

@@ -38,7 +38,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/DOMWindow.h"
-#include "platform/UserGestureIndicator.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -86,12 +85,7 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtr<Eve
     // generated bindings), but breaks legacy content. http://crbug.com/249598
     if (!listener)
         return false;
-    EventListener* eventListener = listener.get();
-    if (ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture)) {
-        InspectorInstrumentation::didAddEventListener(this, eventType, eventListener, useCapture);
-        return true;
-    }
-    return false;
+    return ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture);
 }
 
 bool EventTarget::removeEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
@@ -102,10 +96,8 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, EventListen
 
     size_t indexOfRemovedListener;
 
-    RefPtr<EventListener> protect(listener);
     if (!d->eventListenerMap.remove(eventType, listener, useCapture, indexOfRemovedListener))
         return false;
-    InspectorInstrumentation::didRemoveEventListener(this, eventType, listener, useCapture);
 
     // Notify firing events planning to invoke the listener at 'index' that
     // they have one less listener to invoke.
@@ -154,7 +146,7 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
     return removeEventListener(eventType, listener, false);
 }
 
-bool EventTarget::dispatchEvent(PassRefPtr<Event> event, ExceptionState& exceptionState)
+bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event, ExceptionState& exceptionState)
 {
     if (!event) {
         exceptionState.throwDOMException(InvalidStateError, "The event provided is null.");
@@ -175,7 +167,7 @@ bool EventTarget::dispatchEvent(PassRefPtr<Event> event, ExceptionState& excepti
     return dispatchEvent(event);
 }
 
-bool EventTarget::dispatchEvent(PassRefPtr<Event> event)
+bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     event->setTarget(this);
     event->setCurrentTarget(this);
@@ -268,7 +260,11 @@ bool EventTarget::fireEventListeners(Event* event)
 
     EventListenerVector* listenersVector = d->eventListenerMap.find(event->type());
     if (!RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled() && (event->type() == EventTypeNames::animationiteration || event->type() == EventTypeNames::animationend
-        || event->type() == EventTypeNames::animationstart))
+        || event->type() == EventTypeNames::animationstart)
+        // Some code out-there uses custom events to dispatch unprefixed animation events manually,
+        // we can safely remove all this block when cssAnimationUnprefixedEnabled is always on, this
+        // is really a special case. DO NOT ADD MORE EVENTS HERE.
+        && event->interfaceName() != EventNames::CustomEvent)
         listenersVector = 0;
 
     if (listenersVector) {
@@ -305,7 +301,6 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
             UseCounter::count(executingWindow->document(), UseCounter::DocumentUnloadFired);
     }
 
-    bool userEventWasHandled = false;
     size_t i = 0;
     size_t size = entry.size();
     if (!d->firingEventIterators)
@@ -331,15 +326,9 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
         // To match Mozilla, the AT_TARGET phase fires both capturing and bubbling
         // event listeners, even though that violates some versions of the DOM spec.
         registeredListener.listener->handleEvent(context, event);
-        if (!userEventWasHandled && UserGestureIndicator::processingUserGesture())
-            userEventWasHandled = true;
         InspectorInstrumentation::didHandleEvent(cookie);
     }
     d->firingEventIterators->removeLast();
-    if (userEventWasHandled) {
-        if (ExecutionContext* context = executionContext())
-            context->userEventWasHandled();
-    }
 }
 
 const EventListenerVector& EventTarget::getEventListeners(const AtomicString& eventType)
@@ -369,7 +358,6 @@ void EventTarget::removeAllEventListeners()
     if (!d)
         return;
     d->eventListenerMap.clear();
-    InspectorInstrumentation::didRemoveAllEventListeners(this);
 
     // Notify firing events planning to invoke the listener at 'index' that
     // they have one less listener to invoke.

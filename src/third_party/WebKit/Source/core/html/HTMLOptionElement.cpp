@@ -54,15 +54,15 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
-    return adoptRef(new HTMLOptionElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLOptionElement(document));
 }
 
-PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const AtomicString& value,
+PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const AtomicString& value,
     bool defaultSelected, bool selected, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLOptionElement> element = adoptRef(new HTMLOptionElement(document));
+    RefPtrWillBeRawPtr<HTMLOptionElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLOptionElement(document));
 
     RefPtr<Text> text = Text::create(document, data.isNull() ? "" : data);
 
@@ -129,7 +129,7 @@ void HTMLOptionElement::setText(const String &text, ExceptionState& exceptionSta
     // Changing the text causes a recalc of a select's items, which will reset the selected
     // index to the first item if the select is single selection with a menu list. We attempt to
     // preserve the selected item.
-    RefPtr<HTMLSelectElement> select = ownerSelectElement();
+    RefPtrWillBeRawPtr<HTMLSelectElement> select = ownerSelectElement();
     bool selectIsMenuList = select && select->usesMenuList();
     int oldSelectedIndex = selectIsMenuList ? select->selectedIndex() : -1;
 
@@ -162,12 +162,12 @@ int HTMLOptionElement::index() const
 
     int optionIndex = 0;
 
-    const Vector<HTMLElement*>& items = selectElement->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& items = selectElement->listItems();
     size_t length = items.size();
     for (size_t i = 0; i < length; ++i) {
         if (!isHTMLOptionElement(*items[i]))
             continue;
-        if (items[i] == this)
+        if (items[i].get() == this)
             return optionIndex;
         ++optionIndex;
     }
@@ -282,7 +282,12 @@ void HTMLOptionElement::setLabel(const AtomicString& label)
 
 void HTMLOptionElement::updateNonRenderStyle()
 {
+    bool oldDisplayNoneStatus = isDisplayNone();
     m_style = originalStyleForRenderer();
+    if (oldDisplayNoneStatus != isDisplayNone()) {
+        if (HTMLSelectElement* select = ownerSelectElement())
+            select->updateListOnRenderer();
+    }
 }
 
 RenderStyle* HTMLOptionElement::nonRendererStyle() const
@@ -362,6 +367,18 @@ HTMLFormElement* HTMLOptionElement::form() const
         return selectElement->formOwner();
 
     return 0;
+}
+
+bool HTMLOptionElement::isDisplayNone() const
+{
+    ContainerNode* parent = parentNode();
+    // Check for parent optgroup having display NONE
+    if (parent && isHTMLOptGroupElement(*parent)) {
+        if (toHTMLOptGroupElement(*parent).isDisplayNone())
+            return true;
+    }
+    RenderStyle* style = nonRendererStyle();
+    return style && style->display() == NONE;
 }
 
 } // namespace WebCore

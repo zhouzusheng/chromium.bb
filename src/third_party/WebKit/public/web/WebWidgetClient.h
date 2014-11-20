@@ -59,12 +59,7 @@ public:
     virtual void didAutoResize(const WebSize& newSize) { }
 
     // Called when the compositor is enabled or disabled.
-    // The parameter to didActivateCompositor() is meaningless.
-    // FIXME: The older definiton of didActivateCompositor (i.e with arguments)
-    // and all its corresponding call is to removed once the dependent chromium
-    // side patch https://codereview.chromium.org/137893025/ lands.
     virtual void didActivateCompositor() { }
-    virtual void didActivateCompositor(int deprecated) { }
     virtual void didDeactivateCompositor() { }
 
     // Attempt to initialize compositing for this widget. If this is successful,
@@ -74,6 +69,8 @@ public:
     // Return a compositing view used for this widget. This is owned by the
     // WebWidgetClient.
     virtual WebLayerTreeView* layerTreeView() { return 0; }
+    // FIXME: Remove all overrides of this and change layerTreeView() above to ASSERT_NOT_REACHED.
+    virtual bool allowsBrokenNullLayerTreeView() const { return false; }
 
     // Sometimes the WebWidget enters a state where it will generate a sequence
     // of invalidations that should not, by themselves, trigger the compositor
@@ -184,6 +181,10 @@ public:
     // Called during WebWidget::HandleInputEvent for a TouchStart event to inform the embedder
     // of the touch actions that are permitted for this touch.
     virtual void setTouchAction(WebTouchAction touchAction) { }
+
+    // Called when value of focused text field gets dirty, e.g. value is
+    // modified by script, not by user input.
+    virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
 
 protected:
     ~WebWidgetClient() { }

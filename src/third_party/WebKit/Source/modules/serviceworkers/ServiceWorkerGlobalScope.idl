@@ -28,11 +28,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 [
-    GlobalContext=ServiceWorkerGlobalScope,
+    Exposed=ServiceWorker,
+    Global=Worker&ServiceWorker,
     RuntimeEnabled=ServiceWorker,
 ] interface ServiceWorkerGlobalScope : WorkerGlobalScope {
-  attribute EventHandler oninstall;
+
+  readonly attribute ServiceWorkerClients clients;
+  [CallWith=ExecutionContext, Unforgeable] readonly attribute DOMString scope;
+
   attribute EventHandler onactivate;
   attribute EventHandler onfetch;
+  attribute EventHandler oninstall;
+  attribute EventHandler onmessage;
   attribute EventHandler onsync;
 };

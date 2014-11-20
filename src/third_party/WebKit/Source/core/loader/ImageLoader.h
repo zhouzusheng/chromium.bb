@@ -26,7 +26,7 @@
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicString.h"
 
@@ -39,7 +39,7 @@ public:
     // Determines whether the observed ImageResource should have higher priority in the decoded resources cache.
     virtual bool requestsHighLiveResourceCachePriority() { return false; }
 
-    virtual void trace(Visitor*) = 0;
+    virtual void trace(Visitor*) { }
 
 protected:
     ImageLoaderClient() { }

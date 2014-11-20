@@ -31,11 +31,15 @@
 #ifndef HTMLParserThread_h
 #define HTMLParserThread_h
 
+#include "platform/heap/glue/MessageLoopInterruptor.h"
+#include "platform/heap/glue/PendingGCRunner.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
-#include "public/platform/WebThread.h"
 
 namespace WebCore {
+
+class TaskSynchronizer;
 
 class HTMLParserThread {
 public:
@@ -46,14 +50,18 @@ public:
     static HTMLParserThread* shared();
 
     void postTask(const Closure&);
+    blink::WebThread& platformThread();
+    bool isRunning();
 
 private:
     HTMLParserThread();
     ~HTMLParserThread();
-
-    blink::WebThread& ensureThread();
+    void setupHTMLParserThread();
+    void cleanupHTMLParserThread(TaskSynchronizer*);
 
     OwnPtr<blink::WebThread> m_thread;
+    OwnPtr<PendingGCRunner> m_pendingGCRunner;
+    OwnPtr<MessageLoopInterruptor> m_messageLoopInterruptor;
 };
 
 } // namespace WebCore

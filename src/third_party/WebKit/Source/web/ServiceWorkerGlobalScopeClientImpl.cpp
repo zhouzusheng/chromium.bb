@@ -29,56 +29,73 @@
  */
 
 #include "config.h"
-#include "ServiceWorkerGlobalScopeClientImpl.h"
+#include "web/ServiceWorkerGlobalScopeClientImpl.h"
 
-#include "WebServiceWorkerContextClient.h"
 #include "modules/serviceworkers/Response.h"
 #include "platform/NotImplemented.h"
 #include "public/platform/WebServiceWorkerResponse.h"
+#include "public/platform/WebURL.h"
+#include "public/web/WebServiceWorkerContextClient.h"
 #include "wtf/PassOwnPtr.h"
+
+using namespace WebCore;
 
 namespace blink {
 
-PassOwnPtr<WebCore::ServiceWorkerGlobalScopeClient> ServiceWorkerGlobalScopeClientImpl::create(PassOwnPtr<WebServiceWorkerContextClient> client)
+PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> ServiceWorkerGlobalScopeClientImpl::create(WebServiceWorkerContextClient& client)
 {
-    return adoptPtr(new ServiceWorkerGlobalScopeClientImpl(client));
+    return adoptPtrWillBeNoop(new ServiceWorkerGlobalScopeClientImpl(client));
 }
 
 ServiceWorkerGlobalScopeClientImpl::~ServiceWorkerGlobalScopeClientImpl()
 {
 }
 
+void ServiceWorkerGlobalScopeClientImpl::getClients(WebServiceWorkerClientsCallbacks* callbacks)
+{
+    m_client.getClients(callbacks);
+}
+
+WebURL ServiceWorkerGlobalScopeClientImpl::scope() const
+{
+    return m_client.scope();
+}
+
 void ServiceWorkerGlobalScopeClientImpl::didHandleActivateEvent(int eventID, WebServiceWorkerEventResult result)
 {
-    m_client->didHandleActivateEvent(eventID, result);
+    m_client.didHandleActivateEvent(eventID, result);
 }
 
 void ServiceWorkerGlobalScopeClientImpl::didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult result)
 {
-    m_client->didHandleInstallEvent(installEventID, result);
+    m_client.didHandleInstallEvent(installEventID, result);
 }
 
-void ServiceWorkerGlobalScopeClientImpl::didHandleFetchEvent(int fetchEventID, PassRefPtr<WebCore::Response> response)
+void ServiceWorkerGlobalScopeClientImpl::didHandleFetchEvent(int fetchEventID, PassRefPtr<Response> response)
 {
     if (!response) {
-        m_client->didHandleFetchEvent(fetchEventID);
+        m_client.didHandleFetchEvent(fetchEventID);
         return;
     }
 
     WebServiceWorkerResponse webResponse;
     response->populateWebServiceWorkerResponse(webResponse);
-    m_client->didHandleFetchEvent(fetchEventID, webResponse);
+    m_client.didHandleFetchEvent(fetchEventID, webResponse);
 }
 
 void ServiceWorkerGlobalScopeClientImpl::didHandleSyncEvent(int syncEventID)
 {
-    m_client->didHandleSyncEvent(syncEventID);
+    m_client.didHandleSyncEvent(syncEventID);
 }
 
-ServiceWorkerGlobalScopeClientImpl::ServiceWorkerGlobalScopeClientImpl(PassOwnPtr<WebServiceWorkerContextClient> client)
+void ServiceWorkerGlobalScopeClientImpl::postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray> webChannels)
+{
+    m_client.postMessageToClient(clientID, message, webChannels.leakPtr());
+}
+
+ServiceWorkerGlobalScopeClientImpl::ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient& client)
     : m_client(client)
 {
-    ASSERT(m_client);
 }
 
 } // namespace blink

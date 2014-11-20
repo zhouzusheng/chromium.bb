@@ -19,15 +19,15 @@
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/render_widget_host_view_port.h"
-#include "content/port/browser/web_contents_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -283,8 +283,7 @@ void InterstitialPageImpl::Hide() {
   if (render_view_host_->GetView() &&
       render_view_host_->GetView()->HasFocus() &&
       controller_->delegate()->GetRenderViewHost()->GetView()) {
-    RenderWidgetHostViewPort::FromRWHV(
-        controller_->delegate()->GetRenderViewHost()->GetView())->Focus();
+    controller_->delegate()->GetRenderViewHost()->GetView()->Focus();
   }
 
   // Delete this and call Shutdown on the RVH asynchronously, as we may have
@@ -357,7 +356,7 @@ void InterstitialPageImpl::NavigationEntryCommitted(
   OnNavigatingAwayOrTabClosing();
 }
 
-void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
+void InterstitialPageImpl::WebContentsDestroyed() {
   OnNavigatingAwayOrTabClosing();
 }
 
@@ -401,7 +400,7 @@ RenderViewHostDelegateView* InterstitialPageImpl::GetDelegateView() {
   return rvh_delegate_view_.get();
 }
 
-const GURL& InterstitialPageImpl::GetURL() const {
+const GURL& InterstitialPageImpl::GetMainFrameLastCommittedURL() const {
   return url_;
 }
 
@@ -566,11 +565,10 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
 WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   if (!enabled() || !create_view_)
     return NULL;
-  WebContentsView* web_contents_view = web_contents()->GetView();
-  WebContentsViewPort* web_contents_view_port =
-      static_cast<WebContentsViewPort*>(web_contents_view);
-  RenderWidgetHostView* view =
-      web_contents_view_port->CreateViewForWidget(render_view_host_);
+  WebContentsView* wcv =
+      static_cast<WebContentsImpl*>(web_contents())->GetView();
+  RenderWidgetHostViewBase* view =
+      wcv->CreateViewForWidget(render_view_host_);
   render_view_host_->SetView(view);
   render_view_host_->AllowBindings(BINDINGS_POLICY_DOM_AUTOMATION);
 
@@ -578,13 +576,14 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
       GetMaxPageIDForSiteInstance(render_view_host_->GetSiteInstance());
   render_view_host_->CreateRenderView(base::string16(),
                                       MSG_ROUTING_NONE,
-                                      max_page_id);
+                                      max_page_id,
+                                      false);
   controller_->delegate()->RenderFrameForInterstitialPageCreated(
       frame_tree_.root()->current_frame_host());
-  view->SetSize(web_contents_view->GetContainerSize());
+  view->SetSize(web_contents()->GetContainerBounds().size());
   // Don't show the interstitial until we have navigated to it.
   view->Hide();
-  return web_contents_view;
+  return wcv;
 }
 
 void InterstitialPageImpl::Proceed() {
@@ -692,7 +691,7 @@ void InterstitialPageImpl::Focus() {
   // Focus the native window.
   if (!enabled())
     return;
-  RenderWidgetHostViewPort::FromRWHV(render_view_host_->GetView())->Focus();
+  render_view_host_->GetView()->Focus();
 }
 
 void InterstitialPageImpl::FocusThroughTabTraversal(bool reverse) {
@@ -872,7 +871,8 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::StartDragging(
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
     const DragEventSourceInfo& event_info) {
-  NOTREACHED() << "InterstitialPage does not support dragging yet.";
+  interstitial_page_->render_view_host_->DragSourceSystemDragEnded();
+  DVLOG(1) << "InterstitialPage does not support dragging yet.";
 }
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::UpdateDragCursor(

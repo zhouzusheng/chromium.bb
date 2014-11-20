@@ -229,11 +229,13 @@ class VIEWS_EXPORT HWNDMessageHandler :
                                          WPARAM w_param,
                                          LPARAM l_param) OVERRIDE;
 
-  // Returns the auto-hide edges of the appbar. See Appbar::GetAutohideEdges()
-  // for details. If the edges change OnAppbarAutohideEdgesChanged() is called.
+  // Returns the auto-hide edges of the appbar. See
+  // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,
+  // OnAppbarAutohideEdgesChanged() is called.
   int GetAppbarAutohideEdges(HMONITOR monitor);
 
-  // Callback if the autohide edges have changed. See Appbar for details.
+  // Callback if the autohide edges have changed. See
+  // ViewsDelegate::GetAppbarAutohideEdges() for details.
   void OnAppbarAutohideEdgesChanged();
 
   // Can be called after the delegate has had the opportunity to set focus and
@@ -462,6 +464,15 @@ class VIEWS_EXPORT HWNDMessageHandler :
                                    LPARAM l_param,
                                    bool track_mouse);
 
+  // Returns true if the mouse message passed in is an OS synthesized mouse
+  // message.
+  // |message| identifies the mouse message.
+  // |message_time| is the time when the message occurred.
+  // |l_param| indicates the location of the mouse message.
+  bool IsSynthesizedMouseMessage(unsigned int message,
+                                 int message_time,
+                                 LPARAM l_param);
+
   HWNDMessageHandlerDelegate* delegate_;
 
   scoped_ptr<FullscreenHandler> fullscreen_handler_;
@@ -472,10 +483,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   bool remove_standard_frame_;
 
   bool use_system_default_icon_;
-
-  // Whether the focus should be restored next time we get enabled.  Needed to
-  // restore focus correctly when Windows modal dialogs are displayed.
-  bool restore_focus_when_enabled_;
 
   // Whether all ancestors have been enabled. This is only used if is_modal_ is
   // true.
@@ -584,6 +591,16 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // touch input. This is fine because activation still works correctly via
   // native SetFocus calls invoked in the views code.
   bool touch_down_context_;
+
+  // Time the last touch message was received. Used to flag mouse messages
+  // synthesized by Windows for touch which are not flagged by the OS as
+  // synthesized mouse messages. For more information please refer to
+  // the IsMouseEventFromTouch function.
+  static long last_touch_message_time_;
+
+  // Time the last WM_MOUSEHWHEEL message is received. Please refer to the
+  // HandleMouseEventInternal function as to why this is needed.
+  long last_mouse_hwheel_time_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

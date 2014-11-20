@@ -130,7 +130,8 @@ void RenderSurfaceImpl::AppendRenderPasses(RenderPassSink* pass_sink) {
   scoped_ptr<RenderPass> pass = RenderPass::Create(layer_list_.size());
   pass->SetNew(RenderPassId(),
                content_rect_,
-               damage_tracker_->current_damage_rect(),
+               gfx::IntersectRects(content_rect_,
+                                   damage_tracker_->current_damage_rect()),
                screen_space_transform_);
   pass_sink->AppendRenderPass(pass.Pass());
 }
@@ -149,8 +150,7 @@ void RenderSurfaceImpl::AppendQuads(QuadSink* quad_sink,
   if (visible_content_rect.IsEmpty())
     return;
 
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(SharedQuadState::Create());
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
   shared_quad_state->SetAll(draw_transform,
                             content_rect_.size(),
                             content_rect_,

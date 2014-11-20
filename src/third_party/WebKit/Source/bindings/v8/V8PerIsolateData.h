@@ -27,7 +27,7 @@
 #define V8PerIsolateData_h
 
 #include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/UnsafePersistent.h"
+#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "gin/public/gin_embedders.h"
@@ -43,7 +43,6 @@ namespace WebCore {
 class DOMDataStore;
 class GCEventData;
 class StringCache;
-class V8PerContextData;
 struct WrapperTypeInfo;
 
 class ExternalStringVisitor;
@@ -53,10 +52,6 @@ typedef WTF::Vector<DOMDataStore*> DOMDataStoreList;
 class V8PerIsolateData {
 public:
     static void ensureInitialized(v8::Isolate*);
-    static V8PerIsolateData* current()
-    {
-        return from(v8::Isolate::GetCurrent());
-    }
     static V8PerIsolateData* from(v8::Isolate* isolate)
     {
         ASSERT(isolate);
@@ -97,7 +92,8 @@ public:
     bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>);
     v8::Handle<v8::Object> findInstanceInPrototypeChain(const WrapperTypeInfo*, v8::Handle<v8::Value>);
 
-    v8::Local<v8::Context> ensureRegexContext();
+    // FIXME: This method should go away, because we shouldn't need a random context to be able to run microtasks.
+    v8::Local<v8::Context> ensureDomInJSContext();
 
     const char* previousSamplingState() const { return m_previousSamplingState; }
     void setPreviousSamplingState(const char* name) { m_previousSamplingState = name; }
@@ -119,7 +115,7 @@ private:
     OwnPtr<StringCache> m_stringCache;
     OwnPtr<V8HiddenValue> m_hiddenValue;
     ScopedPersistent<v8::Value> m_liveRoot;
-    OwnPtr<V8PerContextData> m_perContextDataForRegex;
+    RefPtr<ScriptState> m_blinkInJSScriptState;
 
     const char* m_previousSamplingState;
 

@@ -332,25 +332,27 @@ void FEComposite::applySoftware()
         if (destinationRect.isEmpty())
             break;
         IntPoint destinationPoint(destinationRect.x() - absolutePaintRect().x(), destinationRect.y() - absolutePaintRect().y());
-        IntRect sourceRect(IntPoint(destinationRect.x() - in->absolutePaintRect().x(),
+        FloatRect sourceRect(IntPoint(destinationRect.x() - in->absolutePaintRect().x(),
                                     destinationRect.y() - in->absolutePaintRect().y()), destinationRect.size());
-        IntRect source2Rect(IntPoint(destinationRect.x() - in2->absolutePaintRect().x(),
+        FloatRect source2Rect(IntPoint(destinationRect.x() - in2->absolutePaintRect().x(),
                                      destinationRect.y() - in2->absolutePaintRect().y()), destinationRect.size());
-        filterContext->drawImageBuffer(imageBuffer2, destinationPoint, source2Rect);
-        filterContext->drawImageBuffer(imageBuffer, destinationPoint, sourceRect, CompositeSourceIn);
+        filterContext->drawImageBuffer(imageBuffer2,
+            FloatRect(destinationPoint, imageBuffer2->size()), &source2Rect);
+        filterContext->drawImageBuffer(imageBuffer,
+            FloatRect(destinationPoint, imageBuffer->size()), &sourceRect, CompositeSourceIn);
         break;
     }
     case FECOMPOSITE_OPERATOR_OUT:
         filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()), IntRect(IntPoint(), imageBuffer2->size()), CompositeDestinationOut);
+        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()), 0, CompositeDestinationOut);
         break;
     case FECOMPOSITE_OPERATOR_ATOP:
         filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->size()), CompositeSourceAtop);
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), 0, CompositeSourceAtop);
         break;
     case FECOMPOSITE_OPERATOR_XOR:
         filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->size()), CompositeXOR);
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), 0, CompositeXOR);
         break;
     default:
         break;
@@ -378,15 +380,25 @@ SkXfermode::Mode toXfermode(WebCore::CompositeOperationType mode)
 
 PassRefPtr<SkImageFilter> FEComposite::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    RefPtr<SkImageFilter> foreground(builder->build(inputEffect(0), operatingColorSpace()));
-    RefPtr<SkImageFilter> background(builder->build(inputEffect(1), operatingColorSpace()));
+    return createImageFilterInternal(builder, true);
+}
+
+PassRefPtr<SkImageFilter> FEComposite::createImageFilterWithoutValidation(SkiaImageFilterBuilder* builder)
+{
+    return createImageFilterInternal(builder, false);
+}
+
+PassRefPtr<SkImageFilter> FEComposite::createImageFilterInternal(SkiaImageFilterBuilder* builder, bool requiresPMColorValidation)
+{
+    RefPtr<SkImageFilter> foreground(builder->build(inputEffect(0), operatingColorSpace(), !mayProduceInvalidPreMultipliedPixels()));
+    RefPtr<SkImageFilter> background(builder->build(inputEffect(1), operatingColorSpace(), !mayProduceInvalidPreMultipliedPixels()));
     SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
     RefPtr<SkXfermode> mode;
     if (m_type == FECOMPOSITE_OPERATOR_ARITHMETIC)
-        mode = adoptRef(SkArithmeticMode::Create(SkFloatToScalar(m_k1), SkFloatToScalar(m_k2), SkFloatToScalar(m_k3), SkFloatToScalar(m_k4)));
+        mode = adoptRef(SkArithmeticMode::Create(SkFloatToScalar(m_k1), SkFloatToScalar(m_k2), SkFloatToScalar(m_k3), SkFloatToScalar(m_k4), requiresPMColorValidation));
     else
         mode = adoptRef(SkXfermode::Create(toXfermode(m_type)));
-    return adoptRef(new SkXfermodeImageFilter(mode.get(), background.get(), foreground.get(), &cropRect));
+    return adoptRef(SkXfermodeImageFilter::Create(mode.get(), background.get(), foreground.get(), &cropRect));
 }
 
 static TextStream& operator<<(TextStream& ts, const CompositeOperationType& type)

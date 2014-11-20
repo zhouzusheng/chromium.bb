@@ -31,7 +31,7 @@
 #ifndef TextEncoder_h
 #define TextEncoder_h
 
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Uint8Array.h"
@@ -44,9 +44,9 @@ namespace WebCore {
 class Dictionary;
 class ExceptionState;
 
-class TextEncoder FINAL : public RefCountedWillBeGarbageCollectedFinalized<TextEncoder> {
+class TextEncoder FINAL : public GarbageCollectedFinalized<TextEncoder> {
 public:
-    static PassRefPtrWillBeRawPtr<TextEncoder> create(const String& utfLabel, ExceptionState&);
+    static TextEncoder* create(const String& utfLabel, ExceptionState&);
     ~TextEncoder();
 
     // Implement the IDL

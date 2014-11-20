@@ -32,7 +32,7 @@
 #define AnimationEffect_h
 
 #include "CSSPropertyNames.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -54,7 +54,7 @@ public:
     virtual bool affects(CSSPropertyID) { return false; };
     virtual bool isKeyframeEffectModel() const { return false; }
 
-    virtual void trace(Visitor*) = 0;
+    virtual void trace(Visitor*) { }
 };
 
 } // namespace WebCore

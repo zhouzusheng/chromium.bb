@@ -28,6 +28,9 @@
               }],
             ],
           }],
+          ['target_arch=="arm64"', {
+            'target_arch_full': 'generic',
+          }],
         ],
       }],
 
@@ -50,10 +53,8 @@
     'variables': {
       'conditions': [
         ['OS=="win" and buildtype=="Official"', {
-          # Setting the optimizations to 'speed' or to 'max' results in a lot of
-          # unresolved symbols. The only supported mode is 'size' (see
-          # crbug.com/352476).
-          'optimize' :'size',
+          # Do not set to 'size', as it results in an error on win64. 
+          'optimize' :'speed',
         }],
       ],
     },
@@ -127,9 +128,11 @@
                 #'libvpx_intrinsics_sse4_1',
                 # Currently no avx intrinsic functions
                 #'libvpx_intrinsics_avx',
-                # Add avx2 support when VS2013 lands: crbug.com/328981
                 #'libvpx_intrinsics_avx2',
               ],
+            }],
+            ['target_arch=="arm64"', {
+              'includes': [ 'libvpx_srcs_generic.gypi', ],
             }],
             ['target_arch=="x64"', {
               'conditions': [
@@ -150,7 +153,6 @@
                     #'libvpx_intrinsics_sse4_1',
                     # Currently no avx intrinsic functions
                     #'libvpx_intrinsics_avx',
-                    # Add avx2 support when VS2013 lands: crbug.com/328981
                     #'libvpx_intrinsics_avx2',
                   ],
                 }],
@@ -364,7 +366,13 @@
       ],
       'sources': [
         '<(libvpx_source)/build/make/obj_int_extract.c',
-      ]
+      ],
+      'conditions': [
+        ['android_webview_build==1', {
+          'defines': [ 'FORCE_PARSE_ELF' ],
+          'include_dirs': [ 'include' ],
+        }],
+      ],
     },
     {
       # A library that contains assembly offsets needed.
@@ -442,7 +450,9 @@
         'output_dir': '<(shared_generated_dir)',
         'conditions' : [
           ['android_webview_build==1', {
-            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vp8)/libvpx_asm_offsets_vp8.a',
+            # pass the empty string for 3rd and 4th arguments of
+            # intermediates-dir-for macro.
+            'lib_intermediate_name' : '$(realpath $(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vp8,,, $(GYP_VAR_PREFIX)))/libvpx_asm_offsets_vp8.a',
           }],
           ['(target_arch=="arm" or target_arch=="armv7")', {
             'output_format': 'gas',
@@ -513,7 +523,9 @@
         'output_dir': '<(shared_generated_dir)',
         'conditions' : [
           ['android_webview_build==1', {
-            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vpx_scale)/libvpx_asm_offsets_vpx_scale.a',
+            # pass the empty string for 3rd and 4th arguments of
+            # intermediates-dir-for macro.
+            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vpx_scale,,, $(GYP_VAR_PREFIX))/libvpx_asm_offsets_vpx_scale.a',
           }],
           ['(target_arch=="arm" or target_arch=="armv7")', {
             'output_format': 'gas',

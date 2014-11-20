@@ -4,7 +4,13 @@
 
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 
+#include "base/callback.h"
+
 namespace content {
+
+WebContents* BrowserPluginGuestDelegate::GetOpener() const {
+  return NULL;
+}
 
 bool BrowserPluginGuestDelegate::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
@@ -19,16 +25,33 @@ bool BrowserPluginGuestDelegate::IsOverridingUserAgent() const {
   return false;
 }
 
-bool BrowserPluginGuestDelegate::RequestPermission(
-    BrowserPluginPermissionType permission_type,
-    const base::DictionaryValue& request_info,
-    const PermissionResponseCallback& callback,
-    bool allowed_by_default) {
-  return false;
-}
-
 GURL BrowserPluginGuestDelegate::ResolveURL(const std::string& src) {
   return GURL(src);
+}
+
+void BrowserPluginGuestDelegate::RequestMediaAccessPermission(
+    const MediaStreamRequest& request,
+    const MediaResponseCallback& callback) {
+  callback.Run(MediaStreamDevices(),
+               MEDIA_DEVICE_INVALID_STATE,
+               scoped_ptr<MediaStreamUI>());
+}
+
+void BrowserPluginGuestDelegate::CanDownload(
+    const std::string& request_method,
+    const GURL& url,
+    const base::Callback<void(bool)>& callback) {
+  callback.Run(true);
+}
+
+JavaScriptDialogManager*
+BrowserPluginGuestDelegate::GetJavaScriptDialogManager() {
+  return NULL;
+}
+
+bool BrowserPluginGuestDelegate::HandleContextMenu(
+    const ContextMenuParams& params) {
+  return false;
 }
 
 }  // namespace content

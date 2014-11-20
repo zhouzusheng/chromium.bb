@@ -22,20 +22,19 @@
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/top_controls_state.h"
+#include "cc/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
-#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
-#include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_widget.h"
@@ -47,7 +46,6 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -101,19 +99,14 @@ class WebIconURL;
 class WebImage;
 class WebPeerConnection00Handler;
 class WebPeerConnection00HandlerClient;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebPeerConnectionHandler;
 class WebPeerConnectionHandlerClient;
 class WebSocketStreamHandle;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebSpeechRecognizer;
 class WebStorageNamespace;
 class WebTouchEvent;
 class WebURLRequest;
-class WebUserMediaClient;
 struct WebActiveWheelFlingParameters;
 struct WebDateTimeChooserParams;
 struct WebFileChooserParams;
@@ -140,16 +133,16 @@ class DocumentState;
 class ExternalPopupMenu;
 class FaviconHelper;
 class GeolocationDispatcher;
+class HistoryController;
+class HistoryEntry;
 class ImageResourceFetcher;
-class InputTagSpeechDispatcher;
 class LoadProgressTracker;
 class MidiDispatcher;
-class MediaStreamClient;
 class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
-class NotificationProvider;
 class PepperPluginInstanceImpl;
+class PushMessagingDispatcher;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererAccessibility;
@@ -174,15 +167,16 @@ class WebMediaPlayerProxyAndroid;
 class CONTENT_EXPORT RenderViewImpl
     : public RenderWidget,
       NON_EXPORTED_BASE(public blink::WebViewClient),
-      NON_EXPORTED_BASE(public blink::WebFrameClient),
       NON_EXPORTED_BASE(public blink::WebPageSerializerClient),
       public RenderView,
-      NON_EXPORTED_BASE(public WebMediaPlayerDelegate),
       public base::SupportsWeakPtr<RenderViewImpl> {
  public:
   // Creates a new RenderView. |opener_id| is the routing ID of the RenderView
-  // responsible for creating this RenderView.
+  // responsible for creating this RenderView. Note that if the original opener
+  // has been closed, |window_was_created_with_opener| will be true and
+  // |opener_id| will be MSG_ROUTING_NONE.
   static RenderViewImpl* Create(int32 opener_id,
+                                bool window_was_created_with_opener,
                                 const RendererPreferences& renderer_prefs,
                                 const WebPreferences& webkit_prefs,
                                 int32 routing_id,
@@ -193,6 +187,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 bool is_renderer_created,
                                 bool swapped_out,
                                 bool hidden,
+                                bool never_visible,
                                 int32 next_page_id,
                                 const blink::WebScreenInfo& screen_info,
                                 AccessibilityMode accessibility_mode);
@@ -227,6 +222,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
 
+  // TODO(jam): move to RenderFrameImpl
   MediaStreamDispatcher* media_stream_dispatcher() {
     return media_stream_dispatcher_;
   }
@@ -241,6 +237,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
+  }
+
+  HistoryController* history_controller() {
+    return history_controller_.get();
   }
 
   // Lazily initialize this view's BrowserPluginManager and return it.
@@ -265,12 +265,6 @@ class CONTENT_EXPORT RenderViewImpl
   bool ScheduleFileChooser(const FileChooserParams& params,
                            blink::WebFileChooserCompletion* completion);
 
-  void LoadNavigationErrorPage(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& failed_request,
-      const blink::WebURLError& error,
-      bool replace);
-
 #if defined(OS_ANDROID)
   void DismissDateTimeDialog();
 #endif
@@ -285,6 +279,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   void FrameDidChangeLoadProgress(blink::WebFrame* frame,
                                   double load_progress);
+  void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
+                                     bool is_new_navigation);
 
   // Plugin-related functions --------------------------------------------------
 
@@ -351,13 +347,6 @@ class CONTENT_EXPORT RenderViewImpl
   // periodic timer so we don't send too many messages.
   void SyncNavigationState();
 
-  // Temporary call until all this media code moves to RenderFrame.
-  // TODO(jam): remove me
-  blink::WebMediaPlayer* CreateMediaPlayer(
-      RenderFrame* render_frame,
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
   // Returns the length of the session history of this RenderView. Note that
   // this only coincides with the actual length of the session history if this
   // RenderView is the currently active RenderView of a WebContents.
@@ -371,6 +360,9 @@ class CONTENT_EXPORT RenderViewImpl
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
 
+  // Change the device ICC color profile while running a layout test.
+  void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
+
   // Used to force the size of a window when running layout tests.
   void ForceResizeForTesting(const gfx::Size& new_size);
 
@@ -380,10 +372,6 @@ class CONTENT_EXPORT RenderViewImpl
   void EnableAutoResizeForTesting(const gfx::Size& min_size,
                                   const gfx::Size& max_size);
   void DisableAutoResizeForTesting(const gfx::Size& new_size);
-
-  // Overrides the MediaStreamClient used when creating MediaStream players.
-  // Must be called before any players are created.
-  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
 
   // IPC::Listener implementation ----------------------------------------------
 
@@ -401,11 +389,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool requestPointerLock();
   virtual void requestPointerUnlock();
   virtual bool isPointerLocked();
-  // FIXME: To be removed as soon as chromium and blink side changes land
-  // didActivateCompositor with parameters is still kept in order to land
-  // these changes s-chromium - https://codereview.chromium.org/137893025/.
-  // s-blink - https://codereview.chromium.org/138523003/
-  virtual void didActivateCompositor(int input_handler_identifier);
   virtual void didActivateCompositor() OVERRIDE;
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled) OVERRIDE;
@@ -413,56 +396,27 @@ class CONTENT_EXPORT RenderViewImpl
 
   // blink::WebViewClient implementation --------------------------------------
 
-  virtual blink::WebView* createView(
-      blink::WebFrame* creator,
-      const blink::WebURLRequest& request,
-      const blink::WebWindowFeatures& features,
-      const blink::WebString& frame_name,
-      blink::WebNavigationPolicy policy,
-      bool suppress_opener);
+  virtual blink::WebView* createView(blink::WebLocalFrame* creator,
+                                     const blink::WebURLRequest& request,
+                                     const blink::WebWindowFeatures& features,
+                                     const blink::WebString& frame_name,
+                                     blink::WebNavigationPolicy policy,
+                                     bool suppress_opener);
   virtual blink::WebWidget* createPopupMenu(blink::WebPopupType popup_type);
   virtual blink::WebExternalPopupMenu* createExternalPopupMenu(
       const blink::WebPopupMenuInfo& popup_menu_info,
       blink::WebExternalPopupMenuClient* popup_menu_client);
   virtual blink::WebStorageNamespace* createSessionStorageNamespace();
-  virtual bool shouldReportDetailedMessageForSource(
-      const blink::WebString& source);
-  virtual void didAddMessageToConsole(
-      const blink::WebConsoleMessage& message,
-      const blink::WebString& source_name,
-      unsigned source_line,
-      const blink::WebString& stack_trace);
-  virtual void printPage(blink::WebFrame* frame);
-  virtual blink::WebNotificationPresenter* notificationPresenter();
+  virtual void printPage(blink::WebLocalFrame* frame);
   virtual bool enumerateChosenDirectory(
       const blink::WebString& path,
       blink::WebFileChooserCompletion* chooser_completion);
-  // DEPRECATED
-  virtual void didStartLoading(bool to_different_document);
-  // DEPRECATED
-  virtual void didStopLoading();
-
   virtual void didCancelCompositionOnSelectionChange();
   virtual void didExecuteCommand(const blink::WebString& command_name);
   virtual bool handleCurrentKeyboardEvent();
-  virtual blink::WebColorChooser* createColorChooser(
-      blink::WebColorChooserClient*,
-      const blink::WebColor& initial_color,
-      const blink::WebVector<blink::WebColorSuggestion>& suggestions);
   virtual bool runFileChooser(
       const blink::WebFileChooserParams& params,
       blink::WebFileChooserCompletion* chooser_completion);
-  virtual void runModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message);
-  virtual bool runModalConfirmDialog(blink::WebFrame* frame,
-                                     const blink::WebString& message);
-  virtual bool runModalPromptDialog(blink::WebFrame* frame,
-                                    const blink::WebString& message,
-                                    const blink::WebString& default_value,
-                                    blink::WebString* actual_value);
-  virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
-                                          bool is_reload,
-                                          const blink::WebString& message);
   virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
                                      const blink::WebString& main_text,
                                      const blink::WebString& sub_text,
@@ -470,14 +424,10 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void hideValidationMessage() OVERRIDE;
   virtual void moveValidationMessage(
       const blink::WebRect& anchor_in_root_view) OVERRIDE;
-
-  // DEPRECATED
-  virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame,
-                                          const blink::WebString& message);
   virtual void setStatusText(const blink::WebString& text);
   virtual void setMouseOverURL(const blink::WebURL& url);
   virtual void setKeyboardFocusURL(const blink::WebURL& url);
-  virtual void startDragging(blink::WebFrame* frame,
+  virtual void startDragging(blink::WebLocalFrame* frame,
                              const blink::WebDragData& data,
                              blink::WebDragOperationsMask mask,
                              const blink::WebImage& image,
@@ -493,6 +443,7 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebGestureEvent& event,
       const blink::WebVector<blink::WebRect>& target_rects);
 #endif
+  virtual blink::WebString acceptLanguages();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
@@ -501,8 +452,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didUpdateInspectorSetting(const blink::WebString& key,
                                          const blink::WebString& value);
   virtual blink::WebGeolocationClient* geolocationClient();
-  virtual blink::WebSpeechInputController* speechInputController(
-      blink::WebSpeechInputListener* listener);
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
@@ -513,8 +462,8 @@ class CONTENT_EXPORT RenderViewImpl
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
   virtual blink::WebPageVisibilityState visibilityState() const;
-  virtual blink::WebUserMediaClient* userMediaClient();
   virtual blink::WebMIDIClient* webMIDIClient();
+  virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
 
 #if defined(OS_ANDROID)
@@ -529,106 +478,6 @@ class CONTENT_EXPORT RenderViewImpl
                                    blink::WebDateTimeChooserCompletion*);
   virtual void didScrollWithKeyboard(const blink::WebSize& delta);
 #endif
-
-  // blink::WebFrameClient implementation -------------------------------------
-
-  virtual blink::WebMediaPlayer* createMediaPlayer(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
-  virtual void didAccessInitialDocument(blink::WebFrame* frame);
-  virtual void didDisownOpener(blink::WebFrame* frame);
-  virtual void frameDetached(blink::WebFrame* frame);
-  virtual void willClose(blink::WebFrame* frame);
-  virtual void didMatchCSS(
-      blink::WebFrame* frame,
-      const blink::WebVector<blink::WebString>& newly_matching_selectors,
-      const blink::WebVector<blink::WebString>& stopped_matching_selectors);
-  virtual void willSendSubmitEvent(blink::WebFrame* frame,
-                                   const blink::WebFormElement& form);
-  virtual void willSubmitForm(blink::WebFrame* frame,
-                              const blink::WebFormElement& form);
-  virtual void didCreateDataSource(blink::WebFrame* frame,
-                                   blink::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(blink::WebFrame* frame);
-  virtual void didFailProvisionalLoad(blink::WebFrame* frame,
-                                      const blink::WebURLError& error);
-  virtual void didCommitProvisionalLoad(blink::WebFrame* frame,
-                                        bool is_new_navigation);
-  virtual void didClearWindowObject(blink::WebFrame* frame, int world_id);
-  virtual void didCreateDocumentElement(blink::WebFrame* frame);
-  virtual void didReceiveTitle(blink::WebFrame* frame,
-                               const blink::WebString& title,
-                               blink::WebTextDirection direction);
-  virtual void didChangeIcon(blink::WebFrame*,
-                             blink::WebIconURL::Type);
-  virtual void didFinishDocumentLoad(blink::WebFrame* frame);
-  virtual void didHandleOnloadEvents(blink::WebFrame* frame);
-  virtual void didFailLoad(blink::WebFrame* frame,
-                           const blink::WebURLError& error);
-  virtual void didFinishLoad(blink::WebFrame* frame);
-  virtual void didNavigateWithinPage(blink::WebFrame* frame,
-                                     bool is_new_navigation);
-  virtual void didUpdateCurrentHistoryItem(blink::WebFrame* frame);
-  virtual void willSendRequest(blink::WebFrame* frame,
-                               unsigned identifier,
-                               blink::WebURLRequest& request,
-                               const blink::WebURLResponse& redirect_response);
-  virtual void didReceiveResponse(blink::WebFrame* frame,
-                                  unsigned identifier,
-                                  const blink::WebURLResponse& response);
-  virtual void didFinishResourceLoad(blink::WebFrame* frame,
-                                     unsigned identifier);
-  virtual void didLoadResourceFromMemoryCache(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      const blink::WebURLResponse&);
-  virtual void didDisplayInsecureContent(blink::WebFrame* frame);
-  virtual void didRunInsecureContent(
-      blink::WebFrame* frame,
-      const blink::WebSecurityOrigin& origin,
-      const blink::WebURL& target);
-  virtual void didCreateScriptContext(blink::WebFrame* frame,
-                                      v8::Handle<v8::Context>,
-                                      int extension_group,
-                                      int world_id);
-  virtual void willReleaseScriptContext(blink::WebFrame* frame,
-                                        v8::Handle<v8::Context>,
-                                        int world_id);
-  virtual void didChangeScrollOffset(blink::WebFrame* frame);
-  virtual void willInsertBody(blink::WebFrame* frame);
-  virtual void didFirstVisuallyNonEmptyLayout(blink::WebFrame*);
-  virtual void didChangeContentsSize(blink::WebFrame* frame,
-                                     const blink::WebSize& size);
-  virtual void reportFindInPageMatchCount(int request_id,
-                                          int count,
-                                          bool final_update);
-  virtual void reportFindInPageSelection(int request_id,
-                                         int active_match_ordinal,
-                                         const blink::WebRect& sel);
-  virtual void requestStorageQuota(
-      blink::WebFrame* frame,
-      blink::WebStorageQuotaType type,
-      unsigned long long requested_size,
-      blink::WebStorageQuotaCallbacks callbacks);
-  virtual void willOpenSocketStream(
-      blink::WebSocketStreamHandle* handle);
-  virtual void willStartUsingPeerConnectionHandler(blink::WebFrame* frame,
-      blink::WebRTCPeerConnectionHandler* handler);
-  virtual bool willCheckAndDispatchMessageEvent(
-      blink::WebFrame* sourceFrame,
-      blink::WebFrame* targetFrame,
-      blink::WebSecurityOrigin targetOrigin,
-      blink::WebDOMMessageEvent event);
-  virtual blink::WebString acceptLanguages();
-  virtual blink::WebString userAgentOverride(
-      blink::WebFrame* frame,
-      const blink::WebURL& url);
-  virtual blink::WebString doNotTrackValue(blink::WebFrame* frame);
-  virtual bool allowWebGL(blink::WebFrame* frame, bool default_value);
-  virtual void didLoseWebGLContext(
-      blink::WebFrame* frame,
-      int arb_robustness_status_code);
 
   // blink::WebPageSerializerClient implementation ----------------------------
 
@@ -654,8 +503,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool GetContentStateImmediately() const OVERRIDE;
   virtual float GetFilteredTimePerFrame() const OVERRIDE;
   virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
-  virtual void RunModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message) OVERRIDE;
   virtual void DidStartLoading() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
   virtual void Repaint(const gfx::Size& size) OVERRIDE;
@@ -670,12 +517,6 @@ class CONTENT_EXPORT RenderViewImpl
                                       bool animate) OVERRIDE;
 #endif
 
-  // WebMediaPlayerDelegate implementation -----------------------
-
-  virtual void DidPlay(blink::WebMediaPlayer* player) OVERRIDE;
-  virtual void DidPause(blink::WebMediaPlayer* player) OVERRIDE;
-  virtual void PlayerGone(blink::WebMediaPlayer* player) OVERRIDE;
-
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
   // nearer to the top you can add it to.
@@ -687,19 +528,13 @@ class CONTENT_EXPORT RenderViewImpl
 
  protected:
   // RenderWidget overrides:
+  virtual void OnClose() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
-  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor) OVERRIDE;
   virtual gfx::Vector2d GetScrollOffset() OVERRIDE;
   virtual void DidHandleKeyEvent() OVERRIDE;
-  virtual void WillProcessUserGesture() OVERRIDE;
   virtual bool WillHandleMouseEvent(
       const blink::WebMouseEvent& event) OVERRIDE;
   virtual bool WillHandleGestureEvent(
@@ -721,9 +556,10 @@ class CONTENT_EXPORT RenderViewImpl
                                        const gfx::Range& replacement_range,
                                        bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
+  virtual void OnOrientationChange() OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
   virtual void GetCompositionRange(gfx::Range* range) OVERRIDE;
@@ -813,6 +649,23 @@ class CONTENT_EXPORT RenderViewImpl
     CONNECTION_ERROR,
   };
 
+  // Old WebFrameClient implementations ----------------------------------------
+
+  // RenderViewImpl used to be a WebFrameClient, but now RenderFrameImpl is the
+  // WebFrameClient. However, many implementations of WebFrameClient methods
+  // still live here and are called from RenderFrameImpl. These implementations
+  // are to be moved to RenderFrameImpl <http://crbug.com/361761>.
+
+  void didCreateDataSource(blink::WebLocalFrame* frame,
+                           blink::WebDataSource* datasource);
+  void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  void didReceiveTitle(blink::WebLocalFrame* frame,
+                       const blink::WebString& title,
+                       blink::WebTextDirection direction);
+  void didChangeIcon(blink::WebLocalFrame*, blink::WebIconURL::Type);
+  void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  void didChangeScrollOffset(blink::WebLocalFrame* frame);
+
   static bool IsReload(const FrameMsg_Navigate_Params& params);
 
   static Referrer GetReferrerFromRequest(
@@ -825,7 +678,7 @@ class CONTENT_EXPORT RenderViewImpl
   void UpdateTitle(blink::WebFrame* frame, const base::string16& title,
                    blink::WebTextDirection title_direction);
   void UpdateSessionHistory(blink::WebFrame* frame);
-  void SendUpdateState(const blink::WebHistoryItem& item);
+  void SendUpdateState(HistoryEntry* entry);
 
   // Update current main frame's encoding and send it to browser window.
   // Since we want to let users see the right encoding info from menu
@@ -843,22 +696,11 @@ class CONTENT_EXPORT RenderViewImpl
   void UpdateEncoding(blink::WebFrame* frame,
                       const std::string& encoding_name);
 
-  bool RunJavaScriptMessage(JavaScriptMessageType type,
-                            const base::string16& message,
-                            const base::string16& default_value,
-                            const GURL& frame_url,
-                            base::string16* result);
-
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
 
   // Called when the "pinned to left/right edge" state needs to be updated.
   void UpdateScrollState(blink::WebFrame* frame);
-
-  void EvaluateScript(const base::string16& frame_xpath,
-                      const base::string16& jscript,
-                      int id,
-                      bool notify_result);
 
   // IPC message handlers ------------------------------------------------------
   //
@@ -866,8 +708,6 @@ class CONTENT_EXPORT RenderViewImpl
   // content/common/*_messages.h for the message that the function is handling.
   void OnExecuteEditCommand(const std::string& name, const std::string& value);
   void OnMoveCaret(const gfx::Point& point);
-  void OnReplace(const base::string16& text);
-  void OnReplaceMisspelling(const base::string16& text);
   void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
   void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnAllowBindings(int enabled_bindings_flags);
@@ -877,14 +717,14 @@ class CONTENT_EXPORT RenderViewImpl
   void OnClosePage();
   void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
+  void OnSaveImageAt(int x, int y);
   void OnSetName(const std::string& name);
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
       const gfx::Size& disable_scrollbars_size_limit);
-  void OnDragSourceEndedOrMoved(const gfx::Point& client_point,
-                                const gfx::Point& screen_point,
-                                bool ended,
-                                blink::WebDragOperation drag_operation);
+  void OnDragSourceEnded(const gfx::Point& client_point,
+                         const gfx::Point& screen_point,
+                         blink::WebDragOperation drag_operation);
   void OnDragSourceSystemDragEnded();
   void OnDragTargetDrop(const gfx::Point& client_pt,
                         const gfx::Point& screen_pt,
@@ -916,18 +756,12 @@ class CONTENT_EXPORT RenderViewImpl
       const base::FilePath& local_directory_name);
   void OnMediaPlayerActionAt(const gfx::Point& location,
                              const blink::WebMediaPlayerAction& action);
-  void OnOrientationChangeEvent(int orientation);
   void OnPluginActionAt(const gfx::Point& location,
                         const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
-  void OnReleaseDisambiguationPopupDIB(TransportDIB::Handle dib_handle);
-  void OnReloadFrame();
+  void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
   void OnResetPageEncodingToDefault();
-  void OnScriptEvalRequest(const base::string16& frame_xpath,
-                           const base::string16& jscript,
-                           int id,
-                           bool notify_result);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
   void OnSetBackground(const SkBitmap& background);
@@ -979,11 +813,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
 
-  // Initializes |media_stream_client_|, returning true if successful. Returns
-  // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
-  // disabled) in which case |media_stream_client_| is NULL.
-  bool InitializeMediaStreamClient();
-
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
   // details.
@@ -1033,17 +862,7 @@ class CONTENT_EXPORT RenderViewImpl
 #if defined(OS_ANDROID)
   // Launch an Android content intent with the given URL.
   void LaunchAndroidContentIntent(const GURL& intent_url, size_t request_id);
-
-  blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
 #endif
-
-  blink::WebMediaPlayer* CreateWebMediaPlayerForMediaStream(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
 
   // Sends a reply to the current find operation handling if it was a
   // synchronous find request.
@@ -1257,10 +1076,6 @@ class CONTENT_EXPORT RenderViewImpl
   bool cached_is_main_frame_pinned_to_left_;
   bool cached_is_main_frame_pinned_to_right_;
 
-  // These store the "has scrollbars" state last sent to the browser.
-  bool cached_has_main_frame_horizontal_scrollbar_;
-  bool cached_has_main_frame_vertical_scrollbar_;
-
   // Bookkeeping to suppress redundant scroll and focus requests for an already
   // scrolled and focused editable node.
   bool has_scrolled_focused_editable_node_into_rect_;
@@ -1274,14 +1089,11 @@ class CONTENT_EXPORT RenderViewImpl
   // along with the RenderView automatically.  This is why we just store
   // weak references.
 
-  // Holds a reference to the service which provides desktop notifications.
-  NotificationProvider* notification_provider_;
+  // The push messaging dispatcher attached to this view, lazily initialized.
+  PushMessagingDispatcher* push_messaging_dispatcher_;
 
   // The geolocation dispatcher attached to this view, lazily initialized.
   GeolocationDispatcher* geolocation_dispatcher_;
-
-  // The speech dispatcher attached to this view, lazily initialized.
-  InputTagSpeechDispatcher* input_tag_speech_dispatcher_;
 
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
@@ -1295,10 +1107,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
-
-  // MediaStreamClient attached to this view; lazily initialized.
-  MediaStreamClient* media_stream_client_;
-  blink::WebUserMediaClient* web_user_media_client_;
 
   // MidiClient attached to this view; lazily initialized.
   MidiDispatcher* midi_dispatcher_;
@@ -1315,13 +1123,10 @@ class CONTENT_EXPORT RenderViewImpl
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
 
+  scoped_ptr<HistoryController> history_controller_;
+
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------
-
-  // The background color of the document body element. This is used as the
-  // default background color for filling the screen areas for which we don't
-  // have the actual content.
-  SkColor body_background_color_;
 
   // Expected id of the next content intent launched. Used to prevent scheduled
   // intents to be launched if aborted.
@@ -1422,6 +1227,9 @@ class CONTENT_EXPORT RenderViewImpl
   // NOTE: stats_collection_observer_ should be the last members because their
   // constructors call the AddObservers method of RenderViewImpl.
   scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
+
+  typedef std::map<cc::SharedBitmapId, cc::SharedBitmap*> BitmapMap;
+  BitmapMap disambiguation_bitmaps_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

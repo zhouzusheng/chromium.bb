@@ -28,6 +28,7 @@
 
 #include "core/page/FocusType.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
@@ -37,7 +38,7 @@ namespace WebCore {
 struct FocusCandidate;
 class Document;
 class Element;
-class LocalFrame;
+class Frame;
 class HTMLFrameOwnerElement;
 class HTMLShadowElement;
 class IntRect;
@@ -47,6 +48,7 @@ class Page;
 class TreeScope;
 
 class FocusNavigationScope {
+    STACK_ALLOCATED();
 public:
     Node* rootNode() const;
     Element* owner() const;
@@ -58,7 +60,7 @@ public:
 
 private:
     explicit FocusNavigationScope(TreeScope*);
-    TreeScope* m_rootTreeScope;
+    RawPtrWillBeMember<TreeScope> m_rootTreeScope;
 };
 
 class FocusController {
@@ -66,23 +68,21 @@ class FocusController {
 public:
     static PassOwnPtr<FocusController> create(Page*);
 
-    void setFocusedFrame(PassRefPtr<LocalFrame>);
-    LocalFrame* focusedFrame() const { return m_focusedFrame.get(); }
-    LocalFrame* focusedOrMainFrame() const;
+    void setFocusedFrame(PassRefPtr<Frame>);
+    void focusDocumentView(PassRefPtr<Frame>);
+    Frame* focusedFrame() const { return m_focusedFrame.get(); }
+    Frame* focusedOrMainFrame() const;
 
     bool setInitialFocus(FocusType);
     bool advanceFocus(FocusType type) { return advanceFocus(type, false); }
 
-    bool setFocusedElement(Element*, PassRefPtr<LocalFrame>, FocusType = FocusTypeNone);
+    bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusType = FocusTypeNone);
 
     void setActive(bool);
     bool isActive() const { return m_isActive; }
 
     void setFocused(bool);
     bool isFocused() const { return m_isFocused; }
-
-    void setContainingWindowIsVisible(bool);
-    bool containingWindowIsVisible() const { return m_containingWindowIsVisible; }
 
 private:
     explicit FocusController(Page*);
@@ -115,12 +115,10 @@ private:
     void findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, FocusType, FocusCandidate& closest);
 
     Page* m_page;
-    RefPtr<LocalFrame> m_focusedFrame;
+    RefPtr<Frame> m_focusedFrame;
     bool m_isActive;
     bool m_isFocused;
     bool m_isChangingFocusedFrame;
-    bool m_containingWindowIsVisible;
-
 };
 
 } // namespace WebCore

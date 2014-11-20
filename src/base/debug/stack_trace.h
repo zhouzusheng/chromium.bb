@@ -53,7 +53,7 @@ class BASE_EXPORT StackTrace {
   // Creates a stacktrace for an exception.
   // Note: this function will throw an import not found (StackWalk64) exception
   // on system without dbghelp 5.1.
-  StackTrace(_EXCEPTION_POINTERS* exception_pointers);
+  StackTrace(const _EXCEPTION_POINTERS* exception_pointers);
 #endif
 
   // Copying and assignment are allowed with the default functions.
@@ -64,11 +64,13 @@ class BASE_EXPORT StackTrace {
   // number of elements in the returned array.
   const void* const* Addresses(size_t* count) const;
 
+#if !defined(__UCLIBC__)
   // Prints the stack trace to stderr.
   void Print() const;
 
   // Resolves backtrace to symbols and write to stream.
   void OutputToStream(std::ostream* os) const;
+#endif
 
   // Resolves backtrace to symbols and returns as string.
   std::string ToString() const;

@@ -1,4 +1,5 @@
 # Copyright (C) 2013 Google Inc. All rights reserved.
+# coding=utf-8
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -32,6 +33,8 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
 from collections import defaultdict
+import itertools
+from operator import itemgetter
 
 import idl_types
 from idl_types import IdlType, inherits_interface
@@ -39,15 +42,16 @@ import v8_attributes
 from v8_globals import includes
 import v8_methods
 import v8_types
+from v8_types import cpp_ptr_type, cpp_template_type
 import v8_utilities
-from v8_utilities import capitalize, conditional_string, cpp_name, has_extended_attribute_value, runtime_enabled_function_name
+from v8_utilities import capitalize, conditional_string, cpp_name, gc_type, has_extended_attribute_value, runtime_enabled_function_name
 
 
 INTERFACE_H_INCLUDES = frozenset([
     'bindings/v8/V8Binding.h',
     'bindings/v8/V8DOMWrapper.h',
     'bindings/v8/WrapperTypeInfo.h',
-    'heap/Handle.h',
+    'platform/heap/Handle.h',
 ])
 INTERFACE_CPP_INCLUDES = frozenset([
     'RuntimeEnabledFeatures.h',
@@ -127,18 +131,18 @@ def generate_interface(interface):
     for special_wrap_interface in special_wrap_for:
         v8_types.add_includes_for_interface(special_wrap_interface)
 
-    # [WillBeGarbageCollected]
-    is_will_be_garbage_collected = 'WillBeGarbageCollected' in extended_attributes
-
     # [Custom=Wrap], [SetWrapperReferenceFrom]
     has_visit_dom_wrapper = (
         has_extended_attribute_value(interface, 'Custom', 'VisitDOMWrapper') or
         reachable_node_function or
         set_wrapper_reference_to_list)
 
+    this_gc_type = gc_type(interface)
+
     template_contents = {
         'conditional_string': conditional_string(interface),  # [Conditional]
         'cpp_class': cpp_name(interface),
+        'gc_type': this_gc_type,
         'has_custom_legacy_call_as_function': has_extended_attribute_value(interface, 'Custom', 'LegacyCallAsFunction'),  # [Custom=LegacyCallAsFunction]
         'has_custom_to_v8': has_extended_attribute_value(interface, 'Custom', 'ToV8'),  # [Custom=ToV8]
         'has_custom_wrap': has_extended_attribute_value(interface, 'Custom', 'Wrap'),  # [Custom=Wrap]
@@ -152,15 +156,13 @@ def generate_interface(interface):
         'is_document': is_document,
         'is_event_target': inherits_interface(interface.name, 'EventTarget'),
         'is_exception': interface.is_exception,
-        'is_will_be_garbage_collected': is_will_be_garbage_collected,
         'is_node': inherits_interface(interface.name, 'Node'),
         'measure_as': v8_utilities.measure_as(interface),  # [MeasureAs]
         'parent_interface': parent_interface,
-        'pass_ref_ptr': 'PassRefPtrWillBeRawPtr'
-                        if is_will_be_garbage_collected else 'PassRefPtr',
+        'pass_cpp_type': cpp_template_type(
+            cpp_ptr_type('PassRefPtr', 'RawPtr', this_gc_type),
+            cpp_name(interface)),
         'reachable_node_function': reachable_node_function,
-        'ref_ptr': 'RefPtrWillBeRawPtr'
-                   if is_will_be_garbage_collected else 'RefPtr',
         'runtime_enabled_function': runtime_enabled_function_name(interface),  # [RuntimeEnabled]
         'set_wrapper_reference_to_list': set_wrapper_reference_to_list,
         'special_wrap_for': special_wrap_for,
@@ -287,7 +289,7 @@ def generate_constant(constant):
 
     extended_attributes = constant.extended_attributes
     return {
-        'cpp_class': extended_attributes.get('ImplementedBy'),
+        'cpp_class': extended_attributes.get('PartialInterfaceImplementedAs'),
         'name': constant.name,
         # FIXME: use 'reflected_name' as correct 'name'
         'reflected_name': extended_attributes.get('Reflect', constant.name),
@@ -301,68 +303,229 @@ def generate_constant(constant):
 ################################################################################
 
 def generate_overloads(methods):
-    generate_overloads_by_type(methods, is_static=False)  # Regular methods
-    generate_overloads_by_type(methods, is_static=True)
+    # Regular methods
+    generate_overloads_by_type([method for method in methods
+                                if not method['is_static']])
+    # Static methods
+    generate_overloads_by_type([method for method in methods
+                                if method['is_static']])
 
 
-def generate_overloads_by_type(methods, is_static):
-    # Generates |overloads| template values and modifies |methods| in place;
-    # |is_static| flag used (instead of partitioning list in 2) because need to
-    # iterate over original list of methods to modify in place
-    method_counts = defaultdict(lambda: 0)
-    for method in methods:
-        if method['is_static'] != is_static:
-            continue
-        name = method['name']
-        method_counts[name] += 1
+def generate_overloads_by_type(methods):
+    """Generates |method.overload*| template values.
 
+    Modifies |method| in place for |method| in |methods|.
+    Called separately for static and non-static (regular) methods,
+    as these are overloaded separately.
+    Doesn't change the |methods| list itself (only the values, i.e. individual
+    methods), so ok to treat these separately.
+    """
     # Filter to only methods that are actually overloaded
-    overloaded_method_counts = dict((name, count)
-                                    for name, count in method_counts.iteritems()
-                                    if count > 1)
+    method_counts = Counter(method['name'] for method in methods)
+    overloaded_method_names = set(name
+                                  for name, count in method_counts.iteritems()
+                                  if count > 1)
+    overloaded_methods = [method for method in methods
+                          if method['name'] in overloaded_method_names]
+
+    # Group by name (generally will be defined together, but not necessarily)
+    method_overloads = sort_and_groupby(overloaded_methods, itemgetter('name'))
 
     # Add overload information only to overloaded methods, so template code can
     # easily verify if a function is overloaded
-    method_overloads = defaultdict(list)
-    for method in methods:
-        name = method['name']
-        if (method['is_static'] != is_static or
-            name not in overloaded_method_counts):
-            continue
-        # Overload index includes self, so first append, then compute index
-        method_overloads[name].append(method)
-        method.update({
-            'overload_index': len(method_overloads[name]),
-            'overload_resolution_expression': overload_resolution_expression(method),
-        })
+    for name, overloads in method_overloads.iteritems():
+        effective_overloads_by_length = effective_overload_set_by_length(overloads)
+        for effective_overloads in effective_overloads_by_length.itervalues():
+            # To test, compute but discard result
+            distinguishing_argument_index(effective_overloads)
 
-    # Resolution function is generated after last overloaded function;
-    # package necessary information into |method.overloads| for that method.
-    for method in methods:
-        if (method['is_static'] != is_static or
-            'overload_index' not in method):
-            continue
-        name = method['name']
-        if method['overload_index'] != overloaded_method_counts[name]:
-            continue
-        overloads = method_overloads[name]
+        for index, method in enumerate(overloads, 1):
+            method.update({
+                'overload_index': index,
+                'overload_resolution_expression':
+                    overload_resolution_expression(method),
+            })
+
+        # Resolution function is generated after last overloaded function;
+        # package necessary information into |method.overloads| for that method.
         minimum_number_of_required_arguments = min(
-            overload['number_of_required_arguments']
-            for overload in overloads)
-        method['overloads'] = {
+            method['number_of_required_arguments'] for method in overloads)
+        overloads[-1]['overloads'] = {
             'has_exception_state': bool(minimum_number_of_required_arguments),
             'methods': overloads,
             'minimum_number_of_required_arguments': minimum_number_of_required_arguments,
             'name': name,
+            'measure_all_as': common_value(overloads, 'measure_as'),  # [MeasureAs]
+            'deprecate_all_as': common_value(overloads, 'deprecate_as'),  # [DeprecateAs]
         }
+
+
+def effective_overload_set(F):
+    """Returns the effective overload set of an overloaded function.
+
+    An effective overload set is the set of overloaded functions + signatures
+    (type list of arguments, with optional and variadic arguments included or
+    not), and is used in the overload resolution algorithm.
+
+    For example, given input [f1(optional long x), f2(DOMString s)], the output
+    is informally [f1(), f1(long), f2(DOMString)], and formally
+    [(f1, [], []), (f1, [long], [optional]), (f2, [DOMString], [required])].
+
+    Currently the optionality list is a list of |is_optional| booleans (True
+    means optional, False means required); to support variadics this needs to
+    be tri-valued as required, optional, or variadic.
+
+    Formally:
+    An effective overload set represents the allowable invocations for a
+    particular operation, constructor (specified with [Constructor] or
+    [NamedConstructor]), legacy caller or callback function.
+
+    An additional argument N (argument count) is needed when overloading
+    variadics, but we don't use that currently.
+
+    Spec: http://heycam.github.io/webidl/#dfn-effective-overload-set
+
+    Formally the input and output lists are sets, but methods are stored
+    internally as dicts, which can't be stored in a set because they are not
+    hashable, so we use lists instead.
+
+    Arguments:
+        F: list of overloads for a given callable name.
+
+    Returns:
+        S: list of tuples of the form (callable, type list, optionality list).
+    """
+    # Code closely follows the algorithm in the spec, for clarity and
+    # correctness, and hence is not very Pythonic.
+
+    # 1. Initialize S to ∅.
+    # (We use a list because we can't use a set, as noted above.)
+    S = []
+
+    # 2. Let F be a set with elements as follows, according to the kind of
+    # effective overload set:
+    # (Passed as argument, nothing to do.)
+
+    # 3. & 4. (maxarg, m) are only needed for variadics, not used.
+
+    # 5. For each operation, extended attribute or callback function X in F:
+    for X in F:  # X is the "callable", F is the overloads.
+        arguments = X['arguments']
+        # 1. Let n be the number of arguments X is declared to take.
+        n = len(arguments)
+        # 2. Let t0..n−1 be a list of types, where ti is the type of X’s
+        # argument at index i.
+        # (“type list”)
+        t = tuple(argument['idl_type_object'] for argument in arguments)
+        # 3. Let o0..n−1 be a list of optionality values, where oi is “variadic”
+        # if X’s argument at index i is a final, variadic argument, “optional”
+        # if the argument is optional, and “required” otherwise.
+        # (“optionality list”)
+        # (We’re just using a boolean for optional vs. required.)
+        o = tuple(argument['is_optional'] for argument in arguments)
+        # 4. Add to S the tuple <X, t0..n−1, o0..n−1>.
+        S.append((X, t, o))
+        # 5. If X is declared to be variadic, then:
+        # (Not used, so not implemented.)
+        # 6. Initialize i to n−1.
+        i = n - 1
+        # 7. While i ≥ 0:
+        # Spec bug (fencepost error); should be “While i > 0:”
+        # https://www.w3.org/Bugs/Public/show_bug.cgi?id=25590
+        while i > 0:
+            # 1. If argument i of X is not optional, then break this loop.
+            if not o[i]:
+                break
+            # 2. Otherwise, add to S the tuple <X, t0..i−1, o0..i−1>.
+            S.append((X, t[:i], o[:i]))
+            # 3. Set i to i−1.
+            i = i - 1
+        # 8. If n > 0 and all arguments of X are optional, then add to S the
+        # tuple <X, (), ()> (where “()” represents the empty list).
+        if n > 0 and all(oi for oi in o):
+            S.append((X, [], []))
+    # 6. The effective overload set is S.
+    return S
+
+
+def effective_overload_set_by_length(overloads):
+    def type_list_length(entry):
+        # Entries in the effective overload set are 3-tuples:
+        # (callable, type list, optionality list)
+        return len(entry[1])
+
+    effective_overloads = effective_overload_set(overloads)
+    return sort_and_groupby(effective_overloads, type_list_length)
+
+
+def distinguishing_argument_index(entries):
+    """Returns the distinguishing argument index for a sequence of entries.
+
+    Entries are elements of the effective overload set with the same number
+    of arguments (formally, same type list length), each a 3-tuple of the form
+    (callable, type list, optionality list).
+
+    Spec: http://heycam.github.io/webidl/#dfn-distinguishing-argument-index
+
+    If there is more than one entry in an effective overload set that has a
+    given type list length, then for those entries there must be an index i
+    such that for each pair of entries the types at index i are
+    distinguishable.
+    The lowest such index is termed the distinguishing argument index for the
+    entries of the effective overload set with the given type list length.
+    """
+    if len(entries) < 2:
+        # Only need to distinguish if two or more entries
+        return
+    type_lists = [tuple(idl_type.name for idl_type in entry[1])
+                  for entry in entries]
+    type_list_length = len(type_lists[0])
+    assert all(len(type_list) == type_list_length for type_list in type_lists)
+    name = entries[0][0]['name']
+
+    # The spec defines the distinguishing argument index by conditions it must
+    # satisfy, but does not give an algorithm.
+    #
+    # We compute the distinguishing argument index by first computing the
+    # minimum index where not all types are the same, and then checking that
+    # all types in this position are distinguishable (and the optionality lists
+    # up to this point are identical), since "minimum index where not all types
+    # are the same" is a *necessary* condition, and more direct to check than
+    # distinguishability.
+    types_by_index = (set(types) for types in zip(*type_lists))
+    try:
+        # “In addition, for each index j, where j is less than the
+        #  distinguishing argument index for a given type list length, the types
+        #  at index j in all of the entries’ type lists must be the same”
+        index = next(i for i, types in enumerate(types_by_index)
+                     if len(types) > 1)
+    except StopIteration:
+        raise ValueError('No distinguishing index found for %s, length %s:\n'
+                         'All entries have the same type list:\n'
+                         '%s' % (name, type_list_length, type_lists[0]))
+    # Check optionality
+    # “and the booleans in the corresponding list indicating argument
+    #  optionality must be the same.”
+    # FIXME: spec typo: optionality value is no longer a boolean
+    # https://www.w3.org/Bugs/Public/show_bug.cgi?id=25628
+    initial_optionality_lists = set(entry[2][:index] for entry in entries)
+    if len(initial_optionality_lists) > 1:
+        raise ValueError(
+            'Invalid optionality lists for %s, length %s:\n'
+            'Optionality lists differ below distinguishing argument index %s:\n'
+            '%s'
+            % (name, type_list_length, index, set(initial_optionality_lists)))
+
+    # FIXME: check distinguishability
+
+    return index
 
 
 def overload_resolution_expression(method):
     # Expression is an OR of ANDs: each term in the OR corresponds to a
     # possible argument count for a given method, with type checks.
     # FIXME: Blink's overload resolution algorithm is incorrect, per:
-    # Implement WebIDL overload resolution algorithm.
-    # https://code.google.com/p/chromium/issues/detail?id=293561
+    # Implement WebIDL overload resolution algorithm.  http://crbug.com/293561
     #
     # Currently if distinguishing non-primitive type from primitive type,
     # (e.g., sequence<DOMString> from DOMString or Dictionary from double)
@@ -415,7 +578,7 @@ def overload_check_argument(index, argument):
     cpp_value = 'info[%s]' % index
     idl_type = argument['idl_type_object']
     # FIXME: proper type checking, sharing code with attributes and methods
-    if idl_type.name == 'String' and argument['is_strict_type_checking']:
+    if idl_type.name == 'String' and argument['has_legacy_overload_string']:
         return ' || '.join(['isUndefinedOrNull(%s)' % cpp_value,
                             '%s->IsString()' % cpp_value,
                             '%s->IsObject()' % cpp_value])
@@ -447,6 +610,37 @@ def overload_check_argument(index, argument):
 
 
 ################################################################################
+# Utility functions
+################################################################################
+
+def Counter(iterable):
+    # Once using Python 2.7, using collections.Counter
+    counter = defaultdict(lambda: 0)
+    for item in iterable:
+        counter[item] += 1
+    return counter
+
+
+def common_value(dicts, key):
+    """Returns common value of a key across an iterable of dicts, or None.
+
+    Auxiliary function for overloads, so can consolidate an extended attribute
+    that appears with the same value on all items in an overload set.
+    """
+    values = (d[key] for d in dicts)
+    first_value = next(values)
+    if all(value == first_value for value in values):
+        return first_value
+    return None
+
+
+def sort_and_groupby(l, key=None):
+    """Returns a dict of {key: list}, sorting and grouping input list by key."""
+    l.sort(key=key)
+    return dict((k, list(g)) for k, g in itertools.groupby(l, key))
+
+
+################################################################################
 # Constructors
 ################################################################################
 
@@ -454,8 +648,11 @@ def overload_check_argument(index, argument):
 def generate_constructor(interface, constructor):
     return {
         'argument_list': constructor_argument_list(interface, constructor),
-        'arguments': [constructor_argument(argument, index)
+        'arguments': [v8_methods.generate_argument(interface, constructor, argument, index)
                       for index, argument in enumerate(constructor.arguments)],
+        'cpp_type': cpp_template_type(
+            cpp_ptr_type('RefPtr', 'RawPtr', gc_type(interface)),
+            cpp_name(interface)),
         'has_exception_state':
             # [RaisesException=Constructor]
             interface.extended_attributes.get('RaisesException') == 'Constructor' or
@@ -463,6 +660,7 @@ def generate_constructor(interface, constructor):
                 if argument.idl_type.name == 'SerializedScriptValue' or
                    argument.idl_type.is_integer_type),
         'is_constructor': True,
+        'is_named_constructor': False,
         'is_variadic': False,  # Required for overload resolution
         'number_of_required_arguments':
             number_of_required_arguments(constructor),
@@ -487,28 +685,12 @@ def constructor_argument_list(interface, constructor):
     return arguments
 
 
-def constructor_argument(argument, index):
-    idl_type = argument.idl_type
-    return {
-        'has_default': 'Default' in argument.extended_attributes,
-        'idl_type_object': idl_type,
-        # Dictionary is special-cased, but arrays and sequences shouldn't be
-        'idl_type': not idl_type.array_or_sequence_type and idl_type.base_type,
-        'index': index,
-        'is_optional': argument.is_optional,
-        'is_strict_type_checking': False,  # Required for overload resolution
-        'name': argument.name,
-        'v8_value_to_local_cpp_value':
-            v8_methods.v8_value_to_local_cpp_value(argument, index),
-    }
-
-
 def generate_constructor_overloads(constructors):
     if len(constructors) <= 1:
         return
-    for overload_index, constructor in enumerate(constructors):
+    for overload_index, constructor in enumerate(constructors, 1):
         constructor.update({
-            'overload_index': overload_index + 1,
+            'overload_index': overload_index,
             'overload_resolution_expression':
                 overload_resolution_expression(constructor),
         })
@@ -525,7 +707,10 @@ def generate_named_constructor(interface):
     idl_constructor = interface.constructors[0]
     constructor = generate_constructor(interface, idl_constructor)
     constructor['argument_list'].insert(0, '*document')
-    constructor['name'] = extended_attributes['NamedConstructor']
+    constructor.update({
+        'name': extended_attributes['NamedConstructor'],
+        'is_named_constructor': True,
+    })
     return constructor
 
 
@@ -600,8 +785,8 @@ def property_setter(setter):
     extended_attributes = setter.extended_attributes
     is_raises_exception = 'RaisesException' in extended_attributes
     return {
-        'has_strict_type_checking':
-            'StrictTypeChecking' in extended_attributes and
+        'has_type_checking_interface':
+            has_extended_attribute_value(setter, 'TypeChecking', 'Interface') and
             idl_type.is_wrapper_type,
         'idl_type': idl_type.base_type,
         'is_custom': 'Custom' in extended_attributes,

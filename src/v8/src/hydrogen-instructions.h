@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_HYDROGEN_INSTRUCTIONS_H_
 #define V8_HYDROGEN_INSTRUCTIONS_H_
@@ -32,13 +9,13 @@
 
 #include "allocation.h"
 #include "code-stubs.h"
+#include "conversions.h"
 #include "data-flow.h"
 #include "deoptimizer.h"
 #include "small-pointer-list.h"
 #include "string-stream.h"
 #include "unique.h"
-#include "v8conversions.h"
-#include "v8utils.h"
+#include "utils.h"
 #include "zone.h"
 
 namespace v8 {
@@ -184,7 +161,6 @@ class LChunkBuilder;
   V(WrapReceiver)
 
 #define GVN_TRACKED_FLAG_LIST(V)               \
-  V(Maps)                                      \
   V(NewSpacePromotion)
 
 #define GVN_UNTRACKED_FLAG_LIST(V)             \
@@ -200,6 +176,7 @@ class LChunkBuilder;
   V(ElementsPointer)                           \
   V(GlobalVars)                                \
   V(InobjectFields)                            \
+  V(Maps)                                      \
   V(OsrEntries)                                \
   V(ExternalMemory)                            \
   V(StringChars)                               \
@@ -684,6 +661,9 @@ class HValue : public ZoneObject {
         type_(type),
         use_list_(NULL),
         range_(NULL),
+#ifdef DEBUG
+        range_poisoned_(false),
+#endif
         flags_(0) {}
   virtual ~HValue() {}
 
@@ -854,9 +834,17 @@ class HValue : public ZoneObject {
     return result;
   }
 
-  Range* range() const { return range_; }
-  // TODO(svenpanne) We should really use the null object pattern here.
-  bool HasRange() const { return range_ != NULL; }
+  Range* range() const {
+    ASSERT(!range_poisoned_);
+    return range_;
+  }
+  bool HasRange() const {
+    ASSERT(!range_poisoned_);
+    return range_ != NULL;
+  }
+#ifdef DEBUG
+  void PoisonRange() { range_poisoned_ = true; }
+#endif
   void AddNewRange(Range* r, Zone* zone);
   void RemoveLastAddedRange();
   void ComputeInitialRange(Zone* zone);
@@ -888,7 +876,6 @@ class HValue : public ZoneObject {
   virtual void PrintTo(StringStream* stream) = 0;
   void PrintNameTo(StringStream* stream);
   void PrintTypeTo(StringStream* stream);
-  void PrintRangeTo(StringStream* stream);
   void PrintChangesTo(StringStream* stream);
 
   const char* Mnemonic() const;
@@ -962,7 +949,7 @@ class HValue : public ZoneObject {
   virtual Representation RepresentationFromInputs() {
     return representation();
   }
-  Representation RepresentationFromUses();
+  virtual Representation RepresentationFromUses();
   Representation RepresentationFromUseRequirements();
   bool HasNonSmiUse();
   virtual void UpdateRepresentation(Representation new_rep,
@@ -1028,6 +1015,9 @@ class HValue : public ZoneObject {
   HType type_;
   HUseListNode* use_list_;
   Range* range_;
+#ifdef DEBUG
+  bool range_poisoned_;
+#endif
   int flags_;
   GVNFlagSet changes_flags_;
   GVNFlagSet depends_on_flags_;
@@ -1263,6 +1253,7 @@ class HInstruction : public HValue {
     position_.set_operand_position(index, pos);
   }
 
+  bool CanTruncateToSmi() const { return CheckFlag(kTruncatingToSmi); }
   bool CanTruncateToInt32() const { return CheckFlag(kTruncatingToInt32); }
 
   virtual LInstruction* CompileToLithium(LChunkBuilder* builder) = 0;
@@ -1529,6 +1520,8 @@ class HBranch V8_FINAL : public HUnaryControlInstruction {
 
   virtual bool KnownSuccessorBlock(HBasicBlock** block) V8_OVERRIDE;
 
+  virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
+
   ToBooleanStub::Types expected_input_types() const {
     return expected_input_types_;
   }
@@ -1733,7 +1726,7 @@ class HChange V8_FINAL : public HUnaryOperation {
     set_representation(to);
     SetFlag(kUseGVN);
     SetFlag(kCanOverflow);
-    if (is_truncating_to_smi) {
+    if (is_truncating_to_smi && to.IsSmi()) {
       SetFlag(kTruncatingToSmi);
       SetFlag(kTruncatingToInt32);
     }
@@ -2645,6 +2638,7 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
   virtual Range* InferRange(Zone* zone) V8_OVERRIDE;
 
   virtual HValue* Canonicalize() V8_OVERRIDE;
+  virtual Representation RepresentationFromUses() V8_OVERRIDE;
   virtual Representation RepresentationFromInputs() V8_OVERRIDE;
 
   BuiltinFunctionId op() const { return op_; }
@@ -2659,6 +2653,15 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
   }
 
  private:
+  // Indicates if we support a double (and int32) output for Math.floor and
+  // Math.round.
+  bool SupportsFlexibleFloorAndRound() const {
+#ifdef V8_TARGET_ARCH_ARM64
+    return true;
+#else
+    return false;
+#endif
+  }
   HUnaryMathOperation(HValue* context, HValue* value, BuiltinFunctionId op)
       : HTemplateInstruction<2>(HType::TaggedNumber()), op_(op) {
     SetOperandAt(0, context);
@@ -2666,6 +2669,12 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
     switch (op) {
       case kMathFloor:
       case kMathRound:
+        if (SupportsFlexibleFloorAndRound()) {
+          SetFlag(kFlexibleRepresentation);
+        } else {
+          set_representation(Representation::Integer32());
+        }
+        break;
       case kMathClz32:
         set_representation(Representation::Integer32());
         break;
@@ -2735,81 +2744,82 @@ class HLoadRoot V8_FINAL : public HTemplateInstruction<0> {
 class HCheckMaps V8_FINAL : public HTemplateInstruction<2> {
  public:
   static HCheckMaps* New(Zone* zone, HValue* context, HValue* value,
-                         Handle<Map> map, CompilationInfo* info,
-                         HValue* typecheck = NULL);
+                         Handle<Map> map, HValue* typecheck = NULL) {
+    return new(zone) HCheckMaps(value, new(zone) UniqueSet<Map>(
+            Unique<Map>::CreateImmovable(map), zone), typecheck);
+  }
   static HCheckMaps* New(Zone* zone, HValue* context,
-                         HValue* value, SmallMapList* maps,
+                         HValue* value, SmallMapList* map_list,
                          HValue* typecheck = NULL) {
-    HCheckMaps* check_map = new(zone) HCheckMaps(value, zone, typecheck);
-    for (int i = 0; i < maps->length(); i++) {
-      check_map->Add(maps->at(i), zone);
+    UniqueSet<Map>* maps = new(zone) UniqueSet<Map>(map_list->length(), zone);
+    for (int i = 0; i < map_list->length(); ++i) {
+      maps->Add(Unique<Map>::CreateImmovable(map_list->at(i)), zone);
     }
-    return check_map;
+    return new(zone) HCheckMaps(value, maps, typecheck);
   }
 
-  bool CanOmitMapChecks() { return omit_; }
+  bool IsStabilityCheck() const { return is_stability_check_; }
+  void MarkAsStabilityCheck() {
+    has_migration_target_ = false;
+    is_stability_check_ = true;
+    ClearChangesFlag(kNewSpacePromotion);
+    ClearDependsOnFlag(kElementsKind);
+    ClearDependsOnFlag(kMaps);
+  }
 
   virtual bool HasEscapingOperandAt(int index) V8_OVERRIDE { return false; }
   virtual Representation RequiredInputRepresentation(int index) V8_OVERRIDE {
     return Representation::Tagged();
   }
-  virtual bool HandleSideEffectDominator(GVNFlag side_effect,
-                                         HValue* dominator) V8_OVERRIDE;
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
 
   HValue* value() { return OperandAt(0); }
   HValue* typecheck() { return OperandAt(1); }
 
-  Unique<Map> first_map() const { return map_set_.at(0); }
-  UniqueSet<Map> map_set() const { return map_set_; }
+  const UniqueSet<Map>* maps() const { return maps_; }
+  void set_maps(const UniqueSet<Map>* maps) { maps_ = maps; }
 
-  void set_map_set(UniqueSet<Map>* maps, Zone *zone) {
-    map_set_.Clear();
-    for (int i = 0; i < maps->size(); i++) {
-      map_set_.Add(maps->at(i), zone);
-    }
-  }
+  bool maps_are_stable() const { return maps_are_stable_; }
 
-  bool has_migration_target() const {
-    return has_migration_target_;
-  }
+  bool HasMigrationTarget() const { return has_migration_target_; }
+
+  virtual HValue* Canonicalize() V8_OVERRIDE;
 
   DECLARE_CONCRETE_INSTRUCTION(CheckMaps)
 
  protected:
   virtual bool DataEquals(HValue* other) V8_OVERRIDE {
-    return this->map_set_.Equals(&HCheckMaps::cast(other)->map_set_);
+    return this->maps()->Equals(HCheckMaps::cast(other)->maps());
   }
 
   virtual int RedefinedOperandIndex() { return 0; }
 
  private:
-  void Add(Handle<Map> map, Zone* zone) {
-    map_set_.Add(Unique<Map>(map), zone);
-    SetDependsOnFlag(kMaps);
-    SetDependsOnFlag(kElementsKind);
-
-    if (!has_migration_target_ && map->is_migration_target()) {
-      has_migration_target_ = true;
-      SetChangesFlag(kNewSpacePromotion);
-    }
-  }
-
   // Clients should use one of the static New* methods above.
-  HCheckMaps(HValue* value, Zone *zone, HValue* typecheck)
-      : HTemplateInstruction<2>(value->type()),
-        omit_(false), has_migration_target_(false) {
+  HCheckMaps(HValue* value, const UniqueSet<Map>* maps, HValue* typecheck)
+      : HTemplateInstruction<2>(value->type()), maps_(maps),
+        has_migration_target_(false), is_stability_check_(false),
+        maps_are_stable_(true) {
+    ASSERT_NE(0, maps->size());
     SetOperandAt(0, value);
     // Use the object value for the dependency if NULL is passed.
-    SetOperandAt(1, typecheck != NULL ? typecheck : value);
+    SetOperandAt(1, typecheck ? typecheck : value);
     set_representation(Representation::Tagged());
     SetFlag(kUseGVN);
-    SetFlag(kTrackSideEffectDominators);
+    SetDependsOnFlag(kMaps);
+    SetDependsOnFlag(kElementsKind);
+    for (int i = 0; i < maps->size(); ++i) {
+      Handle<Map> map = maps->at(i).handle();
+      if (map->is_migration_target()) has_migration_target_ = true;
+      if (!map->is_stable()) maps_are_stable_ = false;
+    }
+    if (has_migration_target_) SetChangesFlag(kNewSpacePromotion);
   }
 
-  bool omit_;
-  bool has_migration_target_;
-  UniqueSet<Map> map_set_;
+  const UniqueSet<Map>* maps_;
+  bool has_migration_target_ : 1;
+  bool is_stability_check_ : 1;
+  bool maps_are_stable_ : 1;
 };
 
 
@@ -3382,8 +3392,6 @@ class HArgumentsObject V8_FINAL : public HDematerializedObject {
     set_representation(Representation::Tagged());
     SetFlag(kIsArguments);
   }
-
-  virtual bool IsDeletable() const V8_FINAL V8_OVERRIDE { return true; }
 };
 
 
@@ -3463,6 +3471,14 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
         is_not_in_new_space, false, false, kUnknownInstanceType));
   }
 
+  static HConstant* CreateAndInsertAfter(Zone* zone,
+                                         Unique<Map> unique,
+                                         HInstruction* instruction) {
+    return instruction->Append(new(zone) HConstant(
+            unique, Representation::Tagged(), HType::Tagged(),
+            true, false, false, MAP_TYPE));
+  }
+
   Handle<Object> handle(Isolate* isolate) {
     if (object_.handle().is_null()) {
       // Default arguments to is_not_in_new_space depend on this heap number
@@ -3473,12 +3489,6 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
     AllowDeferredHandleDereference smi_check;
     ASSERT(has_int32_value_ || !object_.handle()->IsSmi());
     return object_.handle();
-  }
-
-  bool HasMap(Handle<Map> map) {
-    Handle<Object> constant_object = handle(map->GetIsolate());
-    return constant_object->IsHeapObject() &&
-        Handle<HeapObject>::cast(constant_object)->map() == *map;
   }
 
   bool IsSpecialDouble() const {
@@ -3564,6 +3574,16 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   bool BooleanValue() const { return boolean_value_; }
   bool IsUndetectable() const { return is_undetectable_; }
   InstanceType GetInstanceType() const { return instance_type_; }
+
+  bool HasObjectMap() const { return !object_map_.IsNull(); }
+  Unique<Map> ObjectMap() const {
+    ASSERT(HasObjectMap());
+    return object_map_;
+  }
+  bool ObjectMapIsStable() const {
+    ASSERT(HasObjectMap());
+    return object_map_is_stable_;
+  }
 
   virtual intptr_t Hashcode() V8_OVERRIDE {
     if (has_int32_value_) {
@@ -3656,6 +3676,10 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   // constant is non-numeric, object_ always points to a valid
   // constant HeapObject.
   Unique<Object> object_;
+
+  // If this is a heap object, this points to the Map of the object.
+  Unique<Map> object_map_;
+  bool object_map_is_stable_ : 1;
 
   // We store the HConstant in the most specific form safely possible.
   // The two flags, has_int32_value_ and has_double_value_ tell us if
@@ -3766,7 +3790,7 @@ class HBinaryOperation : public HTemplateInstruction<3> {
   bool RightIsPowerOf2() {
     if (!right()->IsInteger32Constant()) return false;
     int32_t value = right()->GetInteger32Constant();
-    return value != 0 && (IsPowerOf2(value) || IsPowerOf2(-value));
+    return IsPowerOf2(value) || IsPowerOf2(-value);
   }
 
   DECLARE_ABSTRACT_INSTRUCTION(BinaryOperation)
@@ -4211,6 +4235,9 @@ class HCompareNumericAndBranch : public HTemplateControlInstruction<2, 2> {
   virtual Representation observed_input_representation(int index) V8_OVERRIDE {
     return observed_input_representation_[index];
   }
+
+  virtual bool KnownSuccessorBlock(HBasicBlock** block) V8_OVERRIDE;
+
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
 
   void SetOperandPositions(Zone* zone,
@@ -5823,6 +5850,10 @@ class HObjectAccess V8_FINAL {
     return portion() == kStringLengths;
   }
 
+  inline bool IsMap() const {
+    return portion() == kMaps;
+  }
+
   inline int offset() const {
     return OffsetField::decode(value_);
   }
@@ -6030,6 +6061,11 @@ class HObjectAccess V8_FINAL {
         JSArrayBuffer::kBackingStoreOffset, Representation::External());
   }
 
+  static HObjectAccess ForJSArrayBufferByteLength() {
+    return HObjectAccess::ForObservableJSObjectOffset(
+        JSArrayBuffer::kByteLengthOffset, Representation::Tagged());
+  }
+
   static HObjectAccess ForExternalArrayExternalPointer() {
     return HObjectAccess::ForObservableJSObjectOffset(
         ExternalArray::kExternalPointerOffset, Representation::External());
@@ -6130,8 +6166,28 @@ class HObjectAccess V8_FINAL {
 
 class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
  public:
-  DECLARE_INSTRUCTION_FACTORY_P3(HLoadNamedField, HValue*, HValue*,
-                                 HObjectAccess);
+  static HLoadNamedField* New(Zone* zone, HValue* context,
+                              HValue* object, HValue* dependency,
+                              HObjectAccess access) {
+    return new(zone) HLoadNamedField(
+        object, dependency, access, new(zone) UniqueSet<Map>());
+  }
+  static HLoadNamedField* New(Zone* zone, HValue* context,
+                              HValue* object, HValue* dependency,
+                              HObjectAccess access, SmallMapList* map_list,
+                              CompilationInfo* info) {
+    UniqueSet<Map>* maps = new(zone) UniqueSet<Map>(map_list->length(), zone);
+    for (int i = 0; i < map_list->length(); ++i) {
+      Handle<Map> map = map_list->at(i);
+      maps->Add(Unique<Map>::CreateImmovable(map), zone);
+      // TODO(bmeurer): Get rid of this shit!
+      if (map->CanTransition()) {
+        Map::AddDependentCompilationInfo(
+            map, DependentCode::kPrototypeCheckGroup, info);
+      }
+    }
+    return new(zone) HLoadNamedField(object, dependency, access, maps);
+  }
 
   HValue* object() { return OperandAt(0); }
   HValue* dependency() {
@@ -6143,6 +6199,8 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
   Representation field_representation() const {
       return access_.representation();
   }
+
+  const UniqueSet<Map>* maps() const { return maps_; }
 
   virtual bool HasEscapingOperandAt(int index) V8_OVERRIDE { return false; }
   virtual bool HasOutOfBoundsAccess(int size) V8_OVERRIDE {
@@ -6163,13 +6221,15 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
  protected:
   virtual bool DataEquals(HValue* other) V8_OVERRIDE {
     HLoadNamedField* b = HLoadNamedField::cast(other);
-    return access_.Equals(b->access_);
+    return access_.Equals(b->access_) && this->maps()->Equals(b->maps());
   }
 
  private:
   HLoadNamedField(HValue* object,
                   HValue* dependency,
-                  HObjectAccess access) : access_(access) {
+                  HObjectAccess access,
+                  const UniqueSet<Map>* maps)
+      : access_(access), maps_(maps) {
     ASSERT(object != NULL);
     SetOperandAt(0, object);
     SetOperandAt(1, dependency != NULL ? dependency : object);
@@ -6203,6 +6263,7 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
   virtual bool IsDeletable() const V8_OVERRIDE { return true; }
 
   HObjectAccess access_;
+  const UniqueSet<Map>* maps_;
 };
 
 
@@ -6578,13 +6639,9 @@ class HStoreNamedField V8_FINAL : public HTemplateInstruction<3> {
     }
   }
 
-  void SetTransition(HConstant* map_constant, CompilationInfo* info) {
+  void SetTransition(HConstant* transition) {
     ASSERT(!has_transition());  // Only set once.
-    Handle<Map> map = Handle<Map>::cast(map_constant->handle(info->isolate()));
-    if (map->CanBeDeprecated()) {
-      map->AddDependentCompilationInfo(DependentCode::kTransitionGroup, info);
-    }
-    SetOperandAt(2, map_constant);
+    SetOperandAt(2, transition);
     has_transition_ = true;
   }
 
@@ -6604,6 +6661,12 @@ class HStoreNamedField V8_FINAL : public HTemplateInstruction<3> {
     if (IsSkipWriteBarrier()) return false;
     return ReceiverObjectNeedsWriteBarrier(object(), transition(),
                                            new_space_dominator());
+  }
+
+  SmiCheck SmiCheckForWriteBarrier() const {
+    if (field_representation().IsHeapObject()) return OMIT_SMI_CHECK;
+    if (value()->IsHeapObject()) return OMIT_SMI_CHECK;
+    return INLINE_SMI_CHECK;
   }
 
   Representation field_representation() const {
@@ -6703,19 +6766,28 @@ class HStoreKeyed V8_FINAL
     }
 
     ASSERT_EQ(index, 2);
-    if (IsDoubleOrFloatElementsKind(elements_kind())) {
+    return RequiredValueRepresentation(elements_kind_, store_mode_);
+  }
+
+  static Representation RequiredValueRepresentation(
+      ElementsKind kind, StoreFieldOrKeyedMode mode) {
+    if (IsDoubleOrFloatElementsKind(kind)) {
       return Representation::Double();
     }
-    if (SmiValuesAre32Bits() && store_mode_ == STORE_TO_INITIALIZED_ENTRY) {
+
+    if (kind == FAST_SMI_ELEMENTS && SmiValuesAre32Bits() &&
+        mode == STORE_TO_INITIALIZED_ENTRY) {
       return Representation::Integer32();
     }
-    if (IsFastSmiElementsKind(elements_kind())) {
+
+    if (IsFastSmiElementsKind(kind)) {
       return Representation::Smi();
     }
 
-    return is_external() || is_fixed_typed_array()
-        ? Representation::Integer32()
-        : Representation::Tagged();
+    return IsExternalArrayElementsKind(kind) ||
+                   IsFixedTypedArrayElementsKind(kind)
+               ? Representation::Integer32()
+               : Representation::Tagged();
   }
 
   bool is_external() const {
@@ -6735,20 +6807,9 @@ class HStoreKeyed V8_FINAL
     if (IsUninitialized()) {
       return Representation::None();
     }
-    if (IsDoubleOrFloatElementsKind(elements_kind())) {
-      return Representation::Double();
-    }
-    if (SmiValuesAre32Bits() && store_mode_ == STORE_TO_INITIALIZED_ENTRY) {
-      return Representation::Integer32();
-    }
-    if (IsFastSmiElementsKind(elements_kind())) {
-      return Representation::Smi();
-    }
-    if (is_typed_elements()) {
-      return Representation::Integer32();
-    }
-    // For fast object elements kinds, don't assume anything.
-    return Representation::None();
+    Representation r = RequiredValueRepresentation(elements_kind_, store_mode_);
+    if (r.IsTagged()) return Representation::None();
+    return r;
   }
 
   HValue* elements() { return OperandAt(0); }
@@ -6815,9 +6876,6 @@ class HStoreKeyed V8_FINAL
     SetOperandAt(0, obj);
     SetOperandAt(1, key);
     SetOperandAt(2, val);
-
-    ASSERT(store_mode != STORE_TO_INITIALIZED_ENTRY ||
-           elements_kind == FAST_SMI_ELEMENTS);
 
     if (IsFastObjectElementsKind(elements_kind)) {
       SetFlag(kTrackSideEffectDominators);
@@ -7504,6 +7562,7 @@ class HLoadFieldByIndex V8_FINAL : public HTemplateInstruction<2> {
                     HValue* index) {
     SetOperandAt(0, object);
     SetOperandAt(1, index);
+    SetChangesFlag(kNewSpacePromotion);
     set_representation(Representation::Tagged());
   }
 

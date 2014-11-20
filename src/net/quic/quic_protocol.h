@@ -60,14 +60,17 @@ const QuicByteCount kMaxPacketSize = 1452;
 
 // Maximum size of the initial congestion window in packets.
 const size_t kDefaultInitialWindow = 10;
-const size_t kMaxInitialWindow = 100;
+const uint32 kMaxInitialWindow = 100;
+
+// Default size of initial flow control window.
+const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 
 // Maximum size of the congestion window, in packets, for TCP congestion control
 // algorithms.
 const size_t kMaxTcpCongestionWindow = 200;
 
 // Don't allow a client to suggest an RTT longer than 15 seconds.
-const size_t kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
+const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
 
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
@@ -80,9 +83,6 @@ const size_t kQuicVersionSize = 4;
 const size_t kPrivateFlagsSize = 1;
 // Number of bytes reserved for FEC group in the packet header.
 const size_t kFecGroupSize = 1;
-// TODO(wtc): remove this when we drop support for QUIC_VERSION_13.
-// Number of bytes reserved for the nonce proof in public reset packet.
-const size_t kPublicResetNonceSize = 8;
 
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
@@ -91,9 +91,9 @@ const bool kIncludeVersion = true;
 const size_t kStartOfHashData = 0;
 
 // Limit on the delta between stream IDs.
-const QuicStreamId kMaxStreamIdDelta = 100;
+const QuicStreamId kMaxStreamIdDelta = 200;
 // Limit on the delta between header IDs.
-const QuicHeaderId kMaxHeaderIdDelta = 100;
+const QuicHeaderId kMaxHeaderIdDelta = 200;
 
 // Reserved ID for the crypto stream.
 const QuicStreamId kCryptoStreamId = 1;
@@ -106,6 +106,9 @@ const QuicStreamId kHeadersStreamId = 3;
 const int64 kDefaultInitialTimeoutSecs = 120;  // 2 mins.
 const int64 kDefaultTimeoutSecs = 60 * 10;  // 10 minutes.
 const int64 kDefaultMaxTimeForCryptoHandshakeSecs = 5;  // 5 secs.
+
+// Default ping timeout.
+const int64 kPingTimeoutSecs = 15;  // 15 secs.
 
 // We define an unsigned 16-bit floating point value, inspired by IEEE floats
 // (http://en.wikipedia.org/wiki/Half_precision_floating-point_format),
@@ -160,6 +163,7 @@ enum QuicFrameType {
   WINDOW_UPDATE_FRAME = 4,
   BLOCKED_FRAME = 5,
   STOP_WAITING_FRAME = 6,
+  PING_FRAME = 7,
 
   // STREAM, ACK, and CONGESTION_FEEDBACK frames are special frames. They are
   // encoded differently on the wire and their values do not need to be stable.
@@ -257,9 +261,11 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_13 = 13,
   QUIC_VERSION_15 = 15,
-  QUIC_VERSION_16 = 16,  // Current version.
+  QUIC_VERSION_16 = 16,
+  QUIC_VERSION_17 = 17,
+  QUIC_VERSION_18 = 18,
+  QUIC_VERSION_19 = 19,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -269,9 +275,10 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_16,
-                                                     QUIC_VERSION_15,
-                                                     QUIC_VERSION_13};
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_18,
+                                                     QUIC_VERSION_17,
+                                                     QUIC_VERSION_16,
+                                                     QUIC_VERSION_15};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -344,10 +351,19 @@ enum QuicRstStreamErrorCode {
   QUIC_STREAM_PEER_GOING_AWAY,
   // The stream has been cancelled.
   QUIC_STREAM_CANCELLED,
+  // Sending a RST to allow for proper flow control accounting.
+  QUIC_RST_FLOW_CONTROL_ACCOUNTING,
 
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
 };
+
+// Because receiving an unknown QuicRstStreamErrorCode results in connection
+// teardown, we use this to make sure any errors predating a given version are
+// downgraded to the most appropriate existing error.
+NET_EXPORT_PRIVATE QuicRstStreamErrorCode AdjustErrorForVersion(
+    QuicRstStreamErrorCode error_code,
+    QuicVersion version);
 
 // These values must remain stable as they are uploaded to UMA histograms.
 // To add a new error code, use the current value of QUIC_LAST_ERROR and
@@ -369,6 +385,8 @@ enum QuicErrorCode {
   QUIC_INVALID_FEC_DATA = 5,
   // STREAM frame data is malformed.
   QUIC_INVALID_STREAM_DATA = 46,
+  // STREAM frame data is not encrypted.
+  QUIC_UNENCRYPTED_STREAM_DATA = 61,
   // RST_STREAM frame data is malformed.
   QUIC_INVALID_RST_STREAM_DATA = 6,
   // CONNECTION_CLOSE frame data is malformed.
@@ -487,7 +505,7 @@ enum QuicErrorCode {
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 61,
+  QUIC_LAST_ERROR = 62,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -550,6 +568,11 @@ typedef QuicPacketPublicHeader QuicVersionNegotiationPacket;
 
 // A padding frame contains no payload.
 struct NET_EXPORT_PRIVATE QuicPaddingFrame {
+};
+
+// A ping frame contains no payload, though it is retransmittable,
+// and ACK'd just like other normal frames.
+struct NET_EXPORT_PRIVATE QuicPingFrame {
 };
 
 struct NET_EXPORT_PRIVATE QuicStreamFrame {
@@ -650,11 +673,6 @@ struct NET_EXPORT_PRIVATE QuicStopWaitingFrame {
 
 struct NET_EXPORT_PRIVATE QuicAckFrame {
   QuicAckFrame();
-  // Testing convenience method to construct a QuicAckFrame with all packets
-  // from least_unacked to largest_observed acked.
-  QuicAckFrame(QuicPacketSequenceNumber largest_observed,
-               QuicTime largest_observed_receive_time,
-               QuicPacketSequenceNumber least_unacked);
 
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
       std::ostream& os, const QuicAckFrame& s);
@@ -670,6 +688,11 @@ enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.
   kInterArrival,  // Use additional inter arrival information.
   kFixRate,  // Provided for testing.
+};
+
+enum LossDetectionType {
+  kNack,  // Used to mimic TCP's loss detection.
+  kTime,  // Time based loss detection.
 };
 
 struct NET_EXPORT_PRIVATE CongestionFeedbackMessageTCP {
@@ -809,6 +832,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
   explicit QuicFrame(QuicRstStreamFrame* frame);
   explicit QuicFrame(QuicConnectionCloseFrame* frame);
   explicit QuicFrame(QuicStopWaitingFrame* frame);
+  explicit QuicFrame(QuicPingFrame* frame);
   explicit QuicFrame(QuicGoAwayFrame* frame);
   explicit QuicFrame(QuicWindowUpdateFrame* frame);
   explicit QuicFrame(QuicBlockedFrame* frame);
@@ -823,6 +847,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
     QuicAckFrame* ack_frame;
     QuicCongestionFeedbackFrame* congestion_feedback_frame;
     QuicStopWaitingFrame* stop_waiting_frame;
+    QuicPingFrame* ping_frame;
     QuicRstStreamFrame* rst_stream_frame;
     QuicConnectionCloseFrame* connection_close_frame;
     QuicGoAwayFrame* goaway_frame;
@@ -981,6 +1006,37 @@ struct NET_EXPORT_PRIVATE SerializedPacket {
   std::set<QuicAckNotifier*> notifiers;
 };
 
+struct NET_EXPORT_PRIVATE TransmissionInfo {
+  // Used by STL when assigning into a map.
+  TransmissionInfo();
+
+  // Constructs a Transmission with a new all_tranmissions set
+  // containing |sequence_number|.
+  TransmissionInfo(RetransmittableFrames* retransmittable_frames,
+                   QuicPacketSequenceNumber sequence_number,
+                   QuicSequenceNumberLength sequence_number_length);
+
+  // Constructs a Transmission with the specified |all_tranmissions| set
+  // and inserts |sequence_number| into it.
+  TransmissionInfo(RetransmittableFrames* retransmittable_frames,
+                   QuicPacketSequenceNumber sequence_number,
+                   QuicSequenceNumberLength sequence_number_length,
+                   SequenceNumberSet* all_transmissions);
+
+  RetransmittableFrames* retransmittable_frames;
+  QuicSequenceNumberLength sequence_number_length;
+  // Zero when the packet is serialized, non-zero once it's sent.
+  QuicTime sent_time;
+  // Zero when the packet is serialized, non-zero once it's sent.
+  QuicByteCount bytes_sent;
+  size_t nack_count;
+  // Stores the sequence numbers of all transmissions of this packet.
+  // Can never be null.
+  SequenceNumberSet* all_transmissions;
+  // Pending packets have not been abandoned or lost.
+  bool pending;
+};
+
 // A struct for functions which consume data payloads and fins.
 struct NET_EXPORT_PRIVATE QuicConsumedData {
   QuicConsumedData(size_t bytes_consumed, bool fin_consumed);
@@ -1009,6 +1065,7 @@ enum WriteStatus {
 // of bytes written or the error code, depending upon the status.
 struct NET_EXPORT_PRIVATE WriteResult {
   WriteResult(WriteStatus status, int bytes_written_or_error_code);
+  WriteResult();
 
   WriteStatus status;
   union {

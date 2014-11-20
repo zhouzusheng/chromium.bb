@@ -33,10 +33,9 @@
 
 namespace WebCore {
 
-ContextFeaturesClient* ContextFeaturesClient::empty()
+PassOwnPtr<ContextFeaturesClient> ContextFeaturesClient::empty()
 {
-    DEFINE_STATIC_LOCAL(ContextFeaturesClient, empty, ());
-    return &empty;
+    return adoptPtr(new ContextFeaturesClient());
 }
 
 const char* ContextFeatures::supplementName()
@@ -46,7 +45,11 @@ const char* ContextFeatures::supplementName()
 
 ContextFeatures* ContextFeatures::defaultSwitch()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<ContextFeatures>, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
+#else
     DEFINE_STATIC_REF(ContextFeatures, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
+#endif
     return instance;
 }
 
@@ -84,14 +87,14 @@ bool ContextFeatures::pushStateEnabled(Document* document)
     return document->contextFeatures().isEnabled(document, PushState, true);
 }
 
-void provideContextFeaturesTo(Page& page, ContextFeaturesClient* client)
+void provideContextFeaturesTo(Page& page, PassOwnPtr<ContextFeaturesClient> client)
 {
-    RefCountedSupplement<Page, ContextFeatures>::provideTo(page, ContextFeatures::supplementName(), ContextFeatures::create(client));
+    ContextFeatures::SupplementType::provideTo(page, ContextFeatures::supplementName(), ContextFeatures::create(client));
 }
 
 void provideContextFeaturesToDocumentFrom(Document& document, Page& page)
 {
-    ContextFeatures* provided = static_cast<ContextFeatures*>(RefCountedSupplement<Page, ContextFeatures>::from(page, ContextFeatures::supplementName()));
+    ContextFeatures* provided = static_cast<ContextFeatures*>(ContextFeatures::SupplementType::from(page, ContextFeatures::supplementName()));
     if (!provided)
         return;
     document.setContextFeatures(*provided);

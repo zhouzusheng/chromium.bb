@@ -42,7 +42,6 @@ class BidiContext;
 class LayoutStateMaintainer;
 class LineLayoutState;
 class RenderInline;
-class RenderRegion;
 class RenderText;
 
 struct BidiRun;
@@ -115,8 +114,6 @@ public:
         return objects && !objects->isEmpty();
     }
 
-    virtual bool visibleForTouchAction() const OVERRIDE FINAL { return true; }
-
     void addPercentHeightDescendant(RenderBox*);
     static void removePercentHeightDescendant(RenderBox*);
     static bool hasPercentHeightContainerMap();
@@ -184,7 +181,7 @@ public:
     void clearTruncation();
 
     void adjustRectForColumns(LayoutRect&) const;
-    virtual void adjustForColumns(LayoutSize&, const LayoutPoint&) const OVERRIDE FINAL;
+    virtual LayoutSize columnOffset(const LayoutPoint&) const OVERRIDE;
     void adjustForColumnRect(LayoutSize& offset, const LayoutPoint& locationInContainer) const;
 
     void addContinuationWithOutline(RenderInline*);
@@ -261,12 +258,14 @@ public:
     void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const RenderObject* = 0) const;
 #endif
 
-    LayoutSize logicalOffsetFromShapeAncestorContainer(const RenderBlock* container) const;
-
     // inline-block elements paint all phases atomically. This function ensures that. Certain other elements
     // (grid items, flex items) require this behavior as well, and this function exists as a helper for them.
     // It is expected that the caller will call this function independent of the value of paintInfo.phase.
     static void paintAsInlineBlock(RenderObject*, PaintInfo&, const LayoutPoint&);
+
+    bool recalcChildOverflowAfterStyleChange();
+    bool recalcOverflowAfterStyleChange();
+
 protected:
     virtual void willBeDestroyed() OVERRIDE;
 
@@ -275,7 +274,13 @@ protected:
     virtual void layout() OVERRIDE;
     virtual bool updateImageLoadingPriorities() OVERRIDE FINAL;
 
-    void layoutPositionedObjects(bool relayoutChildren, bool fixedPositionObjectsOnly = false);
+    enum PositionedLayoutBehavior {
+        DefaultLayout,
+        LayoutOnlyFixedPositionedObjects,
+        ForcedLayoutAfterContainingBlockMoved
+    };
+
+    void layoutPositionedObjects(bool relayoutChildren, PositionedLayoutBehavior = DefaultLayout);
     void markFixedPositionObjectForLayoutIfNeeded(RenderObject* child, SubtreeLayoutScope&);
 
     LayoutUnit marginIntrinsicLogicalWidthForChild(RenderBox* child) const;
@@ -288,7 +293,7 @@ protected:
     void paintChild(RenderBox*, PaintInfo&, const LayoutPoint&);
     void paintChildAsInlineBlock(RenderBox*, PaintInfo&, const LayoutPoint&);
 
-    virtual void adjustInlineDirectionLineBounds(int /* expansionOpportunityCount */, float& /* logicalLeft */, float& /* logicalWidth */) const { }
+    virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, float& /* logicalLeft */, float& /* logicalWidth */) const { }
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
@@ -312,7 +317,7 @@ protected:
 
     void updateScrollInfoAfterLayout();
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
     virtual bool hasLineIfEmpty() const;
@@ -322,6 +327,7 @@ protected:
 
     void setDesiredColumnCountAndWidth(int, LayoutUnit);
 
+    bool avoidsOrIgnoresFloats() { return isFloatingOrOutOfFlowPositioned() || avoidsFloats(); }
 public:
     virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool = false);
 protected:
@@ -339,6 +345,8 @@ protected:
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox*);
 
     virtual bool isInlineBlockOrInlineTable() const OVERRIDE FINAL { return isInline() && isReplaced(); }
+
+    virtual void repaintTreeAfterLayout() OVERRIDE;
 
 private:
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
@@ -381,8 +389,6 @@ private:
 
     bool hasCaret() const { return hasCaret(CursorCaret) || hasCaret(DragCaret); }
     bool hasCaret(CaretType) const;
-
-    virtual bool avoidsFloats() const OVERRIDE;
 
     bool hitTestColumns(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
     bool hitTestContents(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
@@ -464,16 +470,12 @@ protected:
     enum PageBoundaryRule { ExcludePageBoundary, IncludePageBoundary };
     LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule = ExcludePageBoundary) const;
 
-    bool createsBlockFormattingContext() const;
-
 public:
     LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const;
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit offset) const;
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit offset, PageBoundaryRule = IncludePageBoundary) const;
 
 protected:
-    bool pushToNextPageWithMinimumLogicalHeight(LayoutUnit& adjustment, LayoutUnit logicalOffset, LayoutUnit minimumLogicalHeight) const;
-
     // A page break is required at some offset due to space shortage in the current fragmentainer.
     void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage);
 
@@ -496,7 +498,8 @@ protected:
 
 public:
     virtual LayoutUnit offsetFromLogicalTopOfFirstPage() const OVERRIDE FINAL;
-    RenderRegion* regionAtBlockOffset(LayoutUnit) const;
+
+    void invalidateLineHeight() { m_lineHeight = -1; }
 
 public:
 

@@ -205,9 +205,6 @@ public:
     bool isRootForIsolatedGroup() const { return m_isRootForIsolatedGroup; }
     void setIsRootForIsolatedGroup(bool);
 
-    bool hasGpuRasterizationHint() const { return m_hasGpuRasterizationHint; }
-    void setHasGpuRasterizationHint(bool);
-
     const FilterOperations& filters() const { return m_filters; }
 
     // Returns true if filter can be rendered by the compositor
@@ -216,7 +213,7 @@ public:
 
     // Some GraphicsLayers paint only the foreground or the background content
     GraphicsLayerPaintingPhase paintingPhase() const { return m_paintingPhase; }
-    void setPaintingPhase(GraphicsLayerPaintingPhase phase) { m_paintingPhase = phase; }
+    void setPaintingPhase(GraphicsLayerPaintingPhase);
 
     void setNeedsDisplay();
     // mark the given rect (in layer coords) as needing dispay. Never goes deep.
@@ -362,7 +359,6 @@ private:
     bool m_drawsContent : 1;
     bool m_contentsVisible : 1;
     bool m_isRootForIsolatedGroup : 1;
-    bool m_hasGpuRasterizationHint: 1;
 
     bool m_hasScrollParent : 1;
     bool m_hasClipParent : 1;

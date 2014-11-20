@@ -43,6 +43,7 @@
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
@@ -55,10 +56,9 @@
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/svg/SVGDocument.h"
+#include "core/svg/SVGDocumentExtensions.h"
 #include "platform/DragImage.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -97,16 +97,12 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, HTMLFr
     , m_spellChecker(SpellChecker::create(*this))
     , m_selection(adoptPtr(new FrameSelection(this)))
     , m_eventHandler(adoptPtr(new EventHandler(this)))
+    , m_console(FrameConsole::create(*this))
     , m_inputMethodController(InputMethodController::create(*this))
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
-    , m_orientation(0)
     , m_inViewSourceMode(false)
 {
-    if (this->ownerElement()) {
-        page()->incrementSubframeCount();
-        this->ownerElement()->setContentFrame(*this);
-    }
 }
 
 PassRefPtr<LocalFrame> LocalFrame::create(FrameLoaderClient* client, FrameHost* host, HTMLFrameOwnerElement* ownerElement)
@@ -123,8 +119,6 @@ LocalFrame::~LocalFrame()
     setView(nullptr);
     loader().clear();
     setDOMWindow(nullptr);
-
-    disconnectOwnerElement();
 }
 
 bool LocalFrame::inScope(TreeScope* scope) const
@@ -159,16 +153,19 @@ void LocalFrame::setView(PassRefPtr<FrameView> view)
 
     m_view = view;
 
-    if (m_view && isMainFrame())
-        m_view->setVisibleContentScaleFactor(page()->pageScaleFactor());
+    if (m_view && isMainFrame()) {
+        if (settings()->pinchVirtualViewportEnabled())
+            m_host->pinchViewport().mainFrameDidChangeSize();
+        else
+            m_view->setVisibleContentScaleFactor(page()->pageScaleFactor());
+    }
 }
 
-void LocalFrame::sendOrientationChangeEvent(int orientation)
+void LocalFrame::sendOrientationChangeEvent()
 {
     if (!RuntimeEnabledFeatures::orientationEventEnabled())
         return;
 
-    m_orientation = orientation;
     if (DOMWindow* window = domWindow())
         window->dispatchEvent(Event::create(EventTypeNames::orientationchange));
 }
@@ -230,22 +227,6 @@ void LocalFrame::setDOMWindow(PassRefPtrWillBeRawPtr<DOMWindow> domWindow)
     Frame::setDOMWindow(domWindow);
 }
 
-RenderPart* LocalFrame::ownerRenderer() const
-{
-    if (!ownerElement())
-        return 0;
-    RenderObject* object = ownerElement()->renderer();
-    if (!object)
-        return 0;
-    // FIXME: If <object> is ever fixed to disassociate itself from frames
-    // that it has started but canceled, then this can turn into an ASSERT
-    // since ownerElement() would be 0 when the load is canceled.
-    // https://bugs.webkit.org/show_bug.cgi?id=18585
-    if (!object->isRenderPart())
-        return 0;
-    return toRenderPart(object);
-}
-
 void LocalFrame::didChangeVisibilityState()
 {
     if (document())
@@ -281,18 +262,6 @@ void LocalFrame::detachFromFrameHost()
     Frame::detachFromFrameHost();
 }
 
-void LocalFrame::disconnectOwnerElement()
-{
-    if (ownerElement()) {
-        if (Document* doc = document())
-            doc->topDocument().clearAXObjectCache();
-        ownerElement()->clearContentFrame();
-        if (page())
-            page()->decrementSubframeCount();
-    }
-    m_ownerElement = 0;
-}
-
 String LocalFrame::documentTypeString() const
 {
     if (DocumentType* doctype = document()->doctype())
@@ -326,6 +295,16 @@ VisiblePosition LocalFrame::visiblePositionForPoint(const IntPoint& framePoint)
     return visiblePos;
 }
 
+RenderView* LocalFrame::contentRenderer() const
+{
+    return document() ? document()->renderView() : 0;
+}
+
+Document* LocalFrame::document() const
+{
+    return m_domWindow ? m_domWindow->document() : 0;
+}
+
 Document* LocalFrame::documentAtPoint(const IntPoint& point)
 {
     if (!view())
@@ -339,7 +318,7 @@ Document* LocalFrame::documentAtPoint(const IntPoint& point)
     return result.innerNode() ? &result.innerNode()->document() : 0;
 }
 
-PassRefPtr<Range> LocalFrame::rangeForPoint(const IntPoint& framePoint)
+PassRefPtrWillBeRawPtr<Range> LocalFrame::rangeForPoint(const IntPoint& framePoint)
 {
     VisiblePosition position = visiblePositionForPoint(framePoint);
     if (position.isNull())
@@ -347,14 +326,14 @@ PassRefPtr<Range> LocalFrame::rangeForPoint(const IntPoint& framePoint)
 
     VisiblePosition previous = position.previous();
     if (previous.isNotNull()) {
-        RefPtr<Range> previousCharacterRange = makeRange(previous, position);
+        RefPtrWillBeRawPtr<Range> previousCharacterRange = makeRange(previous, position);
         LayoutRect rect = editor().firstRectForRange(previousCharacterRange.get());
         if (rect.contains(framePoint))
             return previousCharacterRange.release();
     }
 
     VisiblePosition next = position.next();
-    if (RefPtr<Range> nextCharacterRange = makeRange(position, next)) {
+    if (RefPtrWillBeRawPtr<Range> nextCharacterRange = makeRange(position, next)) {
         LayoutRect rect = editor().firstRectForRange(nextCharacterRange.get());
         if (rect.contains(framePoint))
             return nextCharacterRange.release();
@@ -396,8 +375,11 @@ void LocalFrame::createView(const IntSize& viewportSize, const Color& background
     if (isMainFrame)
         frameView->setParentVisible(true);
 
-    if (ownerRenderer())
-        ownerRenderer()->setWidget(frameView);
+    if (ownerRenderer()) {
+        HTMLFrameOwnerElement* owner = ownerElement();
+        ASSERT(owner);
+        owner->setWidget(frameView);
+    }
 
     if (HTMLFrameOwnerElement* owner = ownerElement())
         view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
@@ -427,8 +409,6 @@ String LocalFrame::layerTreeAsText(unsigned flags) const
 {
     if (!contentRenderer())
         return String();
-
-    ASSERT(document()->lifecycle().state() >= DocumentLifecycle::CompositingClean);
 
     return contentRenderer()->compositor()->layerTreeAsText(static_cast<LayerTreeFlags>(flags));
 }
@@ -466,7 +446,7 @@ void LocalFrame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomF
     // Respect SVGs zoomAndPan="disabled" property in standalone SVG documents.
     // FIXME: How to handle compound documents + zoomAndPan="disabled"? Needs SVG WG clarification.
     if (document->isSVGDocument()) {
-        if (!toSVGDocument(document)->zoomAndPanEnabled())
+        if (!document->accessSVGExtensions().zoomAndPanEnabled())
             return;
     }
 
@@ -532,7 +512,6 @@ struct ScopedFramePaintingState {
         : frame(frame)
         , node(node)
         , paintBehavior(frame->view()->paintBehavior())
-        , backgroundColor(frame->view()->baseBackgroundColor())
     {
         ASSERT(!node || node->renderer());
         if (node)
@@ -544,14 +523,12 @@ struct ScopedFramePaintingState {
         if (node && node->renderer())
             node->renderer()->updateDragState(false);
         frame->view()->setPaintBehavior(paintBehavior);
-        frame->view()->setBaseBackgroundColor(backgroundColor);
         frame->view()->setNodeToDraw(0);
     }
 
     LocalFrame* frame;
     Node* node;
     PaintBehavior paintBehavior;
-    Color backgroundColor;
 };
 
 PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
@@ -564,9 +541,6 @@ PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
     m_view->updateLayoutAndStyleForPainting();
 
     m_view->setPaintBehavior(state.paintBehavior | PaintBehaviorFlattenCompositingLayers);
-
-    // When generating the drag image for an element, ignore the document background.
-    m_view->setBaseBackgroundColor(Color::transparent);
 
     m_view->setNodeToDraw(&node); // Enable special sub-tree drawing mode.
 
@@ -633,6 +607,24 @@ double LocalFrame::devicePixelRatio() const
     double ratio = m_host->deviceScaleFactor();
     ratio *= pageZoomFactor();
     return ratio;
+}
+
+void LocalFrame::disconnectOwnerElement()
+{
+    if (ownerElement()) {
+        if (Document* doc = document())
+            doc->topDocument().clearAXObjectCache();
+    }
+    Frame::disconnectOwnerElement();
+}
+
+LocalFrame* LocalFrame::localFrameRoot()
+{
+    LocalFrame* curFrame = this;
+    while (curFrame && curFrame->tree().parent() && curFrame->tree().parent()->isLocalFrame())
+        curFrame = curFrame->tree().parent();
+
+    return curFrame;
 }
 
 } // namespace WebCore

@@ -31,7 +31,7 @@
 #ifndef DOMWrapperWorld_h
 #define DOMWrapperWorld_h
 
-#include "bindings/v8/V8PerContextData.h"
+#include "bindings/v8/ScriptState.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 #include "wtf/PassRefPtr.h"
@@ -43,8 +43,9 @@
 namespace WebCore {
 
 class DOMDataStore;
-class ScriptController;
 class ExecutionContext;
+class ScriptController;
+class V8DOMActivityLogger;
 
 enum WorldIdConstants {
     MainWorldId = 0,
@@ -69,32 +70,29 @@ public:
     static bool isolatedWorldsExist() { return isolatedWorldCount; }
     static void allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld> >& worlds);
 
-    static DOMWrapperWorld* world(v8::Handle<v8::Context> context)
+    static DOMWrapperWorld& world(v8::Handle<v8::Context> context)
     {
-        ASSERT(!context.IsEmpty());
-        return V8PerContextData::world(context);
+        return ScriptState::from(context)->world();
     }
 
-    // Will return null if there is no DOMWrapperWorld for the current context.
-    static DOMWrapperWorld* current(v8::Isolate* isolate)
+    static DOMWrapperWorld& current(v8::Isolate* isolate)
     {
         if (isMainThread() && worldOfInitializingWindow) {
             // It's possible that current() is being called while window is being initialized.
             // In order to make current() workable during the initialization phase,
             // we cache the world of the initializing window on worldOfInitializingWindow.
             // If there is no initiazing window, worldOfInitializingWindow is 0.
-            return worldOfInitializingWindow;
+            return *worldOfInitializingWindow;
         }
         return world(isolate->GetCurrentContext());
     }
 
-    static DOMWrapperWorld* mainWorld();
+    static DOMWrapperWorld& mainWorld();
 
     // Associates an isolated world (see above for description) with a security
     // origin. XMLHttpRequest instances used in that world will be considered
     // to come from that origin, not the frame's.
-    static void setIsolatedWorldSecurityOrigin(int worldID, PassRefPtr<SecurityOrigin>);
-    static void clearIsolatedWorldSecurityOrigin(int worldID);
+    static void setIsolatedWorldSecurityOrigin(int worldId, PassRefPtr<SecurityOrigin>);
     SecurityOrigin* isolatedWorldSecurityOrigin();
 
     // Associated an isolated world with a Content Security Policy. Resources
@@ -105,8 +103,7 @@ public:
     // FIXME: Right now, resource injection simply bypasses the main world's
     // DOM. More work is necessary to allow the isolated world's policy to be
     // applied correctly.
-    static void setIsolatedWorldContentSecurityPolicy(int worldID, const String& policy);
-    static void clearIsolatedWorldContentSecurityPolicy(int worldID);
+    static void setIsolatedWorldContentSecurityPolicy(int worldId, const String& policy);
     bool isolatedWorldHasContentSecurityPolicy();
 
     bool isMainWorld() const { return m_worldId == MainWorldId; }
@@ -115,7 +112,9 @@ public:
 
     int worldId() const { return m_worldId; }
     int extensionGroup() const { return m_extensionGroup; }
-    DOMDataStore& domDataStore() { return *m_domDataStore; }
+    DOMDataStore& domDataStore() const { return *m_domDataStore; }
+    V8DOMActivityLogger* activityLogger() const { return m_activityLogger; }
+    void setActivityLogger(V8DOMActivityLogger* activityLogger) { m_activityLogger = activityLogger; }
 
     static void setWorldOfInitializingWindow(DOMWrapperWorld* world)
     {
@@ -134,6 +133,8 @@ private:
     const int m_worldId;
     const int m_extensionGroup;
     OwnPtr<DOMDataStore> m_domDataStore;
+    // This is owned by a static hash map in V8DOMActivityLogger.
+    V8DOMActivityLogger* m_activityLogger;
 };
 
 } // namespace WebCore

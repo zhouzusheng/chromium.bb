@@ -29,9 +29,8 @@
  */
 
 #include "config.h"
-#include "DragClientImpl.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
+#include "web/DragClientImpl.h"
+
 #include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
 #include "core/frame/LocalFrame.h"
@@ -43,6 +42,8 @@
 #include "public/platform/WebImage.h"
 #include "public/platform/WebPoint.h"
 #include "public/web/WebDragOperation.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 #include "wtf/Assertions.h"
 #include "wtf/RefPtr.h"
 

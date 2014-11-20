@@ -27,8 +27,8 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceMotionController.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
+#include "core/frame/DOMWindow.h"
 #include "core/page/Page.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
@@ -37,8 +37,9 @@
 namespace WebCore {
 
 DeviceMotionController::DeviceMotionController(Document& document)
-    : DeviceSensorEventController(document)
+    : DeviceSensorEventController(document.page())
     , DOMWindowLifecycleObserver(document.domWindow())
+    , m_document(document)
 {
 }
 
@@ -62,7 +63,7 @@ DeviceMotionController& DeviceMotionController::from(Document& document)
     DeviceMotionController* controller = static_cast<DeviceMotionController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new DeviceMotionController(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
     }
     return *controller;
 }
@@ -72,7 +73,7 @@ bool DeviceMotionController::hasLastData()
     return DeviceMotionDispatcher::instance().latestDeviceMotionData();
 }
 
-PassRefPtr<Event> DeviceMotionController::getLastEvent()
+PassRefPtrWillBeRawPtr<Event> DeviceMotionController::getLastEvent()
 {
     return DeviceMotionEvent::create(EventTypeNames::devicemotion, DeviceMotionDispatcher::instance().latestDeviceMotionData());
 }
@@ -93,21 +94,29 @@ bool DeviceMotionController::isNullEvent(Event* event)
     return !motionEvent->deviceMotionData()->canProvideEventData();
 }
 
-void DeviceMotionController::didAddEventListener(DOMWindow*, const AtomicString& eventType)
+Document* DeviceMotionController::document()
 {
-    if (eventType == EventTypeNames::devicemotion && RuntimeEnabledFeatures::deviceMotionEnabled()) {
-        if (page() && page()->visibilityState() == PageVisibilityStateVisible)
-            startUpdating();
-        m_hasEventListener = true;
-    }
+    return &m_document;
 }
 
-void DeviceMotionController::didRemoveEventListener(DOMWindow*, const AtomicString& eventType)
+void DeviceMotionController::didAddEventListener(DOMWindow* window, const AtomicString& eventType)
 {
-    if (eventType == EventTypeNames::devicemotion) {
-        stopUpdating();
-        m_hasEventListener = false;
-    }
+    if (eventType != EventTypeNames::devicemotion)
+        return;
+
+    if (page() && page()->visibilityState() == PageVisibilityStateVisible)
+        startUpdating();
+
+    m_hasEventListener = true;
+}
+
+void DeviceMotionController::didRemoveEventListener(DOMWindow* window, const AtomicString& eventType)
+{
+    if (eventType != EventTypeNames::devicemotion || window->hasEventListeners(EventTypeNames::devicemotion))
+        return;
+
+    stopUpdating();
+    m_hasEventListener = false;
 }
 
 void DeviceMotionController::didRemoveAllEventListeners(DOMWindow*)

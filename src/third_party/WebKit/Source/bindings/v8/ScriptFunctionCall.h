@@ -38,7 +38,6 @@
 
 namespace WebCore {
     class ScriptValue;
-    class ScriptState;
 
     class ScriptCallArgumentHandler {
     public:
@@ -57,7 +56,7 @@ namespace WebCore {
         void appendArgument(const Vector<ScriptValue>&);
 
     protected:
-        ScriptState* m_scriptState;
+        RefPtr<ScriptState> m_scriptState;
         Vector<ScriptValue> m_arguments;
     };
 
@@ -71,17 +70,6 @@ namespace WebCore {
     protected:
         ScriptObject m_thisObject;
         String m_name;
-    };
-
-    class ScriptCallback : public ScriptCallArgumentHandler {
-    public:
-        ScriptCallback(ScriptState*, const ScriptValue&);
-
-        ScriptValue call();
-
-    private:
-        ScriptState* m_scriptState;
-        ScriptValue m_function;
     };
 
 } // namespace WebCore

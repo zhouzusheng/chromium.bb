@@ -59,7 +59,6 @@ public:
     virtual void repaint() = 0;
     virtual void durationChanged() = 0;
     virtual void sizeChanged() = 0;
-    virtual void setOpaque(bool) = 0;
     // FIXME: Remove once calls on the Chromium-side have been removed.
     virtual double volume() const = 0;
     virtual void playbackStateChanged() = 0;

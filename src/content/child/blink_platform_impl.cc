@@ -43,6 +43,7 @@
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/public/platform/WebConvertableToTraceFormat.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
@@ -135,6 +136,22 @@ class MemoryUsageCache {
   base::Time last_updated_time_;
 
   base::Lock lock_;
+};
+
+class ConvertableToTraceFormatWrapper
+    : public base::debug::ConvertableToTraceFormat {
+ public:
+  explicit ConvertableToTraceFormatWrapper(
+      const blink::WebConvertableToTraceFormat& convertable)
+      : convertable_(convertable) {}
+  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+    *out += convertable_.asTraceFormat().utf8();
+  }
+
+ private:
+  virtual ~ConvertableToTraceFormatWrapper() {}
+
+  blink::WebConvertableToTraceFormat convertable_;
 };
 
 }  // namespace
@@ -533,6 +550,44 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
   return result;
 }
 
+blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    int num_args,
+    const char** arg_names,
+    const unsigned char* arg_types,
+    const unsigned long long* arg_values,
+    const blink::WebConvertableToTraceFormat* convertable_values,
+    unsigned char flags) {
+  scoped_refptr<base::debug::ConvertableToTraceFormat> convertable_wrappers[2];
+  if (convertable_values) {
+    size_t size = std::min(static_cast<size_t>(num_args),
+                           arraysize(convertable_wrappers));
+    for (size_t i = 0; i < size; ++i) {
+      if (arg_types[i] == TRACE_VALUE_TYPE_CONVERTABLE) {
+        convertable_wrappers[i] =
+            new ConvertableToTraceFormatWrapper(convertable_values[i]);
+      }
+    }
+  }
+  base::debug::TraceEventHandle handle =
+      TRACE_EVENT_API_ADD_TRACE_EVENT(phase,
+                                      category_group_enabled,
+                                      name,
+                                      id,
+                                      num_args,
+                                      arg_names,
+                                      arg_types,
+                                      arg_values,
+                                      convertable_wrappers,
+                                      flags);
+  blink::Platform::TraceEventHandle result;
+  memcpy(&result, &handle, sizeof(result));
+  return result;
+}
+
 void BlinkPlatformImpl::updateTraceEventDuration(
     const unsigned char* category_group_enabled,
     const char* name,
@@ -679,10 +734,8 @@ const DataResource kDataResources[] = {
     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
   { "mediaplayerFullscreenDisabled",
     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
-#if defined(OS_ANDROID)
   { "mediaplayerOverlayPlay",
     IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
-#endif
 #if defined(OS_MACOSX)
   { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
   { "overhangShadow", IDR_OVERHANG_SHADOW, ui::SCALE_FACTOR_100P },
@@ -695,14 +748,9 @@ const DataResource kDataResources[] = {
     IDR_SEARCH_MAGNIFIER_RESULTS, ui::SCALE_FACTOR_100P },
   { "textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P },
   { "textAreaResizeCorner@2x", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_200P },
-  { "inputSpeech", IDR_INPUT_SPEECH, ui::SCALE_FACTOR_100P },
-  { "inputSpeechRecording", IDR_INPUT_SPEECH_RECORDING, ui::SCALE_FACTOR_100P },
-  { "inputSpeechWaiting", IDR_INPUT_SPEECH_WAITING, ui::SCALE_FACTOR_100P },
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
   { "generatePasswordHover",
     IDR_PASSWORD_GENERATION_ICON_HOVER, ui::SCALE_FACTOR_100P },
-  { "syntheticTouchCursor",
-    IDR_SYNTHETIC_TOUCH_CURSOR, ui::SCALE_FACTOR_100P },
 };
 
 }  // namespace
@@ -943,6 +991,10 @@ size_t BlinkPlatformImpl::physicalMemoryMB() {
   return static_cast<size_t>(base::SysInfo::AmountOfPhysicalMemoryMB());
 }
 
+size_t BlinkPlatformImpl::virtualMemoryLimitMB() {
+  return static_cast<size_t>(base::SysInfo::AmountOfVirtualMemoryMB());
+}
+
 size_t BlinkPlatformImpl::numberOfProcessors() {
   return static_cast<size_t>(base::SysInfo::NumberOfProcessors());
 }
@@ -1006,8 +1058,13 @@ size_t BlinkPlatformImpl::maxDecodedImageBytes() {
     return 3 * 1024 * 1024 * 4;
   }
   // For other devices, limit decoded image size based on the amount of physical
-  // memory. For a device with 2GB physical memory the limit is 16M pixels.
-  return base::SysInfo::AmountOfPhysicalMemory() / 32;
+  // memory.
+  // In some cases all physical memory is not accessible by Chromium, as it can
+  // be reserved for direct use by certain hardware. Thus, we set the limit so
+  // that 1.6GB of reported physical memory on a 2GB device is enough to set the
+  // limit at 16M pixels, which is a desirable value since 4K*4K is a relatively
+  // common texture size.
+  return base::SysInfo::AmountOfPhysicalMemory() / 25;
 #else
   return noDecodedImageByteLimit;
 #endif

@@ -112,21 +112,13 @@ void RenderWidgetHostViewChildFrame::ImeCancelComposition() {
   NOTREACHED();
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
 void RenderWidgetHostViewChildFrame::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   NOTREACHED();
 }
 #endif
-
-void RenderWidgetHostViewChildFrame::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  NOTREACHED();
-}
 
 void RenderWidgetHostViewChildFrame::WasShown() {
   if (!host_->is_hidden())
@@ -141,7 +133,6 @@ void RenderWidgetHostViewChildFrame::WasHidden() {
 }
 
 void RenderWidgetHostViewChildFrame::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& moves) {
 }
 
@@ -196,8 +187,19 @@ void RenderWidgetHostViewChildFrame::SelectionBoundsChanged(
 }
 
 #if defined(OS_ANDROID)
+void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
+    const gfx::Rect& target_rect,
+    const SkBitmap& zoomed_bitmap) {
+}
+
 void RenderWidgetHostViewChildFrame::SelectionRootBoundsChanged(
     const gfx::Rect& bounds) {
+}
+
+void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
+}
+
+void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 }
 #endif
 
@@ -244,12 +246,12 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
   return GetViewBounds();
 }
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
 void RenderWidgetHostViewChildFrame::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch,
     InputEventAckState ack_result) {
 }
-#endif  // defined(OS_WIN) || defined(USE_AURA)
+#endif  // defined(USE_AURA)
 
 bool RenderWidgetHostViewChildFrame::LockMouse() {
   return false;
@@ -294,29 +296,6 @@ bool RenderWidgetHostViewChildFrame::PostProcessEventForPluginIme(
 }
 #endif // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID)
-void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
-    const gfx::Rect& target_rect,
-    const SkBitmap& zoomed_bitmap) {
-}
-#endif  // defined(OS_ANDROID)
-
-#if defined(TOOLKIT_GTK)
-GdkEventButton* RenderWidgetHostViewChildFrame::GetLastMouseDown() {
-  return NULL;
-}
-
-gfx::NativeView RenderWidgetHostViewChildFrame::BuildInputMethodsGtkMenu() {
-  return NULL;
-}
-#endif  // defined(TOOLKIT_GTK)
-
-BackingStore* RenderWidgetHostViewChildFrame::AllocBackingStore(
-    const gfx::Size& size) {
-  NOTREACHED();
-  return NULL;
-}
-
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
@@ -351,10 +330,6 @@ bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
 
 gfx::GLSurfaceHandle RenderWidgetHostViewChildFrame::GetCompositingSurface() {
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-}
-
-void RenderWidgetHostViewChildFrame::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
 }
 
 void RenderWidgetHostViewChildFrame::SetScrollOffsetPinning(

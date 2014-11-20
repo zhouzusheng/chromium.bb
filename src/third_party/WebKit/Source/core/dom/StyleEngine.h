@@ -32,7 +32,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentOrderedList.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
@@ -90,7 +90,9 @@ public:
 
     ~StyleEngine();
 
+#if !ENABLE(OILPAN)
     void detachFromDocument();
+#endif
 
     const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList(TreeScope&);
     const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() const;
@@ -98,7 +100,7 @@ public:
     const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
     const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
 
-    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > activeStyleSheetsForInspector() const;
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > activeStyleSheetsForInspector() const;
 
     void modifiedStyleSheet(StyleSheet*);
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
@@ -201,6 +203,7 @@ private:
 
     bool isMaster() const { return m_isMaster; }
     Document* master();
+    Document& document() const { return *m_document; }
 
     typedef ListHashSet<TreeScope*, 16> TreeScopeSet;
     static void insertTreeScopeInDocumentOrder(TreeScopeSet&, TreeScope*);
@@ -210,7 +213,7 @@ private:
 
     static PassRefPtrWillBeRawPtr<CSSStyleSheet> parseSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
 
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
     bool m_isMaster;
 
     // Track the number of currently loading top-level stylesheets needed for rendering.
@@ -225,7 +228,8 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_authorStyleSheets;
 
     DocumentStyleSheetCollection m_documentStyleSheetCollection;
-    WillBeHeapHashMap<TreeScope*, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> > m_styleSheetCollectionMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<TreeScope>, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> > StyleSheetCollectionMap;
+    StyleSheetCollectionMap m_styleSheetCollectionMap;
 
     bool m_documentScopeDirty;
     TreeScopeSet m_dirtyTreeScopes;
@@ -245,7 +249,7 @@ private:
     bool m_didCalculateResolver;
     OwnPtrWillBeMember<StyleResolver> m_resolver;
 
-    RefPtr<CSSFontSelector> m_fontSelector;
+    RefPtrWillBeMember<CSSFontSelector> m_fontSelector;
 
     WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<StyleSheetContents> > m_textToSheetCache;
     WillBeHeapHashMap<RawPtrWillBeMember<StyleSheetContents>, AtomicString> m_sheetToTextCache;

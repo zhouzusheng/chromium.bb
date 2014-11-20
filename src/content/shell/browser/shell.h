@@ -18,12 +18,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#include "ui/base/gtk/gtk_signal.h"
-
-typedef struct _GtkToolItem GtkToolItem;
-#elif defined(OS_ANDROID)
+#if defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
@@ -62,6 +57,9 @@ class Shell : public WebContentsDelegate,
 
   void LoadURL(const GURL& url);
   void LoadURLForFrame(const GURL& url, const std::string& frame_name);
+  void LoadDataWithBaseURL(const GURL& url,
+                           const std::string& data,
+                           const GURL& base_url);
   void GoBackOrForward(int offset);
   void Reload();
   void Stop();
@@ -69,9 +67,10 @@ class Shell : public WebContentsDelegate,
   void Close();
   void ShowDevTools();
   void ShowDevToolsForElementAt(int x, int y);
-  void ShowDevToolsForTest(const std::string& settings);
+  void ShowDevToolsForTest(const std::string& settings,
+                           const std::string& frontend_url);
   void CloseDevTools();
-#if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
   // Resizes the web content view to the given dimensions.
   void SizeTo(const gfx::Size& content_size);
 #endif
@@ -214,26 +213,9 @@ class Shell : public WebContentsDelegate,
   // WebContentsObserver
   virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
-  void InnerShowDevTools(const std::string& settings);
+  void InnerShowDevTools(const std::string& settings,
+                         const std::string& frontend_url);
   void OnDevToolsWebContentsDestroyed();
-
-#if defined(TOOLKIT_GTK)
-  CHROMEGTK_CALLBACK_0(Shell, void, OnBackButtonClicked);
-  CHROMEGTK_CALLBACK_0(Shell, void, OnForwardButtonClicked);
-  CHROMEGTK_CALLBACK_0(Shell, void, OnReloadButtonClicked);
-  CHROMEGTK_CALLBACK_0(Shell, void, OnStopButtonClicked);
-  CHROMEGTK_CALLBACK_0(Shell, void, OnURLEntryActivate);
-  CHROMEGTK_CALLBACK_0(Shell, gboolean, OnWindowDestroyed);
-
-  CHROMEG_CALLBACK_3(Shell, gboolean, OnCloseWindowKeyPressed, GtkAccelGroup*,
-                     GObject*, guint, GdkModifierType);
-  CHROMEG_CALLBACK_3(Shell, gboolean, OnNewWindowKeyPressed, GtkAccelGroup*,
-                     GObject*, guint, GdkModifierType);
-  CHROMEG_CALLBACK_3(Shell, gboolean, OnHighlightURLView, GtkAccelGroup*,
-                     GObject*, guint, GdkModifierType);
-  CHROMEG_CALLBACK_3(Shell, gboolean, OnReloadKeyPressed, GtkAccelGroup*,
-                     GObject*, guint, GdkModifierType);
-#endif
 
   scoped_ptr<ShellJavaScriptDialogManager> dialog_manager_;
 
@@ -249,19 +231,7 @@ class Shell : public WebContentsDelegate,
 
   gfx::Size content_size_;
 
-#if defined(TOOLKIT_GTK)
-  GtkWidget* vbox_;
-
-  GtkToolItem* back_button_;
-  GtkToolItem* forward_button_;
-  GtkToolItem* reload_button_;
-  GtkToolItem* stop_button_;
-
-  GtkWidget* spinner_;
-  GtkToolItem* spinner_item_;
-
-  int ui_elements_height_; // height of menubar, toolbar, etc.
-#elif defined(OS_ANDROID)
+#if defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)

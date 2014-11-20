@@ -13,10 +13,10 @@
 #include "base/memory/weak_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/rolling_time_delta_history.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/overlay_candidate_validator.h"
 #include "cc/output/software_output_device.h"
-#include "cc/scheduler/frame_rate_controller.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -42,7 +42,7 @@ class OutputSurfaceClient;
 //      From here on, it will only be used on the compositor thread.
 //   3. If the 3D context is lost, then the compositor will delete the output
 //      surface (on the compositor thread) and go back to step 1.
-class CC_EXPORT OutputSurface : public FrameRateControllerClient {
+class CC_EXPORT OutputSurface {
  public:
   enum {
     DEFAULT_MAX_FRAMES_PENDING = 2
@@ -69,7 +69,7 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
     int max_frames_pending;
     bool deferred_gl_initialization;
     bool draw_and_swap_full_viewport_every_frame;
-    // This doesn't handle the <webview> case, but once BeginImplFrame is
+    // This doesn't handle the <webview> case, but once BeginFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
     bool adjust_deadline_for_parent;
     // Whether this output surface renders to the default OpenGL zero
@@ -105,12 +105,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // thread.
   virtual bool BindToClient(OutputSurfaceClient* client);
 
-  void InitializeBeginImplFrameEmulation(
-      base::SingleThreadTaskRunner* task_runner,
-      bool throttle_frame_production,
-      base::TimeDelta interval);
-
-  void SetMaxFramesPending(int max_frames_pending);
+  // Enable or disable vsync.
+  void SetThrottleFrameProduction(bool enable);
 
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
@@ -129,10 +125,10 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // processing should be stopped, or lowered in priority.
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) {}
 
-  // Requests a BeginImplFrame notification from the output surface. The
+  // Requests a BeginFrame notification from the output surface. The
   // notification will be delivered by calling
-  // OutputSurfaceClient::BeginImplFrame until the callback is disabled.
-  virtual void SetNeedsBeginImplFrame(bool enable);
+  // OutputSurfaceClient::BeginFrame until the callback is disabled.
+  virtual void SetNeedsBeginFrame(bool enable) {}
 
   bool HasClient() { return !!client_; }
 
@@ -146,13 +142,12 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   }
 
  protected:
+  OutputSurfaceClient* client_;
+
   // Synchronously initialize context3d and enter hardware mode.
   // This can only supported in threaded compositing mode.
-  // |offscreen_context_provider| should match what is returned by
-  // LayerTreeClient::OffscreenContextProvider().
   bool InitializeAndSetContext3d(
-      scoped_refptr<ContextProvider> context_provider,
-      scoped_refptr<ContextProvider> offscreen_context_provider);
+      scoped_refptr<ContextProvider> context_provider);
   void ReleaseGL();
 
   void PostSwapBuffersComplete();
@@ -164,28 +159,10 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   gfx::Size surface_size_;
   float device_scale_factor_;
 
-  // The FrameRateController is deprecated.
-  // Platforms should move to native BeginImplFrames instead.
   void CommitVSyncParameters(base::TimeTicks timebase,
                              base::TimeDelta interval);
-  virtual void FrameRateControllerTick(bool throttled,
-                                       const BeginFrameArgs& args) OVERRIDE;
-  scoped_ptr<FrameRateController> frame_rate_controller_;
-  int max_frames_pending_;
-  int pending_swap_buffers_;
-  bool needs_begin_impl_frame_;
-  bool client_ready_for_begin_impl_frame_;
 
-  // This stores a BeginImplFrame that we couldn't process immediately,
-  // but might process retroactively in the near future.
-  BeginFrameArgs skipped_begin_impl_frame_args_;
-
-  // Forwarded to OutputSurfaceClient but threaded through OutputSurface
-  // first so OutputSurface has a chance to update the FrameRateController
   void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
-  void BeginImplFrame(const BeginFrameArgs& args);
-  void DidSwapBuffers();
-  void OnSwapBuffersComplete();
   void ReclaimResources(const CompositorFrameAck* ack);
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
@@ -194,22 +171,13 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
                                   const gfx::Rect& clip,
                                   bool valid_for_tile_management);
 
-  // virtual for testing.
-  virtual base::TimeTicks RetroactiveBeginImplFrameDeadline();
-  virtual void PostCheckForRetroactiveBeginImplFrame();
-  void CheckForRetroactiveBeginImplFrame();
-
  private:
-  OutputSurfaceClient* client_;
-
   void SetUpContext3d();
   void ResetContext3d();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy);
   void UpdateAndMeasureGpuLatency();
 
-  // check_for_retroactive_begin_impl_frame_pending_ is used to avoid posting
-  // redundant checks for a retroactive BeginImplFrame.
-  bool check_for_retroactive_begin_impl_frame_pending_;
+  void OnSwapBuffersComplete();
 
   bool external_stencil_test_enabled_;
 

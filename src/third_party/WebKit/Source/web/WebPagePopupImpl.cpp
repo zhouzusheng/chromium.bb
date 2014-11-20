@@ -29,16 +29,12 @@
  */
 
 #include "config.h"
-#include "WebPagePopupImpl.h"
+#include "web/WebPagePopupImpl.h"
 
-#include "WebInputEventConversion.h"
-#include "WebSettingsImpl.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
-#include "WebWidgetClient.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
@@ -47,8 +43,12 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupClient.h"
-#include "core/frame/Settings.h"
 #include "public/platform/WebCursorInfo.h"
+#include "public/web/WebViewClient.h"
+#include "public/web/WebWidgetClient.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebSettingsImpl.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 using namespace std;
@@ -83,7 +83,7 @@ private:
         m_popup->widgetClient()->setWindowRect(m_popup->m_windowRectInScreen);
     }
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) OVERRIDE
+    virtual void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) OVERRIDE
     {
 #ifndef NDEBUG
         fprintf(stderr, "CONSOLE MESSSAGE:%u: %s\n", lineNumber, message.utf8().data());
@@ -109,6 +109,11 @@ private:
 
     virtual void scheduleAnimation() OVERRIDE
     {
+        if (m_popup->isAcceleratedCompositingActive()) {
+            ASSERT(m_popup->m_layerTreeView);
+            m_popup->m_layerTreeView->setNeedsAnimate();
+            return;
+        }
         m_popup->widgetClient()->scheduleAnimation();
     }
 
@@ -204,14 +209,13 @@ bool WebPagePopupImpl::initializePage()
     m_chromeClient = adoptPtr(new PagePopupChromeClient(this));
     pageClients.chromeClient = m_chromeClient.get();
 
-    m_page = adoptPtr(new Page(pageClients));
+    m_page = adoptPtrWillBeNoop(new Page(pageClients));
     m_page->settings().setScriptEnabled(true);
     m_page->settings().setAllowScriptsToCloseWindows(true);
     m_page->setDeviceScaleFactor(m_webView->deviceScaleFactor());
     m_page->settings().setDeviceSupportsTouch(m_webView->page()->settings().deviceSupportsTouch());
 
-    static ContextFeaturesClient* pagePopupFeaturesClient =  new PagePopupFeaturesClient();
-    provideContextFeaturesTo(*m_page, pagePopupFeaturesClient);
+    provideContextFeaturesTo(*m_page, adoptPtr(new PagePopupFeaturesClient()));
     static FrameLoaderClient* emptyFrameLoaderClient =  new EmptyFrameLoaderClient();
     RefPtr<LocalFrame> frame = LocalFrame::create(emptyFrameLoaderClient, &m_page->frameHost(), 0);
     frame->setView(FrameView::create(frame.get()));
@@ -236,6 +240,7 @@ void WebPagePopupImpl::destroyPage()
     if (m_page->mainFrame())
         m_page->mainFrame()->loader().frameDetached();
 
+    m_page->willBeDestroyed();
     m_page.clear();
 }
 
@@ -264,7 +269,7 @@ void WebPagePopupImpl::setIsAcceleratedCompositingActive(bool enter)
         m_widgetClient->didDeactivateCompositor();
     } else if (m_layerTreeView) {
         m_isAcceleratedCompositingActive = true;
-        m_widgetClient->didActivateCompositor(0);
+        m_widgetClient->didActivateCompositor();
     } else {
         TRACE_EVENT0("webkit", "WebPagePopupImpl::setIsAcceleratedCompositingActive(true)");
 
@@ -272,7 +277,7 @@ void WebPagePopupImpl::setIsAcceleratedCompositingActive(bool enter)
         m_layerTreeView = m_widgetClient->layerTreeView();
         if (m_layerTreeView) {
             m_layerTreeView->setVisible(true);
-            m_widgetClient->didActivateCompositor(0);
+            m_widgetClient->didActivateCompositor();
             m_isAcceleratedCompositingActive = true;
             m_layerTreeView->setDeviceScaleFactor(m_widgetClient->deviceScaleFactor());
         } else {
@@ -307,14 +312,6 @@ void WebPagePopupImpl::enterForceCompositingMode(bool enter)
             return;
         mainFrame->view()->updateCompositingLayersAfterStyleChange();
     }
-}
-
-void WebPagePopupImpl::didExitCompositingMode()
-{
-    setIsAcceleratedCompositingActive(false);
-    m_widgetClient->didInvalidateRect(IntRect(0, 0, size().width, size().height));
-    if (m_page)
-        m_page->mainFrame()->document()->setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void WebPagePopupImpl::willCloseLayerTreeView()

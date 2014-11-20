@@ -51,6 +51,16 @@ enum ValueRange {
     ValueRangeNonNegative
 };
 
+struct PixelsAndPercent {
+    PixelsAndPercent(float pixels, float percent)
+        : pixels(pixels)
+        , percent(percent)
+    {
+    }
+    float pixels;
+    float percent;
+};
+
 class CalculationValue;
 
 class PLATFORM_EXPORT Length {
@@ -95,12 +105,18 @@ public:
 
     Length(const Length& length)
     {
-        initFromLength(length);
+        memcpy(this, &length, sizeof(Length));
+        if (isCalculated())
+            incrementCalculatedRef();
     }
 
     Length& operator=(const Length& length)
     {
-        initFromLength(length);
+        if (length.isCalculated())
+            length.incrementCalculatedRef();
+        if (isCalculated())
+            decrementCalculatedRef();
+        memcpy(this, &length, sizeof(Length));
         return *this;
     }
 
@@ -147,8 +163,9 @@ public:
         ASSERT(type() == Percent);
         return getFloatValue();
     }
+    PixelsAndPercent pixelsAndPercent() const;
 
-    CalculationValue* calculationValue() const;
+    CalculationValue& calculationValue() const;
 
     LengthType type() const { return static_cast<LengthType>(m_type); }
     bool quirk() const { return m_quirk; }
@@ -241,10 +258,7 @@ public:
 
     Length blend(const Length& from, double progress, ValueRange range) const
     {
-        // FIXME: These should step at 50%, but transitions currently blend values that should
-        // never be transitioned in the first place.
-        if (isUndefined() || from.isUndefined() || isIntrinsicOrAuto() || from.isIntrinsicOrAuto())
-            return *this;
+        ASSERT(isSpecified() && from.isSpecified());
 
         if (progress == 0.0)
             return from;
@@ -278,18 +292,13 @@ public:
     }
     float nonNanCalculatedValue(int maxValue) const;
 
+    Length subtractFromOneHundredPercent() const;
+
 private:
     int getIntValue() const
     {
         ASSERT(!isUndefined());
         return m_isFloat ? static_cast<int>(m_floatValue) : m_intValue;
-    }
-    void initFromLength(const Length& length)
-    {
-        memcpy(this, &length, sizeof(Length));
-
-        if (isCalculated())
-            incrementCalculatedRef();
     }
 
     Length blendMixedTypes(const Length& from, double progress, ValueRange) const;

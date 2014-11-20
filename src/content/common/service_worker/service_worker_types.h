@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerState.h"
 #include "url/gurl.h"
 
 // This file is to have common definitions that are to be shared by
@@ -22,7 +23,13 @@ namespace content {
 // and embedded worker.
 const static int kInvalidServiceWorkerRequestId = -1;
 
+// Constants for invalid identifiers.
+const static int kInvalidServiceWorkerHandleId = -1;
 const static int kInvalidServiceWorkerProviderId = -1;
+const static int64 kInvalidServiceWorkerRegistrationId = -1;
+const static int64 kInvalidServiceWorkerVersionId = -1;
+const static int64 kInvalidServiceWorkerResourceId = -1;
+const static int64 kInvalidServiceWorkerResponseId = -1;
 
 // To dispatch fetch request from browser to child process.
 // TODO(kinuko): This struct will definitely need more fields and
@@ -62,6 +69,15 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   std::string status_text;
   std::string method;
   std::map<std::string, std::string> headers;
+};
+
+// Represents initialization info for a WebServiceWorker object.
+struct CONTENT_EXPORT ServiceWorkerObjectInfo {
+  ServiceWorkerObjectInfo();
+  int handle_id;
+  GURL scope;
+  GURL url;
+  blink::WebServiceWorkerState state;
 };
 
 }  // namespace content

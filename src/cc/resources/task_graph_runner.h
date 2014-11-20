@@ -14,7 +14,6 @@
 #include "cc/base/cc_export.h"
 
 namespace cc {
-namespace internal {
 
 class CC_EXPORT Task : public base::RefCountedThreadSafe<Task> {
  public:
@@ -32,12 +31,14 @@ class CC_EXPORT Task : public base::RefCountedThreadSafe<Task> {
   Task();
   virtual ~Task();
 
+  bool will_run_;
   bool did_run_;
 };
 
-// Dependencies are represented as edges in a task graph. Each graph node
-// is assigned a priority and a run count that matches the number of
-// dependencies.
+// Dependencies are represented as edges in a task graph. Each graph node is
+// assigned a priority and a run count that matches the number of dependencies.
+// Priority range from 0 (most favorable scheduling) to UINT_MAX (least
+// favorable).
 struct CC_EXPORT TaskGraph {
   struct Node {
     class TaskComparator {
@@ -226,7 +227,6 @@ class CC_EXPORT TaskGraphRunner {
   DISALLOW_COPY_AND_ASSIGN(TaskGraphRunner);
 };
 
-}  // namespace internal
 }  // namespace cc
 
 #endif  // CC_RESOURCES_TASK_GRAPH_RUNNER_H_

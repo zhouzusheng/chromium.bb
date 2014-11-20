@@ -36,7 +36,7 @@
 
 namespace WebCore {
 
-PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
 {
     // FIXME: add support for workers.
     if (!context || !context->isDocument()) {
@@ -53,8 +53,16 @@ PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* co
         return nullptr;
     }
 
-    if (numberOfChannels > 10) {
-        exceptionState.throwDOMException(SyntaxError, "number of channels (" + String::number(numberOfChannels) + ") exceeds maximum (10).");
+    if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
+        exceptionState.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::indexOutsideRange<unsigned>(
+                "number of channels",
+                numberOfChannels,
+                0,
+                ExceptionMessages::InclusiveBound,
+                AudioContext::maxNumberOfChannels(),
+                ExceptionMessages::InclusiveBound));
         return nullptr;
     }
 
@@ -63,7 +71,7 @@ PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* co
         return nullptr;
     }
 
-    RefPtr<OfflineAudioContext> audioContext(adoptRef(new OfflineAudioContext(document, numberOfChannels, numberOfFrames, sampleRate)));
+    RefPtrWillBeRawPtr<OfflineAudioContext> audioContext(adoptRefWillBeThreadSafeRefCountedGarbageCollected(new OfflineAudioContext(document, numberOfChannels, numberOfFrames, sampleRate)));
 
     if (!audioContext->destination()) {
         exceptionState.throwDOMException(

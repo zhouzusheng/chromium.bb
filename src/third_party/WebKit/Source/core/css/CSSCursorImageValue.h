@@ -34,7 +34,7 @@ class CSSCursorImageValue : public CSSValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSCursorImageValue> create(PassRefPtrWillBeRawPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new CSSCursorImageValue(imageValue, hasHotSpot, hotSpot));
+        return adoptRefWillBeNoop(new CSSCursorImageValue(imageValue, hasHotSpot, hotSpot));
     }
 
     ~CSSCursorImageValue();
@@ -54,7 +54,9 @@ public:
     StyleImage* cachedImage(ResourceFetcher*, float deviceScaleFactor);
     StyleImage* cachedOrPendingImage(float deviceScaleFactor);
 
+#if !ENABLE(OILPAN)
     void removeReferencedElement(SVGElement*);
+#endif
 
     bool equals(const CSSCursorImageValue&) const;
 
@@ -67,18 +69,16 @@ private:
     String cachedImageURL();
     void clearImageResource();
 
-    // FIXME: oilpan: This should be a Member but we need to resolve
-    // finalization order issues first. The CSSCursorImageValue
-    // destructor uses m_imageValue. Leaving it as a RefPtr as a
-    // workaround for now.
-    RefPtr<CSSValue> m_imageValue;
+    RefPtrWillBeMember<CSSValue> m_imageValue;
 
     bool m_hasHotSpot;
     IntPoint m_hotSpot;
     RefPtr<StyleImage> m_image;
     bool m_accessedImage;
 
+#if !ENABLE(OILPAN)
     HashSet<SVGElement*> m_referencedElements;
+#endif
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSCursorImageValue, isCursorImageValue());

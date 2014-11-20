@@ -23,8 +23,8 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/config/gpu_info.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
+#include "ipc/message_filter.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
@@ -59,7 +59,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
-  typedef base::Callback<void(int32)> CreateCommandBufferCallback;
+  typedef base::Callback<void(bool)> CreateCommandBufferCallback;
 
   typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
 
@@ -96,7 +96,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // Adds a message filter to the GpuProcessHost's channel.
-  void AddFilter(IPC::ChannelProxy::MessageFilter* filter);
+  void AddFilter(IPC::MessageFilter* filter);
 
   // Tells the GPU process to create a new channel for communication with a
   // client. Once the GPU process responds asynchronously with the IPC handle
@@ -112,6 +112,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       int surface_id,
       int client_id,
       const GPUCreateCommandBufferConfig& init_params,
+      int route_id,
       const CreateCommandBufferCallback& callback);
 
   // Tells the GPU process to create a new image using the given window.
@@ -155,7 +156,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
-  void OnCommandBufferCreated(const int32 route_id);
+  void OnCommandBufferCreated(bool succeeded);
   void OnDestroyCommandBuffer(int32 surface_id);
   void OnImageCreated(const gfx::Size size);
   void OnDidCreateOffscreenContext(const GURL& url);
@@ -167,16 +168,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 #if defined(OS_MACOSX)
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
-#endif
-  // Note: Different implementations depending on USE_AURA.
-#if defined(OS_WIN)
-  void OnAcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
-  void OnAcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params);
-  void OnAcceleratedSurfaceSuspend(int32 surface_id);
-  void OnAcceleratedSurfaceRelease(
-    const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
 #endif
 
   void CreateChannelCache(int32 client_id);

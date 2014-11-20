@@ -14,9 +14,9 @@
 
 namespace WebCore {
 
-PassOwnPtr<ServiceWorkerContainerClient> ServiceWorkerContainerClient::create(PassOwnPtr<blink::WebServiceWorkerProvider> provider)
+PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> ServiceWorkerContainerClient::create(PassOwnPtr<blink::WebServiceWorkerProvider> provider)
 {
-    return adoptPtr(new ServiceWorkerContainerClient(provider));
+    return adoptPtrWillBeNoop(new ServiceWorkerContainerClient(provider));
 }
 
 ServiceWorkerContainerClient::~ServiceWorkerContainerClient()
@@ -32,18 +32,20 @@ ServiceWorkerContainerClient* ServiceWorkerContainerClient::from(ExecutionContex
 {
     if (context->isDocument()) {
         Document* document = toDocument(context);
-        ServiceWorkerContainerClient* client = static_cast<ServiceWorkerContainerClient*>(Supplement<Page>::from(document->page(), supplementName()));
+        if (!document->frame())
+            return 0;
+
+        ServiceWorkerContainerClient* client = static_cast<ServiceWorkerContainerClient*>(DocumentSupplement::from(document, supplementName()));
         if (client)
             return client;
 
-        // If it's not provided yet create it lazily.
-        ASSERT(document->frame());
-        document->page()->provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(document->frame()->loader().client()->createServiceWorkerProvider()));
-        return static_cast<ServiceWorkerContainerClient*>(Supplement<Page>::from(document->page(), supplementName()));
+        // If it's not provided yet, create it lazily.
+        document->DocumentSupplementable::provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(document->frame()->loader().client()->createServiceWorkerProvider()));
+        return static_cast<ServiceWorkerContainerClient*>(DocumentSupplement::from(document, supplementName()));
     }
 
     ASSERT(context->isWorkerGlobalScope());
-    return static_cast<ServiceWorkerContainerClient*>(Supplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
+    return static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
 }
 
 ServiceWorkerContainerClient::ServiceWorkerContainerClient(PassOwnPtr<blink::WebServiceWorkerProvider> provider)

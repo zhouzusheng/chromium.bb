@@ -6,17 +6,20 @@
 #define ScreenOrientationController_h
 
 #include "core/dom/DocumentSupplementable.h"
-#include "public/platform/WebScreenOrientation.h"
+#include "public/platform/WebScreenOrientationType.h"
 
 namespace WebCore {
 
-class ScreenOrientationController FINAL : public DocumentSupplement {
+class ScreenOrientationController FINAL : public NoBaseWillBeGarbageCollected<ScreenOrientationController>, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
 public:
+#if !ENABLE(OILPAN)
     virtual ~ScreenOrientationController();
+#endif
 
-    void didChangeScreenOrientation(blink::WebScreenOrientation);
+    void didChangeScreenOrientation(blink::WebScreenOrientationType);
 
-    blink::WebScreenOrientation orientation() const { return m_orientation; }
+    blink::WebScreenOrientationType orientation() const { return m_orientation; }
 
     // DocumentSupplement API.
     static ScreenOrientationController& from(Document&);
@@ -28,7 +31,7 @@ private:
     void dispatchOrientationChangeEvent();
 
     Document& m_document;
-    blink::WebScreenOrientation m_orientation;
+    blink::WebScreenOrientationType m_orientation;
 };
 
 } // namespace WebCore

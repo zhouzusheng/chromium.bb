@@ -76,10 +76,6 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         {
             // We clear out unused slots so that the visitor and the finalizer
             // do not visit them (or at least it does not matter if they do).
-            // canInitializeWithMemset tells us that the class does not expect
-            // matching constructor and destructor calls as long as the memory
-            // is zeroed.
-            COMPILE_ASSERT(!VectorTraits<T>::needsDestruction || VectorTraits<T>::canInitializeWithMemset, ClassHasProblemsWithFinalizersCalledOnClearedMemory);
             memset(begin, 0, sizeof(T) * (end - begin));
         }
     };
@@ -231,10 +227,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static bool compare(const T* a, const T* b, size_t size)
         {
-            for (size_t i = 0; i < size; ++i)
-                if (!(a[i] == b[i]))
-                    return false;
-            return true;
+            return std::equal(a, a + size, b);
         }
     };
 
@@ -313,6 +306,11 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         const T* buffer() const { return m_buffer; }
         size_t capacity() const { return m_capacity; }
 
+        void clearUnusedSlots(T* from, T* to)
+        {
+            VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T> >::value || VectorTraits<T>::isWeak), T>::clear(from, to);
+        }
+
     protected:
         VectorBufferBase()
             : m_buffer(0)
@@ -335,7 +333,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     class VectorBuffer;
 
     template<typename T, typename Allocator>
-    class VectorBuffer<T, 0, Allocator> : private VectorBufferBase<T, Allocator> {
+    class VectorBuffer<T, 0, Allocator> : protected VectorBufferBase<T, Allocator> {
     private:
         typedef VectorBufferBase<T, Allocator> Base;
     public:
@@ -380,8 +378,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         using Base::buffer;
         using Base::capacity;
 
-    protected:
-        using Base::m_size;
+        using Base::clearUnusedSlots;
 
         bool hasOutOfLineBuffer() const
         {
@@ -389,13 +386,16 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
             return buffer();
         }
 
+    protected:
+        using Base::m_size;
+
     private:
         using Base::m_buffer;
         using Base::m_capacity;
     };
 
     template<typename T, size_t inlineCapacity, typename Allocator>
-    class VectorBuffer : private VectorBufferBase<T, Allocator> {
+    class VectorBuffer : protected VectorBufferBase<T, Allocator> {
         WTF_MAKE_NONCOPYABLE(VectorBuffer);
     private:
         typedef VectorBufferBase<T, Allocator> Base;
@@ -483,13 +483,13 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         using Base::buffer;
         using Base::capacity;
 
-    protected:
-        using Base::m_size;
-
         bool hasOutOfLineBuffer() const
         {
             return buffer() && buffer() != inlineBuffer();
         }
+
+    protected:
+        using Base::m_size;
 
     private:
         using Base::m_buffer;
@@ -511,7 +511,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     // vector has a trivial destructor and we use that in a compiler plugin to ensure the
     // correctness of non-finalized garbage-collected classes and the use of VectorTraits::needsDestruction.
 
-    // All non-GC managed vectors needs a destructor. This destructor will simply call finalize on the actual vector type.
+    // All non-GC managed vectors need a destructor. This destructor will simply call finalize on the actual vector type.
     template<typename Derived, typename Elements, bool hasInlineCapacity, bool isGarbageCollected>
     class VectorDestructorBase {
     public:
@@ -545,6 +545,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
     template<typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
     class Vector : private VectorBuffer<T, inlineCapacity, Allocator>, public VectorDestructorBase<Vector<T, inlineCapacity, Allocator>, T, (inlineCapacity > 0), Allocator::isGarbageCollected> {
+        WTF_USE_ALLOCATOR(Vector, Allocator);
     private:
         typedef VectorBuffer<T, inlineCapacity, Allocator> Base;
         typedef VectorTypeOperations<T> TypeOperations;
@@ -557,27 +558,24 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         typedef std::reverse_iterator<iterator> reverse_iterator;
         typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
-        void* operator new(size_t size)
-        {
-            return Allocator::template malloc<void*, Vector>(size);
-        }
-        void operator delete(void* p) { Allocator::free(p); }
-        void* operator new[](size_t size) { return Allocator::template newArray<Vector>(size); }
-        void operator delete[](void* p) { Allocator::deleteArray(p); }
-        void* operator new(size_t, NotNullTag, void* location)
-        {
-            ASSERT(location);
-            return location;
-        }
-
         Vector()
         {
+            // Unused slots are initialized to zero so that the visitor and the
+            // finalizer can visit them safely. canInitializeWithMemset tells us
+            // that the class does not expect matching constructor and
+            // destructor calls as long as the memory is zeroed.
+            COMPILE_ASSERT(!Allocator::isGarbageCollected || !VectorTraits<T>::needsDestruction || VectorTraits<T>::canInitializeWithMemset, ClassHasProblemsWithFinalizersCalledOnClearedMemory);
             m_size = 0;
         }
 
         explicit Vector(size_t size)
             : Base(size)
         {
+            // Unused slots are initialized to zero so that the visitor and the
+            // finalizer can visit them safely. canInitializeWithMemset tells us
+            // that the class does not expect matching constructor and
+            // destructor calls as long as the memory is zeroed.
+            COMPILE_ASSERT(!Allocator::isGarbageCollected || !VectorTraits<T>::needsDestruction || VectorTraits<T>::canInitializeWithMemset, ClassHasProblemsWithFinalizersCalledOnClearedMemory);
             m_size = size;
             TypeOperations::initialize(begin(), end());
         }
@@ -603,11 +601,6 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         void finalizeGarbageCollectedObject()
         {
             finalize();
-        }
-
-        void clearUnusedSlots(T* from, T* to)
-        {
-            VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T> >::value || VectorTraits<T>::isWeak), T>::clear(from, to);
         }
 
         Vector(const Vector&);
@@ -669,6 +662,11 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         void reserveCapacity(size_t newCapacity);
         void reserveInitialCapacity(size_t initialCapacity);
         void shrinkToFit() { shrinkCapacity(size()); }
+        void shrinkToReasonableCapacity()
+        {
+            if (size() * 2 < capacity())
+                shrinkCapacity(size() + size() / 4 + 1);
+        }
 
         void clear() { shrinkCapacity(0); }
 
@@ -729,6 +727,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         using Base::swapVectorBuffer;
         using Base::allocateBuffer;
         using Base::allocationSize;
+        using Base::clearUnusedSlots;
     };
 
     template<typename T, size_t inlineCapacity, typename Allocator>

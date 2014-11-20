@@ -3,12 +3,8 @@
 // found in the LICENSE file.
 
 #include "config.h"
-#include "WebMediaPlayerClientImpl.h"
+#include "web/WebMediaPlayerClientImpl.h"
 
-#include "WebDocument.h"
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
-#include "WebViewImpl.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
@@ -36,6 +32,10 @@
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebFrameClient.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 
 #if OS(ANDROID)
 #include "GrContext.h"
@@ -54,7 +54,7 @@ namespace blink {
 
 static PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(WebMediaPlayerClient* client, const WebURL& url, LocalFrame* frame)
 {
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
 
     if (!webFrame || !webFrame->client())
         return nullptr;
@@ -70,10 +70,10 @@ WebMediaPlayer* WebMediaPlayerClientImpl::webMediaPlayer() const
 
 WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
 {
-    HTMLMediaElementEncryptedMedia::playerDestroyed(mediaElement());
-
     // Explicitly destroy the WebMediaPlayer to allow verification of tear down.
     m_webMediaPlayer.clear();
+
+    HTMLMediaElementEncryptedMedia::playerDestroyed(mediaElement());
 }
 
 void WebMediaPlayerClientImpl::networkStateChanged()
@@ -104,11 +104,6 @@ void WebMediaPlayerClientImpl::durationChanged()
 void WebMediaPlayerClientImpl::sizeChanged()
 {
     m_client->mediaPlayerSizeChanged();
-}
-
-void WebMediaPlayerClientImpl::setOpaque(bool opaque)
-{
-    m_client->mediaPlayerSetOpaque(opaque);
 }
 
 double WebMediaPlayerClientImpl::volume() const

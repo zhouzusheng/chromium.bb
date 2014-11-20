@@ -22,25 +22,25 @@
 #define HTMLFrameOwnerElement_h
 
 #include "core/html/HTMLElement.h"
-#include "core/svg/SVGDocument.h"
 #include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
 class DOMWindow;
 class ExceptionState;
-class LocalFrame;
+class Frame;
 class RenderPart;
+class Widget;
 
 class HTMLFrameOwnerElement : public HTMLElement {
 public:
     virtual ~HTMLFrameOwnerElement();
 
-    LocalFrame* contentFrame() const { return m_contentFrame; }
+    Frame* contentFrame() const { return m_contentFrame; }
     DOMWindow* contentWindow() const;
     Document* contentDocument() const;
 
-    void setContentFrame(LocalFrame&);
+    void setContentFrame(Frame&);
     void clearContentFrame();
 
     void disconnectContentFrame();
@@ -50,7 +50,7 @@ public:
     // RenderObject when using fallback content.
     RenderPart* renderPart() const;
 
-    SVGDocument* getSVGDocument(ExceptionState&) const;
+    Document* getSVGDocument(ExceptionState&) const;
 
     virtual ScrollbarMode scrollingMode() const { return ScrollbarAuto; }
 
@@ -62,6 +62,17 @@ public:
     virtual void renderFallbackContent() { }
 
     virtual bool isObjectElement() const { return false; }
+    void setWidget(PassRefPtr<Widget>);
+    Widget* ownedWidget() const;
+
+    class UpdateSuspendScope {
+    public:
+        UpdateSuspendScope();
+        ~UpdateSuspendScope();
+
+    private:
+        void performDeferredWidgetTreeOperations();
+    };
 
 protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
@@ -73,7 +84,8 @@ private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool isFrameOwnerElement() const OVERRIDE FINAL { return true; }
 
-    LocalFrame* m_contentFrame;
+    Frame* m_contentFrame;
+    RefPtr<Widget> m_widget;
     SandboxFlags m_sandboxFlags;
 };
 

@@ -28,7 +28,6 @@
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/rendering/FastTextAutosizer.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
 #include "wtf/StdLibExtras.h"
@@ -288,6 +287,10 @@ void RenderListItem::updateMarkerLocation()
         }
 
         if (markerParent != lineBoxParent || m_marker->preferredLogicalWidthsDirty()) {
+            // FIXME: We should not modify the structure of the render tree
+            // during layout. crbug.com/370461
+            DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
+
             // Removing and adding the marker can trigger repainting in
             // containers other than ourselves, so we need to disable LayoutState.
             LayoutStateDisabler layoutStateDisabler(*this);
@@ -323,7 +326,6 @@ void RenderListItem::layout()
             textAutosizer->inflateListItem(this, m_marker);
     }
 
-    LayoutRectRecorder recorder(*this);
     updateMarkerLocation();
     RenderBlockFlow::layout();
 }
@@ -443,29 +445,6 @@ const String& RenderListItem::markerText() const
     return nullAtom.string();
 }
 
-String RenderListItem::markerTextWithSuffix() const
-{
-    if (!m_marker)
-        return String();
-
-    // Append the suffix for the marker in the right place depending
-    // on the direction of the text (right-to-left or left-to-right).
-
-    const String& markerText = m_marker->text();
-    const String markerSuffix = m_marker->suffix();
-    StringBuilder result;
-
-    if (!m_marker->style()->isLeftToRightDirection())
-        result.append(markerSuffix);
-
-    result.append(markerText);
-
-    if (m_marker->style()->isLeftToRightDirection())
-        result.append(markerSuffix);
-
-    return result.toString();
-}
-
 void RenderListItem::explicitValueChanged()
 {
     if (m_marker)
@@ -511,10 +490,7 @@ void RenderListItem::updateListMarkerNumbers()
         return;
 
     Node* listNode = enclosingList(this);
-    // The list node can be the shadow root which has no renderer.
     ASSERT(listNode);
-    if (!listNode)
-        return;
 
     bool isListReversed = false;
     HTMLOListElement* oListElement = isHTMLOListElement(listNode) ? toHTMLOListElement(listNode) : 0;
@@ -522,6 +498,14 @@ void RenderListItem::updateListMarkerNumbers()
         oListElement->itemCountChanged();
         isListReversed = oListElement->isReversed();
     }
+
+    // FIXME: The n^2 protection below doesn't help if the elements were inserted after the
+    // the list had already been displayed.
+
+    // Avoid an O(n^2) walk over the children below when they're all known to be attaching.
+    if (listNode->needsAttach())
+        return;
+
     for (RenderListItem* item = previousOrNextItem(isListReversed, listNode, this); item; item = previousOrNextItem(isListReversed, listNode, item)) {
         if (!item->m_isValueUpToDate) {
             // If an item has been marked for update before, we can safely

@@ -149,16 +149,17 @@ void HandleMetroExit() {
 
 RemoteWindowTreeHostWin* g_instance = NULL;
 
+// static
 RemoteWindowTreeHostWin* RemoteWindowTreeHostWin::Instance() {
-  if (g_instance)
-    return g_instance;
-  return Create(gfx::Rect());
+  if (!g_instance)
+    g_instance = new RemoteWindowTreeHostWin(gfx::Rect());
+  return g_instance;
 }
 
-RemoteWindowTreeHostWin* RemoteWindowTreeHostWin::Create(
-    const gfx::Rect& bounds) {
-  g_instance = g_instance ? g_instance : new RemoteWindowTreeHostWin(bounds);
-  return g_instance;
+// static
+void RemoteWindowTreeHostWin::SetInstance(RemoteWindowTreeHostWin* instance) {
+  CHECK(!g_instance);
+  g_instance = instance;
 }
 
 RemoteWindowTreeHostWin::RemoteWindowTreeHostWin(const gfx::Rect& bounds)
@@ -372,6 +373,10 @@ Window* RemoteWindowTreeHostWin::GetAshWindow() {
   return window();
 }
 
+ui::EventSource* RemoteWindowTreeHostWin::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget RemoteWindowTreeHostWin::GetAcceleratedWidget() {
   if (remote_window_)
     return remote_window_;
@@ -390,9 +395,6 @@ void RemoteWindowTreeHostWin::Hide() {
   NOTIMPLEMENTED();
 }
 
-void RemoteWindowTreeHostWin::ToggleFullScreen() {
-}
-
 gfx::Rect RemoteWindowTreeHostWin::GetBounds() const {
   return gfx::Rect(window_size_);
 }
@@ -400,13 +402,6 @@ gfx::Rect RemoteWindowTreeHostWin::GetBounds() const {
 void RemoteWindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
   window_size_ = bounds.size();
   OnHostResized(bounds.size());
-}
-
-gfx::Insets RemoteWindowTreeHostWin::GetInsets() const {
-  return gfx::Insets();
-}
-
-void RemoteWindowTreeHostWin::SetInsets(const gfx::Insets& insets) {
 }
 
 gfx::Point RemoteWindowTreeHostWin::GetLocationOnNativeScreen() const {
@@ -417,27 +412,6 @@ void RemoteWindowTreeHostWin::SetCapture() {
 }
 
 void RemoteWindowTreeHostWin::ReleaseCapture() {
-}
-
-bool RemoteWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(window());
-  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
-    *location_return = gfx::Point(0, 0);
-    return false;
-  }
-  POINT pt;
-  GetCursorPos(&pt);
-  *location_return =
-      gfx::Point(static_cast<int>(pt.x), static_cast<int>(pt.y));
-  return true;
-}
-
-bool RemoteWindowTreeHostWin::ConfineCursorToRootWindow() {
-  return true;
-}
-
-void RemoteWindowTreeHostWin::UnConfineCursor() {
 }
 
 void RemoteWindowTreeHostWin::SetCursorNative(gfx::NativeCursor native_cursor) {

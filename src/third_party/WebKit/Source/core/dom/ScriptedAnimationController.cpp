@@ -32,6 +32,7 @@
 #include "core/frame/DOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 
 namespace WebCore {
@@ -74,6 +75,9 @@ ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCal
     m_callbacks.append(callback);
     scheduleAnimationIfNeeded();
 
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "RequestAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didRequestAnimationFrame(m_document, id);
 
     return id;
@@ -83,6 +87,9 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
 {
     for (size_t i = 0; i < m_callbacks.size(); ++i) {
         if (m_callbacks[i]->m_id == id) {
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacks.remove(i);
             return;
@@ -90,6 +97,9 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     }
     for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
         if (m_callbacksToInvoke[i]->m_id == id) {
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacksToInvoke[i]->m_cancelled = true;
             // will be removed at the end of executeCallbacks()
@@ -100,7 +110,7 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
 
 void ScriptedAnimationController::dispatchEvents()
 {
-    Vector<RefPtr<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
     events.swap(m_eventQueue);
     m_perFrameEvents.clear();
 
@@ -133,12 +143,15 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
     for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
         RequestAnimationFrameCallback* callback = m_callbacksToInvoke[i].get();
         if (!callback->m_cancelled) {
+            TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FireAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, callback->m_id));
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireAnimationFrame(m_document, callback->m_id);
             if (callback->m_useLegacyTimeBase)
                 callback->handleEvent(legacyHighResNowMs);
             else
                 callback->handleEvent(highResNowMs);
             InspectorInstrumentation::didFireAnimationFrame(cookie);
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
         }
     }
 
@@ -161,13 +174,13 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     scheduleAnimationIfNeeded();
 }
 
-void ScriptedAnimationController::enqueueEvent(PassRefPtr<Event> event)
+void ScriptedAnimationController::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     m_eventQueue.append(event);
     scheduleAnimationIfNeeded();
 }
 
-void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtr<Event> event)
+void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (!m_perFrameEvents.add(eventTargetKey(event.get())).isNewEntry)
         return;

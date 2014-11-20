@@ -55,7 +55,15 @@ CustomElementMicrotaskResolutionStep::~CustomElementMicrotaskResolutionStep()
 CustomElementMicrotaskStep::Result CustomElementMicrotaskResolutionStep::process()
 {
     m_context->resolve(m_element.get(), m_descriptor);
-    return CustomElementMicrotaskStep::Continue;
+    return CustomElementMicrotaskStep::FinishedProcessing;
 }
+
+#if !defined(NDEBUG)
+void CustomElementMicrotaskResolutionStep::show(unsigned indent)
+{
+    fprintf(stderr, "%*sResolution: ", indent, "");
+    m_element->outerHTML().show();
+}
+#endif
 
 } // namespace WebCore

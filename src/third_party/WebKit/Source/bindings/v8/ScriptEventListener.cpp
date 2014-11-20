@@ -32,7 +32,6 @@
 #include "bindings/v8/ScriptEventListener.h"
 
 #include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
@@ -128,7 +127,7 @@ String eventListenerHandlerBody(Document* document, EventListener* listener)
     if (function.IsEmpty())
         return "";
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<WithNullCheck>, functionString, function, "");
+    TOSTRING_DEFAULT(V8StringResource<WithNullCheck>, functionString, function, "");
     return functionString;
 }
 
@@ -145,7 +144,7 @@ ScriptValue eventListenerHandler(Document* document, EventListener* listener)
     v8::Handle<v8::Object> function = v8Listener->getListenerObject(document);
     if (function.IsEmpty())
         return ScriptValue();
-    return ScriptValue(function, isolate);
+    return ScriptValue(ScriptState::from(context), function);
 }
 
 ScriptState* eventListenerHandlerScriptState(LocalFrame* frame, EventListener* listener)
@@ -155,7 +154,7 @@ ScriptState* eventListenerHandlerScriptState(LocalFrame* frame, EventListener* l
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::HandleScope scope(toIsolate(frame));
     v8::Handle<v8::Context> v8Context = frame->script().windowShell(v8Listener->world())->context();
-    return ScriptState::forContext(v8Context);
+    return ScriptState::from(v8Context);
 }
 
 bool eventListenerHandlerLocation(Document* document, EventListener* listener, String& sourceName, String& scriptId, int& lineNumber)

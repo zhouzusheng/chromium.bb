@@ -5,7 +5,6 @@
 
 
 import copy
-import types
 
 
 class PolicyTemplateGenerator:
@@ -104,20 +103,6 @@ class PolicyTemplateGenerator:
       })
     return result
 
-  def _PrintPolicyValue(self, item):
-    '''Produces a string representation for a policy value. Taking care to print
-    dictionaries in a sorted order.'''
-    if type(item) == types.StringType:
-      str_val = "'%s'" % item
-    elif isinstance(item, dict):
-      str_val = "{";  
-      for it in sorted(item.iterkeys()):
-        str_val += "\'%s\': %s, " % (it, self._PrintPolicyValue(item[it]))
-      str_val = str_val.rstrip(", ") + "}";  
-    else:
-      str_val = str(item)
-    return str_val;  
-
   def _ProcessPolicy(self, policy):
     '''Processes localized message strings in a policy or a group.
      Also breaks up the content of 'supported_on' attribute into a list.
@@ -137,8 +122,6 @@ class PolicyTemplateGenerator:
       # Iterate through all the items of an enum-type policy, and add captions.
       for item in policy['items']:
         item['caption'] = self._ImportMessage(item['caption'])
-    elif policy['type'] == 'dict' and 'example_value' in policy:
-      policy['example_value'] = self._PrintPolicyValue(policy['example_value'])
     if policy['type'] != 'group':
       if not 'label' in policy:
         # If 'label' is not specified, then it defaults to 'caption':

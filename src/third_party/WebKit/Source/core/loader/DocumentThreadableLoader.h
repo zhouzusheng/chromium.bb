@@ -36,11 +36,11 @@
 #include "core/fetch/ResourceOwner.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/Timer.h"
+#include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceError.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -51,22 +51,15 @@ class ResourceRequest;
 class SecurityOrigin;
 class ThreadableLoaderClient;
 
-class DocumentThreadableLoader FINAL : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private ResourceOwner<RawResource>  {
+class DocumentThreadableLoader FINAL : public ThreadableLoader, private ResourceOwner<RawResource>  {
     WTF_MAKE_FAST_ALLOCATED;
     public:
-        static void loadResourceSynchronously(Document*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
-        static PassRefPtr<DocumentThreadableLoader> create(Document*, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&);
+        static void loadResourceSynchronously(Document&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
+        static PassRefPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&);
         virtual ~DocumentThreadableLoader();
 
         virtual void cancel() OVERRIDE;
         void setDefersLoading(bool);
-
-        using RefCounted<DocumentThreadableLoader>::ref;
-        using RefCounted<DocumentThreadableLoader>::deref;
-
-    protected:
-        virtual void refThreadableLoader() OVERRIDE { ref(); }
-        virtual void derefThreadableLoader() OVERRIDE { deref(); }
 
     private:
         enum BlockingBehavior {
@@ -74,7 +67,7 @@ class DocumentThreadableLoader FINAL : public RefCounted<DocumentThreadableLoade
             LoadAsynchronously
         };
 
-        DocumentThreadableLoader(Document*, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&);
+        DocumentThreadableLoader(Document&, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&);
 
         // RawResourceClient
         virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
@@ -100,12 +93,13 @@ class DocumentThreadableLoader FINAL : public RefCounted<DocumentThreadableLoade
         SecurityOrigin* securityOrigin() const;
 
         ThreadableLoaderClient* m_client;
-        Document* m_document;
+        Document& m_document;
         ThreadableLoaderOptions m_options;
         bool m_sameOriginRequest;
         bool m_simpleRequest;
         bool m_async;
         OwnPtr<ResourceRequest> m_actualRequest; // non-null during Access Control preflight checks
+        HTTPHeaderMap m_simpleRequestHeaders; // stores simple request headers in case of a cross-origin redirect.
         Timer<DocumentThreadableLoader> m_timeoutTimer;
     };
 

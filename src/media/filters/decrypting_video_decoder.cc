@@ -31,6 +31,7 @@ DecryptingVideoDecoder::DecryptingVideoDecoder(
       weak_factory_(this) {}
 
 void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
+                                        bool live_mode,
                                         const PipelineStatusCB& status_cb) {
   DVLOG(2) << "Initialize()";
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -122,7 +123,7 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
   DoReset();
 }
 
-void DecryptingVideoDecoder::Stop(const base::Closure& closure) {
+void DecryptingVideoDecoder::Stop() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DVLOG(2) << "Stop() - state: " << state_;
 
@@ -149,7 +150,6 @@ void DecryptingVideoDecoder::Stop(const base::Closure& closure) {
     base::ResetAndReturn(&reset_cb_).Run();
 
   state_ = kStopped;
-  BindToCurrentLoop(closure).Run();
 }
 
 DecryptingVideoDecoder::~DecryptingVideoDecoder() {

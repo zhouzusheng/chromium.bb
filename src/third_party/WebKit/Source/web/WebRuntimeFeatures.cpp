@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-#include "WebRuntimeFeatures.h"
+#include "public/web/WebRuntimeFeatures.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "WebMediaPlayerClientImpl.h"
+#include "web/WebMediaPlayerClientImpl.h"
 
 using namespace WebCore;
 
@@ -135,9 +135,9 @@ void WebRuntimeFeatures::enableMediaPlayer(bool enable)
     RuntimeEnabledFeatures::setMediaEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableWebKitMediaSource(bool enable)
+void WebRuntimeFeatures::enableSubpixelFontScaling(bool enable)
 {
-    RuntimeEnabledFeatures::setWebKitMediaSourceEnabled(enable);
+    RuntimeEnabledFeatures::setSubpixelFontScalingEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableMediaSource(bool enable)
@@ -193,11 +193,6 @@ void WebRuntimeFeatures::enableServiceWorker(bool enable)
 void WebRuntimeFeatures::enableSessionStorage(bool enable)
 {
     RuntimeEnabledFeatures::setSessionStorageEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableSpeechInput(bool enable)
-{
-    RuntimeEnabledFeatures::setSpeechInputEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableSpeechSynthesis(bool enable)
@@ -279,6 +274,11 @@ void WebRuntimeFeatures::enableExperimentalWebSocket(bool enable)
 void WebRuntimeFeatures::enableTargetedStyleRecalc(bool enable)
 {
     RuntimeEnabledFeatures::setTargetedStyleRecalcEnabled(enable);
+}
+
+void WebRuntimeFeatures::enablePreciseMemoryInfo(bool enable)
+{
+    RuntimeEnabledFeatures::setPreciseMemoryInfoEnabled(enable);
 }
 
 } // namespace blink

@@ -32,11 +32,13 @@
 #define WebFrame_h
 
 #include "WebCompositionUnderline.h"
+#include "WebHistoryItem.h"
 #include "WebIconURL.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebMessagePortChannel.h"
+#include "public/platform/WebPrivateOwnPtr.h"
 #include "public/platform/WebReferrerPolicy.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
@@ -54,18 +56,20 @@ template <class T> class Local;
 
 namespace blink {
 
+class OpenedFrameTracker;
 class WebData;
 class WebDataSource;
 class WebDocument;
 class WebElement;
 class WebFormElement;
 class WebFrameClient;
-class WebHistoryItem;
 class WebInputElement;
 class WebLayer;
+class WebLocalFrame;
 class WebPerformance;
 class WebPermissionClient;
 class WebRange;
+class WebRemoteFrame;
 class WebSecurityOrigin;
 class WebSharedWorkerRepositoryClient;
 class WebString;
@@ -86,8 +90,12 @@ struct WebURLLoaderOptions;
 
 template <typename T> class WebVector;
 
-typedef class WebFrame WebLocalFrame;
-
+// Frames may be rendered in process ('local') or out of process ('remote').
+// A remote frame is always cross-site; a local frame may be either same-site or
+// cross-site.
+// WebFrame is the base class for both WebLocalFrame and WebRemoteFrame and
+// contains methods that are valid on both local and remote frames, such as
+// getting a frame's parent or its opener.
 class WebFrame {
 public:
     // Control of renderTreeAsText output
@@ -98,28 +106,15 @@ public:
     };
     typedef unsigned RenderAsTextControls;
 
-    // Creates a WebFrame. Delete this WebFrame by calling WebFrame::close().
-    // It is valid to pass a null client pointer.
-    BLINK_EXPORT static WebLocalFrame* create(WebFrameClient*);
-
     // Returns the number of live WebFrame objects, used for leak checking.
     BLINK_EXPORT static int instanceCount();
 
-    // Returns the WebFrame associated with the current V8 context. This
-    // function can return 0 if the context is associated with a Document that
-    // is not currently being displayed in a Frame.
-    BLINK_EXPORT static WebLocalFrame* frameForCurrentContext();
-
-    // Returns the frame corresponding to the given context. This can return 0
-    // if the context is detached from the frame, or if the context doesn't
-    // correspond to a frame (e.g., workers).
-    BLINK_EXPORT static WebLocalFrame* frameForContext(v8::Handle<v8::Context>);
-
-    // Returns the frame inside a given frame or iframe element. Returns 0 if
-    // the given element is not a frame, iframe or if the frame is empty.
-    BLINK_EXPORT static WebLocalFrame* fromFrameOwnerElement(const WebElement&);
-
+    virtual bool isWebLocalFrame() const = 0;
     virtual WebLocalFrame* toWebLocalFrame() = 0;
+    virtual bool isWebRemoteFrame() const = 0;
+    virtual WebRemoteFrame* toWebRemoteFrame() = 0;
+
+    BLINK_EXPORT void swap(WebFrame*);
 
     // This method closes and deletes the WebFrame.
     virtual void close() = 0;
@@ -193,34 +188,34 @@ public:
     virtual WebView* view() const = 0;
 
     // Returns the frame that opened this frame or 0 if there is none.
-    virtual WebFrame* opener() const = 0;
+    BLINK_EXPORT WebFrame* opener() const;
 
     // Sets the frame that opened this one or 0 if there is none.
-    virtual void setOpener(WebFrame*) = 0;
+    virtual void setOpener(WebFrame*);
 
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
     void clearOpener() { setOpener(0); }
 
     // Adds the given frame as a child of this frame.
-    virtual void appendChild(WebFrame*) = 0;
+    virtual void appendChild(WebFrame*);
 
     // Removes the given child from this frame.
-    virtual void removeChild(WebFrame*) = 0;
+    virtual void removeChild(WebFrame*);
 
     // Returns the parent frame or 0 if this is a top-most frame.
-    virtual WebFrame* parent() const = 0;
+    BLINK_EXPORT WebFrame* parent() const;
 
     // Returns the top-most frame in the hierarchy containing this frame.
-    virtual WebFrame* top() const = 0;
+    BLINK_EXPORT WebFrame* top() const;
 
     // Returns the first/last child frame.
-    virtual WebFrame* firstChild() const = 0;
-    virtual WebFrame* lastChild() const = 0;
+    BLINK_EXPORT WebFrame* firstChild() const;
+    BLINK_EXPORT WebFrame* lastChild() const;
 
-    // Returns the next/previous sibling frame.
-    virtual WebFrame* nextSibling() const = 0;
-    virtual WebFrame* previousSibling() const = 0;
+    // Returns the previous/next sibling frame.
+    BLINK_EXPORT WebFrame* previousSibling() const;
+    BLINK_EXPORT WebFrame* nextSibling() const;
 
     // Returns the next/previous frame in "frame traversal order"
     // optionally wrapping around.
@@ -230,15 +225,22 @@ public:
     // Returns the child frame identified by the given name.
     virtual WebFrame* findChildByName(const WebString& name) const = 0;
 
-    // Returns the child frame identified by the given xpath expression.
-    virtual WebFrame* findChildByExpression(const WebString& xpath) const = 0;
-
 
     // Content ------------------------------------------------------------
 
     virtual WebDocument document() const = 0;
 
     virtual WebPerformance performance() const = 0;
+
+
+    // Closing -------------------------------------------------------------
+
+    // Runs beforeunload handlers for this frame, returning false if a
+    // handler suppressed unloading.
+    virtual bool dispatchBeforeUnloadEvent() = 0;
+
+    // Runs unload handlers for this frame.
+    virtual void dispatchUnloadEvent() = 0;
 
 
     // Scripting ----------------------------------------------------------
@@ -334,9 +336,10 @@ public:
     virtual void loadRequest(const WebURLRequest&) = 0;
 
     // Load the given history state, corresponding to a back/forward
-    // navigation.
+    // navigation of a frame. Multiple frames may be navigated via separate calls.
     virtual void loadHistoryItem(
         const WebHistoryItem&,
+        WebHistoryLoadType,
         WebURLRequest::CachePolicy = WebURLRequest::UseProtocolCachePolicy) = 0;
 
     // Loads the given data with specific mime type and optional text
@@ -370,14 +373,6 @@ public:
 
     // Returns the data source that is currently loaded.
     virtual WebDataSource* dataSource() const = 0;
-
-    // Returns the previous history item.  Check WebHistoryItem::isNull()
-    // before using.
-    virtual WebHistoryItem previousHistoryItem() const = 0;
-
-    // Returns the current history item.  Check WebHistoryItem::isNull()
-    // before using.
-    virtual WebHistoryItem currentHistoryItem() const = 0;
 
     // View-source rendering mode.  Set this before loading an URL to cause
     // it to be rendered in view-source mode.
@@ -612,11 +607,18 @@ public:
 
     // OrientationChange event ---------------------------------------------
 
+    // Notify the frame that the screen orientation has changed.
+    virtual void sendOrientationChangeEvent() = 0;
+
+    // FIXME: this is only there for backward compatibility, it will be removed.
     // Orientation is the interface orientation in degrees.
     // Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
     //  90 is when rotated counter clockwise.
-    virtual void sendOrientationChangeEvent(int orientation) = 0;
+    void sendOrientationChangeEvent(int orientation)
+    {
+        sendOrientationChangeEvent();
+    }
 
     // Events --------------------------------------------------------------
 
@@ -668,7 +670,20 @@ public:
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
 protected:
-    ~WebFrame() { }
+    explicit WebFrame();
+    virtual ~WebFrame();
+
+private:
+    friend class OpenedFrameTracker;
+
+    WebFrame* m_parent;
+    WebFrame* m_previousSibling;
+    WebFrame* m_nextSibling;
+    WebFrame* m_firstChild;
+    WebFrame* m_lastChild;
+
+    WebFrame* m_opener;
+    WebPrivateOwnPtr<OpenedFrameTracker> m_openedFrameTracker;
 };
 
 } // namespace blink

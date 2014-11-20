@@ -54,6 +54,7 @@ DeferredImageDecoder::DeferredImageDecoder(PassOwnPtr<ImageDecoder> actualDecode
     , m_actualDecoder(actualDecoder)
     , m_orientation(DefaultImageOrientation)
     , m_repetitionCount(cAnimationNone)
+    , m_hasColorProfile(false)
 {
 }
 
@@ -93,6 +94,11 @@ void DeferredImageDecoder::setEnabled(bool enabled)
 #endif
 }
 
+bool DeferredImageDecoder::enabled()
+{
+    return s_enabled;
+}
+
 String DeferredImageDecoder::filenameExtension() const
 {
     return m_actualDecoder ? m_actualDecoder->filenameExtension() : m_filenameExtension;
@@ -112,21 +118,21 @@ ImageFrame* DeferredImageDecoder::frameBufferAtIndex(size_t index)
     return 0;
 }
 
-void DeferredImageDecoder::setData(SharedBuffer* data, bool allDataReceived)
+void DeferredImageDecoder::setData(SharedBuffer& data, bool allDataReceived)
 {
     if (m_actualDecoder) {
-        const bool firstData = !m_data && data;
-        const bool moreData = data && data->size() > m_lastDataSize;
+        const bool firstData = !m_data;
+        const bool moreData = data.size() > m_lastDataSize;
         m_dataChanged = firstData || moreData;
-        m_data = data;
-        m_lastDataSize = data->size();
+        m_data = RefPtr<SharedBuffer>(data);
+        m_lastDataSize = data.size();
         m_allDataReceived = allDataReceived;
-        m_actualDecoder->setData(data, allDataReceived);
+        m_actualDecoder->setData(&data, allDataReceived);
         prepareLazyDecodedFrames();
     }
 
     if (m_frameGenerator)
-        m_frameGenerator->setData(data, allDataReceived);
+        m_frameGenerator->setData(&data, allDataReceived);
 }
 
 bool DeferredImageDecoder::isSizeAvailable()
@@ -134,6 +140,11 @@ bool DeferredImageDecoder::isSizeAvailable()
     // m_actualDecoder is 0 only if image decoding is deferred and that
     // means image header decoded successfully and size is available.
     return m_actualDecoder ? m_actualDecoder->isSizeAvailable() : true;
+}
+
+bool DeferredImageDecoder::hasColorProfile() const
+{
+    return m_actualDecoder ? m_actualDecoder->hasColorProfile() : m_hasColorProfile;
 }
 
 IntSize DeferredImageDecoder::size() const
@@ -211,6 +222,7 @@ void DeferredImageDecoder::activateLazyDecoding()
     m_size = m_actualDecoder->size();
     m_orientation = m_actualDecoder->orientation();
     m_filenameExtension = m_actualDecoder->filenameExtension();
+    m_hasColorProfile = m_actualDecoder->hasColorProfile();
     const bool isSingleFrame = m_actualDecoder->repetitionCount() == cAnimationNone || (m_allDataReceived && m_actualDecoder->frameCount() == 1u);
     m_frameGenerator = ImageFrameGenerator::create(SkISize::Make(m_actualDecoder->decodedSize().width(), m_actualDecoder->decodedSize().height()), m_data, m_allDataReceived, !isSingleFrame);
 }

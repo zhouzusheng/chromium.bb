@@ -84,12 +84,12 @@ void PluginDocumentParser::createDocumentStructure()
     if (!frame->settings() || !frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return;
 
-    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
     rootElement->insertedByParser();
     document()->appendChild(rootElement);
     frame->loader().dispatchDocumentElementAvailable();
 
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
     body->setAttribute(marginwidthAttr, "0");
     body->setAttribute(marginheightAttr, "0");
     body->setAttribute(styleAttr, "background-color: rgb(38,38,38)");
@@ -182,16 +182,10 @@ void PluginDocument::detach(const AttachContext& context)
     HTMLDocument::detach(context);
 }
 
-void PluginDocument::cancelManualPluginLoad()
+void PluginDocument::trace(Visitor* visitor)
 {
-    // PluginDocument::cancelManualPluginLoad should only be called once, but there are issues
-    // with how many times we call beforeload on object elements. <rdar://problem/8441094>.
-    if (!shouldLoadPluginManually())
-        return;
-
-    DocumentLoader* documentLoader = frame()->loader().documentLoader();
-    documentLoader->cancelMainResourceLoad(ResourceError::cancelledError(documentLoader->request().url()));
-    setShouldLoadPluginManually(false);
+    visitor->trace(m_pluginNode);
+    HTMLDocument::trace(visitor);
 }
 
 }

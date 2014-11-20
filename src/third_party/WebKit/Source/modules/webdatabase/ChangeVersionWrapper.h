@@ -28,8 +28,8 @@
 #ifndef ChangeVersionWrapper_h
 #define ChangeVersionWrapper_h
 
-#include "heap/Handle.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -40,7 +40,7 @@ class ChangeVersionWrapper FINAL : public SQLTransactionWrapper {
 public:
     static PassRefPtrWillBeRawPtr<ChangeVersionWrapper> create(const String& oldVersion, const String& newVersion) { return adoptRefWillBeNoop(new ChangeVersionWrapper(oldVersion, newVersion)); }
 
-    virtual void trace(Visitor*) OVERRIDE { }
+    virtual void trace(Visitor* visitor) OVERRIDE { SQLTransactionWrapper::trace(visitor); }
     virtual bool performPreflight(SQLTransactionBackend*) OVERRIDE;
     virtual bool performPostflight(SQLTransactionBackend*) OVERRIDE;
     virtual SQLErrorData* sqlError() const OVERRIDE { return m_sqlError.get(); }

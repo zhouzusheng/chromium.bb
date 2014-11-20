@@ -34,7 +34,7 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -61,13 +61,13 @@ namespace WebCore {
         virtual void trace(Visitor*) OVERRIDE;
 
     private:
-        SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtr<WorkerClients>);
+        SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerClients>);
         virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
 
         String m_name;
     };
 
-    PassRefPtr<MessageEvent> createConnectEvent(PassRefPtr<MessagePort>);
+    PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtr<MessagePort>);
 
 } // namespace WebCore
 

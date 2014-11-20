@@ -61,6 +61,7 @@ bool VideoResourceUpdater::VerifyFrame(
   switch (video_frame->format()) {
     // Acceptable inputs.
     case media::VideoFrame::YV12:
+    case media::VideoFrame::I420:
     case media::VideoFrame::YV12A:
     case media::VideoFrame::YV16:
     case media::VideoFrame::YV12J:
@@ -72,7 +73,7 @@ bool VideoResourceUpdater::VerifyFrame(
 
     // Unacceptable inputs. ¯\(°_o)/¯
     case media::VideoFrame::UNKNOWN:
-    case media::VideoFrame::I420:
+    case media::VideoFrame::NV12:
       break;
   }
   return false;
@@ -107,10 +108,12 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 
   // Only YUV software video frames are supported.
   DCHECK(input_frame_format == media::VideoFrame::YV12 ||
+         input_frame_format == media::VideoFrame::I420 ||
          input_frame_format == media::VideoFrame::YV12A ||
          input_frame_format == media::VideoFrame::YV12J ||
          input_frame_format == media::VideoFrame::YV16);
   if (input_frame_format != media::VideoFrame::YV12 &&
+      input_frame_format != media::VideoFrame::I420 &&
       input_frame_format != media::VideoFrame::YV12A &&
       input_frame_format != media::VideoFrame::YV12J &&
       input_frame_format != media::VideoFrame::YV16)
@@ -280,7 +283,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 static void ReturnTexture(const scoped_refptr<media::VideoFrame>& frame,
                           uint32 sync_point,
                           bool lost_resource) {
-  frame->mailbox_holder()->sync_point = sync_point;
+  frame->AppendReleaseSyncPoint(sync_point);
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
@@ -294,7 +297,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
   if (!context_provider_)
     return VideoFrameExternalResources();
 
-  gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
+  const gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
   VideoFrameExternalResources external_resources;
   switch (mailbox_holder->texture_target) {
     case GL_TEXTURE_2D:

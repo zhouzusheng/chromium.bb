@@ -30,7 +30,6 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event_target_iterator.h"
-#include "ui/gfx/animation/multi_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/scoped_canvas.h"
@@ -235,6 +234,15 @@ Window::~Window() {
   if (host)
     host->dispatcher()->OnPostNotifiedWindowDestroying(this);
 
+  // The window should have already had its state cleaned up in
+  // WindowEventDispatcher::OnWindowHidden(), but there have been some crashes
+  // involving windows being destroyed without being hidden first. See
+  // crbug.com/342040. This should help us debug the issue. TODO(tdresser):
+  // remove this once we determine why we have windows that are destroyed
+  // without being hidden.
+  bool window_incorrectly_cleaned_up = CleanupGestureState();
+  CHECK(!window_incorrectly_cleaned_up);
+
   // Then destroy the children.
   RemoveOrDestroyChildren();
 
@@ -418,8 +426,17 @@ Window::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
 void Window::SetBounds(const gfx::Rect& new_bounds) {
   if (parent_ && parent_->layout_manager())
     parent_->layout_manager()->SetChildBounds(this, new_bounds);
-  else
-    SetBoundsInternal(new_bounds);
+  else {
+    // Ensure we don't go smaller than our minimum bounds.
+    gfx::Rect final_bounds(new_bounds);
+    if (delegate_) {
+      const gfx::Size& min_size = delegate_->GetMinimumSize();
+      final_bounds.set_width(std::max(min_size.width(), final_bounds.width()));
+      final_bounds.set_height(std::max(min_size.height(),
+                                       final_bounds.height()));
+    }
+    SetBoundsInternal(final_bounds);
+  }
 }
 
 void Window::SetBoundsInScreen(const gfx::Rect& new_bounds_in_screen,
@@ -625,14 +642,6 @@ void Window::MoveCursorTo(const gfx::Point& point_in_window) {
 
 gfx::NativeCursor Window::GetCursor(const gfx::Point& point) const {
   return delegate_ ? delegate_->GetCursor(point) : gfx::kNullCursor;
-}
-
-void Window::SetEventFilter(ui::EventHandler* event_filter) {
-  if (event_filter_)
-    RemovePreTargetHandler(event_filter_.get());
-  event_filter_.reset(event_filter);
-  if (event_filter)
-    AddPreTargetHandler(event_filter);
 }
 
 void Window::AddObserver(WindowObserver* observer) {
@@ -865,16 +874,6 @@ bool Window::HitTest(const gfx::Point& local_point) {
 
 void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
   gfx::Rect actual_new_bounds(new_bounds);
-
-  // Ensure we don't go smaller than our minimum bounds.
-  if (delegate_) {
-    const gfx::Size& min_size = delegate_->GetMinimumSize();
-    actual_new_bounds.set_width(
-        std::max(min_size.width(), actual_new_bounds.width()));
-    actual_new_bounds.set_height(
-        std::max(min_size.height(), actual_new_bounds.height()));
-  }
-
   gfx::Rect old_bounds = GetTargetBounds();
 
   // Always need to set the layer's bounds -- even if it is to the same thing.
@@ -1323,6 +1322,19 @@ void Window::OnWindowBoundsChanged(const gfx::Rect& old_bounds) {
   FOR_EACH_OBSERVER(WindowObserver,
                     observers_,
                     OnWindowBoundsChanged(this, old_bounds, bounds()));
+}
+
+bool Window::CleanupGestureState() {
+  bool state_modified = false;
+  state_modified |= ui::GestureRecognizer::Get()->CancelActiveTouches(this);
+  state_modified |=
+      ui::GestureRecognizer::Get()->CleanupStateForConsumer(this);
+  for (Window::Windows::iterator iter = children_.begin();
+       iter != children_.end();
+       ++iter) {
+    state_modified |= (*iter)->CleanupGestureState();
+  }
+  return state_modified;
 }
 
 void Window::OnPaintLayer(gfx::Canvas* canvas) {

@@ -24,7 +24,7 @@
  */
 
 [
-    StrictTypeChecking,
+    TypeChecking=Interface|Nullable,
     SetWrapperReferenceTo(SVGElement contextElement),
     ImplementedAs=SVGStringListTearOff
 ] interface SVGStringList {

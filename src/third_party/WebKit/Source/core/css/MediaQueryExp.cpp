@@ -30,11 +30,12 @@
 #include "config.h"
 #include "core/css/MediaQueryExp.h"
 
-#include "CSSValueKeywords.h"
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSParserValues.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "wtf/DecimalNumber.h"
+#include "wtf/text/StringBuffer.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -47,7 +48,6 @@ static inline bool featureWithCSSValueID(const String& mediaFeature, const CSSPa
         return false;
 
     return mediaFeature == orientationMediaFeature
-        || mediaFeature == viewModeMediaFeature
         || mediaFeature == pointerMediaFeature
         || mediaFeature == scanMediaFeature;
 }
@@ -56,19 +56,6 @@ static inline bool featureWithValidIdent(const String& mediaFeature, CSSValueID 
 {
     if (mediaFeature == orientationMediaFeature)
         return ident == CSSValuePortrait || ident == CSSValueLandscape;
-
-    if (mediaFeature == viewModeMediaFeature) {
-        switch (ident) {
-        case CSSValueWindowed:
-        case CSSValueFloating:
-        case CSSValueFullscreen:
-        case CSSValueMaximized:
-        case CSSValueMinimized:
-            return true;
-        default:
-            return false;
-        }
-    }
 
     if (mediaFeature == pointerMediaFeature)
         return ident == CSSValueNone || ident == CSSValueCoarse || ident == CSSValueFine;
@@ -131,9 +118,7 @@ static inline bool featureWithPositiveNumber(const String& mediaFeature, const C
     if (value->unit != CSSPrimitiveValue::CSS_NUMBER || value->fValue < 0)
         return false;
 
-    return mediaFeature == transform2dMediaFeature
-        || mediaFeature == transform3dMediaFeature
-        || mediaFeature == animationMediaFeature
+    return mediaFeature == transform3dMediaFeature
         || mediaFeature == devicePixelRatioMediaFeature
         || mediaFeature == maxDevicePixelRatioMediaFeature
         || mediaFeature == minDevicePixelRatioMediaFeature;
@@ -173,10 +158,7 @@ static inline bool featureWithoutValue(const String& mediaFeature)
         || mediaFeature == aspectRatioMediaFeature
         || mediaFeature == deviceAspectRatioMediaFeature
         || mediaFeature == hoverMediaFeature
-        || mediaFeature == transform2dMediaFeature
         || mediaFeature == transform3dMediaFeature
-        || mediaFeature == animationMediaFeature
-        || mediaFeature == viewModeMediaFeature
         || mediaFeature == pointerMediaFeature
         || mediaFeature == devicePixelRatioMediaFeature
         || mediaFeature == resolutionMediaFeature
@@ -201,13 +183,13 @@ bool MediaQueryExp::isViewportDependent() const
 
 MediaQueryExp::MediaQueryExp(const MediaQueryExp& other)
     : m_mediaFeature(other.mediaFeature())
-    , m_value(other.value())
+    , m_expValue(other.expValue())
 {
 }
 
-MediaQueryExp::MediaQueryExp(const String& mediaFeature, PassRefPtrWillBeRawPtr<CSSValue> value)
+MediaQueryExp::MediaQueryExp(const String& mediaFeature, const MediaQueryExpValue& expValue)
     : m_mediaFeature(mediaFeature)
-    , m_value(value)
+    , m_expValue(expValue)
 {
 }
 
@@ -215,7 +197,7 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
 {
     ASSERT(!mediaFeature.isNull());
 
-    RefPtrWillBeRawPtr<CSSValue> cssValue = nullptr;
+    MediaQueryExpValue expValue;
     bool isValid = false;
     String lowerMediaFeature = attemptStaticStringCreation(mediaFeature.lower());
 
@@ -225,29 +207,32 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
             CSSParserValue* value = valueList->current();
             ASSERT(value);
 
-            if (featureWithCSSValueID(lowerMediaFeature, value)) {
+            if (featureWithCSSValueID(lowerMediaFeature, value) && featureWithValidIdent(lowerMediaFeature, value->id)) {
                 // Media features that use CSSValueIDs.
-                cssValue = CSSPrimitiveValue::createIdentifier(value->id);
-                if (!featureWithValidIdent(lowerMediaFeature, toCSSPrimitiveValue(cssValue.get())->getValueID()))
-                    cssValue.clear();
-            } else if (featureWithValidDensity(lowerMediaFeature, value)) {
-                // Media features that must have non-negative <density>, ie. dppx, dpi or dpcm.
-                cssValue = CSSPrimitiveValue::create(value->fValue, (CSSPrimitiveValue::UnitTypes) value->unit);
-            } else if (featureWithValidPositiveLength(lowerMediaFeature, value)) {
-                // Media features that must have non-negative <lenght> or number value.
-                cssValue = CSSPrimitiveValue::create(value->fValue, (CSSPrimitiveValue::UnitTypes) value->unit);
-            } else if (featureWithPositiveInteger(lowerMediaFeature, value)) {
-                // Media features that must have non-negative integer value.
-                cssValue = CSSPrimitiveValue::create(value->fValue, CSSPrimitiveValue::CSS_NUMBER);
-            } else if (featureWithPositiveNumber(lowerMediaFeature, value)) {
-                // Media features that must have non-negative number value.
-                cssValue = CSSPrimitiveValue::create(value->fValue, CSSPrimitiveValue::CSS_NUMBER);
-            } else if (featureWithZeroOrOne(lowerMediaFeature, value)) {
-                // Media features that must have (0|1) value.
-                cssValue = CSSPrimitiveValue::create(value->fValue, CSSPrimitiveValue::CSS_NUMBER);
+                expValue.id = value->id;
+                expValue.unit = CSSPrimitiveValue::CSS_VALUE_ID;
+                expValue.isID = true;
+            } else if (featureWithValidDensity(lowerMediaFeature, value)
+                || featureWithValidPositiveLength(lowerMediaFeature, value)) {
+                // Media features that must have non-negative <density>, ie. dppx, dpi or dpcm,
+                // or Media features that must have non-negative <length> or number value.
+                expValue.value = value->fValue;
+                expValue.unit = (CSSPrimitiveValue::UnitTypes)value->unit;
+                expValue.isValue = true;
+                expValue.isInteger = value->isInt;
+            } else if (featureWithPositiveInteger(lowerMediaFeature, value)
+                || featureWithPositiveNumber(lowerMediaFeature, value)
+                || featureWithZeroOrOne(lowerMediaFeature, value)) {
+                // Media features that must have non-negative integer value,
+                // or media features that must have non-negative number value,
+                // or media features that must have (0|1) value.
+                expValue.value = value->fValue;
+                expValue.unit = CSSPrimitiveValue::CSS_NUMBER;
+                expValue.isValue = true;
+                expValue.isInteger = value->isInt;
             }
 
-            isValid = cssValue;
+            isValid = (expValue.isID || expValue.isValue);
 
         } else if (valueList->size() == 3 && featureWithAspectRatio(lowerMediaFeature)) {
             // Create list of values.
@@ -272,8 +257,11 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
                 }
             }
 
-            if (isValid)
-                cssValue = CSSAspectRatioValue::create(numeratorValue, denominatorValue);
+            if (isValid) {
+                expValue.numerator = (unsigned)numeratorValue;
+                expValue.denominator = (unsigned)denominatorValue;
+                expValue.isRatio = true;
+            }
         }
     } else if (featureWithoutValue(lowerMediaFeature)) {
         isValid = true;
@@ -282,11 +270,18 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
     if (!isValid)
         return nullptr;
 
-    return adoptPtrWillBeNoop(new MediaQueryExp(lowerMediaFeature, cssValue));
+    return adoptPtrWillBeNoop(new MediaQueryExp(lowerMediaFeature, expValue));
 }
 
 MediaQueryExp::~MediaQueryExp()
 {
+}
+
+bool MediaQueryExp::operator==(const MediaQueryExp& other) const
+{
+    return (other.m_mediaFeature == m_mediaFeature)
+        && ((!other.m_expValue.isValid() && !m_expValue.isValid())
+            || (other.m_expValue.isValid() && m_expValue.isValid() && other.m_expValue.equals(m_expValue)));
 }
 
 String MediaQueryExp::serialize() const
@@ -294,13 +289,38 @@ String MediaQueryExp::serialize() const
     StringBuilder result;
     result.append("(");
     result.append(m_mediaFeature.lower());
-    if (m_value) {
+    if (m_expValue.isValid()) {
         result.append(": ");
-        result.append(m_value->cssText());
+        result.append(m_expValue.cssText());
     }
     result.append(")");
 
     return result.toString();
+}
+
+static String printNumber(double number)
+{
+    DecimalNumber decimal(number);
+    StringBuffer<LChar> buffer(decimal.bufferLengthForStringDecimal());
+    decimal.toStringDecimal(buffer.characters(), buffer.length());
+    return String::adopt(buffer);
+}
+
+String MediaQueryExpValue::cssText() const
+{
+    StringBuilder output;
+    if (isValue) {
+        output.append(printNumber(value));
+        output.append(CSSPrimitiveValue::unitTypeToString(unit));
+    } else if (isRatio) {
+        output.append(printNumber(numerator));
+        output.append("/");
+        output.append(printNumber(denominator));
+    } else if (isID) {
+        output.append(getValueName(id));
+    }
+
+    return output.toString();
 }
 
 } // namespace

@@ -39,8 +39,6 @@ class ExternalStringVisitor;
 // to manage the life-cycle of the underlying buffer of the external string.
 class WebCoreStringResourceBase {
 public:
-    static WebCoreStringResourceBase* toWebCoreStringResourceBase(v8::Handle<v8::String>);
-
     explicit WebCoreStringResourceBase(const String& string)
         : m_plainString(string)
     {
@@ -88,8 +86,6 @@ public:
         }
         return m_atomicString;
     }
-
-    void visitStrings(ExternalStringVisitor*);
 
 protected:
     // A shallow copy of the string. Keeps the string buffer alive until the V8 engine garbage collects it.
@@ -180,15 +176,15 @@ public:
     {
     }
 
-    bool prepare();
-    operator String() const { return toString<String>(); }
-    operator AtomicString() const { return toString<AtomicString>(); }
-
-private:
-    bool prepareBase()
+    bool prepare()
     {
         if (m_v8Object.IsEmpty())
             return true;
+
+        if (!isValid()) {
+            setString(String());
+            return true;
+        }
 
         if (LIKELY(m_v8Object->IsString()))
             return true;
@@ -208,6 +204,11 @@ private:
         }
         return true;
     }
+    operator String() const { return toString<String>(); }
+    operator AtomicString() const { return toString<AtomicString>(); }
+
+private:
+    bool isValid() const;
 
     void setString(const String& string)
     {
@@ -229,27 +230,19 @@ private:
     String m_string;
 };
 
-template<> inline bool V8StringResource<DefaultMode>::prepare()
+template<> inline bool V8StringResource<DefaultMode>::isValid() const
 {
-    return prepareBase();
+    return true;
 }
 
-template<> inline bool V8StringResource<WithNullCheck>::prepare()
+template<> inline bool V8StringResource<WithNullCheck>::isValid() const
 {
-    if (m_v8Object.IsEmpty() || m_v8Object->IsNull()) {
-        setString(String());
-        return true;
-    }
-    return prepareBase();
+    return !m_v8Object->IsNull();
 }
 
-template<> inline bool V8StringResource<WithUndefinedOrNullCheck>::prepare()
+template<> inline bool V8StringResource<WithUndefinedOrNullCheck>::isValid() const
 {
-    if (m_v8Object.IsEmpty() || m_v8Object->IsNull() || m_v8Object->IsUndefined()) {
-        setString(String());
-        return true;
-    }
-    return prepareBase();
+    return !m_v8Object->IsNull() && !m_v8Object->IsUndefined();
 }
 
 } // namespace WebCore

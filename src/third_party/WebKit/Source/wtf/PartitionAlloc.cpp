@@ -298,6 +298,16 @@ bool partitionAllocGenericShutdown(PartitionRootGeneric* root)
     return noLeaks;
 }
 
+static NEVER_INLINE void partitionOutOfMemory()
+{
+    IMMEDIATE_CRASH();
+}
+
+static NEVER_INLINE void partitionFull()
+{
+    IMMEDIATE_CRASH();
+}
+
 static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root, size_t numPartitionPages)
 {
     ASSERT(!(reinterpret_cast<uintptr_t>(root->nextPartitionPage) % kPartitionPageSize));
@@ -315,11 +325,13 @@ static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root,
 
     // Need a new super page.
     root->totalSizeOfSuperPages += kSuperPageSize;
-    RELEASE_ASSERT(root->totalSizeOfSuperPages <= kMaxPartitionSize);
+    if (root->totalSizeOfSuperPages > kMaxPartitionSize)
+        partitionFull();
     char* requestedAddress = root->nextSuperPage;
     char* superPage = reinterpret_cast<char*>(allocPages(requestedAddress, kSuperPageSize, kSuperPageSize));
     // TODO: handle allocation failure here with PartitionAllocReturnNull.
-    RELEASE_ASSERT(superPage);
+    if (!superPage)
+        partitionOutOfMemory();
     root->nextSuperPage = superPage + kSuperPageSize;
     char* ret = superPage + kPartitionPageSize;
     root->nextPartitionPage = ret + totalSize;
@@ -564,7 +576,7 @@ static ALWAYS_INLINE void* partitionDirectMap(PartitionRootBase* root, int flags
     if (!ptr) {
         if (flags & PartitionAllocReturnNull)
             return 0;
-        RELEASE_ASSERT(false);
+        partitionOutOfMemory();
     }
     char* ret = ptr + kPartitionPageSize;
     // TODO: due to all the guard paging, this arrangement creates 4 mappings.
@@ -798,6 +810,13 @@ bool partitionReallocDirectMappedInPlace(PartitionRootGeneric* root, PartitionPa
     char* charPtr = static_cast<char*>(partitionPageToPointer(page));
 
     if (newSize < currentSize) {
+        size_t mapSize = partitionPageToDirectMapExtent(page)->mapSize;
+
+        // Don't reallocate in-place if new size is less than 80 % of the full
+        // map size, to avoid holding on to too much unused address space.
+        if ((newSize / kSystemPageSize) * 5 < (mapSize / kSystemPageSize) * 4)
+            return false;
+
         // Shrink by decommitting unneeded pages and making them inaccessible.
         size_t decommitSize = currentSize - newSize;
         decommitSystemPages(charPtr + newSize, decommitSize);

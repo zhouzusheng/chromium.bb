@@ -31,7 +31,6 @@
 #include "config.h"
 #include "bindings/v8/ScriptObject.h"
 
-#include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptState.h"
 
 #include "V8InspectorFrontendHost.h"
@@ -41,7 +40,7 @@
 namespace WebCore {
 
 ScriptObject::ScriptObject(ScriptState* scriptState, v8::Handle<v8::Object> v8Object)
-    : ScriptValue(v8Object, scriptState->isolate())
+    : ScriptValue(scriptState, v8Object)
     , m_scriptState(scriptState)
 {
 }
@@ -49,6 +48,15 @@ ScriptObject::ScriptObject(ScriptState* scriptState, v8::Handle<v8::Object> v8Ob
 ScriptObject::ScriptObject(ScriptState* scriptState, const ScriptValue& scriptValue)
     : ScriptValue(scriptValue)
     , m_scriptState(scriptState)
+{
+}
+
+ScriptObject::ScriptObject()
+    : m_scriptState(nullptr)
+{
+}
+
+ScriptObject::~ScriptObject()
 {
 }
 
@@ -60,15 +68,16 @@ v8::Handle<v8::Object> ScriptObject::v8Object() const
 
 bool ScriptGlobalObject::set(ScriptState* scriptState, const char* name, InspectorFrontendHost* value)
 {
-    ScriptScope scope(scriptState);
-    scope.global()->Set(v8AtomicString(scriptState->isolate(), name), toV8(value, v8::Handle<v8::Object>(), scriptState->isolate()));
-    return scope.success();
+    ScriptState::Scope scope(scriptState);
+    v8::TryCatch tryCatch;
+    scriptState->context()->Global()->Set(v8AtomicString(scriptState->isolate(), name), toV8(value, v8::Handle<v8::Object>(), scriptState->isolate()));
+    return !tryCatch.HasCaught();
 }
 
 bool ScriptGlobalObject::get(ScriptState* scriptState, const char* name, ScriptObject& value)
 {
-    ScriptScope scope(scriptState);
-    v8::Local<v8::Value> v8Value = scope.global()->Get(v8AtomicString(scriptState->isolate(), name));
+    ScriptState::Scope scope(scriptState);
+    v8::Local<v8::Value> v8Value = scriptState->context()->Global()->Get(v8AtomicString(scriptState->isolate(), name));
     if (v8Value.IsEmpty())
         return false;
 

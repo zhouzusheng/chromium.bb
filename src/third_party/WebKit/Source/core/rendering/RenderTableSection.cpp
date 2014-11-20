@@ -26,12 +26,9 @@
 #include "config.h"
 #include "core/rendering/RenderTableSection.h"
 
-// FIXME: Remove 'RuntimeEnabledFeatures.h' when http://crbug.com/78724 is closed.
-#include "RuntimeEnabledFeatures.h"
 #include <limits>
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderTableCol.h"
@@ -638,7 +635,7 @@ void RenderTableSection::updateBaselineForCell(RenderTableCell* cell, unsigned r
 int RenderTableSection::calcRowLogicalHeight()
 {
 #ifndef NDEBUG
-    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 #endif
 
     ASSERT(!needsLayout());
@@ -734,8 +731,6 @@ void RenderTableSection::layout()
     ASSERT(!needsCellRecalc());
     ASSERT(!table()->needsSectionRecalc());
 
-    LayoutRectRecorder recorder(*this);
-
     // addChild may over-grow m_grid but we don't want to throw away the memory too early as addChild
     // can be called in a loop (e.g during parsing). Doing it now ensures we have a stable-enough structure.
     m_grid.shrinkToFit();
@@ -744,7 +739,7 @@ void RenderTableSection::layout()
 
     const Vector<int>& columnPos = table()->columnPositions();
 
-    SubtreeLayoutScope layouter(this);
+    SubtreeLayoutScope layouter(*this);
     for (unsigned r = 0; r < m_grid.size(); ++r) {
         Row& row = m_grid[r].row;
         unsigned cols = row.size();
@@ -755,8 +750,6 @@ void RenderTableSection::layout()
             RenderTableCell* cell = current.primaryCell();
             if (!cell || current.inColSpan)
                 continue;
-
-            LayoutRectRecorder cellRecorder(*cell);
 
             unsigned endCol = startColumn;
             unsigned cspan = cell->colSpan();
@@ -881,7 +874,7 @@ static bool shouldFlexCellChild(RenderObject* cellDescendant)
 void RenderTableSection::layoutRows()
 {
 #ifndef NDEBUG
-    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 #endif
 
     ASSERT(!needsLayout());
@@ -920,8 +913,6 @@ void RenderTableSection::layoutRows()
 
             if (!cell || cs.inColSpan)
                 continue;
-
-            LayoutRectRecorder cellRecorder(*cell);
 
             int rowIndex = cell->rowIndex();
             int rHeight = m_rowPos[rowIndex + cell->rowSpan()] - m_rowPos[rowIndex] - vspacing;
@@ -979,7 +970,7 @@ void RenderTableSection::layoutRows()
                 }
             }
 
-            SubtreeLayoutScope layouter(cell);
+            SubtreeLayoutScope layouter(*cell);
             cell->computeIntrinsicPadding(rHeight, layouter);
 
             LayoutRect oldCellRect = cell->frameRect();

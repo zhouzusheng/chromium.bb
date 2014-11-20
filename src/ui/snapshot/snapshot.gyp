@@ -25,7 +25,6 @@
         'snapshot_android.cc',
         'snapshot_aura.cc',
         'snapshot_export.h',
-        'snapshot_gtk.cc',
         'snapshot_ios.mm',
         'snapshot_mac.mm',
         'snapshot_win.cc',
@@ -65,11 +64,11 @@
           'dependencies': [
             '../compositor/compositor.gyp:compositor',
             '../compositor/compositor.gyp:compositor_test_support',
+            '../wm/wm.gyp:wm',
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

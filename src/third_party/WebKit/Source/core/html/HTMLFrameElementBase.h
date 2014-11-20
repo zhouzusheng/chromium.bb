@@ -31,9 +31,6 @@ namespace WebCore {
 
 class HTMLFrameElementBase : public HTMLFrameOwnerElement {
 public:
-    KURL location() const;
-    void setLocation(const String&);
-
     virtual ScrollbarMode scrollingMode() const OVERRIDE FINAL { return m_scrolling; }
 
     int marginWidth() const { return m_marginWidth; }
@@ -54,6 +51,10 @@ protected:
     virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE FINAL;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
+    // FIXME: Remove this method once we have input routing in the browser
+    // process. See http://crbug.com/339659.
+    virtual void defaultEventHandler(Event*) OVERRIDE;
+
 private:
     virtual bool supportsFocus() const OVERRIDE FINAL;
     virtual void setFocus(bool) OVERRIDE FINAL;
@@ -64,6 +65,7 @@ private:
 
     virtual bool areAuthorShadowsAllowed() const OVERRIDE FINAL { return false; }
 
+    void setLocation(const String&);
     void setNameAndOpenURL();
     void openURL(bool lockBackForwardList = true);
 

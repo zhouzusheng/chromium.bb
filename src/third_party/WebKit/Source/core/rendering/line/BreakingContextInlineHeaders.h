@@ -862,6 +862,7 @@ inline void BreakingContext::commitAndUpdateLineBreakIfNeeded()
         }
     }
 
+    ASSERT_WITH_SECURITY_IMPLICATION(m_currentStyle->refCount() > 0);
     if (checkForBreak && !m_width.fitsOnLine()) {
         // if we have floats, try to get below them.
         if (m_currentCharacterIsSpace && !m_ignoringSpaces && m_currentStyle->collapseWhiteSpace())
@@ -898,12 +899,14 @@ inline void BreakingContext::commitAndUpdateLineBreakIfNeeded()
 
 inline IndentTextOrNot requiresIndent(bool isFirstLine, bool isAfterHardLineBreak, RenderStyle* style)
 {
-    if (isFirstLine)
-        return IndentText;
-    if (isAfterHardLineBreak && style->textIndentLine() == TextIndentEachLine)
-        return IndentText;
+    IndentTextOrNot shouldIndentText = DoNotIndentText;
+    if (isFirstLine || (isAfterHardLineBreak && style->textIndentLine()) == TextIndentEachLine)
+        shouldIndentText = IndentText;
 
-    return DoNotIndentText;
+    if (style->textIndentType() == TextIndentHanging)
+        shouldIndentText = shouldIndentText == IndentText ? DoNotIndentText : IndentText;
+
+    return shouldIndentText;
 }
 
 }

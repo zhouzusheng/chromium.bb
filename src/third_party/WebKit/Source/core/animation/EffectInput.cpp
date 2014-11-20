@@ -33,22 +33,25 @@
 
 #include "bindings/v8/Dictionary.h"
 #include "core/animation/AnimationHelpers.h"
-#include "core/animation/css/CSSAnimations.h"
+#include "core/animation/KeyframeEffectModel.h"
+#include "core/animation/StringKeyframe.h"
 #include "core/css/parser/BisonCSSParser.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
+#include "wtf/NonCopyingSort.h"
 
 namespace WebCore {
 
+// FIXME: Remove this once we've removed the dependency on Element.
 static bool checkDocumentAndRenderer(Element* element)
 {
-    if (!element->inActiveDocument())
+    if (!element || !element->inActiveDocument())
         return false;
     element->document().updateRenderTreeIfNeeded();
     return element->renderer();
 }
 
-PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector,  ExceptionState& exceptionState, bool unsafe)
+PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState, bool unsafe)
 {
     // FIXME: This test will not be neccessary once resolution of keyframe values occurs at
     // animation application time.
@@ -56,21 +59,38 @@ PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, c
         return nullptr;
 
     StyleSheetContents* styleSheetContents = element->document().elementSheet().contents();
-
-    // FIXME: Move this code into KeyframeEffectModel, it will be used by the IDL constructor for that class.
-    KeyframeEffectModel::KeyframeVector keyframes;
-    WillBeHeapVector<RefPtrWillBeMember<MutableStylePropertySet> > propertySetVector;
+    StringKeyframeVector keyframes;
+    bool everyFrameHasOffset = true;
+    bool looselySortedByOffset = true;
+    double lastOffset = -std::numeric_limits<double>::infinity();
 
     for (size_t i = 0; i < keyframeDictionaryVector.size(); ++i) {
-        RefPtrWillBeRawPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create();
-        propertySetVector.append(propertySet);
+        RefPtrWillBeRawPtr<StringKeyframe> keyframe = StringKeyframe::create();
 
-        RefPtrWillBeRawPtr<Keyframe> keyframe = Keyframe::create();
-        keyframes.append(keyframe);
-
+        bool frameHasOffset = false;
         double offset;
-        if (keyframeDictionaryVector[i].get("offset", offset))
-            keyframe->setOffset(offset);
+        if (keyframeDictionaryVector[i].get("offset", offset)) {
+            // Keyframes with offsets outside the range [0.0, 1.0] are ignored.
+            if (std::isnan(offset) || offset < 0 || offset > 1)
+                continue;
+
+            frameHasOffset = true;
+            // The JS value null gets converted to 0 so we need to check whether the original value is null.
+            if (offset == 0) {
+                ScriptValue scriptValue;
+                if (keyframeDictionaryVector[i].get("offset", scriptValue) && scriptValue.isNull())
+                    frameHasOffset = false;
+            }
+            if (frameHasOffset) {
+                keyframe->setOffset(offset);
+                if (offset < lastOffset)
+                    looselySortedByOffset = false;
+                lastOffset = offset;
+            }
+        }
+        everyFrameHasOffset = everyFrameHasOffset && frameHasOffset;
+
+        keyframes.append(keyframe);
 
         String compositeString;
         keyframeDictionaryVector[i].get("composite", compositeString);
@@ -86,31 +106,31 @@ PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, c
 
         Vector<String> keyframeProperties;
         keyframeDictionaryVector[i].getOwnPropertyNames(keyframeProperties);
-
         for (size_t j = 0; j < keyframeProperties.size(); ++j) {
             String property = keyframeProperties[j];
             CSSPropertyID id = camelCaseCSSPropertyNameToID(property);
-
-            // FIXME: There is no way to store invalid properties or invalid values
-            // in a Keyframe object, so for now I just skip over them. Eventually we
-            // will need to support getFrames(), which should return exactly the
-            // keyframes that were input through the API. We will add a layer to wrap
-            // KeyframeEffectModel, store input keyframes and implement getFrames.
-            if (id == CSSPropertyInvalid || !CSSAnimations::isAnimatableProperty(id))
+            if (id == CSSPropertyInvalid)
                 continue;
-
             String value;
             keyframeDictionaryVector[i].get(property, value);
-            propertySet->setProperty(id, value, false, styleSheetContents);
+            keyframe->setPropertyValue(id, value, styleSheetContents);
         }
     }
 
-    // FIXME: Replace this with code that just parses, when that code is available.
-    RefPtrWillBeRawPtr<KeyframeEffectModel> keyframeEffectModel = StyleResolver::createKeyframeEffectModel(*element, propertySetVector, keyframes);
+    if (!looselySortedByOffset) {
+        if (!everyFrameHasOffset) {
+            exceptionState.throwDOMException(InvalidModificationError, "Keyframes are not loosely sorted by offset.");
+            return nullptr;
+        }
+        nonCopyingSort(keyframes.begin(), keyframes.end(), Keyframe::compareOffsets);
+    }
+
+    RefPtrWillBeRawPtr<StringKeyframeEffectModel> keyframeEffectModel = StringKeyframeEffectModel::create(keyframes);
     if (!keyframeEffectModel->isReplaceOnly()) {
         exceptionState.throwDOMException(NotSupportedError, "Partial keyframes are not supported.");
         return nullptr;
     }
+    keyframeEffectModel->forceConversionsToAnimatableValues(element);
 
     return keyframeEffectModel;
 }

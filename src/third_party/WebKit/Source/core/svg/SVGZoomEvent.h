@@ -32,19 +32,17 @@ class SVGZoomEvent FINAL : public UIEvent {
 public:
     static PassRefPtrWillBeRawPtr<SVGZoomEvent> create()
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new SVGZoomEvent);
+        return adoptRefWillBeNoop(new SVGZoomEvent);
     }
 
     // 'SVGZoomEvent' functions
     PassRefPtr<SVGRectTearOff> zoomRectScreen() const;
 
     float previousScale() const;
-    void setPreviousScale(float);
 
     PassRefPtr<SVGPointTearOff> previousTranslate() const;
 
     float newScale() const;
-    void setNewScale(float);
 
     PassRefPtr<SVGPointTearOff> newTranslate() const;
 

@@ -106,7 +106,7 @@ Channel::SendData(FrameType frameType,
         // Store current audio level in the RTP/RTCP module.
         // The level will be used in combination with voice-activity state
         // (frameType) to add an RTP header extension
-        _rtpRtcpModule->SetAudioLevel(rtp_audioproc_->level_estimator()->RMS());
+        _rtpRtcpModule->SetAudioLevel(rms_level_.RMS());
     }
 
     // Push data from ACM to RTP/RTCP-module to deliver audio frame for
@@ -502,8 +502,6 @@ Channel::OnPeriodicDeadOrAlive(int32_t id,
         isAlive = (_outputSpeechType != AudioFrame::kPLCCNG);
     }
 
-    UpdateDeadOrAliveCounters(isAlive);
-
     // Send callback to the registered observer
     if (_connectionObserver)
     {
@@ -663,12 +661,6 @@ int32_t Channel::GetAudioFrame(int32_t id, AudioFrame& audioFrame)
     if (state.output_file_playing)
     {
         MixAudioWithFile(audioFrame, audioFrame.sample_rate_hz_);
-    }
-
-    // Place channel in on-hold state (~muted) if on-hold is activated
-    if (state.output_is_on_hold)
-    {
-        AudioFrameOperations::Mute(audioFrame);
     }
 
     // External media
@@ -837,15 +829,14 @@ Channel::Channel(int32_t channelId,
     _channelId(channelId),
     rtp_header_parser_(RtpHeaderParser::Create()),
     rtp_payload_registry_(
-        new RTPPayloadRegistry(channelId,
-                               RTPPayloadStrategy::CreateStrategy(true))),
+        new RTPPayloadRegistry(RTPPayloadStrategy::CreateStrategy(true))),
     rtp_receive_statistics_(ReceiveStatistics::Create(
         Clock::GetRealTimeClock())),
     rtp_receiver_(RtpReceiver::CreateAudioReceiver(
         VoEModuleId(instanceId, channelId), Clock::GetRealTimeClock(), this,
         this, this, rtp_payload_registry_.get())),
     telephone_event_handler_(rtp_receiver_->GetTelephoneEventHandler()),
-    audio_coding_(config.Get<AudioCodingModuleFactory>().Create(
+    audio_coding_(AudioCodingModule::Create(
         VoEModuleId(instanceId, channelId))),
     _rtpDumpIn(*RtpDump::CreateRtpDump()),
     _rtpDumpOut(*RtpDump::CreateRtpDump()),
@@ -882,7 +873,6 @@ Channel::Channel(int32_t channelId,
     _voiceEngineObserverPtr(NULL),
     _callbackCritSectPtr(NULL),
     _transportPtr(NULL),
-    rx_audioproc_(AudioProcessing::Create(VoEModuleId(instanceId, channelId))),
     _rxVadObserverPtr(NULL),
     _oldVadDecision(-1),
     _sendFrameType(0),
@@ -890,7 +880,6 @@ Channel::Channel(int32_t channelId,
     _rtcpObserverPtr(NULL),
     _externalPlayout(false),
     _externalMixing(false),
-    _inputIsOnHold(false),
     _mixFileWithMicrophone(false),
     _rtpObserver(false),
     _rtcpObserver(false),
@@ -909,8 +898,6 @@ Channel::Channel(int32_t channelId,
     _rtpTimeOutSeconds(0),
     _connectionObserver(false),
     _connectionObserverPtr(NULL),
-    _countAliveDetections(0),
-    _countDeadDetections(0),
     _outputSpeechType(AudioFrame::kNormalSpeech),
     vie_network_(NULL),
     video_channel_(-1),
@@ -942,6 +929,10 @@ Channel::Channel(int32_t channelId,
     statistics_proxy_.reset(new StatisticsProxy(_rtpRtcpModule->SSRC()));
     rtp_receive_statistics_->RegisterRtcpStatisticsCallback(
         statistics_proxy_.get());
+
+    Config audioproc_config;
+    audioproc_config.Set<ExperimentalAgc>(new ExperimentalAgc(false));
+    rx_audioproc_.reset(AudioProcessing::Create(audioproc_config));
 }
 
 Channel::~Channel()
@@ -1366,9 +1357,6 @@ Channel::StopReceiving()
         return 0;
     }
 
-    // Recover DTMF detection status.
-    telephone_event_handler_->SetTelephoneEventForwardToDecoder(true);
-    RegisterReceiveCodecsToRTPModule();
     channel_state_.SetReceiving(false);
     return 0;
 }
@@ -1425,52 +1413,6 @@ Channel::GetNetEQPlayoutMode(NetEqModes& mode)
     WEBRTC_TRACE(kTraceStateInfo, kTraceVoice,
                  VoEId(_instanceId,_channelId),
                  "Channel::GetNetEQPlayoutMode() => mode=%u", mode);
-    return 0;
-}
-
-int32_t
-Channel::SetOnHoldStatus(bool enable, OnHoldModes mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetOnHoldStatus()");
-    if (mode == kHoldSendAndPlay)
-    {
-        channel_state_.SetOutputIsOnHold(enable);
-        _inputIsOnHold = enable;
-    }
-    else if (mode == kHoldPlayOnly)
-    {
-        channel_state_.SetOutputIsOnHold(enable);
-    }
-    if (mode == kHoldSendOnly)
-    {
-        _inputIsOnHold = enable;
-    }
-    return 0;
-}
-
-int32_t
-Channel::GetOnHoldStatus(bool& enabled, OnHoldModes& mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::GetOnHoldStatus()");
-    bool output_is_on_hold = channel_state_.Get().output_is_on_hold;
-    enabled = (output_is_on_hold || _inputIsOnHold);
-    if (output_is_on_hold && _inputIsOnHold)
-    {
-        mode = kHoldSendAndPlay;
-    }
-    else if (output_is_on_hold && !_inputIsOnHold)
-    {
-        mode = kHoldPlayOnly;
-    }
-    else if (!output_is_on_hold && _inputIsOnHold)
-    {
-        mode = kHoldSendOnly;
-    }
-    WEBRTC_TRACE(kTraceStateInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::GetOnHoldStatus() => enabled=%d, mode=%d",
-                 enabled, mode);
     return 0;
 }
 
@@ -1708,47 +1650,6 @@ Channel::GetRecPayloadType(CodecInst& codec)
 }
 
 int32_t
-Channel::SetAMREncFormat(AmrMode mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetAMREncFormat()");
-
-    // ACM doesn't support AMR
-    return -1;
-}
-
-int32_t
-Channel::SetAMRDecFormat(AmrMode mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetAMRDecFormat()");
-
-    // ACM doesn't support AMR
-    return -1;
-}
-
-int32_t
-Channel::SetAMRWbEncFormat(AmrMode mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetAMRWbEncFormat()");
-
-    // ACM doesn't support AMR
-    return -1;
-
-}
-
-int32_t
-Channel::SetAMRWbDecFormat(AmrMode mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetAMRWbDecFormat()");
-
-    // ACM doesn't support AMR
-    return -1;
-}
-
-int32_t
 Channel::SetSendCNPayloadType(int type, PayloadFrequencies frequency)
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
@@ -1793,199 +1694,6 @@ Channel::SetSendCNPayloadType(int type, PayloadFrequencies frequency)
                 "module");
             return -1;
         }
-    }
-    return 0;
-}
-
-int32_t
-Channel::SetISACInitTargetRate(int rateBps, bool useFixedFrameSize)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetISACInitTargetRate()");
-
-    CodecInst sendCodec;
-    if (audio_coding_->SendCodec(&sendCodec) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACInitTargetRate() failed to retrieve send codec");
-        return -1;
-    }
-    if (STR_CASE_CMP(sendCodec.plname, "ISAC") != 0)
-    {
-        // This API is only valid if iSAC is setup to run in channel-adaptive
-        // mode.
-        // We do not validate the adaptive mode here. It is done later in the
-        // ConfigISACBandwidthEstimator() API.
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACInitTargetRate() send codec is not iSAC");
-        return -1;
-    }
-
-    uint8_t initFrameSizeMsec(0);
-    if (16000 == sendCodec.plfreq)
-    {
-        // Note that 0 is a valid and corresponds to "use default
-        if ((rateBps != 0 &&
-            rateBps < kVoiceEngineMinIsacInitTargetRateBpsWb) ||
-            (rateBps > kVoiceEngineMaxIsacInitTargetRateBpsWb))
-        {
-             _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACInitTargetRate() invalid target rate - 1");
-            return -1;
-        }
-        // 30 or 60ms
-        initFrameSizeMsec = (uint8_t)(sendCodec.pacsize / 16);
-    }
-    else if (32000 == sendCodec.plfreq)
-    {
-        if ((rateBps != 0 &&
-            rateBps < kVoiceEngineMinIsacInitTargetRateBpsSwb) ||
-            (rateBps > kVoiceEngineMaxIsacInitTargetRateBpsSwb))
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACInitTargetRate() invalid target rate - 2");
-            return -1;
-        }
-        initFrameSizeMsec = (uint8_t)(sendCodec.pacsize / 32); // 30ms
-    }
-
-    if (audio_coding_->ConfigISACBandwidthEstimator(
-        initFrameSizeMsec, rateBps, useFixedFrameSize) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-            "SetISACInitTargetRate() iSAC BWE config failed");
-        return -1;
-    }
-
-    return 0;
-}
-
-int32_t
-Channel::SetISACMaxRate(int rateBps)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetISACMaxRate()");
-
-    CodecInst sendCodec;
-    if (audio_coding_->SendCodec(&sendCodec) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACMaxRate() failed to retrieve send codec");
-        return -1;
-    }
-    if (STR_CASE_CMP(sendCodec.plname, "ISAC") != 0)
-    {
-        // This API is only valid if iSAC is selected as sending codec.
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACMaxRate() send codec is not iSAC");
-        return -1;
-    }
-    if (16000 == sendCodec.plfreq)
-    {
-        if ((rateBps < kVoiceEngineMinIsacMaxRateBpsWb) ||
-            (rateBps > kVoiceEngineMaxIsacMaxRateBpsWb))
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACMaxRate() invalid max rate - 1");
-            return -1;
-        }
-    }
-    else if (32000 == sendCodec.plfreq)
-    {
-        if ((rateBps < kVoiceEngineMinIsacMaxRateBpsSwb) ||
-            (rateBps > kVoiceEngineMaxIsacMaxRateBpsSwb))
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACMaxRate() invalid max rate - 2");
-            return -1;
-        }
-    }
-    if (channel_state_.Get().sending)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_SENDING, kTraceError,
-            "SetISACMaxRate() unable to set max rate while sending");
-        return -1;
-    }
-
-    // Set the maximum instantaneous rate of iSAC (works for both adaptive
-    // and non-adaptive mode)
-    if (audio_coding_->SetISACMaxRate(rateBps) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-            "SetISACMaxRate() failed to set max rate");
-        return -1;
-    }
-
-    return 0;
-}
-
-int32_t
-Channel::SetISACMaxPayloadSize(int sizeBytes)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetISACMaxPayloadSize()");
-    CodecInst sendCodec;
-    if (audio_coding_->SendCodec(&sendCodec) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACMaxPayloadSize() failed to retrieve send codec");
-        return -1;
-    }
-    if (STR_CASE_CMP(sendCodec.plname, "ISAC") != 0)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_CODEC_ERROR, kTraceError,
-            "SetISACMaxPayloadSize() send codec is not iSAC");
-        return -1;
-    }
-    if (16000 == sendCodec.plfreq)
-    {
-        if ((sizeBytes < kVoiceEngineMinIsacMaxPayloadSizeBytesWb) ||
-            (sizeBytes > kVoiceEngineMaxIsacMaxPayloadSizeBytesWb))
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACMaxPayloadSize() invalid max payload - 1");
-            return -1;
-        }
-    }
-    else if (32000 == sendCodec.plfreq)
-    {
-        if ((sizeBytes < kVoiceEngineMinIsacMaxPayloadSizeBytesSwb) ||
-            (sizeBytes > kVoiceEngineMaxIsacMaxPayloadSizeBytesSwb))
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "SetISACMaxPayloadSize() invalid max payload - 2");
-            return -1;
-        }
-    }
-    if (channel_state_.Get().sending)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_SENDING, kTraceError,
-            "SetISACMaxPayloadSize() unable to set max rate while sending");
-        return -1;
-    }
-
-    if (audio_coding_->SetISACMaxPayloadSize(sizeBytes) == -1)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-            "SetISACMaxPayloadSize() failed to set max payload size");
-        return -1;
     }
     return 0;
 }
@@ -3512,21 +3220,19 @@ Channel::GetRemoteCSRCs(unsigned int arrCSRC[15])
 }
 
 int Channel::SetSendAudioLevelIndicationStatus(bool enable, unsigned char id) {
-  if (rtp_audioproc_.get() == NULL) {
-    rtp_audioproc_.reset(AudioProcessing::Create(VoEModuleId(_instanceId,
-                                                             _channelId)));
-  }
+  _includeAudioLevelIndication = enable;
+  return SetSendRtpHeaderExtension(enable, kRtpExtensionAudioLevel, id);
+}
 
-  if (rtp_audioproc_->level_estimator()->Enable(enable) !=
-      AudioProcessing::kNoError) {
-    _engineStatisticsPtr->SetLastError(VE_APM_ERROR, kTraceError,
-        "Failed to enable AudioProcessing::level_estimator()");
+int Channel::SetReceiveAudioLevelIndicationStatus(bool enable,
+                                                  unsigned char id) {
+  rtp_header_parser_->DeregisterRtpHeaderExtension(
+      kRtpExtensionAudioLevel);
+  if (enable && !rtp_header_parser_->RegisterRtpHeaderExtension(
+          kRtpExtensionAudioLevel, id)) {
     return -1;
   }
-
-  _includeAudioLevelIndication = enable;
-
-  return SetSendRtpHeaderExtension(enable, kRtpExtensionAudioLevel, id);
+  return 0;
 }
 
 int Channel::SetSendAbsoluteSenderTimeStatus(bool enable, unsigned char id) {
@@ -4153,61 +3859,26 @@ Channel::Demultiplex(const AudioFrame& audioFrame)
     return 0;
 }
 
-// TODO(xians): This method borrows quite some code from
-// TransmitMixer::GenerateAudioFrame(), refactor these two methods and reduce
-// code duplication.
 void Channel::Demultiplex(const int16_t* audio_data,
                           int sample_rate,
                           int number_of_frames,
                           int number_of_channels) {
-  // The highest sample rate that WebRTC supports for mono audio is 96kHz.
-  static const int kMaxNumberOfFrames = 960;
-  assert(number_of_frames <= kMaxNumberOfFrames);
-
-  // Get the send codec information for doing resampling or downmixing later on.
   CodecInst codec;
   GetSendCodec(codec);
-  assert(codec.channels == 1 || codec.channels == 2);
-  int support_sample_rate = std::min(32000,
-                                     std::min(sample_rate, codec.plfreq));
 
-  // Downmix the data to mono if needed.
-  const int16_t* audio_ptr = audio_data;
-  if (number_of_channels == 2 && codec.channels == 1) {
-    if (!mono_recording_audio_.get())
-      mono_recording_audio_.reset(new int16_t[kMaxNumberOfFrames]);
-
-    AudioFrameOperations::StereoToMono(audio_data, number_of_frames,
-                                       mono_recording_audio_.get());
-    audio_ptr = mono_recording_audio_.get();
+  if (!mono_recording_audio_.get()) {
+    // Temporary space for DownConvertToCodecFormat.
+    mono_recording_audio_.reset(new int16_t[kMaxMonoDataSizeSamples]);
   }
-
-  // Resample the data to the sample rate that the codec is using.
-  if (input_resampler_.InitializeIfNeeded(sample_rate,
-                                          support_sample_rate,
-                                          codec.channels)) {
-    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
-                 "Channel::Demultiplex() unable to resample");
-    return;
-  }
-
-  int out_length = input_resampler_.Resample(audio_ptr,
-                                             number_of_frames * codec.channels,
-                                             _audioFrame.data_,
-                                             AudioFrame::kMaxDataSizeSamples);
-  if (out_length == -1) {
-    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
-                 "Channel::Demultiplex() resampling failed");
-    return;
-  }
-
-  _audioFrame.samples_per_channel_ = out_length / codec.channels;
-  _audioFrame.timestamp_ = -1;
-  _audioFrame.sample_rate_hz_ = support_sample_rate;
-  _audioFrame.speech_type_ = AudioFrame::kNormalSpeech;
-  _audioFrame.vad_activity_ = AudioFrame::kVadUnknown;
-  _audioFrame.num_channels_ = codec.channels;
-  _audioFrame.id_ = _channelId;
+  DownConvertToCodecFormat(audio_data,
+                           number_of_frames,
+                           number_of_channels,
+                           sample_rate,
+                           codec.channels,
+                           codec.plfreq,
+                           mono_recording_audio_.get(),
+                           &input_resampler_,
+                           &_audioFrame);
 }
 
 uint32_t
@@ -4252,12 +3923,8 @@ Channel::PrepareEncodeAndSend(int mixingFrequency)
     InsertInbandDtmfTone();
 
     if (_includeAudioLevelIndication) {
-      // Performs level analysis only; does not affect the signal.
-      int err = rtp_audioproc_->ProcessStream(&_audioFrame);
-      if (err) {
-        LOG(LS_ERROR) << "ProcessStream() error: " << err;
-        assert(false);
-      }
+      int length = _audioFrame.samples_per_channel_ * _audioFrame.num_channels_;
+      rms_level_.Process(_audioFrame.data_, length);
     }
 
     return 0;
@@ -4389,68 +4056,6 @@ int Channel::SetExternalMixing(bool enabled) {
 
     _externalMixing = enabled;
 
-    return 0;
-}
-
-int
-Channel::ResetRTCPStatistics()
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::ResetRTCPStatistics()");
-    uint32_t remoteSSRC(0);
-    remoteSSRC = rtp_receiver_->SSRC();
-    return _rtpRtcpModule->ResetRTT(remoteSSRC);
-}
-
-int
-Channel::GetRoundTripTimeSummary(StatVal& delaysMs) const
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::GetRoundTripTimeSummary()");
-    // Override default module outputs for the case when RTCP is disabled.
-    // This is done to ensure that we are backward compatible with the
-    // VoiceEngine where we did not use RTP/RTCP module.
-    if (!_rtpRtcpModule->RTCP())
-    {
-        delaysMs.min = -1;
-        delaysMs.max = -1;
-        delaysMs.average = -1;
-        WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
-                     "Channel::GetRoundTripTimeSummary() RTCP is disabled =>"
-                     " valid RTT measurements cannot be retrieved");
-        return 0;
-    }
-
-    uint32_t remoteSSRC;
-    uint16_t RTT;
-    uint16_t avgRTT;
-    uint16_t maxRTT;
-    uint16_t minRTT;
-    // The remote SSRC will be zero if no RTP packet has been received.
-    remoteSSRC = rtp_receiver_->SSRC();
-    if (remoteSSRC == 0)
-    {
-        WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
-                     "Channel::GetRoundTripTimeSummary() unable to measure RTT"
-                     " since no RTP packet has been received yet");
-    }
-
-    // Retrieve RTT statistics from the RTP/RTCP module for the specified
-    // channel and SSRC. The SSRC is required to parse out the correct source
-    // in conference scenarios.
-    if (_rtpRtcpModule->RTT(remoteSSRC, &RTT, &avgRTT, &minRTT,&maxRTT) != 0)
-    {
-        WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
-                     "GetRoundTripTimeSummary unable to retrieve RTT values"
-                     " from the RTCP layer");
-        delaysMs.min = -1; delaysMs.max = -1; delaysMs.average = -1;
-    }
-    else
-    {
-        delaysMs.min = minRTT;
-        delaysMs.max = maxRTT;
-        delaysMs.average = avgRTT;
-    }
     return 0;
 }
 
@@ -4657,7 +4262,7 @@ Channel::GetRtpRtcp(RtpRtcp** rtpRtcpModule, RtpReceiver** rtp_receiver) const
 int32_t
 Channel::MixOrReplaceAudioWithFile(int mixingFrequency)
 {
-    scoped_array<int16_t> fileBuffer(new int16_t[640]);
+    scoped_ptr<int16_t[]> fileBuffer(new int16_t[640]);
     int fileSamples(0);
 
     {
@@ -4697,11 +4302,11 @@ Channel::MixOrReplaceAudioWithFile(int mixingFrequency)
     {
         // Currently file stream is always mono.
         // TODO(xians): Change the code when FilePlayer supports real stereo.
-        Utility::MixWithSat(_audioFrame.data_,
-                            _audioFrame.num_channels_,
-                            fileBuffer.get(),
-                            1,
-                            fileSamples);
+        MixWithSat(_audioFrame.data_,
+                   _audioFrame.num_channels_,
+                   fileBuffer.get(),
+                   1,
+                   fileSamples);
     }
     else
     {
@@ -4727,7 +4332,7 @@ Channel::MixAudioWithFile(AudioFrame& audioFrame,
 {
     assert(mixingFrequency <= 32000);
 
-    scoped_array<int16_t> fileBuffer(new int16_t[640]);
+    scoped_ptr<int16_t[]> fileBuffer(new int16_t[640]);
     int fileSamples(0);
 
     {
@@ -4757,11 +4362,11 @@ Channel::MixAudioWithFile(AudioFrame& audioFrame,
     {
         // Currently file stream is always mono.
         // TODO(xians): Change the code when FilePlayer supports real stereo.
-        Utility::MixWithSat(audioFrame.data_,
-                            audioFrame.num_channels_,
-                            fileBuffer.get(),
-                            1,
-                            fileSamples);
+        MixWithSat(audioFrame.data_,
+                   audioFrame.num_channels_,
+                   fileBuffer.get(),
+                   1,
+                   fileSamples);
     }
     else
     {
@@ -4846,28 +4451,6 @@ Channel::InsertInbandDtmfTone()
         // Add 10ms to "delay-since-last-tone" counter
         _inbandDtmfGenerator.UpdateDelaySinceLastTone();
     }
-    return 0;
-}
-
-void
-Channel::ResetDeadOrAliveCounters()
-{
-    _countDeadDetections = 0;
-    _countAliveDetections = 0;
-}
-
-void
-Channel::UpdateDeadOrAliveCounters(bool alive)
-{
-    if (alive)
-        _countAliveDetections++;
-    else
-        _countDeadDetections++;
-}
-
-int
-Channel::GetDeadOrAliveCounters(int& countDead, int& countAlive) const
-{
     return 0;
 }
 

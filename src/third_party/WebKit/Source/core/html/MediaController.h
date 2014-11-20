@@ -27,11 +27,8 @@
 #define MediaController_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/Event.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/html/MediaControllerInterface.h"
-#include "platform/Timer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -39,11 +36,11 @@
 namespace WebCore {
 
 class Clock;
-class Event;
 class ExceptionState;
 class ExecutionContext;
+class GenericEventQueue;
 
-class MediaController FINAL : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
+class MediaController FINAL : public RefCounted<MediaController>, public ScriptWrappable, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(MediaController);
 public:
     static PassRefPtr<MediaController> create(ExecutionContext*);
@@ -51,15 +48,14 @@ public:
 
     void addMediaElement(HTMLMediaElement*);
     void removeMediaElement(HTMLMediaElement*);
-    bool containsMediaElement(HTMLMediaElement*) const;
 
     PassRefPtr<TimeRanges> buffered() const;
     PassRefPtr<TimeRanges> seekable() const;
     PassRefPtr<TimeRanges> played();
 
-    virtual double duration() const OVERRIDE;
-    virtual double currentTime() const OVERRIDE;
-    virtual void setCurrentTime(double, ExceptionState&) OVERRIDE;
+    double duration() const;
+    double currentTime() const;
+    void setCurrentTime(double, ExceptionState&);
 
     bool paused() const { return m_paused; }
     void play();
@@ -67,24 +63,22 @@ public:
     void unpause();
 
     double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
-    void setDefaultPlaybackRate(double, ExceptionState&);
+    void setDefaultPlaybackRate(double);
 
     double playbackRate() const;
-    void setPlaybackRate(double, ExceptionState&);
+    void setPlaybackRate(double);
 
-    virtual double volume() const OVERRIDE { return m_volume; }
-    virtual void setVolume(double, ExceptionState&) OVERRIDE;
+    double volume() const { return m_volume; }
+    void setVolume(double, ExceptionState&);
 
-    virtual bool muted() const OVERRIDE { return m_muted; }
-    virtual void setMuted(bool) OVERRIDE;
+    bool muted() const { return m_muted; }
+    void setMuted(bool);
 
     typedef HTMLMediaElement::ReadyState ReadyState;
     ReadyState readyState() const { return m_readyState; }
 
     enum PlaybackState { WAITING, PLAYING, ENDED };
     const AtomicString& playbackState() const;
-
-    virtual bool hasAudio() const OVERRIDE;
 
     bool isRestrained() const;
     bool isBlocked() const;
@@ -99,7 +93,6 @@ private:
     void updateMediaElements();
     void bringElementUpToSpeed(HTMLMediaElement*);
     void scheduleEvent(const AtomicString& eventName);
-    void asyncEventTimerFired(Timer<MediaController>*);
     void clearPositionTimerFired(Timer<MediaController>*);
     bool hasEnded() const;
     void scheduleTimeupdateEvent();
@@ -120,8 +113,7 @@ private:
     bool m_muted;
     ReadyState m_readyState;
     PlaybackState m_playbackState;
-    Vector<RefPtr<Event> > m_pendingEvents;
-    Timer<MediaController> m_asyncEventTimer;
+    OwnPtr<GenericEventQueue> m_pendingEventsQueue;
     mutable Timer<MediaController> m_clearPositionTimer;
     OwnPtr<Clock> m_clock;
     ExecutionContext* m_executionContext;

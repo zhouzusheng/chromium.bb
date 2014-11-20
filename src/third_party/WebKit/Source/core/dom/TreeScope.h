@@ -28,7 +28,7 @@
 #define TreeScope_h
 
 #include "core/dom/DocumentOrderedMap.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/text/AtomicString.h"
 
@@ -49,7 +49,7 @@ class RenderObject;
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
 // the destructor.
-class TreeScope {
+class TreeScope : public WillBeGarbageCollectedMixin {
 public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
 
@@ -98,10 +98,12 @@ public:
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node&);
 
-    Node& rootNode() const { return m_rootNode; }
+    Node& rootNode() const { return *m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
+
+#if !ENABLE(OILPAN)
     // Nodes belonging to this scope hold guard references -
     // these are enough to keep the scope from being destroyed, but
     // not enough to keep it from removing its children. This allows a
@@ -115,6 +117,7 @@ public:
 
     void guardDeref()
     {
+        ASSERT(m_guardRefCount > 0);
         ASSERT(!deletionHasBegun());
         --m_guardRefCount;
         if (!m_guardRefCount && !refCount() && !rootNodeHasTreeSharedParent()) {
@@ -122,31 +125,44 @@ public:
             delete this;
         }
     }
+#endif
 
     void removedLastRefToScope();
 
     bool isInclusiveAncestorOf(const TreeScope&) const;
     unsigned short comparePosition(const TreeScope&) const;
 
+    const TreeScope* commonAncestorTreeScope(const TreeScope& other) const;
+    TreeScope* commonAncestorTreeScope(TreeScope& other);
+
     Element* getElementByAccessKey(const String& key) const;
+
+    virtual void trace(Visitor*);
 
 protected:
     TreeScope(ContainerNode&, Document&);
     TreeScope(Document&);
     virtual ~TreeScope();
 
+#if !ENABLE(OILPAN)
     void destroyTreeScopeData();
+#endif
+
     void setDocument(Document& document) { m_document = &document; }
     void setParentTreeScope(TreeScope&);
 
+#if !ENABLE(OILPAN)
     bool hasGuardRefCount() const { return m_guardRefCount; }
+#endif
 
     void setNeedsStyleRecalcForViewportUnits();
 
 private:
     virtual void dispose() { }
 
+#if !ENABLE(OILPAN)
     int refCount() const;
+
 #if SECURITY_ASSERT_ENABLED
     bool deletionHasBegun();
     void beginDeletion();
@@ -154,21 +170,25 @@ private:
     bool deletionHasBegun() { return false; }
     void beginDeletion() { }
 #endif
+#endif
 
     bool rootNodeHasTreeSharedParent() const;
 
-    Node& m_rootNode;
-    Document* m_document;
-    TreeScope* m_parentTreeScope;
+    RawPtrWillBeMember<Node> m_rootNode;
+    RawPtrWillBeMember<Document> m_document;
+    RawPtrWillBeMember<TreeScope> m_parentTreeScope;
+
+#if !ENABLE(OILPAN)
     int m_guardRefCount;
+#endif
 
     OwnPtr<DocumentOrderedMap> m_elementsById;
     OwnPtr<DocumentOrderedMap> m_imageMapsByName;
     OwnPtr<DocumentOrderedMap> m_labelsByForAttribute;
 
-    OwnPtr<IdTargetObserverRegistry> m_idTargetObserverRegistry;
+    OwnPtrWillBeMember<IdTargetObserverRegistry> m_idTargetObserverRegistry;
 
-    mutable RefPtrWillBePersistent<DOMSelection> m_selection;
+    mutable RefPtrWillBeMember<DOMSelection> m_selection;
 };
 
 inline bool TreeScope::hasElementWithId(StringImpl* id) const

@@ -41,19 +41,19 @@ const char* MIDIController::supplementName()
     return "MIDIController";
 }
 
-MIDIController::MIDIController(MIDIClient* client)
+MIDIController::MIDIController(PassOwnPtr<MIDIClient> client)
     : m_client(client)
 {
-    ASSERT(client);
+    ASSERT(m_client);
 }
 
 MIDIController::~MIDIController()
 {
 }
 
-PassOwnPtr<MIDIController> MIDIController::create(MIDIClient* client)
+PassOwnPtrWillBeRawPtr<MIDIController> MIDIController::create(PassOwnPtr<MIDIClient> client)
 {
-    return adoptPtr(new MIDIController(client));
+    return adoptPtrWillBeNoop(new MIDIController(client));
 }
 
 void MIDIController::requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess> access)
@@ -66,7 +66,7 @@ void MIDIController::cancelSysexPermissionRequest(MIDIAccess* access)
     m_client->cancelSysexPermissionRequest(access);
 }
 
-void provideMIDITo(Page& page, MIDIClient* client)
+void provideMIDITo(Page& page, PassOwnPtr<MIDIClient> client)
 {
     MIDIController::provideTo(page, MIDIController::supplementName(), MIDIController::create(client));
 }

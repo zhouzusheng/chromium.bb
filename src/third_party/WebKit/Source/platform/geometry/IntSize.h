@@ -28,6 +28,7 @@
 #define IntSize_h
 
 #include "platform/PlatformExport.h"
+#include "public/platform/WebCommon.h"
 
 #if OS(MACOSX)
 typedef struct CGSize CGSize;
@@ -97,9 +98,10 @@ public:
             m_height = minimumSize.height();
     }
 
-    int area() const
+    // Return area in a uint64_t to avoid overflow.
+    uint64_t area() const
     {
-        return m_width * m_height;
+        return static_cast<uint64_t>(width()) * height();
     }
 
     int diagonalLengthSquared() const

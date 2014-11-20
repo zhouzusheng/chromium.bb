@@ -9,6 +9,7 @@
 
 #include "base/at_exit.h"
 #include "base/debug/trace_event.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 
@@ -16,23 +17,21 @@ namespace {
 
 using gpu::gles2::ShaderTranslator;
 
-bool g_translator_initialized = false;
-
-void FinalizeShaderTranslator(void* /* dummy */) {
-  TRACE_EVENT0("gpu", "ShFinalize");
-  ShFinalize();
-  g_translator_initialized = false;
-}
-
-bool InitializeShaderTranslator() {
-  if (!g_translator_initialized) {
+class ShaderTranslatorInitializer {
+ public:
+  ShaderTranslatorInitializer() {
     TRACE_EVENT0("gpu", "ShInitialize");
     CHECK(ShInitialize());
-    base::AtExitManager::RegisterCallback(&FinalizeShaderTranslator, NULL);
-    g_translator_initialized = true;
   }
-  return g_translator_initialized;
-}
+
+  ~ShaderTranslatorInitializer() {
+    TRACE_EVENT0("gpu", "ShFinalize");
+    ShFinalize();
+  }
+};
+
+base::LazyInstance<ShaderTranslatorInitializer> g_translator_initializer =
+    LAZY_INSTANCE_INITIALIZER;
 
 #if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
 typedef int ANGLEGetInfoType;
@@ -135,8 +134,7 @@ bool ShaderTranslator::Init(
   DCHECK(shader_spec == SH_GLES2_SPEC || shader_spec == SH_WEBGL_SPEC);
   DCHECK(resources != NULL);
 
-  if (!InitializeShaderTranslator())
-    return false;
+  g_translator_initializer.Get();
 
   ShShaderOutput shader_output =
       (glsl_implementation_type == kGlslES ? SH_ESSL_OUTPUT : SH_GLSL_OUTPUT);
@@ -205,7 +203,14 @@ bool ShaderTranslator::Translate(const char* shader) {
 
 std::string ShaderTranslator::GetStringForOptionsThatWouldEffectCompilation()
     const {
+
+#if ANGLE_SH_VERSION >= 123
+  const size_t kNumIntFields = 21;
+#elif ANGLE_SH_VERSION >= 122
+  const size_t kNumIntFields = 20;
+#else
   const size_t kNumIntFields = 16;
+#endif
   const size_t kNumEnumFields = 1;
   const size_t kNumFunctionPointerFields = 1;
   struct MustMatchShBuiltInResource {
@@ -256,7 +261,23 @@ std::string ShaderTranslator::GetStringForOptionsThatWouldEffectCompilation()
       ":MaxCallStackDepth:" +
       base::IntToString(compiler_options_.MaxCallStackDepth) +
       ":EXT_frag_depth:" +
+#if ANGLE_SH_VERSION >= 122
+      base::IntToString(compiler_options_.EXT_frag_depth) +
+#if ANGLE_SH_VERSION >= 123
+      ":EXT_shader_texture_lod:" +
+      base::IntToString(compiler_options_.EXT_shader_texture_lod) +
+#endif
+      ":MaxVertexOutputVectors:" +
+      base::IntToString(compiler_options_.MaxVertexOutputVectors) +
+      ":MaxFragmentInputVectors:" +
+      base::IntToString(compiler_options_.MaxFragmentInputVectors) +
+      ":MinProgramTexelOffset:" +
+      base::IntToString(compiler_options_.MinProgramTexelOffset) +
+      ":MaxProgramTexelOffset:" +
+      base::IntToString(compiler_options_.MaxProgramTexelOffset));
+#else   // ANGLE_SH_VERSION < 122
       base::IntToString(compiler_options_.EXT_frag_depth));
+#endif
 }
 
 const char* ShaderTranslator::translated_shader() const {

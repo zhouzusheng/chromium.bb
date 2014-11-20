@@ -37,7 +37,7 @@ namespace cc {
 
 namespace {
 
-class OnDemandRasterTaskImpl : public internal::Task {
+class OnDemandRasterTaskImpl : public Task {
  public:
   OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
                          SkCanvas* canvas,
@@ -51,7 +51,7 @@ class OnDemandRasterTaskImpl : public internal::Task {
     DCHECK(canvas_);
   }
 
-  // Overridden from internal::Task:
+  // Overridden from Task:
   virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
 
@@ -115,7 +115,6 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
     : DirectRenderer(client, settings, output_surface, resource_provider),
-      visible_(true),
       is_scissor_enabled_(false),
       is_backbuffer_discarded_(false),
       output_device_(output_surface->software_device()),
@@ -129,7 +128,7 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = settings_->use_map_image;
+  capabilities_.using_map_image = true;
   capabilities_.using_shared_memory_resources = true;
 
   capabilities_.allow_rasterize_on_demand = true;
@@ -391,7 +390,7 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
                "SoftwareRenderer::DrawPictureQuad");
 
   // Create and run on-demand raster task for tile.
-  scoped_refptr<internal::Task> on_demand_raster_task(
+  scoped_refptr<Task> on_demand_raster_task(
       new OnDemandRasterTaskImpl(quad->picture_pile,
                                  current_canvas_,
                                  quad->content_rect,
@@ -583,9 +582,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     SkPaint mask_paint;
     mask_paint.setShader(mask_shader.get());
 
+    SkLayerRasterizer::Builder builder;
+    builder.addLayer(mask_paint);
+
     skia::RefPtr<SkLayerRasterizer> mask_rasterizer =
-        skia::AdoptRef(new SkLayerRasterizer);
-    mask_rasterizer->addLayer(mask_paint);
+        skia::AdoptRef(builder.detachRasterizer());
 
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
@@ -653,12 +654,8 @@ void SoftwareRenderer::GetFramebufferPixels(void* pixels,
   output_device_->CopyToPixels(frame_rect, pixels);
 }
 
-void SoftwareRenderer::SetVisible(bool visible) {
-  if (visible_ == visible)
-    return;
-  visible_ = visible;
-
-  if (visible_)
+void SoftwareRenderer::DidChangeVisibility() {
+  if (visible())
     EnsureBackbuffer();
   else
     DiscardBackbuffer();

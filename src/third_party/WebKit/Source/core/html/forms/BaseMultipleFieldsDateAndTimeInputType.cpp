@@ -36,6 +36,7 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/KeyboardEvent.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -158,9 +159,12 @@ void BaseMultipleFieldsDateAndTimeInputType::didBlurFromControl()
 
     if (containsFocusedShadowElement())
         return;
+    EventQueueScope scope;
     RefPtr<HTMLInputElement> protector(element());
     // Remove focus ring by CSS "focus" pseudo class.
     element().setFocus(false);
+    if (SpinButtonElement *spinButton = spinButtonElement())
+        spinButton->releaseCapture();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::didFocusOnControl()
@@ -187,7 +191,6 @@ void BaseMultipleFieldsDateAndTimeInputType::editControlValueChanged()
         input->setValueInternal(newValue, DispatchNoEvent);
         input->setNeedsStyleRecalc(SubtreeStyleChange);
         input->dispatchFormControlInputEvent();
-        input->dispatchFormControlChangeEvent();
     }
     input->notifyFormStateChanged();
     input->updateClearButtonVisibility();
@@ -240,6 +243,12 @@ void BaseMultipleFieldsDateAndTimeInputType::spinButtonStepUp()
         edit->stepUp();
 }
 
+void BaseMultipleFieldsDateAndTimeInputType::spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch eventDispatch)
+{
+    if (eventDispatch == SpinButtonElement::EventDispatchAllowed)
+        element().dispatchFormControlChangeEvent();
+}
+
 bool BaseMultipleFieldsDateAndTimeInputType::isPickerIndicatorOwnerDisabledOrReadOnly() const
 {
     return element().isDisabledOrReadOnly();
@@ -259,6 +268,7 @@ void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(const St
     unsigned end;
     if (date.parseDate(value, 0, end) && end == value.length())
         edit->setOnlyYearMonthDay(date);
+    element().dispatchFormControlChangeEvent();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(double value)
@@ -285,6 +295,7 @@ BaseMultipleFieldsDateAndTimeInputType::BaseMultipleFieldsDateAndTimeInputType(H
 
 BaseMultipleFieldsDateAndTimeInputType::~BaseMultipleFieldsDateAndTimeInputType()
 {
+#if !ENABLE(OILPAN)
     if (SpinButtonElement* element = spinButtonElement())
         element->removeSpinButtonOwner();
     if (ClearButtonElement* element = clearButtonElement())
@@ -293,6 +304,7 @@ BaseMultipleFieldsDateAndTimeInputType::~BaseMultipleFieldsDateAndTimeInputType(
         element->removeEditControlOwner();
     if (PickerIndicatorElement* element = pickerIndicatorElement())
         element->removePickerIndicatorOwner();
+#endif
 }
 
 String BaseMultipleFieldsDateAndTimeInputType::badInputText() const
@@ -436,6 +448,11 @@ AtomicString BaseMultipleFieldsDateAndTimeInputType::localeIdentifier() const
     return element().computeInheritedLanguage();
 }
 
+void BaseMultipleFieldsDateAndTimeInputType::editControlDidChangeValueByKeyboard()
+{
+    element().dispatchFormControlChangeEvent();
+}
+
 void BaseMultipleFieldsDateAndTimeInputType::minOrMaxAttributeChanged()
 {
     updateView();
@@ -506,6 +523,8 @@ void BaseMultipleFieldsDateAndTimeInputType::updateView()
 
     setupLayoutParameters(layoutParameters, date);
 
+    DEFINE_STATIC_LOCAL(AtomicString, datetimeformatAttr, ("datetimeformat", AtomicString::ConstructFromLiteral));
+    edit->setAttribute(datetimeformatAttr, AtomicString(layoutParameters.dateTimeFormat), ASSERT_NO_EXCEPTION);
     const AtomicString pattern = edit->fastGetAttribute(HTMLNames::patternAttr);
     if (!pattern.isEmpty())
         layoutParameters.dateTimeFormat = pattern;

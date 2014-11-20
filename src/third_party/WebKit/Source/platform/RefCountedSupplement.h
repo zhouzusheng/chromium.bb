@@ -32,22 +32,25 @@
 
 namespace WebCore {
 
+#if !ENABLE(OILPAN)
 template<class T, class S>
 class RefCountedSupplement : public RefCounted<S> {
 public:
     typedef RefCountedSupplement<T, S> ThisType;
 
     virtual ~RefCountedSupplement() { }
-    virtual void hostDestroyed() { }
 
     class Wrapper FINAL : public Supplement<T> {
     public:
         explicit Wrapper(PassRefPtr<ThisType> wrapped) : m_wrapped(wrapped) { }
-        virtual ~Wrapper() { m_wrapped->hostDestroyed();  }
+        virtual ~Wrapper() { }
 #if SECURITY_ASSERT_ENABLED
         virtual bool isRefCountedWrapper() const OVERRIDE { return true; }
 #endif
         ThisType* wrapped() const { return m_wrapped.get(); }
+
+        virtual void trace(Visitor*) OVERRIDE { }
+
     private:
 
         RefPtr<ThisType> m_wrapped;
@@ -67,6 +70,7 @@ public:
         return static_cast<Wrapper*>(found)->wrapped();
     }
 };
+#endif
 
 } // namespace WebCore
 

@@ -27,6 +27,7 @@
 #define CSSFontFace_h
 
 #include "core/css/CSSFontFaceSource.h"
+#include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/FontFace.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
@@ -36,21 +37,20 @@
 namespace WebCore {
 
 class CSSFontSelector;
-class CSSSegmentedFontFace;
 class Document;
 class FontDescription;
 class RemoteFontFaceSource;
 class SimpleFontData;
 class StyleRuleFontFace;
 
-class CSSFontFace {
+class CSSFontFace FINAL : public NoBaseWillBeGarbageCollectedFinalized<CSSFontFace> {
 public:
     struct UnicodeRange;
     class UnicodeRangeSet;
 
     CSSFontFace(FontFace* fontFace, Vector<UnicodeRange>& ranges)
         : m_ranges(ranges)
-        , m_segmentedFontFace(0)
+        , m_segmentedFontFace(nullptr)
         , m_fontFace(fontFace)
     {
         ASSERT(m_fontFace);
@@ -61,9 +61,12 @@ public:
     UnicodeRangeSet& ranges() { return m_ranges; }
 
     void setSegmentedFontFace(CSSSegmentedFontFace*);
-    void clearSegmentedFontFace() { m_segmentedFontFace = 0; }
+    void clearSegmentedFontFace() { m_segmentedFontFace = nullptr; }
 
     bool isValid() const { return !m_sources.isEmpty(); }
+
+    // FIXME: Should not be exposed (used by tentative CORS fallback code).
+    CSSFontSelector* fontSelector() const;
 
     void addSource(PassOwnPtr<CSSFontFaceSource>);
 
@@ -94,6 +97,7 @@ public:
     class UnicodeRangeSet {
     public:
         explicit UnicodeRangeSet(const Vector<UnicodeRange>&);
+        bool contains(UChar32) const;
         bool intersectsWith(const String&) const;
         bool isEntireRange() const { return m_ranges.isEmpty(); }
         size_t size() const { return m_ranges.size(); }
@@ -103,18 +107,20 @@ public:
     };
 
     FontFace::LoadStatus loadStatus() const { return m_fontFace->loadStatus(); }
-    void willUseFontData(const FontDescription&);
+    bool maybeScheduleFontLoad(const FontDescription&, UChar32);
     void load(const FontDescription&, CSSFontSelector* = 0);
 
     bool hadBlankText() { return isValid() && m_sources.first()->hadBlankText(); }
+
+    void trace(Visitor*);
 
 private:
     void setLoadStatus(FontFace::LoadStatus);
 
     UnicodeRangeSet m_ranges;
-    CSSSegmentedFontFace* m_segmentedFontFace;
+    RawPtrWillBeMember<CSSSegmentedFontFace> m_segmentedFontFace;
     Deque<OwnPtr<CSSFontFaceSource> > m_sources;
-    FontFace* m_fontFace;
+    RawPtrWillBeMember<FontFace> m_fontFace;
 };
 
 }

@@ -36,15 +36,14 @@ void PictureLayerTilingSet::SetClient(PictureLayerTilingClient* client) {
     tilings_[i]->SetClient(client_);
 }
 
-void PictureLayerTilingSet::SyncTilings(
-    const PictureLayerTilingSet& other,
-    const gfx::Size& new_layer_bounds,
-    const Region& layer_invalidation,
-    float minimum_contents_scale) {
+bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
+                                        const gfx::Size& new_layer_bounds,
+                                        const Region& layer_invalidation,
+                                        float minimum_contents_scale) {
   if (new_layer_bounds.IsEmpty()) {
     RemoveAllTilings();
     layer_bounds_ = new_layer_bounds;
-    return;
+    return false;
   }
 
   tilings_.reserve(other.tilings_.size());
@@ -59,6 +58,8 @@ void PictureLayerTilingSet::SyncTilings(
     tilings_.pop_back();
     --i;
   }
+
+  bool have_high_res_tiling = false;
 
   // Add any missing tilings from |other| that meet the minimum.
   for (size_t i = 0; i < other.tilings_.size(); ++i) {
@@ -75,9 +76,11 @@ void PictureLayerTilingSet::SyncTilings(
 
       this_tiling->UpdateTilesToCurrentPile();
       this_tiling->CreateMissingTilesInLiveTilesRect();
+      if (this_tiling->resolution() == HIGH_RESOLUTION)
+        have_high_res_tiling = true;
 
       DCHECK(this_tiling->tile_size() ==
-             client_->CalculateTileSize(this_tiling->ContentRect().size()));
+             client_->CalculateTileSize(this_tiling->TilingRect().size()));
       continue;
     }
     scoped_ptr<PictureLayerTiling> new_tiling = PictureLayerTiling::Create(
@@ -85,11 +88,19 @@ void PictureLayerTilingSet::SyncTilings(
         new_layer_bounds,
         client_);
     new_tiling->set_resolution(other.tilings_[i]->resolution());
+    if (new_tiling->resolution() == HIGH_RESOLUTION)
+      have_high_res_tiling = true;
     tilings_.push_back(new_tiling.Pass());
   }
   tilings_.sort(LargestToSmallestScaleFunctor());
 
   layer_bounds_ = new_layer_bounds;
+  return have_high_res_tiling;
+}
+
+void PictureLayerTilingSet::RemoveTilesInRegion(const Region& region) {
+  for (size_t i = 0; i < tilings_.size(); ++i)
+    tilings_[i]->RemoveTilesInRegion(region);
 }
 
 void PictureLayerTilingSet::SetCanUseLCDText(bool can_use_lcd_text) {

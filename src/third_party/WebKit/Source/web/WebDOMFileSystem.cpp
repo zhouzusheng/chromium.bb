@@ -29,17 +29,17 @@
  */
 
 #include "config.h"
-#include "WebDOMFileSystem.h"
+#include "public/web/WebDOMFileSystem.h"
 
 #include "V8DOMFileSystem.h"
 #include "V8DirectoryEntry.h"
 #include "V8FileEntry.h"
-#include "WebFrameImpl.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/FileEntry.h"
+#include "web/WebLocalFrameImpl.h"
 #include <v8.h>
 
 using namespace WebCore;
@@ -57,14 +57,14 @@ WebDOMFileSystem WebDOMFileSystem::fromV8Value(v8::Handle<v8::Value> value)
 }
 
 WebDOMFileSystem WebDOMFileSystem::create(
-    WebFrame* frame,
+    WebLocalFrame* frame,
     WebFileSystemType type,
     const WebString& name,
     const WebURL& rootURL,
     SerializableType serializableType)
 {
-    ASSERT(frame && toWebFrameImpl(frame)->frame());
-    RefPtrWillBeRawPtr<DOMFileSystem> domFileSystem = DOMFileSystem::create(toWebFrameImpl(frame)->frame()->document(), name, static_cast<WebCore::FileSystemType>(type), rootURL);
+    ASSERT(frame && toWebLocalFrameImpl(frame)->frame());
+    RefPtrWillBeRawPtr<DOMFileSystem> domFileSystem = DOMFileSystem::create(toWebLocalFrameImpl(frame)->frame()->document(), name, static_cast<WebCore::FileSystemType>(type), rootURL);
     if (serializableType == SerializableTypeSerializable)
         domFileSystem->makeClonable();
     return WebDOMFileSystem(domFileSystem);

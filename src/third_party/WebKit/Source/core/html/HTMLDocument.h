@@ -35,17 +35,11 @@ class HTMLElement;
 
 class HTMLDocument : public Document, public ResourceClient {
 public:
-    static PassRefPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
+    static PassRefPtrWillBeRawPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new HTMLDocument(initializer));
+        return adoptRefWillBeRefCountedGarbageCollected(new HTMLDocument(initializer));
     }
     virtual ~HTMLDocument();
-
-    const AtomicString& dir();
-    void setDir(const AtomicString&);
-
-    String designMode() const;
-    void setDesignMode(const String&);
 
     const AtomicString& bgColor() const;
     void setBgColor(const AtomicString&);
@@ -73,8 +67,8 @@ public:
 
     using Document::write;
     using Document::writeln;
-    void write(DOMWindow*, const Vector<String>& text);
-    void writeln(DOMWindow*, const Vector<String>& text);
+    void write(DOMWindow*, const Vector<String>& text, ExceptionState&);
+    void writeln(DOMWindow*, const Vector<String>& text, ExceptionState&);
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 

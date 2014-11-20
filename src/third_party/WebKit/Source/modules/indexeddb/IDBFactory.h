@@ -30,6 +30,8 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
+#include "modules/indexeddb/IndexedDBClient.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -38,33 +40,33 @@
 namespace WebCore {
 
 class ExceptionState;
-class IDBFactoryBackendInterface;
 class IDBKey;
 class IDBKeyRange;
 class ExecutionContext;
 
-class IDBFactory : public ScriptWrappable, public RefCounted<IDBFactory> {
+class IDBFactory : public RefCountedWillBeGarbageCollectedFinalized<IDBFactory>, public ScriptWrappable {
 public:
-    static PassRefPtr<IDBFactory> create(IDBFactoryBackendInterface* factory)
+    static PassRefPtrWillBeRawPtr<IDBFactory> create(PassRefPtrWillBeRawPtr<IndexedDBClient> client)
     {
-        return adoptRef(new IDBFactory(factory));
+        return adoptRefWillBeNoop(new IDBFactory(client));
     }
     ~IDBFactory();
+    void trace(Visitor*);
 
-    PassRefPtr<IDBRequest> getDatabaseNames(ExecutionContext*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBRequest> getDatabaseNames(ExecutionContext*, ExceptionState&);
 
-    PassRefPtr<IDBOpenDBRequest> open(ExecutionContext*, const String& name, ExceptionState&);
-    PassRefPtr<IDBOpenDBRequest> open(ExecutionContext*, const String& name, unsigned long long version, ExceptionState&);
-    PassRefPtr<IDBOpenDBRequest> deleteDatabase(ExecutionContext*, const String& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBOpenDBRequest> open(ExecutionContext*, const String& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBOpenDBRequest> open(ExecutionContext*, const String& name, unsigned long long version, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBOpenDBRequest> deleteDatabase(ExecutionContext*, const String& name, ExceptionState&);
 
     short cmp(ExecutionContext*, const ScriptValue& first, const ScriptValue& second, ExceptionState&);
 
 private:
-    explicit IDBFactory(IDBFactoryBackendInterface*);
+    explicit IDBFactory(PassRefPtrWillBeRawPtr<IndexedDBClient>);
 
-    PassRefPtr<IDBOpenDBRequest> openInternal(ExecutionContext*, const String& name, int64_t version, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBOpenDBRequest> openInternal(ExecutionContext*, const String& name, int64_t version, ExceptionState&);
 
-    RefPtr<IDBFactoryBackendInterface> m_permissionClient;
+    RefPtrWillBeMember<IndexedDBClient> m_permissionClient;
 };
 
 } // namespace WebCore

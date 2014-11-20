@@ -66,14 +66,14 @@
 #include "content/browser/media/capture/video_capture_oracle.h"
 #include "content/browser/media/capture/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "media/base/video_util.h"
 #include "media/video/capture/video_capture_types.h"
@@ -100,15 +100,6 @@ gfx::Rect ComputeYV12LetterboxRegion(const gfx::Size& frame_size,
   return result;
 }
 
-// Wrapper function to invoke ThreadSafeCaptureOracle::CaptureFrameCallback, is
-// compatible with RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback.
-void InvokeCaptureFrameCallback(
-    const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
-    base::TimeTicks timestamp,
-    bool frame_captured) {
-  capture_frame_cb.Run(timestamp, frame_captured);
-}
-
 void DeleteOnWorkerThread(scoped_ptr<base::Thread> render_thread,
                           const base::Closure& callback) {
   render_thread.reset();
@@ -117,14 +108,33 @@ void DeleteOnWorkerThread(scoped_ptr<base::Thread> render_thread,
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback);
 }
 
+// Responsible for logging the effective frame rate.
+class VideoFrameDeliveryLog {
+ public:
+  VideoFrameDeliveryLog();
+
+  // Report that the frame posted with |frame_time| has been delivered.
+  void ChronicleFrameDelivery(base::TimeTicks frame_time);
+
+ private:
+  // The following keep track of and log the effective frame rate whenever
+  // verbose logging is turned on.
+  base::TimeTicks last_frame_rate_log_time_;
+  int count_frames_rendered_;
+
+  DISALLOW_COPY_AND_ASSIGN(VideoFrameDeliveryLog);
+};
+
 // FrameSubscriber is a proxy to the ThreadSafeCaptureOracle that's compatible
 // with RenderWidgetHostViewFrameSubscriber. We create one per event type.
 class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
  public:
   FrameSubscriber(VideoCaptureOracle::Event event_type,
-                  const scoped_refptr<ThreadSafeCaptureOracle>& oracle)
+                  const scoped_refptr<ThreadSafeCaptureOracle>& oracle,
+                  VideoFrameDeliveryLog* delivery_log)
       : event_type_(event_type),
-        oracle_proxy_(oracle) {}
+        oracle_proxy_(oracle),
+        delivery_log_(delivery_log) {}
 
   virtual bool ShouldCaptureFrame(
       base::TimeTicks present_time,
@@ -135,6 +145,7 @@ class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
  private:
   const VideoCaptureOracle::Event event_type_;
   scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
+  VideoFrameDeliveryLog* const delivery_log_;
 };
 
 // ContentCaptureSubscription is the relationship between a RenderWidgetHost
@@ -180,6 +191,7 @@ class ContentCaptureSubscription : public content::NotificationObserver {
   const int render_process_id_;
   const int render_view_id_;
 
+  VideoFrameDeliveryLog delivery_log_;
   FrameSubscriber paint_subscriber_;
   FrameSubscriber timer_subscriber_;
   content::NotificationRegistrar registrar_;
@@ -217,8 +229,8 @@ class WebContentsCaptureMachine
   virtual ~WebContentsCaptureMachine();
 
   // VideoCaptureMachine overrides.
-  virtual bool Start(
-      const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) OVERRIDE;
+  virtual bool Start(const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+                     const media::VideoCaptureParams& params) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
 
   // Starts a copy from the backing store or the composited surface. Must be run
@@ -257,7 +269,7 @@ class WebContentsCaptureMachine
     RenewFrameSubscription();
   }
 
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
  private:
   // Starts observing the web contents, returning false if lookup fails.
@@ -298,6 +310,9 @@ class WebContentsCaptureMachine
   // Makes all the decisions about which frames to copy, and how.
   scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
+  // Video capture parameters that this machine is started with.
+  media::VideoCaptureParams capture_params_;
+
   // Routing ID of any active fullscreen render widget or MSG_ROUTING_NONE
   // otherwise.
   int fullscreen_widget_id_;
@@ -316,26 +331,6 @@ class WebContentsCaptureMachine
   DISALLOW_COPY_AND_ASSIGN(WebContentsCaptureMachine);
 };
 
-// Responsible for logging the effective frame rate.
-// TODO(nick): Make this compatible with the push model and hook it back up.
-class VideoFrameDeliveryLog {
- public:
-  VideoFrameDeliveryLog();
-
-  // Treat |frame_number| as having been delivered, and update the
-  // frame rate statistics accordingly.
-  void ChronicleFrameDelivery(int frame_number);
-
- private:
-  // The following keep track of and log the effective frame rate whenever
-  // verbose logging is turned on.
-  base::TimeTicks last_frame_rate_log_time_;
-  int count_frames_rendered_;
-  int last_frame_number_;
-
-  DISALLOW_COPY_AND_ASSIGN(VideoFrameDeliveryLog);
-};
-
 bool FrameSubscriber::ShouldCaptureFrame(
     base::TimeTicks present_time,
     scoped_refptr<media::VideoFrame>* storage,
@@ -347,7 +342,10 @@ bool FrameSubscriber::ShouldCaptureFrame(
   bool oracle_decision = oracle_proxy_->ObserveEventAndDecideCapture(
       event_type_, present_time, storage, &capture_frame_cb);
 
-  *deliver_frame_cb = base::Bind(&InvokeCaptureFrameCallback, capture_frame_cb);
+  if (!capture_frame_cb.is_null())
+    *deliver_frame_cb = base::Bind(capture_frame_cb, *storage);
+  if (oracle_decision)
+    delivery_log_->ChronicleFrameDelivery(present_time);
   return oracle_decision;
 }
 
@@ -357,21 +355,24 @@ ContentCaptureSubscription::ContentCaptureSubscription(
     const CaptureCallback& capture_callback)
     : render_process_id_(source.GetProcess()->GetID()),
       render_view_id_(source.GetRoutingID()),
-      paint_subscriber_(VideoCaptureOracle::kSoftwarePaint, oracle_proxy),
-      timer_subscriber_(VideoCaptureOracle::kTimerPoll, oracle_proxy),
+      delivery_log_(),
+      paint_subscriber_(VideoCaptureOracle::kSoftwarePaint, oracle_proxy,
+                        &delivery_log_),
+      timer_subscriber_(VideoCaptureOracle::kTimerPoll, oracle_proxy,
+                        &delivery_log_),
       capture_callback_(capture_callback),
       timer_(true, true) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  RenderWidgetHostViewPort* view =
-      RenderWidgetHostViewPort::FromRWHV(source.GetView());
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      source.GetView());
 
   // Subscribe to accelerated presents. These will be serviced directly by the
   // oracle.
   if (view && kAcceleratedSubscriberIsSupported) {
     scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber(
         new FrameSubscriber(VideoCaptureOracle::kCompositorUpdate,
-            oracle_proxy));
+            oracle_proxy, &delivery_log_));
     view->BeginFrameSubscription(subscriber.Pass());
   }
 
@@ -394,8 +395,8 @@ ContentCaptureSubscription::~ContentCaptureSubscription() {
     RenderViewHost* source = RenderViewHost::FromID(render_process_id_,
                                                     render_view_id_);
     if (source) {
-      RenderWidgetHostViewPort* view =
-          RenderWidgetHostViewPort::FromRWHV(source->GetView());
+      RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+          source->GetView());
       if (view)
         view->EndFrameSubscription();
     }
@@ -530,39 +531,29 @@ void RenderVideoFrame(const SkBitmap& input,
 
 VideoFrameDeliveryLog::VideoFrameDeliveryLog()
     : last_frame_rate_log_time_(),
-      count_frames_rendered_(0),
-      last_frame_number_(0) {
+      count_frames_rendered_(0) {
 }
 
-void VideoFrameDeliveryLog::ChronicleFrameDelivery(int frame_number) {
+void VideoFrameDeliveryLog::ChronicleFrameDelivery(base::TimeTicks frame_time) {
   // Log frame rate, if verbose logging is turned on.
   static const base::TimeDelta kFrameRateLogInterval =
       base::TimeDelta::FromSeconds(10);
-  const base::TimeTicks now = base::TimeTicks::Now();
   if (last_frame_rate_log_time_.is_null()) {
-    last_frame_rate_log_time_ = now;
+    last_frame_rate_log_time_ = frame_time;
     count_frames_rendered_ = 0;
-    last_frame_number_ = frame_number;
   } else {
     ++count_frames_rendered_;
-    const base::TimeDelta elapsed = now - last_frame_rate_log_time_;
+    const base::TimeDelta elapsed = frame_time - last_frame_rate_log_time_;
     if (elapsed >= kFrameRateLogInterval) {
       const double measured_fps =
           count_frames_rendered_ / elapsed.InSecondsF();
-      const int frames_elapsed = frame_number - last_frame_number_;
-      const int count_frames_dropped = frames_elapsed - count_frames_rendered_;
-      DCHECK_LE(0, count_frames_dropped);
-      UMA_HISTOGRAM_PERCENTAGE(
-          "TabCapture.FrameDropPercentage",
-          (count_frames_dropped * 100 + frames_elapsed / 2) / frames_elapsed);
       UMA_HISTOGRAM_COUNTS(
           "TabCapture.FrameRate",
           static_cast<int>(measured_fps));
       VLOG(1) << "Current measured frame rate for "
               << "WebContentsVideoCaptureDevice is " << measured_fps << " FPS.";
-      last_frame_rate_log_time_ = now;
+      last_frame_rate_log_time_ = frame_time;
       count_frames_rendered_ = 0;
-      last_frame_number_ = frame_number;
     }
   }
 }
@@ -582,12 +573,14 @@ WebContentsCaptureMachine::~WebContentsCaptureMachine() {
 }
 
 bool WebContentsCaptureMachine::Start(
-    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) {
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+    const media::VideoCaptureParams& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!started_);
 
   DCHECK(oracle_proxy.get());
   oracle_proxy_ = oracle_proxy;
+  capture_params_ = params;
 
   render_thread_.reset(new base::Thread("WebContentsVideo_RenderThread"));
   if (!render_thread_->Start()) {
@@ -636,8 +629,8 @@ void WebContentsCaptureMachine::Capture(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   RenderWidgetHost* rwh = GetTarget();
-  RenderWidgetHostViewPort* view =
-      rwh ? RenderWidgetHostViewPort::FromRWHV(rwh->GetView()) : NULL;
+  RenderWidgetHostViewBase* view =
+      rwh ? static_cast<RenderWidgetHostViewBase*>(rwh->GetView()) : NULL;
   if (!view || !rwh) {
     deliver_frame_cb.Run(base::TimeTicks(), false);
     return;
@@ -658,15 +651,7 @@ void WebContentsCaptureMachine::Capture(
         view_size.width() * view_size.height() / 1024);
   }
 
-  if (!view->IsSurfaceAvailableForCopy()) {
-    // Fallback to the more expensive renderer-side copy if the surface and
-    // backing store are not accessible.
-    rwh->GetSnapshotFromRenderer(
-        gfx::Rect(),
-        base::Bind(&WebContentsCaptureMachine::DidCopyFromBackingStore,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   start_time, target, deliver_frame_cb));
-  } else if (view->CanCopyToVideoFrame()) {
+  if (view->CanCopyToVideoFrame()) {
     view->CopyFromCompositingSurfaceToVideoFrame(
         gfx::Rect(view_size),
         target,
@@ -717,12 +702,11 @@ bool WebContentsCaptureMachine::StartObservingWebContents() {
   return false;
 }
 
-void WebContentsCaptureMachine::WebContentsDestroyed(
-    WebContents* web_contents) {
+void WebContentsCaptureMachine::WebContentsDestroyed() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   subscription_.reset();
-  web_contents->DecrementCapturerCount();
+  web_contents()->DecrementCapturerCount();
   oracle_proxy_->ReportError("WebContentsDestroyed()");
 }
 

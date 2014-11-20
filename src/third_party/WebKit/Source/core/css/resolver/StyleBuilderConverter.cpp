@@ -27,6 +27,8 @@
 #include "config.h"
 #include "core/css/resolver/StyleBuilderConverter.h"
 
+#include "core/css/CSSFunctionValue.h"
+#include "core/css/CSSGridLineNamesValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSShadowValue.h"
 #include "core/css/Pair.h"
@@ -34,12 +36,157 @@
 
 namespace WebCore {
 
+namespace {
+
+static GridLength convertGridTrackBreadth(const StyleResolverState& state, CSSPrimitiveValue* primitiveValue)
+{
+    if (primitiveValue->getValueID() == CSSValueMinContent)
+        return Length(MinContent);
+
+    if (primitiveValue->getValueID() == CSSValueMaxContent)
+        return Length(MaxContent);
+
+    // Fractional unit.
+    if (primitiveValue->isFlex())
+        return GridLength(primitiveValue->getDoubleValue());
+
+    return primitiveValue->convertToLength<FixedConversion | PercentConversion | AutoConversion>(state.cssToLengthConversionData());
+}
+
+} // namespace
+
 AtomicString StyleBuilderConverter::convertFragmentIdentifier(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->isURI())
-        return SVGURIReference::fragmentIdentifierFromIRIString(primitiveValue->getStringValue(), state.document());
+        return SVGURIReference::fragmentIdentifierFromIRIString(primitiveValue->getStringValue(), state.element()->treeScope());
     return nullAtom;
+}
+
+EGlyphOrientation StyleBuilderConverter::convertGlyphOrientation(StyleResolverState&, CSSValue* value)
+{
+    if (!value->isPrimitiveValue())
+        return GO_0DEG;
+
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+    if (primitiveValue->primitiveType() != CSSPrimitiveValue::CSS_DEG)
+        return GO_0DEG;
+
+    float angle = fabsf(fmodf(primitiveValue->getFloatValue(), 360.0f));
+
+    if (angle <= 45.0f || angle > 315.0f)
+        return GO_0DEG;
+    if (angle > 45.0f && angle <= 135.0f)
+        return GO_90DEG;
+    if (angle > 135.0f && angle <= 225.0f)
+        return GO_180DEG;
+    return GO_270DEG;
+}
+
+
+GridPosition StyleBuilderConverter::convertGridPosition(StyleResolverState&, CSSValue* value)
+{
+    // We accept the specification's grammar:
+    // 'auto' | [ <integer> || <string> ] | [ span && [ <integer> || string ] ] | <ident>
+
+    GridPosition position;
+
+    if (value->isPrimitiveValue()) {
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+        // We translate <ident> to <string> during parsing as it
+        // makes handling it more simple.
+        if (primitiveValue->isString()) {
+            position.setNamedGridArea(primitiveValue->getStringValue());
+            return position;
+        }
+
+        ASSERT(primitiveValue->getValueID() == CSSValueAuto);
+        return position;
+    }
+
+    CSSValueList* values = toCSSValueList(value);
+    ASSERT(values->length());
+
+    bool isSpanPosition = false;
+    // The specification makes the <integer> optional, in which case it default to '1'.
+    int gridLineNumber = 1;
+    String gridLineName;
+
+    CSSValueListIterator it = values;
+    CSSPrimitiveValue* currentValue = toCSSPrimitiveValue(it.value());
+    if (currentValue->getValueID() == CSSValueSpan) {
+        isSpanPosition = true;
+        it.advance();
+        currentValue = it.hasMore() ? toCSSPrimitiveValue(it.value()) : 0;
+    }
+
+    if (currentValue && currentValue->isNumber()) {
+        gridLineNumber = currentValue->getIntValue();
+        it.advance();
+        currentValue = it.hasMore() ? toCSSPrimitiveValue(it.value()) : 0;
+    }
+
+    if (currentValue && currentValue->isString()) {
+        gridLineName = currentValue->getStringValue();
+        it.advance();
+    }
+
+    ASSERT(!it.hasMore());
+    if (isSpanPosition)
+        position.setSpanPosition(gridLineNumber, gridLineName);
+    else
+        position.setExplicitPosition(gridLineNumber, gridLineName);
+
+    return position;
+}
+
+GridTrackSize StyleBuilderConverter::convertGridTrackSize(StyleResolverState& state, CSSValue* value)
+{
+    if (value->isPrimitiveValue())
+        return GridTrackSize(convertGridTrackBreadth(state, toCSSPrimitiveValue(value)));
+
+    CSSFunctionValue* minmaxFunction = toCSSFunctionValue(value);
+    CSSValueList* arguments = minmaxFunction->arguments();
+    ASSERT_WITH_SECURITY_IMPLICATION(arguments->length() == 2);
+    GridLength minTrackBreadth(convertGridTrackBreadth(state, toCSSPrimitiveValue(arguments->itemWithoutBoundsCheck(0))));
+    GridLength maxTrackBreadth(convertGridTrackBreadth(state, toCSSPrimitiveValue(arguments->itemWithoutBoundsCheck(1))));
+    return GridTrackSize(minTrackBreadth, maxTrackBreadth);
+}
+
+bool StyleBuilderConverter::convertGridTrackList(CSSValue* value, Vector<GridTrackSize>& trackSizes, NamedGridLinesMap& namedGridLines, OrderedNamedGridLines& orderedNamedGridLines, StyleResolverState& state)
+{
+    // Handle 'none'.
+    if (value->isPrimitiveValue()) {
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+        return primitiveValue->getValueID() == CSSValueNone;
+    }
+
+    if (!value->isValueList())
+        return false;
+
+    size_t currentNamedGridLine = 0;
+    for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
+        CSSValue* currValue = i.value();
+        if (currValue->isGridLineNamesValue()) {
+            CSSGridLineNamesValue* lineNamesValue = toCSSGridLineNamesValue(currValue);
+            for (CSSValueListIterator j = lineNamesValue; j.hasMore(); j.advance()) {
+                String namedGridLine = toCSSPrimitiveValue(j.value())->getStringValue();
+                NamedGridLinesMap::AddResult result = namedGridLines.add(namedGridLine, Vector<size_t>());
+                result.storedValue->value.append(currentNamedGridLine);
+                OrderedNamedGridLines::AddResult orderedInsertionResult = orderedNamedGridLines.add(currentNamedGridLine, Vector<String>());
+                orderedInsertionResult.storedValue->value.append(namedGridLine);
+            }
+            continue;
+        }
+
+        ++currentNamedGridLine;
+        trackSizes.append(convertGridTrackSize(state, currValue));
+    }
+
+    // The parser should have rejected any <track-list> without any <track-size> as
+    // this is not conformant to the syntax.
+    ASSERT(!trackSizes.isEmpty());
+    return true;
 }
 
 Length StyleBuilderConverter::convertLength(StyleResolverState& state, CSSValue* value)
@@ -110,6 +257,38 @@ float StyleBuilderConverter::convertNumberOrPercentage(StyleResolverState& state
     return primitiveValue->getFloatValue() / 100.0f;
 }
 
+EPaintOrder StyleBuilderConverter::convertPaintOrder(StyleResolverState&, CSSValue* cssPaintOrder)
+{
+    if (cssPaintOrder->isValueList()) {
+        int paintOrder = 0;
+        CSSValueListInspector iter(cssPaintOrder);
+        for (size_t i = 0; i < iter.length(); i++) {
+            CSSPrimitiveValue* value = toCSSPrimitiveValue(iter.item(i));
+
+            EPaintOrderType paintOrderType = PT_NONE;
+            switch (value->getValueID()) {
+            case CSSValueFill:
+                paintOrderType = PT_FILL;
+                break;
+            case CSSValueStroke:
+                paintOrderType = PT_STROKE;
+                break;
+            case CSSValueMarkers:
+                paintOrderType = PT_MARKERS;
+                break;
+            default:
+                ASSERT_NOT_REACHED();
+                break;
+            }
+
+            paintOrder |= (paintOrderType << kPaintOrderBitwidth*i);
+        }
+        return (EPaintOrder)paintOrder;
+    }
+
+    return PO_NORMAL;
+}
+
 LengthSize StyleBuilderConverter::convertRadius(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
@@ -159,6 +338,37 @@ float StyleBuilderConverter::convertSpacing(StyleResolverState& state, CSSValue*
     if (state.useSVGZoomRules())
         return primitiveValue->computeLength<float>(state.cssToLengthConversionData().copyWithAdjustedZoom(1));
     return primitiveValue->computeLength<float>(state.cssToLengthConversionData());
+}
+
+PassRefPtr<SVGLengthList> StyleBuilderConverter::convertStrokeDasharray(StyleResolverState&, CSSValue* value)
+{
+    if (!value->isValueList()) {
+        return SVGRenderStyle::initialStrokeDashArray();
+    }
+
+    CSSValueList* dashes = toCSSValueList(value);
+
+    RefPtr<SVGLengthList> array = SVGLengthList::create();
+    size_t length = dashes->length();
+    for (size_t i = 0; i < length; ++i) {
+        CSSValue* currValue = dashes->itemWithoutBoundsCheck(i);
+        if (!currValue->isPrimitiveValue())
+            continue;
+
+        CSSPrimitiveValue* dash = toCSSPrimitiveValue(dashes->itemWithoutBoundsCheck(i));
+        array->append(SVGLength::fromCSSPrimitiveValue(dash));
+    }
+
+    return array.release();
+}
+
+Color StyleBuilderConverter::convertSVGColor(StyleResolverState& state, CSSValue* value)
+{
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+    if (primitiveValue->isRGBColor())
+        return primitiveValue->getRGBA32Value();
+    ASSERT(primitiveValue->getValueID() == CSSValueCurrentcolor);
+    return state.style()->color();
 }
 
 PassRefPtr<SVGLength> StyleBuilderConverter::convertSVGLength(StyleResolverState&, CSSValue* value)

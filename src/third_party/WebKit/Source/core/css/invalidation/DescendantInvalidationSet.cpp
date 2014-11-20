@@ -38,7 +38,37 @@ namespace WebCore {
 
 DescendantInvalidationSet::DescendantInvalidationSet()
     : m_allDescendantsMightBeInvalid(false)
+    , m_customPseudoInvalid(false)
 {
+}
+
+bool DescendantInvalidationSet::invalidatesElement(Element& element) const
+{
+    if (m_allDescendantsMightBeInvalid)
+        return true;
+
+    if (m_tagNames && m_tagNames->contains(element.tagQName().localName()))
+        return true;
+
+    if (element.hasID() && m_ids && m_ids->contains(element.idForStyleResolution()))
+        return true;
+
+    if (element.hasClass() && m_classes) {
+        const SpaceSplitString& classNames = element.classNames();
+        for (HashSet<AtomicString>::const_iterator it = m_classes->begin(); it != m_classes->end(); ++it) {
+            if (classNames.contains(*it))
+                return true;
+        }
+    }
+
+    if (element.hasAttributes() && m_attributes) {
+        for (HashSet<AtomicString>::const_iterator it = m_attributes->begin(); it != m_attributes->end(); ++it) {
+            if (element.hasAttribute(*it))
+                return true;
+        }
+    }
+
+    return false;
 }
 
 void DescendantInvalidationSet::combine(const DescendantInvalidationSet& other)
@@ -51,6 +81,9 @@ void DescendantInvalidationSet::combine(const DescendantInvalidationSet& other)
         setWholeSubtreeInvalid();
         return;
     }
+
+    if (other.customPseudoInvalid())
+        setCustomPseudoInvalid();
 
     if (other.m_classes) {
         HashSet<AtomicString>::const_iterator end = other.m_classes->end();
@@ -131,22 +164,6 @@ void DescendantInvalidationSet::addAttribute(const AtomicString& attribute)
     if (wholeSubtreeInvalid())
         return;
     ensureAttributeSet().add(attribute);
-}
-
-void DescendantInvalidationSet::getClasses(Vector<AtomicString>& classes) const
-{
-    if (!m_classes)
-        return;
-    for (HashSet<AtomicString>::const_iterator it = m_classes->begin(); it != m_classes->end(); ++it)
-        classes.append(*it);
-}
-
-void DescendantInvalidationSet::getAttributes(Vector<AtomicString>& attributes) const
-{
-    if (!m_attributes)
-        return;
-    for (HashSet<AtomicString>::const_iterator it = m_attributes->begin(); it != m_attributes->end(); ++it)
-        attributes.append(*it);
 }
 
 void DescendantInvalidationSet::setWholeSubtreeInvalid()

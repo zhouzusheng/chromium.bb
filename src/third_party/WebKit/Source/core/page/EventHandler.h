@@ -32,15 +32,16 @@
 #include "core/page/FocusType.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include "heap/Handle.h"
 #include "platform/Cursor.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/Timer.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/geometry/LayoutPoint.h"
+#include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
+#include "wtf/HashTraits.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -174,7 +175,7 @@ public:
 
     bool handleTouchEvent(const PlatformTouchEvent&);
 
-    bool useHandCursor(Node*, bool isOverLink, bool shiftKey);
+    bool useHandCursor(Node*, bool isOverLink);
 
     void notifyElementActivated();
 
@@ -197,6 +198,7 @@ private:
     bool handleMousePressEventSingleClick(const MouseEventWithHitTestResults&);
     bool handleMousePressEventDoubleClick(const MouseEventWithHitTestResults&);
     bool handleMousePressEventTripleClick(const MouseEventWithHitTestResults&);
+    bool handleMouseFocus(const PlatformMouseEvent&);
     bool handleMouseDraggedEvent(const MouseEventWithHitTestResults&);
     bool handleMouseReleaseEvent(const MouseEventWithHitTestResults&);
 
@@ -212,14 +214,13 @@ private:
 
     bool shouldApplyTouchAdjustment(const PlatformGestureEvent&) const;
 
-    OptionalCursor selectCursor(const HitTestResult&, bool shiftKey);
-    OptionalCursor selectAutoCursor(const HitTestResult&, Node*, const Cursor& iBeam, bool shiftKey);
+    OptionalCursor selectCursor(const HitTestResult&);
+    OptionalCursor selectAutoCursor(const HitTestResult&, Node*, const Cursor& iBeam);
 
     void hoverTimerFired(Timer<EventHandler>*);
     void cursorUpdateTimerFired(Timer<EventHandler>*);
     void activeIntervalTimerFired(Timer<EventHandler>*);
 
-    bool shouldTurnVerticalTicksIntoHorizontal(const HitTestResult&, const PlatformWheelEvent&) const;
     bool mouseDownMayStartSelect() const { return m_mouseDownMayStartSelect; }
 
     void fakeMouseMoveEventTimerFired(Timer<EventHandler>*);
@@ -244,13 +245,9 @@ private:
     // absolutePoint - For wheel scrolls - the location, in absolute coordinates, where the event occured.
     bool scroll(ScrollDirection, ScrollGranularity, Node* startNode = 0, Node** stopNode = 0, float delta = 1.0f, IntPoint absolutePoint = IntPoint());
 
-    bool dispatchSyntheticTouchEventIfEnabled(const PlatformMouseEvent&);
-
     TouchAction intersectTouchAction(const TouchAction, const TouchAction);
     TouchAction computeEffectiveTouchAction(const LayoutPoint&);
 
-    bool handleMouseEventAsEmulatedGesture(const PlatformMouseEvent&);
-    bool handleWheelEventAsEmulatedGesture(const PlatformWheelEvent&);
     HitTestResult hitTestResultInFrame(LocalFrame*, const LayoutPoint&, HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
 
     void invalidateClick();
@@ -261,7 +258,7 @@ private:
 
     MouseEventWithHitTestResults prepareMouseEvent(const HitTestRequest&, const PlatformMouseEvent&);
 
-    bool dispatchMouseEvent(const AtomicString& eventType, Node* target, bool cancelable, int clickCount, const PlatformMouseEvent&, bool setUnder);
+    bool dispatchMouseEvent(const AtomicString& eventType, Node* target, int clickCount, const PlatformMouseEvent&, bool setUnder);
     bool dispatchDragEvent(const AtomicString& eventType, Node* target, const PlatformMouseEvent&, Clipboard*);
 
     void freeClipboard();
@@ -337,8 +334,6 @@ private:
     Timer<EventHandler> m_fakeMouseMoveEventTimer;
 
     bool m_svgPan;
-    RefPtr<SVGElementInstance> m_instanceUnderMouse;
-    RefPtr<SVGElementInstance> m_lastInstanceUnderMouse;
 
     RenderLayerScrollableArea* m_resizeScrollableArea;
 
@@ -374,10 +369,13 @@ private:
 
     RefPtr<Node> m_previousWheelScrolledNode;
 
-    typedef HashMap<int, RefPtr<EventTarget> > TouchTargetMap;
-    TouchTargetMap m_originatingTouchPointTargets;
-    RefPtr<Document> m_originatingTouchPointDocument;
-    unsigned m_originatingTouchPointTargetKey;
+    // The target of each active touch point indexed by the touch ID.
+    typedef HashMap<unsigned, RefPtr<EventTarget>, DefaultHash<unsigned>::Hash, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > TouchTargetMap;
+    TouchTargetMap m_targetForTouchID;
+
+    // If set, the document of the active touch sequence. Unset if no touch sequence active.
+    RefPtr<Document> m_touchSequenceDocument;
+
     bool m_touchPressed;
 
     RefPtr<Node> m_scrollGestureHandlingNode;
@@ -390,10 +388,6 @@ private:
     bool m_didStartDrag;
 
     bool m_longTapShouldInvokeContextMenu;
-    OwnPtr<IntPoint> m_lastSyntheticPinchAnchorCss;
-    OwnPtr<IntPoint> m_lastSyntheticPinchAnchorDip;
-    OwnPtr<IntPoint> m_lastSyntheticPanLocation;
-    float m_syntheticPageScaleFactor;
 
     Timer<EventHandler> m_activeIntervalTimer;
     double m_lastShowPressTimestamp;

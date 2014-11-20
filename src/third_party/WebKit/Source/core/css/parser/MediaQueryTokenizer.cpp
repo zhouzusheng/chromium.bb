@@ -25,13 +25,13 @@ static bool isNameStart(UChar c)
     return !isASCII(c);
 }
 
-// http://www.w3.org/TR/css-syntax-3/#name-code-point
+// http://dev.w3.org/csswg/css-syntax/#name-code-point
 static bool isNameChar(UChar c)
 {
     return isNameStart(c) || isASCIIDigit(c) || c == '-';
 }
 
-// http://www.w3.org/TR/css-syntax-3/#check-if-two-code-points-are-a-valid-escape
+// http://dev.w3.org/csswg/css-syntax/#check-if-two-code-points-are-a-valid-escape
 static bool twoCharsAreValidEscape(UChar first, UChar second)
 {
     return ((first == '\\') && (second != '\n') && (second != kEndOfFileMarker));
@@ -67,14 +67,62 @@ MediaQueryToken MediaQueryTokenizer::whiteSpace(UChar cc)
     return MediaQueryToken(WhitespaceToken);
 }
 
+static bool popIfBlockMatches(Vector<MediaQueryTokenType>& blockStack, MediaQueryTokenType type)
+{
+    if (!blockStack.isEmpty() && blockStack.last() == type) {
+        blockStack.removeLast();
+        return true;
+    }
+    return false;
+}
+
+MediaQueryToken MediaQueryTokenizer::blockStart(MediaQueryTokenType type)
+{
+    m_blockStack.append(type);
+    return MediaQueryToken(type, MediaQueryToken::BlockStart);
+}
+
+MediaQueryToken MediaQueryTokenizer::blockStart(MediaQueryTokenType blockType, MediaQueryTokenType type, String name)
+{
+    m_blockStack.append(blockType);
+    return MediaQueryToken(type, name, MediaQueryToken::BlockStart);
+}
+
+MediaQueryToken MediaQueryTokenizer::blockEnd(MediaQueryTokenType type, MediaQueryTokenType startType)
+{
+    if (popIfBlockMatches(m_blockStack, startType))
+        return MediaQueryToken(type, MediaQueryToken::BlockEnd);
+    return MediaQueryToken(type);
+}
+
 MediaQueryToken MediaQueryTokenizer::leftParenthesis(UChar cc)
 {
-    return MediaQueryToken(LeftParenthesisToken);
+    return blockStart(LeftParenthesisToken);
 }
 
 MediaQueryToken MediaQueryTokenizer::rightParenthesis(UChar cc)
 {
-    return MediaQueryToken(RightParenthesisToken);
+    return blockEnd(RightParenthesisToken, LeftParenthesisToken);
+}
+
+MediaQueryToken MediaQueryTokenizer::leftBracket(UChar cc)
+{
+    return blockStart(LeftBracketToken);
+}
+
+MediaQueryToken MediaQueryTokenizer::rightBracket(UChar cc)
+{
+    return blockEnd(RightBracketToken, LeftBracketToken);
+}
+
+MediaQueryToken MediaQueryTokenizer::leftBrace(UChar cc)
+{
+    return blockStart(LeftBraceToken);
+}
+
+MediaQueryToken MediaQueryTokenizer::rightBrace(UChar cc)
+{
+    return blockEnd(RightBraceToken, LeftBraceToken);
 }
 
 MediaQueryToken MediaQueryTokenizer::plusOrFullStop(UChar cc)
@@ -83,6 +131,11 @@ MediaQueryToken MediaQueryTokenizer::plusOrFullStop(UChar cc)
         reconsume(cc);
         return consumeNumericToken();
     }
+    return MediaQueryToken(DelimiterToken, cc);
+}
+
+MediaQueryToken MediaQueryTokenizer::asterisk(UChar cc)
+{
     return MediaQueryToken(DelimiterToken, cc);
 }
 
@@ -106,6 +159,11 @@ MediaQueryToken MediaQueryTokenizer::hyphenMinus(UChar cc)
 
 MediaQueryToken MediaQueryTokenizer::solidus(UChar cc)
 {
+    if (consumeIfNext('*')) {
+        // We're intentionally deviating from the spec here, by creating tokens for CSS comments.
+        return consumeUntilCommentEndFound()? MediaQueryToken(CommentToken): MediaQueryToken(EOFToken);
+    }
+
     return MediaQueryToken(DelimiterToken, cc);
 }
 
@@ -140,6 +198,11 @@ MediaQueryToken MediaQueryTokenizer::nameStart(UChar cc)
     return consumeIdentLikeToken();
 }
 
+MediaQueryToken MediaQueryTokenizer::stringStart(UChar cc)
+{
+    return consumeStringTokenUntil(cc);
+}
+
 MediaQueryToken MediaQueryTokenizer::endOfFile(UChar cc)
 {
     return MediaQueryToken(EOFToken);
@@ -148,18 +211,22 @@ MediaQueryToken MediaQueryTokenizer::endOfFile(UChar cc)
 void MediaQueryTokenizer::tokenize(String string, Vector<MediaQueryToken>& outTokens)
 {
     // According to the spec, we should perform preprocessing here.
-    // See: http://www.w3.org/TR/css-syntax-3/#input-preprocessing
+    // See: http://dev.w3.org/csswg/css-syntax/#input-preprocessing
     //
     // However, we can skip this step since:
     // * We're using HTML spaces (which accept \r and \f as a valid white space)
     // * Do not count white spaces
     // * consumeEscape replaces NULLs for replacement characters
 
+    if (string.isEmpty())
+        return;
+
     MediaQueryInputStream input(string);
     MediaQueryTokenizer tokenizer(input);
     while (true) {
-        outTokens.append(tokenizer.nextToken());
-        if (outTokens.last().type() == EOFToken)
+        MediaQueryToken token = tokenizer.nextToken();
+        outTokens.append(token);
+        if (token.type() == EOFToken)
             return;
     }
 }
@@ -185,7 +252,6 @@ MediaQueryToken MediaQueryTokenizer::nextToken()
 
     if (codePointFunc)
         return ((this)->*(codePointFunc))(cc);
-
     return MediaQueryToken(DelimiterToken, cc);
 }
 
@@ -222,7 +288,7 @@ static double getFraction(MediaQueryInputStream& input, unsigned& offset, unsign
     return input.getDouble(fractionStartPos, fractionEndPos);
 }
 
-static unsigned long long getExponent(MediaQueryInputStream& input, unsigned& offset, int sign)
+static unsigned long long getExponent(MediaQueryInputStream& input, unsigned& offset, int& sign)
 {
     unsigned exponentStartPos = 0;
     unsigned exponentEndPos = 0;
@@ -284,9 +350,45 @@ MediaQueryToken MediaQueryTokenizer::consumeNumericToken()
 MediaQueryToken MediaQueryTokenizer::consumeIdentLikeToken()
 {
     String name = consumeName();
-    if (consumeIfNext('('))
-        return MediaQueryToken(FunctionToken, name);
+    if (consumeIfNext('(')) {
+        return blockStart(LeftParenthesisToken, FunctionToken, name);
+    }
     return MediaQueryToken(IdentToken, name);
+}
+
+static bool isNewLine(UChar cc)
+{
+    // We check \r and \f here, since we have no preprocessing stage
+    return (cc == '\r' || cc == '\n' || cc == '\f');
+}
+
+// http://dev.w3.org/csswg/css-syntax/#consume-a-string-token
+MediaQueryToken MediaQueryTokenizer::consumeStringTokenUntil(UChar endingCodePoint)
+{
+    StringBuilder output;
+    while (true) {
+        UChar cc = consume();
+        if (cc == endingCodePoint || cc == kEndOfFileMarker) {
+            // The "reconsume" here deviates from the spec, but is required to avoid consuming past the EOF
+            if (cc == kEndOfFileMarker)
+                reconsume(cc);
+            return MediaQueryToken(StringToken, output.toString());
+        }
+        if (isNewLine(cc)) {
+            reconsume(cc);
+            return MediaQueryToken(BadStringToken);
+        }
+        if (cc == '\\') {
+            if (m_input.currentInputChar() == kEndOfFileMarker)
+                continue;
+            if (isNewLine(m_input.currentInputChar()))
+                consume();
+            else
+                output.append(consumeEscape());
+        } else {
+            output.append(cc);
+        }
+    }
 }
 
 void MediaQueryTokenizer::consumeUntilNonWhitespace()
@@ -294,6 +396,23 @@ void MediaQueryTokenizer::consumeUntilNonWhitespace()
     // Using HTML space here rather than CSS space since we don't do preprocessing
     while (isHTMLSpace<UChar>(m_input.currentInputChar()))
         consume();
+}
+
+bool MediaQueryTokenizer::consumeUntilCommentEndFound()
+{
+    UChar c = consume();
+    while (true) {
+        if (c == kEndOfFileMarker)
+            return false;
+        if (c != '*') {
+            c = consume();
+            continue;
+        }
+        c = consume();
+        if (c == '/')
+            break;
+    }
+    return true;
 }
 
 bool MediaQueryTokenizer::consumeIfNext(UChar character)
@@ -310,38 +429,38 @@ String MediaQueryTokenizer::consumeName()
 {
     // FIXME: Is this as efficient as it can be?
     // The possibility of escape chars mandates a copy AFAICT.
-    Vector<UChar> result;
+    StringBuilder result;
     while (true) {
-        if (isNameChar(m_input.currentInputChar())) {
-            result.append(consume());
+        UChar cc = consume();
+        if (isNameChar(cc)) {
+            result.append(cc);
             continue;
         }
-        if (nextTwoCharsAreValidEscape()) {
-            // "consume()" fixes a spec bug.
-            // The first code point should be consumed before consuming the escaped code point.
-            consume();
+        if (twoCharsAreValidEscape(cc, m_input.currentInputChar())) {
             result.append(consumeEscape());
             continue;
         }
-        return String(result);
+        reconsume(cc);
+        return result.toString();
     }
 }
 
-// http://www.w3.org/TR/css-syntax-3/#consume-an-escaped-code-point
+// http://dev.w3.org/csswg/css-syntax/#consume-an-escaped-code-point
 UChar MediaQueryTokenizer::consumeEscape()
 {
     UChar cc = consume();
     ASSERT(cc != '\n');
     if (isASCIIHexDigit(cc)) {
         unsigned consumedHexDigits = 1;
-        String hexChars;
-        do {
-            hexChars.append(cc);
+        StringBuilder hexChars;
+        hexChars.append(cc);
+        while (consumedHexDigits < 6 && isASCIIHexDigit(m_input.currentInputChar())) {
             cc = consume();
+            hexChars.append(cc);
             consumedHexDigits++;
-        } while (consumedHexDigits < 6 && isASCIIHexDigit(cc));
+        };
         bool ok = false;
-        UChar codePoint = hexChars.toUIntStrict(&ok, 16);
+        UChar codePoint = hexChars.toString().toUIntStrict(&ok, 16);
         if (!ok)
             return WTF::Unicode::replacementCharacter;
         return codePoint;
@@ -353,11 +472,11 @@ UChar MediaQueryTokenizer::consumeEscape()
     return cc;
 }
 
-bool MediaQueryTokenizer::nextTwoCharsAreValidEscape()
+bool MediaQueryTokenizer::nextTwoCharsAreValidEscape(unsigned offset)
 {
-    if (m_input.leftChars() < 2)
+    if (m_input.leftChars() < offset + 1)
         return false;
-    return twoCharsAreValidEscape(m_input.peek(1), m_input.peek(2));
+    return twoCharsAreValidEscape(m_input.peek(offset), m_input.peek(offset + 1));
 }
 
 // http://www.w3.org/TR/css3-syntax/#starts-with-a-number
@@ -378,13 +497,13 @@ bool MediaQueryTokenizer::nextCharsAreNumber()
 bool MediaQueryTokenizer::nextCharsAreIdentifier()
 {
     UChar firstChar = m_input.currentInputChar();
-    if (isNameStart(firstChar) || nextTwoCharsAreValidEscape())
+    if (isNameStart(firstChar) || nextTwoCharsAreValidEscape(0))
         return true;
 
     if (firstChar == '-') {
         if (isNameStart(m_input.peek(1)))
             return true;
-        return nextTwoCharsAreValidEscape();
+        return nextTwoCharsAreValidEscape(1);
     }
 
     return false;

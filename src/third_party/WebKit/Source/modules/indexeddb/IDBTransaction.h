@@ -32,9 +32,9 @@
 #include "core/events/Event.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "heap/Handle.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IndexedDB.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebIDBDatabase.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefCounted.h"
@@ -49,13 +49,18 @@ class IDBObjectStore;
 class IDBOpenDBRequest;
 struct IDBObjectStoreMetadata;
 
-class IDBTransaction FINAL : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTargetWithInlineData, public ActiveDOMObject {
-    REFCOUNTED_EVENT_TARGET(IDBTransaction);
+class IDBTransaction FINAL
+    : public RefCountedWillBeRefCountedGarbageCollected<IDBTransaction>
+    , public ScriptWrappable
+    , public EventTargetWithInlineData
+    , public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<IDBTransaction>);
 
 public:
-    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, const Vector<String>& objectStoreNames, blink::WebIDBDatabase::TransactionMode, IDBDatabase*);
-    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
+    static PassRefPtrWillBeRawPtr<IDBTransaction> create(ExecutionContext*, int64_t, const Vector<String>& objectStoreNames, blink::WebIDBDatabase::TransactionMode, IDBDatabase*);
+    static PassRefPtrWillBeRawPtr<IDBTransaction> create(ExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
     virtual ~IDBTransaction();
+    void trace(Visitor*);
 
     static const AtomicString& modeReadOnly();
     static const AtomicString& modeReadWrite();
@@ -64,11 +69,13 @@ public:
     static blink::WebIDBDatabase::TransactionMode stringToMode(const String&, ExceptionState&);
     static const AtomicString& modeToString(blink::WebIDBDatabase::TransactionMode);
 
+    // When the connection is closed backend will be 0.
     blink::WebIDBDatabase* backendDB() const;
 
     int64_t id() const { return m_id; }
     bool isActive() const { return m_state == Active; }
     bool isFinished() const { return m_state == Finished; }
+    bool isFinishing() const { return m_state == Finishing; }
     bool isReadOnly() const { return m_mode == blink::WebIDBDatabase::TransactionReadOnly; }
     bool isVersionChange() const { return m_mode == blink::WebIDBDatabase::TransactionVersionChange; }
 
@@ -76,12 +83,12 @@ public:
     const String& mode() const;
     IDBDatabase* db() const { return m_database.get(); }
     PassRefPtrWillBeRawPtr<DOMError> error() const { return m_error; }
-    PassRefPtr<IDBObjectStore> objectStore(const String& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<IDBObjectStore> objectStore(const String& name, ExceptionState&);
     void abort(ExceptionState&);
 
     void registerRequest(IDBRequest*);
     void unregisterRequest(IDBRequest*);
-    void objectStoreCreated(const String&, PassRefPtr<IDBObjectStore>);
+    void objectStoreCreated(const String&, PassRefPtrWillBeRawPtr<IDBObjectStore>);
     void objectStoreDeleted(const String&);
     void setActive(bool);
     void setError(PassRefPtrWillBeRawPtr<DOMError>);
@@ -98,7 +105,7 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
@@ -107,7 +114,7 @@ public:
 private:
     IDBTransaction(ExecutionContext*, int64_t, const Vector<String>&, blink::WebIDBDatabase::TransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
 
-    void enqueueEvent(PassRefPtr<Event>);
+    void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
     enum State {
         Inactive, // Created or started, but not in an event callback
@@ -117,24 +124,24 @@ private:
     };
 
     int64_t m_id;
-    RefPtr<IDBDatabase> m_database;
+    RefPtrWillBeMember<IDBDatabase> m_database;
     const Vector<String> m_objectStoreNames;
-    IDBOpenDBRequest* m_openDBRequest;
+    RawPtrWillBeMember<IDBOpenDBRequest> m_openDBRequest;
     const blink::WebIDBDatabase::TransactionMode m_mode;
     State m_state;
     bool m_hasPendingActivity;
     bool m_contextStopped;
-    RefPtrWillBePersistent<DOMError> m_error;
+    RefPtrWillBeMember<DOMError> m_error;
 
-    ListHashSet<RefPtr<IDBRequest> > m_requestList;
+    WillBeHeapListHashSet<RefPtrWillBeMember<IDBRequest> > m_requestList;
 
-    typedef HashMap<String, RefPtr<IDBObjectStore> > IDBObjectStoreMap;
+    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<IDBObjectStore> > IDBObjectStoreMap;
     IDBObjectStoreMap m_objectStoreMap;
 
-    typedef HashSet<RefPtr<IDBObjectStore> > IDBObjectStoreSet;
+    typedef WillBeHeapHashSet<RefPtrWillBeMember<IDBObjectStore> > IDBObjectStoreSet;
     IDBObjectStoreSet m_deletedObjectStores;
 
-    typedef HashMap<RefPtr<IDBObjectStore>, IDBObjectStoreMetadata> IDBObjectStoreMetadataMap;
+    typedef WillBeHeapHashMap<RefPtrWillBeMember<IDBObjectStore>, IDBObjectStoreMetadata> IDBObjectStoreMetadataMap;
     IDBObjectStoreMetadataMap m_objectStoreCleanupMap;
     IDBDatabaseMetadata m_previousMetadata;
 };

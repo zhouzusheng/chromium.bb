@@ -9,8 +9,6 @@
 #include "base/strings/stringprintf.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
-#include "cc/animation/scrollbar_animation_controller_linear_fade.h"
-#include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/layer_tree_debug_state.h"
@@ -48,6 +46,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       scroll_clip_layer_(NULL),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
+      have_scroll_event_handlers_(false),
       user_scrollable_horizontal_(true),
       user_scrollable_vertical_(true),
       stacking_order_changed_(false),
@@ -62,6 +61,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       draws_content_(false),
       hide_layer_and_subtree_(false),
       force_render_surface_(false),
+      transform_is_invertible_(true),
       is_container_for_fixed_position_layers_(false),
       is_3d_sorted_(false),
       background_color_(0),
@@ -238,8 +238,12 @@ void LayerImpl::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
 }
 
-scoped_ptr<SharedQuadState> LayerImpl::CreateSharedQuadState() const {
-  scoped_ptr<SharedQuadState> state = SharedQuadState::Create();
+void LayerImpl::ClearRenderSurfaceLayerList() {
+  if (draw_properties_.render_surface)
+    draw_properties_.render_surface->layer_list().clear();
+}
+
+void LayerImpl::PopulateSharedQuadState(SharedQuadState* state) const {
   state->SetAll(draw_properties_.target_space_transform,
                 draw_properties_.content_bounds,
                 draw_properties_.visible_content_rect,
@@ -247,7 +251,6 @@ scoped_ptr<SharedQuadState> LayerImpl::CreateSharedQuadState() const {
                 draw_properties_.is_clipped,
                 draw_properties_.opacity,
                 blend_mode_);
-  return state.Pass();
 }
 
 bool LayerImpl::WillDraw(DrawMode draw_mode,
@@ -504,6 +507,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
   layer->SetHaveWheelEventHandlers(have_wheel_event_handlers_);
+  layer->SetHaveScrollEventHandlers(have_scroll_event_handlers_);
   layer->SetNonFastScrollableRegion(non_fast_scrollable_region_);
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetContentsOpaque(contents_opaque_);
@@ -517,7 +521,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetShouldFlattenTransform(should_flatten_transform_);
   layer->SetIs3dSorted(is_3d_sorted_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
-  layer->SetTransform(transform_);
+  layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
 
   layer->SetScrollClipLayer(scroll_clip_layer_ ? scroll_clip_layer_->id()
                                                : Layer::INVALID_ID);
@@ -642,6 +646,8 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
 
   if (have_wheel_event_handlers_)
     result->SetBoolean("WheelHandler", have_wheel_event_handlers_);
+  if (have_scroll_event_handlers_)
+    result->SetBoolean("ScrollHandler", have_scroll_event_handlers_);
   if (!touch_event_handler_region_.IsEmpty()) {
     scoped_ptr<base::Value> region = touch_event_handler_region_.AsValue();
     result->Set("TouchRegion", region.release());
@@ -697,6 +703,7 @@ void LayerImpl::ResetAllChangeTrackingForSubtree() {
   layer_property_changed_ = false;
 
   update_rect_ = gfx::RectF();
+  damage_rect_ = gfx::RectF();
 
   if (draw_properties_.render_surface)
     draw_properties_.render_surface->ResetPropertyChangedFlag();
@@ -995,6 +1002,19 @@ void LayerImpl::SetTransform(const gfx::Transform& transform) {
     return;
 
   transform_ = transform;
+  transform_is_invertible_ = transform_.IsInvertible();
+  NoteLayerPropertyChangedForSubtree();
+}
+
+void LayerImpl::SetTransformAndInvertibility(const gfx::Transform& transform,
+                                             bool transform_is_invertible) {
+  if (transform_ == transform) {
+    DCHECK(transform_is_invertible_ == transform_is_invertible)
+        << "Can't change invertibility if transform is unchanged";
+    return;
+  }
+  transform_ = transform;
+  transform_is_invertible_ = transform_is_invertible;
   NoteLayerPropertyChangedForSubtree();
 }
 
@@ -1011,6 +1031,10 @@ bool LayerImpl::TransformIsAnimatingOnImplOnly() const {
 void LayerImpl::SetUpdateRect(const gfx::RectF& update_rect) {
   update_rect_ = update_rect;
   SetNeedsPushProperties();
+}
+
+void LayerImpl::AddDamageRect(const gfx::RectF& damage_rect) {
+  damage_rect_ = gfx::UnionRects(damage_rect_, damage_rect);
 }
 
 void LayerImpl::SetContentBounds(const gfx::Size& content_bounds) {
@@ -1032,14 +1056,14 @@ void LayerImpl::SetContentsScale(float contents_scale_x,
   NoteLayerPropertyChanged();
 }
 
-void LayerImpl::CalculateContentsScale(
-    float ideal_contents_scale,
-    float device_scale_factor,
-    float page_scale_factor,
-    bool animating_transform_to_screen,
-    float* contents_scale_x,
-    float* contents_scale_y,
-    gfx::Size* content_bounds) {
+void LayerImpl::CalculateContentsScale(float ideal_contents_scale,
+                                       float device_scale_factor,
+                                       float page_scale_factor,
+                                       float maximum_animation_contents_scale,
+                                       bool animating_transform_to_screen,
+                                       float* contents_scale_x,
+                                       float* contents_scale_y,
+                                       gfx::Size* content_bounds) {
   // Base LayerImpl has all of its content scales and content bounds pushed
   // from its Layer during commit and just reuses those values as-is.
   *contents_scale_x = this->contents_scale_x();
@@ -1189,6 +1213,7 @@ gfx::Vector2d LayerImpl::MaxScrollOffset() const {
 
   scaled_scroll_bounds.SetSize(scale_factor * scaled_scroll_bounds.width(),
                                scale_factor * scaled_scroll_bounds.height());
+  scaled_scroll_bounds = gfx::ToFlooredSize(scaled_scroll_bounds);
 
   gfx::Vector2dF max_offset(
       scaled_scroll_bounds.width() - scroll_clip_layer_->bounds().width(),
@@ -1278,16 +1303,21 @@ void LayerImpl::SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
   }
 
   layer_tree_impl()->set_needs_update_draw_properties();
-  // TODO(wjmaclean) Should the rest of this function be deleted?
   // TODO(wjmaclean) The scrollbar animator for the pinch-zoom scrollbars should
   // activate for every scroll on the main frame, not just the scrolls that move
   // the pinch virtual viewport (i.e. trigger from either inner or outer
   // viewport).
   if (scrollbar_animation_controller_) {
-    bool should_animate = scrollbar_animation_controller_->DidScrollUpdate(
-        layer_tree_impl_->CurrentFrameTimeTicks());
-    if (should_animate)
-      layer_tree_impl_->StartScrollbarAnimation();
+    // When both non-overlay and overlay scrollbars are both present, don't
+    // animate the overlay scrollbars when page scale factor is at the min.
+    // Non-overlay scrollbars also shouldn't trigger animations.
+    bool is_animatable_scrollbar =
+        scrollbar_layer->is_overlay_scrollbar() &&
+        ((layer_tree_impl()->total_page_scale_factor() >
+          layer_tree_impl()->min_page_scale_factor()) ||
+         !layer_tree_impl()->settings().use_pinch_zoom_scrollbars);
+    if (is_animatable_scrollbar)
+      scrollbar_animation_controller_->DidScrollUpdate();
   }
 }
 
@@ -1306,29 +1336,8 @@ void LayerImpl::DidBecomeActive() {
   if (scrollbar_animation_controller_)
     return;
 
-  switch (layer_tree_impl_->settings().scrollbar_animator) {
-  case LayerTreeSettings::LinearFade: {
-    base::TimeDelta fadeout_delay = base::TimeDelta::FromMilliseconds(
-        layer_tree_impl_->settings().scrollbar_linear_fade_delay_ms);
-    base::TimeDelta fadeout_length = base::TimeDelta::FromMilliseconds(
-        layer_tree_impl_->settings().scrollbar_linear_fade_length_ms);
-
-    scrollbar_animation_controller_ =
-        ScrollbarAnimationControllerLinearFade::Create(
-            this, fadeout_delay, fadeout_length)
-            .PassAs<ScrollbarAnimationController>();
-    break;
-  }
-  case LayerTreeSettings::Thinning: {
-    scrollbar_animation_controller_ =
-        ScrollbarAnimationControllerThinning::Create(this)
-            .PassAs<ScrollbarAnimationController>();
-    break;
-  }
-  case LayerTreeSettings::NoAnimator:
-    NOTREACHED();
-    break;
-  }
+  scrollbar_animation_controller_ =
+      layer_tree_impl_->CreateScrollbarAnimationController(this);
 }
 
 void LayerImpl::ClearScrollbars() {
@@ -1436,6 +1445,12 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
     state->Set("wheel_event_handler_region",
                wheel_region.AsValue().release());
   }
+  if (have_scroll_event_handlers_) {
+    gfx::Rect scroll_rect(content_bounds());
+    Region scroll_region(scroll_rect);
+    state->Set("scroll_event_handler_region",
+               scroll_region.AsValue().release());
+  }
   if (!non_fast_scrollable_region_.IsEmpty()) {
     state->Set("non_fast_scrollable_region",
                non_fast_scrollable_region_.AsValue().release());
@@ -1483,6 +1498,11 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
       NOTREACHED();
     }
   }
+}
+
+bool LayerImpl::IsDrawnRenderSurfaceLayerListMember() const {
+  return draw_properties_.last_drawn_render_surface_layer_list_id ==
+         layer_tree_impl_->current_render_surface_list_id();
 }
 
 size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }

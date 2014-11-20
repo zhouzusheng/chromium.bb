@@ -49,6 +49,7 @@ class QuicConnection;
 class QuicDecrypter;
 class QuicEncrypter;
 class QuicFecGroup;
+class QuicFlowController;
 class QuicRandom;
 
 namespace test {
@@ -61,11 +62,8 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
  public:
   virtual ~QuicConnectionVisitorInterface() {}
 
-  // A simple visitor interface for dealing with data frames.  The session
-  // should determine if all frames will be accepted, and return true if so.
-  // If any frames can't be processed or buffered, none of the data should
-  // be used, and the callee should return false.
-  virtual bool OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
+  // A simple visitor interface for dealing with data frames.
+  virtual void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
 
   // The session should process all WINDOW_UPDATE frames, adjusting both stream
   // and connection level flow control windows.
@@ -103,6 +101,10 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 
   // Called to ask if any handshake messages are pending in this visitor.
   virtual bool HasPendingHandshake() const = 0;
+
+  // Called to ask if any streams are open in this visitor, excluding the
+  // reserved crypto and headers stream.
+  virtual bool HasOpenDataStreams() const = 0;
 };
 
 // Interface which gets callbacks from the QuicConnection at interesting
@@ -151,6 +153,9 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
 
   // Called when a StopWaitingFrame has been parsed.
   virtual void OnStopWaitingFrame(const QuicStopWaitingFrame& frame) {}
+
+  // Called when a Ping has been parsed.
+  virtual void OnPingFrame(const QuicPingFrame& frame) {}
 
   // Called when a RstStreamFrame has been parsed.
   virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) {}
@@ -212,7 +217,8 @@ class NET_EXPORT_PRIVATE QuicConnection
                  QuicConnectionHelperInterface* helper,
                  QuicPacketWriter* writer,
                  bool is_server,
-                 const QuicVersionVector& supported_versions);
+                 const QuicVersionVector& supported_versions,
+                 uint32 max_flow_control_receive_window_bytes);
   virtual ~QuicConnection();
 
   // Sets connection parameters from the supplied |config|.
@@ -261,6 +267,8 @@ class NET_EXPORT_PRIVATE QuicConnection
                           QuicStreamId last_good_stream_id,
                           const std::string& reason);
 
+  QuicFlowController* flow_controller() { return flow_controller_.get(); }
+
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
 
@@ -307,6 +315,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual bool OnUnauthenticatedPublicHeader(
       const QuicPacketPublicHeader& header) OVERRIDE;
   virtual bool OnUnauthenticatedHeader(const QuicPacketHeader& header) OVERRIDE;
+  virtual void OnDecryptedPacket(EncryptionLevel level) OVERRIDE;
   virtual bool OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
   virtual void OnFecProtectedPayload(base::StringPiece payload) OVERRIDE;
   virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE;
@@ -314,6 +323,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual bool OnCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& frame) OVERRIDE;
   virtual bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) OVERRIDE;
+  virtual bool OnPingFrame(const QuicPingFrame& frame) OVERRIDE;
   virtual bool OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual bool OnConnectionCloseFrame(
       const QuicConnectionCloseFrame& frame) OVERRIDE;
@@ -390,6 +400,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // true.  Otherwise, it will return false and will reset the timeout alarm.
   bool CheckForTimeout();
 
+  // Sends a ping, and resets the ping alarm.
+  void SendPing();
+
   // Sets up a packet with an QuicAckFrame and sends it out.
   void SendAck();
 
@@ -404,6 +417,10 @@ class NET_EXPORT_PRIVATE QuicConnection
   // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
+  // Calls |sent_packet_manager_|'s DiscardUnencryptedPackets. Used when the
+  // connection becomes forward secure and hasn't received acks for all packets.
+  void DiscardUnencryptedPackets();
+
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
   void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
@@ -417,15 +434,17 @@ class NET_EXPORT_PRIVATE QuicConnection
   // and takes ownership. If an alternative decrypter is in place then the
   // function DCHECKs. This is intended for cases where one knows that future
   // packets will be using the new decrypter and the previous decrypter is now
-  // obsolete.
-  void SetDecrypter(QuicDecrypter* decrypter);
+  // obsolete. |level| indicates the encryption level of the new decrypter.
+  void SetDecrypter(QuicDecrypter* decrypter, EncryptionLevel level);
 
   // SetAlternativeDecrypter sets a decrypter that may be used to decrypt
-  // future packets and takes ownership of it. If |latch_once_used| is true,
-  // then the first time that the decrypter is successful it will replace the
-  // primary decrypter. Otherwise both decrypters will remain active and the
-  // primary decrypter will be the one last used.
+  // future packets and takes ownership of it. |level| indicates the encryption
+  // level of the decrypter. If |latch_once_used| is true, then the first time
+  // that the decrypter is successful it will replace the primary decrypter.
+  // Otherwise both decrypters will remain active and the primary decrypter
+  // will be the one last used.
   void SetAlternativeDecrypter(QuicDecrypter* decrypter,
+                               EncryptionLevel level,
                                bool latch_once_used);
 
   const QuicDecrypter* decrypter() const;
@@ -438,12 +457,33 @@ class NET_EXPORT_PRIVATE QuicConnection
     return sent_packet_manager_;
   }
 
-  // Make sure a stop waiting we got from our peer is sane.
-  bool ValidateStopWaitingFrame(const QuicStopWaitingFrame& stop_waiting);
-
   bool CanWrite(TransmissionType transmission_type,
                 HasRetransmittableData retransmittable,
                 IsHandshake handshake);
+
+  uint32 max_flow_control_receive_window_bytes() const {
+    return max_flow_control_receive_window_bytes_;
+  }
+
+  // Stores current batch state for connection, puts the connection
+  // into batch mode, and destruction restores the stored batch state.
+  // While the bundler is in scope, any generated frames are bundled
+  // as densely as possible into packets.  In addition, this bundler
+  // can be configured to ensure that an ACK frame is included in the
+  // first packet created, if there's new ack information to be sent.
+  class ScopedPacketBundler {
+   public:
+    // In addition to all outgoing frames being bundled when the
+    // bundler is in scope, setting |include_ack| to true ensures that
+    // an ACK frame is opportunistically bundled with the first
+    // outgoing packet.
+    ScopedPacketBundler(QuicConnection* connection, AckBundling send_ack);
+    ~ScopedPacketBundler();
+
+   private:
+    QuicConnection* connection_;
+    bool already_in_batch_mode_;
+  };
 
  protected:
   // Send a packet to the peer using encryption |level|. If |sequence_number|
@@ -466,28 +506,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // such a version exists, false otherwise.
   bool SelectMutualVersion(const QuicVersionVector& available_versions);
 
+  QuicPacketWriter* writer() { return writer_; }
+
  private:
-  // Stores current batch state for connection, puts the connection
-  // into batch mode, and destruction restores the stored batch state.
-  // While the bundler is in scope, any generated frames are bundled
-  // as densely as possible into packets.  In addition, this bundler
-  // can be configured to ensure that an ACK frame is included in the
-  // first packet created, if there's new ack information to be sent.
-  class ScopedPacketBundler {
-   public:
-    // In addition to all outgoing frames being bundled when the
-    // bundler is in scope, setting |include_ack| to true ensures that
-    // an ACK frame is opportunistically bundled with the first
-    // outgoing packet.
-    ScopedPacketBundler(QuicConnection* connection, AckBundling send_ack);
-    ~ScopedPacketBundler();
-
-   private:
-    QuicConnection* connection_;
-    bool already_in_batch_mode_;
-  };
-
-  friend class ScopedPacketBundler;
   friend class test::QuicConnectionPeer;
 
   // Packets which have not been written to the wire.
@@ -521,6 +542,9 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // Make sure an ack we got from our peer is sane.
   bool ValidateAckFrame(const QuicAckFrame& incoming_ack);
+
+  // Make sure a stop waiting we got from our peer is sane.
+  bool ValidateStopWaitingFrame(const QuicStopWaitingFrame& stop_waiting);
 
   // Sends a version negotiation packet to the peer.
   void SendVersionNegotiationPacket();
@@ -584,6 +608,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Closes any FEC groups protecting packets before |sequence_number|.
   void CloseFecGroupsBefore(QuicPacketSequenceNumber sequence_number);
 
+  // Sets the ping alarm to the appropriate value, if any.
+  void SetPingAlarm();
+
   QuicFramer framer_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicPacketWriter* writer_;  // Not owned.
@@ -599,6 +626,7 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
+  EncryptionLevel last_decrypted_packet_level_;
   QuicPacketHeader last_header_;
   std::vector<QuicStreamFrame> last_stream_frames_;
   std::vector<QuicAckFrame> last_ack_frames_;
@@ -663,6 +691,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   scoped_ptr<QuicAlarm> resume_writes_alarm_;
   // An alarm that fires when the connection may have timed out.
   scoped_ptr<QuicAlarm> timeout_alarm_;
+  // An alarm that fires when a ping should be sent.
+  scoped_ptr<QuicAlarm> ping_alarm_;
 
   QuicConnectionVisitorInterface* visitor_;
   QuicConnectionDebugVisitorInterface* debug_visitor_;
@@ -673,8 +703,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicTime::Delta idle_network_timeout_;
   // Overall connection timeout.
   QuicTime::Delta overall_connection_timeout_;
-  // Connection creation time.
-  QuicTime creation_time_;
 
   // Statistics for this session.
   QuicConnectionStats stats_;
@@ -713,6 +741,12 @@ class NET_EXPORT_PRIVATE QuicConnection
   // If non-empty this contains the set of versions received in a
   // version negotiation packet.
   QuicVersionVector server_supported_versions_;
+
+  // Initial flow control receive window size for new streams.
+  uint32 max_flow_control_receive_window_bytes_;
+
+  // Used for connection level flow control.
+  scoped_ptr<QuicFlowController> flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

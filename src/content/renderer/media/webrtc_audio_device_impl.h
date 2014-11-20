@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,7 +18,6 @@
 #include "content/common/content_export.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_device_not_impl.h"
-#include "content/renderer/media/webrtc_audio_renderer.h"
 #include "ipc/ipc_platform_file.h"
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_renderer_sink.h"
@@ -321,8 +321,8 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   virtual int32_t StereoRecordingIsAvailable(bool* available) const OVERRIDE;
   virtual int32_t PlayoutDelay(uint16_t* delay_ms) const OVERRIDE;
   virtual int32_t RecordingDelay(uint16_t* delay_ms) const OVERRIDE;
-  virtual int32_t RecordingSampleRate(uint32_t* samples_per_sec) const OVERRIDE;
-  virtual int32_t PlayoutSampleRate(uint32_t* samples_per_sec) const OVERRIDE;
+  virtual int32_t RecordingSampleRate(uint32_t* sample_rate) const OVERRIDE;
+  virtual int32_t PlayoutSampleRate(uint32_t* sample_rate) const OVERRIDE;
 
   // Sets the |renderer_|, returns false if |renderer_| already exists.
   // Called on the main renderer thread.
@@ -355,7 +355,7 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Enables the Aec dump.  If the default capturer exists, it will call
   // StartAecDump() on the capturer and pass the ownership of the file to
   // WebRtc. Otherwise it will hold the file until a capturer is added.
-  void EnableAecDump(const base::PlatformFile& aec_dump_file);
+  void EnableAecDump(base::File aec_dump_file);
 
   // Disables the Aec dump.  When this method is called, the ongoing Aec dump
   // on WebRtc will be stopped.
@@ -387,7 +387,7 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
 
   // WebRtcAudioRendererSource implementation.
 
-  // Called on the AudioInputDevice worker thread.
+  // Called on the AudioOutputDevice worker thread.
   virtual void RenderData(media::AudioBus* audio_bus,
                           int sample_rate,
                           int audio_delay_milliseconds) OVERRIDE;
@@ -451,7 +451,10 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   std::vector<int16> render_buffer_;
 
   // Used for start the Aec dump on the default capturer.
-  base::PlatformFile aec_dump_file_;
+  base::File aec_dump_file_;
+
+  // Flag to tell if audio processing is enabled in MediaStreamAudioProcessor.
+  const bool is_audio_track_processing_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioDeviceImpl);
 };

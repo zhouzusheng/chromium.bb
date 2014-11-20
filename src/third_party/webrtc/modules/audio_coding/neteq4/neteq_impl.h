@@ -70,7 +70,8 @@ class NetEqImpl : public webrtc::NetEq {
             TimestampScaler* timestamp_scaler,
             AccelerateFactory* accelerate_factory,
             ExpandFactory* expand_factory,
-            PreemptiveExpandFactory* preemptive_expand_factory);
+            PreemptiveExpandFactory* preemptive_expand_factory,
+            bool create_components = true);
 
   virtual ~NetEqImpl();
 
@@ -114,11 +115,10 @@ class NetEqImpl : public webrtc::NetEq {
 
   // Provides an externally created decoder object |decoder| to insert in the
   // decoder database. The decoder implements a decoder of type |codec| and
-  // associates it with |rtp_payload_type|. The decoder operates at the
-  // frequency |sample_rate_hz|. Returns kOK on success, kFail on failure.
+  // associates it with |rtp_payload_type|. Returns kOK on success, kFail on
+  // failure.
   virtual int RegisterExternalDecoder(AudioDecoder* decoder,
                                       enum NetEqDecoder codec,
-                                      int sample_rate_hz,
                                       uint8_t rtp_payload_type);
 
   // Removes |rtp_payload_type| from the codec database. Returns 0 on success,
@@ -186,9 +186,7 @@ class NetEqImpl : public webrtc::NetEq {
   virtual void FlushBuffers();
 
   virtual void PacketBufferStatistics(int* current_num_packets,
-                                      int* max_num_packets,
-                                      int* current_memory_size_bytes,
-                                      int* max_memory_size_bytes) const;
+                                      int* max_num_packets) const;
 
   // Get sequence number and timestamp of the latest RTP.
   // This method is to facilitate NACK.
@@ -200,7 +198,10 @@ class NetEqImpl : public webrtc::NetEq {
   // Gets background noise mode.
   virtual NetEqBackgroundNoiseMode BackgroundNoiseMode() const;
 
- private:
+  // This accessor method is only intended for testing purposes.
+  virtual const SyncBuffer* sync_buffer_for_test() const;
+
+ protected:
   static const int kOutputSizeMs = 10;
   static const int kMaxFrameSize = 2880;  // 60 ms @ 48 kHz.
   // TODO(hlundin): Provide a better value for kSyncBufferSize.
@@ -328,6 +329,14 @@ class NetEqImpl : public webrtc::NetEq {
   // GetAudio().
   NetEqOutputType LastOutputType() EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
 
+  // Updates Expand and Merge.
+  virtual void UpdatePlcComponents(int fs_hz, size_t channels)
+      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
+
+  // Creates DecisionLogic object for the given mode.
+  void CreateDecisionLogic(NetEqPlayoutMode mode)
+      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
+
   const scoped_ptr<BufferLevelFilter> buffer_level_filter_;
   const scoped_ptr<DecoderDatabase> decoder_database_;
   const scoped_ptr<DelayManager> delay_manager_;
@@ -360,9 +369,9 @@ class NetEqImpl : public webrtc::NetEq {
   int output_size_samples_ GUARDED_BY(crit_sect_);
   int decoder_frame_length_ GUARDED_BY(crit_sect_);
   Modes last_mode_ GUARDED_BY(crit_sect_);
-  scoped_array<int16_t> mute_factor_array_ GUARDED_BY(crit_sect_);
+  scoped_ptr<int16_t[]> mute_factor_array_ GUARDED_BY(crit_sect_);
   size_t decoded_buffer_length_ GUARDED_BY(crit_sect_);
-  scoped_array<int16_t> decoded_buffer_ GUARDED_BY(crit_sect_);
+  scoped_ptr<int16_t[]> decoded_buffer_ GUARDED_BY(crit_sect_);
   uint32_t playout_timestamp_ GUARDED_BY(crit_sect_);
   bool new_codec_ GUARDED_BY(crit_sect_);
   uint32_t timestamp_ GUARDED_BY(crit_sect_);
@@ -385,6 +394,7 @@ class NetEqImpl : public webrtc::NetEq {
   int decoded_packet_sequence_number_ GUARDED_BY(crit_sect_);
   uint32_t decoded_packet_timestamp_ GUARDED_BY(crit_sect_);
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(NetEqImpl);
 };
 

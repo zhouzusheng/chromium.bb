@@ -16,6 +16,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/focus/focus_manager.h"
@@ -30,6 +31,7 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
 #include "ui/views/widget/widget_observer.h"
+#include "ui/views/widget/widget_removals_observer.h"
 #include "ui/views/window/custom_frame_view.h"
 #include "ui/views/window/dialog_delegate.h"
 
@@ -182,7 +184,8 @@ Widget::Widget()
       last_mouse_event_was_move_(false),
       auto_release_capture_(true),
       root_layers_dirty_(false),
-      movement_disabled_(false) {
+      movement_disabled_(false),
+      observer_manager_(this) {
 }
 
 Widget::~Widget() {
@@ -215,13 +218,13 @@ Widget* Widget::CreateWindowWithBounds(WidgetDelegate* delegate,
 
 // static
 Widget* Widget::CreateWindowWithParent(WidgetDelegate* delegate,
-                                       gfx::NativeWindow parent) {
+                                       gfx::NativeView parent) {
   return CreateWindowWithParentAndBounds(delegate, parent, gfx::Rect());
 }
 
 // static
 Widget* Widget::CreateWindowWithParentAndBounds(WidgetDelegate* delegate,
-                                                gfx::NativeWindow parent,
+                                                gfx::NativeView parent,
                                                 const gfx::Rect& bounds) {
   Widget* widget = new Widget;
   Widget::InitParams params;
@@ -367,6 +370,7 @@ void Widget::Init(const InitParams& in_params) {
         internal::NativeWidgetPrivate::IsMouseButtonDown();
   }
   native_widget_->InitNativeWidget(params);
+  observer_manager_.Add(GetNativeTheme());
   if (RequiresNonClientView(params.type)) {
     non_client_view_ = new NonClientView;
     non_client_view_->SetFrameView(CreateNonClientFrameView());
@@ -413,6 +417,18 @@ bool Widget::HasObserver(WidgetObserver* observer) {
   return observers_.HasObserver(observer);
 }
 
+void Widget::AddRemovalsObserver(WidgetRemovalsObserver* observer) {
+  removals_observers_.AddObserver(observer);
+}
+
+void Widget::RemoveRemovalsObserver(WidgetRemovalsObserver* observer) {
+  removals_observers_.RemoveObserver(observer);
+}
+
+bool Widget::HasRemovalsObserver(WidgetRemovalsObserver* observer) {
+  return removals_observers_.HasObserver(observer);
+}
+
 bool Widget::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
   return false;
 }
@@ -440,6 +456,12 @@ void Widget::NotifyNativeViewHierarchyWillChange() {
 
 void Widget::NotifyNativeViewHierarchyChanged() {
   root_view_->NotifyNativeViewHierarchyChanged();
+}
+
+void Widget::NotifyWillRemoveView(View* view) {
+    FOR_EACH_OBSERVER(WidgetRemovalsObserver,
+                      removals_observers_,
+                      OnWillRemoveView(this, view));
 }
 
 // Converted methods (see header) ----------------------------------------------
@@ -767,6 +789,10 @@ const InputMethod* Widget::GetInputMethod() const {
   }
 }
 
+ui::InputMethod* Widget::GetHostInputMethod() {
+  return native_widget_private()->GetHostInputMethod();
+}
+
 void Widget::RunShellDrag(View* view,
                           const ui::OSExchangeData& data,
                           const gfx::Point& location,
@@ -1008,11 +1034,19 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
 }
 
 void Widget::OnNativeFocus(gfx::NativeView old_focused_view) {
+  // Ensure the focused view's TextInputClient is used for text input.
+  views::FocusManager* focus_manager = GetFocusManager();
+  focus_manager->FocusTextInputClient(focus_manager->GetFocusedView());
+
   WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(old_focused_view,
                                                         GetNativeView());
 }
 
 void Widget::OnNativeBlur(gfx::NativeView new_focused_view) {
+  // Ensure the focused view's TextInputClient is not used for text input.
+  views::FocusManager* focus_manager = GetFocusManager();
+  focus_manager->BlurTextInputClient(focus_manager->GetFocusedView());
+
   WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(GetNativeView(),
                                                         new_focused_view);
 }
@@ -1069,6 +1103,11 @@ gfx::Size Widget::GetMaximumSize() {
 
 void Widget::OnNativeWidgetMove() {
   widget_delegate_->OnWidgetMove();
+  if (GetRootView()->GetFocusManager()) {
+    View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
+    if (focused_view && focused_view->GetInputMethod())
+      focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
+  }
   FOR_EACH_OBSERVER(WidgetObserver, observers_, OnWidgetBoundsChanged(
     this,
     GetWindowBoundsInScreen()));
@@ -1076,6 +1115,12 @@ void Widget::OnNativeWidgetMove() {
 
 void Widget::OnNativeWidgetSizeChanged(const gfx::Size& new_size) {
   root_view_->SetSize(new_size);
+
+  if (GetRootView()->GetFocusManager()) {
+    View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
+    if (focused_view && focused_view->GetInputMethod())
+      focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
+  }
 
   // Size changed notifications can fire prior to full initialization
   // i.e. during session restore.  Avoid saving session state during these
@@ -1219,12 +1264,15 @@ void Widget::OnMouseCaptureLost() {
   is_mouse_button_pressed_ = false;
 }
 
-void Widget::OnTouchEvent(ui::TouchEvent* event) {
-  SendEventToProcessor(event);
-}
-
 void Widget::OnScrollEvent(ui::ScrollEvent* event) {
-  SendEventToProcessor(event);
+  ui::ScrollEvent event_copy(*event);
+  SendEventToProcessor(&event_copy);
+
+  // Convert unhandled ui::ET_SCROLL events into ui::ET_MOUSEWHEEL events.
+  if (!event_copy.handled() && event_copy.type() == ui::ET_SCROLL) {
+    ui::MouseWheelEvent wheel(*event);
+    OnMouseEvent(&wheel);
+  }
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
@@ -1321,6 +1369,21 @@ View* Widget::GetFocusTraversableParentView() {
   // up and as a result this should not be called.
   NOTREACHED();
   return NULL;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Widget, ui::NativeThemeObserver implementation:
+
+void Widget::OnNativeThemeUpdated(ui::NativeTheme* observed_theme) {
+  DCHECK(observer_manager_.IsObserving(observed_theme));
+
+  ui::NativeTheme* current_native_theme = GetNativeTheme();
+  if (!observer_manager_.IsObserving(current_native_theme)) {
+    observer_manager_.RemoveAll();
+    observer_manager_.Add(current_native_theme);
+  }
+
+  root_view_->PropagateNativeThemeChanged(current_native_theme);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

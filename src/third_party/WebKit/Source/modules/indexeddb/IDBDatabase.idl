@@ -25,10 +25,11 @@
  */
 
 [
-    ActiveDOMObject
+    ActiveDOMObject,
+    WillBeGarbageCollected
 ] interface IDBDatabase : EventTarget {
     readonly attribute DOMString name;
-    [CallWith=ExecutionContext] readonly attribute any version;
+    [CallWith=ScriptState] readonly attribute any version;
     readonly attribute DOMStringList objectStoreNames;
 
     attribute EventHandler onabort;

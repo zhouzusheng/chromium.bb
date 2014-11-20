@@ -33,6 +33,7 @@
 
 #include "V8ANGLEInstancedArrays.h"
 #include "V8EXTFragDepth.h"
+#include "V8EXTShaderTextureLOD.h"
 #include "V8EXTTextureFilterAnisotropic.h"
 #include "V8HTMLCanvasElement.h"
 #include "V8HTMLImageElement.h"
@@ -47,6 +48,7 @@
 #include "V8OESVertexArrayObject.h"
 #include "V8WebGLBuffer.h"
 #include "V8WebGLCompressedTextureATC.h"
+#include "V8WebGLCompressedTextureETC1.h"
 #include "V8WebGLCompressedTexturePVRTC.h"
 #include "V8WebGLCompressedTextureS3TC.h"
 #include "V8WebGLDebugRendererInfo.h"
@@ -191,6 +193,10 @@ static v8::Handle<v8::Value> toV8Object(WebGLExtension* extension, v8::Handle<v8
         extensionObject = toV8(static_cast<EXTFragDepth*>(extension), contextObject, isolate);
         referenceName = "extFragDepthName";
         break;
+    case EXTShaderTextureLODName:
+        extensionObject = toV8(static_cast<EXTShaderTextureLOD*>(extension), contextObject, isolate);
+        referenceName = "extShaderTextureLODName";
+        break;
     case EXTTextureFilterAnisotropicName:
         extensionObject = toV8(static_cast<EXTTextureFilterAnisotropic*>(extension), contextObject, isolate);
         referenceName = "extTextureFilterAnisotropicName";
@@ -226,6 +232,10 @@ static v8::Handle<v8::Value> toV8Object(WebGLExtension* extension, v8::Handle<v8
     case WebGLCompressedTextureATCName:
         extensionObject = toV8(static_cast<WebGLCompressedTextureATC*>(extension), contextObject, isolate);
         referenceName = "webGLCompressedTextureATCName";
+        break;
+    case WebGLCompressedTextureETC1Name:
+        extensionObject = toV8(static_cast<WebGLCompressedTextureETC1*>(extension), contextObject, isolate);
+        referenceName = "webGLCompressedTextureETC1Name";
         break;
     case WebGLCompressedTexturePVRTCName:
         extensionObject = toV8(static_cast<WebGLCompressedTexturePVRTC*>(extension), contextObject, isolate);
@@ -358,7 +368,7 @@ void V8WebGLRenderingContext::getExtensionMethodCustom(const v8::FunctionCallbac
         exceptionState.throwIfNeeded();
         return;
     }
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, info[0]);
+    TOSTRING_VOID(V8StringResource<>, name, info[0]);
     RefPtr<WebGLExtension> extension(impl->getExtension(name));
     v8SetReturnValue(info, toV8Object(extension.get(), info.Holder(), info.GetIsolate()));
 }

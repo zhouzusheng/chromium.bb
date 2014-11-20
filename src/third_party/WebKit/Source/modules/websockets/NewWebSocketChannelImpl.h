@@ -44,7 +44,6 @@
 #include "wtf/FastAllocBase.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
@@ -63,21 +62,21 @@ class Document;
 class WebSocketHandshakeRequest;
 
 // This class may replace MainThreadWebSocketChannel.
-class NewWebSocketChannelImpl FINAL : public WebSocketChannel, public RefCounted<NewWebSocketChannelImpl>, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
-    WTF_MAKE_FAST_ALLOCATED;
+class NewWebSocketChannelImpl FINAL : public WebSocketChannel, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     // You can specify the source file and the line number information
     // explicitly by passing the last parameter.
     // In the usual case, they are set automatically and you don't have to
     // pass it.
-    static PassRefPtr<NewWebSocketChannelImpl> create(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0)
+    static PassRefPtrWillBeRawPtr<NewWebSocketChannelImpl> create(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0)
     {
-        return adoptRef(new NewWebSocketChannelImpl(context, client, sourceURL, lineNumber));
+        return adoptRefWillBeRefCountedGarbageCollected(new NewWebSocketChannelImpl(context, client, sourceURL, lineNumber));
     }
     virtual ~NewWebSocketChannelImpl();
 
     // WebSocketChannel functions.
-    virtual void connect(const KURL&, const String& protocol) OVERRIDE;
+    virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
     virtual String subprotocol() OVERRIDE;
     virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
@@ -91,11 +90,10 @@ public:
     using WebSocketChannel::fail;
     virtual void disconnect() OVERRIDE;
 
-    using RefCounted<NewWebSocketChannelImpl>::ref;
-    using RefCounted<NewWebSocketChannelImpl>::deref;
-
     virtual void suspend() OVERRIDE;
     virtual void resume() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     enum MessageType {
@@ -143,10 +141,6 @@ private:
     void didFinishLoadingBlob(PassRefPtr<ArrayBuffer>);
     void didFailLoadingBlob(FileError::ErrorCode);
 
-    // WebSocketChannel functions.
-    virtual void refWebSocketChannel() OVERRIDE { ref(); }
-    virtual void derefWebSocketChannel() OVERRIDE { deref(); }
-
     // LifecycleObserver functions.
     // This object must be destroyed before the context.
     virtual void contextDestroyed() OVERRIDE { ASSERT_NOT_REACHED(); }
@@ -161,7 +155,7 @@ private:
     KURL m_url;
     // m_identifier > 0 means calling scriptContextExecution() returns a Document.
     unsigned long m_identifier;
-    OwnPtr<BlobLoader> m_blobLoader;
+    OwnPtrWillBeMember<BlobLoader> m_blobLoader;
     Deque<Message> m_messages;
     Vector<char> m_receivingMessageData;
 

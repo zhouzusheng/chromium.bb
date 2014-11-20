@@ -41,7 +41,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
@@ -70,7 +70,7 @@
 #include "ui/wm/public/drag_drop_delegate.h"
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -159,7 +159,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
       web_contents_window()->delegate()->OnGestureEvent(event);
   }
 
-  WebContents* web_contents_;
+  WebContentsImpl* web_contents_;
 
   // The window is displayed both during the gesture, and after the gesture
   // while the navigation is in progress. During the gesture, it is necessary to
@@ -174,52 +174,20 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
 
 // Listens to all mouse drag events during a drag and drop and sends them to
 // the renderer.
-class WebDragSourceAura : public base::MessageLoopForUI::Observer,
-                          public NotificationObserver {
+class WebDragSourceAura : public NotificationObserver {
  public:
   WebDragSourceAura(aura::Window* window, WebContentsImpl* contents)
       : window_(window),
         contents_(contents) {
-    base::MessageLoopForUI::current()->AddObserver(this);
     registrar_.Add(this,
                    NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                    Source<WebContents>(contents));
   }
 
   virtual ~WebDragSourceAura() {
-    base::MessageLoopForUI::current()->RemoveObserver(this);
   }
 
-  // MessageLoop::Observer implementation:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE {
-    return base::EVENT_CONTINUE;
-  }
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE {
-    if (!contents_)
-      return;
-    ui::EventType type = ui::EventTypeFromNative(event);
-    RenderViewHost* rvh = NULL;
-    switch (type) {
-      case ui::ET_MOUSE_DRAGGED:
-        rvh = contents_->GetRenderViewHost();
-        if (rvh) {
-          gfx::Point screen_loc_in_pixel = ui::EventLocationFromNative(event);
-          gfx::Point screen_loc = ConvertViewPointToDIP(rvh->GetView(),
-              screen_loc_in_pixel);
-          gfx::Point client_loc = screen_loc;
-          aura::Window* window = rvh->GetView()->GetNativeView();
-          aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-              window, &client_loc);
-          contents_->DragSourceMovedTo(client_loc.x(), client_loc.y(),
-              screen_loc.x(), screen_loc.y());
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
+  // NotificationObserver:
   virtual void Observe(int type,
       const NotificationSource& source,
       const NotificationDetails& details) OVERRIDE {
@@ -315,7 +283,7 @@ void PrepareDragForDownload(
   scoped_refptr<DragDownloadFile> download_file =
       new DragDownloadFile(
           download_path,
-          scoped_ptr<net::FileStream>(),
+          base::File(),
           download_url,
           Referrer(page_url, drop_data.referrer_policy),
           page_encoding,
@@ -325,6 +293,54 @@ void PrepareDragForDownload(
   provider->SetDownloadFileInfo(file_download);
 }
 #endif  // defined(OS_WIN)
+
+// Returns the CustomFormat to store file system files.
+const ui::OSExchangeData::CustomFormat& GetFileSystemFileCustomFormat() {
+  static const char kFormatString[] = "chromium/x-file-system-files";
+  CR_DEFINE_STATIC_LOCAL(ui::OSExchangeData::CustomFormat,
+                         format,
+                         (ui::Clipboard::GetFormatType(kFormatString)));
+  return format;
+}
+
+// Writes file system files to the pickle.
+void WriteFileSystemFilesToPickle(
+    const std::vector<DropData::FileSystemFileInfo>& file_system_files,
+    Pickle* pickle) {
+  pickle->WriteUInt64(file_system_files.size());
+  for (size_t i = 0; i < file_system_files.size(); ++i) {
+    pickle->WriteString(file_system_files[i].url.spec());
+    pickle->WriteInt64(file_system_files[i].size);
+  }
+}
+
+// Reads file system files from the pickle.
+bool ReadFileSystemFilesFromPickle(
+    const Pickle& pickle,
+    std::vector<DropData::FileSystemFileInfo>* file_system_files) {
+  PickleIterator iter(pickle);
+
+  uint64 num_files = 0;
+  if (!pickle.ReadUInt64(&iter, &num_files))
+    return false;
+  file_system_files->resize(num_files);
+
+  for (uint64 i = 0; i < num_files; ++i) {
+    std::string url_string;
+    int64 size = 0;
+    if (!pickle.ReadString(&iter, &url_string) ||
+        !pickle.ReadInt64(&iter, &size))
+      return false;
+
+    GURL url(url_string);
+    if (!url.is_valid())
+      return false;
+
+    (*file_system_files)[i].url = url;
+    (*file_system_files)[i].size = size;
+  }
+  return true;
+}
 
 // Utility to fill a ui::OSExchangeDataProvider object from DropData.
 void PrepareDragData(const DropData& drop_data,
@@ -352,6 +368,11 @@ void PrepareDragData(const DropData& drop_data,
     provider->SetHtml(drop_data.html.string(), drop_data.html_base_url);
   if (!drop_data.filenames.empty())
     provider->SetFilenames(drop_data.filenames);
+  if (!drop_data.file_system_files.empty()) {
+    Pickle pickle;
+    WriteFileSystemFilesToPickle(drop_data.file_system_files, &pickle);
+    provider->SetPickledData(GetFileSystemFileCustomFormat(), pickle);
+  }
   if (!drop_data.custom_data.empty()) {
     Pickle pickle;
     ui::WriteCustomDataToPickle(drop_data.custom_data, &pickle);
@@ -389,6 +410,11 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
   data.GetFilenames(&drop_data->filenames);
 
   Pickle pickle;
+  std::vector<DropData::FileSystemFileInfo> file_system_files;
+  if (data.GetPickledData(GetFileSystemFileCustomFormat(), &pickle) &&
+      ReadFileSystemFilesFromPickle(pickle, &file_system_files))
+    drop_data->file_system_files = file_system_files;
+
   if (data.GetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), &pickle))
     ui::ReadCustomDataIntoMap(
         pickle.data(), pickle.size(), &drop_data->custom_data);
@@ -953,10 +979,6 @@ void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
   *out = window_->GetBoundsInScreen();
 }
 
-void WebContentsViewAura::OnTabCrashed(base::TerminationStatus status,
-                                       int error_code) {
-}
-
 void WebContentsViewAura::SizeContents(const gfx::Size& size) {
   gfx::Rect bounds = window_->bounds();
   if (bounds.size() != size) {
@@ -1009,7 +1031,7 @@ gfx::Rect WebContentsViewAura::GetViewBounds() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WebContentsViewAura, WebContentsViewPort implementation:
+// WebContentsViewAura, WebContentsView implementation:
 
 void WebContentsViewAura::CreateView(
     const gfx::Size& initial_size, gfx::NativeView context) {
@@ -1017,7 +1039,7 @@ void WebContentsViewAura::CreateView(
   // if the bookmark bar is not shown and you create a new tab). The right
   // value is set shortly after this, so its safe to ignore.
 
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   window_.reset(new aura::Window(this));
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
@@ -1056,7 +1078,7 @@ void WebContentsViewAura::CreateView(
     drag_dest_delegate_ = delegate_->GetDragDestDelegate();
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -1065,11 +1087,12 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
 
-  RenderWidgetHostView* view =
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host);
+  RenderWidgetHostViewBase* view = new RenderWidgetHostViewAura(
+      render_widget_host);
   view->InitAsChild(NULL);
   GetNativeView()->AddChild(view->GetNativeView());
 
@@ -1096,9 +1119,9 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
   return view;
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  return new RenderWidgetHostViewAura(render_widget_host);
 }
 
 void WebContentsViewAura::SetPageTitle(const base::string16& title) {
@@ -1305,12 +1328,12 @@ void WebContentsViewAura::OnImplicitAnimationsCompleted() {
 
   if (ShouldNavigateForward(web_contents_->GetController(),
                             completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoForward();
+    PrepareOverscrollNavigationOverlay();
   } else if (ShouldNavigateBack(web_contents_->GetController(),
                                 completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoBack();
+    PrepareOverscrollNavigationOverlay();
   } else {
     if (touch_editable_)
       touch_editable_->OverscrollCompleted();

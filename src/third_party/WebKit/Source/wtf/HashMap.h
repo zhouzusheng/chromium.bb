@@ -40,6 +40,8 @@ namespace WTF {
         static const typename T::KeyType& extract(const T& p) { return p.key; }
     };
 
+    // Note: empty or deleted key values are not allowed, using them may lead to undefined behavior.
+    // For pointer keys this means that null pointers are not allowed unless you supply custom key traits.
     template<
         typename KeyArg,
         typename MappedArg,
@@ -48,6 +50,7 @@ namespace WTF {
         typename MappedTraitsArg = HashTraits<MappedArg>,
         typename Allocator = DefaultAllocator>
     class HashMap {
+        WTF_USE_ALLOCATOR(HashMap, Allocator);
     private:
         typedef KeyTraitsArg KeyTraits;
         typedef MappedTraitsArg MappedTraits;
@@ -58,20 +61,6 @@ namespace WTF {
         typedef const typename KeyTraits::PeekInType& KeyPeekInType;
         typedef typename MappedTraits::TraitType MappedType;
         typedef typename ValueTraits::TraitType ValueType;
-
-        void* operator new(size_t size)
-        {
-            return Allocator::template malloc<void*, HashMap>(size);
-        }
-        void operator delete(void* p) { Allocator::free(p); }
-        void* operator new[](size_t size) { return Allocator::template newArray<HashMap>(size); }
-        void operator delete[](void* p) { Allocator::deleteArray(p); }
-        void* operator new(size_t, NotNullTag, void* location)
-        {
-            COMPILE_ASSERT(!Allocator::isGarbageCollected, Garbage_collector_must_be_disabled);
-            ASSERT(location);
-            return location;
-        }
 
     private:
         typedef typename MappedTraits::PassInType MappedPassInType;
@@ -139,6 +128,8 @@ namespace WTF {
         void remove(KeyPeekInType);
         void remove(iterator);
         void clear();
+        template<typename Collection>
+        void removeAll(const Collection& toBeRemoved) { WTF::removeAll(*this, toBeRemoved); }
 
         MappedPassOutType take(KeyPeekInType); // efficient combination of get with remove
 
@@ -161,10 +152,7 @@ namespace WTF {
 
         static bool isValidKey(KeyPeekInType);
 
-        void trace(typename Allocator::Visitor* visitor)
-        {
-            m_impl.trace(visitor);
-        }
+        void trace(typename Allocator::Visitor* visitor) { m_impl.trace(visitor); }
 
     private:
         AddResult inlineAdd(KeyPeekInType, MappedPassInReferenceType);

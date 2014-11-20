@@ -34,7 +34,6 @@
 #include "RuntimeEnabledFeatures.h"
 #include "V8Event.h"
 #include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
@@ -83,16 +82,16 @@ void V8CustomEvent::initCustomEventMethodCustom(const v8::FunctionCallbackInfo<v
     CustomEvent* event = V8CustomEvent::toNative(info.Holder());
     ASSERT(!event->serializedDetail());
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, typeArg, info[0]);
-    V8TRYCATCH_VOID(bool, canBubbleArg, info[1]->BooleanValue());
-    V8TRYCATCH_VOID(bool, cancelableArg, info[2]->BooleanValue());
+    TOSTRING_VOID(V8StringResource<>, typeArg, info[0]);
+    TONATIVE_VOID(bool, canBubbleArg, info[1]->BooleanValue());
+    TONATIVE_VOID(bool, cancelableArg, info[2]->BooleanValue());
     v8::Handle<v8::Value> detailsArg = info[3];
 
     event->initEvent(typeArg, canBubbleArg, cancelableArg);
 
     if (!detailsArg.IsEmpty()) {
         V8HiddenValue::setHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::detail(info.GetIsolate()), detailsArg);
-        if (DOMWrapperWorld::current(info.GetIsolate())->isIsolatedWorld())
+        if (DOMWrapperWorld::current(info.GetIsolate()).isIsolatedWorld())
             event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(detailsArg, info.GetIsolate()));
     }
 }

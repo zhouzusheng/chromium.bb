@@ -7,6 +7,8 @@
 #include "base/debug/trace_event.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/scrollbar_animation_controller.h"
+#include "cc/animation/scrollbar_animation_controller_linear_fade.h"
+#include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/traced_value.h"
@@ -90,12 +92,15 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       min_page_scale_factor_(0),
       max_page_scale_factor_(0),
       scrolling_layer_id_from_previous_tree_(0),
+      use_gpu_rasterization_(false),
       contents_textures_purged_(false),
       requires_high_res_to_draw_(false),
       viewport_size_invalid_(false),
       needs_update_draw_properties_(true),
       needs_full_tree_sync_(true),
-      next_activation_forces_redraw_(false) {}
+      next_activation_forces_redraw_(false),
+      render_surface_layer_list_id_(0) {
+}
 
 LayerTreeImpl::~LayerTreeImpl() {
   // Need to explicitly clear the tree prior to destroying this so that
@@ -105,6 +110,11 @@ LayerTreeImpl::~LayerTreeImpl() {
 }
 
 void LayerTreeImpl::Shutdown() { root_layer_.reset(); }
+
+void LayerTreeImpl::ReleaseResources() {
+  if (root_layer_)
+    ReleaseResourcesRecursive(root_layer_.get());
+}
 
 void LayerTreeImpl::SetRootLayer(scoped_ptr<LayerImpl> layer) {
   if (inner_viewport_scroll_layer_)
@@ -216,6 +226,8 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   target_tree->set_background_color(background_color());
   target_tree->set_has_transparent_background(has_transparent_background());
 
+  target_tree->use_gpu_rasterization_ = use_gpu_rasterization();
+
   if (ContentsTexturesPurged())
     target_tree->SetContentsTexturesPurged();
   else
@@ -256,10 +268,10 @@ void LayerTreeImpl::SetCurrentlyScrollingLayer(LayerImpl* layer) {
   if (currently_scrolling_layer_ &&
       currently_scrolling_layer_->scrollbar_animation_controller())
     currently_scrolling_layer_->scrollbar_animation_controller()
-        ->DidScrollGestureEnd(CurrentFrameTimeTicks());
+        ->DidScrollEnd();
   currently_scrolling_layer_ = layer;
   if (layer && layer->scrollbar_animation_controller())
-    layer->scrollbar_animation_controller()->DidScrollGestureBegin();
+    layer->scrollbar_animation_controller()->DidScrollBegin();
 }
 
 void LayerTreeImpl::ClearCurrentlyScrollingLayer() {
@@ -433,6 +445,14 @@ void LayerTreeImpl::ClearViewportLayers() {
   outer_viewport_scroll_layer_ = NULL;
 }
 
+void LayerTreeImpl::SetUseGpuRasterization(bool use_gpu) {
+  if (use_gpu == use_gpu_rasterization_)
+    return;
+
+  use_gpu_rasterization_ = use_gpu;
+  ReleaseResources();
+}
+
 void LayerTreeImpl::UpdateDrawProperties() {
   needs_update_draw_properties_ = false;
   render_surface_layer_list_.clear();
@@ -455,6 +475,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
         page_scale_layer_ ? page_scale_layer_ : InnerViewportContainerLayer();
     bool can_render_to_separate_surface =
         !output_surface()->ForcedDrawToSoftwareDevice();
+
+    ++render_surface_layer_list_id_;
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
         DrawViewportSize(),
@@ -466,7 +488,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
         settings().can_use_lcd_text,
         can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
-        &render_surface_layer_list_);
+        &render_surface_layer_list_,
+        render_surface_layer_list_id_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
 
@@ -486,11 +509,13 @@ void LayerTreeImpl::UpdateDrawProperties() {
              LayerIteratorType::Begin(&render_surface_layer_list_);
          it != end;
          ++it) {
-      if (!it.represents_itself())
-        continue;
       LayerImpl* layer = *it;
+      if (it.represents_itself())
+        layer->UpdateTilePriorities();
 
-      layer->UpdateTilePriorities();
+      if (!it.represents_contributing_render_surface())
+        continue;
+
       if (layer->mask_layer())
         layer->mask_layer()->UpdateTilePriorities();
       if (layer->replica_layer() && layer->replica_layer()->mask_layer())
@@ -644,6 +669,10 @@ bool LayerTreeImpl::device_viewport_valid_for_tile_management() const {
   return layer_tree_host_impl_->device_viewport_valid_for_tile_management();
 }
 
+gfx::Size LayerTreeImpl::device_viewport_size() const {
+  return layer_tree_host_impl_->device_viewport_size();
+}
+
 bool LayerTreeImpl::IsActiveTree() const {
   return layer_tree_host_impl_->active_tree() == this;
 }
@@ -682,6 +711,10 @@ base::TimeTicks LayerTreeImpl::CurrentFrameTimeTicks() const {
   return layer_tree_host_impl_->CurrentFrameTimeTicks();
 }
 
+base::TimeDelta LayerTreeImpl::begin_impl_frame_interval() const {
+  return layer_tree_host_impl_->begin_impl_frame_interval();
+}
+
 void LayerTreeImpl::SetNeedsCommit() {
   layer_tree_host_impl_->SetNeedsCommit();
 }
@@ -690,8 +723,30 @@ gfx::Size LayerTreeImpl::DrawViewportSize() const {
   return layer_tree_host_impl_->DrawViewportSize();
 }
 
-void LayerTreeImpl::StartScrollbarAnimation() {
-  layer_tree_host_impl_->StartScrollbarAnimation();
+scoped_ptr<ScrollbarAnimationController>
+LayerTreeImpl::CreateScrollbarAnimationController(LayerImpl* scrolling_layer) {
+  DCHECK(settings().scrollbar_fade_delay_ms);
+  DCHECK(settings().scrollbar_fade_duration_ms);
+  base::TimeDelta delay =
+      base::TimeDelta::FromMilliseconds(settings().scrollbar_fade_delay_ms);
+  base::TimeDelta duration =
+      base::TimeDelta::FromMilliseconds(settings().scrollbar_fade_duration_ms);
+  switch (settings().scrollbar_animator) {
+    case LayerTreeSettings::LinearFade: {
+      return ScrollbarAnimationControllerLinearFade::Create(
+                 scrolling_layer, layer_tree_host_impl_, delay, duration)
+          .PassAs<ScrollbarAnimationController>();
+    }
+    case LayerTreeSettings::Thinning: {
+      return ScrollbarAnimationControllerThinning::Create(
+                 scrolling_layer, layer_tree_host_impl_, delay, duration)
+          .PassAs<ScrollbarAnimationController>();
+    }
+    case LayerTreeSettings::NoAnimator:
+      NOTREACHED();
+      break;
+  }
+  return scoped_ptr<ScrollbarAnimationController>();
 }
 
 void LayerTreeImpl::DidAnimateScrollOffset() {
@@ -954,6 +1009,17 @@ const std::vector<LayerImpl*>& LayerTreeImpl::LayersWithCopyOutputRequest()
   DCHECK(IsActiveTree());
 
   return layers_with_copy_output_request_;
+}
+
+void LayerTreeImpl::ReleaseResourcesRecursive(LayerImpl* current) {
+  DCHECK(current);
+  current->ReleaseResources();
+  if (current->mask_layer())
+    ReleaseResourcesRecursive(current->mask_layer());
+  if (current->replica_layer())
+    ReleaseResourcesRecursive(current->replica_layer());
+  for (size_t i = 0; i < current->children().size(); ++i)
+    ReleaseResourcesRecursive(current->children()[i]);
 }
 
 }  // namespace cc

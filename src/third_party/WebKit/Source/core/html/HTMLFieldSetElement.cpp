@@ -44,9 +44,17 @@ inline HTMLFieldSetElement::HTMLFieldSetElement(Document& document, HTMLFormElem
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLFieldSetElement(document, form));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLFieldSetElement(document, form));
+}
+
+void HTMLFieldSetElement::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_associatedElements);
+#endif
+    HTMLFormControlElement::trace(visitor);
 }
 
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
@@ -120,7 +128,7 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
     }
 }
 
-const Vector<FormAssociatedElement*>& HTMLFieldSetElement::associatedElements() const
+const FormAssociatedElement::List& HTMLFieldSetElement::associatedElements() const
 {
     refreshElementsIfNeeded();
     return m_associatedElements;

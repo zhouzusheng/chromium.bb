@@ -56,6 +56,7 @@
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
+#include "core/svg/graphics/SVGImage.h"
 #include "core/xml/XMLTreeViewer.h"
 #include "core/xml/parser/SharedBufferReader.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
@@ -110,6 +111,9 @@ static inline bool hasNoStyleInformation(Document* document)
 
     if (document->frame()->tree().parent())
         return false; // This document is not in a top frame
+
+    if (SVGImage::isInSVGImage(document))
+        return false;
 
     return true;
 }
@@ -755,7 +759,8 @@ XMLDocumentParser::XMLDocumentParser(Document* document, FrameView* frameView)
     , m_parsingFragment(false)
 {
     // This is XML being used as a document resource.
-    UseCounter::count(*document, UseCounter::XMLDocument);
+    if (frameView && document->isXMLDocument())
+        UseCounter::count(*document, UseCounter::XMLDocument);
 }
 
 XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parentElement, ParserContentPolicy parserContentPolicy)

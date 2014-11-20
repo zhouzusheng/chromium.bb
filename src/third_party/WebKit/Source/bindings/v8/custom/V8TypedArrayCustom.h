@@ -91,7 +91,7 @@ public:
     template<typename CallbackInfo>
     static void v8SetReturnValueForMainWorld(const CallbackInfo& info, TypedArray* impl)
     {
-        ASSERT(DOMWrapperWorld::current(info.GetIsolate())->isMainWorld());
+        ASSERT(DOMWrapperWorld::current(info.GetIsolate()).isMainWorld());
         if (UNLIKELY(!impl)) {
             v8SetReturnValueNull(info);
             return;
@@ -180,7 +180,7 @@ template <typename TypedArray>
 const WrapperTypeInfo V8TypedArray<TypedArray>::wrapperTypeInfo = {
     gin::kEmbedderBlink,
     0, V8TypedArray<TypedArray>::derefObject,
-    0, 0, 0, 0, 0, WrapperTypeObjectPrototype, false
+    0, 0, 0, 0, 0, WrapperTypeObjectPrototype, RefCountedObject
 };
 
 template <typename TypedArray>

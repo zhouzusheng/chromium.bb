@@ -24,17 +24,26 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
     Config();
     ~Config();
     GestureDetector::Config gesture_detector_config;
+
+    // Minimum accepted value for TouchMajor while scaling (in dips).
+    float min_scaling_touch_major;
+
+    // Minimum span needed to initiate a scaling gesture (in dips).
+    float min_scaling_span;
+
+    // Whether double-tap drag scaling is enabled.
     bool quick_scale_enabled;
-    int min_scaling_touch_major;
-    int min_scaling_span;
   };
 
   class ScaleGestureListener {
    public:
     virtual ~ScaleGestureListener() {}
-    virtual bool OnScale(const ScaleGestureDetector& detector) = 0;
-    virtual bool OnScaleBegin(const ScaleGestureDetector& detector) = 0;
-    virtual void OnScaleEnd(const ScaleGestureDetector& detector) = 0;
+    virtual bool OnScale(const ScaleGestureDetector& detector,
+                         const MotionEvent& e) = 0;
+    virtual bool OnScaleBegin(const ScaleGestureDetector& detector,
+                              const MotionEvent& e) = 0;
+    virtual void OnScaleEnd(const ScaleGestureDetector& detector,
+                            const MotionEvent& e) = 0;
   };
 
   // A convenience class to extend when you only want to listen for a subset of
@@ -46,9 +55,12 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   class SimpleScaleGestureListener : public ScaleGestureListener {
    public:
     // ScaleGestureListener implementation.
-    virtual bool OnScale(const ScaleGestureDetector&) OVERRIDE;
-    virtual bool OnScaleBegin(const ScaleGestureDetector&) OVERRIDE;
-    virtual void OnScaleEnd(const ScaleGestureDetector&) OVERRIDE;
+    virtual bool OnScale(const ScaleGestureDetector&,
+                         const MotionEvent&) OVERRIDE;
+    virtual bool OnScaleBegin(const ScaleGestureDetector&,
+                              const MotionEvent&) OVERRIDE;
+    virtual void OnScaleEnd(const ScaleGestureDetector&,
+                            const MotionEvent&) OVERRIDE;
   };
 
   ScaleGestureDetector(const Config& config, ScaleGestureListener* listener);
@@ -71,6 +83,7 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   void SetQuickScaleEnabled(bool scales);
   bool IsQuickScaleEnabled() const;
   bool IsInProgress() const;
+  bool InDoubleTapMode() const;
   float GetFocusX() const;
   float GetFocusY() const;
   float GetCurrentSpan() const;
@@ -92,8 +105,7 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   // The TouchMajor/TouchMinor elements of a MotionEvent can flutter/jitter on
   // some hardware/driver combos. Smooth out to get kinder, gentler behavior.
   void AddTouchHistory(const MotionEvent& ev);
-  void ClearTouchHistory();
-  bool InDoubleTapMode() const;
+  void ResetTouchHistory();
 
   ScaleGestureListener* const listener_;
 
@@ -114,8 +126,8 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   base::TimeTicks curr_time_;
   base::TimeTicks prev_time_;
   bool in_progress_;
-  int span_slop_;
-  int min_span_;
+  float span_slop_;
+  float min_span_;
 
   // Bounds for recently seen values.
   float touch_upper_;
@@ -123,7 +135,7 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   float touch_history_last_accepted_;
   int touch_history_direction_;
   base::TimeTicks touch_history_last_accepted_time_;
-  int touch_min_major_;
+  float touch_min_major_;
   float double_tap_focus_x_;
   float double_tap_focus_y_;
   DoubleTapMode double_tap_mode_;

@@ -27,16 +27,16 @@
  */
 
 #include "config.h"
-#include "PageOverlay.h"
+#include "web/PageOverlay.h"
 
-#include "WebPageOverlay.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
-#include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/page/Page.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "public/platform/WebLayer.h"
+#include "public/web/WebPageOverlay.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
@@ -76,6 +76,8 @@ public:
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip)
     {
+        if (gc.paintingDisabled())
+            return;
         gc.save();
         m_overlay->paintPageOverlay(ToWebCanvas(&gc));
         gc.restore();
@@ -144,7 +146,7 @@ void PageOverlay::update()
 
 void PageOverlay::paintWebFrame(GraphicsContext& gc)
 {
-    if (!m_viewImpl->isAcceleratedCompositingActive()) {
+    if (!m_viewImpl->isAcceleratedCompositingActive() && !gc.paintingDisabled()) {
         gc.save();
         m_overlay->paintPageOverlay(ToWebCanvas(&gc));
         gc.restore();

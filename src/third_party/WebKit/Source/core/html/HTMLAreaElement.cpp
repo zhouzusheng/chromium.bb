@@ -46,9 +46,9 @@ inline HTMLAreaElement::HTMLAreaElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAreaElement> HTMLAreaElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLAreaElement> HTMLAreaElement::create(Document& document)
 {
-    return adoptRef(new HTMLAreaElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLAreaElement(document));
 }
 
 void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -103,7 +103,7 @@ Path HTMLAreaElement::computePath(RenderObject* obj) const
     // Default should default to the size of the containing object.
     LayoutSize size = m_lastSize;
     if (m_shape == Default)
-        size = obj->absoluteOutlineBounds().size();
+        size = obj->absoluteClippedOverflowRect().size();
 
     Path p = getRegion(size);
     float zoomFactor = obj->style()->effectiveZoom();
@@ -237,13 +237,6 @@ void HTMLAreaElement::updateFocusAppearance(bool restorePreviousSelection)
         return;
 
     imageElement->updateFocusAppearance(restorePreviousSelection);
-}
-
-bool HTMLAreaElement::supportsFocus() const
-{
-    // If the AREA element was a link, it should support focus.
-    // FIXME: This means that an AREA that is not a link cannot be made focusable through contenteditable or tabindex. Is it correct?
-    return isLink();
 }
 
 }

@@ -56,10 +56,8 @@ public:
 
     virtual void updateInspectorStateCookie(const WTF::String&) OVERRIDE;
 
-    virtual void clearBrowserCache() OVERRIDE;
-    virtual void clearBrowserCookies() OVERRIDE;
-
     virtual void overrideDeviceMetrics(int, int, float, bool, bool) OVERRIDE;
+    virtual void setTouchEventEmulationEnabled(bool) OVERRIDE;
 
     virtual bool overridesShowPaintRects() OVERRIDE;
     virtual void setShowPaintRects(bool) OVERRIDE;
@@ -77,6 +75,8 @@ public:
 
     virtual void setTraceEventCallback(const String& categoryFilter, TraceEventCallback) OVERRIDE;
     virtual void resetTraceEventCallback() OVERRIDE;
+    virtual void enableTracing(const String& categoryFilter) OVERRIDE;
+    virtual void disableTracing() OVERRIDE;
 
     virtual void startGPUEventsRecording() OVERRIDE;
     virtual void stopGPUEventsRecording() OVERRIDE;

@@ -28,18 +28,20 @@ namespace {
 
 const int kTCPKeepAliveSeconds = 45;
 
-bool SetSocketReceiveBufferSize(SOCKET socket, int32 size) {
+int SetSocketReceiveBufferSize(SOCKET socket, int32 size) {
   int rv = setsockopt(socket, SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket receive buffer size: " << GetLastError();
-  return rv == 0;
+  int net_error = (rv == 0) ? OK : MapSystemError(WSAGetLastError());
+  DCHECK(!rv) << "Could not set socket receive buffer size: " << net_error;
+  return net_error;
 }
 
-bool SetSocketSendBufferSize(SOCKET socket, int32 size) {
+int SetSocketSendBufferSize(SOCKET socket, int32 size) {
   int rv = setsockopt(socket, SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket send buffer size: " << GetLastError();
-  return rv == 0;
+  int net_error = (rv == 0) ? OK : MapSystemError(WSAGetLastError());
+  DCHECK(!rv) << "Could not set socket send buffer size: " << net_error;
+  return net_error;
 }
 
 // Disable Nagle.
@@ -316,6 +318,24 @@ int TCPSocketWin::AdoptConnectedSocket(SOCKET socket,
 
   core_ = new Core(this);
   peer_address_.reset(new IPEndPoint(peer_address));
+
+  return OK;
+}
+
+int TCPSocketWin::AdoptListenSocket(SOCKET socket) {
+  DCHECK(CalledOnValidThread());
+  DCHECK_EQ(socket_, INVALID_SOCKET);
+
+  socket_ = socket;
+
+  if (SetNonBlocking(socket_)) {
+    int result = MapSystemError(WSAGetLastError());
+    Close();
+    return result;
+  }
+
+  // |core_| is not needed for sockets that are used to accept connections.
+  // The operation here is more like Open but with an existing socket.
 
   return OK;
 }
@@ -599,12 +619,12 @@ int TCPSocketWin::SetExclusiveAddrUse() {
   return OK;
 }
 
-bool TCPSocketWin::SetReceiveBufferSize(int32 size) {
+int TCPSocketWin::SetReceiveBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   return SetSocketReceiveBufferSize(socket_, size);
 }
 
-bool TCPSocketWin::SetSendBufferSize(int32 size) {
+int TCPSocketWin::SetSendBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   return SetSocketSendBufferSize(socket_, size);
 }

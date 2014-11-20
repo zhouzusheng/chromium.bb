@@ -31,8 +31,12 @@
 #ifndef ServiceWorker_h
 #define ServiceWorker_h
 
+#include "bindings/v8/ScriptPromise.h"
+#include "bindings/v8/ScriptWrappable.h"
 #include "bindings/v8/SerializedScriptValue.h"
+#include "core/workers/AbstractWorker.h"
 #include "public/platform/WebServiceWorker.h"
+#include "public/platform/WebServiceWorkerProxy.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -44,28 +48,43 @@ class WebServiceWorker;
 
 namespace WebCore {
 
-class ServiceWorker : public RefCounted<ServiceWorker> {
+class ScriptState;
+class ScriptPromiseResolverWithContext;
+
+class ServiceWorker
+    : public AbstractWorker
+    , public ScriptWrappable
+    , public blink::WebServiceWorkerProxy {
 public:
-    static PassRefPtr<ServiceWorker> create(PassOwnPtr<blink::WebServiceWorker> worker)
-    {
-        return adoptRef(new ServiceWorker(worker));
-    }
+    static PassRefPtr<ServiceWorker> create(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
+
+    virtual ~ServiceWorker() { }
 
     // For CallbackPromiseAdapter
     typedef blink::WebServiceWorker WebType;
-    static PassRefPtr<ServiceWorker> from(WebType* worker)
-    {
-        return create(adoptPtr(worker));
-    }
-
-    ~ServiceWorker() { }
+    static PassRefPtr<ServiceWorker> from(ScriptPromiseResolverWithContext*, WebType* worker);
 
     void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
 
+    const AtomicString& state() const;
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
+
+    // WebServiceWorkerProxy overrides.
+    virtual bool isReady() OVERRIDE;
+    virtual void dispatchStateChangeEvent() OVERRIDE;
+
+    // AbstractWorker overrides.
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
 private:
-    explicit ServiceWorker(PassOwnPtr<blink::WebServiceWorker>);
+    class ThenFunction;
+
+    ServiceWorker(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
+    void onPromiseResolved();
+    void waitOnPromise(ScriptPromise);
 
     OwnPtr<blink::WebServiceWorker> m_outerWorker;
+    bool m_isPromisePending;
 };
 
 } // namespace WebCore

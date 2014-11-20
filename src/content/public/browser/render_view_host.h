@@ -12,11 +12,8 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/page_zoom.h"
-#include "third_party/WebKit/public/web/WebDragOperation.h"
-
-#if defined(USE_MOJO)
 #include "mojo/public/cpp/system/core.h"
-#endif
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class GURL;
 struct WebPreferences;
@@ -85,6 +82,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Tells the renderer to clear the focused element (if any).
   virtual void ClearFocusedElement() = 0;
 
+  // Returns true if the current focused element is editable.
+  virtual bool IsFocusedElementEditable() = 0;
+
   // Causes the renderer to close the current page, including running its
   // onunload event handler.  A ClosePage_ACK message will be sent to the
   // ResourceDispatcherHost when it is finished.
@@ -94,15 +94,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // image at that location).
   virtual void CopyImageAt(int x, int y) = 0;
 
-  // Notifies the renderer about the result of a desktop notification.
-  virtual void DesktopNotificationPermissionRequestDone(
-      int callback_context) = 0;
-  virtual void DesktopNotificationPostDisplay(int callback_context) = 0;
-  virtual void DesktopNotificationPostError(int notification_id,
-                                    const base::string16& message) = 0;
-  virtual void DesktopNotificationPostClose(int notification_id,
-                                            bool by_user) = 0;
-  virtual void DesktopNotificationPostClick(int notification_id) = 0;
+  // Saves the image at location x, y to the disk (if there indeed is an
+  // image at that location).
+  virtual void SaveImageAt(int x, int y) = 0;
 
   // Notifies the listener that a directory enumeration is complete.
   virtual void DirectoryEnumerationFinished(
@@ -118,11 +112,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void DragSourceEndedAt(
       int client_x, int client_y, int screen_x, int screen_y,
       blink::WebDragOperation operation) = 0;
-
-  // Notifies the renderer that a drag and drop operation is in progress, with
-  // droppable items positioned over the renderer's view.
-  virtual void DragSourceMovedTo(
-      int client_x, int client_y, int screen_x, int screen_y) = 0;
 
   // Notifies the renderer that we're done with the drag and drop operation.
   // This allows the renderer to reset some state.
@@ -162,20 +151,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       const gfx::Point& location,
       const blink::WebMediaPlayerAction& action) = 0;
 
-  // Runs some javascript within the context of a frame in the page.
-  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
-  virtual void ExecuteJavascriptInWebFrame(const base::string16& frame_xpath,
-                                           const base::string16& jscript) = 0;
-
-  // Runs some javascript within the context of a frame in the page. The result
-  // is sent back via the provided callback.
-  // OBSOLETE; DO NOT USE! Use RenderFrameHost::ExecuteJavaScript instead.
-  typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
-  virtual void ExecuteJavascriptInWebFrameCallbackResult(
-      const base::string16& frame_xpath,
-      const base::string16& jscript,
-      const JavascriptResultCallback& callback) = 0;
-
   // Tells the renderer to perform the given action on the plugin located at
   // the given point.
   virtual void ExecutePluginActionAtLocation(
@@ -207,9 +182,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // started.
   virtual void NotifyMoveOrResizeStarted() = 0;
 
-  // Reloads the current focused frame.
-  virtual void ReloadFrame() = 0;
-
   // Sets a property with the given name and value on the Web UI binding object.
   // Must call AllowWebUIBindings() on this renderer first.
   virtual void SetWebUIProperty(const std::string& name,
@@ -221,8 +193,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Send the renderer process the current preferences supplied by the
   // RenderViewHostDelegate.
   virtual void SyncRendererPrefs() = 0;
-
-  virtual void ToggleSpeechInput() = 0;
 
   // Returns the current WebKit preferences.
   virtual WebPreferences GetWebkitPreferences() = 0;
@@ -240,6 +210,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const = 0;
 
+  // Sets the mojo handle for WebUI pages.
+  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) = 0;
+
 #if defined(OS_ANDROID)
   // Selects and zooms to the find result nearest to the point (x,y)
   // defined in find-in-page coordinates.
@@ -247,14 +220,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to send the rects of the current find matches.
   virtual void RequestFindMatchRects(int current_version) = 0;
-
-  // Disables fullscreen media playback for encrypted video.
-  virtual void DisableFullscreenEncryptedMediaPlayback() = 0;
-#endif
-
-#if defined(USE_MOJO)
-  // Sets the mojo handle for WebUI pages.
-  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) = 0;
 #endif
 
  private:

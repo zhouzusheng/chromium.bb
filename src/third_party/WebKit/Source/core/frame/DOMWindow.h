@@ -30,10 +30,11 @@
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
+#include "core/frame/DOMWindowBase64.h"
 #include "core/frame/FrameDestructionObserver.h"
-#include "heap/Handle.h"
 #include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 #include "wtf/Forward.h"
 
@@ -58,16 +59,16 @@ namespace WebCore {
     class EventQueue;
     class ExceptionState;
     class FloatRect;
-    class LocalFrame;
+    class FrameConsole;
     class History;
     class IDBFactory;
+    class LocalFrame;
     class Location;
     class MediaQueryList;
     class MessageEvent;
     class Navigator;
     class Node;
     class Page;
-    class PageConsole;
     class Performance;
     class PostMessageTimer;
     class RequestAnimationFrameCallback;
@@ -91,7 +92,7 @@ enum PageshowEventPersistence {
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
-    class DOMWindow FINAL : public RefCountedWillBeRefCountedGarbageCollected<DOMWindow>, public ScriptWrappable, public EventTargetWithInlineData, public FrameDestructionObserver, public WillBeHeapSupplementable<DOMWindow>, public LifecycleContext<DOMWindow> {
+    class DOMWindow FINAL : public RefCountedWillBeRefCountedGarbageCollected<DOMWindow>, public ScriptWrappable, public EventTargetWithInlineData, public DOMWindowBase64, public FrameDestructionObserver, public WillBeHeapSupplementable<DOMWindow>, public LifecycleContext<DOMWindow> {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindow);
         DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<DOMWindow>);
     public:
@@ -122,7 +123,6 @@ enum PageshowEventPersistence {
 
         bool allowPopUp(); // Call on first window, not target window.
         static bool allowPopUp(LocalFrame& firstFrame);
-        static bool canShowModalDialog(const LocalFrame*);
         static bool canShowModalDialogNow(const LocalFrame*);
 
         // DOM Level 0
@@ -212,7 +212,7 @@ enum PageshowEventPersistence {
 
         // DOM Level 2 Style Interface
 
-        PassRefPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const;
+        PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const;
 
         // WebKit extensions
 
@@ -223,7 +223,7 @@ enum PageshowEventPersistence {
         PassRefPtrWillBeRawPtr<DOMPoint> webkitConvertPointFromNodeToPage(Node*, const DOMPoint*) const;
 
         Console& console() const;
-        PageConsole* pageConsole() const;
+        FrameConsole* frameConsole() const;
 
         void printErrorMessage(const String&);
         String crossDomainAccessErrorMessage(DOMWindow* callingWindow);
@@ -231,7 +231,7 @@ enum PageshowEventPersistence {
 
         void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionState&);
         void postMessageTimerFired(PassOwnPtr<PostMessageTimer>);
-        void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtr<Event>, PassRefPtr<ScriptCallStack>);
+        void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event>, PassRefPtr<ScriptCallStack>);
 
         void scrollBy(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
         void scrollTo(int x, int y, const Dictionary& scrollOptions, ExceptionState&) const;
@@ -257,7 +257,7 @@ enum PageshowEventPersistence {
         virtual void removeAllEventListeners() OVERRIDE;
 
         using EventTarget::dispatchEvent;
-        bool dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget);
+        bool dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget);
 
         void dispatchLoadEvent();
 
@@ -314,8 +314,8 @@ enum PageshowEventPersistence {
         PassOwnPtr<LifecycleNotifier<DOMWindow> > createLifecycleNotifier();
 
         EventQueue* eventQueue() const;
-        void enqueueWindowEvent(PassRefPtr<Event>);
-        void enqueueDocumentEvent(PassRefPtr<Event>);
+        void enqueueWindowEvent(PassRefPtrWillBeRawPtr<Event>);
+        void enqueueDocumentEvent(PassRefPtrWillBeRawPtr<Event>);
         void enqueuePageshowEvent(PageshowEventPersistence);
         void enqueueHashchangeEvent(const String& oldURL, const String& newURL);
         void enqueuePopstateEvent(PassRefPtr<SerializedScriptValue>);
@@ -346,6 +346,9 @@ enum PageshowEventPersistence {
         RefPtr<Document> m_document;
 
         bool m_shouldPrintWhenFinishedLoading;
+#if ASSERT_ENABLED
+        bool m_hasBeenReset;
+#endif
 
         HashSet<DOMWindowProperty*> m_properties;
 

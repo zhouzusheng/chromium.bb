@@ -34,6 +34,8 @@
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/Canvas2DLayerBridge.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/ImageBufferClient.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 #define CanvasDefaultInterpolationQuality InterpolationLow
@@ -61,9 +63,10 @@ public:
     virtual void canvasDestroyed(HTMLCanvasElement*) = 0;
 };
 
-class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource {
+class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
-    static PassRefPtr<HTMLCanvasElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLCanvasElement> create(Document&);
     virtual ~HTMLCanvasElement();
 
     void addObserver(CanvasObserver*);
@@ -94,8 +97,8 @@ public:
     CanvasRenderingContext* getContext(const String&, CanvasContextAttributes* attributes = 0);
 
     static String toEncodingMimeType(const String& mimeType);
-    String toDataURL(const String& mimeType, const double* quality, ExceptionState&);
-    String toDataURL(const String& mimeType, ExceptionState& exceptionState) { return toDataURL(mimeType, 0, exceptionState); }
+    String toDataURL(const String& mimeType, const double* quality, ExceptionState&) const;
+    String toDataURL(const String& mimeType, ExceptionState& exceptionState) const { return toDataURL(mimeType, 0, exceptionState); }
 
     // Used for rendering
     void didDraw(const FloatRect&);
@@ -112,7 +115,7 @@ public:
     ImageBuffer* buffer() const;
     Image* copiedImage() const;
     void clearCopiedImage();
-    PassRefPtr<ImageData> getImageData();
+    PassRefPtrWillBeRawPtr<ImageData> getImageData() const;
     void makePresentationCopy();
     void clearPresentationCopy();
 
@@ -124,9 +127,13 @@ public:
 
     bool is3D() const;
 
-    bool hasImageBuffer() const { return m_imageBuffer.get(); }
+    bool hasImageBuffer() const { return m_imageBuffer; }
+    bool hasValidImageBuffer() const;
+    void discardImageBuffer();
 
     bool shouldAccelerate(const IntSize&) const;
+
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
@@ -137,6 +144,11 @@ public:
     virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
     virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
     virtual FloatSize sourceSize() const OVERRIDE;
+
+    // ImageBufferClient implementation
+    virtual void notifySurfaceInvalid() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
@@ -152,8 +164,8 @@ private:
 
     PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
+    void createImageBufferInternal();
     void clearImageBuffer();
-    void discardImageBuffer();
 
     void setSurfaceSize(const IntSize&);
 
@@ -161,13 +173,13 @@ private:
 
     void updateExternallyAllocatedMemory() const;
 
+    String toDataURLInternal(const String& mimeType, const double* quality) const;
+
     HashSet<CanvasObserver*> m_observers;
 
     IntSize m_size;
 
-    OwnPtr<CanvasRenderingContext> m_context;
-
-    bool m_rendererIsCanvas;
+    OwnPtrWillBeMember<CanvasRenderingContext> m_context;
 
     bool m_ignoreReset;
     bool m_accelerationDisabled;

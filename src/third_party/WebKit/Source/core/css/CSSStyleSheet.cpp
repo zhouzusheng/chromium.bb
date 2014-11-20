@@ -24,6 +24,7 @@
 #include "HTMLNames.h"
 #include "SVGNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8PerIsolateData.h"
 #include "core/css/CSSCharsetRule.h"
 #include "core/css/CSSImportRule.h"
@@ -54,6 +55,7 @@ public:
     virtual void trace(Visitor* visitor) OVERRIDE
     {
         visitor->trace(m_styleSheet);
+        CSSRuleList::trace(visitor);
     }
 
 private:
@@ -75,7 +77,11 @@ private:
 #if !ASSERT_DISABLED
 static bool isAcceptableCSSStyleSheetParent(Node* parentNode)
 {
-    // Only these nodes can be parents of StyleSheets, and they need to call clearOwnerNode() when moved out of document.
+    // Only these nodes can be parents of StyleSheets, and they need to call
+    // clearOwnerNode() when moved out of document.
+    // Destruction of the style sheet counts as being "moved out of the
+    // document", but only in the non-oilpan version of blink. I.e. don't call
+    // clearOwnerNode() in the owner's destructor in oilpan.
     return !parentNode
         || parentNode->isDocumentNode()
         || isHTMLLinkElement(*parentNode)
@@ -112,7 +118,7 @@ CSSStyleSheet::CSSStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> contents
     : m_contents(contents)
     , m_isInlineStylesheet(false)
     , m_isDisabled(false)
-    , m_ownerNode(0)
+    , m_ownerNode(nullptr)
     , m_ownerRule(ownerRule)
     , m_startPosition(TextPosition::minimumPosition())
     , m_loadCompleted(false)
@@ -261,7 +267,7 @@ void CSSStyleSheet::clearOwnerNode()
     didMutate(EntireStyleSheetUpdate);
     if (m_ownerNode)
         m_contents->unregisterClient(this);
-    m_ownerNode = 0;
+    m_ownerNode = nullptr;
 }
 
 bool CSSStyleSheet::canAccessRules() const
@@ -452,10 +458,12 @@ void CSSStyleSheet::trace(Visitor* visitor)
 {
     visitor->trace(m_contents);
     visitor->trace(m_mediaQueries);
+    visitor->trace(m_ownerNode);
     visitor->trace(m_ownerRule);
     visitor->trace(m_mediaCSSOMWrapper);
     visitor->trace(m_childRuleCSSOMWrappers);
     visitor->trace(m_ruleListCSSOMWrapper);
+    StyleSheet::trace(visitor);
 }
 
 }

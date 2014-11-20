@@ -12,8 +12,8 @@
 #include "base/i18n/rtl.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
+#include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/content_export.h"
-#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/page_transition_types.h"
 #include "net/base/load_states.h"
@@ -83,9 +83,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message);
 
-  // Gets the URL that is currently being displayed, if there is one.
-  virtual const GURL& GetURL() const;
-
   // Return this object cast to a WebContents, if it is one. If the object is
   // not a WebContents, returns NULL. DEPRECATED: Be sure to include brettw or
   // jam as reviewers before you use this method. http://crbug.com/82582
@@ -144,23 +141,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // entirely loaded).
   virtual void DidChangeLoadProgress(double progress) {}
 
-  // The RenderView set its opener to null, disowning it for the lifetime of
-  // the window.
-  virtual void DidDisownOpener(RenderViewHost* rvh) {}
-
-  // Another page accessed the initial empty document of this RenderView,
-  // which means it is no longer safe to display a pending URL without
-  // risking a URL spoof.
-  virtual void DidAccessInitialDocument() {}
-
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
-
-  // The onload handler in the RenderView's main frame has completed.
-  virtual void DocumentOnLoadCompletedInMainFrame(
-      RenderViewHost* render_view_host,
-      int32 page_id) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
@@ -169,26 +152,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
       const ViewMsg_PostMessage_Params& params) {}
-
-  // A javascript message, confirmation or prompt should be shown.
-  virtual void RunJavaScriptMessage(RenderViewHost* rvh,
-                                    const base::string16& message,
-                                    const base::string16& default_prompt,
-                                    const GURL& frame_url,
-                                    JavaScriptMessageType type,
-                                    IPC::Message* reply_msg,
-                                    bool* did_suppress_message) {}
-
-  virtual void RunBeforeUnloadConfirm(RenderViewHost* rvh,
-                                      const base::string16& message,
-                                      bool is_reload,
-                                      IPC::Message* reply_msg) {}
-
-  // A message was added to to the console.
-  virtual bool AddMessageToConsole(int32 level,
-                                   const base::string16& message,
-                                   int32 line_no,
-                                   const base::string16& source_id);
 
   // Return a dummy RendererPreferences object that will be used by the renderer
   // associated with the owning RenderViewHost.
@@ -331,6 +294,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // create the SessionStorageNamespace on the fly.
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance);
+
+  // Returns a copy of the map of all session storage namespaces related
+  // to this view.
+  virtual SessionStorageNamespaceMap GetSessionStorageNamespaceMap();
+
+  // Returns true if the RenderViewHost will never be visible.
+  virtual bool IsNeverVisible();
 
   // Returns the FrameTree the render view should use. Guaranteed to be constant
   // for the lifetime of the render view.

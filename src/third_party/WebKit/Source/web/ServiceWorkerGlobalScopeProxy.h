@@ -31,8 +31,8 @@
 #ifndef ServiceWorkerGlobalScopeProxy_h
 #define ServiceWorkerGlobalScopeProxy_h
 
-#include "WebServiceWorkerContextProxy.h"
 #include "core/workers/WorkerReportingProxy.h"
+#include "public/web/WebServiceWorkerContextProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
@@ -79,6 +79,7 @@ public:
     virtual void updateInspectorStateCookie(const String&) OVERRIDE;
     virtual void workerGlobalScopeStarted(WebCore::WorkerGlobalScope*) OVERRIDE;
     virtual void workerGlobalScopeClosed() OVERRIDE;
+    virtual void willDestroyWorkerGlobalScope() OVERRIDE;
     virtual void workerGlobalScopeDestroyed() OVERRIDE;
 
 private:

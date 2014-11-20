@@ -21,12 +21,12 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/files/file.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -40,11 +40,10 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/browser_main.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/browser_plugin/browser_plugin_geolocation_permission_context.h"
 #include "content/browser/browser_plugin/browser_plugin_message_filter.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/device_orientation/device_motion_message_filter.h"
-#include "content/browser/device_orientation/device_orientation_message_filter.h"
+#include "content/browser/device_sensors/device_motion_message_filter.h"
+#include "content/browser/device_sensors/device_orientation_message_filter.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_message_filter.h"
 #include "content/browser/download/mhtml_generation_manager.h"
@@ -60,18 +59,14 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_scheduler_filter.h"
-
-// SHEZ: make this conditional for ANDROID only
-#if defined(OS_ANDROID)
-#include "content/browser/media/android/browser_demuxer_android.h"
-#endif
-
 #include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
+#include "content/browser/push_messaging_message_filter.h"
 #include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/clipboard_message_filter.h"
 #include "content/browser/renderer_host/database_message_filter.h"
@@ -103,7 +98,6 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
-#include "content/browser/speech/input_tag_speech_dispatcher_host.h"
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream_context.h"
@@ -116,9 +110,9 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/mojo/mojo_messages.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
@@ -127,6 +121,7 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/worker_service.h"
@@ -141,6 +136,8 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media_switches.h"
+#include "mojo/common/common_type_converters.h"
+#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -151,6 +148,10 @@
 #include "ui/native_theme/native_theme_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/common/resource_type.h"
+
+#if defined(OS_ANDROID)
+#include "content/browser/media/android/browser_demuxer_android.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
@@ -163,10 +164,6 @@
 #include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
 #include "content/browser/renderer_host/media/webrtc_identity_service_host.h"
 #include "content/common/media/media_stream_messages.h"
-#endif
-
-#if defined(USE_MOJO)
-#include "content/browser/renderer_host/render_process_host_mojo_impl.h"
 #endif
 
 extern bool g_exited_main_message_loop;
@@ -215,32 +212,26 @@ void GetContexts(
 IPC::PlatformFileForTransit CreateAecDumpFileForProcess(
     base::FilePath file_path,
     base::ProcessHandle process) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::PlatformFile aec_dump_file = base::CreatePlatformFile(
-      file_path,
-      base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_APPEND,
-      NULL,
-      &error);
-  if (error != base::PLATFORM_FILE_OK) {
-    VLOG(1) << "Could not open AEC dump file, error=" << error;
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  base::File dump_file(file_path,
+                       base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_APPEND);
+  if (!dump_file.IsValid()) {
+    VLOG(1) << "Could not open AEC dump file, error=" <<
+               dump_file.error_details();
     return IPC::InvalidPlatformFileForTransit();
   }
-  return IPC::GetFileHandleForProcess(aec_dump_file, process, true);
+  return IPC::TakeFileHandleForProcess(dump_file.Pass(), process);
 }
 
 // Does nothing. Just to avoid races between enable and disable.
 void DisableAecDumpOnFileThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 }
 #endif
 
 // the global list of all renderer processes
 base::LazyInstance<IDMap<RenderProcessHost> >::Leaky
     g_all_hosts = LAZY_INSTANCE_INITIALIZER;
-
-base::LazyInstance<scoped_refptr<BrowserPluginGeolocationPermissionContext> >
-    g_browser_plugin_geolocation_context = LAZY_INSTANCE_INITIALIZER;
 
 // Map of site to process, to ensure we only have one RenderProcessHost per
 // site in process-per-site mode.  Each map is specific to a BrowserContext.
@@ -334,14 +325,30 @@ class RendererSandboxedProcessLauncherDelegate
 #endif  // OS_POSIX
 };
 
+const char kSessionStorageHolderKey[] = "kSessionStorageHolderKey";
+
+class SessionStorageHolder : public base::SupportsUserData::Data {
+ public:
+  SessionStorageHolder() {}
+  virtual ~SessionStorageHolder() {}
+
+  void Hold(const SessionStorageNamespaceMap& sessions, int view_route_id) {
+    session_storage_namespaces_awaiting_close_[view_route_id] = sessions;
+  }
+
+  void Release(int old_route_id) {
+    session_storage_namespaces_awaiting_close_.erase(old_route_id);
+  }
+
+ private:
+  std::map<int, SessionStorageNamespaceMap >
+      session_storage_namespaces_awaiting_close_;
+  DISALLOW_COPY_AND_ASSIGN(SessionStorageHolder);
+};
+
 }  // namespace
 
 RendererMainThreadFactoryFunction g_renderer_main_thread_factory = NULL;
-
-void RenderProcessHost::RegisterRendererMainThreadFactory(
-    RendererMainThreadFactoryFunction create) {
-  g_renderer_main_thread_factory = create;
-}
 
 base::MessageLoop* g_in_process_thread;
 
@@ -404,7 +411,6 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 RenderProcessHostImpl::RenderProcessHostImpl(
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
-    bool supports_browser_plugin,
     bool is_guest)
     : fast_shutdown_started_(false),
       deleting_soon_(false),
@@ -412,19 +418,15 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       is_self_deleted_(false),
 #endif
       pending_views_(0),
+      mojo_activation_required_(false),
       visible_widgets_(0),
       backgrounded_(true),
-      cached_dibs_cleaner_(FROM_HERE,
-                           base::TimeDelta::FromSeconds(5),
-                           this,
-                           &RenderProcessHostImpl::ClearTransportDIBCache),
       is_initialized_(false),
       id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
       browser_context_(browser_context),
       storage_partition_impl_(storage_partition_impl),
       sudden_termination_allowed_(true),
       ignore_input_events_(false),
-      supports_browser_plugin_(supports_browser_plugin),
       is_guest_(is_guest),
       gpu_observer_registered_(false),
       delayed_cleanup_needed_(false),
@@ -483,6 +485,11 @@ void RenderProcessHostImpl::ShutDownInProcessRenderer() {
   }
 }
 
+void RenderProcessHostImpl::RegisterRendererMainThreadFactory(
+    RendererMainThreadFactoryFunction create) {
+  g_renderer_main_thread_factory = create;
+}
+
 RenderProcessHostImpl::~RenderProcessHostImpl() {
 #ifndef NDEBUG
   DCHECK(is_self_deleted_)
@@ -507,7 +514,6 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
     queued_messages_.pop();
   }
 
-  ClearTransportDIBCache();
   UnregisterHost(GetID());
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
@@ -558,6 +564,10 @@ bool RenderProcessHostImpl::Init() {
                                 this,
                                 BrowserThread::GetMessageLoopProxyForThread(
                                     BrowserThread::IO).get()));
+
+  // Setup the Mojo channel.
+  mojo_application_host_.reset(new MojoApplicationHost());
+  mojo_application_host_->Init();
 
   // Call the embedder first so that their IPC filters have priority.
   GetContentClient()->browser()->RenderProcessWillLaunch(this);
@@ -618,19 +628,31 @@ bool RenderProcessHostImpl::Init() {
   return true;
 }
 
+void RenderProcessHostImpl::MaybeActivateMojo() {
+  // TODO(darin): Following security review, we can unconditionally initialize
+  // Mojo in all renderers. We will then be able to directly call Activate()
+  // from OnProcessLaunched.
+  if (!mojo_activation_required_)
+    return;  // Waiting on someone to require Mojo.
+
+  if (!GetHandle())
+    return;  // Waiting on renderer startup.
+
+  if (!mojo_application_host_->did_activate())
+    mojo_application_host_->Activate(this, GetHandle());
+}
+
 void RenderProcessHostImpl::CreateMessageFilters() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   AddFilter(new ResourceSchedulerFilter(GetID()));
   MediaInternals* media_internals = MediaInternals::GetInstance();
   media::AudioManager* audio_manager =
       BrowserMainLoop::GetInstance()->audio_manager();
   // Add BrowserPluginMessageFilter to ensure it gets the first stab at messages
   // from guests.
-  if (supports_browser_plugin_) {
-    scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
-        new BrowserPluginMessageFilter(GetID(), IsGuest()));
-    AddFilter(bp_message_filter.get());
-  }
+  scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
+      new BrowserPluginMessageFilter(GetID(), IsGuest()));
+  AddFilter(bp_message_filter.get());
 
   scoped_refptr<RenderMessageFilter> render_message_filter(
       new RenderMessageFilter(
@@ -699,19 +721,13 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(),
       storage_partition_impl_->GetDOMStorageContext()));
   AddFilter(new IndexedDBDispatcherHost(
-      storage_partition_impl_->GetIndexedDBContext()));
+      GetID(),
+      storage_partition_impl_->GetURLRequestContext(),
+      storage_partition_impl_->GetIndexedDBContext(),
+      ChromeBlobStorageContext::GetFor(browser_context)));
 
-  if (IsGuest()) {
-    if (!g_browser_plugin_geolocation_context.Get().get()) {
-      g_browser_plugin_geolocation_context.Get() =
-          new BrowserPluginGeolocationPermissionContext();
-    }
-    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
-        GetID(), g_browser_plugin_geolocation_context.Get().get());
-  } else {
-    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
-        GetID(), browser_context->GetGeolocationPermissionContext());
-  }
+  geolocation_dispatcher_host_ = new GeolocationDispatcherHost(
+      GetID(), browser_context->GetGeolocationPermissionContext());
   AddFilter(geolocation_dispatcher_host_);
   gpu_message_filter_ = new GpuMessageFilter(GetID(), widget_helper_.get());
   AddFilter(gpu_message_filter_);
@@ -730,10 +746,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #endif
 #if defined(ENABLE_PLUGINS)
   AddFilter(new PepperRendererConnection(GetID()));
-#endif
-#if defined(ENABLE_INPUT_SPEECH)
-  AddFilter(new InputTagSpeechDispatcherHost(
-      IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext()));
 #endif
   AddFilter(new SpeechRecognitionDispatcherHost(
       IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext()));
@@ -845,6 +857,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new VibrationMessageFilter());
   screen_orientation_dispatcher_host_ = new ScreenOrientationDispatcherHost();
   AddFilter(screen_orientation_dispatcher_host_);
+  AddFilter(new PushMessagingMessageFilter());
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -960,15 +973,24 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
   return storage_partition_impl_;
 }
 
-static void AppendGpuCommandLineFlags(CommandLine* command_line) {
-  if (content::IsThreadedCompositingEnabled())
+static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
+  if (IsPinchVirtualViewportEnabled())
+    command_line->AppendSwitch(cc::switches::kEnablePinchVirtualViewport);
+
+  if (IsThreadedCompositingEnabled())
     command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
-  if (content::IsDelegatedRendererEnabled())
+  if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
-  if (content::IsImplSidePaintingEnabled())
+  if (IsImplSidePaintingEnabled())
     command_line->AppendSwitch(switches::kEnableImplSidePainting);
+
+  if (content::IsGpuRasterizationEnabled())
+    command_line->AppendSwitch(switches::kEnableGpuRasterization);
+
+  if (content::IsForceGpuRasterizationEnabled())
+    command_line->AppendSwitch(switches::kForceGpuRasterization);
 
   // Appending disable-gpu-feature switches due to software rendering list.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
@@ -1007,7 +1029,7 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   if (content::IsPinchToZoomEnabled())
     command_line->AppendSwitch(switches::kEnablePinch);
 
-  AppendGpuCommandLineFlags(command_line);
+  AppendCompositorCommandLineFlags(command_line);
 }
 
 void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
@@ -1016,6 +1038,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
   // Propagate the following switches to the renderer command line (along
   // with any associated values) if present in the browser command line.
   static const char* const kSwitchNames[] = {
+    switches::kAllowInsecureWebSocketFromHttpsOrigin,
     switches::kAllowLoopbackInPeerConnection,
     switches::kAudioBufferSize,
     switches::kAuditAllHandles,
@@ -1025,7 +1048,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDefaultTileWidth,
     switches::kDefaultTileHeight,
     switches::kDisable3DAPIs,
-    switches::kDisableAcceleratedCompositing,
     switches::kDisableAcceleratedFixedRootBackground,
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableApplicationCache,
@@ -1033,24 +1055,21 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableCompositingForFixedPosition,
     switches::kDisableCompositingForTransition,
     switches::kDisableDatabases,
-    switches::kDisableDelegatedRenderer,
     switches::kDisableDesktopNotifications,
     switches::kDisableDirectNPAPIRequests,
+    switches::kDisableDistanceFieldText,
     switches::kDisableFastTextAutosizing,
     switches::kDisableFileSystem,
     switches::kDisableFiltersOverIPC,
-    switches::kDisableGpu,
     switches::kDisableGpuCompositing,
-    switches::kDisableGpuRasterization,
     switches::kDisableGpuVsync,
     switches::kDisableLowResTiling,
     switches::kDisableHistogramCustomizer,
-    switches::kDisableImplSidePainting,
     switches::kDisableLCDText,
     switches::kDisableLayerSquashing,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
-    switches::kDisableMapImage,
+    switches::kDisableMediaSource,
     switches::kDisableOverlayScrollbar,
     switches::kDisablePinch,
     switches::kDisablePrefixedEncryptedMedia,
@@ -1058,14 +1077,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
-    switches::kDisableSpeechInput,
-    switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
     switches::kDisableUniversalAcceleratedOverflowScroll,
-    switches::kDisableUnprefixedMediaSource,
-    switches::kDisableWebKitMediaSource,
+    switches::kDisableZeroCopy,
     switches::kDomAutomationController,
     switches::kEnableAcceleratedFixedRootBackground,
     switches::kEnableAcceleratedOverflowScroll,
@@ -1073,44 +1089,39 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableADTSStreamParser,
     switches::kEnableBeginFrameScheduling,
     switches::kEnableBleedingEdgeRenderingFastPaths,
-    switches::kEnableBrowserPluginForAllViewTypes,
     switches::kEnableCompositingForFixedPosition,
     switches::kEnableCompositingForTransition,
     switches::kEnableDeferredImageDecoding,
-    switches::kEnableDelegatedRenderer,
+    switches::kEnableDistanceFieldText,
     switches::kEnableEncryptedMedia,
     switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableExperimentalWebSocket,
     switches::kEnableFastTextAutosizing,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
-    switches::kEnableGpuRasterization,
     switches::kEnableGPUServiceLogging,
     switches::kEnableHighDpiCompositingForFixedPosition,
-    switches::kEnableHTMLImports,
     switches::kEnableLowResTiling,
-    switches::kEnableImplSidePainting,
     switches::kEnableInbandTextTracks,
     switches::kEnableLCDText,
     switches::kEnableLayerSquashing,
     switches::kEnableLogging,
-    switches::kEnableMapImage,
     switches::kEnableMemoryBenchmarking,
+    switches::kEnableOneCopy,
     switches::kEnableOverlayFullscreenVideo,
     switches::kEnableOverlayScrollbar,
     switches::kEnableOverscrollNotifications,
     switches::kEnablePinch,
+    switches::kEnablePreciseMemoryInfo,
     switches::kEnablePreparsedJsCaching,
     switches::kEnableRepaintAfterLayout,
+    switches::kEnableSeccompFilterSandbox,
     switches::kEnableServiceWorker,
     switches::kEnableSkiaBenchmarking,
-    switches::kEnableSoftwareCompositing,
     switches::kEnableSpeechSynthesis,
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
     switches::kEnableTargetedStyleRecalc,
-    switches::kEnableThreadedCompositing,
     switches::kEnableUniversalAcceleratedOverflowScroll,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
@@ -1121,8 +1132,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebAnimationsSVG,
     switches::kEnableWebGLDraftExtensions,
     switches::kEnableWebMIDI,
+    switches::kEnableZeroCopy,
+    switches::kForceCompositingMode,
     switches::kForceDeviceScaleFactor,
-    switches::kForceGpuRasterization,
     switches::kFullMemoryCrashReport,
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,
@@ -1163,7 +1175,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kDisableMainFrameBeforeDraw,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableGpuBenchmarking,
-    cc::switches::kEnablePinchVirtualViewport,
     cc::switches::kEnableMainFrameBeforeActivation,
     cc::switches::kEnableTopControlsPositionCalculation,
     cc::switches::kMaxTilesForInterestArea,
@@ -1190,7 +1201,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableDeviceEnumeration,
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
-    switches::kEnableWebRtcAecRecordings,
     switches::kEnableWebRtcHWVp8Encoding,
     switches::kEnableWebRtcTcpServerSocket,
 #endif
@@ -1202,20 +1212,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableSpeechRecognition,
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
-#endif
-#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
-    switches::kEnableWebAudio,
-#else
-    // Need to be able to disable webaudio on other platforms where it
-    // is enabled by default.
     switches::kDisableWebAudio,
 #endif
 #if defined(OS_MACOSX)
     // Allow this to be set when invoking the browser and relayed along.
     switches::kEnableSandboxLogging,
-#endif
-#if defined(OS_POSIX)
-    switches::kChildCleanExit,
 #endif
 #if defined(OS_WIN)
     switches::kEnableDirectWrite,
@@ -1280,8 +1281,11 @@ bool RenderProcessHostImpl::FastShutdownIfPossible() {
   if (!SuddenTerminationAllowed())
     return false;
 
-  if (worker_ref_count_ != 0)
+  if (worker_ref_count_ != 0) {
+    if (survive_for_worker_start_time_.is_null())
+      survive_for_worker_start_time_ = base::TimeTicks::Now();
     return false;
+  }
 
   // Set this before ProcessDied() so observers can tell if the render process
   // died due to fast shutdown versus another cause.
@@ -1297,82 +1301,6 @@ void RenderProcessHostImpl::DumpHandles() {
 #else
   NOTIMPLEMENTED();
 #endif
-}
-
-// This is a platform specific function for mapping a transport DIB given its id
-TransportDIB* RenderProcessHostImpl::MapTransportDIB(
-    TransportDIB::Id dib_id) {
-#if defined(OS_WIN)
-  // On Windows we need to duplicate the handle from the remote process
-  HANDLE section;
-  DuplicateHandle(GetHandle(), dib_id.handle, GetCurrentProcess(), &section,
-                  FILE_MAP_READ | FILE_MAP_WRITE,
-                  FALSE, 0);
-  return TransportDIB::Map(section);
-#elif defined(TOOLKIT_GTK)
-  return TransportDIB::Map(dib_id.shmkey);
-#elif defined(OS_ANDROID)
-  return TransportDIB::Map(dib_id);
-#else
-  // On POSIX, the browser allocates all DIBs and keeps a file descriptor around
-  // for each.
-  return widget_helper_->MapTransportDIB(dib_id);
-#endif
-}
-
-TransportDIB* RenderProcessHostImpl::GetTransportDIB(
-    TransportDIB::Id dib_id) {
-  if (!TransportDIB::is_valid_id(dib_id))
-    return NULL;
-
-  const std::map<TransportDIB::Id, TransportDIB*>::iterator
-      i = cached_dibs_.find(dib_id);
-  if (i != cached_dibs_.end()) {
-    cached_dibs_cleaner_.Reset();
-    return i->second;
-  }
-
-  TransportDIB* dib = MapTransportDIB(dib_id);
-  if (!dib)
-    return NULL;
-
-  if (cached_dibs_.size() >= MAX_MAPPED_TRANSPORT_DIBS) {
-    // Clean a single entry from the cache
-    std::map<TransportDIB::Id, TransportDIB*>::iterator smallest_iterator;
-    size_t smallest_size = std::numeric_limits<size_t>::max();
-
-    for (std::map<TransportDIB::Id, TransportDIB*>::iterator
-         i = cached_dibs_.begin(); i != cached_dibs_.end(); ++i) {
-      if (i->second->size() <= smallest_size) {
-        smallest_iterator = i;
-        smallest_size = i->second->size();
-      }
-    }
-
-#if defined(TOOLKIT_GTK)
-    smallest_iterator->second->Detach();
-#else
-    delete smallest_iterator->second;
-#endif
-    cached_dibs_.erase(smallest_iterator);
-  }
-
-  cached_dibs_[dib_id] = dib;
-  cached_dibs_cleaner_.Reset();
-  return dib;
-}
-
-void RenderProcessHostImpl::ClearTransportDIBCache() {
-#if defined(TOOLKIT_GTK)
-  std::map<TransportDIB::Id, TransportDIB*>::const_iterator dib =
-      cached_dibs_.begin();
-  for (; dib != cached_dibs_.end(); ++dib)
-    dib->second->Detach();
-#else
-  STLDeleteContainerPairSecondPointers(
-      cached_dibs_.begin(), cached_dibs_.end());
-#endif
-  cached_dibs_.clear();
 }
 
 bool RenderProcessHostImpl::Send(IPC::Message* msg) {
@@ -1416,6 +1344,7 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
       IPC_MESSAGE_HANDLER(ViewHostMsg_UserMetricsRecordAction,
                           OnUserMetricsRecordAction)
       IPC_MESSAGE_HANDLER(ViewHostMsg_SavedPageAsMHTML, OnSavedPageAsMHTML)
+      IPC_MESSAGE_HANDLER(ViewHostMsg_Close_ACK, OnCloseACK)
       // Adding single handlers for your service here is fine, but once your
       // service needs more than one handler, please extract them into a new
       // message filter and add that filter to CreateMessageFilters().
@@ -1506,8 +1435,19 @@ void RenderProcessHostImpl::Cleanup() {
   }
   delayed_cleanup_needed_ = false;
 
+  // Records the time when the process starts surviving for workers for UMA.
+  if (listeners_.IsEmpty() && worker_ref_count_ > 0 &&
+      survive_for_worker_start_time_.is_null()) {
+    survive_for_worker_start_time_ = base::TimeTicks::Now();
+  }
+
   // When there are no other owners of this object, we can delete ourselves.
   if (listeners_.IsEmpty() && worker_ref_count_ == 0) {
+    if (!survive_for_worker_start_time_.is_null()) {
+      UMA_HISTOGRAM_LONG_TIMES(
+          "SharedWorker.RendererSurviveForWorkerTime",
+          base::TimeTicks::Now() - survive_for_worker_start_time_);
+    }
     // We cannot clean up twice; if this fails, there is an issue with our
     // control flow.
     DCHECK(!deleting_soon_);
@@ -1536,6 +1476,7 @@ void RenderProcessHostImpl::Cleanup() {
     message_port_message_filter_ = NULL;
     geolocation_dispatcher_host_ = NULL;
     screen_orientation_dispatcher_host_ = NULL;
+    RemoveUserData(kSessionStorageHolderKey);
 
     // Remove ourself from the list of renderer processes so that we can't be
     // reused in between now and when the Delete task runs.
@@ -1574,7 +1515,7 @@ void RenderProcessHostImpl::FilterURL(bool empty_allowed, GURL* url) {
 
 #if defined(ENABLE_WEBRTC)
 void RenderProcessHostImpl::EnableAecDump(const base::FilePath& file) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&CreateAecDumpFileForProcess, file, GetHandle()),
@@ -1583,7 +1524,7 @@ void RenderProcessHostImpl::EnableAecDump(const base::FilePath& file) {
 }
 
 void RenderProcessHostImpl::DisableAecDump() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Posting on the FILE thread and then replying back on the UI thread is only
   // for avoiding races between enable and disable. Nothing is done on the FILE
   // thread.
@@ -1743,19 +1684,19 @@ void RenderProcessHost::SetRunRendererInProcess(bool value) {
     // TODO(piman): we should really send configuration through bools rather
     // than by parsing strings, i.e. sending an IPC rather than command line
     // args. crbug.com/314909
-    AppendGpuCommandLineFlags(command_line);
+    AppendCompositorCommandLineFlags(command_line);
   }
 }
 
 // static
 RenderProcessHost::iterator RenderProcessHost::AllHostsIterator() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return iterator(g_all_hosts.Pointer());
 }
 
 // static
 RenderProcessHost* RenderProcessHost::FromID(int render_process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_all_hosts.Get().Lookup(render_process_id);
 }
 
@@ -1924,6 +1865,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   message_port_message_filter_ = NULL;
   geolocation_dispatcher_host_ = NULL;
   screen_orientation_dispatcher_host_ = NULL;
+  RemoveUserData(kSessionStorageHolderKey);
 
   IDMap<IPC::Listener>::iterator iter(&listeners_);
   while (!iter.IsAtEnd()) {
@@ -1934,11 +1876,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
     iter.Advance();
   }
 
-  ClearTransportDIBCache();
-
-#if defined(USE_MOJO)
-  render_process_host_mojo_.reset();
-#endif
+  mojo_application_host_.reset();
 
   // It's possible that one of the calls out to the observers might have caused
   // this object to be no longer needed.
@@ -1985,7 +1923,7 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 
 #if defined(ENABLE_WEBRTC)
 void RenderProcessHostImpl::WebRtcLogMessage(const std::string& message) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!webrtc_log_message_callback_.is_null())
     webrtc_log_message_callback_.Run(message);
 }
@@ -1994,6 +1932,24 @@ void RenderProcessHostImpl::WebRtcLogMessage(const std::string& message) {
 scoped_refptr<ScreenOrientationDispatcherHost>
 RenderProcessHostImpl::screen_orientation_dispatcher_host() const {
   return make_scoped_refptr(screen_orientation_dispatcher_host_);
+}
+
+void RenderProcessHostImpl::ReleaseOnCloseACK(
+    RenderProcessHost* host,
+    const SessionStorageNamespaceMap& sessions,
+    int view_route_id) {
+  DCHECK(host);
+  if (sessions.empty())
+    return;
+  SessionStorageHolder* holder = static_cast<SessionStorageHolder*>
+      (host->GetUserData(kSessionStorageHolderKey));
+  if (!holder) {
+    holder = new SessionStorageHolder();
+    host->SetUserData(
+        kSessionStorageHolderKey,
+        holder);
+  }
+  holder->Hold(sessions, view_route_id);
 }
 
 void RenderProcessHostImpl::OnShutdownRequest() {
@@ -2073,6 +2029,11 @@ void RenderProcessHostImpl::OnProcessLaunched() {
       Source<RenderProcessHost>(this),
       NotificationService::NoDetails());
 
+  // Allow Mojo to be setup before the renderer sees any Chrome IPC messages.
+  // This way, Mojo can be safely used from the renderer in response to any
+  // Chrome IPC message.
+  MaybeActivateMojo();
+
   while (!queued_messages_.empty()) {
     Send(queued_messages_.front());
     queued_messages_.pop();
@@ -2081,11 +2042,6 @@ void RenderProcessHostImpl::OnProcessLaunched() {
 #if defined(ENABLE_WEBRTC)
   if (WebRTCInternals::GetInstance()->aec_dump_enabled())
     EnableAecDump(WebRTCInternals::GetInstance()->aec_dump_file_path());
-#endif
-
-#if defined(USE_MOJO)
-  if (render_process_host_mojo_.get())
-    render_process_host_mojo_->OnProcessLaunched();
 #endif
 }
 
@@ -2097,6 +2053,14 @@ RenderProcessHostImpl::audio_renderer_host() const {
 void RenderProcessHostImpl::OnUserMetricsRecordAction(
     const std::string& action) {
   RecordComputedAction(action);
+}
+
+void RenderProcessHostImpl::OnCloseACK(int old_route_id) {
+  SessionStorageHolder* holder = static_cast<SessionStorageHolder*>
+      (GetUserData(kSessionStorageHolderKey));
+  if (!holder)
+    return;
+  holder->Release(old_route_id);
 }
 
 void RenderProcessHostImpl::OnSavedPageAsMHTML(int job_id, int64 data_size) {
@@ -2148,26 +2112,27 @@ void RenderProcessHostImpl::SendDisableAecDumpToRenderer() {
 #endif
 
 void RenderProcessHostImpl::IncrementWorkerRefCount() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ++worker_ref_count_;
 }
 
 void RenderProcessHostImpl::DecrementWorkerRefCount() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_GT(worker_ref_count_, 0);
   --worker_ref_count_;
   if (worker_ref_count_ == 0)
     Cleanup();
 }
 
-#if defined(USE_MOJO)
-void RenderProcessHostImpl::SetWebUIHandle(
-int32 view_routing_id,
-mojo::ScopedMessagePipeHandle handle) {
-  if (!render_process_host_mojo_)
-    render_process_host_mojo_.reset(new RenderProcessHostMojoImpl(this));
-  render_process_host_mojo_->SetWebUIHandle(view_routing_id, handle.Pass());
+void RenderProcessHostImpl::ConnectTo(
+    const base::StringPiece& service_name,
+    mojo::ScopedMessagePipeHandle handle) {
+  mojo_activation_required_ = true;
+  MaybeActivateMojo();
+
+  mojo::AllocationScope scope;
+  mojo_application_host_->shell_client()->AcceptConnection(service_name,
+                                                           handle.Pass());
 }
-#endif
 
 }  // namespace content

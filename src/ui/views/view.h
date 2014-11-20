@@ -26,6 +26,7 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/events/event.h"
 #include "ui/events/event_target.h"
+#include "ui/events/event_targeter.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
@@ -70,6 +71,7 @@ class ScrollView;
 class Widget;
 
 namespace internal {
+class PreEventDispatchHandler;
 class PostEventDispatchHandler;
 class RootView;
 }
@@ -106,8 +108,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
  public:
   typedef std::vector<View*> Views;
 
-  // TODO(tdanderson,sadrul): Becomes obsolete with the refactoring of the
-  // event targeting logic for views and windows.
+  // TODO(tdanderson): Becomes obsolete with the refactoring of the event
+  //                   targeting logic for views and windows. See
+  //                   crbug.com/355425.
   // Specifies the source of the region used in a hit test.
   // HIT_TEST_SOURCE_MOUSE indicates the hit test is being performed with a
   // single point and HIT_TEST_SOURCE_TOUCH indicates the hit test is being
@@ -507,7 +510,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   Background* background() { return background_.get(); }
 
   // The border object is owned by this object and may be NULL.
-  void SetBorder(scoped_ptr<Border> b);
+  virtual void SetBorder(scoped_ptr<Border> b);
   const Border* border() const { return border_.get(); }
   Border* border() { return border_.get(); }
 
@@ -555,6 +558,11 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // The points, rects, mouse locations, and touch locations in the following
   // functions are in the view's coordinates, except for a RootView.
 
+  // TODO(tdanderson): GetEventHandlerForPoint() and GetEventHandlerForRect()
+  //                   will be removed once their logic is moved into
+  //                   ViewTargeter and its derived classes. See
+  //                   crbug.com/355425.
+
   // Convenience functions which calls into GetEventHandler() with
   // a 1x1 rect centered at |point|.
   View* GetEventHandlerForPoint(const gfx::Point& point);
@@ -579,6 +587,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // lifetime may vary from platform to platform. On Windows and Aura,
   // the cursor is a shared resource.
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event);
+
+  // TODO(tdanderson): HitTestPoint() and HitTestRect() will be removed once
+  //                   their logic is moved into ViewTargeter and its
+  //                   derived classes. See crbug.com/355425.
 
   // A convenience function which calls HitTestRect() with a rect of size
   // 1x1 and an origin of |point|.
@@ -701,17 +713,24 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual InputMethod* GetInputMethod();
   virtual const InputMethod* GetInputMethod() const;
 
+  // Sets a new event-targeter for the view, and returns the previous
+  // event-targeter.
+  scoped_ptr<ui::EventTargeter> SetEventTargeter(
+      scoped_ptr<ui::EventTargeter> targeter);
+
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual ui::EventTarget* GetParentTarget() OVERRIDE;
   virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
   virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
+  virtual void ConvertEventToTarget(ui::EventTarget* target,
+                                    ui::LocatedEvent* event) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE FINAL;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Accelerators --------------------------------------------------------------
@@ -1210,6 +1229,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 #endif
 
  private:
+  friend class internal::PreEventDispatchHandler;
   friend class internal::PostEventDispatchHandler;
   friend class internal::RootView;
   friend class FocusManager;
@@ -1544,6 +1564,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Input  --------------------------------------------------------------------
 
   scoped_ptr<internal::PostEventDispatchHandler> post_dispatch_handler_;
+  scoped_ptr<ui::EventTargeter> targeter_;
 
   // Accessibility -------------------------------------------------------------
 

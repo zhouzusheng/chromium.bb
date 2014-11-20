@@ -32,29 +32,32 @@
 #define MIDIController_h
 
 #include "core/page/Page.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 class MIDIAccess;
 class MIDIClient;
 
-class MIDIController FINAL : public Supplement<Page> {
+class MIDIController FINAL : public NoBaseWillBeGarbageCollectedFinalized<MIDIController>, public WillBeHeapSupplement<Page> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIController);
 public:
     virtual ~MIDIController();
 
     void requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess>);
     void cancelSysexPermissionRequest(MIDIAccess*);
 
-    static PassOwnPtr<MIDIController> create(MIDIClient*);
+    static PassOwnPtrWillBeRawPtr<MIDIController> create(PassOwnPtr<MIDIClient>);
     static const char* supplementName();
-    static MIDIController* from(Page* page) { return static_cast<MIDIController*>(Supplement<Page>::from(page, supplementName())); }
+    static MIDIController* from(Page* page) { return static_cast<MIDIController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
 
 protected:
-    explicit MIDIController(MIDIClient*);
+    explicit MIDIController(PassOwnPtr<MIDIClient>);
 
 private:
-    MIDIClient* m_client;
+    OwnPtr<MIDIClient> m_client;
 };
 
 } // namespace WebCore

@@ -34,8 +34,8 @@
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "heap/ThreadState.h"
 #include "platform/PlatformThreadData.h"
+#include "platform/heap/ThreadState.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebWaitableEvent.h"
@@ -133,16 +133,18 @@ void WorkerThread::workerThread()
 
     runEventLoop();
 
+    // This should be called before we start the shutdown procedure.
+    workerReportingProxy().willDestroyWorkerGlobalScope();
+
     ThreadIdentifier threadID = m_threadID;
 
     // The below assignment will destroy the context, which will in turn notify messaging proxy.
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
     // If Oilpan is enabled, we detach of the context/global scope, with the final heap cleanup below sweeping it out.
-#if ENABLE(OILPAN)
-    m_workerGlobalScope->dispose();
-#else
+#if !ENABLE(OILPAN)
     ASSERT(m_workerGlobalScope->hasOneRef());
 #endif
+    m_workerGlobalScope->dispose();
     m_workerGlobalScope = nullptr;
 
     // Detach the ThreadState, cleaning out the thread's heap by
@@ -230,7 +232,7 @@ void WorkerThread::stop()
     // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
     if (m_workerGlobalScope) {
         m_workerGlobalScope->script()->scheduleExecutionTermination();
-        m_workerGlobalScope->willStopActiveDOMObjects();
+        m_workerGlobalScope->wasRequestedToTerminate();
         m_runLoop.postTaskAndTerminate(WorkerThreadShutdownStartTask::create());
         return;
     }
@@ -240,19 +242,6 @@ void WorkerThread::stop()
 bool WorkerThread::isCurrentThread() const
 {
     return m_threadID == currentThread();
-}
-
-class ReleaseFastMallocFreeMemoryTask : public ExecutionContextTask {
-    virtual void performTask(ExecutionContext*) OVERRIDE { WTF::releaseFastMallocFreeMemory(); }
-};
-
-void WorkerThread::releaseFastMallocFreeMemoryInAllThreads()
-{
-    MutexLocker lock(threadSetMutex());
-    HashSet<WorkerThread*>& threads = workerThreads();
-    HashSet<WorkerThread*>::iterator end = threads.end();
-    for (HashSet<WorkerThread*>::iterator it = threads.begin(); it != end; ++it)
-        (*it)->runLoop().postTask(adoptPtr(new ReleaseFastMallocFreeMemoryTask));
 }
 
 } // namespace WebCore

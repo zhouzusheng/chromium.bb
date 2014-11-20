@@ -70,7 +70,9 @@ PassRefPtr<SVGTextPathElement> SVGTextPathElement::create(Document& document)
 
 SVGTextPathElement::~SVGTextPathElement()
 {
+#if !ENABLE(OILPAN)
     clearResourceReferences();
+#endif
 }
 
 void SVGTextPathElement::clearResourceReferences()
@@ -116,7 +118,7 @@ void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (SVGURIReference::isKnownAttribute(attrName)) {
         buildPendingResource();
@@ -150,7 +152,7 @@ void SVGTextPathElement::buildPendingResource()
         return;
 
     AtomicString id;
-    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), document(), &id);
+    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), treeScope(), &id);
     if (!target) {
         // Do not register as pending if we are already pending this resource.
         if (document().accessSVGExtensions().isElementPendingResource(this, id))

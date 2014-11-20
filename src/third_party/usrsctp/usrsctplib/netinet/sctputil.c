@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 257800 2013-11-07 16:37:12Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 263237 2014-03-16 12:32:16Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -4216,6 +4216,7 @@ void
 sctp_handle_ootb(struct mbuf *m, int iphlen, int offset,
                  struct sockaddr *src, struct sockaddr *dst,
                  struct sctphdr *sh, struct sctp_inpcb *inp,
+                 struct mbuf *cause,
 #if defined(__FreeBSD__)
                  uint8_t use_mflowid, uint32_t mflowid,
 #endif
@@ -4284,7 +4285,7 @@ sctp_handle_ootb(struct mbuf *m, int iphlen, int offset,
 	if ((SCTP_BASE_SYSCTL(sctp_blackhole) == 0) ||
 	    ((SCTP_BASE_SYSCTL(sctp_blackhole) == 1) &&
 	     (contains_init_chunk == 0))) {
-		sctp_send_abort(m, iphlen, src, dst, sh, 0, NULL,
+		sctp_send_abort(m, iphlen, src, dst, sh, 0, cause,
 #if defined(__FreeBSD__)
 		                use_mflowid, mflowid,
 #endif
@@ -5083,19 +5084,24 @@ sctp_append_to_readq(struct sctp_inpcb *inp,
  */
 
 struct mbuf *
-sctp_generate_invmanparam(int err)
+sctp_generate_cause(uint16_t code, char *info)
 {
-	/* Return a MBUF with a invalid mandatory parameter */
 	struct mbuf *m;
+	struct sctp_gen_error_cause *cause;
+	size_t info_len, len;
 
-	m = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr), 0, M_NOWAIT, 1, MT_DATA);
-	if (m) {
-		struct sctp_paramhdr *ph;
-
-		SCTP_BUF_LEN(m) = sizeof(struct sctp_paramhdr);
-		ph = mtod(m, struct sctp_paramhdr *);
-		ph->param_length = htons(sizeof(struct sctp_paramhdr));
-		ph->param_type = htons(err);
+	if ((code == 0) || (info == NULL)) {
+		return (NULL);
+	}
+	info_len = strlen(info);
+	len = sizeof(struct sctp_paramhdr) + info_len;
+	m = sctp_get_mbuf_for_msg(len, 0, M_NOWAIT, 1, MT_DATA);
+	if (m != NULL) {
+		SCTP_BUF_LEN(m) = len;
+		cause = mtod(m, struct sctp_gen_error_cause *);
+		cause->code = htons(code);
+		cause->length = htons((uint16_t)len);
+		memcpy(cause->info, info, info_len);
 	}
 	return (m);
 }
@@ -6477,8 +6483,8 @@ sctp_sorecvmsg(struct socket *so,
 #else
 		if ((uio->uio_resid == 0) ||
 #endif
-		    ((in_eeor_mode) && (copied_so_far >= max(so->so_rcv.sb_lowat, 1)))
-			) {
+		    ((in_eeor_mode) &&
+		     (copied_so_far >= (uint32_t)max(so->so_rcv.sb_lowat, 1)))) {
 			goto release;
 		}
 		/*
@@ -6527,13 +6533,13 @@ sctp_sorecvmsg(struct socket *so,
 			SOCKBUF_LOCK(&so->so_rcv);
 			hold_sblock = 1;
 		}
-#if defined(__APPLE__)
-		sbunlock(&so->so_rcv, 1);
-#endif
 		if ((copied_so_far) && (control->length == 0) &&
 		    (sctp_is_feature_on(inp, SCTP_PCB_FLAGS_FRAG_INTERLEAVE))) {
 			goto release;
 		}
+#if defined(__APPLE__)
+		sbunlock(&so->so_rcv, 1);
+#endif
 		if (so->so_rcv.sb_cc <= control->held_length) {
 			error = sbwait(&so->so_rcv);
 			if (error) {

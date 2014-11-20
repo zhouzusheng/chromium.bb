@@ -50,7 +50,14 @@ PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(Document& document)
 
 SVGFEImageElement::~SVGFEImageElement()
 {
+#if ENABLE(OILPAN)
+    if (m_cachedImage) {
+        m_cachedImage->removeClient(this);
+        m_cachedImage = 0;
+    }
+#else
     clearResourceReferences();
+#endif
 }
 
 bool SVGFEImageElement::currentFrameHasSingleSecurityOrigin() const
@@ -87,7 +94,7 @@ void SVGFEImageElement::buildPendingResource()
         return;
 
     AtomicString id;
-    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), document(), &id);
+    Element* target = SVGURIReference::targetElementFromIRIString(hrefString(), treeScope(), &id);
     if (!target) {
         if (id.isEmpty())
             fetchImageResource();
@@ -140,7 +147,7 @@ void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::preserveAspectRatioAttr) {
         invalidate();
@@ -188,7 +195,7 @@ PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* fil
 {
     if (m_cachedImage)
         return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), m_preserveAspectRatio->currentValue());
-    return FEImage::createWithIRIReference(filter, document(), hrefString(), m_preserveAspectRatio->currentValue());
+    return FEImage::createWithIRIReference(filter, treeScope(), hrefString(), m_preserveAspectRatio->currentValue());
 }
 
 }

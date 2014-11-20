@@ -34,8 +34,10 @@
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceOwner.h"
 #include "core/html/imports/HTMLImport.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Vector.h"
+#include "wtf/WeakPtr.h"
 
 namespace WebCore {
 
@@ -65,18 +67,14 @@ public:
     void wasAlreadyLoaded();
     void startLoading(const ResourcePtr<RawResource>&);
     void importDestroyed();
+    WeakPtr<HTMLImportChild> weakPtr() { return m_weakFactory.createWeakPtr(); }
 
     // HTMLImport
     virtual bool isChild() const OVERRIDE { return true; }
-    virtual HTMLImportRoot* root() OVERRIDE;
     virtual Document* document() const OVERRIDE;
-    virtual void wasDetachedFromDocument() OVERRIDE;
-    virtual void didFinishParsing() OVERRIDE;
-    virtual void didRemoveAllPendingStylesheet() OVERRIDE;
     virtual bool isDone() const OVERRIDE;
-    virtual bool hasLoader() const OVERRIDE;
-    virtual bool ownsLoader() const OVERRIDE;
-    virtual CustomElementMicrotaskImportStep* customElementMicrotaskStep() const OVERRIDE FINAL { return m_customElementMicrotaskStep; }
+    virtual HTMLImportLoader* loader() const OVERRIDE { return m_loader; }
+    virtual void stateWillChange() OVERRIDE;
     virtual void stateDidChange() OVERRIDE;
 
 #if !defined(NDEBUG)
@@ -88,6 +86,10 @@ public:
     bool loaderHasError() const;
 
     void didFinishLoading();
+    void didFinishUpgradingCustomElements();
+    bool isLoaded() const;
+    bool isFirst() const;
+    void normalize();
 
 private:
     // RawResourceOwner doing nothing.
@@ -100,11 +102,17 @@ private:
     void createLoader();
     void shareLoader(HTMLImportChild*);
     void ensureLoader();
+    void createCustomElementMicrotaskStepIfNeeded();
 
+#if ENABLE(OILPAN)
+    Persistent<Document> m_master;
+#else
     Document& m_master;
+#endif
     KURL m_url;
-    CustomElementMicrotaskImportStep* m_customElementMicrotaskStep;
-    RefPtr<HTMLImportLoader> m_loader;
+    WeakPtrFactory<HTMLImportChild> m_weakFactory;
+    WeakPtr<CustomElementMicrotaskImportStep> m_customElementMicrotaskStep;
+    HTMLImportLoader* m_loader;
     HTMLImportChildClient* m_client;
 };
 

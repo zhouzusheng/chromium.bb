@@ -35,7 +35,7 @@
 #include "core/animation/EffectInput.h"
 #include "core/animation/TimedItem.h"
 #include "core/animation/TimingInput.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -43,13 +43,14 @@ namespace WebCore {
 class Dictionary;
 class Element;
 class ExceptionState;
+class SampledEffect;
 
 class Animation FINAL : public TimedItem {
 
 public:
     enum Priority { DefaultPriority, TransitionPriority };
 
-    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
+    static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
     // Web Animations API Bindings constructors.
     static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Dictionary& timingInputDictionary);
     static PassRefPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, double duration);
@@ -58,63 +59,48 @@ public:
     static PassRefPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState&);
     static PassRefPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState&);
 
-    // FIXME: Move all of these setter methods out of Animation,
-    // possibly into a new class (TimingInput?).
-    static void setStartDelay(Timing&, double startDelay);
-    static void setEndDelay(Timing&, double endDelay);
-    static void setFillMode(Timing&, String fillMode);
-    static void setIterationStart(Timing&, double iterationStart);
-    static void setIterationCount(Timing&, double iterationCount);
-    static void setIterationDuration(Timing&, double iterationDuration);
-    static void setPlaybackRate(Timing&, double playbackRate);
-    static void setPlaybackDirection(Timing&, String direction);
-    static void setTimingFunction(Timing&, String timingFunctionString);
+    virtual ~Animation();
 
     virtual bool isAnimation() const OVERRIDE { return true; }
 
-    const WillBeHeapVector<RefPtrWillBeMember<Interpolation> >& activeInterpolations() const
-    {
-        ASSERT(m_activeInterpolations);
-        return *m_activeInterpolations;
-    }
-
     bool affects(CSSPropertyID) const;
     const AnimationEffect* effect() const { return m_effect.get(); }
+    AnimationEffect* effect() { return m_effect.get(); }
     Priority priority() const { return m_priority; }
-    Element* target() { return m_target.get(); }
+    Element* target() { return m_target; }
+
+    void notifySampledEffectRemovedFromAnimationStack();
+    void notifyElementDestroyed();
 
     bool isCandidateForAnimationOnCompositor() const;
-    // Must only be called once and assumes to be part of a player without a start time.
-    bool maybeStartAnimationOnCompositor();
+    // Must only be called once.
+    bool maybeStartAnimationOnCompositor(double startTime);
     bool hasActiveAnimationsOnCompositor() const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
     void pauseAnimationForTestingOnCompositor(double pauseTime);
 
 protected:
-    void applyEffects(bool previouslyInEffect);
+    void applyEffects();
     void clearEffects();
     virtual void updateChildrenAndEffects() const OVERRIDE;
     virtual void didAttach() OVERRIDE;
     virtual void willDetach() OVERRIDE;
+    virtual void specifiedTimingChanged() OVERRIDE;
     virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
-    static void populateTiming(Timing&, Dictionary);
+    Animation(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
 
-    Animation(PassRefPtr<Element>, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
-
-    RefPtr<Element> m_target;
+    Element* m_target;
     RefPtrWillBePersistent<AnimationEffect> m_effect;
 
-    bool m_activeInAnimationStack;
-    OwnPtrWillBePersistent<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > m_activeInterpolations;
+    SampledEffect* m_sampledEffect;
 
     Priority m_priority;
 
     Vector<int> m_compositorAnimationIds;
 
-    friend class CSSAnimations;
     friend class AnimationAnimationV8Test;
 };
 

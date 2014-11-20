@@ -43,17 +43,17 @@ using blink::WebIDBDatabase;
 
 namespace WebCore {
 
-PassRefPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, WebIDBDatabase::TransactionMode mode, IDBDatabase* db)
+PassRefPtrWillBeRawPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, WebIDBDatabase::TransactionMode mode, IDBDatabase* db)
 {
     IDBOpenDBRequest* openDBRequest = 0;
-    RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata())));
+    RefPtrWillBeRawPtr<IDBTransaction> transaction(adoptRefWillBeRefCountedGarbageCollected(new IDBTransaction(context, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata())));
     transaction->suspendIfNeeded();
     return transaction.release();
 }
 
-PassRefPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
+PassRefPtrWillBeRawPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
 {
-    RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, id, Vector<String>(), WebIDBDatabase::TransactionVersionChange, db, openDBRequest, previousMetadata)));
+    RefPtrWillBeRawPtr<IDBTransaction> transaction(adoptRefWillBeRefCountedGarbageCollected(new IDBTransaction(context, id, Vector<String>(), WebIDBDatabase::TransactionVersionChange, db, openDBRequest, previousMetadata)));
     transaction->suspendIfNeeded();
     return transaction.release();
 }
@@ -94,10 +94,12 @@ IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vect
         m_state = Inactive;
     }
 
+#if !ENABLE(OILPAN)
     // We pass a reference of this object before it can be adopted.
     relaxAdoptionRequirement();
+#endif
     if (m_state == Active)
-        IDBPendingTransactionMonitor::addNewTransaction(this);
+        IDBPendingTransactionMonitor::from(*context).addNewTransaction(*this);
     m_database->transactionCreated(this);
 }
 
@@ -105,6 +107,17 @@ IDBTransaction::~IDBTransaction()
 {
     ASSERT(m_state == Finished || m_contextStopped);
     ASSERT(m_requestList.isEmpty() || m_contextStopped);
+}
+
+void IDBTransaction::trace(Visitor* visitor)
+{
+    visitor->trace(m_database);
+    visitor->trace(m_openDBRequest);
+    visitor->trace(m_error);
+    visitor->trace(m_requestList);
+    visitor->trace(m_objectStoreMap);
+    visitor->trace(m_deletedObjectStores);
+    visitor->trace(m_objectStoreCleanupMap);
 }
 
 const String& IDBTransaction::mode() const
@@ -124,7 +137,7 @@ void IDBTransaction::setError(PassRefPtrWillBeRawPtr<DOMError> error)
     }
 }
 
-PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionState& exceptionState)
 {
     if (m_state == Finished) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
@@ -149,15 +162,15 @@ PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, Excep
 
     const IDBDatabaseMetadata& metadata = m_database->metadata();
 
-    RefPtr<IDBObjectStore> objectStore = IDBObjectStore::create(metadata.objectStores.get(objectStoreId), this);
+    RefPtrWillBeRawPtr<IDBObjectStore> objectStore = IDBObjectStore::create(metadata.objectStores.get(objectStoreId), this);
     objectStoreCreated(name, objectStore);
     return objectStore.release();
 }
 
-void IDBTransaction::objectStoreCreated(const String& name, PassRefPtr<IDBObjectStore> prpObjectStore)
+void IDBTransaction::objectStoreCreated(const String& name, PassRefPtrWillBeRawPtr<IDBObjectStore> prpObjectStore)
 {
     ASSERT(m_state != Finished);
-    RefPtr<IDBObjectStore> objectStore = prpObjectStore;
+    RefPtrWillBeRawPtr<IDBObjectStore> objectStore = prpObjectStore;
     m_objectStoreMap.set(name, objectStore);
     if (isVersionChange())
         m_objectStoreCleanupMap.set(objectStore, objectStore->metadata());
@@ -169,7 +182,7 @@ void IDBTransaction::objectStoreDeleted(const String& name)
     ASSERT(isVersionChange());
     IDBObjectStoreMap::iterator it = m_objectStoreMap.find(name);
     if (it != m_objectStoreMap.end()) {
-        RefPtr<IDBObjectStore> objectStore = it->value;
+        RefPtrWillBeRawPtr<IDBObjectStore> objectStore = it->value;
         m_objectStoreMap.remove(name);
         objectStore->markDeleted();
         m_objectStoreCleanupMap.set(objectStore, objectStore->metadata());
@@ -185,7 +198,7 @@ void IDBTransaction::setActive(bool active)
     ASSERT(active != (m_state == Active));
     m_state = active ? Active : Inactive;
 
-    if (!active && m_requestList.isEmpty())
+    if (!active && m_requestList.isEmpty() && backendDB())
         backendDB()->commit(m_id);
 }
 
@@ -202,13 +215,14 @@ void IDBTransaction::abort(ExceptionState& exceptionState)
         return;
 
     while (!m_requestList.isEmpty()) {
-        RefPtr<IDBRequest> request = *m_requestList.begin();
+        RefPtrWillBeRawPtr<IDBRequest> request = *m_requestList.begin();
         m_requestList.remove(request);
         request->abort();
     }
 
-    RefPtr<IDBTransaction> selfRef = this;
-    backendDB()->abort(m_id);
+    RefPtrWillBeRawPtr<IDBTransaction> selfRef(this);
+    if (backendDB())
+        backendDB()->abort(m_id);
 }
 
 void IDBTransaction::registerRequest(IDBRequest* request)
@@ -229,7 +243,7 @@ void IDBTransaction::onAbort(PassRefPtrWillBeRawPtr<DOMError> prpError)
 {
     IDB_TRACE("IDBTransaction::onAbort");
     if (m_contextStopped) {
-        RefPtr<IDBTransaction> protect(this);
+        RefPtrWillBeRawPtr<IDBTransaction> protect(this);
         m_database->transactionFinished(this);
         return;
     }
@@ -244,7 +258,7 @@ void IDBTransaction::onAbort(PassRefPtrWillBeRawPtr<DOMError> prpError)
         // Abort was not triggered by front-end, so outstanding requests must
         // be aborted now.
         while (!m_requestList.isEmpty()) {
-            RefPtr<IDBRequest> request = *m_requestList.begin();
+            RefPtrWillBeRawPtr<IDBRequest> request = *m_requestList.begin();
             m_requestList.remove(request);
             request->abort();
         }
@@ -263,7 +277,7 @@ void IDBTransaction::onAbort(PassRefPtrWillBeRawPtr<DOMError> prpError)
     enqueueEvent(Event::createBubble(EventTypeNames::abort));
 
     // If script has stopped and GC has completed, database may have last reference to this object.
-    RefPtr<IDBTransaction> protect(this);
+    RefPtrWillBeRawPtr<IDBTransaction> protect(this);
     m_database->transactionFinished(this);
 }
 
@@ -271,7 +285,7 @@ void IDBTransaction::onComplete()
 {
     IDB_TRACE("IDBTransaction::onComplete");
     if (m_contextStopped) {
-        RefPtr<IDBTransaction> protect(this);
+        RefPtrWillBeRawPtr<IDBTransaction> protect(this);
         m_database->transactionFinished(this);
         return;
     }
@@ -284,7 +298,7 @@ void IDBTransaction::onComplete()
     enqueueEvent(Event::create(EventTypeNames::complete));
 
     // If script has stopped and GC has completed, database may have last reference to this object.
-    RefPtr<IDBTransaction> protect(this);
+    RefPtrWillBeRawPtr<IDBTransaction> protect(this);
     m_database->transactionFinished(this);
 }
 
@@ -338,7 +352,7 @@ ExecutionContext* IDBTransaction::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool IDBTransaction::dispatchEvent(PassRefPtr<Event> event)
+bool IDBTransaction::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     IDB_TRACE("IDBTransaction::dispatchEvent");
     if (m_contextStopped || !executionContext()) {
@@ -386,7 +400,7 @@ void IDBTransaction::stop()
     abort(IGNORE_EXCEPTION);
 }
 
-void IDBTransaction::enqueueEvent(PassRefPtr<Event> event)
+void IDBTransaction::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     ASSERT_WITH_MESSAGE(m_state != Finished, "A finished transaction tried to enqueue an event of type %s.", event->type().utf8().data());
     if (m_contextStopped || !executionContext())

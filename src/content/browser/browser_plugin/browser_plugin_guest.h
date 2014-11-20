@@ -22,14 +22,11 @@
 #include <queue>
 
 #include "base/compiler_specific.h"
-#include "base/id_map.h"
-#include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "content/common/edit_command.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
-#include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/browser_plugin_permission_type.h"
@@ -45,18 +42,12 @@
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_Attach_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
-struct FrameHostMsg_BuffersSwappedACK_Params;
 struct FrameHostMsg_CompositorFrameSwappedACK_Params;
 struct FrameHostMsg_ReclaimCompositorResources_Params;
-struct ViewHostMsg_CreateWindow_Params;
 #if defined(OS_MACOSX)
 struct ViewHostMsg_ShowPopup_Params;
 #endif
 struct ViewHostMsg_UpdateRect_Params;
-
-namespace cc {
-class CompositorFrameAck;
-}
 
 namespace blink {
 class WebInputEvent;
@@ -66,16 +57,10 @@ namespace gfx {
 class Range;
 }
 
-namespace gpu {
-struct Mailbox;
-}
-
 namespace content {
 
-class BrowserPluginHostFactory;
-class BrowserPluginEmbedder;
 class BrowserPluginGuestManager;
-class RenderProcessHost;
+class BrowserPluginHostFactory;
 class RenderWidgetHostView;
 class SiteInstance;
 class WebCursor;
@@ -93,11 +78,9 @@ struct MediaStreamRequest;
 // CreateNewWindow. The newly created guest will live in the same partition,
 // which means it can share storage and can script this guest.
 class CONTENT_EXPORT BrowserPluginGuest
-    : public JavaScriptDialogManager,
-      public WebContentsDelegate,
+    : public WebContentsDelegate,
       public WebContentsObserver {
  public:
-  typedef base::Callback<void(bool)> GeolocationCallback;
   virtual ~BrowserPluginGuest();
 
   // The WebContents passed into the factory method here has not been
@@ -152,10 +135,10 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   bool focused() const { return focused_; }
   bool visible() const { return guest_visible_; }
-  void clear_damage_buffer() { damage_buffer_.reset(); }
   bool is_in_destruction() { return is_in_destruction_; }
 
-  BrowserPluginGuest* opener() const { return opener_.get(); }
+  // Returns the BrowserPluginGuest that created this guest, if any.
+  BrowserPluginGuest* GetOpener() const;
 
   // Returns whether the mouse pointer was unlocked.
   bool UnlockMouseIfNecessary(const NativeWebKeyboardEvent& event);
@@ -166,6 +149,8 @@ class CONTENT_EXPORT BrowserPluginGuest
       gfx::Rect src_subrect,
       gfx::Size dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback);
+
+  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
@@ -204,6 +189,10 @@ class CONTENT_EXPORT BrowserPluginGuest
                                    double progress) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
+  virtual ColorChooser* OpenColorChooser(
+      WebContents* web_contents,
+      SkColor color,
+      const std::vector<ColorSuggestion>& suggestions) OVERRIDE;
   virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
   virtual void HandleKeyboardEvent(
       WebContents* source,
@@ -234,35 +223,8 @@ class CONTENT_EXPORT BrowserPluginGuest
       content::WebContents* source,
       const blink::WebGestureEvent& event) OVERRIDE;
 
-  // JavaScriptDialogManager implementation.
-  virtual void RunJavaScriptDialog(
-      WebContents* web_contents,
-      const GURL& origin_url,
-      const std::string& accept_lang,
-      JavaScriptMessageType javascript_message_type,
-      const base::string16& message_text,
-      const base::string16& default_prompt_text,
-      const DialogClosedCallback& callback,
-      bool* did_suppress_message) OVERRIDE;
-  virtual void RunBeforeUnloadDialog(
-      WebContents* web_contents,
-      const base::string16& message_text,
-      bool is_reload,
-      const DialogClosedCallback& callback) OVERRIDE;
-  virtual bool HandleJavaScriptDialog(
-      WebContents* web_contents,
-      bool accept,
-      const base::string16* prompt_override) OVERRIDE;
-  virtual void CancelActiveAndPendingDialogs(
-      WebContents* web_contents) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
-
   // Exposes the protected web_contents() from WebContentsObserver.
-  WebContentsImpl* GetWebContents();
-
-  // Overridden in tests.
-  virtual void SetDamageBuffer(
-      const BrowserPluginHostMsg_ResizeGuest_Params& params);
+  WebContentsImpl* GetWebContents() const;
 
   gfx::Point GetScreenCoordinates(const gfx::Point& relative_position) const;
 
@@ -285,20 +247,6 @@ class CONTENT_EXPORT BrowserPluginGuest
               BrowserPluginHostMsg_Attach_Params params,
               const base::DictionaryValue& extra_params);
 
-  // Requests geolocation permission through Embedder JavaScript API.
-  void AskEmbedderForGeolocationPermission(int bridge_id,
-                                           const GURL& requesting_frame,
-                                           const GeolocationCallback& callback);
-  // Cancels pending geolocation request.
-  void CancelGeolocationRequest(int bridge_id);
-
-  // Allow the embedder to call this for unhandled messages when
-  // BrowserPluginGuest is already destroyed.
-  static void AcknowledgeBufferPresent(int route_id,
-                                       int gpu_host_id,
-                                       const gpu::Mailbox& mailbox,
-                                       uint32 sync_point);
-
   // Returns whether BrowserPluginGuest is interested in receiving the given
   // |message|.
   static bool ShouldForwardToBrowserPluginGuest(const IPC::Message& message);
@@ -306,9 +254,6 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, blink::WebDragOperation operation);
-
-  void DragSourceMovedTo(int client_x, int client_y,
-                         int screen_x, int screen_y);
 
   // Called when the drag started by this guest ends at an OS-level.
   void EndSystemDrag();
@@ -328,18 +273,15 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   void SetZoom(double zoom_factor);
 
+  void PointerLockPermissionResponse(bool allow);
+
  private:
   class EmbedderWebContentsObserver;
   friend class TestBrowserPluginGuest;
 
   class DownloadRequest;
-  class GeolocationRequest;
-  class JavaScriptDialogRequest;
-  // MediaRequest because of naming conflicts with MediaStreamRequest.
-  class MediaRequest;
   class NewWindowRequest;
   class PermissionRequest;
-  class PointerLockRequest;
 
   // Tracks the name, and target URL of the new window and whether or not it has
   // changed since the WebContents has been created and before the new window
@@ -359,8 +301,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   // |web_contents| has to stay valid for the lifetime of BrowserPluginGuest.
   BrowserPluginGuest(int instance_id,
                      bool has_render_view,
-                     WebContentsImpl* web_contents,
-                     BrowserPluginGuest* opener);
+                     WebContentsImpl* web_contents);
 
   // Destroy unattached new windows that have been opened by this
   // BrowserPluginGuest.
@@ -371,13 +312,8 @@ class CONTENT_EXPORT BrowserPluginGuest
                          PageTransition transition_type,
                          WebContents* web_contents);
 
-  // Bridge IDs correspond to a geolocation request. This method will remove
-  // the bookkeeping for a particular geolocation request associated with the
-  // provided |bridge_id|. It returns the request ID of the geolocation request.
-  int RemoveBridgeID(int bridge_id);
-
   // Returns the |request_id| generated for the |request| provided.
-  int RequestPermission(
+  void RequestPermission(
       BrowserPluginPermissionType permission_type,
       scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
       const base::DictionaryValue& request_info);
@@ -385,15 +321,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Creates a new guest window, and BrowserPluginGuest that is owned by this
   // BrowserPluginGuest.
   BrowserPluginGuest* CreateNewGuestWindow(const OpenURLParams& params);
-
-  base::SharedMemory* damage_buffer() const { return damage_buffer_.get(); }
-  const gfx::Size& damage_view_size() const { return damage_view_size_; }
-  float damage_buffer_scale_factor() const {
-    return damage_buffer_scale_factor_;
-  }
-  // Returns the damage buffer corresponding to the handle in resize |params|.
-  base::SharedMemory* GetDamageBufferFromEmbedder(
-      const BrowserPluginHostMsg_ResizeGuest_Params& params);
 
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
@@ -429,7 +356,7 @@ class CONTENT_EXPORT BrowserPluginGuest
       int instance_id,
       const FrameHostMsg_ReclaimCompositorResources_Params& params);
 
-  // Overriden in tests.
+  // Overridden in tests.
   virtual void OnHandleInputEvent(int instance_id,
                                   const gfx::Rect& guest_window_rect,
                                   const blink::WebInputEvent* event);
@@ -439,11 +366,11 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnLockMouseAck(int instance_id, bool succeeded);
   void OnNavigateGuest(int instance_id, const std::string& src);
   void OnPluginDestroyed(int instance_id);
-  // Grab the new damage buffer from the embedder, and resize the guest's
-  // web contents.
-  void OnResizeGuest(int instance_id,
-                     const BrowserPluginHostMsg_ResizeGuest_Params& params);
-  // Overriden in tests.
+  // Resizes the guest's web contents.
+  // Overridden in tests.
+  virtual void OnResizeGuest(
+      int instance_id, const BrowserPluginHostMsg_ResizeGuest_Params& params);
+  // Overridden in tests.
   virtual void OnSetFocus(int instance_id, bool focused);
   // Sets the name of the guest so that other guests in the same partition can
   // access it.
@@ -473,17 +400,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   // collection. See RenderThreadImpl::IdleHandler (executed when hidden) and
   // RenderThreadImpl::IdleHandlerInForegroundTab (executed when visible).
   void OnSetVisibility(int instance_id, bool visible);
-  // Message from embedder acknowledging last HW buffer.
-  void OnSwapBuffersACK(int instance_id,
-                        const FrameHostMsg_BuffersSwappedACK_Params& params);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
-  void OnUpdateRectACK(
-      int instance_id,
-      bool needs_ack,
-      const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
-      const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params);
 
   void OnTextInputTypeChanged(ui::TextInputType type,
                               ui::TextInputMode input_mode,
@@ -501,7 +420,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnExtendSelectionAndDelete(int instance_id, int before, int after);
   // Overridden in tests.
   virtual void OnImeCancelComposition();
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
@@ -521,7 +440,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
 #endif
   void OnShowWidget(int route_id, const gfx::Rect& initial_pos);
-  // Overriden in tests.
+  // Overridden in tests.
   virtual void OnTakeFocus(bool reverse);
   void OnUpdateFrameName(int frame_id,
                          bool is_top_level,
@@ -533,11 +452,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void DidRetrieveDownloadURLFromRequestId(
       const std::string& request_method,
       const base::Callback<void(bool)>& callback,
-      const std::string& url);
-
-  // Embedder sets permission to allow or deny geolocation request.
-  void SetGeolocationPermission(
-      GeolocationCallback callback, int bridge_id, bool allowed);
+      const GURL& url);
 
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
@@ -548,17 +463,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
   WebContentsImpl* embedder_web_contents_;
 
-  std::map<int, int> bridge_id_to_request_id_map_;
-
   // An identifier that uniquely identifies a browser plugin guest within an
   // embedder.
   int instance_id_;
-  scoped_ptr<base::SharedMemory> damage_buffer_;
-  // An identifier that uniquely identifies a damage buffer.
-  uint32 damage_buffer_sequence_id_;
-  size_t damage_buffer_size_;
-  gfx::Size damage_view_size_;
-  float damage_buffer_scale_factor_;
   float guest_device_scale_factor_;
   gfx::Rect guest_window_rect_;
   gfx::Rect guest_screen_rect_;
@@ -573,6 +480,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   bool auto_size_enabled_;
   gfx::Size max_auto_size_;
   gfx::Size min_auto_size_;
+  gfx::Size full_size_;
 
   // Each copy-request is identified by a unique number. The unique number is
   // used to keep track of the right callback.
@@ -583,7 +491,6 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   typedef std::map<BrowserPluginGuest*, NewWindowInfo> PendingWindowMap;
   PendingWindowMap pending_new_windows_;
-  base::WeakPtr<BrowserPluginGuest> opener_;
   // A counter to generate a unique request id for a permission request.
   // We only need the ids to be unique for a given BrowserPluginGuest.
   int next_permission_request_id_;

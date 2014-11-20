@@ -13,6 +13,7 @@
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
+#include "content/renderer/media/media_stream_audio_source.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
 #include "content/renderer/media/webrtc_logging.h"
@@ -28,7 +29,8 @@ namespace {
 // for its current sample rate (set by the user) on Windows and Mac OS X.
 // The listed rates below adds restrictions and WebRtcAudioDeviceImpl::Init()
 // will fail if the user selects any rate outside these ranges.
-const int kValidInputRates[] = {96000, 48000, 44100, 32000, 16000, 8000};
+const int kValidInputRates[] =
+    {192000, 96000, 48000, 44100, 32000, 16000, 8000};
 #elif defined(OS_LINUX) || defined(OS_OPENBSD)
 const int kValidInputRates[] = {48000, 44100};
 #elif defined(OS_ANDROID)
@@ -36,6 +38,13 @@ const int kValidInputRates[] = {48000, 44100};
 #else
 const int kValidInputRates[] = {44100};
 #endif
+
+// Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments
+// for semantics.  This value was arbitrarily chosen, but seems to work well.
+const int kPowerMonitorTimeConstantMs = 10;
+
+// The time between two audio power level samples.
+const int kPowerMonitorLogIntervalSeconds = 10;
 
 }  // namespace
 
@@ -123,9 +132,10 @@ class WebRtcAudioCapturer::TrackOwner
 scoped_refptr<WebRtcAudioCapturer> WebRtcAudioCapturer::CreateCapturer(
     int render_view_id, const StreamDeviceInfo& device_info,
     const blink::WebMediaConstraints& constraints,
-    WebRtcAudioDeviceImpl* audio_device) {
+    WebRtcAudioDeviceImpl* audio_device,
+    MediaStreamAudioSource* audio_source) {
   scoped_refptr<WebRtcAudioCapturer> capturer = new WebRtcAudioCapturer(
-      render_view_id, device_info, constraints, audio_device);
+      render_view_id, device_info, constraints, audio_device, audio_source);
   if (capturer->Initialize())
     return capturer;
 
@@ -163,7 +173,8 @@ bool WebRtcAudioCapturer::Initialize() {
 
   // Verify that the reported input channel configuration is supported.
   if (channel_layout != media::CHANNEL_LAYOUT_MONO &&
-      channel_layout != media::CHANNEL_LAYOUT_STEREO) {
+      channel_layout != media::CHANNEL_LAYOUT_STEREO &&
+      channel_layout != media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
     DLOG(ERROR) << channel_layout
                 << " is not a supported input channel configuration.";
     return false;
@@ -208,7 +219,8 @@ WebRtcAudioCapturer::WebRtcAudioCapturer(
     int render_view_id,
     const StreamDeviceInfo& device_info,
     const blink::WebMediaConstraints& constraints,
-    WebRtcAudioDeviceImpl* audio_device)
+    WebRtcAudioDeviceImpl* audio_device,
+    MediaStreamAudioSource* audio_source)
     : constraints_(constraints),
       audio_processor_(
           new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
@@ -221,15 +233,19 @@ WebRtcAudioCapturer::WebRtcAudioCapturer(
       peer_connection_mode_(false),
       key_pressed_(false),
       need_audio_processing_(false),
-      audio_device_(audio_device) {
+      audio_device_(audio_device),
+      audio_source_(audio_source),
+      audio_power_monitor_(
+          device_info_.device.input.sample_rate,
+          base::TimeDelta::FromMilliseconds(kPowerMonitorTimeConstantMs)) {
   DVLOG(1) << "WebRtcAudioCapturer::WebRtcAudioCapturer()";
 }
 
 WebRtcAudioCapturer::~WebRtcAudioCapturer() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(tracks_.IsEmpty());
-  DCHECK(!running_);
   DVLOG(1) << "WebRtcAudioCapturer::~WebRtcAudioCapturer()";
+  Stop();
 }
 
 void WebRtcAudioCapturer::AddTrack(WebRtcLocalAudioTrack* track) {
@@ -246,25 +262,34 @@ void WebRtcAudioCapturer::AddTrack(WebRtcLocalAudioTrack* track) {
     scoped_refptr<TrackOwner> track_owner(new TrackOwner(track));
     tracks_.AddAndTag(track_owner);
   }
-
-  // Start the source if the first audio track is connected to the capturer.
-  // Start() will do nothing if the capturer has already been started.
-  Start();
-
 }
 
 void WebRtcAudioCapturer::RemoveTrack(WebRtcLocalAudioTrack* track) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  base::AutoLock auto_lock(lock_);
+  DVLOG(1) << "WebRtcAudioCapturer::RemoveTrack()";
+  bool stop_source = false;
+  {
+    base::AutoLock auto_lock(lock_);
 
-  scoped_refptr<TrackOwner> removed_item =
-      tracks_.Remove(TrackOwner::TrackWrapper(track));
+    scoped_refptr<TrackOwner> removed_item =
+        tracks_.Remove(TrackOwner::TrackWrapper(track));
 
-  // Clear the delegate to ensure that no more capture callbacks will
-  // be sent to this sink. Also avoids a possible crash which can happen
-  // if this method is called while capturing is active.
-  if (removed_item.get())
-    removed_item->Reset();
+    // Clear the delegate to ensure that no more capture callbacks will
+    // be sent to this sink. Also avoids a possible crash which can happen
+    // if this method is called while capturing is active.
+    if (removed_item.get()) {
+      removed_item->Reset();
+      stop_source = tracks_.IsEmpty();
+    }
+  }
+  if (stop_source) {
+    // Since WebRtcAudioCapturer does not inherit MediaStreamAudioSource,
+    // and instead MediaStreamAudioSource is composed of a WebRtcAudioCapturer,
+    // we have to call StopSource on the MediaStreamSource. This will call
+    // MediaStreamAudioSource::DoStopSource which in turn call
+    // WebRtcAudioCapturerer::Stop();
+    audio_source_->StopSource();
+  }
 }
 
 void WebRtcAudioCapturer::SetCapturerSource(
@@ -275,7 +300,6 @@ void WebRtcAudioCapturer::SetCapturerSource(
   DVLOG(1) << "SetCapturerSource(channel_layout=" << channel_layout << ","
            << "sample_rate=" << sample_rate << ")";
   scoped_refptr<media::AudioCapturerSource> old_source;
-  bool restart_source = false;
   {
     base::AutoLock auto_lock(lock_);
     if (source_.get() == source.get())
@@ -285,7 +309,6 @@ void WebRtcAudioCapturer::SetCapturerSource(
     source_ = source;
 
     // Reset the flag to allow starting the new source.
-    restart_source = running_;
     running_ = false;
   }
 
@@ -318,8 +341,7 @@ void WebRtcAudioCapturer::SetCapturerSource(
   if (source.get())
     source->Initialize(params, this, session_id());
 
-  if (restart_source)
-    Start();
+  Start();
 }
 
 void WebRtcAudioCapturer::EnablePeerConnectionMode() {
@@ -449,11 +471,11 @@ void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
     if (!running_)
       return;
 
-    // Map internal volume range of [0.0, 1.0] into [0, 255] used by the
-    // webrtc::VoiceEngine. webrtc::VoiceEngine will handle the case when the
-    // volume is higher than 255.
+    // Map internal volume range of [0.0, 1.0] into [0, 255] used by AGC.
+    // The volume can be higher than 255 on Linux, and it will be cropped to
+    // 255 since AGC does not allow values out of range.
     volume_ = static_cast<int>((volume * MaxVolume()) + 0.5);
-    current_volume = volume_;
+    current_volume = volume_ > MaxVolume() ? MaxVolume() : volume_;
     audio_delay = base::TimeDelta::FromMilliseconds(audio_delay_milliseconds);
     audio_delay_ = audio_delay;
     key_pressed_ = key_pressed;
@@ -480,6 +502,20 @@ void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
        it != tracks_to_notify_format.end(); ++it) {
     (*it)->OnSetFormat(output_params);
     (*it)->SetAudioProcessor(audio_processor_);
+  }
+
+  if ((base::TimeTicks::Now() - last_audio_level_log_time_).InSeconds() >
+          kPowerMonitorLogIntervalSeconds) {
+    audio_power_monitor_.Scan(*audio_source, audio_source->frames());
+
+    last_audio_level_log_time_ = base::TimeTicks::Now();
+
+    std::pair<float, bool> result =
+        audio_power_monitor_.ReadCurrentPowerAndClip();
+    WebRtcLogMessage(base::StringPrintf(
+        "WAC::Capture: current_audio_power=%.2fdBFS.", result.first));
+
+    audio_power_monitor_.Reset();
   }
 
   // Push the data to the processor for processing.
@@ -574,11 +610,10 @@ void WebRtcAudioCapturer::SetCapturerSourceForTesting(
                     static_cast<float>(params.sample_rate()));
 }
 
-void WebRtcAudioCapturer::StartAecDump(
-    const base::PlatformFile& aec_dump_file) {
+void WebRtcAudioCapturer::StartAecDump(base::File aec_dump_file) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK_NE(aec_dump_file, base::kInvalidPlatformFileValue);
-  audio_processor_->StartAecDump(aec_dump_file);
+  DCHECK(aec_dump_file.IsValid());
+  audio_processor_->StartAecDump(aec_dump_file.Pass());
 }
 
 void WebRtcAudioCapturer::StopAecDump() {

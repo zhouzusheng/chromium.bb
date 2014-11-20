@@ -20,7 +20,7 @@ class SingleThreadTaskRunner;
 namespace media {
 
 class AudioBuffer;
-class AudioTimestampHelper;
+class AudioDiscardHelper;
 class DecoderBuffer;
 struct QueuedAudioBuffer;
 
@@ -36,12 +36,9 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
  private:
-  void DoReset();
-  void DoStop();
-
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
   void DecodeBuffer(const scoped_refptr<DecoderBuffer>& input,
@@ -58,26 +55,11 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   AudioDecoderConfig config_;
   OpusMSDecoder* opus_decoder_;
 
-  // Used for computing output timestamps.
-  scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
-  base::TimeDelta last_input_timestamp_;
-
-  // Number of frames to be discarded from the start of the packet. This value
-  // is respected for all packets except for the first one in the stream. For
-  // the first packet in the stream, |frame_delay_at_start_| is used. This is
-  // usually set to the SeekPreRoll value from the container whenever a seek
-  // happens.
-  int frames_to_discard_;
-
-  // Number of frames to be discarded at the start of the stream. This value
-  // is typically the CodecDelay value from the container.  This value should
-  // only be applied when input timestamp is |start_input_timestamp_|.
-  int frame_delay_at_start_;
+  // When the input timestamp is |start_input_timestamp_| the decoder needs to
+  // drop |config_.codec_delay()| frames.
   base::TimeDelta start_input_timestamp_;
 
-  // Timestamp to be subtracted from all the frames. This is typically computed
-  // from the CodecDelay value in the container.
-  base::TimeDelta timestamp_offset_;
+  scoped_ptr<AudioDiscardHelper> discard_helper_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(OpusAudioDecoder);
 };

@@ -40,7 +40,7 @@ public:
     bool isEmbeddedThroughSVGImage() const;
     bool isEmbeddedThroughFrameContainingSVGDocument() const;
 
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const OVERRIDE;
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE;
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -53,11 +53,15 @@ public:
     virtual void setNeedsTransformUpdate() OVERRIDE { m_needsBoundariesOrTransformUpdate = true; }
 
     IntSize containerSize() const { return m_containerSize; }
-    void setContainerSize(const IntSize& containerSize) { m_containerSize = containerSize; }
-
-    virtual bool hasRelativeIntrinsicLogicalWidth() const OVERRIDE;
-    virtual bool hasRelativeLogicalHeight() const OVERRIDE;
-    virtual bool visibleForTouchAction() const OVERRIDE { return true; }
+    void setContainerSize(const IntSize& containerSize)
+    {
+        // SVGImage::draw() does a view layout prior to painting,
+        // and we need that layout to know of the new size otherwise
+        // the rendering may be incorrectly using the old size.
+        if (m_containerSize != containerSize)
+            setNeedsLayout();
+        m_containerSize = containerSize;
+    }
 
     // localToBorderBoxTransform maps local SVG viewport coordinates to local CSS box coordinates.
     const AffineTransform& localToBorderBoxTransform() const { return m_localToBorderBoxTransform; }
@@ -102,6 +106,7 @@ private:
     virtual bool canBeSelectionLeaf() const OVERRIDE { return false; }
     virtual bool canHaveChildren() const OVERRIDE { return true; }
 
+    bool shouldApplyViewportClip() const;
     void updateCachedBoundaries();
     void buildLocalToBorderBoxTransform();
 
@@ -115,6 +120,7 @@ private:
     AffineTransform m_localToBorderBoxTransform;
     bool m_isLayoutSizeChanged : 1;
     bool m_needsBoundariesOrTransformUpdate : 1;
+    bool m_hasBoxDecorations : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGRoot, isSVGRoot());

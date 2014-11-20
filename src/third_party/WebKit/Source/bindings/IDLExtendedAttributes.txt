@@ -34,7 +34,6 @@
 #
 
 ActiveDOMObject
-ActivityLogging=ForAllWorlds|GetterForAllWorlds|SetterForAllWorlds|ForIsolatedWorlds|GetterForIsolatedWorlds|SetterForIsolatedWorlds
 CachedAttribute=*
 CallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
 CheckSecurity=Frame|Node
@@ -56,21 +55,28 @@ DoNotCheckSignature
 EnforceRange
 EventConstructor
 ExposeJSAccessors
-WillBeGarbageCollected
-GlobalContext=Window|WorkerGlobalScope|SharedWorkerGlobalScope|DedicatedWorkerGlobalScope|ServiceWorkerGlobalScope
+Exposed=*
+GarbageCollected
+Global=|*
 Immutable
 ImplementedAs=*
-ImplementedInBaseClass
 InitializedByEventConstructor
+LegacyTreatAsPartialInterface
+LegacyOverloadString
+LogActivity=|GetterOnly|SetterOnly
+LogAllWorlds
+LogPreviousValue
 MeasureAs=*
 NamedConstructor=*
 NoInterfaceObject
 NotEnumerable
 OverrideBuiltins
+PartialInterfaceImplementedAs=*
 # Valid values for [PerContextEnabled] are Context Features, in
 # ContextFeatures::FeatureType in Source/core/dom/ContextFeatures.h
 PerContextEnabled=*
 PerWorldBindings
+PrimaryGlobal=|*
 PutForwards=*
 RaisesException=|Getter|Setter|Constructor
 ReadOnly
@@ -85,11 +91,12 @@ Replaceable
 RuntimeEnabled=*
 SetWrapperReferenceFrom=*
 SetWrapperReferenceTo=*
-SetterCallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow
+SetterCallWith=ExecutionContext|ScriptArguments|ActiveWindow|FirstWindow
 SpecialWrapFor=*
-StrictTypeChecking
 TreatNullAs=NullString
 TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=NullString
+TypeChecking=Interface|Nullable|Unrestricted
 URL
 Unforgeable
+WillBeGarbageCollected

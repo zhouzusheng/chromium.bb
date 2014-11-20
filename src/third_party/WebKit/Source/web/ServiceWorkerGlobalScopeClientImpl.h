@@ -32,26 +32,35 @@
 #define ServiceWorkerGlobalScopeClientImpl_h
 
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
+#include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class WebServiceWorkerContextClient;
+class WebURL;
 
-class ServiceWorkerGlobalScopeClientImpl FINAL : public WebCore::ServiceWorkerGlobalScopeClient {
+class ServiceWorkerGlobalScopeClientImpl FINAL : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerGlobalScopeClientImpl>, public WebCore::ServiceWorkerGlobalScopeClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerGlobalScopeClientImpl);
 public:
-    static PassOwnPtr<WebCore::ServiceWorkerGlobalScopeClient> create(PassOwnPtr<WebServiceWorkerContextClient>);
+    static PassOwnPtrWillBeRawPtr<WebCore::ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeClientImpl();
+
+    virtual void getClients(WebServiceWorkerClientsCallbacks*);
+    virtual WebURL scope() const OVERRIDE;
 
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult) OVERRIDE;
     virtual void didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult) OVERRIDE;
     virtual void didHandleFetchEvent(int fetchEventID, PassRefPtr<WebCore::Response>) OVERRIDE;
     virtual void didHandleSyncEvent(int syncEventID) OVERRIDE;
+    virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) OVERRIDE;
+
+    virtual void trace(WebCore::Visitor* visitor) OVERRIDE { WebCore::ServiceWorkerGlobalScopeClient::trace(visitor); }
 
 private:
-    ServiceWorkerGlobalScopeClientImpl(PassOwnPtr<WebServiceWorkerContextClient>);
+    ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient&);
 
-    OwnPtr<WebServiceWorkerContextClient> m_client;
+    WebServiceWorkerContextClient& m_client;
 };
 
 } // namespace blink

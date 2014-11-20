@@ -35,12 +35,6 @@ class FlowThreadController;
 class RenderLayerCompositor;
 class RenderQuote;
 
-struct OutlineRectInfo {
-    LayoutRect oldOutlineRect;
-    LayoutRect newOutlineRect;
-};
-typedef HashMap<RenderObject*, OwnPtr<OutlineRectInfo> > OutlineRects;
-
 // The root of the render tree, corresponding to the CSS initial containing block.
 // It's dimensions match that of the logical viewport (which may be different from
 // the visible viewport in fixed-layout mode), and it is always at position (0,0)
@@ -147,6 +141,12 @@ public:
     bool layoutStateEnabled() const { return m_layoutStateDisableCount == 0 && m_layoutState; }
     LayoutState* layoutState() const { return m_layoutState; }
 
+    bool canUseLayoutStateForContainer(const RenderObject* repaintContainer) const
+    {
+        // FIXME: LayoutState should be enabled for other repaint containers than the RenderView. crbug.com/363834
+        return layoutStateEnabled() && (repaintContainer == this);
+    }
+
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
 
     LayoutUnit pageLogicalHeight() const { return m_pageLogicalHeight; }
@@ -201,8 +201,6 @@ public:
     void disableLayoutState() { m_layoutStateDisableCount++; }
     void enableLayoutState() { ASSERT(m_layoutStateDisableCount > 0); m_layoutStateDisableCount--; }
 
-    OutlineRects& outlineRects() { return m_outlineRects; }
-
 private:
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
@@ -217,7 +215,7 @@ private:
     bool pushLayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUnit pageHeight = 0, bool pageHeightChanged = false, ColumnInfo* colInfo = 0)
     {
         // We push LayoutState even if layoutState is disabled because it stores layoutDelta too.
-        if (!doingFullRepaint() || m_layoutState->isPaginated() || renderer.hasColumns() || renderer.flowThreadContainingBlock()
+        if ((!doingFullRepaint() || RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) || m_layoutState->isPaginated() || renderer.hasColumns() || renderer.flowThreadContainingBlock()
             ) {
             pushLayoutStateForCurrentFlowThread(renderer);
             m_layoutState = new LayoutState(m_layoutState, renderer, offset, pageHeight, pageHeightChanged, colInfo);
@@ -261,30 +259,41 @@ private:
 
     RenderQuote* m_renderQuoteHead;
     unsigned m_renderCounterCount;
-
-    OutlineRects m_outlineRects;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
 
 class RootLayoutStateScope {
 public:
-    explicit RootLayoutStateScope(RenderView& view)
-        : m_view(view)
-        , m_rootLayoutState(view.pageLogicalHeight(), view.pageLogicalHeightChanged())
+    explicit RootLayoutStateScope(RenderObject& obj)
+        : m_view(*obj.view())
+        , m_rootLayoutState(m_view.pageLogicalHeight(), m_view.pageLogicalHeightChanged())
+        , m_isRenderView(obj.isRenderView())
     {
-        ASSERT(!m_view.m_layoutState);
-        m_view.m_layoutState = &m_rootLayoutState;
+        // If the invalidation root isn't the renderView we have to make sure it
+        // gets added correctly to LayoutState otherwise we'll lose the margins that
+        // are set in the ancestors of the roots.
+        if (m_isRenderView) {
+            ASSERT(!m_view.m_layoutState);
+            m_view.m_layoutState = &m_rootLayoutState;
+        } else {
+            m_view.pushLayoutState(obj);
+        }
     }
 
     ~RootLayoutStateScope()
     {
-        ASSERT(m_view.m_layoutState == &m_rootLayoutState);
-        m_view.m_layoutState = 0;
+        if (m_isRenderView) {
+            ASSERT(m_view.m_layoutState == &m_rootLayoutState);
+            m_view.m_layoutState = 0;
+        } else {
+            m_view.popLayoutState();
+        }
     }
 private:
     RenderView& m_view;
     LayoutState m_rootLayoutState;
+    bool m_isRenderView;
 };
 
 // Stack-based class to assist with LayoutState push/pop
@@ -354,7 +363,7 @@ private:
 class LayoutStateDisabler {
     WTF_MAKE_NONCOPYABLE(LayoutStateDisabler);
 public:
-    LayoutStateDisabler(const RenderBox& root)
+    LayoutStateDisabler(const RenderObject& root)
         : m_view(*root.view())
     {
         m_view.disableLayoutState();

@@ -87,7 +87,9 @@ ImmutableStylePropertySet::ImmutableStylePropertySet(const CSSProperty* properti
     for (unsigned i = 0; i < m_arraySize; ++i) {
         metadataArray[i] = properties[i].metadata();
         valueArray[i] = properties[i].value();
+#if !ENABLE(OILPAN)
         valueArray[i]->ref();
+#endif
     }
 }
 
@@ -441,33 +443,35 @@ void MutableStylePropertySet::removeBlockProperties()
     removePropertiesInSet(blockProperties().data(), blockProperties().size());
 }
 
+inline bool containsId(const CSSPropertyID* set, unsigned length, CSSPropertyID id)
+{
+    for (unsigned i = 0; i < length; ++i) {
+        if (set[i] == id)
+            return true;
+    }
+    return false;
+}
+
 bool MutableStylePropertySet::removePropertiesInSet(const CSSPropertyID* set, unsigned length)
 {
     if (m_propertyVector.isEmpty())
         return false;
 
-    // FIXME: This is always used with static sets and in that case constructing the hash repeatedly is pretty pointless.
-    HashSet<CSSPropertyID> toRemove;
-    for (unsigned i = 0; i < length; ++i)
-        toRemove.add(set[i]);
-
     WillBeHeapVector<CSSProperty> newProperties;
     newProperties.reserveInitialCapacity(m_propertyVector.size());
 
-    unsigned size = m_propertyVector.size();
-    for (unsigned n = 0; n < size; ++n) {
-        const CSSProperty& property = m_propertyVector.at(n);
+    unsigned initialSize = m_propertyVector.size();
+    const CSSProperty* properties = m_propertyVector.data();
+    for (unsigned n = 0; n < initialSize; ++n) {
+        const CSSProperty& property = properties[n];
         // Not quite sure if the isImportant test is needed but it matches the existing behavior.
-        if (!property.isImportant()) {
-            if (toRemove.contains(property.id()))
-                continue;
-        }
+        if (!property.isImportant() && containsId(set, length, property.id()))
+            continue;
         newProperties.append(property);
     }
 
-    bool changed = newProperties.size() != m_propertyVector.size();
     m_propertyVector = newProperties;
-    return changed;
+    return initialSize != m_propertyVector.size();
 }
 
 CSSProperty* MutableStylePropertySet::findCSSPropertyWithID(CSSPropertyID propertyID)
@@ -540,7 +544,7 @@ CSSStyleDeclaration* MutableStylePropertySet::ensureCSSStyleDeclaration()
         ASSERT(!m_cssomWrapper->parentElement());
         return m_cssomWrapper.get();
     }
-    m_cssomWrapper = adoptPtr(new PropertySetCSSStyleDeclaration(*this));
+    m_cssomWrapper = adoptPtrWillBeNoop(new PropertySetCSSStyleDeclaration(*this));
     return m_cssomWrapper.get();
 }
 
@@ -549,8 +553,9 @@ int MutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     // Convert here propertyID into an uint16_t to compare it with the metadata's m_propertyID to avoid
     // the compiler converting it to an int multiple times in the loop.
     uint16_t id = static_cast<uint16_t>(propertyID);
+    const CSSProperty* properties = m_propertyVector.data();
     for (int n = m_propertyVector.size() - 1 ; n >= 0; --n) {
-        if (m_propertyVector.at(n).metadata().m_propertyID == id) {
+        if (properties[n].metadata().m_propertyID == id) {
             // Only enabled or internal properties should be part of the style.
             ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID) || isInternalProperty(propertyID));
             return n;
@@ -562,6 +567,7 @@ int MutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
 
 void MutableStylePropertySet::traceAfterDispatch(Visitor* visitor)
 {
+    visitor->trace(m_cssomWrapper);
     visitor->trace(m_propertyVector);
     StylePropertySet::traceAfterDispatch(visitor);
 }

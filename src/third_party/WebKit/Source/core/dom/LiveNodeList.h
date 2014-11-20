@@ -45,20 +45,31 @@ public:
     virtual Node* item(unsigned offset) const OVERRIDE FINAL { return m_collectionIndexCache.nodeAt(*this, offset); }
     virtual bool elementMatches(const Element&) const = 0;
 
-    virtual void invalidateCache(Document* oldDocument) const OVERRIDE FINAL;
+    virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE FINAL;
+    void invalidateCacheForAttribute(const QualifiedName*) const;
+
     bool shouldOnlyIncludeDirectChildren() const { return false; }
 
     // Collection IndexCache API.
     bool canTraverseBackward() const { return true; }
-    Element* itemBefore(const Element* previousItem) const;
-    Element* traverseToFirstElement(const ContainerNode& root) const;
-    Element* traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset, const ContainerNode& root) const;
+    Element* traverseToFirstElement() const;
+    Element* traverseToLastElement() const;
+    Element* traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
+    Element* traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
 
 private:
     virtual Node* virtualOwnerNode() const OVERRIDE FINAL;
 
     mutable CollectionIndexCache<LiveNodeList, Element> m_collectionIndexCache;
 };
+
+DEFINE_TYPE_CASTS(LiveNodeList, LiveNodeListBase, list, isLiveNodeListType(list->type()), isLiveNodeListType(list.type()));
+
+inline void LiveNodeList::invalidateCacheForAttribute(const QualifiedName* attrName) const
+{
+    if (!attrName || shouldInvalidateTypeOnAttributeChange(invalidationType(), *attrName))
+        invalidateCache();
+}
 
 } // namespace WebCore
 

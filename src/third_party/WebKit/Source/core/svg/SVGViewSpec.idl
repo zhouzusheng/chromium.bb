@@ -23,8 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://www.w3.org/TR/SVG2/types.html#InterfaceSVGViewSpec
+
 [
     DependentLifetime,
+    WillBeGarbageCollected,
+    SetWrapperReferenceTo(SVGElement contextElement),
 ] interface SVGViewSpec {
       [ImplementedAs=transformFromJavascript] readonly attribute SVGTransformList transform;
       readonly attribute SVGElement viewTarget;

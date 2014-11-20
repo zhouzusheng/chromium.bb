@@ -41,6 +41,7 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "wtf/Deque.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -53,6 +54,7 @@ class WebLayer;
 }
 
 namespace WebCore {
+class Extensions3DUtil;
 class ImageData;
 class ImageBuffer;
 
@@ -72,6 +74,10 @@ class PLATFORM_EXPORT DrawingBuffer : public RefCounted<DrawingBuffer>, public b
         blink::WebExternalTextureMailbox mailbox;
         unsigned textureId;
         IntSize size;
+        // This keeps the parent drawing buffer alive as long as the compositor is
+        // referring to one of the mailboxes DrawingBuffer produced. The parent drawing buffer is
+        // cleared when the compositor returns the mailbox. See mailboxReleased().
+        RefPtr<DrawingBuffer> m_parentDrawingBuffer;
     };
 public:
     enum PreserveDrawingBuffer {
@@ -79,24 +85,22 @@ public:
         Discard
     };
 
-    static PassRefPtr<DrawingBuffer> create(blink::WebGraphicsContext3D*, const IntSize&, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
+    static PassRefPtr<DrawingBuffer> create(PassOwnPtr<blink::WebGraphicsContext3D>, const IntSize&, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
 
     virtual ~DrawingBuffer();
 
-    // Clear all resources from this object, as well as context. Called when context is destroyed
-    // to prevent invalid accesses to the resources.
-    void releaseResources();
+    // Destruction will be completed after all mailboxes are released.
+    void beginDestruction();
 
     // Issues a glClear() on all framebuffers associated with this DrawingBuffer. The caller is responsible for
     // making the context current and setting the clear values and masks. Modifies the framebuffer binding.
     void clearFramebuffers(GLbitfield clearMask);
 
     // Given the desired buffer size, provides the largest dimensions that will fit in the pixel budget.
-    IntSize adjustSize(const IntSize&);
-    void reset(const IntSize&);
+    static IntSize adjustSize(const IntSize& desiredSize, const IntSize& curSize, int maxTextureSize);
+    bool reset(const IntSize&);
     void bind();
     IntSize size() const { return m_size; }
-    bool isZeroSized() const { return m_size.isEmpty(); }
 
     // Copies the multisample color buffer to the normal color buffer and leaves m_fbo bound.
     void commit(long x = 0, long y = 0, long width = -1, long height = -1);
@@ -129,8 +133,9 @@ public:
     blink::WebLayer* platformLayer();
     void paintCompositedResultsToCanvas(ImageBuffer*);
 
+    blink::WebGraphicsContext3D* context();
+
     // WebExternalTextureLayerClient implementation.
-    virtual blink::WebGraphicsContext3D* context() OVERRIDE;
     virtual bool prepareMailbox(blink::WebExternalTextureMailbox*, blink::WebExternalBitmap*) OVERRIDE;
     virtual void mailboxReleased(const blink::WebExternalTextureMailbox&) OVERRIDE;
 
@@ -143,11 +148,17 @@ public:
     void paintRenderingResultsToCanvas(ImageBuffer*);
     PassRefPtr<Uint8ClampedArray> paintRenderingResultsToImageData(int&, int&);
 
-private:
-    DrawingBuffer(blink::WebGraphicsContext3D*, const IntSize&, bool multisampleExtensionSupported,
-                  bool packedDepthStencilExtensionSupported, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
+protected: // For unittests
+    DrawingBuffer(
+        PassOwnPtr<blink::WebGraphicsContext3D>,
+        PassOwnPtr<Extensions3DUtil>,
+        bool multisampleExtensionSupported,
+        bool packedDepthStencilExtensionSupported, PreserveDrawingBuffer, PassRefPtr<ContextEvictionManager>);
 
-    void initialize(const IntSize&);
+    bool initialize(const IntSize&);
+
+private:
+    void mailboxReleasedWhileDestructionInProgress(const blink::WebExternalTextureMailbox&);
 
     unsigned createColorTexture(const IntSize& size = IntSize());
     // Create the depth/stencil and multisample buffers, if needed.
@@ -163,12 +174,13 @@ private:
 
     PassRefPtr<MailboxInfo> recycledMailbox();
     PassRefPtr<MailboxInfo> createNewMailbox(unsigned);
+    void deleteMailbox(const blink::WebExternalTextureMailbox&);
 
     // Updates the current size of the buffer, ensuring that s_currentResourceUsePixels is updated.
     void setSize(const IntSize& size);
 
     // Calculates the difference in pixels between the current buffer size and the proposed size.
-    int pixelDelta(const IntSize& size);
+    static int pixelDelta(const IntSize& newSize, const IntSize& curSize);
 
     // Given the desired buffer size, provides the largest dimensions that will fit in the pixel budget
     // Returns true if the buffer will only fit if the oldest WebGL context is forcibly lost
@@ -199,7 +211,8 @@ private:
     Platform3DObject m_framebufferBinding;
     GLenum m_activeTextureUnit;
 
-    blink::WebGraphicsContext3D* m_context;
+    OwnPtr<blink::WebGraphicsContext3D> m_context;
+    OwnPtr<Extensions3DUtil> m_extensionsUtil;
     IntSize m_size;
     bool m_multisampleExtensionSupported;
     bool m_packedDepthStencilExtensionSupported;
@@ -241,13 +254,14 @@ private:
     int m_maxTextureSize;
     int m_sampleCount;
     int m_packAlignment;
+    bool m_destructionInProgress;
 
     OwnPtr<blink::WebExternalTextureLayer> m_layer;
 
     // All of the mailboxes that this DrawingBuffer has ever created.
     Vector<RefPtr<MailboxInfo> > m_textureMailboxes;
-    // Mailboxes that were released by the compositor and can be used again by this DrawingBuffer.
-    Vector<RefPtr<MailboxInfo> > m_recycledMailboxes;
+    // Mailboxes that were released by the compositor can be used again by this DrawingBuffer.
+    Deque<blink::WebExternalTextureMailbox> m_recycledMailboxQueue;
 
     RefPtr<ContextEvictionManager> m_contextEvictionManager;
 

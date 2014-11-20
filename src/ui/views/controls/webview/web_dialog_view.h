@@ -122,11 +122,6 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
   // Initializes the contents of the dialog.
   void InitDialog();
 
-  // Whether the view is initialized. That is, dialog accelerators is registered
-  // and FreezeUpdates property is set to prevent WM from showing the window
-  // until the property is removed.
-  bool initialized_;
-
   // This view is a delegate to the HTML content since it needs to get notified
   // about when the dialog is closing. For all other actions (besides dialog
   // closing) we delegate to the creator of this view, which we keep track of
@@ -143,11 +138,11 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
   // beforeunload event.
   bool before_unload_fired_;
 
-  // Whether the dialog is closed from WebUI in response to a "DialogClose"
+  // Whether the dialog is closed from WebUI in response to a "dialogClose"
   // message.
   bool closed_via_webui_;
 
-  // A json string returned to WebUI from a "DialogClosed" message.
+  // A json string returned to WebUI from a "dialogClose" message.
   std::string dialog_close_retval_;
 
   // Whether CloseContents() has been called.

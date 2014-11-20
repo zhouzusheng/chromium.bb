@@ -198,6 +198,30 @@ class BufferIdAllocator : public IdAllocator {
   DISALLOW_COPY_AND_ASSIGN(BufferIdAllocator);
 };
 
+// Generic fence implementation for query objects. Fence has passed when query
+// result is available.
+class QueryFence : public ResourceProvider::Fence {
+ public:
+  QueryFence(gpu::gles2::GLES2Interface* gl, unsigned query_id)
+      : gl_(gl), query_id_(query_id) {}
+
+  // Overridden from ResourceProvider::Fence:
+  virtual bool HasPassed() OVERRIDE {
+    unsigned available = 1;
+    gl_->GetQueryObjectuivEXT(
+        query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
+    return !!available;
+  }
+
+ private:
+  virtual ~QueryFence() {}
+
+  gpu::gles2::GLES2Interface* gl_;
+  unsigned query_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(QueryFence);
+};
+
 }  // namespace
 
 ResourceProvider::Resource::Resource()
@@ -205,8 +229,8 @@ ResourceProvider::Resource::Resource()
       gl_id(0),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
+      gl_read_lock_query_id(0),
       pixels(NULL),
-      pixel_buffer(NULL),
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
@@ -250,8 +274,8 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       gl_id(texture_id),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
+      gl_read_lock_query_id(0),
       pixels(NULL),
-      pixel_buffer(NULL),
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
@@ -293,8 +317,8 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       gl_id(0),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
+      gl_read_lock_query_id(0),
       pixels(pixels),
-      pixel_buffer(NULL),
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
@@ -337,8 +361,8 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       gl_id(0),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
+      gl_read_lock_query_id(0),
       pixels(NULL),
-      pixel_buffer(NULL),
       lock_for_read_count(0),
       imported_count(0),
       exported_count(0),
@@ -407,8 +431,11 @@ bool ResourceProvider::RasterBuffer::UnlockForWrite() {
 
 ResourceProvider::DirectRasterBuffer::DirectRasterBuffer(
     const Resource* resource,
-    ResourceProvider* resource_provider)
-    : RasterBuffer(resource, resource_provider), surface_generation_id_(0u) {}
+    ResourceProvider* resource_provider,
+    bool use_distance_field_text )
+    : RasterBuffer(resource, resource_provider),
+      surface_generation_id_(0u),
+      use_distance_field_text_(use_distance_field_text) {}
 
 ResourceProvider::DirectRasterBuffer::~DirectRasterBuffer() {}
 
@@ -442,8 +469,11 @@ skia::RefPtr<SkSurface> ResourceProvider::DirectRasterBuffer::CreateSurface() {
         desc.fTextureHandle = resource()->gl_id;
         skia::RefPtr<GrTexture> gr_texture =
             skia::AdoptRef(gr_context->wrapBackendTexture(desc));
-        surface = skia::AdoptRef(
-            SkSurface::NewRenderTargetDirect(gr_texture->asRenderTarget()));
+        SkSurface::TextRenderMode text_render_mode =
+            use_distance_field_text_ ? SkSurface::kDistanceField_TextRenderMode
+                                     : SkSurface::kStandard_TextRenderMode;
+        surface = skia::AdoptRef(SkSurface::NewRenderTargetDirect(
+            gr_texture->asRenderTarget(), text_render_mode));
       }
       break;
     }
@@ -568,24 +598,20 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
     SharedBitmapManager* shared_bitmap_manager,
     int highp_threshold_min,
     bool use_rgba_4444_texture_format,
-    size_t id_allocation_chunk_size) {
+    size_t id_allocation_chunk_size,
+    bool use_distance_field_text) {
   scoped_ptr<ResourceProvider> resource_provider(
       new ResourceProvider(output_surface,
                            shared_bitmap_manager,
                            highp_threshold_min,
                            use_rgba_4444_texture_format,
-                           id_allocation_chunk_size));
+                           id_allocation_chunk_size,
+                           use_distance_field_text));
 
-  bool success = false;
-  if (resource_provider->ContextGL()) {
-    success = resource_provider->InitializeGL();
-  } else {
+  if (resource_provider->ContextGL())
+    resource_provider->InitializeGL();
+  else
     resource_provider->InitializeSoftware();
-    success = true;
-  }
-
-  if (!success)
-    return scoped_ptr<ResourceProvider>();
 
   DCHECK_NE(InvalidType, resource_provider->default_resource_type());
   return resource_provider.Pass();
@@ -702,10 +728,12 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(
     bitmap = shared_bitmap_manager_->AllocateSharedBitmap(size);
 
   uint8_t* pixels;
-  if (bitmap)
+  if (bitmap) {
     pixels = bitmap->pixels();
-  else
-    pixels = new uint8_t[4 * size.GetArea()];
+  } else {
+    size_t bytes = SharedBitmap::CheckedSizeInBytes(size);
+    pixels = new uint8_t[bytes];
+  }
   DCHECK(pixels);
 
   ResourceId id = next_id_++;
@@ -716,34 +744,27 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(
   return id;
 }
 
-ResourceProvider::ResourceId
-ResourceProvider::CreateResourceFromExternalTexture(
-    GLuint texture_target,
-    GLuint texture_id) {
+ResourceProvider::ResourceId ResourceProvider::CreateResourceFromIOSurface(
+    const gfx::Size& size,
+    unsigned io_surface_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  DCHECK(texture_target);
-  DCHECK(texture_id);
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  GLC(gl, gl->BindTexture(texture_target, texture_id));
-  GLC(gl, gl->TexParameteri(texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-  GLC(gl, gl->TexParameteri(texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-  GLC(gl,
-      gl->TexParameteri(texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-  GLC(gl,
-      gl->TexParameteri(texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-
   ResourceId id = next_id_++;
-  Resource resource(texture_id,
+  Resource resource(0,
                     gfx::Size(),
-                    Resource::External,
-                    texture_target,
+                    Resource::Internal,
+                    GL_TEXTURE_RECTANGLE_ARB,
                     GL_LINEAR,
-                    0,
+                    GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
                     GL_CLAMP_TO_EDGE,
                     TextureUsageAny,
                     RGBA_8888);
+  LazyCreate(&resource);
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  gl->BindTexture(GL_TEXTURE_RECTANGLE_ARB, resource.gl_id);
+  gl->TexImageIOSurface2DCHROMIUM(
+      GL_TEXTURE_RECTANGLE_ARB, size.width(), size.height(), io_surface_id, 0);
   resource.allocated = true;
   resources_[id] = resource;
   return id;
@@ -831,12 +852,17 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     DCHECK(gl);
     GLC(gl, gl->DestroyImageCHROMIUM(resource->image_id));
   }
-
   if (resource->gl_upload_query_id) {
     DCHECK(resource->origin == Resource::Internal);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     GLC(gl, gl->DeleteQueriesEXT(1, &resource->gl_upload_query_id));
+  }
+  if (resource->gl_read_lock_query_id) {
+    DCHECK(resource->origin == Resource::Internal);
+    GLES2Interface* gl = ContextGL();
+    DCHECK(gl);
+    GLC(gl, gl->DeleteQueriesEXT(1, &resource->gl_read_lock_query_id));
   }
   if (resource->gl_pixel_buffer_id) {
     DCHECK(resource->origin == Resource::Internal);
@@ -844,7 +870,8 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     DCHECK(gl);
     GLC(gl, gl->DeleteBuffers(1, &resource->gl_pixel_buffer_id));
   }
-  if (resource->mailbox.IsValid() && resource->origin == Resource::External) {
+  if (resource->origin == Resource::External) {
+    DCHECK(resource->mailbox.IsValid());
     GLuint sync_point = resource->mailbox.sync_point();
     if (resource->type == GLTexture) {
       DCHECK(resource->mailbox.IsTexture());
@@ -869,7 +896,7 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     }
     resource->release_callback.Run(sync_point, lost_resource);
   }
-  if (resource->gl_id && resource->origin != Resource::External) {
+  if (resource->gl_id) {
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     GLC(gl, gl->DeleteTextures(1, &resource->gl_id));
@@ -885,14 +912,6 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     DCHECK(resource->origin == Resource::Internal);
     delete[] resource->pixels;
   }
-  if (resource->pixel_buffer) {
-    DCHECK(resource->origin == Resource::Internal);
-    delete[] resource->pixel_buffer;
-  }
-  // We should never delete the texture for a resource created by
-  // CreateResourceFromExternalTexture().
-  DCHECK(!resource->gl_id || resource->origin == Resource::External);
-
   resources_.erase(it);
 }
 
@@ -1226,7 +1245,8 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
                                    SharedBitmapManager* shared_bitmap_manager,
                                    int highp_threshold_min,
                                    bool use_rgba_4444_texture_format,
-                                   size_t id_allocation_chunk_size)
+                                   size_t id_allocation_chunk_size,
+                                   bool use_distance_field_text)
     : output_surface_(output_surface),
       shared_bitmap_manager_(shared_bitmap_manager),
       lost_output_surface_(false),
@@ -1240,7 +1260,9 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
-      id_allocation_chunk_size_(id_allocation_chunk_size) {
+      id_allocation_chunk_size_(id_allocation_chunk_size),
+      use_sync_query_(false),
+      use_distance_field_text_(use_distance_field_text) {
   DCHECK(output_surface_->HasClient());
   DCHECK(id_allocation_chunk_size_);
 }
@@ -1257,7 +1279,7 @@ void ResourceProvider::InitializeSoftware() {
   best_texture_format_ = RGBA_8888;
 }
 
-bool ResourceProvider::InitializeGL() {
+void ResourceProvider::InitializeGL() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!texture_uploader_);
   DCHECK_NE(GLTexture, default_resource_type_);
@@ -1273,6 +1295,7 @@ bool ResourceProvider::InitializeGL() {
   use_texture_storage_ext_ = caps.gpu.texture_storage;
   use_texture_usage_hint_ = caps.gpu.texture_usage;
   use_compressed_texture_etc1_ = caps.gpu.texture_format_etc1;
+  use_sync_query_ = caps.gpu.sync_query;
 
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
@@ -1286,8 +1309,6 @@ bool ResourceProvider::InitializeGL() {
       new TextureIdAllocator(gl, id_allocation_chunk_size_));
   buffer_id_allocator_.reset(
       new BufferIdAllocator(gl, id_allocation_chunk_size_));
-
-  return true;
 }
 
 void ResourceProvider::CleanUpGLIfNeeded() {
@@ -1537,8 +1558,6 @@ void ResourceProvider::ReceiveReturnsFromParent(
         DCHECK(resource->gl_id);
         GLC(gl, gl->WaitSyncPointCHROMIUM(returned.sync_point));
       } else {
-        // Because CreateResourceFromExternalTexture() never be called,
-        // when enabling delegated compositor.
         DCHECK(!resource->gl_id);
         resource->mailbox.set_sync_point(returned.sync_point);
       }
@@ -1585,11 +1604,7 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   Resource* source = GetResource(id);
   DCHECK(!source->locked_for_write);
   DCHECK(!source->lock_for_read_count);
-  // Because CreateResourceFromExternalTexture() never be called,
-  // when enabling delegated compositor.
-  DCHECK(source->origin == Resource::Internal ||
-         source->origin == Resource::Delegated ||
-         (source->origin == Resource::External && source->mailbox.IsValid()));
+  DCHECK(source->origin != Resource::External || source->mailbox.IsValid());
   DCHECK(source->allocated);
   DCHECK_EQ(source->wrap_mode, GL_CLAMP_TO_EDGE);
   resource->id = id;
@@ -1736,7 +1751,7 @@ SkCanvas* ResourceProvider::MapDirectRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
   if (!resource->direct_raster_buffer.get()) {
     resource->direct_raster_buffer.reset(
-        new DirectRasterBuffer(resource, this));
+        new DirectRasterBuffer(resource, this, use_distance_field_text_));
   }
   return resource->direct_raster_buffer->LockForWrite();
 }
@@ -1756,10 +1771,10 @@ SkCanvas* ResourceProvider::MapImageRasterBuffer(ResourceId id) {
   return resource->image_raster_buffer->LockForWrite();
 }
 
-void ResourceProvider::UnmapImageRasterBuffer(ResourceId id) {
+bool ResourceProvider::UnmapImageRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
-  resource->image_raster_buffer->UnlockForWrite();
   resource->dirty_image = true;
+  return resource->image_raster_buffer->UnlockForWrite();
 }
 
 void ResourceProvider::AcquirePixelRasterBuffer(ResourceId id) {
@@ -1795,27 +1810,20 @@ void ResourceProvider::AcquirePixelBuffer(Resource* resource) {
   DCHECK(!resource->image_id);
   DCHECK_NE(ETC1, resource->format);
 
-  if (resource->type == GLTexture) {
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    if (!resource->gl_pixel_buffer_id)
-      resource->gl_pixel_buffer_id = buffer_id_allocator_->NextId();
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->gl_pixel_buffer_id);
-    unsigned bytes_per_pixel = BitsPerPixel(resource->format) / 8;
-    gl->BufferData(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->size.height() *
-                       RoundUp(bytes_per_pixel * resource->size.width(), 4u),
-                   NULL,
-                   GL_DYNAMIC_DRAW);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  } else {
-    DCHECK_EQ(Bitmap, resource->type);
-    if (resource->pixel_buffer)
-      return;
-
-    resource->pixel_buffer = new uint8_t[4 * resource->size.GetArea()];
-  }
+  DCHECK_EQ(GLTexture, resource->type);
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  if (!resource->gl_pixel_buffer_id)
+    resource->gl_pixel_buffer_id = buffer_id_allocator_->NextId();
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->gl_pixel_buffer_id);
+  unsigned bytes_per_pixel = BitsPerPixel(resource->format) / 8;
+  gl->BufferData(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->size.height() *
+                     RoundUp(bytes_per_pixel * resource->size.width(), 4u),
+                 NULL,
+                 GL_DYNAMIC_DRAW);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
 }
 
 void ResourceProvider::ReleasePixelBuffer(Resource* resource) {
@@ -1838,23 +1846,16 @@ void ResourceProvider::ReleasePixelBuffer(Resource* resource) {
     resource->locked_for_write = false;
   }
 
-  if (resource->type == GLTexture) {
-    if (!resource->gl_pixel_buffer_id)
-      return;
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->gl_pixel_buffer_id);
-    gl->BufferData(
-        GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0, NULL, GL_DYNAMIC_DRAW);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  } else {
-    DCHECK_EQ(Bitmap, resource->type);
-    if (!resource->pixel_buffer)
-      return;
-    delete[] resource->pixel_buffer;
-    resource->pixel_buffer = NULL;
-  }
+  DCHECK_EQ(GLTexture, resource->type);
+  if (!resource->gl_pixel_buffer_id)
+    return;
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->gl_pixel_buffer_id);
+  gl->BufferData(
+      GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0, NULL, GL_DYNAMIC_DRAW);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
 }
 
 uint8_t* ResourceProvider::MapPixelBuffer(const Resource* resource,
@@ -1867,21 +1868,18 @@ uint8_t* ResourceProvider::MapPixelBuffer(const Resource* resource,
   DCHECK(!resource->image_id);
 
   *stride = 0;
-  if (resource->type == GLTexture) {
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    DCHECK(resource->gl_pixel_buffer_id);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->gl_pixel_buffer_id);
-    uint8_t* image = static_cast<uint8_t*>(gl->MapBufferCHROMIUM(
-        GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, GL_WRITE_ONLY));
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-    // Buffer is required to be 4-byte aligned.
-    CHECK(!(reinterpret_cast<intptr_t>(image) & 3));
-    return image;
-  }
-  DCHECK_EQ(Bitmap, resource->type);
-  return resource->pixel_buffer;
+  DCHECK_EQ(GLTexture, resource->type);
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  DCHECK(resource->gl_pixel_buffer_id);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->gl_pixel_buffer_id);
+  uint8_t* image = static_cast<uint8_t*>(gl->MapBufferCHROMIUM(
+      GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, GL_WRITE_ONLY));
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
+  // Buffer is required to be 4-byte aligned.
+  CHECK(!(reinterpret_cast<intptr_t>(image) & 3));
+  return image;
 }
 
 void ResourceProvider::UnmapPixelBuffer(const Resource* resource) {
@@ -1892,15 +1890,14 @@ void ResourceProvider::UnmapPixelBuffer(const Resource* resource) {
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
 
-  if (resource->type == GLTexture) {
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    DCHECK(resource->gl_pixel_buffer_id);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->gl_pixel_buffer_id);
-    gl->UnmapBufferCHROMIUM(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  }
+  DCHECK_EQ(GLTexture, resource->type);
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  DCHECK(resource->gl_pixel_buffer_id);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->gl_pixel_buffer_id);
+  gl->UnmapBufferCHROMIUM(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
 }
 
 GLenum ResourceProvider::BindForSampling(
@@ -1947,53 +1944,42 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
   resource->allocated = true;
   LockForWrite(id);
 
-  if (resource->type == GLTexture) {
-    DCHECK(resource->gl_id);
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    DCHECK(resource->gl_pixel_buffer_id);
-    DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
-    gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                   resource->gl_pixel_buffer_id);
-    if (!resource->gl_upload_query_id)
-      gl->GenQueriesEXT(1, &resource->gl_upload_query_id);
-    gl->BeginQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM,
-                      resource->gl_upload_query_id);
-    if (allocate) {
-      gl->AsyncTexImage2DCHROMIUM(GL_TEXTURE_2D,
-                                  0, /* level */
-                                  GLInternalFormat(resource->format),
-                                  resource->size.width(),
-                                  resource->size.height(),
-                                  0, /* border */
-                                  GLDataFormat(resource->format),
-                                  GLDataType(resource->format),
-                                  NULL);
-    } else {
-      gl->AsyncTexSubImage2DCHROMIUM(GL_TEXTURE_2D,
-                                     0, /* level */
-                                     0, /* x */
-                                     0, /* y */
-                                     resource->size.width(),
-                                     resource->size.height(),
-                                     GLDataFormat(resource->format),
-                                     GLDataType(resource->format),
-                                     NULL);
-    }
-    gl->EndQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM);
-    gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
+  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK(resource->gl_id);
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  DCHECK(resource->gl_pixel_buffer_id);
+  DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
+  gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
+                 resource->gl_pixel_buffer_id);
+  if (!resource->gl_upload_query_id)
+    gl->GenQueriesEXT(1, &resource->gl_upload_query_id);
+  gl->BeginQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM,
+                    resource->gl_upload_query_id);
+  if (allocate) {
+    gl->AsyncTexImage2DCHROMIUM(GL_TEXTURE_2D,
+                                0, /* level */
+                                GLInternalFormat(resource->format),
+                                resource->size.width(),
+                                resource->size.height(),
+                                0, /* border */
+                                GLDataFormat(resource->format),
+                                GLDataType(resource->format),
+                                NULL);
   } else {
-    DCHECK_EQ(Bitmap, resource->type);
-    DCHECK(!resource->mailbox.IsValid());
-    DCHECK(resource->pixel_buffer);
-    DCHECK_EQ(RGBA_8888, resource->format);
-
-    memcpy(
-        resource->pixels, resource->pixel_buffer, 4 * resource->size.GetArea());
-    delete[] resource->pixel_buffer;
-    resource->pixel_buffer = NULL;
+    gl->AsyncTexSubImage2DCHROMIUM(GL_TEXTURE_2D,
+                                   0, /* level */
+                                   0, /* x */
+                                   0, /* y */
+                                   resource->size.width(),
+                                   resource->size.height(),
+                                   GLDataFormat(resource->format),
+                                   GLDataType(resource->format),
+                                   NULL);
   }
+  gl->EndQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM);
+  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
 
   resource->pending_set_pixels = true;
   resource->set_pixels_completion_forced = false;
@@ -2165,7 +2151,8 @@ void ResourceProvider::AcquireImage(Resource* resource) {
   resource->image_id =
       gl->CreateImageCHROMIUM(resource->size.width(),
                               resource->size.height(),
-                              TextureToStorageFormat(resource->format));
+                              TextureToStorageFormat(resource->format),
+                              GL_IMAGE_MAP_CHROMIUM);
   DCHECK(resource->image_id);
 }
 
@@ -2195,8 +2182,8 @@ uint8_t* ResourceProvider::MapImage(const Resource* resource, int* stride) {
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     // MapImageCHROMIUM should be called prior to GetImageParameterivCHROMIUM.
-    uint8_t* pixels = static_cast<uint8_t*>(
-        gl->MapImageCHROMIUM(resource->image_id, GL_READ_WRITE));
+    uint8_t* pixels =
+        static_cast<uint8_t*>(gl->MapImageCHROMIUM(resource->image_id));
     gl->GetImageParameterivCHROMIUM(
         resource->image_id, GL_IMAGE_ROWBYTES_CHROMIUM, stride);
     return pixels;
@@ -2214,6 +2201,62 @@ void ResourceProvider::UnmapImage(const Resource* resource) {
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     gl->UnmapImageCHROMIUM(resource->image_id);
+  }
+}
+
+void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
+  TRACE_EVENT0("cc", "ResourceProvider::CopyResource");
+
+  Resource* source_resource = GetResource(source_id);
+  DCHECK(!source_resource->lock_for_read_count);
+  DCHECK(source_resource->origin == Resource::Internal);
+  DCHECK_EQ(source_resource->exported_count, 0);
+  DCHECK(source_resource->allocated);
+  LazyCreate(source_resource);
+
+  Resource* dest_resource = GetResource(dest_id);
+  DCHECK(!dest_resource->locked_for_write);
+  DCHECK(!dest_resource->lock_for_read_count);
+  DCHECK(dest_resource->origin == Resource::Internal);
+  DCHECK_EQ(dest_resource->exported_count, 0);
+  LazyCreate(dest_resource);
+
+  DCHECK_EQ(source_resource->type, dest_resource->type);
+  DCHECK_EQ(source_resource->format, dest_resource->format);
+  DCHECK(source_resource->size == dest_resource->size);
+
+  if (source_resource->type == GLTexture) {
+    GLES2Interface* gl = ContextGL();
+    DCHECK(gl);
+    if (source_resource->image_id && source_resource->dirty_image) {
+      gl->BindTexture(source_resource->target, source_resource->gl_id);
+      BindImageForSampling(source_resource);
+    }
+    DCHECK(use_sync_query_) << "CHROMIUM_sync_query extension missing";
+    if (!source_resource->gl_read_lock_query_id)
+      gl->GenQueriesEXT(1, &source_resource->gl_read_lock_query_id);
+    gl->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM,
+                      source_resource->gl_read_lock_query_id);
+    DCHECK(!dest_resource->image_id);
+    dest_resource->allocated = true;
+    gl->CopyTextureCHROMIUM(dest_resource->target,
+                            source_resource->gl_id,
+                            dest_resource->gl_id,
+                            0,
+                            GLInternalFormat(dest_resource->format),
+                            GLDataType(dest_resource->format));
+    // End query and create a read lock fence that will prevent access to
+    // source resource until CopyTextureCHROMIUM command has completed.
+    gl->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
+    source_resource->read_lock_fence = make_scoped_refptr(
+        new QueryFence(gl, source_resource->gl_read_lock_query_id));
+  } else {
+    DCHECK_EQ(Bitmap, source_resource->type);
+    DCHECK_EQ(RGBA_8888, source_resource->format);
+    LazyAllocate(dest_resource);
+
+    size_t bytes = SharedBitmap::CheckedSizeInBytes(source_resource->size);
+    memcpy(dest_resource->pixels, source_resource->pixels, bytes);
   }
 }
 

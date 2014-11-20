@@ -24,16 +24,16 @@
  */
 
 #include "config.h"
-#include "ColorChooserPopupUIController.h"
+#include "web/ColorChooserPopupUIController.h"
 
-#include "ChromeClientImpl.h"
 #include "ColorSuggestionPicker.h"
 #include "PickerCommon.h"
-#include "WebColorChooser.h"
-#include "WebViewImpl.h"
 #include "core/frame/FrameView.h"
 #include "platform/ColorChooserClient.h"
 #include "platform/geometry/IntRect.h"
+#include "public/web/WebColorChooser.h"
+#include "web/ChromeClientImpl.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
@@ -46,8 +46,8 @@ enum ColorPickerPopupAction {
     ColorPickerPopupActionSetValue = 0
 };
 
-ColorChooserPopupUIController::ColorChooserPopupUIController(ChromeClientImpl* chromeClient, ColorChooserClient* client)
-    : ColorChooserUIController(chromeClient, client)
+ColorChooserPopupUIController::ColorChooserPopupUIController(WebCore::LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
+    : ColorChooserUIController(frame, client)
     , m_chromeClient(chromeClient)
     , m_client(client)
     , m_popup(0)

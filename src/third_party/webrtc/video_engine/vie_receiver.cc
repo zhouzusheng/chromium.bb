@@ -22,7 +22,9 @@
 #include "webrtc/modules/utility/interface/rtp_dump.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/interface/timestamp_extrapolator.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
 namespace webrtc {
@@ -35,16 +37,19 @@ ViEReceiver::ViEReceiver(const int32_t channel_id,
       channel_id_(channel_id),
       rtp_header_parser_(RtpHeaderParser::Create()),
       rtp_payload_registry_(new RTPPayloadRegistry(
-          channel_id, RTPPayloadStrategy::CreateStrategy(false))),
+          RTPPayloadStrategy::CreateStrategy(false))),
       rtp_receiver_(RtpReceiver::CreateVideoReceiver(
           channel_id, Clock::GetRealTimeClock(), this, rtp_feedback,
           rtp_payload_registry_.get())),
       rtp_receive_statistics_(ReceiveStatistics::Create(
           Clock::GetRealTimeClock())),
-      fec_receiver_(FecReceiver::Create(channel_id, this)),
+      fec_receiver_(FecReceiver::Create(this)),
       rtp_rtcp_(NULL),
       vcm_(module_vcm),
       remote_bitrate_estimator_(remote_bitrate_estimator),
+      clock_(Clock::GetRealTimeClock()),
+      ts_extrapolator_(
+          new TimestampExtrapolator(clock_->TimeInMilliseconds())),
       rtp_dump_(NULL),
       receiving_(false),
       restored_packet_in_use_(false),
@@ -171,11 +176,35 @@ int ViEReceiver::ReceivedRTCPPacket(const void* rtcp_packet,
 int32_t ViEReceiver::OnReceivedPayloadData(
     const uint8_t* payload_data, const uint16_t payload_size,
     const WebRtcRTPHeader* rtp_header) {
-  if (vcm_->IncomingPacket(payload_data, payload_size, *rtp_header) != 0) {
+  WebRtcRTPHeader rtp_header_with_ntp = *rtp_header;
+  CalculateCaptureNtpTime(&rtp_header_with_ntp);
+  if (vcm_->IncomingPacket(payload_data,
+                           payload_size,
+                           rtp_header_with_ntp) != 0) {
     // Check this...
     return -1;
   }
   return 0;
+}
+
+void ViEReceiver::CalculateCaptureNtpTime(WebRtcRTPHeader* rtp_header) {
+  if (rtcp_list_.size() < 2) {
+    // We need two RTCP SR reports to calculate NTP.
+    return;
+  }
+
+  int64_t sender_capture_ntp_ms = 0;
+  if (!RtpToNtpMs(rtp_header->header.timestamp,
+                  rtcp_list_,
+                  &sender_capture_ntp_ms)) {
+    return;
+  }
+  uint32_t timestamp = sender_capture_ntp_ms * 90;
+  int64_t receiver_capture_ms =
+      ts_extrapolator_->ExtrapolateLocalTime(timestamp);
+  int64_t ntp_offset =
+      clock_->CurrentNtpInMilliseconds() - clock_->TimeInMilliseconds();
+  rtp_header->ntp_time_ms = receiver_capture_ms + ntp_offset;
 }
 
 bool ViEReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
@@ -328,7 +357,59 @@ int ViEReceiver::InsertRTCPPacket(const uint8_t* rtcp_packet,
     }
   }
   assert(rtp_rtcp_);  // Should be set by owner at construction time.
-  return rtp_rtcp_->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);
+  int ret = rtp_rtcp_->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);
+  if (ret != 0) {
+    return ret;
+  }
+
+  if (!GetRtcpTimestamp()) {
+    LOG(LS_WARNING) << "Failed to retrieve timestamp information from RTCP SR.";
+  }
+
+  return 0;
+}
+
+bool ViEReceiver::GetRtcpTimestamp() {
+  uint16_t rtt = 0;
+  rtp_rtcp_->RTT(rtp_receiver_->SSRC(), &rtt, NULL, NULL, NULL);
+  if (rtt == 0) {
+    // Waiting for valid rtt.
+    return true;
+  }
+
+  // Update RTCP list
+  uint32_t ntp_secs = 0;
+  uint32_t ntp_frac = 0;
+  uint32_t rtp_timestamp = 0;
+  if (0 != rtp_rtcp_->RemoteNTP(&ntp_secs,
+                                &ntp_frac,
+                                NULL,
+                                NULL,
+                                &rtp_timestamp)) {
+    return false;
+  }
+
+  bool new_rtcp_sr = false;
+  if (!UpdateRtcpList(ntp_secs,
+                      ntp_frac,
+                      rtp_timestamp,
+                      &rtcp_list_,
+                      &new_rtcp_sr)) {
+    return false;
+  }
+
+  if (!new_rtcp_sr) {
+    // No new RTCP SR since last time this function was called.
+    return true;
+  }
+
+  // Update extrapolator with the new arrival time.
+  // The extrapolator assumes the TimeInMilliseconds time.
+  int64_t receiver_arrival_time = clock_->TimeInMilliseconds();
+  int64_t sender_send_time_ms = Clock::NtpToMs(ntp_secs, ntp_frac);
+  int64_t sender_arrival_time_90k = (sender_send_time_ms + rtt / 2) * 90;
+  ts_extrapolator_->Update(receiver_arrival_time, sender_arrival_time_90k);
+  return true;
 }
 
 void ViEReceiver::StartReceive() {
@@ -381,22 +462,6 @@ int ViEReceiver::StopRTPDump() {
     return -1;
   }
   return 0;
-}
-
-// TODO(holmer): To be moved to ViEChannelGroup.
-void ViEReceiver::EstimatedReceiveBandwidth(
-    unsigned int* available_bandwidth) const {
-  std::vector<unsigned int> ssrcs;
-
-  // LatestEstimate returns an error if there is no valid bitrate estimate, but
-  // ViEReceiver instead returns a zero estimate.
-  remote_bitrate_estimator_->LatestEstimate(&ssrcs, available_bandwidth);
-  if (std::find(ssrcs.begin(), ssrcs.end(), rtp_receiver_->SSRC()) !=
-      ssrcs.end()) {
-    *available_bandwidth /= ssrcs.size();
-  } else {
-    *available_bandwidth = 0;
-  }
 }
 
 void ViEReceiver::GetReceiveBandwidthEstimatorStats(

@@ -42,7 +42,7 @@
 #include "WebGamepads.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
-#include "WebScreenOrientation.h"
+#include "WebScreenOrientationLockType.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
@@ -55,10 +55,12 @@ class GrContext;
 namespace blink {
 
 class WebAudioBus;
+class WebBatteryStatusListener;
 class WebBlobRegistry;
 class WebContentDecryptionModule;
 class WebClipboard;
 class WebCompositorSupport;
+class WebConvertableToTraceFormat;
 class WebCookieJar;
 class WebCrypto;
 class WebDatabaseObserver;
@@ -159,6 +161,12 @@ public:
     virtual WebMIDIAccessor* createMIDIAccessor(WebMIDIAccessorClient*) { return 0; }
 
 
+    // Battery -------------------------------------------------------------
+
+    // Sets the listener for watching battery status updates.
+    virtual void setBatteryStatusListener(blink::WebBatteryStatusListener*) { }
+
+
     // Blob ----------------------------------------------------------------
 
     // Must return non-null.
@@ -249,6 +257,10 @@ public:
     // Return the physical memory of the current machine, in MB.
     virtual size_t physicalMemoryMB() { return 0; }
 
+    // Return the available virtual memory of the current machine, in MB. Or
+    // zero, if there is no limit.
+    virtual size_t virtualMemoryLimitMB() { return 0; }
+
     // Return the number of of processors of the current machine.
     virtual size_t numberOfProcessors() { return 0; }
 
@@ -298,9 +310,9 @@ public:
 
     // Message Ports -------------------------------------------------------
 
-    // Creates a Message Port Channel. This can be called on any thread.
-    // The returned object should only be used on the thread it was created on.
-    virtual WebMessagePortChannel* createMessagePortChannel() { return 0; }
+    // Creates a Message Port Channel pair. This can be called on any thread.
+    // The returned objects should only be used on the thread they were created on.
+    virtual void createMessageChannel(WebMessagePortChannel** channel1, WebMessagePortChannel** channel2) { *channel1 = 0; *channel2 = 0; }
 
 
     // Network -------------------------------------------------------------
@@ -504,8 +516,12 @@ public:
     //   - POINTER (5): void*
     //   - STRING (6): char* (long-lived null-terminated char* string)
     //   - COPY_STRING (7): char* (temporary null-terminated char* string)
+    //   - CONVERTABLE (8): WebConvertableToTraceFormat
     // - argValues is the array of argument values. Each value is the unsigned
     //   long long member of a union of all supported types.
+    // - convertableValues is the array of WebConvertableToTraceFormat classes
+    //   that may be converted to trace format by calling asTraceFormat method.
+    //   ConvertableToTraceFormat interface.
     // - thresholdBeginId optionally specifies the value returned by a previous
     //   call to addTraceEvent with a BEGIN phase.
     // - threshold is used on an END phase event in conjunction with the
@@ -529,6 +545,7 @@ public:
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
+        const WebConvertableToTraceFormat* convertableValues,
         unsigned char flags)
     {
         return 0;
@@ -610,7 +627,7 @@ public:
     // Screen Orientation -------------------------------------------------
 
     virtual void setScreenOrientationListener(blink::WebScreenOrientationListener*) { }
-    virtual void lockOrientation(WebScreenOrientations) { }
+    virtual void lockOrientation(WebScreenOrientationLockType) { }
     virtual void unlockOrientation() { }
 
 

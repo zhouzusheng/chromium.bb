@@ -13,6 +13,7 @@
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 namespace base {
@@ -67,7 +68,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual unsigned long long visitedLinkHash(
       const char* canonicalURL, size_t length);
   virtual bool isLinkVisited(unsigned long long linkHash);
-  virtual blink::WebMessagePortChannel* createMessagePortChannel();
+  virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
+                                    blink::WebMessagePortChannel** channel2);
   virtual blink::WebPrescientNetworking* prescientNetworking();
   virtual void cacheMetadata(
       const blink::WebURL&, double, const char*, size_t);
@@ -101,15 +103,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual size_t audioHardwareBufferSize();
   virtual unsigned audioHardwareOutputChannels();
   virtual blink::WebDatabaseObserver* databaseObserver();
-
-  // TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-  virtual blink::WebAudioDevice* createAudioDevice(
-      size_t buffer_size, unsigned channels, double sample_rate,
-      blink::WebAudioDevice::RenderCallback* callback);
-  // TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-  virtual blink::WebAudioDevice* createAudioDevice(
-      size_t buffer_size, unsigned input_channels, unsigned channels,
-      double sample_rate, blink::WebAudioDevice::RenderCallback* callback);
 
   virtual blink::WebAudioDevice* createAudioDevice(
       size_t buffer_size, unsigned input_channels, unsigned channels,
@@ -154,7 +147,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void cancelVibration();
   virtual void setScreenOrientationListener(
     blink::WebScreenOrientationListener*) OVERRIDE;
-  virtual void lockOrientation(blink::WebScreenOrientations) OVERRIDE;
+  virtual void lockOrientation(blink::WebScreenOrientationLockType) OVERRIDE;
   virtual void unlockOrientation() OVERRIDE;
 
   // Disables the WebSandboxSupport implementation for testing.
@@ -184,9 +177,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // is invoked.
   static void SetMockDeviceOrientationDataForTesting(
       const blink::WebDeviceOrientationData& data);
-  // Set WebScreenOrientation to return when setScreenOrientationListener is
-  // invoked.
-  static void SetMockScreenOrientationForTesting(blink::WebScreenOrientation);
+  // Forces the screen orientation for testing purposes.
+  static void SetMockScreenOrientationForTesting(
+      blink::WebScreenOrientationType);
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();

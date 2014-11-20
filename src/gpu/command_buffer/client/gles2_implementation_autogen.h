@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -397,8 +397,10 @@ virtual void Uniform2i(GLint location, GLint x, GLint y) OVERRIDE;
 
 virtual void Uniform2iv(GLint location, GLsizei count, const GLint* v) OVERRIDE;
 
-virtual void Uniform3f(GLint location, GLfloat x, GLfloat y, GLfloat z)
-    OVERRIDE;
+virtual void Uniform3f(GLint location,
+                       GLfloat x,
+                       GLfloat y,
+                       GLfloat z) OVERRIDE;
 
 virtual void Uniform3fv(GLint location,
                         GLsizei count,
@@ -418,8 +420,11 @@ virtual void Uniform4fv(GLint location,
                         GLsizei count,
                         const GLfloat* v) OVERRIDE;
 
-virtual void Uniform4i(GLint location, GLint x, GLint y, GLint z, GLint w)
-    OVERRIDE;
+virtual void Uniform4i(GLint location,
+                       GLint x,
+                       GLint y,
+                       GLint z,
+                       GLint w) OVERRIDE;
 
 virtual void Uniform4iv(GLint location, GLsizei count, const GLint* v) OVERRIDE;
 
@@ -450,8 +455,10 @@ virtual void VertexAttrib2f(GLuint indx, GLfloat x, GLfloat y) OVERRIDE;
 
 virtual void VertexAttrib2fv(GLuint indx, const GLfloat* values) OVERRIDE;
 
-virtual void VertexAttrib3f(GLuint indx, GLfloat x, GLfloat y, GLfloat z)
-    OVERRIDE;
+virtual void VertexAttrib3f(GLuint indx,
+                            GLfloat x,
+                            GLfloat y,
+                            GLfloat z) OVERRIDE;
 
 virtual void VertexAttrib3fv(GLuint indx, const GLfloat* values) OVERRIDE;
 
@@ -565,7 +572,7 @@ virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) OVERRIDE;
 
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) OVERRIDE;
 
-virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) OVERRIDE;
+virtual void* MapImageCHROMIUM(GLuint image_id) OVERRIDE;
 
 virtual void UnmapImageCHROMIUM(GLuint image_id) OVERRIDE;
 
@@ -612,7 +619,8 @@ virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
 
 virtual GLuint CreateImageCHROMIUM(GLsizei width,
                                    GLsizei height,
-                                   GLenum internalformat) OVERRIDE;
+                                   GLenum internalformat,
+                                   GLenum usage) OVERRIDE;
 
 virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;
 
@@ -625,8 +633,10 @@ virtual void GetTranslatedShaderSourceANGLE(GLuint shader,
                                             GLsizei* length,
                                             char* source) OVERRIDE;
 
-virtual void PostSubBufferCHROMIUM(GLint x, GLint y, GLint width, GLint height)
-    OVERRIDE;
+virtual void PostSubBufferCHROMIUM(GLint x,
+                                   GLint y,
+                                   GLint width,
+                                   GLint height) OVERRIDE;
 
 virtual void TexImageIOSurface2DCHROMIUM(GLenum target,
                                          GLsizei width,
@@ -696,6 +706,8 @@ virtual void AsyncTexImage2DCHROMIUM(GLenum target,
 
 virtual void WaitAsyncTexImage2DCHROMIUM(GLenum target) OVERRIDE;
 
+virtual void WaitAllAsyncTexImage2DCHROMIUM() OVERRIDE;
+
 virtual void DiscardFramebufferEXT(GLenum target,
                                    GLsizei count,
                                    const GLenum* attachments) OVERRIDE;
@@ -709,5 +721,17 @@ virtual void WaitSyncPointCHROMIUM(GLuint sync_point) OVERRIDE;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) OVERRIDE;
 
 virtual void DiscardBackbufferCHROMIUM() OVERRIDE;
+
+virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
+                                          GLenum plane_transform,
+                                          GLuint overlay_texture_id,
+                                          GLint bounds_x,
+                                          GLint bounds_y,
+                                          GLint bounds_width,
+                                          GLint bounds_height,
+                                          GLfloat uv_x,
+                                          GLfloat uv_y,
+                                          GLfloat uv_width,
+                                          GLfloat uv_height) OVERRIDE;
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_AUTOGEN_H_

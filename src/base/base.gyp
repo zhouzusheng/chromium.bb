@@ -39,14 +39,6 @@
             ['chromeos==1', {
               'sources/': [ ['include', '_chromeos\\.cc$'] ]
             }],
-            ['toolkit_uses_gtk==1', {
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ],
-              'export_dependent_settings': [
-                '../build/linux/system.gyp:gtk',
-              ],
-            }],
           ],
           'dependencies': [
             'symbolize',
@@ -69,22 +61,6 @@
             '../build/linux/system.gyp:glib',
           ],
         }],
-        ['use_x11==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:x11',
-          ],
-          'export_dependent_settings': [
-            '../build/linux/system.gyp:x11',
-          ],
-        }],
-        ['use_aura==1 and use_x11==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:xrandr',
-          ],
-          'export_dependent_settings': [
-            '../build/linux/system.gyp:xrandr',
-          ],
-        }],
         ['os_bsd==1', {
           'include_dirs': [
             '/usr/local/include',
@@ -105,8 +81,7 @@
             ],
           },
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or linux_use_tcmalloc==0)', {
+            ['use_allocator!="tcmalloc"', {
               'defines': [
                 'NO_TCMALLOC',
               ],
@@ -174,8 +149,6 @@
         'message_loop/message_pump_android.h',
         'message_loop/message_pump_glib.cc',
         'message_loop/message_pump_glib.h',
-        'message_loop/message_pump_gtk.cc',
-        'message_loop/message_pump_gtk.h',
         'message_loop/message_pump_io_ios.cc',
         'message_loop/message_pump_io_ios.h',
         'message_loop/message_pump_observer.h',
@@ -183,8 +156,6 @@
         'message_loop/message_pump_libevent.h',
         'message_loop/message_pump_mac.h',
         'message_loop/message_pump_mac.mm',
-        'message_loop/message_pump_x11.cc',
-        'message_loop/message_pump_x11.h',
         'metrics/field_trial.cc',
         'metrics/field_trial.h',
         'posix/file_descriptor_shuffle.cc',
@@ -209,12 +180,6 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # i18n/rtl.cc uses gtk
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         ['OS == "win"', {
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [
@@ -443,7 +408,6 @@
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
-        'memory/discardable_memory_allocator_android_unittest.cc',
         'memory/discardable_memory_manager_unittest.cc',
         'memory/discardable_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
@@ -646,19 +610,11 @@
             'file_version_info_unittest.cc',
           ],
           'conditions': [
-            [ 'toolkit_uses_gtk==1', {
+            [ 'desktop_linux==1', {
               'sources': [
                 'nix/xdg_util_unittest.cc',
               ],
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ]
             }],
-          ],
-        }],
-        ['use_x11 == 1', {
-          'dependencies': [
-            '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
         }],
         ['use_glib == 1', {
@@ -675,8 +631,7 @@
             'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS == "linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS == "linux" and use_allocator!="none"', {
             'dependencies': [
               'allocator/allocator.gyp:allocator',
             ],
@@ -730,6 +685,11 @@
             ['include', '^sys_string_conversions_mac_unittest\\.mm$'],
           ],
         }],
+        ['OS == "android" and _toolset == "target"', {
+          'sources': [
+            'memory/discardable_memory_ashmem_allocator_unittest.cc',
+          ],
+        }],
         ['OS == "android"', {
           'sources/': [
             ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
@@ -751,17 +711,46 @@
           'PERF_TEST',
         ],
       },
+    },
+    {
+      'target_name': 'sanitizer_options',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'variables': {
+         # Every target is going to depend on sanitizer_options, so allow
+         # this one to depend on itself.
+         'prune_self_dependency': 1,
+         # Do not let 'none' targets depend on this one, they don't need to.
+         'link_dependency': 1,
+       },
+      'sources': [
+        'debug/sanitizer_options.cc',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      # Some targets may want to opt-out from ASan, TSan and MSan and link
+      # without the corresponding runtime libraries. We drop the libc++
+      # dependency and omit the compiler flags to avoid bringing instrumented
+      # code to those targets.
       'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # Needed to handle the #include chain:
-            #   base/test/perf_test_suite.h
-            #   base/test/test_suite.h
-            #   gtk/gtk.h
-            '../build/linux/system.gyp:gtk',
+        ['use_custom_libcxx==1', {
+          'dependencies!': [
+            '../third_party/libc++/libc++.gyp:libcxx_proxy',
           ],
         }],
       ],
+      'cflags!': [
+        '-fsanitize=address',
+        '-fsanitize=thread',
+        '-fsanitize=memory',
+        '-fsanitize-memory-track-origins',
+      ],
+      'direct_dependent_settings': {
+        'ldflags': [
+          '-Wl,-u_sanitizer_options_link_helper',
+        ],
+      },
     },
   ],
   'conditions': [

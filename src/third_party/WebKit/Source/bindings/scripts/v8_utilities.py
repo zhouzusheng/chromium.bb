@@ -108,10 +108,13 @@ IdlType.enum_validation_expression = property(enum_validation_expression)
 
 
 def scoped_name(interface, definition, base_name):
-    implemented_by = definition.extended_attributes.get('ImplementedBy')
-    if implemented_by:
-        return '%s::%s' % (implemented_by, base_name)
-    if definition.is_static:
+    # partial interfaces are implemented as separate classes, with their members
+    # implemented as static member functions
+    partial_interface_implemented_as = definition.extended_attributes.get('PartialInterfaceImplementedAs')
+    if partial_interface_implemented_as:
+        return '%s::%s' % (partial_interface_implemented_as, base_name)
+    if (definition.is_static or
+        definition.name in ('Constructor', 'NamedConstructor')):
         return '%s::%s' % (cpp_name(interface), base_name)
     return 'impl->%s' % base_name
 
@@ -125,30 +128,27 @@ def v8_class_name(interface):
 ################################################################################
 
 # [ActivityLogging]
-def activity_logging_world_list(member, access_type=None):
+def activity_logging_world_list(member, access_type=''):
     """Returns a set of world suffixes for which a definition member has activity logging, for specified access type.
 
     access_type can be 'Getter' or 'Setter' if only checking getting or setting.
     """
-    if 'ActivityLogging' not in member.extended_attributes:
+    extended_attributes = member.extended_attributes
+    if 'LogActivity' not in extended_attributes:
         return set()
-    activity_logging = member.extended_attributes['ActivityLogging']
-    # [ActivityLogging=For*] (no prefix, starts with the worlds suffix) means
-    # "log for all use (method)/access (attribute)", otherwise check that value
-    # agrees with specified access_type (Getter/Setter).
-    has_logging = (activity_logging.startswith('For') or
-                   (access_type and activity_logging.startswith(access_type)))
-    if not has_logging:
+    log_activity = extended_attributes['LogActivity']
+    if log_activity and not log_activity.startswith(access_type):
         return set()
+
     includes.add('bindings/v8/V8DOMActivityLogger.h')
-    if activity_logging.endswith('ForIsolatedWorlds'):
-        return set([''])
-    return set(['', 'ForMainWorld'])  # endswith('ForAllWorlds')
+    if 'LogAllWorlds' in extended_attributes:
+        return set(['', 'ForMainWorld'])
+    return set([''])  # At minimum, include isolated worlds.
 
 
 # [CallWith]
 CALL_WITH_ARGUMENTS = {
-    'ScriptState': '&state',
+    'ScriptState': 'state',
     'ExecutionContext': 'scriptContext',
     'ScriptArguments': 'scriptArguments.release()',
     'ActiveWindow': 'callingDOMWindow(info.GetIsolate())',
@@ -195,6 +195,16 @@ def deprecate_as(member):
         return None
     includes.add('core/frame/UseCounter.h')
     return extended_attributes['DeprecateAs']
+
+
+# [GarbageCollected], [WillBeGarbageCollected]
+def gc_type(definition):
+    extended_attributes = definition.extended_attributes
+    if 'GarbageCollected' in extended_attributes:
+        return 'GarbageCollectedObject'
+    elif 'WillBeGarbageCollected' in extended_attributes:
+        return 'WillBeGarbageCollectedObject'
+    return 'RefCountedObject'
 
 
 # [ImplementedAs]

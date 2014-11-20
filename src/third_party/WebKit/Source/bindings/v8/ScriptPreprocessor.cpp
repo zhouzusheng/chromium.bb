@@ -36,17 +36,19 @@
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ScriptRunner.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PageConsole.h"
 #include "wtf/TemporaryChange.h"
 
 namespace WebCore {
 
 ScriptPreprocessor::ScriptPreprocessor(const ScriptSourceCode& preprocessorSourceCode, LocalFrame* frame)
-    : m_isolate(V8PerIsolateData::mainThreadIsolate())
-    , m_isPreprocessing(false)
+    : m_isPreprocessing(false)
 {
+    RefPtr<DOMWrapperWorld> world = DOMWrapperWorld::ensureIsolatedWorld(ScriptPreprocessorIsolatedWorldId, DOMWrapperWorld::mainWorldExtensionGroup);
+    m_scriptState = ScriptState::from(toV8Context(toIsolate(frame), frame, *world));
+
     ASSERT(frame);
     v8::TryCatch tryCatch;
     tryCatch.SetVerbose(true);
@@ -56,21 +58,16 @@ ScriptPreprocessor::ScriptPreprocessor(const ScriptSourceCode& preprocessorSourc
     frame->script().executeScriptInIsolatedWorld(ScriptPreprocessorIsolatedWorldId, sources, DOMWrapperWorld::mainWorldExtensionGroup, &scriptResults);
 
     if (scriptResults.size() != 1) {
-        frame->host()->console().addMessage(JSMessageSource, ErrorMessageLevel, "ScriptPreprocessor internal error, one ScriptSourceCode must give exactly one result.");
+        frame->console().addMessage(JSMessageSource, ErrorMessageLevel, "ScriptPreprocessor internal error, one ScriptSourceCode must give exactly one result.");
         return;
     }
 
     ScriptValue preprocessorFunction = scriptResults[0];
     if (!preprocessorFunction.isFunction()) {
-        frame->host()->console().addMessage(JSMessageSource, ErrorMessageLevel, "The preprocessor must compile to a function.");
+        frame->console().addMessage(JSMessageSource, ErrorMessageLevel, "The preprocessor must compile to a function.");
         return;
     }
-
-    m_world = DOMWrapperWorld::ensureIsolatedWorld(ScriptPreprocessorIsolatedWorldId, DOMWrapperWorld::mainWorldExtensionGroup);
-    v8::Local<v8::Context> context = toV8Context(m_isolate, frame, m_world.get());
-
-    m_context.set(m_isolate, context);
-    m_preprocessorFunction.set(m_isolate, v8::Handle<v8::Function>::Cast(preprocessorFunction.v8Value()));
+    m_preprocessorFunction.set(m_scriptState->isolate(), v8::Handle<v8::Function>::Cast(preprocessorFunction.v8Value()));
 }
 
 String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const String& sourceName)
@@ -78,7 +75,7 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     if (!isValid())
         return sourceCode;
 
-    return preprocessSourceCode(sourceCode, sourceName, v8::Undefined(m_isolate));
+    return preprocessSourceCode(sourceCode, sourceName, v8::Undefined(m_scriptState->isolate()));
 }
 
 String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const String& sourceName, const String& functionName)
@@ -86,7 +83,7 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     if (!isValid())
         return sourceCode;
 
-    v8::Handle<v8::String> functionNameString = v8String(m_isolate, functionName);
+    v8::Handle<v8::String> functionNameString = v8String(m_scriptState->isolate(), functionName);
     return preprocessSourceCode(sourceCode, sourceName, functionNameString);
 }
 
@@ -95,17 +92,17 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     if (!isValid())
         return sourceCode;
 
-    v8::HandleScope handleScope(m_isolate);
-    v8::Context::Scope contextScope(m_context.newLocal(m_isolate));
+    v8::Isolate* isolate = m_scriptState->isolate();
+    ScriptState::Scope scope(m_scriptState.get());
 
-    v8::Handle<v8::String> sourceCodeString = v8String(m_isolate, sourceCode);
-    v8::Handle<v8::String> sourceNameString = v8String(m_isolate, sourceName);
+    v8::Handle<v8::String> sourceCodeString = v8String(isolate, sourceCode);
+    v8::Handle<v8::String> sourceNameString = v8String(isolate, sourceName);
     v8::Handle<v8::Value> argv[] = { sourceCodeString, sourceNameString, functionName};
 
     v8::TryCatch tryCatch;
     tryCatch.SetVerbose(true);
     TemporaryChange<bool> isPreprocessing(m_isPreprocessing, true);
-    v8::Handle<v8::Value> resultValue = V8ScriptRunner::callAsFunction(m_preprocessorFunction.newLocal(m_isolate), m_context.newLocal(m_isolate)->Global(), WTF_ARRAY_LENGTH(argv), argv);
+    v8::Handle<v8::Value> resultValue = V8ScriptRunner::callAsFunction(isolate, m_preprocessorFunction.newLocal(isolate), m_scriptState->context()->Global(), WTF_ARRAY_LENGTH(argv), argv);
 
     if (!resultValue.IsEmpty() && resultValue->IsString())
         return toCoreStringWithNullCheck(resultValue.As<v8::String>());

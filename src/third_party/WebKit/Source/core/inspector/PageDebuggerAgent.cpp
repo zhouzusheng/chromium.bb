@@ -34,8 +34,8 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PageConsole.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
@@ -91,12 +91,12 @@ PageScriptDebugServer& PageDebuggerAgent::scriptDebugServer()
 
 void PageDebuggerAgent::muteConsole()
 {
-    PageConsole::mute();
+    FrameConsole::mute();
 }
 
 void PageDebuggerAgent::unmuteConsole()
 {
-    PageConsole::unmute();
+    FrameConsole::unmute();
 }
 
 void PageDebuggerAgent::overlayResumed()
@@ -114,11 +114,11 @@ void PageDebuggerAgent::overlaySteppedOver()
 InjectedScript PageDebuggerAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)
 {
     if (!executionContextId) {
-        ScriptState* scriptState = mainWorldScriptState(m_pageAgent->mainFrame());
+        ScriptState* scriptState = ScriptState::forMainWorld(m_pageAgent->mainFrame());
         return injectedScriptManager()->injectedScriptFor(scriptState);
     }
     InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
-    if (injectedScript.hasNoValue())
+    if (injectedScript.isEmpty())
         *errorString = "Execution context with given id not found.";
     return injectedScript;
 }
@@ -128,7 +128,7 @@ void PageDebuggerAgent::setOverlayMessage(ErrorString*, const String* message)
     m_overlay->setPausedInDebuggerMessage(message);
 }
 
-void PageDebuggerAgent::didClearWindowObjectInMainWorld(LocalFrame* frame)
+void PageDebuggerAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 {
     if (frame != m_pageAgent->mainFrame())
         return;

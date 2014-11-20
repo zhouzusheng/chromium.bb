@@ -16,7 +16,6 @@
 namespace views {
 
 namespace test {
-class RootViewTestHelper;
 class WidgetTest;
 }
 
@@ -25,6 +24,7 @@ class Widget;
 // This is a views-internal API and should not be used externally.
 // Widget exposes this object as a View*.
 namespace internal {
+class PreEventDispatchHandler;
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootView class
@@ -110,6 +110,9 @@ class VIEWS_EXPORT RootView : public View,
   virtual void UpdateParentLayer() OVERRIDE;
 
  protected:
+  // TODO(tdanderson): Remove RootView::DispatchGestureEvent() once
+  //                   its targeting and dispatch logic has been moved
+  //                   elsewhere. See crbug.com/348083.
   virtual void DispatchGestureEvent(ui::GestureEvent* event);
 
   // Overridden from View:
@@ -124,21 +127,9 @@ class VIEWS_EXPORT RootView : public View,
  private:
   friend class ::views::View;
   friend class ::views::Widget;
-  friend class ::views::test::RootViewTestHelper;
   friend class ::views::test::WidgetTest;
 
   // Input ---------------------------------------------------------------------
-
-  // TODO(tdanderson): Remove the RootView::Dispatch*Event() functions once
-  //                   their targeting and dispatch logic has been moved
-  //                   elsewhere. See crbug.com/348083.
-
-  // Process a key event. Send the event to the focused view and up the focus
-  // path, and finally to the default keyboard handler, until someone consumes
-  // it. Returns whether anyone consumed the event.
-  void DispatchKeyEvent(ui::KeyEvent* event);
-  void DispatchScrollEvent(ui::ScrollEvent* event);
-  void DispatchTouchEvent(ui::TouchEvent* event);
 
   // Update the cursor given a mouse event. This is called by non mouse_move
   // event handlers to honor the cursor desired by views located under the
@@ -160,10 +151,6 @@ class VIEWS_EXPORT RootView : public View,
                                    View* view,
                                    View* sibling);
 
-  // Dispatches the KeyEvent to |view| and ancestors until the event is
-  // handled.
-  void DispatchKeyEventStartAt(View* view, ui::KeyEvent* event);
-
   // Overridden from ui::EventDispatcherDelegate:
   virtual bool CanDispatchToTarget(ui::EventTarget* target) OVERRIDE;
   virtual ui::EventDispatchDetails PreDispatchEvent(ui::EventTarget* target,
@@ -172,7 +159,6 @@ class VIEWS_EXPORT RootView : public View,
       ui::EventTarget* target, const ui::Event& event) OVERRIDE;
 
   //////////////////////////////////////////////////////////////////////////////
-
   // Tree operations -----------------------------------------------------------
 
   // The host Widget
@@ -199,9 +185,6 @@ class VIEWS_EXPORT RootView : public View,
   int last_mouse_event_x_;
   int last_mouse_event_y_;
 
-  // The view currently handling touch events.
-  View* touch_pressed_handler_;
-
   // The view currently handling gesture events. When set, this handler receives
   // all gesture events, except when there is an event handler for the specific
   // gesture (e.g. scroll).
@@ -209,6 +192,8 @@ class VIEWS_EXPORT RootView : public View,
 
   // The view currently handling scroll gesture events.
   View* scroll_gesture_handler_;
+
+  scoped_ptr<internal::PreEventDispatchHandler> pre_dispatch_handler_;
 
   // Focus ---------------------------------------------------------------------
 

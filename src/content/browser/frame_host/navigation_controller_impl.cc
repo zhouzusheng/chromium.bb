@@ -115,7 +115,7 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
     return navigation_type == NAVIGATION_TYPE_IN_PAGE;
   }
 
-  url_canon::Replacements<char> replacements;
+  url::Replacements<char> replacements;
   replacements.ClearRef();
   return existing_url.ReplaceComponents(replacements) ==
       new_url.ReplaceComponents(replacements);
@@ -429,17 +429,12 @@ NavigationEntry* NavigationControllerImpl::GetVisibleEntry() const {
   // long as no other page has tried to access the initial empty document in
   // the new tab.  If another page modifies this blank page, a URL spoof is
   // possible, so we must stop showing the pending entry.
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      delegate_->GetRenderViewHost());
   bool safe_to_show_pending =
       pending_entry_ &&
       // Require a new navigation.
       pending_entry_->GetPageID() == -1 &&
       // Require either browser-initiated or an unmodified new tab.
-      (!pending_entry_->is_renderer_initiated() ||
-       (IsInitialNavigation() &&
-        !GetLastCommittedEntry() &&
-        !rvh->has_accessed_initial_document()));
+      (!pending_entry_->is_renderer_initiated() || IsUnmodifiedBlankTab());
 
   // Also allow showing the pending entry for history navigations in a new tab,
   // such as Ctrl+Back.  In this case, no existing page is visible and no one
@@ -659,8 +654,8 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
     case LOAD_TYPE_DEFAULT:
       break;
     case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
-      if (!params.url.SchemeIs(kHttpScheme) &&
-          !params.url.SchemeIs(kHttpsScheme)) {
+      if (!params.url.SchemeIs(url::kHttpScheme) &&
+          !params.url.SchemeIs(url::kHttpsScheme)) {
         NOTREACHED() << "Http post load must use http(s) scheme.";
         return;
       }
@@ -706,7 +701,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
   if (params.frame_tree_node_id != -1)
     entry->set_frame_tree_node_id(params.frame_tree_node_id);
   if (params.redirect_chain.size() > 0)
-    entry->set_redirect_chain(params.redirect_chain);
+    entry->SetRedirectChain(params.redirect_chain);
   if (params.should_replace_current_entry)
     entry->set_should_replace_entry(true);
   entry->set_should_clear_history_list(params.should_clear_history_list);
@@ -827,6 +822,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   active_entry->SetTimestamp(timestamp);
   active_entry->SetHttpStatusCode(params.http_status_code);
   active_entry->SetPageState(params.page_state);
+  active_entry->SetRedirectChain(params.redirects);
 
   // Once it is committed, we no longer need to track several pieces of state on
   // the entry.
@@ -1320,6 +1316,7 @@ void NavigationControllerImpl::CopyStateFromAndPrune(
   // that new and existing navigations in the tab's current SiteInstances
   // are identified properly.
   delegate_->CopyMaxPageIDsFrom(source->delegate()->GetWebContents());
+  max_restored_page_id_ = source->max_restored_page_id_;
 
   // If there is a last committed entry, be sure to include it in the new
   // max page ID map.
@@ -1406,6 +1403,12 @@ void NavigationControllerImpl::SetMaxRestoredPageID(int32 max_id) {
 
 int32 NavigationControllerImpl::GetMaxRestoredPageID() const {
   return max_restored_page_id_;
+}
+
+bool NavigationControllerImpl::IsUnmodifiedBlankTab() const {
+  return IsInitialNavigation() &&
+         !GetLastCommittedEntry() &&
+         !delegate_->HasAccessedInitialDocument();
 }
 
 SessionStorageNamespace*

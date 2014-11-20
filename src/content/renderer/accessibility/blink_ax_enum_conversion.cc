@@ -138,6 +138,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_DRAWER;
     case blink::WebAXRoleEditableText:
       return ui::AX_ROLE_EDITABLE_TEXT;
+    case blink::WebAXRoleEmbeddedObject:
+      return ui::AX_ROLE_EMBEDDED_OBJECT;
     case blink::WebAXRoleFooter:
       return ui::AX_ROLE_FOOTER;
     case blink::WebAXRoleForm:
@@ -154,6 +156,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_HELP_TAG;
     case blink::WebAXRoleHorizontalRule:
       return ui::AX_ROLE_HORIZONTAL_RULE;
+    case blink::WebAXRoleIframe:
+      return ui::AX_ROLE_IFRAME;
     case blink::WebAXRoleIgnored:
       return ui::AX_ROLE_IGNORED;
     case blink::WebAXRoleImage:

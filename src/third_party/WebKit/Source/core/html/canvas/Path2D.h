@@ -49,13 +49,13 @@ public:
 
     const Path& path() const { return m_path; }
 
-
-    void addPath(Path2D* path, SVGMatrixTearOff* transform, ExceptionState& exceptionState)
+    void addPath(Path2D* path)
     {
-        if (!path) {
-            exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "Path"));
-            return;
-        }
+        addPath(path, 0);
+    }
+
+    void addPath(Path2D* path, SVGMatrixTearOff* transform)
+    {
         Path src = path->path();
         m_path.addPath(src, transform ? transform->value() : AffineTransform(1, 0, 0, 1, 0, 0));
     }

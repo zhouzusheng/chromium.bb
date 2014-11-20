@@ -436,6 +436,10 @@ bool DesktopWindowTreeHostWin::IsAnimatingClosed() const {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostWin, WindowTreeHost implementation:
 
+ui::EventSource* DesktopWindowTreeHostWin::GetEventSource() {
+  return this;
+}
+
 gfx::AcceleratedWidget DesktopWindowTreeHostWin::GetAcceleratedWidget() {
   return message_handler_->hwnd();
 }
@@ -447,10 +451,6 @@ void DesktopWindowTreeHostWin::Show() {
 void DesktopWindowTreeHostWin::Hide() {
   if (!pending_close_)
     message_handler_->Hide();
-}
-
-void DesktopWindowTreeHostWin::ToggleFullScreen() {
-  SetWindowTransparency();
 }
 
 // GetBounds and SetBounds work in pixel coordinates, whereas other get/set
@@ -500,13 +500,6 @@ void DesktopWindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
     HandleClientSizeChanged(new_expanded.size());
 }
 
-gfx::Insets DesktopWindowTreeHostWin::GetInsets() const {
-  return gfx::Insets();
-}
-
-void DesktopWindowTreeHostWin::SetInsets(const gfx::Insets& insets) {
-}
-
 gfx::Point DesktopWindowTreeHostWin::GetLocationOnNativeScreen() const {
   return GetBounds().origin();
 }
@@ -517,30 +510,6 @@ void DesktopWindowTreeHostWin::SetCapture() {
 
 void DesktopWindowTreeHostWin::ReleaseCapture() {
   message_handler_->ReleaseCapture();
-}
-
-bool DesktopWindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(window());
-  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
-    *location_return = gfx::Point(0, 0);
-    return false;
-  }
-  POINT pt = {0};
-  ::GetCursorPos(&pt);
-  *location_return =
-      gfx::Point(static_cast<int>(pt.x), static_cast<int>(pt.y));
-  return true;
-}
-
-bool DesktopWindowTreeHostWin::ConfineCursorToRootWindow() {
-  RECT window_rect = window()->GetBoundsInScreen().ToRECT();
-  ::ClipCursor(&window_rect);
-  return true;
-}
-
-void DesktopWindowTreeHostWin::UnConfineCursor() {
-  ::ClipCursor(NULL);
 }
 
 void DesktopWindowTreeHostWin::PostNativeEvent(
@@ -635,22 +604,6 @@ bool DesktopWindowTreeHostWin::CanActivate() const {
 bool DesktopWindowTreeHostWin::WidgetSizeIsClientSize() const {
   const Widget* widget = GetWidget()->GetTopLevelWidget();
   return IsMaximized() || (widget && widget->ShouldUseNativeFrame());
-}
-
-bool DesktopWindowTreeHostWin::CanSaveFocus() const {
-  return GetWidget()->is_top_level();
-}
-
-void DesktopWindowTreeHostWin::SaveFocusOnDeactivate() {
-  GetWidget()->GetFocusManager()->StoreFocusedView(true);
-}
-
-void DesktopWindowTreeHostWin::RestoreFocusOnActivate() {
-  RestoreFocusOnEnable();
-}
-
-void DesktopWindowTreeHostWin::RestoreFocusOnEnable() {
-  GetWidget()->GetFocusManager()->RestoreFocusedView();
 }
 
 bool DesktopWindowTreeHostWin::IsModal() const {
@@ -952,6 +905,11 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
     const ui::ScrollEvent& event) {
   SendEventToProcessor(const_cast<ui::ScrollEvent*>(&event));
   return event.handled();
+}
+
+void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
+  if (compositor())
+    compositor()->FinishAllRendering();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

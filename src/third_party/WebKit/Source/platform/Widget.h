@@ -83,8 +83,10 @@ public:
     void setSelfVisible(bool v) { m_selfVisible = v; }
 
     virtual bool isFrameView() const { return false; }
+    virtual bool isRemoteFrameView() const { return false; }
     virtual bool isPluginView() const { return false; }
     virtual bool isPluginContainer() const { return false; }
+    virtual bool pluginShouldPersist() const { return false; }
     virtual bool isScrollbar() const { return false; }
     virtual bool isScrollView() const { return false; }
 

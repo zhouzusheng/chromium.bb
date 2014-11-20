@@ -29,13 +29,13 @@
  */
 
 #include "config.h"
-#include "WebStorageEventDispatcher.h"
+#include "public/web/WebStorageEventDispatcher.h"
 
-#include "WebViewImpl.h"
 #include "core/storage/StorageArea.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
+#include "web/WebViewImpl.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {

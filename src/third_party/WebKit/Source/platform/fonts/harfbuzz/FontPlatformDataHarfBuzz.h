@@ -103,7 +103,12 @@ public:
 
     // The returned styles are all actual styles without FontRenderStyle::NoPreference.
     const FontRenderStyle& fontRenderStyle() const { return m_style; }
-    void setupPaint(SkPaint*, GraphicsContext* = 0) const;
+
+    struct FontSmoothingOverride {
+        bool lcdExplicitlyRequested;
+        uint32_t textFlags;
+    };
+    void setupPaint(SkPaint*, GraphicsContext* = 0, const FontSmoothingOverride* = 0) const;
 
 #if OS(WIN)
     int paintTextFlags() const { return m_paintTextFlags; }

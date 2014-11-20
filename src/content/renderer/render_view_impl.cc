@@ -1430,6 +1430,7 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
     params.user_gesture = true;
   params.window_container_type = WindowFeaturesToContainerType(features);
   params.session_storage_namespace_id = session_storage_namespace_id_;
+
   if (frame_name != "_blank")
     params.frame_name = frame_name;
   params.opener_render_frame_id =
@@ -2386,6 +2387,19 @@ int RenderViewImpl::GetPageId() const {
 
 gfx::Size RenderViewImpl::GetSize() const {
   return size();
+}
+
+void RenderViewImpl::SetSize(const gfx::Size& new_size) {
+  if (new_size == size()) {
+    return;
+  }
+  need_update_rect_for_auto_resize_ = true;
+  Resize(new_size, new_size, overdraw_bottom_height_,
+         resizer_rect_, is_fullscreen_, NO_RESIZE_ACK);
+}
+
+void RenderViewImpl::SetFocus(bool focused) {
+  OnSetFocus(focused);
 }
 
 WebPreferences& RenderViewImpl::GetWebkitPreferences() {

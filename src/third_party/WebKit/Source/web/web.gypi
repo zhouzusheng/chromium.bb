@@ -105,6 +105,7 @@
       'WebArrayBufferConverter.cpp',
       'WebArrayBufferView.cpp',
       'WebAutocompleteParams.cpp',
+      'WebBBPrintInfo.cpp',
       'WebBindings.cpp',
       'WebBlob.cpp',
       'WebCache.cpp',

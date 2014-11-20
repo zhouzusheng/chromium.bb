@@ -48,6 +48,7 @@ struct NPObject;
 namespace v8 {
 class Context;
 class Function;
+class Isolate;
 class Object;
 class Value;
 template <class T> class Handle;
@@ -321,6 +322,9 @@ public:
     // the "main world" or an "isolated world" is, then you probably shouldn't
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
+
+    // Returns the V8 isolate for this frame.
+    virtual v8::Isolate* scriptIsolate() const = 0;
 
     // Navigation ----------------------------------------------------------
 

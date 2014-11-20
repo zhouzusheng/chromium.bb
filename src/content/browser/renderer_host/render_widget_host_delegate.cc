@@ -27,6 +27,20 @@ bool RenderWidgetHostDelegate::HandleGestureEvent(
   return false;
 }
 
+bool RenderWidgetHostDelegate::ShouldSetKeyboardFocusOnMouseDown() {
+  return true;
+}
+
+bool RenderWidgetHostDelegate::ShouldSetLogicalFocusOnMouseDown() {
+  return true;
+}
+
+bool RenderWidgetHostDelegate::ShowTooltip(
+    const base::string16& tooltip_text,
+    blink::WebTextDirection text_direction_hint) {
+  return false;
+}
+
 #if defined(OS_WIN)
 gfx::NativeViewAccessible
 RenderWidgetHostDelegate::GetParentNativeViewAccessible() {

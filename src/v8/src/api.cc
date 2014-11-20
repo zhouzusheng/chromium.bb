@@ -1541,6 +1541,24 @@ void ObjectTemplate::SetInternalFieldCount(int value) {
 // Internally, UnboundScript is a SharedFunctionInfo, and Script is a
 // JSFunction.
 
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create() {
+  return new ScriptCompiler::CachedData();
+}
+
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create(
+    const uint8_t* data, int length,
+    BufferPolicy buffer_policy) {
+  return new ScriptCompiler::CachedData(data, length, buffer_policy);
+}
+
+
+void ScriptCompiler::CachedData::dispose(CachedData* cd) {
+  delete cd;
+}
+
+
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
                                        BufferPolicy buffer_policy_)
     : data(data_), length(length_), buffer_policy(buffer_policy_) {}
@@ -1729,7 +1747,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
     if ((options & kProduceDataToCache) && script_data_impl != NULL) {
       // script_data_impl now contains the data that was generated. source will
       // take the ownership.
-      source->cached_data = new CachedData(
+      source->cached_data = CachedData::create(
           reinterpret_cast<const uint8_t*>(script_data_impl->Data()),
           script_data_impl->Length(), CachedData::BufferOwned);
       script_data_impl->owns_store_ = false;
@@ -5046,6 +5064,11 @@ int v8::V8::ContextDisposedNotification() {
 
 bool v8::V8::InitializeICU(const char* icu_data_file) {
   return i::InitializeICU(icu_data_file);
+}
+
+
+bool v8::V8::InitializeICUWithData(const void* icu_data) {
+  return i::InitializeICUWithData(icu_data);
 }
 
 

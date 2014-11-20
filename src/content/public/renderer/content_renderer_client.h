@@ -49,12 +49,17 @@ struct WebPluginParams;
 struct WebURLError;
 }
 
+namespace webkit_glue {
+class ResourceLoaderBridge;
+}
+
 namespace content {
 class DocumentState;
 class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
 struct KeySystemInfo;
+struct RequestInfo;
 struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
@@ -168,6 +173,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client);
+
+  // Allows the embedder to override the ResourceLoaderBridge used.
+  // If it returns NULL, the content layer will provide a bridge.
+  virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+      const content::RequestInfo& request_info);
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.

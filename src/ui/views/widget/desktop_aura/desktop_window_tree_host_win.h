@@ -174,6 +174,10 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual void HandleVisibilityChanging(bool visible) OVERRIDE;
   virtual void HandleVisibilityChanged(bool visible) OVERRIDE;
   virtual void HandleClientSizeChanged(const gfx::Size& new_size) OVERRIDE;
+  virtual bool HandleNCHitTest(LRESULT* result, const gfx::Point& point) OVERRIDE;
+  virtual bool HandleNCDragBegin(int hit_test_code) OVERRIDE;
+  virtual void HandleNCDragMove() OVERRIDE;
+  virtual void HandleNCDragEnd() OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
   virtual void HandleNativeFocus(HWND last_focused_window) OVERRIDE;
   virtual void HandleNativeBlur(HWND focused_window) OVERRIDE;

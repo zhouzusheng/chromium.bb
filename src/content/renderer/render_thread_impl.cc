@@ -103,6 +103,7 @@
 #include "net/base/net_util.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/Webkit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -261,7 +262,68 @@ void NotifyTimezoneChangeOnThisThread() {
   v8::Date::DateTimeConfigurationChangeNotification(isolate);
 }
 
+RenderProcessImpl* g_render_process = 0;
+
+typedef std::vector<IPC::ChannelProxy::MessageFilter*> MessageFilterList;
+
+static MessageFilterList& deferredAddFilterList()
+{
+  static MessageFilterList list;
+  return list;
+}
+
 }  // namespace
+
+// static
+void RenderThread::InitInProcessRenderer(const std::string& channel_id)
+{
+  g_render_process = new RenderProcessImpl();
+  RenderThreadImpl* thread = new RenderThreadImpl(channel_id);
+  if (channel_id.empty()) {
+    // Normally, WebKit is initialized in the browser's WebKit thread.  This is
+    // necessary because there is code in the browser that depends on WebKit
+    // being initialized at startup.  However, when running an in-process
+    // renderer, we don't run the browser's WebKit thread.
+    // We need to ensure WebKit is initialized to simulate the case that the
+    // WebKit thread has been run.  We only do this if the channel_id is empty,
+    // so that this behavior is only performed for blpwtk2.  Regular
+    // content_shell --single-process mode will have the default upstream
+    // behavior of initializing WebKit when the first RenderView is created.
+    thread->EnsureWebKitInitialized();
+  }
+}
+
+// static
+void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id)
+{
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  thread->SetChannelName(channel_id);  // This will create the channel.
+
+  // MessageFilters can only be added when the channel has been created.  If
+  // the channel was not provided at init time, then AddFilter would place the
+  // MessageFilter on a deferred list, until the channel gets created.
+  MessageFilterList filterList;
+  filterList.swap(deferredAddFilterList());
+  for (std::size_t i = 0; i < filterList.size(); ++i) {
+    thread->AddFilter(filterList[i]);
+  }
+  DCHECK(deferredAddFilterList().empty());
+}
+
+// static
+base::SingleThreadTaskRunner* RenderThread::IPCTaskRunner()
+{
+  return g_render_process->io_message_loop_proxy();
+}
+
+// static
+void RenderThread::CleanUpInProcessRenderer()
+{
+  if (g_render_process) {
+    delete g_render_process;
+    g_render_process = 0;
+  }
+}
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -568,6 +630,8 @@ void RenderThreadImpl::Shutdown() {
   if (webkit_platform_support_)
     blink::shutdown();
 
+  gpu_va_context_provider_ = 0;
+
   lazy_tls.Pointer()->Set(NULL);
 
   // TODO(port)
@@ -646,6 +710,9 @@ base::MessageLoop* RenderThreadImpl::GetMessageLoop() {
 }
 
 IPC::SyncChannel* RenderThreadImpl::GetChannel() {
+  DCHECK(channel());  // Since we allow channel initialization to be deferred,
+                      // the channel pointer might be null.  Make sure nobody
+                      // tries to get it before it has been initialized.
   return channel();
 }
 
@@ -700,11 +767,31 @@ int RenderThreadImpl::GenerateRoutingID() {
 }
 
 void RenderThreadImpl::AddFilter(IPC::MessageFilter* filter) {
-  channel()->AddFilter(filter);
+  if (channel()) {
+    channel()->AddFilter(filter);
+  }
+  else {
+    deferredAddFilterList().push_back(filter);
+  }
 }
 
 void RenderThreadImpl::RemoveFilter(IPC::MessageFilter* filter) {
-  channel()->RemoveFilter(filter);
+  if (channel()) {
+    channel()->RemoveFilter(filter);
+  }
+  else {
+    MessageFilterList& list = deferredAddFilterList();
+    DCHECK(!list.empty());
+    for (std::size_t i = 0; i < list.size() - 1; ++i) {
+      if (list[i] == filter) {
+        list[i] = list[list.size() - 1];
+        list.pop_back();
+        return;
+      }
+    }
+    DCHECK(list[list.size() - 1] == filter);
+    list.pop_back();
+  }
 }
 
 void RenderThreadImpl::AddObserver(RenderProcessObserver* observer) {
@@ -1229,6 +1316,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
 #endif
+    IPC_MESSAGE_HANDLER(ViewMsg_ClearWebCache, OnClearWebCache)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScrollbarTheme, OnUpdateScrollbarTheme)
 #endif
@@ -1399,6 +1487,10 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(
                                              redraw);
 }
 #endif
+
+void RenderThreadImpl::OnClearWebCache() {
+  blink::WebCache::clear();
+}
 
 void RenderThreadImpl::OnCreateNewSharedWorker(
     const WorkerProcessMsg_CreateWorker_Params& params) {

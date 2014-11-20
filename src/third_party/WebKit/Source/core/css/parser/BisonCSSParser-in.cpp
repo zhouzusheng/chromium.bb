@@ -727,8 +727,8 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int valueID, const
         if (valueID == CSSValueNormal || valueID == CSSValuePre || valueID == CSSValuePreWrap || valueID == CSSValuePreLine || valueID == CSSValueNowrap)
             return true;
         break;
-    case CSSPropertyWordBreak: // normal | break-all | break-word (this is a custom extension)
-        if (valueID == CSSValueNormal || valueID == CSSValueBreakAll || valueID == CSSValueBreakWord)
+    case CSSPropertyWordBreak: // normal | break-all | keep-all || -bb-keep-all-if-korean | break-word (this is a custom extension)
+        if (valueID == CSSValueNormal || valueID == CSSValueBreakAll || valueID == CSSValueKeepAll || valueID == CSSValueBbKeepAllIfKorean || valueID == CSSValueBreakWord)
             return true;
         break;
     default:

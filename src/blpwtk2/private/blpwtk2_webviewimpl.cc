@@ -46,7 +46,6 @@
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/web_contents.h>
-#include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
@@ -101,7 +100,6 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
-, d_rfhForContextMenu(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(browserContext);
@@ -142,7 +140,6 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
-, d_rfhForContextMenu(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -180,7 +177,7 @@ void WebViewImpl::setImplClient(WebViewImplClient* client)
 gfx::NativeView WebViewImpl::getNativeView() const
 {
     DCHECK(Statics::isInBrowserMainThread());
-    return d_webContents->GetView()->GetNativeView();
+    return d_webContents->GetNativeView();
 }
 
 void WebViewImpl::showContextMenu(const ContextMenuParams& params)
@@ -195,7 +192,6 @@ void WebViewImpl::saveCustomContextMenuContext(
     content::RenderFrameHost* rfh,
     const content::CustomContextMenuContext& context)
 {
-    d_rfhForContextMenu = rfh;
     d_customContext = context;
 }
 
@@ -376,13 +372,13 @@ void WebViewImpl::setLogicalFocus(bool focused)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     if (focused) {
-        d_webContents->GetView()->Focus();
+        d_webContents->Focus();
     }
     else {
-        content::RenderWidgetHostViewPort* viewPort
-            = static_cast<content::RenderWidgetHostViewPort*>(
+        content::RenderWidgetHostViewBase* viewBase
+            = static_cast<content::RenderWidgetHostViewBase*>(
                 d_webContents->GetRenderWidgetHostView());
-        viewPort->Blur();
+        viewBase->Blur();
     }
 }
 
@@ -439,36 +435,28 @@ void WebViewImpl::cutSelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
-    if (frame)
-        frame->Cut();
+    d_webContents->Cut();
 }
 
 void WebViewImpl::copySelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
-    if (frame)
-        frame->Copy();
+    d_webContents->Copy();
 }
 
 void WebViewImpl::paste()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
-    if (frame)
-        frame->Paste();
+    d_webContents->Paste();
 }
 
 void WebViewImpl::deleteSelection()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    content::RenderFrameHost* frame = d_webContents->GetFocusedFrame();
-    if (frame)
-        frame->Delete();
+    d_webContents->Delete();
 }
 
 void WebViewImpl::enableFocusBefore(bool enabled)
@@ -533,9 +521,7 @@ void WebViewImpl::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    DCHECK(d_rfhForContextMenu);
-    d_rfhForContextMenu->ExecuteCustomContextMenuCommand(actionId, d_customContext);
-    d_rfhForContextMenu = 0;
+    d_webContents->ExecuteCustomContextMenuCommand(actionId, d_customContext);
 }
 
 void WebViewImpl::enableAltDragRubberbanding(bool enabled)
@@ -572,7 +558,7 @@ void WebViewImpl::replaceMisspelledRange(const StringRef& text)
     DCHECK(!d_wasDestroyed);
     base::string16 text16;
     base::UTF8ToUTF16(text.data(), text.length(), &text16);
-    d_webContents->GetRenderViewHost()->ReplaceMisspelling(text16);
+    d_webContents->ReplaceMisspelling(text16);
 }
 
 void WebViewImpl::rootWindowPositionChanged()
@@ -611,7 +597,7 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
     // This creates the HWND that will host the WebContents.  The widget
     // will be deleted when the HWND is destroyed.
     d_widget = new blpwtk2::NativeViewWidget(
-        d_webContents->GetView()->GetNativeView(),
+        d_webContents->GetNativeView(),
         parent,
         this);
 

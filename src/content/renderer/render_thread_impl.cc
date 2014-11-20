@@ -264,7 +264,7 @@ void NotifyTimezoneChangeOnThisThread() {
 
 RenderProcessImpl* g_render_process = 0;
 
-typedef std::vector<IPC::ChannelProxy::MessageFilter*> MessageFilterList;
+typedef std::vector<IPC::MessageFilter*> MessageFilterList;
 
 static MessageFilterList& deferredAddFilterList()
 {

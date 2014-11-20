@@ -412,6 +412,12 @@ BrowserContextImpl::GetGeolocationPermissionContext()
     return 0;
 }
 
+content::BrowserPluginGuestManagerDelegate*
+BrowserContextImpl::GetGuestManagerDelegate()
+{
+    return 0;
+}
+
 quota::SpecialStoragePolicy* BrowserContextImpl::GetSpecialStoragePolicy()
 {
     return 0;

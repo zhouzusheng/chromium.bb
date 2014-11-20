@@ -27,6 +27,8 @@
 
 #include <blpwtk2_resourcecontext.h>
 
+#include <base/memory/ref_counted.h>
+#include <url/gurl.h>
 #include <webkit/child/resource_loader_bridge.h>
 
 namespace base {
@@ -36,6 +38,10 @@ class MessageLoop;
 namespace content {
 struct RequestInfo;
 }  // close namespace content
+
+namespace net {
+class HttpResponseHeaders;
+}  // close namespace net
 
 namespace blpwtk2 {
 
@@ -50,11 +56,12 @@ class InProcessResourceLoaderBridge
     // webkit_glue::ResourceLoaderBridge overrides
     virtual void SetRequestBody(
         content::ResourceRequestBody* request_body) OVERRIDE;
-    virtual bool Start(Peer* peer) OVERRIDE;
+    virtual bool Start(content::RequestPeer* peer) OVERRIDE;
     virtual void Cancel() OVERRIDE;
     virtual void SetDefersLoading(bool value) OVERRIDE;
-    virtual void DidChangePriority(net::RequestPriority new_priority) OVERRIDE;
-    virtual void SyncLoad(SyncLoadResponse* response) OVERRIDE;
+    virtual void DidChangePriority(net::RequestPriority new_priority,
+                                   int intra_priority_value) OVERRIDE;
+    virtual void SyncLoad(content::SyncLoadResponse* response) OVERRIDE;
 
     // ResourceContext overrides
     virtual void replaceStatusLine(const StringRef& newStatus) OVERRIDE;
@@ -70,7 +77,7 @@ class InProcessResourceLoaderBridge
 
     GURL d_url;
     scoped_refptr<net::HttpResponseHeaders> d_responseHeaders;
-    Peer* d_peer;
+    content::RequestPeer* d_peer;
     void* d_userData;
     int64 d_totalTransferSize;
     bool d_started;

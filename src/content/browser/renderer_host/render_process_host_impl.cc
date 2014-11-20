@@ -411,11 +411,10 @@ RenderProcessHost* RenderProcessHost::CreateProcessHost(
         = static_cast<content::StoragePartitionImpl*>(partition);
 
     int id = content::RenderProcessHostImpl::GenerateUniqueId();
-    bool supportsBrowserPlugin = true;
     bool isGuest = false;
     return new content::RenderProcessHostImpl(id, processHandle,
                                               browserContext, partitionImpl,
-                                              supportsBrowserPlugin, isGuest);
+                                              isGuest);
 }
 
 // static

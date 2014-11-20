@@ -29,6 +29,8 @@
 #include <base/bind.h>
 #include <base/message_loop/message_loop.h>
 #include <content/child/request_info.h>
+#include <content/child/sync_load_response.h>
+#include <content/public/child/request_peer.h>
 #include <net/base/mime_sniffer.h>
 #include <net/base/net_errors.h>
 #include <net/http/http_response_headers.h>
@@ -64,7 +66,7 @@ void InProcessResourceLoaderBridge::SetRequestBody(
 {
 }
 
-bool InProcessResourceLoaderBridge::Start(Peer* peer)
+bool InProcessResourceLoaderBridge::Start(content::RequestPeer* peer)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_started);
@@ -106,11 +108,12 @@ void InProcessResourceLoaderBridge::SetDefersLoading(bool value)
 }
 
 void InProcessResourceLoaderBridge::DidChangePriority(
-    net::RequestPriority new_priority)
+    net::RequestPriority new_priority,
+    int intra_priority_value)
 {
 }
 
-void InProcessResourceLoaderBridge::SyncLoad(SyncLoadResponse* response)
+void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
 {
     DLOG(ERROR) << "Synchronous requests not supported: url("
                 << d_url << ")";

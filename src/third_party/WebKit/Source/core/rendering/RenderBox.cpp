@@ -1752,6 +1752,12 @@ LayoutUnit RenderBox::containingBlockLogicalWidthForContent() const
         return overrideContainingBlockContentLogicalWidth();
 
     RenderBlock* cb = containingBlock();
+    if (style()->columnSpanCount() > 1 && !style()->hasSpanAllColumns() && cb->columnInfo()) {
+        unsigned columnSpan = min((unsigned)style()->columnSpanCount(), cb->columnInfo()->desiredColumnCount());
+        LayoutUnit columnWidths = cb->availableLogicalWidth() * columnSpan;
+        LayoutUnit columnGaps = cb->columnGap() * (columnSpan - 1);
+        return columnWidths + columnGaps;
+    }
     return cb->availableLogicalWidth();
 }
 
@@ -4117,7 +4123,7 @@ bool RenderBox::avoidsFloats() const
 bool RenderBox::createsBlockFormattingContext() const
 {
     return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
-        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->columnSpan();
+        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->hasSpanAllColumns();
 }
 
 void RenderBox::markForPaginationRelayoutIfNeeded(SubtreeLayoutScope& layoutScope)

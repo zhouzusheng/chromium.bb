@@ -1148,18 +1148,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
 
     if (isImage()) {
         context->drawImage(m_image->image(this, marker.size()).get(), marker);
-        if (selectionState() != SelectionNone) {
-            LayoutRect selRect = localSelectionRect();
-            selRect.moveBy(boxOrigin);
-            context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor());
-        }
         return;
-    }
-
-    if (selectionState() != SelectionNone) {
-        LayoutRect selRect = localSelectionRect();
-        selRect.moveBy(boxOrigin);
-        context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor());
     }
 
     const Color color(resolveColor(CSSPropertyColor));
@@ -1299,11 +1288,8 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
         }
 
         const UChar suffix = listMarkerSuffix(type, m_listItem->value());
-        UChar suffixStr[2] = {
-            style()->isLeftToRightDirection() ? suffix : ' ',
-            style()->isLeftToRightDirection() ? ' ' : suffix
-        };
-        TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixStr, 2, style(), style()->direction());
+        UChar suffixStr[1] = { suffix };
+        TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixStr, 1, style(), style()->direction());
         TextRunPaintInfo suffixRunInfo(suffixRun);
         suffixRunInfo.bounds = marker;
 
@@ -1323,7 +1309,7 @@ void RenderListMarker::layout()
 
     if (isImage()) {
         updateMarginsAndContent();
-        setWidth(m_image->imageSize(this, style()->effectiveZoom()).width());
+        setWidth(minPreferredLogicalWidth());
         setHeight(m_image->imageSize(this, style()->effectiveZoom()).height());
     } else {
         setLogicalWidth(minPreferredLogicalWidth());
@@ -1349,7 +1335,7 @@ void RenderListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
     if (o != m_image->data())
         return;
 
-    if (width() != m_image->imageSize(this, style()->effectiveZoom()).width() || height() != m_image->imageSize(this, style()->effectiveZoom()).height() || m_image->errorOccurred())
+    if (width() != m_image->imageSize(this, style()->effectiveZoom()).width() + cMarkerPadding || height() != m_image->imageSize(this, style()->effectiveZoom()).height() || m_image->errorOccurred())
         setNeedsLayoutAndPrefWidthsRecalc();
     else
         repaint();
@@ -1479,6 +1465,8 @@ void RenderListMarker::computePreferredLogicalWidths()
     if (isImage()) {
         LayoutSize imageSize = m_image->imageSize(this, style()->effectiveZoom());
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = style()->isHorizontalWritingMode() ? imageSize.width() : imageSize.height();
+        m_minPreferredLogicalWidth += cMarkerPadding;
+        m_maxPreferredLogicalWidth += cMarkerPadding;
         clearPreferredLogicalWidthsDirty();
         updateMargins();
         return;
@@ -1494,11 +1482,13 @@ void RenderListMarker::computePreferredLogicalWidths()
         case Asterisks:
         case Footnotes:
             logicalWidth = font.width(m_text); // no suffix for these types
+            logicalWidth += cMarkerPadding;
             break;
         case Circle:
         case Disc:
         case Square:
             logicalWidth = (font.fontMetrics().ascent() * 2 / 3 + 1) / 2 + 2;
+            logicalWidth += cMarkerPadding;
             break;
         case Afar:
         case Amharic:
@@ -1579,9 +1569,10 @@ void RenderListMarker::computePreferredLogicalWidths()
                 logicalWidth = 0;
             else {
                 LayoutUnit itemWidth = font.width(m_text);
-                UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+                UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
+                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 1, style(), style()->direction()));
                 logicalWidth = itemWidth + suffixSpaceWidth;
+                logicalWidth += cMarkerPadding;
             }
             break;
     }
@@ -1601,58 +1592,8 @@ void RenderListMarker::updateMargins()
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 
-    if (isInside()) {
-        if (isImage())
-            marginEnd = cMarkerPadding;
-        else switch (style()->listStyleType()) {
-            case Disc:
-            case Circle:
-            case Square:
-                marginStart = -1;
-                marginEnd = fontMetrics.ascent() - minPreferredLogicalWidth() + 1;
-                break;
-            default:
-                break;
-        }
-    } else {
-        if (style()->isLeftToRightDirection()) {
-            if (isImage())
-                marginStart = -minPreferredLogicalWidth() - cMarkerPadding;
-            else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (style()->listStyleType()) {
-                    case Disc:
-                    case Circle:
-                    case Square:
-                        marginStart = -offset - cMarkerPadding - 1;
-                        break;
-                    case NoneListStyle:
-                        break;
-                    default:
-                        marginStart = m_text.isEmpty() ? LayoutUnit() : -minPreferredLogicalWidth() - offset / 2;
-                }
-            }
-            marginEnd = -marginStart - minPreferredLogicalWidth();
-        } else {
-            if (isImage())
-                marginEnd = cMarkerPadding;
-            else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (style()->listStyleType()) {
-                    case Disc:
-                    case Circle:
-                    case Square:
-                        marginEnd = offset + cMarkerPadding + 1 - minPreferredLogicalWidth();
-                        break;
-                    case NoneListStyle:
-                        break;
-                    default:
-                        marginEnd = m_text.isEmpty() ? 0 : offset / 2;
-                }
-            }
-            marginStart = -marginEnd - minPreferredLogicalWidth();
-        }
-
+    if (!isInside()) {
+        marginStart = -minPreferredLogicalWidth();
     }
 
     style()->setMarginStart(Length(marginStart, Fixed));
@@ -1683,16 +1624,14 @@ String RenderListMarker::suffix() const
         return String(" ");
 
     // If the suffix is not ' ', an extra space is needed
-    UChar data[2];
+    UChar data[1];
     if (style()->isLeftToRightDirection()) {
         data[0] = suffix;
-        data[1] = ' ';
     } else {
-        data[0] = ' ';
-        data[1] = suffix;
+        data[0] = suffix;
     }
 
-    return String(data, 2);
+    return String(data, 1);
 }
 
 bool RenderListMarker::isInside() const
@@ -1702,10 +1641,16 @@ bool RenderListMarker::isInside() const
 
 IntRect RenderListMarker::getRelativeMarkerRect()
 {
-    if (isImage())
-        return IntRect(0, 0, m_image->imageSize(this, style()->effectiveZoom()).width(), m_image->imageSize(this, style()->effectiveZoom()).height());
-
     IntRect relativeRect;
+
+    if (isImage()) {
+        relativeRect = IntRect(0, 0, m_image->imageSize(this, style()->effectiveZoom()).width(), m_image->imageSize(this, style()->effectiveZoom()).height());
+        if (!style()->isLeftToRightDirection()) {
+            relativeRect.move(cMarkerPadding, 0);
+        }
+        return relativeRect;
+    }
+
     EListStyleType type = style()->listStyleType();
     switch (type) {
         case Asterisks:
@@ -1805,9 +1750,13 @@ IntRect RenderListMarker::getRelativeMarkerRect()
                 return IntRect();
             const Font& font = style()->font();
             int itemWidth = font.width(m_text);
-            UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+            UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
+            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 1, style(), style()->direction()));
             relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
+    }
+
+    if (!style()->isLeftToRightDirection()) {
+        relativeRect.move(cMarkerPadding, 0);
     }
 
     if (!style()->isHorizontalWritingMode()) {

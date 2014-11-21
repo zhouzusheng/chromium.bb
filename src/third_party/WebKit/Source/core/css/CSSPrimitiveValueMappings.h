@@ -2657,6 +2657,41 @@ template<> inline CSSPrimitiveValue::operator EUserSelect() const
     return SELECT_TEXT;
 }
 
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ERubberbandable e)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (e) {
+        case RUBBERBANDABLE_NONE:
+            m_value.valueID = CSSValueNone;
+            break;
+        case RUBBERBANDABLE_TEXT:
+            m_value.valueID = CSSValueText;
+            break;
+        case RUBBERBANDABLE_TEXT_WITH_LEADING_TAB:
+            m_value.valueID = CSSValueTextWithLeadingTab;
+            break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator ERubberbandable() const
+{
+    ASSERT(isValueID());
+    switch (m_value.valueID) {
+        case CSSValueAuto:
+            return RUBBERBANDABLE_TEXT;
+        case CSSValueNone:
+            return RUBBERBANDABLE_NONE;
+        case CSSValueText:
+            return RUBBERBANDABLE_TEXT;
+        case CSSValueTextWithLeadingTab:
+            return RUBBERBANDABLE_TEXT_WITH_LEADING_TAB;
+    }
+
+    ASSERT_NOT_REACHED();
+    return RUBBERBANDABLE_TEXT;
+}
+
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EVerticalAlign a)
     : CSSValue(PrimitiveClass)
 {

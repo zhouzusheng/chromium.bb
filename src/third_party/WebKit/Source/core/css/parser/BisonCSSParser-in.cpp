@@ -707,6 +707,10 @@ bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int valueID, const
         if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll)
             return true;
         break;
+    case CSSPropertyBbRubberbandable: // auto | none | text | text-with-leading-tab
+        if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueTextWithLeadingTab)
+            return true;
+        break;
     case CSSPropertyWebkitWrapFlow:
         if (!RuntimeEnabledFeatures::cssExclusionsEnabled())
             return false;
@@ -833,6 +837,7 @@ bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitWritingMode:

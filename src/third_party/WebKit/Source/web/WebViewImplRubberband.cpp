@@ -39,7 +39,7 @@
 #include "core/rendering/RenderView.h"
 #include "wtf/text/StringBuilder.h"
 
-#include "WebViewClient.h"
+#include "public/web/WebViewClient.h"
 
 using namespace WebCore;
 using namespace std;
@@ -190,7 +190,7 @@ class RubberbandContext {
         if (m_layerContext->m_colBlock) {
             LayoutPoint tmp = result;
             tmp.moveBy(-m_layerContext->m_colBlockAbsTopLeft);
-            LayoutSize offset = m_layerContext->m_colBlock->offsetForColumns(tmp);
+            LayoutSize offset = m_layerContext->m_colBlock->columnOffset(tmp);
             result.move(offset);
         }
         return result;

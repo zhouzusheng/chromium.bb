@@ -382,6 +382,7 @@ WebViewImpl::WebViewImpl(WebViewClient* client)
     , m_imeAcceptEvents(true)
     , m_operationsAllowed(WebDragOperationNone)
     , m_dragOperation(WebDragOperationNone)
+    , m_isAltDragRubberbandingEnabled(false)
     , m_isTransparent(false)
     , m_tabsToLinks(false)
     , m_layerTreeView(0)
@@ -1886,6 +1887,9 @@ bool WebViewImpl::handleInputEvent(const WebInputEvent& inputEvent)
     }
 
     TRACE_EVENT0("input", "WebViewImpl::handleInputEvent");
+    if (m_isAltDragRubberbandingEnabled && handleAltDragRubberbandEvent(inputEvent))
+        return true;
+
     // If we've started a drag and drop operation, ignore input events until
     // we're done.
     if (m_doingDragAndDrop)
@@ -1956,6 +1960,11 @@ void WebViewImpl::mouseCaptureLost()
 {
     TRACE_EVENT_ASYNC_END0("input", "capturing mouse", this);
     m_mouseCaptureNode = nullptr;
+    if (m_isAltDragRubberbandingEnabled && isRubberbanding()) {
+        if (m_client)
+            m_client->hideRubberbandRect();
+        abortRubberbanding();
+    }
 }
 
 void WebViewImpl::setFocus(bool enable)

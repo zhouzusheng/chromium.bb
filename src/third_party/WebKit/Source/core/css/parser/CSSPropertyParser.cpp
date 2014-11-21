@@ -1615,6 +1615,7 @@ bool CSSPropertyParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitWritingMode:

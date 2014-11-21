@@ -29,21 +29,13 @@ class ReliableQuicStream;
 class NET_EXPORT_PRIVATE QuicStreamSequencer {
  public:
   explicit QuicStreamSequencer(ReliableQuicStream* quic_stream);
-  QuicStreamSequencer(size_t max_frame_memory,
-                      ReliableQuicStream* quic_stream);
-
   virtual ~QuicStreamSequencer();
-
-  // Returns the expected value of OnStreamFrame for this frame.
-  bool WillAcceptStreamFrame(const QuicStreamFrame& frame) const;
 
   // If the frame is the next one we need in order to process in-order data,
   // ProcessData will be immediately called on the stream until all buffered
   // data is processed or the stream fails to consume data.  Any unconsumed
-  // data will be buffered.
-  //
-  // If the frame is not the next in line, it will either be buffered, and
-  // this will return true, or it will be rejected and this will return false.
+  // data will be buffered. If the frame is not the next in line, it will be
+  // buffered.
   bool OnStreamFrame(const QuicStreamFrame& frame);
 
   // Once data is buffered, it's up to the stream to read it when the stream
@@ -73,8 +65,13 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Blocks processing of frames until |FlushBufferedFrames| is called.
   void SetBlockedUntilFlush();
 
-  size_t num_bytes_buffered() const {
-    return num_bytes_buffered_;
+  size_t num_bytes_buffered() const { return num_bytes_buffered_; }
+  QuicStreamOffset num_bytes_consumed() const { return num_bytes_consumed_; }
+
+  int num_frames_received() const { return num_frames_received_; }
+
+  int num_duplicate_frames_received() const {
+    return num_duplicate_frames_received_;
   }
 
  private:
@@ -103,9 +100,6 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Stores buffered frames (maps from sequence number -> frame data as string).
   FrameMap frames_;
 
-  // The maximum memory the sequencer can buffer.
-  size_t max_frame_memory_;
-
   // The offset, if any, we got a stream termination for.  When this many bytes
   // have been processed, the sequencer will be closed.
   QuicStreamOffset close_offset_;
@@ -116,6 +110,14 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
 
   // Tracks how many bytes the sequencer has buffered.
   size_t num_bytes_buffered_;
+
+  // Count of the number of frames received.
+  int num_frames_received_;
+
+  // Count of the number of duplicate frames received.
+  int num_duplicate_frames_received_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencer);
 };
 
 }  // namespace net

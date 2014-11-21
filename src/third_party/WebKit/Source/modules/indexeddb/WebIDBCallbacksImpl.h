@@ -35,6 +35,7 @@
 #include "wtf/RefPtr.h"
 
 namespace blink {
+class WebBlobInfo;
 class WebData;
 class WebIDBCursor;
 class WebIDBDatabase;
@@ -50,28 +51,28 @@ class IDBRequest;
 
 class WebIDBCallbacksImpl FINAL : public blink::WebIDBCallbacks {
 public:
-    static PassOwnPtr<WebIDBCallbacksImpl> create(PassRefPtr<IDBRequest>);
+    static PassOwnPtr<WebIDBCallbacksImpl> create(PassRefPtrWillBeRawPtr<IDBRequest>);
 
     virtual ~WebIDBCallbacksImpl();
 
     // Pointers transfer ownership.
     virtual void onError(const blink::WebIDBDatabaseError&) OVERRIDE;
     virtual void onSuccess(const blink::WebVector<blink::WebString>&) OVERRIDE;
-    virtual void onSuccess(blink::WebIDBCursor*, const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&) OVERRIDE;
+    virtual void onSuccess(blink::WebIDBCursor*, const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
     virtual void onSuccess(blink::WebIDBDatabase*, const blink::WebIDBMetadata&) OVERRIDE;
     virtual void onSuccess(const blink::WebIDBKey&) OVERRIDE;
-    virtual void onSuccess(const blink::WebData&) OVERRIDE;
-    virtual void onSuccess(const blink::WebData&, const blink::WebIDBKey&, const blink::WebIDBKeyPath&) OVERRIDE;
+    virtual void onSuccess(const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
+    virtual void onSuccess(const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&, const blink::WebIDBKey&, const blink::WebIDBKeyPath&) OVERRIDE;
     virtual void onSuccess(long long) OVERRIDE;
     virtual void onSuccess() OVERRIDE;
-    virtual void onSuccess(const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&) OVERRIDE;
+    virtual void onSuccess(const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
     virtual void onBlocked(long long oldVersion) OVERRIDE;
     virtual void onUpgradeNeeded(long long oldVersion, blink::WebIDBDatabase*, const blink::WebIDBMetadata&, unsigned short dataLoss, blink::WebString dataLossMessage) OVERRIDE;
 
 private:
-    explicit WebIDBCallbacksImpl(PassRefPtr<IDBRequest>);
+    explicit WebIDBCallbacksImpl(PassRefPtrWillBeRawPtr<IDBRequest>);
 
-    RefPtr<IDBRequest> m_request;
+    RefPtrWillBePersistent<IDBRequest> m_request;
 };
 
 } // namespace WebCore

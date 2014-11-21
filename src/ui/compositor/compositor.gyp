@@ -117,7 +117,8 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11'
+            '<(DEPTH)/build/linux/system.gyp:x11',
+            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
           ]
         }]
       ]
@@ -141,6 +142,7 @@
         'layer_animation_element_unittest.cc',
         'layer_animation_sequence_unittest.cc',
         'layer_animator_unittest.cc',
+        'layer_owner_unittest.cc',
         'layer_unittest.cc',
         'run_all_unittests.cc',
         'transform_animation_curve_adapter_unittest.cc',
@@ -153,8 +155,7 @@
         }],
         ['os_posix == 1 and OS != "mac"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],

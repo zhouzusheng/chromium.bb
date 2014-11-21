@@ -1,5 +1,7 @@
 // FIXME: When we have all the properties using the new StyleBuilder, we
 //   should use this for make_css_property_names.py
+// Note that type_name is currently only used for non-custom value application
+// and when explicitly referred to in generated applicators.
 // Note: Mandatory blank line to skip parameter parsing phase
 
 align-content
@@ -63,6 +65,15 @@ font-variant font, type_name=FontVariant, name_for_methods=Variant
 font-variant-ligatures custom_all
 font-weight custom_all
 grid-auto-flow type_name=GridAutoFlow
+grid-auto-columns converter=convertGridTrackSize
+grid-auto-rows converter=convertGridTrackSize
+grid-column-start converter=convertGridPosition
+grid-column-end converter=convertGridPosition
+grid-row-start converter=convertGridPosition
+grid-row-end converter=convertGridPosition
+grid-template-columns custom_all
+grid-template-rows custom_all
+grid-template-areas custom_all
 height type_name=Length, initial=initialSize, converter=convertLengthSizing
 justify-content
 image-rendering
@@ -110,7 +121,6 @@ scroll-behavior type_name=ScrollBehavior
 shape-image-threshold type_name=float
 shape-margin type_name=Length, converter=convertLength
 shape-outside type_name=ShapeValue*, custom_value
-shape-padding type_name=Length, converter=convertLength
 size custom_all
 speak
 table-layout
@@ -154,6 +164,7 @@ z-index type_name=int, custom_all
 -webkit-animation-timing-function custom_all
 -webkit-appearance type_name=ControlPart
 -webkit-aspect-ratio custom_all
+backface-visibility
 -webkit-backface-visibility
 -webkit-background-clip use_handlers_for=CSSPropertyBackgroundClip
 -webkit-background-composite custom_all
@@ -185,6 +196,7 @@ column-fill type_name=ColumnFill
 -webkit-column-rule-width type_name=unsigned short, converter=convertLineWidth<unsigned short>
 -webkit-column-span type_name=unsigned int, name_for_methods=ColumnSpanCount, custom_all
 -webkit-column-width type_name=float, custom_all
+-webkit-filter custom_value
 -webkit-font-smoothing font, type_name=FontSmoothingMode
 -webkit-highlight type_name=AtomicString, converter=convertString<CSSValueNone>
 -webkit-hyphenate-character type_name=AtomicString, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
@@ -213,12 +225,14 @@ column-fill type_name=ColumnFill
 -webkit-mask-repeat-x custom_all
 -webkit-mask-repeat-y custom_all
 -webkit-mask-size custom_all
+perspective-origin custom_all
 -webkit-perspective-origin custom_all
 -webkit-perspective-origin-x type_name=Length, converter=convertLength
 -webkit-perspective-origin-y type_name=Length, converter=convertLength
 -webkit-print-color-adjust type_name=PrintColorAdjust
 -webkit-rtl-ordering type_name=Order, getter=rtlOrdering, setter=setRTLOrdering, initial=initialRTLOrdering
 -webkit-ruby-position type_name=RubyPosition
+-webkit-tap-highlight-color custom_value
 -webkit-text-combine type_name=TextCombine
 -webkit-text-emphasis-color custom_all
 -webkit-text-emphasis-position type_name=TextEmphasisPosition
@@ -227,6 +241,9 @@ column-fill type_name=ColumnFill
 -webkit-text-security
 -webkit-text-stroke-color custom_all
 text-underline-position custom_value
+transform custom_value
+-webkit-transform use_handlers_for=CSSPropertyTransform
+transform-origin custom_all
 -webkit-transform-origin-x type_name=Length, converter=convertLength
 -webkit-transform-origin-y type_name=Length, converter=convertLength
 -webkit-transform-origin-z type_name=float, converter=convertComputedLength<float>
@@ -254,15 +271,21 @@ dominant-baseline svg
 fill-opacity svg, type_name=float, converter=convertNumberOrPercentage
 fill-rule svg, type_name=WindRule
 filter svg, type_name=String, name_for_methods=FilterResource, converter=convertFragmentIdentifier
+flood-color svg, converter=convertSVGColor
 flood-opacity svg, type_name=float, converter=convertNumberOrPercentage
-kerning svg, type_name=SVGLength, converter=convertSVGLength
+glyph-orientation-horizontal svg, converter=convertGlyphOrientation
+glyph-orientation-vertical svg, custom_value
+lighting-color svg, converter=convertSVGColor
 marker-start svg, type_name=String, name_for_methods=MarkerStartResource, converter=convertFragmentIdentifier
 marker-mid svg, type_name=String, name_for_methods=MarkerMidResource, converter=convertFragmentIdentifier
 marker-end svg, type_name=String, name_for_methods=MarkerEndResource, converter=convertFragmentIdentifier
 mask svg, type_name=String, name_for_methods=MaskerResource, converter=convertFragmentIdentifier
 mask-type svg
+paint-order svg, converter=convertPaintOrder
 shape-rendering svg
+stop-color svg, converter=convertSVGColor
 stop-opacity svg, type_name=float, converter=convertNumberOrPercentage
+stroke-dasharray svg, name_for_methods=StrokeDashArray, converter=convertStrokeDasharray
 stroke-dashoffset svg, type_name=SVGLength, name_for_methods=StrokeDashOffset, converter=convertSVGLength
 stroke-linecap svg, type_name=LineCap, name_for_methods=CapStyle
 stroke-linejoin svg, type_name=LineJoin, name_for_methods=JoinStyle

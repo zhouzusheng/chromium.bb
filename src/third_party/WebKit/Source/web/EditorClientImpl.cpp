@@ -25,14 +25,14 @@
  */
 
 #include "config.h"
-#include "EditorClientImpl.h"
+#include "web/EditorClientImpl.h"
 
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
-#include "WebPermissionClient.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "core/editing/SelectionType.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebPermissionClient.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
@@ -49,7 +49,7 @@ EditorClientImpl::~EditorClientImpl()
 
 void EditorClientImpl::respondToChangedSelection(LocalFrame* frame, WebCore::SelectionType selectionType)
 {
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
     if (webFrame->client())
         webFrame->client()->didChangeSelection(selectionType != WebCore::RangeSelection);
 }
@@ -62,18 +62,18 @@ void EditorClientImpl::respondToChangedContents()
 
 bool EditorClientImpl::canCopyCut(LocalFrame* frame, bool defaultValue) const
 {
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
     if (!webFrame->permissionClient())
         return defaultValue;
-    return webFrame->permissionClient()->allowWriteToClipboard(webFrame, defaultValue);
+    return webFrame->permissionClient()->allowWriteToClipboard(defaultValue);
 }
 
 bool EditorClientImpl::canPaste(LocalFrame* frame, bool defaultValue) const
 {
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
     if (!webFrame->permissionClient())
         return defaultValue;
-    return webFrame->permissionClient()->allowReadFromClipboard(webFrame, defaultValue);
+    return webFrame->permissionClient()->allowReadFromClipboard(defaultValue);
 }
 
 void EditorClientImpl::didExecuteCommand(String commandName)

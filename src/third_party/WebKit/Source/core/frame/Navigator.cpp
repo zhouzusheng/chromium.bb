@@ -32,7 +32,6 @@
 #include "core/loader/FrameLoader.h"
 #include "core/plugins/DOMMimeTypeArray.h"
 #include "core/plugins/DOMPluginArray.h"
-#include "platform/Language.h"
 
 #ifndef WEBCORE_NAVIGATOR_PRODUCT_SUB
 #define WEBCORE_NAVIGATOR_PRODUCT_SUB "20030107"
@@ -56,11 +55,6 @@ Navigator::Navigator(LocalFrame* frame)
 
 Navigator::~Navigator()
 {
-}
-
-AtomicString Navigator::language() const
-{
-    return defaultLanguage();
 }
 
 String Navigator::productSub() const
@@ -133,9 +127,7 @@ void Navigator::trace(Visitor* visitor)
 {
     visitor->trace(m_plugins);
     visitor->trace(m_mimeTypes);
-#if ENABLE(OILPAN)
-    HeapSupplementable<Navigator>::trace(visitor);
-#endif
+    WillBeHeapSupplementable<Navigator>::trace(visitor);
 }
 
 } // namespace WebCore

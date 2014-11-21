@@ -11,6 +11,11 @@
 #include "base/basictypes.h"
 #include "build/build_config.h"
 
+#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+#include "base/file_util.h"
+#include "base/lazy_instance.h"
+#endif
+
 #if defined(ARCH_CPU_X86_FAMILY)
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -83,6 +88,56 @@ uint64 _xgetbv(uint32 xcr) {
 
 #endif  // !_MSC_VER
 #endif  // ARCH_CPU_X86_FAMILY
+
+#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+
+// Returns the string found in /proc/cpuinfo under the key "model name" or
+// "Processor". "model name" is used in Linux 3.8 and later (3.7 and later for
+// arm64) and is shown once per CPU. "Processor" is used in earler versions and
+// is shown only once at the top of /proc/cpuinfo regardless of the number CPUs.
+std::string ParseCpuInfo() {
+  const char kModelNamePrefix[] = "model name\t: ";
+  const char kProcessorPrefix[] = "Processor\t: ";
+  std::string contents;
+  ReadFileToString(FilePath("/proc/cpuinfo"), &contents);
+  DCHECK(!contents.empty());
+  std::string cpu_brand;
+  if (!contents.empty()) {
+    std::istringstream iss(contents);
+    std::string line;
+    while (std::getline(iss, line)) {
+      if (line.compare(0, strlen(kModelNamePrefix), kModelNamePrefix) == 0) {
+        cpu_brand.assign(line.substr(strlen(kModelNamePrefix)));
+        break;
+      }
+      if (line.compare(0, strlen(kProcessorPrefix), kProcessorPrefix) == 0) {
+        cpu_brand.assign(line.substr(strlen(kProcessorPrefix)));
+        break;
+      }
+    }
+  }
+  return cpu_brand;
+}
+
+class LazyCpuInfoValue {
+ public:
+  LazyCpuInfoValue() : value_(ParseCpuInfo()) {}
+  const std::string& value() { return value_; }
+
+ private:
+  const std::string value_;
+  DISALLOW_COPY_AND_ASSIGN(LazyCpuInfoValue);
+};
+
+base::LazyInstance<LazyCpuInfoValue> g_lazy_cpu_brand =
+    LAZY_INSTANCE_INITIALIZER;
+
+const std::string& CpuBrandInfo() {
+  return g_lazy_cpu_brand.Get().value();
+}
+
+#endif  // defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) ||
+        // defined(OS_LINUX))
 
 }  // anonymous namespace
 
@@ -157,13 +212,8 @@ void CPU::Initialize() {
     __cpuid(cpu_info, parameter_containing_non_stop_time_stamp_counter);
     has_non_stop_time_stamp_counter_ = (cpu_info[3] & (1 << 8)) != 0;
   }
-#elif defined(ARCH_CPU_ARM_FAMILY)
-  // TODO(piman): Expand this. ARM has a CPUID register, but it's not available
-  // in user mode. /proc/cpuinfo has some information, but it's non standard,
-  // platform-specific, and not accessible from the sandbox.
-  // For some purposes, this first approximation is enough.
-  // crbug.com/313454
-  cpu_brand_.assign("ARM");
+#elif defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+  cpu_brand_.assign(CpuBrandInfo());
 #endif
 }
 

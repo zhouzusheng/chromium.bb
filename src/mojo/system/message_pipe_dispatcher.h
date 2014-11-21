@@ -66,21 +66,23 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipeDispatcher : public Dispatcher {
       uint32_t num_bytes,
       std::vector<DispatcherTransport>* transports,
       MojoWriteMessageFlags flags) OVERRIDE;
-  virtual MojoResult ReadMessageImplNoLock(
-      void* bytes,
-      uint32_t* num_bytes,
-      std::vector<scoped_refptr<Dispatcher> >* dispatchers,
-      uint32_t* num_dispatchers,
-      MojoReadMessageFlags flags) OVERRIDE;
+  virtual MojoResult ReadMessageImplNoLock(void* bytes,
+                                           uint32_t* num_bytes,
+                                           DispatcherVector* dispatchers,
+                                           uint32_t* num_dispatchers,
+                                           MojoReadMessageFlags flags) OVERRIDE;
   virtual MojoResult AddWaiterImplNoLock(Waiter* waiter,
                                          MojoWaitFlags flags,
                                          MojoResult wake_result) OVERRIDE;
   virtual void RemoveWaiterImplNoLock(Waiter* waiter) OVERRIDE;
-  virtual size_t GetMaximumSerializedSizeImplNoLock(
-      const Channel* channel) const OVERRIDE;
-  virtual bool SerializeAndCloseImplNoLock(Channel* channel,
-                                           void* destination,
-                                           size_t* actual_size) OVERRIDE;
+  virtual void StartSerializeImplNoLock(Channel* channel,
+                                        size_t* max_size,
+                                        size_t* max_platform_handles) OVERRIDE;
+  virtual bool EndSerializeAndCloseImplNoLock(
+      Channel* channel,
+      void* destination,
+      size_t* actual_size,
+      std::vector<embedder::PlatformHandle>* platform_handles) OVERRIDE;
 
   // Protected by |lock()|:
   scoped_refptr<MessagePipe> message_pipe_;  // This will be null if closed.

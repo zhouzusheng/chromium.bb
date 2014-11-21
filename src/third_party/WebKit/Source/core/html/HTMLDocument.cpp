@@ -73,42 +73,14 @@ HTMLDocument::HTMLDocument(const DocumentInit& initializer, DocumentClassFlags e
 {
     ScriptWrappable::init(this);
     clearXMLVersion();
+    if (isSrcdocDocument() || initializer.importsController()) {
+        ASSERT(inNoQuirksMode());
+        lockCompatibilityMode();
+    }
 }
 
 HTMLDocument::~HTMLDocument()
 {
-}
-
-const AtomicString& HTMLDocument::dir()
-{
-    HTMLElement* b = body();
-    if (!b)
-        return nullAtom;
-    return b->getAttribute(dirAttr);
-}
-
-void HTMLDocument::setDir(const AtomicString& value)
-{
-    HTMLElement* b = body();
-    if (b)
-        b->setAttribute(dirAttr, value);
-}
-
-String HTMLDocument::designMode() const
-{
-    return inDesignMode() ? "on" : "off";
-}
-
-void HTMLDocument::setDesignMode(const String& value)
-{
-    InheritedBool mode;
-    if (equalIgnoringCase(value, "on"))
-        mode = on;
-    else if (equalIgnoringCase(value, "off"))
-        mode = off;
-    else
-        mode = inherit;
-    Document::setDesignMode(mode);
 }
 
 HTMLBodyElement* HTMLDocument::htmlBodyElement() const
@@ -300,22 +272,22 @@ bool HTMLDocument::isCaseSensitiveAttribute(const QualifiedName& attributeName)
     return !isPossibleHTMLAttr || !htmlCaseInsensitiveAttributesSet->contains(attributeName.localName().impl());
 }
 
-void HTMLDocument::write(DOMWindow* callingWindow, const Vector<String>& text)
+void HTMLDocument::write(DOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
 {
     ASSERT(callingWindow);
     StringBuilder builder;
     for (size_t i = 0; i < text.size(); ++i)
         builder.append(text[i]);
-    write(builder.toString(), callingWindow->document());
+    write(builder.toString(), callingWindow->document(), exceptionState);
 }
 
-void HTMLDocument::writeln(DOMWindow* callingWindow, const Vector<String>& text)
+void HTMLDocument::writeln(DOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
 {
     ASSERT(callingWindow);
     StringBuilder builder;
     for (size_t i = 0; i < text.size(); ++i)
         builder.append(text[i]);
-    writeln(builder.toString(), callingWindow->document());
+    writeln(builder.toString(), callingWindow->document(), exceptionState);
 }
 
 }

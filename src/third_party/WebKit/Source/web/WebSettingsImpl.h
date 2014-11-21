@@ -31,7 +31,7 @@
 #ifndef WebSettingsImpl_h
 #define WebSettingsImpl_h
 
-#include "WebSettings.h"
+#include "public/web/WebSettings.h"
 
 namespace WebCore {
 class InspectorController;
@@ -46,6 +46,7 @@ public:
     virtual ~WebSettingsImpl() { }
 
     virtual bool mainFrameResizesAreOrientationChanges() const OVERRIDE;
+    virtual bool shrinksViewportContentToFit() const OVERRIDE;
     virtual bool scrollAnimatorEnabled() const OVERRIDE;
     virtual bool touchEditingEnabled() const OVERRIDE;
     virtual bool viewportEnabled() const OVERRIDE;
@@ -53,22 +54,18 @@ public:
     virtual void setAccelerated2dCanvasEnabled(bool) OVERRIDE;
     virtual void setAccelerated2dCanvasMSAASampleCount(int) OVERRIDE;
     virtual void setAcceleratedCompositingEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForAnimationEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForCanvasEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFiltersEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) OVERRIDE;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForGpuRasterizationHintEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForPluginsEnabled(bool) OVERRIDE;
-    virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) OVERRIDE;
     virtual void setAcceleratedCompositingForVideoEnabled(bool) OVERRIDE;
     virtual void setAllowDisplayOfInsecureContent(bool) OVERRIDE;
     virtual void setAllowFileAccessFromFileURLs(bool) OVERRIDE;
     virtual void setAllowCustomScrollbarInMainFrame(bool) OVERRIDE;
     virtual void setAllowRunningOfInsecureContent(bool) OVERRIDE;
+    virtual void setAllowConnectingInsecureWebSocket(bool) OVERRIDE;
     virtual void setAllowScriptsToCloseWindows(bool) OVERRIDE;
     virtual void setAllowUniversalAccessFromFileURLs(bool) OVERRIDE;
     virtual void setAntialiased2dCanvasEnabled(bool) OVERRIDE;
@@ -95,17 +92,14 @@ public:
     virtual void setDeviceSupportsTouch(bool) OVERRIDE;
     virtual void setDoubleTapToZoomEnabled(bool) OVERRIDE;
     virtual void setDownloadableBinaryFontsEnabled(bool) OVERRIDE;
-    virtual void setEditableLinkBehaviorNeverLive() OVERRIDE;
     virtual void setEditingBehavior(EditingBehavior) OVERRIDE;
     virtual void setEnableScrollAnimator(bool) OVERRIDE;
     virtual void setEnableTouchAdjustment(bool) OVERRIDE;
     virtual void setRegionBasedColumnsEnabled(bool) OVERRIDE;
     virtual void setExperimentalWebGLEnabled(bool) OVERRIDE;
-    virtual void setExperimentalWebSocketEnabled(bool) OVERRIDE;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setForceCompositingMode(bool) OVERRIDE;
-    virtual void setFullScreenEnabled(bool) OVERRIDE;
     virtual void setGestureTapHighlightEnabled(bool) OVERRIDE;
     virtual void setHyperlinkAuditingEnabled(bool) OVERRIDE;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) OVERRIDE;
@@ -115,15 +109,14 @@ public:
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) OVERRIDE;
     virtual void setJavaScriptEnabled(bool) OVERRIDE;
     virtual void setLayerSquashingEnabled(bool) OVERRIDE;
-    virtual void setLayoutFallbackWidth(int) OVERRIDE;
     virtual void setLoadsImagesAutomatically(bool) OVERRIDE;
     virtual void setLoadWithOverviewMode(bool) OVERRIDE;
     virtual void setLocalStorageEnabled(bool) OVERRIDE;
     virtual void setMainFrameClipsContent(bool) OVERRIDE;
     virtual void setMainFrameResizesAreOrientationChanges(bool) OVERRIDE;
     virtual void setMaxTouchPoints(int) OVERRIDE;
+    virtual void setMediaControlsOverlayPlayButtonEnabled(bool) OVERRIDE;
     virtual void setMediaPlaybackRequiresUserGesture(bool) OVERRIDE;
-    virtual void setMediaFullscreenRequiresUserGesture(bool) OVERRIDE;
     virtual void setMinimumAccelerated2dCanvasSize(int) OVERRIDE;
     virtual void setMinimumFontSize(int) OVERRIDE;
     virtual void setMinimumLogicalFontSize(int) OVERRIDE;
@@ -151,6 +144,7 @@ public:
     virtual void setShowFPSCounter(bool) OVERRIDE;
     virtual void setShowPaintRects(bool) OVERRIDE;
     virtual void setShrinksStandaloneImagesToFit(bool) OVERRIDE;
+    virtual void setShrinksViewportContentToFit(bool) OVERRIDE;
     virtual void setSmartInsertDeleteEnabled(bool) OVERRIDE;
     virtual void setSpatialNavigationEnabled(bool) OVERRIDE;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
@@ -169,6 +163,7 @@ public:
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) OVERRIDE;
     virtual void setUseSolidColorScrollbars(bool) OVERRIDE;
     virtual void setUseWideViewport(bool) OVERRIDE;
+    virtual void setUseThreadedHTMLParserForDataURLs(bool) OVERRIDE;
     virtual void setValidationMessageTimerMagnification(int) OVERRIDE;
     virtual void setViewportEnabled(bool) OVERRIDE;
     virtual void setViewportMetaEnabled(bool) OVERRIDE;
@@ -181,9 +176,6 @@ public:
     virtual void setWebSecurityEnabled(bool) OVERRIDE;
     virtual void setWideViewportQuirkEnabled(bool) OVERRIDE;
     virtual void setXSSAuditorEnabled(bool) OVERRIDE;
-
-    // FIXME: Make chromium stop calling this and delete the method.
-    virtual void setVisualWordMovementEnabled(bool) OVERRIDE { }
 
     bool showFPSCounter() const { return m_showFPSCounter; }
     bool showPaintRects() const { return m_showPaintRects; }
@@ -209,6 +201,7 @@ private:
     bool m_doubleTapToZoomEnabled;
     bool m_perTilePaintingEnabled;
     bool m_supportDeprecatedTargetDensityDPI;
+    bool m_shrinksViewportContentToFit;
     // This quirk is to maintain compatibility with Android apps built on
     // the Android SDK prior to and including version 18. Presumably, this
     // can be removed any time after 2015. See http://crbug.com/277369.

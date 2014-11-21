@@ -80,7 +80,9 @@ void FETile::applySoftware()
     GraphicsContext* tileImageContext = tileImage->context();
     tileImageContext->scale(FloatSize(intTileSize.width() / tileRect.width(), intTileSize.height() / tileRect.height()));
     tileImageContext->translate(-inMaxEffectLocation.x(), -inMaxEffectLocation.y());
-    tileImageContext->drawImageBuffer(in->asImageBuffer(), in->absolutePaintRect().location());
+
+    if (ImageBuffer* tileImageBuffer = in->asImageBuffer())
+        tileImageContext->drawImageBuffer(tileImageBuffer, IntRect(in->absolutePaintRect().location(), tileImageBuffer->size()));
 
     RefPtr<Pattern> pattern = Pattern::create(tileImage->copyImage(CopyBackingStore), true, true);
 
@@ -112,7 +114,7 @@ PassRefPtr<SkImageFilter> FETile::createImageFilter(SkiaImageFilterBuilder* buil
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     FloatRect srcRect = inputEffect(0) ? getRect(inputEffect(0)) : filter()->filterRegion();
     FloatRect dstRect = getRect(this);
-    return adoptRef(new SkTileImageFilter(srcRect, dstRect, input.get()));
+    return adoptRef(SkTileImageFilter::Create(srcRect, dstRect, input.get()));
 }
 
 TextStream& FETile::externalRepresentation(TextStream& ts, int indent) const

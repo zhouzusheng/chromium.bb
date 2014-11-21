@@ -23,6 +23,8 @@ class NET_EXPORT_PRIVATE TCPLossAlgorithm : public LossDetectionInterface {
   TCPLossAlgorithm();
   virtual ~TCPLossAlgorithm() {}
 
+  virtual LossDetectionType GetLossDetectionType() const OVERRIDE;
+
   // Uses nack counts to decide when packets are lost.
   virtual SequenceNumberSet DetectLostPackets(
       const QuicUnackedPacketMap& unacked_packets,
@@ -35,6 +37,8 @@ class NET_EXPORT_PRIVATE TCPLossAlgorithm : public LossDetectionInterface {
 
  private:
   QuicTime loss_detection_timeout_;
+
+  DISALLOW_COPY_AND_ASSIGN(TCPLossAlgorithm);
 };
 
 }  // namespace net

@@ -34,7 +34,8 @@
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/ConsoleTypes.h"
-#include "heap/Handle.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -52,7 +53,7 @@ public:
     }
     virtual ~WorkerConsole();
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     virtual ExecutionContext* context() OVERRIDE;

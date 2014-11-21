@@ -39,8 +39,8 @@ class HTMLOptionElement;
 
 class HTMLSelectElement FINAL : public HTMLFormControlElementWithState, public TypeAheadDataSource {
 public:
-    static PassRefPtr<HTMLSelectElement> create(Document&);
-    static PassRefPtr<HTMLSelectElement> create(Document&, HTMLFormElement*);
+    static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&, HTMLFormElement*);
 
     int selectedIndex() const;
     void setSelectedIndex(int);
@@ -82,7 +82,7 @@ public:
     void invalidateSelectedItems();
     void updateListItemSelectedStates();
 
-    const Vector<HTMLElement*>& listItems() const;
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems() const;
 
     virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
     void accessKeySetSelectedIndex(int);
@@ -114,7 +114,11 @@ public:
 
     // For use in the implementation of HTMLOptionElement.
     void optionSelectionStateChanged(HTMLOptionElement*, bool optionIsSelected);
-    bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionState&);
+    bool anonymousIndexedSetter(unsigned, PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
+
+    void updateListOnRenderer();
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     HTMLSelectElement(Document&, HTMLFormElement*);
@@ -197,7 +201,7 @@ private:
     virtual String optionAtIndex(int index) const OVERRIDE;
 
     // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
-    mutable Vector<HTMLElement*> m_listItems;
+    mutable WillBeHeapVector<RawPtrWillBeMember<HTMLElement> > m_listItems;
     Vector<bool> m_lastOnChangeSelection;
     Vector<bool> m_cachedStateForActiveSelection;
     TypeAhead m_typeAhead;

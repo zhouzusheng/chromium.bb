@@ -23,6 +23,7 @@
 #include "core/rendering/style/StyleRareNonInheritedData.h"
 
 #include "core/rendering/style/ContentData.h"
+#include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleFilterData.h"
@@ -44,7 +45,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_pageSize()
     , m_shapeOutside(RenderStyle::initialShapeOutside())
     , m_shapeMargin(RenderStyle::initialShapeMargin())
-    , m_shapePadding(RenderStyle::initialShapePadding())
     , m_shapeImageThreshold(RenderStyle::initialShapeImageThreshold())
     , m_clipPath(RenderStyle::initialClipPath())
     , m_textDecorationColor(StyleColor::currentColor())
@@ -76,7 +76,12 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_textDecorationStyle(RenderStyle::initialTextDecorationStyle())
     , m_wrapFlow(RenderStyle::initialWrapFlow())
     , m_wrapThrough(RenderStyle::initialWrapThrough())
-    , m_runningAcceleratedAnimation(false)
+    , m_hasCurrentOpacityAnimation(false)
+    , m_hasCurrentTransformAnimation(false)
+    , m_hasCurrentFilterAnimation(false)
+    , m_runningOpacityAnimationOnCompositor(false)
+    , m_runningTransformAnimationOnCompositor(false)
+    , m_runningFilterAnimationOnCompositor(false)
     , m_hasAspectRatio(false)
     , m_effectiveBlendMode(RenderStyle::initialBlendMode())
     , m_touchAction(RenderStyle::initialTouchAction())
@@ -119,7 +124,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_pageSize(o.m_pageSize)
     , m_shapeOutside(o.m_shapeOutside)
     , m_shapeMargin(o.m_shapeMargin)
-    , m_shapePadding(o.m_shapePadding)
     , m_shapeImageThreshold(o.m_shapeImageThreshold)
     , m_clipPath(o.m_clipPath)
     , m_textDecorationColor(o.m_textDecorationColor)
@@ -151,7 +155,12 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_textDecorationStyle(o.m_textDecorationStyle)
     , m_wrapFlow(o.m_wrapFlow)
     , m_wrapThrough(o.m_wrapThrough)
-    , m_runningAcceleratedAnimation(o.m_runningAcceleratedAnimation)
+    , m_hasCurrentOpacityAnimation(o.m_hasCurrentOpacityAnimation)
+    , m_hasCurrentTransformAnimation(o.m_hasCurrentTransformAnimation)
+    , m_hasCurrentFilterAnimation(o.m_hasCurrentFilterAnimation)
+    , m_runningOpacityAnimationOnCompositor(o.m_runningOpacityAnimationOnCompositor)
+    , m_runningTransformAnimationOnCompositor(o.m_runningTransformAnimationOnCompositor)
+    , m_runningFilterAnimationOnCompositor(o.m_runningFilterAnimationOnCompositor)
     , m_hasAspectRatio(o.m_hasAspectRatio)
     , m_effectiveBlendMode(o.m_effectiveBlendMode)
     , m_touchAction(o.m_touchAction)
@@ -200,7 +209,6 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_pageSize == o.m_pageSize
         && m_shapeOutside == o.m_shapeOutside
         && m_shapeMargin == o.m_shapeMargin
-        && m_shapePadding == o.m_shapePadding
         && m_shapeImageThreshold == o.m_shapeImageThreshold
         && m_clipPath == o.m_clipPath
         && m_textDecorationColor == o.m_textDecorationColor
@@ -233,7 +241,9 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_textDecorationStyle == o.m_textDecorationStyle
         && m_wrapFlow == o.m_wrapFlow
         && m_wrapThrough == o.m_wrapThrough
-        && !m_runningAcceleratedAnimation && !o.m_runningAcceleratedAnimation
+        && m_hasCurrentOpacityAnimation == o.m_hasCurrentOpacityAnimation
+        && m_hasCurrentTransformAnimation == o.m_hasCurrentTransformAnimation
+        && m_hasCurrentFilterAnimation == o.m_hasCurrentFilterAnimation
         && m_effectiveBlendMode == o.m_effectiveBlendMode
         && m_hasAspectRatio == o.m_hasAspectRatio
         && m_touchAction == o.m_touchAction
@@ -259,50 +269,27 @@ bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInherite
 
 bool StyleRareNonInheritedData::counterDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (m_counterDirectives.get() == o.m_counterDirectives.get())
-        return true;
-
-    if (m_counterDirectives && o.m_counterDirectives && *m_counterDirectives == *o.m_counterDirectives)
-        return true;
-
-    return false;
+    return dataEquivalent(m_counterDirectives, o.m_counterDirectives);
 }
 
 bool StyleRareNonInheritedData::shadowDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_boxShadow && o.m_boxShadow) || (m_boxShadow && !o.m_boxShadow))
-        return false;
-    if (m_boxShadow && o.m_boxShadow && (*m_boxShadow != *o.m_boxShadow))
-        return false;
-    return true;
+    return dataEquivalent(m_boxShadow, o.m_boxShadow);
 }
 
 bool StyleRareNonInheritedData::reflectionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (m_boxReflect != o.m_boxReflect) {
-        if (!m_boxReflect || !o.m_boxReflect)
-            return false;
-        return *m_boxReflect == *o.m_boxReflect;
-    }
-    return true;
+    return dataEquivalent(m_boxReflect, o.m_boxReflect);
 }
 
 bool StyleRareNonInheritedData::animationDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_animations && o.m_animations) || (m_animations && !o.m_animations))
-        return false;
-    if (m_animations && o.m_animations && (*m_animations != *o.m_animations))
-        return false;
-    return true;
+    return dataEquivalent(m_animations, o.m_animations);
 }
 
 bool StyleRareNonInheritedData::transitionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_transitions && o.m_transitions) || (m_transitions && !o.m_transitions))
-        return false;
-    if (m_transitions && o.m_transitions && (*m_transitions != *o.m_transitions))
-        return false;
-    return true;
+    return dataEquivalent(m_transitions, o.m_transitions);
 }
 
 bool StyleRareNonInheritedData::hasFilters() const

@@ -32,33 +32,45 @@ private:
     MediaQueryToken consumeNumericToken();
     MediaQueryToken consumeIdentLikeToken();
     MediaQueryToken consumeNumber();
+    MediaQueryToken consumeStringTokenUntil(UChar);
 
     void consumeUntilNonWhitespace();
+    bool consumeUntilCommentEndFound();
 
     bool consumeIfNext(UChar);
     String consumeName();
     UChar consumeEscape();
 
-    bool nextTwoCharsAreValidEscape();
+    bool nextTwoCharsAreValidEscape(unsigned offset);
     bool nextCharsAreNumber();
     bool nextCharsAreIdentifier();
+    MediaQueryToken blockStart(MediaQueryTokenType);
+    MediaQueryToken blockStart(MediaQueryTokenType blockType, MediaQueryTokenType, String);
+    MediaQueryToken blockEnd(MediaQueryTokenType, MediaQueryTokenType startType);
 
     typedef MediaQueryToken (MediaQueryTokenizer::*CodePoint)(UChar);
 
     static const CodePoint codePoints[];
+    Vector<MediaQueryTokenType> m_blockStack;
 
     MediaQueryToken whiteSpace(UChar);
     MediaQueryToken leftParenthesis(UChar);
     MediaQueryToken rightParenthesis(UChar);
+    MediaQueryToken leftBracket(UChar);
+    MediaQueryToken rightBracket(UChar);
+    MediaQueryToken leftBrace(UChar);
+    MediaQueryToken rightBrace(UChar);
     MediaQueryToken plusOrFullStop(UChar);
     MediaQueryToken comma(UChar);
     MediaQueryToken hyphenMinus(UChar);
+    MediaQueryToken asterisk(UChar);
     MediaQueryToken solidus(UChar);
     MediaQueryToken colon(UChar);
     MediaQueryToken semiColon(UChar);
     MediaQueryToken reverseSolidus(UChar);
     MediaQueryToken asciiDigit(UChar);
     MediaQueryToken nameStart(UChar);
+    MediaQueryToken stringStart(UChar);
     MediaQueryToken endOfFile(UChar);
 
     MediaQueryInputStream& m_input;

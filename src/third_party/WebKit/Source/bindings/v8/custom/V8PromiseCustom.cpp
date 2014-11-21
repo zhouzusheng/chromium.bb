@@ -32,7 +32,6 @@
 #include "bindings/v8/custom/V8PromiseCustom.h"
 
 #include "V8Promise.h"
-#include "bindings/v8/DOMRequestState.h"
 #include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/ScriptFunctionCall.h"
 #include "bindings/v8/ScriptState.h"
@@ -54,7 +53,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <v8.h>
 
-#define V8TRYCATCH_VOID_EMPTY(type, var, value)    \
+#define TONATIVE_VOID_EMPTY(type, var, value)    \
     type var;                                      \
     {                                              \
         v8::TryCatch block;                        \
@@ -211,7 +210,7 @@ void setStateForPromise(v8::Handle<v8::Object> promise, V8PromiseCustom::Promise
     internal->SetInternalField(V8PromiseCustom::InternalResultIndex, value);
     ExecutionContext* context = currentExecutionContext(isolate);
     if (InspectorInstrumentation::isPromiseTrackerEnabled(context))
-        InspectorInstrumentation::didUpdatePromiseState(context, ScriptObject(ScriptState::forContext(isolate->GetCurrentContext()), promise), state, ScriptValue(value, isolate));
+        InspectorInstrumentation::didUpdatePromiseState(context, ScriptObject(ScriptState::current(isolate), promise), state, ScriptValue(ScriptState::current(isolate), value));
 }
 
 class TaskPerformScopeForInstrumentation {
@@ -236,7 +235,7 @@ public:
         : m_promise(isolate, promise)
         , m_handler(isolate, handler)
         , m_argument(isolate, argument)
-        , m_requestState(context)
+        , m_scriptState(ScriptState::current(isolate))
     {
         ASSERT(!m_promise.isEmpty());
         ASSERT(!m_handler.isEmpty());
@@ -251,7 +250,7 @@ private:
     ScopedPersistent<v8::Object> m_promise;
     ScopedPersistent<v8::Function> m_handler;
     ScopedPersistent<v8::Value> m_argument;
-    DOMRequestState m_requestState;
+    RefPtr<ScriptState> m_scriptState;
 };
 
 void CallHandlerTask::performTask(ExecutionContext* context)
@@ -262,8 +261,8 @@ void CallHandlerTask::performTask(ExecutionContext* context)
     if (context->activeDOMObjectsAreStopped())
         return;
 
-    DOMRequestState::Scope scope(m_requestState);
-    v8::Isolate* isolate = m_requestState.isolate();
+    ScriptState::Scope scope(m_scriptState.get());
+    v8::Isolate* isolate = m_scriptState->isolate();
     v8::Handle<v8::Value> info[] = { m_argument.newLocal(isolate) };
     v8::TryCatch trycatch;
     v8::Local<v8::Value> value = V8ScriptRunner::callFunction(m_handler.newLocal(isolate), context, v8::Undefined(isolate), WTF_ARRAY_LENGTH(info), info, isolate);
@@ -281,7 +280,7 @@ public:
         , m_onFulfilled(isolate, onFulfilled)
         , m_onRejected(isolate, onRejected)
         , m_originatorValueObject(isolate, originatorValueObject)
-        , m_requestState(context)
+        , m_scriptState(ScriptState::current(isolate))
     {
         ASSERT(!m_promise.isEmpty());
         ASSERT(!m_originatorValueObject.isEmpty());
@@ -296,7 +295,7 @@ private:
     ScopedPersistent<v8::Function> m_onFulfilled;
     ScopedPersistent<v8::Function> m_onRejected;
     ScopedPersistent<v8::Object> m_originatorValueObject;
-    DOMRequestState m_requestState;
+    RefPtr<ScriptState> m_scriptState;
 };
 
 void UpdateDerivedTask::performTask(ExecutionContext* context)
@@ -307,8 +306,8 @@ void UpdateDerivedTask::performTask(ExecutionContext* context)
     if (context->activeDOMObjectsAreStopped())
         return;
 
-    DOMRequestState::Scope scope(m_requestState);
-    v8::Isolate* isolate = m_requestState.isolate();
+    ScriptState::Scope scope(m_scriptState.get());
+    v8::Isolate* isolate = m_scriptState->isolate();
     v8::Local<v8::Object> originatorValueObject = m_originatorValueObject.newLocal(isolate);
     v8::Local<v8::Value> coercedAlready = V8HiddenValue::getHiddenValue(isolate, originatorValueObject, V8HiddenValue::thenableHiddenPromise(isolate));
     if (!coercedAlready.IsEmpty() && coercedAlready->IsObject()) {
@@ -505,7 +504,7 @@ void PromisePropagator::updateDerivedFromPromise(v8::Handle<v8::Object> derivedP
     }
     ExecutionContext* context = currentExecutionContext(isolate);
     if (InspectorInstrumentation::isPromiseTrackerEnabled(context)) {
-        ScriptState* scriptState = ScriptState::forContext(isolate->GetCurrentContext());
+        ScriptState* scriptState = ScriptState::current(isolate);
         InspectorInstrumentation::didUpdatePromiseParent(context, ScriptObject(scriptState, derivedPromise), ScriptObject(scriptState, promise));
     }
 }
@@ -523,9 +522,9 @@ void V8Promise::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& inf
         return;
     }
     v8::Local<v8::Function> init = info[0].As<v8::Function>();
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
-    V8TRYCATCH_VOID_EMPTY(v8::Handle<v8::Value>, resolve, createClosure(promiseResolveCallback, promise, isolate));
-    V8TRYCATCH_VOID_EMPTY(v8::Handle<v8::Value>, reject, createClosure(promiseRejectCallback, promise, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
+    TONATIVE_VOID_EMPTY(v8::Handle<v8::Value>, resolve, createClosure(promiseResolveCallback, promise, isolate));
+    TONATIVE_VOID_EMPTY(v8::Handle<v8::Value>, reject, createClosure(promiseRejectCallback, promise, isolate));
     v8::Handle<v8::Value> argv[] = { resolve, reject };
     v8::TryCatch trycatch;
     if (V8ScriptRunner::callFunction(init, currentExecutionContext(isolate), v8::Undefined(isolate), WTF_ARRAY_LENGTH(argv), argv, isolate).IsEmpty()) {
@@ -544,7 +543,7 @@ void V8Promise::thenMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info
         onFulfilled = info[0].As<v8::Function>();
     if (info.Length() > 1 && info[1]->IsFunction())
         onRejected = info[1].As<v8::Function>();
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, newPromise, V8PromiseCustom::then(info.Holder(), onFulfilled, onRejected, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, newPromise, V8PromiseCustom::then(info.Holder(), onFulfilled, onRejected, isolate));
     v8SetReturnValue(info, newPromise);
 }
 
@@ -557,7 +556,7 @@ void V8Promise::castMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info
     if (info.Length() > 0)
         result = info[0];
 
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, cast, V8PromiseCustom::toPromise(result, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, cast, V8PromiseCustom::toPromise(result, isolate));
     v8SetReturnValue(info, cast);
 }
 
@@ -573,7 +572,7 @@ void V8Promise::catchMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& inf
         }
         onRejected = info[0].As<v8::Function>();
     }
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, newPromise, V8PromiseCustom::then(info.Holder(), onFulfilled, onRejected, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, newPromise, V8PromiseCustom::then(info.Holder(), onFulfilled, onRejected, isolate));
     v8SetReturnValue(info, newPromise);
 }
 
@@ -586,7 +585,7 @@ void V8Promise::resolveMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& i
     if (info.Length() > 0)
         result = info[0];
 
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
     V8PromiseCustom::resolve(promise, result, isolate);
     v8SetReturnValue(info, promise);
 }
@@ -600,7 +599,7 @@ void V8Promise::rejectMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& in
     if (info.Length() > 0)
         result = info[0];
 
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
     V8PromiseCustom::reject(promise, result, isolate);
     v8SetReturnValue(info, promise);
 }
@@ -608,7 +607,7 @@ void V8Promise::rejectMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& in
 void V8Promise::raceMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     v8::Isolate* isolate = info.GetIsolate();
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
 
     if (!info.Length() || !info[0]->IsArray()) {
         v8SetReturnValue(info, promise);
@@ -617,14 +616,14 @@ void V8Promise::raceMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info
 
     // FIXME: Now we limit the iterable type to the Array type.
     v8::Local<v8::Array> iterable = info[0].As<v8::Array>();
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Function>, onFulfilled, createClosure(promiseResolveCallback, promise, isolate));
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Function>, onRejected, createClosure(promiseRejectCallback, promise, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Function>, onFulfilled, createClosure(promiseResolveCallback, promise, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Function>, onRejected, createClosure(promiseRejectCallback, promise, isolate));
 
     for (unsigned i = 0, length = iterable->Length(); i < length; ++i) {
         // Array-holes should not be skipped by for-of iteration semantics.
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, nextValue, iterable->Get(i));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, nextPromise, V8PromiseCustom::toPromise(nextValue, isolate));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, unused, V8PromiseCustom::then(nextPromise, onFulfilled, onRejected, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, nextValue, iterable->Get(i));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, nextPromise, V8PromiseCustom::toPromise(nextValue, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, unused, V8PromiseCustom::then(nextPromise, onFulfilled, onRejected, isolate));
     }
     v8SetReturnValue(info, promise);
 }
@@ -632,7 +631,7 @@ void V8Promise::raceMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info
 void V8Promise::allMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     v8::Isolate* isolate = info.GetIsolate();
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, promise, V8PromiseCustom::createPromise(info.Holder(), isolate));
     v8::Local<v8::Array> results = v8::Array::New(info.GetIsolate());
 
     if (!info.Length() || !info[0]->IsArray()) {
@@ -651,17 +650,17 @@ void V8Promise::allMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
     }
 
     v8::Local<v8::ObjectTemplate> objectTemplate = primitiveWrapperObjectTemplate(isolate);
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, countdownWrapper, objectTemplate->NewInstance());
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, countdownWrapper, objectTemplate->NewInstance());
     countdownWrapper->SetInternalField(V8PromiseCustom::PrimitiveWrapperPrimitiveIndex, v8::Integer::New(isolate, iterable->Length()));
 
-    V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Function>, onRejected, createClosure(promiseRejectCallback, promise, isolate));
+    TONATIVE_VOID_EMPTY(v8::Local<v8::Function>, onRejected, createClosure(promiseRejectCallback, promise, isolate));
     for (unsigned i = 0, length = iterable->Length(); i < length; ++i) {
         // Array-holes should not be skipped by for-of iteration semantics.
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, environment, promiseAllEnvironment(promise, countdownWrapper, i, results, isolate));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Function>, onFulfilled, createClosure(promiseAllFulfillCallback, environment, isolate));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, nextValue, iterable->Get(i));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Object>, nextPromise, V8PromiseCustom::toPromise(nextValue, isolate));
-        V8TRYCATCH_VOID_EMPTY(v8::Local<v8::Value>, unused, V8PromiseCustom::then(nextPromise, onFulfilled, onRejected, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, environment, promiseAllEnvironment(promise, countdownWrapper, i, results, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Function>, onFulfilled, createClosure(promiseAllFulfillCallback, environment, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, nextValue, iterable->Get(i));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Object>, nextPromise, V8PromiseCustom::toPromise(nextValue, isolate));
+        TONATIVE_VOID_EMPTY(v8::Local<v8::Value>, unused, V8PromiseCustom::then(nextPromise, onFulfilled, onRejected, isolate));
     }
     v8SetReturnValue(info, promise);
 }
@@ -681,7 +680,7 @@ v8::Local<v8::Object> V8PromiseCustom::createPromise(v8::Handle<v8::Object> crea
 
     ExecutionContext* context = currentExecutionContext(isolate);
     if (InspectorInstrumentation::isPromiseTrackerEnabled(context))
-        InspectorInstrumentation::didCreatePromise(context, ScriptObject(ScriptState::forContext(isolate->GetCurrentContext()), promise));
+        InspectorInstrumentation::didCreatePromise(context, ScriptObject(ScriptState::current(isolate), promise));
 
     setStateForPromise(promise, Pending, v8::Undefined(isolate), isolate);
     return promise;

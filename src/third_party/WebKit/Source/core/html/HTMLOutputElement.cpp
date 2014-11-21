@@ -45,9 +45,9 @@ inline HTMLOutputElement::HTMLOutputElement(Document& document, HTMLFormElement*
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLOutputElement(document, form));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLOutputElement(document, form));
 }
 
 const AtomicString& HTMLOutputElement::formControlType() const
@@ -126,6 +126,13 @@ void HTMLOutputElement::setDefaultValue(const String& value)
     // when the element's value mode flag to "default".
     if (m_isDefaultValueMode)
         setTextContent(value);
+}
+
+
+void HTMLOutputElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_tokens);
+    HTMLFormControlElement::trace(visitor);
 }
 
 } // namespace

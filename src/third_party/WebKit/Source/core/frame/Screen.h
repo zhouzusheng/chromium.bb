@@ -31,10 +31,9 @@
 #define Screen_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowProperty.h"
-#include "heap/Handle.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -42,13 +41,12 @@ namespace WebCore {
 
     class LocalFrame;
 
-    class Screen FINAL : public RefCountedWillBeRefCountedGarbageCollected<Screen>, public ScriptWrappable, public EventTargetWithInlineData, public DOMWindowProperty, public WillBeHeapSupplementable<Screen> {
+    class Screen FINAL : public RefCountedWillBeGarbageCollectedFinalized<Screen>, public ScriptWrappable, public DOMWindowProperty, public WillBeHeapSupplementable<Screen> {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Screen);
-        DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<Screen>);
     public:
         static PassRefPtrWillBeRawPtr<Screen> create(LocalFrame* frame)
         {
-            return adoptRefWillBeRefCountedGarbageCollected(new Screen(frame));
+            return adoptRefWillBeNoop(new Screen(frame));
         }
 
         unsigned height() const;
@@ -59,10 +57,6 @@ namespace WebCore {
         int availTop() const;
         unsigned availHeight() const;
         unsigned availWidth() const;
-
-        // EventTarget.
-        virtual const AtomicString& interfaceName() const OVERRIDE;
-        virtual ExecutionContext* executionContext() const OVERRIDE;
 
         void trace(Visitor*);
 

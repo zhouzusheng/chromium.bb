@@ -34,12 +34,11 @@ void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, Generi
 
 class Document;
 class SVGElement;
-class SVGElementInstanceList;
 class SVGUseElement;
 
 // SVGElementInstance mimics Node, but without providing all its functionality
-class SVGElementInstance FINAL : public EventTarget, public ScriptWrappable, public TreeShared<SVGElementInstance> {
-    DEFINE_EVENT_TARGET_REFCOUNTING(TreeShared<SVGElementInstance>);
+class SVGElementInstance FINAL : public TreeSharedWillBeRefCountedGarbageCollected<SVGElementInstance>, public EventTarget, public ScriptWrappable {
+    DEFINE_EVENT_TARGET_REFCOUNTING(TreeSharedWillBeRefCountedGarbageCollected<SVGElementInstance>);
 public:
     static PassRefPtr<SVGElementInstance> create(SVGUseElement* correspondingUseElement, SVGUseElement* directUseElement, PassRefPtr<SVGElement> originalElement);
 
@@ -55,7 +54,7 @@ public:
     virtual void removeAllEventListeners() OVERRIDE;
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     SVGElement* correspondingElement() const { return m_element.get(); }
     SVGUseElement* correspondingUseElement() const { return m_correspondingUseElement; }
@@ -65,7 +64,6 @@ public:
     void detach();
 
     SVGElementInstance* parentNode() const { return m_parentInstance; }
-    PassRefPtr<SVGElementInstanceList> childNodes();
 
     SVGElementInstance* previousSibling() const { return m_previousSibling; }
     SVGElementInstance* nextSibling() const { return m_nextSibling; }
@@ -75,26 +73,7 @@ public:
 
     inline Document* ownerDocument() const;
 
-    class InvalidationGuard {
-        WTF_MAKE_NONCOPYABLE(InvalidationGuard);
-    public:
-        InvalidationGuard(SVGElement* element) : m_element(element) { }
-        ~InvalidationGuard() { SVGElementInstance::invalidateAllInstancesOfElement(m_element); }
-    private:
-        SVGElement* m_element;
-    };
-
-    class InstanceUpdateBlocker {
-        WTF_MAKE_NONCOPYABLE(InstanceUpdateBlocker);
-    public:
-        InstanceUpdateBlocker(SVGElement* targetElement);
-        ~InstanceUpdateBlocker();
-
-    private:
-        SVGElement* m_targetElement;
-    };
-
-    static void invalidateAllInstancesOfElement(SVGElement*);
+    virtual void trace(Visitor*);
 
     // EventTarget API
     DECLARE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(correspondingElement(), abort);
@@ -147,7 +126,11 @@ private:
 
     SVGElementInstance(SVGUseElement*, SVGUseElement*, PassRefPtr<SVGElement> originalElement);
 
+
+#if !ENABLE(OILPAN)
     void removedLastRef();
+#endif
+
     bool hasTreeSharedParent() const { return !!m_parentInstance; }
 
     virtual Node* toNode() OVERRIDE;
@@ -158,11 +141,13 @@ private:
     template<class GenericNode, class GenericNodeContainer>
     friend void appendChildToContainer(GenericNode& child, GenericNodeContainer&);
 
+#if !ENABLE(OILPAN)
     template<class GenericNode, class GenericNodeContainer>
     friend void removeDetachedChildrenInContainer(GenericNodeContainer&);
 
     template<class GenericNode, class GenericNodeContainer>
     friend void Private::addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
+#endif
 
     bool hasChildren() const { return m_firstChild; }
 
@@ -175,18 +160,18 @@ private:
     virtual EventTargetData* eventTargetData() OVERRIDE;
     virtual EventTargetData& ensureEventTargetData() OVERRIDE;
 
-    SVGElementInstance* m_parentInstance;
+    RawPtrWillBeMember<SVGElementInstance> m_parentInstance;
 
-    SVGUseElement* m_correspondingUseElement;
-    SVGUseElement* m_directUseElement;
-    RefPtr<SVGElement> m_element;
-    RefPtr<SVGElement> m_shadowTreeElement;
+    RawPtrWillBeMember<SVGUseElement> m_correspondingUseElement;
+    RawPtrWillBeMember<SVGUseElement> m_directUseElement;
+    RefPtrWillBeMember<SVGElement> m_element;
+    RefPtrWillBeMember<SVGElement> m_shadowTreeElement;
 
-    SVGElementInstance* m_previousSibling;
-    SVGElementInstance* m_nextSibling;
+    RawPtrWillBeMember<SVGElementInstance> m_previousSibling;
+    RawPtrWillBeMember<SVGElementInstance> m_nextSibling;
 
-    SVGElementInstance* m_firstChild;
-    SVGElementInstance* m_lastChild;
+    RawPtrWillBeMember<SVGElementInstance> m_firstChild;
+    RawPtrWillBeMember<SVGElementInstance> m_lastChild;
 };
 
 } // namespace WebCore

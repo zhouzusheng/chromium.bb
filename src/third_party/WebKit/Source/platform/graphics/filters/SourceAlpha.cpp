@@ -65,10 +65,11 @@ void SourceAlpha::applySoftware()
     filterContext->fillRect(imageRect, Color::black);
 
     IntRect srcRect = filter->sourceImageRect();
-    filterContext->drawImageBuffer(
-        filter->sourceImage(),
-        IntPoint(srcRect.location() - absolutePaintRect().location()),
-        CompositeDestinationIn);
+    if (ImageBuffer* sourceImageBuffer = filter->sourceImage()) {
+        filterContext->drawImageBuffer(sourceImageBuffer,
+            FloatRect(IntPoint(srcRect.location() - absolutePaintRect().location()), sourceImageBuffer->size()),
+            0, CompositeDestinationIn);
+    }
 }
 
 PassRefPtr<SkImageFilter> SourceAlpha::createImageFilter(SkiaImageFilterBuilder* builder)
@@ -79,7 +80,7 @@ PassRefPtr<SkImageFilter> SourceAlpha::createImageFilter(SkiaImageFilterBuilder*
         0, 0, 0, 0, 0,
         0, 0, 0, SK_Scalar1, 0
     };
-    RefPtr<SkColorFilter> colorFilter(adoptRef(new SkColorMatrixFilter(matrix)));
+    RefPtr<SkColorFilter> colorFilter(adoptRef(SkColorMatrixFilter::Create(matrix)));
     return adoptRef(SkColorFilterImageFilter::Create(colorFilter.get()));
 }
 

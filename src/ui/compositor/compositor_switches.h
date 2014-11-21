@@ -9,10 +9,11 @@
 
 namespace switches {
 
+COMPOSITOR_EXPORT extern const char kEnableHardwareOverlays[];
 COMPOSITOR_EXPORT extern const char kEnablePixelOutputInTests[];
 COMPOSITOR_EXPORT extern const char kUIDisableThreadedCompositing[];
 COMPOSITOR_EXPORT extern const char kUIEnableImplSidePainting[];
-COMPOSITOR_EXPORT extern const char kUIEnableMapImage[];
+COMPOSITOR_EXPORT extern const char kUIEnableZeroCopy[];
 COMPOSITOR_EXPORT extern const char kUIShowPaintRects[];
 
 }  // namespace switches
@@ -20,7 +21,7 @@ COMPOSITOR_EXPORT extern const char kUIShowPaintRects[];
 namespace ui {
 
 COMPOSITOR_EXPORT bool IsUIImplSidePaintingEnabled();
-COMPOSITOR_EXPORT bool IsUIMapImageEnabled();
+COMPOSITOR_EXPORT bool IsUIZeroCopyEnabled();
 
 }  // namespace ui
 

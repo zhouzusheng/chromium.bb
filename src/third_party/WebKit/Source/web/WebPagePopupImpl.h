@@ -31,9 +31,9 @@
 #ifndef WebPagePopupImpl_h
 #define WebPagePopupImpl_h
 
-#include "PageWidgetDelegate.h"
-#include "WebPagePopup.h"
 #include "core/page/PagePopup.h"
+#include "public/web/WebPagePopup.h"
+#include "web/PageWidgetDelegate.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -73,7 +73,6 @@ private:
     virtual void animate(double) OVERRIDE;
     virtual void layout() OVERRIDE;
     virtual void enterForceCompositingMode(bool enter) OVERRIDE;
-    virtual void didExitCompositingMode() OVERRIDE;
     virtual void willCloseLayerTreeView() OVERRIDE;
     virtual void paint(WebCanvas*, const WebRect&, PaintOptions = ReadbackFromCompositorIfAvailable) OVERRIDE;
     virtual void resize(const WebSize&) OVERRIDE;
@@ -81,6 +80,7 @@ private:
     virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
     virtual bool isPagePopup() const OVERRIDE { return true; }
+    virtual bool isAcceleratedCompositingActive() const OVERRIDE { return m_isAcceleratedCompositingActive; }
 
     // PageWidgetEventHandler functions
     virtual bool handleKeyEvent(const WebKeyboardEvent&) OVERRIDE;
@@ -96,7 +96,7 @@ private:
     WebWidgetClient* m_widgetClient;
     WebRect m_windowRectInScreen;
     WebViewImpl* m_webView;
-    OwnPtr<WebCore::Page> m_page;
+    OwnPtrWillBePersistent<WebCore::Page> m_page;
     OwnPtr<PagePopupChromeClient> m_chromeClient;
     WebCore::PagePopupClient* m_popupClient;
     bool m_closing;

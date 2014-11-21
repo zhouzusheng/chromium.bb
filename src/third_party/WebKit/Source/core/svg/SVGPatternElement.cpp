@@ -116,7 +116,7 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::xAttr
         || attrName == SVGNames::yAttr
@@ -191,7 +191,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
         processedPatterns.add(current);
 
         // Respect xlink:href, take attributes from referenced element
-        Node* refNode = SVGURIReference::targetElementFromIRIString(current->hrefString(), document());
+        Node* refNode = SVGURIReference::targetElementFromIRIString(current->hrefString(), treeScope());
         if (isSVGPatternElement(refNode)) {
             current = toSVGPatternElement(refNode);
 

@@ -44,13 +44,13 @@ namespace WebCore {
     public:
         ScriptObject(ScriptState*, v8::Handle<v8::Object>);
         ScriptObject(ScriptState*, const ScriptValue&);
-        ScriptObject() : m_scriptState(0) { }
-        virtual ~ScriptObject() { }
+        ScriptObject();
+        virtual ~ScriptObject();
 
         v8::Handle<v8::Object> v8Object() const;
-        ScriptState* scriptState() const { return m_scriptState; }
+        ScriptState* scriptState() const { return m_scriptState.get(); }
     protected:
-        ScriptState* m_scriptState;
+        RefPtr<ScriptState> m_scriptState;
     };
 
     class ScriptGlobalObject {

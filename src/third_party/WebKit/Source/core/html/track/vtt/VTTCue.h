@@ -32,6 +32,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/track/TextTrackCue.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -42,33 +43,35 @@ class VTTScanner;
 
 class VTTCueBox FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<VTTCueBox> create(Document& document, VTTCue* cue)
+    static PassRefPtrWillBeRawPtr<VTTCueBox> create(Document& document, VTTCue* cue)
     {
-        return adoptRef(new VTTCueBox(document, cue));
+        return adoptRefWillBeRefCountedGarbageCollected(new VTTCueBox(document, cue));
     }
 
     VTTCue* getCue() const { return m_cue; }
     void applyCSSProperties(const IntSize& videoSize);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     VTTCueBox(Document&, VTTCue*);
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    VTTCue* m_cue;
+    RawPtrWillBeMember<VTTCue> m_cue;
 };
 
 class VTTCue FINAL : public TextTrackCue, public ScriptWrappable {
 public:
-    static PassRefPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
+    static PassRefPtrWillBeRawPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
     {
-        return adoptRef(new VTTCue(document, startTime, endTime, text));
+        return adoptRefWillBeRefCountedGarbageCollected(new VTTCue(document, startTime, endTime, text));
     }
 
     virtual ~VTTCue();
 
     const String& vertical() const;
-    void setVertical(const String&, ExceptionState&);
+    void setVertical(const String&);
 
     bool snapToLines() const { return m_snapToLines; }
     void setSnapToLines(bool);
@@ -83,7 +86,7 @@ public:
     void setSize(int, ExceptionState&);
 
     const String& align() const;
-    void setAlign(const String&, ExceptionState&);
+    void setAlign(const String&);
 
     const String& text() const { return m_text; }
     void setText(const String&);
@@ -137,13 +140,15 @@ public:
     virtual String toString() const OVERRIDE;
 #endif
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     VTTCue(Document&, double startTime, double endTime, const String& text);
 
     Document& document() const;
 
-    PassRefPtr<VTTCueBox> displayTreeInternal();
-    PassRefPtr<VTTCueBox> getDisplayTree(const IntSize& videoSize);
+    VTTCueBox& ensureDisplayTree();
+    PassRefPtrWillBeRawPtr<VTTCueBox> getDisplayTree(const IntSize& videoSize);
 
     virtual void cueDidChange() OVERRIDE;
 
@@ -174,9 +179,9 @@ private:
     CueAlignment m_cueAlignment;
     String m_regionId;
 
-    RefPtr<DocumentFragment> m_vttNodeTree;
-    RefPtr<HTMLDivElement> m_cueBackgroundBox;
-    RefPtr<VTTCueBox> m_displayTree;
+    RefPtrWillBeMember<DocumentFragment> m_vttNodeTree;
+    RefPtrWillBeMember<HTMLDivElement> m_cueBackgroundBox;
+    RefPtrWillBeMember<VTTCueBox> m_displayTree;
 
     CSSValueID m_displayDirection;
     int m_displaySize;

@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebSettingsImpl.h"
+#include "web/WebSettingsImpl.h"
 
 #include "core/frame/Settings.h"
 #include "core/inspector/InspectorController.h"
@@ -53,6 +53,7 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings, InspectorController* inspec
     , m_deferredImageDecodingEnabled(false)
     , m_doubleTapToZoomEnabled(false)
     , m_supportDeprecatedTargetDensityDPI(false)
+    , m_shrinksViewportContentToFit(false)
     , m_viewportMetaLayoutSizeQuirk(false)
     , m_viewportMetaNonUserScalableQuirk(false)
     , m_clobberUserAgentInitialScaleQuirk(false)
@@ -258,6 +259,11 @@ void WebSettingsImpl::setShrinksStandaloneImagesToFit(bool shrinkImages)
     m_settings->setShrinksStandaloneImagesToFit(shrinkImages);
 }
 
+void WebSettingsImpl::setShrinksViewportContentToFit(bool shrinkViewportContent)
+{
+    m_shrinksViewportContentToFit = shrinkViewportContent;
+}
+
 void WebSettingsImpl::setSpatialNavigationEnabled(bool enabled)
 {
     m_settings->setSpatialNavigationEnabled(enabled);
@@ -343,14 +349,6 @@ void WebSettingsImpl::setMaxTouchPoints(int maxTouchPoints)
     m_settings->setMaxTouchPoints(maxTouchPoints);
 }
 
-void WebSettingsImpl::setEditableLinkBehaviorNeverLive()
-{
-    // FIXME: If you ever need more behaviors than this, then we should probably
-    //        define an enum in WebSettings.h and have a switch statement that
-    //        translates.  Until then, this is probably fine, though.
-    m_settings->setEditableLinkBehavior(WebCore::EditableLinkNeverLive);
-}
-
 void WebSettingsImpl::setAllowUniversalAccessFromFileURLs(bool allow)
 {
     m_settings->setAllowUniversalAccessFromFileURLs(allow);
@@ -389,11 +387,6 @@ void WebSettingsImpl::setWebAudioEnabled(bool enabled)
 void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
 {
     m_settings->setWebGLEnabled(enabled);
-}
-
-void WebSettingsImpl::setExperimentalWebSocketEnabled(bool enabled)
-{
-    m_settings->setExperimentalWebSocketEnabled(enabled);
 }
 
 void WebSettingsImpl::setRegionBasedColumnsEnabled(bool enabled)
@@ -452,11 +445,6 @@ void WebSettingsImpl::setMockScrollbarsEnabled(bool enabled)
     m_settings->setMockScrollbarsEnabled(enabled);
 }
 
-void WebSettingsImpl::setAcceleratedCompositingFor3DTransformsEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingFor3DTransformsEnabled(enabled);
-}
-
 void WebSettingsImpl::setAcceleratedCompositingForFiltersEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForFiltersEnabled(enabled);
@@ -482,29 +470,9 @@ void WebSettingsImpl::setAcceleratedCompositingForFixedRootBackgroundEnabled(boo
     m_settings->setAcceleratedCompositingForFixedRootBackgroundEnabled(enabled);
 }
 
-void WebSettingsImpl::setAcceleratedCompositingForGpuRasterizationHintEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingForGpuRasterizationHintEnabled(enabled);
-}
-
-void WebSettingsImpl::setAcceleratedCompositingForPluginsEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingForPluginsEnabled(enabled);
-}
-
 void WebSettingsImpl::setAcceleratedCompositingForCanvasEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForCanvasEnabled(enabled);
-}
-
-void WebSettingsImpl::setAcceleratedCompositingForAnimationEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingForAnimationEnabled(enabled);
-}
-
-void WebSettingsImpl::setAcceleratedCompositingForScrollableFramesEnabled(bool enabled)
-{
-    m_settings->setAcceleratedCompositingForScrollableFramesEnabled(enabled);
 }
 
 void WebSettingsImpl::setAccelerated2dCanvasEnabled(bool enabled)
@@ -558,11 +526,6 @@ void WebSettingsImpl::setLayerSquashingEnabled(bool enabled)
     m_settings->setLayerSquashingEnabled(enabled);
 }
 
-void WebSettingsImpl::setLayoutFallbackWidth(int width)
-{
-    m_settings->setLayoutFallbackWidth(width);
-}
-
 void WebSettingsImpl::setAsynchronousSpellCheckingEnabled(bool enabled)
 {
     m_settings->setAsynchronousSpellCheckingEnabled(enabled);
@@ -583,11 +546,6 @@ void WebSettingsImpl::setValidationMessageTimerMagnification(int newValue)
     m_settings->setValidationMessageTimerMagnification(newValue);
 }
 
-void WebSettingsImpl::setFullScreenEnabled(bool enabled)
-{
-    m_settings->setFullScreenEnabled(enabled);
-}
-
 void WebSettingsImpl::setAllowDisplayOfInsecureContent(bool enabled)
 {
     m_settings->setAllowDisplayOfInsecureContent(enabled);
@@ -596,6 +554,11 @@ void WebSettingsImpl::setAllowDisplayOfInsecureContent(bool enabled)
 void WebSettingsImpl::setAllowRunningOfInsecureContent(bool enabled)
 {
     m_settings->setAllowRunningOfInsecureContent(enabled);
+}
+
+void WebSettingsImpl::setAllowConnectingInsecureWebSocket(bool enabled)
+{
+    m_settings->setAllowConnectingInsecureWebSocket(enabled);
 }
 
 void WebSettingsImpl::setPasswordEchoEnabled(bool flag)
@@ -658,19 +621,24 @@ bool WebSettingsImpl::mainFrameResizesAreOrientationChanges() const
     return m_mainFrameResizesAreOrientationChanges;
 }
 
+bool WebSettingsImpl::shrinksViewportContentToFit() const
+{
+    return m_shrinksViewportContentToFit;
+}
+
 void WebSettingsImpl::setShouldRespectImageOrientation(bool enabled)
 {
     m_settings->setShouldRespectImageOrientation(enabled);
 }
 
+void WebSettingsImpl::setMediaControlsOverlayPlayButtonEnabled(bool enabled)
+{
+    m_settings->setMediaControlsOverlayPlayButtonEnabled(enabled);
+}
+
 void WebSettingsImpl::setMediaPlaybackRequiresUserGesture(bool required)
 {
     m_settings->setMediaPlaybackRequiresUserGesture(required);
-}
-
-void WebSettingsImpl::setMediaFullscreenRequiresUserGesture(bool required)
-{
-    m_settings->setMediaFullscreenRequiresUserGesture(required);
 }
 
 void WebSettingsImpl::setViewportEnabled(bool enabled)
@@ -746,6 +714,11 @@ void WebSettingsImpl::setPinchVirtualViewportEnabled(bool enabled)
 void WebSettingsImpl::setUseSolidColorScrollbars(bool enabled)
 {
     m_settings->setUseSolidColorScrollbars(enabled);
+}
+
+void WebSettingsImpl::setUseThreadedHTMLParserForDataURLs(bool enabled)
+{
+    m_settings->setUseThreadedHTMLParserForDataURLs(enabled);
 }
 
 void WebSettingsImpl::setMainFrameResizesAreOrientationChanges(bool enabled)

@@ -2,137 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ipc/ipc_channel_proxy.h"
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
-#include "ipc/ipc_message_start.h"
-#include "ipc/ipc_message_utils.h"
+#include "ipc/message_filter.h"
+#include "ipc/message_filter_router.h"
 
 namespace IPC {
-
-//------------------------------------------------------------------------------
-
-class ChannelProxy::Context::MessageFilterRouter {
- public:
-  typedef std::vector<MessageFilter*> MessageFilters;
-
-  MessageFilterRouter() {}
-  ~MessageFilterRouter() {}
-
-  void AddFilter(MessageFilter* filter) {
-    // Determine if the filter should be applied to all messages, or only
-    // messages of a certain class.
-    std::vector<uint32> supported_message_classes;
-    if (filter->GetSupportedMessageClasses(&supported_message_classes)) {
-      DCHECK(!supported_message_classes.empty());
-      for (size_t i = 0; i < supported_message_classes.size(); ++i) {
-        const int message_class = supported_message_classes[i];
-        DCHECK(ValidMessageClass(message_class));
-        // Safely ignore repeated subscriptions to a given message class for the
-        // current filter being added.
-        if (!message_class_filters_[message_class].empty() &&
-            message_class_filters_[message_class].back() == filter) {
-          continue;
-        }
-        message_class_filters_[message_class].push_back(filter);
-      }
-    } else {
-      global_filters_.push_back(filter);
-    }
-  }
-
-  void RemoveFilter(MessageFilter* filter) {
-    if (RemoveFilter(global_filters_, filter))
-      return;
-
-    for (size_t i = 0; i < arraysize(message_class_filters_); ++i)
-      RemoveFilter(message_class_filters_[i], filter);
-  }
-
-  bool TryFilters(const Message& message) {
-    if (TryFilters(global_filters_, message))
-      return true;
-
-    const int message_class = IPC_MESSAGE_CLASS(message);
-    if (!ValidMessageClass(message_class))
-      return false;
-
-    return TryFilters(message_class_filters_[message_class], message);
-  }
-
-  void Clear() {
-    global_filters_.clear();
-    for (size_t i = 0; i < arraysize(message_class_filters_); ++i)
-      message_class_filters_[i].clear();
-  }
-
- private:
-  static bool TryFilters(MessageFilters& filters, const IPC::Message& message) {
-    for (size_t i = 0; i < filters.size(); ++i) {
-      if (filters[i]->OnMessageReceived(message)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static bool RemoveFilter(MessageFilters& filters, MessageFilter* filter) {
-    MessageFilters::iterator it =
-        std::remove(filters.begin(), filters.end(), filter);
-    if (it == filters.end())
-      return false;
-
-    filters.erase(it, filters.end());
-    return true;
-  }
-
-  static bool ValidMessageClass(int message_class) {
-    return message_class >= 0 && message_class < LastIPCMsgStart;
-  }
-
-  // List of global and selective filters; a given filter will exist in either
-  // |message_global_filters_| OR |message_class_filters_|, but not both.
-  // Note that |message_global_filters_| will be given first offering of any
-  // given message.  It's the filter implementer and installer's
-  // responsibility to ensure that a filter is either global or selective to
-  // ensure proper message filtering order.
-  MessageFilters global_filters_;
-  MessageFilters message_class_filters_[LastIPCMsgStart];
-};
-
-//------------------------------------------------------------------------------
-
-ChannelProxy::MessageFilter::MessageFilter() {}
-
-void ChannelProxy::MessageFilter::OnFilterAdded(Channel* channel) {}
-
-void ChannelProxy::MessageFilter::OnFilterRemoved() {}
-
-void ChannelProxy::MessageFilter::OnChannelConnected(int32 peer_pid) {}
-
-void ChannelProxy::MessageFilter::OnChannelError() {}
-
-void ChannelProxy::MessageFilter::OnChannelClosing() {}
-
-bool ChannelProxy::MessageFilter::OnMessageReceived(const Message& message) {
-  return false;
-}
-
-bool ChannelProxy::MessageFilter::GetSupportedMessageClasses(
-    std::vector<uint32>* /*supported_message_classes*/) const {
-  return false;
-}
-
-ChannelProxy::MessageFilter::~MessageFilter() {}
 
 //------------------------------------------------------------------------------
 
@@ -145,6 +30,15 @@ ChannelProxy::Context::Context(Listener* listener,
       message_filter_router_(new MessageFilterRouter()),
       peer_pid_(base::kNullProcessId) {
   DCHECK(ipc_task_runner_.get());
+  // The Listener thread where Messages are handled must be a separate thread
+  // to avoid oversubscribing the IO thread. If you trigger this error, you
+  // need to either:
+  // 1) Create the ChannelProxy on a different thread, or
+  // 2) Just use Channel
+  // Note, we currently make an exception for a NULL listener. That usage
+  // basically works, but is outside the intent of ChannelProxy. This support
+  // will disappear, so please don't rely on it. See crbug.com/364241
+  DCHECK(!listener || (ipc_task_runner_.get() != listener_task_runner_.get()));
 }
 
 ChannelProxy::Context::~Context() {
@@ -349,10 +243,10 @@ void ChannelProxy::Context::OnDispatchMessage(const Message& message) {
   Logging* logger = Logging::GetInstance();
   std::string name;
   logger->GetMessageText(message.type(), &name, &message, NULL);
-  TRACE_EVENT1("toplevel", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT1("ipc", "ChannelProxy::Context::OnDispatchMessage",
                "name", name);
 #else
-  TRACE_EVENT2("toplevel", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT2("ipc", "ChannelProxy::Context::OnDispatchMessage",
                "class", IPC_MESSAGE_ID_CLASS(message.type()),
                "line", IPC_MESSAGE_ID_LINE(message.type()));
 #endif

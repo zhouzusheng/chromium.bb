@@ -27,7 +27,6 @@
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/sys_color_change_listener.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/common_theme.h"
 
@@ -50,6 +49,7 @@ const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
 const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
 const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
 const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
+const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
 // MenuItem:
 const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
 const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
@@ -211,16 +211,6 @@ bool NativeThemeWin::IsClassicTheme(ThemeName name) const {
 
   return !GetThemeHandle(name);
 }
-
-// TODO(sky): seems like we should default to NativeThemeWin, but that currently
-// breaks a couple of tests (FocusTraversalTest.NormalTraversal in
-// views_unittests).
-#if !defined(USE_AURA)
-// static
-NativeTheme* NativeTheme::instance() {
-  return NativeThemeWin::instance();
-}
-#endif
 
 // static
 NativeThemeWin* NativeThemeWin::instance() {
@@ -399,6 +389,7 @@ NativeThemeWin::~NativeThemeWin() {
 void NativeThemeWin::OnSysColorChange() {
   UpdateSystemColors();
   is_using_high_contrast_valid_ = false;
+  NotifyObservers();
 }
 
 void NativeThemeWin::UpdateSystemColors() {
@@ -532,6 +523,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return kButtonHighlightColor;
     case kColorId_ButtonHoverColor:
       return kButtonHoverColor;
+    case kColorId_ButtonHoverBackgroundColor:
+      return kButtonHoverBackgroundColor;
 
     // MenuItem
     case kColorId_EnabledMenuItemForegroundColor:
@@ -601,6 +594,50 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
                               COLOR_MENUHIGHLIGHT : COLOR_BTNFACE];
     case kColorId_TableGroupingIndicatorColor:
       return system_colors_[COLOR_GRAYTEXT];
+
+    // Results Tables
+    case kColorId_ResultsTableNormalBackground:
+      return system_colors_[COLOR_WINDOW];
+    case kColorId_ResultsTableHoveredBackground:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHT],
+                                     system_colors_[COLOR_WINDOW], 0x40);
+    case kColorId_ResultsTableSelectedBackground:
+      return system_colors_[COLOR_HIGHLIGHT];
+    case kColorId_ResultsTableNormalText:
+    case kColorId_ResultsTableHoveredText:
+      return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_ResultsTableSelectedText:
+      return system_colors_[COLOR_HIGHLIGHTTEXT];
+    case kColorId_ResultsTableNormalDimmedText:
+      return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
+                                     system_colors_[COLOR_WINDOW], 0x80);
+    case kColorId_ResultsTableHoveredDimmedText:
+      return color_utils::AlphaBlend(
+          system_colors_[COLOR_WINDOWTEXT],
+          GetSystemColor(kColorId_ResultsTableHoveredBackground), 0x80);
+    case kColorId_ResultsTableSelectedDimmedText:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
+                                     system_colors_[COLOR_HIGHLIGHT], 0x80);
+    case kColorId_ResultsTableNormalUrl:
+      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+                                           system_colors_[COLOR_WINDOW]);
+    case kColorId_ResultsTableHoveredUrl:
+      return color_utils::GetReadableColor(
+          SkColorSetRGB(0, 128, 0),
+          GetSystemColor(kColorId_ResultsTableHoveredBackground));
+    case kColorId_ResultsTableSelectedUrl:
+      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+                                           system_colors_[COLOR_HIGHLIGHT]);
+    case kColorId_ResultsTableNormalDivider:
+      return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
+                                     system_colors_[COLOR_WINDOW], 0x34);
+    case kColorId_ResultsTableHoveredDivider:
+      return color_utils::AlphaBlend(
+          system_colors_[COLOR_WINDOWTEXT],
+          GetSystemColor(kColorId_ResultsTableHoveredBackground), 0x34);
+    case kColorId_ResultsTableSelectedDivider:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
+                                     system_colors_[COLOR_HIGHLIGHT], 0x34);
 
     default:
       NOTREACHED();

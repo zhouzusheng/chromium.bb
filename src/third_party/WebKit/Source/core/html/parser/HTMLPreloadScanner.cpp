@@ -31,6 +31,10 @@
 #include "HTMLNames.h"
 #include "InputTypeNames.h"
 #include "RuntimeEnabledFeatures.h"
+#include "core/css/MediaList.h"
+#include "core/css/MediaQueryEvaluator.h"
+#include "core/css/MediaValues.h"
+#include "core/css/parser/SizesAttributeParser.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
@@ -90,22 +94,33 @@ static String initiatorFor(const StringImpl* tagImpl)
     return emptyString();
 }
 
+static bool mediaAttributeMatches(const MediaValues& mediaValues, const String& attributeValue)
+{
+    RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::createOffMainThread(attributeValue);
+    MediaQueryEvaluator mediaQueryEvaluator("screen", mediaValues);
+    return mediaQueryEvaluator.eval(mediaQueries.get());
+}
+
 class TokenPreloadScanner::StartTagScanner {
 public:
-    StartTagScanner(const StringImpl* tagImpl, float deviceScaleFactor)
+    StartTagScanner(const StringImpl* tagImpl, PassRefPtr<MediaValues> mediaValues)
         : m_tagImpl(tagImpl)
         , m_linkIsStyleSheet(false)
+        , m_matchedMediaAttribute(true)
         , m_inputIsImage(false)
-        , m_deviceScaleFactor(deviceScaleFactor)
-        , m_encounteredImgSrc(false)
+        , m_imgSourceSize(0)
+        , m_sourceSizeSet(false)
         , m_isCORSEnabled(false)
         , m_allowCredentials(DoNotAllowStoredCredentials)
+        , m_mediaValues(mediaValues)
     {
         if (!match(m_tagImpl, imgTag)
             && !match(m_tagImpl, inputTag)
             && !match(m_tagImpl, linkTag)
             && !match(m_tagImpl, scriptTag))
             m_tagImpl = 0;
+        if (RuntimeEnabledFeatures::pictureSizesEnabled())
+            m_imgSourceSize = SizesAttributeParser::findEffectiveSize(String(), m_mediaValues);
     }
 
     enum URLReplacement {
@@ -135,12 +150,12 @@ public:
 
     PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source)
     {
-        if (!shouldPreload())
+        if (!shouldPreload() || !m_matchedMediaAttribute)
             return nullptr;
 
         TRACE_EVENT_INSTANT1("net", "PreloadRequest", "url", m_urlToLoad.ascii());
         TextPosition position = TextPosition(source.currentLine(), source.currentColumn());
-        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), m_mediaAttribute);
+        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType());
         if (isCORSEnabled())
             request->setCrossOriginEnabled(allowStoredCredentials());
         request->setCharset(charset());
@@ -160,16 +175,22 @@ private:
             else if (match(attributeName, crossoriginAttr))
                 setCrossOriginAllowed(attributeValue);
         } else if (match(m_tagImpl, imgTag)) {
-            if (match(attributeName, srcAttr) && !m_encounteredImgSrc) {
-                m_encounteredImgSrc = true;
-                setUrlToLoad(bestFitSourceForImageAttributes(m_deviceScaleFactor, attributeValue, m_srcsetImageCandidate), AllowURLReplacement);
+            if (match(attributeName, srcAttr) && m_imgSrcUrl.isNull()) {
+                m_imgSrcUrl = attributeValue;
+                setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_imgSourceSize, attributeValue, m_srcsetImageCandidate), AllowURLReplacement);
             } else if (match(attributeName, crossoriginAttr)) {
                 setCrossOriginAllowed(attributeValue);
-            } else if (RuntimeEnabledFeatures::srcsetEnabled()
-                && match(attributeName, srcsetAttr)
-                && m_srcsetImageCandidate.isEmpty()) {
-                m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_deviceScaleFactor, attributeValue);
-                setUrlToLoad(bestFitSourceForImageAttributes(m_deviceScaleFactor, m_urlToLoad, m_srcsetImageCandidate), AllowURLReplacement);
+            } else if (match(attributeName, srcsetAttr) && m_srcsetImageCandidate.isEmpty()) {
+                m_imgSrcsetAttributeValue = attributeValue;
+                m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_imgSourceSize, attributeValue);
+                setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_imgSourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
+            } else if (RuntimeEnabledFeatures::pictureSizesEnabled() && match(attributeName, sizesAttr) && !m_sourceSizeSet) {
+                m_imgSourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+                m_sourceSizeSet = true;
+                if (!m_srcsetImageCandidate.isEmpty()) {
+                    m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_imgSourceSize, m_imgSrcsetAttributeValue);
+                    setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_imgSourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
+                }
             }
         } else if (match(m_tagImpl, linkTag)) {
             if (match(attributeName, hrefAttr))
@@ -177,7 +198,7 @@ private:
             else if (match(attributeName, relAttr))
                 m_linkIsStyleSheet = relAttributeIsStyleSheet(attributeValue);
             else if (match(attributeName, mediaAttr))
-                m_mediaAttribute = attributeValue;
+                m_matchedMediaAttribute = mediaAttributeMatches(*m_mediaValues, attributeValue);
             else if (match(attributeName, crossoriginAttr))
                 setCrossOriginAllowed(attributeValue);
         } else if (match(m_tagImpl, inputTag)) {
@@ -261,19 +282,22 @@ private:
     ImageCandidate m_srcsetImageCandidate;
     String m_charset;
     bool m_linkIsStyleSheet;
-    String m_mediaAttribute;
+    bool m_matchedMediaAttribute;
     bool m_inputIsImage;
-    float m_deviceScaleFactor;
-    bool m_encounteredImgSrc;
+    String m_imgSrcUrl;
+    String m_imgSrcsetAttributeValue;
+    unsigned m_imgSourceSize;
+    bool m_sourceSizeSet;
     bool m_isCORSEnabled;
     StoredCredentials m_allowCredentials;
+    RefPtr<MediaValues> m_mediaValues;
 };
 
-TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, float deviceScaleFactor)
+TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, PassRefPtr<MediaValues> mediaValues)
     : m_documentURL(documentURL)
     , m_inStyle(false)
-    , m_deviceScaleFactor(deviceScaleFactor)
     , m_templateCount(0)
+    , m_mediaValues(mediaValues)
 {
 }
 
@@ -353,7 +377,7 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
             return;
         }
 
-        StartTagScanner scanner(tagImpl, m_deviceScaleFactor);
+        StartTagScanner scanner(tagImpl, m_mediaValues);
         scanner.processAttributes(token.attributes());
         OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source);
         if (request)
@@ -374,8 +398,8 @@ void TokenPreloadScanner::updatePredictedBaseURL(const Token& token)
         m_predictedBaseElementURL = KURL(m_documentURL, stripLeadingAndTrailingHTMLSpaces(hrefAttribute->value)).copy();
 }
 
-HTMLPreloadScanner::HTMLPreloadScanner(const HTMLParserOptions& options, const KURL& documentURL, float deviceScaleFactor)
-    : m_scanner(documentURL, deviceScaleFactor)
+HTMLPreloadScanner::HTMLPreloadScanner(const HTMLParserOptions& options, const KURL& documentURL, PassRefPtr<MediaValues> mediaValues)
+    : m_scanner(documentURL, mediaValues)
     , m_tokenizer(HTMLTokenizer::create(options))
 {
 }
@@ -392,6 +416,8 @@ void HTMLPreloadScanner::appendToEnd(const SegmentedString& source)
 void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& startingBaseElementURL)
 {
     ASSERT(isMainThread()); // HTMLTokenizer::updateStateFor only works on the main thread.
+
+    TRACE_EVENT1("webkit", "HTMLPreloadScanner::scan", "source_length", m_source.length());
 
     // When we start scanning, our best prediction of the baseElementURL is the real one!
     if (!startingBaseElementURL.isEmpty())

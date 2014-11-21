@@ -29,35 +29,26 @@ namespace WebCore {
 
 using namespace WTF;
 
-AtomicString CSSParserString::atomicSubstring(unsigned position, unsigned length) const
+static void destroy(Vector<CSSParserValue, 4>& values)
 {
-    ASSERT(m_length >= position + length);
-
-    if (is8Bit())
-        return AtomicString(characters8() + position, length);
-    return AtomicString(characters16() + position, length);
+    size_t numValues = values.size();
+    for (size_t i = 0; i < numValues; i++) {
+        if (values[i].unit == CSSParserValue::Function)
+            delete values[i].function;
+        else if (values[i].unit == CSSParserValue::ValueList)
+            delete values[i].valueList;
+    }
 }
 
-void CSSParserString::trimTrailingWhitespace()
+void CSSParserValueList::destroyAndClear()
 {
-    if (is8Bit()) {
-        while (m_length > 0 && isHTMLSpace<LChar>(m_data.characters8[m_length - 1]))
-            --m_length;
-    } else {
-        while (m_length > 0 && isHTMLSpace<UChar>(m_data.characters16[m_length - 1]))
-            --m_length;
-    }
+    destroy(m_values);
+    clearAndLeakValues();
 }
 
 CSSParserValueList::~CSSParserValueList()
 {
-    size_t numValues = m_values.size();
-    for (size_t i = 0; i < numValues; i++) {
-        if (m_values[i].unit == CSSParserValue::Function)
-            delete m_values[i].function;
-        else if (m_values[i].unit == CSSParserValue::ValueList)
-            delete m_values[i].valueList;
-    }
+    destroy(m_values);
 }
 
 void CSSParserValueList::addValue(const CSSParserValue& v)
@@ -70,16 +61,11 @@ void CSSParserValueList::insertValueAt(unsigned i, const CSSParserValue& v)
     m_values.insert(i, v);
 }
 
-void CSSParserValueList::deleteValueAt(unsigned i)
-{
-    m_values.remove(i);
-}
-
 void CSSParserValueList::stealValues(CSSParserValueList& valueList)
 {
     for (unsigned i = 0; i < valueList.size(); ++i)
         m_values.append(*(valueList.valueAt(i)));
-    valueList.clear();
+    valueList.clearAndLeakValues();
 }
 
 PassRefPtrWillBeRawPtr<CSSValue> CSSParserValue::createCSSValue()

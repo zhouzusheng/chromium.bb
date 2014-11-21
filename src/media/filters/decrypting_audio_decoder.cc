@@ -156,7 +156,7 @@ void DecryptingAudioDecoder::Reset(const base::Closure& closure) {
   DoReset();
 }
 
-void DecryptingAudioDecoder::Stop(const base::Closure& closure) {
+void DecryptingAudioDecoder::Stop() {
   DVLOG(2) << "Stop() - state: " << state_;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
@@ -179,7 +179,6 @@ void DecryptingAudioDecoder::Stop(const base::Closure& closure) {
     base::ResetAndReturn(&reset_cb_).Run();
 
   state_ = kStopped;
-  task_runner_->PostTask(FROM_HERE, closure);
 }
 
 DecryptingAudioDecoder::~DecryptingAudioDecoder() {
@@ -208,18 +207,6 @@ void DecryptingAudioDecoder::SetDecryptor(Decryptor* decryptor) {
 }
 
 void DecryptingAudioDecoder::InitializeDecoder() {
-  // Force to use S16 due to limitations of the CDM. See b/13548512
-  config_.Initialize(config_.codec(),
-                     kSampleFormatS16,
-                     config_.channel_layout(),
-                     config_.samples_per_second(),
-                     config_.extra_data(),
-                     config_.extra_data_size(),
-                     config_.is_encrypted(),
-                     false,
-                     base::TimeDelta(),
-                     base::TimeDelta());
-
   state_ = kPendingDecoderInit;
   decryptor_->InitializeAudioDecoder(
       config_,
@@ -384,8 +371,6 @@ void DecryptingAudioDecoder::EnqueueFrames(
     }
 
     frame->set_timestamp(current_time);
-    frame->set_duration(
-        timestamp_helper_->GetFrameDuration(frame->frame_count()));
     timestamp_helper_->AddFrames(frame->frame_count());
   }
 }

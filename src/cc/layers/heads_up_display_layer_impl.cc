@@ -43,7 +43,7 @@ static inline SkPaint CreatePaint() {
   swizzle_matrix.fMat[3 + 5 * 3] = 1;
 
   skia::RefPtr<SkColorMatrixFilter> filter =
-      skia::AdoptRef(new SkColorMatrixFilter(swizzle_matrix));
+      skia::AdoptRef(SkColorMatrixFilter::Create(swizzle_matrix));
   paint.setColorFilter(filter.get());
 #endif
   return paint;
@@ -110,8 +110,8 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
   if (!hud_resource_->id())
     return;
 
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect(contents_opaque() ? quad_rect : gfx::Rect());
@@ -149,7 +149,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     canvas_size.set(0, 0);
 
   if (canvas_size.width() != content_bounds().width() ||
-      canvas_size.width() != content_bounds().height() || !hud_canvas_) {
+      canvas_size.height() != content_bounds().height() || !hud_canvas_) {
     TRACE_EVENT0("cc", "ResizeHudCanvas");
     bool opaque = false;
     hud_canvas_ = make_scoped_ptr(skia::CreateBitmapCanvas(
@@ -599,25 +599,31 @@ void HeadsUpDisplayLayerImpl::DrawDebugRect(
     SkColor fill_color,
     float stroke_width,
     const std::string& label_text) const {
-  gfx::RectF debug_layer_rect = gfx::ScaleRect(
+  gfx::Rect debug_layer_rect = gfx::ScaleToEnclosingRect(
       rect.rect, 1.0 / contents_scale_x(), 1.0 / contents_scale_y());
-  SkRect sk_rect = RectFToSkRect(debug_layer_rect);
+  SkIRect sk_rect = RectToSkIRect(debug_layer_rect);
   paint.setColor(fill_color);
   paint.setStyle(SkPaint::kFill_Style);
-  canvas->drawRect(sk_rect, paint);
+  canvas->drawIRect(sk_rect, paint);
 
   paint.setColor(stroke_color);
   paint.setStyle(SkPaint::kStroke_Style);
   paint.setStrokeWidth(SkFloatToScalar(stroke_width));
-  canvas->drawRect(sk_rect, paint);
+  canvas->drawIRect(sk_rect, paint);
 
   if (label_text.length()) {
     const int kFontHeight = 12;
     const int kPadding = 3;
 
+    // The debug_layer_rect may be huge, and converting to a floating point may
+    // be lossy, so intersect with the HUD layer bounds first to prevent that.
+    gfx::Rect clip_rect = debug_layer_rect;
+    clip_rect.Intersect(gfx::Rect(content_bounds()));
+    SkRect sk_clip_rect = RectToSkRect(clip_rect);
+
     canvas->save();
-    canvas->clipRect(sk_rect);
-    canvas->translate(sk_rect.x(), sk_rect.y());
+    canvas->clipRect(sk_clip_rect);
+    canvas->translate(sk_clip_rect.x(), sk_clip_rect.y());
 
     SkPaint label_paint = CreatePaint();
     label_paint.setTextSize(kFontHeight);
@@ -701,6 +707,12 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
         fill_color = DebugColors::WheelEventHandlerRectFillColor();
         stroke_width = DebugColors::WheelEventHandlerRectBorderWidth();
         label_text = "mousewheel event listener";
+        break;
+      case SCROLL_EVENT_HANDLER_RECT_TYPE:
+        stroke_color = DebugColors::ScrollEventHandlerRectBorderColor();
+        fill_color = DebugColors::ScrollEventHandlerRectFillColor();
+        stroke_width = DebugColors::ScrollEventHandlerRectBorderWidth();
+        label_text = "scroll event listener";
         break;
       case NON_FAST_SCROLLABLE_RECT_TYPE:
         stroke_color = DebugColors::NonFastScrollableRectBorderColor();

@@ -29,11 +29,8 @@
  */
 
 #include "config.h"
-#include "WebFontImpl.h"
+#include "web/WebFontImpl.h"
 
-#include <skia/ext/platform_canvas.h>
-#include "WebFontDescription.h"
-#include "WebTextRun.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -41,6 +38,9 @@
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebFontDescription.h"
+#include "public/web/WebTextRun.h"
+#include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
 

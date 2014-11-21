@@ -23,7 +23,7 @@
 
 #include "core/css/CSSRule.h"
 #include "core/css/StyleSheet.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/TextPosition.h"
 
@@ -139,7 +139,7 @@ private:
     String m_title;
     RefPtrWillBeMember<MediaQuerySet> m_mediaQueries;
 
-    Node* m_ownerNode;
+    RawPtrWillBeMember<Node> m_ownerNode;
     RawPtrWillBeMember<CSSRule> m_ownerRule;
 
     TextPosition m_startPosition;

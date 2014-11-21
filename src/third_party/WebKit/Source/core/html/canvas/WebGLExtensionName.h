@@ -11,6 +11,7 @@ namespace WebCore {
 enum WebGLExtensionName {
     ANGLEInstancedArraysName,
     EXTFragDepthName,
+    EXTShaderTextureLODName,
     EXTTextureFilterAnisotropicName,
     OESElementIndexUintName,
     OESStandardDerivativesName,
@@ -20,6 +21,7 @@ enum WebGLExtensionName {
     OESTextureHalfFloatName,
     OESVertexArrayObjectName,
     WebGLCompressedTextureATCName,
+    WebGLCompressedTextureETC1Name,
     WebGLCompressedTexturePVRTCName,
     WebGLCompressedTextureS3TCName,
     WebGLDebugRendererInfoName,

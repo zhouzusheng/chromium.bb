@@ -24,7 +24,7 @@
 
 #include <third_party/WebKit/public/web/WebDOMCustomEvent.h>
 #include <third_party/WebKit/public/web/WebElement.h>
-#include <third_party/WebKit/public/web/WebFrame.h>
+#include <third_party/WebKit/public/web/WebLocalFrame.h>
 #include <third_party/WebKit/public/web/WebPluginContainer.h>
 #include <v8/include/v8.h>
 
@@ -41,7 +41,7 @@ static v8::Handle<v8::Object> toV8(v8::Isolate* isolate, const blink::WebRect& r
     return result;
 }
 
-JsWidget::JsWidget(blink::WebFrame* frame)
+JsWidget::JsWidget(blink::WebLocalFrame* frame)
 : d_container(nullptr)
 , d_frame(frame)
 {

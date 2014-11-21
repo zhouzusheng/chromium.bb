@@ -307,7 +307,7 @@ void WindowEventDispatcher::OnWindowHidden(Window* invisible,
   if (invisible->Contains(old_dispatch_target_))
     old_dispatch_target_ = NULL;
 
-  CleanupGestureState(invisible);
+  invisible->CleanupGestureState();
 
   // Do not clear the capture, and the |event_dispatch_target_| if the
   // window is moving across hosts, because the target itself is actually still
@@ -330,17 +330,6 @@ void WindowEventDispatcher::OnWindowHidden(Window* invisible,
     // after this.
     if (invisible->Contains(capture_window) && invisible != window())
       capture_window->ReleaseCapture();
-  }
-}
-
-void WindowEventDispatcher::CleanupGestureState(Window* window) {
-  ui::GestureRecognizer::Get()->CancelActiveTouches(window);
-  ui::GestureRecognizer::Get()->CleanupStateForConsumer(window);
-  const Window::Windows& windows = window->children();
-  for (Window::Windows::const_iterator iter = windows.begin();
-      iter != windows.end();
-      ++iter) {
-    CleanupGestureState(*iter);
   }
 }
 
@@ -506,11 +495,6 @@ bool WindowEventDispatcher::CanDispatchToConsumer(
   return (consumer_window && consumer_window->GetRootWindow() == window());
 }
 
-void WindowEventDispatcher::DispatchPostponedGestureEvent(
-    ui::GestureEvent* event) {
-  DispatchGestureEvent(event);
-}
-
 void WindowEventDispatcher::DispatchCancelTouchEvent(ui::TouchEvent* event) {
   DispatchDetails details = OnEventFromSource(event);
   if (details.dispatcher_destroyed)
@@ -595,17 +579,10 @@ void WindowEventDispatcher::OnWindowBoundsChanged(Window* window,
     if (details.dispatcher_destroyed)
       return;
 
-    // Constrain the mouse position within the new root Window size.
-    gfx::Point point;
-    if (host_->QueryMouseLocation(&point)) {
-      SetLastMouseLocation(
-          host_->window(),
-          ui::ConvertPointToDIP(host_->window()->layer(), point));
-    }
     synthesize_mouse_move_ = false;
   }
 
-  if (window->IsVisible()) {
+  if (window->IsVisible() && !window->ignore_events()) {
     gfx::Rect old_bounds_in_root = old_bounds, new_bounds_in_root = new_bounds;
     Window::ConvertRectToTarget(window->parent(), host_->window(),
                                 &old_bounds_in_root);
@@ -736,9 +713,13 @@ void WindowEventDispatcher::PreDispatchLocatedEvent(Window* target,
 void WindowEventDispatcher::PreDispatchMouseEvent(Window* target,
                                                   ui::MouseEvent* event) {
   client::CursorClient* cursor_client = client::GetCursorClient(window());
+  // We allow synthesized mouse exit events through even if mouse events are
+  // disabled. This ensures that hover state, etc on controls like buttons is
+  // cleared.
   if (cursor_client &&
       !cursor_client->IsMouseEventsEnabled() &&
-      (event->flags() & ui::EF_IS_SYNTHESIZED)) {
+      (event->flags() & ui::EF_IS_SYNTHESIZED) &&
+      (event->type() != ui::ET_MOUSE_EXITED)) {
     event->SetHandled();
     return;
   }

@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "platform/ParsingUtilities.h"
 
@@ -48,11 +49,10 @@ inline bool isComma(CharType character)
 }
 
 template<typename CharType>
-static bool parseDescriptors(const CharType* descriptorsStart, const CharType* descriptorsEnd, float& imgScaleFactor)
+static bool parseDescriptors(const CharType* descriptorsStart, const CharType* descriptorsEnd, DescriptorParsingResult& result)
 {
     const CharType* position = descriptorsStart;
     bool isValid = false;
-    bool isFoundScaleFactor = false;
     bool isEmptyDescriptor = !(descriptorsEnd > descriptorsStart);
     while (position < descriptorsEnd) {
         // 13.1. Let descriptor list be the result of splitting unparsed descriptors on spaces.
@@ -66,15 +66,22 @@ static bool parseDescriptors(const CharType* descriptorsStart, const CharType* d
         --currentDescriptorEnd;
         unsigned descriptorLength = currentDescriptorEnd - currentDescriptorStart;
         if (*currentDescriptorEnd == 'x') {
-            if (isFoundScaleFactor)
+            if (result.foundDescriptor())
                 return false;
-            imgScaleFactor = charactersToFloat(currentDescriptorStart, descriptorLength, &isValid);
-            isFoundScaleFactor = true;
-        } else {
-            continue;
+            result.scaleFactor = charactersToFloat(currentDescriptorStart, descriptorLength, &isValid);
+            if (!isValid || result.scaleFactor < 0)
+                return false;
+        } else if (RuntimeEnabledFeatures::pictureSizesEnabled() && *currentDescriptorEnd == 'w') {
+            if (result.foundDescriptor())
+                return false;
+            result.resourceWidth = charactersToInt(currentDescriptorStart, descriptorLength, &isValid);
+            if (!isValid || result.resourceWidth <= 0)
+                return false;
         }
     }
-    return isEmptyDescriptor || isValid;
+    if (isEmptyDescriptor)
+        result.scaleFactor = 1.0;
+    return result.foundDescriptor();
 }
 
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/embedded-content-1.html#processing-the-image-candidates
@@ -85,8 +92,7 @@ static void parseImageCandidatesFromSrcsetAttribute(const String& attribute, con
     const CharType* attributeEnd = position + length;
 
     while (position < attributeEnd) {
-        float imgScaleFactor = 1.0;
-
+        DescriptorParsingResult result;
         // 4. Splitting loop: Skip whitespace.
         skipWhile<CharType, isHTMLSpace<CharType> >(position, attributeEnd);
         if (position == attributeEnd)
@@ -105,17 +111,22 @@ static void parseImageCandidatesFromSrcsetAttribute(const String& attribute, con
 
         if (position != attributeEnd && *(position - 1) == ',') {
             --imageURLEnd;
+            result.scaleFactor = 1.0;
         } else {
             // 7. Collect a sequence of characters that are not "," (U+002C) characters, and let that be descriptors.
             skipWhile<CharType, isHTMLSpace<CharType> >(position, attributeEnd);
             const CharType* descriptorsStart = position;
             skipUntil<CharType, isComma<CharType> >(position, attributeEnd);
             const CharType* descriptorsEnd = position;
-            if (!parseDescriptors(descriptorsStart, descriptorsEnd, imgScaleFactor))
+            if (!parseDescriptors(descriptorsStart, descriptorsEnd, result))
                 continue;
         }
 
-        imageCandidates.append(ImageCandidate(attribute, imageURLStart - attributeStart, imageURLEnd - imageURLStart, imgScaleFactor));
+        ASSERT(imageURLEnd > attributeStart);
+        unsigned imageURLStartingPosition = imageURLStart - attributeStart;
+        ASSERT(imageURLEnd > imageURLStart);
+        unsigned imageURLLength = imageURLEnd - imageURLStart;
+        imageCandidates.append(ImageCandidate(attribute, imageURLStartingPosition, imageURLLength, result, ImageCandidate::SrcsetOrigin));
         // 11. Return to the step labeled splitting loop.
     }
 }
@@ -131,19 +142,34 @@ static void parseImageCandidatesFromSrcsetAttribute(const String& attribute, Vec
         parseImageCandidatesFromSrcsetAttribute<UChar>(attribute, attribute.characters16(), attribute.length(), imageCandidates);
 }
 
-static ImageCandidate pickBestImageCandidate(float deviceScaleFactor, Vector<ImageCandidate>& imageCandidates)
+static ImageCandidate pickBestImageCandidate(float deviceScaleFactor, unsigned sourceSize, Vector<ImageCandidate>& imageCandidates)
 {
+    bool ignoreSrc = false;
     if (imageCandidates.isEmpty())
         return ImageCandidate();
+
+    // http://picture.responsiveimages.org/#normalize-source-densities
+    for (Vector<ImageCandidate>::iterator it = imageCandidates.begin(); it != imageCandidates.end(); ++it) {
+        if (it->resourceWidth() > 0) {
+            it->setScaleFactor((float)it->resourceWidth() / (float)sourceSize);
+            ignoreSrc = true;
+        }
+    }
 
     std::stable_sort(imageCandidates.begin(), imageCandidates.end(), compareByScaleFactor);
 
     unsigned i;
-    for (i = 0; i < imageCandidates.size() - 1; ++i)
-        if (imageCandidates[i].scaleFactor() >= deviceScaleFactor)
+    for (i = 0; i < imageCandidates.size() - 1; ++i) {
+        if ((imageCandidates[i].scaleFactor() >= deviceScaleFactor) && (!ignoreSrc || !imageCandidates[i].srcOrigin()))
             break;
+    }
 
+    if (imageCandidates[i].srcOrigin() && ignoreSrc) {
+        ASSERT(i > 0);
+        --i;
+    }
     float winningScaleFactor = imageCandidates[i].scaleFactor();
+
     unsigned winner = i;
     // 16. If an entry b in candidates has the same associated ... pixel density as an earlier entry a in candidates,
     // then remove entry b
@@ -153,21 +179,24 @@ static ImageCandidate pickBestImageCandidate(float deviceScaleFactor, Vector<Ima
     return imageCandidates[winner];
 }
 
-ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, const String& srcsetAttribute)
+ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, unsigned sourceSize, const String& srcsetAttribute)
 {
     Vector<ImageCandidate> imageCandidates;
 
     parseImageCandidatesFromSrcsetAttribute(srcsetAttribute, imageCandidates);
 
-    return pickBestImageCandidate(deviceScaleFactor, imageCandidates);
+    return pickBestImageCandidate(deviceScaleFactor, sourceSize, imageCandidates);
 }
 
-ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, const String& srcAttribute, const String& srcsetAttribute)
+ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, const String& srcsetAttribute)
 {
+    DescriptorParsingResult defaultResult;
+    defaultResult.scaleFactor = 1.0;
+
     if (srcsetAttribute.isNull()) {
         if (srcAttribute.isNull())
             return ImageCandidate();
-        return ImageCandidate(srcAttribute, 0, srcAttribute.length(), 1);
+        return ImageCandidate(srcAttribute, 0, srcAttribute.length(), defaultResult, ImageCandidate::SrcOrigin);
     }
 
     Vector<ImageCandidate> imageCandidates;
@@ -175,13 +204,16 @@ ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, const St
     parseImageCandidatesFromSrcsetAttribute(srcsetAttribute, imageCandidates);
 
     if (!srcAttribute.isEmpty())
-        imageCandidates.append(ImageCandidate(srcAttribute, 0, srcAttribute.length(), 1.0));
+        imageCandidates.append(ImageCandidate(srcAttribute, 0, srcAttribute.length(), defaultResult, ImageCandidate::SrcOrigin));
 
-    return pickBestImageCandidate(deviceScaleFactor, imageCandidates);
+    return pickBestImageCandidate(deviceScaleFactor, sourceSize, imageCandidates);
 }
 
-String bestFitSourceForImageAttributes(float deviceScaleFactor, const String& srcAttribute, ImageCandidate& srcsetImageCandidate)
+String bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, ImageCandidate& srcsetImageCandidate)
 {
+    DescriptorParsingResult defaultResult;
+    defaultResult.scaleFactor = 1.0;
+
     if (srcsetImageCandidate.isEmpty())
         return srcAttribute;
 
@@ -189,9 +221,9 @@ String bestFitSourceForImageAttributes(float deviceScaleFactor, const String& sr
     imageCandidates.append(srcsetImageCandidate);
 
     if (!srcAttribute.isEmpty())
-        imageCandidates.append(ImageCandidate(srcAttribute, 0, srcAttribute.length(), 1.0));
+        imageCandidates.append(ImageCandidate(srcAttribute, 0, srcAttribute.length(), defaultResult, ImageCandidate::SrcOrigin));
 
-    return pickBestImageCandidate(deviceScaleFactor, imageCandidates).toString();
+    return pickBestImageCandidate(deviceScaleFactor, sourceSize, imageCandidates).toString();
 }
 
 }

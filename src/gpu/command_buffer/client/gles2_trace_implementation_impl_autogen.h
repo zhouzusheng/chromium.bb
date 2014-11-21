@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1178,10 +1178,9 @@ GLboolean GLES2TraceImplementation::UnmapBufferCHROMIUM(GLuint target) {
   return gl_->UnmapBufferCHROMIUM(target);
 }
 
-void* GLES2TraceImplementation::MapImageCHROMIUM(GLuint image_id,
-                                                 GLenum access) {
+void* GLES2TraceImplementation::MapImageCHROMIUM(GLuint image_id) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::MapImageCHROMIUM");
-  return gl_->MapImageCHROMIUM(image_id, access);
+  return gl_->MapImageCHROMIUM(image_id);
 }
 
 void GLES2TraceImplementation::UnmapImageCHROMIUM(GLuint image_id) {
@@ -1272,9 +1271,10 @@ GLuint GLES2TraceImplementation::CreateStreamTextureCHROMIUM(GLuint texture) {
 
 GLuint GLES2TraceImplementation::CreateImageCHROMIUM(GLsizei width,
                                                      GLsizei height,
-                                                     GLenum internalformat) {
+                                                     GLenum internalformat,
+                                                     GLenum usage) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::CreateImageCHROMIUM");
-  return gl_->CreateImageCHROMIUM(width, height, internalformat);
+  return gl_->CreateImageCHROMIUM(width, height, internalformat, usage);
 }
 
 void GLES2TraceImplementation::DestroyImageCHROMIUM(GLuint image_id) {
@@ -1441,6 +1441,12 @@ void GLES2TraceImplementation::WaitAsyncTexImage2DCHROMIUM(GLenum target) {
   gl_->WaitAsyncTexImage2DCHROMIUM(target);
 }
 
+void GLES2TraceImplementation::WaitAllAsyncTexImage2DCHROMIUM() {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::WaitAllAsyncTexImage2DCHROMIUM");
+  gl_->WaitAllAsyncTexImage2DCHROMIUM();
+}
+
 void GLES2TraceImplementation::DiscardFramebufferEXT(
     GLenum target,
     GLsizei count,
@@ -1474,6 +1480,33 @@ void GLES2TraceImplementation::DrawBuffersEXT(GLsizei count,
 void GLES2TraceImplementation::DiscardBackbufferCHROMIUM() {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::DiscardBackbufferCHROMIUM");
   gl_->DiscardBackbufferCHROMIUM();
+}
+
+void GLES2TraceImplementation::ScheduleOverlayPlaneCHROMIUM(
+    GLint plane_z_order,
+    GLenum plane_transform,
+    GLuint overlay_texture_id,
+    GLint bounds_x,
+    GLint bounds_y,
+    GLint bounds_width,
+    GLint bounds_height,
+    GLfloat uv_x,
+    GLfloat uv_y,
+    GLfloat uv_width,
+    GLfloat uv_height) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::ScheduleOverlayPlaneCHROMIUM");
+  gl_->ScheduleOverlayPlaneCHROMIUM(plane_z_order,
+                                    plane_transform,
+                                    overlay_texture_id,
+                                    bounds_x,
+                                    bounds_y,
+                                    bounds_width,
+                                    bounds_height,
+                                    uv_x,
+                                    uv_y,
+                                    uv_width,
+                                    uv_height);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_TRACE_IMPLEMENTATION_IMPL_AUTOGEN_H_

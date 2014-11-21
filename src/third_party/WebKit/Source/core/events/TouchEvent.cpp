@@ -29,6 +29,8 @@
 #include "core/events/TouchEvent.h"
 
 #include "core/events/EventDispatcher.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
@@ -40,8 +42,8 @@ TouchEvent::TouchEvent()
 TouchEvent::TouchEvent(TouchList* touches, TouchList* targetTouches,
         TouchList* changedTouches, const AtomicString& type,
         PassRefPtrWillBeRawPtr<AbstractView> view, int screenX, int screenY, int pageX, int pageY,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
-    : MouseRelatedEvent(type, true, true, view, 0, IntPoint(screenX, screenY),
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable)
+    : MouseRelatedEvent(type, true, cancelable, view, 0, IntPoint(screenX, screenY),
                         IntPoint(pageX, pageY),
                         IntPoint(0, 0),
                         ctrlKey, altKey, shiftKey, metaKey)
@@ -64,7 +66,11 @@ void TouchEvent::initTouchEvent(TouchList* touches, TouchList* targetTouches,
     if (dispatched())
         return;
 
-    initUIEvent(type, true, true, view, 0);
+    bool cancelable = true;
+    if (type == EventTypeNames::touchcancel)
+        cancelable = false;
+
+    initUIEvent(type, true, cancelable, view, 0);
 
     m_touches = touches;
     m_targetTouches = targetTouches;
@@ -87,6 +93,18 @@ bool TouchEvent::isTouchEvent() const
     return true;
 }
 
+void TouchEvent::preventDefault()
+{
+    MouseRelatedEvent::preventDefault();
+
+    // A common developer error is to wait too long before attempting to stop
+    // scrolling by consuming a touchmove event. Generate a warning if this
+    // event is uncancelable.
+    if (!cancelable() && view() && view()->frame()) {
+        view()->frame()->console().addMessage(JSMessageSource, WarningMessageLevel,
+            "Ignored attempt to cancel a " + type() + " event with cancelable=false, for example because scrolling is in progress and cannot be interrupted.");
+    }
+}
 void TouchEvent::trace(Visitor* visitor)
 {
     visitor->trace(m_touches);
@@ -95,12 +113,12 @@ void TouchEvent::trace(Visitor* visitor)
     MouseRelatedEvent::trace(visitor);
 }
 
-PassRefPtr<TouchEventDispatchMediator> TouchEventDispatchMediator::create(PassRefPtr<TouchEvent> touchEvent)
+PassRefPtr<TouchEventDispatchMediator> TouchEventDispatchMediator::create(PassRefPtrWillBeRawPtr<TouchEvent> touchEvent)
 {
     return adoptRef(new TouchEventDispatchMediator(touchEvent));
 }
 
-TouchEventDispatchMediator::TouchEventDispatchMediator(PassRefPtr<TouchEvent> touchEvent)
+TouchEventDispatchMediator::TouchEventDispatchMediator(PassRefPtrWillBeRawPtr<TouchEvent> touchEvent)
     : EventDispatchMediator(touchEvent)
 {
 }

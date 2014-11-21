@@ -60,7 +60,7 @@ public:
 
     int32_t MixActiveChannels();
 
-    int32_t DoOperationsOnCombinedSignal();
+    int32_t DoOperationsOnCombinedSignal(bool feed_data_to_apm);
 
     int32_t SetMixabilityStatus(MixerParticipant& participant,
                                 bool mixable);
@@ -133,8 +133,10 @@ private:
     CriticalSectionWrapper& _fileCritSect;
     AudioConferenceMixer& _mixerModule;
     AudioFrame _audioFrame;
-    PushResampler resampler_;  // converts mixed audio to fit ADM format
-    PushResampler audioproc_resampler_;  // converts mixed audio to fit APM rate
+    // Converts mixed audio to the audio device output rate.
+    PushResampler<int16_t> resampler_;
+    // Converts mixed audio to the audio processing rate.
+    PushResampler<int16_t> audioproc_resampler_;
     AudioLevel _audioLevel;    // measures audio level for the combined signal
     DtmfInband _dtmfGenerator;
     int _instanceId;

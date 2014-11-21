@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -41,13 +41,18 @@
 namespace WebCore {
 
 class ExecutionContext;
+class MemoryInfo;
 
-class WorkerPerformance : public RefCountedWillBeGarbageCollectedFinalized<WorkerPerformance>, public ScriptWrappable {
+class WorkerPerformance : public GarbageCollectedFinalized<WorkerPerformance>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<WorkerPerformance> create() { return adoptRefWillBeNoop(new WorkerPerformance()); }
+    static WorkerPerformance* create()
+    {
+        return new WorkerPerformance();
+    }
     ~WorkerPerformance();
 
     double now(ExecutionContext*) const;
+    PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
 
     void trace(Visitor*) { }
 

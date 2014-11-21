@@ -27,8 +27,8 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
+#include "core/frame/DOMWindow.h"
 #include "core/page/Page.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/device_orientation/DeviceOrientationDispatcher.h"
@@ -37,8 +37,9 @@
 namespace WebCore {
 
 DeviceOrientationController::DeviceOrientationController(Document& document)
-    : DeviceSensorEventController(document)
+    : DeviceSensorEventController(document.page())
     , DOMWindowLifecycleObserver(document.domWindow())
+    , m_document(document)
 {
 }
 
@@ -64,7 +65,7 @@ DeviceOrientationController& DeviceOrientationController::from(Document& documen
     DeviceOrientationController* controller = static_cast<DeviceOrientationController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new DeviceOrientationController(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
     }
     return *controller;
 }
@@ -79,7 +80,7 @@ bool DeviceOrientationController::hasLastData()
     return lastData();
 }
 
-PassRefPtr<Event> DeviceOrientationController::getLastEvent()
+PassRefPtrWillBeRawPtr<Event> DeviceOrientationController::getLastEvent()
 {
     return DeviceOrientationEvent::create(EventTypeNames::deviceorientation, lastData());
 }
@@ -100,21 +101,29 @@ bool DeviceOrientationController::isNullEvent(Event* event)
     return !orientationEvent->orientation()->canProvideEventData();
 }
 
+Document* DeviceOrientationController::document()
+{
+    return &m_document;
+}
+
 void DeviceOrientationController::didAddEventListener(DOMWindow* window, const AtomicString& eventType)
 {
-    if (eventType == EventTypeNames::deviceorientation && RuntimeEnabledFeatures::deviceOrientationEnabled()) {
-        if (page() && page()->visibilityState() == PageVisibilityStateVisible)
-            startUpdating();
-        m_hasEventListener = true;
-    }
+    if (eventType != EventTypeNames::deviceorientation)
+        return;
+
+    if (page() && page()->visibilityState() == PageVisibilityStateVisible)
+        startUpdating();
+
+    m_hasEventListener = true;
 }
 
 void DeviceOrientationController::didRemoveEventListener(DOMWindow* window, const AtomicString& eventType)
 {
-    if (eventType == EventTypeNames::deviceorientation) {
-        stopUpdating();
-        m_hasEventListener = false;
-    }
+    if (eventType != EventTypeNames::deviceorientation || window->hasEventListeners(EventTypeNames::deviceorientation))
+        return;
+
+    stopUpdating();
+    m_hasEventListener = false;
 }
 
 void DeviceOrientationController::didRemoveAllEventListeners(DOMWindow* window)
@@ -138,6 +147,12 @@ void DeviceOrientationController::clearOverride()
     DeviceOrientationData* orientation = lastData();
     if (orientation)
         didChangeDeviceOrientation(orientation);
+}
+
+void DeviceOrientationController::trace(Visitor* visitor)
+{
+    visitor->trace(m_overrideOrientationData);
+    DocumentSupplement::trace(visitor);
 }
 
 } // namespace WebCore

@@ -44,9 +44,10 @@ class InjectedScriptManager;
 class InspectorFrontend;
 class InspectorOverlay;
 class InstrumentingAgents;
+class ScriptState;
 class ScriptCallStack;
 class ScriptProfile;
-class ScriptState;
+
 
 typedef String ErrorString;
 

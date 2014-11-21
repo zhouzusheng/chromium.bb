@@ -36,8 +36,8 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "heap/Handle.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -107,7 +107,7 @@ private:
     void abortConnectionAttempt();
     void parseEventStream();
     void parseEventStreamLine(unsigned pos, int fieldLength, int lineLength);
-    PassRefPtr<MessageEvent> createMessageEvent();
+    PassRefPtrWillBeRawPtr<MessageEvent> createMessageEvent();
 
     KURL m_url;
     bool m_withCredentials;

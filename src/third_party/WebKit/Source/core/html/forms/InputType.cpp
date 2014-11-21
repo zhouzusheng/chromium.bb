@@ -75,7 +75,7 @@ using blink::WebLocalizedString;
 using namespace HTMLNames;
 using namespace std;
 
-typedef PassRefPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
+typedef PassRefPtrWillBeRawPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
 typedef HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash> InputTypeFactoryMap;
 
 static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
@@ -112,7 +112,7 @@ static const InputTypeFactoryMap* factoryMap()
     return factoryMap;
 }
 
-PassRefPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicString& typeName)
+PassRefPtrWillBeRawPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicString& typeName)
 {
     InputTypeFactoryFunction factory = typeName.isEmpty() ? 0 : factoryMap()->get(typeName);
     if (!factory)
@@ -120,7 +120,7 @@ PassRefPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicS
     return factory(element);
 }
 
-PassRefPtr<InputType> InputType::createText(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> InputType::createText(HTMLInputElement& element)
 {
     return TextInputType::create(element);
 }
@@ -131,16 +131,6 @@ const AtomicString& InputType::normalizeTypeName(const AtomicString& typeName)
         return InputTypeNames::text;
     InputTypeFactoryMap::const_iterator it = factoryMap()->find(typeName);
     return it == factoryMap()->end() ? InputTypeNames::text : it->key;
-}
-
-bool InputType::canChangeFromAnotherType(const AtomicString& normalizedTypeName)
-{
-    // Don't allow the type to be changed to file after the first type change.
-    // In other engines this might mean a JavaScript programmer could set a text
-    // field's value to something like /etc/passwd and then change it to a file
-    // input. I don't think this would actually occur in Blink, but this rule
-    // still may be important for compatibility.
-    return normalizedTypeName != InputTypeNames::file;
 }
 
 InputType::~InputType()
@@ -557,6 +547,11 @@ bool InputType::storesValueSeparateFromAttribute()
     return true;
 }
 
+bool InputType::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
+{
+    return !equalIgnoringNullity(oldValue, newValue);
+}
+
 void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     element().setValueInternal(sanitizedValue, eventBehavior);
@@ -944,10 +939,10 @@ void InputType::stepUpFromRenderer(int n)
         setValueAsDecimal(current, DispatchNoEvent, IGNORE_EXCEPTION);
     }
     if ((sign > 0 && current < stepRange.minimum()) || (sign < 0 && current > stepRange.maximum())) {
-        setValueAsDecimal(sign > 0 ? stepRange.minimum() : stepRange.maximum(), DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
+        setValueAsDecimal(sign > 0 ? stepRange.minimum() : stepRange.maximum(), DispatchChangeEvent, IGNORE_EXCEPTION);
         return;
     }
-    applyStep(current, n, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
+    applyStep(current, n, AnyIsDefaultStep, DispatchChangeEvent, IGNORE_EXCEPTION);
 }
 
 void InputType::countUsageIfVisible(UseCounter::Feature feature) const

@@ -164,8 +164,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSV
             return currentColorOrValidColor(*style, svgStyle->stopColor());
         case CSSPropertyFill:
             return adjustSVGPaintForCurrentColor(SVGPaint::create(svgStyle->fillPaintType(), svgStyle->fillPaintUri(), svgStyle->fillPaintColor()), *style);
-        case CSSPropertyKerning:
-            return SVGLength::toCSSPrimitiveValue(svgStyle->kerning());
         case CSSPropertyMarkerEnd:
             if (!svgStyle->markerEndResource().isEmpty())
                 return CSSPrimitiveValue::create(svgStyle->markerEndResource(), CSSPrimitiveValue::CSS_URI);
@@ -221,7 +219,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getSVGPropertyCSSV
             return CSSPrimitiveValue::create(svgStyle->maskType());
         case CSSPropertyMarker:
         case CSSPropertyEnableBackground:
-        case CSSPropertyColorProfile:
             // the above properties are not yet implemented in the engine
             break;
     default:

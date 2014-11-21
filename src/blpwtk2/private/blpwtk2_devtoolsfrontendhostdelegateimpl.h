@@ -51,7 +51,7 @@ class DevToolsFrontendHostDelegateImpl
     // ======== WebContentsObserver overrides ============
 
     virtual void RenderViewCreated(content::RenderViewHost* renderViewHost) OVERRIDE;
-    virtual void WebContentsDestroyed(content::WebContents* webContents) OVERRIDE;
+    virtual void WebContentsDestroyed() OVERRIDE;
 
 
     // ======== DevToolsFrontendHostDelegate overrides ===========

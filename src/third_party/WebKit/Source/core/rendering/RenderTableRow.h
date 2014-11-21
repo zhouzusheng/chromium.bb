@@ -100,12 +100,11 @@ private:
 
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
     virtual void layout() OVERRIDE;
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
     virtual LayerType layerTypeRequired() const OVERRIDE
     {
-        if (hasTransform() || hasHiddenBackface() || hasClipPath() || createsGroup() || isStickyPositioned() || style()->hasWillChangeCompositingHint() || style()->hasWillChangeGpuRasterizationHint() || shouldCompositeForActiveAnimations(*this))
+        if (hasTransform() || hasHiddenBackface() || hasClipPath() || createsGroup() || isStickyPositioned() || style()->shouldCompositeForCurrentAnimations())
             return NormalLayer;
 
         if (hasOverflowClip())

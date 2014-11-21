@@ -31,7 +31,6 @@
 #ifndef PageRuntimeAgent_h
 #define PageRuntimeAgent_h
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 #include "wtf/PassOwnPtr.h"
@@ -50,14 +49,11 @@ public:
     }
     virtual ~PageRuntimeAgent();
     virtual void init() OVERRIDE;
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
     virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
 
-    void didClearWindowObjectInMainWorld(LocalFrame*);
+    void didClearDocumentOfWindowObject(LocalFrame*);
     void didCreateIsolatedContext(LocalFrame*, ScriptState*, SecurityOrigin*);
+    void frameWindowDiscarded(DOMWindow*);
 
 private:
     PageRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, Page*, InspectorPageAgent*);
@@ -66,11 +62,9 @@ private:
     virtual void muteConsole() OVERRIDE;
     virtual void unmuteConsole() OVERRIDE;
     void reportExecutionContextCreation();
-    void notifyContextCreated(const String& frameId, ScriptState*, SecurityOrigin*, bool isPageContext);
 
     Page* m_inspectedPage;
     InspectorPageAgent* m_pageAgent;
-    InspectorFrontend::Runtime* m_frontend;
     bool m_mainWorldContextCreated;
 };
 

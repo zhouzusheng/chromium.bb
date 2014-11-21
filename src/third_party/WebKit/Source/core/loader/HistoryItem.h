@@ -28,6 +28,7 @@
 #define HistoryItem_h
 
 #include "bindings/v8/SerializedScriptValue.h"
+#include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/weborigin/Referrer.h"
 #include "wtf/RefCounted.h"
@@ -36,6 +37,7 @@
 namespace WebCore {
 
 class Document;
+class DocumentState;
 class FormData;
 class HistoryItem;
 class Image;
@@ -47,10 +49,7 @@ typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
 class HistoryItem : public RefCounted<HistoryItem> {
 public:
     static PassRefPtr<HistoryItem> create() { return adoptRef(new HistoryItem); }
-
     ~HistoryItem();
-
-    PassRefPtr<HistoryItem> copy() const;
 
     // Used when the frame this item represents was navigated to a different
     // url but a new item wasn't created.
@@ -66,6 +65,8 @@ public:
     FormData* formData();
     const AtomicString& formContentType() const;
 
+    const FloatPoint& pinchViewportScrollPoint() const;
+    void setPinchViewportScrollPoint(const FloatPoint&);
     const IntPoint& scrollPoint() const;
     void setScrollPoint(const IntPoint&);
     void clearScrollPoint();
@@ -73,8 +74,10 @@ public:
     float pageScaleFactor() const;
     void setPageScaleFactor(float);
 
-    const Vector<String>& documentState() const;
+    Vector<String> getReferencedFilePaths();
+    const Vector<String>& documentState();
     void setDocumentState(const Vector<String>&);
+    void setDocumentState(DocumentState*);
     void clearDocumentState();
 
     void setURL(const KURL&);
@@ -95,25 +98,20 @@ public:
     void setFormData(PassRefPtr<FormData>);
     void setFormContentType(const AtomicString&);
 
-    void addChildItem(PassRefPtr<HistoryItem>);
-    const HistoryItemVector& children() const;
-    void clearChildren();
-
     bool isCurrentDocument(Document*) const;
 
 private:
     HistoryItem();
-    explicit HistoryItem(const HistoryItem&);
 
     String m_urlString;
     Referrer m_referrer;
     String m_target;
 
+    FloatPoint m_pinchViewportScrollPoint;
     IntPoint m_scrollPoint;
     float m_pageScaleFactor;
-    Vector<String> m_documentState;
-
-    HistoryItemVector m_children;
+    Vector<String> m_documentStateVector;
+    RefPtrWillBePersistent<DocumentState> m_documentState;
 
     // If two HistoryItems have the same item sequence number, then they are
     // clones of one another. Traversing history from one such HistoryItem to

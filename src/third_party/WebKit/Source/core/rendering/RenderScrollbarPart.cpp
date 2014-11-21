@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/rendering/RenderScrollbarPart.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderScrollbarTheme.h"
@@ -57,7 +56,6 @@ RenderScrollbarPart* RenderScrollbarPart::createAnonymous(Document* document, Re
 
 void RenderScrollbarPart::layout()
 {
-    LayoutRectRecorder recorder(*this);
     setLocation(LayoutPoint()); // We don't worry about positioning ourselves. We're just determining our minimum width/height.
     if (m_scrollbar->orientation() == HorizontalScrollbar)
         layoutHorizontalPart();
@@ -140,7 +138,7 @@ void RenderScrollbarPart::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
     RenderBlock::styleWillChange(diff, newStyle);
     setInline(false);
@@ -153,7 +151,7 @@ void RenderScrollbarPart::styleDidChange(StyleDifference diff, const RenderStyle
     clearPositionedState();
     setFloating(false);
     setHasOverflowClip(false);
-    if (oldStyle && m_scrollbar && m_part != NoPart && diff >= StyleDifferenceRepaint)
+    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsRepaint() || diff.needsLayout()))
         m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
 }
 

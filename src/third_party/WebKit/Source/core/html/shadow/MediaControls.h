@@ -40,7 +40,6 @@ public:
     static PassRefPtr<MediaControls> create(HTMLMediaElement&);
 
     HTMLMediaElement& mediaElement() const { return m_mediaElement; }
-    MediaControllerInterface& mediaControllerInterface() const;
 
     void reset();
 
@@ -56,8 +55,7 @@ public:
 
     void updateCurrentTimeDisplay();
 
-    void changedMute();
-    void changedVolume();
+    void updateVolume();
 
     void changedClosedCaptionsVisibility();
     void refreshClosedCaptionsButtonVisibility();
@@ -78,10 +76,10 @@ private:
 
     void updatePlayState();
 
-    bool shouldHideFullscreenControls();
-    void hideFullscreenControlsTimerFired(Timer<MediaControls>*);
-    void startHideFullscreenControlsTimer();
-    void stopHideFullscreenControlsTimer();
+    bool shouldHideMediaControls();
+    void hideMediaControlsTimerFired(Timer<MediaControls>*);
+    void startHideMediaControlsTimer();
+    void stopHideMediaControlsTimer();
 
     void createTextTrackDisplay();
     void showTextTrackDisplay();
@@ -117,8 +115,7 @@ private:
     MediaControlTimeRemainingDisplayElement* m_durationDisplay;
     MediaControlPanelEnclosureElement* m_enclosure;
 
-    Timer<MediaControls> m_hideFullscreenControlsTimer;
-    bool m_isFullscreen : 1;
+    Timer<MediaControls> m_hideMediaControlsTimer;
     bool m_isMouseOverControls : 1;
     bool m_isPausedForScrubbing : 1;
 };

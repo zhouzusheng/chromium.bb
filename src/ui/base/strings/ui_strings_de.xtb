@@ -2,6 +2,7 @@
 <!DOCTYPE translationbundle>
 <translationbundle lang="de">
 <translation id="4820616160060340806">Befehltaste+<ph name="KEY_COMBO_NAME"/></translation>
+<translation id="8806053966018712535">Ordner <ph name="FOLDER_NAME"/></translation>
 <translation id="1871244248791675517">Einfg</translation>
 <translation id="6135826906199951471">Entf</translation>
 <translation id="528468243742722775">Ende</translation>
@@ -9,7 +10,7 @@
 <translation id="6310545596129886942"><ph name="NUMBER_FEW"/> Sekunden übrig</translation>
 <translation id="9213479837033539041"><ph name="NUMBER_MANY"/> Sekunden übrig</translation>
 <translation id="1209866192426315618"><ph name="NUMBER_DEFAULT"/> Minuten übrig</translation>
-<translation id="1801827354178857021">Punkt</translation>
+<translation id="1801827354178857021">Zeitraum</translation>
 <translation id="1190609913194133056">Benachrichtigungscenter</translation>
 <translation id="7470933019269157899">Noch <ph name="NUMBER_DEFAULT"/> Minuten</translation>
 <translation id="5613020302032141669">Linkspfeil</translation>
@@ -18,7 +19,6 @@
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
 <translation id="7121570032414343252"><ph name="NUMBER_TWO"/> Sekunden</translation>
 <translation id="7511635910912978956"><ph name="NUMBER_FEW"/> Stunden übrig</translation>
-<translation id="8717309436826820190"><ph name="NUMBER_OF_NOTIFICATIONS"/> weitere von <ph name="SOURCE_OF_NOTIFICATIONS"/></translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME"/></translation>
 <translation id="7658239707568436148">Abbrechen</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -33,7 +33,7 @@
 <translation id="1940483897317142625">Bis zum Zeilenende löschen</translation>
 <translation id="8507996248087185956"><ph name="NUMBER_DEFAULT"/> Minuten</translation>
 <translation id="3520476450377425184"><ph name="NUMBER_MANY"/> Tage übrig</translation>
-<translation id="932327136139879170">Startseite</translation>
+<translation id="932327136139879170">Privat</translation>
 <translation id="5600907569873192868"><ph name="NUMBER_MANY"/> Minuten übrig</translation>
 <translation id="8666066831007952346"><ph name="NUMBER_TWO"/> Tage übrig</translation>
 <translation id="6390842777729054533"><ph name="NUMBER_ZERO"/> Sekunden übrig</translation>
@@ -139,6 +139,7 @@
 <translation id="8331626408530291785">Nach oben blättern</translation>
 <translation id="7907591526440419938">Datei öffnen</translation>
 <translation id="2864069933652346933"><ph name="NUMBER_ZERO"/> days left</translation>
+<translation id="2803313416453193357">Ordner öffnen</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="2797524280730715045">Vor <ph name="NUMBER_DEFAULT"/> Stunden</translation>
 <translation id="815598010540052116">Nach unten blättern</translation>
@@ -176,7 +177,6 @@
 <translation id="2704295676501803339">Nach links</translation>
 <translation id="9098468523912235228">Vor <ph name="NUMBER_DEFAULT"/> Sekunden</translation>
 <translation id="494645311413743213"><ph name="NUMBER_TWO"/> Sekunden übrig</translation>
-<translation id="4570886800634958009">Benachrichtigung anzeigen</translation>
 <translation id="566737009157135450">Letztes Wort löschen</translation>
 <translation id="436869212180315161">Klicken</translation>
 <translation id="4860787810836767172"><ph name="NUMBER_FEW"/> secs ago</translation>
@@ -196,6 +196,7 @@
 <translation id="822618367988303761"><ph name="NUMBER_TWO"/> days ago</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> Minuten</translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> Tage übrig</translation>
+<translation id="6786750046913594791">Ordner schließen</translation>
 <translation id="7509440305564869263"><ph name="NUMBER_FEW"/> Minuten</translation>
 <translation id="5906719743126878045"><ph name="NUMBER_TWO"/> Stunden übrig</translation>
 <translation id="8959208747503200525"><ph name="NUMBER_TWO"/> hours ago</translation>

@@ -57,8 +57,16 @@ class FontResource;
 class FontsReadyPromiseResolver;
 class ExecutionContext;
 
+#if ENABLE(OILPAN)
+class FontFaceSet FINAL : public RefCountedGarbageCollected<FontFaceSet>, public HeapSupplement<Document>, public ActiveDOMObject, public EventTargetWithInlineData {
+    USING_GARBAGE_COLLECTED_MIXIN(FontFaceSet);
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<FontFaceSet>);
+    typedef HeapSupplement<Document> SupplementType;
+#else
 class FontFaceSet FINAL : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
-    REFCOUNTED_EVENT_TARGET(FontFaceSet);
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCounted<FontFaceSet>);
+    typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
+#endif
 public:
     virtual ~FontFaceSet();
 
@@ -67,8 +75,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadingerror);
 
     bool check(const String& font, const String& text, ExceptionState&);
-    ScriptPromise load(const String& font, const String& text);
-    ScriptPromise ready();
+    ScriptPromise load(ScriptState*, const String& font, const String& text);
+    ScriptPromise ready(ScriptState*);
 
     void add(FontFace*, ExceptionState&);
     void clear();
@@ -95,17 +103,19 @@ public:
     virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
 
-    static PassRefPtr<FontFaceSet> from(Document&);
+    static PassRefPtrWillBeRawPtr<FontFaceSet> from(Document&);
     static void didLayout(Document&);
 
     void addFontFacesToFontFaceCache(FontFaceCache*, CSSFontSelector*);
 
-private:
-    typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
+#if ENABLE(OILPAN)
+    virtual void trace(Visitor*) OVERRIDE;
+#endif
 
-    static PassRefPtr<FontFaceSet> create(Document& document)
+private:
+    static PassRefPtrWillBeRawPtr<FontFaceSet> create(Document& document)
     {
-        return adoptRef<FontFaceSet>(new FontFaceSet(document));
+        return adoptRefWillBeRefCountedGarbageCollected<FontFaceSet>(new FontFaceSet(document));
     }
 
     class FontLoadHistogram {
@@ -128,22 +138,23 @@ private:
 
     bool inActiveDocumentContext() const;
     void forEachInternal(PassOwnPtr<FontFaceSetForEachCallback>, ScriptValue* thisArg) const;
-    void addToLoadingFonts(PassRefPtr<FontFace>);
-    void removeFromLoadingFonts(PassRefPtr<FontFace>);
+    void addToLoadingFonts(PassRefPtrWillBeRawPtr<FontFace>);
+    void removeFromLoadingFonts(PassRefPtrWillBeRawPtr<FontFace>);
     void fireLoadingEvent();
     void fireDoneEventIfPossible();
     bool resolveFontStyle(const String&, Font&);
     void handlePendingEventsAndPromisesSoon();
     void handlePendingEventsAndPromises();
-    const ListHashSet<RefPtr<FontFace> >& cssConnectedFontFaceList() const;
+    const ListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFontFaceList() const;
     bool isCSSConnectedFontFace(FontFace*) const;
 
-    HashSet<RefPtr<FontFace> > m_loadingFonts;
+    WillBeHeapHashSet<RefPtrWillBeMember<FontFace> > m_loadingFonts;
     bool m_shouldFireLoadingEvent;
     Vector<OwnPtr<FontsReadyPromiseResolver> > m_readyResolvers;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
-    ListHashSet<RefPtr<FontFace> > m_nonCSSConnectedFaces;
+    // FIXME: Oilpan: replace with a HeapListHashSet or HeapLinkedHashSet.
+    ListHashSet<RefPtrWillBeMember<FontFace> > m_nonCSSConnectedFaces;
 
     AsyncMethodRunner<FontFaceSet> m_asyncRunner;
 

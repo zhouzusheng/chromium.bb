@@ -30,8 +30,13 @@
 #ifndef ShapeOutsideInfo_h
 #define ShapeOutsideInfo_h
 
-#include "core/rendering/shapes/ShapeInfo.h"
+#include "core/rendering/shapes/Shape.h"
+#include "core/rendering/style/RenderStyle.h"
+#include "core/rendering/style/ShapeValue.h"
+#include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutSize.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -39,8 +44,23 @@ class RenderBlockFlow;
 class RenderBox;
 class FloatingObject;
 
-class ShapeOutsideInfo FINAL : public ShapeInfo<RenderBox>, public MappedInfo<RenderBox, ShapeOutsideInfo> {
+class ShapeOutsideInfo FINAL {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
+    void setReferenceBoxLogicalSize(LayoutSize);
+
+    SegmentList computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) const;
+
+    LayoutUnit shapeLogicalTop() const { return computedShape().shapeMarginLogicalBoundingBox().y() + logicalTopOffset(); }
+    LayoutUnit shapeLogicalBottom() const { return computedShape().shapeMarginLogicalBoundingBox().maxY() + logicalTopOffset(); }
+    LayoutUnit shapeLogicalLeft() const { return computedShape().shapeMarginLogicalBoundingBox().x() + logicalLeftOffset(); }
+    LayoutUnit shapeLogicalRight() const { return computedShape().shapeMarginLogicalBoundingBox().maxX() + logicalLeftOffset(); }
+    LayoutUnit shapeLogicalWidth() const { return computedShape().shapeMarginLogicalBoundingBox().width(); }
+    LayoutUnit shapeLogicalHeight() const { return computedShape().shapeMarginLogicalBoundingBox().height(); }
+
+    LayoutUnit logicalLineTop() const { return m_referenceBoxLineTop + logicalTopOffset(); }
+    LayoutUnit logicalLineBottom() const { return m_referenceBoxLineTop + m_lineHeight + logicalTopOffset(); }
+
     LayoutUnit leftMarginBoxDelta() const { return m_leftMarginBoxDelta; }
     LayoutUnit rightMarginBoxDelta() const { return m_rightMarginBoxDelta; }
     bool lineOverlapsShape() const { return m_lineOverlapsShape; }
@@ -49,33 +69,54 @@ public:
     static bool isEnabledFor(const RenderBox&);
     void updateDeltasForContainingBlockLine(const RenderBlockFlow&, const FloatingObject&, LayoutUnit lineTop, LayoutUnit lineHeight);
 
-    virtual bool lineOverlapsShapeBounds() const OVERRIDE
+    bool lineOverlapsShapeBounds() const
     {
         return computedShape().lineOverlapsShapeMarginBounds(m_referenceBoxLineTop, m_lineHeight);
     }
 
+    static ShapeOutsideInfo& ensureInfo(const RenderBox& key)
+    {
+        InfoMap& infoMap = ShapeOutsideInfo::infoMap();
+        if (ShapeOutsideInfo* info = infoMap.get(&key))
+            return *info;
+        InfoMap::AddResult result = infoMap.add(&key, ShapeOutsideInfo::createInfo(key));
+        return *result.storedValue->value;
+    }
+    static void removeInfo(const RenderBox& key) { infoMap().remove(&key); }
+    static ShapeOutsideInfo* info(const RenderBox& key) { return infoMap().get(&key); }
+
+    void markShapeAsDirty() { m_shape.clear(); }
+    bool isShapeDirty() { return !m_shape.get(); }
+    LayoutSize shapeSize() const { return m_referenceBoxLogicalSize; }
+
+    LayoutRect computedShapePhysicalBoundingBox() const;
+    FloatPoint shapeToRendererPoint(FloatPoint) const;
+    FloatSize shapeToRendererSize(FloatSize) const;
+    const Shape& computedShape() const;
+
 protected:
-    virtual LayoutBox referenceBox() const OVERRIDE
-    {
-        if (shapeValue()->layoutBox() == BoxMissing)
-            return MarginBox;
-        return shapeValue()->layoutBox();
-    }
-    virtual LayoutRect computedShapeLogicalBoundingBox() const OVERRIDE { return computedShape().shapeMarginLogicalBoundingBox(); }
-    virtual ShapeValue* shapeValue() const OVERRIDE;
-    virtual void getIntervals(LayoutUnit lineTop, LayoutUnit lineHeight, SegmentList& segments) const OVERRIDE
-    {
-        return computedShape().getExcludedIntervals(lineTop, lineHeight, segments);
-    }
-
-    virtual const RenderStyle* styleForWritingMode() const OVERRIDE;
-
-private:
     ShapeOutsideInfo(const RenderBox& renderer)
-        : ShapeInfo<RenderBox>(renderer)
+        : m_renderer(renderer)
         , m_lineOverlapsShape(false)
     { }
 
+private:
+    LayoutUnit logicalTopOffset() const;
+    LayoutUnit logicalLeftOffset() const;
+
+    typedef HashMap<const RenderBox*, OwnPtr<ShapeOutsideInfo> > InfoMap;
+    static InfoMap& infoMap()
+    {
+        DEFINE_STATIC_LOCAL(InfoMap, staticInfoMap, ());
+        return staticInfoMap;
+    }
+
+    LayoutUnit m_referenceBoxLineTop;
+    LayoutUnit m_lineHeight;
+
+    const RenderBox& m_renderer;
+    mutable OwnPtr<Shape> m_shape;
+    LayoutSize m_referenceBoxLogicalSize;
     LayoutUnit m_leftMarginBoxDelta;
     LayoutUnit m_rightMarginBoxDelta;
     LayoutUnit m_borderBoxLineTop;

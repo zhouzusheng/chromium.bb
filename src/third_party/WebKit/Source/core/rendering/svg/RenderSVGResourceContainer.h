@@ -64,6 +64,8 @@ protected:
 
     void clearInvalidationMask() { m_invalidationMask = 0; }
 
+    static AffineTransform computeResourceSpaceTransform(RenderObject*, const AffineTransform& baseTransform, const SVGRenderStyle*, unsigned short resourceMode);
+
     bool m_isInLayout;
 
 private:
@@ -86,21 +88,21 @@ private:
     HashSet<RenderLayer*> m_clientLayers;
 };
 
-inline RenderSVGResourceContainer* getRenderSVGResourceContainerById(Document& document, const AtomicString& id)
+inline RenderSVGResourceContainer* getRenderSVGResourceContainerById(TreeScope& treeScope, const AtomicString& id)
 {
     if (id.isEmpty())
         return 0;
 
-    if (RenderSVGResourceContainer* renderResource = document.accessSVGExtensions().resourceById(id))
+    if (RenderSVGResourceContainer* renderResource = treeScope.document().accessSVGExtensions().resourceById(id))
         return renderResource;
 
     return 0;
 }
 
 template<typename Renderer>
-Renderer* getRenderSVGResourceById(Document& document, const AtomicString& id)
+Renderer* getRenderSVGResourceById(TreeScope& treeScope, const AtomicString& id)
 {
-    if (RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(document, id))
+    if (RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(treeScope, id))
         return container->cast<Renderer>();
 
     return 0;

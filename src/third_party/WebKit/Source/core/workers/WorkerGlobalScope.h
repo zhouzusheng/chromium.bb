@@ -32,10 +32,11 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
+#include "core/frame/DOMWindowBase64.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerConsole.h"
 #include "core/workers/WorkerEventQueue.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
@@ -57,7 +58,7 @@ namespace WebCore {
     class WorkerNavigator;
     class WorkerThread;
 
-    class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData {
+    class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
         DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>);
     public:
@@ -81,7 +82,17 @@ namespace WebCore {
         void clearScript() { m_script.clear(); }
         void clearInspector();
 
-        void willStopActiveDOMObjects();
+        // FIXME: We can remove this interface when we remove openDatabaseSync.
+        class TerminationObserver {
+        public:
+            virtual ~TerminationObserver() { }
+            // The function is probably called in the main thread.
+            virtual void wasRequestedToTerminate() = 0;
+        };
+        void registerTerminationObserver(TerminationObserver*);
+        void unregisterTerminationObserver(TerminationObserver*);
+        void wasRequestedToTerminate();
+
         void dispose();
 
         WorkerThread* thread() const { return m_thread; }
@@ -130,7 +141,7 @@ namespace WebCore {
         virtual void trace(Visitor*);
 
     protected:
-        WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtr<WorkerClients>);
+        WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
         void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
 
         virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
@@ -164,9 +175,10 @@ namespace WebCore {
 
         OwnPtr<WorkerEventQueue> m_eventQueue;
 
-        OwnPtr<WorkerClients> m_workerClients;
+        OwnPtrWillBeMember<WorkerClients> m_workerClients;
 
         double m_timeOrigin;
+        TerminationObserver* m_terminationObserver;
     };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());

@@ -16,11 +16,10 @@
 #include "webrtc/system_wrappers/interface/file_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 #include "webrtc/voice_engine/include/voe_external_media.h"
-#include "webrtc/voice_engine/output_mixer_internal.h"
 #include "webrtc/voice_engine/statistics.h"
+#include "webrtc/voice_engine/utility.h"
 
 namespace webrtc {
-
 namespace voe {
 
 void
@@ -528,11 +527,12 @@ int OutputMixer::GetMixedAudio(int sample_rate_hz,
   frame->sample_rate_hz_ = sample_rate_hz;
   // TODO(andrew): Ideally the downmixing would occur much earlier, in
   // AudioCodingModule.
-  return RemixAndResample(_audioFrame, &resampler_, frame);
+  RemixAndResample(_audioFrame, &resampler_, frame);
+  return 0;
 }
 
 int32_t
-OutputMixer::DoOperationsOnCombinedSignal()
+OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
 {
     if (_audioFrame.sample_rate_hz_ != _mixingFrequencyHz)
     {
@@ -565,8 +565,8 @@ OutputMixer::DoOperationsOnCombinedSignal()
     }
 
     // --- Far-end Voice Quality Enhancement (AudioProcessing Module)
-
-    APMAnalyzeReverseStream();
+    if (feed_data_to_apm)
+      APMAnalyzeReverseStream();
 
     // --- External media processing
     {
@@ -602,9 +602,8 @@ void OutputMixer::APMAnalyzeReverseStream() {
   // side. Downmix to mono.
   AudioFrame frame;
   frame.num_channels_ = 1;
-  frame.sample_rate_hz_ = _audioProcessingModulePtr->sample_rate_hz();
-  if (RemixAndResample(_audioFrame, &audioproc_resampler_, &frame) == -1)
-    return;
+  frame.sample_rate_hz_ = _audioProcessingModulePtr->input_sample_rate_hz();
+  RemixAndResample(_audioFrame, &audioproc_resampler_, &frame);
 
   if (_audioProcessingModulePtr->AnalyzeReverseStream(&frame) == -1) {
     WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,-1),
@@ -657,5 +656,4 @@ OutputMixer::InsertInbandDtmfTone()
 }
 
 }  // namespace voe
-
 }  // namespace webrtc

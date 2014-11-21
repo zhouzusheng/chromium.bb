@@ -36,15 +36,11 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
     }
 
     Vector<RefPtr<Document> > documents;
-    for (LocalFrame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext())
+    for (RefPtr<LocalFrame> frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext())
         documents.append(frame->document());
 
     for (size_t i = 0; i < documents.size(); ++i)
         documents[i]->serviceScriptedAnimations(monotonicAnimationStartTime);
-
-    // Frame callbacks might have started new players or caused existing players to become outdated.
-    for (size_t i = 0; i < documents.size(); ++i)
-        DocumentAnimations::updateOutdatedAnimationPlayersAfterFrameCallbacks(*documents[i]);
 }
 
 void PageAnimator::scheduleVisualUpdate()

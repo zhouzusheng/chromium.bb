@@ -25,13 +25,6 @@
 #include "webrtc/voice_engine/utility.h"
 #include "webrtc/voice_engine/voice_engine_impl.h"
 
-#if (defined(_WIN32) && defined(_DLL) && (_MSC_VER == 1400))
-// Fix for VS 2005 MD/MDd link problem
-#include <stdio.h>
-extern "C"
-    { FILE _iob[3] = {   __iob_func()[0], __iob_func()[1], __iob_func()[2]}; }
-#endif
-
 namespace webrtc
 {
 
@@ -157,39 +150,18 @@ int32_t VoEBaseImpl::NeedMorePlayData(
         void* audioSamples,
         uint32_t& nSamplesOut)
 {
-    WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "VoEBaseImpl::NeedMorePlayData(nSamples=%u, "
-                     "nBytesPerSample=%d, nChannels=%d, samplesPerSec=%u)",
-                 nSamples, nBytesPerSample, nChannels, samplesPerSec);
+  WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_shared->instance_id(), -1),
+               "VoEBaseImpl::NeedMorePlayData(nSamples=%u, "
+               "nBytesPerSample=%d, nChannels=%d, samplesPerSec=%u)",
+               nSamples, nBytesPerSample, nChannels, samplesPerSec);
 
-    assert(_shared->output_mixer() != NULL);
+  GetPlayoutData(static_cast<int>(samplesPerSec),
+                 static_cast<int>(nChannels),
+                 static_cast<int>(nSamples), true, audioSamples);
 
-    // TODO(andrew): if the device is running in mono, we should tell the mixer
-    // here so that it will only request mono from AudioCodingModule.
-    // Perform mixing of all active participants (channel-based mixing)
-    _shared->output_mixer()->MixActiveChannels();
+  nSamplesOut = _audioFrame.samples_per_channel_;
 
-    // Additional operations on the combined signal
-    _shared->output_mixer()->DoOperationsOnCombinedSignal();
-
-    // Retrieve the final output mix (resampled to match the ADM)
-    _shared->output_mixer()->GetMixedAudio(samplesPerSec, nChannels,
-        &_audioFrame);
-
-    assert(static_cast<int>(nSamples) == _audioFrame.samples_per_channel_);
-    assert(samplesPerSec ==
-        static_cast<uint32_t>(_audioFrame.sample_rate_hz_));
-
-    // Deliver audio (PCM) samples to the ADM
-    memcpy(
-           (int16_t*) audioSamples,
-           (const int16_t*) _audioFrame.data_,
-           sizeof(int16_t) * (_audioFrame.samples_per_channel_
-                   * _audioFrame.num_channels_));
-
-    nSamplesOut = _audioFrame.samples_per_channel_;
-
-    return 0;
+  return 0;
 }
 
 int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
@@ -223,8 +195,11 @@ int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
   // No need to go through the APM, demultiplex the data to each VoE channel,
   // encode and send to the network.
   for (int i = 0; i < number_of_voe_channels; ++i) {
-    OnData(voe_channels[i], audio_data, 16, sample_rate,
-           number_of_channels, number_of_frames);
+    // TODO(ajm): In the case where multiple channels are using the same codec
+    // rate, this path needlessly does extra conversions. We should convert once
+    // and share between channels.
+    PushCaptureData(voe_channels[i], audio_data, 16, sample_rate,
+                    number_of_channels, number_of_frames);
   }
 
   // Return 0 to indicate no need to change the volume.
@@ -235,19 +210,35 @@ void VoEBaseImpl::OnData(int voe_channel, const void* audio_data,
                          int bits_per_sample, int sample_rate,
                          int number_of_channels,
                          int number_of_frames) {
+  PushCaptureData(voe_channel, audio_data, bits_per_sample, sample_rate,
+                  number_of_channels, number_of_frames);
+}
+
+void VoEBaseImpl::PushCaptureData(int voe_channel, const void* audio_data,
+                                  int bits_per_sample, int sample_rate,
+                                  int number_of_channels,
+                                  int number_of_frames) {
   voe::ChannelOwner ch = _shared->channel_manager().GetChannel(voe_channel);
   voe::Channel* channel_ptr = ch.channel();
   if (!channel_ptr)
     return;
 
-  if (channel_ptr->InputIsOnHold()) {
-    channel_ptr->UpdateLocalTimeStamp();
-  } else if (channel_ptr->Sending()) {
+  if (channel_ptr->Sending()) {
     channel_ptr->Demultiplex(static_cast<const int16_t*>(audio_data),
                              sample_rate, number_of_frames, number_of_channels);
     channel_ptr->PrepareEncodeAndSend(sample_rate);
     channel_ptr->EncodeAndSend();
   }
+}
+
+void VoEBaseImpl::PullRenderData(int bits_per_sample, int sample_rate,
+                                 int number_of_channels, int number_of_frames,
+                                 void* audio_data) {
+  assert(bits_per_sample == 16);
+  assert(number_of_frames == static_cast<int>(sample_rate / 100));
+
+  GetPlayoutData(sample_rate, number_of_channels, number_of_frames, false,
+                 audio_data);
 }
 
 int VoEBaseImpl::RegisterVoiceEngineObserver(VoiceEngineObserver& observer)
@@ -391,18 +382,6 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
         _shared->SetLastError(VE_AUDIO_DEVICE_MODULE_ERROR, kTraceInfo,
             "Init() failed to set the default output device");
     }
-    if (_shared->audio_device()->SpeakerIsAvailable(&available) != 0)
-    {
-        _shared->SetLastError(VE_CANNOT_ACCESS_SPEAKER_VOL, kTraceInfo,
-            "Init() failed to check speaker availability, trying to "
-            "initialize speaker anyway");
-    }
-    else if (!available)
-    {
-        _shared->SetLastError(VE_CANNOT_ACCESS_SPEAKER_VOL, kTraceInfo,
-            "Init() speaker not available, trying to initialize speaker "
-            "anyway");
-    }
     if (_shared->audio_device()->InitSpeaker() != 0)
     {
         _shared->SetLastError(VE_CANNOT_ACCESS_SPEAKER_VOL, kTraceInfo,
@@ -415,18 +394,6 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
     {
         _shared->SetLastError(VE_SOUNDCARD_ERROR, kTraceInfo,
             "Init() failed to set the default input device");
-    }
-    if (_shared->audio_device()->MicrophoneIsAvailable(&available) != 0)
-    {
-        _shared->SetLastError(VE_CANNOT_ACCESS_MIC_VOL, kTraceInfo,
-            "Init() failed to check microphone availability, trying to "
-            "initialize microphone anyway");
-    }
-    else if (!available)
-    {
-        _shared->SetLastError(VE_CANNOT_ACCESS_MIC_VOL, kTraceInfo,
-            "Init() microphone not available, trying to initialize "
-            "microphone anyway");
     }
     if (_shared->audio_device()->InitMicrophone() != 0)
     {
@@ -471,11 +438,6 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
 
     // Set the error state for any failures in this block.
     _shared->SetLastError(VE_APM_ERROR);
-    if (audioproc->echo_cancellation()->set_device_sample_rate_hz(48000)) {
-      LOG_FERR1(LS_ERROR, set_device_sample_rate_hz, 48000);
-      return -1;
-    }
-
     // Configure AudioProcessing components.
     if (audioproc->high_pass_filter()->Enable(true) != 0) {
       LOG_FERR1(LS_ERROR, high_pass_filter()->Enable, true);
@@ -902,88 +864,6 @@ int VoEBaseImpl::LastError()
     return (_shared->statistics().LastError());
 }
 
-
-int VoEBaseImpl::SetNetEQPlayoutMode(int channel, NetEqModes mode)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "SetNetEQPlayoutMode(channel=%i, mode=%i)", channel, mode);
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "SetNetEQPlayoutMode() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->SetNetEQPlayoutMode(mode);
-}
-
-int VoEBaseImpl::GetNetEQPlayoutMode(int channel, NetEqModes& mode)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "GetNetEQPlayoutMode(channel=%i, mode=?)", channel);
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "GetNetEQPlayoutMode() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->GetNetEQPlayoutMode(mode);
-}
-
-int VoEBaseImpl::SetOnHoldStatus(int channel, bool enable, OnHoldModes mode)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "SetOnHoldStatus(channel=%d, enable=%d, mode=%d)", channel,
-                 enable, mode);
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "SetOnHoldStatus() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->SetOnHoldStatus(enable, mode);
-}
-
-int VoEBaseImpl::GetOnHoldStatus(int channel, bool& enabled, OnHoldModes& mode)
-{
-    WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
-                 "GetOnHoldStatus(channel=%d, enabled=?, mode=?)", channel);
-    if (!_shared->statistics().Initialized())
-    {
-        _shared->SetLastError(VE_NOT_INITED, kTraceError);
-        return -1;
-    }
-    voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
-    voe::Channel* channelPtr = ch.channel();
-    if (channelPtr == NULL)
-    {
-        _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
-            "GetOnHoldStatus() failed to locate channel");
-        return -1;
-    }
-    return channelPtr->GetOnHoldStatus(enabled, mode);
-}
-
 int32_t VoEBaseImpl::StartPlayout()
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_shared->instance_id(), -1),
@@ -1214,6 +1094,31 @@ int VoEBaseImpl::ProcessRecordedDataWithAPM(
 
   // Return 0 to indicate no change on the volume.
   return 0;
+}
+
+void VoEBaseImpl::GetPlayoutData(int sample_rate, int number_of_channels,
+                                 int number_of_frames, bool feed_data_to_apm,
+                                 void* audio_data) {
+  assert(_shared->output_mixer() != NULL);
+
+  // TODO(andrew): if the device is running in mono, we should tell the mixer
+  // here so that it will only request mono from AudioCodingModule.
+  // Perform mixing of all active participants (channel-based mixing)
+  _shared->output_mixer()->MixActiveChannels();
+
+  // Additional operations on the combined signal
+  _shared->output_mixer()->DoOperationsOnCombinedSignal(feed_data_to_apm);
+
+  // Retrieve the final output mix (resampled to match the ADM)
+  _shared->output_mixer()->GetMixedAudio(sample_rate, number_of_channels,
+                                         &_audioFrame);
+
+  assert(number_of_frames == _audioFrame.samples_per_channel_);
+  assert(sample_rate == _audioFrame.sample_rate_hz_);
+
+  // Deliver audio (PCM) samples to the ADM
+  memcpy(audio_data, _audioFrame.data_,
+         sizeof(int16_t) * number_of_frames * number_of_channels);
 }
 
 }  // namespace webrtc

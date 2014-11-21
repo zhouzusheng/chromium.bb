@@ -19,6 +19,14 @@
 
 class GURL;
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheStorageTest, DelegateReferences);
+FORWARD_DECLARE_TEST(AppCacheStorageTest, UsageMap);
+class AppCacheQuotaClientTest;
+class AppCacheResponseTest;
+class AppCacheStorageTest;
+}
+
 namespace appcache {
 
 class AppCache;
@@ -52,7 +60,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
         bool would_exceed_quota) {}
 
     // If the operation fails, success will be false.
-    virtual void OnGroupMadeObsolete(AppCacheGroup* group, bool success) {}
+    virtual void OnGroupMadeObsolete(AppCacheGroup* group,
+                                     bool success,
+                                     int response_code) {}
 
     // If a load fails the 'response_info' will be NULL.
     virtual void OnResponseInfoLoaded(
@@ -140,8 +150,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   // Schedules a task to update persistent storage and doom the group and all
   // related caches and responses for deletion. Upon completion the in-memory
   // instance is marked as obsolete and the delegate callback is called.
-  virtual void MakeGroupObsolete(
-      AppCacheGroup* group, Delegate* delegate) = 0;
+  virtual void MakeGroupObsolete(AppCacheGroup* group,
+                                 Delegate* delegate,
+                                 int response_code) = 0;
 
   // Cancels all pending callbacks for the delegate. The delegate callbacks
   // will not be invoked after, however any scheduled operations will still
@@ -191,9 +202,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   AppCacheService* service() { return service_; }
 
  protected:
-  friend class AppCacheQuotaClientTest;
-  friend class AppCacheResponseTest;
-  friend class AppCacheStorageTest;
+  friend class content::AppCacheQuotaClientTest;
+  friend class content::AppCacheResponseTest;
+  friend class content::AppCacheStorageTest;
 
   // Helper to call a collection of delegates.
   #define FOR_EACH_DELEGATE(delegates, func_and_args)                \
@@ -308,8 +319,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   // The set of last ids must be retrieved from storage prior to being used.
   static const int64 kUnitializedId;
 
-  FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, DelegateReferences);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, UsageMap);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheStorageTest, DelegateReferences);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheStorageTest, UsageMap);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheStorage);
 };

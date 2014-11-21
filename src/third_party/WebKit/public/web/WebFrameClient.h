@@ -31,9 +31,12 @@
 #ifndef WebFrameClient_h
 #define WebFrameClient_h
 
+#include "../platform/WebColor.h"
 #include "WebDOMMessageEvent.h"
 #include "WebDataSource.h"
 #include "WebFrame.h"
+#include "WebHistoryCommitType.h"
+#include "WebHistoryItem.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
@@ -53,6 +56,8 @@ namespace blink {
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebCachedURLRequest;
+class WebColorChooser;
+class WebColorChooserClient;
 class WebContentDecryptionModule;
 class WebCookieJar;
 class WebDataSource;
@@ -61,6 +66,7 @@ class WebFormElement;
 class WebInputEvent;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
+class WebNotificationPresenter;
 class WebServiceWorkerProvider;
 class WebServiceWorkerProviderClient;
 class WebNode;
@@ -73,7 +79,10 @@ class WebString;
 class WebURL;
 class WebURLLoader;
 class WebURLResponse;
+class WebUserMediaClient;
 class WebWorkerPermissionClientProxy;
+struct WebColorSuggestion;
+struct WebConsoleMessage;
 struct WebContextMenuData;
 struct WebPluginParams;
 struct WebRect;
@@ -96,10 +105,8 @@ public:
     // May return null.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) { return 0; }
 
-    // May return null. Takes ownership of the client.
-    // FIXME: Deprecate the second argument.
-    virtual WebServiceWorkerProvider* createServiceWorkerProvider(WebLocalFrame*, WebServiceWorkerProviderClient*) { return 0; }
-    virtual WebServiceWorkerProvider* createServiceWorkerProvider(WebLocalFrame* frame) { return createServiceWorkerProvider(frame, 0); }
+    // May return null.
+    virtual WebServiceWorkerProvider* createServiceWorkerProvider(WebLocalFrame* frame) { return 0; }
 
     // May return null.
     virtual WebWorkerPermissionClientProxy* createWorkerPermissionClientProxy(WebLocalFrame*) { return 0; }
@@ -113,6 +120,9 @@ public:
 
 
     // General notifications -----------------------------------------------
+
+    // Indicates if creating a plugin without an associated renderer is supported.
+    virtual bool canCreatePluginWithoutRenderer(const WebString& mimeType) { return false; }
 
     // Indicates that another page has accessed the DOM of the initial empty
     // document of a main frame. After this, it is no longer safe to show a
@@ -139,7 +149,7 @@ public:
 
     // This frame is about to be closed. This is called after frameDetached,
     // when the document is being unloaded, due to new one committing.
-    virtual void willClose(WebLocalFrame*) { }
+    virtual void willClose(WebFrame*) { }
 
     // This frame's name has changed.
     virtual void didChangeName(WebLocalFrame*, const WebString&) { }
@@ -147,11 +157,19 @@ public:
     // Called when a watched CSS selector matches or stops matching.
     virtual void didMatchCSS(WebLocalFrame*, const WebVector<WebString>& newlyMatchingSelectors, const WebVector<WebString>& stoppedMatchingSelectors) { }
 
+
+    // Console messages ----------------------------------------------------
+
+    // Whether or not we should report a detailed message for the given source.
+    virtual bool shouldReportDetailedMessageForSource(const WebString& source) { return false; }
+
+    // A new message was added to the console.
+    virtual void didAddMessageToConsole(const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine, const WebString& stackTrace) { }
+
+
     // Load commands -------------------------------------------------------
 
     // The client should handle the navigation externally.
-    virtual void loadURLExternally(
-        WebLocalFrame*, const WebURLRequest&, WebNavigationPolicy) { }
     virtual void loadURLExternally(
         WebLocalFrame*, const WebURLRequest&, WebNavigationPolicy, const WebString& downloadName) { }
 
@@ -164,8 +182,21 @@ public:
         WebLocalFrame*, WebDataSource::ExtraData*, const WebURLRequest&, WebNavigationType,
         WebNavigationPolicy defaultPolicy, bool isRedirect) { return defaultPolicy; }
 
+    // During a history navigation, we may choose to load new subframes from history as well.
+    // This returns such a history item if appropriate.
+    virtual WebHistoryItem historyItemForNewChildFrame(WebFrame*) { return WebHistoryItem(); }
+
 
     // Navigational notifications ------------------------------------------
+
+    // These notifications bracket any loading that occurs in the WebFrame.
+    virtual void didStartLoading(bool toDifferentDocument) { }
+    virtual void didStopLoading() { }
+
+    // Notification that some progress was made loading the current frame.
+    // loadProgress is a value between 0 (nothing loaded) and 1.0 (frame fully
+    // loaded).
+    virtual void didChangeLoadProgress(double loadProgress) { }
 
     // A form submission has been requested, but the page's submit event handler
     // hasn't yet had a chance to run (and possibly alter/interrupt the submit.)
@@ -190,11 +221,14 @@ public:
     // The provisional datasource is now committed.  The first part of the
     // response body has been received, and the encoding of the response
     // body is known.
-    virtual void didCommitProvisionalLoad(WebLocalFrame*, bool isNewNavigation) { }
+    virtual void didCommitProvisionalLoad(WebLocalFrame*, const WebHistoryItem&, WebHistoryCommitType) { }
 
     // The window object for the frame has been cleared of any extra
     // properties that may have been set by script from the previously
     // loaded document.
+    virtual void didClearWindowObject(WebLocalFrame* frame) { didClearWindowObject(frame, 0); }
+
+    // Deprecated.
     virtual void didClearWindowObject(WebLocalFrame* frame, int worldId) { }
 
     // The document element has been created.
@@ -221,18 +255,67 @@ public:
     // The navigation resulted in no change to the documents within the page.
     // For example, the navigation may have just resulted in scrolling to a
     // named anchor or a PopState event may have been dispatched.
-    virtual void didNavigateWithinPage(WebLocalFrame*, bool isNewNavigation) { }
+    virtual void didNavigateWithinPage(WebLocalFrame*, const WebHistoryItem&, WebHistoryCommitType) { }
 
     // Called upon update to scroll position, document state, and other
     // non-navigational events related to the data held by WebHistoryItem.
     // WARNING: This method may be called very frequently.
     virtual void didUpdateCurrentHistoryItem(WebLocalFrame*) { }
 
+    // The frame's manifest has changed.
+    virtual void didChangeManifest(WebLocalFrame*) { }
+
+
+    // Misc ----------------------------------------------------------------
+
+    // Called to retrieve the provider of desktop notifications.
+    virtual WebNotificationPresenter* notificationPresenter() { return 0; }
+
+
     // Editing -------------------------------------------------------------
 
     // These methods allow the client to intercept and overrule editing
     // operations.
     virtual void didChangeSelection(bool isSelectionEmpty) { }
+
+
+    // Dialogs -------------------------------------------------------------
+
+    // This method opens the color chooser and returns a new WebColorChooser
+    // instance. If there is a WebColorChooser already from the last time this
+    // was called, it ends the color chooser by calling endChooser, and replaces
+    // it with the new one. The given list of suggestions can be used to show a
+    // simple interface with a limited set of choices.
+
+    virtual WebColorChooser* createColorChooser(
+        WebColorChooserClient*,
+        const WebColor&,
+        const WebVector<WebColorSuggestion>&) { return 0; }
+
+    // Displays a modal alert dialog containing the given message. Returns
+    // once the user dismisses the dialog.
+    virtual void runModalAlertDialog(const WebString& message) { }
+
+    // Displays a modal confirmation dialog with the given message as
+    // description and OK/Cancel choices. Returns true if the user selects
+    // 'OK' or false otherwise.
+    virtual bool runModalConfirmDialog(const WebString& message) { return false; }
+
+    // Displays a modal input dialog with the given message as description
+    // and OK/Cancel choices. The input field is pre-filled with
+    // defaultValue. Returns true if the user selects 'OK' or false
+    // otherwise. Upon returning true, actualValue contains the value of
+    // the input field.
+    virtual bool runModalPromptDialog(
+        const WebString& message, const WebString& defaultValue,
+        WebString* actualValue) { return false; }
+
+    // Displays a modal confirmation dialog containing the given message as
+    // description and OK/Cancel choices, where 'OK' means that it is okay
+    // to proceed with closing the view. Returns true if the user selects
+    // 'OK' or false otherwise.
+    virtual bool runModalBeforeUnloadDialog(
+        bool isReload, const WebString& message) { return true; }
 
 
     // UI ------------------------------------------------------------------
@@ -268,10 +351,7 @@ public:
         WebLocalFrame*, unsigned identifier, const WebURLResponse&) { }
 
     virtual void didChangeResourcePriority(
-        WebLocalFrame*, unsigned identifier, const blink::WebURLRequest::Priority&) { }
-
-    virtual void didChangeResourcePriority(
-        WebFrame* webFrame, unsigned identifier, const blink::WebURLRequest::Priority& priority, int) { didChangeResourcePriority(webFrame, identifier, priority); }
+        WebLocalFrame* webFrame, unsigned identifier, const blink::WebURLRequest::Priority& priority, int) { }
 
     // The resource request given by identifier succeeded.
     virtual void didFinishResourceLoad(
@@ -299,6 +379,7 @@ public:
     // The loaders in this frame have been stopped.
     virtual void didAbortLoading(WebLocalFrame*) { }
 
+
     // Script notifications ------------------------------------------------
 
     // Notifies that a new script context has been created for this frame.
@@ -308,6 +389,7 @@ public:
 
     // WebKit is about to release its reference to a v8 context for a frame.
     virtual void willReleaseScriptContext(WebLocalFrame*, v8::Handle<v8::Context>, int worldId) { }
+
 
     // Geometry notifications ----------------------------------------------
 
@@ -323,6 +405,7 @@ public:
     // If the frame is loading an HTML document, this will be called to
     // notify that the <body> will be attached soon.
     virtual void willInsertBody(WebLocalFrame*) { }
+
 
     // Find-in-page notifications ------------------------------------------
 
@@ -340,6 +423,7 @@ public:
     // where on the screen the selection rect is currently located.
     virtual void reportFindInPageSelection(
         int identifier, int activeMatchOrdinal, const WebRect& selection) { }
+
 
     // Quota ---------------------------------------------------------
 
@@ -361,10 +445,14 @@ public:
     // A WebSocket object is going to open new stream connection.
     virtual void willOpenSocketStream(WebSocketStreamHandle*) { }
 
+
     // MediaStream -----------------------------------------------------
 
     // A new WebRTCPeerConnectionHandler is created.
     virtual void willStartUsingPeerConnectionHandler(WebLocalFrame*, WebRTCPeerConnectionHandler*) { }
+
+    virtual WebUserMediaClient* userMediaClient() { return 0; }
+
 
     // Messages ------------------------------------------------------
 
@@ -385,6 +473,7 @@ public:
     // Asks the embedder what value the network stack will send for the DNT
     // header. An empty string indicates that no DNT header will be send.
     virtual WebString doNotTrackValue(WebLocalFrame*) { return WebString(); }
+
 
     // WebGL ------------------------------------------------------
 

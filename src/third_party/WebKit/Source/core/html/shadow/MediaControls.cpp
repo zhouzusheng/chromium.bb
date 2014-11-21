@@ -36,15 +36,7 @@
 
 namespace WebCore {
 
-#if OS(ANDROID)
-static const bool alwaysHideFullscreenControls = true;
-static const bool needOverlayPlayButton = true;
-#else
-static const bool alwaysHideFullscreenControls = false;
-static const bool needOverlayPlayButton = false;
-#endif
-
-static const double timeWithoutMouseMovementBeforeHidingFullscreenControls = 3;
+static const double timeWithoutMouseMovementBeforeHidingMediaControls = 3;
 
 MediaControls::MediaControls(HTMLMediaElement& mediaElement)
     : HTMLDivElement(mediaElement.document())
@@ -62,8 +54,7 @@ MediaControls::MediaControls(HTMLMediaElement& mediaElement)
     , m_fullScreenButton(0)
     , m_durationDisplay(0)
     , m_enclosure(0)
-    , m_hideFullscreenControlsTimer(this, &MediaControls::hideFullscreenControlsTimerFired)
-    , m_isFullscreen(false)
+    , m_hideMediaControlsTimer(this, &MediaControls::hideMediaControlsTimerFired)
     , m_isMouseOverControls(false)
     , m_isPausedForScrubbing(false)
 {
@@ -83,7 +74,7 @@ bool MediaControls::initializeControls()
 {
     TrackExceptionState exceptionState;
 
-    if (needOverlayPlayButton) {
+    if (document().settings() && document().settings()->mediaControlsOverlayPlayButtonEnabled()) {
         RefPtr<MediaControlOverlayEnclosureElement> overlayEnclosure = MediaControlOverlayEnclosureElement::create(*this);
         RefPtr<MediaControlOverlayPlayButtonElement> overlayPlayButton = MediaControlOverlayPlayButtonElement::create(*this);
         m_overlayPlayButton = overlayPlayButton.get();
@@ -164,16 +155,9 @@ bool MediaControls::initializeControls()
     return true;
 }
 
-MediaControllerInterface& MediaControls::mediaControllerInterface() const
-{
-    if (m_mediaElement.controller())
-        return *m_mediaElement.controller();
-    return m_mediaElement;
-}
-
 void MediaControls::reset()
 {
-    double duration = mediaControllerInterface().duration();
+    double duration = mediaElement().duration();
     m_durationDisplay->setInnerText(RenderTheme::theme().formatMediaControlsTime(duration), ASSERT_NO_EXCEPTION);
     m_durationDisplay->setCurrentValue(duration);
 
@@ -181,19 +165,18 @@ void MediaControls::reset()
 
     updateCurrentTimeDisplay();
 
-    m_timeline->setDuration(mediaControllerInterface().duration());
-    m_timeline->setPosition(mediaControllerInterface().currentTime());
+    m_timeline->setDuration(duration);
+    m_timeline->setPosition(mediaElement().currentTime());
 
-    if (!mediaControllerInterface().hasAudio()) {
+    if (!mediaElement().hasAudio())
         m_volumeSlider->hide();
-    } else {
+    else
         m_volumeSlider->show();
-        m_volumeSlider->setVolume(mediaControllerInterface().volume());
-    }
+    updateVolume();
 
     refreshClosedCaptionsButtonVisibility();
 
-    if (mediaElement().hasVideo() && document().settings() && document().settings()->fullScreenEnabled())
+    if (mediaElement().hasVideo())
         m_fullScreenButton->show();
     else
         m_fullScreenButton->hide();
@@ -224,9 +207,9 @@ void MediaControls::makeTransparent()
     m_panel->makeTransparent();
 }
 
-bool MediaControls::shouldHideFullscreenControls()
+bool MediaControls::shouldHideMediaControls()
 {
-    return alwaysHideFullscreenControls || !m_panel->hovered();
+    return !m_panel->hovered() && mediaElement().hasVideo();
 }
 
 void MediaControls::playbackStarted()
@@ -235,16 +218,15 @@ void MediaControls::playbackStarted()
     m_durationDisplay->hide();
 
     updatePlayState();
-    m_timeline->setPosition(mediaControllerInterface().currentTime());
+    m_timeline->setPosition(mediaElement().currentTime());
     updateCurrentTimeDisplay();
 
-    if (m_isFullscreen)
-        startHideFullscreenControlsTimer();
+    startHideMediaControlsTimer();
 }
 
 void MediaControls::playbackProgressed()
 {
-    m_timeline->setPosition(mediaControllerInterface().currentTime());
+    m_timeline->setPosition(mediaElement().currentTime());
     updateCurrentTimeDisplay();
 
     if (!m_isMouseOverControls && mediaElement().hasVideo())
@@ -254,11 +236,11 @@ void MediaControls::playbackProgressed()
 void MediaControls::playbackStopped()
 {
     updatePlayState();
-    m_timeline->setPosition(mediaControllerInterface().currentTime());
+    m_timeline->setPosition(mediaElement().currentTime());
     updateCurrentTimeDisplay();
     makeOpaque();
 
-    stopHideFullscreenControlsTimer();
+    stopHideMediaControlsTimer();
 }
 
 void MediaControls::updatePlayState()
@@ -290,8 +272,8 @@ void MediaControls::endScrubbing()
 
 void MediaControls::updateCurrentTimeDisplay()
 {
-    double now = mediaControllerInterface().currentTime();
-    double duration = mediaControllerInterface().duration();
+    double now = mediaElement().currentTime();
+    double duration = mediaElement().duration();
 
     // After seek, hide duration display and show current time.
     if (now > 0) {
@@ -304,21 +286,16 @@ void MediaControls::updateCurrentTimeDisplay()
     m_currentTimeDisplay->setCurrentValue(now);
 }
 
-void MediaControls::changedMute()
+void MediaControls::updateVolume()
 {
     m_muteButton->updateDisplayType();
-
-    if (mediaControllerInterface().muted())
-        m_volumeSlider->setVolume(0);
-    else
-        m_volumeSlider->setVolume(mediaControllerInterface().volume());
-}
-
-void MediaControls::changedVolume()
-{
-    m_volumeSlider->setVolume(mediaControllerInterface().volume());
     if (m_muteButton->renderer())
         m_muteButton->renderer()->repaint();
+
+    if (mediaElement().muted())
+        m_volumeSlider->setVolume(0);
+    else
+        m_volumeSlider->setVolume(mediaElement().volume());
 }
 
 void MediaControls::changedClosedCaptionsVisibility()
@@ -341,16 +318,16 @@ void MediaControls::closedCaptionTracksChanged()
 
 void MediaControls::enteredFullscreen()
 {
-    m_isFullscreen = true;
     m_fullScreenButton->setIsFullscreen(true);
-    startHideFullscreenControlsTimer();
+    stopHideMediaControlsTimer();
+    startHideMediaControlsTimer();
 }
 
 void MediaControls::exitedFullscreen()
 {
-    m_isFullscreen = false;
     m_fullScreenButton->setIsFullscreen(false);
-    stopHideFullscreenControlsTimer();
+    stopHideMediaControlsTimer();
+    startHideMediaControlsTimer();
 }
 
 void MediaControls::defaultEventHandler(Event* event)
@@ -362,8 +339,8 @@ void MediaControls::defaultEventHandler(Event* event)
             m_isMouseOverControls = true;
             if (!mediaElement().togglePlayStateWillPlay()) {
                 makeOpaque();
-                if (shouldHideFullscreenControls())
-                    startHideFullscreenControlsTimer();
+                if (shouldHideMediaControls())
+                    startHideMediaControlsTimer();
             }
         }
         return;
@@ -372,48 +349,40 @@ void MediaControls::defaultEventHandler(Event* event)
     if (event->type() == EventTypeNames::mouseout) {
         if (!containsRelatedTarget(event)) {
             m_isMouseOverControls = false;
-            stopHideFullscreenControlsTimer();
+            stopHideMediaControlsTimer();
         }
         return;
     }
 
     if (event->type() == EventTypeNames::mousemove) {
-        if (m_isFullscreen) {
-            // When we get a mouse move in fullscreen mode, show the media controls, and start a timer
-            // that will hide the media controls after a 3 seconds without a mouse move.
-            makeOpaque();
-            if (shouldHideFullscreenControls())
-                startHideFullscreenControlsTimer();
-        }
+        // When we get a mouse move, show the media controls, and start a timer
+        // that will hide the media controls after a 3 seconds without a mouse move.
+        makeOpaque();
+        if (shouldHideMediaControls())
+            startHideMediaControlsTimer();
         return;
     }
 }
 
-void MediaControls::hideFullscreenControlsTimerFired(Timer<MediaControls>*)
+void MediaControls::hideMediaControlsTimerFired(Timer<MediaControls>*)
 {
     if (mediaElement().togglePlayStateWillPlay())
         return;
 
-    if (!m_isFullscreen)
-        return;
-
-    if (!shouldHideFullscreenControls())
+    if (!shouldHideMediaControls())
         return;
 
     makeTransparent();
 }
 
-void MediaControls::startHideFullscreenControlsTimer()
+void MediaControls::startHideMediaControlsTimer()
 {
-    if (!m_isFullscreen)
-        return;
-
-    m_hideFullscreenControlsTimer.startOneShot(timeWithoutMouseMovementBeforeHidingFullscreenControls, FROM_HERE);
+    m_hideMediaControlsTimer.startOneShot(timeWithoutMouseMovementBeforeHidingMediaControls, FROM_HERE);
 }
 
-void MediaControls::stopHideFullscreenControlsTimer()
+void MediaControls::stopHideMediaControlsTimer()
 {
-    m_hideFullscreenControlsTimer.stop();
+    m_hideMediaControlsTimer.stop();
 }
 
 const AtomicString& MediaControls::shadowPseudoId() const

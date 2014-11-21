@@ -21,7 +21,6 @@
 
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
@@ -62,7 +61,6 @@ void RenderSVGResourceContainer::layout()
     if (m_isInLayout)
         return;
 
-    LayoutRectRecorder recorder(*this);
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
 
     RenderSVGHiddenContainer::layout();
@@ -229,9 +227,32 @@ void RenderSVGResourceContainer::registerResource()
         RenderObject* renderer = (*it)->renderer();
         if (!renderer)
             continue;
-        SVGResourcesCache::clientStyleChanged(renderer, StyleDifferenceLayout, renderer->style());
+
+        StyleDifference diff;
+        diff.setNeedsFullLayout();
+        SVGResourcesCache::clientStyleChanged(renderer, diff, renderer->style());
         renderer->setNeedsLayout();
     }
+}
+
+AffineTransform RenderSVGResourceContainer::computeResourceSpaceTransform(RenderObject* object, const AffineTransform& baseTransform, const SVGRenderStyle* svgStyle, unsigned short resourceMode)
+{
+    AffineTransform computedSpaceTransform = baseTransform;
+    if (resourceMode & ApplyToTextMode) {
+        // Depending on the font scaling factor, we may need to apply an
+        // additional transform (scale-factor) the paintserver, since text
+        // painting removes the scale factor from the context. (See
+        // SVGInlineTextBox::paintTextWithShadows.)
+        AffineTransform additionalTextTransformation;
+        if (shouldTransformOnTextPainting(object, additionalTextTransformation))
+            computedSpaceTransform = additionalTextTransformation * computedSpaceTransform;
+    }
+    if (resourceMode & ApplyToStrokeMode) {
+        // Non-scaling stroke needs to reset the transform back to the host transform.
+        if (svgStyle->vectorEffect() == VE_NON_SCALING_STROKE)
+            computedSpaceTransform = transformOnNonScalingStroke(object, computedSpaceTransform);
+    }
+    return computedSpaceTransform;
 }
 
 bool RenderSVGResourceContainer::shouldTransformOnTextPainting(RenderObject* object, AffineTransform& resourceTransform)

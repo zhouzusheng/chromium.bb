@@ -29,21 +29,21 @@
  */
 
 #include "config.h"
-#include "UserMediaClientImpl.h"
+#include "web/UserMediaClientImpl.h"
 
-#include "WebMediaDevicesRequest.h"
-#include "WebUserMediaClient.h"
-#include "WebUserMediaRequest.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebMediaDevicesRequest.h"
+#include "public/web/WebUserMediaClient.h"
+#include "public/web/WebUserMediaRequest.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/RefPtr.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-UserMediaClientImpl::UserMediaClientImpl(WebViewImpl* webView)
-    : m_client(webView->client() ? webView->client()->userMediaClient() : 0)
+UserMediaClientImpl::UserMediaClientImpl(WebLocalFrameImpl* webFrame)
+    : m_client(webFrame->client() ? webFrame->client()->userMediaClient() : 0)
 {
 }
 

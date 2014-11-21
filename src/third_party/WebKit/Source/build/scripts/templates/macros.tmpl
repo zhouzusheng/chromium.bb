@@ -1,17 +1,7 @@
-{% macro wrap_with_condition(condition) %}
-{%- if condition %}
-#if ENABLE({{condition}})
-{{- caller() }}
-#endif
-{%- else %}
-{{- caller() }}
-{%- endif %}
-{%- endmacro %}
-
 {#
     FIXME: Do we need to put license blocks in generated files?
 #}
-{% macro license() -%}
+{% macro license() %}
 /*
  * Copyright (C) 2013 Google Inc. All rights reserved.
  *
@@ -41,8 +31,4 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-{%- endmacro %}
-
-{% macro lower_first(s) -%}
-{{ (s[0]|lower) + s[1:] }}
 {%- endmacro %}

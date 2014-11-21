@@ -156,6 +156,9 @@ const lightGridColor = "rgba(0,0,0,0.2)";
 const darkGridColor = "rgba(0,0,0,0.7)";
 const transparentColor = "rgba(0, 0, 0, 0)";
 const gridBackgroundColor = "rgba(255, 255, 255, 0.8)";
+// CSS shapes
+const shapeHighlightColor = "rgba(96, 82, 127, 0.8)";
+const shapeMarginHighlightColor = "rgba(96, 82, 127, 0.6)";
 
 function drawPausedInDebuggerMessage(message)
 {
@@ -426,14 +429,15 @@ function _drawElementTitle(highlight)
     var titleWidth = elementTitle.offsetWidth + 6;
     var titleHeight = elementTitle.offsetHeight + 4;
 
-    var anchorTop = marginQuad[0].y;
-    var anchorBottom = marginQuad[3].y
+    var anchorTop = Math.min(marginQuad[0].y, marginQuad[1].y, marginQuad[2].y, marginQuad[3].y);
+    var anchorBottom = Math.max(marginQuad[0].y, marginQuad[1].y, marginQuad[2].y, marginQuad[3].y);
+    var anchorLeft = Math.min(marginQuad[0].x, marginQuad[1].x, marginQuad[2].x, marginQuad[3].x);
 
     const arrowHeight = 7;
     var renderArrowUp = false;
     var renderArrowDown = false;
 
-    var boxX = Math.max(2, marginQuad[0].x);
+    var boxX = Math.max(2, anchorLeft);
     if (boxX + titleWidth > canvasWidth)
         boxX = canvasWidth - titleWidth - 2;
 
@@ -542,6 +546,54 @@ function _drawRulers(highlight, rulerAtRight, rulerAtBottom)
 
     context.restore();
 }
+// CSS shapes 
+function drawPath(commands, fillColor)
+{
+    context.save();
+    context.beginPath();
+
+    var commandsIndex = 0;
+    var commandsLength = commands.length;
+    while (commandsIndex < commandsLength) {
+        switch (commands[commandsIndex++]) {
+        case "M":
+            context.moveTo(commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "L":
+            context.lineTo(commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "C":
+            context.bezierCurveTo(commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++],
+                                  commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "Q":
+            context.quadraticCurveTo(commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++],
+                                     commands[commandsIndex++]);
+            break;
+        case "Z":
+            context.closePath();
+            break;
+        }
+    }
+    context.closePath();
+    context.fillStyle = fillColor;
+    context.fill();
+
+    context.restore();
+}
+
+function drawShapeHighlight(shapeInfo)
+{
+    if (shapeInfo.marginShape)
+        drawPath(shapeInfo.marginShape, shapeMarginHighlightColor);
+    else
+        drawOutlinedQuad(shapeInfo.bounds, shapeHighlightColor, shapeHighlightColor);
+
+    if (shapeInfo.shape)
+        drawPath(shapeInfo.shape, shapeHighlightColor);
+   else
+        drawOutlinedQuad(shapeInfo.bounds, shapeHighlightColor, shapeHighlightColor);
+}
 
 function drawNodeHighlight(highlight)
 {
@@ -614,6 +666,8 @@ function drawNodeHighlight(highlight)
         _drawGrid(rulerAtRight, rulerAtBottom);
         _drawRulers(highlight, rulerAtRight, rulerAtBottom);
     }
+    if (highlight.elementInfo && highlight.elementInfo.shapeOutsideInfo)
+        drawShapeHighlight(highlight.elementInfo.shapeOutsideInfo);
     _drawElementTitle(highlight);
 
     context.restore();

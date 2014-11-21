@@ -127,13 +127,16 @@ class PListWriter(xml_formatted_writer.XMLFormattedWriter):
 
     self._array = self._AddKeyValuePair(dict, 'pfm_subkeys', 'array')
 
-  def Init(self):
+  def CreatePlistDocument(self):
     dom_impl = minidom.getDOMImplementation('')
     doctype = dom_impl.createDocumentType(
         'plist',
         '-//Apple//DTD PLIST 1.0//EN',
         'http://www.apple.com/DTDs/PropertyList-1.0.dtd')
-    self._doc = dom_impl.createDocument(None, 'plist', doctype)
+    return dom_impl.createDocument(None, 'plist', doctype)
+
+  def Init(self):
+    self._doc = self.CreatePlistDocument()
     self._plist = self._doc.documentElement
 
   def GetTemplateText(self):

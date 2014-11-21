@@ -279,11 +279,13 @@ KURL HitTestResult::absoluteImageURL() const
     if (!m_innerNonSharedNode)
         return KURL();
 
-    if (!(m_innerNonSharedNode->renderer() && m_innerNonSharedNode->renderer()->isImage()))
+    RenderObject* renderer = m_innerNonSharedNode->renderer();
+    if (!(renderer && (renderer->isImage() || renderer->isCanvas())))
         return KURL();
 
     AtomicString urlString;
-    if (isHTMLEmbedElement(*m_innerNonSharedNode)
+    if (isHTMLCanvasElement(*m_innerNonSharedNode)
+        || isHTMLEmbedElement(*m_innerNonSharedNode)
         || isHTMLImageElement(*m_innerNonSharedNode)
         || isHTMLInputElement(*m_innerNonSharedNode)
         || isHTMLObjectElement(*m_innerNonSharedNode)
@@ -360,14 +362,6 @@ bool HitTestResult::isMisspelled() const
 bool HitTestResult::isOverLink() const
 {
     return m_innerURLElement && m_innerURLElement->isLink();
-}
-
-String HitTestResult::titleDisplayString() const
-{
-    if (!m_innerURLElement)
-        return String();
-
-    return m_innerURLElement->title();
 }
 
 String HitTestResult::textContent() const

@@ -34,13 +34,13 @@ public:
     static const double IndeterminatePosition;
     static const double InvalidPosition;
 
-    static PassRefPtr<HTMLProgressElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLProgressElement> create(Document&);
 
     double value() const;
-    void setValue(double, ExceptionState&);
+    void setValue(double);
 
     double max() const;
-    void setMax(double, ExceptionState&);
+    void setMax(double);
 
     double position() const;
 

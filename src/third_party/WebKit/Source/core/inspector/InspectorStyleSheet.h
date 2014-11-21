@@ -29,8 +29,8 @@
 #include "core/css/CSSPropertySourceData.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/inspector/InspectorStyleTextEditor.h"
-#include "heap/Handle.h"
 #include "platform/JSONValues.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -62,16 +62,6 @@ public:
     {
     }
 
-    explicit InspectorCSSId(PassRefPtr<JSONObject> value)
-    {
-        if (!value->getString("styleSheetId", &m_styleSheetId))
-            return;
-
-        RefPtr<JSONValue> ordinalValue = value->get("ordinal");
-        if (!ordinalValue || !ordinalValue->asNumber(&m_ordinal))
-            m_styleSheetId = "";
-    }
-
     InspectorCSSId(const String& styleSheetId, unsigned ordinal)
         : m_styleSheetId(styleSheetId)
         , m_ordinal(ordinal)
@@ -83,25 +73,14 @@ public:
     const String& styleSheetId() const { return m_styleSheetId; }
     unsigned ordinal() const { return m_ordinal; }
 
-    // ID type is either TypeBuilder::CSS::CSSStyleId or TypeBuilder::CSS::CSSRuleId.
-    template<typename ID>
-    PassRefPtr<ID> asProtocolValue() const
-    {
-        if (isEmpty())
-            return nullptr;
-
-        RefPtr<ID> result = ID::create()
-            .setStyleSheetId(m_styleSheetId)
-            .setOrdinal(m_ordinal);
-        return result.release();
-    }
-
 private:
     String m_styleSheetId;
     unsigned m_ordinal;
 };
 
 struct InspectorStyleProperty {
+    ALLOW_ONLY_INLINE_ALLOCATION();
+public:
     explicit InspectorStyleProperty(CSSPropertySourceData sourceData)
         : sourceData(sourceData)
         , hasSource(true)
@@ -125,6 +104,8 @@ struct InspectorStyleProperty {
 
     bool hasRawText() const { return !rawText.isEmpty(); }
 
+    void trace(Visitor* visitor) { visitor->trace(sourceData); }
+
     CSSPropertySourceData sourceData;
     bool hasSource;
     String rawText;
@@ -132,7 +113,7 @@ struct InspectorStyleProperty {
 
 class InspectorStyle FINAL : public RefCounted<InspectorStyle> {
 public:
-    static PassRefPtr<InspectorStyle> create(const InspectorCSSId&, PassRefPtr<CSSStyleDeclaration>, InspectorStyleSheetBase* parentStyleSheet);
+    static PassRefPtr<InspectorStyle> create(const InspectorCSSId&, PassRefPtrWillBeRawPtr<CSSStyleDeclaration>, InspectorStyleSheetBase* parentStyleSheet);
 
     CSSStyleDeclaration* cssStyle() const { return m_style.get(); }
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForStyle() const;
@@ -141,19 +122,19 @@ public:
     bool styleText(String* result) const;
 
 private:
-    InspectorStyle(const InspectorCSSId&, PassRefPtr<CSSStyleDeclaration>, InspectorStyleSheetBase* parentStyleSheet);
+    InspectorStyle(const InspectorCSSId&, PassRefPtrWillBeRawPtr<CSSStyleDeclaration>, InspectorStyleSheetBase* parentStyleSheet);
 
     bool verifyPropertyText(const String& propertyText, bool canOmitSemicolon);
-    void populateAllProperties(Vector<InspectorStyleProperty>& result) const;
+    void populateAllProperties(WillBeHeapVector<InspectorStyleProperty>& result) const;
     PassRefPtr<TypeBuilder::CSS::CSSStyle> styleWithProperties() const;
-    PassRefPtr<CSSRuleSourceData> extractSourceData() const;
+    PassRefPtrWillBeRawPtr<CSSRuleSourceData> extractSourceData() const;
     bool applyStyleText(const String&);
     String shorthandValue(const String& shorthandProperty) const;
     NewLineAndWhitespace& newLineAndWhitespaceDelimiters() const;
     inline Document* ownerDocument() const;
 
     InspectorCSSId m_styleId;
-    RefPtr<CSSStyleDeclaration> m_style;
+    RefPtrWillBePersistent<CSSStyleDeclaration> m_style;
     InspectorStyleSheetBase* m_parentStyleSheet;
     mutable std::pair<String, String> m_format;
     mutable bool m_formatAcquired;
@@ -185,6 +166,8 @@ public:
     virtual InspectorCSSId styleId(CSSStyleDeclaration*) const = 0;
 
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForStyle(CSSStyleDeclaration*);
+    bool findPropertyByRange(const SourceRange&, InspectorCSSId*, unsigned* propertyIndex, bool* overwrite);
+    bool lineNumberAndColumnToOffset(unsigned lineNumber, unsigned columnNumber, unsigned* offset);
 
 protected:
     InspectorStyleSheetBase(const String& id, Listener*);
@@ -194,9 +177,10 @@ protected:
     PassOwnPtr<Vector<unsigned> > lineEndings();
 
     virtual PassRefPtr<InspectorStyle> inspectorStyleForId(const InspectorCSSId&) = 0;
+    virtual unsigned ruleCount() = 0;
 
     // Also accessed by friend class InspectorStyle.
-    virtual PassRefPtr<CSSRuleSourceData> ruleSourceDataFor(CSSStyleDeclaration*) const = 0;
+    virtual PassRefPtrWillBeRawPtr<CSSRuleSourceData> ruleSourceDataAt(unsigned) const = 0;
     virtual bool ensureParsedDataReady() = 0;
 
 private:
@@ -235,11 +219,14 @@ public:
     virtual CSSStyleDeclaration* styleForId(const InspectorCSSId&) const OVERRIDE;
     virtual bool setStyleText(const InspectorCSSId&, const String&) OVERRIDE;
 
+    bool findRuleBySelectorRange(const SourceRange&, InspectorCSSId*);
+
 protected:
     virtual PassRefPtr<InspectorStyle> inspectorStyleForId(const InspectorCSSId&) OVERRIDE;
+    virtual unsigned ruleCount() OVERRIDE;
 
     // Also accessed by friend class InspectorStyle.
-    virtual PassRefPtr<CSSRuleSourceData> ruleSourceDataFor(CSSStyleDeclaration*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<CSSRuleSourceData> ruleSourceDataAt(unsigned) const OVERRIDE;
     virtual bool ensureParsedDataReady() OVERRIDE;
 
 private:
@@ -285,19 +272,20 @@ public:
 
 protected:
     virtual PassRefPtr<InspectorStyle> inspectorStyleForId(const InspectorCSSId&) OVERRIDE;
+    virtual unsigned ruleCount() OVERRIDE { return 1; }
 
     // Also accessed by friend class InspectorStyle.
     virtual bool ensureParsedDataReady() OVERRIDE;
-    virtual PassRefPtr<CSSRuleSourceData> ruleSourceDataFor(CSSStyleDeclaration* style) const OVERRIDE { ASSERT_UNUSED(style, style == inlineStyle()); return m_ruleSourceData; }
+    virtual PassRefPtrWillBeRawPtr<CSSRuleSourceData> ruleSourceDataAt(unsigned ruleIndex) const OVERRIDE { ASSERT_UNUSED(ruleIndex, !ruleIndex); return m_ruleSourceData; }
 
 private:
     InspectorStyleSheetForInlineStyle(const String& id, PassRefPtr<Element>, Listener*);
     CSSStyleDeclaration* inlineStyle() const;
     const String& elementStyleText() const;
-    PassRefPtr<CSSRuleSourceData> getStyleAttributeData() const;
+    PassRefPtrWillBeRawPtr<CSSRuleSourceData> getStyleAttributeData() const;
 
     RefPtr<Element> m_element;
-    RefPtr<CSSRuleSourceData> m_ruleSourceData;
+    RefPtrWillBePersistent<CSSRuleSourceData> m_ruleSourceData;
     RefPtr<InspectorStyle> m_inspectorStyle;
 
     // Contains "style" attribute value.
@@ -307,5 +295,7 @@ private:
 
 
 } // namespace WebCore
+
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::InspectorStyleProperty);
 
 #endif // !defined(InspectorStyleSheet_h)

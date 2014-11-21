@@ -29,8 +29,8 @@
 #include "core/frame/DOMWindowLifecycleObserver.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/frame/DeviceSensorEventController.h"
-#include "heap/Handle.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebGamepads.h"
 
 namespace blink {
@@ -62,28 +62,29 @@ public:
     void didConnectOrDisconnectGamepad(unsigned index, const blink::WebGamepad&, bool connected);
 
 private:
-    explicit NavigatorGamepad(Document&);
+    explicit NavigatorGamepad(LocalFrame*);
 
     static const char* supplementName();
 
     // DOMWindowProperty
-    virtual void willDestroyGlobalObjectInFrame() OVERRIDE FINAL;
-    virtual void willDetachGlobalObjectFromFrame() OVERRIDE FINAL;
+    virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
+    virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
 
     // DeviceSensorEventController
-    virtual void registerWithDispatcher() OVERRIDE FINAL;
-    virtual void unregisterWithDispatcher() OVERRIDE FINAL;
-    virtual bool hasLastData() OVERRIDE FINAL;
-    virtual PassRefPtr<Event> getLastEvent() OVERRIDE FINAL;
-    virtual bool isNullEvent(Event*) OVERRIDE FINAL;
+    virtual void registerWithDispatcher() OVERRIDE;
+    virtual void unregisterWithDispatcher() OVERRIDE;
+    virtual bool hasLastData() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Event> getLastEvent() OVERRIDE;
+    virtual bool isNullEvent(Event*) OVERRIDE;
+    virtual Document* document() OVERRIDE;
 
     // DOMWindowLifecycleObserver
-    virtual void didAddEventListener(DOMWindow*, const AtomicString&) OVERRIDE FINAL;
-    virtual void didRemoveEventListener(DOMWindow*, const AtomicString&) OVERRIDE FINAL;
-    virtual void didRemoveAllEventListeners(DOMWindow*) OVERRIDE FINAL;
+    virtual void didAddEventListener(DOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveEventListener(DOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveAllEventListeners(DOMWindow*) OVERRIDE;
 
-    RefPtrWillBeMember<GamepadList> m_gamepads;
-    RefPtrWillBeMember<WebKitGamepadList> m_webkitGamepads;
+    PersistentWillBeMember<GamepadList> m_gamepads;
+    PersistentWillBeMember<WebKitGamepadList> m_webkitGamepads;
 };
 
 } // namespace WebCore

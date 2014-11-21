@@ -96,10 +96,13 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
                                        bool use_anchor,
                                        float new_page_scale,
                                        double duration_sec);
+  virtual void heuristicsForGpuRasterizationUpdated(bool matches_heuristics);
   virtual void setNeedsAnimate();
   virtual bool commitRequested() const;
   virtual void didStopFlinging();
   virtual bool compositeAndReadback(void *pixels, const blink::WebRect& rect);
+  virtual void compositeAndReadbackAsync(
+      blink::WebCompositeAndReadbackAsyncCallback* callback);
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
   virtual void registerForAnimations(blink::WebLayer* layer);
@@ -123,13 +126,11 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
                                    float page_scale) OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
-  virtual void DidInitializeOutputSurface(bool success) OVERRIDE;
+  virtual void DidInitializeOutputSurface() OVERRIDE;
   virtual void WillCommit() OVERRIDE;
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProvider() OVERRIDE;
   virtual void RateLimitSharedMainThreadContext() OVERRIDE;
 
   // cc::LayerTreeHostSingleThreadClient implementation.

@@ -24,13 +24,13 @@
  */
 
 #include "config.h"
-#include "WebGeolocationController.h"
+#include "public/web/WebGeolocationController.h"
 
-#include "WebGeolocationError.h"
-#include "WebGeolocationPosition.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
+#include "public/web/WebGeolocationError.h"
+#include "public/web/WebGeolocationPosition.h"
 
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -41,12 +41,12 @@ namespace blink {
 
 void WebGeolocationController::positionChanged(const WebGeolocationPosition& webPosition)
 {
-    m_private->positionChanged(PassRefPtr<GeolocationPosition>(webPosition).get());
+    m_private->positionChanged(PassRefPtrWillBeRawPtr<GeolocationPosition>(webPosition).get());
 }
 
 void WebGeolocationController::errorOccurred(const WebGeolocationError& webError)
 {
-    m_private->errorOccurred(PassRefPtr<GeolocationError>(webError).get());
+    m_private->errorOccurred(PassRefPtrWillBeRawPtr<GeolocationError>(webError).get());
 }
 
 } // namespace blink

@@ -31,11 +31,12 @@
 #ifndef WorkerThreadableWebSocketChannel_h
 #define WorkerThreadableWebSocketChannel_h
 
+#include "core/dom/ExecutionContextTask.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "heap/Handle.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
+#include "platform/heap/Handle.h"
 
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -61,17 +62,17 @@ class WorkerGlobalScope;
 class WorkerLoaderProxy;
 class WorkerRunLoop;
 
-class WorkerThreadableWebSocketChannel FINAL : public RefCounted<WorkerThreadableWebSocketChannel>, public WebSocketChannel {
-    WTF_MAKE_FAST_ALLOCATED;
+class WorkerThreadableWebSocketChannel FINAL : public WebSocketChannel {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtr<WebSocketChannel> create(WorkerGlobalScope* workerGlobalScope, WebSocketChannelClient* client, const String& sourceURL, unsigned lineNumber)
+    static PassRefPtrWillBeRawPtr<WebSocketChannel> create(WorkerGlobalScope& workerGlobalScope, WebSocketChannelClient* client, const String& sourceURL, unsigned lineNumber)
     {
-        return adoptRef(new WorkerThreadableWebSocketChannel(workerGlobalScope, client, sourceURL, lineNumber));
+        return adoptRefWillBeRefCountedGarbageCollected(new WorkerThreadableWebSocketChannel(workerGlobalScope, client, sourceURL, lineNumber));
     }
     virtual ~WorkerThreadableWebSocketChannel();
 
     // WebSocketChannel functions.
-    virtual void connect(const KURL&, const String& protocol) OVERRIDE;
+    virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
     virtual String subprotocol() OVERRIDE;
     virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
@@ -120,26 +121,18 @@ public:
     private:
         Peer(PassRefPtr<WeakReference<Peer> >, PassRefPtr<ThreadableWebSocketChannelClientWrapper>, WorkerLoaderProxy&, ExecutionContext*, const String& sourceURL, unsigned lineNumber, PassOwnPtr<ThreadableWebSocketChannelSyncHelper>);
 
-        RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
+        const RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
         WorkerLoaderProxy& m_loaderProxy;
-        RefPtr<WebSocketChannel> m_mainWebSocketChannel;
+        RefPtrWillBePersistent<WebSocketChannel> m_mainWebSocketChannel;
         OwnPtr<ThreadableWebSocketChannelSyncHelper> m_syncHelper;
         WeakPtrFactory<Peer> m_weakFactory;
     };
-
-    using RefCounted<WorkerThreadableWebSocketChannel>::ref;
-    using RefCounted<WorkerThreadableWebSocketChannel>::deref;
-
-protected:
-    // WebSocketChannel functions.
-    virtual void refWebSocketChannel() OVERRIDE { ref(); }
-    virtual void derefWebSocketChannel() OVERRIDE { deref(); }
 
 private:
     // Bridge for Peer. Running on the worker thread.
     class Bridge : public RefCounted<Bridge> {
     public:
-        static PassRefPtr<Bridge> create(PassRefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper, PassRefPtrWillBeRawPtr<WorkerGlobalScope> workerGlobalScope)
+        static PassRefPtr<Bridge> create(PassRefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper, WorkerGlobalScope& workerGlobalScope)
         {
             return adoptRef(new Bridge(workerClientWrapper, workerGlobalScope));
         }
@@ -147,7 +140,7 @@ private:
         // sourceURLAtConnection and lineNumberAtConnection parameters may
         // be shown when the connection fails.
         void initialize(const String& sourceURLAtConnection, unsigned lineNumberAtConnection);
-        void connect(const KURL&, const String& protocol);
+        bool connect(const KURL&, const String& protocol);
         WebSocketChannel::SendResult send(const String& message);
         WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength);
         WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>);
@@ -158,11 +151,8 @@ private:
         void suspend();
         void resume();
 
-        using RefCounted<Bridge>::ref;
-        using RefCounted<Bridge>::deref;
-
     private:
-        Bridge(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, PassRefPtrWillBeRawPtr<WorkerGlobalScope>);
+        Bridge(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, WorkerGlobalScope&);
 
         static void setWebSocketChannel(ExecutionContext*, Bridge* thisPtr, Peer*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>);
 
@@ -170,21 +160,22 @@ private:
         void clearClientWrapper();
 
         // Returns false if shutdown event is received before method completion.
-        bool waitForMethodCompletion();
+        bool waitForMethodCompletion(PassOwnPtr<ExecutionContextTask>);
 
         void terminatePeer();
 
-        RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
+        bool hasTerminatedPeer() { return !m_syncHelper; }
+
+        const RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
         RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
         WorkerLoaderProxy& m_loaderProxy;
         ThreadableWebSocketChannelSyncHelper* m_syncHelper;
         WeakPtr<Peer> m_peer;
     };
 
-    WorkerThreadableWebSocketChannel(WorkerGlobalScope*, WebSocketChannelClient*, const String& sourceURL, unsigned lineNumber);
+    WorkerThreadableWebSocketChannel(WorkerGlobalScope&, WebSocketChannelClient*, const String& sourceURL, unsigned lineNumber);
 
-    RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
-    RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
+    const RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
     RefPtr<Bridge> m_bridge;
     String m_sourceURLAtConnection;
     unsigned m_lineNumberAtConnection;

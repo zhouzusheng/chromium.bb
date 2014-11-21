@@ -27,8 +27,8 @@
 #define GamepadList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
 #include "modules/gamepad/Gamepad.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebGamepads.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -36,15 +36,15 @@
 
 namespace WebCore {
 
-class GamepadList FINAL : public RefCountedWillBeGarbageCollectedFinalized<GamepadList>, public ScriptWrappable {
+class GamepadList FINAL : public GarbageCollectedFinalized<GamepadList>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<GamepadList> create()
+    static GamepadList* create()
     {
-        return adoptRefWillBeNoop(new GamepadList);
+        return new GamepadList();
     }
     ~GamepadList();
 
-    void set(unsigned index, PassRefPtrWillBeRawPtr<Gamepad>);
+    void set(unsigned index, Gamepad*);
     Gamepad* item(unsigned index);
     unsigned length() const { return blink::WebGamepads::itemsLengthCap; }
 
@@ -52,7 +52,7 @@ public:
 
 private:
     GamepadList();
-    RefPtrWillBeMember<Gamepad> m_items[blink::WebGamepads::itemsLengthCap];
+    Member<Gamepad> m_items[blink::WebGamepads::itemsLengthCap];
 };
 
 } // namespace WebCore

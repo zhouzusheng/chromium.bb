@@ -54,7 +54,7 @@ WheelController* WheelController::from(Document& document)
     WheelController* controller = static_cast<WheelController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new WheelController(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
     }
     return controller;
 }
@@ -69,11 +69,7 @@ static void wheelEventHandlerCountChanged(Document& document)
     if (!scrollingCoordinator)
         return;
 
-    FrameView* frameView = document.view();
-    if (!frameView)
-        return;
-
-    scrollingCoordinator->frameViewWheelEventHandlerCountChanged(frameView);
+    scrollingCoordinator->updateHaveWheelEventHandlers();
 }
 
 void WheelController::didAddWheelEventHandler(Document& document)

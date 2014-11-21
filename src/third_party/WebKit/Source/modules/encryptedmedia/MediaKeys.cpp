@@ -58,7 +58,7 @@ PassRefPtrWillBeRawPtr<MediaKeys> MediaKeys::create(ExecutionContext* context, c
     // From <http://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#dom-media-keys-constructor>:
     // The MediaKeys(keySystem) constructor must run the following steps:
 
-    // 1. If keySystem is null or an empty string, throw an InvalidAccessError exception and abort these steps.
+    // 1. If keySystem is an empty string, throw an InvalidAccessError exception and abort these steps.
     if (keySystem.isEmpty()) {
         exceptionState.throwDOMException(InvalidAccessError, "The key system provided is invalid.");
         return nullptr;
@@ -92,7 +92,9 @@ MediaKeys::MediaKeys(ExecutionContext* context, const String& keySystem, PassOwn
     , m_keySystem(keySystem)
     , m_cdm(cdm)
     , m_initializeNewSessionTimer(this, &MediaKeys::initializeNewSessionTimerFired)
+#if !ENABLE(OILPAN)
     , m_weakFactory(this)
+#endif
 {
     WTF_LOG(Media, "MediaKeys::MediaKeys");
     ScriptWrappable::init(this);
@@ -115,8 +117,8 @@ PassRefPtrWillBeRawPtr<MediaKeySession> MediaKeys::createSession(ExecutionContex
         return nullptr;
     }
 
-    if (!initData || !initData->length()) {
-        exceptionState.throwDOMException(InvalidAccessError, "The initData provided is null or empty.");
+    if (!initData->length()) {
+        exceptionState.throwDOMException(InvalidAccessError, "The initData provided is empty.");
         return nullptr;
     }
 
@@ -128,7 +130,11 @@ PassRefPtrWillBeRawPtr<MediaKeySession> MediaKeys::createSession(ExecutionContex
     }
 
     // 2. Create a new MediaKeySession object.
-    RefPtrWillBeRawPtr<MediaKeySession> session = MediaKeySession::create(context, m_cdm.get(), m_weakFactory.createWeakPtr());
+#if ENABLE(OILPAN)
+    MediaKeySession* session = MediaKeySession::create(context, m_cdm.get(), this);
+#else
+    RefPtr<MediaKeySession> session = MediaKeySession::create(context, m_cdm.get(), m_weakFactory.createWeakPtr());
+#endif
     // 2.1 Let the keySystem attribute be keySystem.
     ASSERT(!session->keySystem().isEmpty());
     // FIXME: 2.2 Let the state of the session be CREATED.
@@ -149,7 +155,7 @@ bool MediaKeys::isTypeSupported(const String& keySystem, const String& contentTy
 {
     WTF_LOG(Media, "MediaKeys::isTypeSupported(%s, %s)", keySystem.ascii().data(), contentType.ascii().data());
 
-    // 1. If keySystem is null or an empty string, return false and abort these steps.
+    // 1. If keySystem is an empty string, return false and abort these steps.
     if (keySystem.isEmpty())
         return false;
 
@@ -158,7 +164,7 @@ bool MediaKeys::isTypeSupported(const String& keySystem, const String& contentTy
     if (!isKeySystemSupportedWithContentType(keySystem, ""))
         return false;
 
-    // 3. If contentType is null or an empty string, return true and abort these steps.
+    // 3. If contentType is an empty string, return true and abort these steps.
     if (contentType.isEmpty())
         return true;
 

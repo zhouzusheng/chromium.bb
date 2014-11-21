@@ -29,9 +29,9 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
-#include "heap/Handle.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognitionResult.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Compiler.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -76,7 +76,7 @@ public:
     void didEndAudio();
     void didReceiveResults(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& newFinalResults, const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& currentInterimResults);
     void didReceiveNoMatch(PassRefPtrWillBeRawPtr<SpeechRecognitionResult>);
-    void didReceiveError(PassRefPtr<SpeechRecognitionError>);
+    void didReceiveError(PassRefPtrWillBeRawPtr<SpeechRecognitionError>);
     void didStart();
     void didEnd();
 

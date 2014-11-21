@@ -48,12 +48,12 @@ public:
     }
 
     RenderObject* object() const { return m_object; }
-    RenderLayerModelObject* repaintContainer() const { return m_repaintContainer; }
+    const RenderLayerModelObject* repaintContainer() const { return m_repaintContainer; }
     RenderObject::SelectionState state() const { return m_state; }
 
 protected:
     RenderObject* m_object;
-    RenderLayerModelObject* m_repaintContainer;
+    const RenderLayerModelObject* m_repaintContainer;
     RenderObject::SelectionState m_state;
 };
 
@@ -68,7 +68,7 @@ public:
 
     void repaint()
     {
-        m_object->repaintUsingContainer(m_repaintContainer, enclosingIntRect(m_rect));
+        m_object->repaintUsingContainer(m_repaintContainer, enclosingIntRect(m_rect), InvalidationSelection);
     }
 
     LayoutRect rect() const { return m_rect; }
@@ -89,7 +89,7 @@ public:
 
     void repaint()
     {
-        m_object->repaintUsingContainer(m_repaintContainer, enclosingIntRect(m_rects));
+        m_object->repaintUsingContainer(m_repaintContainer, enclosingIntRect(m_rects), InvalidationSelection);
     }
 
     RenderBlock* block() const { return toRenderBlock(m_object); }

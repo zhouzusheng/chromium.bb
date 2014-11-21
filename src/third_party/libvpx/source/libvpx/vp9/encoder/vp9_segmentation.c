@@ -16,6 +16,7 @@
 #include "vp9/common/vp9_pred_common.h"
 #include "vp9/common/vp9_tile_common.h"
 
+#include "vp9/encoder/vp9_cost.h"
 #include "vp9/encoder/vp9_segmentation.h"
 
 void vp9_enable_segmentation(struct segmentation *seg) {
@@ -26,18 +27,6 @@ void vp9_enable_segmentation(struct segmentation *seg) {
 
 void vp9_disable_segmentation(struct segmentation *seg) {
   seg->enabled = 0;
-}
-
-void vp9_set_segmentation_map(VP9_COMP *cpi, unsigned char *segmentation_map) {
-  struct segmentation *const seg = &cpi->common.seg;
-
-  // Copy in the new segmentation map
-  vpx_memcpy(cpi->segmentation_map, segmentation_map,
-             (cpi->common.mi_rows * cpi->common.mi_cols));
-
-  // Signal that the map should be updated.
-  seg->update_map = 1;
-  seg->update_data = 1;
 }
 
 void vp9_set_segment_data(struct segmentation *seg,
@@ -132,8 +121,8 @@ static void count_segs(VP9_COMP *cpi, const TileInfo *const tile,
   if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols)
     return;
 
-  xd->mi_8x8 = mi_8x8;
-  segment_id = xd->mi_8x8[0]->mbmi.segment_id;
+  xd->mi = mi_8x8;
+  segment_id = xd->mi[0]->mbmi.segment_id;
 
   set_mi_row_col(xd, tile, mi_row, bh, mi_col, bw, cm->mi_rows, cm->mi_cols);
 
@@ -151,7 +140,7 @@ static void count_segs(VP9_COMP *cpi, const TileInfo *const tile,
 
     // Store the prediction status for this mb and update counts
     // as appropriate
-    xd->mi_8x8[0]->mbmi.seg_id_predicted = pred_flag;
+    xd->mi[0]->mbmi.seg_id_predicted = pred_flag;
     temporal_predictor_count[pred_context][pred_flag]++;
 
     if (!pred_flag)
@@ -168,7 +157,7 @@ static void count_segs_sb(VP9_COMP *cpi, const TileInfo *const tile,
                           int mi_row, int mi_col,
                           BLOCK_SIZE bsize) {
   const VP9_COMMON *const cm = &cpi->common;
-  const int mis = cm->mode_info_stride;
+  const int mis = cm->mi_stride;
   int bw, bh;
   const int bs = num_8x8_blocks_wide_lookup[bsize], hbs = bs / 2;
 
@@ -228,7 +217,7 @@ void vp9_choose_segmap_coding_method(VP9_COMP *cpi) {
   vp9_prob t_pred_tree[SEG_TREE_PROBS];
   vp9_prob t_nopred_prob[PREDICTION_PROBS];
 
-  const int mis = cm->mode_info_stride;
+  const int mis = cm->mi_stride;
   MODE_INFO **mi_ptr, **mi;
 
   // Set default state for the segment tree probabilities and the

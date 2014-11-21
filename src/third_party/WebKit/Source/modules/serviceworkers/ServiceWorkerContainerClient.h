@@ -5,7 +5,7 @@
 #ifndef ServiceWorkerContainerClient_h
 #define ServiceWorkerContainerClient_h
 
-#include "core/page/Page.h"
+#include "core/dom/DocumentSupplementable.h"
 #include "core/workers/WorkerClients.h"
 #include "wtf/Forward.h"
 
@@ -18,19 +18,27 @@ namespace WebCore {
 class ExecutionContext;
 
 // This mainly exists to provide access to WebServiceWorkerProvider.
-// Owned by Page (or WorkerClients).
+// Owned by Document (or WorkerClients).
 class ServiceWorkerContainerClient FINAL :
-    public Supplement<Page>,
-    public Supplement<WorkerClients> {
+    public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerContainerClient>,
+    public DocumentSupplement,
+    public WillBeHeapSupplement<WorkerClients> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerContainerClient);
     WTF_MAKE_NONCOPYABLE(ServiceWorkerContainerClient);
 public:
-    static PassOwnPtr<ServiceWorkerContainerClient> create(PassOwnPtr<blink::WebServiceWorkerProvider>);
+    static PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> create(PassOwnPtr<blink::WebServiceWorkerProvider>);
     virtual ~ServiceWorkerContainerClient();
 
     blink::WebServiceWorkerProvider* provider() { return m_provider.get(); }
 
     static const char* supplementName();
     static ServiceWorkerContainerClient* from(ExecutionContext*);
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        DocumentSupplement::trace(visitor);
+        WillBeHeapSupplement<WorkerClients>::trace(visitor);
+    }
 
 protected:
     explicit ServiceWorkerContainerClient(PassOwnPtr<blink::WebServiceWorkerProvider>);

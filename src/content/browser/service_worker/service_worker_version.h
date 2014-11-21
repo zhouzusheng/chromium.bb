@@ -13,16 +13,20 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 
 class GURL;
 
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerContextCore;
+class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerVersionInfo;
 
@@ -37,7 +41,7 @@ class ServiceWorkerVersionInfo;
 // This happens when a version is replaced as well as at browser shutdown.
 class CONTENT_EXPORT ServiceWorkerVersion
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerVersion>),
-      public EmbeddedWorkerInstance::Observer {
+      public EmbeddedWorkerInstance::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode,
@@ -66,15 +70,31 @@ class CONTENT_EXPORT ServiceWorkerVersion
                  // different states for different termination sequences)
   };
 
+  class Listener {
+   public:
+    virtual void OnWorkerStarted(ServiceWorkerVersion* version) = 0;
+    virtual void OnWorkerStopped(ServiceWorkerVersion* version) = 0;
+    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) = 0;
+    virtual void OnErrorReported(ServiceWorkerVersion* version,
+                                 const base::string16& error_message,
+                                 int line_number,
+                                 int column_number,
+                                 const GURL& source_url) = 0;
+    virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
+                                        int source_identifier,
+                                        int message_level,
+                                        const base::string16& message,
+                                        int line_number,
+                                        const GURL& source_url) = 0;
+  };
+
   ServiceWorkerVersion(
       ServiceWorkerRegistration* registration,
-      EmbeddedWorkerRegistry* worker_registry,
-      int64 version_id);
+      int64 version_id,
+      base::WeakPtr<ServiceWorkerContextCore> context);
 
   int64 version_id() const { return version_id_; }
-
-  void Shutdown();
-  bool is_shutdown() const { return is_shutdown_; }
+  int64 registration_id() const { return registration_id_; }
 
   RunningStatus running_status() const {
     return static_cast<RunningStatus>(embedded_worker_->status());
@@ -98,6 +118,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void StartWorker(const StatusCallback& callback);
 
   // Starts an embedded worker for this version.
+  // |potential_process_ids| is a list of processes in which to start the
+  // worker.
+  // This returns OK (success) if the worker is already running.
+  void StartWorkerWithCandidateProcesses(
+      const std::vector<int>& potential_process_ids,
+      const StatusCallback& callback);
+
+  // Starts an embedded worker for this version.
   // This returns OK (success) if the worker is already stopped.
   void StopWorker(const StatusCallback& callback);
 
@@ -106,30 +134,19 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // calling StartWorker internally.
   // |callback| can be null if the sender does not need to know if the
   // message is successfully sent or not.
-  // (If the sender expects the receiver to respond please use
-  // SendMessageAndRegisterCallback instead)
   void SendMessage(const IPC::Message& message, const StatusCallback& callback);
-
-  // Sends an IPC message to the worker and registers |callback| to
-  // be notified when a response message is received.
-  // The |callback| will be also fired with an error code if the worker
-  // is unexpectedly (being) stopped.
-  // If the worker is not running this first tries to start it by
-  // calling StartWorker internally.
-  void SendMessageAndRegisterCallback(const IPC::Message& message,
-                                      const MessageCallback& callback);
 
   // Sends install event to the associated embedded worker and asynchronously
   // calls |callback| when it errors out or it gets response from the worker
   // to notify install completion.
-  // |active_version_embedded_worker_id| must be a valid positive ID
+  // |active_version_id| must be a valid positive ID
   // if there's an active (previous) version running.
   //
   // This must be called when the status() is NEW. Calling this changes
   // the version's status to INSTALLING.
   // Upon completion, the version's status will be changed to INSTALLED
   // on success, or back to NEW on failure.
-  void DispatchInstallEvent(int active_version_embedded_worker_id,
+  void DispatchInstallEvent(int active_version_id,
                             const StatusCallback& callback);
 
   // Sends activate event to the associated embedded worker and asynchronously
@@ -150,41 +167,105 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void DispatchFetchEvent(const ServiceWorkerFetchRequest& request,
                           const FetchCallback& callback);
 
+  // Sends sync event to the associated embedded worker and asynchronously calls
+  // |callback| when it errors out or it gets response from the worker to notify
+  // completion.
+  //
+  // This must be called when the status() is ACTIVE.
+  void DispatchSyncEvent(const StatusCallback& callback);
+
   // These are expected to be called when a renderer process host for the
   // same-origin as for this ServiceWorkerVersion is created.  The added
   // processes are used to run an in-renderer embedded worker.
   void AddProcessToWorker(int process_id);
-  void RemoveProcessToWorker(int process_id);
+  void RemoveProcessFromWorker(int process_id);
+
+  // Returns true if this has at least one process to run.
+  bool HasProcessToRun() const;
+
+  // Adds and removes |provider_host| as a controllee of this ServiceWorker.
+  void AddControllee(ServiceWorkerProviderHost* provider_host);
+  void RemoveControllee(ServiceWorkerProviderHost* provider_host);
+  void AddPendingControllee(ServiceWorkerProviderHost* provider_host);
+  void RemovePendingControllee(ServiceWorkerProviderHost* provider_host);
+
+  // Returns if it has (non-pending) controllee.
+  bool HasControllee() const { return !controllee_map_.empty(); }
+
+  // Adds and removes Listeners.
+  void AddListener(Listener* listener);
+  void RemoveListener(Listener* listener);
 
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
 
-  // EmbeddedWorkerInstance::Observer overrides:
+  // EmbeddedWorkerInstance::Listener overrides:
   virtual void OnStarted() OVERRIDE;
   virtual void OnStopped() OVERRIDE;
-  virtual void OnMessageReceived(int request_id,
-                                 const IPC::Message& message) OVERRIDE;
+  virtual void OnReportException(const base::string16& error_message,
+                                 int line_number,
+                                 int column_number,
+                                 const GURL& source_url) OVERRIDE;
+  virtual void OnReportConsoleMessage(int source_identifier,
+                                      int message_level,
+                                      const base::string16& message,
+                                      int line_number,
+                                      const GURL& source_url) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  void AddToScriptCache(const GURL& url, int64 resource_id);
+  int64 LookupInScriptCache(const GURL& url);
 
  private:
   typedef ServiceWorkerVersion self;
+  typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
+  typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
+  typedef std::map<GURL, int64> ResourceIDMap;
   friend class base::RefCounted<ServiceWorkerVersion>;
 
   virtual ~ServiceWorkerVersion();
 
+  void RunStartWorkerCallbacksOnError(ServiceWorkerStatusCode status);
+
+  void DispatchInstallEventAfterStartWorker(int active_version_id,
+                                            const StatusCallback& callback);
+  void DispatchActivateEventAfterStartWorker(const StatusCallback& callback);
+
+  // Message handlers.
+  void OnGetClientDocuments(int request_id);
+  void OnActivateEventFinished(int request_id,
+                               blink::WebServiceWorkerEventResult result);
+  void OnInstallEventFinished(int request_id,
+                              blink::WebServiceWorkerEventResult result);
+  void OnFetchEventFinished(int request_id,
+                            ServiceWorkerFetchEventResult result,
+                            const ServiceWorkerResponse& response);
+  void OnSyncEventFinished(int request_id);
+  void OnPostMessageToDocument(int client_id,
+                               const base::string16& message,
+                               const std::vector<int>& sent_message_port_ids);
+
   const int64 version_id_;
-
+  int64 registration_id_;
+  GURL script_url_;
+  GURL scope_;
   Status status_;
-
-  bool is_shutdown_;
-  scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
-
-  // Pending callbacks.
   std::vector<StatusCallback> start_callbacks_;
   std::vector<StatusCallback> stop_callbacks_;
-
   std::vector<base::Closure> status_change_callbacks_;
 
-  IDMap<MessageCallback, IDMapOwnPointer> message_callbacks_;
+  // Message callbacks.
+  IDMap<StatusCallback, IDMapOwnPointer> activate_callbacks_;
+  IDMap<StatusCallback, IDMapOwnPointer> install_callbacks_;
+  IDMap<FetchCallback, IDMapOwnPointer> fetch_callbacks_;
+  IDMap<StatusCallback, IDMapOwnPointer> sync_callbacks_;
+
+  ControlleeMap controllee_map_;
+  ControlleeByIDMap controllee_by_id_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
+  ObserverList<Listener> listeners_;
+
+  ResourceIDMap script_cache_map_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

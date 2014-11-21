@@ -6,15 +6,15 @@
 #define GamepadButton_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class GamepadButton FINAL : public RefCountedWillBeGarbageCollectedFinalized<GamepadButton>, public ScriptWrappable {
+class GamepadButton FINAL : public GarbageCollectedFinalized<GamepadButton>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<GamepadButton> create();
+    static GamepadButton* create();
     ~GamepadButton();
 
     float value() const { return m_value; }
@@ -31,7 +31,7 @@ private:
     bool m_pressed;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<GamepadButton> > GamepadButtonVector;
+typedef HeapVector<Member<GamepadButton> > GamepadButtonVector;
 
 } // namespace WebCore
 

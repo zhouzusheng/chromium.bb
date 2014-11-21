@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "content/common/content_export.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/accessibility/ax_node_data.h"
 
@@ -14,11 +15,12 @@ namespace content {
 
 // Use this object in conjunction with the
 // |WebContentsObserver::AccessibilityEventReceived| method.
-struct AXEventNotificationDetails {
+struct CONTENT_EXPORT AXEventNotificationDetails {
  public:
   AXEventNotificationDetails(const std::vector<ui::AXNodeData>& nodes,
                              ui::AXEvent event_type,
                              int id,
+                             int process_id,
                              int routing_id);
 
   ~AXEventNotificationDetails();
@@ -26,6 +28,7 @@ struct AXEventNotificationDetails {
   std::vector<ui::AXNodeData> nodes;
   ui::AXEvent event_type;
   int id;
+  int process_id;
   int routing_id;
 };
 

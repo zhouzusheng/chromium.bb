@@ -32,7 +32,6 @@
 
 #include "core/rendering/RenderRubyRun.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderRubyBase.h"
 #include "core/rendering/RenderRubyText.h"
 #include "core/rendering/RenderText.h"
@@ -64,11 +63,6 @@ bool RenderRubyRun::hasRubyBase() const
     // The only place where a ruby base can be is in the last position
     // Note: As anonymous blocks, ruby runs do not have ':before' or ':after' content themselves.
     return lastChild() && lastChild()->isRubyBase();
-}
-
-bool RenderRubyRun::isEmpty() const
-{
-    return !hasRubyText() && !hasRubyBase();
 }
 
 RenderRubyText* RenderRubyRun::rubyText() const
@@ -188,8 +182,7 @@ void RenderRubyRun::removeChild(RenderObject* child)
         }
 
         // If any of the above leaves the run empty, destroy it as well.
-        if (isEmpty()) {
-            parent()->removeChild(this);
+        if (!hasRubyText() && !hasRubyBase()) {
             deleteLineBoxTree();
             destroy();
         }
@@ -229,7 +222,6 @@ RenderObject* RenderRubyRun::layoutSpecialExcludedChild(bool relayoutChildren, S
 
 void RenderRubyRun::layout()
 {
-    LayoutRectRecorder recorder(*this);
     RenderBlockFlow::layout();
 
     RenderRubyText* rt = rubyText();

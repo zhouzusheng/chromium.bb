@@ -32,8 +32,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
-#include "core/frame/PageConsole.h"
+#include "core/frame/LocalFrame.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -395,7 +396,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     // case CSSPropertyShapeInside: return 346;
     case CSSPropertyShapeOutside: return 347;
     case CSSPropertyShapeMargin: return 348;
-    case CSSPropertyShapePadding: return 349;
+    // case CSSPropertyShapePadding: return 349;
     case CSSPropertyWebkitWrapFlow: return 350;
     case CSSPropertyWebkitWrapThrough: return 351;
     // CSSPropertyWebkitWrap was 352.
@@ -417,7 +418,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyStopOpacity: return 364;
     case CSSPropertyColorInterpolation: return 365;
     case CSSPropertyColorInterpolationFilters: return 366;
-    case CSSPropertyColorProfile: return 367;
+    // case CSSPropertyColorProfile: return 367;
     case CSSPropertyColorRendering: return 368;
     case CSSPropertyFill: return 369;
     case CSSPropertyFillOpacity: return 370;
@@ -441,7 +442,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyDominantBaseline: return 388;
     case CSSPropertyGlyphOrientationHorizontal: return 389;
     case CSSPropertyGlyphOrientationVertical: return 390;
-    case CSSPropertyKerning: return 391;
+    // CSSPropertyKerning has been removed, was return 391;
     case CSSPropertyTextAnchor: return 392;
     case CSSPropertyVectorEffect: return 393;
     case CSSPropertyWritingMode: return 394;
@@ -506,6 +507,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyPerspective: return 449;
     case CSSPropertyPerspectiveOrigin: return 450;
     case CSSPropertyBackfaceVisibility: return 451;
+    case CSSPropertyGridTemplate: return 452;
+    case CSSPropertyGrid: return 453;
 
     // Add new features above this line (don't change the assigned numbers of the existing
     // items) and update maximumCSSSampleId() with the new maximum value.
@@ -524,7 +527,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 451; }
+static int maximumCSSSampleId() { return 453; }
 
 void UseCounter::muteForInspector()
 {
@@ -620,12 +623,13 @@ void UseCounter::countDeprecation(const DOMWindow* window, Feature feature)
 void UseCounter::countDeprecation(const Document& document, Feature feature)
 {
     FrameHost* host = document.frameHost();
-    if (!host)
+    LocalFrame* frame = document.frame();
+    if (!host || !frame)
         return;
 
     if (host->useCounter().recordMeasurement(feature)) {
         ASSERT(!host->useCounter().deprecationMessage(feature).isEmpty());
-        host->console().addMessage(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature));
+        frame->console().addMessage(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature));
     }
 }
 
@@ -635,10 +639,6 @@ String UseCounter::deprecationMessage(Feature feature)
     // Quota
     case PrefixedStorageInfo:
         return "'window.webkitStorageInfo' is deprecated. Please use 'navigator.webkitTemporaryStorage' or 'navigator.webkitPersistentStorage' instead.";
-
-    // Performance
-    case PrefixedPerformanceTimeline:
-        return "'window.performance.webkitGet*' methods have been deprecated. Please use the unprefixed 'performance.get*' methods instead.";
 
     // HTML Media Capture
     case CaptureAttributeAsEnum:
@@ -655,7 +655,7 @@ String UseCounter::deprecationMessage(Feature feature)
         return "FileError is deprecated. Please use the 'name' or 'message' attributes of DOMError rather than 'code'.";
 
     case ShowModalDialog:
-        return "Chromium is considering deprecating showModalDialog. Please use window.open and postMessage instead.";
+        return "showModalDialog is deprecated. Please use window.open and postMessage instead.";
 
     case CSSStyleSheetInsertRuleOptionalArg:
         return "Calling CSSStyleSheet.insertRule() with one argument is deprecated. Please pass the index argument as well: insertRule(x, 0).";
@@ -678,26 +678,8 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedVideoExitFullScreen:
         return "'HTMLVideoElement.webkitExitFullScreen()' is deprecated. Please use 'Document.exitFullscreen()' and 'Document.webkitExitFullscreen()' instead.";
 
-    case PrefixedMediaSourceOpen:
-        return "'WebKitMediaSource' is deprecated. Please use 'MediaSource' instead.";
-
-    case DOMImplementationCreateCSSStyleSheet:
-        return "'DOMImplementation.createCSSStyleSheet()' is deprecated.";
-
     case MediaErrorEncrypted:
         return "'MediaError.MEDIA_ERR_ENCRYPTED' is deprecated. This error code is never used.";
-
-    case HTMLSourceElementMedia:
-        return "'HTMLSourceElement.media' is deprecated. This attribute doesn't do anything.";
-
-    case PrefixedGetImageDataHD:
-        return "'CanvasRenderingContext2D.webkitGetImageDataHD' is deprecated. Please use getImageData instead.";
-
-    case PrefixedPutImageDataHD:
-        return "'CanvasRenderingContext2D.webkitPutImageDataHD' is deprecated. Please use putImageData instead.";
-
-    case PrefixedSpeechAttribute:
-        return "The 'x-webkit-speech' input field attribute is deprecated. Please use the JavaScript API instead.";
 
     case PrefixedGamepad:
         return "'navigator.webkitGetGamepads' is deprecated. Please use 'navigator.getGamepads' instead.";
@@ -711,6 +693,9 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedCancelRequestAnimationFrame:
         return "'webkitCancelRequestAnimationFrame' is vendor-specific. Please use the standard 'cancelAnimationFrame' instead.";
 
+    case HTMLHtmlElementManifest:
+        return "'HTMLHtmlElement.manifest' is deprecated. The manifest attribute only has an effect during the early stages of document load.";
+
     case DocumentCreateAttributeNS:
         return "'Document.createAttributeNS' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
 
@@ -719,6 +704,28 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case ElementSetAttributeNodeNS:
         return "'Element.setAttributeNodeNS' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
+
+    case NodeIteratorDetach:
+        return "'NodeIterator.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-nodeiterator-detach).";
+
+    case AttrNodeValue:
+        return "'Attr.nodeValue' is deprecated. Please use 'value' instead.";
+
+    case AttrTextContent:
+        return "'Attr.textContent' is deprecated. Please use 'value' instead.";
+
+    case NodeIteratorExpandEntityReferences:
+        return "'NodeIterator.expandEntityReferences' is deprecated and has been removed from DOM. It always returns false.";
+
+    case TreeWalkerExpandEntityReferences:
+        return "'TreeWalker.expandEntityReferences' is deprecated and has been removed from DOM. It always returns false.";
+
+    case RangeDetach:
+        return "'Range.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-range-detach).";
+
+    case DocumentImportNodeOptionalArgument:
+        return "The behavior of importNode() with no boolean argument is about to change from doing a deep clone to doing a shallow clone.  "
+            "Make sure to pass an explicit boolean argument to keep your current behavior.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

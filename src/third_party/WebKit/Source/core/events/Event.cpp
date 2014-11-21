@@ -25,6 +25,7 @@
 
 #include "core/dom/StaticNodeList.h"
 #include "core/events/EventTarget.h"
+#include "core/frame/UseCounter.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -99,6 +100,25 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
     m_cancelable = cancelableArg;
+}
+
+bool Event::legacyReturnValue(ExecutionContext* executionContext) const
+{
+    bool returnValue = !defaultPrevented();
+    if (returnValue)
+        UseCounter::count(executionContext, UseCounter::EventGetReturnValueTrue);
+    else
+        UseCounter::count(executionContext, UseCounter::EventGetReturnValueFalse);
+    return returnValue;
+}
+
+void Event::setLegacyReturnValue(ExecutionContext* executionContext, bool returnValue)
+{
+    if (returnValue)
+        UseCounter::count(executionContext, UseCounter::EventSetReturnValueTrue);
+    else
+        UseCounter::count(executionContext, UseCounter::EventSetReturnValueFalse);
+    setDefaultPrevented(!returnValue);
 }
 
 const AtomicString& Event::interfaceName() const
@@ -180,7 +200,7 @@ void Event::receivedTarget()
 {
 }
 
-void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
+void Event::setUnderlyingEvent(PassRefPtrWillBeRawPtr<Event> ue)
 {
     // Prohibit creation of a cycle -- just do nothing in that case.
     for (Event* e = ue.get(); e; e = e->underlyingEvent())
@@ -192,7 +212,7 @@ void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
 EventPath& Event::ensureEventPath()
 {
     if (!m_eventPath)
-        m_eventPath = adoptPtr(new EventPath(this));
+        m_eventPath = adoptPtrWillBeNoop(new EventPath(this));
     return *m_eventPath;
 }
 
@@ -207,14 +227,16 @@ PassRefPtr<NodeList> Event::path() const
     size_t eventPathSize = m_eventPath->size();
     for (size_t i = 0; i < eventPathSize; ++i) {
         if (node == (*m_eventPath)[i].node()) {
-            return (*m_eventPath)[i].treeScopeEventContext()->ensureEventPath(*m_eventPath);
+            return (*m_eventPath)[i].treeScopeEventContext().ensureEventPath(*m_eventPath);
         }
     }
     return StaticNodeList::createEmpty();
 }
 
-void Event::trace(Visitor*)
+void Event::trace(Visitor* visitor)
 {
+    visitor->trace(m_underlyingEvent);
+    visitor->trace(m_eventPath);
 }
 
 } // namespace WebCore

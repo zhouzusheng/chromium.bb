@@ -108,6 +108,8 @@ public:
     void remove(AbstractInlineTextBox*);
     void remove(AXID);
 
+    void clearWeakMembers(Visitor*);
+
     void detachWrapper(AXObject*);
     void attachWrapper(AXObject*);
     void childrenChanged(Node*);
@@ -139,6 +141,8 @@ public:
     void handleAttributeChanged(const QualifiedName& attrName, Element*);
     void recomputeIsIgnored(RenderObject* renderer);
 
+    void inlineTextBoxesUpdated(RenderObject* renderer);
+
     static void enableAccessibility() { gAccessibilityEnabled = true; }
     static bool accessibilityEnabled() { return gAccessibilityEnabled; }
     static void setInlineTextBoxAccessibility(bool flag) { gInlineTextBoxAccessibility = flag; }
@@ -153,10 +157,6 @@ public:
 
     AXID platformGenerateAXID() const;
     AXObject* objectFromAXID(AXID id) const { return m_objects.get(id); }
-
-    // Text marker utilities.
-    void textMarkerDataForVisiblePosition(TextMarkerData&, const VisiblePosition&);
-    VisiblePosition visiblePositionForTextMarkerData(TextMarkerData&);
 
     enum AXNotification {
         AXActiveDescendantChanged,
@@ -194,9 +194,6 @@ public:
     void postNotification(AXObject*, Document*, AXNotification, bool postToElement, PostType = PostAsynchronously);
 
     bool nodeHasRole(Node*, const AtomicString& role);
-
-    void startCachingComputedObjectAttributesUntilTreeMutates();
-    void stopCachingComputedObjectAttributes();
 
     AXComputedObjectAttributeCache* computedObjectAttributeCache() { return m_computedObjectAttributeCache.get(); }
 

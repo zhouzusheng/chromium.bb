@@ -27,7 +27,7 @@
 #define File_h
 
 #include "core/fileapi/Blob.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -61,6 +61,10 @@ public:
     static PassRefPtrWillBeRawPtr<File> create(const String& path, const String& name, const String& relativePath, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
     {
         return adoptRefWillBeNoop(new File(path, name, relativePath, hasSnaphotData, size, lastModified, blobDataHandle));
+    }
+    static PassRefPtrWillBeRawPtr<File> create(const String& path, const String& name, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
+    {
+        return adoptRefWillBeNoop(new File(path, name, String(), true, size, lastModified, blobDataHandle));
     }
 
     static PassRefPtrWillBeRawPtr<File> createWithRelativePath(const String& path, const String& relativePath);

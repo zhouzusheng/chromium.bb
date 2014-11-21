@@ -30,10 +30,10 @@
 
 [
     RuntimeEnabled=EncodingAPI,
-    GlobalContext=Window&WorkerGlobalScope,
+    Exposed=Window&Worker,
     Constructor([Default=NullString] optional DOMString label, optional Dictionary options),
     RaisesException=Constructor,
-    WillBeGarbageCollected
+    GarbageCollected
 ] interface TextDecoder {
     readonly attribute DOMString encoding;
     [RaisesException] DOMString decode(optional ArrayBufferView input, optional Dictionary options);

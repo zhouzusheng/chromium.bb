@@ -46,7 +46,7 @@
 {% set attribute_configuration_list = attribute_configuration_list
                                     + [on_prototype] %}
 {% endif %}
-{{'{'}}{{attribute_configuration_list|join(', ')}}{{'}'}}
+{{'{'}}{{attribute_configuration_list | join(', ')}}{{'}'}}
 {%- endmacro %}
 
 
@@ -94,7 +94,8 @@ static void {{cpp_class}}ReplaceableAttributeSetter(v8::Local<v8::String> name, 
         return;
     }
     {% endif %}
-    info.This()->ForceSet(name, v8Value);
+    if (info.This()->IsObject())
+        v8::Handle<v8::Object>::Cast(info.This())->ForceSet(name, v8Value);
 }
 
 {# FIXME: rename to ForceSetAttributeOnThisCallback, since also used for Constructors #}
@@ -139,7 +140,7 @@ static void indexedPropertyGetter(uint32_t index, const v8::PropertyCallbackInfo
     {% set getter_name = getter.name or 'anonymousIndexedGetter' %}
     {% set getter_arguments = ['index', 'exceptionState']
            if getter.is_raises_exception else ['index'] %}
-    {{getter.cpp_type}} result = impl->{{getter_name}}({{getter_arguments|join(', ')}});
+    {{getter.cpp_type}} result = impl->{{getter_name}}({{getter_arguments | join(', ')}});
     {% if getter.is_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
@@ -183,7 +184,7 @@ static void indexedPropertySetter(uint32_t index, v8::Local<v8::Value> v8Value, 
     {% if setter.has_exception_state %}
     ExceptionState exceptionState(ExceptionState::IndexedSetterContext, "{{interface_name}}", info.Holder(), info.GetIsolate());
     {% endif %}
-    {% if setter.has_strict_type_checking %}
+    {% if setter.has_type_checking_interface %}
     {# Type checking for interface types (if interface not implemented, throw
        TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
     if (!isUndefinedOrNull(v8Value) && !V8{{setter.idl_type}}::hasInstance(v8Value, info.GetIsolate())) {
@@ -195,7 +196,7 @@ static void indexedPropertySetter(uint32_t index, v8::Local<v8::Value> v8Value, 
     {% set setter_name = setter.name or 'anonymousIndexedSetter' %}
     {% set setter_arguments = ['index', 'propertyValue', 'exceptionState']
            if setter.is_raises_exception else ['index', 'propertyValue'] %}
-    bool result = impl->{{setter_name}}({{setter_arguments|join(', ')}});
+    bool result = impl->{{setter_name}}({{setter_arguments | join(', ')}});
     {% if setter.is_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
@@ -241,7 +242,7 @@ static void indexedPropertyDeleter(uint32_t index, const v8::PropertyCallbackInf
     {% set deleter_name = deleter.name or 'anonymousIndexedDeleter' %}
     {% set deleter_arguments = ['index', 'exceptionState']
            if deleter.is_raises_exception else ['index'] %}
-    DeleteResult result = impl->{{deleter_name}}({{deleter_arguments|join(', ')}});
+    DeleteResult result = impl->{{deleter_name}}({{deleter_arguments | join(', ')}});
     {% if deleter.is_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
@@ -345,7 +346,7 @@ static void namedPropertySetter(v8::Local<v8::String> name, v8::Local<v8::Value>
     {% endif %}
     {{cpp_class}}* impl = {{v8_class}}::toNative(info.Holder());
     {# v8_value_to_local_cpp_value('DOMString', 'name', 'propertyName') #}
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, propertyName, name);
+    TOSTRING_VOID(V8StringResource<>, propertyName, name);
     {{setter.v8_value_to_local_cpp_value}};
     {% if setter.has_exception_state %}
     v8::String::Utf8Value namedProperty(name);
@@ -356,7 +357,7 @@ static void namedPropertySetter(v8::Local<v8::String> name, v8::Local<v8::Value>
            ['propertyName', 'propertyValue', 'exceptionState']
            if setter.is_raises_exception else
            ['propertyName', 'propertyValue'] %}
-    bool result = impl->{{setter_name}}({{setter_arguments|join(', ')}});
+    bool result = impl->{{setter_name}}({{setter_arguments | join(', ')}});
     {% if setter.is_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
@@ -447,7 +448,7 @@ static void namedPropertyDeleter(v8::Local<v8::String> name, const v8::PropertyC
     {% set deleter_name = deleter.name or 'anonymousNamedDeleter' %}
     {% set deleter_arguments = ['propertyName', 'exceptionState']
            if deleter.is_raises_exception else ['propertyName'] %}
-    DeleteResult result = impl->{{deleter_name}}({{deleter_arguments|join(', ')}});
+    DeleteResult result = impl->{{deleter_name}}({{deleter_arguments | join(', ')}});
     {% if deleter.is_raises_exception %}
     if (exceptionState.throwIfNeeded())
         return;
@@ -538,7 +539,8 @@ static void {{cpp_class}}OriginSafeMethodSetter(v8::Local<v8::String> name, v8::
         return;
     }
 
-    V8HiddenValue::setHiddenValue(isolate, info.This(), name, v8Value);
+    {# The findInstanceInPrototypeChain() call above only returns a non-empty handle if info.This() is an Object. #}
+    V8HiddenValue::setHiddenValue(isolate, v8::Handle<v8::Object>::Cast(info.This()), name, v8Value);
 }
 
 static void {{cpp_class}}OriginSafeMethodSetterCallback(v8::Local<v8::String> name, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info)
@@ -560,7 +562,7 @@ static void {{cpp_class}}OriginSafeMethodSetterCallback(v8::Local<v8::String> na
                               if is_active_dom_object else '0' %}
 {% set to_event_target = '%s::toEventTarget' % v8_class
                          if is_event_target else '0' %}
-const WrapperTypeInfo {{v8_class}}Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, {{v8_class}}Constructor::domTemplate, {{v8_class}}::derefObject, {{to_active_dom_object}}, {{to_event_target}}, 0, {{v8_class}}::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, false };
+const WrapperTypeInfo {{v8_class}}Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, {{v8_class}}Constructor::domTemplate, {{v8_class}}::derefObject, {{to_active_dom_object}}, {{to_event_target}}, 0, {{v8_class}}::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
 
 {{named_constructor_callback(named_constructor)}}
 v8::Handle<v8::FunctionTemplate> {{v8_class}}Constructor::domTemplate(v8::Isolate* isolate)
@@ -586,7 +588,7 @@ v8::Handle<v8::FunctionTemplate> {{v8_class}}Constructor::domTemplate(v8::Isolat
 
 {##############################################################################}
 {% block overloaded_constructor %}
-{% if constructors|length > 1 %}
+{% if constructors | length > 1 %}
 static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     {% for constructor in constructors %}
@@ -626,13 +628,13 @@ static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
         return;
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, info[0]);
+    TOSTRING_VOID(V8StringResource<>, type, info[0]);
     {% for attribute in any_type_attributes %}
     v8::Local<v8::Value> {{attribute.name}};
     {% endfor %}
     {{cpp_class}}Init eventInit;
     if (info.Length() >= 2) {
-        V8TRYCATCH_VOID(Dictionary, options, Dictionary(info[1], isolate));
+        TONATIVE_VOID(Dictionary, options, Dictionary(info[1], isolate));
         if (!initialize{{cpp_class}}(eventInit, options, exceptionState, info)) {
             exceptionState.throwIfNeeded();
             return;
@@ -662,7 +664,7 @@ static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
           thus passing it around would cause leakage.
        2) Errors cannot be cloned (or serialized):
        http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#safe-passing-of-structured-data #}
-    if (DOMWrapperWorld::current(isolate)->isIsolatedWorld()) {
+    if (DOMWrapperWorld::current(isolate).isIsolatedWorld()) {
         {% for attribute in any_type_attributes %}
         if (!{{attribute.name}}.IsEmpty())
             event->setSerialized{{attribute.name | blink_capitalize}}(SerializedScriptValue::createAndSwallowExceptions({{attribute.name}}, isolate));
@@ -824,7 +826,7 @@ void {{v8_class}}::constructorCallback(const v8::FunctionCallbackInfo<v8::Value>
         return;
     }
 
-    if (ConstructorMode::current() == ConstructorMode::WrapExistingObject) {
+    if (ConstructorMode::current(info.GetIsolate()) == ConstructorMode::WrapExistingObject) {
         v8SetReturnValue(info, info.Holder());
         return;
     }
@@ -898,8 +900,8 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     functionTemplate->SetCallHandler({{v8_class}}::constructorCallback);
     functionTemplate->SetLength({{interface_length}});
     {% endif %}
-    v8::Local<v8::ObjectTemplate> ALLOW_UNUSED instanceTemplate = functionTemplate->InstanceTemplate();
-    v8::Local<v8::ObjectTemplate> ALLOW_UNUSED prototypeTemplate = functionTemplate->PrototypeTemplate();
+    v8::Local<v8::ObjectTemplate> instanceTemplate ALLOW_UNUSED = functionTemplate->InstanceTemplate();
+    v8::Local<v8::ObjectTemplate> prototypeTemplate ALLOW_UNUSED = functionTemplate->PrototypeTemplate();
     {% if is_check_security and interface_name != 'Window' %}
     instanceTemplate->SetAccessCheckCallbacks({{cpp_class}}V8Internal::namedSecurityCheck, {{cpp_class}}V8Internal::indexedSecurityCheck, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&{{v8_class}}::wrapperTypeInfo)));
     {% endif %}
@@ -975,7 +977,7 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {% filter conditional(method.conditional_string) %}
     {% if method.is_do_not_check_security %}
     {% if method.is_per_world_bindings %}
-    if (DOMWrapperWorld::current(isolate)->isMainWorld()) {
+    if (DOMWrapperWorld::current(isolate).isMainWorld()) {
         {{install_do_not_check_security_signature(method, 'ForMainWorld')}}
     } else {
         {{install_do_not_check_security_signature(method)}}
@@ -985,7 +987,7 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {% endif %}
     {% else %}{# is_do_not_check_security #}
     {% if method.is_per_world_bindings %}
-    if (DOMWrapperWorld::current(isolate)->isMainWorld()) {
+    if (DOMWrapperWorld::current(isolate).isMainWorld()) {
         {% filter runtime_enabled(method.runtime_enabled_function) %}
         {{install_custom_signature(method, 'ForMainWorld')}}
         {% endfilter %}
@@ -1027,7 +1029,7 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {% endif %}
 
     // Custom toString template
-    functionTemplate->Set(v8AtomicString(isolate, "toString"), V8PerIsolateData::current()->toStringTemplate());
+    functionTemplate->Set(v8AtomicString(isolate, "toString"), V8PerIsolateData::from(isolate)->toStringTemplate());
 }
 
 {% endblock %}
@@ -1203,7 +1205,7 @@ EventTarget* {{v8_class}}::toEventTarget(v8::Handle<v8::Object> object)
 {% if interface_name == 'Window' %}
 v8::Handle<v8::ObjectTemplate> V8Window::getShadowObjectTemplate(v8::Isolate* isolate)
 {
-    if (DOMWrapperWorld::current(isolate)->isMainWorld()) {
+    if (DOMWrapperWorld::current(isolate).isMainWorld()) {
         DEFINE_STATIC_LOCAL(v8::Persistent<v8::ObjectTemplate>, V8WindowShadowObjectCacheForMainWorld, ());
         if (V8WindowShadowObjectCacheForMainWorld.IsEmpty()) {
             TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
@@ -1244,8 +1246,8 @@ v8::Handle<v8::Object> wrap({{cpp_class}}* impl, v8::Handle<v8::Object> creation
     {% if is_document %}
     if (wrapper.IsEmpty())
         return wrapper;
-    DOMWrapperWorld* world = DOMWrapperWorld::current(isolate);
-    if (world->isMainWorld()) {
+    DOMWrapperWorld& world = DOMWrapperWorld::current(isolate);
+    if (world.isMainWorld()) {
         if (LocalFrame* frame = impl->frame())
             frame->script().windowShell(world)->updateDocumentWrapper(wrapper);
     }
@@ -1260,12 +1262,12 @@ v8::Handle<v8::Object> wrap({{cpp_class}}* impl, v8::Handle<v8::Object> creation
 {##############################################################################}
 {% block create_wrapper %}
 {% if not has_custom_to_v8 %}
-v8::Handle<v8::Object> {{v8_class}}::createWrapper({{pass_ref_ptr}}<{{cpp_class}}> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+v8::Handle<v8::Object> {{v8_class}}::createWrapper({{pass_cpp_type}} impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl);
     ASSERT(!DOMDataStore::containsWrapper<{{v8_class}}>(impl.get(), isolate));
     if (ScriptWrappable::wrapperCanBeStoredInObject(impl.get())) {
-        const WrapperTypeInfo* actualInfo = ScriptWrappable::getTypeInfoFromObject(impl.get());
+        const WrapperTypeInfo* actualInfo = ScriptWrappable::fromObject(impl.get())->typeInfo();
         // Might be a XXXConstructor::wrapperTypeInfo instead of an XXX::wrapperTypeInfo. These will both have
         // the same object de-ref functions, though, so use that as the basis of the check.
         RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(actualInfo->derefObjectFunction == wrapperTypeInfo.derefObjectFunction);
@@ -1308,11 +1310,13 @@ v8::Handle<v8::Object> {{v8_class}}::createWrapper({{pass_ref_ptr}}<{{cpp_class}
 {% block deref_object_and_to_v8_no_inline %}
 void {{v8_class}}::derefObject(void* object)
 {
-{% set oilpan_conditional = '!ENABLE(OILPAN)' if is_will_be_garbage_collected
-                                              else '' %}
-{% filter conditional(oilpan_conditional) %}
+{% if gc_type == 'RefCountedObject' %}
+    fromInternalPointer(object)->deref();
+{% elif gc_type == 'WillBeGarbageCollectedObject' %}
+{% filter conditional('!ENABLE(OILPAN)') %}
     fromInternalPointer(object)->deref();
 {% endfilter %}
+{% endif %}
 }
 
 template<>

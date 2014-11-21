@@ -148,9 +148,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLint max_vertex_uniform_vectors;
       GLint num_compressed_texture_formats;
       GLint num_shader_binary_formats;
-#if defined(OS_CHROMEOS)
       GLint bind_generates_resource_chromium;
-#endif
     };
     IntState int_state;
 
@@ -224,7 +222,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       const base::Closure& swap_buffers_complete_callback)
           OVERRIDE;
   virtual void ScheduleOverlayPlane(int plane_z_order,
-                                    unsigned plane_transform,
+                                    gfx::OverlayTransform plane_transform,
                                     unsigned overlay_texture_id,
                                     const gfx::Rect& display_bounds,
                                     const gfx::RectF& uv_rect) OVERRIDE;
@@ -545,10 +543,12 @@ class GLES2_IMPL_EXPORT GLES2Implementation
       GLenum target, GLintptr offset, GLsizeiptr size, const void* data,
       ScopedTransferBufferPtr* buffer);
 
-  GLuint CreateImageCHROMIUMHelper(
-      GLsizei width, GLsizei height, GLenum internalformat);
+  GLuint CreateImageCHROMIUMHelper(GLsizei width,
+                                   GLsizei height,
+                                   GLenum internalformat,
+                                   GLenum usage);
   void DestroyImageCHROMIUMHelper(GLuint image_id);
-  void* MapImageCHROMIUMHelper(GLuint image_id, GLenum access);
+  void* MapImageCHROMIUMHelper(GLuint image_id);
   void UnmapImageCHROMIUMHelper(GLuint image_id);
   void GetImageParameterivCHROMIUMHelper(
       GLuint image_id, GLenum pname, GLint* params);
@@ -598,6 +598,46 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void RunIfContextNotLost(const base::Closure& callback);
 
   void OnSwapBuffersComplete();
+
+  // Validate if an offset is valid, i.e., non-negative and fit into 32-bit.
+  // If not, generate an approriate error, and return false.
+  bool ValidateOffset(const char* func, GLintptr offset);
+
+  // Validate if a size is valid, i.e., non-negative and fit into 32-bit.
+  // If not, generate an approriate error, and return false.
+  bool ValidateSize(const char* func, GLsizeiptr offset);
+
+  // Remove the transfer buffer from the buffer tracker. For buffers used
+  // asynchronously the memory is free:ed if the upload has completed. For
+  // other buffers, the memory is either free:ed immediately or free:ed pending
+  // a token.
+  void RemoveTransferBuffer(BufferTracker::Buffer* buffer);
+
+  // Returns true if the async upload token has passed.
+  //
+  // NOTE: This will detect wrapped async tokens by checking if the most
+  // significant  bit of async token to check is 1 but the last read is 0, i.e.
+  // the uint32 wrapped.
+  bool HasAsyncUploadTokenPassed(uint32 token) const {
+    return async_upload_sync_->HasAsyncUploadTokenPassed(token);
+  }
+
+  // Get the next async upload token.
+  uint32 NextAsyncUploadToken();
+
+  // Ensure that the shared memory used for synchronizing async upload tokens
+  // has been mapped.
+  //
+  // Returns false on error, true on success.
+  bool EnsureAsyncUploadSync();
+
+  // Checks the last read asynchronously upload token and frees any unmanaged
+  // transfer buffer that has its async token passed.
+  void PollAsyncUploads();
+
+  // Free every async upload buffer. If some async upload buffer is still in use
+  // wait for them to finish before freeing.
+  void FreeAllAsyncUploadBuffers();
 
   bool GetBoundPixelTransferBuffer(
       GLenum target, const char* function_name, GLuint* buffer_id);
@@ -671,6 +711,18 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   GLuint bound_pixel_pack_transfer_buffer_id_;
   GLuint bound_pixel_unpack_transfer_buffer_id_;
 
+  // The current asynchronous pixel buffer upload token.
+  uint32 async_upload_token_;
+
+  // The shared memory used for synchronizing asynchronous upload tokens.
+  AsyncUploadSync* async_upload_sync_;
+  int32 async_upload_sync_shm_id_;
+  unsigned int async_upload_sync_shm_offset_;
+
+  // Unmanaged pixel transfer buffer memory pending asynchronous upload token.
+  typedef std::list<std::pair<void*, uint32> > DetachedAsyncUploadMemoryList;
+  DetachedAsyncUploadMemoryList detached_async_upload_memory_;
+
   // Client side management for vertex array objects. Needed to correctly
   // track client side arrays.
   scoped_ptr<VertexArrayObjectManager> vertex_array_object_manager_;
@@ -725,7 +777,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   Capabilities capabilities_;
 
-  bool use_echo_for_swap_ack_;
   base::Closure swap_buffers_complete_callback_;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;

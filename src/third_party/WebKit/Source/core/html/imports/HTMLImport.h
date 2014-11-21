@@ -37,11 +37,10 @@
 
 namespace WebCore {
 
-class CustomElementMicrotaskImportStep;
 class Document;
 class LocalFrame;
 class HTMLImportChild;
-class HTMLImportRoot;
+class HTMLImportLoader;
 class HTMLImportsController;
 class KURL;
 
@@ -53,8 +52,7 @@ class KURL;
 // HTML Imports form a tree:
 //
 // * The root of the tree is HTMLImportsController, which is owned by the master
-//   document as a DocumentSupplement. HTMLImportsController has an abstract class called
-//   HTMLImportRoot to deal with cycler dependency.
+//   document as a DocumentSupplement.
 //
 // * The non-root nodes are HTMLImportChild, which is owned by LinkStyle, that is owned by HTMLLinkElement.
 //   LinkStyle is wired into HTMLImportChild by implementing HTMLImportChildClient interface
@@ -67,10 +65,10 @@ class KURL;
 // One assumption is that the tree is append-only and nodes are never inserted in the middle of the tree nor removed.
 //
 //
-//    HTMLImport <|- HTMLImportRoot <|- HTMLImportsController <- Document
-//                                      *
-//                                      |
-//               <|-                    HTMLImportChild <- LinkStyle <- HTMLLinkElement
+//    HTMLImport <|- HTMLImportsController <- Document
+//                   *
+//                   |
+//               <|- HTMLImportChild <- LinkStyle <- HTMLLinkElement
 //
 //
 // # Import Sharing and HTMLImportLoader
@@ -105,29 +103,22 @@ public:
         Async = 1
     };
 
-    static bool isMaster(Document*);
-
     virtual ~HTMLImport() { }
 
-    LocalFrame* frame();
-    Document* master();
-    HTMLImportsController* controller();
+    HTMLImport* root();
+    bool precedes(HTMLImport*);
     bool isRoot() const { return !isChild(); }
     bool isSync() const { return SyncMode(m_sync) == Sync; }
+    bool formsCycle() const;
     const HTMLImportState& state() const { return m_state; }
 
-    void appendChild(HTMLImport*);
+    void appendImport(HTMLImport*);
 
     virtual bool isChild() const { return false; }
-    virtual HTMLImportRoot* root() = 0;
     virtual Document* document() const = 0;
-    virtual void wasDetachedFromDocument() = 0;
-    virtual void didFinishParsing() { };
-    virtual void didRemoveAllPendingStylesheet() { }
     virtual bool isDone() const = 0; // FIXME: Should be renamed to haveFinishedLoading()
-    virtual bool hasLoader() const = 0;
-    virtual bool ownsLoader() const { return false; }
-    virtual CustomElementMicrotaskImportStep* customElementMicrotaskStep() const { return 0; }
+    virtual HTMLImportLoader* loader() const { return 0; }
+    virtual void stateWillChange() { }
     virtual void stateDidChange();
 
 protected:
@@ -137,7 +128,6 @@ protected:
         : m_sync(sync)
     { }
 
-    void stateWillChange();
     static void recalcTreeState(HTMLImport* root);
 
 #if !defined(NDEBUG)
@@ -149,16 +139,6 @@ protected:
 private:
     HTMLImportState m_state;
     unsigned m_sync : 1;
-};
-
-// An abstract class to decouple its sublcass HTMLImportsController.
-class HTMLImportRoot : public HTMLImport {
-public:
-    HTMLImportRoot() : HTMLImport(Sync) { }
-
-    virtual void scheduleRecalcState() = 0;
-    virtual HTMLImportsController* toController() = 0;
-    virtual HTMLImportChild* findLinkFor(const KURL&, HTMLImport* excluding = 0) const = 0;
 };
 
 } // namespace WebCore

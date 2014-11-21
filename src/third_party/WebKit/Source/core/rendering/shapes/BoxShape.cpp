@@ -42,14 +42,6 @@ LayoutRect BoxShape::shapeMarginLogicalBoundingBox() const
     return static_cast<LayoutRect>(marginBounds);
 }
 
-LayoutRect BoxShape::shapePaddingLogicalBoundingBox() const
-{
-    FloatRect paddingBounds(m_bounds.rect());
-    if (shapePadding() > 0)
-        paddingBounds.inflate(-shapePadding());
-    return static_cast<LayoutRect>(paddingBounds);
-}
-
 FloatRoundedRect BoxShape::shapeMarginBounds() const
 {
     FloatRoundedRect marginBounds(m_bounds);
@@ -58,16 +50,6 @@ FloatRoundedRect BoxShape::shapeMarginBounds() const
         marginBounds.expandRadii(shapeMargin());
     }
     return marginBounds;
-}
-
-FloatRoundedRect BoxShape::shapePaddingBounds() const
-{
-    FloatRoundedRect paddingBounds(m_bounds);
-    if (shapePadding() > 0) {
-        paddingBounds.inflate(-shapePadding());
-        paddingBounds.expandRadii(-shapePadding());
-    }
-    return paddingBounds;
 }
 
 void BoxShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList& result) const
@@ -88,7 +70,7 @@ void BoxShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHei
     float topCornerMaxY = std::max<float>(marginBounds.topLeftCorner().maxY(), marginBounds.topRightCorner().maxY());
     float bottomCornerMinY = std::min<float>(marginBounds.bottomLeftCorner().y(), marginBounds.bottomRightCorner().y());
 
-    if (y1 <= topCornerMaxY && y2 >= bottomCornerMinY) {
+    if (topCornerMaxY <= bottomCornerMinY && y1 <= topCornerMaxY && y2 >= bottomCornerMinY) {
         result.append(LineSegment(rect.x(), rect.maxX()));
         return;
     }
@@ -97,6 +79,12 @@ void BoxShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHei
     float x2 = rect.x();
     float minXIntercept;
     float maxXIntercept;
+
+    if (y1 <= marginBounds.topLeftCorner().maxY() && y2 >= marginBounds.bottomLeftCorner().y())
+        x1 = rect.x();
+
+    if (y1 <= marginBounds.topRightCorner().maxY() && y2 >= marginBounds.bottomRightCorner().y())
+        x2 = rect.maxX();
 
     if (marginBounds.xInterceptsAtY(y1, minXIntercept, maxXIntercept)) {
         x1 = std::min<float>(x1, minXIntercept);
@@ -112,48 +100,11 @@ void BoxShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHei
     result.append(LineSegment(x1, x2));
 }
 
-void BoxShape::getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList& result) const
+void BoxShape::buildDisplayPaths(DisplayPaths& paths) const
 {
-    const FloatRoundedRect& paddingBounds = shapePaddingBounds();
-    if (paddingBounds.isEmpty())
-        return;
-
-    float y1 = logicalTop.toFloat();
-    float y2 = (logicalTop + logicalHeight).toFloat();
-    const FloatRect& rect = paddingBounds.rect();
-
-    if (y1 < rect.y() || y2 > rect.maxY())
-        return;
-
-    if (!paddingBounds.isRounded()) {
-        result.append(LineSegment(rect.x(), rect.maxX()));
-        return;
-    }
-
-    float x1 = rect.x();
-    float x2 = rect.maxX();
-    float minXIntercept;
-    float maxXIntercept;
-
-    if (paddingBounds.xInterceptsAtY(y1, minXIntercept, maxXIntercept)) {
-        x1 = std::max<float>(x1, minXIntercept);
-        x2 = std::min<float>(x2, maxXIntercept);
-    }
-
-    if (paddingBounds.xInterceptsAtY(y2, minXIntercept, maxXIntercept)) {
-        x1 = std::max<float>(x1, minXIntercept);
-        x2 = std::min<float>(x2, maxXIntercept);
-    }
-
-    result.append(LineSegment(x1, x2));
-}
-
-bool BoxShape::firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const FloatSize&, LayoutUnit& result) const
-{
-    // FIXME: this method is only a stub, https://bugs.webkit.org/show_bug.cgi?id=124606.
-
-    result = minLogicalIntervalTop;
-    return true;
+    paths.shape.addRoundedRect(m_bounds.rect(), m_bounds.radii().topLeft(), m_bounds.radii().topRight(), m_bounds.radii().bottomLeft(), m_bounds.radii().bottomRight());
+    if (shapeMargin())
+        paths.marginShape.addRoundedRect(shapeMarginBounds().rect(), shapeMarginBounds().radii().topLeft(), shapeMarginBounds().radii().topRight(), shapeMarginBounds().radii().bottomLeft(), shapeMarginBounds().radii().bottomRight());
 }
 
 } // namespace WebCore

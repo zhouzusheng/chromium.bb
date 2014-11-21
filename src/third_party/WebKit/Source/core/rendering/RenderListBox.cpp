@@ -48,7 +48,6 @@
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderText.h"
@@ -87,6 +86,7 @@ RenderListBox::RenderListBox(Element* element)
     , m_inAutoscroll(false)
     , m_optionsWidth(0)
     , m_indexOffset(0)
+    , m_listItemCount(0)
 {
     ASSERT(element);
     ASSERT(element->isHTMLElement());
@@ -119,24 +119,36 @@ inline HTMLSelectElement* RenderListBox::selectElement() const
 void RenderListBox::updateFromElement()
 {
     FontCachePurgePreventer fontCachePurgePreventer;
-
     if (m_optionsChanged) {
-        const Vector<HTMLElement*>& listItems = selectElement()->listItems();
-        int size = numItems();
+        const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement()->listItems();
+        int size = static_cast<int>(listItems.size());
 
         float width = 0;
+        m_listItemCount = 0;
         for (int i = 0; i < size; ++i) {
-            HTMLElement* element = listItems[i];
+            const HTMLElement& element = *listItems[i];
+
             String text;
             Font itemFont = style()->font();
-            if (isHTMLOptionElement(*element)) {
-                text = toHTMLOptionElement(*element).textIndentedToRespectGroupLabel();
-            } else if (isHTMLOptGroupElement(*element)) {
-                text = toHTMLOptGroupElement(*element).groupLabelText();
+            if (isHTMLOptionElement(element)) {
+                const HTMLOptionElement& optionElement = toHTMLOptionElement(element);
+                if (optionElement.isDisplayNone())
+                    continue;
+                text = optionElement.textIndentedToRespectGroupLabel();
+                ++m_listItemCount;
+            } else if (isHTMLOptGroupElement(element)) {
+                if (toHTMLOptGroupElement(element).isDisplayNone())
+                    continue;
+                text = toHTMLOptGroupElement(element).groupLabelText();
                 FontDescription d = itemFont.fontDescription();
                 d.setWeight(d.bolderWeight());
                 itemFont = Font(d);
                 itemFont.update(document().styleEngine()->fontSelector());
+                ++m_listItemCount;
+            } else if (isHTMLHRElement(element)) {
+                // HTMLSelect adds it to its list, so we will also add it to match the count.
+                ++m_listItemCount;
+                continue;
             }
 
             if (!text.isEmpty()) {
@@ -177,7 +189,6 @@ void RenderListBox::selectionChanged()
 
 void RenderListBox::layout()
 {
-    LayoutRectRecorder recorder(*this);
     RenderBlockFlow::layout();
 
     if (m_vBar) {
@@ -196,15 +207,22 @@ void RenderListBox::layout()
     }
 }
 
+void RenderListBox::repaintTreeAfterLayout()
+{
+    repaintScrollbarIfNeeded();
+    RenderBox::repaintTreeAfterLayout();
+}
+
 void RenderListBox::scrollToRevealSelection()
 {
     HTMLSelectElement* select = selectElement();
 
     m_scrollToRevealSelectionAfterLayout = false;
 
-    int firstIndex = select->activeSelectionStartListIndex();
-    if (firstIndex >= 0 && !listIndexIsVisible(select->activeSelectionEndListIndex()))
-        scrollToRevealElementAtListIndex(firstIndex);
+    int firstIndex = listIndexToRenderListBoxIndex(select->activeSelectionStartListIndex());
+    int lastIndex = listIndexToRenderListBoxIndex(select->activeSelectionEndListIndex());
+    if (firstIndex >= 0 && !listIndexIsVisible(lastIndex))
+        scrollToRevealElementAtListIndexInternal(firstIndex);
 }
 
 void RenderListBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
@@ -222,20 +240,21 @@ void RenderListBox::computePreferredLogicalWidths()
 
     m_minPreferredLogicalWidth = 0;
     m_maxPreferredLogicalWidth = 0;
+    RenderStyle* styleToUse = style();
 
-    if (style()->width().isFixed() && style()->width().value() > 0)
-        m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = adjustContentBoxLogicalWidthForBoxSizing(style()->width().value());
+    if (styleToUse->width().isFixed() && styleToUse->width().value() > 0)
+        m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = adjustContentBoxLogicalWidthForBoxSizing(styleToUse->width().value());
     else
         computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
 
-    if (style()->minWidth().isFixed() && style()->minWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->minWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->minWidth().value()));
+    if (styleToUse->minWidth().isFixed() && styleToUse->minWidth().value() > 0) {
+        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
+        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->minWidth().value()));
     }
 
-    if (style()->maxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->maxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->maxWidth().value()));
+    if (styleToUse->maxWidth().isFixed()) {
+        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
+        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->maxWidth().value()));
     }
 
     LayoutUnit toAdd = borderAndPaddingWidth();
@@ -262,7 +281,7 @@ int RenderListBox::numVisibleItems() const
 
 int RenderListBox::numItems() const
 {
-    return selectElement()->listItems().size();
+    return m_listItemCount;
 }
 
 LayoutUnit RenderListBox::listHeight() const
@@ -286,7 +305,7 @@ int RenderListBox::baselinePosition(FontBaseline baselineType, bool firstLine, L
     return RenderBox::baselinePosition(baselineType, firstLine, lineDirection, linePositionMode) - baselineAdjustment;
 }
 
-LayoutRect RenderListBox::itemBoundingBoxRect(const LayoutPoint& additionalOffset, int index)
+LayoutRect RenderListBox::itemBoundingBoxRectInternal(const LayoutPoint& additionalOffset, int index) const
 {
     // For RTL, items start after the left-side vertical scrollbar.
     int scrollbarOffset = style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft() ? verticalScrollbarWidth() : 0;
@@ -348,17 +367,17 @@ void RenderListBox::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint&
     // Focus the last selected item.
     int selectedItem = select->activeSelectionEndListIndex();
     if (selectedItem >= 0) {
-        rects.append(pixelSnappedIntRect(itemBoundingBoxRect(additionalOffset, selectedItem)));
+        rects.append(pixelSnappedIntRect(itemBoundingBoxRectInternal(additionalOffset, selectedItem)));
         return;
     }
 
     // No selected items, find the first non-disabled item.
     int size = numItems();
-    const Vector<HTMLElement*>& listItems = select->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = select->listItems();
     for (int i = 0; i < size; ++i) {
-        HTMLElement* element = listItems[i];
+        HTMLElement* element = listItems[renderListBoxIndexToListIndex(i)];
         if (isHTMLOptionElement(*element) && !element->isDisabledFormControl()) {
-            rects.append(pixelSnappedIntRect(itemBoundingBoxRect(additionalOffset, i)));
+            rects.append(pixelSnappedIntRect(itemBoundingBoxRectInternal(additionalOffset, i)));
             return;
         }
     }
@@ -412,8 +431,8 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
 
     HTMLSelectElement* select = selectElement();
 
-    const Vector<HTMLElement*>& listItems = select->listItems();
-    HTMLElement* element = listItems[listIndex];
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = select->listItems();
+    HTMLElement* element = listItems[renderListBoxIndexToListIndex(listIndex)];
 
     RenderStyle* itemStyle = element->renderStyle();
     if (!itemStyle)
@@ -443,7 +462,7 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
 
     TextRun textRun(itemText, 0, 0, TextRun::AllowTrailingExpansion, itemStyle->direction(), isOverride(itemStyle->unicodeBidi()), true, TextRun::NoRounding);
     Font itemFont = style()->font();
-    LayoutRect r = itemBoundingBoxRect(paintOffset, listIndex);
+    LayoutRect r = itemBoundingBoxRectInternal(paintOffset, listIndex);
     r.move(itemOffsetForAlignment(textRun, itemStyle, itemFont, r));
 
     if (isHTMLOptGroupElement(*element)) {
@@ -461,8 +480,8 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
 
 void RenderListBox::paintItemBackground(PaintInfo& paintInfo, const LayoutPoint& paintOffset, int listIndex)
 {
-    const Vector<HTMLElement*>& listItems = selectElement()->listItems();
-    HTMLElement* element = listItems[listIndex];
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement()->listItems();
+    HTMLElement* element = listItems[renderListBoxIndexToListIndex(listIndex)];
 
     Color backColor;
     if (isHTMLOptionElement(*element) && ((toHTMLOptionElement(*element).selected() && selectElement()->suggestedIndex() < 0) || listIndex == selectElement()->suggestedIndex())) {
@@ -476,7 +495,7 @@ void RenderListBox::paintItemBackground(PaintInfo& paintInfo, const LayoutPoint&
 
     // Draw the background for this list box item
     if (!element->renderStyle() || element->renderStyle()->visibility() != HIDDEN) {
-        LayoutRect itemRect = itemBoundingBoxRect(paintOffset, listIndex);
+        LayoutRect itemRect = itemBoundingBoxRectInternal(paintOffset, listIndex);
         itemRect.intersect(controlClipRect(paintOffset));
         paintInfo.context->fillRect(pixelSnappedIntRect(itemRect), backColor);
     }
@@ -499,7 +518,7 @@ bool RenderListBox::isPointInOverflowControl(HitTestResult& result, const Layout
     return false;
 }
 
-int RenderListBox::listIndexAtOffset(const LayoutSize& offset)
+int RenderListBox::listIndexAtOffset(const LayoutSize& offset) const
 {
     if (!numItems())
         return -1;
@@ -515,7 +534,7 @@ int RenderListBox::listIndexAtOffset(const LayoutSize& offset)
         return -1;
 
     int newOffset = (offset.height() - borderTop() - paddingTop()) / itemHeight() + m_indexOffset;
-    return newOffset < numItems() ? newOffset : -1;
+    return newOffset < numItems() ? renderListBoxIndexToListIndex(newOffset) : -1;
 }
 
 void RenderListBox::panScroll(const IntPoint& panStartMousePosition)
@@ -572,10 +591,10 @@ int RenderListBox::scrollToward(const IntPoint& destination)
     int rows = numVisibleItems();
     int offset = m_indexOffset;
 
-    if (positionOffset.height() < borderTop() + paddingTop() && scrollToRevealElementAtListIndex(offset - 1))
+    if (positionOffset.height() < borderTop() + paddingTop() && scrollToRevealElementAtListIndexInternal(offset - 1))
         return offset - 1;
 
-    if (positionOffset.height() > height() - paddingBottom() - borderBottom() && scrollToRevealElementAtListIndex(offset + rows))
+    if (positionOffset.height() > height() - paddingBottom() - borderBottom() && scrollToRevealElementAtListIndexInternal(offset + rows))
         return offset + rows - 1;
 
     return listIndexAtOffset(positionOffset);
@@ -594,9 +613,9 @@ void RenderListBox::autoscroll(const IntPoint&)
         m_inAutoscroll = true;
 
         if (!select->multiple())
-            select->setActiveSelectionAnchorIndex(endIndex);
+            select->setActiveSelectionAnchorIndex(renderListBoxIndexToListIndex(endIndex));
 
-        select->setActiveSelectionEndIndex(endIndex);
+        select->setActiveSelectionEndIndex(renderListBoxIndexToListIndex(endIndex));
         select->updateListBoxSelection(!select->multiple());
         m_inAutoscroll = false;
     }
@@ -610,7 +629,7 @@ void RenderListBox::stopAutoscroll()
     selectElement()->listBoxOnChange();
 }
 
-bool RenderListBox::scrollToRevealElementAtListIndex(int index)
+bool RenderListBox::scrollToRevealElementAtListIndexInternal(int index)
 {
     if (index < 0 || index >= numItems() || listIndexIsVisible(index))
         return false;
@@ -626,7 +645,7 @@ bool RenderListBox::scrollToRevealElementAtListIndex(int index)
     return true;
 }
 
-bool RenderListBox::listIndexIsVisible(int index)
+bool RenderListBox::listIndexIsVisible(int index) const
 {
     return index >= m_indexOffset && index < m_indexOffset + numVisibleItems();
 }
@@ -717,13 +736,13 @@ bool RenderListBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
 {
     if (!RenderBlockFlow::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
         return false;
-    const Vector<HTMLElement*>& listItems = selectElement()->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement()->listItems();
     int size = numItems();
     LayoutPoint adjustedLocation = accumulatedOffset + location();
 
     for (int i = 0; i < size; ++i) {
-        if (itemBoundingBoxRect(adjustedLocation, i).contains(locationInContainer.point())) {
-            if (Element* node = listItems[i]) {
+        if (itemBoundingBoxRectInternal(adjustedLocation, i).contains(locationInContainer.point())) {
+            if (Element* node = listItems[renderListBoxIndexToListIndex(i)]) {
                 result.setInnerNode(node);
                 if (!result.innerNonSharedNode())
                     result.setInnerNonSharedNode(node);
@@ -788,7 +807,7 @@ IntRect RenderListBox::convertFromScrollbarToContainingView(const Scrollbar* scr
     int scrollbarTop = borderTop();
     rect.move(scrollbarLeft(), scrollbarTop);
 
-    return view->frameView()->convertFromRenderer(this, rect);
+    return view->frameView()->convertFromRenderer(*this, rect);
 }
 
 IntRect RenderListBox::convertFromContainingViewToScrollbar(const Scrollbar* scrollbar, const IntRect& parentRect) const
@@ -797,7 +816,7 @@ IntRect RenderListBox::convertFromContainingViewToScrollbar(const Scrollbar* scr
     if (!view)
         return parentRect;
 
-    IntRect rect = view->frameView()->convertToRenderer(this, parentRect);
+    IntRect rect = view->frameView()->convertToRenderer(*this, parentRect);
 
     int scrollbarTop = borderTop();
     rect.move(-scrollbarLeft(), -scrollbarTop);
@@ -815,7 +834,7 @@ IntPoint RenderListBox::convertFromScrollbarToContainingView(const Scrollbar* sc
     int scrollbarTop = borderTop();
     point.move(scrollbarLeft(), scrollbarTop);
 
-    return view->frameView()->convertFromRenderer(this, point);
+    return view->frameView()->convertFromRenderer(*this, point);
 }
 
 IntPoint RenderListBox::convertFromContainingViewToScrollbar(const Scrollbar* scrollbar, const IntPoint& parentPoint) const
@@ -824,7 +843,7 @@ IntPoint RenderListBox::convertFromContainingViewToScrollbar(const Scrollbar* sc
     if (!view)
         return parentPoint;
 
-    IntPoint point = view->frameView()->convertToRenderer(this, parentPoint);
+    IntPoint point = view->frameView()->convertToRenderer(*this, parentPoint);
 
     int scrollbarTop = borderTop();
     point.move(-scrollbarLeft(), -scrollbarTop);
@@ -952,6 +971,61 @@ void RenderListBox::setHasVerticalScrollbar(bool hasScrollbar)
     // Force an update since we know the scrollbars have changed things.
     if (document().hasAnnotatedRegions())
         document().setAnnotatedRegionsDirty(true);
+}
+
+int RenderListBox::renderListBoxIndexToListIndex(int index) const
+{
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement()->listItems();
+    const int size = static_cast<int>(listItems.size());
+
+    if (size == numItems())
+        return index;
+
+    int listBoxIndex = 0;
+    int listIndex = 0;
+    for (; listIndex < size; ++listIndex) {
+        const HTMLElement& element = *listItems[listIndex];
+        if (isHTMLOptionElement(element) && toHTMLOptionElement(element).isDisplayNone())
+            continue;
+        if (isHTMLOptGroupElement(element) && toHTMLOptGroupElement(element).isDisplayNone())
+            continue;
+        if (index == listBoxIndex)
+            break;
+        ++listBoxIndex;
+    }
+    return listIndex;
+}
+
+int RenderListBox::listIndexToRenderListBoxIndex(int index) const
+{
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement()->listItems();
+    const int size = static_cast<int>(listItems.size());
+
+    if (size == numItems())
+        return index;
+
+    int listBoxIndex = 0;
+    for (int listIndex = 0; listIndex < size; ++listIndex) {
+        const HTMLElement& element = *listItems[listIndex];
+        if (isHTMLOptionElement(element) && toHTMLOptionElement(element).isDisplayNone())
+            continue;
+        if (isHTMLOptGroupElement(element) && toHTMLOptGroupElement(element).isDisplayNone())
+            continue;
+        if (index == listIndex)
+            break;
+        ++listBoxIndex;
+    }
+    return listBoxIndex;
+}
+
+LayoutRect RenderListBox::itemBoundingBoxRect(const LayoutPoint& point, int index) const
+{
+    return itemBoundingBoxRectInternal(point, listIndexToRenderListBoxIndex(index));
+}
+
+bool RenderListBox::scrollToRevealElementAtListIndex(int index)
+{
+    return scrollToRevealElementAtListIndexInternal(listIndexToRenderListBoxIndex(index));
 }
 
 } // namespace WebCore

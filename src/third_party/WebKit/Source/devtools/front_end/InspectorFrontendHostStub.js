@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-if (!window.InspectorFrontendHost) {
-
 /**
  * @constructor
  * @implements {InspectorFrontendHostAPI}
@@ -218,15 +216,56 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     {
     },
 
+    setWhitelistedShortcuts: function(shortcuts)
+    {
+    },
+
     /**
      * @return {boolean}
      */
     isUnderTest: function()
     {
         return false;
+    },
+
+    /**
+     * @param {string} browserId
+     * @param {string} url
+     */
+    openUrlOnRemoteDeviceAndInspect: function(browserId, url)
+    {
+    },
+
+    startRemoteDevicesListener: function()
+    {
+    },
+
+    stopRemoteDevicesListener: function()
+    {
     }
 }
 
-InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
+// Inherit bindings from the embedder.
+if (top !== window) {
+    window.InspectorFrontendHost = top.InspectorFrontendHost;
+}
 
+if (!window.InspectorFrontendHost) {
+    InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
+} else {
+    var proto = WebInspector.InspectorFrontendHostStub.prototype;
+    for (var name in proto) {
+        var value = proto[name];
+        if (typeof value !== "function" || InspectorFrontendHost[name])
+            continue;
+        InspectorFrontendHost[name] = function(name) {
+            var message = "Incompatible embedder: method InspectorFrontendHost." + name + " is missing. Using stub instead.";
+            if (WebInspector.console)
+                WebInspector.console.showErrorMessage(message);
+            else
+                console.error(message);
+            var args = Array.prototype.slice.call(arguments, 1);
+            return proto[name].apply(InspectorFrontendHost, args);
+        }.bind(null, name);
+    }
 }

@@ -53,10 +53,9 @@ COMPILE_ASSERT(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), shadowroot_sh
 ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     : DocumentFragment(0, CreateShadowRoot)
     , TreeScope(*this, document)
-    , m_prev(0)
-    , m_next(0)
+    , m_prev(nullptr)
+    , m_next(nullptr)
     , m_numberOfStyles(0)
-    , m_applyAuthorStyles(false)
     , m_type(type)
     , m_registeredWithParentShadowRoot(false)
     , m_descendantInsertionPointsIsValid(false)
@@ -66,6 +65,7 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
 
 ShadowRoot::~ShadowRoot()
 {
+#if !ENABLE(OILPAN)
     ASSERT(!m_prev);
     ASSERT(!m_next);
 
@@ -89,12 +89,15 @@ ShadowRoot::~ShadowRoot()
     // as well as Node. See a comment on TreeScope.h for the reason.
     if (hasRareData())
         clearRareData();
+#endif
 }
 
+#if !ENABLE(OILPAN)
 void ShadowRoot::dispose()
 {
     removeDetachedChildren();
 }
+#endif
 
 ShadowRoot* ShadowRoot::olderShadowRootForBindings() const
 {
@@ -103,15 +106,6 @@ ShadowRoot* ShadowRoot::olderShadowRootForBindings() const
         older = older->olderShadowRoot();
     ASSERT(!older || older->shouldExposeToBindings());
     return older;
-}
-
-bool ShadowRoot::isOldestAuthorShadowRoot() const
-{
-    if (type() != AuthorShadowRoot)
-        return false;
-    if (ShadowRoot* older = olderShadowRoot())
-        return older->type() == UserAgentShadowRoot;
-    return true;
 }
 
 PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionState& exceptionState)
@@ -169,30 +163,6 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
     clearChildNeedsStyleRecalc();
 }
 
-void ShadowRoot::setApplyAuthorStyles(bool value)
-{
-    if (isOrphan())
-        return;
-
-    if (applyAuthorStyles() == value)
-        return;
-
-    m_applyAuthorStyles = value;
-
-    ASSERT(host());
-    ASSERT(host()->shadow());
-    if (host()->shadow()->didAffectApplyAuthorStyles())
-        host()->setNeedsStyleRecalc(SubtreeStyleChange);
-
-    // Since styles in shadow trees can select shadow hosts, set shadow host's needs-recalc flag true.
-    // FIXME: host->setNeedsStyleRecalc() should take care of all elements in its shadow tree.
-    // However, when host's recalcStyle is skipped (i.e. host's parent has no renderer),
-    // no recalc style is invoked for any elements in its shadow tree.
-    // This problem occurs when using getComputedStyle() API.
-    // So currently host and shadow root's needsStyleRecalc flags are set to be true.
-    setNeedsStyleRecalc(SubtreeStyleChange);
-}
-
 void ShadowRoot::attach(const AttachContext& context)
 {
     StyleResolverParentScope parentScope(*this);
@@ -237,6 +207,9 @@ void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
 void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+
+    checkForSiblingStyleChanges(false, beforeChange, afterChange, childCountDelta);
+
     if (InsertionPoint* point = shadowInsertionPointOfYoungerShadowRoot()) {
         if (ShadowRoot* root = point->containingShadowRoot())
             root->owner()->setNeedsDistributionRecalc();
@@ -261,7 +234,7 @@ ShadowRootRareData* ShadowRoot::ensureShadowRootRareData()
     if (m_shadowRootRareData)
         return m_shadowRootRareData.get();
 
-    m_shadowRootRareData = adoptPtr(new ShadowRootRareData);
+    m_shadowRootRareData = adoptPtrWillBeNoop(new ShadowRootRareData);
     return m_shadowRootRareData.get();
 }
 
@@ -362,6 +335,15 @@ StyleSheetList* ShadowRoot::styleSheets()
         m_shadowRootRareData->setStyleSheets(StyleSheetList::create(this));
 
     return m_shadowRootRareData->styleSheets();
+}
+
+void ShadowRoot::trace(Visitor* visitor)
+{
+    visitor->trace(m_prev);
+    visitor->trace(m_next);
+    visitor->trace(m_shadowRootRareData);
+    TreeScope::trace(visitor);
+    DocumentFragment::trace(visitor);
 }
 
 }

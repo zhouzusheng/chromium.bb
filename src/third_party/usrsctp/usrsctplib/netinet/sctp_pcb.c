@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_pcb.c 258224 2013-11-16 15:34:14Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_pcb.c 263922 2014-03-29 21:26:45Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -865,7 +865,13 @@ sctp_del_addr_from_vrf(uint32_t vrf_id, struct sockaddr *addr,
 		}
 		SCTPDBG(SCTP_DEBUG_PCB4, "Deleting ifa %p\n", (void *)sctp_ifap);
 		sctp_ifap->localifa_flags &= SCTP_ADDR_VALID;
-		sctp_ifap->localifa_flags |= SCTP_BEING_DELETED;
+                /*
+		 * We don't set the flag. This means that the structure will
+		 * hang around in EP's that have bound specific to it until
+		 * they close. This gives us TCP like behavior if someone
+		 * removes an address (or for that matter adds it right back).
+		 */
+		/* sctp_ifap->localifa_flags |= SCTP_BEING_DELETED; */
 		vrf->total_ifa_count--;
 		LIST_REMOVE(sctp_ifap, next_bucket);
 		sctp_remove_ifa_from_ifn(sctp_ifap);
@@ -2877,7 +2883,7 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 
 #if defined(__APPLE__)
 #if defined(APPLE_LEOPARD) || defined(APPLE_SNOWLEOPARD)
-	inp->ip_inp.inp.inpcb_mtx = lck_mtx_alloc_init(SCTP_BASE_INFO(mtx_grp), SCTP_BASE_INFO(mtx_attr));
+	inp->ip_inp.inp.inpcb_mtx = lck_mtx_alloc_init(SCTP_BASE_INFO(sctbinfo).mtx_grp, SCTP_BASE_INFO(sctbinfo).mtx_attr);
 	if (inp->ip_inp.inp.inpcb_mtx == NULL) {
 		SCTP_PRINTF("in_pcballoc: can't alloc mutex! so=%p\n", (void *)so);
 #ifdef SCTP_MVRF
@@ -2886,12 +2892,14 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 		SCTP_HASH_FREE(inp->sctp_tcbhash, inp->sctp_hashmark);
 		so->so_pcb = NULL;
 		SCTP_ZONE_FREE(SCTP_BASE_INFO(ipi_zone_ep), inp);
-		SCTP_UNLOCK_EXC(SCTP_BASE_INFO(ipi_ep_mtx));
+		SCTP_UNLOCK_EXC(SCTP_BASE_INFO(sctbinfo).ipi_lock);
 		SCTP_LTRACE_ERR_RET(inp, NULL, NULL, SCTP_FROM_SCTP_PCB, ENOMEM);
 		return (ENOMEM);
 	}
+#elif defined(APPLE_LION) || defined(APPLE_MOUNTAINLION)
+	lck_mtx_init(&inp->ip_inp.inp.inpcb_mtx, SCTP_BASE_INFO(sctbinfo).mtx_grp, SCTP_BASE_INFO(sctbinfo).mtx_attr);
 #else
-	lck_mtx_init(&inp->ip_inp.inp.inpcb_mtx, SCTP_BASE_INFO(mtx_grp), SCTP_BASE_INFO(mtx_attr));
+	lck_mtx_init(&inp->ip_inp.inp.inpcb_mtx, SCTP_BASE_INFO(sctbinfo).ipi_lock_grp, SCTP_BASE_INFO(sctbinfo).ipi_lock_attr);
 #endif
 #endif
 	SCTP_INP_INFO_WLOCK();
@@ -2907,7 +2915,12 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 	/* add it to the info area */
 	LIST_INSERT_HEAD(&SCTP_BASE_INFO(listhead), inp, sctp_list);
 #if defined(__APPLE__)
-	LIST_INSERT_HEAD(&SCTP_BASE_INFO(inplisthead), &inp->ip_inp.inp, inp_list);
+	inp->ip_inp.inp.inp_pcbinfo = &SCTP_BASE_INFO(sctbinfo);
+#if defined(APPLE_LEOPARD) || defined(APPLE_SNOWLEOPARD) || defined(APPLE_LION) || defined(APPLE_MOUNTAINLION)
+	LIST_INSERT_HEAD(SCTP_BASE_INFO(sctbinfo).listhead, &inp->ip_inp.inp, inp_list);
+#else
+	LIST_INSERT_HEAD(SCTP_BASE_INFO(sctbinfo).ipi_listhead, &inp->ip_inp.inp, inp_list);
+#endif
 #endif
 	SCTP_INP_INFO_WUNLOCK();
 
@@ -3900,17 +3913,7 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate, int from)
 				/* Left with Data unread */
 				struct mbuf *op_err;
 
-				op_err = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
-							       0, M_NOWAIT, 1, MT_DATA);
-				if (op_err) {
-					/* Fill in the user initiated abort */
-					struct sctp_paramhdr *ph;
-
-					SCTP_BUF_LEN(op_err) = sizeof(struct sctp_paramhdr);
-					ph = mtod(op_err, struct sctp_paramhdr *);
-					ph->param_type = htons(SCTP_CAUSE_USER_INITIATED_ABT);
-					ph->param_length = htons(SCTP_BUF_LEN(op_err));
-				}
+				op_err = sctp_generate_cause(SCTP_CAUSE_USER_INITIATED_ABT, "");
 				asoc->sctp_ep->last_abort_code = SCTP_FROM_SCTP_PCB+SCTP_LOC_3;
 				sctp_send_abort_tcb(asoc, op_err, SCTP_SO_LOCKED);
 				SCTP_STAT_INCR_COUNTER32(sctps_aborted);
@@ -3980,17 +3983,7 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate, int from)
 				    (asoc->asoc.state & SCTP_STATE_PARTIAL_MSG_LEFT)) {
 					struct mbuf *op_err;
 				abort_anyway:
-					op_err = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
-								       0, M_NOWAIT, 1, MT_DATA);
-					if (op_err) {
-						/* Fill in the user initiated abort */
-						struct sctp_paramhdr *ph;
-
-						SCTP_BUF_LEN(op_err) = sizeof(struct sctp_paramhdr);
-						ph = mtod(op_err, struct sctp_paramhdr *);
-						ph->param_type = htons(SCTP_CAUSE_USER_INITIATED_ABT);
-						ph->param_length = htons(SCTP_BUF_LEN(op_err));
-					}
+					op_err = sctp_generate_cause(SCTP_CAUSE_USER_INITIATED_ABT, "");
 					asoc->sctp_ep->last_abort_code = SCTP_FROM_SCTP_PCB+SCTP_LOC_5;
 					sctp_send_abort_tcb(asoc, op_err, SCTP_SO_LOCKED);
 					SCTP_STAT_INCR_COUNTER32(sctps_aborted);
@@ -4057,17 +4050,7 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate, int from)
 		    ((asoc->asoc.state & SCTP_STATE_ABOUT_TO_BE_FREED) == 0)) {
 			struct mbuf *op_err;
 
-			op_err = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
-						       0, M_NOWAIT, 1, MT_DATA);
-			if (op_err) {
-				/* Fill in the user initiated abort */
-				struct sctp_paramhdr *ph;
-
-				SCTP_BUF_LEN(op_err) = sizeof(struct sctp_paramhdr);
-				ph = mtod(op_err, struct sctp_paramhdr *);
-				ph->param_type = htons(SCTP_CAUSE_USER_INITIATED_ABT);
-				ph->param_length = htons(SCTP_BUF_LEN(op_err));
-			}
+			op_err = sctp_generate_cause(SCTP_CAUSE_USER_INITIATED_ABT, "");
 			asoc->sctp_ep->last_abort_code = SCTP_FROM_SCTP_PCB+SCTP_LOC_7;
 			sctp_send_abort_tcb(asoc, op_err, SCTP_SO_LOCKED);
 			SCTP_STAT_INCR_COUNTER32(sctps_aborted);
@@ -6540,7 +6523,7 @@ sctp_startup_mcore_threads(void)
 	}
 }
 #endif
-#if defined(__FreeBSD__) && __FreeBSD_cc_version >= 1100000
+#if defined(__FreeBSD__) && __FreeBSD_cc_version >= 1200000
 static struct mbuf *
 sctp_netisr_hdlr(struct mbuf *m, uintptr_t source)
 {
@@ -6615,6 +6598,25 @@ sctp_pcb_init()
 	LIST_INIT(&SCTP_BASE_INFO(listhead));
 #if defined(__APPLE__)
 	LIST_INIT(&SCTP_BASE_INFO(inplisthead));
+#if defined(APPLE_LEOPARD) || defined(APPLE_SNOWLEOPARD) || defined(APPLE_LION) || defined(APPLE_MOUNTAINLION)
+	SCTP_BASE_INFO(sctbinfo).listhead = &SCTP_BASE_INFO(inplisthead);
+	SCTP_BASE_INFO(sctbinfo).mtx_grp_attr = lck_grp_attr_alloc_init();
+	lck_grp_attr_setdefault(SCTP_BASE_INFO(sctbinfo).mtx_grp_attr);
+	SCTP_BASE_INFO(sctbinfo).mtx_grp = lck_grp_alloc_init("sctppcb", SCTP_BASE_INFO(sctbinfo).mtx_grp_attr);
+	SCTP_BASE_INFO(sctbinfo).mtx_attr = lck_attr_alloc_init();
+	lck_attr_setdefault(SCTP_BASE_INFO(sctbinfo).mtx_attr);
+#else
+	SCTP_BASE_INFO(sctbinfo).ipi_listhead = &SCTP_BASE_INFO(inplisthead);
+	SCTP_BASE_INFO(sctbinfo).ipi_lock_grp_attr = lck_grp_attr_alloc_init();
+	lck_grp_attr_setdefault(SCTP_BASE_INFO(sctbinfo).ipi_lock_grp_attr);
+	SCTP_BASE_INFO(sctbinfo).ipi_lock_grp = lck_grp_alloc_init("sctppcb", SCTP_BASE_INFO(sctbinfo).ipi_lock_grp_attr);
+	SCTP_BASE_INFO(sctbinfo).ipi_lock_attr = lck_attr_alloc_init();
+	lck_attr_setdefault(SCTP_BASE_INFO(sctbinfo).ipi_lock_attr);
+#endif
+#if !defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) && !defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION)
+	SCTP_BASE_INFO(sctbinfo).ipi_gc = sctp_gc;
+	in_pcbinfo_attach(&SCTP_BASE_INFO(sctbinfo));
+#endif
 #endif
 
 
@@ -6688,17 +6690,6 @@ sctp_pcb_init()
 
 
 	/* Master Lock INIT for info structure */
-#if defined(__APPLE__)
-	/* allocate the lock group attribute for SCTP PCB mutexes */
-	SCTP_BASE_INFO(mtx_grp_attr) = lck_grp_attr_alloc_init();
-	lck_grp_attr_setdefault(SCTP_BASE_INFO(mtx_grp_attr));
-	/* allocate the lock group for SCTP PCB mutexes */
-	SCTP_BASE_INFO(mtx_grp) = lck_grp_alloc_init("sctppcb",
-						     SCTP_BASE_INFO(mtx_grp_attr));
-	/* allocate the lock attribute for SCTP PCB mutexes */
-	SCTP_BASE_INFO(mtx_attr) = lck_attr_alloc_init();
-	lck_attr_setdefault(SCTP_BASE_INFO(mtx_attr));
-#endif				/* __APPLE__ */
 	SCTP_INP_INFO_LOCK_INIT();
 	SCTP_STATLOG_INIT_LOCK();
 
@@ -6736,8 +6727,6 @@ sctp_pcb_init()
 	for (i = 0; i < SCTP_STACK_VTAG_HASH_SIZE; i++) {
 		LIST_INIT(&SCTP_BASE_INFO(vtag_timewait)[i]);
 	}
-	SCTP_ITERATOR_LOCK_INIT();
-	SCTP_IPI_ITERATOR_WQ_INIT();
 #if defined(SCTP_PROCESS_LEVEL_LOCKS)
 #if defined(__Userspace_os_Windows)
 	InitializeConditionVariable(&sctp_it_ctl.iterator_wakeup);
@@ -6759,7 +6748,7 @@ sctp_pcb_init()
 	 */
 	sctp_init_vrf_list(SCTP_DEFAULT_VRF);
 #endif
-#if defined(__FreeBSD__) && __FreeBSD_cc_version >= 1100000
+#if defined(__FreeBSD__) && __FreeBSD_cc_version >= 1200000
 	if (ip_register_flow_handler(sctp_netisr_hdlr, IPPROTO_SCTP)) {
 		SCTP_PRINTF("***SCTP- Error can't register netisr handler***\n");
 	}
@@ -6792,33 +6781,9 @@ sctp_pcb_finish(void)
 	struct sctp_tagblock *twait_block, *prev_twait_block;
 	struct sctp_laddr *wi, *nwi;
 	int i;
-#if defined(__FreeBSD__)
 	struct sctp_iterator *it, *nit;
 	
-	/* In FreeBSD the iterator thread never exits
-	 * but we do clean up.
-	 * The only way FreeBSD reaches here is if we have VRF's
-	 * but we still add the ifdef to make it compile on old versions.
-	 */
-	SCTP_IPI_ITERATOR_WQ_LOCK();
-	TAILQ_FOREACH_SAFE(it, &sctp_it_ctl.iteratorhead, sctp_nxt_itr, nit) {
-		if (it->vn != curvnet) {
-			continue;
-		}
-		TAILQ_REMOVE(&sctp_it_ctl.iteratorhead, it, sctp_nxt_itr);
-		if (it->function_atend != NULL) {
-			(*it->function_atend) (it->pointer, it->val);
-		}
-		SCTP_FREE(it,SCTP_M_ITER);
-	}
-	SCTP_IPI_ITERATOR_WQ_UNLOCK();
-	SCTP_ITERATOR_LOCK();
-	if ((sctp_it_ctl.cur_it) &&
-	    (sctp_it_ctl.cur_it->vn == curvnet)) {
-		sctp_it_ctl.iterator_flags |= SCTP_ITERATOR_STOP_CUR_IT;
-	}
-	SCTP_ITERATOR_UNLOCK();
-#else
+#if !defined(__FreeBSD__)
 	/* Notify the iterator to exit. */
 	SCTP_IPI_ITERATOR_WQ_LOCK();
 	sctp_it_ctl.iterator_flags |= SCTP_ITERATOR_MUST_EXIT;
@@ -6826,6 +6791,9 @@ sctp_pcb_finish(void)
 	SCTP_IPI_ITERATOR_WQ_UNLOCK();
 #endif
 #if defined(__APPLE__)
+#if !defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) && !defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION)
+	in_pcbinfo_detach(&SCTP_BASE_INFO(sctbinfo));
+#endif
 	SCTP_IPI_ITERATOR_WQ_LOCK();
 	do {
 		msleep(&sctp_it_ctl.iterator_flags,
@@ -6866,6 +6834,33 @@ sctp_pcb_finish(void)
 #else
 	pthread_cond_destroy(&sctp_it_ctl.iterator_wakeup);
 #endif
+#endif
+	/* In FreeBSD the iterator thread never exits
+	 * but we do clean up.
+	 * The only way FreeBSD reaches here is if we have VRF's
+	 * but we still add the ifdef to make it compile on old versions.
+	 */
+	SCTP_IPI_ITERATOR_WQ_LOCK();
+	TAILQ_FOREACH_SAFE(it, &sctp_it_ctl.iteratorhead, sctp_nxt_itr, nit) {
+#if defined(__FreeBSD__) && __FreeBSD_version >= 801000
+		if (it->vn != curvnet) {
+			continue;
+		}
+#endif
+		TAILQ_REMOVE(&sctp_it_ctl.iteratorhead, it, sctp_nxt_itr);
+		if (it->function_atend != NULL) {
+			(*it->function_atend) (it->pointer, it->val);
+		}
+		SCTP_FREE(it,SCTP_M_ITER);
+	}
+	SCTP_IPI_ITERATOR_WQ_UNLOCK();
+#if defined(__FreeBSD__) && __FreeBSD_version >= 801000
+	SCTP_ITERATOR_LOCK();
+	if ((sctp_it_ctl.cur_it) &&
+	    (sctp_it_ctl.cur_it->vn == curvnet)) {
+		sctp_it_ctl.iterator_flags |= SCTP_ITERATOR_STOP_CUR_IT;
+	}
+	SCTP_ITERATOR_UNLOCK();
 #endif
 #if !defined(__FreeBSD__)
 	SCTP_IPI_ITERATOR_WQ_DESTROY();
@@ -6947,9 +6942,15 @@ sctp_pcb_finish(void)
 	SCTP_WQ_ADDR_DESTROY();
 
 #if defined(__APPLE__)
-	lck_grp_attr_free(SCTP_BASE_INFO(mtx_grp_attr));
-	lck_grp_free(SCTP_BASE_INFO(mtx_grp));
-	lck_attr_free(SCTP_BASE_INFO(mtx_attr));
+#if defined(APPLE_LEOPARD) || defined(APPLE_SNOWLEOPARD) || defined(APPLE_LION) || defined(APPLE_MOUNTAINLION)
+	lck_grp_attr_free(SCTP_BASE_INFO(sctbinfo).mtx_grp_attr);
+	lck_grp_free(SCTP_BASE_INFO(sctbinfo).mtx_grp);
+	lck_attr_free(SCTP_BASE_INFO(sctbinfo).mtx_attr);
+#else
+	lck_grp_attr_free(SCTP_BASE_INFO(sctbinfo).ipi_lock_grp_attr);
+	lck_grp_free(SCTP_BASE_INFO(sctbinfo).ipi_lock_grp);
+	lck_attr_free(SCTP_BASE_INFO(sctbinfo).ipi_lock_attr);
+#endif
 #endif
 #if defined(__Userspace__)
 	SCTP_TIMERQ_LOCK_DESTROY();

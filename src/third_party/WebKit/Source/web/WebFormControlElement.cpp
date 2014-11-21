@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebFormControlElement.h"
+#include "public/web/WebFormControlElement.h"
 
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -178,23 +178,28 @@ WebString WebFormControlElement::directionForFormData() const
     return WebString();
 }
 
+bool WebFormControlElement::isActivatedSubmit() const
+{
+    return constUnwrap<HTMLFormControlElement>()->isActivatedSubmit();
+}
+
 WebFormElement WebFormControlElement::form() const
 {
     return WebFormElement(constUnwrap<HTMLFormControlElement>()->form());
 }
 
-WebFormControlElement::WebFormControlElement(const PassRefPtr<HTMLFormControlElement>& elem)
+WebFormControlElement::WebFormControlElement(const PassRefPtrWillBeRawPtr<HTMLFormControlElement>& elem)
     : WebElement(elem)
 {
 }
 
-WebFormControlElement& WebFormControlElement::operator=(const PassRefPtr<HTMLFormControlElement>& elem)
+WebFormControlElement& WebFormControlElement::operator=(const PassRefPtrWillBeRawPtr<HTMLFormControlElement>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebFormControlElement::operator PassRefPtr<HTMLFormControlElement>() const
+WebFormControlElement::operator PassRefPtrWillBeRawPtr<HTMLFormControlElement>() const
 {
     return toHTMLFormControlElement(m_private.get());
 }

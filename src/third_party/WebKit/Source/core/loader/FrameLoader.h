@@ -60,6 +60,7 @@ class FrameLoaderClient;
 class IconController;
 class NavigationAction;
 class Page;
+class ProgressTracker;
 class ResourceError;
 class ResourceResponse;
 class SecurityOrigin;
@@ -82,6 +83,7 @@ public:
     LocalFrame* frame() const { return m_frame; }
 
     MixedContentChecker* mixedContentChecker() const { return &m_mixedContentChecker; }
+    ProgressTracker& progress() const { return *m_progressTracker; }
 
     // These functions start a load. All eventually call into loadWithNavigationAction() or loadInSameDocument().
     void load(const FrameLoadRequest&); // The entry point for non-reload, non-history loads.
@@ -111,8 +113,6 @@ public:
 
     bool isLoading() const;
 
-    int numPendingOrLoadingRequests(bool recurse) const;
-
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
     DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
@@ -129,7 +129,6 @@ public:
     FrameLoadType loadType() const;
     void setLoadType(FrameLoadType loadType) { m_loadType = loadType; }
 
-    void checkLoadComplete(DocumentLoader*);
     void checkLoadComplete();
 
     static void addHTTPOriginIfNeeded(ResourceRequest&, const AtomicString& origin);
@@ -147,8 +146,8 @@ public:
 
     String userAgent(const KURL&) const;
 
-    void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*);
-    void dispatchDidClearWindowObjectsInAllWorlds();
+    void dispatchDidClearWindowObjectInMainWorld();
+    void dispatchDidClearDocumentOfWindowObject();
     void dispatchDocumentElementAvailable();
 
     // The following sandbox flags will be forced, regardless of changes to
@@ -186,8 +185,6 @@ public:
     void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, UpdateBackForwardListPolicy);
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
-    void markDocumentStateDirty();
-    void saveDocumentState();
     void saveScrollState();
     void clearScrollPositionAndViewState();
 
@@ -214,7 +211,7 @@ private:
     bool checkLoadCompleteForThisFrame();
 
     // Calls continueLoadAfterNavigationPolicy
-    void loadWithNavigationAction(const NavigationAction&, FrameLoadType, PassRefPtr<FormState>,
+    void loadWithNavigationAction(const NavigationAction&, FrameLoadType, PassRefPtrWillBeRawPtr<FormState>,
         const SubstituteData&, ClientRedirectPolicy = NotClientRedirect, const AtomicString& overrideEncoding = nullAtom);
 
     void detachFromParent();
@@ -238,8 +235,7 @@ private:
     mutable FrameLoaderStateMachine m_stateMachine;
     mutable MixedContentChecker m_mixedContentChecker;
 
-    class FrameProgressTracker;
-    OwnPtr<FrameProgressTracker> m_progressTracker;
+    OwnPtr<ProgressTracker> m_progressTracker;
 
     FrameState m_state;
     FrameLoadType m_loadType;

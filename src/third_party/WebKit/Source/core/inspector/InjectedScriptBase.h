@@ -33,6 +33,7 @@
 
 #include "InspectorTypeBuilder.h"
 #include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptState.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -48,7 +49,7 @@ public:
     virtual ~InjectedScriptBase() { }
 
     const String& name() const { return m_name; }
-    bool hasNoValue() const { return m_injectedScriptObject.hasNoValue(); }
+    bool isEmpty() const { return m_injectedScriptObject.isEmpty(); }
     ScriptState* scriptState() const { return m_injectedScriptObject.scriptState(); }
 
 protected:

@@ -53,17 +53,18 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
       FATAL_ERROR_FAILED_WRITE
     };
 
-    // Called when a message is read. This may call |Shutdown()| on the
-    // |RawChannel|, but must not destroy it.
+    // Called when a message is read. This may call |Shutdown()| (on the
+    // |RawChannel|), but must not destroy it.
     virtual void OnReadMessage(const MessageInTransit::View& message_view) = 0;
 
     // Called when there's a fatal error, which leads to the channel no longer
-    // being viable.
-    // For each raw channel, at most one |FATAL_ERROR_FAILED_READ| and one
-    // |FATAL_ERROR_FAILED_WRITE| notification will be issued. (And it is
-    // possible to get both.)
-    // After |OnFatalError(FATAL_ERROR_FAILED_READ)| there won't be further
-    // |OnReadMessage()| calls.
+    // being viable. This may call |Shutdown()| (on the |RawChannel()|), but
+    // must not destroy it.
+    //
+    // For each raw channel, at most one |FATAL_ERROR_FAILED_READ| and at most
+    // one |FATAL_ERROR_FAILED_WRITE| notification will be issued (both may be
+    // issued). After a |OnFatalError(FATAL_ERROR_FAILED_READ)|, there will be
+    // no further calls to |OnReadMessage()|.
     virtual void OnFatalError(FatalError fatal_error) = 0;
 
    protected:
@@ -72,15 +73,15 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
 
   // Static factory method. |handle| should be a handle to a
   // (platform-appropriate) bidirectional communication channel (e.g., a socket
-  // on POSIX, a named pipe on Windows). Does *not* take ownership of |delegate|
-  // and |message_loop_for_io|, which must remain alive while this object does.
-  static RawChannel* Create(embedder::ScopedPlatformHandle handle,
-                            Delegate* delegate,
-                            base::MessageLoopForIO* message_loop_for_io);
+  // on POSIX, a named pipe on Windows).
+  static scoped_ptr<RawChannel> Create(embedder::ScopedPlatformHandle handle);
 
-  // This must be called (on an I/O thread) before this object is used. Returns
-  // true on success. On failure, |Shutdown()| should *not* be called.
-  bool Init();
+  // This must be called (on an I/O thread) before this object is used. Does
+  // *not* take ownership of |delegate|. Both the I/O thread and |delegate| must
+  // remain alive until |Shutdown()| is called (unless this fails); |delegate|
+  // will no longer be used after |Shutdown()|. Returns true on success. On
+  // failure, |Shutdown()| should *not* be called.
+  bool Init(Delegate* delegate);
 
   // This must be called (on the I/O thread) before this object is destroyed.
   void Shutdown();
@@ -95,6 +96,11 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   // becomes empty (or something like that).
   bool IsWriteBufferEmpty();
 
+  // Returns the amount of space needed in the |MessageInTransit|'s
+  // |TransportData|'s "platform handle table" per platform handle (to be
+  // attached to a message). (This amount may be zero.)
+  virtual size_t GetSerializedPlatformHandleSize() const = 0;
+
  protected:
   // Return values of |[Schedule]Read()| and |[Schedule]WriteNoLock()|.
   enum IOResult {
@@ -103,7 +109,7 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
     IO_PENDING
   };
 
-  class ReadBuffer {
+  class MOJO_SYSTEM_IMPL_EXPORT ReadBuffer {
    public:
     ReadBuffer();
     ~ReadBuffer();
@@ -123,34 +129,58 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
     DISALLOW_COPY_AND_ASSIGN(ReadBuffer);
   };
 
-  class WriteBuffer {
+  class MOJO_SYSTEM_IMPL_EXPORT WriteBuffer {
    public:
     struct Buffer {
       const char* addr;
       size_t size;
     };
 
-    WriteBuffer();
+    explicit WriteBuffer(size_t serialized_platform_handle_size);
     ~WriteBuffer();
 
+    // Returns true if there are (more) platform handles to be sent (from the
+    // front of |message_queue_|).
+    bool HavePlatformHandlesToSend() const;
+    // Gets platform handles to be sent (from the front of |message_queue_|).
+    // This should only be called if |HavePlatformHandlesToSend()| returned
+    // true. There are two components to this: the actual |PlatformHandle|s
+    // (which should be closed once sent) and any additional serialization
+    // information (which will be embedded in the message's data; there are
+    // |GetSerializedPlatformHandleSize()| bytes per handle). Once all platform
+    // handles have been sent, the message data should be written next (see
+    // |GetBuffers()|).
+    void GetPlatformHandlesToSend(size_t* num_platform_handles,
+                                  embedder::PlatformHandle** platform_handles,
+                                  void** serialization_data);
+
+    // Gets buffers to be written. These buffers will always come from the front
+    // of |message_queue_|. Once they are completely written, the front
+    // |MessageInTransit| should be popped (and destroyed); this is done in
+    // |OnWriteCompletedNoLock()|.
     void GetBuffers(std::vector<Buffer>* buffers) const;
-    // Returns the total size of all buffers returned by |GetBuffers()|.
-    size_t GetTotalBytesToWrite() const;
 
    private:
     friend class RawChannel;
 
+    const size_t serialized_platform_handle_size_;
+
     // TODO(vtl): When C++11 is available, switch this to a deque of
     // |scoped_ptr|/|unique_ptr|s.
     std::deque<MessageInTransit*> message_queue_;
-    // The first message may have been partially sent. |offset_| indicates the
-    // position in the first message where to start the next write.
-    size_t offset_;
+    // Platform handles are sent before the message data, but doing so may
+    // require several passes. |platform_handles_offset_| indicates the position
+    // in the first message's vector of platform handles to send next.
+    size_t platform_handles_offset_;
+    // The first message's data may have been partially sent. |data_offset_|
+    // indicates the position in the first message's data to start the next
+    // write.
+    size_t data_offset_;
 
     DISALLOW_COPY_AND_ASSIGN(WriteBuffer);
   };
 
-  RawChannel(Delegate* delegate, base::MessageLoopForIO* message_loop_for_io);
+  RawChannel();
 
   base::MessageLoopForIO* message_loop_for_io() { return message_loop_for_io_; }
   base::Lock& write_lock() { return write_lock_; }
@@ -169,39 +199,40 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   // - the method is called on the I/O thread WITHOUT |write_lock_| held.
   //
   // The implementing subclass must guarantee that:
-  // - |bytes_read| is untouched if the method returns values other than
-  //   IO_SUCCEEDED;
-  // - if the method returns IO_PENDING, |OnReadCompleted()| will be called on
+  // - |bytes_read| is untouched unless |Read()| returns |IO_SUCCEEDED|;
+  // - if the method returns |IO_PENDING|, |OnReadCompleted()| will be called on
   //   the I/O thread to report the result, unless |Shutdown()| is called.
   virtual IOResult Read(size_t* bytes_read) = 0;
   // Similar to |Read()|, except that the implementing subclass must also
   // guarantee that the method doesn't succeed synchronously, i.e., it only
-  // returns IO_FAILED or IO_PENDING.
+  // returns |IO_FAILED| or |IO_PENDING|.
   virtual IOResult ScheduleRead() = 0;
 
   // Writes contents in |write_buffer_no_lock()|.
   // This class guarantees that:
-  // - the area indicated by |GetBuffers()| will stay valid until write
-  //   completion (but please also see the comments for |OnShutdownNoLock()|);
+  // - the |PlatformHandle|s given by |GetPlatformHandlesToSend()| and the
+  //   buffer(s) given by |GetBuffers()| will remain valid until write
+  //   completion (see also the comments for |OnShutdownNoLock()|);
   // - a second write is not started if there is a pending write;
   // - the method is called under |write_lock_|.
   //
   // The implementing subclass must guarantee that:
-  // - |bytes_written| is untouched if the method returns values other than
-  //   IO_SUCCEEDED;
-  // - if the method returns IO_PENDING, |OnWriteCompleted()| will be called on
-  //   the I/O thread to report the result, unless |Shutdown()| is called.
-  virtual IOResult WriteNoLock(size_t* bytes_written) = 0;
+  // - |platform_handles_written| and |bytes_written| are untouched unless
+  //   |WriteNoLock()| returns |IO_SUCCEEDED|;
+  // - if the method returns |IO_PENDING|, |OnWriteCompleted()| will be called
+  //   on the I/O thread to report the result, unless |Shutdown()| is called.
+  virtual IOResult WriteNoLock(size_t* platform_handles_written,
+                               size_t* bytes_written) = 0;
   // Similar to |WriteNoLock()|, except that the implementing subclass must also
   // guarantee that the method doesn't succeed synchronously, i.e., it only
-  // returns IO_FAILED or IO_PENDING.
+  // returns |IO_FAILED| or |IO_PENDING|.
   virtual IOResult ScheduleWriteNoLock() = 0;
 
   // Must be called on the I/O thread WITHOUT |write_lock_| held.
   virtual bool OnInit() = 0;
-  // On shutdown, passes the ownership of the buffers to subclasses, who may
-  // want to preserve them if there are pending read/write.
-  // Must be called on the I/O thread under |write_lock_|.
+  // On shutdown, passes the ownership of the buffers to subclasses, which may
+  // want to preserve them if there are pending read/write. Must be called on
+  // the I/O thread under |write_lock_|.
   virtual void OnShutdownNoLock(
       scoped_ptr<ReadBuffer> read_buffer,
       scoped_ptr<WriteBuffer> write_buffer) = 0;
@@ -209,7 +240,9 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   // Must be called on the I/O thread WITHOUT |write_lock_| held.
   void OnReadCompleted(bool result, size_t bytes_read);
   // Must be called on the I/O thread WITHOUT |write_lock_| held.
-  void OnWriteCompleted(bool result, size_t bytes_written);
+  void OnWriteCompleted(bool result,
+                        size_t platform_handles_written,
+                        size_t bytes_written);
 
  private:
   // Calls |delegate_->OnFatalError(fatal_error)|. Must be called on the I/O
@@ -221,12 +254,16 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   // false or any error occurs during the method execution, cancels pending
   // writes and returns false.
   // Must be called only if |write_stopped_| is false and under |write_lock_|.
-  bool OnWriteCompletedNoLock(bool result, size_t bytes_written);
+  bool OnWriteCompletedNoLock(bool result,
+                              size_t platform_handles_written,
+                              size_t bytes_written);
 
-  Delegate* const delegate_;
-  base::MessageLoopForIO* const message_loop_for_io_;
+  // Set in |Init()| and never changed (hence usable on any thread without
+  // locking):
+  base::MessageLoopForIO* message_loop_for_io_;
 
   // Only used on the I/O thread:
+  Delegate* delegate_;
   bool read_stopped_;
   scoped_ptr<ReadBuffer> read_buffer_;
 

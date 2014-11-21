@@ -31,18 +31,18 @@
 #ifndef MIDIAccess_h
 #define MIDIAccess_h
 
-#include "bindings/v8/MIDIAccessResolver.h"
 #include "bindings/v8/ScriptPromise.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
-#include "heap/Handle.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIInput.h"
 #include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIOutput.h"
 #include "platform/AsyncMethodRunner.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/WeakPtr.h"
@@ -72,15 +72,13 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     // ActiveDOMObject
-    virtual void suspend() OVERRIDE;
-    virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
     virtual bool hasPendingActivity() const OVERRIDE;
 
     // MIDIAccessorClient
     virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
     virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didStartSession(bool success) OVERRIDE;
+    virtual void didStartSession(bool success, const String& error, const String& message) OVERRIDE;
     virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
 
     // |timeStampInMilliseconds| is in the same time coordinate system as performance.now().
@@ -101,10 +99,6 @@ private:
 
     void permissionDenied();
 
-    void resolve();
-    void reject(PassRefPtrWillBeRawPtr<DOMError>);
-    void resolveNow();
-    void rejectNow();
     // Called when the promise is resolved or rejected.
     void doPostAction(State);
 
@@ -113,12 +107,9 @@ private:
     MIDIInputVector m_inputs;
     MIDIOutputVector m_outputs;
     OwnPtr<MIDIAccessor> m_accessor;
-    OwnPtr<MIDIAccessResolver> m_resolver;
     MIDIOptions m_options;
     bool m_sysexEnabled;
-    AsyncMethodRunner<MIDIAccess> m_asyncResolveRunner;
-    AsyncMethodRunner<MIDIAccess> m_asyncRejectRunner;
-    RefPtrWillBeMember<DOMError> m_error;
+    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
 };
 
 } // namespace WebCore

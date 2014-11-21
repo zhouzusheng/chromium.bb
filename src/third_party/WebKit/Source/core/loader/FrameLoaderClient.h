@@ -58,6 +58,7 @@ class WebApplicationCacheHostClient;
 namespace WebCore {
 
     class Color;
+    class Dictionary;
     class DOMWindowExtension;
     class DOMWrapperWorld;
     class DocumentLoader;
@@ -122,10 +123,9 @@ namespace WebCore {
         virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
         virtual void dispatchWillSubmitForm(HTMLFormElement*) = 0;
 
-        // Maybe these should go into a ProgressTrackerClient some day
-        virtual void postProgressStartedNotification(LoadStartType) = 0;
-        virtual void postProgressEstimateChangedNotification() = 0;
-        virtual void postProgressFinishedNotification() = 0;
+        virtual void didStartLoading(LoadStartType) = 0;
+        virtual void progressEstimateChanged(double progressEstimate) = 0;
+        virtual void didStopLoading() = 0;
 
         virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
 
@@ -165,13 +165,14 @@ namespace WebCore {
             FailOnDetachedPlugin,
             AllowDetachedPlugin,
         };
+        virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const = 0;
         virtual PassRefPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
 
         virtual PassRefPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
 
         virtual ObjectContentType objectContentType(const KURL&, const String& mimeType, bool shouldPreferPlugInsForImages) = 0;
 
-        virtual void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*) = 0;
+        virtual void dispatchDidClearWindowObjectInMainWorld() = 0;
         virtual void documentElementAvailable() = 0;
 
         virtual void didCreateScriptContext(v8::Handle<v8::Context>, int extensionGroup, int worldId) = 0;
@@ -208,7 +209,7 @@ namespace WebCore {
 
         virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) { }
 
-        virtual void didRequestAutocomplete(HTMLFormElement*) = 0;
+        virtual void didRequestAutocomplete(HTMLFormElement*, const Dictionary&) = 0;
 
         virtual bool allowWebGL(bool enabledPerSettings) { return enabledPerSettings; }
         // Informs the embedder that a WebGL canvas inside this frame received a lost context
@@ -227,6 +228,8 @@ namespace WebCore {
         virtual PassOwnPtr<blink::WebApplicationCacheHost> createApplicationCacheHost(blink::WebApplicationCacheHostClient*) = 0;
 
         virtual void didStopAllLoaders() { }
+
+        virtual void dispatchDidChangeManifest() { }
 
         virtual bool isFrameLoaderClientImpl() const { return false; }
     };

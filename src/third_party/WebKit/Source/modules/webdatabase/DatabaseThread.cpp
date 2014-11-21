@@ -29,13 +29,13 @@
 #include "config.h"
 #include "modules/webdatabase/DatabaseThread.h"
 
-#include "heap/glue/MessageLoopInterruptor.h"
-#include "heap/glue/PendingGCRunner.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "modules/webdatabase/SQLTransactionClient.h"
 #include "modules/webdatabase/SQLTransactionCoordinator.h"
 #include "platform/Logging.h"
+#include "platform/heap/glue/MessageLoopInterruptor.h"
+#include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -83,7 +83,7 @@ void DatabaseThread::setupDatabaseThread()
     ThreadState::current()->addInterruptor(m_messageLoopInterruptor.get());
 }
 
-void DatabaseThread::requestTermination(DatabaseTaskSynchronizer *cleanupSync)
+void DatabaseThread::requestTermination(TaskSynchronizer *cleanupSync)
 {
     MutexLocker lock(m_terminationRequestedMutex);
     ASSERT(!m_terminationRequested);
@@ -93,7 +93,7 @@ void DatabaseThread::requestTermination(DatabaseTaskSynchronizer *cleanupSync)
     m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThread, this)));
 }
 
-bool DatabaseThread::terminationRequested(DatabaseTaskSynchronizer* taskSynchronizer) const
+bool DatabaseThread::terminationRequested(TaskSynchronizer* taskSynchronizer) const
 {
 #ifndef NDEBUG
     if (taskSynchronizer)

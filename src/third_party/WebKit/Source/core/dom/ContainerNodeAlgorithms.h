@@ -73,6 +73,7 @@ namespace Private {
 
 }
 
+#if !ENABLE(OILPAN)
 // Helper functions for TreeShared-derived classes, which have a 'Node' style interface
 // This applies to 'ContainerNode' and 'SVGElementInstance'
 template<class GenericNode, class GenericNodeContainer>
@@ -102,6 +103,7 @@ inline void removeDetachedChildrenInContainer(GenericNodeContainer& container)
         delete n;
     }
 }
+#endif
 
 template<class GenericNode, class GenericNodeContainer>
 inline void appendChildToContainer(GenericNode& child, GenericNodeContainer& container)
@@ -180,7 +182,7 @@ namespace Private {
 
                 tail = n;
             } else {
-                RefPtr<GenericNode> protect(n); // removedFromDocument may remove remove all references to this node.
+                RefPtr<GenericNode> protect(n); // removedFromDocument may remove all references to this node.
                 NodeRemovalDispatcher<GenericNode, GenericNodeContainer, ShouldDispatchRemovalNotification<GenericNode>::value>::dispatch(*n, container);
             }
         }

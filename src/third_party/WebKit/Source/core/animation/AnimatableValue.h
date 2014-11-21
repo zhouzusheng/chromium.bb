@@ -32,7 +32,7 @@
 #define AnimatableValue_h
 
 #include "core/css/CSSValue.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -44,8 +44,6 @@ public:
     static const AnimatableValue* neutralValue();
 
     static PassRefPtrWillBeRawPtr<AnimatableValue> interpolate(const AnimatableValue*, const AnimatableValue*, double fraction);
-    // For noncommutative values read add(A, B) to mean the value A with B composed onto it.
-    static PassRefPtrWillBeRawPtr<AnimatableValue> add(const AnimatableValue*, const AnimatableValue*);
     static double distance(const AnimatableValue* from, const AnimatableValue* to);
     static bool usesDefaultInterpolation(const AnimatableValue* from, const AnimatableValue* to)
     {
@@ -70,6 +68,7 @@ public:
     bool isLengthBox() const { return type() == TypeLengthBox; }
     bool isLengthBoxAndBool() const { return type() == TypeLengthBoxAndBool; }
     bool isLengthPoint() const { return type() == TypeLengthPoint; }
+    bool isLengthPoint3D() const { return type() == TypeLengthPoint3D; }
     bool isLengthSize() const { return type() == TypeLengthSize; }
     bool isNeutral() const { return type() == TypeNeutral; }
     bool isRepeatable() const { return type() == TypeRepeatable; }
@@ -88,7 +87,7 @@ public:
         return value->type() == type();
     }
 
-    virtual void trace(Visitor*) = 0;
+    virtual void trace(Visitor*) { }
 
 protected:
     enum AnimatableType {
@@ -101,6 +100,7 @@ protected:
         TypeLengthBox,
         TypeLengthBoxAndBool,
         TypeLengthPoint,
+        TypeLengthPoint3D,
         TypeLengthSize,
         TypeNeutral,
         TypeRepeatable,
@@ -118,12 +118,6 @@ protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const = 0;
     static PassRefPtrWillBeRawPtr<AnimatableValue> defaultInterpolateTo(const AnimatableValue* left, const AnimatableValue* right, double fraction) { return takeConstRef((fraction < 0.5) ? left : right); }
 
-    // For noncommutative values read A->addWith(B) to mean the value A with B composed onto it.
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> addWith(const AnimatableValue*) const;
-    static PassRefPtrWillBeRawPtr<AnimatableValue> defaultAddWith(const AnimatableValue* left, const AnimatableValue* right) { return takeConstRef(right); }
-
-
-
     template <class T>
     static PassRefPtrWillBeRawPtr<T> takeConstRef(const T* value) { return PassRefPtrWillBeRawPtr<T>(const_cast<T*>(value)); }
 
@@ -134,7 +128,7 @@ private:
 
     virtual double distanceTo(const AnimatableValue*) const;
 
-    friend class KeyframeEffectModel;
+    template <class Keyframe> friend class KeyframeEffectModel;
 };
 
 #define DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(thisType, predicate) \

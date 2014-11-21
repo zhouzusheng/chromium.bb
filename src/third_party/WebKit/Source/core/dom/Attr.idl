@@ -27,6 +27,8 @@ interface Attr : Node {
     [MeasureAs=AttributeSpecified] readonly attribute boolean specified;
 
     [ImplementedAs=valueForBindings, TreatReturnedNullStringAs=Null, TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString value;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, DeprecateAs=AttrNodeValue, ImplementedAs=valueForBindings] attribute DOMString nodeValue;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, DeprecateAs=AttrTextContent, ImplementedAs=valueForBindings] attribute DOMString textContent;
 
     // DOM Level 2
 
@@ -34,8 +36,8 @@ interface Attr : Node {
 
     // DOM 4
 
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString prefix;
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString namespaceURI;
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString localName;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString prefix;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString namespaceURI;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString localName;
 };
 

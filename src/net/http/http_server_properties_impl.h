@@ -34,7 +34,7 @@ class NET_EXPORT HttpServerPropertiesImpl
   HttpServerPropertiesImpl();
   virtual ~HttpServerPropertiesImpl();
 
-  // Initializes |spdy_servers_table_| with the servers (host/port) from
+  // Initializes |spdy_servers_map_| with the servers (host/port) from
   // |spdy_servers| that either support SPDY or not.
   void InitializeSpdyServers(std::vector<std::string>* spdy_servers,
                              bool support_spdy);
@@ -49,8 +49,10 @@ class NET_EXPORT HttpServerPropertiesImpl
   void InitializePipelineCapabilities(
       const PipelineCapabilityMap* pipeline_capability_map);
 
-  // Get the list of servers (host/port) that support SPDY.
-  void GetSpdyServerList(base::ListValue* spdy_server_list) const;
+  // Get the list of servers (host/port) that support SPDY. The max_size is the
+  // number of MRU servers that support SPDY that are to be returned.
+  void GetSpdyServerList(base::ListValue* spdy_server_list,
+                         size_t max_size) const;
 
   // Returns flattened string representation of the |host_port_pair|. Used by
   // unittests.
@@ -80,7 +82,7 @@ class NET_EXPORT HttpServerPropertiesImpl
   virtual void Clear() OVERRIDE;
 
   // Returns true if |server| supports SPDY.
-  virtual bool SupportsSpdy(const HostPortPair& server) const OVERRIDE;
+  virtual bool SupportsSpdy(const HostPortPair& server) OVERRIDE;
 
   // Add |server| into the persistent store.
   virtual void SetSupportsSpdy(const HostPortPair& server,
@@ -102,6 +104,13 @@ class NET_EXPORT HttpServerPropertiesImpl
 
   // Sets the Alternate-Protocol for |server| to be BROKEN.
   virtual void SetBrokenAlternateProtocol(const HostPortPair& server) OVERRIDE;
+
+  // Returns true if Alternate-Protocol for |server| was recently BROKEN.
+  virtual bool WasAlternateProtocolRecentlyBroken(
+      const HostPortPair& server) OVERRIDE;
+
+  // Confirms that Alternate-Protocol for |server| is working.
+  virtual void ConfirmAlternateProtocol(const HostPortPair& server) OVERRIDE;
 
   // Clears the Alternate-Protocol for |server|.
   virtual void ClearAlternateProtocol(const HostPortPair& server) OVERRIDE;
@@ -150,19 +159,35 @@ class NET_EXPORT HttpServerPropertiesImpl
  private:
   typedef base::MRUCache<
       HostPortPair, HttpPipelinedHostCapability> CachedPipelineCapabilityMap;
-  // |spdy_servers_table_| has flattened representation of servers (host/port
-  // pair) that either support or not support SPDY protocol.
-  typedef base::hash_map<std::string, bool> SpdyServerHostPortTable;
+  // |spdy_servers_map_| has flattened representation of servers (host, port)
+  // that either support or not support SPDY protocol.
+  typedef base::MRUCache<std::string, bool> SpdyServerHostPortMap;
   typedef std::map<HostPortPair, NetworkStats> ServerNetworkStatsMap;
   typedef std::map<HostPortPair, HostPortPair> CanonicalHostMap;
   typedef std::vector<std::string> CanonicalSufficList;
+  // List of broken host:ports and the times when they can be expired.
+  struct BrokenAlternateProtocolEntry {
+    HostPortPair server;
+    base::TimeTicks when;
+  };
+  typedef std::list<BrokenAlternateProtocolEntry>
+      BrokenAlternateProtocolList;
+  // Map from host:port to the number of times alternate protocol has
+  // been marked broken.
+  typedef std::map<HostPortPair, int> BrokenAlternateProtocolMap;
 
   // Return the canonical host for |server|, or end if none exists.
   CanonicalHostMap::const_iterator GetCanonicalHost(HostPortPair server) const;
 
-  SpdyServerHostPortTable spdy_servers_table_;
+  void ExpireBrokenAlternateProtocolMappings();
+  void ScheduleBrokenAlternateProtocolMappingsExpiration();
+
+  SpdyServerHostPortMap spdy_servers_map_;
 
   AlternateProtocolMap alternate_protocol_map_;
+  BrokenAlternateProtocolList broken_alternate_protocol_list_;
+  BrokenAlternateProtocolMap broken_alternate_protocol_map_;
+
   SpdySettingsMap spdy_settings_map_;
   ServerNetworkStatsMap server_network_stats_map_;
   scoped_ptr<CachedPipelineCapabilityMap> pipeline_capability_map_;

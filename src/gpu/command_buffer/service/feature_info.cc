@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -95,6 +96,13 @@ void StringToWorkarounds(
     workarounds->max_cube_map_texture_size = 1024;
   if (workarounds->max_cube_map_texture_size_limit_512)
     workarounds->max_cube_map_texture_size = 512;
+
+  if (workarounds->max_fragment_uniform_vectors_32)
+    workarounds->max_fragment_uniform_vectors = 32;
+  if (workarounds->max_varying_vectors_16)
+    workarounds->max_varying_vectors = 16;
+  if (workarounds->max_vertex_uniform_vectors_256)
+    workarounds->max_vertex_uniform_vectors = 256;
 }
 
 }  // anonymous namespace.
@@ -103,6 +111,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
     : chromium_color_buffer_float_rgba(false),
       chromium_color_buffer_float_rgb(false),
       chromium_framebuffer_multisample(false),
+      chromium_sync_query(false),
       use_core_framebuffer_multisample(false),
       multisampled_render_to_texture(false),
       use_img_for_multisampled_render_to_texture(false),
@@ -127,6 +136,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       enable_samplers(false),
       ext_draw_buffers(false),
       ext_frag_depth(false),
+      ext_shader_texture_lod(false),
       use_async_readpixels(false),
       map_buffer_range(false),
       ext_discard_framebuffer(false),
@@ -142,7 +152,10 @@ FeatureInfo::Workarounds::Workarounds() :
     GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
 #undef GPU_OP
     max_texture_size(0),
-    max_cube_map_texture_size(0) {
+    max_cube_map_texture_size(0),
+    max_fragment_uniform_vectors(0),
+    max_varying_vectors(0),
+    max_vertex_uniform_vectors(0) {
 }
 
 FeatureInfo::FeatureInfo() {
@@ -616,6 +629,28 @@ void FeatureInfo::InitializeFeatures() {
     validators_.compressed_texture_format.AddValue(GL_ETC1_RGB8_OES);
   }
 
+  if (extensions.Contains("GL_AMD_compressed_ATC_texture")) {
+    AddExtensionString("GL_AMD_compressed_ATC_texture");
+    validators_.compressed_texture_format.AddValue(
+        GL_ATC_RGB_AMD);
+    validators_.compressed_texture_format.AddValue(
+        GL_ATC_RGBA_EXPLICIT_ALPHA_AMD);
+    validators_.compressed_texture_format.AddValue(
+        GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD);
+  }
+
+  if (extensions.Contains("GL_IMG_texture_compression_pvrtc")) {
+    AddExtensionString("GL_IMG_texture_compression_pvrtc");
+    validators_.compressed_texture_format.AddValue(
+        GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG);
+    validators_.compressed_texture_format.AddValue(
+        GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG);
+    validators_.compressed_texture_format.AddValue(
+        GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG);
+    validators_.compressed_texture_format.AddValue(
+        GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG);
+  }
+
   // Ideally we would only expose this extension on Mac OS X, to
   // support GL_CHROMIUM_iosurface and the compositor. We don't want
   // applications to start using it; they should use ordinary non-
@@ -710,7 +745,8 @@ void FeatureInfo::InitializeFeatures() {
   if (!workarounds_.disable_angle_instanced_arrays &&
       (extensions.Contains("GL_ANGLE_instanced_arrays") ||
        (extensions.Contains("GL_ARB_instanced_arrays") &&
-        extensions.Contains("GL_ARB_draw_instanced")))) {
+        extensions.Contains("GL_ARB_draw_instanced")) ||
+       is_es3)) {
     AddExtensionString("GL_ANGLE_instanced_arrays");
     feature_flags_.angle_instanced_arrays = true;
     validators_.vertex_attribute.AddValue(GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
@@ -746,9 +782,23 @@ void FeatureInfo::InitializeFeatures() {
     feature_flags_.ext_frag_depth = true;
   }
 
-  bool ui_gl_fence_works = extensions.Contains("GL_NV_fence") ||
+  if (extensions.Contains("GL_EXT_shader_texture_lod") ||
+      gfx::HasDesktopGLFeatures()) {
+    AddExtensionString("GL_EXT_shader_texture_lod");
+    feature_flags_.ext_shader_texture_lod = true;
+  }
+
+  bool egl_khr_fence_sync = false;
+#if !defined(OS_MACOSX)
+  if (workarounds_.disable_egl_khr_fence_sync) {
+    gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync = false;
+  }
+  egl_khr_fence_sync = gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync;
+#endif
+  bool ui_gl_fence_works = is_es3 || extensions.Contains("GL_NV_fence") ||
                            extensions.Contains("GL_ARB_sync") ||
-                           extensions.Contains("EGL_KHR_fence_sync");
+                           egl_khr_fence_sync;
+  UMA_HISTOGRAM_BOOLEAN("GPU.FenceSupport", ui_gl_fence_works);
 
   feature_flags_.map_buffer_range =
       is_es3 || extensions.Contains("GL_ARB_map_buffer_range");
@@ -775,6 +825,11 @@ void FeatureInfo::InitializeFeatures() {
     // DiscardFramebufferEXT is automatically bound to InvalidateFramebuffer.
     AddExtensionString("GL_EXT_discard_framebuffer");
     feature_flags_.ext_discard_framebuffer = true;
+  }
+
+  if (ui_gl_fence_works) {
+    AddExtensionString("GL_CHROMIUM_sync_query");
+    feature_flags_.chromium_sync_query = true;
   }
 }
 

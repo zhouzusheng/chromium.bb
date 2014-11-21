@@ -63,19 +63,18 @@ class RenderLayerModelObject;
 class RenderLayerRepainter {
     WTF_MAKE_NONCOPYABLE(RenderLayerRepainter);
 public:
-    RenderLayerRepainter(RenderLayerModelObject*);
+    RenderLayerRepainter(RenderLayerModelObject&);
 
     // Return a cached repaint rect, computed relative to the layer renderer's containerForRepaint.
     LayoutRect repaintRect() const { return m_repaintRect; }
     LayoutRect repaintRectIncludingNonCompositingDescendants() const;
 
-    void repaintAfterLayout(RenderGeometryMap*, bool shouldCheckForRepaint);
-    void repaintIncludingNonCompositingDescendants(RenderLayerModelObject* repaintContainer);
-    void repaintIncludingDescendants();
+    void repaintAfterLayout(bool shouldCheckForRepaint);
+    void repaintIncludingNonCompositingDescendants(const RenderLayerModelObject* repaintContainer);
 
     void setRepaintStatus(RepaintStatus status) { m_repaintStatus = status; }
 
-    void computeRepaintRects(const RenderLayerModelObject* repaintContainer, const RenderGeometryMap* = 0);
+    void computeRepaintRects(const RenderLayerModelObject* repaintContainer);
     void computeRepaintRectsIncludingDescendants();
 
     // Indicate that the layer contents need to be repainted. Only has an effect
@@ -92,12 +91,12 @@ private:
 
     RenderLayer* enclosingFilterRepaintLayer() const;
 
-    RenderLayerModelObject* m_renderer;
+    RenderLayerModelObject& m_renderer;
 
     unsigned m_repaintStatus; // RepaintStatus
 
     LayoutRect m_repaintRect; // Cached repaint rects. Used by layout.
-    LayoutRect m_outlineBox;
+    LayoutPoint m_offset;
 };
 
 } // namespace WebCore

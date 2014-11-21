@@ -62,7 +62,7 @@ PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document& document, Spin
 
 void SpinButtonElement::detach(const AttachContext& context)
 {
-    releaseCapture();
+    releaseCapture(EventDispatchDisallowed);
     HTMLDivElement::detach(context);
 }
 
@@ -111,7 +111,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             event->setDefaultHandled();
         }
     } else if (mouseEvent->type() == EventTypeNames::mouseup && mouseEvent->button() == LeftButton) {
-        stopRepeatingTimer();
+        releaseCapture();
     } else if (event->type() == EventTypeNames::mousemove) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
             if (!m_capturing) {
@@ -187,7 +187,7 @@ void SpinButtonElement::doStepAction(int amount)
         m_spinButtonOwner->spinButtonStepDown();
 }
 
-void SpinButtonElement::releaseCapture()
+void SpinButtonElement::releaseCapture(EventDispatch eventDispatch)
 {
     stopRepeatingTimer();
     if (m_capturing) {
@@ -198,6 +198,9 @@ void SpinButtonElement::releaseCapture()
                 page->chrome().unregisterPopupOpeningObserver(this);
         }
     }
+    if (m_spinButtonOwner)
+        m_spinButtonOwner->spinButtonDidReleaseMouseCapture(eventDispatch);
+
 }
 
 bool SpinButtonElement::matchesReadOnlyPseudoClass() const
@@ -252,6 +255,12 @@ void SpinButtonElement::setHovered(bool flag)
 bool SpinButtonElement::shouldRespondToMouseEvents()
 {
     return !m_spinButtonOwner || m_spinButtonOwner->shouldSpinButtonRespondToMouseEvents();
+}
+
+void SpinButtonElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_spinButtonOwner);
+    HTMLDivElement::trace(visitor);
 }
 
 }

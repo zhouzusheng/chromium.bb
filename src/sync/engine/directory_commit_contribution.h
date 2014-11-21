@@ -14,6 +14,7 @@
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 #include "sync/protocol/sync.pb.h"
+#include "sync/sessions/directory_type_debug_info_emitter.h"
 #include "sync/sessions/status_controller.h"
 
 namespace syncer {
@@ -47,7 +48,8 @@ class SYNC_EXPORT_PRIVATE DirectoryCommitContribution
   static scoped_ptr<DirectoryCommitContribution> Build(
       syncable::Directory* dir,
       ModelType type,
-      size_t max_items);
+      size_t max_items,
+      DirectoryTypeDebugInfoEmitter* debug_info_emitter);
 
   // Serialize this contribution's entries to the given commit request |msg|.
   //
@@ -66,7 +68,7 @@ class SYNC_EXPORT_PRIVATE DirectoryCommitContribution
       const sync_pb::ClientToServerResponse& response,
       sessions::StatusController* status) OVERRIDE;
 
-  // Cleans up any temproary state associated with the commit.  Must be called
+  // Cleans up any temporary state associated with the commit.  Must be called
   // before destruction.
   virtual void CleanUp() OVERRIDE;
 
@@ -82,13 +84,16 @@ class SYNC_EXPORT_PRIVATE DirectoryCommitContribution
   DirectoryCommitContribution(
       const std::vector<int64>& metahandles,
       const google::protobuf::RepeatedPtrField<sync_pb::SyncEntity>& entities,
-      syncable::Directory* directory);
+      const sync_pb::DataTypeContext& context,
+      syncable::Directory* directory,
+      DirectoryTypeDebugInfoEmitter* debug_info_emitter);
 
   void UnsetSyncingBits();
 
   syncable::Directory* dir_;
   const std::vector<int64> metahandles_;
   const google::protobuf::RepeatedPtrField<sync_pb::SyncEntity> entities_;
+  sync_pb::DataTypeContext context_;
   size_t entries_start_index_;
 
   // This flag is tracks whether or not the directory entries associated with
@@ -96,6 +101,9 @@ class SYNC_EXPORT_PRIVATE DirectoryCommitContribution
   // the CommitContribution is created with Build() and unset when CleanUp() is
   // called.  This flag must be unset by the time our destructor is called.
   bool syncing_bits_set_;
+
+  // A pointer to the commit counters of our parent CommitContributor.
+  DirectoryTypeDebugInfoEmitter* debug_info_emitter_;
 
   DISALLOW_COPY_AND_ASSIGN(DirectoryCommitContribution);
 };

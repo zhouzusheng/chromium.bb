@@ -166,12 +166,18 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Ele
     return true;
 }
 
-bool SharedStyleFinder::sharingCandidateShadowHasSharedStyleSheetContents(Element& candidate) const
+bool SharedStyleFinder::sharingCandidateCanShareHostStyles(Element& candidate) const
 {
-    if (!element().shadow() || !element().shadow()->containsActiveStyles())
+    const ElementShadow* elementShadow = element().shadow();
+    const ElementShadow* candidateShadow = candidate.shadow();
+
+    if (!elementShadow && !candidateShadow)
+        return true;
+
+    if (static_cast<bool>(elementShadow) != static_cast<bool>(candidateShadow))
         return false;
 
-    return element().shadow()->hasSameStyles(candidate.shadow());
+    return elementShadow->hasSameStyles(candidateShadow);
 }
 
 bool SharedStyleFinder::sharingCandidateDistributedToSameInsertionPoint(Element& candidate) const
@@ -212,15 +218,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
     if (candidate.isLink() != element().isLink())
         return false;
-    if (candidate.hovered() != element().hovered())
-        return false;
-    if (candidate.active() != element().active())
-        return false;
-    if (candidate.focused() != element().focused())
-        return false;
     if (candidate.shadowPseudoId() != element().shadowPseudoId())
-        return false;
-    if (candidate == document().cssTarget())
         return false;
     if (!sharingCandidateHasIdenticalStyleAffectingAttributes(candidate))
         return false;
@@ -230,7 +228,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
     if (candidate.hasScopedHTMLStyleChild())
         return false;
-    if (candidate.shadow() && candidate.shadow()->containsActiveStyles() && !sharingCandidateShadowHasSharedStyleSheetContents(candidate))
+    if (!sharingCandidateCanShareHostStyles(candidate))
         return false;
     if (!sharingCandidateDistributedToSameInsertionPoint(candidate))
         return false;

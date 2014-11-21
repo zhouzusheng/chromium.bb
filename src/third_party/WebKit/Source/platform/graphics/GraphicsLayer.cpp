@@ -89,7 +89,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_drawsContent(false)
     , m_contentsVisible(true)
     , m_isRootForIsolatedGroup(false)
-    , m_hasGpuRasterizationHint(false)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
@@ -608,11 +607,6 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "(contentsVisible " << m_contentsVisible << ")\n";
     }
 
-    if (m_hasGpuRasterizationHint) {
-        writeIndent(ts, indent + 1);
-        ts << "(hasGpuRasterizationHint " << m_hasGpuRasterizationHint << ")\n";
-    }
-
     if (!m_backfaceVisibility) {
         writeIndent(ts, indent + 1);
         ts << "(backfaceVisibility " << (m_backfaceVisibility ? "visible" : "hidden") << ")\n";
@@ -952,12 +946,6 @@ void GraphicsLayer::setIsRootForIsolatedGroup(bool isolated)
     platformLayer()->setIsRootForIsolatedGroup(isolated);
 }
 
-void GraphicsLayer::setHasGpuRasterizationHint(bool hasHint)
-{
-    m_hasGpuRasterizationHint = hasHint;
-    m_layer->setHasGpuRasterizationHint(hasHint);
-}
-
 void GraphicsLayer::setContentsNeedsDisplay()
 {
     if (WebLayer* contentsLayer = contentsLayerIfRegistered()) {
@@ -1121,9 +1109,6 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
             webFilters.appendDropShadowFilter(WebPoint(dropShadowOp.x(), dropShadowOp.y()), dropShadowOp.stdDeviation(), dropShadowOp.color().rgb());
             break;
         }
-        case FilterOperation::CUSTOM:
-        case FilterOperation::VALIDATED_CUSTOM:
-            return false; // Not supported.
         case FilterOperation::NONE:
             break;
         }
@@ -1157,6 +1142,14 @@ void GraphicsLayer::setBackgroundFilters(const FilterOperations& filters)
     if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, *webFilters))
         return;
     m_layer->layer()->setBackgroundFilters(*webFilters);
+}
+
+void GraphicsLayer::setPaintingPhase(GraphicsLayerPaintingPhase phase)
+{
+    if (m_paintingPhase == phase)
+        return;
+    m_paintingPhase = phase;
+    setNeedsDisplay();
 }
 
 void GraphicsLayer::addLinkHighlight(LinkHighlightClient* linkHighlight)

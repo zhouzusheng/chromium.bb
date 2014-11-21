@@ -31,17 +31,15 @@
 #ifndef VideoPlaybackQuality_h
 #define VideoPlaybackQuality_h
 
-#include "heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 class Document;
 
-class VideoPlaybackQuality : public RefCountedWillBeGarbageCollected<VideoPlaybackQuality> {
+class VideoPlaybackQuality : public GarbageCollected<VideoPlaybackQuality> {
 public:
-    static PassRefPtrWillBeRawPtr<VideoPlaybackQuality> create(const Document&, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames);
+    static VideoPlaybackQuality* create(const Document&, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames);
 
     double creationTime() const { return m_creationTime; }
     unsigned totalVideoFrames() const { return m_totalVideoFrames; }

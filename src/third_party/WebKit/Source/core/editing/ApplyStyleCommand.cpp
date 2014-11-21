@@ -45,6 +45,7 @@
 #include "core/editing/htmlediting.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
+#include "platform/heap/Handle.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -256,9 +257,9 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     // Save and restore the selection endpoints using their indices in the document, since
     // addBlockStyleIfNeeded may moveParagraphs, which can remove these endpoints.
     // Calculate start and end indices from the start of the tree that they're in.
-    Node& scope = visibleStart.deepEquivalent().deprecatedNode()->highestAncestor();
-    RefPtr<Range> startRange = Range::create(document(), firstPositionInNode(&scope), visibleStart.deepEquivalent().parentAnchoredEquivalent());
-    RefPtr<Range> endRange = Range::create(document(), firstPositionInNode(&scope), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
+    Node& scope = visibleStart.deepEquivalent().deprecatedNode()->highestAncestorOrSelf();
+    RefPtrWillBeRawPtr<Range> startRange = Range::create(document(), firstPositionInNode(&scope), visibleStart.deepEquivalent().parentAnchoredEquivalent());
+    RefPtrWillBeRawPtr<Range> endRange = Range::create(document(), firstPositionInNode(&scope), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
     int startIndex = TextIterator::rangeLength(startRange.get(), true);
     int endIndex = TextIterator::rangeLength(endRange.get(), true);
 
@@ -704,7 +705,7 @@ void ApplyStyleCommand::fixRangeAndApplyInlineStyle(EditingStyle* style, const P
     // Start from the highest fully selected ancestor so that we can modify the fully selected node.
     // e.g. When applying font-size: large on <font color="blue">hello</font>, we need to include the font element in our run
     // to generate <font color="blue" size="4">hello</font> instead of <font color="blue"><font size="4">hello</font></font>
-    RefPtr<Range> range = Range::create(startNode->document(), start, end);
+    RefPtrWillBeRawPtr<Range> range = Range::create(startNode->document(), start, end);
     Element* editableRoot = startNode->rootEditableElement();
     if (startNode != editableRoot) {
         while (editableRoot && startNode->parentNode() != editableRoot && isNodeVisiblyContainedWithin(*startNode->parentNode(), *range))
@@ -1504,7 +1505,7 @@ float ApplyStyleCommand::computedFontSize(Node* node)
     if (!node)
         return 0;
 
-    RefPtr<CSSComputedStyleDeclaration> style = CSSComputedStyleDeclaration::create(node);
+    RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> style = CSSComputedStyleDeclaration::create(node);
     if (!style)
         return 0;
 

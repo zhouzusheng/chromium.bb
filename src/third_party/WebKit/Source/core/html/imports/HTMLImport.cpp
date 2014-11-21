@@ -36,24 +36,38 @@
 
 namespace WebCore {
 
-LocalFrame* HTMLImport::frame()
+HTMLImport* HTMLImport::root()
 {
-    return master()->frame();
+    HTMLImport* i = this;
+    while (i->parent())
+        i = i->parent();
+    return i;
 }
 
-Document* HTMLImport::master()
+bool HTMLImport::precedes(HTMLImport* import)
 {
-    return root()->document();
+    for (HTMLImport* i = this; i; i = traverseNext(i)) {
+        if (i == import)
+            return true;
+    }
+
+    return false;
 }
 
-HTMLImportsController* HTMLImport::controller()
+bool HTMLImport::formsCycle() const
 {
-    return root()->toController();
+    for (const HTMLImport* i = this->parent(); i; i = i->parent()) {
+        if (i->document() == this->document())
+            return true;
+    }
+
+    return false;
+
 }
 
-void HTMLImport::appendChild(HTMLImport* child)
+void HTMLImport::appendImport(HTMLImport* child)
 {
-    TreeNode<HTMLImport>::appendChild(child);
+    appendChild(child);
 
     // This prevents HTML parser from going beyond the
     // blockage line before the precise state is computed by recalcState().
@@ -71,15 +85,8 @@ void HTMLImport::stateDidChange()
     }
 }
 
-void HTMLImport::stateWillChange()
-{
-    root()->scheduleRecalcState();
-}
-
 void HTMLImport::recalcTreeState(HTMLImport* root)
 {
-    ASSERT(root == root->root());
-
     HashMap<HTMLImport*, HTMLImportState> snapshot;
     Vector<HTMLImport*> updated;
 
@@ -107,13 +114,6 @@ void HTMLImport::recalcTreeState(HTMLImport* root)
 
     for (size_t i = 0; i < updated.size(); ++i)
         updated[i]->stateDidChange();
-}
-
-bool HTMLImport::isMaster(Document* document)
-{
-    if (!document->import())
-        return true;
-    return (document->import()->master() == document);
 }
 
 #if !defined(NDEBUG)

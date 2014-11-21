@@ -29,19 +29,20 @@
  */
 
 #include "config.h"
-#include "ContextFeaturesClientImpl.h"
+#include "web/ContextFeaturesClientImpl.h"
 
-#include "WebDocument.h"
-#include "WebFrameImpl.h"
-#include "WebPermissionClient.h"
 #include "core/dom/Document.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebPermissionClient.h"
+#include "web/WebLocalFrameImpl.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-class ContextFeaturesCache : public DocumentSupplement {
+class ContextFeaturesCache FINAL : public NoBaseWillBeGarbageCollectedFinalized<ContextFeaturesCache>, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ContextFeaturesCache);
 public:
     class Entry {
     public:
@@ -105,7 +106,7 @@ ContextFeaturesCache& ContextFeaturesCache::from(Document& document)
     ContextFeaturesCache* cache = static_cast<ContextFeaturesCache*>(DocumentSupplement::from(document, supplementName()));
     if (!cache) {
         cache = new ContextFeaturesCache();
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(cache));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(cache));
     }
 
     return *cache;
@@ -138,17 +139,17 @@ void ContextFeaturesClientImpl::urlDidChange(Document* document)
 
 bool ContextFeaturesClientImpl::askIfIsEnabled(Document* document, ContextFeatures::FeatureType type, bool defaultValue)
 {
-    WebFrameImpl* frame = WebFrameImpl::fromFrame(document->frame());
+    WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(document->frame());
     if (!frame || !frame->permissionClient())
         return defaultValue;
 
     switch (type) {
     case ContextFeatures::StyleScoped:
-        return frame->permissionClient()->allowWebComponents(frame, defaultValue);
+        return frame->permissionClient()->allowWebComponents(defaultValue);
     case ContextFeatures::MutationEvents:
-        return frame->permissionClient()->allowMutationEvents(frame, defaultValue);
+        return frame->permissionClient()->allowMutationEvents(defaultValue);
     case ContextFeatures::PushState:
-        return frame->permissionClient()->allowPushState(frame);
+        return frame->permissionClient()->allowPushState();
     default:
         return defaultValue;
     }

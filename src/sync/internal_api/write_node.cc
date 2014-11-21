@@ -41,7 +41,7 @@ void WriteNode::SetIsFolder(bool folder) {
   MarkForSyncing();
 }
 
-void WriteNode::SetTitle(const std::wstring& title) {
+void WriteNode::SetTitle(const std::string& title) {
   DCHECK_NE(GetModelType(), UNSPECIFIED);
   ModelType type = GetModelType();
   // It's possible the nigori lost the set of encrypted types. If the current
@@ -57,7 +57,7 @@ void WriteNode::SetTitle(const std::wstring& title) {
   if (type != BOOKMARKS && needs_encryption) {
     new_legal_title = kEncryptedString;
   } else {
-    SyncAPINameToServerName(base::WideToUTF8(title), &new_legal_title);
+    SyncAPINameToServerName(title, &new_legal_title);
     base::TruncateUTF8ToByteSize(new_legal_title, 255, &new_legal_title);
   }
 
@@ -462,6 +462,11 @@ bool WriteNode::SetPosition(const BaseNode& new_parent,
 
   // Now set the predecessor, which sets IS_UNSYNCED as necessary.
   return PutPredecessor(predecessor);
+}
+
+void WriteNode::SetAttachmentMetadata(
+    const sync_pb::AttachmentMetadata& attachment_metadata) {
+  entry_->PutAttachmentMetadata(attachment_metadata);
 }
 
 const syncable::Entry* WriteNode::GetEntry() const {

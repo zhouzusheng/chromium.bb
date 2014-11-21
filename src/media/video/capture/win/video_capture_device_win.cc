@@ -4,6 +4,9 @@
 
 #include "media/video/capture/win/video_capture_device_win.h"
 
+#include <ks.h>
+#include <ksmedia.h>
+
 #include <algorithm>
 #include <list>
 
@@ -242,7 +245,9 @@ void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
 }
 
 // static
-VideoCaptureDevice* VideoCaptureDevice::Create(const Name& device_name) {
+VideoCaptureDevice* VideoCaptureDevice::Create(
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    const Name& device_name) {
   VideoCaptureDevice* ret = NULL;
   if (device_name.capture_api_type() == Name::MEDIA_FOUNDATION) {
     DCHECK(VideoCaptureDeviceMFWin::PlatformSupported());
@@ -419,17 +424,19 @@ void VideoCaptureDeviceWin::GetDeviceSupportedFormats(const Name& device,
 
       if (media_type->majortype == MEDIATYPE_Video &&
           media_type->formattype == FORMAT_VideoInfo) {
+        VideoCaptureFormat format;
+        format.pixel_format =
+            TranslateMediaSubtypeToPixelFormat(media_type->subtype);
+        if (format.pixel_format == PIXEL_FORMAT_UNKNOWN)
+          continue;
         VIDEOINFOHEADER* h =
             reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
-        VideoCaptureFormat format;
         format.frame_size.SetSize(h->bmiHeader.biWidth,
                                   h->bmiHeader.biHeight);
         // Trust the frame rate from the VIDEOINFOHEADER.
         format.frame_rate = (h->AvgTimePerFrame > 0) ?
             static_cast<int>(kSecondsToReferenceTime / h->AvgTimePerFrame) :
             0;
-        format.pixel_format =
-            TranslateMediaSubtypeToPixelFormat(media_type->subtype);
         formats->push_back(format);
         DVLOG(1) << device.name() << " resolution: "
              << format.frame_size.ToString() << ", fps: " << format.frame_rate
@@ -591,6 +598,8 @@ void VideoCaptureDeviceWin::AllocateAndStart(
     }
   }
 
+  SetAntiFlickerInCaptureFilter();
+
   if (format.pixel_format == PIXEL_FORMAT_MJPEG && mjpg_filter_.get()) {
     // Connect the camera to the MJPEG decoder.
     hr = graph_builder_->ConnectDirect(output_capture_pin_, input_mjpg_pin_,
@@ -700,6 +709,11 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
     if (media_type->majortype == MEDIATYPE_Video &&
         media_type->formattype == FORMAT_VideoInfo) {
       VideoCaptureCapabilityWin capability(i);
+      capability.supported_format.pixel_format =
+          TranslateMediaSubtypeToPixelFormat(media_type->subtype);
+      if (capability.supported_format.pixel_format == PIXEL_FORMAT_UNKNOWN)
+        continue;
+
       VIDEOINFOHEADER* h =
           reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
       capability.supported_format.frame_size.SetSize(h->bmiHeader.biWidth,
@@ -740,13 +754,41 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
       capability.frame_rate_numerator = capability.supported_format.frame_rate;
       capability.frame_rate_denominator = 1;
 
-      capability.supported_format.pixel_format =
-          TranslateMediaSubtypeToPixelFormat(media_type->subtype);
       capabilities_.Add(capability);
     }
   }
 
   return !capabilities_.empty();
+}
+
+// Set the power line frequency removal in |capture_filter_| if available.
+void VideoCaptureDeviceWin::SetAntiFlickerInCaptureFilter() {
+  const int power_line_frequency = GetPowerLineFrequencyForLocation();
+  if (power_line_frequency != kPowerLine50Hz &&
+      power_line_frequency != kPowerLine60Hz) {
+    return;
+  }
+  ScopedComPtr<IKsPropertySet> ks_propset;
+  DWORD type_support = 0;
+  HRESULT hr;
+  if (SUCCEEDED(hr = ks_propset.QueryFrom(capture_filter_)) &&
+      SUCCEEDED(hr = ks_propset->QuerySupported(PROPSETID_VIDCAP_VIDEOPROCAMP,
+          KSPROPERTY_VIDEOPROCAMP_POWERLINE_FREQUENCY, &type_support)) &&
+      (type_support & KSPROPERTY_SUPPORT_SET)) {
+    KSPROPERTY_VIDEOPROCAMP_S data = {};
+    data.Property.Set = PROPSETID_VIDCAP_VIDEOPROCAMP;
+    data.Property.Id = KSPROPERTY_VIDEOPROCAMP_POWERLINE_FREQUENCY;
+    data.Property.Flags = KSPROPERTY_TYPE_SET;
+    data.Value = (power_line_frequency == kPowerLine50Hz) ? 1 : 2;
+    data.Flags = KSPROPERTY_VIDEOPROCAMP_FLAGS_MANUAL;
+    hr = ks_propset->Set(PROPSETID_VIDCAP_VIDEOPROCAMP,
+                         KSPROPERTY_VIDEOPROCAMP_POWERLINE_FREQUENCY,
+                         &data, sizeof(data), &data, sizeof(data));
+    DVLOG_IF(ERROR, FAILED(hr)) << "Anti-flicker setting failed.";
+    DVLOG_IF(2, SUCCEEDED(hr)) << "Anti-flicker set correctly.";
+  } else {
+    DVLOG(2) << "Anti-flicker setting not supported.";
+  }
 }
 
 void VideoCaptureDeviceWin::SetErrorState(const std::string& reason) {

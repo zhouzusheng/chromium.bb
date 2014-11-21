@@ -262,7 +262,7 @@ void URLRequestHttpJob::Start() {
   // Privacy mode could still be disabled in OnCookiesLoaded if we are going
   // to send previously saved cookies.
   request_info_.privacy_mode = enable_privacy_mode ?
-      kPrivacyModeEnabled : kPrivacyModeDisabled;
+      PRIVACY_MODE_ENABLED : PRIVACY_MODE_DISABLED;
 
   // Strip Referer from request_info_.extra_headers to prevent, e.g., plugins
   // from overriding headers that are controlled using other means. Otherwise a
@@ -581,7 +581,7 @@ void URLRequestHttpJob::OnCookiesLoaded(const std::string& cookie_line) {
     request_info_.extra_headers.SetHeader(
         HttpRequestHeaders::kCookie, cookie_line);
     // Disable privacy mode as we are sending cookies anyway.
-    request_info_.privacy_mode = kPrivacyModeDisabled;
+    request_info_.privacy_mode = PRIVACY_MODE_DISABLED;
   }
   DoStartTransaction();
 }
@@ -841,14 +841,13 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       NotifySSLCertificateError(info, true);
     } else {
       // Maybe overridable, maybe not. Ask the delegate to decide.
-      TransportSecurityState::DomainState domain_state;
       const URLRequestContext* context = request_->context();
-      const bool fatal = context->transport_security_state() &&
-          context->transport_security_state()->GetDomainState(
+      TransportSecurityState* state = context->transport_security_state();
+      const bool fatal =
+          state &&
+          state->ShouldSSLErrorsBeFatal(
               request_info_.url.host(),
-              SSLConfigService::IsSNIAvailable(context->ssl_config_service()),
-              &domain_state) &&
-          domain_state.ShouldSSLErrorsBeFatal();
+              SSLConfigService::IsSNIAvailable(context->ssl_config_service()));
       NotifySSLCertificateError(
           transaction_->GetResponseInfo()->ssl_info, fatal);
     }
@@ -1034,6 +1033,16 @@ Filter* URLRequestHttpJob::SetupFilter() const {
       ? Filter::Factory(encoding_types, *filter_context_) : NULL;
 }
 
+bool URLRequestHttpJob::CopyFragmentOnRedirect(const GURL& location) const {
+  // Allow modification of reference fragments by default, unless
+  // |allowed_unsafe_redirect_url_| is set and equal to the redirect URL.
+  // When this is the case, we assume that the network delegate has set the
+  // desired redirect URL (with or without fragment), so it must not be changed
+  // any more.
+  return !allowed_unsafe_redirect_url_.is_valid() ||
+       allowed_unsafe_redirect_url_ != location;
+}
+
 bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
   // HTTP is always safe.
   // TODO(pauljensen): Remove once crbug.com/146591 is fixed.
@@ -1041,14 +1050,10 @@ bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
       (location.scheme() == "http" || location.scheme() == "https")) {
     return true;
   }
-  // Delegates may mark an URL as safe for redirection.
-  if (allowed_unsafe_redirect_url_.is_valid()) {
-    GURL::Replacements replacements;
-    replacements.ClearRef();
-    if (allowed_unsafe_redirect_url_.ReplaceComponents(replacements) ==
-        location.ReplaceComponents(replacements)) {
-      return true;
-    }
+  // Delegates may mark a URL as safe for redirection.
+  if (allowed_unsafe_redirect_url_.is_valid() &&
+      allowed_unsafe_redirect_url_ == location) {
+    return true;
   }
   // Query URLRequestJobFactory as to whether |location| would be safe to
   // redirect to.

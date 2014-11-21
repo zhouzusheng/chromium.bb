@@ -10,10 +10,13 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "cc/input/input_handler.h"
+#include "content/common/input/did_overscroll_params.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/ipc_channel.h"
+#include "ipc/ipc_listener.h"
 #include "ui/gfx/vector2d_f.h"
 
 using blink::WebInputEvent;
@@ -66,13 +69,11 @@ void InputEventFilter::DidRemoveInputHandler(int routing_id) {
 }
 
 void InputEventFilter::DidOverscroll(int routing_id,
-                                     const cc::DidOverscrollParams& params) {
+                                     const DidOverscrollParams& params) {
   if (!overscroll_notifications_enabled_)
     return;
 
-  SendMessage(ViewHostMsg_DidOverscroll(routing_id,
-                                        params.accumulated_overscroll,
-                                        params.current_fling_velocity));
+  SendMessage(ViewHostMsg_DidOverscroll(routing_id, params));
 }
 
 void InputEventFilter::DidStopFlinging(int routing_id) {
@@ -169,7 +170,7 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
     return;
   }
 
-  if (!WebInputEventTraits::IgnoresAckDisposition(event->type))
+  if (!WebInputEventTraits::IgnoresAckDisposition(*event))
     SendACK(event->type, ack, latency_info, routing_id);
 }
 

@@ -41,7 +41,6 @@ const double kTestRefreshRate = 200.0;
 
 bool g_compositor_initialized = false;
 base::Thread* g_compositor_thread = NULL;
-cc::SharedBitmapManager* g_shared_bitmap_manager;
 
 ui::ContextFactory* g_context_factory = NULL;
 
@@ -61,19 +60,6 @@ ContextFactory* ContextFactory::GetInstance() {
 void ContextFactory::SetInstance(ContextFactory* instance) {
   DCHECK_NE(!!g_context_factory, !!instance);
   g_context_factory = instance;
-}
-
-Texture::Texture(bool flipped, const gfx::Size& size, float device_scale_factor)
-    : size_(size),
-      flipped_(flipped),
-      device_scale_factor_(device_scale_factor) {
-}
-
-Texture::~Texture() {
-}
-
-gpu::Mailbox Texture::Produce() {
-  return gpu::Mailbox();
 }
 
 CompositorLock::CompositorLock(Compositor* compositor)
@@ -110,7 +96,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       device_scale_factor_(0.0f),
       last_started_frame_(0),
       last_ended_frame_(0),
-      next_draw_is_resize_(false),
       disable_schedule_composite_(false),
       compositor_lock_(NULL),
       defer_draw_scheduling_(false),
@@ -133,6 +118,8 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       : kDefaultRefreshRate;
   settings.main_frame_before_draw_enabled = false;
   settings.main_frame_before_activation_enabled = false;
+  settings.throttle_frame_production =
+      !command_line->HasSwitch(switches::kDisableGpuVsync);
   settings.partial_swap_enabled =
       !command_line->HasSwitch(cc::switches::kUIDisablePartialSwap);
 #if defined(OS_CHROMEOS)
@@ -165,18 +152,18 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
   settings.impl_side_painting = IsUIImplSidePaintingEnabled();
-  settings.use_map_image = IsUIMapImageEnabled();
+  settings.use_zero_copy = IsUIZeroCopyEnabled();
 
   base::TimeTicks before_create = base::TimeTicks::Now();
   if (!!g_compositor_thread) {
     host_ = cc::LayerTreeHost::CreateThreaded(
         this,
-        g_shared_bitmap_manager,
+        g_context_factory->GetSharedBitmapManager(),
         settings,
         g_compositor_thread->message_loop_proxy());
   } else {
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, g_shared_bitmap_manager, settings);
+        this, this, g_context_factory->GetSharedBitmapManager(), settings);
   }
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
@@ -245,11 +232,6 @@ void Compositor::Terminate() {
   g_compositor_initialized = false;
 }
 
-// static
-void Compositor::SetSharedBitmapManager(cc::SharedBitmapManager* manager) {
-  g_shared_bitmap_manager = manager;
-}
-
 void Compositor::ScheduleDraw() {
   if (g_compositor_thread) {
     host_->Composite(gfx::FrameTime::Now());
@@ -303,18 +285,6 @@ void Compositor::Draw() {
     // compositeImmediately() directly.
     Layout();
     host_->Composite(gfx::FrameTime::Now());
-
-#if defined(OS_WIN)
-    // While we resize, we are usually a few frames behind. By blocking
-    // the UI thread here we minize the area that is mis-painted, specially
-    // in the non-client area. See RenderWidgetHostViewAura::SetBounds for
-    // more details and bug 177115.
-    if (next_draw_is_resize_ && (last_ended_frame_ > 1)) {
-      next_draw_is_resize_ = false;
-      host_->FinishAllRendering();
-    }
-#endif
-
   }
   if (swap_state_ == SWAP_NONE)
     NotifyEnd();
@@ -326,6 +296,10 @@ void Compositor::ScheduleFullRedraw() {
 
 void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
   host_->SetNeedsRedrawRect(damage_rect);
+}
+
+void Compositor::FinishAllRendering() {
+  host_->FinishAllRendering();
 }
 
 void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
@@ -340,8 +314,6 @@ void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
     size_ = size_in_pixel;
     host_->SetViewportSize(size_in_pixel);
     root_web_layer_->SetBounds(size_in_pixel);
-
-    next_draw_is_resize_ = true;
   }
   if (device_scale_factor_ != scale) {
     device_scale_factor_ = scale;
@@ -406,10 +378,6 @@ void Compositor::DidCompleteSwapBuffers() {
     NotifyEnd();
     swap_state_ = SWAP_COMPLETED;
   }
-}
-
-scoped_refptr<cc::ContextProvider> Compositor::OffscreenContextProvider() {
-  return ContextFactory::GetInstance()->OffscreenCompositorContextProvider();
 }
 
 void Compositor::ScheduleComposite() {

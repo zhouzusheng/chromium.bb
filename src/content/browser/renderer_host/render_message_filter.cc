@@ -10,6 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
@@ -35,6 +36,7 @@
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
@@ -87,6 +89,8 @@
 #include "content/common/sandbox_win.h"
 #endif
 #if defined(OS_ANDROID)
+#include "content/browser/renderer_host/compositor_impl_android.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 #include "media/base/android/webaudio_media_codec_bridge.h"
 #endif
 
@@ -351,7 +355,7 @@ RenderMessageFilter::RenderMessageFilter(
 
 RenderMessageFilter::~RenderMessageFilter() {
   // This function should be called on the IO thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(plugin_host_clients_.empty());
 }
 
@@ -374,6 +378,9 @@ void RenderMessageFilter::OnChannelClosing() {
   }
 #endif  // defined(ENABLE_PLUGINS)
   plugin_host_clients_.clear();
+#if defined(OS_ANDROID)
+  CompositorImpl::DestroyAllSurfaceTextures(render_process_id_);
+#endif
 }
 
 void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
@@ -441,7 +448,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnAllocatedSharedBitmap)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedSharedBitmap,
                         OnDeletedSharedBitmap)
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AllocTransportDIB, OnAllocTransportDIB)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FreeTransportDIB, OnFreeTransportDIB)
 #endif
@@ -564,7 +571,7 @@ void RenderMessageFilter::OnCreateFullscreenWidget(int opener_id,
 
 void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
                                                   size_t* shared_bytes) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   using base::ProcessMetrics;
 #if !defined(OS_MACOSX) || defined(OS_IOS)
   scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
@@ -871,15 +878,6 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  static bool enabled = false;
-  static bool checked = false;
-  if (!checked) {
-    checked = true;
-    const CommandLine& command = *CommandLine::ForCurrentProcess();
-    enabled = command.HasSwitch(switches::kEnableMonitorProfile);
-  }
-  if (enabled)
-    return;
   *profile = g_color_profile.Get().profile();
 }
 #endif
@@ -887,9 +885,11 @@ void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
                                         const Referrer& referrer,
-                                        const base::string16& suggested_name) {
+                                        const base::string16& suggested_name,
+                                        const bool use_prompt) {
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
+  save_info->prompt_for_save_location = use_prompt;
 
   // There may be a special cookie store that we could use for this download,
   // rather than the default one. Since this feature is generally only used for
@@ -955,7 +955,7 @@ void RenderMessageFilter::OnDeletedSharedBitmap(const cc::SharedBitmapId& id) {
 
 net::CookieStore* RenderMessageFilter::GetCookieStoreForURL(
     const GURL& url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   net::URLRequestContext* context =
       GetContentClient()->browser()->OverrideRequestContextForURL(
@@ -979,7 +979,7 @@ net::CookieStore* RenderMessageFilter::GetCookieStoreForURL(
   return request_context_->GetURLRequestContext()->cookie_store();
 }
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 void RenderMessageFilter::OnAllocTransportDIB(
     uint32 size, bool cache_in_browser, TransportDIB::Handle* handle) {
   render_widget_helper_->AllocTransportDIB(size, cache_in_browser, handle);
@@ -1133,7 +1133,7 @@ void RenderMessageFilter::SendGetRawCookiesResponse(
 
 void RenderMessageFilter::OnCompletedOpenChannelToNpapiPlugin(
     OpenChannelToNpapiPluginCallback* client) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(ContainsKey(plugin_host_clients_, client));
   plugin_host_clients_.erase(client);
 }
@@ -1249,14 +1249,26 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
     uint32 width,
     uint32 height,
     uint32 internalformat,
+    uint32 usage,
     gfx::GpuMemoryBufferHandle* handle) {
-  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat)) {
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat) ||
+      !GpuMemoryBufferImpl::IsUsageValid(usage)) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+  base::CheckedNumeric<int> size = width;
+  size *= height;
+  if (!size.IsValid()) {
     handle->type = gfx::EMPTY_BUFFER;
     return;
   }
 
 #if defined(OS_MACOSX)
-  if (GpuMemoryBufferImplIOSurface::IsFormatSupported(internalformat)) {
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplIOSurface. crbug.com/325045, crbug.com/323304
+  if (GpuMemoryBufferImplIOSurface::IsConfigurationSupported(internalformat,
+                                                             usage)) {
     IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
     if (io_surface_support) {
       base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
@@ -1300,24 +1312,29 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
   }
 #endif
 
-  uint64 stride = static_cast<uint64>(width) *
-      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
-  if (stride > std::numeric_limits<uint32>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
+#if defined(OS_ANDROID)
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplSurfaceTexture when adding support for out-of-process
+  // GPU service. crbug.com/368716
+  if (GpuMemoryBufferImplSurfaceTexture::IsConfigurationSupported(
+          internalformat, usage)) {
+    // Each surface texture is associated with a render process id. This allows
+    // the GPU service and Java Binder IPC to verify that a renderer is not
+    // trying to use a surface texture it doesn't own.
+    int surface_texture_id =
+        CompositorImpl::CreateSurfaceTexture(render_process_id_);
+    if (surface_texture_id != -1) {
+      handle->type = gfx::SURFACE_TEXTURE_BUFFER;
+      handle->surface_texture_id =
+          gfx::SurfaceTextureId(surface_texture_id, render_process_id_);
+      return;
+    }
   }
+#endif
 
-  uint64 buffer_size = stride * static_cast<uint64>(height);
-  if (buffer_size > std::numeric_limits<size_t>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-  // Fallback to fake GpuMemoryBuffer that is backed by shared memory and
-  // requires an upload before it can be used as a texture.
-  handle->type = gfx::SHARED_MEMORY_BUFFER;
-  ChildProcessHostImpl::AllocateSharedMemory(
-      static_cast<size_t>(buffer_size), PeerHandle(), &handle->handle);
+  GpuMemoryBufferImpl::AllocateForChildProcess(
+      gfx::Size(width, height), internalformat, usage, PeerHandle(), handle);
 }
 
 }  // namespace content

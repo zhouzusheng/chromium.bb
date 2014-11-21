@@ -35,8 +35,7 @@
 #include "FontFamilyNames.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
-#include "bindings/v8/ScriptScope.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "bindings/v8/ScriptState.h"
 #include "core/css/BinaryDataFontFaceSource.h"
 #include "core/css/CSSFontFace.h"
@@ -71,9 +70,8 @@ public:
         return adoptPtr(new FontFaceReadyPromiseResolver(context));
     }
 
-    void resolve(PassRefPtr<FontFace> fontFace)
+    void resolve(PassRefPtrWillBeRawPtr<FontFace> fontFace)
     {
-        ScriptScope scope(m_scriptState);
         switch (fontFace->loadStatus()) {
         case FontFace::Loaded:
             m_resolver->resolve(fontFace);
@@ -90,11 +88,11 @@ public:
 
 private:
     FontFaceReadyPromiseResolver(ExecutionContext* context)
-        : m_scriptState(ScriptState::current())
-        , m_resolver(ScriptPromiseResolver::create(context))
-    { }
-    ScriptState* m_scriptState;
-    RefPtr<ScriptPromiseResolver> m_resolver;
+        : m_resolver(ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(context))))
+    {
+    }
+
+    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
 };
 
 static PassRefPtrWillBeRawPtr<CSSValue> parseCSSValue(const Document* document, const String& s, CSSPropertyID propertyID)
@@ -146,7 +144,7 @@ static bool initFontFace(FontFace* fontFace, ExecutionContext* context, const At
     return true;
 }
 
-PassRefPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, const String& source, const Dictionary& descriptors, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, const String& source, const Dictionary& descriptors, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<CSSValue> src = parseCSSValue(toDocument(context), source, CSSPropertySrc);
     if (!src || !src->isValueList()) {
@@ -154,29 +152,29 @@ PassRefPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicStr
         return nullptr;
     }
 
-    RefPtr<FontFace> fontFace = adoptRefWillBeRefCountedGarbageCollected<FontFace>(new FontFace());
+    RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace());
     if (initFontFace(fontFace.get(), context, family, descriptors, exceptionState))
         fontFace->initCSSFontFace(toDocument(context), src);
     return fontFace.release();
 }
 
-PassRefPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, PassRefPtr<ArrayBuffer> source, const Dictionary& descriptors, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, PassRefPtr<ArrayBuffer> source, const Dictionary& descriptors, ExceptionState& exceptionState)
 {
-    RefPtr<FontFace> fontFace = adoptRefWillBeRefCountedGarbageCollected<FontFace>(new FontFace());
+    RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace());
     if (initFontFace(fontFace.get(), context, family, descriptors, exceptionState))
         fontFace->initCSSFontFace(static_cast<const unsigned char*>(source->data()), source->byteLength());
     return fontFace.release();
 }
 
-PassRefPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, PassRefPtr<ArrayBufferView> source, const Dictionary& descriptors, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, PassRefPtr<ArrayBufferView> source, const Dictionary& descriptors, ExceptionState& exceptionState)
 {
-    RefPtr<FontFace> fontFace = adoptRefWillBeRefCountedGarbageCollected<FontFace>(new FontFace());
+    RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace());
     if (initFontFace(fontFace.get(), context, family, descriptors, exceptionState))
         fontFace->initCSSFontFace(static_cast<const unsigned char*>(source->baseAddress()), source->byteLength());
     return fontFace.release();
 }
 
-PassRefPtr<FontFace> FontFace::create(Document* document, const StyleRuleFontFace* fontFaceRule)
+PassRefPtrWillBeRawPtr<FontFace> FontFace::create(Document* document, const StyleRuleFontFace* fontFaceRule)
 {
     const StylePropertySet& properties = fontFaceRule->properties();
 
@@ -188,7 +186,7 @@ PassRefPtr<FontFace> FontFace::create(Document* document, const StyleRuleFontFac
     if (!src || !src->isValueList())
         return nullptr;
 
-    RefPtr<FontFace> fontFace = adoptRefWillBeRefCountedGarbageCollected<FontFace>(new FontFace());
+    RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace());
 
     if (fontFace->setFamilyValue(toCSSValueList(family.get()))
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStyle)
@@ -381,7 +379,7 @@ void FontFace::setLoadStatus(LoadStatus status)
     if (m_status == Loaded || m_status == Error) {
         resolveReadyPromises();
 
-        Vector<RefPtr<LoadFontCallback> > callbacks;
+        WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback> > callbacks;
         m_callbacks.swap(callbacks);
         for (size_t i = 0; i < callbacks.size(); ++i) {
             if (m_status == Loaded)
@@ -405,7 +403,7 @@ ScriptPromise FontFace::load(ExecutionContext* context)
     return promise;
 }
 
-void FontFace::loadWithCallback(PassRefPtr<LoadFontCallback> callback, ExecutionContext* context)
+void FontFace::loadWithCallback(PassRefPtrWillBeRawPtr<LoadFontCallback> callback, ExecutionContext* context)
 {
     loadInternal(context);
     if (m_status == Loaded)
@@ -534,7 +532,7 @@ FontTraits FontFace::traits() const
     return FontTraits(style, variant, weight, FontStretchNormal);
 }
 
-static PassOwnPtr<CSSFontFace> createCSSFontFace(FontFace* fontFace, CSSValue* unicodeRange)
+static PassOwnPtrWillBeRawPtr<CSSFontFace> createCSSFontFace(FontFace* fontFace, CSSValue* unicodeRange)
 {
     Vector<CSSFontFace::UnicodeRange> ranges;
     if (CSSValueList* rangeList = toCSSValueList(unicodeRange)) {
@@ -545,7 +543,7 @@ static PassOwnPtr<CSSFontFace> createCSSFontFace(FontFace* fontFace, CSSValue* u
         }
     }
 
-    return adoptPtr(new CSSFontFace(fontFace, ranges));
+    return adoptPtrWillBeNoop(new CSSFontFace(fontFace, ranges));
 }
 
 void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSValue> src)
@@ -585,7 +583,12 @@ void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSVal
         } else {
 #if ENABLE(SVG_FONTS)
             if (item->svgFontFaceElement()) {
-                source = adoptPtr(new SVGFontFaceSource(item->svgFontFaceElement()));
+                RefPtr<SVGFontFaceElement> fontfaceElement = item->svgFontFaceElement();
+                // SVGFontFaceSource assumes that it is the case where <font-face> element resides in the same document.
+                // We put a RELEASE_ASSERT here as it will cause UAF if the assumption is false.
+                RELEASE_ASSERT(fontfaceElement->inDocument());
+                RELEASE_ASSERT(fontfaceElement->document() == document);
+                source = adoptPtr(new SVGFontFaceSource(fontfaceElement.get()));
             } else
 #endif
             {
@@ -623,6 +626,8 @@ void FontFace::trace(Visitor* visitor)
     visitor->trace(m_variant);
     visitor->trace(m_featureSettings);
     visitor->trace(m_error);
+    visitor->trace(m_cssFontFace);
+    visitor->trace(m_callbacks);
 }
 
 bool FontFace::hadBlankText() const

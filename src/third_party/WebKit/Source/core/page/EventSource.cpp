@@ -124,7 +124,9 @@ void EventSource::connect()
 {
     ASSERT(m_state == CONNECTING);
     ASSERT(!m_requestInFlight);
+    ASSERT(executionContext());
 
+    ExecutionContext& executionContext = *this->executionContext();
     ResourceRequest request(m_url);
     request.setHTTPMethod("GET");
     request.setHTTPHeaderField("Accept", "text/event-stream");
@@ -132,7 +134,7 @@ void EventSource::connect()
     if (!m_lastEventId.isEmpty())
         request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
 
-    SecurityOrigin* origin = executionContext()->securityOrigin();
+    SecurityOrigin* origin = executionContext.securityOrigin();
 
     ThreadableLoaderOptions options;
     options.sniffContent = DoNotSniffContent;
@@ -142,9 +144,9 @@ void EventSource::connect()
     options.crossOriginRequestPolicy = UseAccessControl;
     options.dataBufferingPolicy = DoNotBufferData;
     options.securityOrigin = origin;
-    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(executionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
+    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(&executionContext) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
 
-    m_loader = ThreadableLoader::create(executionContext(), this, request, options);
+    m_loader = ThreadableLoader::create(executionContext, this, request, options);
 
     if (m_loader)
         m_requestInFlight = true;
@@ -424,9 +426,9 @@ void EventSource::stop()
     close();
 }
 
-PassRefPtr<MessageEvent> EventSource::createMessageEvent()
+PassRefPtrWillBeRawPtr<MessageEvent> EventSource::createMessageEvent()
 {
-    RefPtr<MessageEvent> event = MessageEvent::create();
+    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create();
     event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
     m_data.clear();
     return event.release();

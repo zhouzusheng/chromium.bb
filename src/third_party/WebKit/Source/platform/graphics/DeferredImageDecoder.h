@@ -52,14 +52,16 @@ public:
     static bool isLazyDecoded(const SkBitmap&);
 
     static void setEnabled(bool);
+    static bool enabled();
 
     String filenameExtension() const;
 
     ImageFrame* frameBufferAtIndex(size_t index);
 
-    void setData(SharedBuffer* data, bool allDataReceived);
+    void setData(SharedBuffer& data, bool allDataReceived);
 
     bool isSizeAvailable();
+    bool hasColorProfile() const;
     IntSize size() const;
     IntSize frameSizeAtIndex(size_t index) const;
     size_t frameCount();
@@ -82,7 +84,6 @@ private:
     SkBitmap createSkiaDiscardableBitmap(size_t index);
     SkBitmap createLazyDecodingBitmap(size_t index);
     void activateLazyDecoding();
-    void setData(PassRefPtr<SharedBuffer>, bool allDataReceived);
 
     RefPtr<SharedBuffer> m_data;
     bool m_allDataReceived;
@@ -94,6 +95,7 @@ private:
     IntSize m_size;
     ImageOrientation m_orientation;
     int m_repetitionCount;
+    bool m_hasColorProfile;
 
     Vector<OwnPtr<ImageFrame> > m_lazyDecodedFrames;
     RefPtr<ImageFrameGenerator> m_frameGenerator;

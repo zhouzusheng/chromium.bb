@@ -40,6 +40,7 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/break_lines.h"
 #include "platform/fonts/Character.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/TextBreakIterator.h"
@@ -193,7 +194,7 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
     // we already did this for the parent of the text run.
     // We do have to schedule layouts, though, since a style change can force us to
     // need to relayout.
-    if (diff == StyleDifferenceLayout) {
+    if (diff.needsFullLayout()) {
         setNeedsLayoutAndPrefWidthsRecalc();
         m_knownToHaveNoOverflowAndNoFallbackFonts = false;
     }
@@ -204,8 +205,11 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
     if (oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity())
         transformText();
 
+    // This is an optimization that kicks off font load before layout.
+    // In order to make it fast, we only check if the first character of the
+    // text is included in the unicode ranges of the fonts.
     if (!text().containsOnlyWhitespace())
-        newStyle->font().willUseFontData();
+        newStyle->font().willUseFontData(text().characterStartingAt(0));
 }
 
 void RenderText::removeAndDestroyTextBoxes()
@@ -462,27 +466,6 @@ void RenderText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start,
                 quads.append(localToAbsoluteQuad(rect, 0, wasFixed));
         }
     }
-}
-
-InlineTextBox* RenderText::findNextInlineTextBox(int offset, int& pos) const
-{
-    // The text runs point to parts of the RenderText's m_text
-    // (they don't include '\n')
-    // Find the text run that includes the character at offset
-    // and return pos, which is the position of the char in the run.
-
-    if (!m_firstTextBox)
-        return 0;
-
-    InlineTextBox* s = m_firstTextBox;
-    int off = s->len();
-    while (offset > off && s->nextTextBox()) {
-        s = s->nextTextBox();
-        off = s->start() + s->len();
-    }
-    // we are now in the correct text run
-    pos = (offset > off ? s->len() : s->len() - (off - offset) );
-    return s;
 }
 
 enum ShouldAffinityBeDownstream { AlwaysDownstream, AlwaysUpstream, UpstreamIfPositionIsNotAtStart };
@@ -769,6 +752,7 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
     run.setCharacterScanForCodePath(!canUseSimpleFontCodePath());
     run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
     run.setXPos(xPos);
+    FontCachePurgePreventer fontCachePurgePreventer;
     return f.width(run, fallbackFonts, glyphOverflow);
 }
 
@@ -1492,7 +1476,7 @@ void RenderText::positionLineBox(InlineBox* box)
     // FIXME: should not be needed!!!
     if (!s->len()) {
         // We want the box to be destroyed.
-        s->remove();
+        s->remove(DontMarkLineBoxes);
         if (m_firstTextBox == s)
             m_firstTextBox = s->nextTextBox();
         else

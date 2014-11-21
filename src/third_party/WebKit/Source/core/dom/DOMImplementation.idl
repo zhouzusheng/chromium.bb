@@ -20,6 +20,7 @@
 
 [
     SetWrapperReferenceFrom=document,
+    WillBeGarbageCollected,
 ] interface DOMImplementation {
 
     // DOM Level 1
@@ -35,12 +36,6 @@
     [RaisesException] XMLDocument createDocument([TreatNullAs=NullString] DOMString namespaceURI,
                                                  [TreatNullAs=NullString] DOMString qualifiedName,
                                                  [Default=Undefined] optional DocumentType doctype);
-
-    // DOMImplementationCSS interface from DOM Level 2 CSS
-
-    [DeprecateAs=DOMImplementationCreateCSSStyleSheet]
-    CSSStyleSheet createCSSStyleSheet([Default=Undefined] optional DOMString title,
-                                      [Default=Undefined] optional DOMString media);
 
     // HTMLDOMImplementation interface from DOM Level 2 HTML
 

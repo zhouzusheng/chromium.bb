@@ -160,8 +160,12 @@ enum vp8e_enc_control_id {
                                           scale as used by the rc_*_quantizer config
                                           parameters */
   VP8E_SET_ARNR_MAXFRAMES,         /**< control function to set the max number of frames blurred creating arf*/
-  VP8E_SET_ARNR_STRENGTH,         /**< control function to set the filter strength for the arf */
-  VP8E_SET_ARNR_TYPE,         /**< control function to set the type of filter to use for the arf*/
+  VP8E_SET_ARNR_STRENGTH,          //!< control function to set the filter
+                                   //!< strength for the arf
+
+  /*!\deprecated control function to set the filter type to use for the arf */
+  VP8E_SET_ARNR_TYPE,
+
   VP8E_SET_TUNING,                 /**< control function to set visual tuning */
   /*!\brief control function to set constrained quality level
    *
@@ -192,6 +196,7 @@ enum vp8e_enc_control_id {
   VP9E_SET_TILE_ROWS,
   VP9E_SET_FRAME_PARALLEL_DECODING,
   VP9E_SET_AQ_MODE,
+  VP9E_SET_FRAME_PERIODIC_BOOST,
 
   VP9E_SET_SVC,
   VP9E_SET_SVC_PARAMETERS,
@@ -346,7 +351,7 @@ VPX_CTRL_USE_TYPE(VP8E_SET_TOKEN_PARTITIONS,   int) /* vp8e_token_partitions */
 
 VPX_CTRL_USE_TYPE(VP8E_SET_ARNR_MAXFRAMES,     unsigned int)
 VPX_CTRL_USE_TYPE(VP8E_SET_ARNR_STRENGTH,     unsigned int)
-VPX_CTRL_USE_TYPE(VP8E_SET_ARNR_TYPE,     unsigned int)
+VPX_CTRL_USE_TYPE_DEPRECATED(VP8E_SET_ARNR_TYPE,     unsigned int)
 VPX_CTRL_USE_TYPE(VP8E_SET_TUNING,             int) /* vp8e_tuning */
 VPX_CTRL_USE_TYPE(VP8E_SET_CQ_LEVEL,      unsigned int)
 
@@ -363,6 +368,8 @@ VPX_CTRL_USE_TYPE(VP9E_SET_LOSSLESS, unsigned int)
 VPX_CTRL_USE_TYPE(VP9E_SET_FRAME_PARALLEL_DECODING, unsigned int)
 
 VPX_CTRL_USE_TYPE(VP9E_SET_AQ_MODE, unsigned int)
+
+VPX_CTRL_USE_TYPE(VP9E_SET_FRAME_PERIODIC_BOOST, unsigned int)
 
 /*! @} - end defgroup vp8_encoder */
 #ifdef __cplusplus

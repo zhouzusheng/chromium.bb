@@ -631,6 +631,7 @@ cr.define('cr.ui', function() {
         }
       }
       this.cachedItems_ = newCachedItems;
+      this.pinnedItem_ = null;
 
       var newCachedItemHeights = {};
       for (var index in this.cachedItemHeights_) {
@@ -1120,14 +1121,11 @@ cr.define('cr.ui', function() {
 
       // We don't set the lead or selected properties until after adding all
       // items, in case they force relayout in response to these events.
-      var listItem = null;
       if (leadIndex != -1 && this.cachedItems_[leadIndex])
         this.cachedItems_[leadIndex].lead = true;
       for (var y = firstIndex; y < lastIndex; y++) {
-        if (sm.getIndexSelected(y))
-          this.cachedItems_[y].selected = true;
-        else if (y != leadIndex)
-          listItem = this.cachedItems_[y];
+        if (sm.getIndexSelected(y) != this.cachedItems_[y].selected)
+          this.cachedItems_[y].selected = !this.cachedItems_[y].selected;
       }
 
       this.firstIndex_ = firstIndex;

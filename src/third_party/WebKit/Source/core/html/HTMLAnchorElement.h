@@ -56,8 +56,7 @@ enum {
 
 class HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
 public:
-    static PassRefPtr<HTMLAnchorElement> create(Document&);
-    static PassRefPtr<HTMLAnchorElement> create(const QualifiedName&, Document&);
+    static PassRefPtrWillBeRawPtr<HTMLAnchorElement> create(Document&);
 
     virtual ~HTMLAnchorElement();
 
@@ -71,8 +70,6 @@ public:
 
     virtual String input() const OVERRIDE FINAL;
     virtual void setInput(const String&) OVERRIDE FINAL;
-
-    String text();
 
     bool isLiveLink() const;
 
@@ -88,9 +85,9 @@ protected:
     HTMLAnchorElement(const QualifiedName&, Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual bool supportsFocus() const OVERRIDE;
 
 private:
-    virtual bool supportsFocus() const OVERRIDE;
     virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE FINAL;
@@ -107,24 +104,10 @@ private:
     AtomicString target() const;
     void handleClick(Event*);
 
-    enum EventType {
-        MouseEventWithoutShiftKey,
-        MouseEventWithShiftKey,
-        NonMouseEvent,
-    };
-    static EventType eventType(Event*);
-    bool treatLinkAsLiveForEventType(EventType) const;
-
-    Element* rootEditableElementForSelectionOnMouseDown() const;
-    void setRootEditableElementForSelectionOnMouseDown(Element*);
-    void clearRootEditableElementForSelectionOnMouseDown();
-
     class PrefetchEventHandler;
     PrefetchEventHandler* prefetchEventHandler();
 
-    bool m_hasRootEditableElementForSelectionOnMouseDown : 1;
-    bool m_wasShiftKeyDownOnMouseDown : 1;
-    uint32_t m_linkRelations : 30;
+    uint32_t m_linkRelations;
     OwnPtr<PrefetchEventHandler> m_prefetchEventHandler;
     mutable LinkHash m_cachedVisitedLinkHash;
 };

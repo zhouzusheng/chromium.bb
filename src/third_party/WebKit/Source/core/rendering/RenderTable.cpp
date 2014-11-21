@@ -35,7 +35,6 @@
 #include "core/rendering/FixedTableLayout.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTableCaption.h"
@@ -84,20 +83,20 @@ void RenderTable::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
     RenderBlock::styleDidChange(diff, oldStyle);
     propagateStyleToAnonymousChildren();
 
-    ETableLayout oldTableLayout = oldStyle ? oldStyle->tableLayout() : TAUTO;
+    bool oldFixedTableLayout = oldStyle ? oldStyle->isFixedTableLayout() : false;
 
     // In the collapsed border model, there is no cell spacing.
     m_hSpacing = collapseBorders() ? 0 : style()->horizontalBorderSpacing();
     m_vSpacing = collapseBorders() ? 0 : style()->verticalBorderSpacing();
     m_columnPos[0] = m_hSpacing;
 
-    if (!m_tableLayout || style()->tableLayout() != oldTableLayout) {
+    if (!m_tableLayout || style()->isFixedTableLayout() != oldFixedTableLayout) {
         if (m_tableLayout)
             m_tableLayout->willChangeTableLayout();
 
         // According to the CSS2 spec, you only use fixed table layout if an
         // explicit width is specified on the table.  Auto width implies auto table layout.
-        if (style()->tableLayout() == TFIXED && !style()->logicalWidth().isAuto())
+        if (style()->isFixedTableLayout())
             m_tableLayout = adoptPtr(new FixedTableLayout(this));
         else
             m_tableLayout = adoptPtr(new AutoTableLayout(this));
@@ -412,15 +411,14 @@ void RenderTable::simplifiedNormalFlowLayout()
 
 void RenderTable::layout()
 {
-    // Note: RenderTable is handled differently than other RenderBlocks and the LayoutScope
-    //       must be created before the table begins laying out.
-    FastTextAutosizer::LayoutScope fastTextAutosizerLayoutScope(this);
     ASSERT(needsLayout());
-
-    LayoutRectRecorder recorder(*this);
 
     if (simplifiedLayout())
         return;
+
+    // Note: RenderTable is handled differently than other RenderBlocks and the LayoutScope
+    //       must be created before the table begins laying out.
+    FastTextAutosizer::LayoutScope fastTextAutosizerLayoutScope(this);
 
     recalcSectionsIfNeeded();
     // FIXME: We should do this recalc lazily in borderStart/borderEnd so that we don't have to make sure
@@ -428,7 +426,7 @@ void RenderTable::layout()
     recalcBordersInRowDirection();
 
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
-    SubtreeLayoutScope layouter(this);
+    SubtreeLayoutScope layouter(*this);
 
 
     // If any table section moved vertically, we will just repaint everything from that
@@ -653,7 +651,7 @@ void RenderTable::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     PaintPhase paintPhase = paintInfo.phase;
 
-    if (!isRoot()) {
+    if (!isDocumentElement()) {
         LayoutRect overflowBox = visualOverflowRect();
         flipForWritingMode(overflowBox);
         overflowBox.moveBy(adjustedPaintOffset);

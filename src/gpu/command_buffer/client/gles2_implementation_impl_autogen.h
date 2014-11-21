@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -587,7 +587,7 @@ void GLES2Implementation::GetBooleanv(GLenum pname, GLboolean* params) {
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -617,7 +617,7 @@ void GLES2Implementation::GetBufferParameteriv(GLenum target,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -642,7 +642,7 @@ void GLES2Implementation::GetFloatv(GLenum pname, GLfloat* params) {
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -677,7 +677,7 @@ void GLES2Implementation::GetFramebufferAttachmentParameteriv(GLenum target,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -703,7 +703,7 @@ void GLES2Implementation::GetIntegerv(GLenum pname, GLint* params) {
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -731,7 +731,7 @@ void GLES2Implementation::GetProgramiv(GLuint program,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -788,7 +788,7 @@ void GLES2Implementation::GetRenderbufferParameteriv(GLenum target,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -816,7 +816,7 @@ void GLES2Implementation::GetShaderiv(GLuint shader,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -899,7 +899,7 @@ void GLES2Implementation::GetTexParameterfv(GLenum target,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -929,7 +929,7 @@ void GLES2Implementation::GetTexParameteriv(GLenum target,
   WaitForCmd();
   result->CopyResult(params);
   GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int32 i = 0; i < result->GetNumResults(); ++i) {
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
       GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
     }
   });
@@ -2071,6 +2071,39 @@ void GLES2Implementation::DiscardBackbufferCHROMIUM() {
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glDiscardBackbufferCHROMIUM("
                      << ")");
   helper_->DiscardBackbufferCHROMIUM();
+  CheckGLError();
+}
+
+void GLES2Implementation::ScheduleOverlayPlaneCHROMIUM(
+    GLint plane_z_order,
+    GLenum plane_transform,
+    GLuint overlay_texture_id,
+    GLint bounds_x,
+    GLint bounds_y,
+    GLint bounds_width,
+    GLint bounds_height,
+    GLfloat uv_x,
+    GLfloat uv_y,
+    GLfloat uv_width,
+    GLfloat uv_height) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG(
+      "[" << GetLogPrefix() << "] glScheduleOverlayPlaneCHROMIUM("
+          << plane_z_order << ", " << GLES2Util::GetStringEnum(plane_transform)
+          << ", " << overlay_texture_id << ", " << bounds_x << ", " << bounds_y
+          << ", " << bounds_width << ", " << bounds_height << ", " << uv_x
+          << ", " << uv_y << ", " << uv_width << ", " << uv_height << ")");
+  helper_->ScheduleOverlayPlaneCHROMIUM(plane_z_order,
+                                        plane_transform,
+                                        overlay_texture_id,
+                                        bounds_x,
+                                        bounds_y,
+                                        bounds_width,
+                                        bounds_height,
+                                        uv_x,
+                                        uv_y,
+                                        uv_width,
+                                        uv_height);
   CheckGLError();
 }
 

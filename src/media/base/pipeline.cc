@@ -39,7 +39,6 @@ Pipeline::Pipeline(
       media_log_(media_log),
       running_(false),
       did_loading_progress_(false),
-      total_bytes_(0),
       volume_(1.0f),
       playback_rate_(0.0f),
       clock_(new Clock(&default_tick_clock_)),
@@ -49,7 +48,6 @@ Pipeline::Pipeline(
       audio_ended_(false),
       video_ended_(false),
       text_ended_(false),
-      audio_disabled_(false),
       demuxer_(NULL),
       creation_time_(default_tick_clock_.NowTicks()) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
@@ -161,32 +159,12 @@ TimeDelta Pipeline::GetMediaTime() const {
 
 Ranges<TimeDelta> Pipeline::GetBufferedTimeRanges() {
   base::AutoLock auto_lock(lock_);
-  Ranges<TimeDelta> time_ranges;
-  for (size_t i = 0; i < buffered_time_ranges_.size(); ++i) {
-    time_ranges.Add(buffered_time_ranges_.start(i),
-                    buffered_time_ranges_.end(i));
-  }
-  if (clock_->Duration() == TimeDelta() || total_bytes_ == 0)
-    return time_ranges;
-  for (size_t i = 0; i < buffered_byte_ranges_.size(); ++i) {
-    TimeDelta start = TimeForByteOffset_Locked(buffered_byte_ranges_.start(i));
-    TimeDelta end = TimeForByteOffset_Locked(buffered_byte_ranges_.end(i));
-    // Cap approximated buffered time at the length of the video.
-    end = std::min(end, clock_->Duration());
-    time_ranges.Add(start, end);
-  }
-
-  return time_ranges;
+  return buffered_time_ranges_;
 }
 
 TimeDelta Pipeline::GetMediaDuration() const {
   base::AutoLock auto_lock(lock_);
   return clock_->Duration();
-}
-
-int64 Pipeline::GetTotalBytes() const {
-  base::AutoLock auto_lock(lock_);
-  return total_bytes_;
 }
 
 bool Pipeline::DidLoadingProgress() const {
@@ -316,21 +294,10 @@ void Pipeline::SetError(PipelineStatus error) {
   media_log_->AddEvent(media_log_->CreatePipelineErrorEvent(error));
 }
 
-void Pipeline::OnAudioDisabled() {
-  DCHECK(IsRunning());
-  task_runner_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::AudioDisabledTask, base::Unretained(this)));
-  media_log_->AddEvent(
-      media_log_->CreateEvent(MediaLogEvent::AUDIO_RENDERER_DISABLED));
-}
-
 void Pipeline::OnAudioTimeUpdate(TimeDelta time, TimeDelta max_time) {
   DCHECK_LE(time.InMicroseconds(), max_time.InMicroseconds());
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
-
-  if (audio_disabled_)
-    return;
 
   if (waiting_for_clock_update_ && time < clock_->Elapsed())
     return;
@@ -348,7 +315,7 @@ void Pipeline::OnVideoTimeUpdate(TimeDelta max_time) {
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
 
-  if (audio_renderer_ && !audio_disabled_)
+  if (audio_renderer_)
     return;
 
   // TODO(scherkus): |state_| should only be accessed on pipeline thread, see
@@ -371,39 +338,6 @@ void Pipeline::SetDuration(TimeDelta duration) {
   clock_->SetDuration(duration);
   if (!duration_change_cb_.is_null())
     duration_change_cb_.Run();
-}
-
-void Pipeline::SetTotalBytes(int64 total_bytes) {
-  DCHECK(IsRunning());
-  media_log_->AddEvent(
-      media_log_->CreateStringEvent(
-          MediaLogEvent::TOTAL_BYTES_SET, "total_bytes",
-          base::Int64ToString(total_bytes)));
-  int64 total_mbytes = total_bytes >> 20;
-  if (total_mbytes > kint32max)
-    total_mbytes = kint32max;
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Media.TotalMBytes", static_cast<int32>(total_mbytes), 1, kint32max, 50);
-
-  base::AutoLock auto_lock(lock_);
-  total_bytes_ = total_bytes;
-}
-
-TimeDelta Pipeline::TimeForByteOffset_Locked(int64 byte_offset) const {
-  lock_.AssertAcquired();
-  // Use floating point to avoid potential overflow when using 64 bit integers.
-  double time_offset_in_ms = clock_->Duration().InMilliseconds() *
-      (static_cast<double>(byte_offset) / total_bytes_);
-  TimeDelta time_offset(TimeDelta::FromMilliseconds(
-      static_cast<int64>(time_offset_in_ms)));
-  // Since the byte->time calculation is approximate, fudge the beginning &
-  // ending areas to look better.
-  TimeDelta epsilon = clock_->Duration() / 100;
-  if (time_offset < epsilon)
-    return TimeDelta();
-  if (time_offset + epsilon > clock_->Duration())
-    return clock_->Duration();
-  return time_offset;
 }
 
 void Pipeline::OnStateTransition(PipelineStatus status) {
@@ -469,6 +403,7 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
         PipelineMetadata metadata;
         metadata.has_audio = audio_renderer_;
         metadata.has_video = video_renderer_;
+        metadata.timeline_offset = demuxer_->GetTimelineOffset();
         DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
         if (stream)
           metadata.natural_size = stream->video_decoder_config().natural_size();
@@ -486,7 +421,7 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
         // We use audio stream to update the clock. So if there is such a
         // stream, we pause the clock until we receive a valid timestamp.
         waiting_for_clock_update_ = true;
-        if (!audio_renderer_ || audio_disabled_) {
+        if (!audio_renderer_) {
           clock_->SetMaxTime(clock_->Duration());
           StartClockIfWaitingForTimeUpdate_Locked();
         }
@@ -684,13 +619,6 @@ void Pipeline::OnStopCompleted(PipelineStatus status) {
   }
 }
 
-void Pipeline::AddBufferedByteRange(int64 start, int64 end) {
-  DCHECK(IsRunning());
-  base::AutoLock auto_lock(lock_);
-  buffered_byte_ranges_.Add(start, end);
-  did_loading_progress_ = true;
-}
-
 void Pipeline::AddBufferedTimeRange(base::TimeDelta start,
                                     base::TimeDelta end) {
   DCHECK(IsRunning());
@@ -853,7 +781,7 @@ void Pipeline::DoAudioRendererEnded() {
   audio_ended_ = true;
 
   // Start clock since there is no more audio to trigger clock updates.
-  if (!audio_disabled_) {
+  {
     base::AutoLock auto_lock(lock_);
     clock_->SetMaxTime(clock_->Duration());
     StartClockIfWaitingForTimeUpdate_Locked();
@@ -889,7 +817,7 @@ void Pipeline::DoTextRendererEnded() {
 void Pipeline::RunEndedCallbackIfNeeded() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (audio_renderer_ && !audio_ended_ && !audio_disabled_)
+  if (audio_renderer_ && !audio_ended_)
     return;
 
   if (video_renderer_ && !video_ended_)
@@ -905,20 +833,6 @@ void Pipeline::RunEndedCallbackIfNeeded() {
 
   DCHECK_EQ(status_, PIPELINE_OK);
   ended_cb_.Run();
-}
-
-void Pipeline::AudioDisabledTask() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  base::AutoLock auto_lock(lock_);
-  audio_disabled_ = true;
-
-  // Notify our demuxer that we're no longer rendering audio.
-  demuxer_->OnAudioRendererDisabled();
-
-  // Start clock since there is no more audio to trigger clock updates.
-  clock_->SetMaxTime(clock_->Duration());
-  StartClockIfWaitingForTimeUpdate_Locked();
 }
 
 void Pipeline::AddTextStreamTask(DemuxerStream* text_stream,
@@ -952,7 +866,6 @@ void Pipeline::InitializeAudioRenderer(const PipelineStatusCB& done_cb) {
       base::Bind(&Pipeline::OnAudioUnderflow, base::Unretained(this)),
       base::Bind(&Pipeline::OnAudioTimeUpdate, base::Unretained(this)),
       base::Bind(&Pipeline::OnAudioRendererEnded, base::Unretained(this)),
-      base::Bind(&Pipeline::OnAudioDisabled, base::Unretained(this)),
       base::Bind(&Pipeline::SetError, base::Unretained(this)));
 }
 
@@ -962,6 +875,7 @@ void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
   video_renderer_ = filter_collection_->GetVideoRenderer();
   video_renderer_->Initialize(
       demuxer_->GetStream(DemuxerStream::VIDEO),
+      demuxer_->GetLiveness() == Demuxer::LIVENESS_LIVE,
       done_cb,
       base::Bind(&Pipeline::OnUpdateStatistics, base::Unretained(this)),
       base::Bind(&Pipeline::OnVideoTimeUpdate, base::Unretained(this)),

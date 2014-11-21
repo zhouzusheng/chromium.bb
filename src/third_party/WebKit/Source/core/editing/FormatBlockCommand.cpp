@@ -70,7 +70,7 @@ void FormatBlockCommand::formatRange(const Position& start, const Position& end,
     Node* nodeToSplitTo = enclosingBlockToSplitTreeTo(start.deprecatedNode());
     RefPtr<Node> outerBlock = (start.deprecatedNode() == nodeToSplitTo) ? start.deprecatedNode() : splitTreeToNode(start.deprecatedNode(), nodeToSplitTo);
     RefPtr<Node> nodeAfterInsertionPosition = outerBlock;
-    RefPtr<Range> range = Range::create(document(), start, endOfSelection);
+    RefPtrWillBeRawPtr<Range> range = Range::create(document(), start, endOfSelection);
 
     if (isElementForFormatBlock(refNode->tagQName()) && VisiblePosition(start) == startOfBlock(VisiblePosition(start))
         && (VisiblePosition(end) == endOfBlock(VisiblePosition(end)) || isNodeVisiblyContainedWithin(*refNode, *range))
@@ -106,7 +106,7 @@ Element* FormatBlockCommand::elementForFormatBlockCommand(Range* range)
     if (!range)
         return 0;
 
-    Node* commonAncestor = range->commonAncestorContainer(IGNORE_EXCEPTION);
+    Node* commonAncestor = range->commonAncestorContainer();
     while (commonAncestor && !isElementForFormatBlock(commonAncestor))
         commonAncestor = commonAncestor->parentNode();
 

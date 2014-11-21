@@ -56,7 +56,7 @@ HTMLFormControlsCollection::~HTMLFormControlsCollection()
 {
 }
 
-const Vector<FormAssociatedElement*>& HTMLFormControlsCollection::formControlElements() const
+const FormAssociatedElement::List& HTMLFormControlsCollection::formControlElements() const
 {
     ASSERT(isHTMLFormElement(ownerNode()) || isHTMLFieldSetElement(ownerNode()));
     if (isHTMLFormElement(ownerNode()))
@@ -69,7 +69,7 @@ const Vector<HTMLImageElement*>& HTMLFormControlsCollection::formImageElements()
     return toHTMLFormElement(ownerNode()).imageElements();
 }
 
-static unsigned findFormAssociatedElement(const Vector<FormAssociatedElement*>& associatedElements, Element* element)
+static unsigned findFormAssociatedElement(const FormAssociatedElement::List& associatedElements, Element* element)
 {
     unsigned i = 0;
     for (; i < associatedElements.size(); ++i) {
@@ -82,7 +82,7 @@ static unsigned findFormAssociatedElement(const Vector<FormAssociatedElement*>& 
 
 Element* HTMLFormControlsCollection::virtualItemAfter(Element* previous) const
 {
-    const Vector<FormAssociatedElement*>& associatedElements = formControlElements();
+    const FormAssociatedElement::List& associatedElements = formControlElements();
     unsigned offset;
     if (!previous)
         offset = 0;
@@ -109,7 +109,7 @@ void HTMLFormControlsCollection::invalidateCache(Document* oldDocument) const
     m_cachedElementOffsetInArray = 0;
 }
 
-static HTMLElement* firstNamedItem(const Vector<FormAssociatedElement*>& elementsArray,
+static HTMLElement* firstNamedItem(const FormAssociatedElement::List& elementsArray,
     const Vector<HTMLImageElement*>* imageElementsArray, const QualifiedName& attrName, const String& name)
 {
     ASSERT(attrName == idAttr || attrName == nameAttr);
@@ -153,9 +153,10 @@ void HTMLFormControlsCollection::updateIdNameCache() const
     if (hasValidIdNameCache())
         return;
 
+    OwnPtr<NamedItemCache> cache = NamedItemCache::create();
     HashSet<StringImpl*> foundInputElements;
 
-    const Vector<FormAssociatedElement*>& elementsArray = formControlElements();
+    const FormAssociatedElement::List& elementsArray = formControlElements();
 
     for (unsigned i = 0; i < elementsArray.size(); ++i) {
         FormAssociatedElement* associatedElement = elementsArray[i];
@@ -164,11 +165,11 @@ void HTMLFormControlsCollection::updateIdNameCache() const
             const AtomicString& idAttrVal = element->getIdAttribute();
             const AtomicString& nameAttrVal = element->getNameAttribute();
             if (!idAttrVal.isEmpty()) {
-                appendIdCache(idAttrVal, element);
+                cache->addElementWithId(idAttrVal, element);
                 foundInputElements.add(idAttrVal.impl());
             }
             if (!nameAttrVal.isEmpty() && idAttrVal != nameAttrVal) {
-                appendNameCache(nameAttrVal, element);
+                cache->addElementWithName(nameAttrVal, element);
                 foundInputElements.add(nameAttrVal.impl());
             }
         }
@@ -181,13 +182,14 @@ void HTMLFormControlsCollection::updateIdNameCache() const
             const AtomicString& idAttrVal = element->getIdAttribute();
             const AtomicString& nameAttrVal = element->getNameAttribute();
             if (!idAttrVal.isEmpty() && !foundInputElements.contains(idAttrVal.impl()))
-                appendIdCache(idAttrVal, element);
+                cache->addElementWithId(idAttrVal, element);
             if (!nameAttrVal.isEmpty() && idAttrVal != nameAttrVal && !foundInputElements.contains(nameAttrVal.impl()))
-                appendNameCache(nameAttrVal, element);
+                cache->addElementWithName(nameAttrVal, element);
         }
     }
 
-    setHasValidIdNameCache();
+    // Set the named item cache last as traversing the tree may cause cache invalidation.
+    setNamedItemCache(cache.release());
 }
 
 void HTMLFormControlsCollection::namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtr<RadioNodeList>& radioNodeList, bool& elementEnabled, RefPtr<Element>& element)

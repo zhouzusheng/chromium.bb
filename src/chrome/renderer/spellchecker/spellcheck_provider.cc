@@ -15,7 +15,7 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
 #include "third_party/WebKit/public/web/WebTextDecorationType.h"
@@ -90,7 +90,7 @@ void SpellCheckProvider::RequestTextChecking(
 #endif  // !OS_MACOSX
 }
 
-void SpellCheckProvider::DidFinishLoad(blink::WebFrame* frame) {
+void SpellCheckProvider::DidFinishLoad(blink::WebLocalFrame* frame) {
   if (spellcheck_->is_spellcheck_enabled()) {
     frame->document().documentElement().requestSpellCheck();
   }

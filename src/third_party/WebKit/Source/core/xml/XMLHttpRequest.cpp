@@ -41,6 +41,7 @@
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/frame/Settings.h"
 #include "core/xml/XMLHttpRequestProgressEvent.h"
@@ -55,6 +56,7 @@
 #include "public/platform/Platform.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferView.h"
+#include "wtf/Assertions.h"
 #include "wtf/RefCountedLeakCounter.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
@@ -242,7 +244,8 @@ Document* XMLHttpRequest::responseXML(ExceptionState& exceptionState)
         return 0;
 
     if (!m_createdDocument) {
-        bool isHTML = equalIgnoringCase(responseMIMEType(), "text/html");
+        AtomicString mimeType = responseMIMEType();
+        bool isHTML = equalIgnoringCase(mimeType, "text/html");
 
         // The W3C spec requires the final MIME type to be some valid XML type, or text/html.
         // If it is text/html, then the responseType of "document" must have been supplied explicitly.
@@ -260,6 +263,7 @@ Document* XMLHttpRequest::responseXML(ExceptionState& exceptionState)
             m_responseDocument->setContent(m_responseText.flattenToString());
             m_responseDocument->setSecurityOrigin(securityOrigin());
             m_responseDocument->setContextFeatures(document()->contextFeatures());
+            m_responseDocument->setMimeType(mimeType);
             if (!m_responseDocument->wellFormed())
                 m_responseDocument = nullptr;
         }
@@ -307,6 +311,12 @@ ArrayBuffer* XMLHttpRequest::responseArrayBuffer()
     if (!m_responseArrayBuffer.get()) {
         if (m_binaryResponseBuilder.get() && m_binaryResponseBuilder->size() > 0) {
             m_responseArrayBuffer = m_binaryResponseBuilder->getAsArrayBuffer();
+            if (!m_responseArrayBuffer) {
+                // m_binaryResponseBuilder failed to allocate an ArrayBuffer.
+                // We need to crash the renderer since there's no way defined in
+                // the spec to tell this to the user.
+                CRASH();
+            }
             m_binaryResponseBuilder.clear();
         } else {
             m_responseArrayBuffer = ArrayBuffer::create(static_cast<void*>(0), 0);
@@ -436,6 +446,8 @@ void XMLHttpRequest::dispatchReadyStateChangeEvent()
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRReadyStateChangeEvent(executionContext(), this);
 
     if (m_async || (m_state <= OPENED || m_state == DONE)) {
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "XHRReadyStateChange", "data", InspectorXhrReadyStateChangeEvent::data(executionContext(), this));
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
         ProgressEventAction flushAction = DoNotFlushProgressEvent;
         if (m_state == DONE) {
             if (m_error)
@@ -444,14 +456,20 @@ void XMLHttpRequest::dispatchReadyStateChangeEvent()
                 flushAction = FlushProgressEvent;
         }
         m_progressEventThrottle.dispatchReadyStateChangeEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::readystatechange), flushAction);
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
     }
 
     InspectorInstrumentation::didDispatchXHRReadyStateChangeEvent(cookie);
     if (m_state == DONE && !m_error) {
-        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRLoadEvent(executionContext(), this);
-        dispatchThrottledProgressEventSnapshot(EventTypeNames::load);
-        InspectorInstrumentation::didDispatchXHRLoadEvent(cookie);
+        {
+            TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "XHRLoad", "data", InspectorXhrLoadEvent::data(executionContext(), this));
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+            InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRLoadEvent(executionContext(), this);
+            dispatchThrottledProgressEventSnapshot(EventTypeNames::load);
+            InspectorInstrumentation::didDispatchXHRLoadEvent(cookie);
+        }
         dispatchThrottledProgressEventSnapshot(EventTypeNames::loadend);
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
     }
 }
 
@@ -696,10 +714,17 @@ void XMLHttpRequest::send(Blob* body, ExceptionState& exceptionState)
 
         // FIXME: add support for uploading bundles.
         m_requestEntityBody = FormData::create();
-        if (body->hasBackingFile())
-            m_requestEntityBody->appendFile(toFile(body)->path());
-        else
+        if (body->hasBackingFile()) {
+            File* file = toFile(body);
+            if (!file->path().isEmpty())
+                m_requestEntityBody->appendFile(file->path());
+            else if (!file->fileSystemURL().isEmpty())
+                m_requestEntityBody->appendFileSystemURL(file->fileSystemURL());
+            else
+                ASSERT_NOT_REACHED();
+        } else {
             m_requestEntityBody->appendBlob(body->uuid(), body->blobDataHandle());
+        }
     }
 
     createRequest(exceptionState);
@@ -792,11 +817,14 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
     // added after the request is started.
     m_uploadEventsAllowed = m_sameOriginRequest || uploadEvents || !isSimpleCrossOriginAccessRequest(m_method, m_requestHeaders);
 
+    ASSERT(executionContext());
+    ExecutionContext& executionContext = *this->executionContext();
+
     ResourceRequest request(m_url);
     request.setHTTPMethod(m_method);
     request.setTargetType(ResourceRequest::TargetIsXHR);
 
-    InspectorInstrumentation::willLoadXHR(executionContext(), this, this, m_method, m_url, m_async, m_requestEntityBody ? m_requestEntityBody->deepCopy() : nullptr, m_requestHeaders, m_includeCredentials);
+    InspectorInstrumentation::willLoadXHR(&executionContext, this, this, m_method, m_url, m_async, m_requestEntityBody ? m_requestEntityBody->deepCopy() : nullptr, m_requestHeaders, m_includeCredentials);
 
     if (m_requestEntityBody) {
         ASSERT(m_method != "GET");
@@ -815,7 +843,7 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
     options.crossOriginRequestPolicy = UseAccessControl;
     options.securityOrigin = securityOrigin();
     options.initiator = FetchInitiatorTypeNames::xmlhttprequest;
-    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(executionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
+    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(&executionContext) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
     // TODO(tsepez): Specify TreatAsActiveContent per http://crbug.com/305303.
     options.mixedContentBlockingTreatment = TreatAsPassiveContent;
     options.timeoutMilliseconds = m_timeoutMilliseconds;
@@ -832,7 +860,7 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
         // FIXME: Maybe we need to be able to send XMLHttpRequests from onunload, <http://bugs.webkit.org/show_bug.cgi?id=10904>.
         // FIXME: Maybe create() can return null for other reasons too?
         ASSERT(!m_loader);
-        m_loader = ThreadableLoader::create(executionContext(), this, request, options);
+        m_loader = ThreadableLoader::create(executionContext, this, request, options);
         if (m_loader) {
             // Neither this object nor the JavaScript wrapper should be deleted while
             // a request is in progress because we need to keep the listeners alive,
@@ -840,7 +868,7 @@ void XMLHttpRequest::createRequest(ExceptionState& exceptionState)
             setPendingActivity(this);
         }
     } else {
-        ThreadableLoader::loadResourceSynchronously(executionContext(), request, *this, options);
+        ThreadableLoader::loadResourceSynchronously(executionContext, request, *this, options);
     }
 
     if (!m_exceptionCode && m_error)
@@ -1393,6 +1421,7 @@ void XMLHttpRequest::trace(Visitor* visitor)
 {
     visitor->trace(m_responseBlob);
     visitor->trace(m_responseStream);
+    visitor->trace(m_progressEventThrottle);
 }
 
 } // namespace WebCore

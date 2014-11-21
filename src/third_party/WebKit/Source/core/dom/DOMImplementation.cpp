@@ -49,7 +49,6 @@
 #include "core/html/TextDocument.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/Page.h"
-#include "core/svg/SVGDocument.h"
 #include "platform/ContentType.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/graphics/Image.h"
@@ -134,7 +133,7 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         addString(svgFeatures, "GraphicsAttribute");
         addString(svgFeatures, "BaseGraphicsAttribute");
         addString(svgFeatures, "Marker");
-//      addString(svgFeatures, "ColorProfile"); // requires color-profile, bug 6037
+//      addString(svgFeatures, "ColorProfile");
         addString(svgFeatures, "Gradient");
         addString(svgFeatures, "Pattern");
         addString(svgFeatures, "Clip");
@@ -195,31 +194,24 @@ PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicStrin
     if (!Document::parseQualifiedName(qualifiedName, prefix, localName, exceptionState))
         return nullptr;
 
-    return DocumentType::create(&m_document, qualifiedName, publicId, systemId);
-}
-
-DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
-{
-    return 0;
+    return DocumentType::create(m_document, qualifiedName, publicId, systemId);
 }
 
 PassRefPtr<XMLDocument> DOMImplementation::createDocument(const AtomicString& namespaceURI,
     const AtomicString& qualifiedName, DocumentType* doctype, ExceptionState& exceptionState)
 {
     RefPtr<XMLDocument> doc;
-    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument());
+    DocumentInit init = DocumentInit::fromContext(document().contextDocument());
     if (namespaceURI == SVGNames::svgNamespaceURI) {
-        // FIXME: This should be an XMLDocument as per DOM4 but we need to get rid of SVGDocument first.
-        // SVGDocument no longer exists in SVG2.
-        doc = SVGDocument::create(init);
+        doc = XMLDocument::createSVG(init);
     } else if (namespaceURI == HTMLNames::xhtmlNamespaceURI) {
-        doc = XMLDocument::createXHTML(init.withRegistrationContext(m_document.registrationContext()));
+        doc = XMLDocument::createXHTML(init.withRegistrationContext(document().registrationContext()));
     } else {
         doc = XMLDocument::create(init);
     }
 
-    doc->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
-    doc->setContextFeatures(m_document.contextFeatures());
+    doc->setSecurityOrigin(document().securityOrigin()->isolatedCopy());
+    doc->setContextFeatures(document().contextFeatures());
 
     RefPtr<Node> documentElement;
     if (!qualifiedName.isEmpty()) {
@@ -234,15 +226,6 @@ PassRefPtr<XMLDocument> DOMImplementation::createDocument(const AtomicString& na
         doc->appendChild(documentElement.release());
 
     return doc.release();
-}
-
-PassRefPtrWillBeRawPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media)
-{
-    // FIXME: Title should be set.
-    // FIXME: Media could have wrong syntax, in which case we should generate an exception.
-    RefPtrWillBeRawPtr<CSSStyleSheet> sheet = CSSStyleSheet::create(StyleSheetContents::create(strictCSSParserContext()));
-    sheet->setMediaQueries(MediaQuerySet::create(media));
-    return sheet;
 }
 
 bool DOMImplementation::isXMLMIMEType(const String& mimeType)
@@ -337,15 +320,15 @@ bool DOMImplementation::isTextMIMEType(const String& mimeType)
 
 PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& title)
 {
-    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument())
-        .withRegistrationContext(m_document.registrationContext());
+    DocumentInit init = DocumentInit::fromContext(document().contextDocument())
+        .withRegistrationContext(document().registrationContext());
     RefPtr<HTMLDocument> d = HTMLDocument::create(init);
     d->open();
     d->write("<!doctype html><html><body></body></html>");
     if (!title.isNull())
         d->setTitle(title);
-    d->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
-    d->setContextFeatures(m_document.contextFeatures());
+    d->setSecurityOrigin(document().securityOrigin()->isolatedCopy());
+    d->setContextFeatures(document().contextFeatures());
     return d.release();
 }
 
@@ -388,11 +371,16 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& type, const
     if (isTextMIMEType(type))
         return TextDocument::create(init);
     if (type == "image/svg+xml")
-        return SVGDocument::create(init);
+        return XMLDocument::createSVG(init);
     if (isXMLMIMEType(type))
         return XMLDocument::create(init);
 
     return HTMLDocument::create(init);
+}
+
+void DOMImplementation::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
 }
 
 }

@@ -30,7 +30,6 @@
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/ColorSpace.h"
 #include "public/platform/WebFilterOperations.h"
-#include "wtf/HashMap.h"
 
 class SkImageFilter;
 
@@ -46,7 +45,7 @@ public:
     explicit SkiaImageFilterBuilder(GraphicsContext*);
     ~SkiaImageFilterBuilder();
 
-    PassRefPtr<SkImageFilter> build(FilterEffect*, ColorSpace);
+    PassRefPtr<SkImageFilter> build(FilterEffect*, ColorSpace, bool requiresPMColorValidation = true);
     bool buildFilterOperations(const FilterOperations&, blink::WebFilterOperations*);
     PassRefPtr<SkImageFilter> buildTransform(const AffineTransform&, SkImageFilter* input);
 
@@ -58,21 +57,10 @@ public:
     GraphicsContext* context() { return m_context; }
 
 private:
-    typedef std::pair<FilterEffect*, ColorSpace> FilterColorSpacePair;
-    typedef HashMap<FilterColorSpacePair, RefPtr<SkImageFilter> > FilterBuilderHashMap;
-    FilterBuilderHashMap m_map;
     FloatSize m_cropOffset;
     GraphicsContext* m_context;
 };
 
 } // namespace WebCore
-
-namespace WTF {
-
-template<> struct DefaultHash<WebCore::ColorSpace> {
-    typedef IntHash<unsigned> Hash;
-};
-
-} // namespace WTF
 
 #endif

@@ -34,7 +34,7 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/html/HTMLEmbedElement.h"
+#include "core/dom/NodeRenderStyle.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableCellElement.h"
@@ -46,7 +46,6 @@
 #include "core/rendering/style/GridPosition.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include "core/svg/SVGDocument.h"
 #include "core/svg/SVGSVGElement.h"
 #include "platform/Length.h"
 #include "platform/transforms/TransformOperations.h"
@@ -164,14 +163,16 @@ static bool parentStyleForcesZIndexToCreateStackingContext(const RenderStyle* pa
     return isDisplayFlexibleBox(parentStyle->display()) || isDisplayGridBox(parentStyle->display());
 }
 
-static bool hasWillChangeThatCreatesStackingContext(const RenderStyle* style, Element* e)
+static bool hasWillChangeThatCreatesStackingContext(const RenderStyle* style)
 {
     for (size_t i = 0; i < style->willChangeProperties().size(); ++i) {
         switch (style->willChangeProperties()[i]) {
         case CSSPropertyOpacity:
+        case CSSPropertyTransform:
         case CSSPropertyWebkitTransform:
         case CSSPropertyTransformStyle:
         case CSSPropertyWebkitTransformStyle:
+        case CSSPropertyPerspective:
         case CSSPropertyWebkitPerspective:
         case CSSPropertyWebkitMask:
         case CSSPropertyWebkitMaskBoxImage:
@@ -234,12 +235,12 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->position() == StickyPosition
         || style->position() == FixedPosition
         || isInTopLayer(e, style)
-        || hasWillChangeThatCreatesStackingContext(style, e)))
+        || hasWillChangeThatCreatesStackingContext(style)))
         style->setZIndex(0);
 
     // will-change:transform should result in the same rendering behavior as having a transform,
     // including the creation of a containing block for fixed position descendants.
-    if (!style->hasTransform() && style->willChangeProperties().contains(CSSPropertyWebkitTransform)) {
+    if (!style->hasTransform() && (style->willChangeProperties().contains(CSSPropertyWebkitTransform) || style->willChangeProperties().contains(CSSPropertyTransform))) {
         bool makeIdentity = true;
         style->setTransform(TransformOperations(makeIdentity));
     }
@@ -250,7 +251,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         style->addToTextDecorationsInEffect(style->textDecoration());
 
     if (style->overflowX() != OVISIBLE || style->overflowY() != OVISIBLE)
-        adjustOverflow(style, e);
+        adjustOverflow(style);
 
     // Cull out any useless layers and also repeat patterns into additional layers.
     style->adjustBackgroundLayers();
@@ -275,18 +276,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         if (!(isSVGSVGElement(*e) && e->parentNode() && !e->parentNode()->isSVGElement()))
             style->setPosition(RenderStyle::initialPosition());
 
-        // propagate the zoom from parent document into the svg element
-        if (e->hasTagName(SVGNames::svgTag)) {
-            if (e->document().frame() &&
-                e->document().frame()->ownerElement() &&
-                e->document().frame()->ownerElement()->renderer()) {
-                float ownerEffectiveZoom
-                    = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
-                float childZoom = style->zoom();
-                style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
-            }
-        }
-
         // RenderSVGRoot handles zooming for the whole SVG subtree, so foreignObject content should
         // not be scaled again.
         if (isSVGForeignObjectElement(*e))
@@ -295,6 +284,13 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         // SVG text layout code expects us to be a block-level style element.
         if ((isSVGForeignObjectElement(*e) || isSVGTextElement(*e)) && style->isDisplayInlineType())
             style->setDisplay(BLOCK);
+    }
+
+    if (e && e->renderStyle() && e->renderStyle()->textAutosizingMultiplier() != 1) {
+        // Preserve the text autosizing multiplier on style recalc.
+        // (The autosizer will update it during layout if it needs to be changed.)
+        style->setTextAutosizingMultiplier(e->renderStyle()->textAutosizingMultiplier());
+        style->setUnique();
     }
 
     if (e && e->hasTagName(htmlTag)) {
@@ -322,26 +318,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             }
         }
     }
-
-    // mark the EMBEDed svg element dirty if zoom needs to be reevaluated
-    if (e && e->hasTagName(embedTag)) {
-        HTMLEmbedElement* embed = static_cast<HTMLEmbedElement*>(e);
-        Document *doc = embed->contentDocument();
-        if (doc && doc->isSVGDocument()) {
-            SVGDocument *svgDoc = toSVGDocument(doc);
-            if (svgDoc && svgDoc->rootElement() &&
-                svgDoc->rootElement()->renderer()) {
-                RenderStyle *renderStyle = svgDoc->rootElement()->renderer()->style();
-                float childZoom = renderStyle->zoom();
-                float ownerEffectiveZoom = style->effectiveZoom();
-                float childEffectiveZoom = renderStyle->effectiveZoom();
-                if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
-                    svgDoc->rootElement()->setNeedsStyleRecalc(SubtreeStyleChange);
-                }
-            }
-        }
-    }
-
 }
 
 void StyleAdjuster::adjustStyleForTagName(RenderStyle* style, RenderStyle* parentStyle, Element& element)
@@ -429,7 +405,7 @@ void StyleAdjuster::adjustStyleForTagName(RenderStyle* style, RenderStyle* paren
     }
 }
 
-void StyleAdjuster::adjustOverflow(RenderStyle* style, Element* element)
+void StyleAdjuster::adjustOverflow(RenderStyle* style)
 {
     ASSERT(style->overflowX() != OVISIBLE || style->overflowY() != OVISIBLE);
 
@@ -457,19 +433,6 @@ void StyleAdjuster::adjustOverflow(RenderStyle* style, Element* element)
     if (style->appearance() == MenulistPart) {
         style->setOverflowX(OVISIBLE);
         style->setOverflowY(OVISIBLE);
-    }
-
-    // Spec: http://www.w3.org/TR/SVG/masking.html#OverflowProperty
-    if (element && element->isSVGElement()) {
-        if (style->overflowY() == OSCROLL)
-            style->setOverflowY(OHIDDEN);
-        else if (style->overflowY() == OAUTO)
-            style->setOverflowY(OVISIBLE);
-
-        if (style->overflowX() == OSCROLL)
-            style->setOverflowX(OHIDDEN);
-        else if (style->overflowX() == OAUTO)
-            style->setOverflowX(OVISIBLE);
     }
 }
 

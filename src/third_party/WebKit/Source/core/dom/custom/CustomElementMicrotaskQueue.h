@@ -34,23 +34,42 @@
 #include "core/dom/custom/CustomElementMicrotaskStep.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class CustomElementMicrotaskQueue {
-    WTF_MAKE_NONCOPYABLE(CustomElementMicrotaskQueue);
+class CustomElementMicrotaskQueueBase : public RefCounted<CustomElementMicrotaskQueueBase> {
+    WTF_MAKE_NONCOPYABLE(CustomElementMicrotaskQueueBase);
 public:
-    CustomElementMicrotaskQueue() { }
+    virtual ~CustomElementMicrotaskQueueBase() { }
 
-    bool isEmpty() { return m_queue.isEmpty(); }
+
+    bool isEmpty() const { return m_queue.isEmpty(); }
+    void dispatch();
+
+#if !defined(NDEBUG)
+    void show(unsigned indent);
+#endif
+
+protected:
+    CustomElementMicrotaskQueueBase() { }
+    virtual void doDispatch() = 0;
+
+    Vector<OwnPtr<CustomElementMicrotaskStep> > m_queue;
+};
+
+class CustomElementMicrotaskQueue : public CustomElementMicrotaskQueueBase {
+public:
+    static PassRefPtr<CustomElementMicrotaskQueue> create() { return adoptRef(new CustomElementMicrotaskQueue()); }
+
     void enqueue(PassOwnPtr<CustomElementMicrotaskStep>);
 
-    typedef CustomElementMicrotaskStep::Result Result;
-    Result dispatch();
-
 private:
-    Vector<OwnPtr<CustomElementMicrotaskStep> > m_queue;
+    CustomElementMicrotaskQueue() { }
+    virtual void doDispatch();
 };
 
 }

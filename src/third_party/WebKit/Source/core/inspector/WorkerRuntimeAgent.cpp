@@ -59,14 +59,24 @@ void WorkerRuntimeAgent::init()
     m_instrumentingAgents->setWorkerRuntimeAgent(this);
 }
 
+void WorkerRuntimeAgent::enable(ErrorString* errorString)
+{
+    if (m_enabled)
+        return;
+
+    InspectorRuntimeAgent::enable(errorString);
+    addExecutionContextToFrontend(m_workerGlobalScope->script()->scriptState(), true, m_workerGlobalScope->url(), "");
+}
+
 InjectedScript WorkerRuntimeAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
 {
-    if (executionContextId) {
-        *error = "Execution context id is not supported for workers as there is only one execution context.";
-        return InjectedScript();
-    }
-    ScriptState* scriptState = scriptStateFromWorkerGlobalScope(m_workerGlobalScope);
-    return injectedScriptManager()->injectedScriptFor(scriptState);
+    if (!executionContextId)
+        return injectedScriptManager()->injectedScriptFor(m_workerGlobalScope->script()->scriptState());
+
+    InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
+    if (injectedScript.isEmpty())
+        *error = "Execution context with given id not found.";
+    return injectedScript;
 }
 
 void WorkerRuntimeAgent::muteConsole()

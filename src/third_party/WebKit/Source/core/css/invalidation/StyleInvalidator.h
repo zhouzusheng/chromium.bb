@@ -5,16 +5,25 @@
 #ifndef StyleInvalidator_h
 #define StyleInvalidator_h
 
-#include "core/css/RuleFeature.h"
-#include "heap/Heap.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
+class DescendantInvalidationSet;
+class Document;
+class Element;
+
 class StyleInvalidator {
-    STACK_ALLOCATED();
 public:
-    explicit StyleInvalidator(Document&);
-    void invalidate();
+    StyleInvalidator();
+    ~StyleInvalidator();
+    void invalidate(Document&);
+    void scheduleInvalidation(PassRefPtr<DescendantInvalidationSet>, Element&);
+
+    // Clears all style invalidation state for the passed node.
+    void clearInvalidation(Node&);
+
+    void clearPendingInvalidations();
 
 private:
     bool invalidate(Element&);
@@ -23,40 +32,50 @@ private:
     bool checkInvalidationSetsAgainstElement(Element&);
 
     struct RecursionData {
-        RecursionData() : m_foundInvalidationSet(false) { }
+        RecursionData()
+            : m_invalidateCustomPseudo(false)
+            , m_wholeSubtreeInvalid(false)
+        { }
         void pushInvalidationSet(const DescendantInvalidationSet&);
         bool matchesCurrentInvalidationSets(Element&);
-        bool foundInvalidationSet() { return m_foundInvalidationSet; }
+        bool hasInvalidationSets() const { return m_invalidationSets.size(); }
+        bool wholeSubtreeInvalid() const { return m_wholeSubtreeInvalid; }
+        void setWholeSubtreeInvalid() { m_wholeSubtreeInvalid = true; }
 
-        Vector<AtomicString> m_invalidationClasses;
-        Vector<AtomicString> m_invalidationAttributes;
-        bool m_foundInvalidationSet;
+        typedef Vector<const DescendantInvalidationSet*, 16> InvalidationSets;
+        InvalidationSets m_invalidationSets;
+        bool m_invalidateCustomPseudo;
+        bool m_wholeSubtreeInvalid;
     };
 
     class RecursionCheckpoint {
     public:
         RecursionCheckpoint(RecursionData* data)
-            : m_prevClassLength(data->m_invalidationClasses.size()),
-            m_prevAttributeLength(data->m_invalidationAttributes.size()),
-            m_prevFoundInvalidationSet(data->m_foundInvalidationSet),
-            m_data(data)
+            : m_prevInvalidationSetsSize(data->m_invalidationSets.size())
+            , m_prevInvalidateCustomPseudo(data->m_invalidateCustomPseudo)
+            , m_prevWholeSubtreeInvalid(data->m_wholeSubtreeInvalid)
+            , m_data(data)
         { }
         ~RecursionCheckpoint()
         {
-            m_data->m_invalidationClasses.remove(m_prevClassLength, m_data->m_invalidationClasses.size() - m_prevClassLength);
-            m_data->m_invalidationAttributes.remove(m_prevAttributeLength, m_data->m_invalidationAttributes.size() - m_prevAttributeLength);
-            m_data->m_foundInvalidationSet = m_prevFoundInvalidationSet;
+            m_data->m_invalidationSets.remove(m_prevInvalidationSetsSize, m_data->m_invalidationSets.size() - m_prevInvalidationSetsSize);
+            m_data->m_invalidateCustomPseudo = m_prevInvalidateCustomPseudo;
+            m_data->m_wholeSubtreeInvalid = m_prevWholeSubtreeInvalid;
         }
 
     private:
-        int m_prevClassLength;
-        int m_prevAttributeLength;
-        bool m_prevFoundInvalidationSet;
+        int m_prevInvalidationSetsSize;
+        bool m_prevInvalidateCustomPseudo;
+        bool m_prevWholeSubtreeInvalid;
         RecursionData* m_data;
     };
 
-    Document& m_document;
-    RuleFeatureSet::PendingInvalidationMap& m_pendingInvalidationMap;
+    typedef Vector<RefPtr<DescendantInvalidationSet> > InvalidationList;
+    typedef HashMap<Element*, OwnPtr<InvalidationList> > PendingInvalidationMap;
+
+    InvalidationList& ensurePendingInvalidationList(Element&);
+
+    PendingInvalidationMap m_pendingInvalidationMap;
     RecursionData m_recursionData;
 };
 

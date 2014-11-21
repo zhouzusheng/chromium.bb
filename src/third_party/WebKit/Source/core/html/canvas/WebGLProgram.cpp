@@ -43,7 +43,7 @@ WebGLProgram::WebGLProgram(WebGLRenderingContextBase* ctx)
     , m_infoValid(true)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->webGraphicsContext3D()->createProgram());
+    setObject(ctx->webContext()->createProgram());
 }
 
 WebGLProgram::~WebGLProgram()
@@ -92,12 +92,6 @@ bool WebGLProgram::linkStatus()
 {
     cacheInfoIfNeeded();
     return m_linkStatus;
-}
-
-void WebGLProgram::setLinkStatus(bool status)
-{
-    cacheInfoIfNeeded();
-    m_linkStatus = status;
 }
 
 void WebGLProgram::increaseLinkCount()

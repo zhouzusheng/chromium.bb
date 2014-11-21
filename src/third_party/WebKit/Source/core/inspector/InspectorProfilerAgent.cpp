@@ -59,6 +59,7 @@ static PassRefPtr<TypeBuilder::Profiler::CPUProfile> createCPUProfile(const Scri
         .setStartTime(scriptProfile.startTime())
         .setEndTime(scriptProfile.endTime());
     profile->setSamples(scriptProfile.buildInspectorObjectForSamples());
+    profile->setTimestamps(scriptProfile.buildInspectorObjectForTimestamps());
     return profile.release();
 }
 
@@ -102,7 +103,7 @@ InspectorProfilerAgent::~InspectorProfilerAgent()
 {
 }
 
-void InspectorProfilerAgent::consoleProfile(const String& title, ScriptState* state)
+void InspectorProfilerAgent::consoleProfile(const String& title, ScriptState*)
 {
     ASSERT(m_frontend && enabled());
     String id = nextProfileId();

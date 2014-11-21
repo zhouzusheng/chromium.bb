@@ -44,13 +44,8 @@ namespace WebCore {
 
 const AnimatableValue* AnimatableValue::neutralValue()
 {
-#if ENABLE_OILPAN
-    DEFINE_STATIC_LOCAL(Persistent<AnimatableNeutral>, neutralSentinelValue, (AnimatableNeutral::create()));
-    return neutralSentinelValue.get();
-#else
-    DEFINE_STATIC_REF(AnimatableNeutral, neutralSentinelValue, (AnimatableNeutral::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(AnimatableNeutral, neutralSentinelValue, (AnimatableNeutral::create()));
     return neutralSentinelValue;
-#endif
 }
 
 PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
@@ -64,27 +59,6 @@ PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::interpolate(const Anima
         return left->interpolateTo(right, fraction);
 
     return defaultInterpolateTo(left, right, fraction);
-}
-
-PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, const AnimatableValue* right)
-{
-    ASSERT(left);
-    ASSERT(right);
-
-    if (left->isNeutral())
-        return takeConstRef(right);
-    if (right->isNeutral())
-        return takeConstRef(left);
-
-    if (left->isSameType(right))
-        return left->addWith(right);
-
-    return defaultAddWith(left, right);
-}
-
-PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::addWith(const AnimatableValue* value) const
-{
-    return defaultAddWith(this, value);
 }
 
 double AnimatableValue::distance(const AnimatableValue* left, const AnimatableValue* right)

@@ -43,6 +43,12 @@ DOMWindowIndexedDatabase::~DOMWindowIndexedDatabase()
 {
 }
 
+void DOMWindowIndexedDatabase::trace(Visitor* visitor)
+{
+    visitor->trace(m_idbFactory);
+    WillBeHeapSupplement<DOMWindow>::trace(visitor);
+}
+
 const char* DOMWindowIndexedDatabase::supplementName()
 {
     return "DOMWindowIndexedDatabase";
@@ -89,7 +95,7 @@ IDBFactory* DOMWindowIndexedDatabase::indexedDB()
         return 0;
 
     if (!m_idbFactory)
-        m_idbFactory = IDBFactory::create(IDBFactoryBackendInterface::create().get());
+        m_idbFactory = IDBFactory::create(IndexedDBClient::create());
     return m_idbFactory.get();
 }
 

@@ -193,9 +193,7 @@ void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& excep
     if (!dataLength)
         return;
 
-    const char* dataPointer = static_cast<const char*>(data->data());
-
-    if (!m_handler->sendRawData(dataPointer, dataLength)) {
+    if (!m_handler->sendRawData(static_cast<const char*>((data->data())), dataLength)) {
         // FIXME: This should not throw an exception but instead forcefully close the data channel.
         throwCouldNotSendDataException(exceptionState);
     }
@@ -203,8 +201,10 @@ void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& excep
 
 void RTCDataChannel::send(PassRefPtr<ArrayBufferView> data, ExceptionState& exceptionState)
 {
-    RefPtr<ArrayBuffer> arrayBuffer(data->buffer());
-    send(arrayBuffer.release(), exceptionState);
+    if (!m_handler->sendRawData(static_cast<const char*>(data->baseAddress()), data->byteLength())) {
+        // FIXME: This should not throw an exception but instead forcefully close the data channel.
+        throwCouldNotSendDataException(exceptionState);
+    }
 }
 
 void RTCDataChannel::send(PassRefPtrWillBeRawPtr<Blob> data, ExceptionState& exceptionState)
@@ -291,7 +291,7 @@ void RTCDataChannel::stop()
     m_executionContext = 0;
 }
 
-void RTCDataChannel::scheduleDispatchEvent(PassRefPtr<Event> event)
+void RTCDataChannel::scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     m_scheduledEvents.append(event);
 
@@ -304,10 +304,10 @@ void RTCDataChannel::scheduledEventTimerFired(Timer<RTCDataChannel>*)
     if (m_stopped)
         return;
 
-    Vector<RefPtr<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
     events.swap(m_scheduledEvents);
 
-    Vector<RefPtr<Event> >::iterator it = events.begin();
+    WillBeHeapVector<RefPtrWillBeMember<Event> >::iterator it = events.begin();
     for (; it != events.end(); ++it)
         dispatchEvent((*it).release());
 

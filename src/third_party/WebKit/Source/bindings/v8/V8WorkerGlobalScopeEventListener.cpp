@@ -40,6 +40,7 @@
 #include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace WebCore {
@@ -85,25 +86,24 @@ v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(Exec
     if (handlerFunction.IsEmpty() || receiver.IsEmpty())
         return v8::Local<v8::Value>();
 
+    v8::Isolate* isolate = toIsolate(context);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", devToolsTraceEventData(context, handlerFunction, isolate));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie;
     if (InspectorInstrumentation::timelineAgentEnabled(context)) {
-        String resourceName("undefined");
+        int scriptId = 0;
+        String resourceName;
         int lineNumber = 1;
-        v8::Handle<v8::Function> originalFunction = getBoundFunction(handlerFunction);
-        v8::ScriptOrigin origin = originalFunction->GetScriptOrigin();
-        if (!origin.ResourceName().IsEmpty()) {
-            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringResourceName, origin.ResourceName(), v8::Local<v8::Value>());
-            resourceName = stringResourceName;
-            lineNumber = originalFunction->GetScriptLineNumber() + 1;
-        }
-        cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
+        GetDevToolsFunctionInfo(handlerFunction, isolate, scriptId, resourceName, lineNumber);
+        cookie = InspectorInstrumentation::willCallFunction(context, scriptId, resourceName, lineNumber);
     }
 
-    v8::Isolate* isolate = toIsolate(context);
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
     v8::Local<v8::Value> result = V8ScriptRunner::callFunction(handlerFunction, context, receiver, WTF_ARRAY_LENGTH(parameters), parameters, isolate);
 
     InspectorInstrumentation::didCallFunction(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 
     return result;
 }

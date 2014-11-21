@@ -4,18 +4,11 @@
 
 #include "ui/aura/env.h"
 
-#include "base/command_line.h"
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
-#include "ui/aura/window.h"
 #include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_switches.h"
 #include "ui/events/event_target_iterator.h"
-
-#if defined(USE_X11)
-#include "base/message_loop/message_pump_x11.h"
-#endif
+#include "ui/events/platform/platform_event_source.h"
 
 namespace aura {
 
@@ -32,21 +25,16 @@ Env::Env()
 }
 
 Env::~Env() {
-#if defined(USE_X11)
-  base::MessagePumpX11::Current()->RemoveObserver(
-      &device_list_updater_aurax11_);
-#endif
-
   FOR_EACH_OBSERVER(EnvObserver, observers_, OnWillDestroyEnv());
 
   ui::Compositor::Terminate();
 }
 
 //static
-void Env::CreateInstance() {
+void Env::CreateInstance(bool create_event_source) {
   if (!instance_) {
     instance_ = new Env;
-    instance_->Init();
+    instance_->Init(create_event_source);
   }
 }
 
@@ -79,14 +67,11 @@ bool Env::IsMouseButtonDown() const {
 ////////////////////////////////////////////////////////////////////////////////
 // Env, private:
 
-void Env::Init() {
-#if defined(USE_X11)
-  // We can't do this with a root window listener because XI_HierarchyChanged
-  // messages don't have a target window.
-  base::MessagePumpX11::Current()->AddObserver(
-      &device_list_updater_aurax11_);
-#endif
+void Env::Init(bool create_event_source) {
   ui::Compositor::Initialize();
+
+  if (create_event_source && !ui::PlatformEventSource::GetInstance())
+    event_source_ = ui::PlatformEventSource::CreateDefault();
 }
 
 void Env::NotifyWindowInitialized(Window* window) {

@@ -15,7 +15,6 @@
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "ui/base/layout.h"
-#include "webkit/child/resource_loader_bridge.h"
 
 #if defined(USE_DEFAULT_RENDER_THEME)
 #include "content/child/webthemeengine_impl_default.h"
@@ -59,6 +58,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual size_t memoryUsageMB();
   virtual size_t actualMemoryUsageMB();
   virtual size_t physicalMemoryMB();
+  virtual size_t virtualMemoryLimitMB();
   virtual size_t numberOfProcessors();
 
   virtual void startHeapProfiling(const blink::WebString& prefix);
@@ -104,6 +104,17 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const char** arg_names,
       const unsigned char* arg_types,
       const unsigned long long* arg_values,
+      unsigned char flags);
+  virtual TraceEventHandle addTraceEvent(
+      char phase,
+      const unsigned char* category_group_enabled,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      const blink::WebConvertableToTraceFormat* convertable_values,
       unsigned char flags);
   virtual void updateTraceEventDuration(
       const unsigned char* category_group_enabled,

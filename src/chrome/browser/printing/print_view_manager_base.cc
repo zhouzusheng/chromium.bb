@@ -24,7 +24,6 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 
 // LEVI: Remove chrome resources.
 // #include "grit/generated_resources.h"
@@ -206,6 +205,9 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
       content::NotificationService::NoDetails());
 }
 
+void PrintViewManagerBase::OnShowInvalidPrinterSettingsError() {
+}
+
 void PrintViewManagerBase::DidStartLoading(
     content::RenderViewHost* render_view_host) {
   UpdateScriptedPrintingBlocked();
@@ -220,6 +222,8 @@ bool PrintViewManagerBase::OnMessageReceived(const IPC::Message& message) {
                         OnDidGetDocumentCookie)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DidPrintPage, OnDidPrintPage)
     IPC_MESSAGE_HANDLER(PrintHostMsg_PrintingFailed, OnPrintingFailed)
+    IPC_MESSAGE_HANDLER(PrintHostMsg_ShowInvalidPrinterSettingsError,
+                        OnShowInvalidPrinterSettingsError);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;

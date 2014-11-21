@@ -678,8 +678,7 @@ void Renderer11::setRasterizerState(const gl::RasterizerState &rasterState)
 {
     if (mForceSetRasterState || memcmp(&rasterState, &mCurRasterState, sizeof(gl::RasterizerState)) != 0)
     {
-        ID3D11RasterizerState *dxRasterState = mStateCache.getRasterizerState(rasterState, mScissorEnabled,
-                                                                              mCurDepthSize);
+        ID3D11RasterizerState *dxRasterState = mStateCache.getRasterizerState(rasterState, mScissorEnabled);
         if (!dxRasterState)
         {
             ERR("NULL rasterizer state returned by RenderStateCache::getRasterizerState, setting the default"
@@ -1004,9 +1003,6 @@ bool Renderer11::applyRenderTarget(gl::Framebuffer *framebuffer)
         stencilbufferSerial = depthStencil->getSerial();
     }
 
-    // Extract the depth stencil sizes and view
-    unsigned int depthSize = 0;
-    unsigned int stencilSize = 0;
     ID3D11DepthStencilView* framebufferDSV = NULL;
     if (depthStencil)
     {
@@ -1034,9 +1030,6 @@ bool Renderer11::applyRenderTarget(gl::Framebuffer *framebuffer)
             renderTargetHeight = depthStencil->getHeight();
             renderTargetFormat = depthStencil->getActualFormat();
         }
-
-        depthSize = depthStencil->getDepthSize();
-        stencilSize = depthStencil->getStencilSize();
     }
 
     // Apply the render target and depth stencil
@@ -1053,13 +1046,10 @@ bool Renderer11::applyRenderTarget(gl::Framebuffer *framebuffer)
         mForceSetViewport = true;
         mForceSetScissor = true;
 
-        if (!mDepthStencilInitialized || depthSize != mCurDepthSize)
+        if (!mDepthStencilInitialized)
         {
-            mCurDepthSize = depthSize;
             mForceSetRasterState = true;
         }
-
-        mCurStencilSize = stencilSize;
 
         for (unsigned int rtIndex = 0; rtIndex < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; rtIndex++)
         {
@@ -2898,7 +2888,41 @@ ShaderExecutable *Renderer11::compileToExecutable(gl::InfoLog &infoLog, const ch
         return NULL;
     }
 
-    ID3DBlob *binary = (ID3DBlob*)compileToBinary(infoLog, shaderHLSL, profile, D3DCOMPILE_OPTIMIZATION_LEVEL0, false);
+    UINT flags = D3DCOMPILE_OPTIMIZATION_LEVEL0;
+
+    if (gl::perfActive())
+    {
+#ifndef NDEBUG
+        flags = D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+        flags |= D3DCOMPILE_DEBUG;
+
+        std::string sourcePath = getTempPath();
+        std::string sourceText = std::string("#line 2 \"") + sourcePath + std::string("\"\n\n") + std::string(shaderHLSL);
+        writeFile(sourcePath.c_str(), sourceText.c_str(), sourceText.size());
+    }
+
+    // Sometimes D3DCompile will fail with the default compilation flags for complicated shaders when it would otherwise pass with alternative options.
+    // Try the default flags first and if compilation fails, try some alternatives.
+    const UINT extraFlags[] =
+    {
+        flags,
+        flags | D3DCOMPILE_SKIP_VALIDATION,
+        flags | D3DCOMPILE_SKIP_OPTIMIZATION
+    };
+
+    const static char *extraFlagNames[] =
+    {
+        "default",
+        "skip validation",
+        "skip optimization"
+    };
+
+    int attempts = ArraySize(extraFlags);
+
+    ID3DBlob *binary = (ID3DBlob*)compileToBinary(infoLog, shaderHLSL, profile, extraFlags, extraFlagNames, attempts);
+
     if (!binary)
         return NULL;
 

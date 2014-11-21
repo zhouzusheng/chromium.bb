@@ -254,7 +254,7 @@ int32_t WebRtcAec_Init(void* aecInst, int32_t sampFreq, int32_t scSampFreq) {
   aecpc->checkBuffSize = 1;
   aecpc->firstVal = 0;
 
-  aecpc->startup_phase = 1;
+  aecpc->startup_phase = WebRtcAec_reported_delay_enabled(aecpc->aec);
   aecpc->bufSizeStart = 0;
   aecpc->checkBufSizeCtr = 0;
   aecpc->msInSndCardBuf = 0;
@@ -766,7 +766,9 @@ static int ProcessNormal(aecpc_t* aecpc,
     }
   } else {
     // AEC is enabled.
-    EstBufDelayNormal(aecpc);
+    if (WebRtcAec_reported_delay_enabled(aecpc->aec)) {
+      EstBufDelayNormal(aecpc);
+    }
 
     // Note that 1 frame is supported for NB and 2 frames for WB.
     for (i = 0; i < nFrames; i++) {
@@ -842,7 +844,9 @@ static void ProcessExtended(aecpc_t* self,
     self->startup_phase = 0;
   }
 
-  EstBufDelayExtended(self);
+  if (WebRtcAec_reported_delay_enabled(self->aec)) {
+    EstBufDelayExtended(self);
+  }
 
   {
     // |delay_diff_offset| gives us the option to manually rewind the delay on

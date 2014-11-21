@@ -581,6 +581,13 @@
         'nss/lib/freebl/ecl/ec_naf.c',
         'nss/lib/freebl/gcm.c',
         'nss/lib/freebl/gcm.h',
+        'nss/lib/freebl/intel-aes-x64-masm.asm',
+        'nss/lib/freebl/intel-aes-x86-masm.asm',
+        'nss/lib/freebl/intel-aes.h',
+        'nss/lib/freebl/intel-gcm-wrap.c',
+        'nss/lib/freebl/intel-gcm-x64-masm.asm',
+        'nss/lib/freebl/intel-gcm-x86-masm.asm',
+        'nss/lib/freebl/intel-gcm.h',
         'nss/lib/freebl/hmacct.c',
         'nss/lib/freebl/hmacct.h',
         'nss/lib/freebl/jpake.c',
@@ -1089,6 +1096,8 @@
         }],
         ['target_arch=="ia32"', {
           'sources!': [
+            'nss/lib/freebl/intel-aes-x64-masm.asm',
+            'nss/lib/freebl/intel-gcm-x64-masm.asm',
             'nss/lib/freebl/mpi/mpi_amd64.c',
           ],
         }],
@@ -1162,7 +1171,13 @@
                 'MP_ASSEMBLY_DIV_2DX1D',
                 'MP_USE_UINT_DIGIT',
                 'MP_NO_MP_WORD',
+                'USE_HW_AES',
               ],
+              'msvs_settings': {
+                'MASM': {
+                  'UseSafeExceptionHandlers': 'true',
+                },
+              },
             }],
             ['target_arch=="x64"', {
               'defines': [
@@ -1175,6 +1190,11 @@
                 'WIN64',
               ],
               'sources!': [
+                'nss/lib/freebl/intel-aes-x64-masm.asm',
+                'nss/lib/freebl/intel-aes-x86-masm.asm',
+                'nss/lib/freebl/intel-gcm-wrap.c',
+                'nss/lib/freebl/intel-gcm-x64-masm.asm',
+                'nss/lib/freebl/intel-gcm-x86-masm.asm',
                 'nss/lib/freebl/mpi/mpi_amd64.c',
                 'nss/lib/freebl/mpi/mpi_x86_asm.c',
               ],
@@ -1182,6 +1202,11 @@
           ],
         }, { # else: OS!="win"
           'sources!': [
+            'nss/lib/freebl/intel-aes-x64-masm.asm',
+            'nss/lib/freebl/intel-aes-x86-masm.asm',
+            'nss/lib/freebl/intel-gcm-wrap.c',
+            'nss/lib/freebl/intel-gcm-x64-masm.asm',
+            'nss/lib/freebl/intel-gcm-x86-masm.asm',
             # mpi_x86_asm.c contains MSVC inline assembly code.
             'nss/lib/freebl/mpi/mpi_x86_asm.c',
           ],

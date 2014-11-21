@@ -35,10 +35,12 @@
 
 #include <base/bind.h>
 #include <base/message_loop/message_loop.h>
+#include <content/browser/renderer_host/web_input_event_aura.h>
+#include <content/public/browser/native_web_keyboard_event.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/public/web/WebView.h>
 #include <third_party/WebKit/public/web/WebInputEvent.h>
-#include <third_party/WebKit/public/web/win/WebInputEventFactory.h>
+#include <ui/events/event.h>
 #include <ui/gfx/size.h>
 
 namespace blpwtk2 {
@@ -174,6 +176,13 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
 
     for (size_t i=0; i < eventsCount; ++i) {
         const InputEvent *event = events + i;
+        MSG msg = {
+            event->hwnd,
+            event->message,
+            event->wparam,
+            event->lparam,
+            GetMessageTime()
+        };
 
         switch (event->message) {
         case WM_SYSKEYDOWN:
@@ -183,13 +192,10 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_IME_CHAR:
         case WM_SYSCHAR:
         case WM_CHAR: {
-            blink::WebKeyboardEvent keyboardEvent = blink::WebInputEventFactory::keyboardEvent(
-                event->hwnd,
-                event->message,
-                event->wparam,
-                event->lparam);
+            ui::KeyEvent uiKeyboardEvent(msg, event->message == WM_CHAR);
+            content::NativeWebKeyboardEvent blinkKeyboardEvent(&uiKeyboardEvent);
 
-            keyboardEvent.modifiers &= ~(
+            blinkKeyboardEvent.modifiers &= ~(
                     blink::WebInputEvent::ShiftKey |
                     blink::WebInputEvent::ControlKey |
                     blink::WebInputEvent::AltKey |
@@ -203,36 +209,36 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
                 );
 
             if (event->shiftKey)
-                keyboardEvent.modifiers |= blink::WebInputEvent::ShiftKey;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::ShiftKey;
 
             if (event->controlKey)
-                keyboardEvent.modifiers |= blink::WebInputEvent::ControlKey;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::ControlKey;
 
             if (event->altKey)
-                keyboardEvent.modifiers |= blink::WebInputEvent::AltKey;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::AltKey;
 
             if (event->metaKey)
-                keyboardEvent.modifiers |= blink::WebInputEvent::MetaKey;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::MetaKey;
 
             if (event->isAutoRepeat)
-                keyboardEvent.modifiers |= blink::WebInputEvent::IsAutoRepeat;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::IsAutoRepeat;
 
             if (event->isKeyPad)
-                keyboardEvent.modifiers |= blink::WebInputEvent::IsKeyPad;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::IsKeyPad;
 
             if (event->isLeft)
-                keyboardEvent.modifiers |= blink::WebInputEvent::IsLeft;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::IsLeft;
 
             if (event->isRight)
-                keyboardEvent.modifiers |= blink::WebInputEvent::IsRight;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::IsRight;
 
             if (event->numLockOn)
-                keyboardEvent.modifiers |= blink::WebInputEvent::NumLockOn;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::NumLockOn;
 
             if (event->capsLockOn)
-                keyboardEvent.modifiers |= blink::WebInputEvent::CapsLockOn;
+                blinkKeyboardEvent.modifiers |= blink::WebInputEvent::CapsLockOn;
 
-            rv->GetWebView()->handleInputEvent(keyboardEvent);
+            rv->GetWebView()->handleInputEvent(blinkKeyboardEvent);
         } break;
 
         case WM_MOUSEMOVE:
@@ -245,14 +251,12 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_RBUTTONDBLCLK:
         case WM_LBUTTONUP:
         case WM_MBUTTONUP:
-        case WM_RBUTTONUP:
-            rv->GetWebView()->handleInputEvent(blink::WebInputEventFactory::mouseEvent(
-                    event->hwnd,
-                    event->message,
-                    event->wparam,
-                    event->lparam));
+        case WM_RBUTTONUP: {
+            ui::MouseEvent uiMouseEvent(msg);
+            blink::WebMouseEvent blinkMouseEvent = content::MakeWebMouseEvent(&uiMouseEvent);
+            rv->GetWebView()->handleInputEvent(blinkMouseEvent);
 
-            break;
+        } break;
         }
     }
 }

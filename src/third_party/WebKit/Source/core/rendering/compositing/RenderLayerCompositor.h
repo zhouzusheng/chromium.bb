@@ -46,11 +46,20 @@ class ScrollingCoordinator;
 class StickyPositionViewportConstraints;
 
 enum CompositingUpdateType {
+    CompositingUpdateNone,
+    CompositingUpdateOnCompositedScroll,
+    CompositingUpdateAfterCompositingInputChange,
     CompositingUpdateAfterStyleChange,
     CompositingUpdateAfterLayout,
     CompositingUpdateOnScroll,
-    CompositingUpdateOnCompositedScroll,
-    CompositingUpdateAfterCanvasContextChange
+};
+
+enum CompositingStateTransitionType {
+    NoCompositingStateChange,
+    AllocateOwnCompositedLayerMapping,
+    RemoveOwnCompositedLayerMapping,
+    PutInSquashingLayer,
+    RemoveFromSquashingLayer
 };
 
 // RenderLayerCompositor manages the hierarchy of
@@ -63,32 +72,37 @@ enum CompositingUpdateType {
 class RenderLayerCompositor FINAL : public GraphicsLayerClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    // FIXME: This constructor should take a reference.
     explicit RenderLayerCompositor(RenderView&);
     virtual ~RenderLayerCompositor();
 
+    void updateIfNeededRecursive();
+
     // Return true if this RenderView is in "compositing mode" (i.e. has one or more
     // composited RenderLayers)
-    bool inCompositingMode() const { return m_compositing; }
+    bool inCompositingMode() const;
+    // FIXME: Replace all callers with inCompositingMdoe and remove this function.
+    bool staleInCompositingMode() const;
     // This will make a compositing layer at the root automatically, and hook up to
     // the native view/window system.
-    void enableCompositingMode(bool enable = true);
-
-    bool inForcedCompositingMode() const { return m_forceCompositingMode; }
+    void setCompositingModeEnabled(bool);
 
     // Returns true if the accelerated compositing is enabled
     bool hasAcceleratedCompositing() const { return m_hasAcceleratedCompositing; }
     bool layerSquashingEnabled() const;
 
-    bool canRender3DTransforms() const;
+    bool legacyOrCurrentAcceleratedCompositingForOverflowScrollEnabled() const;
+    bool legacyAcceleratedCompositingForOverflowScrollEnabled() const;
+
+    bool acceleratedCompositingForOverflowScrollEnabled() const;
+
+    bool rootShouldAlwaysComposite() const;
 
     // Copy the accelerated compositing related flags from Settings
-    void cacheAcceleratedCompositingFlags();
+    void updateAcceleratedCompositingSettings();
 
     // Called when the layer hierarchy needs to be updated (compositing layers have been
     // created, destroyed or re-parented).
     void setCompositingLayersNeedRebuild();
-    bool compositingLayersNeedRebuild() const { return m_compositingLayersNeedRebuild; }
 
     // Updating properties required for determining if compositing is necessary.
     void updateCompositingRequirementsState();
@@ -96,11 +110,6 @@ public:
 
     // Used to indicate that a compositing update will be needed for the next frame that gets drawn.
     void setNeedsCompositingUpdate(CompositingUpdateType);
-
-    // Main entry point for a full update. As needed, this function will compute compositing requirements,
-    // rebuild the composited layer tree, and/or update all the properties assocaited with each layer of the
-    // composited layer tree.
-    void updateCompositingLayers();
 
     enum UpdateLayerCompositingStateOptions {
         Normal,
@@ -111,11 +120,8 @@ public:
     // (At the moment, it also has some legacy compatibility hacks.)
     void updateLayerCompositingState(RenderLayer*, UpdateLayerCompositingStateOptions = Normal);
 
-    // Update the geometry for compositing children of compositingAncestor.
-    void updateCompositingDescendantGeometry(RenderLayerStackingNode* compositingAncestor, RenderLayer*, bool compositedChildrenOnly);
-
-    // Whether layer's compositedLayerMapping needs a GraphicsLayer to do clipping by an ancestor (non-stacking-context parent with overflow).
-    bool clippedByAncestor(const RenderLayer*) const;
+    // Returns whether this layer is clipped by another layer that is not an ancestor of the given layer in the stacking context hierarchy.
+    bool clippedByNonAncestorInStackingTree(const RenderLayer*) const;
     // Whether layer's compositedLayerMapping needs a GraphicsLayer to clip z-order children of the given RenderLayer.
     bool clipsCompositingDescendants(const RenderLayer*) const;
 
@@ -125,10 +131,7 @@ public:
     bool supportsFixedRootBackgroundCompositing() const;
     bool needsFixedRootBackgroundLayer(const RenderLayer*) const;
     GraphicsLayer* fixedRootBackgroundLayer() const;
-
-    // Return the bounding box required for compositing layer and its childern, relative to ancestorLayer.
-    // If layerBoundingBox is not 0, on return it contains the bounding box of this layer only.
-    LayoutRect calculateCompositedBounds(const RenderLayer*, const RenderLayer* ancestorLayer) const;
+    void setNeedsUpdateFixedBackground() { m_needsUpdateFixedBackground = true; }
 
     // Repaint the appropriate layers when the given RenderLayer starts or stops being composited.
     void repaintOnCompositingChange(RenderLayer*);
@@ -181,9 +184,6 @@ public:
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
     GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
 
-    void updateViewportConstraintStatus(RenderLayer*);
-    void removeViewportConstrainedLayer(RenderLayer*);
-
     void addOutOfFlowPositionedLayer(RenderLayer*);
     void removeOutOfFlowPositionedLayer(RenderLayer*);
 
@@ -198,45 +198,24 @@ public:
 
     void scheduleAnimationIfNeeded();
 
+    // Whether the layer could ever be composited.
+    bool canBeComposited(const RenderLayer*) const;
+
+    // FIXME: Move allocateOrClearCompositedLayerMapping to CompositingLayerAssigner once we've fixed
+    // the compositing chicken/egg issues.
+    bool allocateOrClearCompositedLayerMapping(RenderLayer*, CompositingStateTransitionType compositedLayerUpdate);
+
+    void updateDirectCompositingReasons(RenderLayer*);
+
+    void setOverlayLayer(GraphicsLayer*);
+
+    bool inOverlayFullscreenVideo() const { return m_inOverlayFullscreenVideo; }
+
 private:
     class OverlapMap;
 
-    enum CompositingStateTransitionType {
-        NoCompositingStateChange,
-        AllocateOwnCompositedLayerMapping,
-        RemoveOwnCompositedLayerMapping,
-        PutInSquashingLayer,
-        RemoveFromSquashingLayer
-    };
-
-    struct SquashingState {
-        SquashingState()
-            : mostRecentMapping(0)
-            , hasMostRecentMapping(false)
-            , nextSquashedLayerIndex(0)
-            , clippingAncestorForMostRecentMapping(0) { }
-
-        void updateSquashingStateForNewMapping(CompositedLayerMappingPtr, bool hasNewCompositedLayerMapping, LayoutPoint newOffsetFromAbsoluteForSquashingCLM, RenderLayer* clippingAncestorForMostRecentMapping);
-
-        // The most recent composited backing that the layer should squash onto if needed.
-        CompositedLayerMappingPtr mostRecentMapping;
-        bool hasMostRecentMapping;
-
-        // Absolute coordinates of the compositedLayerMapping's owning layer. This is used for computing the correct
-        // positions of renderlayers when they paint into the squashing layer.
-        LayoutPoint offsetFromAbsoluteForSquashingCLM;
-
-        // Counter that tracks what index the next RenderLayer would be if it gets squashed to the current squashing layer.
-        size_t nextSquashedLayerIndex;
-
-        RenderLayer* clippingAncestorForMostRecentMapping;
-    };
-
     bool hasUnresolvedDirtyBits();
 
-    bool canSquashIntoCurrentSquashingOwner(const RenderLayer* candidate, const SquashingState&, const RenderLayer* clippingAncestor);
-
-    CompositingStateTransitionType computeCompositedLayerUpdate(RenderLayer*);
     // Make updates to the layer based on viewport-constrained properties such as position:fixed. This can in turn affect
     // compositing.
     bool updateLayerIfViewportConstrained(RenderLayer*);
@@ -249,39 +228,12 @@ private:
 
     // Whether the given RL needs to paint into its own separate backing (and hence would need its own CompositedLayerMapping).
     bool needsOwnBacking(const RenderLayer*) const;
-    // Whether the layer could ever be composited.
-    bool canBeComposited(const RenderLayer*) const;
 
-    void updateDirectCompositingReasons(RenderLayer*);
-
-    void updateCompositingLayersInternal();
-
-    // Returns indirect reasons that a layer should be composited because of something in its subtree.
-    CompositingReasons subtreeReasonsForCompositing(RenderObject*, bool hasCompositedDescendants, bool has3DTransformedDescendants) const;
-
-    // Make or destroy the CompositedLayerMapping for this layer; returns true if the compositedLayerMapping changed.
-    bool allocateOrClearCompositedLayerMapping(RenderLayer*, CompositingStateTransitionType compositedLayerUpdate);
-    bool updateSquashingAssignment(RenderLayer*, SquashingState&, CompositingStateTransitionType compositedLayerUpdate);
+    void updateIfNeeded();
 
     void recursiveRepaintLayer(RenderLayer*);
 
-    void addToOverlapMap(OverlapMap&, RenderLayer*, const IntRect& layerBounds);
-
-    // Forces an update for all frames of frame tree recursively. Used only when the mainFrame compositor is ready to
-    // finish all deferred work.
-    static void finishCompositingUpdateForFrameTree(LocalFrame*);
-
     void computeCompositingRequirements(RenderLayer* ancestorLayer, RenderLayer*, OverlapMap&, struct CompositingRecursionData&, bool& descendantHas3DTransform, Vector<RenderLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
-
-    // Defines which RenderLayers will paint into which composited backings, by allocating and destroying CompositedLayerMappings as needed.
-    void assignLayersToBackings(RenderLayer*, bool& layersChanged);
-    void assignLayersToBackingsInternal(RenderLayer*, SquashingState&, bool& layersChanged, RenderLayer* clippingAncestor);
-
-    // Hook compositing layers together
-    void setCompositingParent(RenderLayer* childLayer, RenderLayer* parentLayer);
-    void removeCompositedChildren(RenderLayer*);
-
-    bool isRunningAcceleratedTransformAnimation(RenderObject*) const;
 
     bool hasAnyAdditionalCompositedLayers(const RenderLayer* rootLayer) const;
 
@@ -290,8 +242,6 @@ private:
 
     void attachRootLayer(RootLayerAttachment);
     void detachRootLayer();
-
-    bool isMainFrame() const;
 
     void updateOverflowControlsLayers();
 
@@ -302,7 +252,9 @@ private:
     GraphicsLayerFactory* graphicsLayerFactory() const;
     ScrollingCoordinator* scrollingCoordinator() const;
 
-    void addViewportConstrainedLayer(RenderLayer*);
+    bool compositingLayersNeedRebuild();
+
+    void enableCompositingModeIfNeeded();
 
     bool requiresHorizontalScrollbarLayer() const;
     bool requiresVerticalScrollbarLayer() const;
@@ -312,12 +264,8 @@ private:
 #endif
 
     void applyUpdateLayerCompositingStateChickenEggHacks(RenderLayer*, CompositingStateTransitionType compositedLayerUpdate);
-    void assignLayersToBackingsForReflectionLayer(RenderLayer* reflectionLayer, bool& layersChanged);
 
-private:
     DocumentLifecycle& lifecycle() const;
-
-    void applyOverlayFullscreenVideoAdjustment();
 
     RenderView& m_renderView;
     OwnPtr<GraphicsLayer> m_rootContentLayer;
@@ -325,22 +273,23 @@ private:
 
     CompositingReasonFinder m_compositingReasonFinder;
 
+    CompositingUpdateType m_pendingUpdateType;
+
     bool m_hasAcceleratedCompositing;
-    bool m_showRepaintCounter;
-
-    // FIXME: This should absolutely not be mutable.
-    mutable bool m_needsToRecomputeCompositingRequirements;
-    bool m_needsToUpdateLayerTreeGeometry;
-
-    // FIXME: We should remove m_pendingUpdateType and propagate the bits with CompositingPropertyUpdater instead.
-    GraphicsLayerUpdater::UpdateType m_pendingUpdateType;
-    CompositingPropertyUpdater::UpdateType m_pendingPropertyUpdateType;
-
+    bool m_needsToRecomputeCompositingRequirements;
     bool m_compositing;
     bool m_compositingLayersNeedRebuild;
-    bool m_forceCompositingMode;
-    bool m_needsUpdateCompositingRequirementsState;
 
+    // The root layer doesn't composite if it's a non-scrollable frame.
+    // So, after a layout we set this dirty bit to know that we need
+    // to recompute whether the root layer should composite even if
+    // none of its descendants composite.
+    // FIXME: Get rid of all the callers of setCompositingModeEnabled
+    // except the one in updateIfNeeded, then rename this to
+    // m_compositingDirty.
+    bool m_rootShouldAlwaysCompositeDirty;
+    bool m_needsUpdateCompositingRequirementsState;
+    bool m_needsUpdateFixedBackground;
     bool m_isTrackingRepaints; // Used for testing.
 
     RootLayerAttachment m_rootLayerAttachment;
@@ -348,9 +297,6 @@ private:
     // Enclosing container layer, which clips for iframe content
     OwnPtr<GraphicsLayer> m_containerLayer;
     OwnPtr<GraphicsLayer> m_scrollLayer;
-
-    HashSet<RenderLayer*> m_viewportConstrainedLayers;
-    HashSet<RenderLayer*> m_viewportConstrainedLayersNeedingUpdate;
 
     // This is used in updateCompositingRequirementsState to avoid full tree
     // walks while determining if layers have unclipped descendants.
@@ -366,8 +312,9 @@ private:
 #if USE(RUBBER_BANDING)
     OwnPtr<GraphicsLayer> m_layerForOverhangShadow;
 #endif
-};
 
+    bool m_inOverlayFullscreenVideo;
+};
 
 } // namespace WebCore
 

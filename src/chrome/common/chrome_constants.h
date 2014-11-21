@@ -56,7 +56,6 @@ extern const wchar_t kBrowserResourcesDll[];
 extern const base::FilePath::CharType kAndroidCacheFilename[];
 #endif
 extern const base::FilePath::CharType kArchivedHistoryFilename[];
-extern const base::FilePath::CharType kBookmarksFileName[];
 extern const base::FilePath::CharType kCacheDirname[];
 extern const base::FilePath::CharType kCookieFilename[];
 extern const base::FilePath::CharType kCRLSetFilename[];
@@ -126,8 +125,6 @@ extern const int kHighestRendererOomScore;
 #endif
 
 #if defined(OS_WIN)
-// Used by Metro Chrome to create the profile under a custom subdirectory.
-extern const wchar_t kMetroChromeUserDataSubDir[];
 // Used by Metro Chrome to initiate navigation and search requests.
 extern const wchar_t kMetroNavigationAndSearchMessage[];
 // Used by Metro Chrome to get information about the current tab.

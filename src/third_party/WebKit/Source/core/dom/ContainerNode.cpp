@@ -38,12 +38,12 @@
 #include "core/dom/SelectorQuery.h"
 #include "core/events/MutationEvent.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/RadioNodeList.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/RenderWidget.h"
 
 using namespace std;
 
@@ -72,6 +72,7 @@ static void collectChildrenAndRemoveFromOldParent(Node& node, NodeVector& nodes,
     toContainerNode(node).removeChildren();
 }
 
+#if !ENABLE(OILPAN)
 void ContainerNode::removeDetachedChildren()
 {
     if (connectedSubframeCount()) {
@@ -81,6 +82,7 @@ void ContainerNode::removeDetachedChildren()
     ASSERT(needsAttach());
     removeDetachedChildrenInContainer<Node, ContainerNode>(*this);
 }
+#endif
 
 void ContainerNode::parserTakeAllChildrenFrom(ContainerNode& oldParent)
 {
@@ -93,8 +95,12 @@ void ContainerNode::parserTakeAllChildrenFrom(ContainerNode& oldParent)
 
 ContainerNode::~ContainerNode()
 {
+#if ENABLE(OILPAN)
+    ASSERT(needsAttach());
+#else
     willBeDeletedFromDocument();
     removeDetachedChildren();
+#endif
 }
 
 bool ContainerNode::isChildTypeAllowed(const Node& child) const
@@ -172,9 +178,11 @@ bool ContainerNode::checkAcceptChildGuaranteedNodeTypes(const Node& newChild, Ex
 
 void ContainerNode::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& exceptionState)
 {
+#if !ENABLE(OILPAN)
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrShadowHostNode());
+#endif
 
     RefPtr<Node> protect(this);
 
@@ -250,11 +258,11 @@ void ContainerNode::insertBeforeCommon(Node& nextChild, Node& newChild)
     ASSERT(m_lastChild != prev);
     nextChild.setPreviousSibling(&newChild);
     if (prev) {
-        ASSERT(m_firstChild != nextChild);
+        ASSERT(firstChild() != nextChild);
         ASSERT(prev->nextSibling() == nextChild);
         prev->setNextSibling(&newChild);
     } else {
-        ASSERT(m_firstChild == nextChild);
+        ASSERT(firstChild() == nextChild);
         m_firstChild = &newChild;
     }
     newChild.setParentOrShadowHostNode(this);
@@ -288,9 +296,11 @@ void ContainerNode::parserInsertBefore(PassRefPtr<Node> newChild, Node& nextChil
 
 void ContainerNode::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& exceptionState)
 {
+#if !ENABLE(OILPAN)
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrShadowHostNode());
+#endif
 
     RefPtr<Node> protect(this);
 
@@ -403,11 +413,20 @@ void ContainerNode::disconnectDescendantFrames()
     ChildFrameDisconnector(*this).disconnect();
 }
 
+void ContainerNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_firstChild);
+    visitor->trace(m_lastChild);
+    Node::trace(visitor);
+}
+
 void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
 {
+#if !ENABLE(OILPAN)
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrShadowHostNode());
+#endif
 
     RefPtr<Node> protect(this);
 
@@ -443,7 +462,7 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
     }
 
     {
-        RenderWidget::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+        HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
 
         Node* prev = child->previousSibling();
         Node* next = child->nextSibling();
@@ -467,9 +486,9 @@ void ContainerNode::removeBetween(Node* previousChild, Node* nextChild, Node& ol
         nextChild->setPreviousSibling(previousChild);
     if (previousChild)
         previousChild->setNextSibling(nextChild);
-    if (m_firstChild == oldChild)
+    if (m_firstChild == &oldChild)
         m_firstChild = nextChild;
-    if (m_lastChild == oldChild)
+    if (m_lastChild == &oldChild)
         m_lastChild = previousChild;
 
     oldChild.setPreviousSibling(0);
@@ -533,7 +552,7 @@ void ContainerNode::removeChildren()
 
     NodeVector removedChildren;
     {
-        RenderWidget::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+        HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
         {
             NoEventDispatchAssertion assertNoEventDispatch;
             removedChildren.reserveInitialCapacity(countChildren());
@@ -556,9 +575,11 @@ void ContainerNode::appendChild(PassRefPtr<Node> newChild, ExceptionState& excep
 {
     RefPtr<ContainerNode> protect(this);
 
+#if !ENABLE(OILPAN)
     // Check that this node is not "floating".
     // If it is, it can be deleted as a side effect of sending mutation events.
     ASSERT(refCount() || parentOrShadowHostNode());
+#endif
 
     // Make sure adding the new child is ok
     if (!checkAcceptChild(newChild.get(), 0, exceptionState))
@@ -654,7 +675,7 @@ void ContainerNode::childrenChanged(bool changedByParser, Node*, Node*, int chil
     if (!changedByParser && childCountDelta)
         document().updateRangesAfterChildrenChanged(this);
     invalidateNodeListCachesInAncestors();
-    if (childCountDelta > 0 && inActiveDocument()) {
+    if (childCountDelta > 0 && !childNeedsStyleRecalc()) {
         setChildNeedsStyleRecalc();
         markAncestorsWithChildNeedsStyleRecalc();
     }
@@ -808,11 +829,14 @@ void ContainerNode::focusStateChanged()
     if (!renderer())
         return;
 
-    if ((isElementNode() && toElement(this)->childrenAffectedByFocus())
-        || (renderStyle()->affectedByFocus() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
-        setNeedsStyleRecalc(SubtreeStyleChange);
-    else if (renderStyle()->affectedByFocus())
-        setNeedsStyleRecalc(LocalStyleChange);
+    if (styleChangeType() < SubtreeStyleChange) {
+        if (renderStyle()->affectedByFocus() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+            setNeedsStyleRecalc(SubtreeStyleChange);
+        else if (isElementNode() && toElement(this)->childrenAffectedByFocus())
+            document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
+        else if (renderStyle()->affectedByFocus())
+            setNeedsStyleRecalc(LocalStyleChange);
+    }
 
     if (renderer() && renderer()->style()->hasAppearance())
         RenderTheme::theme().stateChanged(renderer(), FocusState);
@@ -831,8 +855,8 @@ void ContainerNode::setFocus(bool received)
         return;
 
     // If :focus sets display: none, we lose focus but still need to recalc our style.
-    if (isElementNode() && toElement(this)->childrenAffectedByFocus())
-        setNeedsStyleRecalc(SubtreeStyleChange);
+    if (isElementNode() && toElement(this)->childrenAffectedByFocus() && styleChangeType() < SubtreeStyleChange)
+        document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
     else
         setNeedsStyleRecalc(LocalStyleChange);
 }
@@ -846,11 +870,14 @@ void ContainerNode::setActive(bool down)
 
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
     if (renderer()) {
-        if ((isElementNode() && toElement(this)->childrenAffectedByActive())
-            || (renderStyle()->affectedByActive() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
-            setNeedsStyleRecalc(SubtreeStyleChange);
-        else if (renderStyle()->affectedByActive())
-            setNeedsStyleRecalc(LocalStyleChange);
+        if (styleChangeType() < SubtreeStyleChange) {
+            if (renderStyle()->affectedByActive() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+                setNeedsStyleRecalc(SubtreeStyleChange);
+            else if (isElementNode() && toElement(this)->childrenAffectedByActive())
+                document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoActive, *toElement(this));
+            else if (renderStyle()->affectedByActive())
+                setNeedsStyleRecalc(LocalStyleChange);
+        }
 
         if (renderStyle()->hasAppearance())
             RenderTheme::theme().stateChanged(renderer(), PressedState);
@@ -868,18 +895,21 @@ void ContainerNode::setHovered(bool over)
     if (!renderer()) {
         if (over)
             return;
-        if (isElementNode() && toElement(this)->childrenAffectedByHover())
-            setNeedsStyleRecalc(SubtreeStyleChange);
+        if (isElementNode() && toElement(this)->childrenAffectedByHover() && styleChangeType() < SubtreeStyleChange)
+            document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
         else
             setNeedsStyleRecalc(LocalStyleChange);
         return;
     }
 
-    if ((isElementNode() && toElement(this)->childrenAffectedByHover())
-        || (renderStyle()->affectedByHover() && renderStyle()->hasPseudoStyle(FIRST_LETTER)))
-        setNeedsStyleRecalc(SubtreeStyleChange);
-    else if (renderStyle()->affectedByHover())
-        setNeedsStyleRecalc(LocalStyleChange);
+    if (styleChangeType() < SubtreeStyleChange) {
+        if (renderStyle()->affectedByHover() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+            setNeedsStyleRecalc(SubtreeStyleChange);
+        else if (isElementNode() && toElement(this)->childrenAffectedByHover())
+            document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
+        else if (renderStyle()->affectedByHover())
+            setNeedsStyleRecalc(LocalStyleChange);
+    }
 
     if (renderer()->style()->hasAppearance())
         RenderTheme::theme().stateChanged(renderer(), HoverState);
@@ -984,8 +1014,10 @@ static void dispatchChildRemovalEvents(Node& child)
 
 void ContainerNode::updateTreeAfterInsertion(Node& child)
 {
+#if !ENABLE(OILPAN)
     ASSERT(refCount());
     ASSERT(child.refCount());
+#endif
 
     ChildListMutationScope(*this).childAdded(child);
 
@@ -1043,6 +1075,77 @@ void ContainerNode::checkForChildrenAdjacentRuleChanges()
     }
 }
 
+void ContainerNode::checkForSiblingStyleChanges(bool finishedParsingCallback, Node* beforeChange, Node* afterChange, int childCountDelta)
+{
+    if (!inActiveDocument() || document().hasPendingForcedStyleRecalc() || styleChangeType() >= SubtreeStyleChange)
+        return;
+
+    if (needsStyleRecalc() && childrenAffectedByPositionalRules())
+        return;
+
+    // Forward positional selectors include nth-child, nth-of-type, first-of-type and only-of-type.
+    // The indirect adjacent selector is the ~ selector.
+    // Backward positional selectors include nth-last-child, nth-last-of-type, last-of-type and only-of-type.
+    // We have to invalidate everything following the insertion point in the forward and indirect adjacent case,
+    // and everything before the insertion point in the backward case.
+    // |afterChange| is 0 in the parser callback case, so we won't do any work for the forward case if we don't have to.
+    // For performance reasons we just mark the parent node as changed, since we don't want to make childrenChanged O(n^2) by crawling all our kids
+    // here. recalcStyle will then force a walk of the children when it sees that this has happened.
+    if (((childrenAffectedByForwardPositionalRules() || childrenAffectedByIndirectAdjacentRules()) && afterChange)
+        || (childrenAffectedByBackwardPositionalRules() && beforeChange)) {
+        setNeedsStyleRecalc(SubtreeStyleChange);
+        return;
+    }
+
+    // :first-child. In the parser callback case, we don't have to check anything, since we were right the first time.
+    // In the DOM case, we only need to do something if |afterChange| is not 0.
+    // |afterChange| is 0 in the parser case, so it works out that we'll skip this block.
+    if (childrenAffectedByFirstChildRules() && afterChange) {
+        // Find our new first child.
+        Element* newFirstChild = ElementTraversal::firstWithin(*this);
+        RenderStyle* newFirstChildStyle = newFirstChild ? newFirstChild->renderStyle() : 0;
+
+        // Find the first element node following |afterChange|
+        Node* firstElementAfterInsertion = afterChange->isElementNode() ? afterChange : ElementTraversal::nextSibling(*afterChange);
+        RenderStyle* firstElementAfterInsertionStyle = firstElementAfterInsertion ? firstElementAfterInsertion->renderStyle() : 0;
+
+        // This is the insert/append case.
+        if (newFirstChild != firstElementAfterInsertion && firstElementAfterInsertionStyle && firstElementAfterInsertionStyle->firstChildState())
+            firstElementAfterInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+
+        // We also have to handle node removal.
+        if (childCountDelta < 0 && newFirstChild == firstElementAfterInsertion && newFirstChild && (!newFirstChildStyle || !newFirstChildStyle->firstChildState()))
+            newFirstChild->setNeedsStyleRecalc(SubtreeStyleChange);
+    }
+
+    // :last-child. In the parser callback case, we don't have to check anything, since we were right the first time.
+    // In the DOM case, we only need to do something if |afterChange| is not 0.
+    if (childrenAffectedByLastChildRules() && beforeChange) {
+        // Find our new last child.
+        Node* newLastChild = ElementTraversal::lastChild(*this);
+        RenderStyle* newLastChildStyle = newLastChild ? newLastChild->renderStyle() : 0;
+
+        // Find the last element node going backwards from |beforeChange|
+        Node* lastElementBeforeInsertion = beforeChange->isElementNode() ? beforeChange : ElementTraversal::previousSibling(*beforeChange);
+        RenderStyle* lastElementBeforeInsertionStyle = lastElementBeforeInsertion ? lastElementBeforeInsertion->renderStyle() : 0;
+
+        if (newLastChild != lastElementBeforeInsertion && lastElementBeforeInsertionStyle && lastElementBeforeInsertionStyle->lastChildState())
+            lastElementBeforeInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+
+        // We also have to handle node removal. The parser callback case is similar to node removal as well in that we need to change the last child
+        // to match now.
+        if ((childCountDelta < 0 || finishedParsingCallback) && newLastChild == lastElementBeforeInsertion && newLastChild && (!newLastChildStyle || !newLastChildStyle->lastChildState()))
+            newLastChild->setNeedsStyleRecalc(SubtreeStyleChange);
+    }
+
+    // The + selector. We need to invalidate the first element following the insertion point. It is the only possible element
+    // that could be affected by this DOM change.
+    if (childrenAffectedByDirectAdjacentRules() && afterChange) {
+        if (Node* firstElementAfterInsertion = afterChange->isElementNode() ? afterChange : ElementTraversal::nextSibling(*afterChange))
+            firstElementAfterInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+    }
+}
+
 PassRefPtr<HTMLCollection> ContainerNode::getElementsByTagName(const AtomicString& localName)
 {
     if (localName.isNull())
@@ -1083,6 +1186,26 @@ PassRefPtr<RadioNodeList> ContainerNode::radioNodeList(const AtomicString& name,
     ASSERT(isHTMLFormElement(this) || isHTMLFieldSetElement(this));
     CollectionType type = onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType;
     return ensureRareData().ensureNodeLists().addCache<RadioNodeList>(*this, type, name);
+}
+
+Element* ContainerNode::getElementById(const AtomicString& id) const
+{
+    if (isInTreeScope()) {
+        // Fast path if we are in a tree scope: call getElementById() on tree scope
+        // and check if the matching element is in our subtree.
+        Element* element = treeScope().getElementById(id);
+        if (!element)
+            return 0;
+        if (element->isDescendantOf(this))
+            return element;
+    }
+
+    // Fall back to traversing our subtree. In case of duplicate ids, the first element found will be returned.
+    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
+        if (element->getIdAttribute() == id)
+            return element;
+    }
+    return 0;
 }
 
 #ifndef NDEBUG

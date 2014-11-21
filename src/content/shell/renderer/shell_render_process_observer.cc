@@ -26,8 +26,6 @@
 
 using blink::WebFrame;
 using blink::WebRuntimeFeatures;
-using WebTestRunner::WebTestDelegate;
-using WebTestRunner::WebTestInterfaces;
 
 namespace content {
 

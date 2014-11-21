@@ -233,7 +233,7 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
             }
         }
 
-        SubtreeLayoutScope layoutScope(child);
+        SubtreeLayoutScope layoutScope(*child);
         // Resource containers are nasty: they can invalidate clients outside the current SubtreeLayoutScope.
         // Since they only care about viewport size changes (to resolve their relative lengths), we trigger
         // their invalidation directly from SVGSVGElement::svgAttributeChange() or at a higher
@@ -277,16 +277,10 @@ void SVGRenderSupport::layoutResourcesIfNeeded(const RenderObject* object)
 
 bool SVGRenderSupport::isOverflowHidden(const RenderObject* object)
 {
-    // SVG doesn't support independent x/y overflow
-    ASSERT(object->style()->overflowX() == object->style()->overflowY());
-
-    // OSCROLL is never set for SVG - see StyleResolver::adjustRenderStyle
-    ASSERT(object->style()->overflowX() != OSCROLL);
-
     // RenderSVGRoot should never query for overflow state - it should always clip itself to the initial viewport size.
-    ASSERT(!object->isRoot());
+    ASSERT(!object->isDocumentElement());
 
-    return object->style()->overflowX() == OHIDDEN;
+    return object->style()->overflowX() == OHIDDEN || object->style()->overflowX() == OSCROLL;
 }
 
 void SVGRenderSupport::intersectRepaintRectWithResources(const RenderObject* renderer, FloatRect& repaintRect)

@@ -27,6 +27,7 @@
 #include "core/loader/HistoryItem.h"
 
 #include "core/dom/Document.h"
+#include "core/html/forms/FormController.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/CString.h"
@@ -50,33 +51,6 @@ HistoryItem::HistoryItem()
 
 HistoryItem::~HistoryItem()
 {
-}
-
-inline HistoryItem::HistoryItem(const HistoryItem& item)
-    : RefCounted<HistoryItem>()
-    , m_urlString(item.m_urlString)
-    , m_referrer(item.m_referrer)
-    , m_target(item.m_target)
-    , m_scrollPoint(item.m_scrollPoint)
-    , m_pageScaleFactor(item.m_pageScaleFactor)
-    , m_documentState(item.m_documentState)
-    , m_itemSequenceNumber(item.m_itemSequenceNumber)
-    , m_documentSequenceNumber(item.m_documentSequenceNumber)
-    , m_stateObject(item.m_stateObject)
-    , m_formContentType(item.m_formContentType)
-{
-    if (item.m_formData)
-        m_formData = item.m_formData->copy();
-
-    unsigned size = item.m_children.size();
-    m_children.reserveInitialCapacity(size);
-    for (unsigned i = 0; i < size; ++i)
-        m_children.uncheckedAppend(item.m_children[i]->copy());
-}
-
-PassRefPtr<HistoryItem> HistoryItem::copy() const
-{
-    return adoptRef(new HistoryItem(*this));
 }
 
 void HistoryItem::generateNewItemSequenceNumber()
@@ -118,7 +92,6 @@ void HistoryItem::setURLString(const String& urlString)
 void HistoryItem::setURL(const KURL& url)
 {
     setURLString(url.string());
-    clearDocumentState();
 }
 
 void HistoryItem::setReferrer(const Referrer& referrer)
@@ -129,6 +102,16 @@ void HistoryItem::setReferrer(const Referrer& referrer)
 void HistoryItem::setTarget(const String& target)
 {
     m_target = target;
+}
+
+const FloatPoint& HistoryItem::pinchViewportScrollPoint() const
+{
+    return m_pinchViewportScrollPoint;
+}
+
+void HistoryItem::setPinchViewportScrollPoint(const FloatPoint& point)
+{
+    m_pinchViewportScrollPoint = point;
 }
 
 const IntPoint& HistoryItem::scrollPoint() const
@@ -143,8 +126,8 @@ void HistoryItem::setScrollPoint(const IntPoint& point)
 
 void HistoryItem::clearScrollPoint()
 {
-    m_scrollPoint.setX(0);
-    m_scrollPoint.setY(0);
+    m_scrollPoint = IntPoint();
+    m_pinchViewportScrollPoint = FloatPoint();
 }
 
 float HistoryItem::pageScaleFactor() const
@@ -159,37 +142,36 @@ void HistoryItem::setPageScaleFactor(float scaleFactor)
 
 void HistoryItem::setDocumentState(const Vector<String>& state)
 {
+    ASSERT(!m_documentState);
+    m_documentStateVector = state;
+}
+
+void HistoryItem::setDocumentState(DocumentState* state)
+{
     m_documentState = state;
 }
 
-const Vector<String>& HistoryItem::documentState() const
+const Vector<String>& HistoryItem::documentState()
 {
-    return m_documentState;
+    if (m_documentState)
+        m_documentStateVector = m_documentState->toStateVector();
+    return m_documentStateVector;
+}
+
+Vector<String> HistoryItem::getReferencedFilePaths()
+{
+    return FormController::getReferencedFilePaths(documentState());
 }
 
 void HistoryItem::clearDocumentState()
 {
     m_documentState.clear();
+    m_documentStateVector.clear();
 }
 
 void HistoryItem::setStateObject(PassRefPtr<SerializedScriptValue> object)
 {
     m_stateObject = object;
-}
-
-void HistoryItem::addChildItem(PassRefPtr<HistoryItem> child)
-{
-    m_children.append(child);
-}
-
-const HistoryItemVector& HistoryItem::children() const
-{
-    return m_children;
-}
-
-void HistoryItem::clearChildren()
-{
-    m_children.clear();
 }
 
 const AtomicString& HistoryItem::formContentType() const

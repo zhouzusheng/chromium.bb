@@ -30,6 +30,7 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -38,7 +39,6 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
-#include "core/loader/ProgressTracker.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
@@ -51,6 +51,7 @@
 #include "core/page/StorageClient.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/storage/StorageNamespace.h"
@@ -117,19 +118,15 @@ Page::Page(PageClients& pageClients)
     , m_contextMenuController(ContextMenuController::create(this, pageClients.contextMenuClient))
     , m_inspectorController(InspectorController::create(this, pageClients.inspectorClient))
     , m_pointerLockController(PointerLockController::create(this))
-    , m_historyController(adoptPtr(new HistoryController(this)))
-    , m_progress(ProgressTracker::create())
     , m_undoStack(UndoStack::create())
     , m_backForwardClient(pageClients.backForwardClient)
     , m_editorClient(pageClients.editorClient)
-    , m_validationMessageClient(0)
     , m_spellCheckerClient(pageClients.spellCheckerClient)
     , m_storageClient(pageClients.storageClient)
     , m_subframeCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
-    , m_pageScaleFactor(1)
     , m_deviceScaleFactor(1)
     , m_timerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval())
     , m_visibilityState(PageVisibilityStateVisible)
@@ -151,25 +148,6 @@ Page::Page(PageClients& pageClients)
 
 Page::~Page()
 {
-    // Disable all agents prior to resetting the frame view.
-    m_inspectorController->inspectedPageDestroyed();
-
-    m_mainFrame->setView(nullptr);
-    allPages().remove(this);
-    if (ordinaryPages().contains(this))
-        ordinaryPages().remove(this);
-
-    for (LocalFrame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        frame->willDetachFrameHost();
-        frame->detachFromFrameHost();
-    }
-
-    if (m_scrollingCoordinator)
-        m_scrollingCoordinator->pageDestroyed();
-
-#ifndef NDEBUG
-    pageCounter.decrement();
-#endif
 }
 
 void Page::makeOrdinary()
@@ -199,7 +177,7 @@ String Page::mainThreadScrollingReasonsAsText()
     return String();
 }
 
-PassRefPtr<ClientRectList> Page::nonFastScrollableRects(const LocalFrame* frame)
+PassRefPtrWillBeRawPtr<ClientRectList> Page::nonFastScrollableRects(const LocalFrame* frame)
 {
     if (Document* document = m_mainFrame->document())
         document->updateLayout();
@@ -227,6 +205,7 @@ void Page::documentDetached(Document* document)
     m_contextMenuController->documentDetached(document);
     if (m_validationMessageClient)
         m_validationMessageClient->documentDetached(*document);
+    m_frameHost->eventHandlerRegistry().documentDetached(*document);
 }
 
 bool Page::openedByDOM() const
@@ -321,6 +300,11 @@ void Page::unmarkAllTextMatches()
     } while (frame);
 }
 
+void Page::setValidationMessageClient(PassOwnPtr<ValidationMessageClient> client)
+{
+    m_validationMessageClient = client;
+}
+
 void Page::setDefersLoading(bool defers)
 {
     if (defers == m_defersLoading)
@@ -334,16 +318,19 @@ void Page::setDefersLoading(bool defers)
 void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 {
     FrameView* view = mainFrame()->view();
+    PinchViewport& viewport = frameHost().pinchViewport();
 
-    if (scale != m_pageScaleFactor) {
-        m_pageScaleFactor = scale;
+    if (scale != viewport.scale()) {
+        viewport.setScale(scale);
 
-        if (view)
+        if (view && !settings().pinchVirtualViewportEnabled())
             view->setVisibleContentScaleFactor(scale);
 
         mainFrame()->deviceOrPageScaleFactorChanged();
         m_chrome->client().deviceOrPageScaleFactorChanged();
 
+        // FIXME: In virtual-viewport pinch mode, scale doesn't change the fixed-pos viewport;
+        // remove once it's the only pinch mode in town.
         if (view)
             view->viewportConstrainedVisibleContentSizeChanged(true, true);
 
@@ -352,6 +339,11 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 
     if (view && view->scrollPosition() != origin)
         view->notifyScrollPositionChanged(origin);
+}
+
+float Page::pageScaleFactor() const
+{
+    return frameHost().pinchViewport().scale();
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -448,6 +440,11 @@ PageVisibilityState Page::visibilityState() const
     return m_visibilityState;
 }
 
+bool Page::isCursorVisible() const
+{
+    return m_isCursorVisible && settings().deviceSupportsMouse();
+}
+
 void Page::addMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
 {
     m_multisamplingChangedObservers.add(observer);
@@ -477,8 +474,8 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             frame->document()->initDNSPrefetch();
         break;
     case SettingsDelegate::MultisamplingChange: {
-        HashSet<MultisamplingChangedObserver*>::iterator stop = m_multisamplingChangedObservers.end();
-        for (HashSet<MultisamplingChangedObserver*>::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
+        WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> >::iterator stop = m_multisamplingChangedObservers.end();
+        for (WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> >::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
             (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
         break;
     }
@@ -489,20 +486,19 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
         }
         break;
     case SettingsDelegate::TextAutosizingChange:
-        // FTA needs both setNeedsRecalcStyle and setNeedsLayout after a setting change.
-        if (RuntimeEnabledFeatures::fastTextAutosizingEnabled()) {
-            setNeedsRecalcStyleInAllFrames();
+        if (!mainFrame())
+            break;
+        if (FastTextAutosizer* textAutosizer = mainFrame()->document()->fastTextAutosizer()) {
+            textAutosizer->updatePageInfoInAllFrames();
         } else {
-            // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
             for (LocalFrame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                TextAutosizer* textAutosizer = frame->document()->textAutosizer();
-                if (textAutosizer)
+                if (TextAutosizer* textAutosizer = frame->document()->textAutosizer())
                     textAutosizer->recalculateMultipliers();
             }
+            // TextAutosizing updates RenderStyle during layout phase (via TextAutosizer::processSubtree).
+            // We should invoke setNeedsLayout here.
+            setNeedsLayoutInAllFrames();
         }
-        // TextAutosizing updates RenderStyle during layout phase (via TextAutosizer::processSubtree).
-        // We should invoke setNeedsLayout here.
-        setNeedsLayoutInAllFrames();
         break;
     case SettingsDelegate::ScriptEnableChange:
         m_inspectorController->scriptsEnabled(settings().scriptEnabled());
@@ -512,6 +508,17 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             frame->document()->styleEngine()->updateGenericFontFamilySettings();
         setNeedsRecalcStyleInAllFrames();
         break;
+    case SettingsDelegate::AcceleratedCompositingChange:
+        updateAcceleratedCompositingSettings();
+        break;
+    }
+}
+
+void Page::updateAcceleratedCompositingSettings()
+{
+    for (LocalFrame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (FrameView* view = frame->view())
+            view->updateAcceleratedCompositingSettings();
     }
 }
 
@@ -532,6 +539,41 @@ PageLifecycleNotifier& Page::lifecycleNotifier()
 PassOwnPtr<LifecycleNotifier<Page> > Page::createLifecycleNotifier()
 {
     return PageLifecycleNotifier::create(this);
+}
+
+void Page::trace(Visitor* visitor)
+{
+    visitor->trace(m_multisamplingChangedObservers);
+    visitor->trace(m_frameHost);
+    WillBeHeapSupplementable<Page>::trace(visitor);
+}
+
+void Page::willBeDestroyed()
+{
+    // Disable all agents prior to resetting the frame view.
+    m_inspectorController->willBeDestroyed();
+
+    m_mainFrame->setView(nullptr);
+
+    allPages().remove(this);
+    if (ordinaryPages().contains(this))
+        ordinaryPages().remove(this);
+
+    for (LocalFrame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
+        frame->loader().frameDetached();
+
+    if (m_scrollingCoordinator)
+        m_scrollingCoordinator->willBeDestroyed();
+
+#ifndef NDEBUG
+    pageCounter.decrement();
+#endif
+
+    m_chrome->willBeDestroyed();
+    m_mainFrame.clear();
+    if (m_validationMessageClient)
+        m_validationMessageClient->willBeDestroyed();
+    WillBeHeapSupplementable<Page>::willBeDestroyed();
 }
 
 Page::PageClients::PageClients()

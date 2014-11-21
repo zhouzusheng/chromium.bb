@@ -285,7 +285,7 @@ Element* Position::element() const
     return toElement(n);
 }
 
-PassRefPtr<CSSComputedStyleDeclaration> Position::computedStyle() const
+PassRefPtrWillBeRawPtr<CSSComputedStyleDeclaration> Position::computedStyle() const
 {
     Element* elem = element();
     if (!elem)
@@ -495,34 +495,6 @@ Position Position::previousCharacterPosition(EAffinity affinity) const
             return *this;
 
         if (atStartOfLine || !rendered) {
-            if (currentPos.isCandidate())
-                return currentPos;
-        } else if (rendersInDifferentPosition(currentPos))
-            return currentPos;
-    }
-
-    return *this;
-}
-
-// return first following position rendered at a different location, or "this"
-Position Position::nextCharacterPosition(EAffinity affinity) const
-{
-    if (isNull())
-        return Position();
-
-    Node* fromRootEditableElement = deprecatedNode()->rootEditableElement();
-
-    bool atEndOfLine = isEndOfLine(VisiblePosition(*this, affinity));
-    bool rendered = isCandidate();
-
-    Position currentPos = *this;
-    while (!currentPos.atEndOfTree()) {
-        currentPos = currentPos.next();
-
-        if (currentPos.deprecatedNode()->rootEditableElement() != fromRootEditableElement)
-            return *this;
-
-        if (atEndOfLine || !rendered) {
             if (currentPos.isCandidate())
                 return currentPos;
         } else if (rendersInDifferentPosition(currentPos))

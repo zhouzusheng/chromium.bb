@@ -63,13 +63,13 @@ class ImageBitmap;
 class ImageData;
 class TextMetrics;
 
-typedef WillBePersistentHeapHashMap<String, RefPtrWillBeMember<MutableStylePropertySet> > MutableStylePropertyMap;
+typedef WillBeHeapHashMap<String, RefPtrWillBeMember<MutableStylePropertySet> > MutableStylePropertyMap;
 
-class CanvasRenderingContext2D FINAL: public ScriptWrappable, public CanvasRenderingContext, public CanvasPathMethods {
+class CanvasRenderingContext2D FINAL: public CanvasRenderingContext, public ScriptWrappable, public CanvasPathMethods {
 public:
-    static PassOwnPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
+    static PassOwnPtrWillBeRawPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
     {
-        return adoptPtr(new CanvasRenderingContext2D(canvas, attrs, usesCSSCompatibilityParseMode));
+        return adoptPtrWillBeNoop(new CanvasRenderingContext2D(canvas, attrs, usesCSSCompatibilityParseMode));
     }
     virtual ~CanvasRenderingContext2D();
 
@@ -112,6 +112,8 @@ public:
     float globalAlpha() const;
     void setGlobalAlpha(float);
 
+    bool isContextLost() const;
+
     String globalCompositeOperation() const;
     void setGlobalCompositeOperation(const String&);
 
@@ -122,7 +124,7 @@ public:
     {
         return SVGMatrixTearOff::create(state().m_transform);
     }
-    void setCurrentTransform(PassRefPtr<SVGMatrixTearOff>, ExceptionState&);
+    void setCurrentTransform(PassRefPtr<SVGMatrixTearOff>);
 
     void scale(float sx, float sy);
     void rotate(float angleInRadians);
@@ -147,22 +149,20 @@ public:
 
     void beginPath();
 
-    PassRefPtr<Path2D> currentPath();
-    void setCurrentPath(Path2D*);
     void fill(const String& winding = "nonzero");
-    void fill(Path2D*, ExceptionState&);
-    void fill(Path2D*, const String& winding, ExceptionState&);
+    void fill(Path2D*, const String& winding = "nonzero");
     void stroke();
-    void stroke(Path2D*, ExceptionState&);
+    void stroke(Path2D*);
     void clip(const String& winding = "nonzero");
-    void clip(Path2D*, ExceptionState&);
-    void clip(Path2D*, const String& winding, ExceptionState&);
+    void clip(Path2D*, const String& winding = "nonzero");
 
     bool isPointInPath(const float x, const float y, const String& winding = "nonzero");
-    bool isPointInPath(Path2D*, const float x, const float y, ExceptionState&);
-    bool isPointInPath(Path2D*, const float x, const float y, const String& winding, ExceptionState&);
+    bool isPointInPath(Path2D*, const float x, const float y, const String& winding = "nonzero");
     bool isPointInStroke(const float x, const float y);
-    bool isPointInStroke(Path2D*, const float x, const float y, ExceptionState&);
+    bool isPointInStroke(Path2D*, const float x, const float y);
+
+    void scrollPathIntoView();
+    void scrollPathIntoView(Path2D*);
 
     void clearRect(float x, float y, float width, float height);
     void fillRect(float x, float y, float width, float height);
@@ -189,21 +189,15 @@ public:
 
     void setCompositeOperation(const String&);
 
-    PassRefPtr<CanvasGradient> createLinearGradient(float x0, float y0, float x1, float y1, ExceptionState&);
+    PassRefPtr<CanvasGradient> createLinearGradient(float x0, float y0, float x1, float y1);
     PassRefPtr<CanvasGradient> createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState&);
     PassRefPtr<CanvasPattern> createPattern(CanvasImageSource*, const String& repetitionType, ExceptionState&);
 
-    PassRefPtr<ImageData> createImageData(PassRefPtr<ImageData>, ExceptionState&) const;
-    PassRefPtr<ImageData> createImageData(float width, float height, ExceptionState&) const;
-    PassRefPtr<ImageData> getImageData(float sx, float sy, float sw, float sh, ExceptionState&) const;
-    void putImageData(ImageData*, float dx, float dy, ExceptionState&);
-    void putImageData(ImageData*, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight, ExceptionState&);
-
-    // Slated for deprecation:
-    void webkitPutImageDataHD(ImageData* image, float dx, float dy, ExceptionState& e) { putImageData(image, dx, dy, e); }
-    void webkitPutImageDataHD(ImageData* image, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight, ExceptionState& e) { putImageData(image, dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight, e); }
-    PassRefPtr<ImageData> webkitGetImageDataHD(float sx, float sy, float sw, float sh, ExceptionState&) const;
-    float webkitBackingStorePixelRatio() const { return 1; }
+    PassRefPtrWillBeRawPtr<ImageData> createImageData(PassRefPtrWillBeRawPtr<ImageData>) const;
+    PassRefPtrWillBeRawPtr<ImageData> createImageData(float width, float height, ExceptionState&) const;
+    PassRefPtrWillBeRawPtr<ImageData> getImageData(float sx, float sy, float sw, float sh, ExceptionState&) const;
+    void putImageData(ImageData*, float dx, float dy);
+    void putImageData(ImageData*, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight);
 
     void reset();
 
@@ -231,7 +225,13 @@ public:
     PassRefPtr<Canvas2DContextAttributes> getContextAttributes() const;
 
     void drawFocusIfNeeded(Element*);
+    void drawFocusIfNeeded(Path2D*, Element*);
     bool drawCustomFocusRing(Element*);
+
+    void loseContext();
+    void restoreContext();
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     class State FINAL : public CSSFontSelectorClient {
@@ -245,7 +245,7 @@ private:
         // CSSFontSelectorClient implementation
         virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
 
-        virtual void trace(Visitor*) OVERRIDE { }
+        virtual void trace(Visitor* visitor) OVERRIDE { CSSFontSelectorClient::trace(visitor); }
 
         unsigned m_unrealizedSaveCount;
 
@@ -288,6 +288,10 @@ private:
     void applyShadow();
     bool shouldDrawShadows() const;
 
+    void dispatchContextLostEvent(Timer<CanvasRenderingContext2D>*);
+    void dispatchContextRestoredEvent(Timer<CanvasRenderingContext2D>*);
+    void tryRestoreContextEvent(Timer<CanvasRenderingContext2D>*);
+
     bool computeDirtyRect(const FloatRect& localBounds, FloatRect*);
     bool computeDirtyRect(const FloatRect& localBounds, const FloatRect& transformedClipBounds, FloatRect*);
     void didDraw(const FloatRect&);
@@ -310,6 +314,8 @@ private:
     bool isPointInPathInternal(const Path&, const float x, const float y, const String& windingRuleString);
     bool isPointInStrokeInternal(const Path&, const float x, const float y);
 
+    void scrollPathIntoViewInternal(const Path&);
+
     void drawTextInternal(const String& text, float x, float y, bool fill, float maxWidth = 0, bool useMaxWidth = false);
 
     const Font& accessFont();
@@ -321,8 +327,10 @@ private:
     void inflateStrokeRect(FloatRect&) const;
 
     template<class T> void fullCanvasCompositedFill(const T&);
+    template<class T> void fullCanvasCompositedStroke(const T&);
     template<class T> void fullCanvasCompositedDrawImage(T*, const FloatRect&, const FloatRect&, CompositeOperator);
 
+    void drawFocusIfNeededInternal(const Path&, Element*);
     bool focusRingCallIsValid(const Path&, Element*);
     void updateFocusRingAccessibility(const Path&, Element*);
     void drawFocusRing(const Path&);
@@ -335,12 +343,17 @@ private:
 
     virtual blink::WebLayer* platformLayer() const OVERRIDE;
 
-    // FIXME: Oilpan: Make this a vector of embedded State objects rather than pointers
-    // once we support having vectors with objects using a vtable in oilpan.
-    WillBePersistentHeapVector<OwnPtrWillBeMember<State> > m_stateStack;
+    WillBeHeapVector<OwnPtrWillBeMember<State> > m_stateStack;
     bool m_usesCSSCompatibilityParseMode;
     bool m_hasAlpha;
+    bool m_isContextLost;
+    bool m_contextRestorable;
+    Canvas2DContextStorage m_storageMode;
     MutableStylePropertyMap m_fetchedFonts;
+    unsigned m_tryRestoreContextAttemptCount;
+    Timer<CanvasRenderingContext2D> m_dispatchContextLostEventTimer;
+    Timer<CanvasRenderingContext2D> m_dispatchContextRestoredEventTimer;
+    Timer<CanvasRenderingContext2D> m_tryRestoreContextEventTimer;
 };
 
 DEFINE_TYPE_CASTS(CanvasRenderingContext2D, CanvasRenderingContext, context, context->is2d(), context.is2d());

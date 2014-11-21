@@ -252,7 +252,7 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
           codec, sample_format, channel_layout, sample_per_second,
           extra_data.size() ? &extra_data[0] : NULL, extra_data.size(),
           is_audio_track_encrypted_, false, base::TimeDelta(),
-          base::TimeDelta());
+          0);
       has_audio_ = true;
       audio_track_id_ = track->header.track_id;
     }
@@ -288,20 +288,18 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
 
   RCHECK(config_cb_.Run(audio_config, video_config, TextTrackConfigMap()));
 
-  base::TimeDelta duration;
+  StreamParser::InitParameters params(kInfiniteDuration());
   if (moov_->extends.header.fragment_duration > 0) {
-    duration = TimeDeltaFromRational(moov_->extends.header.fragment_duration,
-                                     moov_->header.timescale);
+    params.duration = TimeDeltaFromRational(
+        moov_->extends.header.fragment_duration, moov_->header.timescale);
   } else if (moov_->header.duration > 0 &&
              moov_->header.duration != kuint64max) {
-    duration = TimeDeltaFromRational(moov_->header.duration,
-                                     moov_->header.timescale);
-  } else {
-    duration = kInfiniteDuration();
+    params.duration =
+        TimeDeltaFromRational(moov_->header.duration, moov_->header.timescale);
   }
 
   if (!init_cb_.is_null())
-    base::ResetAndReturn(&init_cb_).Run(true, duration, false);
+    base::ResetAndReturn(&init_cb_).Run(true, params);
 
   EmitNeedKeyIfNecessary(moov_->pssh);
   return true;
@@ -365,13 +363,10 @@ bool MP4StreamParser::PrepareAVCBuffer(
     // If this is a keyframe, we (re-)inject SPS and PPS headers at the start of
     // a frame. If subsample info is present, we also update the clear byte
     // count for that first subsample.
-    std::vector<uint8> param_sets;
-    RCHECK(AVC::ConvertConfigToAnnexB(avc_config, &param_sets));
-    frame_buf->insert(frame_buf->begin(),
-                      param_sets.begin(), param_sets.end());
-    if (!subsamples->empty())
-      (*subsamples)[0].clear_bytes += param_sets.size();
+    RCHECK(AVC::InsertParamSetsAnnexB(avc_config, frame_buf, subsamples));
   }
+
+  DCHECK(AVC::IsValidAnnexB(*frame_buf));
   return true;
 }
 
@@ -549,9 +544,11 @@ bool MP4StreamParser::SendAndFlushSamples(BufferQueue* audio_buffers,
 bool MP4StreamParser::ReadAndDiscardMDATsUntil(const int64 offset) {
   bool err = false;
   while (mdat_tail_ < offset) {
-    const uint8* buf;
-    int size;
+    const uint8* buf = NULL;
+    int size = 0;
     queue_.PeekAt(mdat_tail_, &buf, &size);
+    if (size <= 0)
+      return false;
 
     FourCC type;
     int box_sz;

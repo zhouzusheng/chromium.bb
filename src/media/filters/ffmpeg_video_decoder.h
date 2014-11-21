@@ -33,11 +33,12 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
+                          bool low_delay,
                           const PipelineStatusCB& status_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
   // Callback called from within FFmpeg to allocate a buffer based on
   // the dimensions of |codec_context|. See AVCodecContext.get_buffer
@@ -60,21 +61,18 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   // Handles (re-)initializing the decoder with a (new) config.
   // Returns true if initialization was successful.
-  bool ConfigureDecoder();
+  bool ConfigureDecoder(bool low_delay);
 
   // Releases resources associated with |codec_context_| and |av_frame_|
   // and resets them to NULL.
   void ReleaseFFmpegResources();
 
-  // Reset decoder and call |reset_cb_|.
-  void DoReset();
-
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DecoderState state_;
 
+  // TODO(xhwang): Merge DecodeBuffer() into Decode() and remove this.
   DecodeCB decode_cb_;
-  base::Closure reset_cb_;
 
   // FFmpeg structures owned by this object.
   scoped_ptr<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;

@@ -321,8 +321,8 @@ class BASE_EXPORT FilePath {
   // separator.
   FilePath StripTrailingSeparators() const WARN_UNUSED_RESULT;
 
-  // Returns true if this FilePath contains any attempt to reference a parent
-  // directory (i.e. has a path component that is ".."
+  // Returns true if this FilePath contains an attempt to reference a parent
+  // directory (e.g. has a path component that is "..").
   bool ReferencesParent() const;
 
   // Return a Unicode human-readable version of this path.
@@ -373,6 +373,10 @@ class BASE_EXPORT FilePath {
   // Normalize all path separators to backslash on Windows
   // (if FILE_PATH_USES_WIN_SEPARATORS is true), or do nothing on POSIX systems.
   FilePath NormalizePathSeparators() const;
+
+  // Normalize all path separattors to given type on Windows
+  // (if FILE_PATH_USES_WIN_SEPARATORS is true), or do nothing on POSIX systems.
+  FilePath NormalizePathSeparatorsTo(CharType separator) const;
 
   // Compare two strings in the same way the file system does.
   // Note that these always ignore case, even on file systems that are case-

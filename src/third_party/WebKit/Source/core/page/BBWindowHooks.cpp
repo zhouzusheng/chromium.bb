@@ -135,7 +135,7 @@ void BBWindowHooks::setTextMatchMarkerVisibility(Document* document, bool highli
 
 bool BBWindowHooks::checkSpellingForRange(Range* range)
 {
-    Node* ancestor = range->commonAncestorContainer(IGNORE_EXCEPTION);
+    Node* ancestor = range->commonAncestorContainer();
 
     if (!ancestor) {
         return false;

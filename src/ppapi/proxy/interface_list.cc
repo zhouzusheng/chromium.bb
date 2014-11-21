@@ -16,7 +16,6 @@
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
-#include "ppapi/c/dev/ppb_graphics_2d_dev.h"
 #include "ppapi/c/dev/ppb_ime_input_event_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
@@ -31,7 +30,6 @@
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/c/ppb_audio_config.h"
@@ -293,7 +291,6 @@ InterfaceList::InterfaceList() {
          PPP_Instance_Private_Proxy::GetProxyInterface());
 #endif
   AddProxy(API_ID_PPP_MESSAGING, &ProxyFactory<PPP_Messaging_Proxy>);
-  AddPPP(PPP_MESSAGING_INTERFACE, PPP_Messaging_Proxy::GetProxyInterface());
   AddProxy(API_ID_PPP_MOUSE_LOCK, &ProxyFactory<PPP_MouseLock_Proxy>);
   AddPPP(PPP_MOUSELOCK_INTERFACE, PPP_MouseLock_Proxy::GetProxyInterface());
   AddProxy(API_ID_PPP_PRINTING, &ProxyFactory<PPP_Printing_Proxy>);

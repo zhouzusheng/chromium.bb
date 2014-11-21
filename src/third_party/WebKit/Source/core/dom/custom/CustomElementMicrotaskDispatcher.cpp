@@ -6,11 +6,13 @@
 #include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
 
 #include "core/dom/Microtask.h"
+#include "core/dom/custom/CustomElementAsyncImportMicrotaskQueue.h"
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/custom/CustomElementCallbackQueue.h"
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
+#include "core/dom/custom/CustomElementMicrotaskQueue.h"
 #include "core/dom/custom/CustomElementScheduler.h"
-#include "core/html/imports/HTMLImport.h"
+#include "core/html/imports/HTMLImportLoader.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -20,6 +22,12 @@ static const CustomElementCallbackQueue::ElementQueueId kMicrotaskQueueId = 0;
 CustomElementMicrotaskDispatcher::CustomElementMicrotaskDispatcher()
     : m_hasScheduledMicrotask(false)
     , m_phase(Quiescent)
+    , m_resolutionAndImports(CustomElementMicrotaskQueue::create())
+    , m_asyncImports(CustomElementAsyncImportMicrotaskQueue::create())
+{
+}
+
+CustomElementMicrotaskDispatcher::~CustomElementMicrotaskDispatcher()
 {
 }
 
@@ -29,34 +37,52 @@ CustomElementMicrotaskDispatcher& CustomElementMicrotaskDispatcher::instance()
     return instance;
 }
 
-void CustomElementMicrotaskDispatcher::enqueue(HTMLImport* import, PassOwnPtr<CustomElementMicrotaskStep> step)
+void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskStep> step)
 {
-    ASSERT(m_phase == Quiescent || m_phase == DispatchingCallbacks);
-    ensureMicrotaskScheduled();
-    if (import && import->customElementMicrotaskStep())
-        import->customElementMicrotaskStep()->enqueue(step);
+    ensureMicrotaskScheduledForMicrotaskSteps();
+    if (parentLoader)
+        parentLoader->microtaskQueue()->enqueue(step);
     else
-        m_resolutionAndImports.enqueue(step);
+        m_resolutionAndImports->enqueue(step);
+}
+
+void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskImportStep> step, bool importIsSync)
+{
+    ensureMicrotaskScheduledForMicrotaskSteps();
+    if (importIsSync)
+        enqueue(parentLoader, PassOwnPtr<CustomElementMicrotaskStep>(step));
+    else
+        m_asyncImports->enqueue(step);
 }
 
 void CustomElementMicrotaskDispatcher::enqueue(CustomElementCallbackQueue* queue)
 {
-    ASSERT(m_phase == Quiescent || m_phase == Resolving);
-    ensureMicrotaskScheduled();
+    ensureMicrotaskScheduledForElementQueue();
     queue->setOwner(kMicrotaskQueueId);
     m_elements.append(queue);
 }
 
 void CustomElementMicrotaskDispatcher::importDidFinish(CustomElementMicrotaskImportStep* step)
 {
+    ensureMicrotaskScheduledForMicrotaskSteps();
+}
+
+void CustomElementMicrotaskDispatcher::ensureMicrotaskScheduledForMicrotaskSteps()
+{
     ASSERT(m_phase == Quiescent || m_phase == DispatchingCallbacks);
+    ensureMicrotaskScheduled();
+}
+
+void CustomElementMicrotaskDispatcher::ensureMicrotaskScheduledForElementQueue()
+{
+    ASSERT(m_phase == Quiescent || m_phase == Resolving);
     ensureMicrotaskScheduled();
 }
 
 void CustomElementMicrotaskDispatcher::ensureMicrotaskScheduled()
 {
     if (!m_hasScheduledMicrotask) {
-        Microtask::enqueueMicrotask(&dispatch);
+        Microtask::enqueueMicrotask(WTF::bind(&dispatch));
         m_hasScheduledMicrotask = true;
     }
 }
@@ -79,7 +105,9 @@ void CustomElementMicrotaskDispatcher::doDispatch()
     ASSERT_WITH_SECURITY_IMPLICATION(!CustomElementCallbackDispatcher::inCallbackDeliveryScope());
 
     m_phase = Resolving;
-    m_resolutionAndImports.dispatch();
+    m_resolutionAndImports->dispatch();
+    if (m_resolutionAndImports->isEmpty())
+        m_asyncImports->dispatch();
 
     m_phase = DispatchingCallbacks;
     for (Vector<CustomElementCallbackQueue*>::iterator it = m_elements.begin();it != m_elements.end(); ++it) {
@@ -93,4 +121,23 @@ void CustomElementMicrotaskDispatcher::doDispatch()
     m_phase = Quiescent;
 }
 
+#if !defined(NDEBUG)
+void CustomElementMicrotaskDispatcher::show()
+{
+    fprintf(stderr, "Dispatcher:\n");
+    fprintf(stderr, "  Sync:\n");
+    m_resolutionAndImports->show(3);
+    fprintf(stderr, "  Async:\n");
+    m_asyncImports->show(3);
+
+}
+#endif
+
 } // namespace WebCore
+
+#if !defined(NDEBUG)
+void showCEMD()
+{
+    WebCore::CustomElementMicrotaskDispatcher::instance().show();
+}
+#endif

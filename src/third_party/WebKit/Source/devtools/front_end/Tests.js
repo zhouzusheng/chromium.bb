@@ -527,11 +527,11 @@ TestSuite.prototype.testConsoleOnNavigateBack = function()
     this.takeControl();
 };
 
-
 TestSuite.prototype.testReattachAfterCrash = function()
 {
-    this.evaluateInConsole_("1+1;", this.releaseControl.bind(this));
-    this.takeControl();
+    PageAgent.navigate("about:crash");
+    PageAgent.navigate("about:blank");
+    WebInspector.runtimeModel.addEventListener(WebInspector.RuntimeModel.Events.ExecutionContextCreated, this.releaseControl, this);
 };
 
 
@@ -574,8 +574,8 @@ TestSuite.prototype.testTimelineFrames = function()
 
         for (var i = 0; i < records.length; ++i) {
             var record = records[i];
-            if (record.type !== "BeginFrame") {
-                recordsInFrame[record.type] = (recordsInFrame[record.type] || 0) + 1;
+            if (record.type() !== "BeginFrame") {
+                recordsInFrame[record.type()] = (recordsInFrame[record.type()] || 0) + 1;
                 continue;
             }
             if (!frameCount++)
@@ -594,6 +594,11 @@ TestSuite.prototype.testTimelineFrames = function()
     step1();
     test.takeControl();
 }
+
+TestSuite.prototype.enableTouchEmulation = function()
+{
+    WebInspector.targetManager.activeTarget().domModel.emulateTouchEventObjects(true);
+};
 
 // Regression test for http://webk.it/97466
 TestSuite.prototype.testPageOverlayUpdate = function()
@@ -679,11 +684,11 @@ TestSuite.prototype.recordTimeline = function(callback)
     function innerAddRecord(record)
     {
         records.push(record);
-        if (record.type === "TimeStamp" && record.data.message === "ready")
+        if (record.type() === "TimeStamp" && record.data().message === "ready")
             done();
 
-        if (record.children)
-            record.children.forEach(innerAddRecord);
+        if (record.children())
+            record.children().forEach(innerAddRecord);
     }
 
     function done()
@@ -813,15 +818,25 @@ TestSuite.prototype.nonAnonymousUISourceCodes_ = function()
  */
 TestSuite.prototype.evaluateInConsole_ = function(code, callback)
 {
-    WebInspector.console.show();
-    var consoleView = WebInspector.ConsolePanel._view();
-    consoleView.prompt.text = code;
-    consoleView.promptElement.dispatchEvent(TestSuite.createKeyEvent("Enter"));
+    function innerEvaluate()
+    {
+        WebInspector.console.show();
+        var consoleView = WebInspector.ConsolePanel._view();
+        consoleView._prompt.text = code;
+        consoleView._promptElement.dispatchEvent(TestSuite.createKeyEvent("Enter"));
 
-    this.addSniffer(WebInspector.ConsoleView.prototype, "_showConsoleMessage",
-        function(viewMessage) {
-            callback(viewMessage.toMessageElement().textContent);
-        }.bind(this));
+        this.addSniffer(WebInspector.ConsoleView.prototype, "_showConsoleMessage",
+            function(viewMessage) {
+                callback(viewMessage.toMessageElement().textContent);
+            }.bind(this));
+    }
+
+    if (!WebInspector.context.flavor(WebInspector.ExecutionContext)) {
+        WebInspector.context.addFlavorChangeListener(WebInspector.ExecutionContext, innerEvaluate, this);
+        return;
+    }
+
+    innerEvaluate.call(this);
 };
 
 /**

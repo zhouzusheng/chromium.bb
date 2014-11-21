@@ -139,15 +139,15 @@ bool ParseDomainASCII(const base::string16& widestr, std::string* domain) {
     return false;
 
   // Check if already ASCII.
-  if (IsStringASCII(widestr)) {
+  if (base::IsStringASCII(widestr)) {
     *domain = base::UTF16ToASCII(widestr);
     return true;
   }
 
   // Otherwise try to convert it from IDN to punycode.
   const int kInitialBufferSize = 256;
-  url_canon::RawCanonOutputT<base::char16, kInitialBufferSize> punycode;
-  if (!url_canon::IDNToASCII(widestr.data(), widestr.length(), &punycode))
+  url::RawCanonOutputT<base::char16, kInitialBufferSize> punycode;
+  if (!url::IDNToASCII(widestr.data(), widestr.length(), &punycode))
     return false;
 
   // |punycode_output| should now be ASCII; convert it to a std::string.
@@ -155,7 +155,7 @@ bool ParseDomainASCII(const base::string16& widestr, std::string* domain) {
   // copy. Since ASCII is a subset of UTF8 the following is equivalent).
   bool success = base::UTF16ToUTF8(punycode.data(), punycode.length(), domain);
   DCHECK(success);
-  DCHECK(IsStringASCII(*domain));
+  DCHECK(base::IsStringASCII(*domain));
   return success && !domain->empty();
 }
 

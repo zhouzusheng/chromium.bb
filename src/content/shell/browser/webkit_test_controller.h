@@ -135,7 +135,7 @@ class WebKitTestController : public base::NonThreadSafe,
                              base::ProcessId plugin_pid) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -165,7 +165,8 @@ class WebKitTestController : public base::NonThreadSafe,
   void OnOverridePreferences(const WebPreferences& prefs);
   void OnTestFinished();
   void OnClearDevToolsLocalStorage();
-  void OnShowDevTools(const std::string& settings);
+  void OnShowDevTools(const std::string& settings,
+                      const std::string& frontend_url);
   void OnCloseDevTools();
   void OnGoToOffset(int offset);
   void OnReload();

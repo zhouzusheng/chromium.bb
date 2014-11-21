@@ -90,7 +90,7 @@ bool Font::operator==(const Font& other) const
         && (m_fontFallbackList ? m_fontFallbackList->generation() : 0) == (other.m_fontFallbackList ? other.m_fontFallbackList->generation() : 0);
 }
 
-void Font::update(PassRefPtr<FontSelector> fontSelector) const
+void Font::update(PassRefPtrWillBeRawPtr<FontSelector> fontSelector) const
 {
     // FIXME: It is pretty crazy that we are willing to just poke into a RefPtr, but it ends up
     // being reasonably safe (because inherited fonts in the render tree pick up the new
@@ -245,11 +245,11 @@ CodePath Font::codePath(const TextRun& run) const
     return Character::characterRangeCodePath(run.characters16(), run.length());
 }
 
-void Font::willUseFontData() const
+void Font::willUseFontData(UChar32 character) const
 {
     const FontFamily& family = fontDescription().family();
     if (m_fontFallbackList && m_fontFallbackList->fontSelector() && !family.familyIsEmpty())
-        m_fontFallbackList->fontSelector()->willUseFontData(fontDescription(), family.family());
+        m_fontFallbackList->fontSelector()->willUseFontData(fontDescription(), family.family(), character);
 }
 
 static inline bool isInRange(UChar32 character, UChar32 lowerBound, UChar32 upperBound)
@@ -500,7 +500,7 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
     if (characterFontData) {
         // Got the fallback glyph and font.
         GlyphPage* fallbackPage = GlyphPageTreeNode::getRootChild(characterFontData.get(), pageNumber)->page();
-        GlyphData data = fallbackPage && fallbackPage->fontDataForCharacter(c) ? fallbackPage->glyphDataForCharacter(c) : characterFontData->missingGlyphData();
+        GlyphData data = fallbackPage && fallbackPage->glyphForCharacter(c) ? fallbackPage->glyphDataForCharacter(c) : characterFontData->missingGlyphData();
         // Cache it so we don't have to do system fallback again next time.
         if (variant == NormalVariant) {
             page->setGlyphDataForCharacter(c, data.glyph, data.fontData);
@@ -528,7 +528,7 @@ bool Font::primaryFontHasGlyphForCharacter(UChar32 character) const
     GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(primaryFont(), pageNumber);
     GlyphPage* page = node->page();
 
-    return page && page->fontDataForCharacter(character);
+    return page && page->glyphForCharacter(character);
 }
 
 // FIXME: This function may not work if the emphasis mark uses a complex script, but none of the
@@ -606,33 +606,31 @@ int Font::emphasisMarkHeight(const AtomicString& mark) const
     return markFontData->fontMetrics().height();
 }
 
-float Font::getGlyphsAndAdvancesForSimpleText(const TextRun& run, int from, int to, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
+float Font::getGlyphsAndAdvancesForSimpleText(const TextRunPaintInfo& runInfo, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
 {
     float initialAdvance;
 
-    WidthIterator it(this, run, 0, false, forTextEmphasis);
+    WidthIterator it(this, runInfo.run, 0, false, forTextEmphasis);
     // FIXME: Using separate glyph buffers for the prefix and the suffix is incorrect when kerning or
     // ligatures are enabled.
     GlyphBuffer localGlyphBuffer;
-    it.advance(from, &localGlyphBuffer);
+    it.advance(runInfo.from, &localGlyphBuffer);
     float beforeWidth = it.m_runWidthSoFar;
-    it.advance(to, &glyphBuffer);
+    it.advance(runInfo.to, &glyphBuffer);
 
     if (glyphBuffer.isEmpty())
         return 0;
 
     float afterWidth = it.m_runWidthSoFar;
 
-    if (run.rtl()) {
+    if (runInfo.run.rtl()) {
         float finalRoundingWidth = it.m_finalRoundingWidth;
-        it.advance(run.length(), &localGlyphBuffer);
+        it.advance(runInfo.run.length(), &localGlyphBuffer);
         initialAdvance = finalRoundingWidth + it.m_runWidthSoFar - afterWidth;
+        glyphBuffer.reverse(0, glyphBuffer.size());
     } else {
         initialAdvance = beforeWidth;
     }
-
-    if (run.rtl())
-        glyphBuffer.reverse(0, glyphBuffer.size());
 
     return initialAdvance;
 }
@@ -642,7 +640,7 @@ void Font::drawSimpleText(GraphicsContext* context, const TextRunPaintInfo& runI
     // This glyph buffer holds our glyphs+advances+font data for each glyph.
     GlyphBuffer glyphBuffer;
 
-    float startX = point.x() + getGlyphsAndAdvancesForSimpleText(runInfo.run, runInfo.from, runInfo.to, glyphBuffer);
+    float startX = point.x() + getGlyphsAndAdvancesForSimpleText(runInfo, glyphBuffer);
 
     if (glyphBuffer.isEmpty())
         return;
@@ -654,7 +652,7 @@ void Font::drawSimpleText(GraphicsContext* context, const TextRunPaintInfo& runI
 void Font::drawEmphasisMarksForSimpleText(GraphicsContext* context, const TextRunPaintInfo& runInfo, const AtomicString& mark, const FloatPoint& point) const
 {
     GlyphBuffer glyphBuffer;
-    float initialAdvance = getGlyphsAndAdvancesForSimpleText(runInfo.run, runInfo.from, runInfo.to, glyphBuffer, ForTextEmphasis);
+    float initialAdvance = getGlyphsAndAdvancesForSimpleText(runInfo, glyphBuffer, ForTextEmphasis);
 
     if (glyphBuffer.isEmpty())
         return;
@@ -762,31 +760,36 @@ float Font::floatWidthForSimpleText(const TextRun& run, HashSet<const SimpleFont
     return it.m_runWidthSoFar;
 }
 
+FloatRect Font::pixelSnappedSelectionRect(float fromX, float toX, float y, float height)
+{
+    // Using roundf() rather than ceilf() for the right edge as a compromise to
+    // ensure correct caret positioning.
+    // Use LayoutUnit::epsilon() to ensure that values that cannot be stored as
+    // an integer are floored to n and not n-1 due to floating point imprecision.
+    float pixelAlignedX = floorf(fromX + LayoutUnit::epsilon());
+    return FloatRect(pixelAlignedX, y, roundf(toX) - pixelAlignedX, height);
+}
+
 FloatRect Font::selectionRectForSimpleText(const TextRun& run, const FloatPoint& point, int h, int from, int to, bool accountForGlyphBounds) const
 {
     GlyphBuffer glyphBuffer;
     WidthIterator it(this, run, 0, accountForGlyphBounds);
     it.advance(from, &glyphBuffer);
-    float beforeWidth = it.m_runWidthSoFar;
+    float fromX = it.m_runWidthSoFar;
     it.advance(to, &glyphBuffer);
-    float afterWidth = it.m_runWidthSoFar;
+    float toX = it.m_runWidthSoFar;
 
-    // Using roundf() rather than ceilf() for the right edge as a compromise to
-    // ensure correct caret positioning.
-    // Use LayoutUnit::epsilon() to ensure that values that cannot be stored as
-    // an integer are floored to n and not n-1 due to floating point imprecision.
     if (run.rtl()) {
         it.advance(run.length(), &glyphBuffer);
         float totalWidth = it.m_runWidthSoFar;
-        float pixelAlignedX = floorf(point.x() + totalWidth - afterWidth + LayoutUnit::epsilon());
-        return FloatRect(pixelAlignedX, accountForGlyphBounds ? it.minGlyphBoundingBoxY() : point.y(),
-            roundf(point.x() + totalWidth - beforeWidth) - pixelAlignedX,
-            accountForGlyphBounds ? it.maxGlyphBoundingBoxY() - it.minGlyphBoundingBoxY() : h);
+        float beforeWidth = fromX;
+        float afterWidth = toX;
+        fromX = totalWidth - afterWidth;
+        toX = totalWidth - beforeWidth;
     }
 
-    float pixelAlignedX = floorf(point.x() + beforeWidth + LayoutUnit::epsilon());
-    return FloatRect(pixelAlignedX, accountForGlyphBounds ? it.minGlyphBoundingBoxY() : point.y(),
-        roundf(point.x() + afterWidth) - pixelAlignedX,
+    return pixelSnappedSelectionRect(point.x() + fromX, point.x() + toX,
+        accountForGlyphBounds ? it.minGlyphBoundingBoxY() : point.y(),
         accountForGlyphBounds ? it.maxGlyphBoundingBoxY() - it.minGlyphBoundingBoxY() : h);
 }
 

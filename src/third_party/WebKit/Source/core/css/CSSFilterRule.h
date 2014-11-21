@@ -31,7 +31,7 @@
 #define CSSFilterRule_h
 
 #include "core/css/CSSRule.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ private:
     CSSFilterRule(StyleRuleFilter*, CSSStyleSheet* parent);
 
     RefPtrWillBeMember<StyleRuleFilter> m_filterRule;
-    mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 };
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSFilterRule, WEBKIT_FILTER_RULE);

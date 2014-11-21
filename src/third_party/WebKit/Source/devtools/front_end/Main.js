@@ -52,11 +52,13 @@ WebInspector.Main.prototype = {
     {
         var configuration;
         if (!Capabilities.isMainFrontend) {
-            configuration = ["main", "sources", "timeline", "profiles", "console", "codemirror"];
+            configuration = ["components", "main", "sources", "timeline", "profiler", "console", "source_frame", "search"];
         } else {
-            configuration = ["main", "elements", "network", "sources", "timeline", "profiles", "resources", "audits", "console", "codemirror", "extensions", "settings"];
+            configuration = ["components", "main", "elements", "network", "sources", "timeline", "profiler", "resources", "audits", "console", "source_frame", "extensions", "settings", "search"];
             if (WebInspector.experimentsSettings.layersPanel.isEnabled())
                 configuration.push("layers");
+            if (WebInspector.experimentsSettings.devicesPanel.isEnabled())
+                configuration.push("devices");
         }
         WebInspector.moduleManager.registerModules(configuration);
     },
@@ -210,7 +212,6 @@ WebInspector.Main.prototype = {
             return;
         }
 
-        InspectorFrontendAPI.dispatchQueryParameters(WebInspector.queryParam("dispatch"));
         new InspectorBackendClass.StubConnection(onConnectionReady);
     },
 
@@ -240,6 +241,7 @@ WebInspector.Main.prototype = {
             WebInspector.setToolbarColors(WebInspector.queryParam("toolbarColor"), WebInspector.queryParam("textColor"));
 
         WebInspector.targetManager = new WebInspector.TargetManager();
+        this._executionContextSelector = new WebInspector.ExecutionContextSelector();
         WebInspector.targetManager.createTarget(connection, this._doLoadedDoneWithCapabilities.bind(this));
     },
 
@@ -261,21 +263,15 @@ WebInspector.Main.prototype = {
         WebInspector.console.addEventListener(WebInspector.ConsoleModel.Events.MessageAdded, this._updateErrorAndWarningCounts, this);
 
         WebInspector.debuggerModel.addEventListener(WebInspector.DebuggerModel.Events.DebuggerPaused, this._debuggerPaused, this);
-        WebInspector.networkLog = new WebInspector.NetworkLog();
 
         WebInspector.zoomManager = new WebInspector.ZoomManager();
-
-        WebInspector.advancedSearchController = new WebInspector.AdvancedSearchController();
 
         InspectorBackend.registerInspectorDispatcher(this);
 
         WebInspector.isolatedFileSystemManager = new WebInspector.IsolatedFileSystemManager();
         WebInspector.isolatedFileSystemDispatcher = new WebInspector.IsolatedFileSystemDispatcher(WebInspector.isolatedFileSystemManager);
         WebInspector.workspace = new WebInspector.Workspace(WebInspector.isolatedFileSystemManager.mapping());
-
-        WebInspector.cssModel = new WebInspector.CSSStyleModel(WebInspector.workspace);
-        WebInspector.timelineManager = new WebInspector.TimelineManager();
-        WebInspector.tracingAgent = new WebInspector.TracingAgent();
+        WebInspector.devicesModel = new WebInspector.DevicesModel();
 
         if (Capabilities.isMainFrontend) {
             WebInspector.inspectElementModeController = new WebInspector.InspectElementModeController();
@@ -314,10 +310,10 @@ WebInspector.Main.prototype = {
 
         new WebInspector.WorkspaceController(WebInspector.workspace);
 
-        WebInspector.fileSystemWorkspaceProvider = new WebInspector.FileSystemWorkspaceProvider(WebInspector.isolatedFileSystemManager, WebInspector.workspace);
+        WebInspector.fileSystemWorkspaceBinding = new WebInspector.FileSystemWorkspaceBinding(WebInspector.isolatedFileSystemManager, WebInspector.workspace);
 
-        WebInspector.networkWorkspaceProvider = new WebInspector.SimpleWorkspaceProvider(WebInspector.workspace, WebInspector.projectTypes.Network);
-        new WebInspector.NetworkUISourceCodeProvider(WebInspector.networkWorkspaceProvider, WebInspector.workspace);
+        WebInspector.networkWorkspaceBinding = new WebInspector.NetworkWorkspaceBinding(WebInspector.workspace);
+        new WebInspector.NetworkUISourceCodeProvider(WebInspector.networkWorkspaceBinding, WebInspector.workspace);
 
         WebInspector.breakpointManager = new WebInspector.BreakpointManager(WebInspector.settings.breakpoints, WebInspector.debuggerModel, WebInspector.workspace);
 
@@ -326,19 +322,21 @@ WebInspector.Main.prototype = {
         WebInspector.overridesSupport = new WebInspector.OverridesSupport();
         WebInspector.overridesSupport.applyInitialOverrides();
 
-        new WebInspector.DebuggerScriptMapping(WebInspector.debuggerModel, WebInspector.workspace, WebInspector.networkWorkspaceProvider);
+        new WebInspector.DebuggerScriptMapping(WebInspector.debuggerModel, WebInspector.workspace, WebInspector.networkWorkspaceBinding);
         WebInspector.liveEditSupport = new WebInspector.LiveEditSupport(WebInspector.workspace);
-        new WebInspector.CSSStyleSheetMapping(WebInspector.cssModel, WebInspector.workspace, WebInspector.networkWorkspaceProvider);
+        new WebInspector.CSSStyleSheetMapping(WebInspector.cssModel, WebInspector.workspace, WebInspector.networkWorkspaceBinding);
         new WebInspector.PresentationConsoleMessageHelper(WebInspector.workspace);
 
         // Create settings before loading modules.
         WebInspector.settings.initializeBackendSettings();
 
         this._registerModules();
-        WebInspector.KeyboardShortcut.registerActions();
+        WebInspector.actionRegistry = new WebInspector.ActionRegistry();
+        WebInspector.shortcutRegistry = new WebInspector.ShortcutRegistry(WebInspector.actionRegistry);
+        this._registerForwardedShortcuts();
 
-        WebInspector.panels = {};
         WebInspector.inspectorView = new WebInspector.InspectorView();
+
         // Screencast controller creates a root view itself.
         if (mainTarget.canScreencast)
             this._screencastController = new WebInspector.ScreencastController();
@@ -365,10 +363,6 @@ WebInspector.Main.prototype = {
         this._updateErrorAndWarningCounts();
 
         WebInspector.extensionServerProxy.setFrontendReady();
-
-        WebInspector.databaseModel = new WebInspector.DatabaseModel();
-        WebInspector.domStorageModel = new WebInspector.DOMStorageModel();
-        WebInspector.cpuProfilerModel = new WebInspector.CPUProfilerModel();
 
         InspectorAgent.enable(inspectorAgentEnableCallback.bind(this));
 
@@ -398,14 +392,28 @@ WebInspector.Main.prototype = {
         WebInspector.notifications.dispatchEventToListeners(WebInspector.NotificationService.Events.InspectorLoaded);
     },
 
+    _registerForwardedShortcuts: function()
+    {
+        /** @const */ var forwardedActions = ["main.reload", "main.hard-reload"];
+        var actionKeys = WebInspector.shortcutRegistry.keysForActions(forwardedActions).map(WebInspector.KeyboardShortcut.keyCodeAndModifiersFromKey);
+
+        actionKeys.push({keyCode: WebInspector.KeyboardShortcut.Keys.F8.code});
+        InspectorFrontendHost.setWhitelistedShortcuts(JSON.stringify(actionKeys));
+    },
+
     _documentClick: function(event)
     {
         var anchor = event.target.enclosingNodeOrSelfWithNodeName("a");
-        if (!anchor || !anchor.href || (anchor.target === "_blank"))
+        if (!anchor || !anchor.href)
             return;
 
         // Prevent the link from navigating, since we don't do any navigation by following links normally.
         event.consume(true);
+
+        if (anchor.target === "_blank") {
+            InspectorFrontendHost.openInNewTab(anchor.href);
+            return;
+        }
 
         function followLink()
         {
@@ -416,7 +424,7 @@ WebInspector.Main.prototype = {
 
             var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(anchor.href);
             if (uiSourceCode) {
-                WebInspector.Revealer.reveal(new WebInspector.UILocation(uiSourceCode, anchor.lineNumber || 0, anchor.columnNumber || 0));
+                WebInspector.Revealer.reveal(uiSourceCode.uiLocation(anchor.lineNumber || 0, anchor.columnNumber || 0));
                 return;
             }
 
@@ -466,18 +474,19 @@ WebInspector.Main.prototype = {
 
         var toggleConsoleLabel = WebInspector.UIString("Show console");
         section.addKey(shortcut.makeDescriptor(shortcut.Keys.Tilde, shortcut.Modifiers.Ctrl), toggleConsoleLabel);
-        var doNotOpenDrawerOnEsc = WebInspector.experimentsSettings.doNotOpenDrawerOnEsc.isEnabled();
-        var toggleDrawerLabel = doNotOpenDrawerOnEsc ? WebInspector.UIString("Hide drawer") : WebInspector.UIString("Toggle drawer");
-        section.addKey(shortcut.makeDescriptor(shortcut.Keys.Esc), toggleDrawerLabel);
+        section.addKey(shortcut.makeDescriptor(shortcut.Keys.Esc), WebInspector.UIString("Toggle drawer"));
         section.addKey(shortcut.makeDescriptor("f", shortcut.Modifiers.CtrlOrMeta), WebInspector.UIString("Search"));
 
-        var advancedSearchShortcut = WebInspector.AdvancedSearchController.createShortcut();
+        var advancedSearchShortcutModifier = WebInspector.isMac()
+                ? WebInspector.KeyboardShortcut.Modifiers.Meta | WebInspector.KeyboardShortcut.Modifiers.Alt
+                : WebInspector.KeyboardShortcut.Modifiers.Ctrl | WebInspector.KeyboardShortcut.Modifiers.Shift;
+        var advancedSearchShortcut = shortcut.makeDescriptor("f", advancedSearchShortcutModifier);
         section.addKey(advancedSearchShortcut, WebInspector.UIString("Search across all sources"));
 
         var inspectElementModeShortcut = WebInspector.InspectElementModeController.createShortcut();
         section.addKey(inspectElementModeShortcut, WebInspector.UIString("Select node to inspect"));
 
-        var openResourceShortcut = WebInspector.KeyboardShortcut.makeDescriptor("o", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta);
+        var openResourceShortcut = WebInspector.KeyboardShortcut.makeDescriptor("p", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta);
         section.addKey(openResourceShortcut, WebInspector.UIString("Go to source"));
 
         if (WebInspector.isMac()) {
@@ -487,33 +496,6 @@ WebInspector.Main.prototype = {
             ];
             section.addRelatedKeys(keys, WebInspector.UIString("Find next/previous"));
         }
-    },
-
-    /**
-     * @param {?Event} event
-     * @return {boolean}
-     */
-    _handleZoomEvent: function(event)
-    {
-        switch (event.keyCode) {
-        case 107: // +
-        case 187: // +
-            InspectorFrontendHost.zoomIn();
-            return true;
-        case 109: // -
-        case 189: // -
-            InspectorFrontendHost.zoomOut();
-            return true;
-        case 48: // 0
-        case 96: // Numpad 0
-            // Zoom reset shortcut does not allow "Shift" when handled by the browser.
-            if (!event.shiftKey) {
-                InspectorFrontendHost.resetZoom();
-                return true;
-            }
-            break;
-        }
-        return false;
     },
 
     _postDocumentKeyDown: function(event)
@@ -529,19 +511,7 @@ WebInspector.Main.prototype = {
             }
         }
 
-        if (!WebInspector.Dialog.currentInstance() && WebInspector.advancedSearchController.handleShortcut(event))
-            return;
-        if (!WebInspector.Dialog.currentInstance() && WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.handleShortcut(event))
-            return;
-
-        var isValidZoomShortcut = WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) &&
-            !event.altKey &&
-            !InspectorFrontendHost.isStub;
-        if (!WebInspector.Dialog.currentInstance() && isValidZoomShortcut && this._handleZoomEvent(event)) {
-            event.consume(true);
-            return;
-        }
-        WebInspector.KeyboardShortcut.handleShortcut(event);
+        WebInspector.shortcutRegistry.handleShortcut(event);
     },
 
     _documentCanCopy: function(event)
@@ -562,18 +532,6 @@ WebInspector.Main.prototype = {
             event.preventDefault();
     },
 
-    _inspectNodeRequested: function(event)
-    {
-        this._updateFocusedNode(event.data);
-    },
-
-    _updateFocusedNode: function(nodeId)
-    {
-        var node = WebInspector.domModel.nodeForId(nodeId);
-        console.assert(node);
-        WebInspector.Revealer.reveal(node);
-    },
-
     _addMainEventListeners: function(doc)
     {
         doc.addEventListener("keydown", this._postDocumentKeyDown.bind(this), false);
@@ -590,8 +548,8 @@ WebInspector.Main.prototype = {
      */
     inspect: function(payload, hints)
     {
-        var object = WebInspector.RemoteObject.fromPayload(payload);
-        if (object.subtype === "node") {
+        var object = WebInspector.runtimeModel.createRemoteObject(payload);
+        if (object.isNode()) {
             object.pushNodeToFrontend(callback);
             var elementsPanel = /** @type {!WebInspector.ElementsPanel} */ (WebInspector.inspectorView.panel("elements"));
             elementsPanel.omitDefaultSelection();
@@ -599,10 +557,13 @@ WebInspector.Main.prototype = {
             return;
         }
 
-        function callback(nodeId)
+        /**
+         * @param {!WebInspector.DOMNode} node
+         */
+        function callback(node)
         {
             elementsPanel.stopOmittingDefaultSelection();
-            WebInspector.Revealer.reveal(WebInspector.domModel.nodeForId(nodeId));
+            node.reveal();
             if (!WebInspector.inspectorView.drawerVisible() && !WebInspector._notFirstInspectElement)
                 InspectorFrontendHost.inspectElementCompleted();
             WebInspector._notFirstInspectElement = true;
@@ -614,25 +575,21 @@ WebInspector.Main.prototype = {
              * @param {?Protocol.Error} error
              * @param {!DebuggerAgent.FunctionDetails} response
              */
-            DebuggerAgent.getFunctionDetails(object.objectId, didGetDetails);
+            object.functionDetails(didGetDetails);
             return;
         }
 
-        function didGetDetails(error, response)
+        /**
+         * @param {?DebuggerAgent.FunctionDetails} response
+         */
+        function didGetDetails(response)
         {
             object.release();
 
-            if (error) {
-                console.error(error);
-                return;
-            }
-
-            var uiLocation = WebInspector.debuggerModel.rawLocationToUILocation(response.location);
-            if (!uiLocation)
+            if (!response)
                 return;
 
-            // FIXME: Dependency violation.
-            /** @type {!WebInspector.SourcesPanel} */ (WebInspector.inspectorView.panel("sources")).showUILocation(uiLocation, true);
+            WebInspector.Revealer.reveal(WebInspector.DebuggerModel.Location.fromPayload(object.target(), response.location).toUILocation());
         }
 
         if (hints.copyToClipboard)
@@ -691,10 +648,8 @@ WebInspector.Main.ReloadActionDelegate.prototype = {
      */
     handleAction: function()
     {
-        if (!WebInspector.Dialog.currentInstance()) {
-            WebInspector.debuggerModel.skipAllPauses(true, true);
-            WebInspector.resourceTreeModel.reloadPage(false);
-        }
+        WebInspector.debuggerModel.skipAllPauses(true, true);
+        WebInspector.resourceTreeModel.reloadPage(false);
         return true;
     }
 }
@@ -713,10 +668,8 @@ WebInspector.Main.HardReloadActionDelegate.prototype = {
      */
     handleAction: function()
     {
-        if (!WebInspector.Dialog.currentInstance()) {
-            WebInspector.debuggerModel.skipAllPauses(true, true);
-            WebInspector.resourceTreeModel.reloadPage(true);
-        }
+        WebInspector.debuggerModel.skipAllPauses(true, true);
+        WebInspector.resourceTreeModel.reloadPage(true);
         return true;
     }
 }
@@ -740,9 +693,111 @@ WebInspector.Main.DebugReloadActionDelegate.prototype = {
     }
 }
 
-new WebInspector.Main();
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.Main.ZoomInActionDelegate = function()
+{
+}
 
-window.DEBUG = true;
+WebInspector.Main.ZoomInActionDelegate.prototype = {
+    /**
+     * @return {boolean}
+     */
+    handleAction: function()
+    {
+        if (InspectorFrontendHost.isStub)
+            return false;
+
+        InspectorFrontendHost.zoomIn();
+        return true;
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.Main.ZoomOutActionDelegate = function()
+{
+}
+
+WebInspector.Main.ZoomOutActionDelegate.prototype = {
+    /**
+     * @return {boolean}
+     */
+    handleAction: function()
+    {
+        if (InspectorFrontendHost.isStub)
+            return false;
+
+        InspectorFrontendHost.zoomOut();
+        return true;
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.ActionDelegate}
+ */
+WebInspector.Main.ZoomResetActionDelegate = function()
+{
+}
+
+WebInspector.Main.ZoomResetActionDelegate.prototype = {
+    /**
+     * @return {boolean}
+     */
+    handleAction: function()
+    {
+        if (InspectorFrontendHost.isStub)
+            return false;
+
+        InspectorFrontendHost.resetZoom();
+        return true;
+    }
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.UISettingDelegate}
+ */
+WebInspector.Main.ShortcutPanelSwitchSettingDelegate = function()
+{
+    WebInspector.UISettingDelegate.call(this);
+}
+
+WebInspector.Main.ShortcutPanelSwitchSettingDelegate.prototype = {
+    /**
+     * @override
+     * @return {!Element}
+     */
+    settingElement: function()
+    {
+        var modifier = WebInspector.platform() === "mac" ? "Cmd" : "Ctrl";
+        return WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Enable %s + 1-9 shortcut to switch panels", modifier), WebInspector.settings.shortcutPanelSwitch);
+    },
+
+    __proto__: WebInspector.UISettingDelegate.prototype
+}
+
+/**
+ * @param {string} ws
+ */
+WebInspector.Main._addWebSocketTarget = function(ws)
+{
+    /**
+     * @param {!InspectorBackendClass.Connection} connection
+     */
+    function callback(connection)
+    {
+        WebInspector.targetManager.createTarget(connection);
+    }
+    new InspectorBackendClass.WebSocketConnection(ws, callback);
+}
+
+new WebInspector.Main();
 
 // These methods are added for backwards compatibility with Devtools CodeSchool extension.
 // DO NOT REMOVE

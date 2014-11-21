@@ -29,7 +29,6 @@
 namespace WebCore {
 
 class ExceptionState;
-class SVGViewSpec;
 
 enum SVGZoomAndPanType {
     SVGZoomAndPanUnknown = 0,
@@ -45,6 +44,8 @@ public:
         SVG_ZOOMANDPAN_DISABLE = SVGZoomAndPanDisable,
         SVG_ZOOMANDPAN_MAGNIFY = SVGZoomAndPanMagnify
     };
+
+    virtual ~SVGZoomAndPan() { }
 
     static bool isKnownAttribute(const QualifiedName&);
     static void addSupportedAttributes(HashSet<QualifiedName>&);
@@ -78,13 +79,10 @@ public:
         return false;
     }
 
-    // SVGZoomAndPan JS API.
-    static SVGZoomAndPanType zoomAndPan(SVGZoomAndPan& object) { return object.m_zoomAndPan; }
-    static void setZoomAndPan(SVGZoomAndPan& object, unsigned short value, ExceptionState&) { object.setZoomAndPan(value); }
-    static void setZoomAndPan(SVGViewSpec&, unsigned short, ExceptionState&);
-
-    void setZoomAndPan(unsigned short value) { m_zoomAndPan = parseFromNumber(value); }
+    // JS API
     SVGZoomAndPanType zoomAndPan() const { return m_zoomAndPan; }
+    virtual void setZoomAndPan(unsigned short value) { m_zoomAndPan = parseFromNumber(value); }
+    virtual void setZoomAndPan(unsigned short value, ExceptionState&) { setZoomAndPan(value); }
 
 protected:
     SVGZoomAndPan();

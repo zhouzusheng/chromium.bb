@@ -95,7 +95,7 @@ void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     updateRelativeLengthsInformation();
 
@@ -159,7 +159,7 @@ bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttribute
 
     while (true) {
         // Respect xlink:href, take attributes from referenced element
-        Node* refNode = SVGURIReference::targetElementFromIRIString(current->href()->currentValue()->value(), document());
+        Node* refNode = SVGURIReference::targetElementFromIRIString(current->href()->currentValue()->value(), treeScope());
         if (refNode && isSVGGradientElement(*refNode)) {
             current = toSVGGradientElement(refNode);
 

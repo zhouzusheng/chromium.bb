@@ -42,10 +42,6 @@ class VIEWS_EXPORT NativeWidgetAura
  public:
   explicit NativeWidgetAura(internal::NativeWidgetDelegate* delegate);
 
-  // TODO(beng): Find a better place for this, and the similar method on
-  //             NativeWidgetWin.
-  static gfx::FontList GetWindowTitleFontList();
-
   // Called internally by NativeWidgetAura and DesktopNativeWidgetAura to
   // associate |native_widget| with |window|.
   static void RegisterNativeWidgetForWindow(
@@ -76,6 +72,7 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual bool HasCapture() const OVERRIDE;
   virtual InputMethod* CreateInputMethod() OVERRIDE;
   virtual internal::InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
+  virtual ui::InputMethod* GetHostInputMethod() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
@@ -163,7 +160,6 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Overridden from aura::client::ActivationDelegate:

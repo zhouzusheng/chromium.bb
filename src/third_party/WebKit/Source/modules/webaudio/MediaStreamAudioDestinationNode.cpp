@@ -37,9 +37,9 @@
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamAudioDestinationNode> MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
+PassRefPtrWillBeRawPtr<MediaStreamAudioDestinationNode> MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
 {
-    return adoptRef(new MediaStreamAudioDestinationNode(context, numberOfChannels));
+    return adoptRefWillBeNoop(new MediaStreamAudioDestinationNode(context, numberOfChannels));
 }
 
 MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* context, size_t numberOfChannels)
@@ -54,7 +54,7 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* c
     audioSources.append(m_source);
     MediaStreamSourceVector videoSources;
     m_stream = MediaStream::create(context->executionContext(), MediaStreamDescriptor::create(audioSources, videoSources));
-    MediaStreamCenter::instance().didCreateMediaStream(m_stream->descriptor());
+    MediaStreamCenter::instance().didCreateMediaStreamAndTracks(m_stream->descriptor());
 
     m_source->setAudioFormat(numberOfChannels, context->sampleRate());
 

@@ -34,6 +34,7 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "hb.h"
+#include "platform/LayoutUnit.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/harfbuzz/HarfBuzzFace.h"
@@ -313,7 +314,6 @@ int HarfBuzzShaper::HarfBuzzRun::characterIndexForXPosition(float targetX)
         if (currentX <= targetX && targetX <= nextX)
             return rtl() ? prevCharacterIndex : m_glyphToCharacterIndexes[glyphIndex];
         currentX = nextX;
-        prevAdvance = currentAdvance;
         ++glyphIndex;
     }
 
@@ -641,7 +641,6 @@ static inline bool collectCandidateRuns(const UChar* normalizedBuffer,
         CandidateRun run = { character, startIndexOfCurrentRun, iterator.currentCharacter(), currentFontData, currentScript };
         runs->append(run);
 
-        currentFontData = nextFontData;
         startIndexOfCurrentRun = iterator.currentCharacter();
     } while (iterator.consume(character, clusterLength));
 
@@ -838,7 +837,6 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
 
         if (m_font->fontDescription().variant() && u_islower(m_normalizedBuffer[currentRun->startIndex()])) {
             String upperText = String(m_normalizedBuffer.get() + currentRun->startIndex(), currentRun->numCharacters()).upper();
-            currentFontData = m_font->glyphDataForCharacter(upperText[0], false, SmallCapsVariant).fontData;
             ASSERT(!upperText.is8Bit()); // m_normalizedBuffer is 16 bit, therefore upperText is 16 bit, even after we call makeUpper().
             hb_buffer_add_utf16(harfBuzzBuffer.get(), toUint16(upperText.characters16()), currentRun->numCharacters(), 0, currentRun->numCharacters());
         } else {
@@ -1013,6 +1011,10 @@ bool HarfBuzzShaper::fillGlyphBuffer(GlyphBuffer* glyphBuffer)
         m_startOffset = m_harfBuzzRuns.last()->offsets()[0];
         for (int runIndex = numRuns - 1; runIndex >= 0; --runIndex) {
             HarfBuzzRun* currentRun = m_harfBuzzRuns[runIndex].get();
+            if (!currentRun->hasGlyphToCharacterIndexes()) {
+                // FIXME: bug 337886, 359664
+                continue;
+            }
             FloatPoint firstOffsetOfNextRun = !runIndex ? FloatPoint() : m_harfBuzzRuns[runIndex - 1]->offsets()[0];
             if (m_forTextEmphasis == ForTextEmphasis)
                 fillGlyphBufferForTextEmphasis(glyphBuffer, currentRun);
@@ -1023,6 +1025,10 @@ bool HarfBuzzShaper::fillGlyphBuffer(GlyphBuffer* glyphBuffer)
         m_startOffset = m_harfBuzzRuns.first()->offsets()[0];
         for (unsigned runIndex = 0; runIndex < numRuns; ++runIndex) {
             HarfBuzzRun* currentRun = m_harfBuzzRuns[runIndex].get();
+            if (!currentRun->hasGlyphToCharacterIndexes()) {
+                // FIXME: bug 337886, 359664
+                continue;
+            }
             FloatPoint firstOffsetOfNextRun = runIndex == numRuns - 1 ? FloatPoint() : m_harfBuzzRuns[runIndex + 1]->offsets()[0];
             if (m_forTextEmphasis == ForTextEmphasis)
                 fillGlyphBufferForTextEmphasis(glyphBuffer, currentRun);
@@ -1105,10 +1111,15 @@ FloatRect HarfBuzzShaper::selectionRect(const FloatPoint& point, int height, int
     if (!foundToX)
         toX = m_run.rtl() ? 0 : m_totalWidth;
 
-    // Using floorf() and roundf() as the same as mac port.
-    if (fromX < toX)
-        return FloatRect(floorf(point.x() + fromX), point.y(), roundf(toX - fromX), height);
-    return FloatRect(floorf(point.x() + toX), point.y(), roundf(fromX - toX), height);
+    if (fromX < toX) {
+        return Font::pixelSnappedSelectionRect(
+            point.x() + fromX, point.x() + toX,
+            point.y(), height);
+    }
+
+    return Font::pixelSnappedSelectionRect(
+        point.x() + toX, point.x() + fromX,
+        point.y(), height);
 }
 
 } // namespace WebCore

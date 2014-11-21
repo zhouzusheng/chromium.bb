@@ -95,6 +95,7 @@
       'hard_dependency': 1,
       'dependencies': [
         'generated_testing_idls',
+        '../bindings/core_bindings_generated.gyp:core_bindings_generated',
         '../config.gyp:config',
       ],
       'sources': [
@@ -187,7 +188,7 @@
             ],
           },
           'inputs': [
-            '<@(scripts_for_in_files)',
+            '<@(make_names_files)',
             '../build/scripts/make_media_feature_names.py',
             '<@(in_files)'
           ],
@@ -214,6 +215,7 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             '../build/scripts/make_media_features.py',
+            '../build/scripts/templates/MediaFeatures.h.tmpl',
             '<@(in_files)'
           ],
           'outputs': [
@@ -236,8 +238,7 @@
             ],
           },
           'inputs': [
-            '<@(scripts_for_in_files)',
-            '../build/scripts/make_names.py',
+            '<@(make_names_files)',
             '<@(in_files)'
           ],
           'outputs': [
@@ -274,9 +275,9 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             '../build/scripts/make_style_shorthands.py',
-            'css/CSSShorthands.in',
-            '../build/scripts/templates/StylePropertyShorthand.h.tmpl',
             '../build/scripts/templates/StylePropertyShorthand.cpp.tmpl',
+            '../build/scripts/templates/StylePropertyShorthand.h.tmpl',
+            'css/CSSShorthands.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/StylePropertyShorthand.cpp',
@@ -295,10 +296,10 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             '../build/scripts/make_style_builder.py',
-            'css/CSSProperties.in',
             '../build/scripts/templates/StyleBuilder.cpp.tmpl',
-            '../build/scripts/templates/StyleBuilderFunctions.h.tmpl',
             '../build/scripts/templates/StyleBuilderFunctions.cpp.tmpl',
+            '../build/scripts/templates/StyleBuilderFunctions.h.tmpl',
+            'css/CSSProperties.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/StyleBuilder.cpp',
@@ -598,6 +599,24 @@
             'python',
             '../build/scripts/make_names.py',
             'events/EventTypeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
+          'action_name': 'HTMLTokenizerNames',
+          'inputs': [
+            '<@(make_names_files)',
+            'html/parser/HTMLTokenizerNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLTokenizerNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLTokenizerNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_names.py',
+            'html/parser/HTMLTokenizerNames.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],

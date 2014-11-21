@@ -46,8 +46,6 @@ ALWAYS_INLINE ValidationMessage::ValidationMessage(HTMLFormControlElement* eleme
 
 ValidationMessage::~ValidationMessage()
 {
-    if (ValidationMessageClient* client = validationMessageClient())
-        client->hideValidationMessage(*m_element);
 }
 
 PassOwnPtr<ValidationMessage> ValidationMessage::create(HTMLFormControlElement* element)
@@ -60,9 +58,8 @@ ValidationMessageClient* ValidationMessage::validationMessageClient() const
     Page* page = m_element->document().page();
     if (!page)
         return 0;
-    // The form valdiation feature requires ValidationMessageClient.
-    ASSERT(page->validationMessageClient());
-    return page->validationMessageClient();
+
+    return &page->validationMessageClient();
 }
 
 void ValidationMessage::updateValidationMessage(const String& message)

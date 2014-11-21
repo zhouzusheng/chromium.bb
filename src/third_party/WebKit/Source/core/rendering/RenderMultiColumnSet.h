@@ -27,29 +27,46 @@
 #ifndef RenderMultiColumnSet_h
 #define RenderMultiColumnSet_h
 
-#include "core/rendering/RenderRegionSet.h"
+#include "core/rendering/RenderMultiColumnFlowThread.h"
+#include "core/rendering/RenderRegion.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-// RenderMultiColumnSet represents a set of columns that all have the same width and height. By combining runs of same-size columns into a single
-// object, we significantly reduce the number of unique RenderObjects required to represent columns.
+// RenderMultiColumnSet represents a set of columns that all have the same width and height. By
+// combining runs of same-size columns into a single object, we significantly reduce the number of
+// unique RenderObjects required to represent columns.
 //
-// A simple multi-column block will have exactly one RenderMultiColumnSet child. A simple paginated multi-column block will have three
-// RenderMultiColumnSet children: one for the content at the bottom of the first page (whose columns will have a shorter height), one
-// for the 2nd to n-1 pages, and then one last column set that will hold the shorter columns on the final page (that may have to be balanced
-// as well).
+// Column sets are inserted as anonymous children of the actual multicol container (i.e. the
+// renderer whose style computes to non-auto column-count and/or column-width).
 //
-// Column spans result in the creation of new column sets as well, since a spanning region has to be placed in between the column sets that
-// come before and after the span.
-class RenderMultiColumnSet FINAL : public RenderRegionSet {
+// Being a "region", a column set has no children on its own, but is merely used to slice a portion
+// of the tall "single-column" flow thread into actual columns visually, to convert from flow thread
+// coordinates to visual ones. It is in charge of both positioning columns correctly relatively to
+// the parent multicol container, and to calculate the correct translation for each column's
+// contents, and to paint any rules between them. RenderMultiColumnSet objects are used for
+// painting, hit testing, and any other type of operation that requires mapping from flow thread
+// coordinates to visual coordinates.
+//
+// Column spans result in the creation of new column sets, since a spanning renderer has to be
+// placed in between the column sets that come before and after the span.
+class RenderMultiColumnSet FINAL : public RenderRegion {
 public:
-    static RenderMultiColumnSet* createAnonymous(RenderFlowThread*);
+    static RenderMultiColumnSet* createAnonymous(RenderFlowThread*, RenderStyle* parentStyle);
 
     virtual bool isRenderMultiColumnSet() const OVERRIDE { return true; }
 
     RenderBlockFlow* multiColumnBlockFlow() const { return toRenderBlockFlow(parent()); }
-    RenderMultiColumnFlowThread* multiColumnFlowThread() const { return multiColumnBlockFlow()->multiColumnFlowThread(); }
+    RenderMultiColumnFlowThread* multiColumnFlowThread() const
+    {
+        ASSERT_WITH_SECURITY_IMPLICATION(!flowThread() || flowThread()->isRenderMultiColumnFlowThread());
+        return static_cast<RenderMultiColumnFlowThread*>(flowThread());
+    }
+
+    RenderMultiColumnSet* nextSiblingMultiColumnSet() const;
+
+    LayoutUnit logicalBottomInFlowThread() const { return isHorizontalWritingMode() ? flowThreadPortionRect().maxY() : flowThreadPortionRect().maxX(); }
+
     unsigned computedColumnCount() const { return m_computedColumnCount; }
     LayoutUnit computedColumnWidth() const { return m_computedColumnWidth; }
     LayoutUnit computedColumnHeight() const { return m_computedColumnHeight; }
@@ -60,6 +77,10 @@ public:
         m_computedColumnCount = count;
     }
 
+    // Find the column that contains the given block offset, and return the translation needed to
+    // get from flow thread coordinates to visual coordinates.
+    LayoutSize flowThreadTranslationAtOffset(LayoutUnit) const;
+
     LayoutUnit heightAdjustedForSetOffset(LayoutUnit height) const;
 
     void updateMinimumColumnHeight(LayoutUnit height) { m_minimumColumnHeight = std::max(height, m_minimumColumnHeight); }
@@ -69,10 +90,10 @@ public:
     void clearForcedBreaks();
     void addForcedBreak(LayoutUnit offsetFromFirstPage);
 
-    // (Re-)calculate the column height when contents are supposed to be balanced. If 'initial' is
-    // set, guess an initial column height; otherwise, stretch the column height a tad. Return true
-    // if column height changed and another layout pass is required.
-    bool recalculateBalancedHeight(bool initial);
+    // (Re-)calculate the column height if it's auto. If 'initial' is set, guess an initial column
+    // height; otherwise, stretch the column height a tad. Return true if column height changed and
+    // another layout pass is required.
+    bool recalculateColumnHeight(bool initial);
 
     // Record space shortage (the amount of space that would have been enough to prevent some
     // element from being moved to the next column) at a column break. The smallest amount of space
@@ -83,6 +104,10 @@ public:
     virtual void updateLogicalWidth() OVERRIDE;
 
     void prepareForLayout();
+
+    // Expand this set's flow thread portion rectangle to contain all trailing flow thread
+    // overflow. Only to be called on the last set.
+    void expandToEncompassFlowThreadContentsIfNeeded();
 
 private:
     RenderMultiColumnSet(RenderFlowThread*);
@@ -131,7 +156,7 @@ private:
     // and store the results. This is needed in order to balance the columns.
     void distributeImplicitBreaks();
 
-    LayoutUnit calculateBalancedHeight(bool initial) const;
+    LayoutUnit calculateColumnHeight(bool initial) const;
 
     unsigned m_computedColumnCount; // Used column count (the resulting 'N' from the pseudo-algorithm in the multicol spec)
     LayoutUnit m_computedColumnWidth; // Used column width (the resulting 'W' from the pseudo-algorithm in the multicol spec)

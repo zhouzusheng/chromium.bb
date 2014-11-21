@@ -13,6 +13,7 @@
 
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/audio_processing/processing_component.h"
+#include "webrtc/modules/audio_processing/rms_level.h"
 
 namespace webrtc {
 
@@ -40,11 +41,10 @@ class LevelEstimatorImpl : public LevelEstimator,
   virtual void* CreateHandle() const OVERRIDE;
   virtual int InitializeHandle(void* handle) const OVERRIDE;
   virtual int ConfigureHandle(void* handle) const OVERRIDE;
-  virtual int DestroyHandle(void* handle) const OVERRIDE;
+  virtual void DestroyHandle(void* handle) const OVERRIDE;
   virtual int num_handles_required() const OVERRIDE;
   virtual int GetHandleError(void* handle) const OVERRIDE;
 
-  const AudioProcessing* apm_;
   CriticalSectionWrapper* crit_;
 };
 

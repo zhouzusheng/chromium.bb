@@ -25,6 +25,7 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'dom4_keycode_converter',
@@ -39,12 +40,12 @@
         'events_base_export.h',
         'gesture_event_details.cc',
         'gesture_event_details.h',
+        'gestures/gesture_configuration.cc',
+        'gestures/gesture_configuration.h',
         'keycodes/keyboard_code_conversion.cc',
         'keycodes/keyboard_code_conversion.h',
         'keycodes/keyboard_code_conversion_android.cc',
         'keycodes/keyboard_code_conversion_android.h',
-        'keycodes/keyboard_code_conversion_gtk.cc',
-        'keycodes/keyboard_code_conversion_gtk.h',
         'keycodes/keyboard_code_conversion_mac.h',
         'keycodes/keyboard_code_conversion_mac.mm',
         'keycodes/keyboard_code_conversion_win.cc',
@@ -64,7 +65,8 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            '../../build/linux/system.gyp:x11',
+            '../gfx/gfx.gyp:gfx_x11',
           ],
         }],
       ],
@@ -79,6 +81,7 @@
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'events_base',
+        'gesture_detection',
       ],
       'defines': [
         'EVENTS_IMPLEMENTATION',
@@ -86,6 +89,7 @@
       'sources': [
         'cocoa/cocoa_event_utils.h',
         'cocoa/cocoa_event_utils.mm',
+        'cocoa/events_mac.mm',
         'event.cc',
         'event.h',
         'event_dispatcher.cc',
@@ -106,22 +110,38 @@
         'event_utils.h',
         'events_export.h',
         'events_stub.cc',
-        'gestures/gesture_configuration.cc',
-        'gestures/gesture_configuration.h',
         'gestures/gesture_point.cc',
         'gestures/gesture_point.h',
+        'gestures/gesture_provider_aura.cc',
+        'gestures/gesture_provider_aura.h',
         'gestures/gesture_recognizer.h',
         'gestures/gesture_recognizer_impl.cc',
         'gestures/gesture_recognizer_impl.h',
         'gestures/gesture_sequence.cc',
         'gestures/gesture_sequence.h',
         'gestures/gesture_types.h',
+        'gestures/motion_event_aura.cc',
+        'gestures/motion_event_aura.h',
         'gestures/velocity_calculator.cc',
         'gestures/velocity_calculator.h',
-        'ozone/evdev/device_manager_evdev.cc',
-        'ozone/evdev/device_manager_evdev.h',
-        'ozone/evdev/device_manager_udev.cc',
-        'ozone/evdev/device_manager_udev.h',
+        'ozone/device/device_event.cc',
+        'ozone/device/device_event.h',
+        'ozone/device/device_event_observer.h',
+        'ozone/device/device_manager.cc',
+        'ozone/device/device_manager.h',
+        'ozone/device/device_manager_manual.cc',
+        'ozone/device/device_manager_manual.h',
+        'ozone/device/udev/device_manager_udev.cc',
+        'ozone/device/udev/device_manager_udev.h',
+        'ozone/device/udev/scoped_udev.h',
+        'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.cc',
+        'ozone/evdev/libgestures_glue/event_reader_libevdev_cros.h',
+        'ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.cc',
+        'ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.h',
+        'ozone/evdev/libgestures_glue/gesture_logging.cc',
+        'ozone/evdev/libgestures_glue/gesture_logging.h',
+        'ozone/evdev/libgestures_glue/gesture_timer_provider.cc',
+        'ozone/evdev/libgestures_glue/gesture_timer_provider.h',
         'ozone/evdev/event_converter_evdev.cc',
         'ozone/evdev/event_converter_evdev.h',
         'ozone/evdev/event_device_info.cc',
@@ -141,42 +161,75 @@
         'platform/platform_event_observer.h',
         'platform/platform_event_source.cc',
         'platform/platform_event_source.h',
+        'platform/platform_event_source_stub.cc',
         'platform/platform_event_types.h',
         'platform/scoped_event_dispatcher.cc',
         'platform/scoped_event_dispatcher.h',
         'platform/x11/x11_event_source.cc',
         'platform/x11/x11_event_source.h',
+        'platform/x11/x11_event_source_glib.cc',
+        'platform/x11/x11_event_source_libevent.cc',
         'win/events_win.cc',
         'x/events_x.cc',
-        'x/text_edit_command_x11.cc',
-        'x/text_edit_command_x11.h',
-        'x/text_edit_key_bindings_delegate_x11.cc',
-        'x/text_edit_key_bindings_delegate_x11.h',
+        'linux/text_edit_command_auralinux.cc',
+        'linux/text_edit_command_auralinux.h',
+        'linux/text_edit_key_bindings_delegate_auralinux.cc',
+        'linux/text_edit_key_bindings_delegate_auralinux.h',
       ],
       'conditions': [
+        ['use_aura==0', {
+          'sources!': [
+            'gestures/gesture_point.cc',
+            'gestures/gesture_point.h',
+            'gestures/gesture_provider_aura.cc',
+            'gestures/gesture_provider_aura.h',
+            'gestures/gesture_recognizer.h',
+            'gestures/gesture_recognizer_impl.cc',
+            'gestures/gesture_recognizer_impl.h',
+            'gestures/gesture_sequence.cc',
+            'gestures/gesture_sequence.h',
+            'gestures/gesture_types.h',
+            'gestures/motion_event_aura.cc',
+            'gestures/motion_event_aura.h',
+            'gestures/velocity_calculator.cc',
+            'gestures/velocity_calculator.h',
+          ],
+        }],
         # We explicitly enumerate the platforms we _do_ provide native cracking
         # for here.
-        ['OS=="win" or use_x11==1 or use_ozone==1', {
+        ['OS=="win" or OS=="mac" or use_x11==1 or use_ozone==1', {
           'sources!': [
             'events_stub.cc',
           ],
         }],
         ['chromeos==1', {
           'sources!': [
-            'x/text_edit_command_x11.cc',
-            'x/text_edit_command_x11.h',
-            'x/text_edit_key_bindings_delegate_x11.cc',
-            'x/text_edit_key_bindings_delegate_x11.h',
+            'linux/text_edit_command_auralinux.cc',
+            'linux/text_edit_command_auralinux.h',
+            'linux/text_edit_key_bindings_delegate_auralinux.cc',
+            'linux/text_edit_key_bindings_delegate_auralinux.h',
           ],
         }],
         ['use_x11==1', {
+          'sources!': [
+            'platform/platform_event_source_stub.cc',
+          ],
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            '../../build/linux/system.gyp:x11',
+            '../gfx/gfx.gyp:gfx_x11',
           ],
         }],
         ['use_glib==1', {
           'dependencies': [
             '../../build/linux/system.gyp:glib',
+          ],
+          'sources!': [
+            'platform/x11/x11_event_source_libevent.cc',
+          ],
+        }, {
+          # use_glib == 0
+          'sources!': [
+            'platform/x11/x11_event_source_glib.cc',
           ],
         }],
         ['use_ozone_evdev==1', {
@@ -187,10 +240,22 @@
             '<(DEPTH)/build/linux/system.gyp:udev',
           ],
         }],
+        ['use_ozone_evdev==1 and use_evdev_gestures==1', {
+          'dependencies': [
+            '<(DEPTH)/build/linux/system.gyp:libgestures',
+            '<(DEPTH)/build/linux/system.gyp:libevdev-cros',
+          ],
+          'defines': [
+            'USE_EVDEV_GESTURES',
+          ],
+        }, {
+          'sources/': [
+            ['exclude', '^ozone/evdev/libgestures_glue/'],
+          ],
+        }],
         ['use_udev==0', {
-          'sources!': [
-            'ozone/evdev/device_manager_udev.cc',
-            'ozone/evdev/device_manager_udev.h',
+          'sources/': [
+            ['exclude', '_udev\\.(h|cc)$'],
           ],
         }],
       ],
@@ -212,6 +277,9 @@
         'gesture_detection/bitset_32.h',
         'gesture_detection/filtered_gesture_provider.cc',
         'gesture_detection/filtered_gesture_provider.h',
+        'gesture_detection/gesture_config_helper.h',
+        'gesture_detection/gesture_config_helper_android.cc',
+        'gesture_detection/gesture_config_helper_aura.cc',
         'gesture_detection/gesture_detection_export.h',
         'gesture_detection/gesture_detector.cc',
         'gesture_detection/gesture_detector.h',
@@ -219,9 +287,6 @@
         'gesture_detection/gesture_event_data.h',
         'gesture_detection/gesture_event_data_packet.cc',
         'gesture_detection/gesture_event_data_packet.h',
-        'gesture_detection/gesture_config_helper.h',
-        'gesture_detection/gesture_config_helper_aura.cc',
-        'gesture_detection/gesture_config_helper_android.cc',
         'gesture_detection/gesture_provider.cc',
         'gesture_detection/gesture_provider.h',
         'gesture_detection/motion_event.h',
@@ -237,11 +302,6 @@
         'gesture_detection/velocity_tracker.h',
       ],
       'conditions': [
-        ['use_aura==1', {
-          'dependencies': [
-            'events'
-          ],
-        }],
         ['use_aura!=1 and OS!="android"', {
           'sources': [
             'gesture_detection/gesture_config_helper.cc',
@@ -253,6 +313,7 @@
       'target_name': 'events_test_support',
       'type': 'static_library',
       'dependencies': [
+        '<(DEPTH)/skia/skia.gyp:skia',
         'events',
         'events_base',
       ],
@@ -263,6 +324,8 @@
         'test/events_test_utils.h',
         'test/events_test_utils_x11.cc',
         'test/events_test_utils_x11.h',
+        'test/platform_event_waiter.cc',
+        'test/platform_event_waiter.h',
         'test/test_event_handler.cc',
         'test/test_event_handler.h',
         'test/test_event_processor.cc',
@@ -273,7 +336,8 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            '../../build/linux/system.gyp:x11',
+            '../gfx/gfx.gyp:gfx_x11',
           ],
         }],
         ['OS=="ios"', {
@@ -287,20 +351,22 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
-        '../gfx/gfx.gyp:gfx',
+        '<(DEPTH)/skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx_geometry',
+        '../gfx/gfx.gyp:gfx_test_support',
         'dom4_keycode_converter',
         'events',
         'events_base',
         'events_test_support',
-        'gesture_detection'
+        'gesture_detection',
       ],
       'sources': [
-        'cocoa/cocoa_event_utils_unittest.mm',
+        'cocoa/events_mac_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
         'event_rewriter_unittest.cc',
         'event_unittest.cc',
+        'gestures/motion_event_aura_unittest.cc',
         'gestures/velocity_calculator_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
@@ -316,8 +382,13 @@
         'x/events_x_unittest.cc',
       ],
       'conditions': [
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['use_aura==0', {
+          'sources!': [
+            'gestures/motion_event_aura_unittest.cc',
+            'gestures/velocity_calculator_unittest.cc',
+          ],
+        }],
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],

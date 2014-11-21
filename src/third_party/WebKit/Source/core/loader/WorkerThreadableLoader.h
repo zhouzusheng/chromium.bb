@@ -34,10 +34,9 @@
 #include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/ThreadableLoaderClientWrapper.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Threading.h"
 #include "wtf/text/WTFString.h"
@@ -51,11 +50,11 @@ namespace WebCore {
     struct CrossThreadResourceResponseData;
     struct CrossThreadResourceRequestData;
 
-    class WorkerThreadableLoader FINAL : public RefCounted<WorkerThreadableLoader>, public ThreadableLoader {
+    class WorkerThreadableLoader FINAL : public ThreadableLoader {
         WTF_MAKE_FAST_ALLOCATED;
     public:
-        static void loadResourceSynchronously(WorkerGlobalScope*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
-        static PassRefPtr<WorkerThreadableLoader> create(WorkerGlobalScope* workerGlobalScope, PassRefPtr<ThreadableLoaderClientWrapper> clientWrapper, PassOwnPtr<ThreadableLoaderClient> clientBridge, const ResourceRequest& request, const ThreadableLoaderOptions& options)
+        static void loadResourceSynchronously(WorkerGlobalScope&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
+        static PassRefPtr<WorkerThreadableLoader> create(WorkerGlobalScope& workerGlobalScope, PassRefPtr<ThreadableLoaderClientWrapper> clientWrapper, PassOwnPtr<ThreadableLoaderClient> clientBridge, const ResourceRequest& request, const ThreadableLoaderOptions& options)
         {
             return adoptRef(new WorkerThreadableLoader(workerGlobalScope, clientWrapper, clientBridge, request, options));
         }
@@ -65,13 +64,6 @@ namespace WebCore {
         virtual void cancel() OVERRIDE;
 
         bool done() const { return m_workerClientWrapper->done(); }
-
-        using RefCounted<WorkerThreadableLoader>::ref;
-        using RefCounted<WorkerThreadableLoader>::deref;
-
-    protected:
-        virtual void refThreadableLoader() OVERRIDE { ref(); }
-        virtual void derefThreadableLoader() OVERRIDE { deref(); }
 
     private:
         // Creates a loader on the main thread and bridges communication between
@@ -132,7 +124,7 @@ namespace WebCore {
             WorkerLoaderProxy& m_loaderProxy;
         };
 
-        WorkerThreadableLoader(WorkerGlobalScope*, PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, const ResourceRequest&, const ThreadableLoaderOptions&);
+        WorkerThreadableLoader(WorkerGlobalScope&, PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, const ResourceRequest&, const ThreadableLoaderOptions&);
 
         RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
         RefPtr<ThreadableLoaderClientWrapper> m_workerClientWrapper;

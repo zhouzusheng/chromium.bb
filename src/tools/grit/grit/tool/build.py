@@ -36,8 +36,10 @@ _format_modules = {
   'resource_map_source':      'resource_map',
   'resource_file_map_source': 'resource_map',
 }
-_format_modules.update((type, 'policy_templates.template_formatter')
-    for type in 'adm plist plist_strings admx adml doc json reg'.split())
+_format_modules.update(
+    (type, 'policy_templates.template_formatter') for type in
+        [ 'adm', 'admx', 'adml', 'reg', 'doc', 'json',
+          'plist', 'plist_strings', 'ios_plist' ])
 
 
 def GetFormatter(type):

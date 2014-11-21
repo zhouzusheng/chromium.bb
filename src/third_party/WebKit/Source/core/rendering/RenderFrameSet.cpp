@@ -31,7 +31,6 @@
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/page/EventHandler.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFrame.h"
 #include "core/rendering/RenderView.h"
@@ -440,10 +439,9 @@ void RenderFrameSet::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     bool doFullRepaint = selfNeedsLayout() && checkForRepaintDuringLayout();
     LayoutRect oldBounds;
-    RenderLayerModelObject* repaintContainer = 0;
+    const RenderLayerModelObject* repaintContainer = 0;
     if (doFullRepaint) {
         repaintContainer = containerForRepaint();
         oldBounds = clippedOverflowRectForRepaint(repaintContainer);
@@ -475,10 +473,10 @@ void RenderFrameSet::layout()
     updateLayerTransform();
 
     if (doFullRepaint) {
-        repaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldBounds));
+        repaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldBounds), InvalidationSelfLayout);
         LayoutRect newBounds = clippedOverflowRectForRepaint(repaintContainer);
         if (newBounds != oldBounds)
-            repaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds));
+            repaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds), InvalidationSelfLayout);
     }
 
     clearNeedsLayout();
@@ -597,16 +595,6 @@ void RenderFrameSet::setIsResizing(bool isResizing)
     }
     if (LocalFrame* frame = this->frame())
         frame->eventHandler().setResizingFrameSet(isResizing ? frameSet() : 0);
-}
-
-bool RenderFrameSet::isResizingRow() const
-{
-    return m_isResizing && m_rows.m_splitBeingResized != noSplit;
-}
-
-bool RenderFrameSet::isResizingColumn() const
-{
-    return m_isResizing && m_cols.m_splitBeingResized != noSplit;
 }
 
 bool RenderFrameSet::canResizeRow(const IntPoint& p) const

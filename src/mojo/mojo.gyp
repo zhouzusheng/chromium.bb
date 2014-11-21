@@ -29,12 +29,15 @@
       'type': 'none',
       'dependencies': [
         'mojo_apps_js_unittests',
-        'mojo_bindings',
         'mojo_compositor_app',
         'mojo_common_lib',
         'mojo_common_unittests',
+        'mojo_cpp_bindings',
         'mojo_js',
+        'mojo_js_bindings',
         'mojo_js_unittests',
+        'mojo_message_generator',
+        'mojo_native_viewport_service',
         'mojo_pepper_container_app',
         'mojo_public_test_utils',
         'mojo_public_bindings_unittests',
@@ -51,23 +54,57 @@
         'mojo_system_impl',
         'mojo_system_unittests',
         'mojo_utility',
+        'mojo_view_manager_lib',
+        'mojo_view_manager_lib_unittests',
       ],
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
             'mojo_aura_demo',
             'mojo_launcher',
+            'mojo_sample_view_manager_app',
             'mojo_view_manager',
+            'mojo_view_manager_unittests',
+          ],
+        }],
+        ['OS == "android"', {
+          'dependencies': [
+            'mojo_public_java',
+            'mojo_system_java',
+            'libmojo_system_java',
+            'mojo_test_apk',
+          ],
+        }],
+        ['OS == "linux"', {
+          'dependencies': [
+            'mojo_dbus_echo',
+            'mojo_dbus_echo_service',
           ],
         }],
       ]
+    },
+    {
+      'target_name': 'mojo_external_service_bindings',
+      'type': 'static_library',
+      'sources': [
+        'shell/external_service.mojom',
+      ],
+      'variables': {
+        'mojom_base_output_dir': 'mojo',
+      },
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
     },
     {
       'target_name': 'mojo_run_all_unittests',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        'mojo_system',
         'mojo_system_impl',
         'mojo_test_support',
         'mojo_test_support_impl',
@@ -80,7 +117,6 @@
       'target_name': 'mojo_run_all_perftests',
       'type': 'static_library',
       'dependencies': [
-        'mojo_system',
         'mojo_system_impl',
         'mojo_test_support',
         'mojo_test_support_impl',
@@ -93,12 +129,13 @@
       'target_name': 'mojo_system_impl',
       'type': '<(component)',
       'dependencies': [
-        'mojo_system',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       'defines': [
         'MOJO_SYSTEM_IMPL_IMPLEMENTATION',
+        'MOJO_SYSTEM_IMPLEMENTATION',
+        'MOJO_USE_SYSTEM_IMPL',
       ],
       'sources': [
         'embedder/embedder.cc',
@@ -107,14 +144,16 @@
         'embedder/platform_channel_pair.h',
         'embedder/platform_channel_pair_posix.cc',
         'embedder/platform_channel_pair_win.cc',
+        'embedder/platform_channel_utils_posix.cc',
+        'embedder/platform_channel_utils_posix.h',
         'embedder/platform_handle.cc',
         'embedder/platform_handle.h',
         'embedder/scoped_platform_handle.h',
         'system/channel.cc',
         'system/channel.h',
         'system/constants.h',
-        'system/core_impl.cc',
-        'system/core_impl.h',
+        'system/core.cc',
+        'system/core.h',
         'system/data_pipe.cc',
         'system/data_pipe.h',
         'system/data_pipe_consumer_dispatcher.cc',
@@ -123,10 +162,15 @@
         'system/data_pipe_producer_dispatcher.h',
         'system/dispatcher.cc',
         'system/dispatcher.h',
+        'system/entrypoints.cc',
+        'system/handle_table.cc',
+        'system/handle_table.h',
         'system/local_data_pipe.cc',
         'system/local_data_pipe.h',
         'system/local_message_pipe_endpoint.cc',
         'system/local_message_pipe_endpoint.h',
+        'system/mapping_table.cc',
+        'system/mapping_table.h',
         'system/memory.cc',
         'system/memory.h',
         'system/message_in_transit.cc',
@@ -153,6 +197,8 @@
         'system/shared_buffer_dispatcher.h',
         'system/simple_dispatcher.cc',
         'system/simple_dispatcher.h',
+        'system/transport_data.cc',
+        'system/transport_data.h',
         'system/waiter.cc',
         'system/waiter.h',
         'system/waiter_list.cc',
@@ -164,20 +210,25 @@
         'embedder/test_embedder.cc',
         'embedder/test_embedder.h',
       ],
+      'all_dependent_settings': {
+        # Ensures that dependent projects import the core functions on Windows.
+        'defines': ['MOJO_USE_SYSTEM_IMPL'],
+      }
     },
     {
       'target_name': 'mojo_system_unittests',
       'type': 'executable',
       'dependencies': [
+        '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
         'mojo_common_test_support',
-        'mojo_system',
         'mojo_system_impl',
       ],
       'sources': [
         'embedder/embedder_unittest.cc',
         'embedder/platform_channel_pair_posix_unittest.cc',
-        'system/core_impl_unittest.cc',
+        'system/channel_unittest.cc',
+        'system/core_unittest.cc',
         'system/core_test_base.cc',
         'system/core_test_base.h',
         'system/data_pipe_unittest.cc',
@@ -212,6 +263,7 @@
         'mojo_gles2',
         'mojo_gles2_bindings',
         'mojo_environment_chromium',
+        'mojo_system_impl',
       ],
       'defines': [
         'MOJO_GLES2_IMPL_IMPLEMENTATION',
@@ -246,11 +298,19 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        'mojo_system',
+        'mojo_system_impl',
+      ],
+      'export_dependent_settings': [
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        'mojo_system_impl',
       ],
       'sources': [
+        'common/channel_init.cc',
+        'common/channel_init.h',
         'common/common_type_converters.cc',
         'common/common_type_converters.h',
+        'common/environment_data.cc',
+        'common/environment_data.h',
         'common/handle_watcher.cc',
         'common/handle_watcher.h',
         'common/message_pump_mojo.cc',
@@ -265,7 +325,6 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        'mojo_system',
         'mojo_system_impl',
       ],
       'sources': [
@@ -282,14 +341,12 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_message_loop_tests',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_common_lib',
         'mojo_common_test_support',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
-        'mojo_system',
-        'mojo_system_impl',
       ],
       'sources': [
         'common/common_type_converters_unittest.cc',
@@ -302,6 +359,7 @@
       'target_name': 'mojo_environment_chromium',
       'type': 'static_library',
       'dependencies': [
+        'mojo_common_lib',
         'mojo_environment_chromium_impl',
       ],
       'sources': [
@@ -348,10 +406,14 @@
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
+        'mojo_common_lib',
         'mojo_environment_chromium',
         'mojo_shell_bindings',
+        'mojo_system_impl',
       ],
       'sources': [
+        'service_manager/background_service_loader.cc',
+        'service_manager/background_service_loader.h',
         'service_manager/service_loader.h',
         'service_manager/service_manager.cc',
         'service_manager/service_manager.h',
@@ -363,24 +425,43 @@
       ],
     },
     {
+      'target_name': 'mojo_spy',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_static',
+        '../net/net.gyp:http_server',
+        '../url/url.gyp:url_lib',
+        'mojo_service_manager',
+      ],
+      'sources': [
+        'spy/spy.cc',
+        'spy/spy.h',
+        'spy/websocket_server.cc',
+        'spy/websocket_server.h',
+      ],
+    },
+    {
       'target_name': 'mojo_shell_lib',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
+        'mojo_external_service_bindings',
         'mojo_gles2_impl',
         'mojo_service_manager',
         'mojo_shell_bindings',
-        'mojo_system',
         'mojo_system_impl',
         'mojo_native_viewport_service',
+        'mojo_spy',
       ],
       'variables': {
         'mojom_base_output_dir': 'mojo',
       },
-      'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'sources': [
         'shell/app_child_process.cc',
         'shell/app_child_process.h',
@@ -393,6 +474,8 @@
         'shell/child_process_host.h',
         'shell/context.cc',
         'shell/context.h',
+        'shell/dbus_service_loader_linux.cc',
+        'shell/dbus_service_loader_linux.h',
         'shell/dynamic_service_loader.cc',
         'shell/dynamic_service_loader.h',
         'shell/dynamic_service_runner.h',
@@ -420,6 +503,47 @@
         'shell/test_child_process.h',
         'shell/url_request_context_getter.cc',
         'shell/url_request_context_getter.h',
+        'shell/view_manager_loader.cc',
+        'shell/view_manager_loader.h',
+      ],
+      'conditions': [
+        ['OS=="linux"', {
+          'dependencies': [
+            '../build/linux/system.gyp:dbus',
+            '../dbus/dbus.gyp:dbus',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
+            # These are only necessary as long as we hard code use of ViewManager.
+            '../skia/skia.gyp:skia',
+            'mojo_gles2',
+            'mojo_shell_client',
+            'mojo_view_manager',
+            'mojo_view_manager_bindings',
+          ],
+        }, {  # use_aura==0
+          'sources!': [
+            'shell/view_manager_loader.cc',
+            'shell/view_manager_loader.h',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'mojo_shell_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_static',
+        '../url/url.gyp:url_lib',
+        'mojo_service_manager',
+        'mojo_shell_lib',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'shell/shell_test_helper.cc',
+        'shell/shell_test_helper.h',
       ],
     },
     {
@@ -433,7 +557,6 @@
         'mojo_environment_chromium',
         'mojo_service_manager',
         'mojo_shell_lib',
-        'mojo_system',
         'mojo_system_impl',
       ],
       'sources': [
@@ -446,17 +569,17 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../url/url.gyp:url_lib',
-        'mojo_bindings',
+        'mojo_common_lib',
+        'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_run_all_unittests',
         'mojo_service_manager',
         'mojo_shell_client',
-        'mojo_system',
       ],
       'variables': {
         'mojom_base_output_dir': 'mojo',
       },
-      'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'sources': [
         'service_manager/service_manager_unittest.cc',
         'service_manager/test.mojom',
@@ -470,13 +593,11 @@
         '../gin/gin.gyp:gin',
         '../v8/tools/gyp/v8.gyp:v8',
         'mojo_common_lib',
-        'mojo_system',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
         '../gin/gin.gyp:gin',
         'mojo_common_lib',
-        'mojo_system',
       ],
       'sources': [
         'bindings/js/core.cc',
@@ -485,6 +606,8 @@
         'bindings/js/handle.h',
         'bindings/js/support.cc',
         'bindings/js/support.h',
+        'bindings/js/unicode.cc',
+        'bindings/js/unicode.h',
         'bindings/js/waiting_callback.cc',
         'bindings/js/waiting_callback.h',
       ],
@@ -494,15 +617,94 @@
       'type': 'executable',
       'dependencies': [
         '../gin/gin.gyp:gin_test',
+        'mojo_common_test_support',
         'mojo_js_bindings_lib',
         'mojo_run_all_unittests',
-        'mojo_sample_service',
+        'mojo_public_test_interfaces',
       ],
       'sources': [
         'bindings/js/run_js_tests.cc',
       ],
     },
+    {
+      'target_name': 'mojo_message_generator',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'mojo_common_lib',
+        'mojo_cpp_bindings',
+        'mojo_environment_chromium',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'tools/message_generator.cc',
+      ],
+    },
+    {
+      'target_name': 'mojo_cc_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../cc/cc.gyp:cc',
+        '../skia/skia.gyp:skia',
+        '../gpu/gpu.gyp:gles2_implementation',
+        'mojo_gles2',
+      ],
+      'sources': [
+        'cc/context_provider_mojo.cc',
+        'cc/context_provider_mojo.h',
+      ],
+    },
   ],
   'conditions': [
+    ['OS=="linux"', {
+      'targets': [
+        {
+          'target_name': 'mojo_dbus_service',
+          'type': 'static_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../build/linux/system.gyp:dbus',
+            '../dbus/dbus.gyp:dbus',
+            'mojo_common_lib',
+            'mojo_external_service_bindings',
+            'mojo_shell_client',
+            'mojo_system_impl',
+          ],
+          'sources': [
+            'dbus/dbus_external_service.h',
+            'dbus/dbus_external_service.cc',
+          ],
+        },
+      ],
+    }],
+    ['use_aura==1', {
+      'targets': [
+        {
+          'target_name': 'mojo_aura_support',
+          'type': 'static_library',
+          'dependencies': [
+            '../cc/cc.gyp:cc',
+            '../ui/aura/aura.gyp:aura',
+            '../ui/events/events.gyp:events',
+            '../ui/events/events.gyp:events_base',
+            '../ui/compositor/compositor.gyp:compositor',
+            '../ui/gl/gl.gyp:gl',
+            '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
+            'mojo_cc_support',
+            'mojo_gles2',
+            'mojo_native_viewport_bindings',
+          ],
+          'sources': [
+            'aura/context_factory_mojo.cc',
+            'aura/context_factory_mojo.h',
+            'aura/screen_mojo.cc',
+            'aura/screen_mojo.h',
+            'aura/window_tree_host_mojo.cc',
+            'aura/window_tree_host_mojo.h',
+          ],
+        },
+      ],
+    }],
   ],
 }

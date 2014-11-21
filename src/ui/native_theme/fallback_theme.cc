@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/skia_utils_gtk.h"
 #include "ui/native_theme/common_theme.h"
 
 namespace ui {
@@ -37,6 +36,12 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
   static const SkColor kButtonDisabledColor = SkColorSetRGB(0x99, 0x99, 0x99);
   static const SkColor kButtonHighlightColor = SkColorSetRGB(0, 0, 0);
   static const SkColor kButtonHoverColor = kButtonEnabledColor;
+  static const SkColor kButtonHoverBackgroundColor =
+      SkColorSetRGB(0xEA, 0xEA, 0xEA);
+  static const SkColor kBlueButtonEnabledColor = SK_ColorWHITE;
+  static const SkColor kBlueButtonDisabledColor = SK_ColorWHITE;
+  static const SkColor kBlueButtonHighlightColor = SK_ColorWHITE;
+  static const SkColor kBlueButtonHoverColor = SK_ColorWHITE;
   // MenuItem:
   static const SkColor kEnabledMenuItemForegroundColor = kButtonEnabledColor;
   static const SkColor kDisabledMenuItemForegroundColor = kButtonDisabledColor;
@@ -65,6 +70,8 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
   static const SkColor kTextfieldSelectionColor =
       color_utils::AlphaBlend(SK_ColorBLACK,
           kTextfieldSelectionBackgroundFocused, 0xdd);
+  // Tooltip
+  static const SkColor kTooltipBackground = 0xFFFFFFCC;
   // Tree
   static const SkColor kTreeBackground = SK_ColorWHITE;
   static const SkColor kTreeTextColor = SK_ColorBLACK;
@@ -80,6 +87,31 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       SkColorSetRGB(0xEE, 0xEE, 0xEE);
   static const SkColor kTableGroupingIndicatorColor =
       SkColorSetRGB(0xCC, 0xCC, 0xCC);
+  // Results Tables
+  static const SkColor kResultsTableHoveredBackground =
+      color_utils::AlphaBlend(kTextfieldSelectionBackgroundFocused,
+                              kTextfieldDefaultBackground, 0x40);
+  static const SkColor kResultsTableNormalText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldDefaultBackground, 0xDD);
+  static const SkColor kResultsTableHoveredText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kResultsTableHoveredBackground, 0xDD);
+  static const SkColor kResultsTableSelectedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldSelectionBackgroundFocused, 0xDD);
+  static const SkColor kResultsTableNormalDimmedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldDefaultBackground, 0xBB);
+  static const SkColor kResultsTableHoveredDimmedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kResultsTableHoveredBackground, 0xBB);
+  static const SkColor kResultsTableSelectedDimmedText =
+      color_utils::AlphaBlend(
+          SK_ColorBLACK, kTextfieldSelectionBackgroundFocused, 0xBB);
+  static const SkColor kResultsTableSelectedOrHoveredUrl =
+      SkColorSetARGB(0xff, 0x00, 0x66, 0x22);
+  static const SkColor kResultsTableNormalDivider = color_utils::AlphaBlend(
+      kResultsTableNormalText, kTextfieldDefaultBackground, 0x34);
+  static const SkColor kResultsTableHoveredDivider = color_utils::AlphaBlend(
+      kResultsTableHoveredText, kResultsTableHoveredBackground, 0x34);
+  static const SkColor kResultsTabSelectedDivider = color_utils::AlphaBlend(
+      kResultsTableSelectedText, kTextfieldSelectionBackgroundFocused, 0x34);
 
   SkColor color;
   if (CommonThemeGetSystemColor(color_id, &color))
@@ -111,6 +143,16 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       return kButtonHighlightColor;
     case kColorId_ButtonHoverColor:
       return kButtonHoverColor;
+    case kColorId_ButtonHoverBackgroundColor:
+      return kButtonHoverBackgroundColor;
+    case kColorId_BlueButtonEnabledColor:
+      return kBlueButtonEnabledColor;
+    case kColorId_BlueButtonDisabledColor:
+      return kBlueButtonDisabledColor;
+    case kColorId_BlueButtonHighlightColor:
+      return kBlueButtonHighlightColor;
+    case kColorId_BlueButtonHoverColor:
+      return kBlueButtonHoverColor;
 
     // MenuItem
     case kColorId_EnabledMenuItemForegroundColor:
@@ -156,6 +198,10 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
     case kColorId_TextfieldSelectionBackgroundFocused:
       return kTextfieldSelectionBackgroundFocused;
 
+    // Tooltip
+    case kColorId_TooltipBackground:
+      return kTooltipBackground;
+
     // Tree
     case kColorId_TreeBackground:
       return kTreeBackground;
@@ -183,6 +229,37 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       return kTableSelectionBackgroundColor;
     case kColorId_TableGroupingIndicatorColor:
       return kTableGroupingIndicatorColor;
+
+    // Results Tables
+    case kColorId_ResultsTableNormalBackground:
+      return kTextfieldDefaultBackground;
+    case kColorId_ResultsTableHoveredBackground:
+      return kResultsTableHoveredBackground;
+    case kColorId_ResultsTableSelectedBackground:
+      return kTextfieldSelectionBackgroundFocused;
+    case kColorId_ResultsTableNormalText:
+      return kResultsTableNormalText;
+    case kColorId_ResultsTableHoveredText:
+      return kResultsTableHoveredText;
+    case kColorId_ResultsTableSelectedText:
+      return kResultsTableSelectedText;
+    case kColorId_ResultsTableNormalDimmedText:
+      return kResultsTableNormalDimmedText;
+    case kColorId_ResultsTableHoveredDimmedText:
+      return kResultsTableHoveredDimmedText;
+    case kColorId_ResultsTableSelectedDimmedText:
+      return kResultsTableSelectedDimmedText;
+    case kColorId_ResultsTableNormalUrl:
+      return kTextfieldSelectionColor;
+    case kColorId_ResultsTableHoveredUrl:
+    case kColorId_ResultsTableSelectedUrl:
+      return kResultsTableSelectedOrHoveredUrl;
+    case kColorId_ResultsTableNormalDivider:
+      return kResultsTableNormalDivider;
+    case kColorId_ResultsTableHoveredDivider:
+      return kResultsTableHoveredDivider;
+    case kColorId_ResultsTableSelectedDivider:
+      return kResultsTabSelectedDivider;
 
     case kColorId_MenuBackgroundColor:
       return kMenuBackgroundColor;

@@ -26,6 +26,17 @@ enum {
 };
 static const int kNormalNumPartitions = 12;
 
+// Delay estimator constants, used for logging.
+enum {
+  kMaxDelayBlocks = 60
+};
+enum {
+  kLookaheadBlocks = 15
+};
+enum {
+  kHistorySizeBlocks = kMaxDelayBlocks + kLookaheadBlocks
+};
+
 // Extended filter adaptation parameters.
 // TODO(ajm): No narrowband tuning yet.
 static const float kExtendedMu = 0.4f;
@@ -122,6 +133,7 @@ struct AecCore {
   void* delay_estimator_farend;
   void* delay_estimator;
 
+  int reported_delay_enabled;  // 0 = disabled, otherwise enabled.
   // 1 = extended filter mode enabled, 0 = disabled.
   int extended_filter_enabled;
   // Runtime selection of number of filter partitions.

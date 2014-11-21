@@ -51,6 +51,8 @@ public:
         return adoptRef(new DescendantInvalidationSet);
     }
 
+    bool invalidatesElement(Element&) const;
+
     void combine(const DescendantInvalidationSet& other);
 
     void addClass(const AtomicString& className);
@@ -58,14 +60,14 @@ public:
     void addTagName(const AtomicString& tagName);
     void addAttribute(const AtomicString& attributeLocalName);
 
-    // Appends the classes in this DescendantInvalidationSet to the vector.
-    void getClasses(Vector<AtomicString>& classes) const;
-
-    // Appends the attributes in this DescendantInvalidationSet to the vector.
-    void getAttributes(Vector<AtomicString>& attributes) const;
-
     void setWholeSubtreeInvalid();
     bool wholeSubtreeInvalid() const { return m_allDescendantsMightBeInvalid; }
+
+    void setCustomPseudoInvalid() { m_customPseudoInvalid = true; }
+    bool customPseudoInvalid() const { return m_customPseudoInvalid; }
+
+    bool isEmpty() const { return !m_classes && !m_ids && !m_tagNames && !m_attributes; }
+
 private:
     DescendantInvalidationSet();
 
@@ -76,6 +78,9 @@ private:
 
     // If true, all descendants might be invalidated, so a full subtree recalc is required.
     bool m_allDescendantsMightBeInvalid;
+
+    // If true, all descendants which are custom pseudo elements must be invalidated.
+    bool m_customPseudoInvalid;
 
     // FIXME: optimize this if it becomes a memory issue.
     OwnPtr<HashSet<AtomicString> > m_classes;

@@ -55,8 +55,8 @@ class Target : public content::DevToolsTarget {
     virtual std::string GetType() const OVERRIDE{ return "page"; }
     virtual std::string GetTitle() const OVERRIDE{ return d_title; }
     virtual std::string GetDescription() const OVERRIDE{ return std::string(); }
-    virtual GURL GetUrl() const OVERRIDE{ return d_url; }
-    virtual GURL GetFaviconUrl() const OVERRIDE{ return d_faviconUrl; }
+    virtual GURL GetURL() const OVERRIDE{ return d_url; }
+    virtual GURL GetFaviconURL() const OVERRIDE{ return d_faviconUrl; }
     virtual base::TimeTicks GetLastActivityTime() const OVERRIDE{
         return d_lastActivityTime;
     }

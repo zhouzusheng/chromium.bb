@@ -15,37 +15,6 @@ namespace net {
 // contain the same data (via retransmissions)
 class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
  public:
-  struct NET_EXPORT_PRIVATE TransmissionInfo {
-    // Used by STL when assinging into a map.
-    TransmissionInfo();
-
-    // Constructs a Transmission with a new all_tranmissions set
-    // containing |sequence_number|.
-    TransmissionInfo(RetransmittableFrames* retransmittable_frames,
-                     QuicPacketSequenceNumber sequence_number,
-                     QuicSequenceNumberLength sequence_number_length);
-
-    // Constructs a Transmission with the specified |all_tranmissions| set
-    // and inserts |sequence_number| into it.
-    TransmissionInfo(RetransmittableFrames* retransmittable_frames,
-                     QuicPacketSequenceNumber sequence_number,
-                     QuicSequenceNumberLength sequence_number_length,
-                     SequenceNumberSet* all_transmissions);
-
-    RetransmittableFrames* retransmittable_frames;
-    QuicSequenceNumberLength sequence_number_length;
-    // Zero when the packet is serialized, non-zero once it's sent.
-    QuicTime sent_time;
-    // Zero when the packet is serialized, non-zero once it's sent.
-    QuicByteCount bytes_sent;
-    size_t nack_count;
-    // Stores the sequence numbers of all transmissions of this packet.
-    // Can never be null.
-    SequenceNumberSet* all_transmissions;
-    // Pending packets have not been abandoned or lost.
-    bool pending;
-  };
-
   QuicUnackedPacketMap();
   ~QuicUnackedPacketMap();
 
@@ -94,6 +63,11 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
     return largest_sent_packet_;
   }
 
+  // Returns the sum of the bytes in all pending packets.
+  QuicByteCount bytes_in_flight() const {
+    return bytes_in_flight_;
+  }
+
   // Returns the smallest sequence number of a serialized packet which has not
   // been acked by the peer.  If there are no unacked packets, returns 0.
   QuicPacketSequenceNumber GetLeastUnackedSentPacket() const;
@@ -102,10 +76,14 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // Test only.
   SequenceNumberSet GetUnackedPackets() const;
 
-  // Sets a packet pending, with the sent time |sent_time|.
-  void SetPending(QuicPacketSequenceNumber sequence_number,
-                  QuicTime sent_time,
-                  QuicByteCount bytes_sent);
+  // Sets a packet as sent with the sent time |sent_time|.  Marks the packet
+  // as pending and tracks the |bytes_sent| if |set_pending| is true.
+  // Packets marked as pending are expected to be marked as missing when they
+  // don't arrive, indicating the need for retransmission.
+  void SetSent(QuicPacketSequenceNumber sequence_number,
+               QuicTime sent_time,
+               QuicByteCount bytes_sent,
+               bool set_pending);
 
   // Clears up to |num_to_clear| previous transmissions in order to make room
   // in the ack frame for new acks.
@@ -142,14 +120,13 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // Returns true if there are any pending crypto packets.
   bool HasPendingCryptoPackets() const;
 
-  // Removes entries from the unacked packet map, and deletes
-  // the retransmittable frames associated with the packet.
+  // Deletes the retransmittable frames associated with the packet and removes
+  // it from unacked packets if it's not pending.
   // Does not remove any previous or subsequent transmissions of this packet.
-  void RemovePacket(QuicPacketSequenceNumber sequence_number);
+  void NeuterIfPendingOrRemovePacket(QuicPacketSequenceNumber sequence_number);
 
-  // Neuters the specified packet.  Deletes any retransmittable
-  // frames, and sets all_transmissions to only include itself.
-  void NeuterPacket(QuicPacketSequenceNumber sequence_number);
+  // Returns true if the packet has been marked as sent by SetSent.
+  static bool IsSentAndNotPending(const TransmissionInfo& transmission_info);
 
  private:
   QuicPacketSequenceNumber largest_sent_packet_;

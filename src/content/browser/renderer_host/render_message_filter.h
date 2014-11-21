@@ -23,6 +23,7 @@
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
+#include "ipc/message_filter.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "net/cookies/canonical_cookie.h"
@@ -95,7 +96,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       MediaInternals* media_internals,
                       DOMStorageContextWrapper* dom_storage_context);
 
-  // IPC::ChannelProxy::MessageFilter methods:
+  // IPC::MessageFilter methods:
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
@@ -195,7 +196,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnDownloadUrl(const IPC::Message& message,
                      const GURL& url,
                      const Referrer& referrer,
-                     const base::string16& suggested_name);
+                     const base::string16& suggested_name,
+                     const bool use_prompt);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
 
@@ -276,6 +278,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnAllocateGpuMemoryBuffer(uint32 width,
                                  uint32 height,
                                  uint32 internalformat,
+                                 uint32 usage,
                                  gfx::GpuMemoryBufferHandle* handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to

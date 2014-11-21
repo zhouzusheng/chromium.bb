@@ -27,6 +27,7 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -40,7 +41,9 @@
 #if defined(OS_WIN)
 #include "content/browser/compositor/software_output_device_win.h"
 #elif defined(USE_OZONE)
+#include "content/browser/compositor/overlay_candidate_validator_ozone.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
+#include "ui/gfx/ozone/surface_factory_ozone.h"
 #elif defined(USE_X11)
 #include "content/browser/compositor/software_output_device_x11.h"
 #endif
@@ -55,91 +58,8 @@ struct GpuProcessTransportFactory::PerCompositorData {
   scoped_refptr<ReflectorImpl> reflector;
 };
 
-class OwnedTexture : public ui::Texture, ImageTransportFactoryObserver {
- public:
-  OwnedTexture(const scoped_refptr<ContextProvider>& provider,
-               const gfx::Size& size,
-               float device_scale_factor,
-               GLuint texture_id)
-      : ui::Texture(true, size, device_scale_factor),
-        provider_(provider),
-        texture_id_(texture_id) {
-    ImageTransportFactory::GetInstance()->AddObserver(this);
-  }
-
-  // ui::Texture overrides:
-  virtual unsigned int PrepareTexture() OVERRIDE {
-    // It's possible that we may have lost the context owning our
-    // texture but not yet fired the OnLostResources callback, so poll to see if
-    // it's still valid.
-    if (provider_ && provider_->IsContextLost())
-      texture_id_ = 0u;
-    return texture_id_;
-  }
-
-  // ImageTransportFactory overrides:
-  virtual void OnLostResources() OVERRIDE {
-    DeleteTexture();
-    provider_ = NULL;
-  }
-
- protected:
-  virtual ~OwnedTexture() {
-    ImageTransportFactory::GetInstance()->RemoveObserver(this);
-    DeleteTexture();
-  }
-
- protected:
-  void DeleteTexture() {
-    if (texture_id_) {
-      provider_->ContextGL()->DeleteTextures(1, &texture_id_);
-      texture_id_ = 0;
-    }
-  }
-
-  scoped_refptr<cc::ContextProvider> provider_;
-  GLuint texture_id_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(OwnedTexture);
-};
-
-class ImageTransportClientTexture : public OwnedTexture {
- public:
-  ImageTransportClientTexture(const scoped_refptr<ContextProvider>& provider,
-                              float device_scale_factor,
-                              GLuint texture_id)
-      : OwnedTexture(provider,
-                     gfx::Size(0, 0),
-                     device_scale_factor,
-                     texture_id) {}
-
-  virtual void Consume(const gpu::Mailbox& mailbox,
-                       const gfx::Size& new_size) OVERRIDE {
-    mailbox_ = mailbox;
-    if (mailbox.IsZero())
-      return;
-
-    DCHECK(provider_ && texture_id_);
-    GLES2Interface* gl = provider_->ContextGL();
-    gl->BindTexture(GL_TEXTURE_2D, texture_id_);
-    gl->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
-    size_ = new_size;
-    gl->ShallowFlushCHROMIUM();
-  }
-
-  virtual gpu::Mailbox Produce() OVERRIDE { return mailbox_; }
-
- protected:
-  virtual ~ImageTransportClientTexture() {}
-
- private:
-  gpu::Mailbox mailbox_;
-  DISALLOW_COPY_AND_ASSIGN(ImageTransportClientTexture);
-};
-
 GpuProcessTransportFactory::GpuProcessTransportFactory()
-    : callback_factory_(this), offscreen_content_bound_to_other_thread_(false) {
+    : callback_factory_(this) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
       &output_surface_map_);
 }
@@ -149,13 +69,6 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
   // Make sure the lost context callback doesn't try to run during destruction.
   callback_factory_.InvalidateWeakPtrs();
-
-  if (offscreen_compositor_contexts_.get() &&
-      offscreen_content_bound_to_other_thread_) {
-    // Leak shared contexts on other threads, as we can not get to the correct
-    // thread to destroy them.
-    offscreen_compositor_contexts_->set_leak_on_destroy();
-  }
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -178,6 +91,20 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
   NOTREACHED();
   return scoped_ptr<cc::SoftwareOutputDevice>();
 #endif
+}
+
+scoped_ptr<cc::OverlayCandidateValidator> CreateOverlayCandidateValidator(
+    gfx::AcceleratedWidget widget) {
+#if defined(USE_OZONE)
+  gfx::OverlayCandidatesOzone* overlay_candidates =
+      gfx::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
+  if (overlay_candidates && CommandLine::ForCurrentProcess()->HasSwitch(
+                                switches::kEnableHardwareOverlays)) {
+    return scoped_ptr<cc::OverlayCandidateValidator>(
+        new OverlayCandidateValidatorOzone(widget, overlay_candidates));
+  }
+#endif
+  return scoped_ptr<cc::OverlayCandidateValidator>();
 }
 
 scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
@@ -237,7 +164,8 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
           context_provider,
           per_compositor_data_[compositor]->surface_id,
           &output_surface_map_,
-          compositor->vsync_manager()));
+          compositor->vsync_manager(),
+          CreateOverlayCandidateValidator(compositor->widget())));
   if (data->reflector.get())
     data->reflector->ReattachToOutputSurfaceFromMainThread(surface.get());
 
@@ -250,12 +178,8 @@ scoped_refptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
   PerCompositorData* data = per_compositor_data_[source];
   DCHECK(data);
 
-  if (data->reflector.get())
-    RemoveObserver(data->reflector.get());
-
   data->reflector = new ReflectorImpl(
       source, target, &output_surface_map_, data->surface_id);
-  AddObserver(data->reflector.get());
   return data->reflector;
 }
 
@@ -266,7 +190,6 @@ void GpuProcessTransportFactory::RemoveReflector(
   PerCompositorData* data =
       per_compositor_data_[reflector_impl->mirrored_compositor()];
   DCHECK(data);
-  RemoveObserver(reflector_impl);
   data->reflector->Shutdown();
   data->reflector = NULL;
 }
@@ -287,6 +210,12 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
     // on the |gl_helper_| variable directly. So instead we call reset() on a
     // local scoped_ptr.
     scoped_ptr<GLHelper> helper = gl_helper_.Pass();
+
+    // If there are any observer left at this point, make sure they clean up
+    // before we destroy the GLHelper.
+    FOR_EACH_OBSERVER(
+        ImageTransportFactoryObserver, observer_list_, OnLostResources());
+
     helper.reset();
     DCHECK(!gl_helper_) << "Destroying the GLHelper should not cause a new "
                            "GLHelper to be created.";
@@ -295,7 +224,11 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
 
 bool GpuProcessTransportFactory::DoesCreateTestContexts() { return false; }
 
-ui::ContextFactory* GpuProcessTransportFactory::AsContextFactory() {
+cc::SharedBitmapManager* GpuProcessTransportFactory::GetSharedBitmapManager() {
+  return HostSharedBitmapManager::current();
+}
+
+ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
 }
 
@@ -305,33 +238,6 @@ gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
   handle.parent_client_id =
       BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   return handle;
-}
-
-scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateTransportClient(
-    float device_scale_factor) {
-  scoped_refptr<cc::ContextProvider> provider =
-      SharedMainThreadContextProvider();
-  if (!provider.get())
-    return NULL;
-  GLuint texture_id = 0;
-  provider->ContextGL()->GenTextures(1, &texture_id);
-  scoped_refptr<ImageTransportClientTexture> image(
-      new ImageTransportClientTexture(
-          provider, device_scale_factor, texture_id));
-  return image;
-}
-
-scoped_refptr<ui::Texture> GpuProcessTransportFactory::CreateOwnedTexture(
-    const gfx::Size& size,
-    float device_scale_factor,
-    unsigned int texture_id) {
-  scoped_refptr<cc::ContextProvider> provider =
-      SharedMainThreadContextProvider();
-  if (!provider.get())
-    return NULL;
-  scoped_refptr<OwnedTexture> image(new OwnedTexture(
-      provider, size, device_scale_factor, texture_id));
-  return image;
 }
 
 GLHelper* GpuProcessTransportFactory::GetGLHelper() {
@@ -356,24 +262,6 @@ void GpuProcessTransportFactory::RemoveObserver(
 }
 
 scoped_refptr<cc::ContextProvider>
-GpuProcessTransportFactory::OffscreenCompositorContextProvider() {
-  // Don't check for DestroyedOnMainThread() here. We hear about context
-  // loss for this context through the lost context callback. If the context
-  // is lost, we want to leave this ContextProvider available until the lost
-  // context notification is sent to the ImageTransportFactoryObserver clients.
-  if (offscreen_compositor_contexts_.get())
-    return offscreen_compositor_contexts_;
-
-  offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
-      GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
-      "Compositor-Offscreen");
-  offscreen_content_bound_to_other_thread_ =
-      ui::Compositor::WasInitializedWithThread();
-
-  return offscreen_compositor_contexts_;
-}
-
-scoped_refptr<cc::ContextProvider>
 GpuProcessTransportFactory::SharedMainThreadContextProvider() {
   if (shared_main_thread_contexts_.get())
     return shared_main_thread_contexts_;
@@ -391,10 +279,8 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
         base::Bind(&GpuProcessTransportFactory::
                         OnLostMainThreadSharedContextInsideCallback,
                    callback_factory_.GetWeakPtr()));
-    if (!shared_main_thread_contexts_->BindToCurrentThread()) {
+    if (!shared_main_thread_contexts_->BindToCurrentThread())
       shared_main_thread_contexts_ = NULL;
-      offscreen_compositor_contexts_ = NULL;
-    }
   }
   return shared_main_thread_contexts_;
 }
@@ -428,9 +314,6 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
   attrs.stencil = false;
   attrs.antialias = false;
   attrs.noAutomaticFlushes = true;
-#if !defined(OS_CHROMEOS)
-  bool bind_generates_resources = false;
-#endif
   bool lose_context_when_out_of_memory = true;
   CauseForGpuLaunch cause =
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
@@ -447,9 +330,6 @@ GpuProcessTransportFactory::CreateContextCommon(int surface_id) {
           url,
           gpu_channel_host.get(),
           attrs,
-#if !defined(OS_CHROMEOS)
-          bind_generates_resources,
-#endif
           lose_context_when_out_of_memory,
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
           NULL));
@@ -470,11 +350,8 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
   // new resources are created if needed.
   // Kill shared contexts for both threads in tandem so they are always in
   // the same share group.
-  scoped_refptr<cc::ContextProvider> lost_offscreen_compositor_contexts =
-      offscreen_compositor_contexts_;
   scoped_refptr<cc::ContextProvider> lost_shared_main_thread_contexts =
       shared_main_thread_contexts_;
-  offscreen_compositor_contexts_ = NULL;
   shared_main_thread_contexts_  = NULL;
 
   scoped_ptr<GLHelper> lost_gl_helper = gl_helper_.Pass();
@@ -485,7 +362,6 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
 
   // Kill things that use the shared context before killing the shared context.
   lost_gl_helper.reset();
-  lost_offscreen_compositor_contexts = NULL;
   lost_shared_main_thread_contexts  = NULL;
 }
 

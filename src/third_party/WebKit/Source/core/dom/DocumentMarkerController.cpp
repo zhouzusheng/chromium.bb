@@ -85,7 +85,7 @@ void DocumentMarkerController::addMarker(Range* range, DocumentMarker::MarkerTyp
 {
     // Use a TextIterator to visit the potentially multiple nodes the range covers.
     for (TextIterator markedText(range); !markedText.atEnd(); markedText.advance()) {
-        RefPtr<Range> textPiece = markedText.range();
+        RefPtrWillBeRawPtr<Range> textPiece = markedText.range();
         addMarker(textPiece->startContainer(), DocumentMarker(type, textPiece->startOffset(), textPiece->endOffset(), description, hash));
     }
 }
@@ -94,7 +94,7 @@ void DocumentMarkerController::addMarker(Range* range, DocumentMarker::MarkerTyp
 {
     // Use a TextIterator to visit the potentially multiple nodes the range covers.
     for (TextIterator markedText(range); !markedText.atEnd(); markedText.advance()) {
-        RefPtr<Range> textPiece = markedText.range();
+        RefPtrWillBeRawPtr<Range> textPiece = markedText.range();
         addMarker(textPiece->startContainer(), DocumentMarker(type, textPiece->startOffset(), textPiece->endOffset(), description));
     }
 }
@@ -103,28 +103,17 @@ void DocumentMarkerController::addMarker(Range* range, DocumentMarker::MarkerTyp
 {
     // Use a TextIterator to visit the potentially multiple nodes the range covers.
     for (TextIterator markedText(range); !markedText.atEnd(); markedText.advance()) {
-        RefPtr<Range> textPiece = markedText.range();
+        RefPtrWillBeRawPtr<Range> textPiece = markedText.range();
         addMarker(textPiece->startContainer(), DocumentMarker(type, textPiece->startOffset(), textPiece->endOffset()));
     }
 
 }
 
-void DocumentMarkerController::addMarkerToNode(Node* node, unsigned startOffset, unsigned length, DocumentMarker::MarkerType type)
-{
-    addMarker(node, DocumentMarker(type, startOffset, startOffset + length));
-}
-
-void DocumentMarkerController::addMarkerToNode(Node* node, unsigned startOffset, unsigned length, DocumentMarker::MarkerType type, PassRefPtr<DocumentMarkerDetails> details)
-{
-    addMarker(node, DocumentMarker(type, startOffset, startOffset + length, details));
-}
-
-
 void DocumentMarkerController::addTextMatchMarker(const Range* range, bool activeMatch)
 {
     // Use a TextIterator to visit the potentially multiple nodes the range covers.
     for (TextIterator markedText(range); !markedText.atEnd(); markedText.advance()) {
-        RefPtr<Range> textPiece = markedText.range();
+        RefPtrWillBeRawPtr<Range> textPiece = markedText.range();
         unsigned startOffset = textPiece->startOffset();
         unsigned endOffset = textPiece->endOffset();
         addMarker(textPiece->startContainer(), DocumentMarker(startOffset, endOffset, activeMatch));
@@ -152,7 +141,7 @@ void DocumentMarkerController::removeMarkers(Range* range, DocumentMarker::Marke
             return;
         ASSERT(!m_markers.isEmpty());
 
-        RefPtr<Range> textPiece = markedText.range();
+        RefPtrWillBeRawPtr<Range> textPiece = markedText.range();
         int startOffset = textPiece->startOffset();
         int endOffset = textPiece->endOffset();
         removeMarkers(textPiece->startContainer(), startOffset, endOffset - startOffset, markerTypes, shouldRemovePartiallyOverlappingMarker);
@@ -369,6 +358,19 @@ void DocumentMarkerController::removeMarkers(Node* node, unsigned startOffset, i
     // repaint the affected node
     if (docDirty && node->renderer())
         node->renderer()->repaint();
+}
+
+// FIXME: Oilpan: Move DocumentMarkerController to the Oilpan heap and make
+// the MarkerMap a weak collection instead of this explicit weak processing.
+void DocumentMarkerController::clearWeakMembers(Visitor* visitor)
+{
+    Vector<const Node*> deadNodes;
+    for (MarkerMap::iterator it = m_markers.begin(); it != m_markers.end(); ++it) {
+        if (!visitor->isAlive(it->key))
+            deadNodes.append(it->key);
+    }
+    for (unsigned i = 0; i < deadNodes.size(); ++i)
+        removeMarkers(const_cast<Node*>(deadNodes[i]));
 }
 
 DocumentMarker* DocumentMarkerController::markerContainingPoint(const LayoutPoint& point, DocumentMarker::MarkerType markerType)

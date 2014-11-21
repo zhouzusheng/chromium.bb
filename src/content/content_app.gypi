@@ -39,6 +39,12 @@
     'public/app/startup_helper_win.h',
   ],
   'conditions': [
+    ['((OS=="linux" and os_posix==1 and use_aura==1) or OS=="android") and use_allocator!="none"', {
+      'dependencies': [
+        # This is needed by app/content_main_runner.cc
+        '../base/allocator/allocator.gyp:allocator',
+      ],
+    }],
     ['OS=="win"', {
       'dependencies': [
         '../sandbox/sandbox.gyp:sandbox',
@@ -47,18 +53,14 @@
     ['OS=="ios"', {
       'sources!': [
         'app/content_main.cc',
-      ],
-    }],
-    ['use_mojo==0', {
-      'sources!': [
         'app/mojo/mojo_init.cc',
         'app/mojo/mojo_init.h',
       ],
-    }, {
+    }, {  # OS!="ios"
       'dependencies': [
         '../mojo/mojo.gyp:mojo_environment_chromium',
         '../mojo/mojo.gyp:mojo_service_manager',
-        '../mojo/mojo.gyp:mojo_system',
+        '../mojo/mojo.gyp:mojo_shell_bindings',
         '../mojo/mojo.gyp:mojo_system_impl',
      ],
     }],

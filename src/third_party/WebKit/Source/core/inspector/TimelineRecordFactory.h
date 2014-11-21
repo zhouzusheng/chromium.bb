@@ -52,7 +52,7 @@ public:
     static PassRefPtr<TypeBuilder::Timeline::TimelineEvent> createBackgroundRecord(double startTime, const String& thread, const String& type, PassRefPtr<JSONObject> data);
 
     static PassRefPtr<JSONObject> createGCEventData(size_t usedHeapSizeDelta);
-    static PassRefPtr<JSONObject> createFunctionCallData(const String& scriptName, int scriptLine);
+    static PassRefPtr<JSONObject> createFunctionCallData(int scriptId, const String& scriptName, int scriptLine);
     static PassRefPtr<JSONObject> createEventDispatchData(const Event&);
     static PassRefPtr<JSONObject> createGenericTimerData(int timerId);
     static PassRefPtr<JSONObject> createTimerInstallData(int timerId, int timeout, bool singleShot);
@@ -62,7 +62,6 @@ public:
     static PassRefPtr<JSONObject> createConsoleTimeData(const String&);
     static PassRefPtr<JSONObject> createTimeStampData(const String&);
     static PassRefPtr<JSONObject> createResourceSendRequestData(const String& requestId, const ResourceRequest&);
-    static PassRefPtr<JSONObject> createScheduleResourceRequestData(const String&);
     static PassRefPtr<JSONObject> createResourceReceiveResponseData(const String& requestId, const ResourceResponse&);
     static PassRefPtr<JSONObject> createReceiveResourceData(const String& requestId, int length);
     static PassRefPtr<JSONObject> createResourceFinishData(const String& requestId, bool didFail, double finishTime);
@@ -74,12 +73,12 @@ public:
     static PassRefPtr<JSONObject> createAnimationFrameData(int callbackId);
     static PassRefPtr<JSONObject> createNodeData(long long nodeId);
     static PassRefPtr<JSONObject> createLayerData(long long layerRootNodeId);
-    static PassRefPtr<JSONObject> createLayerTreeData(PassRefPtr<JSONValue> layerTree);
     static PassRefPtr<JSONObject> createFrameData(int frameId);
     static PassRefPtr<JSONObject> createGPUTaskData(bool foreign);
 
     static void setNodeData(JSONObject* data, long long nodeId);
     static void setLayerData(JSONObject* data, long long layerRootNodeId);
+    static void setLayerTreeData(JSONObject* data, PassRefPtr<JSONValue> layerTree);
     static void setPaintData(JSONObject* data, const FloatQuad&, long long layerRootNodeId, int graphicsLayerId);
     static void setLayoutRoot(JSONObject* data, const FloatQuad&, long long rootNodeId);
     static void setStyleRecalcDetails(JSONObject* data, unsigned elementCount);

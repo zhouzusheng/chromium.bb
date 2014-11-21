@@ -107,18 +107,18 @@ int ProxyResolvingClientSocket::Write(
   return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetReceiveBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetSendBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
 int ProxyResolvingClientSocket::Connect(
@@ -192,7 +192,7 @@ void ProxyResolvingClientSocket::ProcessProxyResolveDone(int status) {
   // Now that we have resolved the proxy, we need to connect.
   status = net::InitSocketHandleForRawConnect(
       dest_host_port_pair_, network_session_.get(), proxy_info_, ssl_config_,
-      ssl_config_, net::kPrivacyModeDisabled, bound_net_log_, transport_.get(),
+      ssl_config_, net::PRIVACY_MODE_DISABLED, bound_net_log_, transport_.get(),
       connect_callback_);
   if (status != net::ERR_IO_PENDING) {
     // Since this method is always called asynchronously. it is OK to call
@@ -270,7 +270,7 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
   }
 
   int rv = network_session_->proxy_service()->ReconsiderProxyAfterError(
-      proxy_url_, &proxy_info_, proxy_resolve_callback_, &pac_request_,
+      proxy_url_, error, &proxy_info_, proxy_resolve_callback_, &pac_request_,
       bound_net_log_);
   if (rv == net::OK || rv == net::ERR_IO_PENDING) {
     CloseTransportSocket();

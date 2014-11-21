@@ -32,16 +32,23 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler#TOC
 """
 
 
+import os.path
 import re
 
+module_path = os.path.dirname(__file__)
+source_path = os.path.join(module_path, os.pardir, os.pardir)
+EXTENDED_ATTRIBUTES_RELATIVE_PATH = os.path.join('bindings',
+                                                 'IDLExtendedAttributes.txt')
+EXTENDED_ATTRIBUTES_FILENAME = os.path.join(source_path,
+                                            EXTENDED_ATTRIBUTES_RELATIVE_PATH)
 
 class IDLInvalidExtendedAttributeError(Exception):
     pass
 
 
 class IDLExtendedAttributeValidator(object):
-    def __init__(self, extended_attributes_filename):
-        self.valid_extended_attributes = read_extended_attributes_file(extended_attributes_filename)
+    def __init__(self):
+        self.valid_extended_attributes = read_extended_attributes_file()
 
     def validate_extended_attributes(self, definitions):
         # FIXME: this should be done when parsing the file, rather than after.
@@ -59,13 +66,13 @@ class IDLExtendedAttributeValidator(object):
             self.validate_name_values_string(name, values_string)
 
     def validate_name_values_string(self, name, values_string):
-        if name == 'ImplementedBy':  # attribute added when merging interfaces
-            return
         if name not in self.valid_extended_attributes:
-            raise IDLInvalidExtendedAttributeError('Unknown extended attribute [%s]' % name)
+            raise IDLInvalidExtendedAttributeError(
+                'Unknown extended attribute [%s]' % name)
         valid_values = self.valid_extended_attributes[name]
         if values_string is None and None not in valid_values:
-            raise IDLInvalidExtendedAttributeError('Missing required argument for extended attribute [%s]' % name)
+            raise IDLInvalidExtendedAttributeError(
+                'Missing required argument for extended attribute [%s]' % name)
         if '*' in valid_values:  # wildcard, any (non-empty) value ok
             return
         if values_string is None:
@@ -75,12 +82,14 @@ class IDLExtendedAttributeValidator(object):
         invalid_values = values - valid_values
         if invalid_values:
             invalid_value = invalid_values.pop()
-            raise IDLInvalidExtendedAttributeError('Invalid value "%s" found in extended attribute [%s=%s]' % (invalid_value, name, values_string))
+            raise IDLInvalidExtendedAttributeError(
+                'Invalid value "%s" found in extended attribute [%s=%s]' %
+                (invalid_value, name, values_string))
 
 
-def read_extended_attributes_file(extended_attributes_filename):
+def read_extended_attributes_file():
     def extended_attribute_name_values():
-        with open(extended_attributes_filename) as extended_attributes_file:
+        with open(EXTENDED_ATTRIBUTES_FILENAME) as extended_attributes_file:
             for line in extended_attributes_file:
                 line = line.strip()
                 if not line or line.startswith('#'):

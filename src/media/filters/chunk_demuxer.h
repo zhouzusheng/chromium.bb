@@ -23,7 +23,7 @@ namespace media {
 class FFmpegURLProtocol;
 class SourceState;
 
-class ChunkDemuxerStream : public DemuxerStream {
+class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
 
@@ -96,6 +96,10 @@ class ChunkDemuxerStream : public DemuxerStream {
     stream_->set_memory_limit_for_testing(memory_limit);
   }
 
+  bool supports_partial_append_window_trimming() const {
+    return partial_append_window_trimming_enabled_;
+  }
+
  private:
   enum State {
     UNINITIALIZED,
@@ -117,7 +121,8 @@ class ChunkDemuxerStream : public DemuxerStream {
   mutable base::Lock lock_;
   State state_;
   ReadCB read_cb_;
-  const bool splice_frames_enabled_;
+  bool splice_frames_enabled_;
+  bool partial_append_window_trimming_enabled_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
 };
@@ -155,9 +160,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
                           bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
-  virtual void OnAudioRendererDisabled() OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
+  virtual base::Time GetTimelineOffset() const OVERRIDE;
+  virtual Liveness GetLiveness() const OVERRIDE;
 
   // Methods used by an external object to control this demuxer.
   //
@@ -186,13 +192,16 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
+  // |use_legacy_frame_processor| determines which of LegacyFrameProcessor or
+  // FrameProcessor to use to process parsed frames from AppendData() calls.
   // kOk is returned if the demuxer has enough resources to support another ID
   //    and supports the format indicated by |type|.
   // kNotSupported is returned if |type| is not a supported format.
   // kReachedIdLimit is returned if the demuxer cannot handle another ID right
   //    now.
   Status AddId(const std::string& id, const std::string& type,
-               std::vector<std::string>& codecs);
+               std::vector<std::string>& codecs,
+               const bool use_legacy_frame_processor);
 
   // Removed an ID & associated resources that were previously added with
   // AddId().
@@ -213,7 +222,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Aborts parsing the current segment and reset the parser to a state where
   // it can accept a new segment.
-  void Abort(const std::string& id);
+  // Some pending frames can be emitted during that process. These frames are
+  // applied |timestamp_offset|.
+  void Abort(const std::string& id,
+             base::TimeDelta append_window_start,
+             base::TimeDelta append_window_end,
+             base::TimeDelta* timestamp_offset);
 
   // Remove buffers between |start| and |end| for the source buffer
   // associated with |id|.
@@ -237,6 +251,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // is requesting "sequence" mode. Otherwise, caller is requesting "segments"
   // mode.
   void SetSequenceMode(const std::string& id, bool sequence_mode);
+
+  // Signals the coded frame processor for the source buffer associated with
+  // |id| to update its group start timestamp to be |timestamp_offset| if it is
+  // in sequence append mode.
+  void SetGroupStartTimestampIfInSequenceMode(const std::string& id,
+                                              base::TimeDelta timestamp_offset);
 
   // Called to signal changes in the "end of stream"
   // state. UnmarkEndOfStream() must not be called if a matching
@@ -280,7 +300,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   bool CanEndOfStream_Locked() const;
 
   // SourceState callbacks.
-  void OnSourceInitDone(bool success, base::TimeDelta duration);
+  void OnSourceInitDone(bool success,
+                        const StreamParser::InitParameters& params);
 
   // Creates a DemuxerStream for the specified |type|.
   // Returns a new ChunkDemuxerStream instance if a stream of this type
@@ -289,18 +310,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   void OnNewTextTrack(ChunkDemuxerStream* text_stream,
                       const TextTrackConfig& config);
-  void OnNewMediaSegment(const std::string& source_id,
-                         base::TimeDelta start_timestamp);
 
   // Returns true if |source_id| is valid, false otherwise.
   bool IsValidId(const std::string& source_id) const;
 
-  // Increases |duration_| if |last_appended_buffer_timestamp| exceeds the
-  // current  |duration_|. The |duration_| is set to the end buffered timestamp
-  // of |stream|.
-  void IncreaseDurationIfNecessary(
-      base::TimeDelta last_appended_buffer_timestamp,
-      ChunkDemuxerStream* stream);
+  // Increases |duration_| to |new_duration|, if |new_duration| is higher.
+  void IncreaseDurationIfNecessary(base::TimeDelta new_duration);
 
   // Decreases |duration_| if the buffered region is less than |duration_| when
   // EndOfStream() is called.
@@ -351,9 +366,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   scoped_ptr<ChunkDemuxerStream> audio_;
   scoped_ptr<ChunkDemuxerStream> video_;
 
-  // Keeps |audio_| alive when audio has been disabled.
-  scoped_ptr<ChunkDemuxerStream> disabled_audio_;
-
   base::TimeDelta duration_;
 
   // The duration passed to the last SetDuration(). If
@@ -362,6 +374,9 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // variable is set to < 0 to indicate that the |duration_| represents
   // the actual duration instead of a user specified value.
   double user_specified_duration_;
+
+  base::Time timeline_offset_;
+  Liveness liveness_;
 
   typedef std::map<std::string, SourceState*> SourceStateMap;
   SourceStateMap source_state_map_;

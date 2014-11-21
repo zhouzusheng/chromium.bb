@@ -40,22 +40,24 @@ public:
     GrGLSLGeneration glslGeneration() const { return fGLContext.glslGeneration(); }
     const GrGLCaps& glCaps() const { return *fGLContext.caps(); }
 
-    // Used by GrGLProgram and GrGLTexGenProgramEffects to configure OpenGL state.
+    virtual void discard(GrRenderTarget*) SK_OVERRIDE;
+
+    // Used by GrGLProgram and GrGLPathTexGenProgramEffects to configure OpenGL
+    // state.
     void bindTexture(int unitIdx, const GrTextureParams& params, GrGLTexture* texture);
     void setProjectionMatrix(const SkMatrix& matrix,
                              const SkISize& renderTargetSize,
                              GrSurfaceOrigin renderTargetOrigin);
-    enum TexGenComponents {
-        kS_TexGenComponents = 1,
-        kST_TexGenComponents = 2,
-        kSTR_TexGenComponents = 3
+    enum PathTexGenComponents {
+        kS_PathTexGenComponents = 1,
+        kST_PathTexGenComponents = 2,
+        kSTR_PathTexGenComponents = 3
     };
-    void enableTexGen(int unitIdx, TexGenComponents, const GrGLfloat* coefficients);
-    void enableTexGen(int unitIdx, TexGenComponents, const SkMatrix& matrix);
-    void flushTexGenSettings(int numUsedTexCoordSets);
+    void enablePathTexGen(int unitIdx, PathTexGenComponents, const GrGLfloat* coefficients);
+    void enablePathTexGen(int unitIdx, PathTexGenComponents, const SkMatrix& matrix);
+    void flushPathTexGenSettings(int numUsedTexCoordSets);
     bool shouldUseFixedFunctionTexturing() const {
-        return this->glCaps().fixedFunctionSupport() &&
-               this->glCaps().pathRenderingSupport();
+        return this->glCaps().pathRenderingSupport();
     }
 
     bool programUnitTest(int maxStages);
@@ -154,7 +156,7 @@ private:
 
     virtual void onGpuStencilPath(const GrPath*, SkPath::FillType) SK_OVERRIDE;
     virtual void onGpuDrawPath(const GrPath*, SkPath::FillType) SK_OVERRIDE;
-    virtual void onGpuDrawPaths(size_t, const GrPath**, const SkMatrix*,
+    virtual void onGpuDrawPaths(int, const GrPath**, const SkMatrix*,
                                 SkPath::FillType,
                                 SkStrokeRec::Style) SK_OVERRIDE;
 
@@ -199,7 +201,7 @@ private:
         enum {
             // We may actually have kMaxEntries+1 shaders in the GL context because we create a new
             // shader before evicting from the cache.
-            kMaxEntries = 32,
+            kMaxEntries = 128,
             kHashBits = 6,
         };
 
@@ -444,13 +446,13 @@ private:
     GrRenderTarget*             fHWBoundRenderTarget;
     SkTArray<GrTexture*, true>  fHWBoundTextures;
 
-    struct TexGenData {
+    struct PathTexGenData {
         GrGLenum  fMode;
         GrGLint   fNumComponents;
         GrGLfloat fCoefficients[3 * 3];
     };
-    int                         fHWActiveTexGenSets;
-    SkTArray<TexGenData, true>  fHWTexGenSettings;
+    int                         fHWActivePathTexGenSets;
+    SkTArray<PathTexGenData, true>  fHWPathTexGenSettings;
     ///@}
 
     // we record what stencil format worked last time to hopefully exit early

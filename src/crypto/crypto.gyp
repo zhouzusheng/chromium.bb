@@ -41,8 +41,6 @@
         }, {  # os_posix != 1 or OS == "mac" or OS == "ios" or OS == "android"
             'sources!': [
               'hmac_win.cc',
-              'openpgp_symmetric_encryption.cc',
-              'openpgp_symmetric_encryption.h',
               'symmetric_key_win.cc',
             ],
         }],
@@ -108,7 +106,6 @@
               'hmac_nss.cc',
               'nss_util.cc',
               'nss_util.h',
-              'openpgp_symmetric_encryption.cc',
               'rsa_private_key_nss.cc',
               'secure_hash_default.cc',
               'signature_creator_nss.cc',
@@ -166,7 +163,6 @@
         'signature_creator_unittest.cc',
         'signature_verifier_unittest.cc',
         'symmetric_key_unittest.cc',
-        'openpgp_symmetric_encryption_unittest.cc',
       ],
       'dependencies': [
         'crypto',
@@ -176,8 +172,7 @@
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            [ 'use_allocator!="none"', {
                 'dependencies': [
                   '../base/allocator/allocator.gyp:allocator',
                 ],
@@ -190,7 +185,6 @@
         }, {  # os_posix != 1 or OS == "mac" or OS == "android" or OS == "ios"
           'sources!': [
             'rsa_private_key_nss_unittest.cc',
-            'openpgp_symmetric_encryption_unittest.cc',
           ]
         }],
         [ 'use_openssl == 0 and (OS == "mac" or OS == "ios" or OS == "win")', {
@@ -205,7 +199,6 @@
         [ 'use_openssl==1', {
           'sources!': [
             'nss_util_unittest.cc',
-            'openpgp_symmetric_encryption_unittest.cc',
             'rsa_private_key_nss_unittest.cc',
           ],
         }],

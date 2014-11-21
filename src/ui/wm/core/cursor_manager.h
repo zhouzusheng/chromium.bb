@@ -14,10 +14,14 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/wm/core/native_cursor_manager_delegate.h"
-#include "ui/wm/core/wm_core_export.h"
+#include "ui/wm/wm_export.h"
 
 namespace gfx {
 class Display;
+}
+
+namespace ui {
+class KeyEvent;
 }
 
 namespace wm {
@@ -32,10 +36,10 @@ class NativeCursorManager;
 // requests to queue any further changes until a later time. It sends changes
 // to the NativeCursorManager, which communicates back to us when these changes
 // were made through the NativeCursorManagerDelegate interface.
-class WM_CORE_EXPORT CursorManager : public aura::client::CursorClient,
-                                     public NativeCursorManagerDelegate {
+class WM_EXPORT CursorManager : public aura::client::CursorClient,
+                                public NativeCursorManagerDelegate {
  public:
-  CursorManager(scoped_ptr<NativeCursorManager> delegate);
+  explicit CursorManager(scoped_ptr<NativeCursorManager> delegate);
   virtual ~CursorManager();
 
   // Overridden from aura::client::CursorClient:
@@ -44,8 +48,6 @@ class WM_CORE_EXPORT CursorManager : public aura::client::CursorClient,
   virtual void ShowCursor() OVERRIDE;
   virtual void HideCursor() OVERRIDE;
   virtual bool IsCursorVisible() const OVERRIDE;
-  virtual void SetScale(float scale) OVERRIDE;
-  virtual float GetScale() const OVERRIDE;
   virtual void SetCursorSet(ui::CursorSetType cursor_set) OVERRIDE;
   virtual ui::CursorSetType GetCursorSet() const OVERRIDE;
   virtual void EnableMouseEvents() OVERRIDE;
@@ -59,12 +61,13 @@ class WM_CORE_EXPORT CursorManager : public aura::client::CursorClient,
       aura::client::CursorClientObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
       aura::client::CursorClientObserver* observer) OVERRIDE;
+  virtual bool ShouldHideCursorOnKeyEvent(
+      const ui::KeyEvent& event) const OVERRIDE;
 
  private:
   // Overridden from NativeCursorManagerDelegate:
   virtual void CommitCursor(gfx::NativeCursor cursor) OVERRIDE;
   virtual void CommitVisibility(bool visible) OVERRIDE;
-  virtual void CommitScale(float scale) OVERRIDE;
   virtual void CommitCursorSet(ui::CursorSetType cursor_set) OVERRIDE;
   virtual void CommitMouseEventsEnabled(bool enabled) OVERRIDE;
 

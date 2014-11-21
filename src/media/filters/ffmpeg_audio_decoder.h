@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_log.h"
 #include "media/base/sample_format.h"
 #include "media/ffmpeg/ffmpeg_deleters.h"
 
@@ -24,13 +25,14 @@ class SingleThreadTaskRunner;
 
 namespace media {
 
-class AudioTimestampHelper;
+class AudioDiscardHelper;
 class DecoderBuffer;
 
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:
-  explicit FFmpegAudioDecoder(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+  FFmpegAudioDecoder(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      const LogCB& log_cb);
   virtual ~FFmpegAudioDecoder();
 
   // AudioDecoder implementation.
@@ -40,7 +42,7 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual scoped_refptr<AudioBuffer> GetDecodeOutput() OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
  private:
   enum DecoderState {
@@ -81,16 +83,13 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   // AVSampleFormat initially requested; not Chrome's SampleFormat.
   int av_sample_format_;
 
-  // Used for computing output timestamps.
-  scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
-  base::TimeDelta last_input_timestamp_;
-
-  // Number of frames to drop before generating output buffers.
-  int output_frames_to_drop_;
+  scoped_ptr<AudioDiscardHelper> discard_helper_;
 
   // Since multiple frames may be decoded from the same packet we need to queue
   // them up.
   std::list<scoped_refptr<AudioBuffer> > queued_audio_;
+
+  LogCB log_cb_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FFmpegAudioDecoder);
 };

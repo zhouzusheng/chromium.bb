@@ -355,32 +355,6 @@ CSSStyleRule* InspectorCSSAgent::asCSSStyleRule(CSSRule* rule)
     return toCSSStyleRule(rule);
 }
 
-template <typename CharType, size_t bufferLength>
-static size_t vendorPrefixLowerCase(const CharType* string, size_t stringLength, char (&buffer)[bufferLength])
-{
-    static const char lowerCaseOffset = 'a' - 'A';
-
-    if (string[0] != '-')
-        return 0;
-
-    for (size_t i = 0; i < stringLength - 1; i++) {
-        CharType c = string[i + 1];
-        if (c == '-')
-            return i;
-        if (i == bufferLength)
-            break;
-        if (c < 'A' || c > 'z')
-            break;
-        if (c >= 'a')
-            buffer[i] = c;
-        else if (c <= 'Z')
-            buffer[i] = c + lowerCaseOffset;
-        else
-            break;
-    }
-    return 0;
-}
-
 InspectorCSSAgent::InspectorCSSAgent(InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
     : InspectorBaseAgent<InspectorCSSAgent>("CSS")
     , m_frontend(0)
@@ -665,13 +639,20 @@ bool InspectorCSSAgent::forcePseudoState(Element* element, CSSSelector::PseudoTy
 void InspectorCSSAgent::getMatchedStylesForNode(ErrorString* errorString, int nodeId, const bool* includePseudo, const bool* includeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> >& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches> >& pseudoIdMatches, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry> >& inheritedEntries)
 {
     Element* element = elementForId(errorString, nodeId);
-    if (!element)
+    if (!element) {
+        *errorString = "Node not found";
         return;
+    }
 
     Element* originalElement = element;
     PseudoId elementPseudoId = element->pseudoId();
-    if (elementPseudoId)
+    if (elementPseudoId) {
         element = element->parentOrShadowHostElement();
+        if (!element) {
+            *errorString = "Pseudo element has no parent";
+            return;
+        }
+    }
 
     Document* ownerDocument = element->ownerDocument();
     // A non-active document has no styles.
@@ -748,7 +729,7 @@ void InspectorCSSAgent::getComputedStyleForNode(ErrorString* errorString, int no
     if (!node)
         return;
 
-    RefPtr<CSSComputedStyleDeclaration> computedStyleInfo = CSSComputedStyleDeclaration::create(node, true);
+    RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> computedStyleInfo = CSSComputedStyleDeclaration::create(node, true);
     RefPtr<InspectorStyle> inspectorStyle = InspectorStyle::create(InspectorCSSId(), computedStyleInfo, 0);
     style = inspectorStyle->buildArrayForComputedStyle();
 }
@@ -778,7 +759,7 @@ void InspectorCSSAgent::getPlatformFontsForNode(ErrorString* errorString, int no
     if (!node)
         return;
 
-    RefPtr<CSSComputedStyleDeclaration> computedStyleInfo = CSSComputedStyleDeclaration::create(node, true);
+    RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> computedStyleInfo = CSSComputedStyleDeclaration::create(node, true);
     *cssFamilyName = computedStyleInfo->getPropertyValue(CSSPropertyFontFamily);
 
     Vector<Node*> textNodes;
@@ -839,17 +820,62 @@ void InspectorCSSAgent::setStyleSheetText(ErrorString* errorString, const String
     *errorString = InspectorDOMAgent::toErrorString(exceptionState);
 }
 
-void InspectorCSSAgent::setPropertyText(ErrorString* errorString, const RefPtr<JSONObject>& fullStyleId, int propertyIndex, const String& text, bool overwrite, RefPtr<TypeBuilder::CSS::CSSStyle>& result)
+static bool extractRangeComponent(ErrorString* errorString, const RefPtr<JSONObject>& range, const String& component, unsigned& result)
 {
-    InspectorCSSId compoundId(fullStyleId);
-    if (compoundId.isEmpty()) {
-        *errorString = "Failed to parse styleId argument";
-        return;
+    int parsedValue;
+    if (!range->getNumber(component, &parsedValue) || parsedValue < 0) {
+        *errorString = "range." + component + " must be a non-negative integer";
+        return false;
+    }
+    result = parsedValue;
+    return true;
+}
+
+static bool jsonRangeToSourceRange(ErrorString* errorString, InspectorStyleSheetBase* inspectorStyleSheet, const RefPtr<JSONObject>& range, SourceRange* sourceRange)
+{
+    unsigned startLineNumber;
+    unsigned startColumn;
+    unsigned endLineNumber;
+    unsigned endColumn;
+    if (!extractRangeComponent(errorString, range, "startLine", startLineNumber)
+        || !extractRangeComponent(errorString, range, "startColumn", startColumn)
+        || !extractRangeComponent(errorString, range, "endLine", endLineNumber)
+        || !extractRangeComponent(errorString, range, "endColumn", endColumn))
+        return false;
+
+    unsigned startOffset;
+    unsigned endOffset;
+    bool success = inspectorStyleSheet->lineNumberAndColumnToOffset(startLineNumber, startColumn, &startOffset)
+        && inspectorStyleSheet->lineNumberAndColumnToOffset(endLineNumber, endColumn, &endOffset);
+    if (!success) {
+        *errorString = "Specified range is out of bounds";
+        return false;
     }
 
-    InspectorStyleSheetBase* inspectorStyleSheet = assertStyleSheetForId(errorString, compoundId.styleSheetId());
+    if (startOffset > endOffset) {
+        *errorString = "Range start must not succeed its end";
+        return false;
+    }
+    sourceRange->start = startOffset;
+    sourceRange->end = endOffset;
+    return true;
+}
+
+void InspectorCSSAgent::setPropertyText(ErrorString* errorString, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result)
+{
+    InspectorStyleSheetBase* inspectorStyleSheet = assertStyleSheetForId(errorString, styleSheetId);
     if (!inspectorStyleSheet)
         return;
+    SourceRange propertyRange;
+    if (!jsonRangeToSourceRange(errorString, inspectorStyleSheet, range, &propertyRange))
+        return;
+    InspectorCSSId compoundId;
+    unsigned propertyIndex;
+    bool overwrite;
+    if (!inspectorStyleSheet->findPropertyByRange(propertyRange, &compoundId, &propertyIndex, &overwrite)) {
+        *errorString = "Source range didn't match any existing property source range nor any property insertion point";
+        return;
+    }
 
     TrackExceptionState exceptionState;
     bool success = m_domAgent->history()->perform(adoptRef(new SetPropertyTextAction(inspectorStyleSheet, compoundId, propertyIndex, text, overwrite)), exceptionState);
@@ -858,18 +884,22 @@ void InspectorCSSAgent::setPropertyText(ErrorString* errorString, const RefPtr<J
     *errorString = InspectorDOMAgent::toErrorString(exceptionState);
 }
 
-void InspectorCSSAgent::setRuleSelector(ErrorString* errorString, const RefPtr<JSONObject>& fullRuleId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result)
+void InspectorCSSAgent::setRuleSelector(ErrorString* errorString, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result)
 {
-    InspectorCSSId compoundId(fullRuleId);
-    ASSERT(!compoundId.isEmpty());
-
-    InspectorStyleSheet* inspectorStyleSheet = assertInspectorStyleSheetForId(errorString, compoundId.styleSheetId());
+    InspectorStyleSheet* inspectorStyleSheet = assertInspectorStyleSheetForId(errorString, styleSheetId);
     if (!inspectorStyleSheet)
         return;
+    SourceRange selectorRange;
+    if (!jsonRangeToSourceRange(errorString, inspectorStyleSheet, range, &selectorRange))
+        return;
+    InspectorCSSId compoundId;
+    if (!inspectorStyleSheet->findRuleBySelectorRange(selectorRange, &compoundId)) {
+        *errorString = "Source range didn't match any rule selector source range";
+        return;
+    }
 
     TrackExceptionState exceptionState;
     bool success = m_domAgent->history()->perform(adoptRef(new SetRuleSelectorAction(inspectorStyleSheet, compoundId, selector)), exceptionState);
-
     if (success) {
         CSSStyleRule* rule = inspectorStyleSheet->ruleForId(compoundId);
         result = inspectorStyleSheet->buildObjectForRule(rule, buildMediaListChain(rule));
@@ -1090,11 +1120,10 @@ void InspectorCSSAgent::collectAllStyleSheets(Vector<InspectorStyleSheet*>& resu
 
 void InspectorCSSAgent::collectAllDocumentStyleSheets(Document* document, Vector<CSSStyleSheet*>& result)
 {
-    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > activeStyleSheets = document->styleEngine()->activeStyleSheetsForInspector();
-    for (WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >::const_iterator it = activeStyleSheets.begin(); it != activeStyleSheets.end(); ++it) {
-        StyleSheet* styleSheet = (*it).get();
-        if (styleSheet->isCSSStyleSheet())
-            collectStyleSheets(toCSSStyleSheet(styleSheet), result);
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > activeStyleSheets = document->styleEngine()->activeStyleSheetsForInspector();
+    for (WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >::const_iterator it = activeStyleSheets.begin(); it != activeStyleSheets.end(); ++it) {
+        CSSStyleSheet* styleSheet = (*it).get();
+        collectStyleSheets(styleSheet, result);
     }
 }
 

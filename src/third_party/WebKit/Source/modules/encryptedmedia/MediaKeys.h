@@ -30,9 +30,9 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventTarget.h"
-#include "heap/Handle.h"
 #include "modules/encryptedmedia/MediaKeySession.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -98,7 +98,9 @@ protected:
     Deque<InitializeNewSessionData> m_pendingInitializeNewSessionData;
     Timer<MediaKeys> m_initializeNewSessionTimer;
 
+#if !ENABLE(OILPAN)
     WeakPtrFactory<MediaKeys> m_weakFactory;
+#endif
 };
 
 }

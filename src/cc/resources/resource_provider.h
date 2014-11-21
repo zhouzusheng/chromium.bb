@@ -75,11 +75,12 @@ class CC_EXPORT ResourceProvider {
       SharedBitmapManager* shared_bitmap_manager,
       int highp_threshold_min,
       bool use_rgba_4444_texture_format,
-      size_t id_allocation_chunk_size);
+      size_t id_allocation_chunk_size,
+      bool use_distance_field_text);
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
-  bool InitializeGL();
+  void InitializeGL();
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
@@ -88,6 +89,7 @@ class CC_EXPORT ResourceProvider {
     return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
   }
   ResourceFormat best_texture_format() const { return best_texture_format_; }
+  bool use_sync_query() const { return use_sync_query_; }
   size_t num_resources() const { return resources_.size(); }
 
   // Checks whether a resource is in use by a consumer.
@@ -124,10 +126,9 @@ class CC_EXPORT ResourceProvider {
                              ResourceFormat format);
 
   ResourceId CreateBitmap(const gfx::Size& size, GLint wrap_mode);
-  // Wraps an external texture into a GL resource.
-  ResourceId CreateResourceFromExternalTexture(
-      unsigned texture_target,
-      unsigned texture_id);
+  // Wraps an IOSurface into a GL resource.
+  ResourceId CreateResourceFromIOSurface(const gfx::Size& size,
+                                         unsigned io_surface_id);
 
   // Wraps an external texture mailbox into a GL resource.
   ResourceId CreateResourceFromTextureMailbox(
@@ -324,13 +325,14 @@ class CC_EXPORT ResourceProvider {
   SkCanvas* MapDirectRasterBuffer(ResourceId id);
   void UnmapDirectRasterBuffer(ResourceId id);
 
-  // Returns a canvas backed by an image buffer.
+  // Returns a canvas backed by an image buffer. UnmapImageRasterBuffer
+  // returns true if canvas was written to while mapped.
   // Rasterizing to the canvas writes the content into the image buffer,
   // which is internally bound to the underlying resource when read.
   // Call Unmap before the resource can be read or used for compositing.
   // It is used by ImageRasterWorkerPool.
   SkCanvas* MapImageRasterBuffer(ResourceId id);
-  void UnmapImageRasterBuffer(ResourceId id);
+  bool UnmapImageRasterBuffer(ResourceId id);
 
   // Returns a canvas backed by pixel buffer. UnmapPixelRasterBuffer
   // returns true if canvas was written to while mapped.
@@ -359,16 +361,16 @@ class CC_EXPORT ResourceProvider {
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
   // until this fence has passed.
-  void SetReadLockFence(scoped_refptr<Fence> fence) {
-    current_read_lock_fence_ = fence;
-  }
-  Fence* GetReadLockFence() { return current_read_lock_fence_.get(); }
+  void SetReadLockFence(Fence* fence) { current_read_lock_fence_ = fence; }
 
   // Enable read lock fences for a specific resource.
   void EnableReadLockFences(ResourceProvider::ResourceId id, bool enable);
 
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
+
+  // Copy pixels from source to destination.
+  void CopyResource(ResourceId source_id, ResourceId dest_id);
 
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
@@ -409,10 +411,11 @@ class CC_EXPORT ResourceProvider {
     unsigned gl_pixel_buffer_id;
     // Query used to determine when asynchronous set pixels complete.
     unsigned gl_upload_query_id;
+    // Query used to determine when read lock fence has passed.
+    unsigned gl_read_lock_query_id;
     TextureMailbox mailbox;
     ReleaseCallback release_callback;
     uint8_t* pixels;
-    uint8_t* pixel_buffer;
     int lock_for_read_count;
     int imported_count;
     int exported_count;
@@ -474,7 +477,8 @@ class CC_EXPORT ResourceProvider {
   class DirectRasterBuffer : public RasterBuffer {
    public:
     DirectRasterBuffer(const Resource* resource,
-                       ResourceProvider* resource_provider);
+                       ResourceProvider* resource_provider,
+                       bool use_distance_field_text);
     virtual ~DirectRasterBuffer();
 
    protected:
@@ -485,6 +489,7 @@ class CC_EXPORT ResourceProvider {
    private:
     skia::RefPtr<SkSurface> surface_;
     uint32_t surface_generation_id_;
+    const bool use_distance_field_text_;
 
     DISALLOW_COPY_AND_ASSIGN(DirectRasterBuffer);
   };
@@ -563,7 +568,8 @@ class CC_EXPORT ResourceProvider {
                    SharedBitmapManager* shared_bitmap_manager,
                    int highp_threshold_min,
                    bool use_rgba_4444_texture_format,
-                   size_t id_allocation_chunk_size);
+                   size_t id_allocation_chunk_size,
+                   bool use_distance_field_text);
 
   void CleanUpGLIfNeeded();
 
@@ -646,6 +652,10 @@ class CC_EXPORT ResourceProvider {
   const size_t id_allocation_chunk_size_;
   scoped_ptr<IdAllocator> texture_id_allocator_;
   scoped_ptr<IdAllocator> buffer_id_allocator_;
+
+  bool use_sync_query_;
+
+  bool use_distance_field_text_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

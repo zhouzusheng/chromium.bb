@@ -82,16 +82,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-class ListAttributeTargetObserver : IdTargetObserver {
-    WTF_MAKE_FAST_ALLOCATED;
+class ListAttributeTargetObserver : public IdTargetObserver {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
+    static PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
+    virtual void trace(Visitor*) OVERRIDE;
     virtual void idTargetChanged() OVERRIDE;
 
 private:
     ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement*);
 
-    HTMLInputElement* m_element;
+    RawPtrWillBeMember<HTMLInputElement> m_element;
 };
 
 // FIXME: According to HTML4, the length attribute's value can be arbitrarily
@@ -110,7 +111,6 @@ HTMLInputElement::HTMLInputElement(Document& document, HTMLFormElement* form, bo
     , m_isChecked(false)
     , m_reflectsCheckedAttribute(true)
     , m_isIndeterminate(false)
-    , m_hasType(false)
     , m_isActivatedSubmit(false)
     , m_autocomplete(Uninitialized)
     , m_hasNonEmptyList(false)
@@ -120,6 +120,7 @@ HTMLInputElement::HTMLInputElement(Document& document, HTMLFormElement* form, bo
     , m_canReceiveDroppedFiles(false)
     , m_hasTouchEventHandler(false)
     , m_shouldRevealPassword(false)
+    , m_needsToUpdateViewValue(true)
     , m_inputType(InputType::createText(*this))
     , m_inputTypeView(m_inputType)
 {
@@ -129,11 +130,19 @@ HTMLInputElement::HTMLInputElement(Document& document, HTMLFormElement* form, bo
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLInputElement> HTMLInputElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLInputElement> HTMLInputElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    RefPtr<HTMLInputElement> inputElement = adoptRef(new HTMLInputElement(document, form, createdByParser));
+    RefPtrWillBeRawPtr<HTMLInputElement> inputElement = adoptRefWillBeRefCountedGarbageCollected(new HTMLInputElement(document, form, createdByParser));
     inputElement->ensureUserAgentShadowRoot();
     return inputElement.release();
+}
+
+void HTMLInputElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_inputType);
+    visitor->trace(m_inputTypeView);
+    visitor->trace(m_listAttributeTargetObserver);
+    HTMLTextFormControlElement::trace(visitor);
 }
 
 HTMLImageLoader* HTMLInputElement::imageLoader()
@@ -148,10 +157,8 @@ void HTMLInputElement::didAddUserAgentShadowRoot(ShadowRoot&)
     m_inputTypeView->createShadowSubtree();
 }
 
-void HTMLInputElement::didAddShadowRoot(ShadowRoot& root)
+void HTMLInputElement::willAddFirstAuthorShadowRoot()
 {
-    if (!root.isOldestAuthorShadowRoot())
-        return;
     m_inputTypeView->destroyShadowSubtree();
     m_inputTypeView = InputTypeView::create(*this);
     lazyReattachIfAttached();
@@ -159,6 +166,7 @@ void HTMLInputElement::didAddShadowRoot(ShadowRoot& root)
 
 HTMLInputElement::~HTMLInputElement()
 {
+#if !ENABLE(OILPAN)
     // Need to remove form association while this is still an HTMLInputElement
     // so that virtual functions are called correctly.
     setForm(0);
@@ -168,6 +176,7 @@ HTMLInputElement::~HTMLInputElement()
         document().formController().radioButtonGroupScope().removeButton(this);
     if (m_hasTouchEventHandler)
         document().didRemoveTouchEventHandler(this);
+#endif
 }
 
 const AtomicString& HTMLInputElement::name() const
@@ -339,7 +348,7 @@ bool HTMLInputElement::shouldShowFocusRingOnMouseFocus() const
 void HTMLInputElement::updateFocusAppearance(bool restorePreviousSelection)
 {
     if (isTextField()) {
-        if (!restorePreviousSelection || !hasCachedSelection())
+        if (!restorePreviousSelection)
             select();
         else
             restoreCachedSelection();
@@ -400,19 +409,11 @@ void HTMLInputElement::setType(const AtomicString& type)
 void HTMLInputElement::updateType()
 {
     const AtomicString& newTypeName = InputType::normalizeTypeName(fastGetAttribute(typeAttr));
-    bool hadType = m_hasType;
-    m_hasType = true;
+
     if (m_inputType->formControlType() == newTypeName)
         return;
 
-    if (hadType && !InputType::canChangeFromAnotherType(newTypeName)) {
-        // Set the attribute back to the old value.
-        // Useful in case we were called from inside parseAttribute.
-        setAttribute(typeAttr, type());
-        return;
-    }
-
-    RefPtr<InputType> newType = InputType::create(*this, newTypeName);
+    RefPtrWillBeRawPtr<InputType> newType = InputType::create(*this, newTypeName);
     removeFromRadioButtonGroup();
 
     bool didStoreValue = m_inputType->storesValueSeparateFromAttribute();
@@ -451,7 +452,7 @@ void HTMLInputElement::updateType()
     } else
         updateValueIfNeeded();
 
-    setFormControlValueMatchesRenderer(false);
+    m_needsToUpdateViewValue = true;
     m_inputTypeView->updateView();
 
     if (didRespectHeightAndWidth != m_inputType->shouldRespectHeightAndWidthAttributes()) {
@@ -643,7 +644,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
             updatePlaceholderVisibility(false);
             setNeedsStyleRecalc(SubtreeStyleChange);
         }
-        setFormControlValueMatchesRenderer(false);
+        m_needsToUpdateViewValue = true;
         setNeedsValidityCheck();
         m_valueAttributeWasUpdatedAfterParsing = !m_parsingInProgress;
         m_inputTypeView->valueAttributeChanged();
@@ -720,24 +721,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
             listAttributeTargetChanged();
         }
         UseCounter::count(document(), UseCounter::ListAttribute);
-    }
-#if ENABLE(INPUT_SPEECH)
-    else if (name == webkitspeechAttr) {
-        if (RuntimeEnabledFeatures::speechInputEnabled() && m_inputType->shouldRespectSpeechAttribute()) {
-            // This renderer and its children have quite different layouts and
-            // styles depending on whether the speech button is visible or
-            // not. So we reset the whole thing and recreate to get the right
-            // styles and layout.
-            m_inputTypeView->destroyShadowSubtree();
-            lazyReattachIfAttached();
-            m_inputTypeView->createShadowSubtree();
-            setFormControlValueMatchesRenderer(false);
-        }
-        UseCounter::countDeprecation(document(), UseCounter::PrefixedSpeechAttribute);
-    } else if (name == onwebkitspeechchangeAttr)
-        setAttributeEventListener(EventTypeNames::webkitspeechchange, createAttributeEventListener(this, name, value));
-#endif
-    else if (name == webkitdirectoryAttr) {
+    } else if (name == webkitdirectoryAttr) {
         HTMLTextFormControlElement::parseAttribute(name, value);
         UseCounter::count(document(), UseCounter::PrefixedDirectoryAttribute);
     }
@@ -770,9 +754,6 @@ RenderObject* HTMLInputElement::createRenderer(RenderStyle* style)
 
 void HTMLInputElement::attach(const AttachContext& context)
 {
-    if (!m_hasType)
-        updateType();
-
     HTMLTextFormControlElement::attach(context);
 
     m_inputTypeView->startResourceLoading();
@@ -785,7 +766,7 @@ void HTMLInputElement::attach(const AttachContext& context)
 void HTMLInputElement::detach(const AttachContext& context)
 {
     HTMLTextFormControlElement::detach(context);
-    setFormControlValueMatchesRenderer(false);
+    m_needsToUpdateViewValue = true;
     m_inputTypeView->closePopupView();
 }
 
@@ -856,7 +837,7 @@ void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventB
     if (checked() == nowChecked)
         return;
 
-    RefPtr<HTMLInputElement> protector(this);
+    RefPtrWillBeRawPtr<HTMLInputElement> protector(this);
     m_reflectsCheckedAttribute = false;
     m_isChecked = nowChecked;
     setNeedsStyleRecalc(SubtreeStyleChange);
@@ -925,7 +906,7 @@ void HTMLInputElement::copyNonAttributePropertiesFromElement(const Element& sour
 
     HTMLTextFormControlElement::copyNonAttributePropertiesFromElement(source);
 
-    setFormControlValueMatchesRenderer(false);
+    m_needsToUpdateViewValue = true;
     m_inputTypeView->updateView();
 }
 
@@ -971,7 +952,7 @@ void HTMLInputElement::setSuggestedValue(const String& value)
 {
     if (!m_inputType->canSetSuggestedValue())
         return;
-    setFormControlValueMatchesRenderer(false);
+    m_needsToUpdateViewValue = true;
     m_suggestedValue = sanitizeValue(value);
     setNeedsStyleRecalc(SubtreeStyleChange);
     m_inputTypeView->updateView();
@@ -993,6 +974,12 @@ void HTMLInputElement::setEditingValue(const String& value)
     dispatchInputEvent();
 }
 
+void HTMLInputElement::setInnerTextValue(const String& value)
+{
+    HTMLTextFormControlElement::setInnerTextValue(value);
+    m_needsToUpdateViewValue = false;
+}
+
 void HTMLInputElement::setValue(const String& value, ExceptionState& exceptionState, TextFieldEventBehavior eventBehavior)
 {
     if (isFileUpload() && !value.isEmpty()) {
@@ -1007,13 +994,13 @@ void HTMLInputElement::setValue(const String& value, TextFieldEventBehavior even
     if (!m_inputType->canSetValue(value))
         return;
 
-    RefPtr<HTMLInputElement> protector(this);
+    RefPtrWillBeRawPtr<HTMLInputElement> protector(this);
     EventQueueScope scope;
     String sanitizedValue = sanitizeValue(value);
     bool valueChanged = sanitizedValue != this->value();
 
     setLastChangeWasNotUserEdit();
-    setFormControlValueMatchesRenderer(false);
+    m_needsToUpdateViewValue = true;
     m_suggestedValue = String(); // Prevent TextFieldInputType::setValue from using the suggested value.
 
     m_inputType->setValue(sanitizedValue, valueChanged, eventBehavior);
@@ -1031,6 +1018,8 @@ void HTMLInputElement::setValueInternal(const String& sanitizedValue, TextFieldE
 {
     m_valueIfDirty = sanitizedValue;
     setNeedsValidityCheck();
+    if (document().focusedElement() == this)
+        document().frameHost()->chrome().client().didUpdateTextOfFocusedElementByNonUserInput();
 }
 
 void HTMLInputElement::updateView()
@@ -1038,9 +1027,11 @@ void HTMLInputElement::updateView()
     m_inputTypeView->updateView();
 }
 
-double HTMLInputElement::valueAsDate() const
+double HTMLInputElement::valueAsDate(bool& isNull) const
 {
-    return m_inputType->valueAsDate();
+    double date =  m_inputType->valueAsDate();
+    isNull = !std::isfinite(date);
+    return date;
 }
 
 void HTMLInputElement::setValueAsDate(double value, ExceptionState& exceptionState)
@@ -1055,6 +1046,8 @@ double HTMLInputElement::valueAsNumber() const
 
 void HTMLInputElement::setValueAsNumber(double newValue, ExceptionState& exceptionState, TextFieldEventBehavior eventBehavior)
 {
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-input-element-attributes.html#dom-input-valueasnumber
+    // On setting, if the new value is infinite, then throw a TypeError exception.
     if (std::isinf(newValue)) {
         exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(newValue));
         return;
@@ -1073,8 +1066,7 @@ void HTMLInputElement::setValueFromRenderer(const String& value)
     ASSERT(value == sanitizeValue(value) || sanitizeValue(value).isEmpty());
 
     m_valueIfDirty = value;
-
-    setFormControlValueMatchesRenderer(true);
+    m_needsToUpdateViewValue = false;
 
     // Input event is fired by the Node::defaultEventHandler for editable controls.
     if (!isTextField())
@@ -1170,7 +1162,7 @@ void HTMLInputElement::defaultEventHandler(Event* evt)
         if (wasChangedSinceLastFormControlChangeEvent())
             dispatchFormControlChangeEvent();
 
-        RefPtr<HTMLFormElement> formForSubmission = m_inputTypeView->formForSubmission();
+        RefPtrWillBeRawPtr<HTMLFormElement> formForSubmission = m_inputTypeView->formForSubmission();
         // Form may never have been present, or may have been destroyed by code responding to the change event.
         if (formForSubmission)
             formForSubmission->submitImplicitly(evt, canTriggerImplicitSubmission());
@@ -1516,12 +1508,19 @@ bool HTMLInputElement::hasValidDataListOptions() const
     return false;
 }
 
+void HTMLInputElement::setListAttributeTargetObserver(PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> newObserver)
+{
+    if (m_listAttributeTargetObserver)
+        m_listAttributeTargetObserver->unregister();
+    m_listAttributeTargetObserver = newObserver;
+}
+
 void HTMLInputElement::resetListAttributeTargetObserver()
 {
     if (inDocument())
-        m_listAttributeTargetObserver = ListAttributeTargetObserver::create(fastGetAttribute(listAttr), this);
+        setListAttributeTargetObserver(ListAttributeTargetObserver::create(fastGetAttribute(listAttr), this));
     else
-        m_listAttributeTargetObserver = nullptr;
+        setListAttributeTargetObserver(nullptr);
 }
 
 void HTMLInputElement::listAttributeTargetChanged()
@@ -1533,16 +1532,6 @@ bool HTMLInputElement::isSteppable() const
 {
     return m_inputType->isSteppable();
 }
-
-#if ENABLE(INPUT_SPEECH)
-
-bool HTMLInputElement::isSpeechEnabled() const
-{
-    // FIXME: Add support for RANGE, EMAIL, URL, COLOR and DATE/TIME input types.
-    return m_inputType->shouldRespectSpeechAttribute() && RuntimeEnabledFeatures::speechInputEnabled() && hasAttribute(webkitspeechAttr);
-}
-
-#endif
 
 bool HTMLInputElement::isTextButton() const
 {
@@ -1774,15 +1763,21 @@ void HTMLInputElement::setWidth(unsigned width)
     setUnsignedIntegralAttribute(widthAttr, width);
 }
 
-PassOwnPtr<ListAttributeTargetObserver> ListAttributeTargetObserver::create(const AtomicString& id, HTMLInputElement* element)
+PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> ListAttributeTargetObserver::create(const AtomicString& id, HTMLInputElement* element)
 {
-    return adoptPtr(new ListAttributeTargetObserver(id, element));
+    return adoptPtrWillBeNoop(new ListAttributeTargetObserver(id, element));
 }
 
 ListAttributeTargetObserver::ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement* element)
     : IdTargetObserver(element->treeScope().idTargetObserverRegistry(), id)
     , m_element(element)
 {
+}
+
+void ListAttributeTargetObserver::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
+    IdTargetObserver::trace(visitor);
 }
 
 void ListAttributeTargetObserver::idTargetChanged()
@@ -1885,5 +1880,10 @@ PassRefPtr<RenderStyle> HTMLInputElement::customStyleForRenderer()
     return m_inputTypeView->customStyleForRenderer(originalStyleForRenderer());
 }
 #endif
+
+bool HTMLInputElement::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
+{
+    return m_inputType->shouldDispatchFormControlChangeEvent(oldValue, newValue);
+}
 
 } // namespace

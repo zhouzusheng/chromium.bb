@@ -38,13 +38,13 @@
 #include "core/loader/CookieJar.h"
 #include "modules/websockets/WebSocket.h"
 #include "platform/Cookie.h"
+#include "platform/Crypto.h"
 #include "platform/Logging.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "wtf/CryptographicallyRandomNumber.h"
-#include "wtf/SHA1.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/StringExtras.h"
 #include "wtf/Vector.h"
@@ -55,22 +55,10 @@
 
 namespace WebCore {
 
-namespace {
-
-// FIXME: The spec says that the Sec-WebSocket-Protocol header in a handshake
-// response can't be null if the header in a request is not null.
-// Some servers are not accustomed to the shutdown,
-// so we provide an adhoc white-list for it tentatively.
-const char* const missingProtocolWhiteList[] = {
-    "ica.citrix.com",
-};
-
 String formatHandshakeFailureReason(const String& detail)
 {
     return "Error during WebSocket handshake: " + detail;
 }
-
-} // namespace
 
 static String resourceName(const KURL& url)
 {
@@ -119,14 +107,17 @@ static String generateSecWebSocketKey()
 String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocketKey)
 {
     static const char webSocketKeyGUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    SHA1 sha1;
     CString keyData = secWebSocketKey.ascii();
-    sha1.addBytes(reinterpret_cast<const uint8_t*>(keyData.data()), keyData.length());
-    sha1.addBytes(reinterpret_cast<const uint8_t*>(webSocketKeyGUID), strlen(webSocketKeyGUID));
-    Vector<uint8_t, SHA1::outputSizeBytes> hash;
-    sha1.computeHash(hash);
-    return base64Encode(reinterpret_cast<const char*>(hash.data()),
-        SHA1::outputSizeBytes);
+
+    StringBuilder digestable;
+    digestable.append(secWebSocketKey);
+    digestable.append(webSocketKeyGUID, strlen(webSocketKeyGUID));
+    CString digestableCString = digestable.toString().utf8();
+    DigestValue digest;
+    bool digestSuccess = computeDigest(HashAlgorithmSha1, digestableCString.data(), digestableCString.length(), digest);
+    RELEASE_ASSERT(digestSuccess);
+
+    return base64Encode(reinterpret_cast<const char*>(digest.data()), sha1HashSize);
 }
 
 WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, Document* document)
@@ -208,13 +199,6 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     fields.append("Origin: " + clientOrigin());
     if (!m_clientProtocol.isEmpty())
         fields.append("Sec-WebSocket-Protocol: " + m_clientProtocol);
-
-    KURL url = httpURLForAuthenticationAndCookies();
-
-    String cookie = cookieRequestHeaderFieldValue(m_document, url);
-    if (!cookie.isEmpty())
-        fields.append("Cookie: " + cookie);
-    // Set "Cookie2: <cookie>" if cookies 2 exists for url?
 
     // Add no-cache headers to avoid compatibility issue.
     // There are some proxies that rewrite "Connection: upgrade"
@@ -347,16 +331,6 @@ String WebSocketHandshake::failureReason() const
 const AtomicString& WebSocketHandshake::serverWebSocketProtocol() const
 {
     return m_response.headerFields().get("sec-websocket-protocol");
-}
-
-const AtomicString& WebSocketHandshake::serverSetCookie() const
-{
-    return m_response.headerFields().get("set-cookie");
-}
-
-const AtomicString& WebSocketHandshake::serverSetCookie2() const
-{
-    return m_response.headerFields().get("set-cookie2");
 }
 
 const AtomicString& WebSocketHandshake::serverUpgrade() const
@@ -565,20 +539,8 @@ bool WebSocketHandshake::checkResponseHeaders()
             return false;
         }
     } else if (!m_clientProtocol.isEmpty()) {
-        // FIXME: Some servers are not accustomed to this failure, so we provide an adhoc white-list for it tentatively.
-        Vector<String> protocols;
-        m_clientProtocol.split(String(WebSocket::subProtocolSeperator()), protocols);
-        bool match = false;
-        for (size_t i = 0; i < protocols.size() && !match; ++i) {
-            for (size_t j = 0; j < WTF_ARRAY_LENGTH(missingProtocolWhiteList) && !match; ++j) {
-                if (protocols[i] == missingProtocolWhiteList[j])
-                    match = true;
-            }
-        }
-        if (!match) {
-            m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
-            return false;
-        }
+        m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
+        return false;
     }
     return true;
 }

@@ -24,8 +24,8 @@
 #define ElementStyleResources_h
 
 #include "CSSPropertyNames.h"
-#include "heap/Handle.h"
 #include "platform/graphics/Color.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 
@@ -52,10 +52,10 @@ WTF_MAKE_NONCOPYABLE(ElementStyleResources);
 public:
     ElementStyleResources();
 
-    PassRefPtr<StyleImage> styleImage(const TextLinkColors&, Color currentColor, CSSPropertyID, CSSValue*);
+    PassRefPtr<StyleImage> styleImage(Document&, const TextLinkColors&, Color currentColor, CSSPropertyID, CSSValue*);
 
     PassRefPtr<StyleImage> generatedOrPendingFromValue(CSSPropertyID, CSSImageGeneratorValue*);
-    PassRefPtr<StyleImage> cachedOrPendingFromValue(CSSPropertyID, CSSImageValue*);
+    PassRefPtr<StyleImage> cachedOrPendingFromValue(Document&, CSSPropertyID, CSSImageValue*);
     PassRefPtr<StyleImage> setOrPendingFromValue(CSSPropertyID, CSSImageSetValue*);
     PassRefPtr<StyleImage> cursorOrPendingFromValue(CSSPropertyID, CSSCursorImageValue*);
 

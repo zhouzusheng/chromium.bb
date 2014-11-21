@@ -115,7 +115,7 @@ void InspectorCanvasAgent::disable(ErrorString*)
 void InspectorCanvasAgent::dropTraceLog(ErrorString* errorString, const TraceLogId& traceLogId)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.dropTraceLog(errorString, traceLogId);
 }
 
@@ -137,8 +137,8 @@ void InspectorCanvasAgent::captureFrame(ErrorString* errorString, const FrameId*
     LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->mainFrame();
     if (!frame)
         return;
-    InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, mainWorldScriptState(frame));
-    if (!module.hasNoValue())
+    InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, ScriptState::forMainWorld(frame));
+    if (!module.isEmpty())
         module.captureFrame(errorString, traceLogId);
 }
 
@@ -147,43 +147,43 @@ void InspectorCanvasAgent::startCapturing(ErrorString* errorString, const FrameI
     LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->mainFrame();
     if (!frame)
         return;
-    InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, mainWorldScriptState(frame));
-    if (!module.hasNoValue())
+    InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, ScriptState::forMainWorld(frame));
+    if (!module.isEmpty())
         module.startCapturing(errorString, traceLogId);
 }
 
 void InspectorCanvasAgent::stopCapturing(ErrorString* errorString, const TraceLogId& traceLogId)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.stopCapturing(errorString, traceLogId);
 }
 
 void InspectorCanvasAgent::getTraceLog(ErrorString* errorString, const TraceLogId& traceLogId, const int* startOffset, const int* maxLength, RefPtr<TraceLog>& traceLog)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.traceLog(errorString, traceLogId, startOffset, maxLength, &traceLog);
 }
 
 void InspectorCanvasAgent::replayTraceLog(ErrorString* errorString, const TraceLogId& traceLogId, int stepNo, RefPtr<ResourceState>& result, double* replayTime)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.replayTraceLog(errorString, traceLogId, stepNo, &result, replayTime);
 }
 
 void InspectorCanvasAgent::getResourceState(ErrorString* errorString, const TraceLogId& traceLogId, const ResourceId& resourceId, RefPtr<ResourceState>& result)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.resourceState(errorString, traceLogId, resourceId, &result);
 }
 
 void InspectorCanvasAgent::evaluateTraceLogCallArgument(ErrorString* errorString, const TraceLogId& traceLogId, int callIndex, int argumentIndex, const String* objectGroup, RefPtr<RemoteObject>& result, RefPtr<ResourceState>& resourceState)
 {
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, traceLogId);
-    if (!module.hasNoValue())
+    if (!module.isEmpty())
         module.evaluateTraceLogCallArgument(errorString, traceLogId, callIndex, argumentIndex, objectGroup ? *objectGroup : String(), &result, &resourceState);
 }
 
@@ -191,7 +191,7 @@ ScriptObject InspectorCanvasAgent::wrapCanvas2DRenderingContextForInstrumentatio
 {
     ErrorString error;
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(&error, context);
-    if (module.hasNoValue())
+    if (module.isEmpty())
         return ScriptObject();
     return notifyRenderingContextWasWrapped(module.wrapCanvas2DContext(context));
 }
@@ -200,7 +200,7 @@ ScriptObject InspectorCanvasAgent::wrapWebGLRenderingContextForInstrumentation(c
 {
     ErrorString error;
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(&error, glContext);
-    if (module.hasNoValue())
+    if (module.isEmpty())
         return ScriptObject();
     return notifyRenderingContextWasWrapped(module.wrapWebGLContext(glContext));
 }
@@ -226,7 +226,7 @@ InjectedScriptCanvasModule InspectorCanvasAgent::injectedScriptCanvasModule(Erro
     if (!checkIsEnabled(errorString))
         return InjectedScriptCanvasModule();
     InjectedScriptCanvasModule module = InjectedScriptCanvasModule::moduleForState(m_injectedScriptManager, scriptState);
-    if (module.hasNoValue()) {
+    if (module.isEmpty()) {
         ASSERT_NOT_REACHED();
         *errorString = "Internal error: no Canvas module";
     }
@@ -237,7 +237,7 @@ InjectedScriptCanvasModule InspectorCanvasAgent::injectedScriptCanvasModule(Erro
 {
     if (!checkIsEnabled(errorString))
         return InjectedScriptCanvasModule();
-    if (scriptObject.hasNoValue()) {
+    if (scriptObject.isEmpty()) {
         ASSERT_NOT_REACHED();
         *errorString = "Internal error: original ScriptObject has no value";
         return InjectedScriptCanvasModule();
@@ -250,7 +250,7 @@ InjectedScriptCanvasModule InspectorCanvasAgent::injectedScriptCanvasModule(Erro
     if (!checkIsEnabled(errorString))
         return InjectedScriptCanvasModule();
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *errorString = "Inspected frame has gone";
         return InjectedScriptCanvasModule();
     }
@@ -340,8 +340,8 @@ void InspectorCanvasAgent::didBeginFrame()
         return;
     ErrorString error;
     for (FramesWithUninstrumentedCanvases::const_iterator it = m_framesWithUninstrumentedCanvases.begin(); it != m_framesWithUninstrumentedCanvases.end(); ++it) {
-        InjectedScriptCanvasModule module = injectedScriptCanvasModule(&error, mainWorldScriptState(it->key));
-        if (!module.hasNoValue())
+        InjectedScriptCanvasModule module = injectedScriptCanvasModule(&error, ScriptState::forMainWorld(it->key));
+        if (!module.isEmpty())
             module.markFrameEnd();
     }
 }

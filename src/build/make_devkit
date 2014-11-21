@@ -236,7 +236,6 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'bb_generate_map_files', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'bb_version', version)
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
-  applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'win_embed_manifest', '1')
 

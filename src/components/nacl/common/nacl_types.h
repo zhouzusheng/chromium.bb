@@ -38,9 +38,6 @@ inline int ToNativeHandle(const FileDescriptor& desc) {
 
 
 // Parameters sent to the NaCl process when we start it.
-//
-// If you change this, you will also need to update the IPC serialization in
-// nacl_messages.h.
 struct NaClStartParams {
   NaClStartParams();
   ~NaClStartParams();
@@ -60,7 +57,9 @@ struct NaClStartParams {
   bool enable_ipc_proxy;
   bool uses_irt;
   bool enable_dyncode_syscalls;
-  bool uses_nonsfi_mode;
+  // NOTE: Any new fields added here must also be added to the IPC
+  // serialization in nacl_messages.h and (for POD fields) the constructor
+  // in nacl_types.cc.
 };
 
 // Parameters sent to the browser process to have it launch a NaCl process.
@@ -90,11 +89,13 @@ struct NaClLaunchParams {
 
 struct NaClLaunchResult {
   NaClLaunchResult();
-  NaClLaunchResult(FileDescriptor imc_channel_handle,
-                   const IPC::ChannelHandle& ppapi_ipc_channel_handle,
-                   const IPC::ChannelHandle& trusted_ipc_channel_handle,
-                   base::ProcessId plugin_pid,
-                   int plugin_child_id);
+  NaClLaunchResult(
+      FileDescriptor imc_channel_handle,
+      const IPC::ChannelHandle& ppapi_ipc_channel_handle,
+      const IPC::ChannelHandle& trusted_ipc_channel_handle,
+      const IPC::ChannelHandle& manifest_service_ipc_channel_handle,
+      base::ProcessId plugin_pid,
+      int plugin_child_id);
   ~NaClLaunchResult();
 
   // For plugin loader <-> renderer IMC communication.
@@ -106,6 +107,10 @@ struct NaClLaunchResult {
   // For plugin loader <-> renderer control communication (loading and
   // starting nexe).
   IPC::ChannelHandle trusted_ipc_channel_handle;
+
+  // For plugin <-> renderer ManifestService communication.
+  IPC::ChannelHandle manifest_service_ipc_channel_handle;
+
   base::ProcessId plugin_pid;
   int plugin_child_id;
 };

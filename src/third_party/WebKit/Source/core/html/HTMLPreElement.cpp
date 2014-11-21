@@ -27,6 +27,7 @@
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
 #include "core/css/StylePropertySet.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -38,9 +39,9 @@ inline HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document& do
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtrWillBeRawPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document& document)
 {
-    return adoptRef(new HTMLPreElement(tagName, document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLPreElement(tagName, document));
 }
 
 bool HTMLPreElement::isPresentationAttribute(const QualifiedName& name) const
@@ -52,10 +53,12 @@ bool HTMLPreElement::isPresentationAttribute(const QualifiedName& name) const
 
 void HTMLPreElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (name == wrapAttr)
+    if (name == wrapAttr) {
+        UseCounter::count(document(), UseCounter::HTMLPreElementWrap);
         style->setProperty(CSSPropertyWhiteSpace, CSSValuePreWrap);
-    else
+    } else {
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+    }
 }
 
 }

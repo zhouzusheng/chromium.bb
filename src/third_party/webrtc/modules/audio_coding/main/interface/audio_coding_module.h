@@ -15,7 +15,9 @@
 
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
+#include "webrtc/modules/audio_coding/neteq4/interface/neteq.h"
 #include "webrtc/modules/interface/module.h"
+#include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -25,7 +27,6 @@ struct CodecInst;
 struct WebRtcRTPHeader;
 class AudioFrame;
 class RTPFragmentationHeader;
-class Clock;
 
 #define WEBRTC_10MS_PCM_AUDIO 960  // 16 bits super wideband 48 kHz
 
@@ -73,15 +74,22 @@ class ACMVQMonCallback {
       const uint16_t delayMS) = 0;  // average delay in ms
 };
 
-// Version string for testing, to distinguish instances of ACM1 from ACM2.
-extern const char kLegacyAcmVersion[];
-extern const char kExperimentalAcmVersion[];
-
 class AudioCodingModule: public Module {
  protected:
   AudioCodingModule() {}
 
  public:
+  struct Config {
+    Config()
+        : id(0),
+          neteq_config(),
+          clock(Clock::GetRealTimeClock()) {}
+
+    int id;
+    NetEq::Config neteq_config;
+    Clock* clock;
+  };
+
   ///////////////////////////////////////////////////////////////////////////
   // Creation and destruction of a ACM.
   //
@@ -177,11 +185,6 @@ class AudioCodingModule: public Module {
   //   false if any parameter is not valid.
   //
   static bool IsCodecValid(const CodecInst& codec);
-
-  // Returns the version of ACM. This facilitates distinguishing instances of
-  // ACM1 from ACM2 while testing. This API will be removed when ACM1 is
-  // completely removed.
-  virtual const char* Version() const = 0;
 
   ///////////////////////////////////////////////////////////////////////////
   //   Sender
@@ -934,20 +937,6 @@ class AudioCodingModule: public Module {
 
   virtual void GetDecodingCallStatistics(
       AudioDecodingCallStats* call_stats) const = 0;
-};
-
-struct AudioCodingModuleFactory {
-  AudioCodingModuleFactory() {}
-  virtual ~AudioCodingModuleFactory() {}
-
-  virtual AudioCodingModule* Create(int id) const;
-};
-
-struct NewAudioCodingModuleFactory : AudioCodingModuleFactory {
-  NewAudioCodingModuleFactory() {}
-  virtual ~NewAudioCodingModuleFactory() {}
-
-  virtual AudioCodingModule* Create(int id) const;
 };
 
 }  // namespace webrtc

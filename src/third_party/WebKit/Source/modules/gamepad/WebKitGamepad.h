@@ -6,18 +6,18 @@
 #define WebKitGamepad_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
 #include "modules/gamepad/GamepadCommon.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class WebKitGamepad FINAL : public RefCountedWillBeGarbageCollectedFinalized<WebKitGamepad>, public GamepadCommon, public ScriptWrappable {
+class WebKitGamepad FINAL : public GarbageCollectedFinalized<WebKitGamepad>, public GamepadCommon, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<WebKitGamepad> create()
+    static WebKitGamepad* create()
     {
-        return adoptRefWillBeNoop(new WebKitGamepad);
+        return new WebKitGamepad();
     }
     ~WebKitGamepad();
 

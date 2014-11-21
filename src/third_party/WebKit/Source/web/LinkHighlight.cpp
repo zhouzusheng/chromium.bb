@@ -25,12 +25,9 @@
 
 #include "config.h"
 
-#include "LinkHighlight.h"
+#include "web/LinkHighlight.h"
 
 #include "SkMatrix44.h"
-#include "WebFrameImpl.h"
-#include "WebKit.h"
-#include "WebViewImpl.h"
 #include "core/dom/Node.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -48,6 +45,9 @@
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebSize.h"
+#include "public/web/WebKit.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/Vector.h"
 
@@ -113,27 +113,25 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
     // Find the nearest enclosing composited layer and attach to it. We may need to cross frame boundaries
     // to find a suitable layer.
     RenderObject* renderer = m_node->renderer();
-    RenderLayerModelObject* repaintContainer;
+    RenderLayer* renderLayer;
     do {
-        repaintContainer = renderer->containerForRepaint();
-        if (!repaintContainer) {
+        renderLayer = renderer->enclosingLayer()->enclosingCompositingLayerForRepaint();
+        if (!renderLayer) {
             renderer = renderer->frame()->ownerRenderer();
             if (!renderer)
                 return 0;
         }
-    } while (!repaintContainer);
-    RenderLayer* renderLayer = repaintContainer->layer();
+    } while (!renderLayer);
 
-    if (!renderLayer || renderLayer->compositingState() == NotComposited)
-        return 0;
+    CompositedLayerMappingPtr compositedLayerMapping = renderLayer->compositingState() == PaintsIntoGroupedBacking ? renderLayer->groupedMapping() : renderLayer->compositedLayerMapping();
+    GraphicsLayer* newGraphicsLayer = renderLayer->compositingState() == PaintsIntoGroupedBacking ? compositedLayerMapping->squashingLayer() : compositedLayerMapping->mainGraphicsLayer();
 
-    GraphicsLayer* newGraphicsLayer = renderLayer->compositedLayerMapping()->mainGraphicsLayer();
-    m_clipLayer->setTransform(SkMatrix44());
+    m_clipLayer->setTransform(SkMatrix44(SkMatrix44::kIdentity_Constructor));
 
     if (!newGraphicsLayer->drawsContent()) {
         if (renderLayer->scrollableArea() && renderLayer->scrollableArea()->usesCompositedScrolling()) {
             ASSERT(renderLayer->hasCompositedLayerMapping() && renderLayer->compositedLayerMapping()->scrollingContentsLayer());
-            newGraphicsLayer = renderLayer->compositedLayerMapping()->scrollingContentsLayer();
+            newGraphicsLayer = compositedLayerMapping->scrollingContentsLayer();
         }
     }
 
@@ -255,12 +253,14 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
     return pathHasChanged;
 }
 
-void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebFloatRect&)
+void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebFloatRect&,
+    WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
     if (!m_node || !m_node->renderer())
         return;
 
-    GraphicsContext gc(canvas);
+    GraphicsContext gc(canvas,
+        contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
     IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
     gc.clip(clipRect);
     gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());

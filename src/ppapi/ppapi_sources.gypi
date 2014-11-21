@@ -7,6 +7,7 @@
     'c_source_files': [
       'c/pp_array_output.h',
       'c/pp_bool.h',
+      'c/pp_codecs.h',
       'c/pp_completion_callback.h',
       'c/pp_errors.h',
       'c/pp_file_info.h',
@@ -62,6 +63,7 @@
       'c/ppb_var_array.h',
       'c/ppb_var_array_buffer.h',
       'c/ppb_var_dictionary.h',
+      'c/ppb_video_decoder.h',
       'c/ppb_video_frame.h',
       'c/ppb_view.h',
       'c/ppb_websocket.h',
@@ -147,9 +149,6 @@
       'c/trusted/ppb_file_chooser_trusted.h',
       'c/trusted/ppb_url_loader_trusted.h',
       'c/trusted/ppp_broker.h',
-
-      # Extensions dev interfaces.
-      'c/extensions/dev/ppb_ext_socket_dev.h',
     ],
     'cpp_source_files': [
       'cpp/array_output.cc',
@@ -239,6 +238,8 @@
       'cpp/var_array_buffer.h',
       'cpp/var_dictionary.cc',
       'cpp/var_dictionary.h',
+      'cpp/video_decoder.cc',
+      'cpp/video_decoder.h',
       'cpp/video_frame.cc',
       'cpp/video_frame.h',
       'cpp/view.cc',
@@ -264,8 +265,6 @@
       'cpp/dev/file_chooser_dev.h',
       'cpp/dev/font_dev.cc',
       'cpp/dev/font_dev.h',
-      'cpp/dev/graphics_2d_dev.cc',
-      'cpp/dev/graphics_2d_dev.h',
       'cpp/dev/ime_input_event_dev.cc',
       'cpp/dev/ime_input_event_dev.h',
       'cpp/dev/may_own_ptr_dev.h',
@@ -376,17 +375,6 @@
       'cpp/trusted/browser_font_trusted.h',
       'cpp/trusted/file_chooser_trusted.cc',
       'cpp/trusted/file_chooser_trusted.h',
-
-      # Extensions interfaces.
-      'cpp/extensions/dict_field.h',
-      'cpp/extensions/ext_output_traits.h',
-      'cpp/extensions/from_var_converter.h',
-      'cpp/extensions/optional.h',
-      'cpp/extensions/to_var_converter.h',
-
-      # Extensions dev interfaces.
-      'cpp/extensions/dev/socket_dev.cc',
-      'cpp/extensions/dev/socket_dev.h',
 
       # Utility sources.
       'utility/completion_callback_factory.h',
@@ -581,8 +569,8 @@
       'tests/test_url_util.h',
       'tests/test_utils.cc',
       'tests/test_utils.h',
-      'tests/test_video_decoder.cc',
-      'tests/test_video_decoder.h',
+      'tests/test_video_decoder_dev.cc',
+      'tests/test_video_decoder_dev.h',
       'tests/test_x509_certificate_private.cc',
       'tests/test_x509_certificate_private.h',
 

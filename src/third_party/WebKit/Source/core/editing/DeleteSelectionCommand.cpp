@@ -418,7 +418,7 @@ void DeleteSelectionCommand::deleteTextFromNode(PassRefPtr<Text> node, unsigned 
 
 void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss()
 {
-    RefPtr<Range> range = m_selectionToDelete.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> range = m_selectionToDelete.toNormalizedRange();
     RefPtr<Node> node = range->firstNode();
     while (node && node != range->pastLastNode()) {
         RefPtr<Node> nextNode = NodeTraversal::next(*node);
@@ -516,7 +516,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
                 removeNode(node.get());
                 node = nextNode.get();
             } else {
-                Node& n = node->lastDescendant();
+                Node& n = node->lastDescendantOrSelf();
                 if (m_downstreamEnd.deprecatedNode() == n && m_downstreamEnd.deprecatedEditingOffset() >= caretMaxOffset(&n)) {
                     removeNode(node.get());
                     node = nullptr;
@@ -635,6 +635,7 @@ void DeleteSelectionCommand::mergeParagraphs()
     Node* listItemInFirstParagraph = enclosingNodeOfType(m_upstreamStart, isListItem);
     Node* listItemInSecondParagraph = enclosingNodeOfType(m_downstreamEnd, isListItem);
     if (listItemInFirstParagraph && listItemInSecondParagraph
+        && listItemInFirstParagraph->parentElement() != listItemInSecondParagraph->parentElement()
         && canMergeLists(listItemInFirstParagraph->parentElement(), listItemInSecondParagraph->parentElement())) {
         mergeIdenticalElements(listItemInFirstParagraph->parentElement(), listItemInSecondParagraph->parentElement());
         m_endingPosition = mergeDestination.deepEquivalent();

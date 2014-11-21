@@ -288,19 +288,20 @@ Vector<String> SavedFormState::getReferencedFilePaths() const
 
 // ----------------------------------------------------------------------------
 
-class FormKeyGenerator {
+class FormKeyGenerator FINAL : public NoBaseWillBeGarbageCollectedFinalized<FormKeyGenerator> {
     WTF_MAKE_NONCOPYABLE(FormKeyGenerator);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 
 public:
-    static PassOwnPtr<FormKeyGenerator> create() { return adoptPtr(new FormKeyGenerator); }
+    static PassOwnPtrWillBeRawPtr<FormKeyGenerator> create() { return adoptPtrWillBeNoop(new FormKeyGenerator); }
+    void trace(Visitor* visitor) { visitor->trace(m_formToKeyMap); }
     const AtomicString& formKey(const HTMLFormControlElementWithState&);
     void willDeleteForm(HTMLFormElement*);
 
 private:
     FormKeyGenerator() { }
 
-    typedef HashMap<HTMLFormElement*, AtomicString> FormToKeyMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<HTMLFormElement>, AtomicString> FormToKeyMap;
     typedef HashMap<String, unsigned> FormSignatureToNextIndexMap;
     FormToKeyMap m_formToKeyMap;
     FormSignatureToNextIndexMap m_formSignatureToNextIndexMap;
@@ -310,7 +311,7 @@ static inline void recordFormStructure(const HTMLFormElement& form, StringBuilde
 {
     // 2 is enough to distinguish forms in webkit.org/b/91209#c0
     const size_t namedControlsToBeRecorded = 2;
-    const Vector<FormAssociatedElement*>& controls = form.associatedElements();
+    const FormAssociatedElement::List& controls = form.associatedElements();
     builder.append(" [");
     for (size_t i = 0, namedControls = 0; i < controls.size() && namedControls < namedControlsToBeRecorded; ++i) {
         if (!controls[i]->isFormControlElementWithState())
@@ -374,12 +375,28 @@ void FormKeyGenerator::willDeleteForm(HTMLFormElement* form)
 
 // ----------------------------------------------------------------------------
 
-FormController::FormController()
+PassRefPtrWillBeRawPtr<DocumentState> DocumentState::create()
 {
+    return adoptRefWillBeNoop(new DocumentState);
 }
 
-FormController::~FormController()
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState)
+
+void DocumentState::trace(Visitor* visitor)
 {
+    visitor->trace(m_formControls);
+}
+
+void DocumentState::addControl(HTMLFormControlElementWithState* control)
+{
+    ASSERT(!m_formControls.contains(control));
+    m_formControls.add(control);
+}
+
+void DocumentState::removeControl(HTMLFormControlElementWithState* control)
+{
+    RELEASE_ASSERT(m_formControls.contains(control));
+    m_formControls.remove(control);
 }
 
 static String formStateSignature()
@@ -391,11 +408,11 @@ static String formStateSignature()
     return signature;
 }
 
-PassOwnPtr<FormController::SavedFormStateMap> FormController::createSavedFormStateMap(const FormElementListHashSet& controlList)
+Vector<String> DocumentState::toStateVector()
 {
-    OwnPtr<FormKeyGenerator> keyGenerator = FormKeyGenerator::create();
+    OwnPtrWillBeRawPtr<FormKeyGenerator> keyGenerator = FormKeyGenerator::create();
     OwnPtr<SavedFormStateMap> stateMap = adoptPtr(new SavedFormStateMap);
-    for (FormElementListHashSet::const_iterator it = controlList.begin(); it != controlList.end(); ++it) {
+    for (FormElementListHashSet::const_iterator it = m_formControls.begin(); it != m_formControls.end(); ++it) {
         HTMLFormControlElementWithState* control = (*it).get();
         ASSERT(control->inDocument());
         if (!control->shouldSaveAndRestoreFormControlState())
@@ -405,12 +422,7 @@ PassOwnPtr<FormController::SavedFormStateMap> FormController::createSavedFormSta
             result.storedValue->value = SavedFormState::create();
         result.storedValue->value->appendControlState(control->name(), control->type(), control->saveFormControlState());
     }
-    return stateMap.release();
-}
 
-Vector<String> FormController::formElementsState() const
-{
-    OwnPtr<SavedFormStateMap> stateMap = createSavedFormStateMap(m_formControls);
     Vector<String> stateVector;
     stateVector.reserveInitialCapacity(m_formControls.size() * 4);
     stateVector.append(formStateSignature());
@@ -422,6 +434,28 @@ Vector<String> FormController::formElementsState() const
     if (hasOnlySignature)
         stateVector.clear();
     return stateVector;
+}
+
+// ----------------------------------------------------------------------------
+
+FormController::FormController()
+    : m_documentState(DocumentState::create())
+{
+}
+
+FormController::~FormController()
+{
+}
+
+void FormController::trace(Visitor* visitor)
+{
+    visitor->trace(m_documentState);
+    visitor->trace(m_formKeyGenerator);
+}
+
+DocumentState* FormController::formElementsState() const
+{
+    return m_documentState.get();
 }
 
 void FormController::setStateForNewFormElements(const Vector<String>& stateVector)
@@ -487,7 +521,7 @@ void FormController::restoreControlStateFor(HTMLFormControlElementWithState& con
 
 void FormController::restoreControlStateIn(HTMLFormElement& form)
 {
-    const Vector<FormAssociatedElement*>& elements = form.associatedElements();
+    const FormAssociatedElement::List& elements = form.associatedElements();
     for (size_t i = 0; i < elements.size(); ++i) {
         if (!elements[i]->isFormControlElementWithState())
             continue;
@@ -514,14 +548,12 @@ Vector<String> FormController::getReferencedFilePaths(const Vector<String>& stat
 
 void FormController::registerStatefulFormControl(HTMLFormControlElementWithState& control)
 {
-    ASSERT(!m_formControls.contains(&control));
-    m_formControls.add(&control);
+    m_documentState->addControl(&control);
 }
 
 void FormController::unregisterStatefulFormControl(HTMLFormControlElementWithState& control)
 {
-    RELEASE_ASSERT(m_formControls.contains(&control));
-    m_formControls.remove(&control);
+    m_documentState->removeControl(&control);
 }
 
 } // namespace WebCore

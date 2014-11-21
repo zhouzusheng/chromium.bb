@@ -35,6 +35,7 @@
 #include "platform/Timer.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/gpu/DrawingBuffer.h"
 #include "platform/graphics/gpu/Extensions3DUtil.h"
 #include "platform/graphics/gpu/WebGLImageConversion.h"
 #include "public/platform/WebGraphicsContext3D.h"
@@ -50,8 +51,8 @@ class WebLayer;
 namespace WebCore {
 
 class ANGLEInstancedArrays;
-class DrawingBuffer;
 class EXTFragDepth;
+class EXTShaderTextureLOD;
 class EXTTextureFilterAnisotropic;
 class ExceptionState;
 class HTMLImageElement;
@@ -69,6 +70,7 @@ class OESVertexArrayObject;
 class WebGLActiveInfo;
 class WebGLBuffer;
 class WebGLCompressedTextureATC;
+class WebGLCompressedTextureETC1;
 class WebGLCompressedTexturePVRTC;
 class WebGLCompressedTextureS3TC;
 class WebGLContextAttributes;
@@ -94,7 +96,8 @@ class WebGLVertexArrayObjectOES;
 class WebGLRenderingContextLostCallback;
 class WebGLRenderingContextErrorMessageCallback;
 
-class WebGLRenderingContextBase: public CanvasRenderingContext, public ActiveDOMObject, private Page::MultisamplingChangedObserver {
+class WebGLRenderingContextBase: public CanvasRenderingContext, public ActiveDOMObject, public Page::MultisamplingChangedObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebGLRenderingContextBase);
 public:
     virtual ~WebGLRenderingContextBase();
 
@@ -168,7 +171,7 @@ public:
     void drawElements(GLenum mode, GLsizei count, GLenum type, long long offset);
 
     void drawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
-    void drawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, GLintptr offset, GLsizei primcount);
+    void drawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, long long offset, GLsizei primcount);
 
     void enable(GLenum cap);
     void enableVertexAttribArray(GLuint index);
@@ -205,7 +208,7 @@ public:
 
     void hint(GLenum target, GLenum mode);
     GLboolean isBuffer(WebGLBuffer*);
-    bool isContextLost();
+    bool isContextLost() const;
     GLboolean isEnabled(GLenum cap);
     GLboolean isFramebuffer(WebGLFramebuffer*);
     GLboolean isProgram(WebGLProgram*);
@@ -324,7 +327,7 @@ public:
     void forceRestoreContext();
     void loseContextImpl(LostContextMode);
 
-    blink::WebGraphicsContext3D* webGraphicsContext3D() const { return m_context.get(); }
+    blink::WebGraphicsContext3D* webContext() const { return m_drawingBuffer->context(); }
     WebGLContextGroup* contextGroup() const { return m_contextGroup.get(); }
     virtual blink::WebLayer* platformLayer() const OVERRIDE;
     Extensions3DUtil* extensionsUtil();
@@ -333,7 +336,7 @@ public:
 
     void markLayerComposited();
     virtual void paintRenderingResultsToCanvas() OVERRIDE;
-    PassRefPtr<ImageData> paintRenderingResultsToImageData();
+    PassRefPtrWillBeRawPtr<ImageData> paintRenderingResultsToImageData();
 
     void removeSharedObject(WebGLSharedObject*);
     void removeContextObject(WebGLContextObject*);
@@ -351,6 +354,7 @@ protected:
     friend class OESVertexArrayObject;
     friend class WebGLDebugShaders;
     friend class WebGLCompressedTextureATC;
+    friend class WebGLCompressedTextureETC1;
     friend class WebGLCompressedTexturePVRTC;
     friend class WebGLCompressedTextureS3TC;
     friend class WebGLRenderingContextErrorMessageCallback;
@@ -392,12 +396,10 @@ protected:
 
     WebGLRenderbuffer* ensureEmulatedStencilBuffer(GLenum target, WebGLRenderbuffer*);
 
-    OwnPtr<blink::WebGraphicsContext3D> m_context;
-    RefPtr<WebGLContextGroup> m_contextGroup;
-
     // Structure for rendering to a DrawingBuffer, instead of directly
     // to the back-buffer of m_context.
     RefPtr<DrawingBuffer> m_drawingBuffer;
+    RefPtr<WebGLContextGroup> m_contextGroup;
 
     // Dispatches a context lost event once it is determined that one is needed.
     // This is used both for synthetic and real context losses. For real ones, it's
@@ -719,6 +721,10 @@ protected:
     // Generates GL error and returns false if level is invalid.
     bool validateTexFuncLevel(const char* functionName, GLenum target, GLint level);
 
+    // Helper function to check if a 64-bit value is non-negative and can fit into a 32-bit integer.
+    // Generates GL error and returns false if not.
+    bool validateValueFitNonNegInt32(const char* functionName, const char* paramName, long long value);
+
     enum TexFuncValidationFunctionType {
         NotTexSubImage2D,
         TexSubImage2D,
@@ -815,9 +821,9 @@ protected:
     bool validateUniformMatrixParameters(const char* functionName, const WebGLUniformLocation*, GLboolean transpose, Float32Array*, GLsizei mod);
     bool validateUniformMatrixParameters(const char* functionName, const WebGLUniformLocation*, GLboolean transpose, void*, GLsizei, GLsizei mod);
 
-    // Helper function to validate parameters for bufferData.
-    // Return the current bound buffer to target, or 0 if parameters are invalid.
-    WebGLBuffer* validateBufferDataParameters(const char* functionName, GLenum target, GLenum usage);
+    // Helper function to validate the target for bufferData.
+    // Return the current bound buffer to target, or 0 if the target is invalid.
+    WebGLBuffer* validateBufferDataTarget(const char* functionName, GLenum target);
 
     // Helper function for tex{Sub}Image2D to make sure image is ready and wouldn't taint Origin.
     bool validateHTMLImageElement(const char* functionName, HTMLImageElement*, ExceptionState&);
@@ -841,6 +847,10 @@ protected:
     void vertexAttribfImpl(const char* functionName, GLuint index, GLsizei expectedSize, GLfloat, GLfloat, GLfloat, GLfloat);
     void vertexAttribfvImpl(const char* functionName, GLuint index, Float32Array*, GLsizei expectedSize);
     void vertexAttribfvImpl(const char* functionName, GLuint index, GLfloat*, GLsizei, GLsizei expectedSize);
+
+    // Helper functions to bufferData() and bufferSubData().
+    void bufferDataImpl(GLenum target, long long size, const void* data, GLenum usage);
+    void bufferSubDataImpl(GLenum target, long long offset, GLsizeiptr size, const void* data);
 
     // Helper function for delete* (deleteBuffer, deleteProgram, etc) functions.
     // Return false if caller should return without further processing.

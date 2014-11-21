@@ -161,7 +161,7 @@ void RenderSliderContainer::layout()
     RenderBox* thumb = thumbElement ? thumbElement->renderBox() : 0;
     RenderBox* track = trackElement ? trackElement->renderBox() : 0;
 
-    SubtreeLayoutScope layoutScope(this);
+    SubtreeLayoutScope layoutScope(*this);
     // Force a layout to reset the position of the thumb so the code below doesn't move the thumb to the wrong place.
     // FIXME: Make a custom Render class for the track and move the thumb positioning code there.
     if (track)
@@ -205,9 +205,9 @@ inline SliderThumbElement::SliderThumbElement(Document& document)
 {
 }
 
-PassRefPtr<SliderThumbElement> SliderThumbElement::create(Document& document)
+PassRefPtrWillBeRawPtr<SliderThumbElement> SliderThumbElement::create(Document& document)
 {
-    RefPtr<SliderThumbElement> element = adoptRef(new SliderThumbElement(document));
+    RefPtrWillBeRawPtr<SliderThumbElement> element = adoptRefWillBeRefCountedGarbageCollected(new SliderThumbElement(document));
     element->setAttribute(idAttr, ShadowElementNames::sliderThumb());
     return element.release();
 }
@@ -444,9 +444,9 @@ inline SliderContainerElement::SliderContainerElement(Document& document)
 {
 }
 
-PassRefPtr<SliderContainerElement> SliderContainerElement::create(Document& document)
+PassRefPtrWillBeRawPtr<SliderContainerElement> SliderContainerElement::create(Document& document)
 {
-    return adoptRef(new SliderContainerElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new SliderContainerElement(document));
 }
 
 RenderObject* SliderContainerElement::createRenderer(RenderStyle*)

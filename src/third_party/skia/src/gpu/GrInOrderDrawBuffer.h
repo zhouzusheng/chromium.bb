@@ -72,7 +72,9 @@ public:
     virtual void clear(const SkIRect* rect,
                        GrColor color,
                        bool canIgnoreRect,
-                       GrRenderTarget* renderTarget = NULL) SK_OVERRIDE;
+                       GrRenderTarget* renderTarget) SK_OVERRIDE;
+
+    virtual void discard(GrRenderTarget*) SK_OVERRIDE;
 
     virtual void initCopySurfaceDstDesc(const GrSurface* src, GrTextureDesc* desc) SK_OVERRIDE;
 
@@ -117,7 +119,7 @@ private:
         DrawPaths();
         ~DrawPaths();
 
-        size_t fPathCount;
+        int fPathCount;
         const GrPath** fPaths;
         SkMatrix* fTransforms;
         SkPath::FillType fFill;
@@ -125,6 +127,7 @@ private:
         GrDeviceCoordTexture fDstCopy;
     };
 
+    // This is also used to record a discard by setting the color to GrColor_ILLEGAL
     struct Clear : public ::SkNoncopyable {
         Clear() : fRenderTarget(NULL) {}
         ~Clear() { SkSafeUnref(fRenderTarget); }
@@ -152,7 +155,7 @@ private:
     virtual void onStencilPath(const GrPath*, SkPath::FillType) SK_OVERRIDE;
     virtual void onDrawPath(const GrPath*, SkPath::FillType,
                             const GrDeviceCoordTexture* dstCopy) SK_OVERRIDE;
-    virtual void onDrawPaths(size_t, const GrPath**, const SkMatrix*,
+    virtual void onDrawPaths(int, const GrPath**, const SkMatrix*,
                              SkPath::FillType, SkStrokeRec::Style,
                              const GrDeviceCoordTexture* dstCopy) SK_OVERRIDE;
 

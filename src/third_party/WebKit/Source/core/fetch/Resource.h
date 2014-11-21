@@ -55,7 +55,6 @@ class SharedBuffer;
 // This class also does the actual communication with the loader to obtain the resource from the network.
 class Resource {
     WTF_MAKE_NONCOPYABLE(Resource); WTF_MAKE_FAST_ALLOCATED;
-    friend class MemoryCache;
     friend class InspectorResource;
 
 public:
@@ -72,7 +71,8 @@ public:
         LinkSubresource,
         TextTrack,
         Shader,
-        ImportResource
+        ImportResource,
+        Media // Audio or video file requested by a HTML5 media element
     };
 
     enum Status {
@@ -85,13 +85,6 @@ public:
 
     Resource(const ResourceRequest&, Type);
     virtual ~Resource();
-
-    // Determines the order in which CachedResources are evicted
-    // from the decoded resources cache.
-    enum CacheLiveResourcePriority {
-        CacheLiveResourcePriorityLow = 0,
-        CacheLiveResourcePriorityHigh
-    };
 
     virtual void load(ResourceFetcher*, const ResourceLoaderOptions&);
 
@@ -160,7 +153,9 @@ public:
         return type() == MainResource
             || type() == LinkPrefetch
             || type() == LinkSubresource
-            || type() == Raw;
+            || type() == Media
+            || type() == Raw
+            || type() == TextTrack;
     }
 
     // Computes the status of an object after loading.
@@ -170,9 +165,6 @@ public:
     // FIXME: Remove the stringless variant once all the callsites' error messages are updated.
     bool passesAccessControlCheck(SecurityOrigin*);
     bool passesAccessControlCheck(SecurityOrigin*, String& errorDescription);
-
-    void setCacheLiveResourcePriority(CacheLiveResourcePriority);
-    unsigned cacheLiveResourcePriority() const { return m_cacheLiveResourcePriority; }
 
     void clearLoader();
 
@@ -197,8 +189,8 @@ public:
     // Returns cached metadata of the given type associated with this resource.
     CachedMetadata* cachedMetadata(unsigned dataTypeID) const;
 
-    bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_protectorCount && !m_resourceToRevalidate && !m_proxyResource; }
-    bool hasOneHandle() const { return m_handleCount == 1; }
+    bool hasOneHandle() const;
+    bool canDelete() const;
 
     // List of acceptable MIME types separated by ",".
     // A MIME type may contain a wildcard, e.g. "text/*".
@@ -219,12 +211,13 @@ public:
     void registerHandle(ResourcePtrBase* h);
     void unregisterHandle(ResourcePtrBase* h);
 
-    bool canReuseRedirectChain() const;
-    bool mustRevalidateDueToCacheHeaders() const;
-    bool canUseCacheValidator() const;
+    bool canReuseRedirectChain();
+    bool mustRevalidateDueToCacheHeaders();
+    bool canUseCacheValidator();
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
+    bool hasCacheControlNoStoreHeader();
 
     bool isPurgeable() const;
     bool wasPurged() const;
@@ -280,7 +273,7 @@ protected:
 
     void setEncodedSize(size_t);
     void setDecodedSize(size_t);
-    void didAccessDecodedData(double timeStamp);
+    void didAccessDecodedData();
 
     virtual void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
@@ -314,8 +307,8 @@ protected:
         {
         }
 
-        const ResourceRequest m_request;
-        const ResourceResponse m_redirectResponse;
+        ResourceRequest m_request;
+        ResourceResponse m_redirectResponse;
     };
     const Vector<RedirectPair>& redirectChain() const { return m_redirectChain; }
 
@@ -342,6 +335,8 @@ private:
 
     bool unlock();
 
+    bool hasRightHandleCountApartFromCache(unsigned targetCount) const;
+
     void failBeforeStarting();
 
     String m_fragmentIdentifierForRequest;
@@ -350,7 +345,6 @@ private:
 
     ResourceError m_error;
 
-    double m_lastDecodedAccessTime; // Used as a "thrash guard" in the cache
     double m_loadFinishTime;
 
     unsigned long m_identifier;
@@ -362,7 +356,6 @@ private:
     unsigned m_protectorCount;
 
     unsigned m_preloadResult : 2; // PreloadResult
-    unsigned m_cacheLiveResourcePriority : 2; // CacheLiveResourcePriority
     unsigned m_requestedFromNetworkingLayer : 1;
 
     unsigned m_loading : 1;

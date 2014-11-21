@@ -56,7 +56,6 @@ Chrome::Chrome(Page* page, ChromeClient* client)
 
 Chrome::~Chrome()
 {
-    m_client->chromeDestroyed();
 }
 
 PassOwnPtr<Chrome> Chrome::create(Page* page, ChromeClient* client)
@@ -334,10 +333,10 @@ void Chrome::enumerateChosenDirectory(FileChooser* fileChooser)
     m_client->enumerateChosenDirectory(fileChooser);
 }
 
-PassOwnPtr<ColorChooser> Chrome::createColorChooser(ColorChooserClient* client, const Color& initialColor)
+PassOwnPtr<ColorChooser> Chrome::createColorChooser(LocalFrame* frame, ColorChooserClient* client, const Color& initialColor)
 {
     notifyPopupOpeningObservers();
-    return m_client->createColorChooser(client, initialColor);
+    return m_client->createColorChooser(frame, client, initialColor);
 }
 
 PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
@@ -405,6 +404,11 @@ void Chrome::notifyPopupOpeningObservers() const
     const Vector<PopupOpeningObserver*> observers(m_popupOpeningObservers);
     for (size_t i = 0; i < observers.size(); ++i)
         observers[i]->willOpenPopup();
+}
+
+void Chrome::willBeDestroyed()
+{
+    m_client->chromeDestroyed();
 }
 
 } // namespace WebCore

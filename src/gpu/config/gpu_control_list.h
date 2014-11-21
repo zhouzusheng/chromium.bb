@@ -265,26 +265,6 @@ class GPU_EXPORT GpuControlList {
     bool value_;
   };
 
-  class GPU_EXPORT MachineModelInfo {
-   public:
-    MachineModelInfo(const std::string& name_op,
-                     const std::string& name_value,
-                     const std::string& version_op,
-                     const std::string& version_string,
-                     const std::string& version_string2);
-    ~MachineModelInfo();
-
-    // Determines if a given name/version is included in the MachineModelInfo.
-    bool Contains(const std::string& name, const std::string& version) const;
-
-    // Determines if the MachineModelInfo contains valid information.
-    bool IsValid() const;
-
-   private:
-    scoped_ptr<StringInfo> name_info_;
-    scoped_ptr<VersionInfo> version_info_;
-  };
-
   class GpuControlListEntry;
   typedef scoped_refptr<GpuControlListEntry> ScopedGpuControlListEntry;
 
@@ -359,6 +339,13 @@ class GPU_EXPORT GpuControlList {
       kMultiGpuCategoryNone
     };
 
+    enum GLType {
+      kGLTypeGL,  // This is default on MacOSX, Linux, ChromeOS
+      kGLTypeGLES,  // This is default on Android
+      kGLTypeANGLE,  // This is default on Windows
+      kGLTypeNone
+    };
+
     GpuControlListEntry();
     ~GpuControlListEntry();
 
@@ -379,6 +366,8 @@ class GPU_EXPORT GpuControlList {
 
     bool SetMultiGpuCategory(const std::string& multi_gpu_category_string);
 
+    bool SetGLType(const std::string& gl_type_string);
+
     bool SetDriverVendorInfo(const std::string& vendor_op,
                              const std::string& vendor_value);
 
@@ -390,6 +379,10 @@ class GPU_EXPORT GpuControlList {
     bool SetDriverDateInfo(const std::string& date_op,
                            const std::string& date_string,
                            const std::string& date_string2);
+
+    bool SetGLVersionInfo(const std::string& version_op,
+                          const std::string& version_string,
+                          const std::string& version_string2);
 
     bool SetGLVendorInfo(const std::string& vendor_op,
                          const std::string& vendor_value);
@@ -419,11 +412,11 @@ class GPU_EXPORT GpuControlList {
                             const std::string& float_string,
                             const std::string& float_string2);
 
-    bool SetMachineModelInfo(const std::string& name_op,
-                             const std::string& name_value,
-                             const std::string& version_op,
-                             const std::string& version_string,
-                             const std::string& version_string2);
+    bool AddMachineModelName(const std::string& model_name);
+
+    bool SetMachineModelVersionInfo(const std::string& version_op,
+                                    const std::string& version_string,
+                                    const std::string& version_string2);
 
     bool SetGpuCountInfo(const std::string& op,
                          const std::string& int_string,
@@ -437,16 +430,26 @@ class GPU_EXPORT GpuControlList {
 
     void AddException(ScopedGpuControlListEntry exception);
 
+    // Return true if GL_VERSION string does not fit the entry info
+    // on GL type and GL version.
+    bool GLVersionInfoMismatch(const std::string& gl_version) const;
+
     static MultiGpuStyle StringToMultiGpuStyle(const std::string& style);
 
     static MultiGpuCategory StringToMultiGpuCategory(
         const std::string& category);
+
+    static GLType StringToGLType(const std::string& gl_type);
 
     // map a feature_name to feature_id. If the string is not a registered
     // feature name, return false.
     static bool StringToFeature(const std::string& feature_name,
                                 int* feature_id,
                                 const FeatureMap& feature_map);
+
+    // Return the default GL type, depending on the OS.
+    // See GLType declaration.
+    static GLType GetDefaultGLType();
 
     uint32 id_;
     bool disabled_;
@@ -458,9 +461,11 @@ class GPU_EXPORT GpuControlList {
     std::vector<uint32> device_id_list_;
     MultiGpuStyle multi_gpu_style_;
     MultiGpuCategory multi_gpu_category_;
+    GLType gl_type_;
     scoped_ptr<StringInfo> driver_vendor_info_;
     scoped_ptr<VersionInfo> driver_version_info_;
     scoped_ptr<VersionInfo> driver_date_info_;
+    scoped_ptr<VersionInfo> gl_version_info_;
     scoped_ptr<StringInfo> gl_vendor_info_;
     scoped_ptr<StringInfo> gl_renderer_info_;
     scoped_ptr<StringInfo> gl_extensions_info_;
@@ -469,7 +474,8 @@ class GPU_EXPORT GpuControlList {
     scoped_ptr<FloatInfo> perf_graphics_info_;
     scoped_ptr<FloatInfo> perf_gaming_info_;
     scoped_ptr<FloatInfo> perf_overall_info_;
-    scoped_ptr<MachineModelInfo> machine_model_info_;
+    std::vector<std::string> machine_model_name_list_;
+    scoped_ptr<VersionInfo> machine_model_version_info_;
     scoped_ptr<IntInfo> gpu_count_info_;
     scoped_ptr<BoolInfo> direct_rendering_info_;
     std::set<int> features_;

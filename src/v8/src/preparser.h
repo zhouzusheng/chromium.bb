@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_PREPARSER_H
 #define V8_PREPARSER_H
@@ -228,8 +205,8 @@ class ParserBase : public Traits {
     FunctionState* outer_function_state_;
     typename Traits::Type::Scope** scope_stack_;
     typename Traits::Type::Scope* outer_scope_;
-    Isolate* isolate_;   // Only used by ParserTraits.
     int saved_ast_node_id_;  // Only used by ParserTraits.
+    typename Traits::Type::Zone* extra_param_;
     typename Traits::Type::Factory factory_;
 
     friend class ParserTraits;
@@ -687,6 +664,67 @@ class PreParserExpressionList {
 };
 
 
+class PreParserStatement {
+ public:
+  static PreParserStatement Default() {
+    return PreParserStatement(kUnknownStatement);
+  }
+
+  static PreParserStatement FunctionDeclaration() {
+    return PreParserStatement(kFunctionDeclaration);
+  }
+
+  // Creates expression statement from expression.
+  // Preserves being an unparenthesized string literal, possibly
+  // "use strict".
+  static PreParserStatement ExpressionStatement(
+      PreParserExpression expression) {
+    if (expression.IsUseStrictLiteral()) {
+      return PreParserStatement(kUseStrictExpressionStatement);
+    }
+    if (expression.IsStringLiteral()) {
+      return PreParserStatement(kStringLiteralExpressionStatement);
+    }
+    return Default();
+  }
+
+  bool IsStringLiteral() {
+    return code_ == kStringLiteralExpressionStatement;
+  }
+
+  bool IsUseStrictLiteral() {
+    return code_ == kUseStrictExpressionStatement;
+  }
+
+  bool IsFunctionDeclaration() {
+    return code_ == kFunctionDeclaration;
+  }
+
+ private:
+  enum Type {
+    kUnknownStatement,
+    kStringLiteralExpressionStatement,
+    kUseStrictExpressionStatement,
+    kFunctionDeclaration
+  };
+
+  explicit PreParserStatement(Type code) : code_(code) {}
+  Type code_;
+};
+
+
+
+// PreParserStatementList doesn't actually store the statements because
+// the PreParser does not need them.
+class PreParserStatementList {
+ public:
+  // These functions make list->Add(some_expression) work as no-ops.
+  PreParserStatementList() {}
+  PreParserStatementList* operator->() { return this; }
+  void Add(PreParserStatement, void*) {}
+};
+
+
 class PreParserScope {
  public:
   explicit PreParserScope(PreParserScope* outer_scope, ScopeType scope_type)
@@ -830,6 +868,7 @@ class PreParserTraits {
     typedef PreParserExpression Literal;
     typedef PreParserExpressionList ExpressionList;
     typedef PreParserExpressionList PropertyList;
+    typedef PreParserStatementList StatementList;
 
     // For constructing objects returned by the traversing functions.
     typedef PreParserFactory Factory;
@@ -842,7 +881,7 @@ class PreParserTraits {
   template<typename FunctionState>
   static void SetUpFunctionState(FunctionState* function_state, void*) {}
   template<typename FunctionState>
-  static void TearDownFunctionState(FunctionState* function_state) {}
+  static void TearDownFunctionState(FunctionState* function_state, void*) {}
 
   // Helper functions for recursive descent.
   static bool IsEvalOrArguments(PreParserIdentifier identifier) {
@@ -922,7 +961,7 @@ class PreParserTraits {
     return PreParserExpression::Default();
   }
   PreParserExpression NewThrowTypeError(
-      const char* type, Handle<Object> arg1, Handle<Object> arg2, int pos) {
+      const char* type, Handle<Object> arg, int pos) {
     return PreParserExpression::Default();
   }
 
@@ -993,6 +1032,10 @@ class PreParserTraits {
     return PreParserExpressionList();
   }
 
+  static PreParserStatementList NewStatementList(int size, void* zone) {
+    return PreParserStatementList();
+  }
+
   static PreParserExpressionList NewPropertyList(int size, void* zone) {
     return PreParserExpressionList();
   }
@@ -1029,6 +1072,7 @@ class PreParser : public ParserBase<PreParserTraits> {
  public:
   typedef PreParserIdentifier Identifier;
   typedef PreParserExpression Expression;
+  typedef PreParserStatement Statement;
 
   enum PreParseResult {
     kPreParseStackOverflow,
@@ -1090,52 +1134,6 @@ class PreParser : public ParserBase<PreParserTraits> {
     kHasNoInitializers
   };
 
-  class Statement {
-   public:
-    static Statement Default() {
-      return Statement(kUnknownStatement);
-    }
-
-    static Statement FunctionDeclaration() {
-      return Statement(kFunctionDeclaration);
-    }
-
-    // Creates expression statement from expression.
-    // Preserves being an unparenthesized string literal, possibly
-    // "use strict".
-    static Statement ExpressionStatement(Expression expression) {
-      if (expression.IsUseStrictLiteral()) {
-        return Statement(kUseStrictExpressionStatement);
-      }
-      if (expression.IsStringLiteral()) {
-        return Statement(kStringLiteralExpressionStatement);
-      }
-      return Default();
-    }
-
-    bool IsStringLiteral() {
-      return code_ == kStringLiteralExpressionStatement;
-    }
-
-    bool IsUseStrictLiteral() {
-      return code_ == kUseStrictExpressionStatement;
-    }
-
-    bool IsFunctionDeclaration() {
-      return code_ == kFunctionDeclaration;
-    }
-
-   private:
-    enum Type {
-      kUnknownStatement,
-      kStringLiteralExpressionStatement,
-      kUseStrictExpressionStatement,
-      kFunctionDeclaration
-    };
-
-    explicit Statement(Type code) : code_(code) {}
-    Type code_;
-  };
 
   enum SourceElements {
     kUnknownSourceElements
@@ -1183,11 +1181,6 @@ class PreParser : public ParserBase<PreParserTraits> {
       bool* ok);
   void ParseLazyFunctionLiteralBody(bool* ok);
 
-  // Logs the currently parsed literal as a symbol in the preparser data.
-  void LogSymbol();
-  // Log the currently parsed string literal.
-  Expression GetStringSymbol();
-
   bool CheckInOrOf(bool accept_OF);
 };
 
@@ -1206,8 +1199,8 @@ ParserBase<Traits>::FunctionState::FunctionState(
       outer_function_state_(*function_state_stack),
       scope_stack_(scope_stack),
       outer_scope_(*scope_stack),
-      isolate_(NULL),
       saved_ast_node_id_(0),
+      extra_param_(extra_param),
       factory_(extra_param) {
   *scope_stack_ = scope;
   *function_state_stack = this;
@@ -1219,7 +1212,7 @@ template<class Traits>
 ParserBase<Traits>::FunctionState::~FunctionState() {
   *scope_stack_ = outer_scope_;
   *function_state_stack_ = outer_function_state_;
-  Traits::TearDownFunctionState(this);
+  Traits::TearDownFunctionState(this, extra_param_);
 }
 
 
@@ -2052,7 +2045,7 @@ ParserBase<Traits>::ParseMemberExpression(bool* ok) {
     Consume(Token::FUNCTION);
     int function_token_position = position();
     bool is_generator = allow_generators() && Check(Token::MUL);
-    IdentifierT name;
+    IdentifierT name = this->EmptyIdentifier();
     bool is_strict_reserved_name = false;
     Scanner::Location function_name_location = Scanner::Location::invalid();
     FunctionLiteral::FunctionType function_type =

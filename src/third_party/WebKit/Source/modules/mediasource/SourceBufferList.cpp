@@ -49,7 +49,7 @@ SourceBufferList::~SourceBufferList()
     ASSERT(m_list.isEmpty());
 }
 
-void SourceBufferList::add(PassRefPtrWillBeRawPtr<SourceBuffer> buffer)
+void SourceBufferList::add(SourceBuffer* buffer)
 {
     m_list.append(buffer);
     scheduleEvent(EventTypeNames::addsourcebuffer);
@@ -74,7 +74,7 @@ void SourceBufferList::scheduleEvent(const AtomicString& eventName)
 {
     ASSERT(m_asyncEventQueue);
 
-    RefPtr<Event> event = Event::create(eventName);
+    RefPtrWillBeRawPtr<Event> event = Event::create(eventName);
     event->setTarget(this);
 
     m_asyncEventQueue->enqueueEvent(event.release());

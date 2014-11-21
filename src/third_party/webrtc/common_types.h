@@ -93,7 +93,6 @@ enum TraceModule
     kTraceAudioDevice            = 0x0012,
     kTraceVideoRenderer          = 0x0014,
     kTraceVideoCapture           = 0x0015,
-    kTraceVideoPreocessing       = 0x0016,
     kTraceRemoteBitrateEstimator = 0x0017,
 };
 
@@ -467,6 +466,7 @@ enum AudioLayers
     kAudioLinuxPulse = 4
 };
 
+// TODO(henrika): to be removed.
 enum NetEqModes             // NetEQ playout configurations
 {
     // Optimized trade-off between low delay and jitter robustness for two-way
@@ -483,6 +483,7 @@ enum NetEqModes             // NetEQ playout configurations
     kNetEqOff = 3,
 };
 
+// TODO(henrika): to be removed.
 enum OnHoldModes            // On Hold direction
 {
     kHoldSendAndPlay = 0,    // Put both sending and playing in on-hold state.
@@ -490,6 +491,7 @@ enum OnHoldModes            // On Hold direction
     kHoldPlayOnly            // Put only playing in on-hold state.
 };
 
+// TODO(henrika): to be removed.
 enum AmrMode
 {
     kRfc3267BwEfficient = 0,
@@ -718,17 +720,17 @@ struct OverUseDetectorOptions {
 // This structure will have the information about when packet is actually
 // received by socket.
 struct PacketTime {
-  PacketTime() : timestamp(-1), max_error_us(-1) {}
-  PacketTime(int64_t timestamp, int64_t max_error_us)
-      : timestamp(timestamp), max_error_us(max_error_us) {
+  PacketTime() : timestamp(-1), not_before(-1) {}
+  PacketTime(int64_t timestamp, int64_t not_before)
+      : timestamp(timestamp), not_before(not_before) {
   }
 
-  int64_t timestamp;    // Receive time after socket delivers the data.
-  int64_t max_error_us; // Earliest possible time the data could have arrived,
-                        // indicating the potential error in the |timestamp|
-                        // value,in case the system is busy.
-                        // For example, the time of the last select() call.
-                        // If unknown, this value will be set to zero.
+  int64_t timestamp;   // Receive time after socket delivers the data.
+  int64_t not_before;  // Earliest possible time the data could have arrived,
+                       // indicating the potential error in the |timestamp|
+                       // value,in case the system is busy.
+                       // For example, the time of the last select() call.
+                       // If unknown, this value will be set to zero.
 };
 
 struct RTPHeaderExtension {

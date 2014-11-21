@@ -78,9 +78,10 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
 
   void FilterAndSendPacket(const GestureEventDataPacket& packet);
   void SendGesture(const GestureEventData& gesture);
-  void CancelTapIfNecessary();
-  void CancelFlingIfNecessary();
-  void EndScrollIfNecessary();
+  void CancelTapIfNecessary(const base::TimeTicks& timestamp);
+  void CancelFlingIfNecessary(const base::TimeTicks& timestamp);
+  void EndScrollIfNecessary(const base::TimeTicks& timestamp);
+  void PopGestureSequence();
   GestureSequence& Head();
   GestureSequence& Tail();
 
@@ -92,7 +93,9 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
   // Bookkeeping for inserting synthetic Gesture{Tap,Fling}Cancel events
   // when necessary, e.g., GestureTapCancel when scrolling begins, or
   // GestureFlingCancel when a user taps following a GestureFlingStart.
+  int ending_event_motion_event_id_;
   bool needs_tap_ending_event_;
+  bool needs_show_press_event_;
   bool needs_fling_ending_event_;
   bool needs_scroll_ending_event_;
 

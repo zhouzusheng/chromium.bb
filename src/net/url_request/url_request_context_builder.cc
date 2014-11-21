@@ -28,12 +28,18 @@
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/data_protocol_handler.h"
-#include "net/url_request/file_protocol_handler.h"
-#include "net/url_request/ftp_protocol_handler.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+
+#if !defined(DISABLE_FILE_SUPPORT)
+#include "net/url_request/file_protocol_handler.h"
+#endif
+
+#if !defined(DISABLE_FTP_SUPPORT)
+#include "net/url_request/ftp_protocol_handler.h"
+#endif
 
 namespace net {
 
@@ -124,45 +130,36 @@ class BasicNetworkDelegate : public NetworkDelegate {
 class BasicURLRequestContext : public URLRequestContext {
  public:
   BasicURLRequestContext()
-      : cache_thread_("Cache Thread"),
-        file_thread_("File Thread"),
-        storage_(this) {}
+      : storage_(this) {}
 
   URLRequestContextStorage* storage() {
     return &storage_;
   }
 
-  void StartCacheThread() {
-    cache_thread_.StartWithOptions(
-        base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+  base::Thread* GetCacheThread() {
+    if (!cache_thread_) {
+      cache_thread_.reset(new base::Thread("Cache Thread"));
+      cache_thread_->StartWithOptions(
+          base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+    }
+    return cache_thread_.get();
   }
 
-  scoped_refptr<base::MessageLoopProxy> cache_message_loop_proxy() {
-    DCHECK(cache_thread_.IsRunning());
-    return cache_thread_.message_loop_proxy();
-  }
-
-  void StartFileThread() {
-    file_thread_.StartWithOptions(
-        base::Thread::Options(base::MessageLoop::TYPE_DEFAULT, 0));
-  }
-
-  base::MessageLoop* file_message_loop() {
-    DCHECK(file_thread_.IsRunning());
-    return file_thread_.message_loop();
-  }
-
-  scoped_refptr<base::MessageLoopProxy> file_message_loop_proxy() {
-    DCHECK(file_thread_.IsRunning());
-    return file_thread_.message_loop_proxy();
+  base::Thread* GetFileThread() {
+    if (!file_thread_) {
+      file_thread_.reset(new base::Thread("File Thread"));
+      file_thread_->StartWithOptions(
+          base::Thread::Options(base::MessageLoop::TYPE_DEFAULT, 0));
+    }
+    return file_thread_.get();
   }
 
  protected:
   virtual ~BasicURLRequestContext() {}
 
  private:
-  base::Thread cache_thread_;
-  base::Thread file_thread_;
+  scoped_ptr<base::Thread> cache_thread_;
+  scoped_ptr<base::Thread> file_thread_;
   URLRequestContextStorage storage_;
   DISALLOW_COPY_AND_ASSIGN(BasicURLRequestContext);
 };
@@ -185,9 +182,20 @@ URLRequestContextBuilder::HttpNetworkSessionParams::HttpNetworkSessionParams()
 URLRequestContextBuilder::HttpNetworkSessionParams::~HttpNetworkSessionParams()
 {}
 
+URLRequestContextBuilder::SchemeFactory::SchemeFactory(
+    const std::string& auth_scheme,
+    net::HttpAuthHandlerFactory* auth_handler_factory)
+    : scheme(auth_scheme), factory(auth_handler_factory) {
+}
+
+URLRequestContextBuilder::SchemeFactory::~SchemeFactory() {
+}
+
 URLRequestContextBuilder::URLRequestContextBuilder()
     : data_enabled_(false),
+#if !defined(DISABLE_FILE_SUPPORT)
       file_enabled_(false),
+#endif
 #if !defined(DISABLE_FTP_SUPPORT)
       ftp_enabled_(false),
 #endif
@@ -217,7 +225,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     host_resolver_ = net::HostResolver::CreateDefaultResolver(NULL);
   storage->set_host_resolver(host_resolver_.Pass());
 
-  context->StartFileThread();
+  storage->set_net_log(new net::NetLog);
 
   // TODO(willchan): Switch to using this code when
   // ProxyService::CreateSystemProxyConfigService()'s signature doesn't suck.
@@ -231,7 +239,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     proxy_config_service =
         ProxyService::CreateSystemProxyConfigService(
             base::ThreadTaskRunnerHandle::Get().get(),
-            context->file_message_loop());
+            context->GetFileThread()->message_loop());
   }
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
   storage->set_proxy_service(
@@ -240,9 +248,15 @@ URLRequestContext* URLRequestContextBuilder::Build() {
           4,  // TODO(willchan): Find a better constant somewhere.
           context->net_log()));
   storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
-  storage->set_http_auth_handler_factory(
+  HttpAuthHandlerRegistryFactory* http_auth_handler_registry_factory =
       net::HttpAuthHandlerRegistryFactory::CreateDefault(
-          context->host_resolver()));
+           context->host_resolver());
+  for (size_t i = 0; i < extra_http_auth_handlers_.size(); ++i) {
+    http_auth_handler_registry_factory->RegisterSchemeFactory(
+        extra_http_auth_handlers_[i].scheme,
+        extra_http_auth_handlers_[i].factory);
+  }
+  storage->set_http_auth_handler_factory(http_auth_handler_registry_factory);
   storage->set_cookie_store(new CookieMonster(NULL, NULL));
   storage->set_transport_security_state(new net::TransportSecurityState());
   storage->set_http_server_properties(
@@ -283,13 +297,12 @@ URLRequestContext* URLRequestContextBuilder::Build() {
         context->server_bound_cert_service();
     HttpCache::BackendFactory* http_cache_backend = NULL;
     if (http_cache_params_.type == HttpCacheParams::DISK) {
-      context->StartCacheThread();
       http_cache_backend = new HttpCache::DefaultBackend(
           DISK_CACHE,
           net::CACHE_BACKEND_DEFAULT,
           http_cache_params_.path,
           http_cache_params_.max_size,
-          context->cache_message_loop_proxy().get());
+          context->GetCacheThread()->message_loop_proxy().get());
     } else {
       http_cache_backend =
           HttpCache::DefaultBackend::InMemory(http_cache_params_.max_size);
@@ -308,9 +321,15 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   URLRequestJobFactoryImpl* job_factory = new URLRequestJobFactoryImpl;
   if (data_enabled_)
     job_factory->SetProtocolHandler("data", new DataProtocolHandler);
-  if (file_enabled_)
+
+#if !defined(DISABLE_FILE_SUPPORT)
+  if (file_enabled_) {
     job_factory->SetProtocolHandler(
-        "file", new FileProtocolHandler(context->file_message_loop_proxy()));
+    "file",
+    new FileProtocolHandler(context->GetFileThread()->message_loop_proxy()));
+  }
+#endif  // !defined(DISABLE_FILE_SUPPORT)
+
 #if !defined(DISABLE_FTP_SUPPORT)
   if (ftp_enabled_) {
     ftp_transaction_factory_.reset(
@@ -318,7 +337,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     job_factory->SetProtocolHandler("ftp",
         new FtpProtocolHandler(ftp_transaction_factory_.get()));
   }
-#endif
+#endif  // !defined(DISABLE_FTP_SUPPORT)
+
   storage->set_job_factory(job_factory);
 
   // TODO(willchan): Support sdch.

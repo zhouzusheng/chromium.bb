@@ -26,10 +26,10 @@
 #include "core/dom/NodeIterator.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -75,7 +75,6 @@ bool NodeIterator::NodePointer::moveToPrevious(Node* root)
 NodeIterator::NodeIterator(PassRefPtr<Node> rootNode, unsigned whatToShow, PassRefPtr<NodeFilter> filter)
     : NodeIteratorBase(rootNode, whatToShow, filter)
     , m_referenceNode(root(), true)
-    , m_detached(false)
 {
     ScriptWrappable::init(this);
     root()->document().attachNodeIterator(this);
@@ -86,13 +85,8 @@ NodeIterator::~NodeIterator()
     root()->document().detachNodeIterator(this);
 }
 
-PassRefPtr<Node> NodeIterator::nextNode(ScriptState* state, ExceptionState& exceptionState)
+PassRefPtr<Node> NodeIterator::nextNode(ExceptionState& exceptionState)
 {
-    if (m_detached) {
-        exceptionState.throwDOMException(InvalidStateError, "The iterator is detached.");
-        return nullptr;
-    }
-
     RefPtr<Node> result;
 
     m_candidateNode = m_referenceNode;
@@ -101,8 +95,8 @@ PassRefPtr<Node> NodeIterator::nextNode(ScriptState* state, ExceptionState& exce
         // In other words, FILTER_REJECT does not pass over descendants
         // of the rejected node. Hence, FILTER_REJECT is the same as FILTER_SKIP.
         RefPtr<Node> provisionalResult = m_candidateNode.node;
-        bool nodeWasAccepted = acceptNode(state, provisionalResult.get()) == NodeFilter::FILTER_ACCEPT;
-        if (state && state->hadException())
+        bool nodeWasAccepted = acceptNode(provisionalResult.get(), exceptionState) == NodeFilter::FILTER_ACCEPT;
+        if (exceptionState.hadException())
             break;
         if (nodeWasAccepted) {
             m_referenceNode = m_candidateNode;
@@ -115,13 +109,8 @@ PassRefPtr<Node> NodeIterator::nextNode(ScriptState* state, ExceptionState& exce
     return result.release();
 }
 
-PassRefPtr<Node> NodeIterator::previousNode(ScriptState* state, ExceptionState& exceptionState)
+PassRefPtr<Node> NodeIterator::previousNode(ExceptionState& exceptionState)
 {
-    if (m_detached) {
-        exceptionState.throwDOMException(InvalidStateError, "The iterator is detached.");
-        return nullptr;
-    }
-
     RefPtr<Node> result;
 
     m_candidateNode = m_referenceNode;
@@ -130,8 +119,8 @@ PassRefPtr<Node> NodeIterator::previousNode(ScriptState* state, ExceptionState& 
         // In other words, FILTER_REJECT does not pass over descendants
         // of the rejected node. Hence, FILTER_REJECT is the same as FILTER_SKIP.
         RefPtr<Node> provisionalResult = m_candidateNode.node;
-        bool nodeWasAccepted = acceptNode(state, provisionalResult.get()) == NodeFilter::FILTER_ACCEPT;
-        if (state && state->hadException())
+        bool nodeWasAccepted = acceptNode(provisionalResult.get(), exceptionState) == NodeFilter::FILTER_ACCEPT;
+        if (exceptionState.hadException())
             break;
         if (nodeWasAccepted) {
             m_referenceNode = m_candidateNode;
@@ -146,9 +135,7 @@ PassRefPtr<Node> NodeIterator::previousNode(ScriptState* state, ExceptionState& 
 
 void NodeIterator::detach()
 {
-    root()->document().detachNodeIterator(this);
-    m_detached = true;
-    m_referenceNode.node.clear();
+    // This is now a no-op as per the DOM specification.
 }
 
 void NodeIterator::nodeWillBeRemoved(Node& removedNode)
@@ -159,7 +146,6 @@ void NodeIterator::nodeWillBeRemoved(Node& removedNode)
 
 void NodeIterator::updateForNodeRemoval(Node& removedNode, NodePointer& referenceNode) const
 {
-    ASSERT(!m_detached);
     ASSERT(root()->document() == removedNode.document());
 
     // Iterator is not affected if the removed node is the reference node and is the root.

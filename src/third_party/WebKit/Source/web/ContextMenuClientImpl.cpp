@@ -29,22 +29,10 @@
  */
 
 #include "config.h"
-#include "ContextMenuClientImpl.h"
+#include "web/ContextMenuClientImpl.h"
 
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
-#include "WebContextMenuData.h"
-#include "WebDataSourceImpl.h"
-#include "WebFormElement.h"
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
-#include "WebMenuItemInfo.h"
-#include "WebPlugin.h"
-#include "WebPluginContainerImpl.h"
-#include "WebSearchableFormData.h"
-#include "WebSpellCheckClient.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
@@ -54,6 +42,10 @@
 #include "core/editing/Editor.h"
 #include "core/editing/SpellChecker.h"
 #include "core/events/CustomEvent.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/PinchViewport.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
@@ -64,9 +56,7 @@
 #include "core/loader/HistoryItem.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
 #include "platform/ContextMenu.h"
@@ -78,6 +68,18 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebContextMenuData.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebMenuItemInfo.h"
+#include "public/web/WebPlugin.h"
+#include "public/web/WebSearchableFormData.h"
+#include "public/web/WebSpellCheckClient.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPluginContainerImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
@@ -134,7 +136,7 @@ static String selectMisspelledWord(LocalFrame* selectedFrame)
     if (pos.isNull())
         return misspelledWord; // It is empty.
 
-    WebFrameImpl::selectWordAroundPosition(selectedFrame, pos);
+    WebLocalFrameImpl::selectWordAroundPosition(selectedFrame, pos);
     misspelledWord = selectedFrame->selectedText().stripWhiteSpace();
 
 #if OS(MACOSX)
@@ -161,14 +163,14 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, DocumentMarker& 
         return String();
 
     // Caret and range selections always return valid normalized ranges.
-    RefPtr<Range> selectionRange = selection.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectionRange = selection.toNormalizedRange();
     Vector<DocumentMarker*> markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     marker = *markers[0];
 
     // Cloning a range fails only for invalid ranges.
-    RefPtr<Range> markerRange = selectionRange->cloneRange(ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Range> markerRange = selectionRange->cloneRange();
     markerRange->setStart(markerRange->startContainer(), marker.startOffset());
     markerRange->setEnd(markerRange->endContainer(), marker.endOffset());
 
@@ -196,22 +198,27 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
     WebContextMenuData data;
     IntPoint mousePoint = selectedFrame->view()->contentsToWindow(r.roundedPointInInnerNodeFrame());
+
+    // FIXME(bokan): crbug.com/371902 - We shouldn't be making these scale
+    // related coordinate transformatios in an ad hoc way.
+    PinchViewport& pinchViewport = selectedFrame->host()->pinchViewport();
+    mousePoint -= flooredIntSize(pinchViewport.visibleRect().location());
     mousePoint.scale(m_webView->pageScaleFactor(), m_webView->pageScaleFactor());
     data.mousePosition = mousePoint;
 
     // Compute edit flags.
     data.editFlags = WebContextMenuData::CanDoNone;
-    if (m_webView->focusedWebCoreFrame()->editor().canUndo())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canUndo())
         data.editFlags |= WebContextMenuData::CanUndo;
-    if (m_webView->focusedWebCoreFrame()->editor().canRedo())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canRedo())
         data.editFlags |= WebContextMenuData::CanRedo;
-    if (m_webView->focusedWebCoreFrame()->editor().canCut())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canCut())
         data.editFlags |= WebContextMenuData::CanCut;
-    if (m_webView->focusedWebCoreFrame()->editor().canCopy())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canCopy())
         data.editFlags |= WebContextMenuData::CanCopy;
-    if (m_webView->focusedWebCoreFrame()->editor().canPaste())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canPaste())
         data.editFlags |= WebContextMenuData::CanPaste;
-    if (m_webView->focusedWebCoreFrame()->editor().canDelete())
+    if (toLocalFrame(m_webView->focusedWebCoreFrame())->editor().canDelete())
         data.editFlags |= WebContextMenuData::CanDelete;
     // We can always select all...
     data.editFlags |= WebContextMenuData::CanSelectAll;
@@ -221,7 +228,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     // all else.
     data.linkURL = r.absoluteLinkURL();
 
-    if (!r.absoluteImageURL().isEmpty()) {
+    if (isHTMLCanvasElement(r.innerNonSharedNode())) {
+        data.mediaType = WebContextMenuData::MediaTypeCanvas;
+    } else if (!r.absoluteImageURL().isEmpty()) {
         data.srcURL = r.absoluteImageURL();
         data.mediaType = WebContextMenuData::MediaTypeImage;
         data.mediaFlags |= WebContextMenuData::MediaCanPrint;
@@ -248,8 +257,12 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             data.mediaFlags |= WebContextMenuData::MediaCanSave;
         if (mediaElement->hasAudio())
             data.mediaFlags |= WebContextMenuData::MediaHasAudio;
-        if (mediaElement->hasVideo())
-            data.mediaFlags |= WebContextMenuData::MediaHasVideo;
+        // Media controls can be toggled only for video player. If we toggle
+        // controls for audio then the player disappears, and there is no way to
+        // return it back. Don't set this bit for fullscreen video, since
+        // toggling is ignored in that case.
+        if (mediaElement->hasVideo() && !mediaElement->isFullscreen())
+            data.mediaFlags |= WebContextMenuData::MediaCanToggleControls;
         if (mediaElement->controls())
             data.mediaFlags |= WebContextMenuData::MediaControls;
     } else if (isHTMLObjectElement(*r.innerNonSharedNode()) || isHTMLEmbedElement(*r.innerNonSharedNode())) {
@@ -307,10 +320,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
     if (r.isContentEditable()) {
         data.isEditable = true;
-#if ENABLE(INPUT_SPEECH)
-        if (isHTMLInputElement(*r.innerNonSharedNode()))
-            data.isSpeechInputEnabled = toHTMLInputElement(r.innerNonSharedNode())->isSpeechEnabled();
-#endif
+
         // When Chrome enables asynchronous spellchecking, its spellchecker adds spelling markers to misspelled
         // words and attaches suggestions to these markers in the background. Therefore, when a user right-clicks
         // a mouse on a word, Chrome just needs to find a spelling marker on the word instead of spellchecking it.
@@ -328,9 +338,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             }
         } else {
             data.isSpellCheckingEnabled =
-                m_webView->focusedWebCoreFrame()->spellChecker().isContinuousSpellCheckingEnabled();
+                toLocalFrame(m_webView->focusedWebCoreFrame())->spellChecker().isContinuousSpellCheckingEnabled();
             // Spellchecking might be enabled for the field, but could be disabled on the node.
-            if (m_webView->focusedWebCoreFrame()->spellChecker().isSpellCheckingEnabledInFocusedNode()) {
+            if (toLocalFrame(m_webView->focusedWebCoreFrame())->spellChecker().isSpellCheckingEnabledInFocusedNode()) {
                 data.misspelledWord = selectMisspelledWord(selectedFrame);
                 if (m_webView->spellCheckClient()) {
                     int misspelledOffset, misspelledLength;
@@ -370,7 +380,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     data.node = r.innerNonSharedNode();
 
     if (!fireBbContextMenuEvent(selectedFrame, data) && m_webView->client()) {
-        WebFrameImpl* selectedWebFrame = WebFrameImpl::fromFrame(selectedFrame);
+        WebLocalFrameImpl* selectedWebFrame = WebLocalFrameImpl::fromFrame(selectedFrame);
         selectedWebFrame->client()->showContextMenu(data);
     }
 }
@@ -382,7 +392,7 @@ void ContextMenuClientImpl::clearContextMenu()
     if (!selectedFrame)
         return;
 
-    WebFrameImpl* selectedWebFrame = WebFrameImpl::fromFrame(selectedFrame);
+    WebLocalFrameImpl* selectedWebFrame = WebLocalFrameImpl::fromFrame(selectedFrame);
     if (selectedWebFrame->client())
         selectedWebFrame->client()->clearContextMenu();
 }

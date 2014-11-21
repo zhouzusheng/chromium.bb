@@ -252,6 +252,15 @@ SkColor DebugColors::WheelEventHandlerRectFillColor() {
   return SkColorSetARGB(30, 189, 209, 57);
 }
 
+// Scroll-event-handler rects in teal.
+SkColor DebugColors::ScrollEventHandlerRectBorderColor() {
+  return SkColorSetARGB(255, 24, 167, 181);
+}
+int DebugColors::ScrollEventHandlerRectBorderWidth() { return 2; }
+SkColor DebugColors::ScrollEventHandlerRectFillColor() {
+  return SkColorSetARGB(30, 24, 167, 181);
+}
+
 // Non-fast-scrollable rects in orange.
 SkColor DebugColors::NonFastScrollableRectBorderColor() {
   return SkColorSetARGB(255, 238, 163, 59);
@@ -275,6 +284,11 @@ SkColor DebugColors::NonPaintedFillColor() { return SK_ColorCYAN; }
 
 // Missing picture rects in magenta.
 SkColor DebugColors::MissingPictureFillColor() { return SK_ColorMAGENTA; }
+
+// Missing resize invalidations are in salmon pink.
+SkColor DebugColors::MissingResizeInvalidations() {
+  return SkColorSetARGB(255, 255, 155, 170);
+}
 
 // Picture borders in transparent blue.
 SkColor DebugColors::PictureBorderColor() {

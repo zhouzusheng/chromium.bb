@@ -121,16 +121,16 @@ static bool verifyProtocolHandlerScheme(const String& scheme, const String& meth
 
 NavigatorContentUtils* NavigatorContentUtils::from(Page& page)
 {
-    return static_cast<NavigatorContentUtils*>(RefCountedSupplement<Page, NavigatorContentUtils>::from(page, NavigatorContentUtils::supplementName()));
+    return static_cast<NavigatorContentUtils*>(WillBeHeapSupplement<Page>::from(page, supplementName()));
 }
 
 NavigatorContentUtils::~NavigatorContentUtils()
 {
 }
 
-PassRefPtr<NavigatorContentUtils> NavigatorContentUtils::create(NavigatorContentUtilsClient* client)
+PassOwnPtrWillBeRawPtr<NavigatorContentUtils> NavigatorContentUtils::create(PassOwnPtr<NavigatorContentUtilsClient> client)
 {
-    return adoptRef(new NavigatorContentUtils(client));
+    return adoptPtrWillBeNoop(new NavigatorContentUtils(client));
 }
 
 void NavigatorContentUtils::registerProtocolHandler(Navigator& navigator, const String& scheme, const String& url, const String& title, ExceptionState& exceptionState)
@@ -138,11 +138,8 @@ void NavigatorContentUtils::registerProtocolHandler(Navigator& navigator, const 
     if (!navigator.frame())
         return;
 
-    Document* document = navigator.frame()->document();
-    if (!document)
-        return;
-
-    KURL baseURL = document->baseURL();
+    ASSERT(navigator.frame()->document());
+    KURL baseURL = navigator.frame()->document()->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
@@ -181,6 +178,10 @@ String NavigatorContentUtils::isProtocolHandlerRegistered(Navigator& navigator, 
         return declined;
 
     Document* document = navigator.frame()->document();
+    ASSERT(document);
+    if (document->activeDOMObjectsAreStopped())
+        return declined;
+
     KURL baseURL = document->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
@@ -198,8 +199,8 @@ void NavigatorContentUtils::unregisterProtocolHandler(Navigator& navigator, cons
     if (!navigator.frame())
         return;
 
-    Document* document = navigator.frame()->document();
-    KURL baseURL = document->baseURL();
+    ASSERT(navigator.frame()->document());
+    KURL baseURL = navigator.frame()->document()->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
@@ -216,9 +217,9 @@ const char* NavigatorContentUtils::supplementName()
     return "NavigatorContentUtils";
 }
 
-void provideNavigatorContentUtilsTo(Page& page, NavigatorContentUtilsClient* client)
+void provideNavigatorContentUtilsTo(Page& page, PassOwnPtr<NavigatorContentUtilsClient> client)
 {
-    RefCountedSupplement<Page, NavigatorContentUtils>::provideTo(page, NavigatorContentUtils::supplementName(), NavigatorContentUtils::create(client));
+    NavigatorContentUtils::provideTo(page, NavigatorContentUtils::supplementName(), NavigatorContentUtils::create(client));
 }
 
 } // namespace WebCore

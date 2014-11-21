@@ -601,6 +601,14 @@
 /* Vertex Buffer Object */
 #define GR_GL_WRITE_ONLY                         0x88B9
 #define GR_GL_BUFFER_MAPPED                      0x88BC
+
+#define GR_GL_MAP_READ_BIT                       0x0001
+#define GR_GL_MAP_WRITE_BIT                      0x0002
+#define GR_GL_MAP_INVALIDATE_RANGE_BIT           0x0004
+#define GR_GL_MAP_INVALIDATE_BUFFER_BIT          0x0008
+#define GR_GL_MAP_FLUSH_EXPLICIT_BIT             0x0010
+#define GR_GL_MAP_UNSYNCHRONIZED_BIT             0x0020
+
 /* Read Format */
 #define GR_GL_IMPLEMENTATION_COLOR_READ_TYPE   0x8B9A
 #define GR_GL_IMPLEMENTATION_COLOR_READ_FORMAT 0x8B9B
@@ -690,6 +698,11 @@
 #define GR_GL_COLOR_ATTACHMENT0              0x8CE0
 #define GR_GL_DEPTH_ATTACHMENT               0x8D00
 #define GR_GL_STENCIL_ATTACHMENT             0x8D20
+
+// GL_EXT_discard_framebuffer
+#define GR_GL_COLOR                          0x1800
+#define GR_GL_DEPTH                          0x1801
+#define GR_GL_STENCIL                        0x1802
 
 #define GR_GL_NONE                           0
 

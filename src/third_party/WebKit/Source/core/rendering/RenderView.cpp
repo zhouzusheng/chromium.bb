@@ -33,7 +33,6 @@
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
@@ -165,7 +164,6 @@ void RenderView::layoutContent()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     RenderBlockFlow::layout();
 
     if (RuntimeEnabledFeatures::dialogElementEnabled())
@@ -195,7 +193,7 @@ void RenderView::layout()
     if (shouldUsePrintingLayout())
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = logicalWidth();
 
-    SubtreeLayoutScope layoutScope(this);
+    SubtreeLayoutScope layoutScope(*this);
 
     // Use calcWidth/Height to get the new width/height, since this will take the full page zoom factor into account.
     bool relayoutChildren = !shouldUsePrintingLayout() && (!m_frameView || width() != viewWidth() || height() != viewHeight());
@@ -416,16 +414,11 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
     }
 }
 
-bool RenderView::shouldRepaint(const LayoutRect& rect) const
-{
-    if (document().printing())
-        return false;
-    return m_frameView && !rect.isEmpty();
-}
-
 void RenderView::repaintViewRectangle(const LayoutRect& ur) const
 {
-    if (!shouldRepaint(ur))
+    ASSERT(!ur.isEmpty());
+
+    if (document().printing() || !m_frameView)
         return;
 
     // We always just invalidate the root view, since we could be an iframe that is clipped out
@@ -476,8 +469,13 @@ void RenderView::computeRectForRepaint(const RenderLayerModelObject* repaintCont
             rect.setX(viewWidth() - rect.maxX());
     }
 
-    if (fixed && m_frameView)
+    if (fixed && m_frameView) {
         rect.move(m_frameView->scrollOffsetForFixedPosition());
+        // If we have a pending scroll, invalidate the previous scroll position.
+        if (!m_frameView->pendingScrollDelta().isZero()) {
+            rect.move(-m_frameView->pendingScrollDelta());
+        }
+    }
 
     // Apply our transform if we have one (because of full page zooming).
     if (!repaintContainer && layer() && layer()->transform())
@@ -536,7 +534,7 @@ IntRect RenderView::selectionBounds(bool clipToVisibleContent) const
         RenderSelectionInfo* info = i->value.get();
         // RenderSelectionInfo::rect() is in the coordinates of the repaintContainer, so map to page coordinates.
         LayoutRect currRect = info->rect();
-        if (RenderLayerModelObject* repaintContainer = info->repaintContainer()) {
+        if (const RenderLayerModelObject* repaintContainer = info->repaintContainer()) {
             FloatQuad absQuad = repaintContainer->localToAbsoluteQuad(FloatRect(currRect));
             currRect = absQuad.enclosingBoundingBox();
         }
@@ -887,7 +885,7 @@ void RenderView::updateHitTestResult(HitTestResult& result, const LayoutPoint& p
 
 bool RenderView::usesCompositing() const
 {
-    return m_compositor && m_compositor->inCompositingMode();
+    return m_compositor && m_compositor->staleInCompositingMode();
 }
 
 RenderLayerCompositor* RenderView::compositor()
@@ -946,7 +944,7 @@ IntervalArena* RenderView::intervalArena()
 bool RenderView::backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const
 {
     // FIXME: Remove this main frame check. Same concept applies to subframes too.
-    if (!m_frameView || !m_frameView->isMainFrame())
+    if (!frame()->isMainFrame())
         return false;
 
     return m_frameView->hasOpaqueBackground();

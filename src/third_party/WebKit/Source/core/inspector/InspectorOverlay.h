@@ -29,10 +29,12 @@
 #ifndef InspectorOverlay_h
 #define InspectorOverlay_h
 
+#include "InspectorTypeBuilder.h"
 #include "platform/Timer.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -46,6 +48,7 @@ class EmptyChromeClient;
 class GraphicsContext;
 class InspectorClient;
 class InspectorOverlayHost;
+class JSONObject;
 class JSONValue;
 class Node;
 class Page;
@@ -118,7 +121,6 @@ public:
     void hide();
     void paint(GraphicsContext&);
     void drawOutline(GraphicsContext*, const LayoutRect&, const Color&);
-    void getHighlight(Highlight*) const;
     void resize(const IntSize&);
     bool handleGestureEvent(const PlatformGestureEvent&);
     bool handleMouseEvent(const PlatformMouseEvent&);
@@ -129,12 +131,13 @@ public:
     void setInspectModeEnabled(bool);
 
     void hideHighlight();
-    void highlightNode(Node*, Node* eventTarget, const HighlightConfig&);
+    void highlightNode(Node*, Node* eventTarget, const HighlightConfig&, bool omitTooltip);
     void highlightQuad(PassOwnPtr<FloatQuad>, const HighlightConfig&);
     void showAndHideViewSize(bool showGrid);
 
     Node* highlightedNode() const;
     bool getBoxModel(Node*, Vector<FloatQuad>*);
+    PassRefPtr<TypeBuilder::DOM::ShapeOutsideInfo> buildObjectForShapeOutside(Node*);
 
     void freePage();
 
@@ -169,13 +172,14 @@ private:
     RefPtr<Node> m_eventTargetNode;
     HighlightConfig m_nodeHighlightConfig;
     OwnPtr<FloatQuad> m_highlightQuad;
-    OwnPtr<Page> m_overlayPage;
+    OwnPtrWillBePersistent<Page> m_overlayPage;
     OwnPtr<EmptyChromeClient> m_overlayChromeClient;
     RefPtr<InspectorOverlayHost> m_overlayHost;
     HighlightConfig m_quadHighlightConfig;
     IntSize m_size;
     bool m_drawViewSize;
     bool m_drawViewSizeWithGrid;
+    bool m_omitTooltip;
     Timer<InspectorOverlay> m_timer;
     int m_activeProfilerCount;
 };

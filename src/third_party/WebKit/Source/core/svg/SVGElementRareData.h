@@ -31,14 +31,14 @@ namespace WebCore {
 class CSSCursorImageValue;
 class SVGCursorElement;
 class SVGElement;
-class SVGElementInstance;
 
-class SVGElementRareData {
-    WTF_MAKE_NONCOPYABLE(SVGElementRareData); WTF_MAKE_FAST_ALLOCATED;
+class SVGElementRareData : public NoBaseWillBeGarbageCollectedFinalized<SVGElementRareData> {
+    WTF_MAKE_NONCOPYABLE(SVGElementRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    SVGElementRareData()
-        : m_cursorElement(0)
-        , m_cursorImageValue(0)
+    SVGElementRareData(SVGElement* owner)
+        : m_owner(owner)
+        , m_cursorElement(nullptr)
+        , m_cursorImageValue(nullptr)
         , m_correspondingElement(0)
         , m_instancesUpdatesBlocked(false)
         , m_useOverrideComputedStyle(false)
@@ -46,12 +46,17 @@ public:
     {
     }
 
-    typedef HashMap<const SVGElement*, SVGElementRareData*> SVGElementRareDataMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<const SVGElement>, RawPtrWillBeMember<SVGElementRareData> > SVGElementRareDataMap;
 
     static SVGElementRareDataMap& rareDataMap()
     {
+#if ENABLE(OILPAN)
+        DEFINE_STATIC_LOCAL(Persistent<SVGElementRareDataMap>, rareDataMap, (new SVGElementRareDataMap));
+        return *rareDataMap;
+#else
         DEFINE_STATIC_LOCAL(SVGElementRareDataMap, rareDataMap, ());
         return rareDataMap;
+#endif
     }
 
     static SVGElementRareData* rareDataFromMap(const SVGElement* element)
@@ -59,8 +64,8 @@ public:
         return rareDataMap().get(element);
     }
 
-    HashSet<SVGElementInstance*>& elementInstances() { return m_elementInstances; }
-    const HashSet<SVGElementInstance*>& elementInstances() const { return m_elementInstances; }
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& elementInstances() { return m_elementInstances; }
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& elementInstances() const { return m_elementInstances; }
 
     bool instanceUpdatesBlocked() const { return m_instancesUpdatesBlocked; }
     void setInstanceUpdatesBlocked(bool value) { m_instancesUpdatesBlocked = value; }
@@ -82,11 +87,6 @@ public:
         return m_animatedSMILStyleProperties.get();
     }
 
-    void destroyAnimatedSMILStyleProperties()
-    {
-        m_animatedSMILStyleProperties.clear();
-    }
-
     RenderStyle* overrideComputedStyle(Element* element, RenderStyle* parentStyle)
     {
         ASSERT(element);
@@ -105,15 +105,55 @@ public:
     void setUseOverrideComputedStyle(bool value) { m_useOverrideComputedStyle = value; }
     void setNeedsOverrideComputedStyleUpdate() { m_needsOverrideComputedStyleUpdate = true; }
 
+    void trace(Visitor* visitor)
+    {
+        visitor->trace(m_animatedSMILStyleProperties);
+        visitor->trace(m_elementInstances);
+        visitor->registerWeakMembers<SVGElementRareData, &SVGElementRareData::processWeakMembers>(this);
+    }
+
+    void processWeakMembers(Visitor* visitor)
+    {
+#if ENABLE(OILPAN)
+        if (!visitor->isAlive(m_owner)) {
+            // If the owning SVGElement is dead this raraData element will be collected ASAP.
+            // The owning SVGElement will also be automatically removed from the SVGCursorElement's
+            // HashSet so no need to call out and clear anything.
+            // It should not be necessary, but just in case we clear the internal members to
+            // ensure we don't have a stale pointer.
+            m_owner = nullptr;
+            m_cursorElement = nullptr;
+            m_cursorImageValue = nullptr;
+            return;
+        }
+        ASSERT(m_owner);
+        if (!visitor->isAlive(m_cursorElement))
+            m_cursorElement = nullptr;
+
+        if (!visitor->isAlive(m_cursorImageValue)) {
+            // If the owning SVGElement is still alive and it is pointing to an SVGCursorElement
+            // we unregister it when the CSSCursorImageValue dies.
+            if (m_cursorElement) {
+                m_cursorElement->removeReferencedElement(m_owner);
+                m_cursorElement = nullptr;
+            }
+            m_cursorImageValue = nullptr;
+        }
+        ASSERT(!m_cursorElement || visitor->isAlive(m_cursorElement));
+        ASSERT(!m_cursorImageValue || visitor->isAlive(m_cursorImageValue));
+#endif
+    }
+
 private:
-    HashSet<SVGElementInstance*> m_elementInstances;
-    SVGCursorElement* m_cursorElement;
-    CSSCursorImageValue* m_cursorImageValue;
+    RawPtrWillBeWeakMember<SVGElement> m_owner;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> > m_elementInstances;
+    RawPtrWillBeWeakMember<SVGCursorElement> m_cursorElement;
+    RawPtrWillBeWeakMember<CSSCursorImageValue> m_cursorImageValue;
     SVGElement* m_correspondingElement;
     bool m_instancesUpdatesBlocked : 1;
     bool m_useOverrideComputedStyle : 1;
     bool m_needsOverrideComputedStyleUpdate : 1;
-    RefPtrWillBePersistent<MutableStylePropertySet> m_animatedSMILStyleProperties;
+    RefPtrWillBeMember<MutableStylePropertySet> m_animatedSMILStyleProperties;
     RefPtr<RenderStyle> m_overrideComputedStyle;
 };
 

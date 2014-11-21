@@ -30,7 +30,6 @@
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderView.h"
@@ -80,7 +79,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
         if (table && !table->selfNeedsLayout() && !table->normalChildNeedsLayout() && oldStyle && oldStyle->border() != style()->border())
             table->invalidateCollapsedBorders();
 
-        if (table && oldStyle && diff == StyleDifferenceLayout && needsLayout() && table->collapseBorders() && borderWidthChanged(oldStyle, style())) {
+        if (table && oldStyle && diff.needsFullLayout() && needsLayout() && table->collapseBorders() && borderWidthChanged(oldStyle, style())) {
             // If the border width changes on a row, we need to make sure the cells in the row know to lay out again.
             // This only happens when borders are collapsed, since they end up affecting the border sides of the cell
             // itself.
@@ -160,14 +159,12 @@ void RenderTableRow::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-
     // Table rows do not add translation.
     LayoutStateMaintainer statePusher(*this, LayoutSize());
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
         if (child->isTableCell()) {
-            SubtreeLayoutScope layouter(child);
+            SubtreeLayoutScope layouter(*child);
             RenderTableCell* cell = toRenderTableCell(child);
             if (!cell->needsLayout())
                 cell->markForPaginationRelayoutIfNeeded(layouter);
@@ -201,23 +198,6 @@ void RenderTableRow::layout()
 
     // RenderTableSection::layoutRows will set our logical height and width later, so it calls updateLayerTransform().
     clearNeedsLayout();
-}
-
-LayoutRect RenderTableRow::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
-{
-    ASSERT(parent());
-
-    if (repaintContainer == this)
-        return RenderBox::clippedOverflowRectForRepaint(repaintContainer);
-
-    // For now, just repaint the whole table.
-    // FIXME: Find a better way to do this, e.g., need to repaint all the cells that we
-    // might have propagated a background color into.
-    // FIXME: do repaintContainer checks here
-    if (RenderTable* parentTable = table())
-        return parentTable->clippedOverflowRectForRepaint(repaintContainer);
-
-    return LayoutRect();
 }
 
 // Hit Testing

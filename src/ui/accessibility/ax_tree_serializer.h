@@ -172,10 +172,13 @@ AXTreeSerializer<AXSourceNode>::~AXTreeSerializer() {
 
 template<typename AXSourceNode>
 void AXTreeSerializer<AXSourceNode>::Reset() {
-  if (client_root_) {
-    DeleteClientSubtree(client_root_);
-    client_root_ = NULL;
-  }
+  if (!client_root_)
+    return;
+
+  DeleteClientSubtree(client_root_);
+  client_id_map_.erase(client_root_->id);
+  delete client_root_;
+  client_root_ = NULL;
 }
 
 template<typename AXSourceNode>
@@ -290,9 +293,7 @@ void AXTreeSerializer<AXSourceNode>::SerializeChanges(
   AXSourceNode lca = LeastCommonAncestor(node);
 
   if (client_root_) {
-    // If the LCA is anything other than the node itself, tell the
-    // client to first delete the subtree rooted at the LCA.
-    bool need_delete = !tree_->IsEqual(lca, node);
+    bool need_delete = false;
     if (tree_->IsValid(lca)) {
       // Check for any reparenting within this subtree - if there is
       // any, we need to delete and reserialize the whole subtree
@@ -305,9 +306,7 @@ void AXTreeSerializer<AXSourceNode>::SerializeChanges(
       // If there's no LCA, just tell the client to destroy the whole
       // tree and then we'll serialize everything from the new root.
       out_update->node_id_to_clear = client_root_->id;
-      DeleteClientSubtree(client_root_);
-      client_id_map_.erase(client_root_->id);
-      client_root_ = NULL;
+      Reset();
     } else if (need_delete) {
       // Otherwise, if we need to reserialize a subtree, first we need
       // to delete those nodes in our client tree so that
@@ -318,6 +317,7 @@ void AXTreeSerializer<AXSourceNode>::SerializeChanges(
       for (size_t i = 0; i < client_lca->children.size(); ++i) {
         client_id_map_.erase(client_lca->children[i]->id);
         DeleteClientSubtree(client_lca->children[i]);
+        delete client_lca->children[i];
       }
       client_lca->children.clear();
     }
@@ -342,6 +342,7 @@ void AXTreeSerializer<AXSourceNode>::DeleteClientSubtree(
   for (size_t i = 0; i < client_node->children.size(); ++i) {
     client_id_map_.erase(client_node->children[i]->id);
     DeleteClientSubtree(client_node->children[i]);
+    delete client_node->children[i];
   }
   client_node->children.clear();
 }
@@ -365,10 +366,7 @@ void AXTreeSerializer<AXSourceNode>::SerializeChangedNodes(
   int id = tree_->GetId(node);
   ClientTreeNode* client_node = ClientTreeNodeById(id);
   if (!client_node) {
-    if (client_root_) {
-      client_id_map_.erase(client_root_->id);
-      DeleteClientSubtree(client_root_);
-    }
+    Reset();
     client_root_ = new ClientTreeNode();
     client_node = client_root_;
     client_node->id = id;
@@ -408,6 +406,7 @@ void AXTreeSerializer<AXSourceNode>::SerializeChangedNodes(
     if (new_child_ids.find(old_child_id) == new_child_ids.end()) {
       client_id_map_.erase(old_child_id);
       DeleteClientSubtree(old_child);
+      delete old_child;
     } else {
       client_child_id_map[old_child_id] = old_child;
     }
@@ -418,8 +417,13 @@ void AXTreeSerializer<AXSourceNode>::SerializeChangedNodes(
   out_update->nodes.push_back(AXNodeData());
   AXNodeData* serialized_node = &out_update->nodes.back();
   tree_->SerializeNode(node, serialized_node);
-  if (serialized_node->id == client_root_->id)
+  // TODO(dmazzoni/dtseng): Make the serializer not depend on roles to identify
+  // the root.
+  if (serialized_node->id == client_root_->id &&
+      (serialized_node->role != AX_ROLE_ROOT_WEB_AREA &&
+       serialized_node->role != AX_ROLE_DESKTOP)) {
     serialized_node->role = AX_ROLE_ROOT_WEB_AREA;
+  }
   serialized_node->child_ids.clear();
 
   // Iterate over the children, make note of the ones that are new

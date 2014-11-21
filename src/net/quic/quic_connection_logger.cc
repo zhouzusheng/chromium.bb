@@ -309,6 +309,8 @@ QuicConnectionLogger::QuicConnectionLogger(const BoundNetLog& net_log)
       num_packets_received_(0),
       num_truncated_acks_sent_(0),
       num_truncated_acks_received_(0),
+      num_frames_received_(0),
+      num_duplicate_frames_received_(0),
       connection_description_(GetConnectionDescriptionString()) {
 }
 
@@ -319,6 +321,20 @@ QuicConnectionLogger::~QuicConnectionLogger() {
                        num_truncated_acks_sent_);
   UMA_HISTOGRAM_COUNTS("Net.QuicSession.TruncatedAcksReceived",
                        num_truncated_acks_received_);
+  if (num_frames_received_ > 0) {
+    int duplicate_stream_frame_per_thousand =
+        num_duplicate_frames_received_ * 1000 / num_frames_received_;
+    if (num_packets_received_ < 100) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "Net.QuicSession.StreamFrameDuplicatedShortConnection",
+          duplicate_stream_frame_per_thousand, 1, 1000, 75);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "Net.QuicSession.StreamFrameDuplicatedLongConnection",
+          duplicate_stream_frame_per_thousand, 1, 1000, 75);
+
+    }
+  }
 
   RecordLossHistograms();
 }
@@ -408,6 +424,13 @@ void QuicConnectionLogger:: OnPacketRetransmitted(
 void QuicConnectionLogger::OnPacketReceived(const IPEndPoint& self_address,
                                             const IPEndPoint& peer_address,
                                             const QuicEncryptedPacket& packet) {
+  if (local_address_from_self_.GetFamily() == ADDRESS_FAMILY_UNSPECIFIED) {
+    local_address_from_self_ = self_address;
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ConnectionTypeFromSelf",
+                              self_address.GetFamily(),
+                              ADDRESS_FAMILY_LAST);
+  }
+
   last_received_packet_size_ = packet.length();
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_PACKET_RECEIVED,
@@ -535,7 +558,7 @@ void QuicConnectionLogger::OnConnectionCloseFrame(
 void QuicConnectionLogger::OnPublicResetPacket(
     const QuicPublicResetPacket& packet) {
   net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED);
-  UpdatePublicResetAddressMismatchHistogram(client_address_,
+  UpdatePublicResetAddressMismatchHistogram(local_address_from_shlo_,
                                             packet.client_address);
 }
 
@@ -565,7 +588,10 @@ void QuicConnectionLogger::OnCryptoHandshakeMessageReceived(
     QuicSocketAddressCoder decoder;
     if (message.GetStringPiece(kCADR, &address) &&
         decoder.Decode(address.data(), address.size())) {
-      client_address_ = IPEndPoint(decoder.ip(), decoder.port());
+      local_address_from_shlo_ = IPEndPoint(decoder.ip(), decoder.port());
+      UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ConnectionTypeFromPeer",
+                                local_address_from_shlo_.GetFamily(),
+                                ADDRESS_FAMILY_LAST);
     }
   }
 }
@@ -589,6 +615,16 @@ void QuicConnectionLogger::OnSuccessfulVersionNegotiation(
   string quic_version = QuicVersionToString(version);
   net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_VERSION_NEGOTIATED,
                     NetLog::StringCallback("version", &quic_version));
+}
+
+void QuicConnectionLogger::UpdateReceivedFrameCounts(
+    QuicStreamId stream_id,
+    int num_frames_received,
+    int num_duplicate_frames_received) {
+  if (stream_id != kCryptoStreamId) {
+    num_frames_received_ += num_frames_received;
+    num_duplicate_frames_received_ += num_duplicate_frames_received;
+  }
 }
 
 base::HistogramBase* QuicConnectionLogger::GetPacketSequenceNumberHistogram(

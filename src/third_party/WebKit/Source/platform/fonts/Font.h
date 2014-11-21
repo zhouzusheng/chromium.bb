@@ -89,7 +89,7 @@ public:
 
     const FontDescription& fontDescription() const { return m_fontDescription; }
 
-    void update(PassRefPtr<FontSelector>) const;
+    void update(PassRefPtrWillBeRawPtr<FontSelector>) const;
 
     enum CustomFontNotReadyAction { DoNotPaintIfFontNotReady, UseFallbackIfFontNotReady };
     void drawText(GraphicsContext*, const TextRunPaintInfo&, const FloatPoint&, CustomFontNotReadyAction = DoNotPaintIfFontNotReady) const;
@@ -131,7 +131,7 @@ private:
     enum ForTextEmphasisOrNot { NotForTextEmphasis, ForTextEmphasis };
 
     // Returns the initial in-stream advance.
-    float getGlyphsAndAdvancesForSimpleText(const TextRun&, int from, int to, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
+    float getGlyphsAndAdvancesForSimpleText(const TextRunPaintInfo&, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
     void drawSimpleText(GraphicsContext*, const TextRunPaintInfo&, const FloatPoint&) const;
     void drawEmphasisMarksForSimpleText(GraphicsContext*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&) const;
     void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, unsigned from, unsigned numGlyphs, const FloatPoint&, const FloatRect& textRect) const;
@@ -144,7 +144,7 @@ private:
     bool getEmphasisMarkGlyphData(const AtomicString&, GlyphData&) const;
 
     // Returns the initial in-stream advance.
-    float getGlyphsAndAdvancesForComplexText(const TextRun&, int from, int to, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
+    float getGlyphsAndAdvancesForComplexText(const TextRunPaintInfo&, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
     void drawComplexText(GraphicsContext*, const TextRunPaintInfo&, const FloatPoint&) const;
     void drawEmphasisMarksForComplexText(GraphicsContext*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&) const;
     float floatWidthForComplexText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
@@ -164,8 +164,9 @@ public:
 
     FontFallbackList* fontList() const { return m_fontFallbackList.get(); }
 
-    void willUseFontData() const;
+    void willUseFontData(UChar32) const;
 
+    static FloatRect pixelSnappedSelectionRect(float fromX, float toX, float y, float height);
 private:
     bool loadingCustomFonts() const
     {

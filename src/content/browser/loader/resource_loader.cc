@@ -8,6 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
+#include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
 #include "content/browser/loader/detachable_resource_handler.h"
@@ -29,7 +30,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request_status.h"
-#include "webkit/browser/appcache/appcache_interceptor.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -54,7 +54,7 @@ void PopulateResourceResponse(net::URLRequest* request,
   response->head.connection_info = response_info.connection_info;
   response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
   response->head.socket_address = request->GetSocketAddress();
-  appcache::AppCacheInterceptor::GetExtraResponseInfo(
+  AppCacheInterceptor::GetExtraResponseInfo(
       request,
       &response->head.appcache_id,
       &response->head.appcache_manifest_url);
@@ -357,12 +357,21 @@ void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
 
   CompleteRead(bytes_read);
 
-  if (is_deferred())
+  // If the handler cancelled or deferred the request, do not continue
+  // processing the read. If cancelled, the URLRequest has already been
+  // cancelled and will schedule an erroring OnReadCompleted later. If deferred,
+  // do nothing until resumed.
+  //
+  // Note: if bytes_read is 0 (EOF) and the handler defers, resumption will call
+  // Read() on the URLRequest again and get a second EOF.
+  if (is_deferred() || !request_->status().is_success())
     return;
 
-  if (request_->status().is_success() && bytes_read > 0) {
+  if (bytes_read > 0) {
     StartReading(true);  // Read the next chunk.
   } else {
+    // URLRequest reported an EOF. Call ResponseCompleted.
+    DCHECK_EQ(0, bytes_read);
     ResponseCompleted();
   }
 }
@@ -615,6 +624,11 @@ void ResourceLoader::CompleteRead(int bytes_read) {
   } else if (defer) {
     deferred_stage_ = DEFERRED_READ;  // Read next chunk when resumed.
   }
+
+  // Note: the request may still have been cancelled while OnReadCompleted
+  // returns true if OnReadCompleted caused request to get cancelled
+  // out-of-band. (In AwResourceDispatcherHostDelegate::DownloadStarting, for
+  // instance.)
 }
 
 void ResourceLoader::ResponseCompleted() {

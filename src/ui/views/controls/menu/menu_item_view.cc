@@ -184,11 +184,11 @@ void MenuItemView::GetAccessibleState(ui::AXViewState* state) {
 }
 
 // static
-bool MenuItemView::IsBubble(MenuItemView::AnchorPosition anchor) {
-  return anchor == MenuItemView::BUBBLE_LEFT ||
-         anchor == MenuItemView::BUBBLE_RIGHT ||
-         anchor == MenuItemView::BUBBLE_ABOVE ||
-         anchor == MenuItemView::BUBBLE_BELOW;
+bool MenuItemView::IsBubble(MenuAnchorPosition anchor) {
+  return anchor == MENU_ANCHOR_BUBBLE_LEFT ||
+         anchor == MENU_ANCHOR_BUBBLE_RIGHT ||
+         anchor == MENU_ANCHOR_BUBBLE_ABOVE ||
+         anchor == MENU_ANCHOR_BUBBLE_BELOW;
 }
 
 // static
@@ -770,7 +770,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 
   // Render the check.
   if (type_ == CHECKBOX && delegate->IsItemChecked(GetCommand())) {
-    gfx::ImageSkia check = GetMenuCheckImage(IsSelected());
+    gfx::ImageSkia check = GetMenuCheckImage(render_selection);
     // Don't use config.check_width here as it's padded
     // to force more padding (AURA).
     gfx::Rect check_bounds(icon_x,
@@ -842,7 +842,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 
   // Render the submenu indicator (arrow).
   if (HasSubmenu()) {
-    gfx::ImageSkia arrow = GetSubmenuArrowImage(IsSelected());
+    gfx::ImageSkia arrow = GetSubmenuArrowImage(render_selection);
     gfx::Rect arrow_bounds(this->width() - config.arrow_width -
                                config.arrow_to_edge_padding,
                            top_margin + (available_height - arrow.height()) / 2,

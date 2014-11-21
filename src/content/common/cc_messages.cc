@@ -47,6 +47,9 @@ void ParamTraits<cc::FilterOperation>::Write(
     case cc::FilterOperation::REFERENCE:
       WriteParam(m, p.image_filter());
       break;
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      NOTREACHED();
+      break;
   }
 }
 
@@ -122,6 +125,8 @@ bool ParamTraits<cc::FilterOperation>::Read(
       success = true;
       break;
     }
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      break;
   }
   return success;
 }
@@ -166,6 +171,9 @@ void ParamTraits<cc::FilterOperation>::Log(
       break;
     case cc::FilterOperation::REFERENCE:
       LogParam(p.image_filter(), l);
+      break;
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      NOTREACHED();
       break;
   }
   l->append(")");
@@ -402,7 +410,7 @@ bool ParamTraits<cc::RenderPass>::Read(
     const Message* m, PickleIterator* iter, param_type* p) {
   cc::RenderPass::Id id(-1, -1);
   gfx::Rect output_rect;
-  gfx::RectF damage_rect;
+  gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
   size_t shared_quad_state_list_size;
@@ -496,10 +504,9 @@ bool ParamTraits<cc::RenderPass>::Read(
 
     // If the quad has a new shared quad state, read it in.
     if (last_shared_quad_state_index != shared_quad_state_index) {
-      scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
-      if (!ReadParam(m, iter, state.get()))
+      cc::SharedQuadState* state = p->CreateAndAppendSharedQuadState();
+      if (!ReadParam(m, iter, state))
         return false;
-      p->shared_quad_state_list.push_back(state.Pass());
       last_shared_quad_state_index = shared_quad_state_index;
     }
 
@@ -755,13 +762,13 @@ void ParamTraits<cc::DelegatedFrameData>::Log(const param_type& p,
 
 void ParamTraits<cc::SoftwareFrameData>::Write(Message* m,
                                                const param_type& p) {
-  DCHECK(p.CheckedSizeInBytes().IsValid());
+  DCHECK(cc::SharedBitmap::VerifySizeInBytes(p.size));
 
   m->Reserve(sizeof(cc::SoftwareFrameData));
   WriteParam(m, p.id);
   WriteParam(m, p.size);
   WriteParam(m, p.damage_rect);
-  WriteParam(m, p.handle);
+  WriteParam(m, p.bitmap_id);
 }
 
 bool ParamTraits<cc::SoftwareFrameData>::Read(const Message* m,
@@ -769,11 +776,12 @@ bool ParamTraits<cc::SoftwareFrameData>::Read(const Message* m,
                                               param_type* p) {
   if (!ReadParam(m, iter, &p->id))
     return false;
-  if (!ReadParam(m, iter, &p->size) || !p->CheckedSizeInBytes().IsValid())
+  if (!ReadParam(m, iter, &p->size) ||
+      !cc::SharedBitmap::VerifySizeInBytes(p->size))
     return false;
   if (!ReadParam(m, iter, &p->damage_rect))
     return false;
-  if (!ReadParam(m, iter, &p->handle))
+  if (!ReadParam(m, iter, &p->bitmap_id))
     return false;
   return true;
 }
@@ -787,7 +795,7 @@ void ParamTraits<cc::SoftwareFrameData>::Log(const param_type& p,
   l->append(", ");
   LogParam(p.damage_rect, l);
   l->append(", ");
-  LogParam(p.handle, l);
+  LogParam(p.bitmap_id, l);
   l->append(")");
 }
 

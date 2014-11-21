@@ -34,16 +34,17 @@
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/Document.h"
+#include "core/frame/UseCounter.h"
 #include "core/page/WindowFocusAllowedIndicator.h"
 #include "modules/notifications/NotificationClient.h"
 #include "modules/notifications/NotificationController.h"
 
 namespace WebCore {
 
-PassRefPtrWillBeRawPtr<Notification> Notification::create(ExecutionContext* context, const String& title, const Dictionary& options)
+Notification* Notification::create(ExecutionContext* context, const String& title, const Dictionary& options)
 {
-    NotificationClient* client = NotificationController::clientFrom(toDocument(context)->page());
-    RefPtrWillBeRawPtr<Notification> notification = adoptRefWillBeRefCountedGarbageCollected(new Notification(title, context, client));
+    NotificationClient* client = NotificationController::clientFrom(toDocument(context)->frame());
+    Notification* notification = adoptRefCountedGarbageCollected(new Notification(title, context, client));
 
     String argument;
     if (options.get("body", argument))
@@ -61,7 +62,7 @@ PassRefPtrWillBeRawPtr<Notification> Notification::create(ExecutionContext* cont
     }
 
     notification->suspendIfNeeded();
-    return notification.release();
+    return notification;
 }
 
 Notification::Notification(const String& title, ExecutionContext* context, NotificationClient* client)
@@ -88,7 +89,7 @@ void Notification::show()
     if (!toDocument(executionContext())->page())
         return;
 
-    if (NotificationController::from(toDocument(executionContext())->page())->client()->checkPermission(executionContext()) != NotificationClient::PermissionAllowed) {
+    if (NotificationController::from(toDocument(executionContext())->frame())->client()->checkPermission(executionContext()) != NotificationClient::PermissionAllowed) {
         dispatchErrorEvent();
         return;
     }
@@ -161,16 +162,18 @@ const String& Notification::permissionString(NotificationClient::Permission perm
 const String& Notification::permission(ExecutionContext* context)
 {
     ASSERT(toDocument(context)->page());
-    return permissionString(NotificationController::from(toDocument(context)->page())->client()->checkPermission(context));
+
+    UseCounter::count(context, UseCounter::NotificationPermission);
+    return permissionString(NotificationController::from(toDocument(context)->frame())->client()->checkPermission(context));
 }
 
 void Notification::requestPermission(ExecutionContext* context, PassOwnPtr<NotificationPermissionCallback> callback)
 {
     ASSERT(toDocument(context)->page());
-    NotificationController::from(toDocument(context)->page())->client()->requestPermission(context, callback);
+    NotificationController::from(toDocument(context)->frame())->client()->requestPermission(context, callback);
 }
 
-bool Notification::dispatchEvent(PassRefPtr<Event> event)
+bool Notification::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     ASSERT(m_state != Closed);
 

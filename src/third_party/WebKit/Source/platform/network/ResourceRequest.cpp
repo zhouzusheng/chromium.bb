@@ -181,11 +181,6 @@ void ResourceRequest::clearHTTPAuthorization()
     m_httpHeaderFields.remove("Authorization");
 }
 
-void ResourceRequest::clearHTTPContentType()
-{
-    m_httpHeaderFields.remove("Content-Type");
-}
-
 void ResourceRequest::clearHTTPReferrer()
 {
     m_httpHeaderFields.remove("Referer");
@@ -200,11 +195,6 @@ void ResourceRequest::clearHTTPOrigin()
 void ResourceRequest::clearHTTPUserAgent()
 {
     m_httpHeaderFields.remove("User-Agent");
-}
-
-void ResourceRequest::clearHTTPAccept()
-{
-    m_httpHeaderFields.remove("Accept");
 }
 
 FormData* ResourceRequest::httpBody() const
@@ -314,8 +304,41 @@ bool ResourceRequest::isConditional() const
         || m_httpHeaderFields.contains("If-Modified-Since")
         || m_httpHeaderFields.contains("If-None-Match")
         || m_httpHeaderFields.contains("If-Range")
-        || m_httpHeaderFields.contains("If-Unmodified-Since")
-        || m_httpHeaderFields.contains("Cache-Control"));
+        || m_httpHeaderFields.contains("If-Unmodified-Since"));
+}
+
+
+static const AtomicString& cacheControlHeaderString()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, cacheControlHeader, ("cache-control", AtomicString::ConstructFromLiteral));
+    return cacheControlHeader;
+}
+
+static const AtomicString& pragmaHeaderString()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, pragmaHeader, ("pragma", AtomicString::ConstructFromLiteral));
+    return pragmaHeader;
+}
+
+bool ResourceRequest::cacheControlContainsNoCache()
+{
+    if (!m_cacheControlHeader.parsed)
+        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeader.containsNoCache;
+}
+
+bool ResourceRequest::cacheControlContainsNoStore()
+{
+    if (!m_cacheControlHeader.parsed)
+        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeader.containsNoStore;
+}
+
+bool ResourceRequest::hasCacheValidatorFields()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, lastModifiedHeader, ("last-modified", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, eTagHeader, ("etag", AtomicString::ConstructFromLiteral));
+    return !m_httpHeaderFields.get(lastModifiedHeader).isEmpty() || !m_httpHeaderFields.get(eTagHeader).isEmpty();
 }
 
 double ResourceRequest::defaultTimeoutInterval()

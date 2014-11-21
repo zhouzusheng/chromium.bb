@@ -32,9 +32,11 @@
 #define WebSocketChannel_h
 
 #include "core/frame/ConsoleTypes.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -44,11 +46,14 @@ class KURL;
 class ExecutionContext;
 class WebSocketChannelClient;
 
-class WebSocketChannel {
+// FIXME: WebSocketChannel needs to be RefCountedGarbageCollected to support manual ref/deref
+// in MainThreadWebSocketChannelImpl. We should change it to GarbageCollectedFinalized once
+// we remove MainThreadWebSocketChannelImpl.
+class WebSocketChannel : public RefCountedWillBeRefCountedGarbageCollected<WebSocketChannel> {
     WTF_MAKE_NONCOPYABLE(WebSocketChannel);
 public:
     WebSocketChannel() { }
-    static PassRefPtr<WebSocketChannel> create(ExecutionContext*, WebSocketChannelClient*);
+    static PassRefPtrWillBeRawPtr<WebSocketChannel> create(ExecutionContext*, WebSocketChannelClient*);
 
     enum SendResult {
         SendSuccess,
@@ -75,7 +80,7 @@ public:
         CloseEventCodeMaximumUserDefined = 4999
     };
 
-    virtual void connect(const KURL&, const String& protocol) = 0;
+    virtual bool connect(const KURL&, const String& protocol) = 0;
     virtual String subprotocol() = 0; // Will be available after didConnect() callback is invoked.
     virtual String extensions() = 0; // Will be available after didConnect() callback is invoked.
     virtual SendResult send(const String& message) = 0;
@@ -103,13 +108,9 @@ public:
     virtual void suspend() = 0;
     virtual void resume() = 0;
 
-    void ref() { refWebSocketChannel(); }
-    void deref() { derefWebSocketChannel(); }
-
-protected:
     virtual ~WebSocketChannel() { }
-    virtual void refWebSocketChannel() = 0;
-    virtual void derefWebSocketChannel() = 0;
+
+    virtual void trace(Visitor*) { }
 };
 
 } // namespace WebCore

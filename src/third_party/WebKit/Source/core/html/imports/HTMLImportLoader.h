@@ -33,13 +33,18 @@
 
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceOwner.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class CustomElementMicrotaskQueue;
 class Document;
 class DocumentWriter;
 class HTMLImportChild;
+class HTMLImportsController;
+
 
 //
 // Owning imported Document lifetime. It also implements ResourceClient through ResourceOwner
@@ -57,9 +62,9 @@ public:
         StateError
     };
 
-    static PassRefPtr<HTMLImportLoader> create()
+    static PassRefPtr<HTMLImportLoader> create(HTMLImportsController* controller)
     {
-        return adoptRef(new HTMLImportLoader());
+        return adoptRef(new HTMLImportLoader(controller));
     }
 
     virtual ~HTMLImportLoader();
@@ -68,17 +73,23 @@ public:
     Document* importedDocument() const;
     void addImport(HTMLImportChild*);
     void removeImport(HTMLImportChild*);
+    void moveToFirst(HTMLImportChild*);
+    HTMLImportChild* firstImport() const { return m_imports[0]; }
+    bool isFirstImport(const HTMLImportChild* child) const { return m_imports.size() ? firstImport() == child : false; }
 
     bool isDone() const { return m_state == StateLoaded || m_state == StateError; }
     bool hasError() const { return m_state == StateError; }
+    bool shouldBlockScriptExecution() const;
 
+    void importDestroyed();
     void startLoading(const ResourcePtr<RawResource>&);
     void didFinishParsing();
     void didRemoveAllPendingStylesheet();
-    bool isOwnedBy(const HTMLImportChild* import) const { return m_imports[0] == import; }
+
+    PassRefPtr<CustomElementMicrotaskQueue> microtaskQueue() const;
 
 private:
-    HTMLImportLoader();
+    HTMLImportLoader(HTMLImportsController*);
 
     // RawResourceClient
     virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
@@ -93,11 +104,14 @@ private:
     void setState(State);
     void didFinishLoading();
     bool hasPendingResources() const;
+    void clear();
 
+    HTMLImportsController* m_controller;
     Vector<HTMLImportChild*> m_imports;
     State m_state;
     RefPtr<Document> m_importedDocument;
     RefPtr<DocumentWriter> m_writer;
+    RefPtr<CustomElementMicrotaskQueue> m_microtaskQueue;
 };
 
 } // namespace WebCore

@@ -25,7 +25,6 @@
 #ifndef TimingFunction_h
 #define TimingFunction_h
 
-#include "RuntimeEnabledFeatures.h"
 #include "platform/animation/AnimationUtilities.h" // For blend()
 #include "platform/animation/UnitBezier.h"
 #include "wtf/OwnPtr.h"
@@ -69,7 +68,7 @@ private:
 
 class PLATFORM_EXPORT LinearTimingFunction FINAL : public TimingFunction {
 public:
-    static LinearTimingFunction* preset()
+    static LinearTimingFunction* shared()
     {
         DEFINE_STATIC_REF(LinearTimingFunction, linear, (adoptRef(new LinearTimingFunction())));
         return linear;

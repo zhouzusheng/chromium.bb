@@ -66,6 +66,7 @@ static FontPlatformDataCache* gFontPlatformDataCache = 0;
 
 #if OS(WIN)
 bool FontCache::s_useDirectWrite = false;
+IDWriteFactory* FontCache::s_directWriteFactory = 0;
 bool FontCache::s_useSubpixelPositioning = false;
 #endif // OS(WIN)
 
@@ -196,10 +197,7 @@ static inline void purgePlatformFontDataCache()
         if (platformData->value && !gFontDataCache->contains(platformData->value.get()))
             keysToRemove.append(platformData->key);
     }
-
-    size_t keysToRemoveCount = keysToRemove.size();
-    for (size_t i = 0; i < keysToRemoveCount; ++i)
-        gFontPlatformDataCache->remove(keysToRemove[i]);
+    gFontPlatformDataCache->removeAll(keysToRemove);
 }
 
 static inline void purgeFontVerticalDataCache()
@@ -222,8 +220,7 @@ static inline void purgeFontVerticalDataCache()
             if (!verticalData->value || !verticalData->value->inFontCache())
                 keysToRemove.append(verticalData->key);
         }
-        for (size_t i = 0, count = keysToRemove.size(); i < count; ++i)
-            fontVerticalDataCache.take(keysToRemove[i]);
+        fontVerticalDataCache.removeAll(keysToRemove);
     }
 #endif
 }
@@ -242,24 +239,32 @@ void FontCache::purge(PurgeSeverity PurgeSeverity)
     purgeFontVerticalDataCache();
 }
 
-static HashSet<FontCacheClient*>* gClients;
+static bool invalidateFontCache = false;
+
+WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >& fontCacheClients()
+{
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<HeapHashSet<WeakMember<FontCacheClient> > >, clients, (new HeapHashSet<WeakMember<FontCacheClient> >()));
+#else
+    DEFINE_STATIC_LOCAL(HashSet<RawPtr<FontCacheClient> >*, clients, (new HashSet<RawPtr<FontCacheClient> >()));
+#endif
+    invalidateFontCache = true;
+    return *clients;
+}
 
 void FontCache::addClient(FontCacheClient* client)
 {
-    if (!gClients)
-        gClients = new HashSet<FontCacheClient*>;
-
-    ASSERT(!gClients->contains(client));
-    gClients->add(client);
+    ASSERT(!fontCacheClients().contains(client));
+    fontCacheClients().add(client);
 }
 
+#if !ENABLE(OILPAN)
 void FontCache::removeClient(FontCacheClient* client)
 {
-    ASSERT(gClients);
-    ASSERT(gClients->contains(client));
-
-    gClients->remove(client);
+    ASSERT(fontCacheClients().contains(client));
+    fontCacheClients().remove(client);
 }
+#endif
 
 static unsigned short gGeneration = 0;
 
@@ -270,7 +275,7 @@ unsigned short FontCache::generation()
 
 void FontCache::invalidate()
 {
-    if (!gClients) {
+    if (!invalidateFontCache) {
         ASSERT(!gFontPlatformDataCache);
         return;
     }
@@ -282,11 +287,11 @@ void FontCache::invalidate()
 
     gGeneration++;
 
-    Vector<RefPtr<FontCacheClient> > clients;
-    size_t numClients = gClients->size();
+    WillBeHeapVector<RefPtrWillBeMember<FontCacheClient> > clients;
+    size_t numClients = fontCacheClients().size();
     clients.reserveInitialCapacity(numClients);
-    HashSet<FontCacheClient*>::iterator end = gClients->end();
-    for (HashSet<FontCacheClient*>::iterator it = gClients->begin(); it != end; ++it)
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >::iterator end = fontCacheClients().end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >::iterator it = fontCacheClients().begin(); it != end; ++it)
         clients.append(*it);
 
     ASSERT(numClients == clients.size());

@@ -13,30 +13,38 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/timer/timer.h"
+#include "ui/events/event.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_delegate.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/widget/widget_observer.h"
 
-namespace ui {
-class NativeTheme;
-class OSExchangeData;
+namespace base {
+class MessagePumpDispatcher;
 }
 namespace gfx {
 class Screen;
+}
+namespace ui {
+class NativeTheme;
+class OSExchangeData;
+class ScopedEventDispatcher;
 }
 namespace views {
 
 class MenuButton;
 class MenuHostRootView;
+class MenuItemView;
 class MouseEvent;
 class SubmenuView;
 class View;
 
 namespace internal {
 class MenuControllerDelegate;
+class MenuEventDispatcher;
+class MenuMessagePumpDispatcher;
 class MenuRunnerImpl;
 }
 
@@ -45,8 +53,7 @@ class MenuRunnerImpl;
 // MenuController is used internally by the various menu classes to manage
 // showing, selecting and drag/drop for menus. All relevant events are
 // forwarded to the MenuController from SubmenuView and MenuHost.
-class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
-                                    public WidgetObserver {
+class VIEWS_EXPORT MenuController : public WidgetObserver {
  public:
   // Enumeration of how the menu should exit.
   enum ExitType {
@@ -74,7 +81,7 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
                     MenuButton* button,
                     MenuItemView* root,
                     const gfx::Rect& bounds,
-                    MenuItemView::AnchorPosition position,
+                    MenuAnchorPosition position,
                     bool context_menu,
                     int* event_flags);
 
@@ -84,8 +91,12 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
   // Whether or not drag operation is in progress.
   bool drag_in_progress() const { return drag_in_progress_; }
 
+  // Returns the owner of child windows.
+  // WARNING: this may be NULL.
+  Widget* owner() { return owner_; }
+
   // Get the anchor position wich is used to show this menu.
-  MenuItemView::AnchorPosition GetAnchorPosition() { return state_.anchor; }
+  MenuAnchorPosition GetAnchorPosition() { return state_.anchor; }
 
   // Cancels the current Run. See ExitType for a description of what happens
   // with the various parameters.
@@ -140,7 +151,10 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
   static void TurnOffMenuSelectionHoldForTest();
 
  private:
+  friend class internal::MenuEventDispatcher;
+  friend class internal::MenuMessagePumpDispatcher;
   friend class internal::MenuRunnerImpl;
+  friend class MenuControllerTest;
   friend class MenuHostRootView;
   friend class MenuItemView;
   friend class SubmenuView;
@@ -192,7 +206,7 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
     gfx::Rect initial_bounds;
 
     // Position of the initial menu.
-    MenuItemView::AnchorPosition anchor;
+    MenuAnchorPosition anchor;
 
     // The direction child menus have opened in.
     std::list<bool> open_leading;
@@ -251,10 +265,6 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
                                  const ui::LocatedEvent& event);
   void StartDrag(SubmenuView* source, const gfx::Point& location);
 
-  // Dispatcher method. This returns true if the menu was canceled, or
-  // if the message is such that the menu should be closed.
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
-
   // Key processing. The return value of this is returned from Dispatch.
   // In other words, if this returns false (which happens if escape was
   // pressed, or a matching mnemonic was found) the message loop returns.
@@ -277,7 +287,7 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
   SendAcceleratorResultType SendAcceleratorToHotTrackedView();
 
   void UpdateInitialLocation(const gfx::Rect& bounds,
-                             MenuItemView::AnchorPosition position,
+                             MenuAnchorPosition position,
                              bool context_menu);
 
   // Invoked when the user accepts the selected item. This is only used
@@ -466,8 +476,11 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
   void SetActiveMouseView(View* view);
   View* GetActiveMouseView();
 
-  // Sets exit type.
+  // Sets exit type. Calling this can terminate the active nested message-loop.
   void SetExitType(ExitType type);
+
+  // Terminates the current nested message-loop.
+  void TerminateNestedMessageLoop();
 
   // Returns true if SetExitType() should quit the message loop.
   bool ShouldQuitNow() const;
@@ -588,6 +601,8 @@ class VIEWS_EXPORT MenuController : public base::MessagePumpDispatcher,
 
   // Set to true if the menu item was selected by touch.
   bool item_selected_by_touch_;
+
+  scoped_ptr<ui::ScopedEventDispatcher> nested_dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuController);
 };

@@ -28,7 +28,6 @@
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderView.h"
@@ -1078,9 +1077,9 @@ RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
     return renderer;
 }
 
-void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
-    if (style() && (newStyle->listStylePosition() != style()->listStylePosition() || newStyle->listStyleType() != style()->listStyleType()))
+    if (style() && (newStyle.listStylePosition() != style()->listStylePosition() || newStyle.listStyleType() != style()->listStyleType()))
         setNeedsLayoutAndPrefWidthsRecalc();
 
     RenderBox::styleWillChange(diff, newStyle);
@@ -1308,7 +1307,6 @@ void RenderListMarker::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     if (isImage()) {
         updateMarginsAndContent();
         setWidth(minPreferredLogicalWidth());

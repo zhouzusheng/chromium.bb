@@ -70,21 +70,44 @@ public:
         ReadWrite
     };
 
-    explicit GraphicsContext(SkCanvas*);
+    enum DisabledMode {
+        NothingDisabled = 0, // Run as normal.
+        PaintingDisabled = 1, // Do not issue painting calls to the canvas but maintain state correctly.
+        FullyDisabled = 2 // Do absolutely minimal work to remove the cost of the context from performance tests.
+    };
+
+    explicit GraphicsContext(SkCanvas*, DisabledMode = NothingDisabled);
     ~GraphicsContext();
 
-    // Returns the canvas used for painting, NOT guaranteed to be non-null.
+    // Returns the canvas used for painting. Must not be called if painting is disabled.
     // Accessing the backing canvas this way flushes all queued save ops,
     // so it should be avoided. Use the corresponding draw/matrix/clip methods instead.
     SkCanvas* canvas()
     {
+        ASSERT(!paintingDisabled());
+
         // Flush any pending saves.
         realizeCanvasSave();
 
         return m_canvas;
     }
-    const SkCanvas* canvas() const { return m_canvas; }
-    bool paintingDisabled() const { return !m_canvas; }
+    const SkCanvas* canvas() const
+    {
+        ASSERT(!paintingDisabled());
+        return m_canvas;
+    }
+    bool paintingDisabled() const { return m_disabledState & PaintingDisabled; }
+    bool contextDisabled() const { return m_disabledState; }
+
+    // This is just a heuristic that currently happens to work. We need either
+    // a more reliable way to know that we are recording, or (better) we need
+    // to obviate the need for this query, and address whatever the caller
+    // needed in some other way.
+    // See bug# 372110
+    bool isRecordingCanvas() const
+    {
+        return m_canvas->imageInfo().colorType() == kUnknown_SkColorType;
+    }
 
     // ---------- State management methods -----------------
     void save();
@@ -129,12 +152,18 @@ public:
 
     SkDrawLooper* drawLooper() const { return immutableState()->drawLooper(); }
 
-    FloatRect getClipBounds() const;
     bool getTransformedClipBounds(FloatRect* bounds) const;
     SkMatrix getTotalMatrix() const;
 
     void setShouldAntialias(bool antialias) { mutableState()->setShouldAntialias(antialias); }
     bool shouldAntialias() const { return immutableState()->shouldAntialias(); }
+
+    // Disable the anti-aliasing optimization for scales/multiple-of-90-degrees
+    // rotations of thin ("hairline") images.
+    // Note: This will only be reliable when the device pixel scale/ratio is
+    // fixed (e.g. when drawing to context backed by an ImageBuffer).
+    void disableAntialiasingOptimizationForHairlineImages() { ASSERT(!isRecording()); m_antialiasHairlineImages = true; }
+    bool shouldAntialiasHairlineImages() const { return m_antialiasHairlineImages; }
 
     void setShouldClampToSourceRect(bool clampToSourceRect) { mutableState()->setShouldClampToSourceRect(clampToSourceRect); }
     bool shouldClampToSourceRect() const { return immutableState()->shouldClampToSourceRect(); }
@@ -218,7 +247,6 @@ public:
     // stroke color).
     void drawRect(const IntRect&);
     void drawLine(const IntPoint&, const IntPoint&);
-    void drawEllipse(const IntRect&);
     void drawConvexPolygon(size_t numPoints, const FloatPoint*, bool shouldAntialias = false);
 
     void fillPath(const Path&);
@@ -235,6 +263,7 @@ public:
 
     void clearRect(const FloatRect&);
 
+    void strokeRect(const FloatRect&);
     void strokeRect(const FloatRect&, float lineWidth);
 
     void fillBetweenRoundedRects(const IntRect&, const IntSize& outerTopLeft, const IntSize& outerTopRight, const IntSize& outerBottomLeft, const IntSize& outerBottomRight,
@@ -255,12 +284,7 @@ public:
         const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
         CompositeOperator = CompositeSourceOver);
 
-    void drawImageBuffer(ImageBuffer*, const IntPoint&, CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal);
-    void drawImageBuffer(ImageBuffer*, const IntRect&, CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal);
-    void drawImageBuffer(ImageBuffer*, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal);
-    void drawImageBuffer(ImageBuffer*, const IntRect& destRect, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal);
-    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect);
-    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal);
+    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect* srcRect = 0, CompositeOperator = CompositeSourceOver);
 
     // These methods write to the canvas and modify the opaque region, if tracked.
     // Also drawLine(const IntPoint& point1, const IntPoint& point2) and fillRoundedRect
@@ -277,8 +301,6 @@ public:
     void didDrawRect(const SkRect&, const SkPaint&, const SkBitmap* = 0);
     void drawRect(const SkRect&, const SkPaint&);
     void drawPosText(const void* text, size_t byteLength, const SkPoint pos[], const SkRect& textRect, const SkPaint&);
-    void drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkRect& textRect, const SkPaint&);
-    void drawTextOnPath(const void* text, size_t byteLength, const SkPath&, const SkRect& textRect, const SkMatrix*, const SkPaint&);
 
     void clip(const IntRect& rect) { clipRect(rect); }
     void clip(const FloatRect& rect) { clipRect(rect); }
@@ -434,6 +456,9 @@ private:
     // Apply deferred paint state saves
     void realizePaintSave()
     {
+        if (contextDisabled())
+            return;
+
         if (m_paintState->saveCount()) {
             m_paintState->decrementSaveCount();
             ++m_paintStateIndex;
@@ -448,7 +473,7 @@ private:
     // Apply deferred canvas state saves
     void realizeCanvasSave()
     {
-        if (!m_pendingCanvasSave)
+        if (!m_pendingCanvasSave || contextDisabled())
             return;
 
         m_canvas->save();
@@ -461,7 +486,7 @@ private:
 
     bool isRecording() const;
 
-    // null indicates painting is disabled. Never delete this object.
+    // null indicates painting is contextDisabled. Never delete this object.
     SkCanvas* m_canvas;
 
     // Paint states stack. Enables local drawing state change with save()/restore() calls.
@@ -491,11 +516,15 @@ private:
 #endif
     // Tracks the region painted opaque via the GraphicsContext.
     OpaqueRegionSkia m_opaqueRegion;
-    bool m_trackOpaqueRegion : 1;
 
     // Tracks the region where text is painted via the GraphicsContext.
-    bool m_trackTextRegion : 1;
     SkRect m_textRegion;
+
+    unsigned m_disabledState;
+
+    // Activation for the above region tracking features
+    bool m_trackOpaqueRegion : 1;
+    bool m_trackTextRegion : 1;
 
     // Are we on a high DPI display? If so, spelling and grammar markers are larger.
     bool m_useHighResMarker : 1;
@@ -504,6 +533,7 @@ private:
     bool m_accelerated : 1;
     bool m_isCertainlyOpaque : 1;
     bool m_printing : 1;
+    bool m_antialiasHairlineImages : 1;
 };
 
 } // namespace WebCore

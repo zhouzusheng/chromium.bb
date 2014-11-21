@@ -31,8 +31,8 @@
 #ifndef WebHelperPluginImpl_h
 #define WebHelperPluginImpl_h
 
-#include "WebHelperPlugin.h"
 #include "platform/Timer.h"
+#include "public/web/WebHelperPlugin.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -45,7 +45,7 @@ class HTMLObjectElement;
 
 namespace blink {
 
-class WebFrameImpl;
+class WebLocalFrameImpl;
 class WebPluginContainerImpl;
 
 // Utility class to host helper plugins for media. Internally, it creates a detached
@@ -65,7 +65,7 @@ private:
     WebHelperPluginImpl();
     virtual ~WebHelperPluginImpl();
 
-    bool initialize(const String& pluginType, WebFrameImpl*);
+    bool initialize(const String& pluginType, WebLocalFrameImpl*);
     void reallyDestroy(WebCore::Timer<WebHelperPluginImpl>*);
 
     WebCore::Timer<WebHelperPluginImpl> m_destructionTimer;

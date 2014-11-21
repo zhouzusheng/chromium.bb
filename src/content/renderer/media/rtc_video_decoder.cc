@@ -294,11 +294,6 @@ int32_t RTCVideoDecoder::Reset() {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-void RTCVideoDecoder::NotifyInitializeDone() {
-  DVLOG(2) << "NotifyInitializeDone";
-  NOTREACHED();
-}
-
 void RTCVideoDecoder::ProvidePictureBuffers(uint32 count,
                                             const gfx::Size& size,
                                             uint32 texture_target) {
@@ -644,9 +639,11 @@ void RTCVideoDecoder::ReleaseMailbox(
     const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
     int64 picture_buffer_id,
     uint32 texture_id,
-    scoped_ptr<gpu::MailboxHolder> mailbox_holder) {
+    const std::vector<uint32>& release_sync_points) {
   DCHECK(factories->GetTaskRunner()->BelongsToCurrentThread());
-  factories->WaitSyncPoint(mailbox_holder->sync_point);
+
+  for (size_t i = 0; i < release_sync_points.size(); i++)
+    factories->WaitSyncPoint(release_sync_points[i]);
 
   if (decoder) {
     decoder->ReusePictureBuffer(picture_buffer_id);
@@ -682,7 +679,7 @@ void RTCVideoDecoder::ReusePictureBuffer(int64 picture_buffer_id) {
 void RTCVideoDecoder::CreateVDA(media::VideoCodecProfile profile,
                                 base::WaitableEvent* waiter) {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
-  vda_ = factories_->CreateVideoDecodeAccelerator(profile);
+  vda_ = factories_->CreateVideoDecodeAccelerator();
   if (vda_ && !vda_->Initialize(profile, this))
     vda_.release()->Destroy();
   waiter->Signal();

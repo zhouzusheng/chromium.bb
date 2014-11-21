@@ -45,7 +45,7 @@
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderView.h"
+#include "core/rendering/RenderPart.h"
 #include "public/platform/WebLayer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -79,10 +79,16 @@ Frame::Frame(FrameHost* host, HTMLFrameOwnerElement* ownerElement)
 #ifndef NDEBUG
     frameCounter.increment();
 #endif
+
+    if (this->ownerElement()) {
+        page()->incrementSubframeCount();
+        this->ownerElement()->setContentFrame(*this);
+    }
 }
 
 Frame::~Frame()
 {
+    disconnectOwnerElement();
     setDOMWindow(nullptr);
 
     // FIXME: We should not be doing all this work inside the destructor
@@ -145,15 +151,22 @@ ChromeClient& Frame::chromeClient() const
     return emptyChromeClient();
 }
 
-Document* Frame::document() const
+RenderPart* Frame::ownerRenderer() const
 {
-    return m_domWindow ? m_domWindow->document() : 0;
+    if (!ownerElement())
+        return 0;
+    RenderObject* object = ownerElement()->renderer();
+    if (!object)
+        return 0;
+    // FIXME: If <object> is ever fixed to disassociate itself from frames
+    // that it has started but canceled, then this can turn into an ASSERT
+    // since ownerElement() would be 0 when the load is canceled.
+    // https://bugs.webkit.org/show_bug.cgi?id=18585
+    if (!object->isRenderPart())
+        return 0;
+    return toRenderPart(object);
 }
 
-RenderView* Frame::contentRenderer() const
-{
-    return document() ? document()->renderView() : 0;
-}
 
 void Frame::willDetachFrameHost()
 {
@@ -177,6 +190,16 @@ bool Frame::isMainFrame() const
 {
     Page* page = this->page();
     return page && this == page->mainFrame();
+}
+
+void Frame::disconnectOwnerElement()
+{
+    if (ownerElement()) {
+        ownerElement()->clearContentFrame();
+        if (page())
+            page()->decrementSubframeCount();
+    }
+    m_ownerElement = 0;
 }
 
 } // namespace WebCore

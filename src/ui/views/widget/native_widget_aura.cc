@@ -17,6 +17,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
@@ -26,6 +27,7 @@
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
+#include "ui/views/ime/null_input_method.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_delegate.h"
@@ -83,19 +85,6 @@ NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
 }
 
 // static
-gfx::FontList NativeWidgetAura::GetWindowTitleFontList() {
-#if defined(OS_WIN)
-  NONCLIENTMETRICS ncm;
-  base::win::GetNonClientMetrics(&ncm);
-  l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
-  base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));
-  return gfx::FontList(gfx::Font(caption_font));
-#else
-  return gfx::FontList();
-#endif
-}
-
-// static
 void NativeWidgetAura::RegisterNativeWidgetForWindow(
       internal::NativeWidgetPrivate* native_widget,
       aura::Window* window) {
@@ -150,6 +139,13 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
     }
   }
 
+  // Set properties before addeing to the parent so that its layout manager
+  // sees the correct values.
+  window_->SetProperty(aura::client::kCanMaximizeKey,
+                       GetWidget()->widget_delegate()->CanMaximize());
+  window_->SetProperty(aura::client::kCanResizeKey,
+                       GetWidget()->widget_delegate()->CanResize());
+
   if (parent) {
     parent->AddChild(window_);
   } else {
@@ -179,11 +175,6 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   }
 
   aura::client::SetActivationDelegate(window_, this);
-
-  window_->SetProperty(aura::client::kCanMaximizeKey,
-                       GetWidget()->widget_delegate()->CanMaximize());
-  window_->SetProperty(aura::client::kCanResizeKey,
-                       GetWidget()->widget_delegate()->CanResize());
 
   window_reorderer_.reset(new WindowReorderer(window_,
       GetWidget()->GetRootView()));
@@ -281,6 +272,10 @@ bool NativeWidgetAura::HasCapture() const {
 InputMethod* NativeWidgetAura::CreateInputMethod() {
   if (!window_)
     return NULL;
+
+  if (switches::IsTextInputFocusManagerEnabled())
+    return new NullInputMethod();
+
   aura::Window* root_window = window_->GetRootWindow();
   ui::InputMethod* host =
       root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
@@ -289,6 +284,11 @@ InputMethod* NativeWidgetAura::CreateInputMethod() {
 
 internal::InputMethodDelegate* NativeWidgetAura::GetInputMethodDelegate() {
   return this;
+}
+
+ui::InputMethod* NativeWidgetAura::GetHostInputMethod() {
+  aura::Window* root_window = window_->GetRootWindow();
+  return root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
 }
 
 void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
@@ -709,6 +709,10 @@ gfx::Size NativeWidgetAura::GetMinimumSize() const {
 }
 
 gfx::Size NativeWidgetAura::GetMaximumSize() const {
+  // If a window have a maximum size, the window should not be
+  // maximizable.
+  DCHECK(delegate_->GetMaximumSize().IsEmpty() ||
+         !window_->GetProperty(aura::client::kCanMaximizeKey));
   return delegate_->GetMaximumSize();
 }
 
@@ -828,6 +832,12 @@ void NativeWidgetAura::OnKeyEvent(ui::KeyEvent* event) {
   if (!window_->IsVisible())
     return;
   GetWidget()->GetInputMethod()->DispatchKeyEvent(*event);
+  if (switches::IsTextInputFocusManagerEnabled()) {
+    FocusManager* focus_manager = GetWidget()->GetFocusManager();
+    delegate_->OnKeyEvent(event);
+    if (!event->handled() && focus_manager)
+      focus_manager->OnKeyEvent(*event);
+  }
   event->SetHandled();
 }
 
@@ -848,12 +858,6 @@ void NativeWidgetAura::OnMouseEvent(ui::MouseEvent* event) {
 
 void NativeWidgetAura::OnScrollEvent(ui::ScrollEvent* event) {
   delegate_->OnScrollEvent(event);
-}
-
-void NativeWidgetAura::OnTouchEvent(ui::TouchEvent* event) {
-  DCHECK(window_);
-  DCHECK(window_->IsVisible() || event->IsEndingEvent());
-  delegate_->OnTouchEvent(event);
 }
 
 void NativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
@@ -1143,6 +1147,19 @@ bool NativeWidgetPrivate::IsMouseButtonDown() {
 // static
 bool NativeWidgetPrivate::IsTouchDown() {
   return aura::Env::GetInstance()->is_touch_down();
+}
+
+// static
+gfx::FontList NativeWidgetPrivate::GetWindowTitleFontList() {
+#if defined(OS_WIN)
+  NONCLIENTMETRICS ncm;
+  base::win::GetNonClientMetrics(&ncm);
+  l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
+  base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));
+  return gfx::FontList(gfx::Font(caption_font));
+#else
+  return gfx::FontList();
+#endif
 }
 
 }  // namespace internal

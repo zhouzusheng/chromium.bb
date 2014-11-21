@@ -41,7 +41,8 @@ bool IsTransientError(int error) {
          error == net::ERR_ADDRESS_INVALID ||
          error == net::ERR_ACCESS_DENIED ||
          error == net::ERR_CONNECTION_RESET ||
-         error == net::ERR_OUT_OF_MEMORY;
+         error == net::ERR_OUT_OF_MEMORY ||
+         error == net::ERR_INTERNET_DISCONNECTED;
 }
 
 }  // namespace
@@ -95,7 +96,7 @@ bool P2PSocketHostUdp::Init(const net::IPEndPoint& local_address,
   }
 
   // Setting recv socket buffer size.
-  if (!socket_->SetReceiveBufferSize(kRecvSocketBufferSize)) {
+  if (socket_->SetReceiveBufferSize(kRecvSocketBufferSize) != net::OK) {
     LOG(WARNING) << "Failed to set socket receive buffer size to "
                  << kRecvSocketBufferSize;
   }
@@ -287,7 +288,7 @@ void P2PSocketHostUdp::HandleSendResult(uint64 packet_id, int result) {
       return;
     }
     VLOG(0) << "sendto() has failed twice returning a "
-                 " transient error. Dropping the packet.";
+               " transient error. Dropping the packet.";
   }
   message_sender_->Send(new P2PMsg_OnSendComplete(id_));
 }
@@ -303,9 +304,9 @@ bool P2PSocketHostUdp::SetOption(P2PSocketOption option, int value) {
   DCHECK_EQ(STATE_OPEN, state_);
   switch (option) {
     case P2P_SOCKET_OPT_RCVBUF:
-      return socket_->SetReceiveBufferSize(value);
+      return socket_->SetReceiveBufferSize(value) == net::OK;
     case P2P_SOCKET_OPT_SNDBUF:
-      return socket_->SetSendBufferSize(value);
+      return socket_->SetSendBufferSize(value) == net::OK;
     case P2P_SOCKET_OPT_DSCP:
       return (net::OK == socket_->SetDiffServCodePoint(
           static_cast<net::DiffServCodePoint>(value))) ? true : false;

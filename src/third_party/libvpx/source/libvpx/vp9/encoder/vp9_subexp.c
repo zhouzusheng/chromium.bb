@@ -11,21 +11,12 @@
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_entropy.h"
 
-#include "vp9/encoder/vp9_treewriter.h"
+#include "vp9/encoder/vp9_cost.h"
 #include "vp9/encoder/vp9_writer.h"
 
 #define vp9_cost_upd256  ((int)(vp9_cost_one(upd) - vp9_cost_zero(upd)))
 
 static int update_bits[255];
-
-static int split_index(int i, int n, int modulus) {
-  int max1 = (n - 1 - modulus / 2) / modulus + 1;
-  if (i % modulus == modulus / 2)
-    i = i / modulus;
-  else
-    i = max1 + i - (i + modulus - modulus / 2) / modulus;
-  return i;
-}
 
 static int recenter_nonneg(int v, int m) {
   if (v > (m << 1))

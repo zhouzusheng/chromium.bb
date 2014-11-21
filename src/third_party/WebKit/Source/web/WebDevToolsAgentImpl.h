@@ -34,10 +34,10 @@
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 
-#include "WebDevToolsAgentPrivate.h"
-#include "WebPageOverlay.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebThread.h"
+#include "public/web/WebPageOverlay.h"
+#include "web/WebDevToolsAgentPrivate.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
@@ -50,6 +50,7 @@ class GraphicsContext;
 class InspectorClient;
 class InspectorController;
 class Node;
+class Page;
 class PlatformKeyboardEvent;
 }
 
@@ -57,7 +58,7 @@ namespace blink {
 
 class WebDevToolsAgentClient;
 class WebFrame;
-class WebFrameImpl;
+class WebLocalFrameImpl;
 class WebString;
 class WebURLRequest;
 class WebURLResponse;
@@ -77,7 +78,7 @@ public:
     virtual ~WebDevToolsAgentImpl();
 
     // WebDevToolsAgentPrivate implementation.
-    virtual void didCreateScriptContext(WebFrameImpl*, int worldId) OVERRIDE;
+    virtual void didCreateScriptContext(WebLocalFrameImpl*, int worldId) OVERRIDE;
     virtual void webViewResized(const WebSize&) OVERRIDE;
     virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&) OVERRIDE;
 
@@ -95,8 +96,6 @@ public:
     virtual void evaluateInWebInspector(long callId, const WebString& script) OVERRIDE;
     virtual void setProcessId(long) OVERRIDE;
     virtual void setLayerTreeId(int) OVERRIDE;
-    // FIXME: remove it once the client side stops firing these.
-    virtual void processGPUEvent(double timestamp, int phase, bool foreign) OVERRIDE;
     virtual void processGPUEvent(const GPUEvent&) OVERRIDE;
 
     // InspectorClient implementation.
@@ -106,15 +105,16 @@ public:
     virtual void sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message) OVERRIDE;
     virtual void flush() OVERRIDE;
 
-    virtual void clearBrowserCache() OVERRIDE;
-    virtual void clearBrowserCookies() OVERRIDE;
-
     virtual void overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow) OVERRIDE;
+    virtual void setTouchEventEmulationEnabled(bool) OVERRIDE;
 
     virtual void getAllocatedObjects(HashSet<const void*>&) OVERRIDE;
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) OVERRIDE;
     virtual void setTraceEventCallback(const WTF::String& categoryFilter, TraceEventCallback) OVERRIDE;
     virtual void resetTraceEventCallback() OVERRIDE;
+    virtual void enableTracing(const WTF::String& categoryFilter) OVERRIDE;
+    virtual void disableTracing() OVERRIDE;
+
     virtual void startGPUEventsRecording() OVERRIDE;
     virtual void stopGPUEventsRecording() OVERRIDE;
 
@@ -138,14 +138,21 @@ private:
     WebCore::LocalFrame* mainFrame();
 
     int m_hostId;
+    int m_layerTreeId;
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
     bool m_attached;
     bool m_generatingEvent;
+
     bool m_deviceMetricsEnabled;
     bool m_emulateViewportEnabled;
     bool m_originalViewportEnabled;
     bool m_isOverlayScrollbarsEnabled;
+
+    bool m_touchEventEmulationEnabled;
+    OwnPtr<WebCore::IntPoint> m_lastPinchAnchorCss;
+    OwnPtr<WebCore::IntPoint> m_lastPinchAnchorDip;
+
     typedef Vector<RefPtr<WebCore::JSONObject> > FrontendMessageQueue;
     FrontendMessageQueue m_frontendMessageQueue;
 };

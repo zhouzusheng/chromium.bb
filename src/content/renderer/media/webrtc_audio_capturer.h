@@ -9,14 +9,15 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
-#include "base/platform_file.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/renderer/media/tagged_list.h"
 #include "media/audio/audio_input_device.h"
+#include "media/audio/audio_power_monitor.h"
 #include "media/base/audio_capturer_source.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 
@@ -27,6 +28,7 @@ class AudioBus;
 namespace content {
 
 class MediaStreamAudioProcessor;
+class MediaStreamAudioSource;
 class WebRtcAudioDeviceImpl;
 class WebRtcLocalAudioRenderer;
 class WebRtcLocalAudioTrack;
@@ -56,7 +58,8 @@ class CONTENT_EXPORT WebRtcAudioCapturer
       int render_view_id,
       const StreamDeviceInfo& device_info,
       const blink::WebMediaConstraints& constraints,
-      WebRtcAudioDeviceImpl* audio_device);
+      WebRtcAudioDeviceImpl* audio_device,
+      MediaStreamAudioSource* audio_source);
 
 
   // Add a audio track to the sinks of the capturer.
@@ -99,8 +102,8 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   // Stops recording audio. This method will empty its track lists since
   // stopping the capturer will implicitly invalidate all its tracks.
-  // This method is exposed to the public because the media stream track can
-  // call Stop() on its source.
+  // This method is exposed to the public because the MediaStreamAudioSource can
+  // call Stop()
   void Stop();
 
   // Called by the WebAudioCapturerSource to get the audio processing params.
@@ -114,7 +117,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::AudioParameters params);
 
-  void StartAecDump(const base::PlatformFile& aec_dump_file);
+  void StartAecDump(base::File aec_dump_file);
   void StopAecDump();
 
  protected:
@@ -128,7 +131,8 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   WebRtcAudioCapturer(int render_view_id,
                       const StreamDeviceInfo& device_info,
                       const blink::WebMediaConstraints& constraints,
-                      WebRtcAudioDeviceImpl* audio_device);
+                      WebRtcAudioDeviceImpl* audio_device,
+                      MediaStreamAudioSource* audio_source);
 
   // AudioCapturerSource::CaptureCallback implementation.
   // Called on the AudioInputDevice audio thread.
@@ -206,6 +210,21 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // Raw pointer to the WebRtcAudioDeviceImpl, which is valid for the lifetime
   // of RenderThread.
   WebRtcAudioDeviceImpl* audio_device_;
+
+  // Raw pointer to the MediaStreamAudioSource object that holds a reference
+  // to this WebRtcAudioCapturer.
+  // Since |audio_source_| is owned by a blink::WebMediaStreamSource object and
+  // blink guarantees that the blink::WebMediaStreamSource outlives any
+  // blink::WebMediaStreamTrack connected to the source, |audio_source_| is
+  // guaranteed to exist as long as a WebRtcLocalAudioTrack is connected to this
+  // WebRtcAudioCapturer.
+  MediaStreamAudioSource* const audio_source_;
+
+    // Audio power monitor for logging audio power level.
+  media::AudioPowerMonitor audio_power_monitor_;
+
+  // Records when the last time audio power level is logged.
+  base::TimeTicks last_audio_level_log_time_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioCapturer);
 };

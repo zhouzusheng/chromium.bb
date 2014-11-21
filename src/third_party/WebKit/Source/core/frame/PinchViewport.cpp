@@ -41,6 +41,7 @@
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "platform/TraceEvent.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
@@ -65,57 +66,108 @@ namespace WebCore {
 PinchViewport::PinchViewport(FrameHost& owner)
     : m_frameHost(owner)
 {
+    reset();
 }
 
 PinchViewport::~PinchViewport() { }
 
-void PinchViewport::setSize(const IntSize& newSize)
+void PinchViewport::setSize(const IntSize& size)
 {
-    // TODO: This is currently called from WebViewImpl with the main frame size which
-    // is (or will be) incorrect, address in future patches.
-
-    if (!m_innerViewportContainerLayer || !m_innerViewportScrollLayer)
+    if (m_size == size)
         return;
 
-    m_innerViewportContainerLayer->setSize(newSize);
-    // The innerviewport scroll layer always has the same size as its clip layer, but
-    // the page scale layer lives between them, allowing for non-zero max scroll
-    // offset when page scale > 1.
-    m_innerViewportScrollLayer->setSize(newSize);
+    TRACE_EVENT2("webkit", "PinchViewport::setSize", "width", size.width(), "height", size.height());
+    m_size = size;
 
-    // Need to re-compute sizes for the overlay scrollbars.
-    setupScrollbar(WebScrollbar::Horizontal);
-    setupScrollbar(WebScrollbar::Vertical);
+    // Make sure we clamp the offset to within the new bounds.
+    setLocation(m_offset);
+
+    if (m_innerViewportContainerLayer) {
+        m_innerViewportContainerLayer->setSize(m_size);
+
+        // Need to re-compute sizes for the overlay scrollbars.
+        setupScrollbar(WebScrollbar::Horizontal);
+        setupScrollbar(WebScrollbar::Vertical);
+    }
 }
 
-void PinchViewport::setLocation(const IntPoint& newLocation)
+void PinchViewport::reset()
 {
-    // TODO: The update from the LayerTree will occur here before the scale delta is applied.
-    // this means that the clamping below may be incorrect. Once scaling is done in PinchViewport
-    // change it so they happen at the same time.
+    setLocation(FloatPoint());
+    setScale(1);
+}
 
-    // Clamp the location within our extents.
-    IntPoint location(newLocation);
-    location.shrunkTo(maximumScrollPosition());
-    location.expandedTo(minimumScrollPosition());
+void PinchViewport::mainFrameDidChangeSize()
+{
+    TRACE_EVENT0("webkit", "PinchViewport::mainFrameDidChangeSize");
 
-    m_visibleRect.setLocation(newLocation);
+    // In unit tests we may not have initialized the layer tree.
+    if (m_innerViewportScrollLayer)
+        m_innerViewportScrollLayer->setSize(contentsSize());
+
+    // Make sure the viewport's offset is clamped within the newly sized main frame.
+    setLocation(m_offset);
+}
+
+FloatRect PinchViewport::visibleRect() const
+{
+    FloatSize scaledSize(m_size);
+    scaledSize.scale(1 / m_scale);
+    return FloatRect(m_offset, scaledSize);
+}
+
+void PinchViewport::setLocation(const FloatPoint& newLocation)
+{
+    FloatPoint clampedOffset(clampOffsetToBoundaries(newLocation));
+
+    if (clampedOffset == m_offset)
+        return;
+
+    m_offset = clampedOffset;
 
     ScrollingCoordinator* coordinator = m_frameHost.page().scrollingCoordinator();
     ASSERT(coordinator);
-
     coordinator->scrollableAreaScrollLayerDidChange(this);
+
+    mainFrame()->loader().saveScrollState();
+}
+
+void PinchViewport::move(const FloatPoint& delta)
+{
+    setLocation(m_offset + delta);
+}
+
+void PinchViewport::setScale(float scale)
+{
+    if (scale == m_scale)
+        return;
+
+    m_scale = scale;
+
+    if (mainFrame())
+        mainFrame()->loader().saveScrollState();
+
+    // Old-style pinch sets scale here but we shouldn't call into the
+    // clamping code below.
+    if (!m_innerViewportScrollLayer)
+        return;
+
+    // Ensure we clamp so we remain within the bounds.
+    setLocation(visibleRect().location());
+
+    // TODO: We should probably be calling scaleDidChange type functions here.
+    // see Page::setPageScaleFactor.
 }
 
 // Modifies the top of the graphics layer tree to add layers needed to support
 // the inner/outer viewport fixed-position model for pinch zoom. When finished,
 // the tree will look like this (with * denoting added layers):
 //
-// *innerViewportContainerLayer (fixed pos container)
-//  +- *pageScaleLayer
-//  |   +- *innerViewportScrollLayer
-//  |       +-- overflowControlsHostLayer (root layer)
-//  |           +-- rootTransformLayer (optional)
+// *rootTransformLayer
+//  +- *innerViewportContainerLayer (fixed pos container)
+//      +- *pageScaleLayer
+//  |       +- *innerViewportScrollLayer
+//  |           +-- overflowControlsHostLayer (root layer)
 //  |               +-- outerViewportContainerLayer (fixed pos container) [frame container layer in RenderLayerCompositor]
 //  |               |   +-- outerViewportScrollLayer [frame scroll layer in RenderLayerCompositor]
 //  |               |       +-- content layers ...
@@ -127,6 +179,7 @@ void PinchViewport::setLocation(const IntPoint& newLocation)
 //
 void PinchViewport::attachToLayerTree(GraphicsLayer* currentLayerTreeRoot, GraphicsLayerFactory* graphicsLayerFactory)
 {
+    TRACE_EVENT1("webkit", "PinchViewport::attachToLayerTree", "currentLayerTreeRoot", (bool)currentLayerTreeRoot);
     if (!currentLayerTreeRoot) {
         m_innerViewportScrollLayer->removeAllChildren();
         return;
@@ -141,6 +194,8 @@ void PinchViewport::attachToLayerTree(GraphicsLayer* currentLayerTreeRoot, Graph
             && !m_pageScaleLayer
             && !m_innerViewportContainerLayer);
 
+        // FIXME: The root transform layer should only be created on demand.
+        m_rootTransformLayer = GraphicsLayer::create(graphicsLayerFactory, this);
         m_innerViewportContainerLayer = GraphicsLayer::create(graphicsLayerFactory, this);
         m_pageScaleLayer = GraphicsLayer::create(graphicsLayerFactory, this);
         m_innerViewportScrollLayer = GraphicsLayer::create(graphicsLayerFactory, this);
@@ -151,21 +206,22 @@ void PinchViewport::attachToLayerTree(GraphicsLayer* currentLayerTreeRoot, Graph
         ASSERT(coordinator);
         coordinator->setLayerIsContainerForFixedPositionLayers(m_innerViewportScrollLayer.get(), true);
 
-        // No need for the inner viewport to clip, since the compositing
-        // surface takes care of it -- and clipping here would interfere with
-        // dynamically-sized viewports on Android.
-        m_innerViewportContainerLayer->setMasksToBounds(false);
+        // Set masks to bounds so the compositor doesn't clobber a manually
+        // set inner viewport container layer size.
+        m_innerViewportContainerLayer->setMasksToBounds(m_frameHost.settings().mainFrameClipsContent());
+        m_innerViewportContainerLayer->setSize(m_size);
 
         m_innerViewportScrollLayer->platformLayer()->setScrollClipLayer(
             m_innerViewportContainerLayer->platformLayer());
         m_innerViewportScrollLayer->platformLayer()->setUserScrollable(true, true);
 
+        m_rootTransformLayer->addChild(m_innerViewportContainerLayer.get());
         m_innerViewportContainerLayer->addChild(m_pageScaleLayer.get());
         m_pageScaleLayer->addChild(m_innerViewportScrollLayer.get());
         m_innerViewportContainerLayer->addChild(m_overlayScrollbarHorizontal.get());
         m_innerViewportContainerLayer->addChild(m_overlayScrollbarVertical.get());
 
-        // Ensure this class is set as the scroll layer's ScrollableArea
+        // Ensure this class is set as the scroll layer's ScrollableArea.
         coordinator->scrollableAreaScrollLayerDidChange(this);
 
         // Setup the inner viewport overlay scrollbars.
@@ -202,7 +258,7 @@ void PinchViewport::setupScrollbar(WebScrollbar::Orientation orientation)
         ScrollingCoordinator* coordinator = m_frameHost.page().scrollingCoordinator();
         ASSERT(coordinator);
         ScrollbarOrientation webcoreOrientation = isHorizontal ? HorizontalScrollbar : VerticalScrollbar;
-        webScrollbarLayer = coordinator->createSolidColorScrollbarLayer(webcoreOrientation, overlayScrollbarThickness, false);
+        webScrollbarLayer = coordinator->createSolidColorScrollbarLayer(webcoreOrientation, overlayScrollbarThickness, 0, false);
 
         webScrollbarLayer->setClipLayer(m_innerViewportContainerLayer->platformLayer());
         scrollbarGraphicsLayer->setContentsToPlatformLayer(webScrollbarLayer->layer());
@@ -222,6 +278,7 @@ void PinchViewport::setupScrollbar(WebScrollbar::Orientation orientation)
 
 void PinchViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView) const
 {
+    TRACE_EVENT0("webkit", "PinchViewport::registerLayersWithTreeView");
     ASSERT(layerTreeView);
     ASSERT(m_frameHost.page().mainFrame());
     ASSERT(m_frameHost.page().mainFrame()->contentRenderer());
@@ -260,10 +317,7 @@ IntPoint PinchViewport::minimumScrollPosition() const
 
 IntPoint PinchViewport::maximumScrollPosition() const
 {
-    // TODO: Doesn't take scale into account yet.
-    IntPoint maxScrollPosition(contentsSize() - visibleRect().size());
-    maxScrollPosition.clampNegativeToZero();
-    return maxScrollPosition;
+    return flooredIntPoint(FloatSize(contentsSize()) - visibleRect().size());
 }
 
 IntRect PinchViewport::scrollableAreaBoundingBox() const
@@ -272,7 +326,7 @@ IntRect PinchViewport::scrollableAreaBoundingBox() const
     // space; however, PinchViewport technically isn't a child of any Frames.
     // Nonetheless, the PinchViewport always occupies the entire main frame so just
     // return that.
-    LocalFrame* frame = m_frameHost.page().mainFrame();
+    LocalFrame* frame = mainFrame();
 
     if (!frame || !frame->view())
         return IntRect();
@@ -282,13 +336,13 @@ IntRect PinchViewport::scrollableAreaBoundingBox() const
 
 IntSize PinchViewport::contentsSize() const
 {
-    LocalFrame* frame = m_frameHost.page().mainFrame();
+    LocalFrame* frame = mainFrame();
 
     if (!frame || !frame->view())
         return IntSize();
 
-    // TODO: This will be visibleContentSize once page scale is removed from FrameView
-    return frame->view()->unscaledVisibleContentSize(IncludeScrollbars);
+    ASSERT(frame->view()->visibleContentScaleFactor() == 1);
+    return frame->view()->visibleContentRect(IncludeScrollbars).size();
 }
 
 void PinchViewport::invalidateScrollbarRect(Scrollbar*, const IntRect&)
@@ -328,6 +382,19 @@ void PinchViewport::notifyAnimationStarted(const GraphicsLayer*, double monotoni
 
 void PinchViewport::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip)
 {
+}
+
+LocalFrame* PinchViewport::mainFrame() const
+{
+    return m_frameHost.page().mainFrame();
+}
+
+FloatPoint PinchViewport::clampOffsetToBoundaries(const FloatPoint& offset)
+{
+    FloatPoint clampedOffset(offset);
+    clampedOffset = clampedOffset.shrunkTo(FloatPoint(maximumScrollPosition()));
+    clampedOffset = clampedOffset.expandedTo(FloatPoint(minimumScrollPosition()));
+    return clampedOffset;
 }
 
 String PinchViewport::debugName(const GraphicsLayer* graphicsLayer)

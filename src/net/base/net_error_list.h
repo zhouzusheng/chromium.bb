@@ -94,6 +94,11 @@ NET_ERROR(BLOCKED_BY_ADMINISTRATOR, -22)
 // The socket is already connected.
 NET_ERROR(SOCKET_IS_CONNECTED, -23)
 
+// The request was blocked because the forced reenrollment check is still
+// pending. This error can only occur on ChromeOS.
+// The error can be emitted by code in c/b/policy/policy_helpers.cc.
+NET_ERROR(BLOCKED_ENROLLMENT_CHECK_PENDING, -24)
+
 // A connection was closed (corresponding to a TCP FIN).
 NET_ERROR(CONNECTION_CLOSED, -100)
 
@@ -313,11 +318,19 @@ NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -158)
 // The SSL server sent us a fatal unrecognized_name alert.
 NET_ERROR(SSL_UNRECOGNIZED_NAME_ALERT, -159)
 
-// Failed to set or change the socket's receive buffer size as requested
+// Failed to set the socket's receive buffer size as requested.
 NET_ERROR(SOCKET_SET_RECEIVE_BUFFER_SIZE_ERROR, -160)
 
-// Failed to set or change the socket's send buffer size as requested.
+// Failed to set the socket's send buffer size as requested.
 NET_ERROR(SOCKET_SET_SEND_BUFFER_SIZE_ERROR, -161)
+
+// Failed to set the socket's receive buffer size as requested, despite success
+// return code from setsockopt.
+NET_ERROR(SOCKET_RECEIVE_BUFFER_SIZE_UNCHANGEABLE, -162)
+
+// Failed to set the socket's send buffer size as requested, despite success
+// return code from setsockopt.
+NET_ERROR(SOCKET_SEND_BUFFER_SIZE_UNCHANGEABLE, -163)
 
 // Certificate error codes
 //

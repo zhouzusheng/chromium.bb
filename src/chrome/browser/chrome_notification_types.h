@@ -308,13 +308,6 @@ enum NotificationType {
   // details the TopSites.
   NOTIFICATION_TOP_SITES_LOADED,
 
-  // Sent by TopSites when it has finished updating its most visited URLs
-  // cache after querying the history service. The source is the TopSites and
-  // the details a CancelableRequestProvider::Handle from the history service
-  // query.
-  // Used only in testing.
-  NOTIFICATION_TOP_SITES_UPDATED,
-
   // Sent by TopSites when the either one of the most visited urls changed, or
   // one of the images changes. The source is the TopSites, the details not
   // used.
@@ -326,11 +319,6 @@ enum NotificationType {
   // source is the ID of the renderer process, and the details are a
   // V8HeapStatsDetails object.
   NOTIFICATION_RENDERER_V8_HEAP_STATS_COMPUTED,
-
-  // Sent when a renderer process is notified of a new FPS value. The source
-  // is the ID of the renderer process, and the details are an FPSDetails
-  // object.
-  NOTIFICATION_RENDERER_FPS_COMPUTED,
 
   // Non-history storage services --------------------------------------------
 
@@ -417,22 +405,19 @@ enum NotificationType {
   // the tab.
   NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when a new extension is loaded. The details are an Extension, and
   // the source is a Profile.
-  NOTIFICATION_EXTENSION_LOADED,
+  NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
 
   // An error occured while attempting to load an extension. The details are a
   // string with details about why the load failed.
   NOTIFICATION_EXTENSION_LOAD_ERROR,
 
-  // Sent when an unpacked extension fails to load. The details are a std::pair,
-  // the first object is a boolean signifying the user's retry response value,
-  // and the second object is a const base::FilePath& of the extension that
-  // failed to load. Source is a Profile.
-  NOTIFICATION_EXTENSION_LOAD_RETRY,
-
   // Sent when an extension is enabled. Under most circumstances, listeners
-  // will want to use NOTIFICATION_EXTENSION_LOADED. This notification is only
+  // will want to use NOTIFICATION_EXTENSION_LOADED_DEPRECATED. This
+  // notification is only
   // fired when the "Enable" button is hit in the extensions tab.  The details
   // are an Extension, and the source is a Profile.
   NOTIFICATION_EXTENSION_ENABLED,
@@ -602,20 +587,6 @@ enum NotificationType {
   // found update.
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
 
-  // Desktop Notifications ---------------------------------------------------
-
-  // This notification is sent when a balloon is connected to a renderer
-  // process to render the balloon contents.  The source is a
-  // Source<BalloonHost> with a pointer to the the balloon.  A
-  // NOTIFY_BALLOON_DISCONNECTED is guaranteed before the source pointer
-  // becomes junk. No details expected.
-  NOTIFICATION_NOTIFY_BALLOON_CONNECTED,
-
-  // This message is sent after a balloon is disconnected from the renderer
-  // process. The source is a Source<BalloonHost> with a pointer to the
-  // balloon host (the pointer is usable). No details are expected.
-  NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
-
   // Upgrade notifications ---------------------------------------------------
 
   // Sent when Chrome believes an update has been installed and available for
@@ -707,25 +678,6 @@ enum NotificationType {
   // are a ChromeCookieDetails object.
   NOTIFICATION_COOKIE_CHANGED,
 
-  // Signin Manager ----------------------------------------------------------
-  // TODO(blundell): Eliminate SigninManager notifications once
-  // crbug.com/333997 is fixed.
-
-  // Sent when a user signs into Google services such as sync.
-  // The source is the Profile. The details are a
-  // GoogleServiceSigninSuccessDetails object.
-  NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-
-  // Sent when a user fails to sign into Google services such as sync.
-  // The source is the Profile. The details are a GoogleServiceAuthError
-  // object.
-  NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-
-  // Sent when the currently signed-in user for a user has been signed out.
-  // The source is the Profile. The details are a
-  // GoogleServiceSignoutDetails object.
-  NOTIFICATION_GOOGLE_SIGNED_OUT,
-
   // Download Notifications --------------------------------------------------
 
   // Sent when a download is initiated. It is possible that the download will
@@ -772,30 +724,13 @@ enum NotificationType {
   // all and the details are AuthenticationNotificationDetails.
   NOTIFICATION_LOGIN_AUTHENTICATION,
 
-  // Sent when GAIA iframe has been loaded. First paint event after this fires
-  // NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
-  // Possible scenarios:
-  // 1. Boot into device that has user pods display disabled or no users.
-  //    Note that booting with network not connected would first generate
-  //    NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN.
-  // 2. From the user pods list, open "Add User" for the second time
-  //    (see below).
-  // TODO(nkostylev): Send this notification any time "Add User" is activated
-  //                  even if it has been silently preloaded on boot.
-  // Not sent on "silent preload" i.e. when booting into login screen
-  // with user pods, GAIA frame is silently preloaded in the background.
-  // Activating it ("Add User") for the first time would not generate this
-  // notification.
-  NOTIFICATION_LOGIN_WEBUI_LOADED,
-
   // Sent when a network error message is displayed on the WebUI login screen.
   // First paint event of this fires NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
   NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
 
   // Sent when the specific part of login/lock WebUI is considered to be
   // visible. That moment is tracked as the first paint event after one of the:
-  // 1. NOTIFICATION_LOGIN_WEBUI_LOADED
-  // 2. NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
+  // NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
   //
   // Possible series of notifications:
   // 1. Boot into fresh OOBE
@@ -806,7 +741,6 @@ enum NotificationType {
   //    if no network is connected or flaky network
   //    (NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN +
   //     NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE)
-  //    NOTIFICATION_LOGIN_WEBUI_LOADED
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 4. Boot into retail mode
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE

@@ -37,7 +37,7 @@ enum ViewportErrorCode {
 
 class HTMLMetaElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMetaElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLMetaElement> create(Document&);
 
     const AtomicString& content() const;
     const AtomicString& httpEquiv() const;
@@ -57,8 +57,8 @@ private:
     float parsePositiveNumber(const String& key, const String& value, bool* ok = 0);
 
     Length parseViewportValueAsLength(const String& key, const String& value);
-    float parseViewportValueAsZoom(const String& key, const String& value);
-    float parseViewportValueAsUserZoom(const String& key, const String& value);
+    float parseViewportValueAsZoom(const String& key, const String& value, bool& computedValueMatchesParsedValue);
+    bool parseViewportValueAsUserZoom(const String& key, const String& value, bool& computedValueMatchesParsedValue);
     float parseViewportValueAsDPI(const String& key, const String& value);
 
     void reportViewportWarning(ViewportErrorCode, const String& replacement1, const String& replacement2);

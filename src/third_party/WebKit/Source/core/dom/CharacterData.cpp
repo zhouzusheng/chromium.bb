@@ -187,7 +187,7 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
         toText(this)->updateTextRenderer(offsetOfReplacedData, oldLength, recalcStyleBehavior);
 
     if (nodeType() == PROCESSING_INSTRUCTION_NODE)
-        toProcessingInstruction(this)->checkStyleSheet();
+        toProcessingInstruction(this)->didAttributeChanged();
 
     if (document().frame())
         document().frame()->selection().didUpdateCharacterData(this, offsetOfReplacedData, oldLength, newLength);
@@ -198,7 +198,7 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
 
 void CharacterData::didModifyData(const String& oldData)
 {
-    if (OwnPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(*this))
+    if (OwnPtrWillBeRawPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(*this))
         mutationRecipients->enqueueMutationRecord(MutationRecord::createCharacterData(this, oldData));
 
     if (parentNode())

@@ -41,15 +41,16 @@
 #include "core/dom/IconURL.h"
 #include "core/editing/TextAffinity.h"
 #include "core/fileapi/FileError.h"
+#include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/InjectedStyleSheets.h"
 #include "core/page/PageVisibilityState.h"
-#include "core/frame/Settings.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
@@ -57,7 +58,6 @@
 #include "modules/indexeddb/IDBKeyPath.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IndexedDB.h"
-#include "modules/indexeddb/chromium/IDBFactoryBackendInterfaceChromium.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include "modules/notifications/NotificationClient.h"
 #include "modules/quota/DeprecatedStorageQuota.h"
@@ -110,6 +110,8 @@
 #include "public/web/WebFormElement.h"
 #include "public/web/WebGeolocationError.h"
 #include "public/web/WebGeolocationPosition.h"
+#include "public/web/WebHistoryCommitType.h"
+#include "public/web/WebHistoryItem.h"
 #include "public/web/WebIconURL.h"
 #include "public/web/WebInputElement.h"
 #include "public/web/WebInputEvent.h"
@@ -192,6 +194,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDiv, DivRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDocument, DocumentRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDrawer, DrawerRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleEditableText, EditableTextRole);
+COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleEmbeddedObject, EmbeddedObjectRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleFooter, FooterRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleForm, FormRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGrid, GridRole);
@@ -199,6 +202,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGroup, GroupRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGrowArea, GrowAreaRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleHeading, HeadingRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleHelpTag, HelpTagRole);
+COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleIframe, IframeRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleIgnored, IgnoredRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleImageMapLink, ImageMapLinkRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleImageMap, ImageMapRole);
@@ -393,12 +397,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeFavicon, Favicon);
 COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouch, TouchIcon);
 COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouchPrecomposed, TouchPrecomposedIcon);
 
-#if ENABLE(INPUT_SPEECH)
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Idle, InputFieldSpeechButtonElement::Idle);
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Recording, InputFieldSpeechButtonElement::Recording);
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Recognizing, InputFieldSpeechButtonElement::Recognizing);
-#endif
-
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::ElementNode, Node::ELEMENT_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::AttributeNode, Node::ATTRIBUTE_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::TextNode, Node::TEXT_NODE);
@@ -589,11 +587,20 @@ COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityVeryHigh, ResourceLoadPriori
 
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyIgnore, NavigationPolicyIgnore);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyDownload, NavigationPolicyDownload);
+COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyDownloadTo, NavigationPolicyDownloadTo);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyCurrentTab, NavigationPolicyCurrentTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewBackgroundTab, NavigationPolicyNewBackgroundTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewForegroundTab, NavigationPolicyNewForegroundTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewWindow, NavigationPolicyNewWindow);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewPopup, NavigationPolicyNewPopup);
+
+COMPILE_ASSERT_MATCHING_ENUM(WebStandardCommit, StandardCommit);
+COMPILE_ASSERT_MATCHING_ENUM(WebBackForwardCommit, BackForwardCommit);
+COMPILE_ASSERT_MATCHING_ENUM(WebInitialCommitInChildFrame, InitialCommitInChildFrame);
+COMPILE_ASSERT_MATCHING_ENUM(WebHistoryInertCommit, HistoryInertCommit);
+
+COMPILE_ASSERT_MATCHING_ENUM(WebHistorySameDocumentLoad, HistorySameDocumentLoad);
+COMPILE_ASSERT_MATCHING_ENUM(WebHistoryDifferentDocumentLoad, HistoryDifferentDocumentLoad);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelDebug, DebugMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelLog, LogMessageLevel);

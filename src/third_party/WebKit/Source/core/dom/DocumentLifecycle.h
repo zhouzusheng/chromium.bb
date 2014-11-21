@@ -44,7 +44,8 @@ public:
 
         // When the document is active, it traverses these states.
 
-        StyleRecalcPending,
+        VisualUpdatePending,
+
         InStyleRecalc,
         StyleClean,
 
@@ -97,16 +98,34 @@ public:
     bool isActive() const { return m_state > Inactive && m_state < Stopping; }
     State state() const { return m_state; }
 
+    bool stateAllowsTreeMutations() const;
+    bool stateAllowsRenderTreeMutations() const;
+
     void advanceTo(State);
-    void rewindTo(State);
+    void ensureStateAtMost(State);
 
 private:
 #if !ASSERT_DISABLED
     bool canAdvanceTo(State) const;
+    bool canRewindTo(State) const;
 #endif
 
     State m_state;
 };
+
+inline bool DocumentLifecycle::stateAllowsTreeMutations() const
+{
+    // FIXME: We should not allow mutations in InPreLayout or AfterPerformLayout either,
+    // but we need to fix MediaList listeners and plugins first.
+    return m_state != InStyleRecalc
+        && m_state != InPerformLayout
+        && m_state != InCompositingUpdate;
+}
+
+inline bool DocumentLifecycle::stateAllowsRenderTreeMutations() const
+{
+    return m_state == InStyleRecalc;
+}
 
 }
 

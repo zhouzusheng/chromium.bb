@@ -49,7 +49,7 @@ extern "C" {
 #define VPX_SS_MAX_LAYERS       5
 
 /*! Spatial Scalability: Default number of coding layers */
-#define VPX_SS_DEFAULT_LAYERS       3
+#define VPX_SS_DEFAULT_LAYERS       1
 
   /*!\brief Current ABI version number
    *
@@ -396,6 +396,19 @@ extern "C" {
      */
     unsigned int           rc_resize_allowed;
 
+    /*!\brief Internal coded frame width.
+     *
+     * If spatial resampling is enabled this specifies the width of the
+     * encoded frame.
+     */
+    unsigned int           rc_scaled_width;
+
+    /*!\brief Internal coded frame height.
+     *
+     * If spatial resampling is enabled this specifies the height of the
+     * encoded frame.
+     */
+    unsigned int           rc_scaled_height;
 
     /*!\brief Spatial resampling up watermark.
      *

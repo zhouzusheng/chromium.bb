@@ -141,8 +141,7 @@ float ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
 
 namespace cc {
 
-PicturePile::PicturePile() {
-}
+PicturePile::PicturePile() : is_suitable_for_gpu_rasterization_(true) {}
 
 PicturePile::~PicturePile() {
 }
@@ -154,6 +153,7 @@ bool PicturePile::Update(ContentLayerClient* painter,
                          const Region& invalidation,
                          const gfx::Rect& visible_layer_rect,
                          int frame_number,
+                         Picture::RecordingMode recording_mode,
                          RenderingStatsInstrumentation* stats_instrumentation) {
   background_color_ = background_color;
   contents_opaque_ = contents_opaque;
@@ -166,7 +166,7 @@ bool PicturePile::Update(ContentLayerClient* painter,
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
   recorded_viewport_ = interest_rect;
-  recorded_viewport_.Intersect(gfx::Rect(size()));
+  recorded_viewport_.Intersect(tiling_rect());
 
   bool invalidated = false;
   for (Region::Iterator i(invalidation); i.has_rect(); i.next()) {
@@ -243,7 +243,16 @@ bool PicturePile::Update(ContentLayerClient* painter,
                                   painter,
                                   tile_grid_info_,
                                   gather_pixel_refs,
-                                  num_raster_threads);
+                                  num_raster_threads,
+                                  recording_mode);
+        // Note the '&&' with previous is-suitable state.
+        // This means that once a picture-pile becomes unsuitable for gpu
+        // rasterization due to some content, it will continue to be unsuitable
+        // even if that content is replaced by gpu-friendly content.
+        // This is an optimization to avoid iterating though all pictures in
+        // the pile after each invalidation.
+        is_suitable_for_gpu_rasterization_ &=
+            picture->IsSuitableForGpuRasterization();
         base::TimeDelta duration =
             stats_instrumentation->EndRecording(start_time);
         best_duration = std::min(duration, best_duration);

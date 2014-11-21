@@ -41,7 +41,7 @@ class HTMLMediaElement;
 
 class MediaElementAudioSourceNode FINAL : public AudioSourceNode, public AudioSourceProviderClient {
 public:
-    static PassRefPtr<MediaElementAudioSourceNode> create(AudioContext*, HTMLMediaElement*);
+    static PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> create(AudioContext*, HTMLMediaElement*);
 
     virtual ~MediaElementAudioSourceNode();
 
@@ -53,8 +53,8 @@ public:
     // AudioSourceProviderClient
     virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
 
-    void lock();
-    void unlock();
+    virtual void lock() OVERRIDE;
+    virtual void unlock() OVERRIDE;
 
 private:
     MediaElementAudioSourceNode(AudioContext*, HTMLMediaElement*);

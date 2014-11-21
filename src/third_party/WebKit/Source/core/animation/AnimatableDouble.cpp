@@ -31,17 +31,10 @@
 #include "config.h"
 #include "core/animation/AnimatableDouble.h"
 
-#include "core/css/CSSPrimitiveValue.h"
-#include "core/css/CSSValuePool.h"
 #include "platform/animation/AnimationUtilities.h"
 #include <math.h>
 
 namespace WebCore {
-
-PassRefPtrWillBeRawPtr<CSSValue> AnimatableDouble::toCSSValue() const
-{
-    return cssValuePool().createValue(m_number, CSSPrimitiveValue::CSS_NUMBER);
-}
 
 bool AnimatableDouble::usesDefaultInterpolationWith(const AnimatableValue* value) const
 {
@@ -56,18 +49,6 @@ PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableDouble::interpolateTo(const An
     if ((m_constraint == InterpolationIsNonContinuousWithZero) && (!m_number || !other->m_number))
         return defaultInterpolateTo(this, value, fraction);
     return AnimatableDouble::create(blend(m_number, other->m_number, fraction));
-}
-
-PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableDouble::addWith(const AnimatableValue* value) const
-{
-    // Optimization for adding with 0.
-    if (!m_number)
-        return takeConstRef(value);
-    const AnimatableDouble* other = toAnimatableDouble(value);
-    if (!other->m_number)
-        return takeConstRef(this);
-
-    return AnimatableDouble::create(m_number + other->m_number);
 }
 
 bool AnimatableDouble::equalTo(const AnimatableValue* value) const

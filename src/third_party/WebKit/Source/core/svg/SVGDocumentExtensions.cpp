@@ -24,10 +24,12 @@
 
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
+#include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGElement.h"
 #include "core/svg/SVGFontFaceElement.h"
 #include "core/svg/SVGSVGElement.h"
+#include "core/svg/SVGViewSpec.h"
+#include "core/svg/SVGZoomAndPan.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/AtomicString.h"
@@ -118,13 +120,6 @@ void SVGDocumentExtensions::pauseAnimations()
     HashSet<SVGSVGElement*>::iterator end = m_timeContainers.end();
     for (HashSet<SVGSVGElement*>::iterator itr = m_timeContainers.begin(); itr != end; ++itr)
         (*itr)->pauseAnimations();
-}
-
-void SVGDocumentExtensions::unpauseAnimations()
-{
-    HashSet<SVGSVGElement*>::iterator end = m_timeContainers.end();
-    for (HashSet<SVGSVGElement*>::iterator itr = m_timeContainers.begin(); itr != end; ++itr)
-        (*itr)->unpauseAnimations();
 }
 
 void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
@@ -350,9 +345,7 @@ void SVGDocumentExtensions::removeAllTargetReferencesForElement(SVGElement* refe
             toBeRemoved.append(referencedElement);
     }
 
-    Vector<SVGElement*>::iterator vectorEnd = toBeRemoved.end();
-    for (Vector<SVGElement*>::iterator it = toBeRemoved.begin(); it != vectorEnd; ++it)
-        m_elementDependencies.remove(*it);
+    m_elementDependencies.removeAll(toBeRemoved);
 }
 
 void SVGDocumentExtensions::rebuildAllElementReferencesForTarget(SVGElement* referencedElement)
@@ -443,5 +436,43 @@ void SVGDocumentExtensions::removePendingSVGFontFaceElementsForRemoval()
 }
 
 #endif
+
+bool SVGDocumentExtensions::zoomAndPanEnabled() const
+{
+    if (SVGSVGElement* svg = rootElement(*m_document)) {
+        if (svg->useCurrentView()) {
+            if (svg->currentView())
+                return svg->currentView()->zoomAndPan() == SVGZoomAndPanMagnify;
+        } else {
+            return svg->zoomAndPan() == SVGZoomAndPanMagnify;
+        }
+    }
+
+    return false;
+}
+
+void SVGDocumentExtensions::startPan(const FloatPoint& start)
+{
+    if (SVGSVGElement* svg = rootElement(*m_document))
+        m_translate = FloatPoint(start.x() - svg->currentTranslate().x(), start.y() - svg->currentTranslate().y());
+}
+
+void SVGDocumentExtensions::updatePan(const FloatPoint& pos) const
+{
+    if (SVGSVGElement* svg = rootElement(*m_document))
+        svg->setCurrentTranslate(FloatPoint(pos.x() - m_translate.x(), pos.y() - m_translate.y()));
+}
+
+SVGSVGElement* SVGDocumentExtensions::rootElement(const Document& document)
+{
+    Element* elem = document.documentElement();
+    return isSVGSVGElement(elem) ? toSVGSVGElement(elem) : 0;
+}
+
+SVGSVGElement* SVGDocumentExtensions::rootElement() const
+{
+    ASSERT(m_document);
+    return rootElement(*m_document);
+}
 
 }

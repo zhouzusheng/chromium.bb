@@ -29,11 +29,8 @@
  */
 
 #include "config.h"
-#include "ServiceWorkerGlobalScopeProxy.h"
+#include "web/ServiceWorkerGlobalScopeProxy.h"
 
-#include "WebEmbeddedWorkerImpl.h"
-#include "WebSerializedScriptValue.h"
-#include "WebServiceWorkerContextClient.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
@@ -44,6 +41,9 @@
 #include "modules/serviceworkers/InstallPhaseEvent.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
+#include "public/web/WebSerializedScriptValue.h"
+#include "public/web/WebServiceWorkerContextClient.h"
+#include "web/WebEmbeddedWorkerImpl.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -107,9 +107,9 @@ void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, 
     m_client.reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
-void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL)
+void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
 {
-    notImplemented();
+    m_client.reportConsoleMessage(source, level, message, lineNumber, sourceURL);
 }
 
 void ServiceWorkerGlobalScopeProxy::postMessageToPageInspector(const String& message)
@@ -134,9 +134,14 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
     m_executionContext.postTask(bind(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
 }
 
-void ServiceWorkerGlobalScopeProxy::workerGlobalScopeDestroyed()
+void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
 {
     m_workerGlobalScope = 0;
+    m_client.willDestroyWorkerContext();
+}
+
+void ServiceWorkerGlobalScopeProxy::workerGlobalScopeDestroyed()
+{
     m_client.workerContextDestroyed();
 }
 

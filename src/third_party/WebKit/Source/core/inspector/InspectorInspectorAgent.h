@@ -67,9 +67,8 @@ public:
     virtual void setFrontend(InspectorFrontend*) OVERRIDE;
     virtual void clearFrontend() OVERRIDE;
 
-    void didClearWindowObjectInMainWorld(LocalFrame*);
+    void didClearDocumentOfWindowObject(LocalFrame*);
 
-    void didCommitLoad(LocalFrame*, DocumentLoader*);
     void domContentLoadedEventFired(LocalFrame*);
 
     bool hasFrontend() const { return m_frontend; }

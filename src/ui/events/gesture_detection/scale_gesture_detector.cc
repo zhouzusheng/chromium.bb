@@ -17,6 +17,11 @@ using base::TimeTicks;
 namespace ui {
 namespace {
 
+// Using a small epsilon when comparing slop distances allows pixel perfect
+// slop determination when using fractional DPI coordinates (assuming the slop
+// region and DPI scale are reasonably proportioned).
+const float kSlopEpsilon = .05f;
+
 const int kTouchStabilizeTimeMs = 128;
 
 const float kScaleFactor = .5f;
@@ -26,24 +31,24 @@ const float kScaleFactor = .5f;
 // Note: These constants were taken directly from the default (unscaled)
 // versions found in Android's ViewConfiguration.
 ScaleGestureDetector::Config::Config()
-    : quick_scale_enabled(false),
-      min_scaling_touch_major(48),
-      min_scaling_span(200) {}
+    : min_scaling_touch_major(48),
+      min_scaling_span(200),
+      quick_scale_enabled(true) {}
 
 ScaleGestureDetector::Config::~Config() {}
 
 bool ScaleGestureDetector::SimpleScaleGestureListener::OnScale(
-    const ScaleGestureDetector&) {
+    const ScaleGestureDetector&, const MotionEvent&) {
   return false;
 }
 
 bool ScaleGestureDetector::SimpleScaleGestureListener::OnScaleBegin(
-    const ScaleGestureDetector&) {
+    const ScaleGestureDetector&, const MotionEvent&) {
   return true;
 }
 
 void ScaleGestureDetector::SimpleScaleGestureListener::OnScaleEnd(
-    const ScaleGestureDetector&) {}
+    const ScaleGestureDetector&, const MotionEvent&) {}
 
 ScaleGestureDetector::ScaleGestureDetector(const Config& config,
                                            ScaleGestureListener* listener)
@@ -72,9 +77,11 @@ ScaleGestureDetector::ScaleGestureDetector(const Config& config,
       double_tap_mode_(DOUBLE_TAP_MODE_NONE),
       event_before_or_above_starting_gesture_event_(false) {
   DCHECK(listener_);
-  span_slop_ = config.gesture_detector_config.scaled_touch_slop * 2;
+  span_slop_ =
+      (config.gesture_detector_config.touch_slop + kSlopEpsilon) * 2;
   touch_min_major_ = config.min_scaling_touch_major;
-  min_span_ = config.min_scaling_span;
+  min_span_ = config.min_scaling_span + kSlopEpsilon;
+  ResetTouchHistory();
   SetQuickScaleEnabled(config.quick_scale_enabled);
 }
 
@@ -92,26 +99,27 @@ bool ScaleGestureDetector::OnTouchEvent(const MotionEvent& event) {
   }
 
   const bool stream_complete =
-      action == MotionEvent::ACTION_UP || action == MotionEvent::ACTION_CANCEL;
+      action == MotionEvent::ACTION_UP ||
+      action == MotionEvent::ACTION_CANCEL ||
+      (action == MotionEvent::ACTION_POINTER_DOWN && InDoubleTapMode());
 
   if (action == MotionEvent::ACTION_DOWN || stream_complete) {
     // Reset any scale in progress with the listener.
     // If it's an ACTION_DOWN we're beginning a new event stream.
     // This means the app probably didn't give us all the events. Shame on it.
     if (in_progress_) {
-      listener_->OnScaleEnd(*this);
+      listener_->OnScaleEnd(*this, event);
       in_progress_ = false;
       initial_span_ = 0;
       double_tap_mode_ = DOUBLE_TAP_MODE_NONE;
-    } else if (double_tap_mode_ == DOUBLE_TAP_MODE_IN_PROGRESS &&
-               stream_complete) {
+    } else if (InDoubleTapMode() && stream_complete) {
       in_progress_ = false;
       initial_span_ = 0;
       double_tap_mode_ = DOUBLE_TAP_MODE_NONE;
     }
 
     if (stream_complete) {
-      ClearTouchHistory();
+      ResetTouchHistory();
       return true;
     }
   }
@@ -129,7 +137,7 @@ bool ScaleGestureDetector::OnTouchEvent(const MotionEvent& event) {
   const int div = pointer_up ? count - 1 : count;
   float focus_x;
   float focus_y;
-  if (double_tap_mode_ == DOUBLE_TAP_MODE_IN_PROGRESS) {
+  if (InDoubleTapMode()) {
     // In double tap mode, the focal pt is always where the double tap
     // gesture started.
     focus_x = double_tap_focus_x_;
@@ -187,7 +195,7 @@ bool ScaleGestureDetector::OnTouchEvent(const MotionEvent& event) {
   focus_y_ = focus_y;
   if (!InDoubleTapMode() && in_progress_ &&
       (span < min_span_ || config_changed)) {
-    listener_->OnScaleEnd(*this);
+    listener_->OnScaleEnd(*this, event);
     in_progress_ = false;
     initial_span_ = span;
     double_tap_mode_ = DOUBLE_TAP_MODE_NONE;
@@ -198,14 +206,14 @@ bool ScaleGestureDetector::OnTouchEvent(const MotionEvent& event) {
     initial_span_ = prev_span_ = curr_span_ = span;
   }
 
-  const int min_span = InDoubleTapMode() ? span_slop_ : min_span_;
-  if (!in_progress_ && span >= min_span &&
+  const float min_span = InDoubleTapMode() ? span_slop_ : min_span_;
+  if (!in_progress_ && span >= min_span && (InDoubleTapMode() || count > 1) &&
       (was_in_progress || std::abs(span - initial_span_) > span_slop_)) {
     prev_span_x_ = curr_span_x_ = span_x;
     prev_span_y_ = curr_span_y_ = span_y;
     prev_span_ = curr_span_ = span;
     prev_time_ = curr_time_;
-    in_progress_ = listener_->OnScaleBegin(*this);
+    in_progress_ = listener_->OnScaleBegin(*this, event);
   }
 
   // Handle motion; focal point and span/scale factor are changing.
@@ -217,7 +225,7 @@ bool ScaleGestureDetector::OnTouchEvent(const MotionEvent& event) {
     bool update_prev = true;
 
     if (in_progress_) {
-      update_prev = listener_->OnScale(*this);
+      update_prev = listener_->OnScale(*this, event);
     }
 
     if (update_prev) {
@@ -244,6 +252,10 @@ bool ScaleGestureDetector::IsQuickScaleEnabled() const {
 }
 
 bool ScaleGestureDetector::IsInProgress() const { return in_progress_; }
+
+bool ScaleGestureDetector::InDoubleTapMode() const {
+  return double_tap_mode_ == DOUBLE_TAP_MODE_IN_PROGRESS;
+}
 
 float ScaleGestureDetector::GetFocusX() const { return focus_x_; }
 
@@ -295,10 +307,12 @@ bool ScaleGestureDetector::OnDoubleTap(const MotionEvent& ev) {
 }
 
 void ScaleGestureDetector::AddTouchHistory(const MotionEvent& ev) {
-  const base::TimeTicks current_time = base::TimeTicks::Now();
+  const base::TimeTicks current_time = ev.GetEventTime();
+  DCHECK(!current_time.is_null());
   const int count = static_cast<int>(ev.GetPointerCount());
-  bool accept = (current_time - touch_history_last_accepted_time_)
-                    .InMilliseconds() >= kTouchStabilizeTimeMs;
+  bool accept = touch_history_last_accepted_time_.is_null() ||
+                (current_time - touch_history_last_accepted_time_) >=
+                    base::TimeDelta::FromMilliseconds(kTouchStabilizeTimeMs);
   float total = 0;
   int sample_count = 0;
   for (int i = 0; i < count; i++) {
@@ -352,16 +366,12 @@ void ScaleGestureDetector::AddTouchHistory(const MotionEvent& ev) {
   }
 }
 
-void ScaleGestureDetector::ClearTouchHistory() {
+void ScaleGestureDetector::ResetTouchHistory() {
   touch_upper_ = std::numeric_limits<float>::quiet_NaN();
   touch_lower_ = std::numeric_limits<float>::quiet_NaN();
   touch_history_last_accepted_ = std::numeric_limits<float>::quiet_NaN();
   touch_history_direction_ = 0;
   touch_history_last_accepted_time_ = base::TimeTicks();
-}
-
-bool ScaleGestureDetector::InDoubleTapMode() const {
-  return double_tap_mode_ == DOUBLE_TAP_MODE_IN_PROGRESS;
 }
 
 }  // namespace ui

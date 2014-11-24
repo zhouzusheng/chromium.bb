@@ -12,18 +12,25 @@ namespace WebCore {
 
 enum MediaQueryTokenType {
     IdentToken = 0,
-    FunctionToken = 1,
-    DelimiterToken = 2,
-    NumberToken = 3,
-    PercentageToken = 4,
-    DimensionToken = 5,
-    WhitespaceToken = 6,
-    ColonToken = 7,
-    SemicolonToken = 8,
-    CommaToken = 9,
-    LeftParenthesisToken = 10,
-    RightParenthesisToken = 11,
-    EOFToken = 12,
+    FunctionToken,
+    DelimiterToken,
+    NumberToken,
+    PercentageToken,
+    DimensionToken,
+    WhitespaceToken,
+    ColonToken,
+    SemicolonToken,
+    CommaToken,
+    LeftParenthesisToken,
+    RightParenthesisToken,
+    LeftBracketToken,
+    RightBracketToken,
+    LeftBraceToken,
+    RightBraceToken,
+    StringToken,
+    BadStringToken,
+    EOFToken,
+    CommentToken,
 };
 
 enum NumericValueType {
@@ -33,8 +40,14 @@ enum NumericValueType {
 
 class MediaQueryToken {
 public:
-    MediaQueryToken(MediaQueryTokenType);
-    MediaQueryToken(MediaQueryTokenType, String);
+    enum BlockType {
+        NotBlock,
+        BlockStart,
+        BlockEnd,
+    };
+
+    MediaQueryToken(MediaQueryTokenType, BlockType = NotBlock);
+    MediaQueryToken(MediaQueryTokenType, String value, BlockType = NotBlock);
 
     MediaQueryToken(MediaQueryTokenType, UChar); // for DelimiterToken
     MediaQueryToken(MediaQueryTokenType, double, NumericValueType); // for NumberToken
@@ -47,10 +60,12 @@ public:
 
     MediaQueryTokenType type() const { return m_type; }
     String value() const { return m_value; }
+    String textForUnitTests() const;
 
-    UChar delimiter() const { return m_delimiter; }
-    NumericValueType numericValueType() const { return m_numericValueType; }
-    double numericValue() const { return m_numericValue; }
+    UChar delimiter() const;
+    NumericValueType numericValueType() const;
+    double numericValue() const;
+    BlockType blockType() const { return m_blockType; }
     CSSPrimitiveValue::UnitTypes unitType() const { return m_unit; }
 
 private:
@@ -62,8 +77,12 @@ private:
     NumericValueType m_numericValueType;
     double m_numericValue;
     CSSPrimitiveValue::UnitTypes m_unit;
+
+    BlockType m_blockType;
 };
 
-}
+typedef Vector<MediaQueryToken>::iterator MediaQueryTokenIterator;
+
+} // namespace
 
 #endif // MediaQueryToken_h

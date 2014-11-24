@@ -13,22 +13,22 @@ namespace WebCore {
 struct GamepadEventInit : public EventInit {
     GamepadEventInit();
 
-    RefPtrWillBeMember<Gamepad> gamepad;
+    Member<Gamepad> gamepad;
 };
 
 class GamepadEvent FINAL : public Event {
 public:
     static PassRefPtrWillBeRawPtr<GamepadEvent> create()
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new GamepadEvent);
+        return adoptRefWillBeNoop(new GamepadEvent);
     }
-    static PassRefPtrWillBeRawPtr<GamepadEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Gamepad> gamepad)
+    static PassRefPtrWillBeRawPtr<GamepadEvent> create(const AtomicString& type, bool canBubble, bool cancelable, Gamepad* gamepad)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new GamepadEvent(type, canBubble, cancelable, gamepad));
+        return adoptRefWillBeNoop(new GamepadEvent(type, canBubble, cancelable, gamepad));
     }
     static PassRefPtrWillBeRawPtr<GamepadEvent> create(const AtomicString& type, const GamepadEventInit& initializer)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new GamepadEvent(type, initializer));
+        return adoptRefWillBeNoop(new GamepadEvent(type, initializer));
     }
     virtual ~GamepadEvent();
 
@@ -40,10 +40,10 @@ public:
 
 private:
     GamepadEvent();
-    GamepadEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Gamepad>);
+    GamepadEvent(const AtomicString& type, bool canBubble, bool cancelable, Gamepad*);
     GamepadEvent(const AtomicString&, const GamepadEventInit&);
 
-    RefPtrWillBeMember<Gamepad> m_gamepad;
+    PersistentWillBeMember<Gamepad> m_gamepad;
 };
 
 } // namespace WebCore

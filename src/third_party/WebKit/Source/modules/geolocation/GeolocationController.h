@@ -28,8 +28,8 @@
 
 #include "core/page/Page.h"
 #include "core/page/PageLifecycleObserver.h"
-#include "heap/Handle.h"
 #include "modules/geolocation/Geolocation.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
@@ -42,12 +42,13 @@ class GeolocationError;
 class GeolocationPosition;
 class Page;
 
-class GeolocationController FINAL : public Supplement<Page>, public PageLifecycleObserver {
+class GeolocationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<Page>, public PageLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(GeolocationController);
     WTF_MAKE_NONCOPYABLE(GeolocationController);
 public:
     virtual ~GeolocationController();
 
-    static PassOwnPtr<GeolocationController> create(Page&, GeolocationClient*);
+    static PassOwnPtrWillBeRawPtr<GeolocationController> create(Page&, GeolocationClient*);
 
     void addObserver(Geolocation*, bool enableHighAccuracy);
     void removeObserver(Geolocation*);
@@ -68,7 +69,11 @@ public:
     virtual void pageVisibilityChanged() OVERRIDE;
 
     static const char* supplementName();
-    static GeolocationController* from(Page* page) { return static_cast<GeolocationController*>(Supplement<Page>::from(page, supplementName())); }
+    static GeolocationController* from(Page* page) { return static_cast<GeolocationController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+    virtual void willBeDestroyed() OVERRIDE;
 
 private:
     GeolocationController(Page&, GeolocationClient*);
@@ -79,8 +84,8 @@ private:
     GeolocationClient* m_client;
     bool m_hasClientForTest;
 
-    RefPtr<GeolocationPosition> m_lastPosition;
-    typedef WillBePersistentHeapHashSet<RefPtrWillBeMember<Geolocation> > ObserversSet;
+    RefPtrWillBeMember<GeolocationPosition> m_lastPosition;
+    typedef WillBeHeapHashSet<RefPtrWillBeMember<Geolocation> > ObserversSet;
     // All observers; both those requesting high accuracy and those not.
     ObserversSet m_observers;
     ObserversSet m_highAccuracyObservers;

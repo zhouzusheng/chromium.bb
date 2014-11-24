@@ -61,7 +61,8 @@ NetEqImpl::NetEqImpl(int fs,
                      TimestampScaler* timestamp_scaler,
                      AccelerateFactory* accelerate_factory,
                      ExpandFactory* expand_factory,
-                     PreemptiveExpandFactory* preemptive_expand_factory)
+                     PreemptiveExpandFactory* preemptive_expand_factory,
+                     bool create_components)
     : buffer_level_filter_(buffer_level_filter),
       decoder_database_(decoder_database),
       delay_manager_(delay_manager),
@@ -76,7 +77,6 @@ NetEqImpl::NetEqImpl(int fs,
       accelerate_factory_(accelerate_factory),
       preemptive_expand_factory_(preemptive_expand_factory),
       last_mode_(kModeNormal),
-      mute_factor_array_(NULL),
       decoded_buffer_length_(kMaxFrameSize),
       decoded_buffer_(new int16_t[decoded_buffer_length_]),
       playout_timestamp_(0),
@@ -97,19 +97,15 @@ NetEqImpl::NetEqImpl(int fs,
         "Changing to 8000 Hz.";
     fs = 8000;
   }
-  LOG(LS_INFO) << "Create NetEqImpl object with fs = " << fs << ".";
+  LOG(LS_VERBOSE) << "Create NetEqImpl object with fs = " << fs << ".";
   fs_hz_ = fs;
   fs_mult_ = fs / 8000;
   output_size_samples_ = kOutputSizeMs * 8 * fs_mult_;
   decoder_frame_length_ = 3 * output_size_samples_;
   WebRtcSpl_Init();
-  decision_logic_.reset(DecisionLogic::Create(fs_hz_, output_size_samples_,
-                                              kPlayoutOn,
-                                              decoder_database_.get(),
-                                              *packet_buffer_.get(),
-                                              delay_manager_.get(),
-                                              buffer_level_filter_.get()));
-  SetSampleRateAndChannels(fs, 1);  // Default is 1 channel.
+  if (create_components) {
+    SetSampleRateAndChannels(fs, 1);  // Default is 1 channel.
+  }
 }
 
 NetEqImpl::~NetEqImpl() {
@@ -204,7 +200,6 @@ int NetEqImpl::RegisterPayloadType(enum NetEqDecoder codec,
 
 int NetEqImpl::RegisterExternalDecoder(AudioDecoder* decoder,
                                        enum NetEqDecoder codec,
-                                       int sample_rate_hz,
                                        uint8_t rtp_payload_type) {
   CriticalSectionScoped lock(crit_sect_.get());
   LOG_API2(static_cast<int>(rtp_payload_type), codec);
@@ -213,6 +208,7 @@ int NetEqImpl::RegisterExternalDecoder(AudioDecoder* decoder,
     assert(false);
     return kFail;
   }
+  const int sample_rate_hz = AudioDecoder::CodecSampleRateHz(codec);
   int ret = decoder_database_->InsertExternal(rtp_payload_type, codec,
                                               sample_rate_hz, decoder);
   if (ret != DecoderDatabase::kOK) {
@@ -284,12 +280,7 @@ void NetEqImpl::SetPlayoutMode(NetEqPlayoutMode mode) {
   CriticalSectionScoped lock(crit_sect_.get());
   if (!decision_logic_.get() || mode != decision_logic_->playout_mode()) {
     // The reset() method calls delete for the old object.
-    decision_logic_.reset(DecisionLogic::Create(fs_hz_, output_size_samples_,
-                                                mode,
-                                                decoder_database_.get(),
-                                                *packet_buffer_.get(),
-                                                delay_manager_.get(),
-                                                buffer_level_filter_.get()));
+    CreateDecisionLogic(mode);
   }
 }
 
@@ -373,12 +364,9 @@ void NetEqImpl::FlushBuffers() {
 }
 
 void NetEqImpl::PacketBufferStatistics(int* current_num_packets,
-                                       int* max_num_packets,
-                                       int* current_memory_size_bytes,
-                                       int* max_memory_size_bytes) const {
+                                       int* max_num_packets) const {
   CriticalSectionScoped lock(crit_sect_.get());
-  packet_buffer_->BufferStat(current_num_packets, max_num_packets,
-                             current_memory_size_bytes, max_memory_size_bytes);
+  packet_buffer_->BufferStat(current_num_packets, max_num_packets);
 }
 
 int NetEqImpl::DecodedRtpInfo(int* sequence_number, uint32_t* timestamp) const {
@@ -400,6 +388,11 @@ NetEqBackgroundNoiseMode NetEqImpl::BackgroundNoiseMode() const {
   CriticalSectionScoped lock(crit_sect_.get());
   assert(background_noise_.get());
   return background_noise_->mode();
+}
+
+const SyncBuffer* NetEqImpl::sync_buffer_for_test() const {
+  CriticalSectionScoped lock(crit_sect_.get());
+  return sync_buffer_.get();
 }
 
 // Methods below this line are private.
@@ -512,19 +505,6 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     memcpy(&main_header, &packet_list.front()->header, sizeof(main_header));
   }
 
-  // Check for FEC in packets, and separate payloads into several packets.
-  int ret = payload_splitter_->SplitFec(&packet_list, decoder_database_.get());
-  if (ret != PayloadSplitter::kOK) {
-    LOG_FERR1(LS_WARNING, SplitFec, packet_list.size());
-    PacketBuffer::DeleteAllPackets(&packet_list);
-    switch (ret) {
-      case PayloadSplitter::kUnknownPayloadType:
-        return kUnknownRtpPayloadType;
-      default:
-        return kOtherError;
-    }
-  }
-
   // Check payload types.
   if (decoder_database_->CheckPayloadTypes(packet_list) ==
       DecoderDatabase::kDecoderNotFound) {
@@ -571,6 +551,19 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     }
   }
 
+  // Check for FEC in packets, and separate payloads into several packets.
+  int ret = payload_splitter_->SplitFec(&packet_list, decoder_database_.get());
+  if (ret != PayloadSplitter::kOK) {
+    LOG_FERR1(LS_WARNING, SplitFec, packet_list.size());
+    PacketBuffer::DeleteAllPackets(&packet_list);
+    switch (ret) {
+      case PayloadSplitter::kUnknownPayloadType:
+        return kUnknownRtpPayloadType;
+      default:
+        return kOtherError;
+    }
+  }
+
   // Split payloads into smaller chunks. This also verifies that all payloads
   // are of a known payload type. SplitAudio() method is protected against
   // sync-packets.
@@ -614,9 +607,6 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     new_codec_ = true;
     update_sample_rate_and_channels = true;
     LOG_F(LS_WARNING) << "Packet buffer flushed";
-  } else if (ret == PacketBuffer::kOversizePacket) {
-    LOG_F(LS_WARNING) << "Packet larger than packet buffer";
-    return kOversizePacket;
   } else if (ret != PacketBuffer::kOK) {
     LOG_FERR1(LS_WARNING, InsertPacketList, packet_list.size());
     PacketBuffer::DeleteAllPackets(&packet_list);
@@ -943,7 +933,7 @@ int NetEqImpl::GetDecision(Operations* operation,
     return 0;
   }
 
-  decision_logic_->ExpandDecision(*operation == kExpand);
+  decision_logic_->ExpandDecision(*operation);
 
   // Check conditions for reset.
   if (new_codec_ || *operation == kUndefined) {
@@ -1060,6 +1050,11 @@ int NetEqImpl::GetDecision(Operations* operation,
         required_samples = 2 * output_size_samples_;
       }
       // Move on with the preemptive expand decision.
+      break;
+    }
+    case kMerge: {
+      required_samples =
+          std::max(merge_->RequiredFutureSamples(), required_samples);
       break;
     }
     default: {
@@ -1829,6 +1824,14 @@ int NetEqImpl::ExtractPackets(int required_samples, PacketList* packet_list) {
   return extracted_samples;
 }
 
+void NetEqImpl::UpdatePlcComponents(int fs_hz, size_t channels) {
+  // Delete objects and create new ones.
+  expand_.reset(expand_factory_->Create(background_noise_.get(),
+                                        sync_buffer_.get(), &random_vector_,
+                                        fs_hz, channels));
+  merge_.reset(new Merge(fs_hz, channels, expand_.get(), sync_buffer_.get()));
+}
+
 void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
   LOG_API2(fs_hz, channels);
   // TODO(hlundin): Change to an enumerator and skip assert.
@@ -1876,21 +1879,20 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
   // Reset random vector.
   random_vector_.Reset();
 
-  // Delete Expand object and create a new one.
-  expand_.reset(expand_factory_->Create(background_noise_.get(),
-                                        sync_buffer_.get(), &random_vector_,
-                                        fs_hz, channels));
+  UpdatePlcComponents(fs_hz, channels);
+
   // Move index so that we create a small set of future samples (all 0).
   sync_buffer_->set_next_index(sync_buffer_->next_index() -
-                               expand_->overlap_length());
+      expand_->overlap_length());
 
   normal_.reset(new Normal(fs_hz, decoder_database_.get(), *background_noise_,
                            expand_.get()));
-  merge_.reset(new Merge(fs_hz, channels, expand_.get(), sync_buffer_.get()));
   accelerate_.reset(
       accelerate_factory_->Create(fs_hz, channels, *background_noise_));
-  preemptive_expand_.reset(
-      preemptive_expand_factory_->Create(fs_hz, channels, *background_noise_));
+  preemptive_expand_.reset(preemptive_expand_factory_->Create(
+      fs_hz, channels,
+      *background_noise_,
+      static_cast<int>(expand_->overlap_length())));
 
   // Delete ComfortNoise object and create a new one.
   comfort_noise_.reset(new ComfortNoise(fs_hz, decoder_database_.get(),
@@ -1903,8 +1905,11 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
     decoded_buffer_.reset(new int16_t[decoded_buffer_length_]);
   }
 
-  // Communicate new sample rate and output size to DecisionLogic object.
-  assert(decision_logic_.get());
+  // Create DecisionLogic if it is not created yet, then communicate new sample
+  // rate and output size to DecisionLogic object.
+  if (!decision_logic_.get()) {
+    CreateDecisionLogic(kPlayoutOn);
+  }
   decision_logic_->SetSampleRate(fs_hz_, output_size_samples_);
 }
 
@@ -1925,4 +1930,12 @@ NetEqOutputType NetEqImpl::LastOutputType() {
   }
 }
 
+void NetEqImpl::CreateDecisionLogic(NetEqPlayoutMode mode) {
+  decision_logic_.reset(DecisionLogic::Create(fs_hz_, output_size_samples_,
+                                              mode,
+                                              decoder_database_.get(),
+                                              *packet_buffer_.get(),
+                                              delay_manager_.get(),
+                                              buffer_level_filter_.get()));
+}
 }  // namespace webrtc

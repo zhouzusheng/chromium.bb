@@ -66,9 +66,8 @@ TextureManager::DestructionObserver::DestructionObserver() {}
 TextureManager::DestructionObserver::~DestructionObserver() {}
 
 TextureManager::~TextureManager() {
-  FOR_EACH_OBSERVER(DestructionObserver,
-                    destruction_observers_,
-                    OnTextureManagerDestroying(this));
+  for (unsigned int i = 0; i < destruction_observers_.size(); i++)
+    destruction_observers_[i]->OnTextureManagerDestroying(this);
 
   DCHECK(textures_.empty());
 
@@ -400,6 +399,13 @@ void Texture::UpdateCleared() {
       }
     }
   }
+
+  // If texture is uncleared and is attached to a framebuffer,
+  // that framebuffer must be marked possibly incomplete.
+  if (!cleared && IsAttachedToFramebuffer()) {
+    IncAllFramebufferStateChangeCount();
+  }
+
   UpdateSafeToRenderFrom(cleared);
 }
 
@@ -873,7 +879,8 @@ TextureRef::TextureRef(TextureManager* manager,
                        Texture* texture)
     : manager_(manager),
       texture_(texture),
-      client_id_(client_id) {
+      client_id_(client_id),
+      num_observers_(0) {
   DCHECK(manager_);
   DCHECK(texture_);
   texture_->AddTextureRef(this);
@@ -895,9 +902,10 @@ TextureRef::~TextureRef() {
 TextureManager::TextureManager(MemoryTracker* memory_tracker,
                                FeatureInfo* feature_info,
                                GLint max_texture_size,
-                               GLint max_cube_map_texture_size)
-    : memory_tracker_managed_(new MemoryTypeTracker(memory_tracker,
-                                                    MemoryTracker::kManaged)),
+                               GLint max_cube_map_texture_size,
+                               bool use_default_textures)
+    : memory_tracker_managed_(
+          new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
       memory_tracker_unmanaged_(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
       feature_info_(feature_info),
@@ -912,6 +920,7 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
                                               max_cube_map_texture_size,
                                               max_cube_map_texture_size,
                                               max_cube_map_texture_size)),
+      use_default_textures_(use_default_textures),
       num_unrenderable_textures_(0),
       num_unsafe_textures_(0),
       num_uncleared_mips_(0),
@@ -959,8 +968,9 @@ scoped_refptr<TextureRef>
 
   // Make default textures and texture for replacing non-renderable textures.
   GLuint ids[2];
-  glGenTextures(arraysize(ids), ids);
-  for (unsigned long ii = 0; ii < arraysize(ids); ++ii) {
+  const unsigned long num_ids = use_default_textures_ ? 2 : 1;
+  glGenTextures(num_ids, ids);
+  for (unsigned long ii = 0; ii < num_ids; ++ii) {
     glBindTexture(target, ids[ii]);
     if (needs_initialization) {
       if (needs_faces) {
@@ -976,48 +986,50 @@ scoped_refptr<TextureRef>
   }
   glBindTexture(target, 0);
 
-  scoped_refptr<TextureRef> default_texture(
-      TextureRef::Create(this, 0, ids[1]));
-  SetTarget(default_texture.get(), target);
-  if (needs_faces) {
-    for (int ii = 0; ii < GLES2Util::kNumFaces; ++ii) {
-      SetLevelInfo(default_texture.get(),
-                   GLES2Util::IndexToGLFaceTarget(ii),
-                   0,
-                   GL_RGBA,
-                   1,
-                   1,
-                   1,
-                   0,
-                   GL_RGBA,
-                   GL_UNSIGNED_BYTE,
-                   true);
-    }
-  } else {
-    if (needs_initialization) {
-      SetLevelInfo(default_texture.get(),
-                   GL_TEXTURE_2D,
-                   0,
-                   GL_RGBA,
-                   1,
-                   1,
-                   1,
-                   0,
-                   GL_RGBA,
-                   GL_UNSIGNED_BYTE,
-                   true);
+  scoped_refptr<TextureRef> default_texture;
+  if (use_default_textures_) {
+    default_texture = TextureRef::Create(this, 0, ids[1]);
+    SetTarget(default_texture.get(), target);
+    if (needs_faces) {
+      for (int ii = 0; ii < GLES2Util::kNumFaces; ++ii) {
+        SetLevelInfo(default_texture.get(),
+                     GLES2Util::IndexToGLFaceTarget(ii),
+                     0,
+                     GL_RGBA,
+                     1,
+                     1,
+                     1,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     true);
+      }
     } else {
-      SetLevelInfo(default_texture.get(),
-                   GL_TEXTURE_EXTERNAL_OES,
-                   0,
-                   GL_RGBA,
-                   1,
-                   1,
-                   1,
-                   0,
-                   GL_RGBA,
-                   GL_UNSIGNED_BYTE,
-                   true);
+      if (needs_initialization) {
+        SetLevelInfo(default_texture.get(),
+                     GL_TEXTURE_2D,
+                     0,
+                     GL_RGBA,
+                     1,
+                     1,
+                     1,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     true);
+      } else {
+        SetLevelInfo(default_texture.get(),
+                     GL_TEXTURE_EXTERNAL_OES,
+                     0,
+                     GL_RGBA,
+                     1,
+                     1,
+                     1,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     true);
+      }
     }
   }
 
@@ -1217,9 +1229,12 @@ void TextureManager::StartTracking(TextureRef* ref) {
 }
 
 void TextureManager::StopTracking(TextureRef* ref) {
-  FOR_EACH_OBSERVER(DestructionObserver,
-                    destruction_observers_,
-                    OnTextureRefDestroying(ref));
+  if (ref->num_observers()) {
+    for (unsigned int i = 0; i < destruction_observers_.size(); i++) {
+      destruction_observers_[i]->OnTextureRefDestroying(ref);
+    }
+    DCHECK_EQ(ref->num_observers(), 0);
+  }
 
   Texture* texture = ref->texture();
 

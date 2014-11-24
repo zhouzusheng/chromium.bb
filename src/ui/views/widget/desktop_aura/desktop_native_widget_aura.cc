@@ -15,6 +15,7 @@
 #include "ui/aura/window_property.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
@@ -25,8 +26,8 @@
 #include "ui/views/corewm/tooltip.h"
 #include "ui/views/corewm/tooltip_controller.h"
 #include "ui/views/drag_utils.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/ime/input_method_bridge.h"
+#include "ui/views/ime/null_input_method.h"
 #include "ui/views/view_constants_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_capture_client.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
@@ -437,9 +438,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   //             handed way of accomplishing focus.
   // No event filter for aura::Env. Create CompoundEvnetFilter per
   // WindowEventDispatcher.
-  root_window_event_filter_ = new wm::CompoundEventFilter;
-  // Pass ownership of the filter to the root_window.
-  host_->window()->SetEventFilter(root_window_event_filter_);
+  root_window_event_filter_.reset(new wm::CompoundEventFilter);
+  host_->window()->AddPreTargetHandler(root_window_event_filter_.get());
 
   // The host's dispatcher must be added to |native_cursor_manager_| before
   // OnNativeWidgetCreated() is called.
@@ -629,6 +629,9 @@ bool DesktopNativeWidgetAura::HasCapture() const {
 }
 
 InputMethod* DesktopNativeWidgetAura::CreateInputMethod() {
+  if (switches::IsTextInputFocusManagerEnabled())
+    return new NullInputMethod();
+
   ui::InputMethod* host = input_method_event_filter_->input_method();
   return new InputMethodBridge(this, host, false);
 }
@@ -636,6 +639,10 @@ InputMethod* DesktopNativeWidgetAura::CreateInputMethod() {
 internal::InputMethodDelegate*
     DesktopNativeWidgetAura::GetInputMethodDelegate() {
   return this;
+}
+
+ui::InputMethod* DesktopNativeWidgetAura::GetHostInputMethod() {
+  return input_method_event_filter_->input_method();
 }
 
 void DesktopNativeWidgetAura::CenterWindow(const gfx::Size& size) {
@@ -1032,10 +1039,6 @@ void DesktopNativeWidgetAura::OnScrollEvent(ui::ScrollEvent* event) {
   } else {
     native_widget_delegate_->OnScrollEvent(event);
   }
-}
-
-void DesktopNativeWidgetAura::OnTouchEvent(ui::TouchEvent* event) {
-  native_widget_delegate_->OnTouchEvent(event);
 }
 
 void DesktopNativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {

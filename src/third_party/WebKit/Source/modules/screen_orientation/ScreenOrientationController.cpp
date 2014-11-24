@@ -13,17 +13,20 @@
 
 namespace WebCore {
 
+#if !ENABLE(OILPAN)
 ScreenOrientationController::~ScreenOrientationController()
 {
+    // With oilpan, weak processing removes the controller once it is dead.
     ScreenOrientationDispatcher::instance().removeController(this);
 }
+#endif
 
 ScreenOrientationController& ScreenOrientationController::from(Document& document)
 {
     ScreenOrientationController* controller = static_cast<ScreenOrientationController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new ScreenOrientationController(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
     }
     return *controller;
 }
@@ -41,7 +44,7 @@ void ScreenOrientationController::dispatchOrientationChangeEvent()
     if (m_document.domWindow()
         && !m_document.activeDOMObjectsAreSuspended()
         && !m_document.activeDOMObjectsAreStopped())
-        m_document.domWindow()->screen().dispatchEvent(Event::create(EventTypeNames::orientationchange));
+        m_document.domWindow()->dispatchEvent(Event::create(EventTypeNames::orientationchange));
 }
 
 const char* ScreenOrientationController::supplementName()
@@ -49,7 +52,7 @@ const char* ScreenOrientationController::supplementName()
     return "ScreenOrientationController";
 }
 
-void ScreenOrientationController::didChangeScreenOrientation(blink::WebScreenOrientation orientation)
+void ScreenOrientationController::didChangeScreenOrientation(blink::WebScreenOrientationType orientation)
 {
     if (orientation == m_orientation)
         return;

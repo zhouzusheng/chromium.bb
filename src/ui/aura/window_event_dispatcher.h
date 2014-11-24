@@ -72,11 +72,6 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
 
   void DispatchCancelModeEvent();
 
-  // Handles a gesture event. Returns true if handled. Unlike the other
-  // event-dispatching function (e.g. for touch/mouse/keyboard events), gesture
-  // events are dispatched from GestureRecognizer instead of WindowTreeHost.
-  void DispatchGestureEvent(ui::GestureEvent* event);
-
   // Dispatches a ui::ET_MOUSE_EXITED event at |point|.
   // TODO(beng): needed only for WTH::OnCursorVisibilityChanged().
   void DispatchMouseExitAtPoint(const gfx::Point& point);
@@ -162,10 +157,6 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
   // on capture (like DragDropTracker).
   void OnWindowHidden(Window* invisible, WindowHiddenReason reason);
 
-  // Cleans up the state of gestures for all windows in |window| (including
-  // |window| itself). This includes cancelling active touch points.
-  void CleanupGestureState(Window* window);
-
   // Returns a target window for the given gesture event.
   Window* GetGestureTarget(ui::GestureEvent* event);
 
@@ -188,7 +179,7 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
 
   // Overridden from ui::GestureEventHelper.
   virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
-  virtual void DispatchPostponedGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Overridden from WindowObserver:
@@ -222,8 +213,8 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
   // task.
   void PostSynthesizeMouseMove();
 
-  // Creates and dispatches synthesized mouse move event using the
-  // current mouse location.
+  // Creates and dispatches synthesized mouse move event using the current mouse
+  // location.
   ui::EventDispatchDetails SynthesizeMouseMoveEvent() WARN_UNUSED_RESULT;
 
   // Calls SynthesizeMouseMove() if |window| is currently visible and contains

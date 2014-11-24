@@ -11,6 +11,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
 #include "content/renderer/media/rtc_media_constraints.h"
+#include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_converter.h"
 #include "media/base/audio_fifo.h"
@@ -32,6 +33,8 @@ const int kAudioProcessingSampleRate = 16000;
 const int kAudioProcessingSampleRate = 32000;
 #endif
 const int kAudioProcessingNumberOfChannels = 1;
+const AudioProcessing::ChannelLayout kAudioProcessingChannelLayout =
+    AudioProcessing::kMono;
 
 const int kMaxNumberOfBuffersInFifo = 2;
 
@@ -234,10 +237,10 @@ const media::AudioParameters& MediaStreamAudioProcessor::OutputFormat() const {
   return capture_converter_->sink_parameters();
 }
 
-void MediaStreamAudioProcessor::StartAecDump(
-    const base::PlatformFile& aec_dump_file) {
+void MediaStreamAudioProcessor::StartAecDump(base::File aec_dump_file) {
   if (audio_processing_)
-    StartEchoCancellationDump(audio_processing_.get(), aec_dump_file);
+    StartEchoCancellationDump(audio_processing_.get(),
+                              aec_dump_file.TakePlatformFile());
 }
 
 void MediaStreamAudioProcessor::StopAecDump() {
@@ -249,11 +252,8 @@ void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
                                               int sample_rate,
                                               int audio_delay_milliseconds) {
   DCHECK(render_thread_checker_.CalledOnValidThread());
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  DCHECK(audio_processing_->echo_control_mobile()->is_enabled());
-#else
-  DCHECK(audio_processing_->echo_cancellation()->is_enabled());
-#endif
+  DCHECK(audio_processing_->echo_control_mobile()->is_enabled() ^
+         audio_processing_->echo_cancellation()->is_enabled());
 
   TRACE_EVENT0("audio", "MediaStreamAudioProcessor::OnPlayoutData");
   DCHECK_LT(audio_delay_milliseconds,
@@ -350,7 +350,13 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
   }
 
   // Create and configure the webrtc::AudioProcessing.
-  audio_processing_.reset(webrtc::AudioProcessing::Create(0));
+  audio_processing_.reset(webrtc::AudioProcessing::Create());
+  CHECK_EQ(0, audio_processing_->Initialize(kAudioProcessingSampleRate,
+                                            kAudioProcessingSampleRate,
+                                            kAudioProcessingSampleRate,
+                                            kAudioProcessingChannelLayout,
+                                            kAudioProcessingChannelLayout,
+                                            kAudioProcessingChannelLayout));
 
   // Enable the audio processing components.
   if (enable_aec) {
@@ -380,13 +386,6 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
   if (enable_agc)
     EnableAutomaticGainControl(audio_processing_.get());
-
-  // Configure the audio format the audio processing is running on. This
-  // has to be done after all the needed components are enabled.
-  CHECK_EQ(0,
-           audio_processing_->set_sample_rate_hz(kAudioProcessingSampleRate));
-  CHECK_EQ(0, audio_processing_->set_num_channels(
-      kAudioProcessingNumberOfChannels, kAudioProcessingNumberOfChannels));
 
   RecordProcessingState(AUDIO_PROCESSING_ENABLED);
 }
@@ -461,7 +460,7 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
     return 0;
 
   TRACE_EVENT0("audio", "MediaStreamAudioProcessor::ProcessData");
-  DCHECK_EQ(audio_processing_->sample_rate_hz(),
+  DCHECK_EQ(audio_processing_->input_sample_rate_hz(),
             capture_converter_->sink_parameters().sample_rate());
   DCHECK_EQ(audio_processing_->num_input_channels(),
             capture_converter_->sink_parameters().channels());
@@ -481,6 +480,7 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
 
   audio_processing_->set_stream_delay_ms(total_delay_ms);
 
+  DCHECK_LE(volume, WebRtcAudioDeviceImpl::kMaxVolumeLevel);
   webrtc::GainControl* agc = audio_processing_->gain_control();
   int err = agc->set_stream_analog_level(volume);
   DCHECK_EQ(err, 0) << "set_stream_analog_level() error: " << err;

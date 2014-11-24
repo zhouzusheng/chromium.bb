@@ -82,16 +82,8 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Removes the reflector, which stops the mirroring.
   virtual void RemoveReflector(scoped_refptr<Reflector> reflector) = 0;
 
-  // Returns a reference to the offscreen context provider used by the
-  // compositor. This provider is bound and used on whichever thread the
-  // compositor is rendering from.
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenCompositorContextProvider() = 0;
-
   // Return a reference to a shared offscreen context provider usable from the
-  // main thread. This may be the same as OffscreenCompositorContextProvider()
-  // depending on the compositor's threading configuration. This provider will
-  // be bound to the main thread.
+  // main thread.
   virtual scoped_refptr<cc::ContextProvider>
       SharedMainThreadContextProvider() = 0;
 
@@ -101,39 +93,9 @@ class COMPOSITOR_EXPORT ContextFactory {
   // When true, the factory uses test contexts that do not do real GL
   // operations.
   virtual bool DoesCreateTestContexts() = 0;
-};
 
-// Texture provide an abstraction over the external texture that can be passed
-// to a layer.
-class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
- public:
-  Texture(bool flipped, const gfx::Size& size, float device_scale_factor);
-
-  bool flipped() const { return flipped_; }
-  gfx::Size size() const { return size_; }
-  float device_scale_factor() const { return device_scale_factor_; }
-
-  virtual unsigned int PrepareTexture() = 0;
-
-  // Replaces the texture with the texture from the specified mailbox.
-  virtual void Consume(const gpu::Mailbox& mailbox,
-                       const gfx::Size& new_size) {}
-
-  // Moves the texture into the mailbox and returns the mailbox name.
-  // The texture must have been previously consumed from a mailbox.
-  virtual gpu::Mailbox Produce();
-
- protected:
-  virtual ~Texture();
-  gfx::Size size_;  // in pixel
-
- private:
-  friend class base::RefCounted<Texture>;
-
-  bool flipped_;
-  float device_scale_factor_;
-
-  DISALLOW_COPY_AND_ASSIGN(Texture);
+  // Gets the shared bitmap manager for software mode.
+  virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -177,7 +139,6 @@ class COMPOSITOR_EXPORT Compositor
   static bool WasInitializedWithThread();
   static scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop();
   static void Terminate();
-  static void SetSharedBitmapManager(cc::SharedBitmapManager* manager);
 
   // Schedules a redraw of the layer tree associated with this compositor.
   void ScheduleDraw();
@@ -211,6 +172,9 @@ class COMPOSITOR_EXPORT Compositor
   // Schedule redraw and append damage_rect to the damage region calculated
   // from changes to layer properties.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
+
+  // Finishes all outstanding rendering on the GPU.
+  void FinishAllRendering();
 
   void SetLatencyInfo(const LatencyInfo& latency_info);
 
@@ -261,13 +225,11 @@ class COMPOSITOR_EXPORT Compositor
                                    float page_scale) OVERRIDE {}
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
-  virtual void DidInitializeOutputSurface(bool success) OVERRIDE {}
+  virtual void DidInitializeOutputSurface() OVERRIDE {}
   virtual void WillCommit() OVERRIDE {}
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProvider() OVERRIDE;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
   virtual void ScheduleComposite() OVERRIDE;
@@ -316,8 +278,6 @@ class COMPOSITOR_EXPORT Compositor
 
   int last_started_frame_;
   int last_ended_frame_;
-
-  bool next_draw_is_resize_;
 
   bool disable_schedule_composite_;
 

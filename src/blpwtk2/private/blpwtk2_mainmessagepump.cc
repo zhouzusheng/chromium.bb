@@ -83,7 +83,7 @@ static LRESULT CALLBACK MsgFilterHookProc(int code, WPARAM wParam, LPARAM lParam
         DebugWithTime("ENTERING MODAL LOOP\n");
         base::MessageLoop::current()->SetNestableTasksAllowed(true);
         base::MessageLoop::current()->set_os_modal_loop(true);
-        base::MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->get_pump()->ScheduleWork();
     }
     return CallNextHookEx(s_msgHook, code, wParam, lParam);
 }
@@ -97,7 +97,7 @@ static LRESULT CALLBACK CallWndHookProc(int code, WPARAM wParam, LPARAM lParam)
         s_isMovingOrResizing = true;
         base::MessageLoop::current()->SetNestableTasksAllowed(true);
         base::MessageLoop::current()->set_os_modal_loop(true);
-        base::MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->get_pump()->ScheduleWork();
         break;
     case WM_EXITSIZEMOVE:
         DebugWithTime("HOOK EXIT SIZEMOVE\n");
@@ -108,7 +108,7 @@ static LRESULT CALLBACK CallWndHookProc(int code, WPARAM wParam, LPARAM lParam)
         DebugWithTime("HOOK ENTER MENU\n");
         base::MessageLoop::current()->SetNestableTasksAllowed(true);
         base::MessageLoop::current()->set_os_modal_loop(true);
-        base::MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->get_pump()->ScheduleWork();
         break;
     case WM_EXITMENULOOP:
         DebugWithTime("HOOK EXIT MENU\n");
@@ -176,7 +176,7 @@ MainMessagePump* MainMessagePump::current()
 {
     base::MessageLoop* loop = base::MessageLoop::current();
     DCHECK_EQ(base::MessageLoop::TYPE_UI, loop->type());
-    return static_cast<MainMessagePump*>(loop->pump_win());
+    return static_cast<MainMessagePump*>(loop->get_pump());
 }
 
 MainMessagePump::MainMessagePump()
@@ -471,7 +471,7 @@ LRESULT CALLBACK MainMessagePump::wndProcThunk(HWND hwnd,
 void MainMessagePump::ScheduleDelayedWork(const base::TimeTicks& delayed_work_time)
 {
     // Verify that we never get called outside the main thread.
-    DCHECK(this == base::MessageLoop::current()->pump_win());
+    DCHECK(this == base::MessageLoop::current()->get_pump());
 
     if (!d_hasAutoPumpTimer) {
         if (PumpMode::AUTOMATIC == Statics::pumpMode) {

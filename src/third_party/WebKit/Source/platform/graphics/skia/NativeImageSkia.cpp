@@ -242,6 +242,8 @@ SkBitmap NativeImageSkia::extractScaledImageFragment(const SkRect& srcRect, floa
 void NativeImageSkia::drawResampledBitmap(GraphicsContext* context, SkPaint& paint, const SkRect& srcRect, const SkRect& destRect) const
 {
     TRACE_EVENT0("skia", "drawResampledBitmap");
+    if (context->paintingDisabled())
+        return;
     // We want to scale |destRect| with transformation in the canvas to obtain
     // the final scale. The final scale is a combination of scale transform
     // in canvas and explicit scaling (srcRect and destRect).
@@ -315,6 +317,8 @@ SkBitmap NativeImageSkia::resizedBitmap(const SkISize& scaledImageSize, const Sk
         bool shouldCache = isDataComplete()
             && shouldCacheResampling(scaledImageSize, scaledImageSubset);
 
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResizeImage", "cached", shouldCache);
+        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
         PlatformInstrumentation::willResizeImage(shouldCache);
         SkBitmap resizedImage = skia::ImageOperations::Resize(m_image, skia::ImageOperations::RESIZE_LANCZOS3, scaledImageSize.width(), scaledImageSize.height(), scaledImageSubset);
         resizedImage.setImmutable();
@@ -332,9 +336,33 @@ SkBitmap NativeImageSkia::resizedBitmap(const SkISize& scaledImageSize, const Sk
     return resizedSubset;
 }
 
-static bool hasNon90rotation(GraphicsContext* context)
+static bool shouldDrawAntiAliased(GraphicsContext* context, const SkRect& destRect)
 {
-    return !context->getTotalMatrix().rectStaysRect();
+    if (!context->shouldAntialias())
+        return false;
+    const SkMatrix totalMatrix = context->getTotalMatrix();
+    // Don't disable anti-aliasing if we're rotated or skewed.
+    if (!totalMatrix.rectStaysRect())
+        return true;
+    // Disable anti-aliasing for scales or n*90 degree rotations.
+    // Allow to opt out of the optimization though for "hairline" geometry
+    // images - using the shouldAntialiasHairlineImages() GraphicsContext flag.
+    if (!context->shouldAntialiasHairlineImages())
+        return false;
+    // Check if the dimensions of the destination are "small" (less than one
+    // device pixel). To prevent sudden drop-outs. Since we know that
+    // kRectStaysRect_Mask is set, the matrix either has scale and no skew or
+    // vice versa. We can query the kAffine_Mask flag to determine which case
+    // it is.
+    // FIXME: This queries the CTM while drawing, which is generally
+    // discouraged. Always drawing with AA can negatively impact performance
+    // though - that's why it's not always on.
+    SkScalar widthExpansion, heightExpansion;
+    if (totalMatrix.getType() & SkMatrix::kAffine_Mask)
+        widthExpansion = totalMatrix[SkMatrix::kMSkewY], heightExpansion = totalMatrix[SkMatrix::kMSkewX];
+    else
+        widthExpansion = totalMatrix[SkMatrix::kMScaleX], heightExpansion = totalMatrix[SkMatrix::kMScaleY];
+    return destRect.width() * fabs(widthExpansion) < 1 || destRect.height() * fabs(heightExpansion) < 1;
 }
 
 void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, const SkRect& destRect, PassRefPtr<SkXfermode> compOp) const
@@ -345,14 +373,17 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
     paint.setColorFilter(context->colorFilter());
     paint.setAlpha(context->getNormalizedAlpha());
     paint.setLooper(context->drawLooper());
-    // only antialias if we're rotated or skewed
-    paint.setAntiAlias(hasNon90rotation(context));
+    paint.setAntiAlias(shouldDrawAntiAliased(context, destRect));
+
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
 
     ResamplingMode resampling;
     if (context->isAccelerated()) {
         resampling = LinearResampling;
     } else if (context->printing()) {
         resampling = NoResampling;
+    } else if (isLazyDecoded) {
+        resampling = AwesomeResampling;
     } else {
         // Take into account scale applied to the canvas when computing sampling mode (e.g. CSS scale or page scale).
         SkRect destRectTarget = destRect;
@@ -373,7 +404,6 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
     }
     resampling = limitResamplingMode(context, resampling);
 
-    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // FIXME: Bicubic filtering in Skia is only applied to defer-decoded images
     // as an experiment. Once this filtering code path becomes stable we should
     // turn this on for all cases, including non-defer-decoded images.
@@ -428,8 +458,9 @@ void NativeImageSkia::drawPattern(
         return; // nothing to draw
 
     SkMatrix totalMatrix = context->getTotalMatrix();
-    SkScalar ctmScaleX = totalMatrix.getScaleX();
-    SkScalar ctmScaleY = totalMatrix.getScaleY();
+    AffineTransform ctm = context->getCTM();
+    SkScalar ctmScaleX = ctm.xScale();
+    SkScalar ctmScaleY = ctm.yScale();
     totalMatrix.preScale(scale.width(), scale.height());
 
     // Figure out what size the bitmap will be in the destination. The
@@ -441,10 +472,14 @@ void NativeImageSkia::drawPattern(
     float destBitmapWidth = SkScalarToFloat(destRectTarget.width());
     float destBitmapHeight = SkScalarToFloat(destRectTarget.height());
 
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
+
     // Compute the resampling mode.
     ResamplingMode resampling;
     if (context->isAccelerated() || context->printing())
         resampling = LinearResampling;
+    else if (isLazyDecoded)
+        resampling = AwesomeResampling;
     else
         resampling = computeResamplingMode(totalMatrix, normSrcRect.width(), normSrcRect.height(), destBitmapWidth, destBitmapHeight);
     resampling = limitResamplingMode(context, resampling);
@@ -452,7 +487,6 @@ void NativeImageSkia::drawPattern(
     SkMatrix shaderTransform;
     RefPtr<SkShader> shader;
 
-    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // Bicubic filter is only applied to defer-decoded images, see
     // NativeImageSkia::draw for details.
     bool useBicubicFilter = resampling == AwesomeResampling && isLazyDecoded;

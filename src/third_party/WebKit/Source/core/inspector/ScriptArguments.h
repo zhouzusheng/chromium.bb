@@ -50,14 +50,14 @@ public:
     const ScriptValue& argumentAt(size_t) const;
     size_t argumentCount() const { return m_arguments.size(); }
 
-    ScriptState* globalState() const;
+    ScriptState* scriptState() const { return m_scriptState.get(); }
 
     bool getFirstArgumentAsString(WTF::String& result, bool checkForNullOrUndefined = false);
 
 private:
     ScriptArguments(ScriptState*, Vector<ScriptValue>& arguments);
 
-    ScriptStateProtectedPtr m_scriptState;
+    ScriptStateProtectingContext m_scriptState;
     Vector<ScriptValue> m_arguments;
 };
 

@@ -66,6 +66,14 @@ const bool kContextMenuOnMousePress = true;
 // rect-based targeting algorithm.
 static const float kRectTargetOverlap = 0.6f;
 
+// Default horizontal drag threshold in pixels.
+// Same as what gtk uses.
+const int kDefaultHorizontalDragThreshold = 8;
+
+// Default vertical drag threshold in pixels.
+// Same as what gtk uses.
+const int kDefaultVerticalDragThreshold = 8;
+
 // Returns the top view in |view|'s hierarchy.
 const views::View* GetHierarchyRoot(const views::View* view) {
   const views::View* root = view;
@@ -209,8 +217,9 @@ void View::AddChildViewAt(View* view, int index) {
 
   // If |view| has a parent, remove it from its parent.
   View* parent = view->parent_;
-  const ui::NativeTheme* old_theme = view->GetNativeTheme();
+  ui::NativeTheme* old_theme = NULL;
   if (parent) {
+    old_theme = view->GetNativeTheme();
     if (parent == this) {
       ReorderChildView(view, index);
       return;
@@ -225,6 +234,13 @@ void View::AddChildViewAt(View* view, int index) {
   view->parent_ = this;
   children_.insert(children_.begin() + index, view);
 
+  views::Widget* widget = GetWidget();
+  if (widget) {
+    const ui::NativeTheme* new_theme = view->GetNativeTheme();
+    if (new_theme != old_theme)
+      view->PropagateNativeThemeChanged(new_theme);
+  }
+
   ViewHierarchyChangedDetails details(true, this, view, parent);
 
   for (View* v = this; v; v = v->parent_)
@@ -232,12 +248,8 @@ void View::AddChildViewAt(View* view, int index) {
 
   view->PropagateAddNotifications(details);
   UpdateTooltip();
-  views::Widget* widget = GetWidget();
   if (widget) {
     RegisterChildrenForVisibleBoundsNotification(view);
-    const ui::NativeTheme* new_theme = widget->GetNativeTheme();
-    if (new_theme != old_theme)
-      PropagateNativeThemeChanged(new_theme);
     if (view->visible())
       view->SchedulePaint();
   }
@@ -1048,6 +1060,7 @@ void View::OnScrollEvent(ui::ScrollEvent* event) {
 }
 
 void View::OnTouchEvent(ui::TouchEvent* event) {
+  NOTREACHED() << "Views should not receive touch events.";
 }
 
 void View::OnGestureEvent(ui::GestureEvent* event) {
@@ -1067,6 +1080,13 @@ const InputMethod* View::GetInputMethod() const {
   return widget ? widget->GetInputMethod() : NULL;
 }
 
+scoped_ptr<ui::EventTargeter>
+View::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
+  scoped_ptr<ui::EventTargeter> old_targeter = targeter_.Pass();
+  targeter_ = targeter.Pass();
+  return old_targeter.Pass();
+}
+
 bool View::CanAcceptEvent(const ui::Event& event) {
   return IsDrawn();
 }
@@ -1081,7 +1101,12 @@ scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
-  return NULL;
+  return targeter_.get();
+}
+
+void View::ConvertEventToTarget(ui::EventTarget* target,
+                                ui::LocatedEvent* event) {
+  event->ConvertLocationToTarget(this, static_cast<View*>(target));
 }
 
 // Accelerators ----------------------------------------------------------------
@@ -1608,6 +1633,18 @@ bool View::InDrag() {
   return widget ? widget->dragged_view() == this : false;
 }
 
+int View::GetHorizontalDragThreshold() {
+  // TODO(jennyz): This value may need to be adjusted for different platforms
+  // and for different display density.
+  return kDefaultHorizontalDragThreshold;
+}
+
+int View::GetVerticalDragThreshold() {
+  // TODO(jennyz): This value may need to be adjusted for different platforms
+  // and for different display density.
+  return kDefaultVerticalDragThreshold;
+}
+
 // Debugging -------------------------------------------------------------------
 
 #if !defined(NDEBUG)
@@ -1682,7 +1719,7 @@ std::string View::DoPrintViewGraph(bool first, View* view_with_children) {
   if (!parent_)
     result.append(", shape=box");
   if (layer()) {
-    if (layer()->texture())
+    if (layer()->has_external_content())
       result.append(", color=green");
     else
       result.append(", color=red");
@@ -1798,6 +1835,7 @@ void View::DoRemoveChildView(View* view,
       UnregisterChildrenForVisibleBoundsNotification(view);
       if (view->visible())
         view->SchedulePaint();
+      GetWidget()->NotifyWillRemoveView(view);
     }
     view->PropagateRemoveNotifications(this, new_parent);
     view->parent_ = NULL;
@@ -2139,6 +2177,15 @@ bool View::ProcessMousePressed(const ui::MouseEvent& event) {
       context_menu_controller_ : 0;
   View::DragInfo* drag_info = GetDragInfo();
 
+  // TODO(sky): for debugging 360238.
+  int storage_id = 0;
+  if (event.IsOnlyRightMouseButton() && context_menu_controller &&
+      kContextMenuOnMousePress && HitTestPoint(event.location())) {
+    ViewStorage* view_storage = ViewStorage::GetInstance();
+    storage_id = view_storage->CreateStorageID();
+    view_storage->StoreView(storage_id, this);
+  }
+
   const bool enabled = enabled_;
   const bool result = OnMousePressed(event);
 
@@ -2151,6 +2198,8 @@ bool View::ProcessMousePressed(const ui::MouseEvent& event) {
     // from mouse pressed.
     gfx::Point location(event.location());
     if (HitTestPoint(location)) {
+      if (storage_id != 0)
+        CHECK_EQ(this, ViewStorage::GetInstance()->RetrieveView(storage_id));
       ConvertPointToScreen(this, &location);
       ShowContextMenu(location, ui::MENU_SOURCE_MOUSE);
       return true;

@@ -17,6 +17,7 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/fileapi/blob_storage_host.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/streams/stream_registry.h"
@@ -29,7 +30,6 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 #include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_storage_host.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -47,7 +47,6 @@ using fileapi::FileSystemOperation;
 using fileapi::FileSystemURL;
 using webkit_blob::BlobData;
 using webkit_blob::BlobStorageContext;
-using webkit_blob::BlobStorageHost;
 
 namespace content {
 
@@ -772,16 +771,22 @@ void FileAPIMessageFilter::DidOpenFileSystem(int request_id,
   // For OpenFileSystem we do not create a new operation, so no unregister here.
 }
 
-void FileAPIMessageFilter::DidResolveURL(int request_id,
-                                         base::File::Error result,
-                                         const fileapi::FileSystemInfo& info,
-                                         const base::FilePath& file_path,
-                                         bool is_directory) {
+void FileAPIMessageFilter::DidResolveURL(
+    int request_id,
+    base::File::Error result,
+    const fileapi::FileSystemInfo& info,
+    const base::FilePath& file_path,
+    fileapi::FileSystemContext::ResolvedEntryType type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (result == base::File::FILE_OK &&
+      type == fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND)
+    result = base::File::FILE_ERROR_NOT_FOUND;
+
   if (result == base::File::FILE_OK) {
     DCHECK(info.root_url.is_valid());
     Send(new FileSystemMsg_DidResolveURL(
-        request_id, info, file_path, is_directory));
+        request_id, info, file_path,
+        type == fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY));
   } else {
     Send(new FileSystemMsg_DidFail(request_id, result));
   }

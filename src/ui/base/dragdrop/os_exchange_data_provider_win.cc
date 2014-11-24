@@ -15,7 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
 #include "grit/ui_strings.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/dragdrop/file_info.h"
@@ -64,7 +64,7 @@ static STGMEDIUM* GetStorageForFileDescriptor(const base::FilePath& path);
 // some sort of sequential data (why not just use an array?). See comments
 // throughout.
 //
-class FormatEtcEnumerator : public IEnumFORMATETC {
+class FormatEtcEnumerator FINAL : public IEnumFORMATETC {
  public:
   FormatEtcEnumerator(DataObjectImpl::StoredData::const_iterator begin,
                       DataObjectImpl::StoredData::const_iterator end);
@@ -537,7 +537,6 @@ void OSExchangeDataProviderWin::SetDownloadFileInfo(
   info->downloader = download.downloader;
   data_->contents_.push_back(info);
 }
-#if defined(USE_AURA)
 
 void OSExchangeDataProviderWin::SetDragImage(
     const gfx::ImageSkia& image,
@@ -553,8 +552,6 @@ const gfx::ImageSkia& OSExchangeDataProviderWin::GetDragImage() const {
 const gfx::Vector2d& OSExchangeDataProviderWin::GetDragImageOffset() const {
   return drag_image_offset_;
 }
-
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // DataObjectImpl, IDataObject implementation:
@@ -897,7 +894,7 @@ template <typename T>
 static STGMEDIUM* GetStorageForString(const std::basic_string<T>& data) {
   return GetStorageForBytes(
       data.c_str(),
-      (data.size() + 1) * sizeof(std::basic_string<T>::value_type));
+      (data.size() + 1) * sizeof(typename std::basic_string<T>::value_type));
 }
 
 static void GetInternetShortcutFileContents(const GURL& url,

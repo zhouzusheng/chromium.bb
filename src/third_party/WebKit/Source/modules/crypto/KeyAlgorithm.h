@@ -32,7 +32,7 @@
 #define KeyAlgorithm_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebCryptoKeyAlgorithm.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -40,12 +40,12 @@
 
 namespace WebCore {
 
-class KeyAlgorithm : public RefCountedWillBeGarbageCollectedFinalized<KeyAlgorithm>, public ScriptWrappable {
+class KeyAlgorithm : public GarbageCollectedFinalized<KeyAlgorithm>, public ScriptWrappable {
 public:
     virtual ~KeyAlgorithm();
 
-    static PassRefPtrWillBeRawPtr<KeyAlgorithm> create(const blink::WebCryptoKeyAlgorithm&);
-    static PassRefPtrWillBeRawPtr<KeyAlgorithm> createHash(const blink::WebCryptoAlgorithm&);
+    static KeyAlgorithm* create(const blink::WebCryptoKeyAlgorithm&);
+    static KeyAlgorithm* createHash(const blink::WebCryptoAlgorithm&);
 
     String name();
 

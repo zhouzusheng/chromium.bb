@@ -59,17 +59,18 @@
 #include "core/frame/Console.h"
 #include "core/frame/DOMPoint.h"
 #include "core/frame/DOMWindowLifecycleNotifier.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/History.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Location.h"
 #include "core/frame/Navigator.h"
-#include "core/frame/PageConsole.h"
 #include "core/frame/Screen.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -114,7 +115,7 @@ class PostMessageTimer FINAL : public SuspendableTimer {
 public:
     PostMessageTimer(DOMWindow& window, PassRefPtr<SerializedScriptValue> message, const String& sourceOrigin, PassRefPtrWillBeRawPtr<DOMWindow> source, PassOwnPtr<MessagePortChannelArray> channels, SecurityOrigin* targetOrigin, PassRefPtr<ScriptCallStack> stackTrace, UserGestureToken* userGestureToken)
         : SuspendableTimer(window.document())
-        , m_window(&window)
+        , m_window(window)
         , m_message(message)
         , m_origin(sourceOrigin)
         , m_source(source)
@@ -125,7 +126,7 @@ public:
     {
     }
 
-    PassRefPtr<MessageEvent> event()
+    PassRefPtrWillBeRawPtr<MessageEvent> event()
     {
         return MessageEvent::create(m_channels.release(), m_message, m_origin, String(), m_source.get());
 
@@ -311,16 +312,6 @@ bool DOMWindow::allowPopUp()
     return m_frame && allowPopUp(*m_frame);
 }
 
-bool DOMWindow::canShowModalDialog(const LocalFrame* frame)
-{
-    if (!frame)
-        return false;
-    FrameHost* host = frame->host();
-    if (!host)
-        return false;
-    return host->chrome().canRunModal();
-}
-
 bool DOMWindow::canShowModalDialogNow(const LocalFrame* frame)
 {
     if (!frame)
@@ -334,6 +325,9 @@ bool DOMWindow::canShowModalDialogNow(const LocalFrame* frame)
 DOMWindow::DOMWindow(LocalFrame& frame)
     : FrameDestructionObserver(&frame)
     , m_shouldPrintWhenFinishedLoading(false)
+#if ASSERT_ENABLED
+    , m_hasBeenReset(false)
+#endif
 {
     ScriptWrappable::init(this);
 }
@@ -423,7 +417,7 @@ EventQueue* DOMWindow::eventQueue() const
     return m_eventQueue.get();
 }
 
-void DOMWindow::enqueueWindowEvent(PassRefPtr<Event> event)
+void DOMWindow::enqueueWindowEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (!m_eventQueue)
         return;
@@ -431,7 +425,7 @@ void DOMWindow::enqueueWindowEvent(PassRefPtr<Event> event)
     m_eventQueue->enqueueEvent(event);
 }
 
-void DOMWindow::enqueueDocumentEvent(PassRefPtr<Event> event)
+void DOMWindow::enqueueDocumentEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (!m_eventQueue)
         return;
@@ -488,29 +482,17 @@ void DOMWindow::statePopped(PassRefPtr<SerializedScriptValue> stateObject)
 
 DOMWindow::~DOMWindow()
 {
-    ASSERT(!m_screen);
-    ASSERT(!m_history);
-    ASSERT(!m_locationbar);
-    ASSERT(!m_menubar);
-    ASSERT(!m_personalbar);
-    ASSERT(!m_scrollbars);
-    ASSERT(!m_statusbar);
-    ASSERT(!m_toolbar);
-    ASSERT(!m_console);
-    ASSERT(!m_navigator);
-    ASSERT(!m_performance);
-    ASSERT(!m_location);
-    ASSERT(!m_media);
-    ASSERT(!m_sessionStorage);
-    ASSERT(!m_localStorage);
-    ASSERT(!m_applicationCache);
-    ASSERT(!m_bbWindowHooks);
-
+    ASSERT(m_hasBeenReset);
     reset();
 
     removeAllEventListeners();
 
+#if ENABLE(OILPAN)
+    ASSERT(m_document->isDisposed());
+#else
     ASSERT(m_document->isStopped());
+#endif
+
     clearDocument();
 }
 
@@ -607,6 +589,9 @@ void DOMWindow::resetDOMWindowProperties()
     m_localStorage = nullptr;
     m_applicationCache = nullptr;
     m_bbWindowHooks = nullptr;
+#if ASSERT_ENABLED
+    m_hasBeenReset = true;
+#endif
 }
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
@@ -618,12 +603,16 @@ int DOMWindow::orientation() const
 {
     ASSERT(RuntimeEnabledFeatures::orientationEventEnabled());
 
-    UseCounter::count(document(), UseCounter::WindowOrientation);
-
     if (!m_frame)
         return 0;
 
-    return m_frame->orientation();
+    int orientation = screenOrientationAngle(m_frame->view());
+    // For backward compatibility, we want to return a value in the range of
+    // [-90; 180] instead of [0; 360[ because window.orientation used to behave
+    // like that in WebKit (this is a WebKit proprietary API).
+    if (orientation == 270)
+        return -90;
+    return orientation;
 }
 
 Screen& DOMWindow::screen() const
@@ -642,7 +631,6 @@ History& DOMWindow::history() const
 
 BarProp& DOMWindow::locationbar() const
 {
-    UseCounter::count(document(), UseCounter::BarPropLocationbar);
     if (!m_locationbar)
         m_locationbar = BarProp::create(m_frame, BarProp::Locationbar);
     return *m_locationbar;
@@ -650,7 +638,6 @@ BarProp& DOMWindow::locationbar() const
 
 BarProp& DOMWindow::menubar() const
 {
-    UseCounter::count(document(), UseCounter::BarPropMenubar);
     if (!m_menubar)
         m_menubar = BarProp::create(m_frame, BarProp::Menubar);
     return *m_menubar;
@@ -658,7 +645,6 @@ BarProp& DOMWindow::menubar() const
 
 BarProp& DOMWindow::personalbar() const
 {
-    UseCounter::count(document(), UseCounter::BarPropPersonalbar);
     if (!m_personalbar)
         m_personalbar = BarProp::create(m_frame, BarProp::Personalbar);
     return *m_personalbar;
@@ -666,7 +652,6 @@ BarProp& DOMWindow::personalbar() const
 
 BarProp& DOMWindow::scrollbars() const
 {
-    UseCounter::count(document(), UseCounter::BarPropScrollbars);
     if (!m_scrollbars)
         m_scrollbars = BarProp::create(m_frame, BarProp::Scrollbars);
     return *m_scrollbars;
@@ -674,7 +659,6 @@ BarProp& DOMWindow::scrollbars() const
 
 BarProp& DOMWindow::statusbar() const
 {
-    UseCounter::count(document(), UseCounter::BarPropStatusbar);
     if (!m_statusbar)
         m_statusbar = BarProp::create(m_frame, BarProp::Statusbar);
     return *m_statusbar;
@@ -682,7 +666,6 @@ BarProp& DOMWindow::statusbar() const
 
 BarProp& DOMWindow::toolbar() const
 {
-    UseCounter::count(document(), UseCounter::BarPropToolbar);
     if (!m_toolbar)
         m_toolbar = BarProp::create(m_frame, BarProp::Toolbar);
     return *m_toolbar;
@@ -695,11 +678,11 @@ Console& DOMWindow::console() const
     return *m_console;
 }
 
-PageConsole* DOMWindow::pageConsole() const
+FrameConsole* DOMWindow::frameConsole() const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;
-    return m_frame->host() ? &m_frame->host()->console() : 0;
+    return &m_frame->console();
 }
 
 ApplicationCache* DOMWindow::applicationCache() const
@@ -869,7 +852,7 @@ void DOMWindow::postMessageTimerFired(PassOwnPtr<PostMessageTimer> t)
     if (!isCurrentlyDisplayedInFrame())
         return;
 
-    RefPtr<MessageEvent> event = timer->event();
+    RefPtrWillBeRawPtr<MessageEvent> event = timer->event();
 
     // Give the embedder a chance to intercept this postMessage because this
     // DOMWindow might be a proxy for another in browsers that support
@@ -883,13 +866,13 @@ void DOMWindow::postMessageTimerFired(PassOwnPtr<PostMessageTimer> t)
     dispatchMessageEventWithOriginCheck(timer->targetOrigin(), event, timer->stackTrace());
 }
 
-void DOMWindow::dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtr<Event> event, PassRefPtr<ScriptCallStack> stackTrace)
+void DOMWindow::dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event> event, PassRefPtr<ScriptCallStack> stackTrace)
 {
     if (intendedTargetOrigin) {
         // Check target origin now since the target document may have changed since the timer was scheduled.
         if (!intendedTargetOrigin->isSameSchemeHostPort(document()->securityOrigin())) {
             String message = ExceptionMessages::failedToExecute("postMessage", "DOMWindow", "The target origin provided ('" + intendedTargetOrigin->toString() + "') does not match the recipient window's origin ('" + document()->securityOrigin()->toString() + "').");
-            pageConsole()->addMessage(SecurityMessageSource, ErrorMessageLevel, message, stackTrace);
+            frameConsole()->addMessage(SecurityMessageSource, ErrorMessageLevel, message, stackTrace);
             return;
         }
     }
@@ -967,7 +950,7 @@ void DOMWindow::close(ExecutionContext* context)
     bool allowScriptsToCloseWindows = settings && settings->allowScriptsToCloseWindows();
 
     if (!(page->openedByDOM() || page->backForward().backForwardListCount() <= 1 || allowScriptsToCloseWindows)) {
-        pageConsole()->addMessage(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it.");
+        frameConsole()->addMessage(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it.");
         return;
     }
 
@@ -986,7 +969,7 @@ void DOMWindow::print()
     if (!host)
         return;
 
-    if (m_frame->loader().provisionalDocumentLoader() || m_frame->loader().documentLoader()->isLoading()) {
+    if (m_frame->loader().state() != FrameStateComplete) {
         m_shouldPrintWhenFinishedLoading = true;
         return;
     }
@@ -1298,7 +1281,7 @@ StyleMedia& DOMWindow::styleMedia() const
     return *m_media;
 }
 
-PassRefPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const String& pseudoElt) const
+PassRefPtrWillBeRawPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const String& pseudoElt) const
 {
     if (!elt)
         return nullptr;
@@ -1308,7 +1291,6 @@ PassRefPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const 
 
 PassRefPtrWillBeRawPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* element, const String& pseudoElement) const
 {
-    UseCounter::count(document(), UseCounter::GetMatchedCSSRules);
     if (!element)
         return nullptr;
 
@@ -1574,7 +1556,7 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
 
 void DOMWindow::dispatchLoadEvent()
 {
-    RefPtr<Event> loadEvent(Event::create(EventTypeNames::load));
+    RefPtrWillBeRawPtr<Event> loadEvent(Event::create(EventTypeNames::load));
     if (m_frame && m_frame->loader().documentLoader() && !m_frame->loader().documentLoader()->timing()->loadEventStart()) {
         // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed while dispatching
         // the event, so protect it to prevent writing the end time into freed memory.
@@ -1593,20 +1575,24 @@ void DOMWindow::dispatchLoadEvent()
     if (ownerElement)
         ownerElement->dispatchEvent(Event::create(EventTypeNames::load));
 
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "MarkLoad", "data", InspectorMarkLoadEvent::data(frame()));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::loadEventFired(frame());
 }
 
-bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget)
+bool DOMWindow::dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget)
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
 
     RefPtr<EventTarget> protect = this;
-    RefPtr<Event> event = prpEvent;
+    RefPtrWillBeRawPtr<Event> event = prpEvent;
 
     event->setTarget(prpTarget ? prpTarget : this);
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);
 
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "type", event->type().ascii());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEventOnWindow(frame(), *event, this);
 
     bool result = fireEventListeners(event.get());
@@ -1672,7 +1658,7 @@ void DOMWindow::printErrorMessage(const String& message)
     if (message.isEmpty())
         return;
 
-    pageConsole()->addMessage(JSMessageSource, ErrorMessageLevel, message);
+    frameConsole()->addMessage(JSMessageSource, ErrorMessageLevel, message);
 }
 
 // FIXME: Once we're throwing exceptions for cross-origin access violations, we will always sanitize the target
@@ -1901,9 +1887,7 @@ void DOMWindow::trace(Visitor* visitor)
     visitor->trace(m_applicationCache);
     visitor->trace(m_performance);
     visitor->trace(m_css);
-#if ENABLE(OILPAN)
-    HeapSupplementable<DOMWindow>::trace(visitor);
-#endif
+    WillBeHeapSupplementable<DOMWindow>::trace(visitor);
 }
 
 } // namespace WebCore

@@ -21,7 +21,8 @@
  */
 
 #include "config.h"
-#include "WebBBPrintInfo.h"
+#include "public/web/WebBBPrintInfo.h"
+
 #include "core/page/BBPrintInfo.h"
 
 #include "public/platform/WebString.h"

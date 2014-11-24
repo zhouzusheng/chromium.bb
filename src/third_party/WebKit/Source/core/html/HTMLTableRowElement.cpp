@@ -54,9 +54,9 @@ const QualifiedName& HTMLTableRowElement::subResourceAttributeName() const
     return backgroundAttr;
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
 {
-    return adoptRef(new HTMLTableRowElement(document));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTableRowElement(document));
 }
 
 int HTMLTableRowElement::rowIndex() const
@@ -119,7 +119,13 @@ int HTMLTableRowElement::sectionRowIndex() const
     return rIndex;
 }
 
-PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(ExceptionState& exceptionState)
+{
+    // The default 'index' argument value is -1.
+    return insertCell(-1, exceptionState);
+}
+
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
 {
     RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
@@ -128,17 +134,11 @@ PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionStat
         return nullptr;
     }
 
-    RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
-    if (index < 0 || index >= numCells)
+    RefPtrWillBeRawPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
+    if (numCells == index || index == -1)
         appendChild(cell, exceptionState);
-    else {
-        Node* n;
-        if (index < 1)
-            n = firstChild();
-        else
-            n = children->item(index);
-        insertBefore(cell, n, exceptionState);
-    }
+    else
+        insertBefore(cell, children->item(index), exceptionState);
     return cell.release();
 }
 
@@ -149,7 +149,7 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
     if (index == -1)
         index = numCells-1;
     if (index >= 0 && index < numCells) {
-        RefPtr<Element> cell = children->item(index);
+        RefPtrWillBeRawPtr<Element> cell = children->item(index);
         HTMLElement::removeChild(cell.get(), exceptionState);
     } else {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [0, " + String::number(numCells) + ").");

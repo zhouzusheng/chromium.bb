@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "mojo/common/message_pump_mojo_handler.h"
@@ -68,69 +69,84 @@ void MessagePumpMojo::RemoveHandler(const Handle& handle) {
 }
 
 void MessagePumpMojo::Run(Delegate* delegate) {
-  RunState* old_state = run_state_;
   RunState run_state;
   // TODO: better deal with error handling.
   CHECK(run_state.read_handle.is_valid());
   CHECK(run_state.write_handle.is_valid());
-  run_state_ = &run_state;
+  RunState* old_state = NULL;
+  {
+    base::AutoLock auto_lock(run_state_lock_);
+    old_state = run_state_;
+    run_state_ = &run_state;
+  }
+  DoRunLoop(&run_state, delegate);
+  {
+    base::AutoLock auto_lock(run_state_lock_);
+    run_state_ = old_state;
+  }
+}
+
+void MessagePumpMojo::Quit() {
+  base::AutoLock auto_lock(run_state_lock_);
+  if (run_state_)
+    run_state_->should_quit = true;
+}
+
+void MessagePumpMojo::ScheduleWork() {
+  base::AutoLock auto_lock(run_state_lock_);
+  if (run_state_)
+    SignalControlPipe(*run_state_);
+}
+
+void MessagePumpMojo::ScheduleDelayedWork(
+    const base::TimeTicks& delayed_work_time) {
+  base::AutoLock auto_lock(run_state_lock_);
+  if (!run_state_)
+    return;
+  run_state_->delayed_work_time = delayed_work_time;
+  SignalControlPipe(*run_state_);
+}
+
+void MessagePumpMojo::DoRunLoop(RunState* run_state, Delegate* delegate) {
   bool more_work_is_plausible = true;
   for (;;) {
     const bool block = !more_work_is_plausible;
-    DoInternalWork(block);
+    DoInternalWork(*run_state, block);
 
     // There isn't a good way to know if there are more handles ready, we assume
     // not.
     more_work_is_plausible = false;
 
-    if (run_state.should_quit)
+    if (run_state->should_quit)
       break;
 
     more_work_is_plausible |= delegate->DoWork();
-    if (run_state.should_quit)
+    if (run_state->should_quit)
       break;
 
     more_work_is_plausible |= delegate->DoDelayedWork(
-        &run_state.delayed_work_time);
-    if (run_state.should_quit)
+        &run_state->delayed_work_time);
+    if (run_state->should_quit)
       break;
 
     if (more_work_is_plausible)
       continue;
 
     more_work_is_plausible = delegate->DoIdleWork();
-    if (run_state.should_quit)
+    if (run_state->should_quit)
       break;
   }
-  run_state_ = old_state;
 }
 
-void MessagePumpMojo::Quit() {
-  if (run_state_)
-    run_state_->should_quit = true;
-}
-
-void MessagePumpMojo::ScheduleWork() {
-  SignalControlPipe();
-}
-
-void MessagePumpMojo::ScheduleDelayedWork(
-    const base::TimeTicks& delayed_work_time) {
-  if (!run_state_)
-    return;
-  run_state_->delayed_work_time = delayed_work_time;
-  SignalControlPipe();
-}
-
-void MessagePumpMojo::DoInternalWork(bool block) {
-  const MojoDeadline deadline = block ? GetDeadlineForWait() : 0;
-  const WaitState wait_state = GetWaitState();
+void MessagePumpMojo::DoInternalWork(const RunState& run_state, bool block) {
+  const MojoDeadline deadline = block ? GetDeadlineForWait(run_state) : 0;
+  const WaitState wait_state = GetWaitState(run_state);
   const MojoResult result =
       WaitMany(wait_state.handles, wait_state.wait_flags, deadline);
   if (result == 0) {
     // Control pipe was written to.
     uint32_t num_bytes = 0;
-    ReadMessageRaw(run_state_->read_handle.get(), NULL, &num_bytes, NULL, NULL,
+    ReadMessageRaw(run_state.read_handle.get(), NULL, &num_bytes, NULL, NULL,
                    MOJO_READ_MESSAGE_FLAG_MAY_DISCARD);
   } else if (result > 0) {
     const size_t index = static_cast<size_t>(result);
@@ -139,14 +155,17 @@ void MessagePumpMojo::DoInternalWork(bool block) {
         wait_state.handles[index]);
   } else {
     switch (result) {
-      case MOJO_RESULT_INVALID_ARGUMENT:
+      case MOJO_RESULT_CANCELLED:
       case MOJO_RESULT_FAILED_PRECONDITION:
+      case MOJO_RESULT_INVALID_ARGUMENT:
         RemoveFirstInvalidHandle(wait_state);
         break;
       case MOJO_RESULT_DEADLINE_EXCEEDED:
         break;
       default:
-        NOTREACHED();
+        base::debug::Alias(&result);
+        // Unexpected result is likely fatal, crash so we can determine cause.
+        CHECK(false);
     }
   }
 
@@ -172,7 +191,8 @@ void MessagePumpMojo::RemoveFirstInvalidHandle(const WaitState& wait_state) {
     const MojoResult result =
         Wait(wait_state.handles[i], wait_state.wait_flags[i], 0);
     if (result == MOJO_RESULT_INVALID_ARGUMENT ||
-        result == MOJO_RESULT_FAILED_PRECONDITION) {
+        result == MOJO_RESULT_FAILED_PRECONDITION ||
+        result == MOJO_RESULT_CANCELLED) {
       // Remove the handle first, this way if OnHandleError() tries to remove
       // the handle our iterator isn't invalidated.
       DCHECK(handlers_.find(wait_state.handles[i]) != handlers_.end());
@@ -181,24 +201,20 @@ void MessagePumpMojo::RemoveFirstInvalidHandle(const WaitState& wait_state) {
       handlers_.erase(wait_state.handles[i]);
       handler->OnHandleError(wait_state.handles[i], result);
       return;
-    } else {
-      DCHECK_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, result);
     }
   }
 }
 
-void MessagePumpMojo::SignalControlPipe() {
-  if (!run_state_)
-    return;
-
+void MessagePumpMojo::SignalControlPipe(const RunState& run_state) {
   // TODO(sky): deal with error?
-  WriteMessageRaw(run_state_->write_handle.get(), NULL, 0, NULL, 0,
+  WriteMessageRaw(run_state.write_handle.get(), NULL, 0, NULL, 0,
                   MOJO_WRITE_MESSAGE_FLAG_NONE);
 }
 
-MessagePumpMojo::WaitState MessagePumpMojo::GetWaitState() const {
+MessagePumpMojo::WaitState MessagePumpMojo::GetWaitState(
+    const RunState& run_state) const {
   WaitState wait_state;
-  wait_state.handles.push_back(run_state_->read_handle.get());
+  wait_state.handles.push_back(run_state.read_handle.get());
   wait_state.wait_flags.push_back(MOJO_WAIT_FLAG_READABLE);
 
   for (HandleToHandler::const_iterator i = handlers_.begin();
@@ -209,8 +225,9 @@ MessagePumpMojo::WaitState MessagePumpMojo::GetWaitState() const {
   return wait_state;
 }
 
-MojoDeadline MessagePumpMojo::GetDeadlineForWait() const {
-  base::TimeTicks min_time = run_state_->delayed_work_time;
+MojoDeadline MessagePumpMojo::GetDeadlineForWait(
+    const RunState& run_state) const {
+  base::TimeTicks min_time = run_state.delayed_work_time;
   for (HandleToHandler::const_iterator i = handlers_.begin();
        i != handlers_.end(); ++i) {
     if (min_time.is_null() && i->second.deadline < min_time)

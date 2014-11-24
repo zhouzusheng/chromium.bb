@@ -40,19 +40,24 @@ void LiveNodeList::invalidateCache(Document*) const
     m_collectionIndexCache.invalidate();
 }
 
-Element* LiveNodeList::itemBefore(const Element* previous) const
+Element* LiveNodeList::traverseToFirstElement() const
 {
-    return LiveNodeListBase::itemBefore(*this, previous);
+    return firstMatchingElement(*this);
 }
 
-Element* LiveNodeList::traverseToFirstElement(const ContainerNode& root) const
+Element* LiveNodeList::traverseToLastElement() const
 {
-    return firstMatchingElement(*this, root);
+    return lastMatchingElement(*this);
 }
 
-Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset, const ContainerNode& root) const
+Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
 {
-    return traverseMatchingElementsForwardToOffset(*this, offset, currentNode, currentOffset, root);
+    return traverseMatchingElementsForwardToOffset(*this, offset, currentNode, currentOffset);
+}
+
+Element* LiveNodeList::traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
+{
+    return traverseMatchingElementsBackwardToOffset(*this, offset, currentNode, currentOffset);
 }
 
 } // namespace WebCore

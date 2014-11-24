@@ -26,9 +26,9 @@
 #ifndef DatabaseManager_h
 #define DatabaseManager_h
 
-#include "heap/Handle.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
@@ -43,7 +43,7 @@ class DatabaseBackendBase;
 class DatabaseCallback;
 class DatabaseContext;
 class DatabaseSync;
-class DatabaseTaskSynchronizer;
+class TaskSynchronizer;
 class ExceptionState;
 class SecurityOrigin;
 class ExecutionContext;

@@ -113,8 +113,10 @@ public:
 
     bool needsFullRepaint() const { return m_doFullRepaint; }
 
+    void updateAcceleratedCompositingSettings();
+
+    void recalcOverflowAfterStyleChange();
     void updateCompositingLayersAfterStyleChange();
-    void updateCompositingLayersAfterLayout();
 
     bool hasCompositedContent() const;
     bool isEnclosedInCompositingLayer() const;
@@ -151,8 +153,6 @@ public:
     void setInputEventsTransformForEmulation(const IntSize&, float);
 
     virtual void setScrollPosition(const IntPoint&) OVERRIDE;
-    virtual void repaintFixedElementsAfterScrolling() OVERRIDE;
-    virtual void updateFixedElementsAfterScrolling() OVERRIDE;
     virtual bool shouldRubberBandInDirection(ScrollDirection) const OVERRIDE;
     virtual bool isRubberBandInProgress() const OVERRIDE;
     void setScrollPositionNonProgrammatically(const IntPoint&);
@@ -233,12 +233,13 @@ public:
     bool scrollToAnchor(const String&);
     void maintainScrollPositionAtAnchor(Node*);
     void scrollElementToRect(Element*, const IntRect&);
+    void scrollContentsIfNeededRecursive();
 
     // Methods to convert points and rects between the coordinate space of the renderer, and this view.
-    IntRect convertFromRenderer(const RenderObject*, const IntRect&) const;
-    IntRect convertToRenderer(const RenderObject*, const IntRect&) const;
-    IntPoint convertFromRenderer(const RenderObject*, const IntPoint&) const;
-    IntPoint convertToRenderer(const RenderObject*, const IntPoint&) const;
+    IntRect convertFromRenderer(const RenderObject&, const IntRect&) const;
+    IntRect convertToRenderer(const RenderObject&, const IntRect&) const;
+    IntPoint convertFromRenderer(const RenderObject&, const IntPoint&) const;
+    IntPoint convertToRenderer(const RenderObject&, const IntPoint&) const;
 
     bool isFrameViewScrollCorner(RenderScrollbarPart* scrollCorner) const { return m_scrollCorner == scrollCorner; }
 
@@ -258,7 +259,7 @@ public:
     void flushAnyPendingPostLayoutTasks();
 
     virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
-    virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate) OVERRIDE;
+    virtual void scrollbarStyleChanged() OVERRIDE;
 
     RenderBox* embeddedContentBox() const;
 
@@ -272,15 +273,14 @@ public:
     bool addScrollableArea(ScrollableArea*);
     // Returns whether the scrollable area has just been removed.
     bool removeScrollableArea(ScrollableArea*);
-    bool containsScrollableArea(const ScrollableArea*) const;
     const ScrollableAreaSet* scrollableAreas() const { return m_scrollableAreas.get(); }
 
     // With CSS style "resize:" enabled, a little resizer handle will appear at the bottom
     // right of the object. We keep track of these resizer areas for checking if touches
     // (implemented using Scroll gesture) are targeting the resizer.
     typedef HashSet<RenderBox*> ResizerAreaSet;
-    void addResizerArea(RenderBox*);
-    void removeResizerArea(RenderBox*);
+    void addResizerArea(RenderBox&);
+    void removeResizerArea(RenderBox&);
     const ResizerAreaSet* resizerAreas() const { return m_resizerAreas.get(); }
 
     virtual void removeChild(Widget*) OVERRIDE;
@@ -300,8 +300,6 @@ public:
 
     // DEPRECATED: Use viewportConstrainedVisibleContentRect() instead.
     IntSize scrollOffsetForFixedPosition() const;
-
-    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
 
     // Override scrollbar notifications to update the AXObject cache.
     virtual void didAddScrollbar(Scrollbar*, ScrollbarOrientation) OVERRIDE;
@@ -331,6 +329,7 @@ public:
     virtual GraphicsLayer* layerForScrollCorner() const OVERRIDE;
 
 protected:
+    virtual void scrollContentsIfNeeded();
     virtual bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect) OVERRIDE;
     virtual void scrollContentsSlowPath(const IntRect& updateRect) OVERRIDE;
 
@@ -394,6 +393,9 @@ private:
     void scrollPositionChanged();
     void didScrollTimerFired(Timer<FrameView>*);
 
+    void updateLayersAndCompositingAfterScrollIfNeeded();
+    void updateFixedElementRepaintRectsAfterScroll();
+
     bool hasCustomScrollbars() const;
     bool shouldUseCustomScrollbars(Element*& customScrollbarElement, LocalFrame*& customScrollbarFrame);
 
@@ -403,8 +405,6 @@ private:
 
     AXObjectCache* axObjectCache() const;
     void removeFromAXObjectCache();
-
-    bool isMainFrame() const;
 
     void setLayoutSizeInternal(const IntSize&);
 
@@ -443,7 +443,6 @@ private:
     bool m_layoutSchedulingEnabled;
     bool m_inPerformLayout;
     bool m_canRepaintDuringPerformLayout;
-    bool m_doingPreLayoutStyleUpdate;
     bool m_inSynchronousPostLayout;
     int m_layoutCount;
     unsigned m_nestedLayoutCount;

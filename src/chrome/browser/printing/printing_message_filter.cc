@@ -24,7 +24,6 @@
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
-#include "content/public/browser/web_contents_view.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -156,7 +155,7 @@ void PrintingMessageFilter::OnAllocateTempFileForPrinting(
     int* sequence_number) {
 #if defined(OS_CHROMEOS)
   // TODO(thestig): Use |render_view_id| for Chrome OS.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   temp_file_fd->fd = *sequence_number = -1;
   temp_file_fd->auto_close = false;
 
@@ -179,7 +178,7 @@ void PrintingMessageFilter::OnAllocateTempFileForPrinting(
     }
   }
 #elif defined(OS_ANDROID)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (!wc)
     return;
@@ -197,7 +196,7 @@ void PrintingMessageFilter::OnAllocateTempFileForPrinting(
 void PrintingMessageFilter::OnTempFileForPrintingWritten(int render_view_id,
                                                          int sequence_number) {
 #if defined(OS_CHROMEOS)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   SequenceToPathMap* map = &g_printing_file_descriptor_map.Get().map;
   SequenceToPathMap::iterator it = map->find(sequence_number);
   if (it == map->end()) {
@@ -213,7 +212,7 @@ void PrintingMessageFilter::OnTempFileForPrintingWritten(int render_view_id,
   // Erase the entry in the map.
   map->erase(it);
 #elif defined(OS_ANDROID)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (!wc)
     return;
@@ -237,7 +236,7 @@ void PrintingMessageFilter::CreatePrintDialogForFile(
     return;
   print_dialog_cloud::CreatePrintDialogForFile(
       wc->GetBrowserContext(),
-      wc->GetView()->GetTopLevelNativeWindow(),
+      wc->GetTopLevelNativeWindow(),
       path,
       wc->GetTitle(),
       base::string16(),
@@ -247,7 +246,7 @@ void PrintingMessageFilter::CreatePrintDialogForFile(
 
 content::WebContents* PrintingMessageFilter::GetWebContentsForRenderView(
     int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::RenderViewHost* view = content::RenderViewHost::FromID(
       render_process_id_, render_view_id);
   return view ? content::WebContents::FromRenderViewHost(view) : NULL;
@@ -265,7 +264,7 @@ void PrintingMessageFilter::GetPrintSettingsForRenderView(
     GetPrintSettingsForRenderViewParams params,
     const base::Closure& callback,
     scoped_refptr<printing::PrinterQuery> printer_query) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (wc) {
     scoped_ptr<PrintingUIWebContentsObserver> wc_observer(
@@ -287,19 +286,19 @@ void PrintingMessageFilter::GetPrintSettingsForRenderView(
 void PrintingMessageFilter::OnGetPrintSettingsFailed(
     const base::Closure& callback,
     scoped_refptr<printing::PrinterQuery> printer_query) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   printer_query->GetSettingsDone(printing::PrintSettings(),
                                  printing::PrintingContext::FAILED);
   callback.Run();
 }
 
 void PrintingMessageFilter::OnIsPrintingEnabled(bool* is_enabled) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   *is_enabled = true;
 }
 
 void PrintingMessageFilter::OnGetDefaultPrintSettings(IPC::Message* reply_msg) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   scoped_refptr<printing::PrinterQuery> printer_query;
   printer_query = queue_->PopPrinterQuery(0);
   if (!printer_query)
@@ -406,7 +405,7 @@ void PrintingMessageFilter::OnScriptedPrintReply(
 
 #if defined(OS_ANDROID)
 void PrintingMessageFilter::UpdateFileDescriptor(int render_view_id, int fd) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (!wc)
     return;

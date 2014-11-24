@@ -33,6 +33,7 @@
     '../build/scripts/scripts.gypi',
     '../build/win/precompile.gypi',
     'blink_platform.gypi',
+    'heap/blink_heap.gypi',
   ],
   'targets': [{
     'target_name': 'blink_common',
@@ -61,6 +62,56 @@
       'exported/WebString.cpp',
       'exported/WebCommon.cpp',
     ],
+  },
+  {
+    'target_name': 'blink_heap_asm_stubs',
+    'type': 'static_library',
+    # VS2010 does not correctly incrementally link obj files generated
+    # from asm files. This flag disables UseLibraryDependencyInputs to
+    # avoid this problem.
+    'msvs_2010_disable_uldi_when_referenced': 1,
+    'includes': [
+      '../../../yasm/yasm_compile.gypi',
+    ],
+    'sources': [
+      '<@(platform_heap_asm_files)',
+    ],
+    'variables': {
+      'more_yasm_flags': [],
+      'conditions': [
+        ['OS == "mac"', {
+          'more_yasm_flags': [
+            # Necessary to ensure symbols end up with a _ prefix; added by
+            # yasm_compile.gypi for Windows, but not Mac.
+            '-DPREFIX',
+          ],
+        }],
+        ['OS == "win" and target_arch == "x64"', {
+          'more_yasm_flags': [
+            '-DX64WIN=1',
+          ],
+        }],
+        ['OS != "win" and target_arch == "x64"', {
+          'more_yasm_flags': [
+            '-DX64POSIX=1',
+          ],
+        }],
+        ['target_arch == "ia32"', {
+          'more_yasm_flags': [
+            '-DIA32=1',
+          ],
+        }],
+        ['target_arch == "arm"', {
+          'more_yasm_flags': [
+            '-DARM=1',
+          ],
+        }],
+      ],
+      'yasm_flags': [
+        '>@(more_yasm_flags)',
+      ],
+      'yasm_output_path': '<(SHARED_INTERMEDIATE_DIR)/webcore/heap'
+    },
   },
   {
     'target_name': 'blink_prerequisites',
@@ -127,6 +178,7 @@
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       'blink_common',
+      'blink_heap_asm_stubs',
       'blink_prerequisites',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
       '<(DEPTH)/skia/skia.gyp:skia',
@@ -170,6 +222,7 @@
     },
     'sources': [
       '<@(platform_files)',
+      '<@(platform_heap_files)',
 
       # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
       '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
@@ -208,10 +261,19 @@
         'dependencies': [
           '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         ],
-      }, { # OS!="linux" and OS!="android"
+      }, { # OS!="linux" and OS!="android" and OS!="win"
         'sources/': [
           ['exclude', 'Harfbuzz[^/]+\\.(cpp|h)$'],
         ],
+      }],
+      ['OS=="linux" or OS=="android"', {
+        'sources/': [
+          ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+        ]
+      }, { # OS!="linux" and OS!="android"
+        'sources/': [
+          ['exclude', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+        ]
       }],
       ['OS=="mac"', {
         'dependencies': [
@@ -244,7 +306,6 @@
           # Some of these are used instead of Chromium platform files, see
           # the specific exclusions in the "exclude" list below.
           ['include', 'audio/mac/FFTFrameMac\\.cpp$'],
-          ['include', 'fonts/mac/GlyphPageTreeNodeMac\\.cpp$'],
           ['include', 'fonts/mac/ComplexTextControllerCoreText\\.mm$'],
           ['include', 'mac/ColorMac\\.mm$'],
           ['include', 'mac/BlockExceptions\\.mm$'],
@@ -266,7 +327,6 @@
           ['exclude', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
 
           ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
-          ['exclude', 'fonts/skia/GlyphPageTreeNodeSkia\\.cpp$'],
           ['exclude', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
 
           # Mac uses Harfbuzz.
@@ -319,12 +379,10 @@
           ['include', 'fonts/opentype/'],
           ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
           ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
-          ['include', 'fonts/skia/GlyphPageTreeNodeSkia\\.cpp$'],
           ['include', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
           ['include', 'fonts/win/FontCacheSkiaWin\\.cpp$'],
           ['include', 'fonts/win/FontFallbackWin\\.(cpp|h)$'],
           ['include', 'fonts/win/FontPlatformDataWin\\.cpp$'],
-          ['exclude', 'fonts/harfbuzz/FontPlatformDataHarfBuzz\\.cpp$'],
 
           # SystemInfo.cpp is useful and we don't want to copy it.
           ['include', 'win/SystemInfo\\.cpp$'],
@@ -361,7 +419,7 @@
       }],
       ['use_default_render_theme==0', {
         'sources/': [
-          ['exclude', 'scroll/ScrollbarThemeGtkOrAura\\.(cpp|h)'],
+          ['exclude', 'scroll/ScrollbarThemeAura\\.(cpp|h)'],
         ],
       }],
       ['"WTF_USE_WEBAUDIO_FFMPEG=1" in feature_defines', {
@@ -390,6 +448,7 @@
       ['OS=="android"', {
         'sources/': [
             ['include', 'exported/linux/WebFontRenderStyle\\.cpp$'],
+            ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
         ],
       }],
     ],

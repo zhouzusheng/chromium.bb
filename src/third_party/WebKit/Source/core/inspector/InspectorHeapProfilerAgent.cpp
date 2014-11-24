@@ -32,7 +32,6 @@
 #include "core/inspector/InspectorHeapProfilerAgent.h"
 
 #include "bindings/v8/ScriptProfiler.h"
-#include "bindings/v8/ScriptScope.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorState.h"
@@ -282,12 +281,12 @@ void InspectorHeapProfilerAgent::getObjectByHeapObjectId(ErrorString* error, con
         return;
     }
     ScriptObject heapObject = ScriptProfiler::objectByHeapObjectId(id);
-    if (heapObject.hasNoValue()) {
+    if (heapObject.isEmpty()) {
         *error = "Object is not available";
         return;
     }
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(heapObject.scriptState());
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *error = "Object is not available. Inspected context is gone";
         return;
     }
@@ -299,13 +298,13 @@ void InspectorHeapProfilerAgent::getObjectByHeapObjectId(ErrorString* error, con
 void InspectorHeapProfilerAgent::getHeapObjectId(ErrorString* errorString, const String& objectId, String* heapSnapshotObjectId)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *errorString = "Inspected context has gone";
         return;
     }
     ScriptValue value = injectedScript.findObjectById(objectId);
-    ScriptScope scope(injectedScript.scriptState());
-    if (value.hasNoValue() || value.isUndefined()) {
+    ScriptState::Scope scope(injectedScript.scriptState());
+    if (value.isEmpty() || value.isUndefined()) {
         *errorString = "Object with given id not found";
         return;
     }

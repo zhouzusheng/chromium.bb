@@ -44,7 +44,6 @@
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 
@@ -57,20 +56,23 @@ class SocketStreamHandle;
 class SocketStreamError;
 class WebSocketChannelClient;
 
-class MainThreadWebSocketChannel FINAL : public RefCounted<MainThreadWebSocketChannel>, public SocketStreamHandleClient, public WebSocketChannel, public FileReaderLoaderClient {
-    WTF_MAKE_FAST_ALLOCATED;
+class MainThreadWebSocketChannel FINAL : public WebSocketChannel, public SocketStreamHandleClient, public FileReaderLoaderClient {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     // You can specify the source file and the line number information
     // explicitly by passing the last parameter.
     // In the usual case, they are set automatically and you don't have to
     // pass it.
-    static PassRefPtr<MainThreadWebSocketChannel> create(Document* document, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0) { return adoptRef(new MainThreadWebSocketChannel(document, client, sourceURL, lineNumber)); }
+    static PassRefPtrWillBeRawPtr<MainThreadWebSocketChannel> create(Document* document, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0)
+    {
+        return adoptRefWillBeRefCountedGarbageCollected(new MainThreadWebSocketChannel(document, client, sourceURL, lineNumber));
+    }
     virtual ~MainThreadWebSocketChannel();
 
     bool send(const char* data, int length);
 
     // WebSocketChannel functions.
-    virtual void connect(const KURL&, const String& protocol) OVERRIDE;
+    virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
     virtual String subprotocol() OVERRIDE;
     virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
@@ -100,14 +102,6 @@ public:
     virtual void didReceiveData() OVERRIDE;
     virtual void didFinishLoading() OVERRIDE;
     virtual void didFail(FileError::ErrorCode) OVERRIDE;
-
-    using RefCounted<MainThreadWebSocketChannel>::ref;
-    using RefCounted<MainThreadWebSocketChannel>::deref;
-
-protected:
-    // WebSocketChannel functions.
-    virtual void refWebSocketChannel() OVERRIDE { ref(); }
-    virtual void derefWebSocketChannel() OVERRIDE { deref(); }
 
 private:
     MainThreadWebSocketChannel(Document*, WebSocketChannelClient*, const String&, unsigned);

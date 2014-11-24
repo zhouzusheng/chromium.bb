@@ -67,7 +67,7 @@ public:
 protected:
     virtual bool needsPreferredWidthsRecalculation() const OVERRIDE FINAL;
     virtual RenderBox* embeddedContentBox() const OVERRIDE FINAL;
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const OVERRIDE FINAL;
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE FINAL;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE FINAL;
 
@@ -103,8 +103,8 @@ private:
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE FINAL;
 
     IntSize imageSizeForError(ImageResource*) const;
-    void imageDimensionsChanged(bool imageSizeChanged, const IntRect* = 0);
-    bool updateIntrinsicSizeIfNeeded(const LayoutSize&, bool imageSizeChanged);
+    void repaintOrMarkForLayout(bool imageSizeChanged, const IntRect* = 0);
+    void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
 

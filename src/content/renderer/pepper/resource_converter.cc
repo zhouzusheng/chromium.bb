@@ -18,9 +18,10 @@
 #include "ppapi/shared_impl/scoped_pp_var.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/web/WebDOMFileSystem.h"
 #include "third_party/WebKit/public/web/WebDOMMediaStreamTrack.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using ppapi::ResourceVar;
@@ -96,16 +97,17 @@ bool DOMFileSystemToResource(
       WebFileSystemTypeToPPAPI(dom_file_system.type());
   GURL root_url = dom_file_system.rootURL();
 
-  // External file systems are not currently supported. (Without this check,
-  // there would be a CHECK-fail in FileRefResource.)
-  // TODO(mgiuca): Support external file systems.
-  if (file_system_type == PP_FILESYSTEMTYPE_EXTERNAL)
+  // Raw external file system access is not allowed, but external file system
+  // access through fileapi is allowed. (Without this check, there would be a
+  // CHECK failure in FileRefResource.)
+  if ((file_system_type == PP_FILESYSTEMTYPE_EXTERNAL) &&
+      (!root_url.is_valid())) {
     return false;
+  }
 
   *pending_renderer_id = host->GetPpapiHost()->AddPendingResourceHost(
-      scoped_ptr<ppapi::host::ResourceHost>(
-          new PepperFileSystemHost(host, instance, 0, root_url,
-              file_system_type)));
+      scoped_ptr<ppapi::host::ResourceHost>(new PepperFileSystemHost(
+          host, instance, 0, root_url, file_system_type)));
   if (*pending_renderer_id == 0)
     return false;
 
@@ -132,7 +134,7 @@ bool ResourceHostToDOMFileSystem(
   blink::WebFileSystemType blink_type;
   if (!FileApiFileSystemTypeToWebFileSystemType(type, &blink_type))
     return false;
-  blink::WebFrame* frame = blink::WebFrame::frameForContext(context);
+  blink::WebLocalFrame* frame = blink::WebLocalFrame::frameForContext(context);
   blink::WebDOMFileSystem web_dom_file_system = blink::WebDOMFileSystem::create(
       frame,
       blink_type,
@@ -141,6 +143,16 @@ bool ResourceHostToDOMFileSystem(
       blink::WebDOMFileSystem::SerializableTypeSerializable);
   *dom_file_system = web_dom_file_system.toV8Value();
   return true;
+}
+
+bool ResourceHostToDOMMediaStreamVideoTrack(
+    content::PepperMediaStreamVideoTrackHost* host,
+    v8::Handle<v8::Context> context,
+    v8::Handle<v8::Value>* dom_video_track) {
+  // TODO(ronghuawu): Implement this once crbug/352219 is resolved.
+  // blink::WebMediaStreamTrack track = host->track();
+  // *dom_video_track = track.toV8Value();
+  return false;
 }
 
 bool DOMMediaStreamTrackToResource(
@@ -186,9 +198,7 @@ ResourceConverter::~ResourceConverter() {}
 
 ResourceConverterImpl::ResourceConverterImpl(PP_Instance instance,
                                              RendererPpapiHost* host)
-    : instance_(instance),
-      host_(host) {
-}
+    : instance_(instance), host_(host) {}
 
 ResourceConverterImpl::~ResourceConverterImpl() {
   // Verify Flush() was called.
@@ -211,8 +221,11 @@ bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
     int pending_renderer_id;
     scoped_ptr<IPC::Message> create_message;
     scoped_ptr<IPC::Message> browser_host_create_message;
-    if (!DOMFileSystemToResource(instance_, host_, dom_file_system,
-                                 &pending_renderer_id, &create_message,
+    if (!DOMFileSystemToResource(instance_,
+                                 host_,
+                                 dom_file_system,
+                                 &pending_renderer_id,
+                                 &create_message,
                                  &browser_host_create_message)) {
       return false;
     }
@@ -231,13 +244,16 @@ bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
   if (!dom_media_stream_track.isNull()) {
     int pending_renderer_id;
     scoped_ptr<IPC::Message> create_message;
-    if (!DOMMediaStreamTrackToResource(instance_, host_, dom_media_stream_track,
-                                       &pending_renderer_id, &create_message)) {
+    if (!DOMMediaStreamTrackToResource(instance_,
+                                       host_,
+                                       dom_media_stream_track,
+                                       &pending_renderer_id,
+                                       &create_message)) {
       return false;
     }
     DCHECK(create_message);
-    scoped_refptr<HostResourceVar> result_var = CreateResourceVar(
-        pending_renderer_id, *create_message);
+    scoped_refptr<HostResourceVar> result_var =
+        CreateResourceVar(pending_renderer_id, *create_message);
     *result = result_var->GetPPVar();
     *was_resource = true;
     return true;
@@ -280,8 +296,7 @@ bool ResourceConverterImpl::ToV8Value(const PP_Var& var,
     NOTREACHED();
     return false;
   }
-  ::ppapi::host::PpapiHost* ppapi_host =
-      renderer_ppapi_host->GetPpapiHost();
+  ::ppapi::host::PpapiHost* ppapi_host = renderer_ppapi_host->GetPpapiHost();
   ::ppapi::host::ResourceHost* resource_host =
       ppapi_host->GetResourceHost(resource_id);
   if (resource_host == NULL) {
@@ -293,6 +308,11 @@ bool ResourceConverterImpl::ToV8Value(const PP_Var& var,
   if (resource_host->IsFileSystemHost()) {
     return ResourceHostToDOMFileSystem(
         static_cast<content::PepperFileSystemHost*>(resource_host),
+        context,
+        result);
+  } else if (resource_host->IsMediaStreamVideoTrackHost()) {
+    return ResourceHostToDOMMediaStreamVideoTrack(
+        static_cast<content::PepperMediaStreamVideoTrackHost*>(resource_host),
         context,
         result);
   } else {

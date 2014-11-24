@@ -51,10 +51,29 @@ void DidGetMetadataForResolveURL(
     base::File::Error error,
     const base::File::Info& file_info) {
   if (error != base::File::FILE_OK) {
-    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    if (error == base::File::FILE_ERROR_NOT_FOUND) {
+      callback.Run(base::File::FILE_OK, info, path,
+                   FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
+    } else {
+      callback.Run(error, FileSystemInfo(), base::FilePath(),
+                   FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
+    }
     return;
   }
-  callback.Run(error, info, path, file_info.is_directory);
+  callback.Run(error, info, path, file_info.is_directory ?
+      FileSystemContext::RESOLVED_ENTRY_DIRECTORY :
+      FileSystemContext::RESOLVED_ENTRY_FILE);
+}
+
+void RelayResolveURLCallback(
+    scoped_refptr<base::MessageLoopProxy> message_loop,
+    const FileSystemContext::ResolveURLCallback& callback,
+    base::File::Error result,
+    const FileSystemInfo& info,
+    const base::FilePath& file_path,
+    FileSystemContext::ResolvedEntryType type) {
+  message_loop->PostTask(
+      FROM_HERE, base::Bind(callback, result, info, file_path, type));
 }
 
 }  // namespace
@@ -72,21 +91,24 @@ int FileSystemContext::GetPermissionPolicy(FileSystemType type) {
     case kFileSystemTypeNativeLocal:
     case kFileSystemTypeCloudDevice:
     case kFileSystemTypeProvided:
+    case kFileSystemTypeDeviceMediaAsFileStorage:
       return FILE_PERMISSION_USE_FILE_PERMISSION;
 
     case kFileSystemTypeRestrictedNativeLocal:
       return FILE_PERMISSION_READ_ONLY |
              FILE_PERMISSION_USE_FILE_PERMISSION;
 
-    // Following types are only accessed via IsolatedFileSystem, and
-    // don't have their own permission policies.
     case kFileSystemTypeDeviceMedia:
-    case kFileSystemTypeDragged:
-    case kFileSystemTypeForTransientFile:
     case kFileSystemTypeIphoto:
     case kFileSystemTypeItunes:
     case kFileSystemTypeNativeMedia:
     case kFileSystemTypePicasa:
+      return FILE_PERMISSION_USE_FILE_PERMISSION;
+
+    // Following types are only accessed via IsolatedFileSystem, and
+    // don't have their own permission policies.
+    case kFileSystemTypeDragged:
+    case kFileSystemTypeForTransientFile:
     case kFileSystemTypePluginPrivate:
       return FILE_PERMISSION_ALWAYS_DENY;
 
@@ -320,15 +342,24 @@ void FileSystemContext::OpenFileSystem(
 void FileSystemContext::ResolveURL(
     const FileSystemURL& url,
     const ResolveURLCallback& callback) {
-  // TODO(nhiroki, kinuko): Remove this thread restriction, so it can be called
-  // on either UI or IO thread.
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!callback.is_null());
+
+  // If not on IO thread, forward before passing the task to the backend.
+  if (!io_task_runner_->RunsTasksOnCurrentThread()) {
+    ResolveURLCallback relay_callback =
+        base::Bind(&RelayResolveURLCallback,
+                   base::MessageLoopProxy::current(), callback);
+    io_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&FileSystemContext::ResolveURL, this, url, relay_callback));
+    return;
+  }
 
   FileSystemBackend* backend = GetFileSystemBackend(url.type());
   if (!backend) {
     callback.Run(base::File::FILE_ERROR_SECURITY,
-                 FileSystemInfo(), base::FilePath(), false);
+                 FileSystemInfo(), base::FilePath(),
+                 FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
     return;
   }
 
@@ -448,6 +479,20 @@ bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
   return !is_incognito_ || !FileSystemContext::IsSandboxFileSystem(url.type());
 }
 
+bool FileSystemContext::ShouldFlushOnWriteCompletion(
+    FileSystemType type) const {
+  if (IsSandboxFileSystem(type)) {
+    // Disable Flush() for each write operation on SandboxFileSystems since it
+    // hurts the performance, assuming the FileSystems are stored in a local
+    // disk, we don't need to keep calling fsync() for it.
+    // On the other hand, other FileSystems that may stored on a removable media
+    // should be Flush()ed as soon as a write operation is completed, so that
+    // written data is saved over sudden media removal.
+    return false;
+  }
+  return true;
+}
+
 void FileSystemContext::OpenPluginPrivateFileSystem(
     const GURL& origin_url,
     FileSystemType type,
@@ -558,7 +603,8 @@ void FileSystemContext::DidOpenFileSystemForResolveURL(
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (error != base::File::FILE_OK) {
-    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    callback.Run(error, FileSystemInfo(), base::FilePath(),
+                 FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
     return;
   }
 

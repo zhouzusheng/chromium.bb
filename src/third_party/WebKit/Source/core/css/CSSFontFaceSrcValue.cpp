@@ -88,13 +88,43 @@ bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
     return m_fetched->loadFailedOrCanceled();
 }
 
+bool CSSFontFaceSrcValue::shouldSetCrossOriginAccessControl(const KURL& resource, SecurityOrigin* securityOrigin)
+{
+    if (resource.isLocalFile() || resource.protocolIsData())
+        return false;
+    if (m_fetched && m_fetched->isCORSFailed())
+        return false;
+    return !securityOrigin->canRequest(resource);
+}
+
 FontResource* CSSFontFaceSrcValue::fetch(Document* document)
 {
-    if (!m_fetched) {
+    if (!m_fetched || m_fetched->isCORSFailed()) {
         FetchRequest request(ResourceRequest(document->completeURL(m_resource)), FetchInitiatorTypeNames::css);
+        SecurityOrigin* securityOrigin = document->securityOrigin();
+        if (shouldSetCrossOriginAccessControl(request.url(), securityOrigin)) {
+            request.setCrossOriginAccessControl(securityOrigin, DoNotAllowStoredCredentials);
+        }
         m_fetched = document->fetcher()->fetchFont(request);
+    } else {
+        // FIXME: CSSFontFaceSrcValue::fetch is invoked when @font-face rule
+        // is processed by StyleResolver / StyleEngine.
+        restoreCachedResourceIfNeeded(document);
     }
     return m_fetched.get();
+}
+
+void CSSFontFaceSrcValue::restoreCachedResourceIfNeeded(Document* document)
+{
+    ASSERT(m_fetched);
+    ASSERT(document && document->fetcher());
+
+    const String resourceURL = document->completeURL(m_resource);
+    if (document->fetcher()->cachedResource(KURL(ParsedURLString, resourceURL)))
+        return;
+
+    FetchRequest request(ResourceRequest(resourceURL), FetchInitiatorTypeNames::css);
+    document->fetcher()->requestLoadStarted(m_fetched.get(), request, ResourceFetcher::ResourceLoadingFromCache);
 }
 
 bool CSSFontFaceSrcValue::equals(const CSSFontFaceSrcValue& other) const

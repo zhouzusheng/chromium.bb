@@ -32,16 +32,26 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/CallbackPromiseAdapter.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/SerializedScriptValue.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/MessagePort.h"
+#include "core/events/MessageEvent.h"
 #include "modules/serviceworkers/RegistrationOptionList.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
+#include "public/platform/WebServiceWorker.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "v8.h"
 
+using blink::WebServiceWorker;
 using blink::WebServiceWorkerProvider;
 
 namespace WebCore {
@@ -67,49 +77,98 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ExecutionContext* ex
 {
     RegistrationOptionList options(dictionary);
     ASSERT(RuntimeEnabledFeatures::serviceWorkerEnabled());
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(executionContext);
+    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(executionContext)));
     ScriptPromise promise = resolver->promise();
+
+    if (!m_provider) {
+        resolver->reject(DOMException::create(InvalidStateError, "No associated provider is available"));
+        return promise;
+    }
 
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     KURL patternURL = executionContext->completeURL(options.scope);
     if (!documentOrigin->canRequest(patternURL)) {
-        resolver->reject(DOMError::create(SecurityError, "Can only register for patterns in the document's origin."));
+        resolver->reject(DOMException::create(SecurityError, "Can only register for patterns in the document's origin."));
         return promise;
     }
 
     KURL scriptURL = executionContext->completeURL(url);
     if (!documentOrigin->canRequest(scriptURL)) {
-        resolver->reject(DOMError::create(SecurityError, "Script must be in document's origin."));
+        resolver->reject(DOMException::create(SecurityError, "Script must be in document's origin."));
         return promise;
     }
 
-    m_provider->registerServiceWorker(patternURL, scriptURL, new CallbackPromiseAdapter<ServiceWorker, ServiceWorkerError>(resolver, executionContext));
+    m_provider->registerServiceWorker(patternURL, scriptURL, new CallbackPromiseAdapter<ServiceWorker, ServiceWorkerError>(resolver));
     return promise;
 }
+
+class UndefinedValue {
+public:
+    typedef WebServiceWorker WebType;
+    static V8UndefinedType from(ScriptPromiseResolverWithContext* resolver, WebServiceWorker* worker)
+    {
+        ASSERT(!worker); // Anything passed here will be leaked.
+        return V8UndefinedType();
+    }
+
+private:
+    UndefinedValue();
+};
 
 ScriptPromise ServiceWorkerContainer::unregisterServiceWorker(ExecutionContext* executionContext, const String& pattern)
 {
     ASSERT(RuntimeEnabledFeatures::serviceWorkerEnabled());
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(executionContext);
+    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(executionContext)));
     ScriptPromise promise = resolver->promise();
+
+    if (!m_provider) {
+        resolver->reject(DOMException::create(InvalidStateError, "No associated provider is available"));
+        return promise;
+    }
 
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     KURL patternURL = executionContext->completeURL(pattern);
     if (!pattern.isEmpty() && !documentOrigin->canRequest(patternURL)) {
-        resolver->reject(DOMError::create(SecurityError, "Can only unregister for patterns in the document's origin."));
-
+        resolver->reject(DOMException::create(SecurityError, "Can only unregister for patterns in the document's origin."));
         return promise;
     }
 
-    m_provider->unregisterServiceWorker(patternURL, new CallbackPromiseAdapter<ServiceWorker, ServiceWorkerError>(resolver, executionContext));
+    m_provider->unregisterServiceWorker(patternURL, new CallbackPromiseAdapter<UndefinedValue, ServiceWorkerError>(resolver));
     return promise;
 }
 
+void ServiceWorkerContainer::setCurrentServiceWorker(blink::WebServiceWorker* serviceWorker)
+{
+    if (!executionContext())
+        return;
+    m_current = ServiceWorker::create(executionContext(), adoptPtr(serviceWorker));
+}
+
+void ServiceWorkerContainer::dispatchMessageEvent(const blink::WebString& message, const blink::WebMessagePortChannelArray& webChannels)
+{
+    if (!executionContext() || !window())
+        return;
+
+    OwnPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
+    RefPtr<SerializedScriptValue> value = SerializedScriptValue::createFromWire(message);
+    window()->dispatchEvent(MessageEvent::create(ports.release(), value));
+}
+
 ServiceWorkerContainer::ServiceWorkerContainer(ExecutionContext* executionContext)
-    : m_provider(ServiceWorkerContainerClient::from(executionContext)->provider())
+    : ContextLifecycleObserver(executionContext)
+    , DOMWindowLifecycleObserver(executionContext->isDocument() ? toDocument(executionContext)->domWindow() : 0)
+    , m_provider(0)
 {
     ScriptWrappable::init(this);
-    m_provider->setClient(this);
+
+    if (!executionContext)
+        return;
+
+    if (ServiceWorkerContainerClient* client = ServiceWorkerContainerClient::from(executionContext)) {
+        m_provider = client->provider();
+        if (m_provider)
+            m_provider->setClient(this);
+    }
 }
 
 } // namespace WebCore

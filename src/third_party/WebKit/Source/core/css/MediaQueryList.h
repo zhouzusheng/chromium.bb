@@ -20,7 +20,7 @@
 #ifndef MediaQueryList_h
 #define MediaQueryList_h
 
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -47,7 +47,7 @@ public:
     void addListener(PassRefPtrWillBeRawPtr<MediaQueryListListener>);
     void removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListener>);
 
-    void evaluate(MediaQueryEvaluator*, bool& notificationNeeded);
+    bool evaluate(MediaQueryEvaluator*);
 
     void trace(Visitor*);
 

@@ -58,24 +58,39 @@ def get_partial_interface_name_from_idl(file_contents):
     return match and match.group(1)
 
 
-def get_implemented_interfaces_from_idl(file_contents, interface_name):
-    # Rule is: identifier-A implements identifier-B;
-    # http://www.w3.org/TR/WebIDL/#idl-implements-statements
-    def get_implemented(left_identifier, right_identifier):
-        # identifier-A must be the current interface
-        if left_identifier != interface_name:
-            raise IdlBadFilenameError("Identifier on the left of the 'implements' statement should be %s in %s.idl, but found %s" % (interface_name, interface_name, left_identifier))
-        return right_identifier
+def get_implements_from_idl(file_contents, interface_name):
+    """Returns lists of implementing and implemented interfaces.
 
+    Rule is: identifier-A implements identifier-B;
+    i.e., implement*ing* implements implement*ed*;
+    http://www.w3.org/TR/WebIDL/#idl-implements-statements
+
+    Returns two lists of interfaces: identifier-As and identifier-Bs.
+    An 'implements' statements can be present in the IDL file for either the
+    implementing or the implemented interface, but not other files.
+    """
     implements_re = (r'^\s*'
                      r'(\w+)\s+'
                      r'implements\s+'
                      r'(\w+)\s*'
                      r';')
     implements_matches = re.finditer(implements_re, file_contents, re.MULTILINE)
-    implements_pairs = [(match.group(1), match.group(2))
-                        for match in implements_matches]
-    return [get_implemented(left, right) for left, right in implements_pairs]
+    implements_pairs = [match.groups() for match in implements_matches]
+
+    foreign_implements = [pair for pair in implements_pairs
+                          if interface_name not in pair]
+    if foreign_implements:
+        left, right = foreign_implements.pop()
+        raise IdlBadFilenameError(
+                'implements statement found in unrelated IDL file.\n'
+                'Statement is:\n'
+                '    %s implements %s;\n'
+                'but filename is unrelated "%s.idl"' %
+                (left, right, interface_name))
+
+    return (
+        [left for left, right in implements_pairs if right == interface_name],
+        [right for left, right in implements_pairs if left == interface_name])
 
 
 def is_callback_interface_from_idl(file_contents):
@@ -93,6 +108,13 @@ def get_parent_interface(file_contents):
 
 
 def get_interface_extended_attributes_from_idl(file_contents):
+    # Strip comments
+    # re.compile needed b/c Python 2.6 doesn't support flags in re.sub
+    single_line_comment_re = re.compile(r'//.*$', flags=re.MULTILINE)
+    block_comment_re = re.compile(r'/\*.*?\*/', flags=re.MULTILINE | re.DOTALL)
+    file_contents = re.sub(single_line_comment_re, '', file_contents)
+    file_contents = re.sub(block_comment_re, '', file_contents)
+
     match = re.search(r'\[(.*)\]\s*'
                       r'((callback|partial)\s+)?'
                       r'(interface|exception)\s+'
@@ -102,12 +124,8 @@ def get_interface_extended_attributes_from_idl(file_contents):
                       file_contents, flags=re.DOTALL)
     if not match:
         return {}
-    # Strip comments
-    # re.compile needed b/c Python 2.6 doesn't support flags in re.sub
-    single_line_comment_re = re.compile(r'//.*$', flags=re.MULTILINE)
-    block_comment_re = re.compile(r'/\*.*?\*/', flags=re.MULTILINE | re.DOTALL)
-    extended_attributes_string = re.sub(single_line_comment_re, '', match.group(1))
-    extended_attributes_string = re.sub(block_comment_re, '', extended_attributes_string)
+
+    extended_attributes_string = match.group(1)
     extended_attributes = {}
     # FIXME: this splitting is WRONG: it fails on ExtendedAttributeArgList like
     # 'NamedConstructor=Foo(a, b)'

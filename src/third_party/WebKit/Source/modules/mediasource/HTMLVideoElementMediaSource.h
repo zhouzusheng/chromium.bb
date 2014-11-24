@@ -31,7 +31,7 @@
 #ifndef HTMLVideoElementMediaSource_h
 #define HTMLVideoElementMediaSource_h
 
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -41,7 +41,7 @@ class VideoPlaybackQuality;
 
 class HTMLVideoElementMediaSource {
 public:
-    static PassRefPtrWillBeRawPtr<VideoPlaybackQuality> getVideoPlaybackQuality(HTMLVideoElement&);
+    static VideoPlaybackQuality* getVideoPlaybackQuality(HTMLVideoElement&);
 
 private:
     HTMLVideoElementMediaSource();

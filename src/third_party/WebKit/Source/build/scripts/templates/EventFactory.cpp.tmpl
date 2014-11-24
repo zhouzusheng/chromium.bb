@@ -1,5 +1,5 @@
-{% from "macros.tmpl" import wrap_with_condition, license -%}
-{{ license() }}
+{% from 'macros.tmpl' import license %}
+{{license()}}
 
 #include "config.h"
 #include "core/events/{{namespace}}Factory.h"
@@ -11,12 +11,16 @@ namespace WebCore {
 
 PassRefPtrWillBeRawPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
 {
-{%- for event in events %}
-{%- call wrap_with_condition(event.Conditional) %}
+    {% for event in events %}
+    {% filter enable_conditional(event.Conditional) %}
+    {% if event|script_name|case_insensitive_matching %}
+    if (equalIgnoringCase(type, "{{event|script_name}}"){% if event.RuntimeEnabled %} && RuntimeEnabledFeatures::{{event.RuntimeEnabled|lower_first}}(){% endif %})
+    {% else %}
     if (type == "{{event|script_name}}"{% if event.RuntimeEnabled %} && RuntimeEnabledFeatures::{{event.RuntimeEnabled|lower_first}}(){% endif %})
+    {% endif %}
         return {{event|cpp_name}}::create();
-{%- endcall %}
-{%- endfor %}
+    {% endfilter %}
+    {% endfor %}
     return nullptr;
 }
 

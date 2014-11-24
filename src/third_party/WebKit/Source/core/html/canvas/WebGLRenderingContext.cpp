@@ -29,6 +29,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/canvas/ANGLEInstancedArrays.h"
 #include "core/html/canvas/EXTFragDepth.h"
+#include "core/html/canvas/EXTShaderTextureLOD.h"
 #include "core/html/canvas/EXTTextureFilterAnisotropic.h"
 #include "core/html/canvas/OESElementIndexUint.h"
 #include "core/html/canvas/OESStandardDerivatives.h"
@@ -38,6 +39,7 @@
 #include "core/html/canvas/OESTextureHalfFloatLinear.h"
 #include "core/html/canvas/OESVertexArrayObject.h"
 #include "core/html/canvas/WebGLCompressedTextureATC.h"
+#include "core/html/canvas/WebGLCompressedTextureETC1.h"
 #include "core/html/canvas/WebGLCompressedTexturePVRTC.h"
 #include "core/html/canvas/WebGLCompressedTextureS3TC.h"
 #include "core/html/canvas/WebGLContextAttributes.h"
@@ -58,7 +60,7 @@
 
 namespace WebCore {
 
-PassOwnPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElement* canvas, WebGLContextAttributes* attrs)
+PassOwnPtrWillBeRawPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElement* canvas, WebGLContextAttributes* attrs)
 {
     Document& document = canvas->document();
     LocalFrame* frame = document.frame();
@@ -88,15 +90,17 @@ PassOwnPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElemen
         return nullptr;
     }
 
-    Extensions3DUtil extensionsUtil(context.get());
-    if (extensionsUtil.supportsExtension("GL_EXT_debug_marker"))
+    OwnPtr<Extensions3DUtil> extensionsUtil = Extensions3DUtil::create(context.get());
+    if (!extensionsUtil)
+        return nullptr;
+    if (extensionsUtil->supportsExtension("GL_EXT_debug_marker"))
         context->pushGroupMarkerEXT("WebGLRenderingContext");
 
-    OwnPtr<WebGLRenderingContext> renderingContext = adoptPtr(new WebGLRenderingContext(canvas, context.release(), attrs));
+    OwnPtrWillBeRawPtr<WebGLRenderingContext> renderingContext = adoptPtrWillBeNoop(new WebGLRenderingContext(canvas, context.release(), attrs));
     renderingContext->registerContextExtensions();
     renderingContext->suspendIfNeeded();
 
-    if (renderingContext->m_drawingBuffer->isZeroSized()) {
+    if (!renderingContext->m_drawingBuffer) {
         canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Could not create a WebGL context."));
         return nullptr;
     }
@@ -139,6 +143,8 @@ void WebGLRenderingContext::registerContextExtensions()
 
     // Register draft extensions.
     registerExtension<EXTFragDepth>(m_extFragDepth, DraftExtension);
+    registerExtension<EXTShaderTextureLOD>(m_extShaderTextureLOD, DraftExtension);
+    registerExtension<WebGLCompressedTextureETC1>(m_webglCompressedTextureETC1, DraftExtension);
 
     // Register privileged extensions.
     registerExtension<WebGLDebugRendererInfo>(m_webglDebugRendererInfo, WebGLDebugRendererInfoExtension);

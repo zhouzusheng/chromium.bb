@@ -148,14 +148,13 @@ void* HighPassFilterImpl::CreateHandle() const {
   return new FilterState;
 }
 
-int HighPassFilterImpl::DestroyHandle(void* handle) const {
+void HighPassFilterImpl::DestroyHandle(void* handle) const {
   delete static_cast<Handle*>(handle);
-  return apm_->kNoError;
 }
 
 int HighPassFilterImpl::InitializeHandle(void* handle) const {
   return InitializeFilter(static_cast<Handle*>(handle),
-                          apm_->sample_rate_hz());
+                          apm_->proc_sample_rate_hz());
 }
 
 int HighPassFilterImpl::ConfigureHandle(void* /*handle*/) const {

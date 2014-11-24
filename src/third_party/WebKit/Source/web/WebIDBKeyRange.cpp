@@ -26,9 +26,9 @@
 #include "config.h"
 #include "public/platform/WebIDBKeyRange.h"
 
-#include "public/platform/WebIDBKey.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyRange.h"
+#include "public/platform/WebIDBKey.h"
 
 using namespace WebCore;
 
@@ -56,14 +56,14 @@ WebIDBKey WebIDBKeyRange::lower() const
 {
     if (!m_private.get())
         return WebIDBKey::createInvalid();
-    return m_private->lower();
+    return WebIDBKey(m_private->lower());
 }
 
 WebIDBKey WebIDBKeyRange::upper() const
 {
     if (!m_private.get())
         return WebIDBKey::createInvalid();
-    return m_private->upper();
+    return WebIDBKey(m_private->upper());
 }
 
 bool WebIDBKeyRange::lowerOpen() const
@@ -76,18 +76,18 @@ bool WebIDBKeyRange::upperOpen() const
     return m_private.get() && m_private->upperOpen();
 }
 
-WebIDBKeyRange::WebIDBKeyRange(const PassRefPtr<IDBKeyRange>& value)
+WebIDBKeyRange::WebIDBKeyRange(const PassRefPtrWillBeRawPtr<IDBKeyRange>& value)
     : m_private(value)
 {
 }
 
-WebIDBKeyRange& WebIDBKeyRange::operator=(const PassRefPtr<IDBKeyRange>& value)
+WebIDBKeyRange& WebIDBKeyRange::operator=(const PassRefPtrWillBeRawPtr<IDBKeyRange>& value)
 {
     m_private = value;
     return *this;
 }
 
-WebIDBKeyRange::operator PassRefPtr<IDBKeyRange>() const
+WebIDBKeyRange::operator PassRefPtrWillBeRawPtr<IDBKeyRange>() const
 {
     return m_private.get();
 }

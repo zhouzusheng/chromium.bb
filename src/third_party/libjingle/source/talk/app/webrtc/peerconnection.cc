@@ -37,6 +37,7 @@
 #include "talk/app/webrtc/streamcollection.h"
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
+#include "talk/p2p/client/basicportallocator.h"
 #include "talk/session/media/channelmanager.h"
 
 namespace {
@@ -266,13 +267,6 @@ bool ParseIceServers(const PeerConnectionInterface::IceServers& configuration,
                                                  server.password,
                                                  turn_transport_type,
                                                  secure));
-        // STUN functionality is part of TURN.
-        // Note: If there is only TURNS is supplied as part of configuration,
-        // we will have problem in fetching server reflexive candidate, as
-        // currently we don't have support of TCP/TLS in stunport.cc.
-        // In that case we should fetch server reflexive addess from
-        // TURN allocate response.
-        stun_config->push_back(StunConfiguration(address, port));
         break;
       }
       case INVALID:
@@ -307,6 +301,7 @@ namespace webrtc {
 PeerConnection::PeerConnection(PeerConnectionFactory* factory)
     : factory_(factory),
       observer_(NULL),
+      uma_observer_(NULL),
       signaling_state_(kStable),
       ice_state_(kIceNew),
       ice_connection_state_(kIceConnectionNew),
@@ -321,22 +316,23 @@ PeerConnection::~PeerConnection() {
 }
 
 bool PeerConnection::Initialize(
-    const PeerConnectionInterface::IceServers& configuration,
+    const PeerConnectionInterface::RTCConfiguration& configuration,
     const MediaConstraintsInterface* constraints,
     PortAllocatorFactoryInterface* allocator_factory,
     DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
   std::vector<PortAllocatorFactoryInterface::StunConfiguration> stun_config;
   std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turn_config;
-  if (!ParseIceServers(configuration, &stun_config, &turn_config)) {
+  if (!ParseIceServers(configuration.servers, &stun_config, &turn_config)) {
     return false;
   }
 
-  return DoInitialize(stun_config, turn_config, constraints,
+  return DoInitialize(configuration.type, stun_config, turn_config, constraints,
                       allocator_factory, dtls_identity_service, observer);
 }
 
 bool PeerConnection::DoInitialize(
+    IceTransportsType type,
     const StunConfigurations& stun_config,
     const TurnConfigurations& turn_config,
     const MediaConstraintsInterface* constraints,
@@ -363,6 +359,12 @@ bool PeerConnection::DoInitialize(
     portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
   }
 
+  if (value && uma_observer_) {
+    uma_observer_->IncrementCounter(kPeerConnection_IPv6);
+  } else if (!value && uma_observer_) {
+    uma_observer_->IncrementCounter(kPeerConnection_IPv4);
+  }
+
   port_allocator_->set_flags(portallocator_flags);
   // No step delay is used while allocating ports.
   port_allocator_->set_step_delay(cricket::kMinimumStepDelay);
@@ -381,7 +383,7 @@ bool PeerConnection::DoInitialize(
 
   // Initialize the WebRtcSession. It creates transport channels etc.
   if (!session_->Initialize(factory_->options(), constraints,
-                            dtls_identity_service))
+                            dtls_identity_service, type))
     return false;
 
   // Register PeerConnection as receiver of local ice candidates.
@@ -575,14 +577,57 @@ void PeerConnection::PostSetSessionDescriptionFailure(
 
 bool PeerConnection::UpdateIce(const IceServers& configuration,
                                const MediaConstraintsInterface* constraints) {
-  // TODO(ronghuawu): Implement UpdateIce.
-  LOG(LS_ERROR) << "UpdateIce is not implemented.";
   return false;
+}
+
+bool PeerConnection::UpdateIce(const RTCConfiguration& config) {
+  if (port_allocator_) {
+    std::vector<PortAllocatorFactoryInterface::StunConfiguration> stuns;
+    std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turns;
+    if (!ParseIceServers(config.servers, &stuns, &turns)) {
+      return false;
+    }
+
+    std::vector<talk_base::SocketAddress> stun_hosts;
+    typedef std::vector<StunConfiguration>::const_iterator StunIt;
+    for (StunIt stun_it = stuns.begin(); stun_it != stuns.end(); ++stun_it) {
+      stun_hosts.push_back(stun_it->server);
+    }
+
+    talk_base::SocketAddress stun_addr;
+    if (!stun_hosts.empty()) {
+      stun_addr = stun_hosts.front();
+      LOG(LS_INFO) << "UpdateIce: StunServer Address: " << stun_addr.ToString();
+    }
+
+    for (size_t i = 0; i < turns.size(); ++i) {
+      cricket::RelayCredentials credentials(turns[i].username,
+                                            turns[i].password);
+      cricket::RelayServerConfig relay_server(cricket::RELAY_TURN);
+      cricket::ProtocolType protocol;
+      if (cricket::StringToProto(turns[i].transport_type.c_str(), &protocol)) {
+        relay_server.ports.push_back(cricket::ProtocolAddress(
+            turns[i].server, protocol, turns[i].secure));
+        relay_server.credentials = credentials;
+        LOG(LS_INFO) << "UpdateIce: TurnServer Address: "
+                     << turns[i].server.ToString();
+      } else {
+        LOG(LS_WARNING) << "Ignoring TURN server " << turns[i].server << ". "
+                        << "Reason= Incorrect " << turns[i].transport_type
+                        << " transport parameter.";
+      }
+    }
+  }
+  return session_->UpdateIce(config.type);
 }
 
 bool PeerConnection::AddIceCandidate(
     const IceCandidateInterface* ice_candidate) {
   return session_->ProcessIceMessage(ice_candidate);
+}
+
+void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
+  uma_observer_ = observer;
 }
 
 const SessionDescriptionInterface* PeerConnection::local_description() const {

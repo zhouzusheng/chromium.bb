@@ -49,8 +49,10 @@ PassRefPtr<SVGAnimateElement> SVGAnimateElement::create(Document& document)
 
 SVGAnimateElement::~SVGAnimateElement()
 {
+#if !ENABLE(OILPAN)
     if (targetElement())
         clearAnimatedType(targetElement());
+#endif
 }
 
 bool SVGAnimateElement::hasValidAttributeType()
@@ -148,10 +150,10 @@ Vector<SVGElement*> findElementInstances(SVGElement* targetElement)
 
     animatedElements.append(targetElement);
 
-    const HashSet<SVGElementInstance*>& instances = targetElement->instancesForElement();
-    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
-        if (SVGElement* shadowTreeElement = (*it)->shadowTreeElement())
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
+        if (SVGElement* shadowTreeElement = *it)
             animatedElements.append(shadowTreeElement);
     }
 
@@ -203,7 +205,9 @@ void SVGAnimateElement::resetAnimatedType()
 
 static inline void applyCSSPropertyToTarget(SVGElement* targetElement, CSSPropertyID id, const String& value)
 {
+#if !ENABLE(OILPAN)
     ASSERT_WITH_SECURITY_IMPLICATION(!targetElement->m_deletionHasBegun);
+#endif
 
     MutableStylePropertySet* propertySet = targetElement->ensureAnimatedSMILStyleProperties();
     if (!propertySet->setProperty(id, value, false, 0))
@@ -214,7 +218,9 @@ static inline void applyCSSPropertyToTarget(SVGElement* targetElement, CSSProper
 
 static inline void removeCSSPropertyFromTarget(SVGElement* targetElement, CSSPropertyID id)
 {
+#if !ENABLE(OILPAN)
     ASSERT_WITH_SECURITY_IMPLICATION(!targetElement->m_deletionHasBegun);
+#endif
     targetElement->ensureAnimatedSMILStyleProperties()->removeProperty(id);
     targetElement->setNeedsStyleRecalc(LocalStyleChange);
 }
@@ -227,14 +233,14 @@ static inline void applyCSSPropertyToTargetAndInstances(SVGElement* targetElemen
 
     CSSPropertyID id = cssPropertyID(attributeName.localName());
 
-    SVGElementInstance::InstanceUpdateBlocker blocker(targetElement);
+    SVGElement::InstanceUpdateBlocker blocker(targetElement);
     applyCSSPropertyToTarget(targetElement, id, valueAsString);
 
     // If the target element has instances, update them as well, w/o requiring the <use> tree to be rebuilt.
-    const HashSet<SVGElementInstance*>& instances = targetElement->instancesForElement();
-    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
-        if (SVGElement* shadowTreeElement = (*it)->shadowTreeElement())
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
+        if (SVGElement* shadowTreeElement = *it)
             applyCSSPropertyToTarget(shadowTreeElement, id, valueAsString);
     }
 }
@@ -247,21 +253,23 @@ static inline void removeCSSPropertyFromTargetAndInstances(SVGElement* targetEle
 
     CSSPropertyID id = cssPropertyID(attributeName.localName());
 
-    SVGElementInstance::InstanceUpdateBlocker blocker(targetElement);
+    SVGElement::InstanceUpdateBlocker blocker(targetElement);
     removeCSSPropertyFromTarget(targetElement, id);
 
     // If the target element has instances, update them as well, w/o requiring the <use> tree to be rebuilt.
-    const HashSet<SVGElementInstance*>& instances = targetElement->instancesForElement();
-    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
-        if (SVGElement* shadowTreeElement = (*it)->shadowTreeElement())
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
+        if (SVGElement* shadowTreeElement = *it)
             removeCSSPropertyFromTarget(shadowTreeElement, id);
     }
 }
 
 static inline void notifyTargetAboutAnimValChange(SVGElement* targetElement, const QualifiedName& attributeName)
 {
+#if !ENABLE(OILPAN)
     ASSERT_WITH_SECURITY_IMPLICATION(!targetElement->m_deletionHasBegun);
+#endif
     targetElement->invalidateSVGAttributes();
     targetElement->svgAttributeChanged(attributeName);
 }
@@ -272,14 +280,14 @@ static inline void notifyTargetAndInstancesAboutAnimValChange(SVGElement* target
     if (attributeName == anyQName() || !targetElement->inDocument() || !targetElement->parentNode())
         return;
 
-    SVGElementInstance::InstanceUpdateBlocker blocker(targetElement);
+    SVGElement::InstanceUpdateBlocker blocker(targetElement);
     notifyTargetAboutAnimValChange(targetElement, attributeName);
 
     // If the target element has instances, update them as well, w/o requiring the <use> tree to be rebuilt.
-    const HashSet<SVGElementInstance*>& instances = targetElement->instancesForElement();
-    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
-        if (SVGElement* shadowTreeElement = (*it)->shadowTreeElement())
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
+        if (SVGElement* shadowTreeElement = *it)
             notifyTargetAboutAnimValChange(shadowTreeElement, attributeName);
     }
 }

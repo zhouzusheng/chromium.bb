@@ -1,5 +1,6 @@
 namespace="EventTarget"
 
+core/animation/AnimationPlayer
 core/css/FontFaceSet
 core/dom/MessagePort
 core/dom/Node
@@ -12,7 +13,6 @@ core/html/track/TextTrackList
 core/loader/appcache/ApplicationCache
 core/page/EventSource
 core/timing/Performance
-core/frame/Screen
 core/frame/Window ImplementedAs=DOMWindow
 core/svg/SVGElementInstance
 core/workers/DedicatedWorkerGlobalScope
@@ -31,14 +31,13 @@ modules/indexeddb/IDBTransaction
 modules/mediasource/MediaSource
 modules/mediasource/SourceBuffer
 modules/mediasource/SourceBufferList
-modules/mediasource/WebKitMediaSource
-modules/mediasource/WebKitSourceBufferList
 modules/mediastream/MediaStream
 modules/mediastream/MediaStreamTrack
 modules/mediastream/RTCDTMFSender
 modules/mediastream/RTCDataChannel
 modules/mediastream/RTCPeerConnection
 modules/notifications/Notification
+modules/serviceworkers/ServiceWorker
 modules/serviceworkers/ServiceWorkerGlobalScope
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesisUtterance

@@ -42,6 +42,7 @@
 
 namespace blink {
 
+class WebCompositeAndReadbackAsyncCallback;
 class WebInputEvent;
 class WebLayerTreeView;
 class WebMouseEvent;
@@ -67,6 +68,13 @@ public:
     // Called to resize the WebWidget.
     virtual void resize(const WebSize&) { }
 
+    // Resizes the unscaled pinch viewport. Normally the unscaled pinch
+    // viewport is the same size as the main frame. The passed size becomes the
+    // size of the viewport when unscaled (i.e. scale = 1). This is used to
+    // shrink the visible viewport to allow things like the ChromeOS virtual
+    // keyboard to overlay over content but allow scrolling it into view.
+    virtual void resizePinchViewport(const WebSize&) { }
+
     // Ends a group of resize events that was started with a call to
     // willStartLiveResize.
     virtual void willEndLiveResize() { }
@@ -91,10 +99,6 @@ public:
     // should be called before paint.
     virtual void enterForceCompositingMode(bool enter) { }
 
-    // Called to notify the WebWidget that the widget has exited compositing
-    // mode and cannot reenter.
-    virtual void didExitCompositingMode() { }
-
     enum PaintOptions {
         // Attempt to fulfill the painting request by reading back from the
         // compositor, assuming we're using a compositor to render.
@@ -118,6 +122,13 @@ public:
     // processed, it should be assumed that another call to layout is
     // warranted before painting again).
     virtual void paint(WebCanvas*, const WebRect& viewPort, PaintOptions = ReadbackFromCompositorIfAvailable) { }
+
+    virtual void paintCompositedDeprecated(WebCanvas*, const WebRect&) { }
+
+    // The caller is responsible for keeping the WebCompositeAndReadbackAsyncCallback
+    // object alive until it is called. This should only be called when
+    // isAcceleratedCompositingActive() is true.
+    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) { }
 
     // Returns true if we've started tracking repaint rectangles.
     virtual bool isTrackingRepaints() const { return false; }

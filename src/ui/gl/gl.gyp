@@ -50,6 +50,8 @@
         'android/surface_texture.h',
         'android/surface_texture_listener.cc',
         'android/surface_texture_listener.h',
+        'android/surface_texture_tracker.cc',
+        'android/surface_texture_tracker.h',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -220,6 +222,7 @@
             '<(DEPTH)/build/linux/system.gyp:x11',
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
+            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
           ],
         }],
         ['OS=="win"', {
@@ -259,10 +262,6 @@
             'gl_image_io_surface.h',
             'gl_surface_cgl.cc',
             'gl_surface_cgl.h',
-            'gl_context_nsview.mm',
-            'gl_context_nsview.h',
-            'gl_surface_nsview.mm',
-            'gl_surface_nsview.h',
             'scoped_cgl.cc',
             'scoped_cgl.h',
           ],
@@ -279,6 +278,8 @@
           'sources': [
             'gl_image_android_native_buffer.cc',
             'gl_image_android_native_buffer.h',
+            'gl_image_surface_texture.cc',
+            'gl_image_surface_texture.h',
           ],
           'link_settings': {
             'libraries': [

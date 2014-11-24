@@ -12,10 +12,9 @@
 #include "ui/events/event_target.h"
 #include "ui/gfx/point.h"
 
-#if defined(USE_X11)
-#include "ui/aura/device_list_updater_aurax11.h"
-#endif
-
+namespace ui {
+class PlatformEventSource;
+}
 namespace aura {
 
 namespace test {
@@ -33,13 +32,18 @@ class AURA_EXPORT Env : public ui::EventTarget {
   Env();
   virtual ~Env();
 
-  static void CreateInstance();
+  // Creates the single Env instance (if it hasn't been created yet). If
+  // |create_event_source| is true a PlatformEventSource is created.
+  // TODO(sky): nuke |create_event_source|. Only necessary while mojo's
+  // nativeviewportservice lives in the same process as the viewmanager.
+  static void CreateInstance(bool create_event_source);
   static Env* GetInstance();
   static void DeleteInstance();
 
   void AddObserver(EnvObserver* observer);
   void RemoveObserver(EnvObserver* observer);
 
+  const int mouse_button_flags() const { return mouse_button_flags_; }
   void set_mouse_button_flags(int mouse_button_flags) {
     mouse_button_flags_ = mouse_button_flags;
   }
@@ -63,7 +67,8 @@ class AURA_EXPORT Env : public ui::EventTarget {
   friend class Window;
   friend class WindowTreeHost;
 
-  void Init();
+  // See description of CreateInstance() for deatils of |create_event_source|.
+  void Init(bool create_event_source);
 
   // Called by the Window when it is initialized. Notifies observers.
   void NotifyWindowInitialized(Window* window);
@@ -88,11 +93,8 @@ class AURA_EXPORT Env : public ui::EventTarget {
   gfx::Point last_mouse_location_;
   bool is_touch_down_;
 
-#if defined(USE_X11)
-  DeviceListUpdaterAuraX11 device_list_updater_aurax11_;
-#endif
-
   scoped_ptr<InputStateLookup> input_state_lookup_;
+  scoped_ptr<ui::PlatformEventSource> event_source_;
 
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

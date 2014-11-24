@@ -104,7 +104,6 @@ class EVENTS_EXPORT Event {
     return type_ == ET_TOUCH_RELEASED ||
            type_ == ET_TOUCH_PRESSED ||
            type_ == ET_TOUCH_MOVED ||
-           type_ == ET_TOUCH_STATIONARY ||
            type_ == ET_TOUCH_CANCELLED;
   }
 
@@ -218,10 +217,6 @@ class EVENTS_EXPORT Event {
 
  private:
   friend class EventTestApi;
-
-  // Safely initializes the native event members of this class.
-  void Init();
-  void InitWithNativeEvent(const base::NativeEvent& native_event);
 
   EventType type_;
   std::string name_;
@@ -476,11 +471,6 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   float rotation_angle() const { return rotation_angle_; }
   float force() const { return force_; }
   int source_device_id() const { return source_device_id_; }
-
-  // Relocate the touch-point to a new |origin|.
-  // This is useful when touch event is in X Root Window coordinates,
-  // and it needs to be mapped into Aura Root Window coordinates.
-  void Relocate(const gfx::Point& origin);
 
   // Used for unit tests.
   void set_radius_x(const float r) { radius_x_ = r; }

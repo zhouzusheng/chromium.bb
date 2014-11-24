@@ -30,8 +30,8 @@
 #ifndef SharedWorkerPerformance_h
 #define SharedWorkerPerformance_h
 
-#include "heap/Handle.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -46,7 +46,7 @@ public:
     static double workerStart(ExecutionContext*, SharedWorker&);
     double getWorkerStart(ExecutionContext*, SharedWorker&) const;
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<SharedWorker>::trace(visitor); }
 
 private:
     explicit SharedWorkerPerformance();

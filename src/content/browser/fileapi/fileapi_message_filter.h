@@ -19,6 +19,7 @@
 #include "content/browser/streams/stream_context.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/common/blob/blob_data.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -33,7 +34,6 @@ class Time;
 
 namespace fileapi {
 class FileSystemURL;
-class FileSystemContext;
 class FileSystemOperationRunner;
 struct DirectoryEntry;
 struct FileSystemInfo;
@@ -44,8 +44,11 @@ class URLRequestContext;
 class URLRequestContextGetter;
 }  // namespace net
 
-namespace webkit_blob {
+namespace content {
 class BlobStorageHost;
+}
+
+namespace webkit_blob {
 class ShareableFileReference;
 }
 
@@ -184,7 +187,7 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                      base::File::Error result,
                      const fileapi::FileSystemInfo& info,
                      const base::FilePath& file_path,
-                     bool is_directory);
+                     fileapi::FileSystemContext::ResolvedEntryType type);
   void DidDeleteFileSystem(int request_id,
                            base::File::Error result);
   void DidCreateSnapshot(
@@ -217,8 +220,8 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   typedef std::map<int, OperationID> OperationsMap;
   OperationsMap operations_;
 
-  // The getter holds the context until Init() can be called from the
-  // IO thread, which will extract the net::URLRequestContext from it.
+  // The getter holds the context until OnChannelConnected() can be called from
+  // the IO thread, which will extract the net::URLRequestContext from it.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   net::URLRequestContext* request_context_;
 
@@ -229,7 +232,7 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
 
   // Keeps track of blobs used in this process and cleans up
   // when the renderer process dies.
-  scoped_ptr<webkit_blob::BlobStorageHost> blob_storage_host_;
+  scoped_ptr<BlobStorageHost> blob_storage_host_;
 
   // Keep track of stream URLs registered in this process. Need to unregister
   // all of them when the renderer process dies.

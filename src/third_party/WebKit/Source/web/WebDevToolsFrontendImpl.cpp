@@ -29,16 +29,11 @@
  */
 
 #include "config.h"
-#include "WebDevToolsFrontendImpl.h"
+#include "web/WebDevToolsFrontendImpl.h"
 
-#include "InspectorFrontendClientImpl.h"
 #include "V8InspectorFrontendHost.h"
 #include "V8MouseEvent.h"
 #include "V8Node.h"
-#include "WebDevToolsFrontendClient.h"
-#include "WebFrameImpl.h"
-#include "WebScriptSource.h"
-#include "WebViewImpl.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
@@ -46,15 +41,20 @@
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/events/Event.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/ContextMenuController.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "platform/ContextMenuItem.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/web/WebDevToolsFrontendClient.h"
+#include "public/web/WebScriptSource.h"
+#include "web/InspectorFrontendClientImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/OwnPtr.h"
 
 using namespace WebCore;
@@ -133,7 +133,7 @@ void WebDevToolsFrontendImpl::maybeDispatch(WebCore::Timer<WebDevToolsFrontendIm
 
 void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& message)
 {
-    WebFrameImpl* frame = m_webViewImpl->mainFrameImpl();
+    WebLocalFrameImpl* frame = m_webViewImpl->mainFrameImpl();
     if (!frame->frame())
         return;
     v8::Isolate* isolate = toIsolate(frame->frame());

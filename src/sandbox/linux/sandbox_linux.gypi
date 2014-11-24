@@ -57,6 +57,37 @@
       ],
     },
     {
+      'target_name': 'sandbox_linux_test_utils',
+      'type': 'static_library',
+      'dependencies': [
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'tests/sandbox_test_runner.h',
+        'tests/sandbox_test_runner_function_pointer.cc',
+        'tests/sandbox_test_runner_function_pointer.h',
+        'tests/test_utils.cc',
+        'tests/test_utils.h',
+        'tests/unit_tests.cc',
+        'tests/unit_tests.h',
+      ],
+      'conditions': [
+        [ 'use_seccomp_bpf==1', {
+          'sources': [
+            'seccomp-bpf/bpf_tester_compatibility_delegate.h',
+            'seccomp-bpf/bpf_tests.h',
+            'seccomp-bpf/sandbox_bpf_test_runner.cc',
+            'seccomp-bpf/sandbox_bpf_test_runner.h',
+          ],
+          'dependencies': [
+            'seccomp_bpf',
+          ]
+        }],
+      ],
+    },
+    {
       # The main sandboxing test target.
       'target_name': 'sandbox_linux_unittests',
       'includes': [
@@ -82,7 +113,7 @@
     },
     {
       'target_name': 'seccomp_bpf',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',
@@ -96,6 +127,7 @@
         'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
+        'seccomp-bpf/sandbox_bpf_compatibility_policy.h',
         'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
@@ -110,13 +142,16 @@
         '../base/base.gyp:base',
         'sandbox_services_headers',
       ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
+      ],
       'include_dirs': [
         '../..',
       ],
     },
     {
       'target_name': 'seccomp_bpf_helpers',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'seccomp-bpf-helpers/baseline_policy.cc',
         'seccomp-bpf-helpers/baseline_policy.h',
@@ -128,6 +163,11 @@
         'seccomp-bpf-helpers/syscall_sets.h',
       ],
       'dependencies': [
+        '../base/base.gyp:base',
+        'seccomp_bpf',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
       ],
       'include_dirs': [
         '../..',
@@ -175,7 +215,7 @@
       ],
     },
     { 'target_name': 'sandbox_services',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'services/broker_process.cc',
         'services/broker_process.h',
@@ -190,6 +230,9 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
       ],
       'conditions': [
         ['compile_credentials==1', {
@@ -211,6 +254,7 @@
       'type': 'none',
       'sources': [
         'services/android_arm_ucontext.h',
+        'services/android_futex.h',
         'services/android_ucontext.h',
         'services/android_i386_ucontext.h',
         'services/arm_linux_syscalls.h',
@@ -240,12 +284,15 @@
     },
     {
       'target_name': 'suid_sandbox_client',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'suid/common/sandbox.h',
         'suid/common/suid_unsafe_environment_variables.h',
         'suid/client/setuid_sandbox_client.cc',
         'suid/client/setuid_sandbox_client.h',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
       ],
       'dependencies': [
         '../base/base.gyp:base',

@@ -13,10 +13,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
+#include "content/renderer/media/buffered_data_source_host_impl.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "content/renderer/media/video_frame_compositor.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
+// TODO(xhwang): Remove when we remove prefixed EME implementation.
 #include "media/base/media_keys.h"
 #include "media/base/pipeline.h"
 #include "media/base/text_track.h"
@@ -32,7 +34,7 @@ class RenderAudioSourceProvider;
 
 namespace blink {
 class WebContentDecryptionModule;
-class WebFrame;
+class WebLocalFrame;
 }
 
 namespace base {
@@ -67,11 +69,10 @@ class WebMediaPlayerImpl
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
   // |delegate| may be null.
-  WebMediaPlayerImpl(
-      blink::WebFrame* frame,
-      blink::WebMediaPlayerClient* client,
-      base::WeakPtr<WebMediaPlayerDelegate> delegate,
-      const WebMediaPlayerParams& params);
+  WebMediaPlayerImpl(blink::WebLocalFrame* frame,
+                     blink::WebMediaPlayerClient* client,
+                     base::WeakPtr<WebMediaPlayerDelegate> delegate,
+                     const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
   virtual void load(LoadType load_type,
@@ -105,6 +106,7 @@ class WebMediaPlayerImpl
   virtual bool paused() const;
   virtual bool seeking() const;
   virtual double duration() const;
+  virtual double timelineOffset() const;
   virtual double currentTime() const;
 
   // Internal states of loading and network.
@@ -113,6 +115,8 @@ class WebMediaPlayerImpl
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
+  // TODO(sandersd): Change this to non-const in blink::WebMediaPlayer.
+  // http://crbug.com/360251
   virtual bool didLoadingProgress() const;
 
   virtual bool hasSingleSecurityOrigin() const;
@@ -180,7 +184,6 @@ class WebMediaPlayerImpl
                  const std::vector<uint8>& init_data);
   void OnAddTextTrack(const media::TextTrackConfig& config,
                       const media::AddTextTrackDoneCB& done_cb);
-  void SetOpaque(bool);
 
  private:
   // Called after |defer_load_cb_| has decided to allow the load. If
@@ -224,8 +227,9 @@ class WebMediaPlayerImpl
   double GetPipelineDuration() const;
 
   // Callbacks from |pipeline_| that are forwarded to |client_|.
-  void OnDurationChange();
-  void OnNaturalSizeChange(gfx::Size size);
+  void OnDurationChanged();
+  void OnNaturalSizeChanged(gfx::Size size);
+  void OnOpacityChanged(bool opaque);
 
   // Called by VideoRendererImpl on its internal thread with the new frame to be
   // painted.
@@ -237,14 +241,15 @@ class WebMediaPlayerImpl
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
-  blink::WebFrame* frame_;
+  // Returns the current video frame from |compositor_|. Blocks until the
+  // compositor can return the frame.
+  scoped_refptr<media::VideoFrame> GetCurrentFrameFromCompositor();
+
+  blink::WebLocalFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
   blink::WebMediaPlayer::NetworkState network_state_;
   blink::WebMediaPlayer::ReadyState ready_state_;
-
-  // Keep a list of buffered time ranges.
-  blink::WebTimeRanges buffered_;
 
   // Message loops for posting tasks on Chrome's main thread. Also used
   // for DCHECKs so methods calls won't execute in the wrong thread.
@@ -263,6 +268,9 @@ class WebMediaPlayerImpl
 
   // Cache of metadata for answering hasAudio(), hasVideo(), and naturalSize().
   media::PipelineMetadata pipeline_metadata_;
+
+  // Whether the video is known to be opaque or not.
+  bool opaque_;
 
   // Playback state.
   //
@@ -319,12 +327,17 @@ class WebMediaPlayerImpl
   scoped_ptr<media::Demuxer> demuxer_;
   media::ChunkDemuxer* chunk_demuxer_;
 
+  BufferedDataSourceHostImpl buffered_data_source_host_;
+  // TODO(sandersd): Remove this cache. http://crbug.com/360254
+  blink::WebTimeRanges buffered_web_time_ranges_;
+
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.
   std::string init_data_type_;
 
   // Video rendering members.
-  VideoFrameCompositor compositor_;
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
+  VideoFrameCompositor* compositor_;  // Deleted on |compositor_task_runner_|.
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
 
   // The compositor layer for displaying the video content when using composited

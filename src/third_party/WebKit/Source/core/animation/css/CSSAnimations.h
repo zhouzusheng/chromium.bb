@@ -73,10 +73,11 @@ public:
         m_animationsWithPauseToggled.append(name);
     }
 
-    void startTransition(CSSPropertyID id, const AnimatableValue* from, const AnimatableValue* to, PassRefPtr<InertAnimation> animation)
+    void startTransition(CSSPropertyID id, CSSPropertyID eventId, const AnimatableValue* from, const AnimatableValue* to, PassRefPtr<InertAnimation> animation)
     {
         NewTransition newTransition;
         newTransition.id = id;
+        newTransition.eventId = eventId;
         newTransition.from = from;
         newTransition.to = to;
         newTransition.animation = animation;
@@ -104,6 +105,7 @@ public:
         }
 
         CSSPropertyID id;
+        CSSPropertyID eventId;
         RawPtrWillBeMember<const AnimatableValue> from;
         RawPtrWillBeMember<const AnimatableValue> to;
         RefPtr<InertAnimation> animation;
@@ -150,7 +152,10 @@ private:
 };
 
 class CSSAnimations FINAL : public NoBaseWillBeGarbageCollectedFinalized<CSSAnimations> {
+    WTF_MAKE_NONCOPYABLE(CSSAnimations);
 public:
+    CSSAnimations();
+
     // FIXME: This method is only used here and in the legacy animations
     // implementation. It should be made private or file-scope when the legacy
     // engine is removed.
@@ -158,6 +163,7 @@ public:
 
     static bool isAnimatableProperty(CSSPropertyID);
     static const StylePropertyShorthand& animatableProperties();
+    static bool isAllowedAnimation(CSSPropertyID);
     // FIXME: This should take a const ScopedStyleTree instead of a StyleResolver.
     // We should also change the Element* to a const Element*
     static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(Element*, const Element& parentElement, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
@@ -179,7 +185,7 @@ private:
             visitor->trace(to);
         }
 
-        Animation* transition; // The TransitionTimeline keeps the AnimationPlayers alive
+        RefPtr<AnimationPlayer> player;
         RawPtrWillBeMember<const AnimatableValue> from;
         RawPtrWillBeMember<const AnimatableValue> to;
     };
@@ -206,13 +212,17 @@ private:
         AnimationEventDelegate(Element* target, const AtomicString& name)
             : m_target(target)
             , m_name(name)
+            , m_previousPhase(TimedItem::PhaseNone)
+            , m_previousIteration(nullValue())
         {
         }
-        virtual void onEventCondition(const TimedItem*, bool isFirstSample, TimedItem::Phase previousPhase, double previousIteration) OVERRIDE;
+        virtual void onEventCondition(const TimedItem*) OVERRIDE;
     private:
         void maybeDispatch(Document::ListenerType, const AtomicString& eventName, double elapsedTime);
         Element* m_target;
         const AtomicString m_name;
+        TimedItem::Phase m_previousPhase;
+        double m_previousIteration;
     };
 
     class TransitionEventDelegate FINAL : public TimedItem::EventDelegate {
@@ -220,12 +230,14 @@ private:
         TransitionEventDelegate(Element* target, CSSPropertyID property)
             : m_target(target)
             , m_property(property)
+            , m_previousPhase(TimedItem::PhaseNone)
         {
         }
-        virtual void onEventCondition(const TimedItem*, bool isFirstSample, TimedItem::Phase previousPhase, double previousIteration) OVERRIDE;
+        virtual void onEventCondition(const TimedItem*) OVERRIDE;
     private:
         Element* m_target;
         const CSSPropertyID m_property;
+        TimedItem::Phase m_previousPhase;
     };
 };
 

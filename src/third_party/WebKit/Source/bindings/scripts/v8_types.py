@@ -113,10 +113,12 @@ CPP_SPECIAL_CONVERSION_RULES = {
     # FIXME: Eliminate custom bindings for XPathNSResolver  http://crbug.com/345529
     'XPathNSResolver': 'RefPtrWillBeRawPtr<XPathNSResolver>',
     'boolean': 'bool',
+    'unrestricted double': 'double',
+    'unrestricted float': 'float',
 }
 
 
-def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, will_be_in_heap_object=False):
+def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_in_cpp_sequence=False):
     """Returns C++ type corresponding to IDL type.
 
     |idl_type| argument is of type IdlType, while return value is a string
@@ -126,10 +128,8 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, will_be
             IdlType
         used_as_argument:
             bool, True if idl_type's raw/primitive C++ type should be returned.
-        will_be_in_heap_object:
-            bool, True if idl_type will be part of a possibly heap allocated
-            object (e.g., appears as an element of a C++ heap vector type.)
-            The C++ type of an interface type changes, if so.
+        used_in_cpp_sequence:
+            bool, True if the C++ type is used as an element of an array or sequence.
     """
     def string_mode():
         # FIXME: the Web IDL spec requires 'EmptyString', not 'NullString',
@@ -146,9 +146,8 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, will_be
     # Composite types
     array_or_sequence_type = idl_type.array_or_sequence_type
     if array_or_sequence_type:
-        will_be_garbage_collected = array_or_sequence_type.is_will_be_garbage_collected
-        vector_type = 'WillBeHeapVector' if will_be_garbage_collected else 'Vector'
-        return cpp_template_type(vector_type, array_or_sequence_type.cpp_type_args(will_be_in_heap_object=will_be_garbage_collected))
+        vector_type = cpp_ptr_type('Vector', 'HeapVector', array_or_sequence_type.gc_type)
+        return cpp_template_type(vector_type, array_or_sequence_type.cpp_type_args(used_in_cpp_sequence=True))
 
     # Simple types
     base_idl_type = idl_type.base_type
@@ -175,16 +174,16 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, will_be
         implemented_as_class = idl_type.implemented_as
         if used_as_argument:
             return implemented_as_class + '*'
-        if idl_type.is_will_be_garbage_collected:
-            ref_ptr_type = 'RefPtrWillBeMember' if will_be_in_heap_object else 'RefPtrWillBeRawPtr'
-            return cpp_template_type(ref_ptr_type, implemented_as_class)
-        return cpp_template_type('RefPtr', implemented_as_class)
+        new_type = 'Member' if used_in_cpp_sequence else 'RawPtr'
+        ptr_type = cpp_ptr_type('RefPtr', new_type, idl_type.gc_type)
+        return cpp_template_type(ptr_type, implemented_as_class)
     # Default, assume native type is a pointer with same type name as idl type
     return base_idl_type + '*'
 
 
-def cpp_type_union(idl_type, extended_attributes=None, used_as_argument=False, will_be_in_heap_object=False):
+def cpp_type_union(idl_type, extended_attributes=None, used_as_argument=False):
     return (member_type.cpp_type for member_type in idl_type.member_types)
+
 
 # Allow access as idl_type.cpp_type if no arguments
 IdlType.cpp_type = property(cpp_type)
@@ -200,6 +199,16 @@ def cpp_template_type(template, inner_type):
     else:
         format_string = '{template}<{inner_type}>'
     return format_string.format(template=template, inner_type=inner_type)
+
+
+def cpp_ptr_type(old_type, new_type, gc_type):
+    if gc_type == 'GarbageCollectedObject':
+        return new_type
+    if gc_type == 'WillBeGarbageCollectedObject':
+        if old_type == 'Vector':
+            return 'WillBe' + new_type
+        return old_type + 'WillBe' + new_type
+    return old_type
 
 
 def v8_type(interface_name):
@@ -230,6 +239,17 @@ IdlType.set_implemented_as_interfaces = classmethod(
         cls.implemented_as_interfaces.update(new_implemented_as_interfaces))
 
 
+# [GarbageCollected]
+IdlType.garbage_collected_types = set()
+
+IdlType.is_garbage_collected = property(
+    lambda self: self.base_type in IdlType.garbage_collected_types)
+
+IdlType.set_garbage_collected_types = classmethod(
+    lambda cls, new_garbage_collected_types:
+        cls.garbage_collected_types.update(new_garbage_collected_types))
+
+
 # [WillBeGarbageCollected]
 IdlType.will_be_garbage_collected_types = set()
 
@@ -239,6 +259,16 @@ IdlType.is_will_be_garbage_collected = property(
 IdlType.set_will_be_garbage_collected_types = classmethod(
     lambda cls, new_will_be_garbage_collected_types:
         cls.will_be_garbage_collected_types.update(new_will_be_garbage_collected_types))
+
+
+def gc_type(idl_type):
+    if idl_type.is_garbage_collected:
+        return 'GarbageCollectedObject'
+    if idl_type.is_will_be_garbage_collected:
+        return 'WillBeGarbageCollectedObject'
+    return 'RefCountedObject'
+
+IdlType.gc_type = property(gc_type)
 
 
 ################################################################################
@@ -324,7 +354,9 @@ V8_VALUE_TO_CPP_VALUE = {
     'DOMString': '{v8_value}',
     'boolean': '{v8_value}->BooleanValue()',
     'float': 'static_cast<float>({v8_value}->NumberValue())',
+    'unrestricted float': 'static_cast<float>({v8_value}->NumberValue())',
     'double': 'static_cast<double>({v8_value}->NumberValue())',
+    'unrestricted double': 'static_cast<double>({v8_value}->NumberValue())',
     'byte': 'toInt8({arguments})',
     'octet': 'toUInt8({arguments})',
     'short': 'toInt16({arguments})',
@@ -337,11 +369,11 @@ V8_VALUE_TO_CPP_VALUE = {
     'CompareHow': 'static_cast<Range::CompareHow>({v8_value}->Int32Value())',
     'Dictionary': 'Dictionary({v8_value}, info.GetIsolate())',
     'EventTarget': 'V8DOMWrapper::isDOMWrapper({v8_value}) ? toWrapperTypeInfo(v8::Handle<v8::Object>::Cast({v8_value}))->toEventTarget(v8::Handle<v8::Object>::Cast({v8_value})) : 0',
-    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptValue({v8_value}, info.GetIsolate()))',
+    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value}))',
     'NodeFilter': 'toNodeFilter({v8_value}, info.GetIsolate())',
-    'Promise': 'ScriptPromise({v8_value}, info.GetIsolate())',
+    'Promise': 'ScriptPromise(ScriptState::current(info.GetIsolate()), {v8_value})',
     'SerializedScriptValue': 'SerializedScriptValue::create({v8_value}, info.GetIsolate())',
-    'ScriptValue': 'ScriptValue({v8_value}, info.GetIsolate())',
+    'ScriptValue': 'ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value})',
     'Window': 'toDOMWindow({v8_value}, info.GetIsolate())',
     'XPathNSResolver': 'toXPathNSResolver({v8_value}, info.GetIsolate())',
 }
@@ -388,7 +420,7 @@ def v8_value_to_cpp_value_array_or_sequence(array_or_sequence_type, v8_value, in
     if (array_or_sequence_type.is_interface_type and
         array_or_sequence_type.name != 'Dictionary'):
         this_cpp_type = None
-        ref_ptr_type = 'Member' if array_or_sequence_type.is_will_be_garbage_collected else 'RefPtr'
+        ref_ptr_type = cpp_ptr_type('RefPtr', 'Member', array_or_sequence_type.gc_type)
         expression_format = '(to{ref_ptr_type}NativeArray<{array_or_sequence_type}, V8{array_or_sequence_type}>({v8_value}, {index}, info.GetIsolate()))'
         add_includes_for_type(array_or_sequence_type)
     else:
@@ -404,15 +436,17 @@ def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variabl
     this_cpp_type = idl_type.cpp_type_args(extended_attributes=extended_attributes, used_as_argument=True)
 
     idl_type = idl_type.preprocessed_type
-    if idl_type.base_type == 'DOMString' and not idl_type.array_or_sequence_type:
-        format_string = 'V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID({cpp_type}, {variable_name}, {cpp_value})'
-    elif idl_type.is_integer_type:
-        format_string = 'V8TRYCATCH_EXCEPTION_VOID({cpp_type}, {variable_name}, {cpp_value}, exceptionState)'
-    else:
-        format_string = 'V8TRYCATCH_VOID({cpp_type}, {variable_name}, {cpp_value})'
-
     cpp_value = v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index)
-    return format_string.format(cpp_type=this_cpp_type, cpp_value=cpp_value, variable_name=variable_name)
+    args = [this_cpp_type, variable_name, cpp_value]
+    if idl_type.base_type == 'DOMString' and not idl_type.array_or_sequence_type:
+        macro = 'TOSTRING_VOID'
+    elif idl_type.is_integer_type:
+        macro = 'TONATIVE_VOID_EXCEPTIONSTATE'
+        args.append('exceptionState')
+    else:
+        macro = 'TONATIVE_VOID'
+
+    return '%s(%s)' % (macro, ', '.join(args))
 
 IdlType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
 IdlUnionType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
@@ -513,7 +547,9 @@ V8_SET_RETURN_VALUE = {
     'void': '',
     # No special v8SetReturnValue* function (set value directly)
     'float': 'v8SetReturnValue(info, {cpp_value})',
+    'unrestricted float': 'v8SetReturnValue(info, {cpp_value})',
     'double': 'v8SetReturnValue(info, {cpp_value})',
+    'unrestricted double': 'v8SetReturnValue(info, {cpp_value})',
     # No special v8SetReturnValue* function, but instead convert value to V8
     # and then use general v8SetReturnValue.
     'array': 'v8SetReturnValue(info, {cpp_value})',
@@ -549,6 +585,7 @@ def v8_set_return_value(idl_type, cpp_value, extended_attributes=None, script_wr
         this_v8_conversion_type = dom_wrapper_conversion_type()
 
     format_string = V8_SET_RETURN_VALUE[this_v8_conversion_type]
+    # FIXME: oilpan: Remove .release() once we remove all RefPtrs from generated code.
     if release:
         cpp_value = '%s.release()' % cpp_value
     statement = format_string.format(cpp_value=cpp_value, script_wrappable=script_wrappable)
@@ -581,13 +618,15 @@ IdlUnionType.release = property(
 
 CPP_VALUE_TO_V8_VALUE = {
     # Built-in types
-    'Date': 'v8DateOrNull({cpp_value}, {isolate})',
+    'Date': 'v8DateOrNaN({cpp_value}, {isolate})',
     'DOMString': 'v8String({isolate}, {cpp_value})',
     'boolean': 'v8Boolean({cpp_value}, {isolate})',
     'int': 'v8::Integer::New({isolate}, {cpp_value})',
     'unsigned': 'v8::Integer::NewFromUnsigned({isolate}, {cpp_value})',
     'float': 'v8::Number::New({isolate}, {cpp_value})',
+    'unrestricted float': 'v8::Number::New({isolate}, {cpp_value})',
     'double': 'v8::Number::New({isolate}, {cpp_value})',
+    'unrestricted double': 'v8::Number::New({isolate}, {cpp_value})',
     'void': 'v8Undefined()',
     # Special cases
     'EventHandler': '{cpp_value} ? v8::Handle<v8::Value>(V8AbstractEventListener::cast({cpp_value})->getListenerObject(impl->executionContext())) : v8::Handle<v8::Value>(v8::Null({isolate}))',

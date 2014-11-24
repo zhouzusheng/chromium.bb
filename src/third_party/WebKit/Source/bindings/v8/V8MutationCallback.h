@@ -27,8 +27,8 @@
 #define V8MutationCallback_h
 
 #include "bindings/v8/ActiveDOMCallback.h"
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/dom/MutationCallback.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -46,7 +46,7 @@ public:
         return adoptPtr(new V8MutationCallback(callback, context, owner, isolate));
     }
 
-    virtual void call(const Vector<RefPtr<MutationRecord> >&, MutationObserver*) OVERRIDE;
+    virtual void call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord> >&, MutationObserver*) OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE { return ContextLifecycleObserver::executionContext(); }
 
 private:
@@ -55,8 +55,7 @@ private:
     static void setWeakCallback(const v8::WeakCallbackData<v8::Function, V8MutationCallback>&);
 
     ScopedPersistent<v8::Function> m_callback;
-    RefPtr<DOMWrapperWorld> m_world;
-    v8::Isolate* m_isolate;
+    RefPtr<ScriptState> m_scriptState;
 };
 
 }

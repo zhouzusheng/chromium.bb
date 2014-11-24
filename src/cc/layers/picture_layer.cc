@@ -7,6 +7,7 @@
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "ui/gfx/rect_conversions.h"
 
 namespace cc {
@@ -20,7 +21,6 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
       pile_(make_scoped_refptr(new PicturePile())),
       instrumentation_object_tracker_(id()),
       is_mask_(false),
-      has_gpu_rasterization_hint_(false),
       update_source_frame_number_(-1) {}
 
 PictureLayer::~PictureLayer() {
@@ -42,15 +42,17 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
     // Update may not get called for an empty layer, so resize here instead.
     // Using layer_impl because either bounds() or paint_properties().bounds
     // may disagree and either one could have been pushed to layer_impl.
-    pile_->Resize(gfx::Size());
+    pile_->SetTilingRect(gfx::Rect());
   } else if (update_source_frame_number_ ==
              layer_tree_host()->source_frame_number()) {
+    // TODO(ernstm): This DCHECK is only valid as long as the pile's tiling_rect
+    // is identical to the layer_rect.
     // If update called, then pile size must match bounds pushed to impl layer.
-    DCHECK_EQ(layer_impl->bounds().ToString(), pile_->size().ToString());
+    DCHECK_EQ(layer_impl->bounds().ToString(),
+              pile_->tiling_rect().size().ToString());
   }
 
   layer_impl->SetIsMask(is_mask_);
-  layer_impl->SetHasGpuRasterizationHint(has_gpu_rasterization_hint_);
 
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
@@ -86,9 +88,13 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
+  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
+      visible_content_rect(), 1.f / contents_scale_x());
+
+  gfx::Rect layer_rect = gfx::Rect(paint_properties().bounds);
+
   if (last_updated_visible_content_rect_ == visible_content_rect() &&
-      pile_->size() == paint_properties().bounds &&
-      pending_invalidation_.IsEmpty()) {
+      pile_->tiling_rect() == layer_rect && pending_invalidation_.IsEmpty()) {
     // Only early out if the visible content rect of this layer hasn't changed.
     return updated;
   }
@@ -97,15 +103,13 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
                "source_frame_number",
                layer_tree_host()->source_frame_number());
 
-  pile_->Resize(paint_properties().bounds);
+  pile_->SetTilingRect(layer_rect);
 
   // Calling paint in WebKit can sometimes cause invalidations, so save
   // off the invalidation prior to calling update.
   pending_invalidation_.Swap(&pile_invalidation_);
   pending_invalidation_.Clear();
 
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_content_rect(), 1.f / contents_scale_x());
   if (layer_tree_host()->settings().using_synchronous_renderer_compositor) {
     // Workaround for http://crbug.com/235910 - to retain backwards compat
     // the full page content must always be provided in the picture layer.
@@ -119,6 +123,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
                            pile_invalidation_,
                            visible_layer_rect,
                            update_source_frame_number_,
+                           RecordingMode(),
                            rendering_stats_instrumentation());
   last_updated_visible_content_rect_ = visible_content_rect();
 
@@ -137,12 +142,15 @@ void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
 }
 
-void PictureLayer::SetHasGpuRasterizationHint(bool has_hint) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (has_gpu_rasterization_hint_ == has_hint)
-    return;
-  has_gpu_rasterization_hint_ = has_hint;
-  SetNeedsCommit();
+Picture::RecordingMode PictureLayer::RecordingMode() const {
+  switch (layer_tree_host()->settings().recording_mode) {
+    case LayerTreeSettings::RecordNormally:
+      return Picture::RECORD_NORMALLY;
+    case LayerTreeSettings::RecordWithSkRecord:
+      return Picture::RECORD_WITH_SKRECORD;
+  }
+  NOTREACHED();
+  return Picture::RECORD_NORMALLY;
 }
 
 bool PictureLayer::SupportsLCDText() const {
@@ -160,11 +168,18 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
   int height = bounds().height();
   gfx::RectF opaque;
 
-  skia::RefPtr<SkPicture> picture = skia::AdoptRef(new SkPicture);
-  SkCanvas* canvas = picture->beginRecording(width, height);
-  client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
-  picture->endRecording();
+  SkPictureRecorder recorder;
+  SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
+  client_->PaintContents(canvas,
+                         gfx::Rect(width, height),
+                         &opaque,
+                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
+  skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;
+}
+
+bool PictureLayer::IsSuitableForGpuRasterization() const {
+  return pile_->is_suitable_for_gpu_rasterization();
 }
 
 void PictureLayer::RunMicroBenchmark(MicroBenchmark* benchmark) {

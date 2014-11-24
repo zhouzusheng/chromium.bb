@@ -82,6 +82,15 @@ public:
     bool operator==(const FontPlatformData&) const;
     FontPlatformData& operator=(const FontPlatformData&);
     bool isHashTableDeletedValue() const { return m_isHashTableDeletedValue; }
+#if OS(WIN)
+    void setMinSizeForAntiAlias(unsigned size) { m_minSizeForAntiAlias = size; }
+    unsigned minSizeForAntiAlias() const { return m_minSizeForAntiAlias; }
+    void setHinting(SkPaint::Hinting style)
+    {
+        m_style.useAutoHint = 0;
+        m_style.hintStyle = style;
+    }
+#endif
 
 #if ENABLE(OPENTYPE_VERTICAL)
     PassRefPtr<OpenTypeVerticalData> verticalData() const;
@@ -113,10 +122,7 @@ public:
 
 private:
     bool static defaultUseSubpixelPositioning();
-#if !OS(WIN)
-    void getRenderStyleForStrike(const char*, int);
     void querySystemForRenderStyle(bool useSkiaSubpixelPositioning);
-#endif
 
     RefPtr<SkTypeface> m_typeface;
 #if !OS(WIN)
@@ -132,6 +138,7 @@ private:
 #if OS(WIN)
     int m_paintTextFlags;
     bool m_useSubpixelPositioning;
+    unsigned m_minSizeForAntiAlias;
 #endif
 };
 

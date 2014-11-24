@@ -4,6 +4,8 @@
 
 'use strict';
 
+tvcm.require('tvcm.range');
+
 tvcm.requireStylesheet('tracing.timeline_view_side_panel');
 
 tvcm.exportTo('tracing', function() {
@@ -58,6 +60,7 @@ tvcm.exportTo('tracing', function() {
       this.appendChild(this.activePanelContainer_);
       this.appendChild(this.tabStrip_);
       this.model_ = undefined;
+      this.rangeOfInterest_ = new tvcm.Range();
     },
 
     get model() {
@@ -73,10 +76,16 @@ tvcm.exportTo('tracing', function() {
       this.hasAttribute('expanded');
     },
 
-    get activePanelConstructor() {
+    get activePanel() {
       if (this.activePanelContainer_.children.length === 0)
         return undefined;
-      return this.activePanelContainer_.children[0].constructor;
+      return this.activePanelContainer_.children[0];
+    },
+
+    get activePanelConstructor() {
+      if (this.activePanel)
+        return this.activePanel.constructor;
+      return undefined;
     },
 
     set activePanelConstructor(panelConstructor) {
@@ -97,14 +106,16 @@ tvcm.exportTo('tracing', function() {
         return;
       }
 
-      var panelEl = new panelConstructor();
-      panelEl.model = this.model_;
-      this.activePanelContainer_.appendChild(panelEl);
-
       this.getLabelForConstructor_(
           panelConstructor).setAttribute('selected', true);
 
       this.setAttribute('expanded', true);
+
+      var panelEl = new panelConstructor();
+      this.activePanelContainer_.appendChild(panelEl);
+      panelEl.rangeOfInterest = this.rangeOfInterest_;
+      panelEl.selection = this.selection_;
+      panelEl.model = this.model_;
     },
 
     getLabelForConstructor_: function(panelConstructor) {
@@ -154,6 +165,28 @@ tvcm.exportTo('tracing', function() {
         this.activePanelContainer_.textContent = '';
         this.removeAttribute('expanded');
       }
+    },
+
+    get selection() {
+      return selection_;
+    },
+
+    set selection(selection) {
+      this.selection_ = selection;
+      if (this.activePanel)
+        this.activePanel.selection = selection;
+    },
+
+    get rangeOfInterest() {
+      return this.rangeOfInterest_;
+    },
+
+    set rangeOfInterest(range) {
+      if (range == undefined)
+        throw new Error('Must not be undefined');
+      this.rangeOfInterest_ = range;
+      if (this.activePanel)
+        this.activePanel.rangeOfInterest = range;
     }
   };
 

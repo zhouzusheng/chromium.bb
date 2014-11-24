@@ -17,9 +17,7 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/ui/host_desktop.h"
 
-class AutomationProviderList;
 class BackgroundModeManager;
-class BookmarkPromptController;
 class ChromeNetLog;
 class CRLSetFetcher;
 class DownloadRequestLimiter;
@@ -148,8 +146,6 @@ class BrowserProcess {
 
   virtual GpuModeManager* gpu_mode_manager() = 0;
 
-  virtual AutomationProviderList* GetAutomationProviderList() = 0;
-
   virtual void CreateDevToolsHttpProtocolHandler(
       chrome::HostDesktopType host_desktop_type,
       const std::string& ip,
@@ -214,8 +210,6 @@ class BrowserProcess {
 
   virtual component_updater::PnaclComponentInstaller*
       pnacl_component_installer() = 0;
-
-  virtual BookmarkPromptController* bookmark_prompt_controller() = 0;
 
   virtual MediaFileSystemRegistry* media_file_system_registry() = 0;
 

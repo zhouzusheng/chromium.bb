@@ -119,7 +119,7 @@ bool TextTrackLoader::load(const KURL& url, const AtomicString& crossOriginMode)
     }
 
     ResourceFetcher* fetcher = m_document.fetcher();
-    setResource(fetcher->fetchRawResource(cueRequest));
+    setResource(fetcher->fetchTextTrack(cueRequest));
     return resource();
 }
 
@@ -149,18 +149,23 @@ void TextTrackLoader::fileFailedToParse()
     cancelLoad();
 }
 
-void TextTrackLoader::getNewCues(Vector<RefPtr<VTTCue> >& outputCues)
+void TextTrackLoader::getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >& outputCues)
 {
     ASSERT(m_cueParser);
     if (m_cueParser)
         m_cueParser->getNewCues(outputCues);
 }
 
-void TextTrackLoader::getNewRegions(Vector<RefPtr<VTTRegion> >& outputRegions)
+void TextTrackLoader::getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >& outputRegions)
 {
     ASSERT(m_cueParser);
     if (m_cueParser)
         m_cueParser->getNewRegions(outputRegions);
+}
+
+void TextTrackLoader::trace(Visitor* visitor)
+{
+    visitor->trace(m_cueParser);
 }
 
 }

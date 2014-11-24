@@ -27,7 +27,7 @@
 #define DOMWindowIndexedDatabase_h
 
 #include "core/frame/DOMWindowProperty.h"
-#include "modules/indexeddb/IDBFactoryBackendInterface.h"
+#include "modules/indexeddb/IndexedDBClient.h"
 #include "platform/Supplementable.h"
 
 namespace WebCore {
@@ -46,7 +46,7 @@ public:
     virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
     virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
 private:
     explicit DOMWindowIndexedDatabase(DOMWindow&);
@@ -55,7 +55,7 @@ private:
     static const char* supplementName();
 
     DOMWindow& m_window;
-    RefPtr<IDBFactory> m_idbFactory;
+    RefPtrWillBeMember<IDBFactory> m_idbFactory;
 };
 
 } // namespace WebCore

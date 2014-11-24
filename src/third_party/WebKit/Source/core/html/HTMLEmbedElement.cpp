@@ -45,9 +45,9 @@ inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByPars
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
-    RefPtr<HTMLEmbedElement> element = adoptRef(new HTMLEmbedElement(document, createdByParser));
+    RefPtrWillBeRawPtr<HTMLEmbedElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLEmbedElement(document, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -94,6 +94,8 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
+        if (!renderer())
+            requestPluginCreationWithoutRendererIfPossible();
     } else if (name == codeAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
     } else if (name == srcAttr) {

@@ -68,7 +68,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // can be safely changed.
   void UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicByteCount bytes_per_second);
+      QuicByteCount congestion_window);
 
   // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
@@ -115,11 +115,26 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Returns true if there are frames pending to be serialized.
   bool HasPendingFrames();
 
+  // Returns IN_FEC_GROUP or NOT_IN_FEC_GROUP, depending on whether FEC is
+  // enabled or not. Note: This does not mean that an FEC group is currently
+  // active; i.e., fec_group_.get() may still be NULL.
+  // TODO(jri): Straighten out naming: Enabling FEC for the connection
+  // should use FEC_ENABLED/DISABLED, and IN_FEC_GROUP/NOT_IN_FEC_GROUP should
+  // be used if a given packet is in an fec group.
+  InFecGroup IsFecEnabled() const;
+
   // Returns the number of bytes which are available to be used by additional
   // frames in the packet.  Since stream frames are slightly smaller when they
   // are the last frame in a packet, this method will return a different
   // value than max_packet_size - PacketSize(), in this case.
   size_t BytesFree() const;
+
+  // Returns the number of bytes that the packet will expand by if a new frame
+  // is added to the packet. If the last frame was a stream frame, it will
+  // expand slightly when a new frame is added, and this method returns the
+  // amount of expected expansion. If the packet is in an FEC group, no
+  // expansion happens and this method always returns zero.
+  size_t ExpansionOnNewFrame() const;
 
   // Returns the number of bytes in the current packet, including the header,
   // if serialized with the current frames.  Adding a frame to the packet
@@ -161,6 +176,11 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   QuicEncryptedPacket* SerializeVersionNegotiationPacket(
       const QuicVersionVector& supported_versions);
 
+  // Sets the encryption level that will be applied to new packets.
+  void set_encryption_level(EncryptionLevel level) {
+    encryption_level_ = level;
+  }
+
   // Sequence number of the last created packet, or 0 if no packets have been
   // created.
   QuicPacketSequenceNumber sequence_number() const {
@@ -182,7 +202,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   // Starts a new FEC group with the next serialized packet, if FEC is enabled
   // and there is not already an FEC group open.
-  void MaybeStartFEC();
+  InFecGroup MaybeStartFEC();
 
   void FillPacketHeader(QuicFecGroupNumber fec_group,
                         bool fec_flag,
@@ -199,6 +219,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   Options options_;
   QuicConnectionId connection_id_;
+  EncryptionLevel encryption_level_;
   QuicFramer* framer_;
   scoped_ptr<QuicRandomBoolSource> random_bool_source_;
   QuicPacketSequenceNumber sequence_number_;

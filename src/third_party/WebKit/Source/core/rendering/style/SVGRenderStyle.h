@@ -28,6 +28,7 @@
 #include "core/rendering/style/DataRef.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/SVGRenderStyleDefs.h"
+#include "core/rendering/style/StyleDifference.h"
 #include "core/svg/SVGPaint.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/Path.h"
@@ -96,13 +97,6 @@ public:
     static EPaintOrder initialPaintOrder() { return PO_NORMAL; }
 
     static PassRefPtr<SVGLength> initialBaselineShiftValue()
-    {
-        RefPtr<SVGLength> length = SVGLength::create();
-        length->newValueSpecifiedUnits(LengthTypeNumber, 0);
-        return length.release();
-    }
-
-    static PassRefPtr<SVGLength> initialKerning()
     {
         RefPtr<SVGLength> length = SVGLength::create();
         length->newValueSpecifiedUnits(LengthTypeNumber, 0);
@@ -220,12 +214,6 @@ public:
             stroke.access()->dashOffset = obj;
     }
 
-    void setKerning(PassRefPtr<SVGLength> obj)
-    {
-        if (!(text->kerning == obj))
-            text.access()->kerning = obj;
-    }
-
     void setStopOpacity(float obj)
     {
         if (!(stops->opacity == obj))
@@ -326,17 +314,16 @@ public:
     const SVGPaint::SVGPaintType& strokePaintType() const { return stroke->paintType; }
     const Color& strokePaintColor() const { return stroke->paintColor; }
     const String& strokePaintUri() const { return stroke->paintUri; }
-    PassRefPtr<SVGLengthList> strokeDashArray() const { return stroke->dashArray; }
+    SVGLengthList* strokeDashArray() const { return stroke->dashArray.get(); }
     float strokeMiterLimit() const { return stroke->miterLimit; }
-    PassRefPtr<SVGLength> strokeWidth() const { return stroke->width; }
-    PassRefPtr<SVGLength> strokeDashOffset() const { return stroke->dashOffset; }
-    PassRefPtr<SVGLength> kerning() const { return text->kerning; }
+    SVGLength* strokeWidth() const { return stroke->width.get(); }
+    SVGLength* strokeDashOffset() const { return stroke->dashOffset.get(); }
     float stopOpacity() const { return stops->opacity; }
     const Color& stopColor() const { return stops->color; }
     float floodOpacity() const { return misc->floodOpacity; }
     const Color& floodColor() const { return misc->floodColor; }
     const Color& lightingColor() const { return misc->lightingColor; }
-    PassRefPtr<SVGLength> baselineShiftValue() const { return misc->baselineShiftValue; }
+    SVGLength* baselineShiftValue() const { return misc->baselineShiftValue.get(); }
     const AtomicString& clipperResource() const { return resources->clipper; }
     const AtomicString& filterResource() const { return resources->filter; }
     const AtomicString& maskerResource() const { return resources->masker; }
@@ -427,7 +414,6 @@ protected:
     // inherited attributes
     DataRef<StyleFillData> fill;
     DataRef<StyleStrokeData> stroke;
-    DataRef<StyleTextData> text;
     DataRef<StyleInheritedResourceData> inheritedResources;
 
     // non-inherited attributes
@@ -441,6 +427,9 @@ private:
     SVGRenderStyle();
     SVGRenderStyle(const SVGRenderStyle&);
     SVGRenderStyle(CreateDefaultType); // Used to create the default style.
+
+    bool diffNeedsLayout(const SVGRenderStyle* other) const;
+    bool diffNeedsRepaint(const SVGRenderStyle* other) const;
 
     void setBitDefaults()
     {

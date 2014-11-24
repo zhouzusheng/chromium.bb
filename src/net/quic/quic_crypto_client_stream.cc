@@ -10,6 +10,7 @@
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_session.h"
 
 namespace net {
 
@@ -43,7 +44,7 @@ void QuicCryptoClientStream::ProofVerifierCallbackImpl::Cancel() {
 }
 
 QuicCryptoClientStream::QuicCryptoClientStream(
-    const QuicSessionKey& server_key,
+    const QuicServerId& server_id,
     QuicClientSessionBase* session,
     ProofVerifyContext* verify_context,
     QuicCryptoClientConfig* crypto_config)
@@ -51,7 +52,7 @@ QuicCryptoClientStream::QuicCryptoClientStream(
       next_state_(STATE_IDLE),
       num_client_hellos_(0),
       crypto_config_(crypto_config),
-      server_key_(server_key),
+      server_id_(server_id),
       generation_counter_(0),
       proof_verify_callback_(NULL),
       verify_context_(verify_context) {
@@ -93,7 +94,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
   QuicErrorCode error;
   string error_details;
   QuicCryptoClientConfig::CachedState* cached =
-      crypto_config_->LookupOrCreate(server_key_);
+      crypto_config_->LookupOrCreate(server_id_);
 
   if (in != NULL) {
     DVLOG(1) << "Client: Received " << in->DebugString();
@@ -105,7 +106,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
     switch (state) {
       case STATE_INITIALIZE: {
         if (!cached->IsEmpty() && !cached->signature().empty() &&
-            server_key_.is_https()) {
+            server_id_.is_https()) {
           DCHECK(crypto_config_->proof_verifier());
           // If the cached state needs to be verified, do it now.
           next_state_ = STATE_VERIFY_PROOF;
@@ -125,7 +126,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
 
         if (!cached->IsComplete(session()->connection()->clock()->WallNow())) {
           crypto_config_->FillInchoateClientHello(
-              server_key_,
+              server_id_,
               session()->connection()->supported_versions().front(),
               cached, &crypto_negotiated_params_, &out);
           // Pad the inchoate client hello to fill up a packet.
@@ -151,9 +152,10 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         }
         session()->config()->ToHandshakeMessage(&out);
         error = crypto_config_->FillClientHello(
-            server_key_,
+            server_id_,
             session()->connection()->connection_id(),
             session()->connection()->supported_versions().front(),
+            session()->connection()->max_flow_control_receive_window_bytes(),
             cached,
             session()->connection()->clock()->WallNow(),
             session()->connection()->random_generator(),
@@ -177,6 +179,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         // Be prepared to decrypt with the new server write key.
         session()->connection()->SetAlternativeDecrypter(
             crypto_negotiated_params_.initial_crypters.decrypter.release(),
+            ENCRYPTION_INITIAL,
             true /* latch once used */);
         // Send subsequent packets under encryption on the assumption that the
         // server will accept the handshake.
@@ -213,7 +216,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           return;
         }
         if (!cached->proof_valid()) {
-          if (!server_key_.is_https()) {
+          if (!server_id_.is_https()) {
             // We don't check the certificates for insecure QUIC connections.
             SetCachedProofValid(cached);
           } else if (!cached->signature().empty()) {
@@ -235,7 +238,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         verify_ok_ = false;
 
         ProofVerifier::Status status = verifier->VerifyProof(
-            server_key_.host(),
+            server_id_.host(),
             cached->server_config(),
             cached->certs(),
             cached->signature(),
@@ -250,8 +253,10 @@ void QuicCryptoClientStream::DoHandshakeLoop(
             DVLOG(1) << "Doing VerifyProof";
             return;
           case ProofVerifier::FAILURE:
+            delete proof_verify_callback;
             break;
           case ProofVerifier::SUCCESS:
+            delete proof_verify_callback;
             verify_ok_ = true;
             break;
         }
@@ -314,7 +319,8 @@ void QuicCryptoClientStream::DoHandshakeLoop(
               error, "Server hello invalid: " + error_details);
           return;
         }
-        error = session()->config()->ProcessServerHello(*in, &error_details);
+        error =
+            session()->config()->ProcessPeerHello(*in, SERVER, &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(
               error, "Server hello invalid: " + error_details);
@@ -329,7 +335,8 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         // with the FORWARD_SECURE key until it receives a FORWARD_SECURE
         // packet from the client.
         session()->connection()->SetAlternativeDecrypter(
-            crypters->decrypter.release(), false /* don't latch */);
+            crypters->decrypter.release(), ENCRYPTION_FORWARD_SECURE,
+            false /* don't latch */);
         session()->connection()->SetEncrypter(
             ENCRYPTION_FORWARD_SECURE, crypters->encrypter.release());
         session()->connection()->SetDefaultEncryptionLevel(

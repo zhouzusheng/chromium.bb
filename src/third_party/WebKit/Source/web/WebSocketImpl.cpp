@@ -29,10 +29,9 @@
  */
 
 #include "config.h"
-#include "WebSocketImpl.h"
+#include "web/WebSocketImpl.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "WebDocument.h"
 #include "core/dom/Document.h"
 #include "core/frame/ConsoleTypes.h"
 #include "modules/websockets/MainThreadWebSocketChannel.h"
@@ -41,6 +40,7 @@
 #include "public/platform/WebArrayBuffer.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebDocument.h"
 #include "wtf/ArrayBuffer.h"
 
 using namespace WebCore;
@@ -51,7 +51,7 @@ WebSocketImpl::WebSocketImpl(const WebDocument& document, WebSocketClient* clien
     : m_client(client)
     , m_binaryType(BinaryTypeBlob)
 {
-    RefPtr<Document> coreDocument = PassRefPtr<Document>(document);
+    RefPtrWillBeRawPtr<Document> coreDocument = PassRefPtrWillBeRawPtr<Document>(document);
     if (RuntimeEnabledFeatures::experimentalWebSocketEnabled()) {
         m_private = NewWebSocketChannelImpl::create(coreDocument.get(), this);
     } else {

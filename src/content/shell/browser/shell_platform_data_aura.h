@@ -10,7 +10,6 @@
 
 namespace aura {
 namespace client {
-class DefaultActivationClient;
 class DefaultCaptureClient;
 class FocusClient;
 class WindowTreeClient;
@@ -43,7 +42,6 @@ class ShellPlatformDataAura {
   // SHEZ: Remove test-only code.
   // scoped_ptr<aura::client::FocusClient> focus_client_;
 
-  scoped_ptr<aura::client::DefaultActivationClient> activation_client_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 
   // SHEZ: Remove test-only code.

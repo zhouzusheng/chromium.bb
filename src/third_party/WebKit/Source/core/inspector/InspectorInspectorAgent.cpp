@@ -66,7 +66,7 @@ InspectorInspectorAgent::~InspectorInspectorAgent()
     m_instrumentingAgents->setInspectorInspectorAgent(0);
 }
 
-void InspectorInspectorAgent::didClearWindowObjectInMainWorld(LocalFrame* frame)
+void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 {
     if (m_injectedScriptForOrigin.isEmpty())
         return;
@@ -75,7 +75,7 @@ void InspectorInspectorAgent::didClearWindowObjectInMainWorld(LocalFrame* frame)
     String script = m_injectedScriptForOrigin.get(origin);
     if (script.isEmpty())
         return;
-    int injectedScriptId = m_injectedScriptManager->injectedScriptIdFor(mainWorldScriptState(frame));
+    int injectedScriptId = m_injectedScriptManager->injectedScriptIdFor(ScriptState::forMainWorld(frame));
     StringBuilder scriptSource;
     scriptSource.append(script);
     scriptSource.append("(");
@@ -101,14 +101,6 @@ void InspectorInspectorAgent::clearFrontend()
     m_injectedScriptManager->discardInjectedScripts();
     ErrorString error;
     disable(&error);
-}
-
-void InspectorInspectorAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
-{
-    if (loader->frame() != frame->page()->mainFrame())
-        return;
-
-    m_injectedScriptManager->discardInjectedScripts();
 }
 
 void InspectorInspectorAgent::enable(ErrorString*)

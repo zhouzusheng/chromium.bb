@@ -52,22 +52,27 @@ DateTimeFieldElement::DateTimeFieldElement(Document& document, FieldOwner& field
 {
 }
 
+void DateTimeFieldElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_fieldOwner);
+    HTMLSpanElement::trace(visitor);
+}
+
 void DateTimeFieldElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == EventTypeNames::blur)
-        didBlur();
-
-    if (event->type() == EventTypeNames::focus)
-        didFocus();
-
     if (event->isKeyboardEvent()) {
         KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (!isDisabled() && !isFieldOwnerDisabled() && !isFieldOwnerReadOnly()) {
             handleKeyboardEvent(keyboardEvent);
-            if (keyboardEvent->defaultHandled())
+            if (keyboardEvent->defaultHandled()) {
+                if (m_fieldOwner)
+                    m_fieldOwner->fieldDidChangeValueByKeyboard();
                 return;
+            }
         }
         defaultKeyboardEventHandler(keyboardEvent);
+        if (m_fieldOwner)
+            m_fieldOwner->fieldDidChangeValueByKeyboard();
         if (keyboardEvent->defaultHandled())
             return;
     }
@@ -129,16 +134,11 @@ void DateTimeFieldElement::defaultKeyboardEventHandler(KeyboardEvent* keyboardEv
     }
 }
 
-void DateTimeFieldElement::didBlur()
+void DateTimeFieldElement::setFocus(bool value)
 {
     if (m_fieldOwner)
-        m_fieldOwner->didBlurFromField();
-}
-
-void DateTimeFieldElement::didFocus()
-{
-    if (m_fieldOwner)
-        m_fieldOwner->didFocusOnField();
+        value ? m_fieldOwner->didFocusOnField() : m_fieldOwner->didBlurFromField();
+    ContainerNode::setFocus(value);
 }
 
 void DateTimeFieldElement::focusOnNextField()

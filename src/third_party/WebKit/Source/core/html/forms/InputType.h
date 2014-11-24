@@ -55,15 +55,13 @@ class Node;
 // FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
 class InputType : public InputTypeView {
     WTF_MAKE_NONCOPYABLE(InputType);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement&, const AtomicString&);
-    static PassRefPtr<InputType> createText(HTMLInputElement&);
+    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&, const AtomicString&);
+    static PassRefPtrWillBeRawPtr<InputType> createText(HTMLInputElement&);
     static const AtomicString& normalizeTypeName(const AtomicString&);
     virtual ~InputType();
-
-    static bool canChangeFromAnotherType(const AtomicString& normalizedTypeName);
 
     virtual const AtomicString& formControlType() const = 0;
 
@@ -221,6 +219,8 @@ public:
     // InputTypeView override
     virtual bool shouldSubmitImplicitly(Event*) OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE;
+
+    virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
 
 protected:
     InputType(HTMLInputElement& element) : InputTypeView(element) { }

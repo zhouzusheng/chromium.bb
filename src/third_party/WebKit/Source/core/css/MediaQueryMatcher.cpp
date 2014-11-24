@@ -37,12 +37,10 @@ MediaQueryMatcher::Listener::Listener(PassRefPtrWillBeRawPtr<MediaQueryListListe
 {
 }
 
-void MediaQueryMatcher::Listener::evaluate(ScriptState* state, MediaQueryEvaluator* evaluator)
+void MediaQueryMatcher::Listener::evaluate(MediaQueryEvaluator* evaluator)
 {
-    bool notify;
-    m_query->evaluate(evaluator, notify);
-    if (notify)
-        m_listener->queryChanged(state, m_query.get());
+    if (m_query->evaluate(evaluator))
+        m_listener->queryChanged(m_query.get());
 }
 
 void MediaQueryMatcher::Listener::trace(Visitor* visitor)
@@ -79,14 +77,7 @@ PassOwnPtr<MediaQueryEvaluator> MediaQueryMatcher::prepareEvaluator() const
     if (!m_document || !m_document->frame())
         return nullptr;
 
-    Element* documentElement = m_document->documentElement();
-    if (!documentElement)
-        return nullptr;
-
-    StyleResolver& styleResolver = m_document->ensureStyleResolver();
-    RefPtr<RenderStyle> rootStyle = styleResolver.styleForElement(documentElement, 0 /*defaultParent*/, DisallowStyleSharing, MatchOnlyUserAgentRules);
-
-    return adoptPtr(new MediaQueryEvaluator(mediaType(), m_document->frame(), rootStyle.get()));
+    return adoptPtr(new MediaQueryEvaluator(mediaType(), m_document->frame()));
 }
 
 bool MediaQueryMatcher::evaluate(const MediaQuerySet* media)
@@ -140,17 +131,13 @@ void MediaQueryMatcher::styleResolverChanged()
     if (!m_document)
         return;
 
-    ScriptState* scriptState = m_document->frame() ? mainWorldScriptState(m_document->frame()) : 0;
-    if (!scriptState)
-        return;
-
     ++m_evaluationRound;
     OwnPtr<MediaQueryEvaluator> evaluator = prepareEvaluator();
     if (!evaluator)
         return;
 
     for (size_t i = 0; i < m_listeners.size(); ++i)
-        m_listeners[i]->evaluate(scriptState, evaluator.get());
+        m_listeners[i]->evaluate(evaluator.get());
 }
 
 void MediaQueryMatcher::trace(Visitor* visitor)

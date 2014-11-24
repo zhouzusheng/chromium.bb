@@ -53,15 +53,6 @@ PassRefPtr<AXListBox> AXListBox::create(RenderObject* renderer)
     return adoptRef(new AXListBox(renderer));
 }
 
-bool AXListBox::canSetSelectedChildrenAttribute() const
-{
-    Node* selectNode = m_renderer->node();
-    if (!selectNode)
-        return false;
-
-    return !toHTMLSelectElement(selectNode)->isDisabledFormControl();
-}
-
 void AXListBox::addChildren()
 {
     Node* selectNode = m_renderer->node();
@@ -70,7 +61,7 @@ void AXListBox::addChildren()
 
     m_haveChildren = true;
 
-    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(selectNode)->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = toHTMLSelectElement(selectNode)->listItems();
     unsigned length = listItems.size();
     for (unsigned i = 0; i < length; i++) {
         // The cast to HTMLElement below is safe because the only other possible listItem type
@@ -78,47 +69,6 @@ void AXListBox::addChildren()
         AXObject* listOption = listBoxOptionAXObject(listItems[i]);
         if (listOption && !listOption->accessibilityIsIgnored())
             m_children.append(listOption);
-    }
-}
-
-void AXListBox::setSelectedChildren(AccessibilityChildrenVector& children)
-{
-    if (!canSetSelectedChildrenAttribute())
-        return;
-
-    Node* selectNode = m_renderer->node();
-    if (!selectNode)
-        return;
-
-    // disable any selected options
-    unsigned length = m_children.size();
-    for (unsigned i = 0; i < length; i++) {
-        AXListBoxOption* listBoxOption = toAXListBoxOption(m_children[i].get());
-        if (listBoxOption->isSelected())
-            listBoxOption->setSelected(false);
-    }
-
-    length = children.size();
-    for (unsigned i = 0; i < length; i++) {
-        AXObject* obj = children[i].get();
-        if (obj->roleValue() != ListBoxOptionRole)
-            continue;
-
-        toAXListBoxOption(obj)->setSelected(true);
-    }
-}
-
-void AXListBox::selectedChildren(AccessibilityChildrenVector& result)
-{
-    ASSERT(result.isEmpty());
-
-    if (!hasChildren())
-        addChildren();
-
-    unsigned length = m_children.size();
-    for (unsigned i = 0; i < length; i++) {
-        if (toAXListBoxOption(m_children[i].get())->isSelected())
-            result.append(m_children[i]);
     }
 }
 

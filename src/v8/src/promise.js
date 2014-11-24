@@ -1,30 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 "use strict";
 
@@ -59,10 +35,13 @@ function Promise(resolver) {
     throw MakeTypeError('resolver_not_a_function', [resolver]);
   var promise = PromiseInit(this);
   try {
+    %DebugPromiseHandlePrologue(function() { return promise });
     resolver(function(x) { PromiseResolve(promise, x) },
              function(r) { PromiseReject(promise, r) });
   } catch (e) {
     PromiseReject(promise, e);
+  } finally {
+    %DebugPromiseHandleEpilogue();
   }
 }
 
@@ -170,31 +149,40 @@ function PromiseChain(onResolve, onReject) {  // a.k.a.  flatMap
 }
 
 function PromiseCatch(onReject) {
-  return this.chain(UNDEFINED, onReject);
+  return this.then(UNDEFINED, onReject);
 }
 
 function PromiseEnqueue(value, tasks) {
-  GetMicrotaskQueue().push(function() {
+  EnqueueMicrotask(function() {
     for (var i = 0; i < tasks.length; i += 2) {
       PromiseHandle(value, tasks[i], tasks[i + 1])
     }
   });
-
-  %SetMicrotaskPending(true);
 }
 
 function PromiseHandle(value, handler, deferred) {
   try {
+    %DebugPromiseHandlePrologue(
+        function() {
+          var queue = GET_PRIVATE(deferred.promise, promiseOnReject);
+          return (queue && queue.length == 0) ? deferred.promise : UNDEFINED;
+        });
     var result = handler(value);
     if (result === deferred.promise)
       throw MakeTypeError('promise_cyclic', [result]);
     else if (IsPromise(result))
-      result.chain(deferred.resolve, deferred.reject);
+      %_CallFunction(result, deferred.resolve, deferred.reject, PromiseChain);
     else
       deferred.resolve(result);
-  } catch(e) {
-    // TODO(rossberg): perhaps log uncaught exceptions below.
-    try { deferred.reject(e) } catch(e) {}
+  } catch (exception) {
+    try {
+      %DebugPromiseHandlePrologue(function() { return deferred.promise });
+      deferred.reject(exception);
+    } catch (e) { } finally {
+      %DebugPromiseHandleEpilogue();
+    }
+  } finally {
+    %DebugPromiseHandleEpilogue();
   }
 }
 
@@ -208,13 +196,15 @@ function PromiseThen(onResolve, onReject) {
     IS_NULL_OR_UNDEFINED(onReject) ? PromiseIdRejectHandler : onReject;
   var that = this;
   var constructor = this.constructor;
-  return this.chain(
+  return %_CallFunction(
+    this,
     function(x) {
       x = PromiseCoerce(constructor, x);
       return x === that ? onReject(MakeTypeError('promise_cyclic', [x])) :
              IsPromise(x) ? x.then(onResolve, onReject) : onResolve(x);
     },
-    onReject
+    onReject,
+    PromiseChain
   );
 }
 
@@ -324,3 +314,12 @@ function SetUpPromise() {
 }
 
 SetUpPromise();
+
+// Functions to expose promise details to the debugger.
+function GetPromiseStatus(promise) {
+  return GET_PRIVATE(promise, promiseStatus);
+}
+
+function GetPromiseValue(promise) {
+  return GET_PRIVATE(promise, promiseValue);
+}

@@ -43,7 +43,6 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
@@ -336,6 +335,18 @@ void InspectorResourceAgent::markResourceAsCached(unsigned long identifier)
     m_frontend->requestServedFromCache(IdentifiersFactory::requestId(identifier));
 }
 
+bool isResponseEmpty(PassRefPtr<TypeBuilder::Network::Response> response)
+{
+    if (!response)
+        return true;
+
+    RefPtr<JSONValue> status = response->get("status");
+    RefPtr<JSONValue> mimeType = response->get("mimeType");
+    RefPtr<JSONObject> headers = response->getObject("headers");
+
+    return !status && !mimeType && (!headers || !headers->size());
+}
+
 void InspectorResourceAgent::didReceiveResourceResponse(LocalFrame* frame, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
@@ -369,7 +380,9 @@ void InspectorResourceAgent::didReceiveResourceResponse(LocalFrame* frame, unsig
 
     m_resourcesData->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), response);
     m_resourcesData->setResourceType(requestId, type);
-    m_frontend->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), m_pageAgent->loaderId(loader), currentTime(), InspectorPageAgent::resourceTypeJson(type), resourceResponse);
+
+    if (!isResponseEmpty(resourceResponse))
+        m_frontend->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), m_pageAgent->loaderId(loader), currentTime(), InspectorPageAgent::resourceTypeJson(type), resourceResponse);
     // If we revalidated the resource and got Not modified, send content length following didReceiveResponse
     // as there will be no calls to didReceiveData from the network stack.
     if (isNotModified && cachedResource && cachedResource->encodedSize())
@@ -493,7 +506,7 @@ void InspectorResourceAgent::willRecalculateStyle(Document*)
     m_isRecalculatingStyle = true;
 }
 
-void InspectorResourceAgent::didRecalculateStyle()
+void InspectorResourceAgent::didRecalculateStyle(int)
 {
     m_isRecalculatingStyle = false;
     m_styleRecalculationInitiator = nullptr;
@@ -695,19 +708,9 @@ void InspectorResourceAgent::canClearBrowserCache(ErrorString*, bool* result)
     *result = true;
 }
 
-void InspectorResourceAgent::clearBrowserCache(ErrorString*)
-{
-    m_client->clearBrowserCache();
-}
-
 void InspectorResourceAgent::canClearBrowserCookies(ErrorString*, bool* result)
 {
     *result = true;
-}
-
-void InspectorResourceAgent::clearBrowserCookies(ErrorString*)
-{
-    m_client->clearBrowserCookies();
 }
 
 void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
@@ -752,7 +755,7 @@ void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, c
     options.crossOriginRequestPolicy = AllowCrossOriginRequests;
 
     InspectorThreadableLoaderClient* inspectorThreadableLoaderClient = new InspectorThreadableLoaderClient(callback);
-    RefPtr<DocumentThreadableLoader> loader = DocumentThreadableLoader::create(document, inspectorThreadableLoaderClient, request, options);
+    RefPtr<DocumentThreadableLoader> loader = DocumentThreadableLoader::create(*document, inspectorThreadableLoaderClient, request, options);
     if (!loader) {
         inspectorThreadableLoaderClient->didFailLoaderCreation();
         return;
@@ -806,10 +809,9 @@ bool InspectorResourceAgent::fetchResourceContent(LocalFrame* frame, const KURL&
     return false;
 }
 
-InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent, InspectorClient* client)
+InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
     : InspectorBaseAgent<InspectorResourceAgent>("Network")
     , m_pageAgent(pageAgent)
-    , m_client(client)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
     , m_isRecalculatingStyle(false)

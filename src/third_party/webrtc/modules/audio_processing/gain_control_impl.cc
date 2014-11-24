@@ -59,7 +59,7 @@ int GainControlImpl::ProcessRenderAudio(AudioBuffer* audio) {
 
   assert(audio->samples_per_split_channel() <= 160);
 
-  int16_t* mixed_data = audio->low_pass_split_data(0);
+  const int16_t* mixed_data = audio->low_pass_split_data(0);
   if (audio->num_channels() > 1) {
     audio->CopyAndMixLowPass(1);
     mixed_data = audio->mixed_low_pass_data(0);
@@ -317,8 +317,8 @@ void* GainControlImpl::CreateHandle() const {
   return handle;
 }
 
-int GainControlImpl::DestroyHandle(void* handle) const {
-  return WebRtcAgc_Free(static_cast<Handle*>(handle));
+void GainControlImpl::DestroyHandle(void* handle) const {
+  WebRtcAgc_Free(static_cast<Handle*>(handle));
 }
 
 int GainControlImpl::InitializeHandle(void* handle) const {
@@ -326,7 +326,7 @@ int GainControlImpl::InitializeHandle(void* handle) const {
                           minimum_capture_level_,
                           maximum_capture_level_,
                           MapSetting(mode_),
-                          apm_->sample_rate_hz());
+                          apm_->proc_sample_rate_hz());
 }
 
 int GainControlImpl::ConfigureHandle(void* handle) const {

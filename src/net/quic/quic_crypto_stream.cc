@@ -22,6 +22,7 @@ QuicCryptoStream::QuicCryptoStream(QuicSession* session)
       encryption_established_(false),
       handshake_confirmed_(false) {
   crypto_framer_.set_visitor(this);
+  DisableFlowControl();
 }
 
 void QuicCryptoStream::OnError(CryptoFramer* framer) {

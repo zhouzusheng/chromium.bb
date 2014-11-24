@@ -36,7 +36,9 @@
 #include "SkPath.h"
 #include "SkTypeface.h"
 #include "SkTypes.h"
+#include "SkUtils.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/fonts/GlyphPage.h"
 #include "platform/fonts/VDMXParser.h"
 #include "platform/geometry/FloatRect.h"
 #include "wtf/unicode/Unicode.h"
@@ -129,11 +131,11 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setLineSpacing(lroundf(ascent) + lroundf(descent) + lroundf(lineGap));
 
-    // For now Skia does not support underline Thickness, once patch is comitted we can uncomment following
-    // code, till then setting Underline Thickness to Zero so that default calculation is done.
-    // float underlineThickness = SkScalarToFloat(metrics.fUnderlineThickness);
-    // m_fontMetrics.setUnderlineThickness(underlineThickness);
-    m_fontMetrics.setUnderlineThickness(0.f);
+    float underlineThickness = SkScalarToFloat(metrics.fUnderlineThickness);
+    m_fontMetrics.setUnderlineThickness(underlineThickness);
+
+    float underlinePosition = SkScalarToFloat(metrics.fUnderlinePosition);
+    m_fontMetrics.setUnderlineThickness(underlinePosition);
 
     if (platformData().orientation() == Vertical && !isTextOrientationFallback()) {
         static const uint32_t vheaTag = SkSetFourByteTag('v', 'h', 'e', 'a');
@@ -277,5 +279,29 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
     return false;
 }
 #endif
+
+bool SimpleFontData::fillGlyphPage(GlyphPage* pageToFill, unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength) const
+{
+    if (SkUTF16_IsHighSurrogate(buffer[bufferLength-1])) {
+        SkDebugf("%s last char is high-surrogate", __FUNCTION__);
+        return false;
+    }
+
+    SkAutoSTMalloc<GlyphPage::size, uint16_t> glyphStorage(length);
+
+    uint16_t* glyphs = glyphStorage.get();
+    SkTypeface* typeface = platformData().typeface();
+    typeface->charsToGlyphs(buffer, SkTypeface::kUTF16_Encoding, glyphs, length);
+
+    bool haveGlyphs = false;
+    for (unsigned i = 0; i < length; i++) {
+        if (glyphs[i]) {
+            pageToFill->setGlyphDataForIndex(offset + i, glyphs[i], this);
+            haveGlyphs = true;
+        }
+    }
+
+    return haveGlyphs;
+}
 
 } // namespace WebCore

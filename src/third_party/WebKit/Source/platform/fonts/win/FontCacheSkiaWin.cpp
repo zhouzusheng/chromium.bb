@@ -42,13 +42,26 @@
 
 namespace WebCore {
 
+HashMap<String, SkTypeface*>* FontCache::s_sideloadedFonts = 0;
+
+// static
+void FontCache::addSideloadedFontForTesting(SkTypeface* typeface)
+{
+    if (!s_sideloadedFonts)
+        s_sideloadedFonts = new HashMap<String, SkTypeface*>;
+    SkString name;
+    typeface->getFamilyName(&name);
+    s_sideloadedFonts->set(name.c_str(), typeface);
+}
+
 FontCache::FontCache()
     : m_purgePreventCount(0)
 {
     SkFontMgr* fontManager;
 
     if (s_useDirectWrite) {
-        fontManager = SkFontMgr_New_DirectWrite();
+        fontManager = SkFontMgr_New_DirectWrite(s_directWriteFactory);
+        s_useSubpixelPositioning = RuntimeEnabledFeatures::subpixelFontScalingEnabled();
     } else {
         fontManager = SkFontMgr_New_GDI();
         // Subpixel text positioning is not supported by the GDI backend.
@@ -79,7 +92,8 @@ PassRefPtr<SimpleFontData> FontCache::platformFallbackForCharacter(const FontDes
     UScriptCode script;
     const wchar_t* family = getFallbackFamily(character,
         fontDescription.genericFamily(),
-        &script);
+        &script,
+        m_fontManager.get());
     FontPlatformData* data = 0;
     if (family)
         data = getFontPlatformData(fontDescription,  AtomicString(family, wcslen(family)));
@@ -143,6 +157,7 @@ PassRefPtr<SimpleFontData> FontCache::platformFallbackForCharacter(const FontDes
         family = panUniFonts[i];
         data = getFontPlatformData(fontDescription, AtomicString(family, wcslen(family)));
     }
+
     // When i-th font (0-base) in |panUniFonts| contains a character and
     // we get out of the loop, |i| will be |i + 1|. That is, if only the
     // last font in the array covers the character, |i| will be numFonts.
@@ -209,6 +224,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         fontDescription.style() == FontStyleItalic && !tf->isItalic() || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
         s_useSubpixelPositioning);
+
     return result;
 }
 

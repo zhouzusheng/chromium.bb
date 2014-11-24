@@ -40,18 +40,15 @@ enum TranslateAttributeMode {
 
 class HTMLElement : public Element {
 public:
-    static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document&);
+    static PassRefPtrWillBeRawPtr<HTMLElement> create(const QualifiedName& tagName, Document&);
 
     virtual String title() const OVERRIDE FINAL;
-
     virtual short tabIndex() const OVERRIDE;
-    void setTabIndex(int);
 
     void setInnerText(const String&, ExceptionState&);
     void setOuterText(const String&, ExceptionState&);
 
     virtual bool hasCustomFocusLogic() const;
-    virtual bool supportsFocus() const OVERRIDE;
 
     String contentEditable() const;
     void setContentEditable(const String&, ExceptionState&);
@@ -64,6 +61,9 @@ public:
 
     bool translate() const;
     void setTranslate(bool);
+
+    const AtomicString& dir();
+    void setDir(const AtomicString&);
 
     void click();
 
@@ -123,7 +123,6 @@ private:
     TranslateAttributeMode translateAttributeMode() const;
 
     void handleKeypressEvent(KeyboardEvent*);
-    bool supportsSpatialNavigationFocus() const;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLElement, isHTMLElement());

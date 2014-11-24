@@ -33,7 +33,6 @@
 #include "core/dom/Range.h"
 #include "core/editing/markup.h"
 #include "core/frame/LocalFrame.h"
-#include "modules/filesystem/DraggedIsolatedFileSystem.h"
 #include "platform/FileMetadata.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
 #include "platform/weborigin/KURL.h"
@@ -132,7 +131,7 @@ bool DragData::containsCompatibleContent() const
         || containsFiles();
 }
 
-PassRefPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame, PassRefPtr<Range>, bool, bool&) const
+PassRefPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame, PassRefPtrWillBeRawPtr<Range>, bool, bool&) const
 {
     /*
      * Order is richest format first. On OSX this is:
@@ -163,10 +162,7 @@ PassRefPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame, PassRefPtr<
 
 String DragData::droppedFileSystemId() const
 {
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(m_platformDragData);
-    if (!filesystem)
-        return String();
-    return filesystem->filesystemId();
+    return m_platformDragData->filesystemId();
 }
 
 } // namespace WebCore

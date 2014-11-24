@@ -68,9 +68,9 @@ namespace WebCore {
 
         WorkerGlobalScope& workerGlobalScope() { return m_workerGlobalScope; }
 
-        void evaluate(const ScriptSourceCode&, RefPtr<ErrorEvent>* = 0);
+        void evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = 0);
 
-        void rethrowExceptionFromImportedScript(PassRefPtr<ErrorEvent>);
+        void rethrowExceptionFromImportedScript(PassRefPtrWillBeRawPtr<ErrorEvent>);
 
         // Async request to terminate a future JS execution. Eventually causes termination
         // exception raised during JS execution, if the worker thread happens to run JS.
@@ -91,8 +91,10 @@ namespace WebCore {
         ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, WorkerGlobalScopeExecutionState*);
 
         v8::Isolate* isolate() const { return m_isolate; }
-        DOMWrapperWorld* world() const { return m_world.get(); }
-        v8::Local<v8::Context> context() { return m_perContextData ? m_perContextData->context() : v8::Local<v8::Context>(); }
+        DOMWrapperWorld& world() const { return *m_world; }
+        ScriptState* scriptState() { return m_scriptState.get(); }
+        v8::Local<v8::Context> context() { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
+        bool isContextInitialized() { return m_scriptState && !!m_scriptState->perContextData(); }
 
         // Send a notification about current thread is going to be idle.
         // Returns true if the embedder should stop calling idleNotification
@@ -101,17 +103,16 @@ namespace WebCore {
 
     private:
         bool initializeContextIfNeeded();
-        void disposeContext();
 
         v8::Isolate* m_isolate;
         WorkerGlobalScope& m_workerGlobalScope;
-        OwnPtr<V8PerContextData> m_perContextData;
-        String m_disableEvalPending;
+        RefPtr<ScriptState> m_scriptState;
         RefPtr<DOMWrapperWorld> m_world;
+        String m_disableEvalPending;
         bool m_executionForbidden;
         bool m_executionScheduledToTerminate;
         mutable Mutex m_scheduledTerminationMutex;
-        RefPtr<ErrorEvent> m_errorEventFromImportedScript;
+        RefPtrWillBePersistent<ErrorEvent> m_errorEventFromImportedScript;
         OwnPtr<V8IsolateInterruptor> m_interruptor;
     };
 

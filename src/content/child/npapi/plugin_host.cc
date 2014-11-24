@@ -22,7 +22,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/user_agent.h"
 #include "content/public/common/webplugininfo.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/npapi/bindings/npruntime.h"
@@ -623,7 +623,7 @@ void NPN_InvalidateRect(NPP id, NPRect *invalidRect) {
   // Before a windowless plugin can refresh part of its drawing area, it must
   // first invalidate it.  This function causes the NPP_HandleEvent method to
   // pass an update event or a paint message to the plug-in.  After calling
-  // this method, the plug-in recieves a paint message asynchronously.
+  // this method, the plug-in receives a paint message asynchronously.
 
   // The browser redraws invalid areas of the document and any windowless
   // plug-ins at regularly timed intervals. To force a paint message, the
@@ -749,18 +749,6 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       rv = NPERR_NO_ERROR;
       break;
     }
-  #if defined(TOOLKIT_GTK)
-    case NPNVToolkit:
-      // Tell them we are GTK2.  (The alternative is GTK 1.2.)
-      *reinterpret_cast<int*>(value) = NPNVGtk2;
-      rv = NPERR_NO_ERROR;
-      break;
-
-    case NPNVSupportsXEmbedBool:
-      *reinterpret_cast<NPBool*>(value) = true;
-      rv = NPERR_NO_ERROR;
-      break;
-  #endif
     case NPNVSupportsWindowless: {
       NPBool* supports_windowless = reinterpret_cast<NPBool*>(value);
       *supports_windowless = true;

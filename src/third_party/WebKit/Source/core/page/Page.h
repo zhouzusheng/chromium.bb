@@ -24,13 +24,13 @@
 #include "core/dom/ViewportDescription.h"
 #include "core/frame/SettingsDelegate.h"
 #include "core/frame/UseCounter.h"
-#include "core/page/HistoryController.h"
 #include "core/page/PageAnimator.h"
 #include "core/page/PageVisibilityState.h"
 #include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
@@ -53,17 +53,13 @@ class EditorClient;
 class FocusController;
 class LocalFrame;
 class FrameHost;
-class FrameSelection;
-class HaltablePlugin;
 class HistoryItem;
 class InspectorClient;
 class InspectorController;
-class Node;
 class PageLifecycleNotifier;
 class PlatformMouseEvent;
 class PluginData;
 class PointerLockController;
-class ProgressTracker;
 class Range;
 class RenderBox;
 class RenderObject;
@@ -82,7 +78,8 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class Page FINAL : public Supplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
+class Page FINAL : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
@@ -116,9 +113,10 @@ public:
     // This method returns all ordinary pages.
     static HashSet<Page*>& ordinaryPages();
 
-    FrameHost& frameHost() { return *m_frameHost; }
+    FrameHost& frameHost() const { return *m_frameHost; }
 
     void setNeedsRecalcStyleInAllFrames();
+    void updateAcceleratedCompositingSettings();
 
     ViewportDescription viewportDescription() const;
 
@@ -128,8 +126,6 @@ public:
     EditorClient& editorClient() const { return *m_editorClient; }
     SpellCheckerClient& spellCheckerClient() const { return *m_spellCheckerClient; }
     UndoStack& undoStack() const { return *m_undoStack; }
-
-    HistoryController& historyController() const { return *m_historyController; }
 
     void setMainFrame(PassRefPtr<LocalFrame>);
     LocalFrame* mainFrame() const { return m_mainFrame.get(); }
@@ -152,16 +148,15 @@ public:
     ContextMenuController& contextMenuController() const { return *m_contextMenuController; }
     InspectorController& inspectorController() const { return *m_inspectorController; }
     PointerLockController& pointerLockController() const { return *m_pointerLockController; }
-    ValidationMessageClient* validationMessageClient() const { return m_validationMessageClient; }
-    void setValidationMessageClient(ValidationMessageClient* client) { m_validationMessageClient = client; }
+    ValidationMessageClient& validationMessageClient() const { return *m_validationMessageClient; }
+    void setValidationMessageClient(PassOwnPtr<ValidationMessageClient>);
 
     ScrollingCoordinator* scrollingCoordinator();
 
     String mainThreadScrollingReasonsAsText();
-    PassRefPtr<ClientRectList> nonFastScrollableRects(const LocalFrame*);
+    PassRefPtrWillBeRawPtr<ClientRectList> nonFastScrollableRects(const LocalFrame*);
 
     Settings& settings() const { return *m_settings; }
-    ProgressTracker& progress() const { return *m_progress; }
     BackForwardClient& backForward() const { return *m_backForwardClient; }
 
     UseCounter& useCounter() { return m_useCounter; }
@@ -178,7 +173,7 @@ public:
     bool defersLoading() const { return m_defersLoading; }
 
     void setPageScaleFactor(float scale, const IntPoint& origin);
-    float pageScaleFactor() const { return m_pageScaleFactor; }
+    float pageScaleFactor() const;
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float);
@@ -198,7 +193,7 @@ public:
     PageVisibilityState visibilityState() const;
     void setVisibilityState(PageVisibilityState, bool);
 
-    bool isCursorVisible() const { return m_isCursorVisible; }
+    bool isCursorVisible() const;
     void setIsCursorVisible(bool isVisible) { m_isCursorVisible = isVisible; }
 
 #ifndef NDEBUG
@@ -208,7 +203,7 @@ public:
 
     double timerAlignmentInterval() const;
 
-    class MultisamplingChangedObserver {
+    class MultisamplingChangedObserver : public WillBeGarbageCollectedMixin {
     public:
         virtual void multisamplingChanged(bool) = 0;
     };
@@ -220,6 +215,9 @@ public:
 
     static void networkStateChanged(bool online);
     PassOwnPtr<LifecycleNotifier<Page> > createLifecycleNotifier();
+
+    void trace(Visitor*);
+    void willBeDestroyed();
 
 protected:
     PageLifecycleNotifier& lifecycleNotifier();
@@ -250,9 +248,6 @@ private:
     const OwnPtr<InspectorController> m_inspectorController;
     const OwnPtr<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
-
-    const OwnPtr<HistoryController> m_historyController;
-    const OwnPtr<ProgressTracker> m_progress;
     const OwnPtr<UndoStack> m_undoStack;
 
     RefPtr<LocalFrame> m_mainFrame;
@@ -261,9 +256,9 @@ private:
 
     BackForwardClient* m_backForwardClient;
     EditorClient* const m_editorClient;
-    ValidationMessageClient* m_validationMessageClient;
     SpellCheckerClient* const m_spellCheckerClient;
     StorageClient* m_storageClient;
+    OwnPtr<ValidationMessageClient> m_validationMessageClient;
 
     UseCounter m_useCounter;
 
@@ -273,7 +268,6 @@ private:
     bool m_tabKeyCyclesThroughElements;
     bool m_defersLoading;
 
-    float m_pageScaleFactor;
     float m_deviceScaleFactor;
 
     OwnPtr<StorageNamespace> m_sessionStorage;
@@ -288,11 +282,11 @@ private:
     bool m_isPainting;
 #endif
 
-    HashSet<MultisamplingChangedObserver*> m_multisamplingChangedObservers;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> > m_multisamplingChangedObservers;
 
     // A pointer to all the interfaces provided to in-process Frames for this Page.
     // FIXME: Most of the members of Page should move onto FrameHost.
-    OwnPtr<FrameHost> m_frameHost;
+    OwnPtrWillBeMember<FrameHost> m_frameHost;
 };
 
 } // namespace WebCore

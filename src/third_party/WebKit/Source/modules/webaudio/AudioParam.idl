@@ -27,6 +27,7 @@
  */
 
 [
+    WillBeGarbageCollected,
     Conditional=WEB_AUDIO
 ] interface AudioParam {
     attribute float value;
@@ -53,7 +54,5 @@
 
     // Cancels all scheduled parameter changes with times greater than or equal to startTime.
     void cancelScheduledValues(double startTime);
-
-    [MeasureAs=LegacyWebAudio, ImplementedAs=setTargetAtTime] void setTargetValueAtTime(float targetValue, double time, double timeConstant);
 
 };

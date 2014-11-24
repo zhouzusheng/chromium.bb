@@ -29,12 +29,11 @@
  */
 
 #include "config.h"
-#include "StorageQuotaClientImpl.h"
+#include "web/StorageQuotaClientImpl.h"
 
-#include "WebFrameClient.h"
-#include "WebFrameImpl.h"
 #include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -45,15 +44,17 @@
 #include "modules/quota/StorageQuotaCallbacksImpl.h"
 #include "modules/quota/StorageUsageCallback.h"
 #include "public/platform/WebStorageQuotaType.h"
+#include "public/web/WebFrameClient.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/Threading.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-PassOwnPtr<StorageQuotaClientImpl> StorageQuotaClientImpl::create()
+PassOwnPtrWillBeRawPtr<StorageQuotaClientImpl> StorageQuotaClientImpl::create()
 {
-    return adoptPtr(new StorageQuotaClientImpl());
+    return adoptPtrWillBeNoop(new StorageQuotaClientImpl());
 }
 
 StorageQuotaClientImpl::~StorageQuotaClientImpl()
@@ -66,7 +67,7 @@ void StorageQuotaClientImpl::requestQuota(ExecutionContext* executionContext, We
 
     if (executionContext->isDocument()) {
         Document* document = toDocument(executionContext);
-        WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
         OwnPtr<StorageQuotaCallbacks> callbacks = DeprecatedStorageQuotaCallbacksImpl::create(successCallback, errorCallback);
         webFrame->client()->requestStorageQuota(webFrame, storageType, newQuotaInBytes, callbacks.release());
     } else {
@@ -79,13 +80,13 @@ ScriptPromise StorageQuotaClientImpl::requestPersistentQuota(ExecutionContext* e
 {
     ASSERT(executionContext);
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(executionContext);
+    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(executionContext)));
     ScriptPromise promise = resolver->promise();
 
     if (executionContext->isDocument()) {
         Document* document = toDocument(executionContext);
-        WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
-        OwnPtr<StorageQuotaCallbacks> callbacks = StorageQuotaCallbacksImpl::create(resolver, executionContext);
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
+        OwnPtr<StorageQuotaCallbacks> callbacks = StorageQuotaCallbacksImpl::create(resolver);
         webFrame->client()->requestStorageQuota(webFrame, WebStorageQuotaTypePersistent, newQuotaInBytes, callbacks.release());
     } else {
         // Requesting quota in Worker is not supported.

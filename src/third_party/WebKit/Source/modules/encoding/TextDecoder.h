@@ -32,7 +32,7 @@
 #define TextDecoder_h
 
 #include "bindings/v8/Dictionary.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/TextCodec.h"
@@ -43,9 +43,9 @@ namespace WebCore {
 
 class ExceptionState;
 
-class TextDecoder FINAL : public RefCountedWillBeGarbageCollectedFinalized<TextDecoder> {
+class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder> {
 public:
-    static PassRefPtrWillBeRawPtr<TextDecoder> create(const String& label, const Dictionary&, ExceptionState&);
+    static TextDecoder* create(const String& label, const Dictionary&, ExceptionState&);
     ~TextDecoder();
 
     // Implement the IDL

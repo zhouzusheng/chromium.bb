@@ -15,12 +15,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "ipc/ipc_listener.h"
-#include "media/video/video_decode_accelerator.h"
 #include "ui/events/latency_info.h"
 
 struct GPUCommandBufferConsoleMessage;
@@ -35,6 +34,11 @@ class GpuMemoryBuffer;
 
 namespace gpu {
 struct Mailbox;
+}
+
+namespace media {
+class VideoDecodeAccelerator;
+class VideoEncodeAccelerator;
 }
 
 namespace content {
@@ -69,8 +73,15 @@ class CommandBufferProxyImpl
   // Note that the GpuVideoDecodeAccelerator may still fail to be created in
   // the GPU process, even if this returns non-NULL. In this case the VDA client
   // is notified of an error later, after Initialize().
-  scoped_ptr<media::VideoDecodeAccelerator> CreateVideoDecoder(
-      media::VideoCodecProfile profile);
+  scoped_ptr<media::VideoDecodeAccelerator> CreateVideoDecoder();
+
+  // Sends an IPC message to create a GpuVideoEncodeAccelerator. Creates and
+  // returns it as an owned pointer to a media::VideoEncodeAccelerator.  Returns
+  // NULL on failure to create the GpuVideoEncodeAcceleratorHost.
+  // Note that the GpuVideoEncodeAccelerator may still fail to be created in
+  // the GPU process, even if this returns non-NULL. In this case the VEA client
+  // is notified of an error later, after Initialize();
+  scoped_ptr<media::VideoEncodeAccelerator> CreateVideoEncoder();
 
   // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -78,30 +89,23 @@ class CommandBufferProxyImpl
 
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
-  virtual State GetState() OVERRIDE;
   virtual State GetLastState() OVERRIDE;
   virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
   virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
   virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
   virtual void SetGetBuffer(int32 shm_id) OVERRIDE;
-  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
   virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
                                                           int32* id) OVERRIDE;
   virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
-  virtual scoped_refptr<gpu::Buffer> GetTransferBuffer(int32 id) OVERRIDE;
-  virtual void SetToken(int32 token) OVERRIDE;
-  virtual void SetParseError(gpu::error::Error error) OVERRIDE;
-  virtual void SetContextLostReason(
-      gpu::error::ContextLostReason reason) OVERRIDE;
 
   // gpu::GpuControl implementation:
   virtual gpu::Capabilities GetCapabilities() OVERRIDE;
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
-      size_t width,
-      size_t height,
-      unsigned internalformat,
-      int32* id) OVERRIDE;
+  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
+                                                      size_t height,
+                                                      unsigned internalformat,
+                                                      unsigned usage,
+                                                      int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual void SignalSyncPoint(uint32 sync_point,
@@ -162,13 +166,7 @@ class CommandBufferProxyImpl
   void TryUpdateState();
 
   // The shared memory area used to update state.
-  gpu::CommandBufferSharedState* shared_state() const {
-    return reinterpret_cast<gpu::CommandBufferSharedState*>(
-        shared_state_shm_->memory());
-  }
-
-  // Local cache of id to transfer buffer mapping.
-  TransferBufferMap transfer_buffers_;
+  gpu::CommandBufferSharedState* shared_state() const;
 
   // Unowned list of DeletionObservers.
   ObserverList<DeletionObserver> deletion_observers_;

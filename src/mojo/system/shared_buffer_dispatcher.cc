@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "mojo/system/constants.h"
 #include "mojo/system/memory.h"
+#include "mojo/system/raw_shared_buffer.h"
 
 namespace mojo {
 namespace system {
@@ -70,12 +71,14 @@ SharedBufferDispatcher::~SharedBufferDispatcher() {
 }
 
 void SharedBufferDispatcher::CloseImplNoLock() {
+  lock().AssertAcquired();
   DCHECK(shared_buffer_);
   shared_buffer_ = NULL;
 }
 
 scoped_refptr<Dispatcher>
     SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
+  lock().AssertAcquired();
   DCHECK(shared_buffer_);
   scoped_refptr<RawSharedBuffer> shared_buffer;
   shared_buffer.swap(shared_buffer_);
@@ -85,6 +88,7 @@ scoped_refptr<Dispatcher>
 MojoResult SharedBufferDispatcher::DuplicateBufferHandleImplNoLock(
     const MojoDuplicateBufferHandleOptions* options,
     scoped_refptr<Dispatcher>* new_dispatcher) {
+  lock().AssertAcquired();
   if (options) {
     // The |struct_size| field must be valid to read.
     if (!VerifyUserPointer<uint32_t>(&options->struct_size, 1))
@@ -106,7 +110,8 @@ MojoResult SharedBufferDispatcher::MapBufferImplNoLock(
     uint64_t offset,
     uint64_t num_bytes,
     MojoMapBufferFlags flags,
-    scoped_ptr<RawSharedBuffer::Mapping>* mapping) {
+    scoped_ptr<RawSharedBufferMapping>* mapping) {
+  lock().AssertAcquired();
   DCHECK(shared_buffer_);
 
   if (offset > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))

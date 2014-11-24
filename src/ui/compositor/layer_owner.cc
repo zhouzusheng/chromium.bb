@@ -21,10 +21,10 @@ void LayerOwner::SetLayer(Layer* layer) {
   layer_->owner_ = this;
 }
 
-Layer* LayerOwner::AcquireLayer() {
+scoped_ptr<Layer> LayerOwner::AcquireLayer() {
   if (layer_owner_)
     layer_owner_->owner_ = NULL;
-  return layer_owner_.release();
+  return layer_owner_.Pass();
 }
 
 scoped_ptr<Layer> LayerOwner::RecreateLayer() {
@@ -38,7 +38,8 @@ scoped_ptr<Layer> LayerOwner::RecreateLayer() {
   const gfx::Rect layer_bounds(old_layer->bounds());
   Layer* new_layer = new ui::Layer(old_layer->type());
   SetLayer(new_layer);
-  new_layer->SetVisible(old_layer->visible());
+  new_layer->SetVisible(old_layer->GetTargetVisibility());
+  new_layer->SetOpacity(old_layer->GetTargetOpacity());
   new_layer->set_scale_content(old_layer->scale_content());
   new_layer->SetBounds(layer_bounds);
   new_layer->SetMasksToBounds(old_layer->GetMasksToBounds());

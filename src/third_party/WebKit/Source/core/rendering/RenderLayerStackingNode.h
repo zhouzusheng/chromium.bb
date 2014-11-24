@@ -170,7 +170,6 @@ private:
 #endif
 
     bool shouldBeNormalFlowOnly() const;
-    bool shouldBeNormalFlowOnlyIgnoringCompositedScrolling() const;
 
     void updateNormalFlowList();
     void dirtyNormalFlowListCanBePromotedToStackingContainer();
@@ -214,7 +213,6 @@ private:
     unsigned m_isNormalFlowOnly : 1;
 
     unsigned m_needsToBeStackingContainer : 1;
-    unsigned m_needsToBeStackingContainerHasBeenRecorded : 1;
 
 #if !ASSERT_DISABLED
     unsigned m_layerListMutationAllowed : 1;

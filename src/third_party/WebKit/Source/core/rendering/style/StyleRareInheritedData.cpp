@@ -23,6 +23,7 @@
 #include "core/rendering/style/StyleRareInheritedData.h"
 
 #include "core/rendering/style/CursorList.h"
+#include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
@@ -85,6 +86,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textJustify(RenderStyle::initialTextJustify())
     , m_textOrientation(TextOrientationVerticalRight)
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
+    , m_textIndentType(RenderStyle::initialTextIndentLine())
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
     , m_imageRendering(RenderStyle::initialImageRendering())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
@@ -141,6 +143,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_textJustify(o.m_textJustify)
     , m_textOrientation(o.m_textOrientation)
     , m_textIndentLine(o.m_textIndentLine)
+    , m_textIndentType(o.m_textIndentType)
     , m_lineBoxContain(o.m_lineBoxContain)
     , m_imageRendering(o.m_imageRendering)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
@@ -162,15 +165,6 @@ StyleRareInheritedData::~StyleRareInheritedData()
 {
 }
 
-static bool cursorDataEquivalent(const CursorList* c1, const CursorList* c2)
-{
-    if (c1 == c2)
-        return true;
-    if ((!c1 && c2) || (c1 && !c2))
-        return false;
-    return (*c1 == *c2);
-}
-
 bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 {
     return m_textStrokeColor == o.m_textStrokeColor
@@ -183,7 +177,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && tapHighlightColor == o.tapHighlightColor
         && shadowDataEquivalent(o)
         && highlight == o.highlight
-        && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
+        && dataEquivalent(cursorData.get(), o.cursorData.get())
         && indent == o.indent
         && m_effectiveZoom == o.m_effectiveZoom
         && widows == o.widows
@@ -217,26 +211,28 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textJustify == o.m_textJustify
         && m_textOrientation == o.m_textOrientation
         && m_textIndentLine == o.m_textIndentLine
+        && m_textIndentType == o.m_textIndentType
         && m_lineBoxContain == o.m_lineBoxContain
         && hyphenationString == o.hyphenationString
         && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
-        && QuotesData::equals(quotes.get(), o.quotes.get())
+        && quotesDataEquivalent(o)
         && m_tabSize == o.m_tabSize
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
         && caretColor == o.caretColor
-        && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());
+        && dataEquivalent(listStyleImage.get(), o.listStyleImage.get());
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const
 {
-    if ((!textShadow && o.textShadow) || (textShadow && !o.textShadow))
-        return false;
-    if (textShadow && o.textShadow && (*textShadow != *o.textShadow))
-        return false;
-    return true;
+    return dataEquivalent(textShadow.get(), o.textShadow.get());
+}
+
+bool StyleRareInheritedData::quotesDataEquivalent(const StyleRareInheritedData& o) const
+{
+    return dataEquivalent(quotes, o.quotes);
 }
 
 } // namespace WebCore

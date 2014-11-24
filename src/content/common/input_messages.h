@@ -11,13 +11,13 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/input_param_traits.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/common/input/touch_action.h"
 #include "ipc/ipc_message_macros.h"
@@ -122,11 +122,6 @@ IPC_MESSAGE_ROUTED0(InputMsg_MouseCaptureLost)
 // TODO(darin): figure out how this meshes with RestoreFocus
 IPC_MESSAGE_ROUTED1(InputMsg_SetFocus,
                     bool /* enable */)
-
-// Tells the renderer to focus the first (last if reverse is true) focusable
-// node.
-IPC_MESSAGE_ROUTED1(InputMsg_SetInitialFocus,
-                    bool /* reverse */)
 
 // Tells the renderer to scroll the currently focused node into rect only if
 // the currently focused node is a Text node (textfield, text area or content

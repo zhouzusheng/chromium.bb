@@ -20,10 +20,8 @@
 #include "content/common/message_router.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_channel_handle.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sync_channel.h"
-#include "media/video/video_decode_accelerator.h"
-#include "media/video/video_encode_accelerator.h"
+#include "ipc/message_filter.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
@@ -41,6 +39,11 @@ class WaitableEvent;
 
 namespace IPC {
 class SyncMessageFilter;
+}
+
+namespace media {
+class VideoDecodeAccelerator;
+class VideoEncodeAccelerator;
 }
 
 namespace content {
@@ -65,8 +68,10 @@ class CONTENT_EXPORT GpuChannelHostFactory {
   virtual base::MessageLoop* GetMainLoop() = 0;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() = 0;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t size) = 0;
-  virtual int32 CreateViewCommandBuffer(
-      int32 surface_id, const GPUCreateCommandBufferConfig& init_params) = 0;
+  virtual bool CreateViewCommandBuffer(
+      int32 surface_id,
+      const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id) = 0;
   virtual void CreateImage(
       gfx::PluginWindowHandle window,
       int32 image_id,
@@ -75,7 +80,8 @@ class CONTENT_EXPORT GpuChannelHostFactory {
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
-      unsigned internalformat) = 0;
+      unsigned internalformat,
+      unsigned usage) = 0;
 };
 
 // Encapsulates an IPC channel between the client and one GPU process.
@@ -125,11 +131,11 @@ class GpuChannelHost : public IPC::Sender,
 
   // Creates a video decoder in the GPU process.
   scoped_ptr<media::VideoDecodeAccelerator> CreateVideoDecoder(
-      int command_buffer_route_id,
-      media::VideoCodecProfile profile);
+      int command_buffer_route_id);
 
   // Creates a video encoder in the GPU process.
-  scoped_ptr<media::VideoEncodeAccelerator> CreateVideoEncoder();
+  scoped_ptr<media::VideoEncodeAccelerator> CreateVideoEncoder(
+      int command_buffer_route_id);
 
   // Destroy a command buffer created by this channel.
   void DestroyCommandBuffer(CommandBufferProxyImpl* command_buffer);
@@ -158,6 +164,9 @@ class GpuChannelHost : public IPC::Sender,
   // Reserve one unused gpu memory buffer ID.
   int32 ReserveGpuMemoryBufferId();
 
+  // Generate a route ID guaranteed to be unique for this channel.
+  int32 GenerateRouteID();
+
  private:
   friend class base::RefCountedThreadSafe<GpuChannelHost>;
   GpuChannelHost(GpuChannelHostFactory* factory,
@@ -169,7 +178,7 @@ class GpuChannelHost : public IPC::Sender,
   // A filter used internally to route incoming messages from the IO thread
   // to the correct message loop. It also maintains some shared state between
   // all the contexts.
-  class MessageFilter : public IPC::ChannelProxy::MessageFilter {
+  class MessageFilter : public IPC::MessageFilter {
    public:
     MessageFilter();
 
@@ -180,7 +189,7 @@ class GpuChannelHost : public IPC::Sender,
     // Called on the IO thread.
     void RemoveRoute(int route_id);
 
-    // IPC::ChannelProxy::MessageFilter implementation
+    // IPC::MessageFilter implementation
     // (called on the IO thread):
     virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
     virtual void OnChannelError() OVERRIDE;
@@ -209,6 +218,7 @@ class GpuChannelHost : public IPC::Sender,
   // except:
   // - |next_transfer_buffer_id_|, atomic type
   // - |next_gpu_memory_buffer_id_|, atomic type
+  // - |next_route_id_|, atomic type
   // - |proxies_|, protected by |context_lock_|
   GpuChannelHostFactory* const factory_;
 
@@ -225,6 +235,9 @@ class GpuChannelHost : public IPC::Sender,
 
   // Gpu memory buffer IDs are allocated in sequence.
   base::AtomicSequenceNumber next_gpu_memory_buffer_id_;
+
+  // Route IDs are allocated in sequence.
+  base::AtomicSequenceNumber next_route_id_;
 
   // Protects proxies_.
   mutable base::Lock context_lock_;

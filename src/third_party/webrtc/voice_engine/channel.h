@@ -8,13 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VOICE_ENGINE_CHANNEL_H
-#define WEBRTC_VOICE_ENGINE_CHANNEL_H
+#ifndef WEBRTC_VOICE_ENGINE_CHANNEL_H_
+#define WEBRTC_VOICE_ENGINE_CHANNEL_H_
 
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
 #include "webrtc/modules/audio_conference_mixer/interface/audio_conference_mixer_defines.h"
+#include "webrtc/modules/audio_processing/rms_level.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
 #include "webrtc/modules/utility/interface/file_player.h"
@@ -74,7 +75,6 @@ class ChannelState {
     struct State {
         State() : rx_apm_is_enabled(false),
                   input_external_media(false),
-                  output_is_on_hold(false),
                   output_file_playing(false),
                   input_file_playing(false),
                   playing(false),
@@ -83,7 +83,6 @@ class ChannelState {
 
         bool rx_apm_is_enabled;
         bool input_external_media;
-        bool output_is_on_hold;
         bool output_file_playing;
         bool input_file_playing;
         bool playing;
@@ -113,11 +112,6 @@ class ChannelState {
     void SetInputExternalMedia(bool enable) {
         CriticalSectionScoped lock(lock_.get());
         state_.input_external_media = enable;
-    }
-
-    void SetOutputIsOnHold(bool enable) {
-        CriticalSectionScoped lock(lock_.get());
-        state_.output_is_on_hold = enable;
     }
 
     void SetOutputFilePlaying(bool enable) {
@@ -193,8 +187,6 @@ public:
 
     int32_t SetNetEQPlayoutMode(NetEqModes mode);
     int32_t GetNetEQPlayoutMode(NetEqModes& mode);
-    int32_t SetOnHoldStatus(bool enable, OnHoldModes mode);
-    int32_t GetOnHoldStatus(bool& enabled, OnHoldModes& mode);
     int32_t RegisterVoiceEngineObserver(VoiceEngineObserver& observer);
     int32_t DeRegisterVoiceEngineObserver();
 
@@ -206,14 +198,7 @@ public:
     int32_t GetVADStatus(bool& enabledVAD, ACMVADMode& mode, bool& disabledDTX);
     int32_t SetRecPayloadType(const CodecInst& codec);
     int32_t GetRecPayloadType(CodecInst& codec);
-    int32_t SetAMREncFormat(AmrMode mode);
-    int32_t SetAMRDecFormat(AmrMode mode);
-    int32_t SetAMRWbEncFormat(AmrMode mode);
-    int32_t SetAMRWbDecFormat(AmrMode mode);
     int32_t SetSendCNPayloadType(int type, PayloadFrequencies frequency);
-    int32_t SetISACInitTargetRate(int rateBps, bool useFixedFrameSize);
-    int32_t SetISACMaxRate(int rateBps);
-    int32_t SetISACMaxPayloadSize(int sizeBytes);
 
     // VoE dual-streaming.
     int SetSecondarySendCodec(const CodecInst& codec, int red_payload_type);
@@ -281,12 +266,6 @@ public:
     int SetChannelOutputVolumeScaling(float scaling);
     int GetChannelOutputVolumeScaling(float& scaling) const;
 
-    // VoECallReport
-    void ResetDeadOrAliveCounters();
-    int ResetRTCPStatistics();
-    int GetRoundTripTimeSummary(StatVal& delaysMs) const;
-    int GetDeadOrAliveCounters(int& countDead, int& countAlive) const;
-
     // VoENetEqStats
     int GetNetworkStatistics(NetworkStatistics& stats);
     void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const;
@@ -341,6 +320,7 @@ public:
     int GetRemoteSSRC(unsigned int& ssrc);
     int GetRemoteCSRCs(unsigned int arrCSRC[15]);
     int SetSendAudioLevelIndicationStatus(bool enable, unsigned char id);
+    int SetReceiveAudioLevelIndicationStatus(bool enable, unsigned char id);
     int SetSendAbsoluteSenderTimeStatus(bool enable, unsigned char id);
     int SetReceiveAbsoluteSenderTimeStatus(bool enable, unsigned char id);
     int SetRTCPStatus(bool enable);
@@ -479,10 +459,6 @@ public:
     {
         return _externalMixing;
     }
-    bool InputIsOnHold() const
-    {
-        return _inputIsOnHold;
-    }
     RtpRtcp* RtpRtcpModulePtr() const
     {
         return _rtpRtcpModule.get();
@@ -514,7 +490,6 @@ private:
     int InsertInbandDtmfTone();
     int32_t MixOrReplaceAudioWithFile(int mixingFrequency);
     int32_t MixAudioWithFile(AudioFrame& audioFrame, int mixingFrequency);
-    void UpdateDeadOrAliveCounters(bool alive);
     int32_t SendPacketRaw(const void *data, int len, bool RTCP);
     void UpdatePacketDelay(uint32_t timestamp,
                            uint16_t sequenceNumber);
@@ -545,9 +520,9 @@ private:
     AudioLevel _outputAudioLevel;
     bool _externalTransport;
     AudioFrame _audioFrame;
-    scoped_array<int16_t> mono_recording_audio_;
-    // Resampler is used when input data is stereo while codec is mono.
-    PushResampler input_resampler_;
+    scoped_ptr<int16_t[]> mono_recording_audio_;
+    // Downsamples to the codec rate if necessary.
+    PushResampler<int16_t> input_resampler_;
     uint8_t _audioLevel_dBov;
     FilePlayer* _inputFilePlayerPtr;
     FilePlayer* _outputFilePlayerPtr;
@@ -582,7 +557,7 @@ private:
     VoiceEngineObserver* _voiceEngineObserverPtr; // owned by base
     CriticalSectionWrapper* _callbackCritSectPtr; // owned by base
     Transport* _transportPtr; // WebRtc socket or external transport
-    scoped_ptr<AudioProcessing> rtp_audioproc_;
+    RMSLevel rms_level_;
     scoped_ptr<AudioProcessing> rx_audioproc_; // far end AudioProcessing
     VoERxVadCallback* _rxVadObserverPtr;
     int32_t _oldVadDecision;
@@ -592,7 +567,6 @@ private:
     // VoEBase
     bool _externalPlayout;
     bool _externalMixing;
-    bool _inputIsOnHold;
     bool _mixFileWithMicrophone;
     bool _rtpObserver;
     bool _rtcpObserver;
@@ -615,8 +589,6 @@ private:
     uint32_t _rtpTimeOutSeconds;
     bool _connectionObserver;
     VoEConnectionObserver* _connectionObserverPtr;
-    uint32_t _countAliveDetections;
-    uint32_t _countDeadDetections;
     AudioFrame::SpeechType _outputSpeechType;
     ViENetwork* vie_network_;
     int video_channel_;
@@ -635,4 +607,4 @@ private:
 }  // namespace voe
 }  // namespace webrtc
 
-#endif  // WEBRTC_VOICE_ENGINE_CHANNEL_H
+#endif  // WEBRTC_VOICE_ENGINE_CHANNEL_H_

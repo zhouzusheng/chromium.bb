@@ -29,10 +29,8 @@
  */
 
 #include "config.h"
-#include "AssociatedURLLoader.h"
+#include "web/AssociatedURLLoader.h"
 
-#include "WebDataSource.h"
-#include "WebFrameImpl.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/loader/DocumentThreadableLoader.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
@@ -47,6 +45,8 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLLoaderClient.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/web/WebDataSource.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
@@ -111,9 +111,7 @@ const HTTPHeaderSet& HTTPResponseHeaderValidator::blockedHeaders()
         m_exposedHeaders.remove("set-cookie2");
         // Block Access-Control-Expose-Header itself. It could be exposed later.
         m_blockedHeaders.add("access-control-expose-headers");
-        HTTPHeaderSet::const_iterator end = m_exposedHeaders.end();
-        for (HTTPHeaderSet::const_iterator it = m_exposedHeaders.begin(); it != end; ++it)
-            m_blockedHeaders.remove(*it);
+        m_blockedHeaders.removeAll(m_exposedHeaders);
     }
 
     return m_blockedHeaders;
@@ -290,7 +288,7 @@ void AssociatedURLLoader::ClientAdapter::notifyError(Timer<ClientAdapter>* timer
     m_client->didFail(m_loader, m_error);
 }
 
-AssociatedURLLoader::AssociatedURLLoader(PassRefPtr<WebFrameImpl> frameImpl, const WebURLLoaderOptions& options)
+AssociatedURLLoader::AssociatedURLLoader(PassRefPtr<WebLocalFrameImpl> frameImpl, const WebURLLoaderOptions& options)
     : m_frameImpl(frameImpl)
     , m_options(options)
     , m_client(0)
@@ -351,7 +349,8 @@ void AssociatedURLLoader::loadAsynchronously(const WebURLRequest& request, WebUR
 
         const ResourceRequest& webcoreRequest = newRequest.toResourceRequest();
         Document* webcoreDocument = m_frameImpl->frame()->document();
-        m_loader = DocumentThreadableLoader::create(webcoreDocument, m_clientAdapter.get(), webcoreRequest, options);
+        ASSERT(webcoreDocument);
+        m_loader = DocumentThreadableLoader::create(*webcoreDocument, m_clientAdapter.get(), webcoreRequest, options);
     } else {
         // FIXME: return meaningful error codes.
         m_clientAdapter->setDelayedError(ResourceError());

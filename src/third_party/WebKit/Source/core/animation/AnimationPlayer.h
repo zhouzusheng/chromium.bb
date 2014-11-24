@@ -32,6 +32,8 @@
 #define AnimationPlayer_h
 
 #include "core/animation/TimedItem.h"
+#include "core/dom/ActiveDOMObject.h"
+#include "core/events/EventTarget.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -39,14 +41,17 @@ namespace WebCore {
 class DocumentTimeline;
 class ExceptionState;
 
-class AnimationPlayer FINAL : public RefCounted<AnimationPlayer> {
-
+class AnimationPlayer FINAL : public RefCounted<AnimationPlayer>
+    , public ActiveDOMObject
+    , public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(AnimationPlayer);
 public:
-    ~AnimationPlayer();
-    static PassRefPtr<AnimationPlayer> create(DocumentTimeline&, TimedItem*);
 
-    // Returns whether this player is still current or in effect.
-    bool update();
+    ~AnimationPlayer();
+    static PassRefPtr<AnimationPlayer> create(ExecutionContext*, DocumentTimeline&, TimedItem*);
+
+    // Returns whether the player is finished.
+    bool update(TimingUpdateReason);
 
     // timeToEffectChange returns:
     //  infinity  - if this player is no longer in effect
@@ -59,12 +64,26 @@ public:
     double currentTime();
     void setCurrentTime(double newCurrentTime);
 
+    double currentTimeInternal();
+    void setCurrentTimeInternal(double newCurrentTime);
+
     bool paused() const { return m_paused && !m_isPausedForTesting; }
     void pause();
     void play();
     void reverse();
     void finish(ExceptionState&);
-    bool finished() { return limited(currentTime()); }
+    bool finished() { return limited(currentTimeInternal()); }
+    // FIXME: Resolve whether finished() should just return the flag, and
+    // remove this method.
+    bool finishedInternal() const { return m_finished; }
+
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(finish);
+
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     double playbackRate() const { return m_playbackRate; }
     void setPlaybackRate(double);
@@ -74,15 +93,18 @@ public:
     void timelineDestroyed() { m_timeline = 0; }
 
     bool hasStartTime() const { return !isNull(m_startTime); }
-    double startTime() const { return m_startTime; }
-    void setStartTime(double);
+    double startTime() const { return m_startTime * 1000; }
+    double startTimeInternal() const { return m_startTime; }
+    void setStartTime(double startTime) { setStartTimeInternal(startTime / 1000); }
+    void setStartTimeInternal(double, bool isUpdateFromCompositor = false);
 
     const TimedItem* source() const { return m_content.get(); }
     TimedItem* source() { return m_content.get(); }
     TimedItem* source(bool& isNull) { isNull = !m_content; return m_content.get(); }
     void setSource(TimedItem*);
 
-    double timeLag() { return currentTimeWithoutLag() - currentTime(); }
+    double timeLag() { return timeLagInternal() * 1000; }
+    double timeLagInternal() { return currentTimeWithoutLag() - currentTimeInternal(); }
 
     // Pausing via this method is not reflected in the value returned by
     // paused() and must never overlap with pausing via pause().
@@ -93,14 +115,17 @@ public:
     void setOutdated();
     bool outdated() { return m_outdated; }
 
+    bool canStartAnimationOnCompositor();
     bool maybeStartAnimationOnCompositor();
     void cancelAnimationOnCompositor();
+    void schedulePendingAnimationOnCompositor();
     bool hasActiveAnimationsOnCompositor();
 
     class SortInfo {
     public:
         friend class AnimationPlayer;
         bool operator<(const SortInfo& other) const;
+        double startTime() const { return m_startTime; }
     private:
         SortInfo(unsigned sequenceNumber, double startTime)
             : m_sequenceNumber(sequenceNumber)
@@ -117,8 +142,14 @@ public:
         return player1->sortInfo() < player2->sortInfo();
     }
 
+    // Checks if the AnimationStack is the last reference holder to the Player.
+    // This won't be needed when AnimationPlayer is moved to Oilpan.
+    bool canFree() const;
+
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
+
 private:
-    AnimationPlayer(DocumentTimeline&, TimedItem*);
+    AnimationPlayer(ExecutionContext*, DocumentTimeline&, TimedItem*);
     double sourceEnd() const;
     bool limited(double currentTime) const;
     double currentTimeWithoutLag() const;
@@ -145,6 +176,12 @@ private:
     // This indicates timing information relevant to the player has changed by
     // means other than the ordinary progression of time
     bool m_outdated;
+
+    bool m_finished;
+    // Holds a 'finished' event queued for asynchronous dispatch via the
+    // ScriptedAnimationController. This object remains active until the
+    // event is actually dispatched.
+    RefPtr<Event> m_pendingFinishedEvent;
 };
 
 } // namespace

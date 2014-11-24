@@ -32,6 +32,7 @@
 #define FrameHost_h
 
 #include "core/frame/PinchViewport.h"
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -40,11 +41,12 @@
 namespace WebCore {
 
 class Chrome;
+class EventHandlerRegistry;
 class Page;
-class PageConsole;
 class PinchViewport;
 class Settings;
 class UseCounter;
+class Visitor;
 
 // FrameHost is the set of global data shared between multiple frames
 // and is provided by the embedder to each frame when created.
@@ -55,18 +57,16 @@ class UseCounter;
 // browser-level concept and Blink core/ only knows about its LocalFrame (and FrameHost).
 // Separating Page from the rest of core/ through this indirection
 // allows us to slowly refactor Page without breaking the rest of core.
-class FrameHost {
-    WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED;
+class FrameHost FINAL : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
+    WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<FrameHost> create(Page&);
+    static PassOwnPtrWillBeRawPtr<FrameHost> create(Page&);
     ~FrameHost();
 
     // Careful: This function will eventually be removed.
-    Page& page() const { return m_page; }
-
+    Page& page() const { return *m_page; }
     Settings& settings() const;
     Chrome& chrome() const;
-    PageConsole& console() const;
     UseCounter& useCounter() const;
 
     // Corresponds to pixel density of the device where this Page is
@@ -74,14 +74,17 @@ public:
     // This value does not account for Page zoom, use LocalFrame::devicePixelRatio instead.
     float deviceScaleFactor() const;
 
-    PinchViewport& pinchViewport();
+    PinchViewport& pinchViewport() const;
+    EventHandlerRegistry& eventHandlerRegistry() const;
+
+    void trace(Visitor*);
 
 private:
     explicit FrameHost(Page&);
 
-    Page& m_page;
-    const OwnPtr<PageConsole> m_console;
-    PinchViewport m_pinchViewport;
+    RawPtrWillBeMember<Page> m_page;
+    const OwnPtr<PinchViewport> m_pinchViewport;
+    const OwnPtrWillBeMember<EventHandlerRegistry> m_eventHandlerRegistry;
 };
 
 }

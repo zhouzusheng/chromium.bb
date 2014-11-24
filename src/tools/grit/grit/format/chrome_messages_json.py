@@ -28,7 +28,8 @@ def Format(root, lang='en', output_dir='.'):
       if id.startswith('IDR_') or id.startswith('IDS_'):
         id = id[4:]
 
-      loc_message = encoder.encode(child.Translate(lang))
+      loc_message = encoder.encode(child.ws_at_start + child.Translate(lang) +
+                                   child.ws_at_end)
 
       if not first:
         yield ',\n'

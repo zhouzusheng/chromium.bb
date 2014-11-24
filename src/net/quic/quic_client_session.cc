@@ -18,7 +18,7 @@
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_default_packet_writer.h"
-#include "net/quic/quic_session_key.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -119,7 +119,7 @@ QuicClientSession::QuicClientSession(
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     scoped_ptr<QuicServerInfo> server_info,
-    const QuicSessionKey& server_key,
+    const QuicServerId& server_id,
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
@@ -140,8 +140,8 @@ QuicClientSession::QuicClientSession(
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
-              server_key, this, crypto_config) :
-          new QuicCryptoClientStream(server_key, this,
+              server_id, this, crypto_config) :
+          new QuicCryptoClientStream(server_id, this,
                                      new ProofVerifyContextChromium(net_log_),
                                      crypto_config));
 
@@ -149,7 +149,7 @@ QuicClientSession::QuicClientSession(
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
       NetLog::TYPE_QUIC_SESSION,
-      NetLog::StringCallback("host", &server_key.host()));
+      NetLog::StringCallback("host", &server_id.host()));
 }
 
 QuicClientSession::~QuicClientSession() {
@@ -160,19 +160,29 @@ QuicClientSession::~QuicClientSession() {
   if (!going_away_)
     RecordUnexpectedNotGoingAway(DESTRUCTOR);
 
-  // The session must be closed before it is destroyed.
-  DCHECK(streams()->empty());
-  CloseAllStreams(ERR_UNEXPECTED);
-  DCHECK(observers_.empty());
-  CloseAllObservers(ERR_UNEXPECTED);
+  while (!streams()->empty() ||
+         !observers_.empty() ||
+         !stream_requests_.empty()) {
+    // The session must be closed before it is destroyed.
+    DCHECK(streams()->empty());
+    CloseAllStreams(ERR_UNEXPECTED);
+    DCHECK(observers_.empty());
+    CloseAllObservers(ERR_UNEXPECTED);
 
-  connection()->set_debug_visitor(NULL);
-  net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
+    connection()->set_debug_visitor(NULL);
+    net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
 
-  while (!stream_requests_.empty()) {
-    StreamRequest* request = stream_requests_.front();
-    stream_requests_.pop_front();
-    request->OnRequestCompleteFailure(ERR_ABORTED);
+    while (!stream_requests_.empty()) {
+      StreamRequest* request = stream_requests_.front();
+      stream_requests_.pop_front();
+      request->OnRequestCompleteFailure(ERR_ABORTED);
+    }
+  }
+
+  if (connection()->connected()) {
+    // Ensure that the connection is closed by the time the session is
+    // destroyed.
+    connection()->CloseConnection(QUIC_INTERNAL_ERROR, false);
   }
 
   if (IsEncryptionEstablished())
@@ -217,7 +227,7 @@ QuicClientSession::~QuicClientSession() {
   }
 }
 
-bool QuicClientSession::OnStreamFrames(
+void QuicClientSession::OnStreamFrames(
     const std::vector<QuicStreamFrame>& frames) {
   // Record total number of stream frames.
   UMA_HISTOGRAM_COUNTS("Net.QuicNumStreamFramesInPacket", frames.size());
@@ -238,8 +248,11 @@ bool QuicClientSession::OnStreamFrames(
 }
 
 void QuicClientSession::AddObserver(Observer* observer) {
-  if (going_away_)
+  if (going_away_) {
     RecordUnexpectedObservers(ADD_OBSERVER);
+    observer->OnSessionClosed(ERR_UNEXPECTED);
+    return;
+  }
 
   DCHECK(!ContainsKey(observers_, observer));
   observers_.insert(observer);
@@ -298,12 +311,12 @@ QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
-               << "Already " << GetNumOpenStreams() << " open.";
+             << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
-               << "Already received goaway.";
+             << "Already received goaway.";
     return NULL;
   }
   if (going_away_) {
@@ -339,17 +352,31 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->cert_status = cert_verify_result_->cert_status;
   ssl_info->cert = cert_verify_result_->verified_cert;
 
-  // TODO(rtenneti): Figure out what to set for the following.
-  // Temporarily hard coded cipher_suite as 0xc031 to represent
-  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (from
-  // net/ssl/ssl_cipher_suite_names.cc) and encryption as 256.
-  int cipher_suite = 0xc02f;
+  // TODO(wtc): Define QUIC "cipher suites".
+  // Report the TLS cipher suite that most closely resembles the crypto
+  // parameters of the QUIC connection.
+  QuicTag aead = crypto_stream_->crypto_negotiated_params().aead;
+  int cipher_suite;
+  int security_bits;
+  switch (aead) {
+    case kAESG:
+      cipher_suite = 0xc02f;  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      security_bits = 128;
+      break;
+    case kCC12:
+      cipher_suite = 0xcc13;  // TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      security_bits = 256;
+      break;
+    default:
+      NOTREACHED();
+      return false;
+  }
   int ssl_connection_status = 0;
   ssl_connection_status |=
       (cipher_suite & SSL_CONNECTION_CIPHERSUITE_MASK) <<
        SSL_CONNECTION_CIPHERSUITE_SHIFT;
   ssl_connection_status |=
-      (SSL_CONNECTION_VERSION_TLS1_2 & SSL_CONNECTION_VERSION_MASK) <<
+      (SSL_CONNECTION_VERSION_QUIC & SSL_CONNECTION_VERSION_MASK) <<
        SSL_CONNECTION_VERSION_SHIFT;
 
   ssl_info->public_key_hashes = cert_verify_result_->public_key_hashes;
@@ -359,7 +386,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->connection_status = ssl_connection_status;
   ssl_info->client_cert_sent = false;
   ssl_info->channel_id_sent = false;
-  ssl_info->security_bits = 256;
+  ssl_info->security_bits = security_bits;
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
   return true;
 }
@@ -393,13 +420,20 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
   // logic will need to be revised.
   DCHECK(connection()->connected());
   SSLInfo ssl_info;
-  bool unused = false;
   if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
     // We can always pool with insecure QUIC sessions.
     return true;
   }
+
+  // Disable pooling for secure sessions.
+  // TODO(rch): re-enable this.
+  return false;
+
+#if 0
+  bool unused = false;
   // Only pool secure QUIC sessions if the cert matches the new hostname.
   return ssl_info.cert->VerifyNameMatch(hostname, &unused);
+#endif
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
@@ -409,6 +443,12 @@ QuicDataStream* QuicClientSession::CreateIncomingDataStream(
 }
 
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
+  ReliableQuicStream* stream = GetStream(stream_id);
+  if (stream) {
+    logger_.UpdateReceivedFrameCounts(
+        stream_id, stream->num_frames_received(),
+        stream->num_duplicate_frames_received());
+  }
   QuicSession::CloseStream(stream_id);
   OnClosedStream();
 }

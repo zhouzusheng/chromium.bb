@@ -163,13 +163,6 @@ AXObjectCache* AXObject::axObjectCache() const
     return 0;
 }
 
-void AXObject::updateBackingStore()
-{
-    // Updating the layout may delete this object.
-    if (Document* document = this->document())
-        document->updateLayoutIgnorePendingStylesheets();
-}
-
 bool AXObject::isARIATextControl() const
 {
     return ariaRoleAttribute() == TextAreaRole || ariaRoleAttribute() == TextFieldRole;
@@ -260,7 +253,11 @@ bool AXObject::isExpanded() const
 
 bool AXObject::accessibilityIsIgnored() const
 {
-    AXComputedObjectAttributeCache* attributeCache = axObjectCache()->computedObjectAttributeCache();
+    AXObjectCache* cache = axObjectCache();
+    if (!cache)
+        return true;
+
+    AXComputedObjectAttributeCache* attributeCache = cache->computedObjectAttributeCache();
     if (attributeCache) {
         AXObjectInclusion ignored = attributeCache->getIgnored(axObjectID());
         switch (ignored) {
@@ -402,20 +399,6 @@ bool AXObject::ariaIsMultiline() const
 bool AXObject::ariaPressedIsPresent() const
 {
     return !getAttribute(aria_pressedAttr).isEmpty();
-}
-
-const AtomicString& AXObject::invalidStatus() const
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, invalidStatusFalse, ("false", AtomicString::ConstructFromLiteral));
-
-    // aria-invalid can return false (default), grammer, spelling, or true.
-    const AtomicString& ariaInvalid = getAttribute(aria_invalidAttr);
-
-    // If empty or not present, it should return false.
-    if (ariaInvalid.isEmpty())
-        return invalidStatusFalse;
-
-    return ariaInvalid;
 }
 
 bool AXObject::supportsARIAAttributes() const
@@ -744,7 +727,7 @@ void AXObject::scrollToMakeVisibleWithSubFocus(const IntRect& subfocus) const
     if (!scrollableArea)
         return;
 
-    LayoutRect objectRect = elementRect();
+    IntRect objectRect = pixelSnappedIntRect(elementRect());
     IntPoint scrollPosition = scrollableArea->scrollPosition();
     IntRect scrollVisibleRect = scrollableArea->visibleContentRect();
 
@@ -789,8 +772,8 @@ void AXObject::scrollToGlobalPoint(const IntPoint& globalPoint) const
 
         ScrollableArea* scrollableArea = outer->getScrollableAreaIfScrollable();
 
-        LayoutRect innerRect = inner->isAXScrollView() ? inner->parentObject()->elementRect() : inner->elementRect();
-        LayoutRect objectRect = innerRect;
+        IntRect innerRect = inner->isAXScrollView() ? pixelSnappedIntRect(inner->parentObject()->elementRect()) : pixelSnappedIntRect(inner->elementRect());
+        IntRect objectRect = innerRect;
         IntPoint scrollPosition = scrollableArea->scrollPosition();
 
         // Convert the object rect into local coordinates.

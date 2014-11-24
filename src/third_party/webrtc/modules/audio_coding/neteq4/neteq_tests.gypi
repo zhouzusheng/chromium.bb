@@ -49,6 +49,7 @@
         'CODEC_PCM16B_WB',
         'CODEC_ISAC_SWB',
         'CODEC_PCM16B_32KHZ',
+        'CODEC_PCM16B_48KHZ',
         'CODEC_CNGCODEC8',
         'CODEC_CNGCODEC16',
         'CODEC_CNGCODEC32',
@@ -80,13 +81,14 @@
     },
 
     {
-      'target_name': 'RTPanalyze',
+      'target_name': 'rtp_analyze',
       'type': 'executable',
       'dependencies': [
-        'NetEq4TestTools',
+        'neteq_unittest_tools',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
       ],
       'sources': [
-        'test/RTPanalyze.cc',
+        'tools/rtp_analyze.cc',
       ],
     },
 
@@ -147,12 +149,28 @@
     },
 
     {
+      'target_name': 'neteq_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        'NetEq4',
+        'PCM16B',
+        'neteq_unittest_tools',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+      ],
+      'sources': [
+        'tools/neteq_performance_test.cc',
+        'tools/neteq_performance_test.h',
+        'tools/neteq_quality_test.cc',
+        'tools/neteq_quality_test.h',
+      ],
+    }, # neteq_test_support
+
+    {
       'target_name': 'neteq4_speed_test',
       'type': 'executable',
       'dependencies': [
         'NetEq4',
-        'neteq_unittest_tools',
-        'PCM16B',
+        'neteq_test_support',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
@@ -166,7 +184,7 @@
       'type': 'executable',
       'dependencies': [
         'NetEq4',
-        'neteq_unittest_tools',
+        'neteq_test_support',
         'webrtc_opus',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/test/test.gyp:test_support_main',

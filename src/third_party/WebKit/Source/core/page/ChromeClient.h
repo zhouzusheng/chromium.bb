@@ -29,7 +29,6 @@
 #include "core/frame/ConsoleTypes.h"
 #include "core/page/FocusType.h"
 #include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/compositing/CompositingTriggers.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
@@ -57,13 +56,14 @@ class DateTimeChooserClient;
 class Element;
 class FileChooser;
 class FloatRect;
-class LocalFrame;
+class Frame;
 class GraphicsLayer;
 class GraphicsLayerFactory;
 class HitTestResult;
 class HTMLFormControlElement;
 class HTMLInputElement;
 class IntRect;
+class LocalFrame;
 class Node;
 class Page;
 class PagePopup;
@@ -124,7 +124,7 @@ public:
     virtual void setResizable(bool) = 0;
 
     virtual bool shouldReportDetailedMessageForSource(const String& source) = 0;
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace) = 0;
+    virtual void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace) = 0;
 
     virtual bool canRunBeforeUnloadConfirmPanel() = 0;
     virtual bool runBeforeUnloadConfirmPanel(const String& message, LocalFrame*) = 0;
@@ -170,7 +170,7 @@ public:
 
     virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) = 0;
 
-    virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) = 0;
+    virtual PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
 
     // This function is used for:
     //  - Mandatory date/time choosers if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -192,9 +192,6 @@ public:
 
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     virtual void attachRootGraphicsLayer(GraphicsLayer*) = 0;
-
-    // Returns a bitfield indicating conditions that can trigger the compositor.
-    virtual CompositingTriggerFlags allowedCompositingTriggers() const { return static_cast<CompositingTriggerFlags>(AllCompositingTriggers); }
 
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
@@ -243,11 +240,12 @@ public:
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
-    virtual void forwardInputEvent(WebCore::Document*, WebCore::Event*) { }
+    virtual void forwardInputEvent(WebCore::Frame*, WebCore::Event*) { }
 
     // Input mehtod editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void willSetInputMethodState() { }
+    virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
 
 protected:
     virtual ~ChromeClient() { }

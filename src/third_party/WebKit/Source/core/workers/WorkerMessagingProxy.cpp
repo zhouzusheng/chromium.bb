@@ -47,8 +47,8 @@
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "heap/Handle.h"
 #include "platform/NotImplemented.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Functional.h"
 #include "wtf/MainThread.h"
 
@@ -82,7 +82,7 @@ private:
     OwnPtr<MessagePortChannelArray> m_channels;
 };
 
-WorkerMessagingProxy::WorkerMessagingProxy(Worker* workerObject, PassOwnPtr<WorkerClients> workerClients)
+WorkerMessagingProxy::WorkerMessagingProxy(Worker* workerObject, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_executionContext(workerObject->executionContext())
     , m_workerObjectProxy(WorkerObjectProxy::create(m_executionContext.get(), this))
     , m_workerObject(workerObject)
@@ -166,7 +166,7 @@ void WorkerMessagingProxy::reportException(const String& errorMessage, int lineN
     // We don't bother checking the askedToTerminate() flag here, because exceptions should *always* be reported even if the thread is terminated.
     // This is intentionally different than the behavior in MessageWorkerTask, because terminated workers no longer deliver messages (section 4.6 of the WebWorker spec), but they do report exceptions.
 
-    RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, 0);
+    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, 0);
     bool errorHandled = !m_workerObject->dispatchEvent(event);
     if (!errorHandled)
         m_executionContext->reportException(event, nullptr, NotSharableCrossOrigin);

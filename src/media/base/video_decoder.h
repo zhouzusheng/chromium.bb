@@ -43,14 +43,20 @@ class MEDIA_EXPORT VideoDecoder {
   // 3) No VideoDecoder calls except for Stop() should be made before
   //    |status_cb| is executed.
   virtual void Initialize(const VideoDecoderConfig& config,
+                          bool low_delay,
                           const PipelineStatusCB& status_cb) = 0;
 
   // Requests a |buffer| to be decoded. The status of the decoder and decoded
-  // frame are returned via the provided callback. Only one decode may be in
-  // flight at any given time.
+  // frame are returned via the provided callback. Some decoders may allow
+  // decoding multiple buffers in parallel. Callers should call
+  // GetMaxDecodeRequests() to get number of buffers that may be decoded in
+  // parallel. Decoder must call |decode_cb| in the same order in which Decode()
+  // is called.
   //
   // Implementations guarantee that the callback will not be called from within
-  // this method.
+  // this method and that |decode_cb| will not be blocked on the following
+  // Decode() calls (i.e. |decode_cb| will be called even Decode() is never
+  // called again).
   //
   // If the returned status is kOk:
   // - Non-EOS (end of stream) frame contains decoded video data.
@@ -64,6 +70,8 @@ class MEDIA_EXPORT VideoDecoder {
   // Some VideoDecoders may queue up multiple VideoFrames from a single
   // DecoderBuffer, if we have any such queued frames this will return the next
   // one. Otherwise we return a NULL VideoFrame.
+  //
+  // TODO(xhwang): Revisit this method.
   virtual scoped_refptr<VideoFrame> GetDecodeOutput();
 
   // Resets decoder state, fulfilling all pending DecodeCB and dropping extra
@@ -75,14 +83,9 @@ class MEDIA_EXPORT VideoDecoder {
   // Stops decoder, fires any pending callbacks and sets the decoder to an
   // uninitialized state. A VideoDecoder cannot be re-initialized after it has
   // been stopped.
-  // Note that if Initialize() has been called, Stop() must be called and
-  // complete before deleting the decoder.
-  virtual void Stop(const base::Closure& closure) = 0;
-
-  // Returns true if the output format has an alpha channel. Most formats do not
-  // have alpha so the default is false. Override and return true for decoders
-  // that return formats with an alpha channel.
-  virtual bool HasAlpha() const;
+  // Note that if Initialize() is pending or has finished successfully, Stop()
+  // must be called before destructing the decoder.
+  virtual void Stop() = 0;
 
   // Returns true if the decoder needs bitstream conversion before decoding.
   virtual bool NeedsBitstreamConversion() const;
@@ -92,6 +95,9 @@ class MEDIA_EXPORT VideoDecoder {
   // this will always return true. Override and return false for decoders that
   // use a fixed set of VideoFrames for decoding.
   virtual bool CanReadWithoutStalling() const;
+
+  // Returns maximum number of parallel decode requests.
+  virtual int GetMaxDecodeRequests() const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VideoDecoder);

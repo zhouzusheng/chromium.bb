@@ -44,6 +44,14 @@
 
 namespace WebCore {
 
+// SVG1.1 specified that the <use> instance tree would expose the target
+// element for events. This has been deprecated and will be removed.
+// See: crbug.com/313438
+static bool usesDeprecatedSVGUseTreeEventRules(Node* node)
+{
+    return node->isSVGElement() && toSVGElement(node)->inUseShadowTree();
+}
+
 EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 {
     ASSERT(referenceNode);
@@ -51,7 +59,7 @@ EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
     if (referenceNode->isPseudoElement())
         return referenceNode->parentNode();
 
-    if (!referenceNode->isSVGElement() || !referenceNode->isInShadowTree())
+    if (!usesDeprecatedSVGUseTreeEventRules(referenceNode))
         return referenceNode;
 
     // Spec: The event handling for the non-exposed tree works as if the referenced element had been textually included
@@ -102,7 +110,7 @@ EventPath::EventPath(Event* event)
 
 EventPath::EventPath(Node* node)
     : m_node(node)
-    , m_event(0)
+    , m_event(nullptr)
 {
     resetWith(node);
 }
@@ -115,7 +123,7 @@ void EventPath::resetWith(Node* node)
     m_treeScopeEventContexts.clear();
     calculatePath();
     calculateAdjustedTargets();
-    if (!node->isSVGElement())
+    if (!usesDeprecatedSVGUseTreeEventRules(node))
         calculateTreeScopePrePostOrderNumbers();
 }
 
@@ -194,9 +202,15 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
 {
     if (!treeScope)
         return 0;
-    TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(treeScope, TreeScopeEventContext::create(*treeScope));
-    TreeScopeEventContext* treeScopeEventContext = addResult.storedValue->value.get();
-    if (addResult.isNewEntry) {
+    TreeScopeEventContext* treeScopeEventContext;
+    bool isNewEntry;
+    {
+        TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(treeScope, nullptr);
+        if ((isNewEntry = addResult.isNewEntry))
+            addResult.storedValue->value = TreeScopeEventContext::create(*treeScope);
+        treeScopeEventContext = addResult.storedValue->value.get();
+    }
+    if (isNewEntry) {
         TreeScopeEventContext* parentTreeScopeEventContext = ensureTreeScopeEventContext(0, treeScope->olderShadowRootOrParentTreeScope(), treeScopeEventContextMap);
         if (parentTreeScopeEventContext && parentTreeScopeEventContext->target()) {
             treeScopeEventContext->setTarget(parentTreeScopeEventContext->target());
@@ -212,7 +226,7 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
 void EventPath::calculateAdjustedTargets()
 {
     const TreeScope* lastTreeScope = 0;
-    bool isSVGElement = at(0).node()->isSVGElement();
+    bool useDeprecatedSVGUseTreeEventRules = usesDeprecatedSVGUseTreeEventRules(at(0).node());
 
     TreeScopeEventContextMap treeScopeEventContextMap;
     TreeScopeEventContext* lastTreeScopeEventContext = 0;
@@ -221,7 +235,7 @@ void EventPath::calculateAdjustedTargets()
         Node* currentNode = at(i).node();
         TreeScope& currentTreeScope = currentNode->treeScope();
         if (lastTreeScope != &currentTreeScope) {
-            if (!isSVGElement) {
+            if (!useDeprecatedSVGUseTreeEventRules) {
                 lastTreeScopeEventContext = ensureTreeScopeEventContext(currentNode, &currentTreeScope, treeScopeEventContextMap);
             } else {
                 TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(&currentTreeScope, TreeScopeEventContext::create(currentTreeScope));
@@ -364,5 +378,10 @@ void EventPath::checkReachability(TreeScope& treeScope, TouchList& touchList)
         ASSERT(touchList.item(i)->target()->toNode()->treeScope().isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(treeScope));
 }
 #endif
+
+void EventPath::trace(Visitor* visitor)
+{
+    visitor->trace(m_event);
+}
 
 } // namespace

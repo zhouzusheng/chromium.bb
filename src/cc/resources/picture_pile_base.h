@@ -29,8 +29,8 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void Resize(const gfx::Size& size);
-  gfx::Size size() const { return tiling_.total_size(); }
+  void SetTilingRect(const gfx::Rect& tiling_rect);
+  gfx::Rect tiling_rect() const { return tiling_.tiling_rect(); }
   void SetMinContentsScale(float min_contents_scale);
 
   int num_tiles_x() const { return tiling_.num_tiles_x(); }
@@ -43,7 +43,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   bool HasRecordings() const { return has_any_recordings_; }
 
   static void ComputeTileGridInfo(const gfx::Size& tile_grid_size,
-                                  SkTileGridPicture::TileGridInfo* info);
+                                  SkTileGridFactory::TileGridInfo* info);
 
   void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
@@ -101,7 +101,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   // If non-empty, all pictures tiles inside this rect are recorded.
   gfx::Rect recorded_viewport_;
   float min_contents_scale_;
-  SkTileGridPicture::TileGridInfo tile_grid_info_;
+  SkTileGridFactory::TileGridInfo tile_grid_info_;
   SkColor background_color_;
   int slow_down_raster_scale_factor_for_debug_;
   bool contents_opaque_;

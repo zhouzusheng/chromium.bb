@@ -391,9 +391,7 @@ public:
     // state is sticky, rather than reported only once.
     virtual WGC3Denum getGraphicsResetStatusARB() { return 0; /* GL_NO_ERROR */ }
 
-    // FIXME: make this function pure virtual once it is implemented in
-    // both command buffer port and in-process port.
-    virtual WebString getTranslatedShaderSourceANGLE(WebGLId shader) { return WebString(); }
+    virtual WebString getTranslatedShaderSourceANGLE(WebGLId shader) = 0;
 
     // GL_CHROMIUM_iosurface
     virtual void texImageIOSurface2DCHROMIUM(WGC3Denum target, WGC3Dint width, WGC3Dint height, WGC3Duint ioSurfaceId, WGC3Duint plane) { }
@@ -457,10 +455,10 @@ public:
     virtual GrGLInterface* createGrGLInterface() { return 0; }
 
     // GL_CHROMIUM_map_image
-    virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat) { return 0; }
+    virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat, WGC3Denum usage) { return 0; }
     virtual void destroyImageCHROMIUM(WGC3Duint imageId) { }
     virtual void getImageParameterivCHROMIUM(WGC3Duint imageId, WGC3Denum pname, WGC3Dint* params) { }
-    virtual void* mapImageCHROMIUM(WGC3Duint imageId, WGC3Denum access) { return 0; }
+    virtual void* mapImageCHROMIUM(WGC3Duint imageId) { return 0; }
     virtual void unmapImageCHROMIUM(WGC3Duint imageId) { }
 
     // GL_ANGLE_instanced_arrays

@@ -66,6 +66,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderText.h"
 
 using namespace std;
@@ -508,7 +509,7 @@ void CompositeEditCommand::replaceTextInNodePreservingMarkers(PassRefPtr<Text> p
     Vector<DocumentMarker> markers;
     copyMarkers(markerController.markersInRange(Range::create(document(), node.get(), offset, node.get(), offset + count).get(), DocumentMarker::AllMarkers()), markers);
     replaceTextInNode(node, offset, count, replacementText);
-    RefPtr<Range> newRange = Range::create(document(), node.get(), offset, node.get(), offset + replacementText.length());
+    RefPtrWillBeRawPtr<Range> newRange = Range::create(document(), node.get(), offset, node.get(), offset + replacementText.length());
     for (size_t i = 0; i < markers.size(); ++i)
         markerController.addMarker(newRange.get(), markers[i].type(), markers[i].description());
 }
@@ -859,7 +860,7 @@ PassRefPtr<Node> CompositeEditCommand::addBlockPlaceholderIfNeeded(Element* cont
     // append the placeholder to make sure it follows
     // any unrendered blocks
     RenderBlock* block = toRenderBlock(renderer);
-    if (block->height() == 0 || (block->isListItem() && block->isEmpty()))
+    if (block->height() == 0 || (block->isListItem() && toRenderListItem(block)->isEmpty()))
         return appendBlockPlaceholder(container);
 
     return nullptr;
@@ -970,6 +971,8 @@ void CompositeEditCommand::pushAnchorElementDown(Node* anchorNode)
 void CompositeEditCommand::cloneParagraphUnderNewElement(const Position& start, const Position& end, Node* passedOuterNode, Element* blockElement)
 {
     ASSERT(comparePositions(start, end) <= 0);
+    ASSERT(passedOuterNode);
+    ASSERT(blockElement);
 
     // First we clone the outerNode
     RefPtr<Node> lastNode;
@@ -1011,19 +1014,25 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(const Position& start, 
         // If end is not a descendant of outerNode we need to
         // find the first common ancestor to increase the scope
         // of our nextSibling traversal.
-        while (!end.deprecatedNode()->isDescendantOf(outerNode.get())) {
+        while (outerNode && !end.deprecatedNode()->isDescendantOf(outerNode.get())) {
             outerNode = outerNode->parentNode();
         }
+
+        if (!outerNode)
+            return;
 
         RefPtr<Node> startNode = start.deprecatedNode();
         for (RefPtr<Node> node = NodeTraversal::nextSkippingChildren(*startNode, outerNode.get()); node; node = NodeTraversal::nextSkippingChildren(*node, outerNode.get())) {
             // Move lastNode up in the tree as much as node was moved up in the
             // tree by NodeTraversal::nextSkippingChildren, so that the relative depth between
             // node and the original start node is maintained in the clone.
-            while (startNode->parentNode() != node->parentNode()) {
+            while (startNode && lastNode && startNode->parentNode() != node->parentNode()) {
                 startNode = startNode->parentNode();
                 lastNode = lastNode->parentNode();
             }
+
+            if (!lastNode || !lastNode->parentNode())
+                return;
 
             RefPtr<Node> clonedNode = node->cloneNode(true);
             insertNodeAfter(clonedNode, lastNode);
@@ -1159,13 +1168,13 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
 
             startIndex = 0;
             if (startInParagraph) {
-                RefPtr<Range> startRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleStart.deepEquivalent().parentAnchoredEquivalent());
+                RefPtrWillBeRawPtr<Range> startRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleStart.deepEquivalent().parentAnchoredEquivalent());
                 startIndex = TextIterator::rangeLength(startRange.get(), true);
             }
 
             endIndex = 0;
             if (endInParagraph) {
-                RefPtr<Range> endRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
+                RefPtrWillBeRawPtr<Range> endRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
                 endIndex = TextIterator::rangeLength(endRange.get(), true);
             }
         }
@@ -1182,7 +1191,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
     // start and end can't be used directly to create a Range; they are "editing positions"
     Position startRangeCompliant = start.parentAnchoredEquivalent();
     Position endRangeCompliant = end.parentAnchoredEquivalent();
-    RefPtr<Range> range = Range::create(document(), startRangeCompliant.deprecatedNode(), startRangeCompliant.deprecatedEditingOffset(), endRangeCompliant.deprecatedNode(), endRangeCompliant.deprecatedEditingOffset());
+    RefPtrWillBeRawPtr<Range> range = Range::create(document(), startRangeCompliant.deprecatedNode(), startRangeCompliant.deprecatedEditingOffset(), endRangeCompliant.deprecatedNode(), endRangeCompliant.deprecatedEditingOffset());
 
     // FIXME: This is an inefficient way to preserve style on nodes in the paragraph to move. It
     // shouldn't matter though, since moved paragraphs will usually be quite small.
@@ -1226,7 +1235,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
         document().updateLayoutIgnorePendingStylesheets();
     }
 
-    RefPtr<Range> startToDestinationRange(Range::create(document(), firstPositionInNode(document().documentElement()), destination.deepEquivalent().parentAnchoredEquivalent()));
+    RefPtrWillBeRawPtr<Range> startToDestinationRange(Range::create(document(), firstPositionInNode(document().documentElement()), destination.deepEquivalent().parentAnchoredEquivalent()));
     destinationIndex = TextIterator::rangeLength(startToDestinationRange.get(), true);
 
     setEndingSelection(VisibleSelection(destination, originalIsDirectional));
@@ -1250,8 +1259,8 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
             // causes spaces to be collapsed during the move operation. This results
             // in a call to rangeFromLocationAndLength with a location past the end
             // of the document (which will return null).
-            RefPtr<Range> start = PlainTextRange(destinationIndex + startIndex).createRangeForSelection(*documentElement);
-            RefPtr<Range> end = PlainTextRange(destinationIndex + endIndex).createRangeForSelection(*documentElement);
+            RefPtrWillBeRawPtr<Range> start = PlainTextRange(destinationIndex + startIndex).createRangeForSelection(*documentElement);
+            RefPtrWillBeRawPtr<Range> end = PlainTextRange(destinationIndex + endIndex).createRangeForSelection(*documentElement);
             if (start && end)
                 setEndingSelection(VisibleSelection(start->startPosition(), end->startPosition(), DOWNSTREAM, originalIsDirectional));
         }

@@ -27,6 +27,7 @@
 #define CSSSegmentedFontFace_h
 
 #include "platform/fonts/FontTraits.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
@@ -43,11 +44,11 @@ class FontDescription;
 class FontFace;
 class SegmentedFontData;
 
-class CSSSegmentedFontFace : public RefCounted<CSSSegmentedFontFace> {
+class CSSSegmentedFontFace FINAL : public RefCountedWillBeGarbageCollectedFinalized<CSSSegmentedFontFace> {
 public:
-    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraits traits)
+    static PassRefPtrWillBeRawPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraits traits)
     {
-        return adoptRef(new CSSSegmentedFontFace(selector, traits));
+        return adoptRefWillBeNoop(new CSSSegmentedFontFace(selector, traits));
     }
     ~CSSSegmentedFontFace();
 
@@ -57,15 +58,17 @@ public:
     void fontLoaded(CSSFontFace*);
     void fontLoadWaitLimitExceeded(CSSFontFace*);
 
-    void addFontFace(PassRefPtr<FontFace>, bool cssConnected);
-    void removeFontFace(PassRefPtr<FontFace>);
+    void addFontFace(PassRefPtrWillBeRawPtr<FontFace>, bool cssConnected);
+    void removeFontFace(PassRefPtrWillBeRawPtr<FontFace>);
     bool isEmpty() const { return m_fontFaces.isEmpty(); }
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
 
     bool checkFont(const String&) const;
-    void match(const String&, Vector<RefPtr<FontFace> >&) const;
-    void willUseFontData(const FontDescription&);
+    void match(const String&, WillBeHeapVector<RefPtrWillBeMember<FontFace> >&) const;
+    void willUseFontData(const FontDescription&, UChar32);
+
+    void trace(Visitor*);
 
 private:
     CSSSegmentedFontFace(CSSFontSelector*, FontTraits);
@@ -75,9 +78,10 @@ private:
     bool isLoading() const;
     bool isLoaded() const;
 
-    typedef ListHashSet<RefPtr<FontFace> > FontFaceList;
+    // FIXME: Oilpan: Replace by HeapLinkedHashSet or HeapListHashSet.
+    typedef ListHashSet<RefPtrWillBeMember<FontFace> > FontFaceList;
 
-    CSSFontSelector* m_fontSelector;
+    RawPtrWillBeMember<CSSFontSelector> m_fontSelector;
     FontTraits m_traits;
     HashMap<unsigned, RefPtr<SegmentedFontData> > m_fontDataTable;
     // All non-CSS-connected FontFaces are stored after the CSS-connected ones.

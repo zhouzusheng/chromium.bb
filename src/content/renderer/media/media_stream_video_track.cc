@@ -4,32 +4,96 @@
 
 #include "content/renderer/media/media_stream_video_track.h"
 
-#include "content/renderer/media/media_stream_dependency_factory.h"
-#include "content/renderer/media/webrtc/webrtc_video_sink_adapter.h"
+#include "base/bind.h"
+#include "content/renderer/media/video_frame_deliverer.h"
+#include "media/base/bind_to_current_loop.h"
 
 namespace content {
 
-// Empty method used for keeping a reference to the original media::VideoFrame
-// in RTCVideoRenderer::OnVideoFrame if a color conversion between I420 and
-// YV12 is needed.
-static void ReleaseOriginalFrame(
-    const scoped_refptr<media::VideoFrame>& frame) {
-}
+// Helper class used for delivering video frames to MediaStreamSinks on the
+// IO-thread.
+// Frames are delivered to an instance of this class from a
+// MediaStreamVideoSource on the IO-thread to the method DeliverFrameOnIO.
+// Frames are only delivered to the sinks if the track is enabled.
+class MediaStreamVideoTrack::FrameDeliverer : public VideoFrameDeliverer {
+ public:
+  FrameDeliverer(
+      const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy,
+      bool enabled)
+      : VideoFrameDeliverer(io_message_loop_proxy),
+        enabled_(enabled) {
+  }
 
-//static
+  // Add |sink| to receive state changes on the main render thread.
+  // Video frames will be delivered to |callback| on the IO thread.
+  void AddSink(MediaStreamVideoSink* sink,
+               const VideoCaptureDeliverFrameCB& callback) {
+    DCHECK(thread_checker().CalledOnValidThread());
+    DCHECK(std::find(sinks_.begin(), sinks_.end(), sink) == sinks_.end());
+    sinks_.push_back(sink);
+    AddCallback(sink, callback);
+  }
+
+  void RemoveSink(MediaStreamVideoSink* sink) {
+    DCHECK(thread_checker().CalledOnValidThread());
+    std::vector<MediaStreamVideoSink*>::iterator it =
+        std::find(sinks_.begin(), sinks_.end(), sink);
+    DCHECK(it != sinks_.end());
+    sinks_.erase(it);
+    RemoveCallback(sink);
+  }
+
+  void SetEnabled(bool enabled) {
+    DCHECK(thread_checker().CalledOnValidThread());
+    io_message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MediaStreamVideoTrack::FrameDeliverer::SetEnabledOnIO,
+                   this, enabled));
+  }
+
+  virtual void DeliverFrameOnIO(
+      const scoped_refptr<media::VideoFrame>& frame,
+      const media::VideoCaptureFormat& format) OVERRIDE {
+    DCHECK(io_message_loop()->BelongsToCurrentThread());
+    if (!enabled_)
+      return;
+    VideoFrameDeliverer::DeliverFrameOnIO(frame, format);
+  }
+
+  const std::vector<MediaStreamVideoSink*>& sinks() const { return sinks_; }
+
+ protected:
+  virtual ~FrameDeliverer() {
+    DCHECK(sinks_.empty());
+  }
+
+  void SetEnabledOnIO(bool enabled) {
+    DCHECK(io_message_loop()->BelongsToCurrentThread());
+    enabled_ = enabled;
+  }
+
+ private:
+  // The below members are used on the main render thread.
+  std::vector<MediaStreamVideoSink*> sinks_;
+
+  // The below parameters are used on the IO-thread.
+  bool enabled_;
+
+  DISALLOW_COPY_AND_ASSIGN(FrameDeliverer);
+};
+
+// static
 blink::WebMediaStreamTrack MediaStreamVideoTrack::CreateVideoTrack(
     MediaStreamVideoSource* source,
     const blink::WebMediaConstraints& constraints,
     const MediaStreamVideoSource::ConstraintsCallback& callback,
-    bool enabled,
-    MediaStreamDependencyFactory* factory) {
+    bool enabled) {
   blink::WebMediaStreamTrack track;
   track.initialize(source->owner());
   track.setExtraData(new MediaStreamVideoTrack(source,
                                                constraints,
                                                callback,
-                                               enabled,
-                                               factory));
+                                               enabled));
   return track;
 }
 
@@ -43,144 +107,66 @@ MediaStreamVideoTrack::MediaStreamVideoTrack(
     MediaStreamVideoSource* source,
     const blink::WebMediaConstraints& constraints,
     const MediaStreamVideoSource::ConstraintsCallback& callback,
-    bool enabled,
-    MediaStreamDependencyFactory* factory)
+    bool enabled)
     : MediaStreamTrack(NULL, true),
-      enabled_(enabled),
-      source_(source),
-      factory_(factory) {
-  // TODO(perkj): source can be NULL if this is actually a remote video track.
-  // Remove as soon as we only have one implementation of video tracks.
-  if (source)
-    source->AddTrack(this, constraints, callback);
+      frame_deliverer_(
+          new MediaStreamVideoTrack::FrameDeliverer(source->io_message_loop(),
+                                                    enabled)),
+      constraints_(constraints),
+      source_(source) {
+  DCHECK(!constraints.isNull());
+  source->AddTrack(this,
+                   base::Bind(
+                       &MediaStreamVideoTrack::FrameDeliverer::DeliverFrameOnIO,
+                       frame_deliverer_),
+                   constraints, callback);
 }
 
 MediaStreamVideoTrack::~MediaStreamVideoTrack() {
-  DCHECK(sinks_.empty());
-  // TODO(perkj): source can be NULL if this is actually a remote video track.
-  // Remove as soon as we only have one implementation of video tracks.
-  if (source_)
-    source_->RemoveTrack(this);
+  Stop();
+  DVLOG(3) << "~MediaStreamVideoTrack()";
 }
 
-void MediaStreamVideoTrack::AddSink(MediaStreamVideoSink* sink) {
+void MediaStreamVideoTrack::AddSink(
+    MediaStreamVideoSink* sink, const VideoCaptureDeliverFrameCB& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(std::find(sinks_.begin(), sinks_.end(), sink) == sinks_.end());
-  sinks_.push_back(sink);
+  frame_deliverer_->AddSink(sink, callback);
 }
 
 void MediaStreamVideoTrack::RemoveSink(MediaStreamVideoSink* sink) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  std::vector<MediaStreamVideoSink*>::iterator it =
-      std::find(sinks_.begin(), sinks_.end(), sink);
-  DCHECK(it != sinks_.end());
-  sinks_.erase(it);
-}
-
-webrtc::VideoTrackInterface* MediaStreamVideoTrack::GetVideoAdapter() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK_EQ(owner().source().type(), blink::WebMediaStreamSource::TypeVideo);
-  if (!track_.get()) {
-    MediaStreamVideoSource* source =
-          static_cast<MediaStreamVideoSource*>(owner().source().extraData());
-    scoped_refptr<webrtc::VideoTrackInterface> video_track(
-        factory_->CreateLocalVideoTrack(owner().id().utf8(),
-                                        source->GetAdapter()));
-    video_track->set_enabled(owner().isEnabled());
-    track_ = video_track;
-  }
-  return static_cast<webrtc::VideoTrackInterface*>(track_.get());
+  frame_deliverer_->RemoveSink(sink);
 }
 
 void MediaStreamVideoTrack::SetEnabled(bool enabled) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  enabled_ = enabled;
   MediaStreamTrack::SetEnabled(enabled);
-  for (std::vector<MediaStreamVideoSink*>::iterator it = sinks_.begin();
-       it != sinks_.end(); ++it) {
+
+  frame_deliverer_->SetEnabled(enabled);
+  const std::vector<MediaStreamVideoSink*>& sinks = frame_deliverer_->sinks();
+  for (std::vector<MediaStreamVideoSink*>::const_iterator it = sinks.begin();
+       it != sinks.end(); ++it) {
     (*it)->OnEnabledChanged(enabled);
   }
 }
 
-void MediaStreamVideoTrack::OnVideoFrame(
-    const scoped_refptr<media::VideoFrame>& frame) {
+void MediaStreamVideoTrack::Stop() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!enabled_)
-    return;
-
-  scoped_refptr<media::VideoFrame> video_frame = frame;
-  if (frame->format() == media::VideoFrame::I420) {
-    // Rendering do not support I420 but video capture use I420.
-    // The only difference between YV12 and I420 is the order of U and V plane.
-    // To solve that the I420 frame is simply wrapped in an YV12 video frame.
-    // crbug/341452.
-    video_frame = media::VideoFrame::WrapExternalYuvData(
-        media::VideoFrame::YV12,
-        frame->coded_size(),
-        frame->visible_rect(),
-        frame->natural_size(),
-        frame->stride(media::VideoFrame::kYPlane),
-        frame->stride(media::VideoFrame::kUPlane),
-        frame->stride(media::VideoFrame::kVPlane),
-        frame->data(media::VideoFrame::kYPlane),
-        frame->data(media::VideoFrame::kUPlane),
-        frame->data(media::VideoFrame::kVPlane),
-        frame->GetTimestamp(),
-        base::Bind(&ReleaseOriginalFrame, frame));
+  if (source_) {
+    source_->RemoveTrack(this);
+    source_ = NULL;
   }
-
-  for (std::vector<MediaStreamVideoSink*>::iterator it = sinks_.begin();
-       it != sinks_.end(); ++it) {
-    (*it)->OnVideoFrame(video_frame);
-  }
+  OnReadyStateChanged(blink::WebMediaStreamSource::ReadyStateEnded);
 }
 
 void MediaStreamVideoTrack::OnReadyStateChanged(
     blink::WebMediaStreamSource::ReadyState state) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  for (std::vector<MediaStreamVideoSink*>::iterator it = sinks_.begin();
-       it != sinks_.end(); ++it) {
+  const std::vector<MediaStreamVideoSink*>& sinks = frame_deliverer_->sinks();
+  for (std::vector<MediaStreamVideoSink*>::const_iterator it = sinks.begin();
+       it != sinks.end(); ++it) {
     (*it)->OnReadyStateChanged(state);
   }
-}
-
-// Wrapper which allows to use std::find_if() when adding and removing
-// sinks to/from |sinks_|.
-struct SinkWrapper {
-  explicit SinkWrapper(MediaStreamVideoSink* sink) : sink_(sink) {}
-  bool operator()(
-      const WebRtcVideoSinkAdapter* owner) {
-    return owner->sink() == sink_;
-  }
-  MediaStreamVideoSink* sink_;
-};
-
-WebRtcMediaStreamVideoTrack::WebRtcMediaStreamVideoTrack(
-    webrtc::VideoTrackInterface* track)
-    : MediaStreamVideoTrack(NULL,
-                            blink::WebMediaConstraints(),
-                            MediaStreamVideoSource::ConstraintsCallback(),
-                            track->enabled(),
-                            NULL) {
-  track_ = track;
-}
-
-WebRtcMediaStreamVideoTrack::~WebRtcMediaStreamVideoTrack() {
-}
-
-void WebRtcMediaStreamVideoTrack::AddSink(MediaStreamVideoSink* sink) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(std::find_if(sinks_.begin(), sinks_.end(),
-                      SinkWrapper(sink)) == sinks_.end());
-  sinks_.push_back(new WebRtcVideoSinkAdapter(GetVideoAdapter(), sink));
-}
-
-void WebRtcMediaStreamVideoTrack::RemoveSink(MediaStreamVideoSink* sink) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ScopedVector<WebRtcVideoSinkAdapter>::iterator it =
-      std::find_if(sinks_.begin(), sinks_.end(), SinkWrapper(sink));
-  DCHECK(it != sinks_.end());
-  sinks_.erase(it);
 }
 
 }  // namespace content

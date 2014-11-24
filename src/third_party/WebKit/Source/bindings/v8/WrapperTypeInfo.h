@@ -32,7 +32,7 @@
 #define WrapperTypeInfo_h
 
 #include "gin/public/wrapper_info.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
 #include <v8.h>
 
@@ -61,6 +61,12 @@ namespace WebCore {
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
         WrapperTypeExceptionPrototype
+    };
+
+    enum GCType {
+        GarbageCollectedObject,
+        WillBeGarbageCollectedObject,
+        RefCountedObject,
     };
 
     inline void setObjectGroup(void* object, const v8::Persistent<v8::Object>& wrapper, v8::Isolate* isolate)
@@ -138,7 +144,7 @@ namespace WebCore {
         const InstallPerContextEnabledPrototypePropertiesFunction installPerContextEnabledMethodsFunction;
         const WrapperTypeInfo* parentClass;
         const WrapperTypePrototype wrapperTypePrototype;
-        const bool isGarbageCollected;
+        const GCType gcType;
     };
 
 
@@ -189,20 +195,25 @@ namespace WebCore {
     inline void releaseObject(v8::Handle<v8::Object> wrapper)
     {
         const WrapperTypeInfo* typeInfo = toWrapperTypeInfo(wrapper);
-#if ENABLE(OILPAN)
-        if (typeInfo->isGarbageCollected) {
+        if (typeInfo->gcType == GarbageCollectedObject) {
             const PersistentNode* handle = toPersistentHandle(wrapper);
             // This will be null iff a wrapper for a hidden wrapper object,
             // see V8DOMWrapper::setNativeInfoForHiddenWrapper().
             delete handle;
+        } else if (typeInfo->gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            const PersistentNode* handle = toPersistentHandle(wrapper);
+            // This will be null iff a wrapper for a hidden wrapper object,
+            // see V8DOMWrapper::setNativeInfoForHiddenWrapper().
+            delete handle;
+#else
+            ASSERT(typeInfo->derefObjectFunction);
+            typeInfo->derefObjectFunction(toNative(wrapper));
+#endif
         } else {
             ASSERT(typeInfo->derefObjectFunction);
             typeInfo->derefObjectFunction(toNative(wrapper));
         }
-#else
-        ASSERT(typeInfo->derefObjectFunction);
-        typeInfo->derefObjectFunction(toNative(wrapper));
-#endif
     }
 
     struct WrapperConfiguration {
@@ -211,7 +222,7 @@ namespace WebCore {
             Dependent, Independent
         };
 
-        void configureWrapper(v8::Persistent<v8::Object>* wrapper) const
+        void configureWrapper(v8::PersistentBase<v8::Object>* wrapper) const
         {
             wrapper->SetWrapperClassId(classId);
             if (lifetime == Independent)

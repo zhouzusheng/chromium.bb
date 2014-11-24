@@ -9,10 +9,9 @@
       'type': 'shared_library',
       'dependencies': [
         # TODO(darin): we should not be linking against these libraries!
-        '../ui/gfx/gfx.gyp:gfx',
+        '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/gl/gl.gyp:gl',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_environment_standalone',
         'mojo_gles2',
         'mojo_native_viewport_bindings',
@@ -36,22 +35,6 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
-      'target_name': 'mojo_compositor_support',
-      'type': 'static_library',
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../cc/cc.gyp:cc',
-        '../skia/skia.gyp:skia',
-        '../gpu/gpu.gyp:gles2_implementation',
-        'mojo_gles2',
-        'mojo_system',
-      ],
-      'sources': [
-        'examples/compositor_app/mojo_context_provider.cc',
-        'examples/compositor_app/mojo_context_provider.h',
-      ],
-    },
-    {
       'target_name': 'mojo_compositor_app',
       'type': 'shared_library',
       'dependencies': [
@@ -59,13 +42,13 @@
         '../cc/cc.gyp:cc',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        'mojo_cc_support',
         'mojo_common_lib',
-        'mojo_compositor_support',
         'mojo_environment_chromium',
         'mojo_gles2',
         'mojo_native_viewport_bindings',
         'mojo_shell_client',
-        'mojo_system',
+        'mojo_system_impl',
       ],
       'sources': [
         'examples/compositor_app/compositor_app.cc',
@@ -86,13 +69,15 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../gpu/gpu.gyp:command_buffer_common',
         '../ppapi/ppapi.gyp:ppapi_c',
         '../ppapi/ppapi_internal.gyp:ppapi_example_gles2_spinning_cube',
+        'mojo_common_lib',
         'mojo_environment_chromium',
         'mojo_gles2',
         'mojo_native_viewport_bindings',
         'mojo_shell_client',
-        'mojo_system',
+        'mojo_system_impl',
       ],
       'defines': [
         # We don't really want to export. We could change how
@@ -176,30 +161,6 @@
     ['use_aura==1', {
       'targets': [
         {
-          'target_name': 'mojo_aura_demo_support',
-          'type': 'static_library',
-          'dependencies': [
-            '../cc/cc.gyp:cc',
-            '../ui/aura/aura.gyp:aura',
-            '../ui/events/events.gyp:events',
-            '../ui/events/events.gyp:events_base',
-            '../ui/compositor/compositor.gyp:compositor',
-            '../ui/gl/gl.gyp:gl',
-            '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
-            'mojo_compositor_support',
-            'mojo_gles2',
-            'mojo_native_viewport_bindings',
-          ],
-          'sources': [
-            'examples/aura_demo/demo_context_factory.cc',
-            'examples/aura_demo/demo_context_factory.h',
-            'examples/aura_demo/demo_screen.cc',
-            'examples/aura_demo/demo_screen.h',
-            'examples/aura_demo/window_tree_host_mojo.cc',
-            'examples/aura_demo/window_tree_host_mojo.h',
-          ],
-        },
-        {
           'target_name': 'mojo_aura_demo',
           'type': 'shared_library',
           'dependencies': [
@@ -208,12 +169,13 @@
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            'mojo_aura_demo_support',
+            'mojo_aura_support',
+            'mojo_cc_support',
             'mojo_common_lib',
             'mojo_environment_chromium',
             'mojo_gles2',
             'mojo_shell_client',
-            'mojo_system',
+            'mojo_system_impl'
           ],
           'sources': [
             'examples/aura_demo/aura_demo.cc',
@@ -235,14 +197,12 @@
           'variables': {
             'mojom_base_output_dir': 'mojo',
           },
-          'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
+          'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
           'export_dependent_settings': [
-            'mojo_bindings',
-            'mojo_system',
+            'mojo_cpp_bindings',
           ],
           'dependencies': [
-            'mojo_bindings',
-            'mojo_system',
+            'mojo_cpp_bindings',
           ],
         },
         {
@@ -256,14 +216,15 @@
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/views/views.gyp:views',
+            '../ui/wm/wm.gyp:wm',
             '../url/url.gyp:url_lib',
-            'mojo_aura_demo_support',
+            'mojo_aura_support',
             'mojo_common_lib',
             'mojo_environment_chromium',
             'mojo_gles2',
             'mojo_launcher_bindings',
             'mojo_shell_client',
-            'mojo_system',
+            'mojo_system_impl',
           ],
           'sources': [
             'examples/launcher/launcher.cc',
@@ -277,48 +238,45 @@
           'includes': [ 'build/package_app.gypi' ],
         },
         {
-          'target_name': 'mojo_view_manager_bindings',
-          'type': 'static_library',
-          'sources': [
-            'examples/view_manager/view_manager.mojom',
-          ],
-          'variables': {
-            'mojom_base_output_dir': 'mojo',
-          },
-          'includes': [ 'public/bindings/mojom_bindings_generator.gypi' ],
-          'export_dependent_settings': [
-            'mojo_bindings',
-            'mojo_system',
-          ],
-          'dependencies': [
-            'mojo_bindings',
-            'mojo_system',
-          ],
-        },
-        {
-          'target_name': 'mojo_view_manager',
+          'target_name': 'mojo_sample_view_manager_app',
           'type': 'shared_library',
           'dependencies': [
             '../base/base.gyp:base',
+            '../skia/skia.gyp:skia',
+            '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            'mojo_common_lib',
+            '../ui/gl/gl.gyp:gl',
+            'mojo_cpp_bindings',
             'mojo_environment_chromium',
-            'mojo_launcher_bindings',
-            'mojo_native_viewport_bindings',
+            'mojo_gles2',
+            'mojo_view_manager_lib',
             'mojo_shell_client',
-            'mojo_system',
-            'mojo_view_manager_bindings',
+            'mojo_system_impl',
+            'mojo_utility',
           ],
           'sources': [
-            'examples/view_manager/view_manager.cc',
+            'examples/sample_view_manager_app/sample_view_manager_app.cc',
           ],
         },
+      ],
+    }],
+    ['OS=="linux"', {
+      'targets': [
         {
-          'target_name': 'package_mojo_view_manager',
-          'variables': {
-            'app_name': 'mojo_view_manager',
-          },
-          'includes': [ 'build/package_app.gypi' ],
+          'target_name': 'mojo_dbus_echo',
+          'type': 'shared_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'mojo_cpp_bindings',
+            'mojo_environment_standalone',
+            'mojo_echo_bindings',
+            'mojo_shell_client',
+            'mojo_system',
+            'mojo_utility',
+          ],
+          'sources': [
+            'examples/dbus_echo/dbus_echo_app.cc',
+          ],
         },
       ],
     }],

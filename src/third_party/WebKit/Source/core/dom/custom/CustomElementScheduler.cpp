@@ -38,6 +38,7 @@
 #include "core/dom/custom/CustomElementLifecycleCallbacks.h"
 #include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
+#include "core/dom/custom/CustomElementMicrotaskQueue.h"
 #include "core/dom/custom/CustomElementMicrotaskResolutionStep.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/html/imports/HTMLImportChild.h"
@@ -46,37 +47,24 @@ namespace WebCore {
 
 class HTMLImport;
 
-void CustomElementScheduler::scheduleCreatedCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
+void CustomElementScheduler::scheduleCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element, CustomElementLifecycleCallbacks::CallbackType type)
 {
+    ASSERT(type != CustomElementLifecycleCallbacks::AttributeChanged);
+
+    if (!callbacks->hasCallback(type))
+        return;
+
     CustomElementCallbackQueue& queue = instance().schedule(element);
-    queue.append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::Created));
+    queue.append(CustomElementCallbackInvocation::createInvocation(callbacks, type));
 }
 
 void CustomElementScheduler::scheduleAttributeChangedCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
-    if (!callbacks->hasAttributeChangedCallback())
+    if (!callbacks->hasCallback(CustomElementLifecycleCallbacks::AttributeChanged))
         return;
 
     CustomElementCallbackQueue& queue = instance().schedule(element);
     queue.append(CustomElementCallbackInvocation::createAttributeChangedInvocation(callbacks, name, oldValue, newValue));
-}
-
-void CustomElementScheduler::scheduleAttachedCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
-{
-    if (!callbacks->hasAttachedCallback())
-        return;
-
-    CustomElementCallbackQueue& queue = instance().schedule(element);
-    queue.append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::Attached));
-}
-
-void CustomElementScheduler::scheduleDetachedCallback(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, PassRefPtr<Element> element)
-{
-    if (!callbacks->hasDetachedCallback())
-        return;
-
-    CustomElementCallbackQueue& queue = instance().schedule(element);
-    queue.append(CustomElementCallbackInvocation::createInvocation(callbacks, CustomElementLifecycleCallbacks::Detached));
 }
 
 void CustomElementScheduler::resolveOrScheduleResolution(PassRefPtr<CustomElementRegistrationContext> context, PassRefPtr<Element> element, const CustomElementDescriptor& descriptor)
@@ -86,9 +74,9 @@ void CustomElementScheduler::resolveOrScheduleResolution(PassRefPtr<CustomElemen
         return;
     }
 
-    HTMLImport* import = element->document().import();
+    HTMLImportLoader* loader = element->document().importLoader();
     OwnPtr<CustomElementMicrotaskResolutionStep> step = CustomElementMicrotaskResolutionStep::create(context, element, descriptor);
-    CustomElementMicrotaskDispatcher::instance().enqueue(import, step.release());
+    CustomElementMicrotaskDispatcher::instance().enqueue(loader, step.release());
 }
 
 CustomElementMicrotaskImportStep* CustomElementScheduler::scheduleImport(HTMLImportChild* import)
@@ -96,13 +84,11 @@ CustomElementMicrotaskImportStep* CustomElementScheduler::scheduleImport(HTMLImp
     ASSERT(!import->isDone());
     ASSERT(import->parent());
 
-    OwnPtr<CustomElementMicrotaskImportStep> step = CustomElementMicrotaskImportStep::create();
-    CustomElementMicrotaskImportStep* rawStep = step.get();
-
     // Ownership of the new step is transferred to the parent
     // processing step, or the base queue.
-    CustomElementMicrotaskDispatcher::instance().enqueue(import->parent(), step.release());
-
+    OwnPtr<CustomElementMicrotaskImportStep> step = CustomElementMicrotaskImportStep::create(import);
+    CustomElementMicrotaskImportStep* rawStep = step.get();
+    CustomElementMicrotaskDispatcher::instance().enqueue(import->parent()->loader(), step.release(), import->isSync());
     return rawStep;
 }
 

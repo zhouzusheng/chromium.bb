@@ -229,9 +229,6 @@ WebGraphicsContext3DCommandBufferImpl::WebGraphicsContext3DCommandBufferImpl(
     const GURL& active_url,
     GpuChannelHost* host,
     const Attributes& attributes,
-#if !defined(OS_CHROMEOS)
-    bool bind_generates_resources,
-#endif
     bool lose_context_when_out_of_memory,
     const SharedMemoryLimits& limits,
     WebGraphicsContext3DCommandBufferImpl* share_context)
@@ -249,9 +246,6 @@ WebGraphicsContext3DCommandBufferImpl::WebGraphicsContext3DCommandBufferImpl(
       weak_ptr_factory_(this),
       initialized_(false),
       gl_(NULL),
-#if !defined(OS_CHROMEOS)
-      bind_generates_resources_(bind_generates_resources),
-#endif
       lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
       mem_limits_(limits),
       flush_id_(0) {
@@ -358,10 +352,8 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
   attribs.push_back(attributes_.failIfMajorPerformanceCaveat ? 1 : 0);
   attribs.push_back(LOSE_CONTEXT_WHEN_OUT_OF_MEMORY);
   attribs.push_back(lose_context_when_out_of_memory_ ? 1 : 0);
-#if defined(OS_CHROMEOS)
   attribs.push_back(BIND_GENERATES_RESOURCES);
   attribs.push_back(0);
-#endif
   attribs.push_back(NONE);
 
   // Create a proxy to a command buffer in the GPU process.
@@ -436,19 +428,12 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(bool onscreen) {
   DCHECK(host_.get());
 
   // Create the object exposing the OpenGL API.
-#if defined(OS_CHROMEOS)
   bool bind_generates_resources = false;
-#endif
-
   real_gl_.reset(
       new gpu::gles2::GLES2Implementation(gles2_helper_.get(),
                                           gles2_share_group,
                                           transfer_buffer_.get(),
-#if defined(OS_CHROMEOS)
                                           bind_generates_resources,
-#else
-                                          bind_generates_resources_,
-#endif
                                           lose_context_when_out_of_memory_,
                                           command_buffer_.get()));
   gl_ = real_gl_.get();
@@ -1221,17 +1206,12 @@ WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
 
   if (share_context && share_context->IsCommandBufferContextLost())
     return NULL;
-#if !defined(OS_CHROMEOS)
-  bool bind_generates_resources = false;
-#endif
+
   return new WebGraphicsContext3DCommandBufferImpl(
       0,
       active_url,
       host,
       attributes,
-#if !defined(OS_CHROMEOS)
-      bind_generates_resources,
-#endif
       lose_context_when_out_of_memory,
       limits,
       share_context);
@@ -1356,17 +1336,34 @@ void WebGraphicsContext3DCommandBufferImpl::drawElementsInstancedANGLE(
 DELEGATE_TO_GL_2(vertexAttribDivisorANGLE, VertexAttribDivisorANGLE, WGC3Duint,
                  WGC3Duint)
 
-DELEGATE_TO_GL_3R(createImageCHROMIUM, CreateImageCHROMIUM,
-                  WGC3Dsizei, WGC3Dsizei, WGC3Denum,
+DELEGATE_TO_GL_4R(createImageCHROMIUM,
+                  CreateImageCHROMIUM,
+                  WGC3Dsizei,
+                  WGC3Dsizei,
+                  WGC3Denum,
+                  WGC3Denum,
                   WGC3Duint);
+
+WGC3Duint WebGraphicsContext3DCommandBufferImpl::createImageCHROMIUM(
+    WGC3Dsizei width,
+    WGC3Dsizei height,
+    WGC3Denum internalformat) {
+  return gl_->CreateImageCHROMIUM(
+      width, height, internalformat, GL_IMAGE_MAP_CHROMIUM);
+}
 
 DELEGATE_TO_GL_1(destroyImageCHROMIUM, DestroyImageCHROMIUM, WGC3Duint);
 
 DELEGATE_TO_GL_3(getImageParameterivCHROMIUM, GetImageParameterivCHROMIUM,
                  WGC3Duint, WGC3Denum, GLint*);
 
-DELEGATE_TO_GL_2R(mapImageCHROMIUM, MapImageCHROMIUM,
-                  WGC3Duint, WGC3Denum, void*);
+DELEGATE_TO_GL_1R(mapImageCHROMIUM, MapImageCHROMIUM, WGC3Duint, void*);
+
+void* WebGraphicsContext3DCommandBufferImpl::mapImageCHROMIUM(
+    WGC3Duint image_id,
+    WGC3Denum access) {
+  return gl_->MapImageCHROMIUM(image_id);
+}
 
 DELEGATE_TO_GL_1(unmapImageCHROMIUM, UnmapImageCHROMIUM, WGC3Duint);
 

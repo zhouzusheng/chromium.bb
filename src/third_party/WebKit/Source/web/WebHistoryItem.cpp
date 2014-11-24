@@ -29,46 +29,23 @@
  */
 
 #include "config.h"
-#include "WebHistoryItem.h"
+#include "public/web/WebHistoryItem.h"
 
-#include "WebSerializedScriptValue.h"
 #include "bindings/v8/SerializedScriptValue.h"
-#include "core/html/forms/FormController.h"
 #include "core/loader/HistoryItem.h"
 #include "platform/network/FormData.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebSerializedScriptValue.h"
 #include "wtf/text/StringHash.h"
 
 using namespace WebCore;
 
 namespace blink {
-namespace {
-
-void addReferencedFilePaths(HistoryItem* item, HashSet<String>& results)
-{
-    const FormData* formData = item->formData();
-    if (formData) {
-        for (size_t i = 0; i < formData->elements().size(); ++i) {
-            const FormDataElement& element = formData->elements()[i];
-            if (element.m_type == FormDataElement::encodedFile)
-                results.add(element.m_filename);
-        }
-    }
-
-    const Vector<String>& filePaths = FormController::getReferencedFilePaths(item->documentState());
-    for (size_t i = 0; i < filePaths.size(); ++i)
-        results.add(filePaths[i]);
-
-    const HistoryItemVector& children = item->children();
-    for (size_t i = 0; i < children.size(); ++i)
-        addReferencedFilePaths(children[i].get(), results);
-}
-
-} // namespace
 
 void WebHistoryItem::initialize()
 {
@@ -92,7 +69,6 @@ WebString WebHistoryItem::urlString() const
 
 void WebHistoryItem::setURLString(const WebString& url)
 {
-    ensureMutable();
     m_private->setURLString(KURL(ParsedURLString, url).string());
 }
 
@@ -108,7 +84,6 @@ WebReferrerPolicy WebHistoryItem::referrerPolicy() const
 
 void WebHistoryItem::setReferrer(const WebString& referrer, WebReferrerPolicy referrerPolicy)
 {
-    ensureMutable();
     m_private->setReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
 }
 
@@ -119,8 +94,17 @@ WebString WebHistoryItem::target() const
 
 void WebHistoryItem::setTarget(const WebString& target)
 {
-    ensureMutable();
     m_private->setTarget(target);
+}
+
+WebFloatPoint WebHistoryItem::pinchViewportScrollOffset() const
+{
+    return m_private->pinchViewportScrollPoint();
+}
+
+void WebHistoryItem::setPinchViewportScrollOffset(const WebFloatPoint& scrollOffset)
+{
+    m_private->setPinchViewportScrollPoint(scrollOffset);
 }
 
 WebPoint WebHistoryItem::scrollOffset() const
@@ -130,7 +114,6 @@ WebPoint WebHistoryItem::scrollOffset() const
 
 void WebHistoryItem::setScrollOffset(const WebPoint& scrollOffset)
 {
-    ensureMutable();
     m_private->setScrollPoint(scrollOffset);
 }
 
@@ -141,7 +124,6 @@ float WebHistoryItem::pageScaleFactor() const
 
 void WebHistoryItem::setPageScaleFactor(float scale)
 {
-    ensureMutable();
     m_private->setPageScaleFactor(scale);
 }
 
@@ -152,7 +134,6 @@ WebVector<WebString> WebHistoryItem::documentState() const
 
 void WebHistoryItem::setDocumentState(const WebVector<WebString>& state)
 {
-    ensureMutable();
     // FIXME: would be nice to avoid the intermediate copy
     Vector<String> ds;
     for (size_t i = 0; i < state.size(); ++i)
@@ -167,7 +148,6 @@ long long WebHistoryItem::itemSequenceNumber() const
 
 void WebHistoryItem::setItemSequenceNumber(long long itemSequenceNumber)
 {
-    ensureMutable();
     m_private->setItemSequenceNumber(itemSequenceNumber);
 }
 
@@ -178,7 +158,6 @@ long long WebHistoryItem::documentSequenceNumber() const
 
 void WebHistoryItem::setDocumentSequenceNumber(long long documentSequenceNumber)
 {
-    ensureMutable();
     m_private->setDocumentSequenceNumber(documentSequenceNumber);
 }
 
@@ -189,7 +168,6 @@ WebSerializedScriptValue WebHistoryItem::stateObject() const
 
 void WebHistoryItem::setStateObject(const WebSerializedScriptValue& object)
 {
-    ensureMutable();
     m_private->setStateObject(object);
 }
 
@@ -200,7 +178,6 @@ WebString WebHistoryItem::httpContentType() const
 
 void WebHistoryItem::setHTTPContentType(const WebString& httpContentType)
 {
-    ensureMutable();
     m_private->setFormContentType(httpContentType);
 }
 
@@ -211,33 +188,24 @@ WebHTTPBody WebHistoryItem::httpBody() const
 
 void WebHistoryItem::setHTTPBody(const WebHTTPBody& httpBody)
 {
-    ensureMutable();
     m_private->setFormData(httpBody);
-}
-
-WebVector<WebHistoryItem> WebHistoryItem::children() const
-{
-    return m_private->children();
-}
-
-void WebHistoryItem::setChildren(const WebVector<WebHistoryItem>& items)
-{
-    ensureMutable();
-    m_private->clearChildren();
-    for (size_t i = 0; i < items.size(); ++i)
-        m_private->addChildItem(items[i]);
-}
-
-void WebHistoryItem::appendToChildren(const WebHistoryItem& item)
-{
-    ensureMutable();
-    m_private->addChildItem(item);
 }
 
 WebVector<WebString> WebHistoryItem::getReferencedFilePaths() const
 {
     HashSet<String> filePaths;
-    addReferencedFilePaths(m_private.get(), filePaths);
+    const FormData* formData = m_private->formData();
+    if (formData) {
+        for (size_t i = 0; i < formData->elements().size(); ++i) {
+            const FormDataElement& element = formData->elements()[i];
+            if (element.m_type == FormDataElement::encodedFile)
+                filePaths.add(element.m_filename);
+        }
+    }
+
+    const Vector<String>& referencedFilePaths = m_private->getReferencedFilePaths();
+    for (size_t i = 0; i < referencedFilePaths.size(); ++i)
+        filePaths.add(referencedFilePaths[i]);
 
     Vector<String> results;
     copyToVector(filePaths, results);
@@ -258,12 +226,6 @@ WebHistoryItem& WebHistoryItem::operator=(const PassRefPtr<HistoryItem>& item)
 WebHistoryItem::operator PassRefPtr<HistoryItem>() const
 {
     return m_private.get();
-}
-
-void WebHistoryItem::ensureMutable()
-{
-    if (!m_private->hasOneRef())
-        m_private = m_private->copy();
 }
 
 } // namespace blink

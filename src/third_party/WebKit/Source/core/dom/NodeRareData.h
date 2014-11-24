@@ -29,6 +29,7 @@
 #include "core/dom/QualifiedName.h"
 #include "core/dom/TagCollection.h"
 #include "core/page/Page.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -209,22 +210,36 @@ private:
     TagCollectionCacheNS m_tagCollectionCacheNS;
 };
 
-class NodeMutationObserverData {
-    WTF_MAKE_NONCOPYABLE(NodeMutationObserverData); WTF_MAKE_FAST_ALLOCATED;
+class NodeMutationObserverData FINAL : public NoBaseWillBeGarbageCollected<NodeMutationObserverData> {
+    WTF_MAKE_NONCOPYABLE(NodeMutationObserverData);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    Vector<OwnPtr<MutationObserverRegistration> > registry;
-    HashSet<MutationObserverRegistration*> transientRegistry;
+    WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> > registry;
+    WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> > transientRegistry;
 
-    static PassOwnPtr<NodeMutationObserverData> create() { return adoptPtr(new NodeMutationObserverData); }
+    static PassOwnPtrWillBeRawPtr<NodeMutationObserverData> create()
+    {
+        return adoptPtrWillBeNoop(new NodeMutationObserverData);
+    }
+
+    void trace(Visitor* visitor)
+    {
+        visitor->trace(registry);
+        visitor->trace(transientRegistry);
+    }
 
 private:
     NodeMutationObserverData() { }
 };
 
-class NodeRareData : public NodeRareDataBase {
-    WTF_MAKE_NONCOPYABLE(NodeRareData); WTF_MAKE_FAST_ALLOCATED;
+class NodeRareData : public NoBaseWillBeGarbageCollectedFinalized<NodeRareData>, public NodeRareDataBase {
+    WTF_MAKE_NONCOPYABLE(NodeRareData);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<NodeRareData> create(RenderObject* renderer) { return adoptPtr(new NodeRareData(renderer)); }
+    static NodeRareData* create(RenderObject* renderer)
+    {
+        return new NodeRareData(renderer);
+    }
 
     void clearNodeLists() { m_nodeLists.clear(); }
     NodeListsNodeData* nodeLists() const { return m_nodeLists.get(); }
@@ -268,21 +283,29 @@ public:
         ConnectedFrameCountBits = 10, // Must fit Page::maxNumberOfFrames.
     };
 
+    void trace(Visitor*);
+
+    void traceAfterDispatch(Visitor*);
+    void finalizeGarbageCollectedObject();
+
 protected:
     NodeRareData(RenderObject* renderer)
         : NodeRareDataBase(renderer)
         , m_connectedFrameCount(0)
         , m_elementFlags(0)
         , m_restyleFlags(0)
+        , m_isElementRareData(false)
     { }
 
 private:
     OwnPtr<NodeListsNodeData> m_nodeLists;
-    OwnPtr<NodeMutationObserverData> m_mutationObserverData;
+    OwnPtrWillBeMember<NodeMutationObserverData> m_mutationObserverData;
 
     unsigned m_connectedFrameCount : ConnectedFrameCountBits;
     unsigned m_elementFlags : NumberOfElementFlags;
     unsigned m_restyleFlags : NumberOfDynamicRestyleFlags;
+protected:
+    unsigned m_isElementRareData : 1;
 };
 
 inline bool NodeListsNodeData::deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(Node& ownerNode)

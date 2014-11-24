@@ -31,22 +31,22 @@
 #include "config.h"
 #include "core/frame/FrameHost.h"
 
-#include "core/frame/PageConsole.h"
+#include "core/frame/EventHandlerRegistry.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 
 namespace WebCore {
 
-PassOwnPtr<FrameHost> FrameHost::create(Page& page)
+PassOwnPtrWillBeRawPtr<FrameHost> FrameHost::create(Page& page)
 {
-    return adoptPtr(new FrameHost(page));
+    return adoptPtrWillBeNoop(new FrameHost(page));
 }
 
 FrameHost::FrameHost(Page& page)
-    : m_page(page)
-    , m_console(PageConsole::create(*this))
-    , m_pinchViewport(*this)
+    : m_page(&page)
+    , m_pinchViewport(adoptPtr(new PinchViewport(*this)))
+    , m_eventHandlerRegistry(adoptPtrWillBeNoop(new EventHandlerRegistry(*this)))
 {
 }
 
@@ -57,32 +57,38 @@ FrameHost::~FrameHost()
 
 Settings& FrameHost::settings() const
 {
-    return m_page.settings();
+    return m_page->settings();
 }
 
 Chrome& FrameHost::chrome() const
 {
-    return m_page.chrome();
-}
-
-PageConsole& FrameHost::console() const
-{
-    return *m_console;
+    return m_page->chrome();
 }
 
 UseCounter& FrameHost::useCounter() const
 {
-    return m_page.useCounter();
+    return m_page->useCounter();
 }
 
 float FrameHost::deviceScaleFactor() const
 {
-    return m_page.deviceScaleFactor();
+    return m_page->deviceScaleFactor();
 }
 
-PinchViewport& FrameHost::pinchViewport()
+PinchViewport& FrameHost::pinchViewport() const
 {
-    return m_pinchViewport;
+    return *m_pinchViewport;
+}
+
+EventHandlerRegistry& FrameHost::eventHandlerRegistry() const
+{
+    return *m_eventHandlerRegistry;
+}
+
+void FrameHost::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+    visitor->trace(m_eventHandlerRegistry);
 }
 
 }

@@ -35,15 +35,14 @@
 #include "SkTypeface.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/fonts/FontCache.h"
-#include "platform/fonts/harfbuzz/HarfBuzzFace.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "public/platform/Platform.h"
-#include "public/platform/win/WebSandboxSupport.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/StdLibExtras.h"
 #include <windows.h>
 
 namespace WebCore {
+
+// Maximum font size, in pixels, at which embedded bitmaps will be used
+// if available.
+const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
 void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const FontSmoothingOverride* fontSmoothingOverride) const
 {
@@ -52,10 +51,8 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
     paint->setTypeface(typeface());
     paint->setFakeBoldText(m_syntheticBold);
     paint->setTextSkewX(m_syntheticItalic ? -SK_Scalar1 / 4 : 0);
-    paint->setSubpixelText(m_useSubpixelPositioning);
 
-    int textFlags;
-    // Only set painting flags when we're actually painting.
+    uint32_t textFlags;
     bool lcdExplicitlyRequested;
     if (fontSmoothingOverride) {
         textFlags = fontSmoothingOverride->textFlags;
@@ -65,6 +62,20 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
         textFlags = paintTextFlags();
         lcdExplicitlyRequested = false;
     }
+
+    uint32_t flags = paint->getFlags();
+    static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
+        SkPaint::kLCDRenderText_Flag |
+        SkPaint::kGenA8FromLCD_Flag;
+    flags &= ~textFlagsMask;
+
+    if (ts <= kMaxSizeForEmbeddedBitmap)
+        flags |= SkPaint::kEmbeddedBitmapText_Flag;
+
+    if (m_useSubpixelPositioning)
+        flags |= SkPaint::kSubpixelText_Flag;
+
+    // Only set painting flags when we're actually painting.
     // SHEZ: don't remove cleartype if it was explicitly requested
     if (!lcdExplicitlyRequested && context && !context->couldUseLCDRenderedText()) {
         textFlags &= ~SkPaint::kLCDRenderText_Flag;
@@ -75,15 +86,9 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
         // drawing LCD offscreen and downsampling that to AA.
         textFlags |= SkPaint::kGenA8FromLCD_Flag;
     }
-
-    static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
-        SkPaint::kLCDRenderText_Flag |
-        SkPaint::kGenA8FromLCD_Flag;
-
     SkASSERT(!(textFlags & ~textFlagsMask));
-    uint32_t flags = paint->getFlags();
-    flags &= ~textFlagsMask;
     flags |= textFlags;
+
     paint->setFlags(flags);
 }
 
@@ -122,156 +127,29 @@ static bool isWebFont(const String& familyName)
 
 static int computePaintTextFlags(String fontFamilyName)
 {
+    if (isRunningLayoutTest())
+        return isFontAntialiasingEnabledForTest() ? SkPaint::kAntiAlias_Flag : 0;
+
     int textFlags = getSystemTextFlags();
 
     // Many web-fonts are so poorly hinted that they are terrible to read when drawn in BW.
     // In these cases, we have decided to FORCE these fonts to be drawn with at least grayscale AA,
     // even when the System (getSystemTextFlags) tells us to draw only in BW.
-    if (isWebFont(fontFamilyName) && !isRunningLayoutTest())
+    if (isWebFont(fontFamilyName))
         textFlags |= SkPaint::kAntiAlias_Flag;
+
     return textFlags;
 }
 
-FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
-    : m_textSize(-1)
-    , m_syntheticBold(false)
-    , m_syntheticItalic(false)
-    , m_orientation(Horizontal)
-    , m_typeface(adoptRef(SkTypeface::RefDefault()))
-    , m_paintTextFlags(0)
-    , m_isHashTableDeletedValue(true)
-    , m_useSubpixelPositioning(false)
-{
-}
 
-FontPlatformData::FontPlatformData()
-    : m_textSize(0)
-    , m_syntheticBold(false)
-    , m_syntheticItalic(false)
-    , m_orientation(Horizontal)
-    , m_typeface(adoptRef(SkTypeface::RefDefault()))
-    , m_paintTextFlags(0)
-    , m_isHashTableDeletedValue(false)
-    , m_useSubpixelPositioning(false)
-{
-}
-
-// FIXME: this constructor is needed for SVG fonts but doesn't seem to do much
-FontPlatformData::FontPlatformData(float size, bool bold, bool oblique)
-    : m_textSize(size)
-    , m_syntheticBold(false)
-    , m_syntheticItalic(false)
-    , m_orientation(Horizontal)
-    , m_typeface(adoptRef(SkTypeface::RefDefault()))
-    , m_paintTextFlags(0)
-    , m_isHashTableDeletedValue(false)
-    , m_useSubpixelPositioning(false)
-{
-}
-
-FontPlatformData::FontPlatformData(const FontPlatformData& data)
-    : m_textSize(data.m_textSize)
-    , m_syntheticBold(data.m_syntheticBold)
-    , m_syntheticItalic(data.m_syntheticItalic)
-    , m_orientation(data.m_orientation)
-    , m_typeface(data.m_typeface)
-    , m_paintTextFlags(data.m_paintTextFlags)
-    , m_isHashTableDeletedValue(false)
-    , m_useSubpixelPositioning(data.m_useSubpixelPositioning)
-{
-}
-
-FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
-    : m_textSize(textSize)
-    , m_syntheticBold(data.m_syntheticBold)
-    , m_syntheticItalic(data.m_syntheticItalic)
-    , m_orientation(data.m_orientation)
-    , m_typeface(data.m_typeface)
-    , m_paintTextFlags(data.m_paintTextFlags)
-    , m_isHashTableDeletedValue(false)
-    , m_useSubpixelPositioning(data.m_useSubpixelPositioning)
-{
-}
-
-FontPlatformData::FontPlatformData(PassRefPtr<SkTypeface> tf, const char* family,
-    float textSize, bool syntheticBold, bool syntheticItalic, FontOrientation orientation,
-    bool useSubpixelPositioning)
-    : m_textSize(textSize)
-    , m_syntheticBold(syntheticBold)
-    , m_syntheticItalic(syntheticItalic)
-    , m_orientation(orientation)
-    , m_typeface(tf)
-    , m_isHashTableDeletedValue(false)
-    , m_useSubpixelPositioning(useSubpixelPositioning)
+void FontPlatformData::querySystemForRenderStyle(bool)
 {
     m_paintTextFlags = computePaintTextFlags(fontFamilyName());
-}
-
-FontPlatformData::~FontPlatformData()
-{
-}
-
-FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
-{
-    if (this != &data) {
-        m_textSize = data.m_textSize;
-        m_syntheticBold = data.m_syntheticBold;
-        m_syntheticItalic = data.m_syntheticItalic;
-        m_orientation = data.m_orientation;
-        m_typeface = data.m_typeface;
-        m_paintTextFlags = data.m_paintTextFlags;
-    }
-    return *this;
-}
-
-String FontPlatformData::fontFamilyName() const
-{
-    // FIXME: This returns the requested name, perhaps a better solution would be to
-    // return the list of names provided by SkTypeface::createFamilyNameIterator.
-    ASSERT(typeface());
-    SkString familyName;
-    typeface()->getFamilyName(&familyName);
-    return String::fromUTF8(familyName.c_str());
-}
-
-bool FontPlatformData::isFixedPitch() const
-{
-    return typeface() && typeface()->isFixedPitch();
-}
-
-bool FontPlatformData::operator==(const FontPlatformData& a) const
-{
-    return SkTypeface::Equal(m_typeface.get(), a.m_typeface.get())
-        && m_textSize == a.m_textSize
-        && m_syntheticBold == a.m_syntheticBold
-        && m_syntheticItalic == a.m_syntheticItalic
-        && m_orientation == a.m_orientation
-        && m_isHashTableDeletedValue == a.m_isHashTableDeletedValue;
-}
-
-HarfBuzzFace* FontPlatformData::harfBuzzFace() const
-{
-    if (!m_harfBuzzFace)
-        m_harfBuzzFace = HarfBuzzFace::create(const_cast<FontPlatformData*>(this), uniqueID());
-
-    return m_harfBuzzFace.get();
-}
-
-SkFontID FontPlatformData::uniqueID() const
-{
-    return m_typeface->uniqueID();
 }
 
 bool FontPlatformData::defaultUseSubpixelPositioning()
 {
     return FontCache::fontCache()->useSubpixelPositioning();
 }
-
-#ifndef NDEBUG
-String FontPlatformData::description() const
-{
-    return String();
-}
-#endif
 
 } // namespace WebCore

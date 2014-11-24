@@ -7,6 +7,7 @@
 
 #include "core/css/invalidation/StyleInvalidator.h"
 
+#include "core/css/invalidation/DescendantInvalidationSet.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
@@ -16,41 +17,78 @@
 
 namespace WebCore {
 
-void StyleInvalidator::invalidate()
+void StyleInvalidator::invalidate(Document& document)
 {
-    if (Element* documentElement = m_document.documentElement())
+    if (Element* documentElement = document.documentElement())
         invalidate(*documentElement);
-    m_document.clearChildNeedsStyleInvalidation();
-    m_document.clearNeedsStyleInvalidation();
+    document.clearChildNeedsStyleInvalidation();
+    document.clearNeedsStyleInvalidation();
+    clearPendingInvalidations();
+}
+
+void StyleInvalidator::scheduleInvalidation(PassRefPtr<DescendantInvalidationSet> invalidationSet, Element& element)
+{
+    ASSERT(element.inActiveDocument());
+    ASSERT(element.styleChangeType() < SubtreeStyleChange);
+    InvalidationList& list = ensurePendingInvalidationList(element);
+    // If we're already going to invalidate the whole subtree we don't need to store any new sets.
+    if (!list.isEmpty() && list.last()->wholeSubtreeInvalid())
+        return;
+    // If this set would invalidate the whole subtree we can discard all existing sets.
+    if (invalidationSet->wholeSubtreeInvalid())
+        list.clear();
+    list.append(invalidationSet);
+    element.setNeedsStyleInvalidation();
+}
+
+StyleInvalidator::InvalidationList& StyleInvalidator::ensurePendingInvalidationList(Element& element)
+{
+    PendingInvalidationMap::AddResult addResult = m_pendingInvalidationMap.add(&element, nullptr);
+    if (addResult.isNewEntry)
+        addResult.storedValue->value = adoptPtr(new InvalidationList);
+    return *addResult.storedValue->value;
+}
+
+void StyleInvalidator::clearInvalidation(Node& node)
+{
+    if (node.isElementNode() && node.needsStyleInvalidation())
+        m_pendingInvalidationMap.remove(toElement(&node));
+}
+
+void StyleInvalidator::clearPendingInvalidations()
+{
     m_pendingInvalidationMap.clear();
 }
 
-StyleInvalidator::StyleInvalidator(Document& document)
-    : m_document(document)
-    , m_pendingInvalidationMap(document.styleResolver()->ruleFeatureSet().pendingInvalidationMap())
-{ }
+StyleInvalidator::StyleInvalidator()
+{
+}
+
+StyleInvalidator::~StyleInvalidator()
+{
+}
 
 void StyleInvalidator::RecursionData::pushInvalidationSet(const DescendantInvalidationSet& invalidationSet)
 {
-    invalidationSet.getClasses(m_invalidationClasses);
-    invalidationSet.getAttributes(m_invalidationAttributes);
-    m_foundInvalidationSet = true;
+    ASSERT(!m_wholeSubtreeInvalid);
+    if (invalidationSet.wholeSubtreeInvalid()) {
+        m_wholeSubtreeInvalid = true;
+        return;
+    }
+    m_invalidationSets.append(&invalidationSet);
+    m_invalidateCustomPseudo = invalidationSet.customPseudoInvalid();
 }
 
 bool StyleInvalidator::RecursionData::matchesCurrentInvalidationSets(Element& element)
 {
-    if (element.hasClass()) {
-        const SpaceSplitString& classNames = element.classNames();
-        for (Vector<AtomicString>::const_iterator it = m_invalidationClasses.begin(); it != m_invalidationClasses.end(); ++it) {
-            if (classNames.contains(*it))
-                return true;
-        }
-    }
-    if (element.hasAttributes()) {
-        for (Vector<AtomicString>::const_iterator it = m_invalidationAttributes.begin(); it != m_invalidationAttributes.end(); ++it) {
-            if (element.hasAttribute(*it))
-                return true;
-        }
+    ASSERT(!m_wholeSubtreeInvalid);
+
+    if (m_invalidateCustomPseudo && element.shadowPseudoId() != nullAtom)
+        return true;
+
+    for (InvalidationSets::iterator it = m_invalidationSets.begin(); it != m_invalidationSets.end(); ++it) {
+        if ((*it)->invalidatesElement(element))
+            return true;
     }
 
     return false;
@@ -58,27 +96,19 @@ bool StyleInvalidator::RecursionData::matchesCurrentInvalidationSets(Element& el
 
 bool StyleInvalidator::checkInvalidationSetsAgainstElement(Element& element)
 {
-    bool thisElementNeedsStyleRecalc = false;
+    if (element.styleChangeType() >= SubtreeStyleChange || m_recursionData.wholeSubtreeInvalid()) {
+        m_recursionData.setWholeSubtreeInvalid();
+        return false;
+    }
     if (element.needsStyleInvalidation()) {
-        if (RuleFeatureSet::InvalidationList* invalidationList = m_pendingInvalidationMap.get(&element)) {
-            // FIXME: it's really only necessary to clone the render style for this element, not full style recalc.
-            thisElementNeedsStyleRecalc = true;
-            for (RuleFeatureSet::InvalidationList::const_iterator it = invalidationList->begin(); it != invalidationList->end(); ++it) {
+        if (InvalidationList* invalidationList = m_pendingInvalidationMap.get(&element)) {
+            for (InvalidationList::const_iterator it = invalidationList->begin(); it != invalidationList->end(); ++it)
                 m_recursionData.pushInvalidationSet(**it);
-                if ((*it)->wholeSubtreeInvalid()) {
-                    element.setNeedsStyleRecalc(SubtreeStyleChange);
-                    // Even though we have set needsStyleRecalc on the whole subtree, we need to keep walking over the subtree
-                    // in order to clear the invalidation dirty bits on all elements.
-                    // FIXME: we can optimize this by having a dedicated function that just traverses the tree and removes the dirty bits,
-                    // without checking classes etc.
-                    break;
-                }
-            }
+            // FIXME: It's really only necessary to clone the render style for this element, not full style recalc.
+            return true;
         }
     }
-    if (!thisElementNeedsStyleRecalc)
-        thisElementNeedsStyleRecalc = m_recursionData.matchesCurrentInvalidationSets(element);
-    return thisElementNeedsStyleRecalc;
+    return m_recursionData.matchesCurrentInvalidationSets(element);
 }
 
 bool StyleInvalidator::invalidateChildren(Element& element)
@@ -106,21 +136,17 @@ bool StyleInvalidator::invalidate(Element& element)
     bool thisElementNeedsStyleRecalc = checkInvalidationSetsAgainstElement(element);
 
     bool someChildrenNeedStyleRecalc = false;
-    // foundInvalidationSet() will be true if we are in a subtree of a node with a DescendantInvalidationSet on it.
-    // We need to check all nodes in the subtree of such a node.
-    if (m_recursionData.foundInvalidationSet() || element.childNeedsStyleInvalidation())
+    if (m_recursionData.hasInvalidationSets() || element.childNeedsStyleInvalidation())
         someChildrenNeedStyleRecalc = invalidateChildren(element);
 
     if (thisElementNeedsStyleRecalc) {
-        element.setNeedsStyleRecalc(LocalStyleChange);
-    } else if (m_recursionData.foundInvalidationSet() && someChildrenNeedStyleRecalc) {
+        element.setNeedsStyleRecalc(m_recursionData.wholeSubtreeInvalid() ? SubtreeStyleChange : LocalStyleChange);
+    } else if (m_recursionData.hasInvalidationSets() && someChildrenNeedStyleRecalc) {
         // Clone the RenderStyle in order to preserve correct style sharing, if possible. Otherwise recalc style.
-        if (RenderObject* renderer = element.renderer()) {
-            ASSERT(renderer->style());
+        if (RenderObject* renderer = element.renderer())
             renderer->setStyleInternal(RenderStyle::clone(renderer->style()));
-        } else {
+        else
             element.setNeedsStyleRecalc(LocalStyleChange);
-        }
     }
 
     element.clearChildNeedsStyleInvalidation();

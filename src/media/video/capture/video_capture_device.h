@@ -18,6 +18,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"
@@ -48,12 +49,21 @@ class MEDIA_EXPORT VideoCaptureDevice {
       DIRECT_SHOW,
       API_TYPE_UNKNOWN
     };
-
+#endif
+#if defined(OS_MACOSX)
+    // Mac targets Capture Api type: it can only be set on construction.
+    enum CaptureApiType {
+      AVFOUNDATION,
+      QTKIT,
+      API_TYPE_UNKNOWN
+    };
+#endif
+#if defined(OS_WIN) || defined(OS_MACOSX)
     Name(const std::string& name,
          const std::string& id,
          const CaptureApiType api_type)
         : device_name_(name), unique_id_(id), capture_api_class_(api_type) {}
-#endif  // if defined(OS_WIN)
+#endif
     ~Name() {}
 
     // Friendly name of a device
@@ -63,7 +73,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
     // friendly name connected to the computer this will be unique.
     const std::string& id() const { return unique_id_; }
 
-    // The unique hardware model identifier of the capture device.  Returns
+    // The unique hardware model identifier of the capture device. Returns
     // "[vid]:[pid]" when a USB device is detected, otherwise "".
     // The implementation of this method is platform-dependent.
     const std::string GetModel() const;
@@ -81,7 +91,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
       return unique_id_ < other.id();
     }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
     CaptureApiType capture_api_type() const {
       return capture_api_class_.capture_api_type();
     }
@@ -90,16 +100,16 @@ class MEDIA_EXPORT VideoCaptureDevice {
    private:
     std::string device_name_;
     std::string unique_id_;
-#if defined(OS_WIN)
-    // This class wraps the CaptureApiType, so it has a by default value if not
-    // inititalized, and I (mcasas) do a DCHECK on reading its value.
+#if defined(OS_WIN) || defined(OS_MACOSX)
+    // This class wraps the CaptureApiType to give it a by default value if not
+    // initialized.
     class CaptureApiClass {
      public:
-      CaptureApiClass():  capture_api_type_(API_TYPE_UNKNOWN) {}
+      CaptureApiClass(): capture_api_type_(API_TYPE_UNKNOWN) {}
       CaptureApiClass(const CaptureApiType api_type)
-          :  capture_api_type_(api_type) {}
+          : capture_api_type_(api_type) {}
       CaptureApiType capture_api_type() const {
-        DCHECK_NE(capture_api_type_,  API_TYPE_UNKNOWN);
+        DCHECK_NE(capture_api_type_, API_TYPE_UNKNOWN);
         return capture_api_type_;
       }
      private:
@@ -107,7 +117,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
     };
 
     CaptureApiClass capture_api_class_;
-#endif  // if defined(OS_WIN)
+#endif
     // Allow generated copy constructor and assignment.
   };
 
@@ -181,7 +191,9 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
   // Creates a VideoCaptureDevice object.
   // Return NULL if the hardware is not available.
-  static VideoCaptureDevice* Create(const Name& device_name);
+  static VideoCaptureDevice* Create(
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+      const Name& device_name);
   virtual ~VideoCaptureDevice();
 
   // Gets the names of all video capture devices connected to this computer.
@@ -212,6 +224,14 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // would be sequenced through the same task runner, so that deallocation
   // happens first.
   virtual void StopAndDeAllocate() = 0;
+
+  // Gets the power line frequency from the current system time zone if this is
+  // defined, otherwise returns 0.
+  int GetPowerLineFrequencyForLocation() const;
+
+ protected:
+  static const int kPowerLine50Hz = 50;
+  static const int kPowerLine60Hz = 60;
 };
 
 }  // namespace media

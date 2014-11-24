@@ -5,17 +5,19 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_IN_PROCESS_COMMAND_BUFFER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_IN_PROCESS_COMMAND_BUFFER_H_
 
+#include <map>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/gpu_export.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
@@ -46,8 +48,11 @@ namespace gpu {
 
 namespace gles2 {
 class GLES2Decoder;
+class ShaderTranslatorCache;
 }
 
+class CommandBufferServiceBase;
+class GpuControlService;
 class GpuMemoryBufferFactory;
 class GpuScheduler;
 class TransferBufferManagerInterface;
@@ -80,31 +85,24 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
 
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
-  virtual State GetState() OVERRIDE;
   virtual State GetLastState() OVERRIDE;
   virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
   virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
   virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
   virtual void SetGetBuffer(int32 shm_id) OVERRIDE;
-  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
   virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
                                                           int32* id) OVERRIDE;
   virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
-  virtual scoped_refptr<gpu::Buffer> GetTransferBuffer(int32 id) OVERRIDE;
-  virtual void SetToken(int32 token) OVERRIDE;
-  virtual void SetParseError(gpu::error::Error error) OVERRIDE;
-  virtual void SetContextLostReason(
-      gpu::error::ContextLostReason reason) OVERRIDE;
   virtual gpu::error::Error GetLastError() OVERRIDE;
 
   // GpuControl implementation:
   virtual gpu::Capabilities GetCapabilities() OVERRIDE;
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
-      size_t width,
-      size_t height,
-      unsigned internalformat,
-      int32* id) OVERRIDE;
+  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
+                                                      size_t height,
+                                                      unsigned internalformat,
+                                                      unsigned usage,
+                                                      int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual void SignalSyncPoint(uint32 sync_point,
@@ -134,6 +132,8 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
     virtual void ScheduleIdleWork(const base::Closure& task) = 0;
 
     virtual bool UseVirtualizedGLContexts() = 0;
+    virtual scoped_refptr<gles2::ShaderTranslatorCache>
+        shader_translator_cache() = 0;
   };
 
 #if defined(OS_ANDROID)
@@ -179,6 +179,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void RetireSyncPointOnGpuThread(uint32 sync_point);
   void SignalSyncPointOnGpuThread(uint32 sync_point,
                                   const base::Closure& callback);
+  void DestroyTransferBufferOnGputhread(int32 id);
 
   // Callbacks:
   void OnContextLost();
@@ -203,15 +204,17 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   State last_state_;
   int32 last_put_offset_;
   gpu::Capabilities capabilities_;
+  typedef std::map<int32, linked_ptr<gfx::GpuMemoryBuffer> > GpuMemoryBufferMap;
+  GpuMemoryBufferMap gpu_memory_buffers_;
 
   // Accessed on both threads:
-  scoped_ptr<CommandBuffer> command_buffer_;
+  scoped_ptr<CommandBufferServiceBase> command_buffer_;
   base::Lock command_buffer_lock_;
   base::WaitableEvent flush_event_;
   scoped_refptr<Service> service_;
   State state_after_last_flush_;
   base::Lock state_after_last_flush_lock_;
-  scoped_ptr<GpuControl> gpu_control_;
+  scoped_ptr<GpuControlService> gpu_control_;
   scoped_refptr<gfx::GLShareGroup> gl_share_group_;
 
 #if defined(OS_ANDROID)

@@ -26,6 +26,12 @@
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheGroupTest, QueueUpdate);
+class AppCacheGroupTest;
+class AppCacheUpdateJobTest;
+}
+
 namespace appcache {
 
 class HostNotifier;
@@ -51,7 +57,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   void StartUpdate(AppCacheHost* host, const GURL& new_master_resource);
 
  private:
-  friend class AppCacheUpdateJobTest;
+  friend class content::AppCacheGroupTest;
+  friend class content::AppCacheUpdateJobTest;
   class URLFetcher;
 
   // Master entries have multiple hosts, for example, the same page is opened
@@ -127,6 +134,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
       existing_entry_ = entry;
     }
     ResultType result() const { return result_; }
+    int redirect_response_code() const { return redirect_response_code_; }
 
    private:
     // URLRequest::Delegate overrides
@@ -154,6 +162,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
     scoped_refptr<net::HttpResponseHeaders> existing_response_headers_;
     std::string manifest_data_;
     ResultType result_;
+    int redirect_response_code_;
     scoped_ptr<AppCacheResponseWriter> response_writer_;
   };  // class URLFetcher
 
@@ -166,7 +175,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
                                            AppCache* newest_cache,
                                            bool success,
                                            bool would_exceed_quota) OVERRIDE;
-  virtual void OnGroupMadeObsolete(AppCacheGroup* group, bool success) OVERRIDE;
+  virtual void OnGroupMadeObsolete(AppCacheGroup* group,
+                                   bool success,
+                                   int response_code) OVERRIDE;
 
   // Methods for AppCacheHost::Observer.
   virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE {}  // N/A
@@ -176,7 +187,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage) OVERRIDE;
 
-  void HandleCacheFailure(const std::string& error_message,
+  void HandleCacheFailure(const ErrorDetails& details,
                           ResultType result,
                           const GURL& failed_resource_url);
 
@@ -197,7 +208,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   void NotifyAllAssociatedHosts(EventID event_id);
   void NotifyAllProgress(const GURL& url);
   void NotifyAllFinalProgress();
-  void NotifyAllError(const std::string& error_message);
+  void NotifyAllError(const ErrorDetails& detals);
+  void LogConsoleMessageToAll(const std::string& message);
   void AddAllAssociatedHostsToNotifier(HostNotifier* notifier);
 
   // Checks if manifest is byte for byte identical with the manifest
@@ -224,7 +236,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   void AddMasterEntryToFetchList(AppCacheHost* host, const GURL& url,
                                  bool is_new);
   void FetchMasterEntries();
-  void CancelAllMasterEntryFetches(const std::string& error_message);
+  void CancelAllMasterEntryFetches(const ErrorDetails& details);
 
   // Asynchronously loads the entry from the newest complete cache if the
   // HTTP caching semantics allow.
@@ -308,6 +320,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   scoped_refptr<net::IOBuffer> read_manifest_buffer_;
   std::string loaded_manifest_data_;
   scoped_ptr<AppCacheResponseReader> manifest_response_reader_;
+  bool manifest_has_valid_mime_type_;
 
   // New master entries added to the cache by this job, used to cleanup
   // in error conditions.
@@ -329,7 +342,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
 
   AppCacheStorage* storage_;
 
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, QueueUpdate);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheUpdateJob);
 };

@@ -664,14 +664,18 @@ template<> struct DefaultHash<String> {
     typedef StringHash Hash;
 };
 
-template <> struct VectorTraits<String> : SimpleClassVectorTraits<String> {
-    static const bool canCompareWithMemcmp = false;
-};
-
 // Shared global empty string.
 WTF_EXPORT const String& emptyString();
 
-}
+#ifndef STRING_HIDE_GLOBALS
+
+WTF_EXPORT extern const String xmlnsWithColon;
+
+#endif // STRING_HIDE_GLOBALS
+
+} // namespace WTF
+
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(String);
 
 using WTF::CString;
 using WTF::KeepTrailingZeros;
@@ -702,4 +706,4 @@ using WTF::isSpaceOrNewline;
 using WTF::reverseFind;
 
 #include "wtf/text/AtomicString.h"
-#endif
+#endif // WTFString_h

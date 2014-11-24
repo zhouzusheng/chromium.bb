@@ -47,7 +47,7 @@ public:
     Node* node() const { return m_node.get(); }
 
     void setTreeScopeEventContext(PassRefPtr<TreeScopeEventContext> prpTreeScopeEventContext) { m_treeScopeEventContext = prpTreeScopeEventContext; }
-    TreeScopeEventContext* treeScopeEventContext() { return m_treeScopeEventContext.get(); }
+    TreeScopeEventContext& treeScopeEventContext() { ASSERT(m_treeScopeEventContext); return *m_treeScopeEventContext; }
 
     EventTarget* target() const { return m_treeScopeEventContext->target(); }
     EventTarget* relatedTarget() const { return m_treeScopeEventContext->relatedTarget(); }
@@ -63,5 +63,7 @@ private:
 };
 
 }
+
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::NodeEventContext);
 
 #endif // NodeEventContext_h

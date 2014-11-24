@@ -578,13 +578,6 @@ void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
 #else
     accepts_input_events_ = false;
 
-#if defined(USE_X11)
-    // Tell the view delegate that the plugin window was created, so that it
-    // can create necessary container widgets.
-    render_frame_->Send(new ViewHostMsg_CreatePluginContainer(
-        render_frame_->GetRenderWidget()->routing_id(), window));
-#endif  // USE_X11
-
 #endif  // OS_MACOSX
   } else {
     DCHECK(!window_);  // Make sure not called twice.
@@ -600,13 +593,8 @@ void WebPluginImpl::SetAcceptsInputEvents(bool accepts) {
 void WebPluginImpl::WillDestroyWindow(gfx::PluginWindowHandle window) {
   DCHECK_EQ(window, window_);
   window_ = gfx::kNullPluginWindow;
-  if (render_view_.get()) {
-#if defined(USE_X11)
-    render_frame_->Send(new ViewHostMsg_DestroyPluginContainer(
-        render_frame_->GetRenderWidget()->routing_id(), window));
-#endif
+  if (render_view_.get())
     render_frame_->GetRenderWidget()->CleanupWindowInPluginMoves(window);
-  }
 }
 
 GURL WebPluginImpl::CompleteURL(const char* url) {
@@ -670,8 +658,8 @@ bool WebPluginImpl::IsValidUrl(const GURL& url, Referrer referrer_flag) {
     // Do url check to make sure that there are no @, ;, \ chars in between url
     // scheme and url path.
     const char* url_to_check(url.spec().data());
-    url_parse::Parsed parsed;
-    url_parse::ParseStandardURL(url_to_check, strlen(url_to_check), &parsed);
+    url::Parsed parsed;
+    url::ParseStandardURL(url_to_check, strlen(url_to_check), &parsed);
     if (parsed.path.begin <= parsed.scheme.end())
       return true;
     std::string string_to_search;
@@ -1182,8 +1170,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   // case in that the request is a javascript url and the target is "_self",
   // in which case we route the output to the plugin rather than routing it
   // to the plugin's frame.
-  bool is_javascript_url = url_util::FindAndCompareScheme(
-      url, strlen(url), "javascript", NULL);
+  bool is_javascript_url =
+      url::FindAndCompareScheme(url, strlen(url), "javascript", NULL);
   RoutingStatus routing_status = RouteToFrame(
       url, is_javascript_url, popups_allowed, method, target, buf, len,
       notify_id, referrer_flag);

@@ -111,8 +111,8 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     String resource = shouldUseDocumentURL ? enteredWindow->document()->url() : toCoreString(resourceName.As<v8::String>());
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
-    DOMWrapperWorld* world = DOMWrapperWorld::current(isolate);
-    RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn() + 1, world);
+    DOMWrapperWorld& world = DOMWrapperWorld::current(isolate);
+    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn() + 1, &world);
     if (V8DOMWrapper::isDOMWrapper(data)) {
         v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(data);
         const WrapperTypeInfo* type = toWrapperTypeInfo(obj);
@@ -127,7 +127,7 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     // avoid storing the exception object, as we can't create a wrapper during context creation.
     // FIXME: Can we even get here during initialization now that we bail out when GetEntered returns an empty handle?
     LocalFrame* frame = enteredWindow->document()->frame();
-    if (world && frame && frame->script().existingWindowShell(world))
+    if (frame && frame->script().existingWindowShell(world))
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, v8::Isolate::GetCurrent());
     enteredWindow->document()->reportException(event.release(), callStack, corsStatus);
 }
@@ -150,7 +150,7 @@ static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> conte
 {
     if (ExecutionContext* executionContext = toExecutionContext(context)) {
         if (ContentSecurityPolicy* policy = toDocument(executionContext)->contentSecurityPolicy())
-            return policy->allowEval(ScriptState::forContext(context));
+            return policy->allowEval(ScriptState::from(context));
     }
     return false;
 }
@@ -166,14 +166,19 @@ static void timerTraceProfilerInMainThread(const char* name, int status)
 
 static void initializeV8Common(v8::Isolate* isolate)
 {
+    // FIXME: This is a temporary flags and should be removed soon.
+    const char promiseFlags[] = "--harmony-promises";
     v8::ResourceConstraints constraints;
-    constraints.ConfigureDefaults(static_cast<uint64_t>(blink::Platform::current()->physicalMemoryMB()) << 20, static_cast<uint32_t>(blink::Platform::current()->numberOfProcessors()));
+    constraints.ConfigureDefaults(static_cast<uint64_t>(blink::Platform::current()->physicalMemoryMB()) << 20, static_cast<uint32_t>(blink::Platform::current()->virtualMemoryLimitMB()) << 20, static_cast<uint32_t>(blink::Platform::current()->numberOfProcessors()));
     v8::SetResourceConstraints(isolate, &constraints);
 
     v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
     v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
+    v8::V8::SetFlagsFromString(promiseFlags, strlen(promiseFlags));
 
-    v8::Debug::SetLiveEditEnabled(false);
+    v8::Debug::SetLiveEditEnabled(isolate, false);
+
+    isolate->SetAutorunMicrotasks(false);
 }
 
 void V8Initializer::initializeMainThreadIfNeeded(v8::Isolate* isolate)
@@ -217,9 +222,9 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
     // During the frame teardown, there may not be a valid context.
     if (ExecutionContext* context = currentExecutionContext(isolate)) {
         String errorMessage = toCoreString(message->Get());
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, sourceURL, message->GetScriptResourceName());
+        TOSTRING_VOID(V8StringResource<>, sourceURL, message->GetScriptResourceName());
 
-        RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn() + 1, DOMWrapperWorld::current(isolate));
+        RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn() + 1, &DOMWrapperWorld::current(isolate));
         AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, isolate);

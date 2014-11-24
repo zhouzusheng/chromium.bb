@@ -30,7 +30,6 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -64,19 +63,10 @@ LayerType RenderIFrame::layerTypeRequired() const
     return ForcedLayer;
 }
 
-RenderView* RenderIFrame::contentRootRenderer() const
-{
-    // FIXME: Is this always a valid cast? What about plugins?
-    ASSERT(!widget() || widget()->isFrameView());
-    FrameView* childFrameView = toFrameView(widget());
-    return childFrameView ? childFrameView->frame().contentRenderer() : 0;
-}
-
 void RenderIFrame::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     updateLogicalWidth();
     // No kids to layout as a replaced element.
     updateLogicalHeight();

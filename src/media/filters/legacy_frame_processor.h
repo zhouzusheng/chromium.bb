@@ -17,10 +17,9 @@ namespace media {
 // algorithm.
 class MEDIA_EXPORT LegacyFrameProcessor : public FrameProcessorBase {
  public:
-  // Callback signature used to notify ChunkDemuxer of timestamps that may cause
-  // the duration to be updated.
-  typedef base::Callback<void(
-      base::TimeDelta, ChunkDemuxerStream*)> IncreaseDurationCB;
+  // Callback signature used to notify ChunkDemuxer of an end timestamp that may
+  // cause the duration to be updated.
+  typedef base::Callback<void(base::TimeDelta)> IncreaseDurationCB;
 
   explicit LegacyFrameProcessor(const IncreaseDurationCB& increase_duration_cb);
   virtual ~LegacyFrameProcessor();
@@ -64,18 +63,21 @@ class MEDIA_EXPORT LegacyFrameProcessor : public FrameProcessorBase {
   // Helper function for Legacy ProcessFrames() when new text buffers have been
   // parsed.
   // Applies |timestamp_offset| to all buffers in |buffers|, filters |buffers|
-  // with append window, and then appends the modified and filtered buffers to
-  // the stream associated with the track having |text_track_id|. If any of
-  // |buffers| are filtered out by append window, then |*new_media_segment| is
-  // set true.
+  // with append window, and stores those filtered buffers into |filtered_text|
+  // based on |text_track_id|. If any of |buffers| are filtered out by append
+  // window, then |*new_media_segment| is set true.
+  // Updates |lowest_segment_timestamp| to be the earliest decode timestamp of
+  // all buffers in |filtered_text|.
   // Returns true on a successful call. Returns false if an error occurred while
   // processing the buffers.
-  bool OnTextBuffers(StreamParser::TrackId text_track_id,
-                     base::TimeDelta append_window_start,
-                     base::TimeDelta append_window_end,
-                     base::TimeDelta timestamp_offset,
-                     const StreamParser::BufferQueue& buffers,
-                     bool* new_media_segment);
+  bool FilterTextBuffers(StreamParser::TrackId text_track_id,
+                         base::TimeDelta append_window_start,
+                         base::TimeDelta append_window_end,
+                         base::TimeDelta timestamp_offset,
+                         const StreamParser::BufferQueue& buffers,
+                         bool* new_media_segment,
+                         base::TimeDelta* lowest_segment_timestamp,
+                         StreamParser::TextBufferQueueMap* filtered_text);
 
   IncreaseDurationCB increase_duration_cb_;
 

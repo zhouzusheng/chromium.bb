@@ -73,6 +73,9 @@ AXNodeObject::~AXNodeObject()
 // ARIA Implementer's Guide.
 static String accessibleNameForNode(Node* node)
 {
+    if (!node)
+        return String();
+
     if (node->isTextNode())
         return toText(node)->data();
 
@@ -221,6 +224,10 @@ AccessibilityRole AXNodeObject::determineAccessibilityRole()
         return GroupRole;
     if (isHTMLAnchorElement(*node()) && isClickable())
         return LinkRole;
+    if (node()->hasTagName(iframeTag))
+        return IframeRole;
+    if (isEmbeddedObject())
+        return EmbeddedObjectRole;
 
     return UnknownRole;
 }
@@ -466,6 +473,13 @@ bool AXNodeObject::isControl() const
 
     return ((node->isElementNode() && toElement(node)->isFormControlElement())
         || AXObject::isARIAControl(ariaRoleAttribute()));
+}
+
+bool AXNodeObject::isEmbeddedObject() const
+{
+    return node()
+        && (node()->hasTagName(objectTag) || node()->hasTagName(embedTag)
+        || node()->hasTagName(appletTag));
 }
 
 bool AXNodeObject::isFieldset() const
@@ -999,7 +1013,7 @@ String AXNodeObject::stringValue() const
     if (isHTMLSelectElement(*node)) {
         HTMLSelectElement& selectElement = toHTMLSelectElement(*node);
         int selectedIndex = selectElement.selectedIndex();
-        const Vector<HTMLElement*> listItems = selectElement.listItems();
+        const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement.listItems();
         if (selectedIndex >= 0 && static_cast<size_t>(selectedIndex) < listItems.size()) {
             const AtomicString& overriddenDescription = listItems[selectedIndex]->fastGetAttribute(aria_labelAttr);
             if (!overriddenDescription.isNull())

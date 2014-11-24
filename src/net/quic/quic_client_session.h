@@ -30,7 +30,7 @@ class DatagramClientSocket;
 class QuicConnectionHelper;
 class QuicCryptoClientStreamFactory;
 class QuicDefaultPacketWriter;
-class QuicSessionKey;
+class QuicServerId;
 class QuicServerInfo;
 class QuicStreamFactory;
 class SSLInfo;
@@ -95,7 +95,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     scoped_ptr<QuicServerInfo> server_info,
-                    const QuicSessionKey& server_key,
+                    const QuicServerId& server_id,
                     const QuicConfig& config,
                     QuicCryptoClientConfig* crypto_config,
                     NetLog* net_log);
@@ -119,7 +119,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   void CancelRequest(StreamRequest* request);
 
   // QuicSession methods:
-  virtual bool OnStreamFrames(
+  virtual void OnStreamFrames(
       const std::vector<QuicStreamFrame>& frames) OVERRIDE;
   virtual QuicReliableClientStream* CreateOutgoingDataStream() OVERRIDE;
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;

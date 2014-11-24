@@ -13,7 +13,7 @@
 #include "third_party/WebKit/public/platform/WebContentDecryptionModule.h"
 
 namespace blink {
-class WebFrame;
+class WebLocalFrame;
 class WebSecurityOrigin;
 }
 
@@ -31,7 +31,7 @@ class WebContentDecryptionModuleImpl
     : public blink::WebContentDecryptionModule {
  public:
   static WebContentDecryptionModuleImpl* Create(
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebSecurityOrigin& security_origin,
       const base::string16& key_system);
 
@@ -42,6 +42,12 @@ class WebContentDecryptionModuleImpl
   // TODO(jrummell): Figure out lifetimes, as WMPI may still use the decryptor
   // after WebContentDecryptionModule is freed. http://crbug.com/330324
   media::Decryptor* GetDecryptor();
+
+#if defined(OS_ANDROID)
+  // Returns the CDM ID associated with this object. May be kInvalidCdmId if no
+  // CDM ID is associated, such as when Clear Key is used.
+  int GetCdmId() const;
+#endif  // defined(OS_ANDROID)
 
   // blink::WebContentDecryptionModule implementation.
   virtual blink::WebContentDecryptionModuleSession* createSession(

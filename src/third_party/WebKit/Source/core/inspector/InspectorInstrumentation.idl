@@ -68,7 +68,7 @@ interface InspectorInstrumentation {
 #include "core/dom/PseudoElement.h"
 
     [Page, Inspector, PageDebugger, PageRuntime]
-    void didClearWindowObjectInMainWorld([Keep] LocalFrame*);
+    void didClearDocumentOfWindowObject([Keep] LocalFrame*);
 
     [DOMDebugger, Inline=FastReturn]
     void willInsertDOMNode([Keep] Node* parent);
@@ -112,7 +112,7 @@ interface InspectorInstrumentation {
     [CSS, Inline=FastReturn]
     void activeStyleSheetsUpdated([Keep] Document*);
 
-    [Console]
+    [Console, PageRuntime]
     void frameWindowDiscarded(LocalFrame*, DOMWindow* domWindow);
 
     [CSS, Inline=FastReturn]
@@ -136,9 +136,6 @@ interface InspectorInstrumentation {
     [DOMDebugger, Inline=FastReturn]
     void didFireWebGLErrorOrWarning(Element*, const String& message);
 
-    [Timeline, Inline=FastReturn]
-    void didScheduleResourceRequest([Keep] Document*, const String& url);
-
     [DOMDebugger, Debugger, Timeline, Inline=FastReturn]
     void didInstallTimer([Keep] ExecutionContext*, int timerId, int timeout, bool singleShot);
 
@@ -146,7 +143,7 @@ interface InspectorInstrumentation {
     void didRemoveTimer([Keep] ExecutionContext*, int timerId);
 
     [Timeline, Inline=FastReturn]
-    InspectorInstrumentationCookie willCallFunction([Keep] ExecutionContext*, const String& scriptName, int scriptLine);
+    InspectorInstrumentationCookie willCallFunction([Keep] ExecutionContext*, int scriptId, const String& scriptName, int scriptLine);
 
     [Timeline, Inline=FastReturn]
     void didCallFunction(const InspectorInstrumentationCookie&);
@@ -162,15 +159,6 @@ interface InspectorInstrumentation {
 
     [Timeline, Inline=FastReturn]
     void didDispatchEvent(const InspectorInstrumentationCookie&);
-
-    [Debugger, Inline=FastReturn]
-    void didAddEventListener([Keep] EventTarget*, const AtomicString& eventType, EventListener* listener, bool useCapture);
-
-    [Debugger, Inline=FastReturn]
-    void didRemoveEventListener([Keep] EventTarget*, const AtomicString& eventType, EventListener* listener, bool useCapture);
-
-    [Debugger, Inline=FastReturn]
-    void didRemoveAllEventListeners([Keep] EventTarget*);
 
     [Debugger, DOMDebugger, Inline=FastReturn]
     InspectorInstrumentationCookie willHandleEvent([Keep] EventTarget*, const AtomicString& eventType, EventListener* listener, bool useCapture);
@@ -220,12 +208,6 @@ interface InspectorInstrumentation {
     [Timeline, Page, Inline=FastReturn]
     void didLayout(const InspectorInstrumentationCookie&, RenderObject* root);
 
-    [Timeline, Inline=FastReturn]
-    void willAutosizeText([Keep] RenderObject* root);
-
-    [Timeline, Inline=FastReturn]
-    void didAutosizeText([Keep] RenderObject* root);
-
     [Page, Inline=FastReturn]
     void didScroll(Page*);
 
@@ -260,10 +242,7 @@ interface InspectorInstrumentation {
     InspectorInstrumentationCookie willRecalculateStyle([Keep] Document*);
 
     [Timeline, Resource, Page, Inline=FastReturn]
-    void didRecalculateStyle(const InspectorInstrumentationCookie&);
-
-    [Timeline, Inline=FastReturn]
-    void didRecalculateStyleForElement(Element*);
+    void didRecalculateStyle(const InspectorInstrumentationCookie&, int elementCount);
 
     [Timeline, Resource, Inline=FastReturn]
     void didScheduleStyleRecalculation([Keep] Document*);
@@ -340,7 +319,7 @@ interface InspectorInstrumentation {
     [Canvas, Page]
     void frameDetachedFromParent([Keep] LocalFrame*);
 
-    [Console, Resource, DOM, Inspector, Canvas, Page, PageDebugger]
+    [Console, Resource, DOM, Canvas, Page, PageDebugger]
     void didCommitLoad([Keep] LocalFrame*, DocumentLoader*);
 
     [DOM, Inline=FastReturn]
@@ -439,8 +418,12 @@ interface InspectorInstrumentation {
     [ApplicationCache, Inline=FastReturn]
     void updateApplicationCacheStatus([Keep] LocalFrame*);
 
+    [Timeline, Inline=FastReturn]
+    void willUpdateLayerTree(LocalFrame*);
     [Timeline, LayerTree, Inline=FastReturn]
-    void layerTreeDidChange(Page*);
+    void layerTreeDidChange(LocalFrame*);
+    [Timeline, Inline=FastReturn]
+    void didUpdateLayerTree(LocalFrame*);
 
     [DOM, Inline=FastReturn]
     void pseudoElementCreated([Keep] PseudoElement*);

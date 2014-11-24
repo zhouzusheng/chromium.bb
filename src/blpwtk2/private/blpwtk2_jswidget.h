@@ -25,10 +25,12 @@
 
 #include <blpwtk2_config.h>
 
+#include <third_party/WebKit/public/web/WebElement.h>
 #include <third_party/WebKit/public/web/WebPlugin.h>
 
 namespace blink {
-class WebFrame;
+class WebDOMCustomEvent;
+class WebLocalFrame;
 }  // close namespace blink
 
 namespace blpwtk2 {
@@ -39,8 +41,10 @@ namespace blpwtk2 {
 // callbacks are invoked.
 class JsWidget : public blink::WebPlugin {
   public:
-    explicit JsWidget(blink::WebFrame* frame);
+    explicit JsWidget(blink::WebLocalFrame* frame);
     virtual ~JsWidget();
+
+    void dispatchEvent(const blink::WebDOMCustomEvent& event);
 
     // blink::WebPlugin overrides
     virtual bool initialize(blink::WebPluginContainer*) OVERRIDE;
@@ -65,7 +69,8 @@ class JsWidget : public blink::WebPlugin {
 
   private:
     blink::WebPluginContainer* d_container;
-    blink::WebFrame* d_frame;
+    blink::WebElement d_webElement;
+    blink::WebLocalFrame* d_frame;
 
     DISALLOW_COPY_AND_ASSIGN(JsWidget);
 };

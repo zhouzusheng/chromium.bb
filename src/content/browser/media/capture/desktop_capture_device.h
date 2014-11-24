@@ -8,11 +8,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/desktop_media_id.h"
 #include "media/video/capture/video_capture_device.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace base {
 class SequencedTaskRunner;
+class Thread;
 }  // namespace base
 
 namespace webrtc {
@@ -20,8 +22,6 @@ class DesktopCapturer;
 }  // namespace webrtc
 
 namespace content {
-
-struct DesktopMediaID;
 
 // DesktopCaptureDevice implements VideoCaptureDevice for screens and windows.
 // It's essentially an adapter between webrtc::DesktopCapturer and
@@ -34,8 +34,6 @@ class CONTENT_EXPORT DesktopCaptureDevice : public media::VideoCaptureDevice {
   static scoped_ptr<media::VideoCaptureDevice> Create(
       const DesktopMediaID& source);
 
-  DesktopCaptureDevice(scoped_refptr<base::SequencedTaskRunner> task_runner,
-                       scoped_ptr<webrtc::DesktopCapturer> desktop_capturer);
   virtual ~DesktopCaptureDevice();
 
   // VideoCaptureDevice interface.
@@ -47,7 +45,15 @@ class CONTENT_EXPORT DesktopCaptureDevice : public media::VideoCaptureDevice {
   void SetNotificationWindowId(gfx::NativeViewId window_id);
 
  private:
+  friend class DesktopCaptureDeviceTest;
   class Core;
+
+  // Either |task_runner| or |thread| should be non-NULL, but not both.
+  DesktopCaptureDevice(scoped_refptr<base::SequencedTaskRunner> task_runner,
+                       scoped_ptr<base::Thread> thread,
+                       scoped_ptr<webrtc::DesktopCapturer> desktop_capturer,
+                       DesktopMediaID::Type type);
+
   scoped_refptr<Core> core_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopCaptureDevice);

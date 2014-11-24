@@ -69,17 +69,21 @@ class ResourceLoaderSet;
 // RefPtr<ResourceFetcher> for their lifetime (and will create one if they
 // are initialized without a LocalFrame), so a Document can keep a ResourceFetcher
 // alive past detach if scripts still reference the Document.
-class ResourceFetcher FINAL : public RefCounted<ResourceFetcher>, public ResourceLoaderHost {
-    WTF_MAKE_NONCOPYABLE(ResourceFetcher); WTF_MAKE_FAST_ALLOCATED;
+class ResourceFetcher FINAL : public RefCountedWillBeGarbageCollectedFinalized<ResourceFetcher>, public ResourceLoaderHost {
+    WTF_MAKE_NONCOPYABLE(ResourceFetcher); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ResourceFetcher);
 friend class ImageLoader;
 friend class ResourceCacheValidationSuppressor;
 
 public:
-    static PassRefPtr<ResourceFetcher> create(DocumentLoader* documentLoader) { return adoptRef(new ResourceFetcher(documentLoader)); }
+    static PassRefPtrWillBeRawPtr<ResourceFetcher> create(DocumentLoader* documentLoader) { return adoptRefWillBeNoop(new ResourceFetcher(documentLoader)); }
     virtual ~ResourceFetcher();
+    virtual void trace(Visitor*);
 
+#if !ENABLE(OILPAN)
     using RefCounted<ResourceFetcher>::ref;
     using RefCounted<ResourceFetcher>::deref;
+#endif
 
     ResourcePtr<Resource> fetchSynchronously(FetchRequest&);
     ResourcePtr<ImageResource> fetchImage(FetchRequest&);
@@ -94,6 +98,8 @@ public:
     ResourcePtr<Resource> fetchLinkResource(Resource::Type, FetchRequest&);
     ResourcePtr<ShaderResource> fetchShader(FetchRequest&);
     ResourcePtr<RawResource> fetchImport(FetchRequest&);
+    ResourcePtr<RawResource> fetchMedia(FetchRequest&);
+    ResourcePtr<RawResource> fetchTextTrack(FetchRequest&);
 
     // Logs an access denied message to the console for the specified URL.
     void printAccessDeniedMessage(const KURL&) const;
@@ -113,7 +119,7 @@ public:
     LocalFrame* frame() const; // Can be null
     FetchContext& context() const;
     Document* document() const { return m_document; } // Can be null
-    void setDocument(Document* document) { m_document = document; }
+    void setDocument(RawPtr<Document> document) { m_document = document; }
 
     DocumentLoader* documentLoader() const { return m_documentLoader; }
     void clearDocumentLoader() { m_documentLoader = 0; }
@@ -146,15 +152,22 @@ public:
     virtual void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*) OVERRIDE;
     virtual void didInitializeResourceLoader(ResourceLoader*) OVERRIDE;
     virtual void willTerminateResourceLoader(ResourceLoader*) OVERRIDE;
-    virtual void willStartLoadingResource(ResourceRequest&) OVERRIDE;
+    virtual void willStartLoadingResource(Resource*, ResourceRequest&) OVERRIDE;
     virtual bool defersLoading() const OVERRIDE;
     virtual bool isLoadedBy(ResourceLoaderHost*) const OVERRIDE;
     virtual bool canAccessRedirect(Resource*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&) OVERRIDE;
     virtual bool canAccessResource(Resource*, SecurityOrigin*, const KURL&) const OVERRIDE;
 
+#if !ENABLE(OILPAN)
     virtual void refResourceLoaderHost() OVERRIDE;
     virtual void derefResourceLoaderHost() OVERRIDE;
+#endif
 
+    enum ResourceLoadStartType {
+        ResourceLoadingFromNetwork,
+        ResourceLoadingFromCache
+    };
+    void requestLoadStarted(Resource*, const FetchRequest&, ResourceLoadStartType);
     static const ResourceLoaderOptions& defaultResourceOptions();
 private:
 
@@ -167,7 +180,7 @@ private:
     ResourcePtr<Resource> loadResource(Resource::Type, FetchRequest&, const String& charset);
     void preCacheDataURIImage(const FetchRequest&);
     void preCacheSubstituteDataForMainResource(const FetchRequest&, const SubstituteData&);
-    void storeResourceTimingInitiatorInformation(const ResourcePtr<Resource>&, const FetchRequest&);
+    void storeResourceTimingInitiatorInformation(Resource*);
     void requestPreload(Resource::Type, FetchRequest&, const String& charset);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
@@ -194,7 +207,7 @@ private:
 
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     DocumentLoader* m_documentLoader;
 
     int m_requestCount;

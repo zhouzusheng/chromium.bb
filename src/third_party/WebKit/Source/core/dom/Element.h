@@ -34,6 +34,7 @@
 #include "core/dom/SpaceSplitString.h"
 #include "core/html/CollectionType.h"
 #include "core/page/FocusType.h"
+#include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 
 namespace WebCore {
@@ -78,14 +79,13 @@ enum SpellcheckAttributeState {
 
 enum ElementFlags {
     TabIndexWasSetExplicitly = 1 << 0,
-    NeedsFocusAppearanceUpdateSoonAfterAttach = 1 << 1,
-    StyleAffectedByEmpty = 1 << 2,
-    IsInCanvasSubtree = 1 << 3,
-    ContainsFullScreenElement = 1 << 4,
-    IsInTopLayer = 1 << 5,
-    HasPendingResources = 1 << 6,
+    StyleAffectedByEmpty = 1 << 1,
+    IsInCanvasSubtree = 1 << 2,
+    ContainsFullScreenElement = 1 << 3,
+    IsInTopLayer = 1 << 4,
+    HasPendingResources = 1 << 5,
 
-    NumberOfElementFlags = 7, // Required size of bitfield used to store the flags.
+    NumberOfElementFlags = 6, // Required size of bitfield used to store the flags.
 };
 
 class Element : public ContainerNode {
@@ -214,8 +214,8 @@ public:
 
     IntRect boundsInRootViewSpace();
 
-    PassRefPtr<ClientRectList> getClientRects();
-    PassRefPtr<ClientRect> getBoundingClientRect();
+    PassRefPtrWillBeRawPtr<ClientRectList> getClientRects();
+    PassRefPtrWillBeRawPtr<ClientRect> getBoundingClientRect();
 
     // Returns the absolute bounding box translated into screen coordinates:
     IntRect screenRect() const;
@@ -298,7 +298,7 @@ public:
 
     // This method is called whenever an attribute is added, changed or removed.
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) { }
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&);
 
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const;
     virtual const QualifiedName& subResourceAttributeName() const;
@@ -333,6 +333,8 @@ public:
     void setAnimationStyleChange(bool);
     void setNeedsAnimationStyleRecalc();
 
+    void setNeedsCompositingUpdate();
+
     bool supportsStyleSharing() const;
 
     ElementShadow* shadow() const;
@@ -342,9 +344,10 @@ public:
     ShadowRoot* youngestShadowRoot() const;
 
     bool hasAuthorShadowRoot() const { return shadowRoot(); }
-    virtual void didAddShadowRoot(ShadowRoot&);
     ShadowRoot* userAgentShadowRoot() const;
     ShadowRoot& ensureUserAgentShadowRoot();
+    virtual void willAddFirstAuthorShadowRoot() { }
+
     bool isInDescendantTreeOf(const Element* shadowHost) const;
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
@@ -355,9 +358,6 @@ public:
 
     void setIsInCanvasSubtree(bool value) { setElementFlag(IsInCanvasSubtree, value); }
     bool isInCanvasSubtree() const { return hasElementFlag(IsInCanvasSubtree); }
-
-    unsigned childIndex() const { return hasRareData() ? rareDataChildIndex() : 0; }
-    void setChildIndex(unsigned);
 
     bool isUpgradedCustomElement() { return customElementState() == Upgraded; }
     bool isUnresolvedCustomElement() { return customElementState() == WaitingForUpgrade; }
@@ -383,7 +383,7 @@ public:
     // focusable but some elements, such as form controls and links, are. Unlike
     // rendererIsFocusable(), this method may be called when layout is not up to
     // date, so it must not use the renderer to determine focusability.
-    virtual bool supportsFocus() const { return hasElementFlag(TabIndexWasSetExplicitly); }
+    virtual bool supportsFocus() const;
     // Whether the node can actually be focused.
     bool isFocusable() const;
     virtual bool isKeyboardFocusable() const;
@@ -439,9 +439,6 @@ public:
 
     DOMStringMap& dataset();
 
-#if ENABLE(INPUT_SPEECH)
-    virtual bool isInputFieldSpeechButtonElement() const { return false; }
-#endif
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     virtual bool isDateTimeEditElement() const { return false; }
     virtual bool isDateTimeFieldElement() const { return false; }
@@ -519,6 +516,11 @@ public:
     MutableStylePropertySet& ensureMutableInlineStyle();
     void clearMutableInlineStyleIfEmpty();
 
+    void setTabIndex(int);
+    virtual short tabIndex() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     Element(const QualifiedName& tagName, Document* document, ConstructionType type)
         : ContainerNode(document, type)
@@ -534,7 +536,6 @@ protected:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
-    virtual void removeAllEventListeners() OVERRIDE;
 
     virtual void willRecalcStyle(StyleRecalcChange);
     virtual void didRecalcStyle(StyleRecalcChange);
@@ -543,9 +544,10 @@ protected:
     virtual bool shouldRegisterAsNamedItem() const { return false; }
     virtual bool shouldRegisterAsExtraNamedItem() const { return false; }
 
+    virtual bool supportsSpatialNavigationFocus() const;
+
     void clearTabIndexExplicitlyIfNeeded();
     void setTabIndexExplicitly(short);
-    virtual short tabIndex() const OVERRIDE;
     // Subclasses may override this method to affect focusability. Unlike
     // supportsFocus, this method must be called on an up-to-date layout, so it
     // may use the renderer to reason about focusability. This method cannot be
@@ -581,10 +583,7 @@ private:
     StyleRecalcChange recalcOwnStyle(StyleRecalcChange);
     void recalcChildStyle(StyleRecalcChange);
 
-    // FIXME: These methods should all be renamed to something better than "check",
-    // since it's not clear that they alter the style bits of siblings and children.
-    void checkForSiblingStyleChanges(bool finishedParsingCallback, Node* beforeChange, Node* afterChange, int childCountDelta);
-    inline void checkForEmptyStyleChange(RenderStyle*);
+    inline void checkForEmptyStyleChange();
 
     void updatePseudoElement(PseudoId, StyleRecalcChange);
 
@@ -642,8 +641,6 @@ private:
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
 
     QualifiedName m_tagName;
-
-    unsigned rareDataChildIndex() const;
 
     SpellcheckAttributeState spellcheckAttributeState() const;
 
@@ -830,6 +827,8 @@ inline bool Node::hasClass() const
 
 inline Node::InsertionNotificationRequest Node::insertedInto(ContainerNode* insertionPoint)
 {
+    ASSERT(!childNeedsStyleInvalidation());
+    ASSERT(!needsStyleInvalidation());
     ASSERT(insertionPoint->inDocument() || isContainerNode());
     if (insertionPoint->inDocument())
         setFlag(InDocumentFlag);

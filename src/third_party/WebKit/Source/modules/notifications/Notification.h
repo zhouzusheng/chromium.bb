@@ -34,9 +34,9 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
-#include "heap/Handle.h"
 #include "modules/notifications/NotificationClient.h"
 #include "platform/AsyncMethodRunner.h"
+#include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
@@ -49,11 +49,11 @@ class Dictionary;
 class ExecutionContext;
 class NotificationPermissionCallback;
 
-class Notification : public RefCountedWillBeRefCountedGarbageCollected<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<Notification>);
+class Notification : public RefCountedGarbageCollected<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<Notification>);
 
 public:
-    static PassRefPtrWillBeRawPtr<Notification> create(ExecutionContext*, const String& title, const Dictionary& options);
+    static Notification* create(ExecutionContext*, const String& title, const Dictionary& options);
 
     virtual ~Notification();
 
@@ -85,14 +85,13 @@ public:
 
     // EventTarget interface.
     virtual ExecutionContext* executionContext() const OVERRIDE FINAL { return ActiveDOMObject::executionContext(); }
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE FINAL;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE FINAL;
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
     // ActiveDOMObject interface.
     virtual void stop() OVERRIDE;
     virtual bool hasPendingActivity() const OVERRIDE;
 
-    // RefCountedWillBeRefCountedGarbageCollected<Notification> interface.
     void trace(Visitor*) { }
 
 private:

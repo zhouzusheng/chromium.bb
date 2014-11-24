@@ -73,12 +73,30 @@ scoped_refptr<MessagePipeDispatcher> MessagePipeDispatcher::Deserialize(
 
   MessageInTransit::EndpointId remote_id =
       static_cast<const SerializedMessagePipeDispatcher*>(source)->endpoint_id;
+  if (remote_id == MessageInTransit::kInvalidEndpointId) {
+    // This means that the other end was closed, and there were no messages
+    // enqueued for us.
+    // TODO(vtl): This is wrong. We should produce a "dead" message pipe
+    // dispatcher.
+    NOTIMPLEMENTED();
+    return scoped_refptr<MessagePipeDispatcher>();
+  }
   MessageInTransit::EndpointId local_id =
       channel->AttachMessagePipeEndpoint(remote_message_pipe.second, 1);
+  if (local_id == MessageInTransit::kInvalidEndpointId) {
+    LOG(ERROR) << "Failed to deserialize message pipe dispatcher (failed to "
+                  "attach; remote ID = " << remote_id << ")";
+    return scoped_refptr<MessagePipeDispatcher>();
+  }
   DVLOG(2) << "Deserializing message pipe dispatcher (remote ID = "
            << remote_id << ", new local ID = " << local_id << ")";
 
-  channel->RunMessagePipeEndpoint(local_id, remote_id);
+  if (!channel->RunMessagePipeEndpoint(local_id, remote_id)) {
+    // In general, this shouldn't fail, since we generated |local_id| locally.
+    NOTREACHED();
+    return scoped_refptr<MessagePipeDispatcher>();
+  }
+
   // TODO(vtl): FIXME -- Need some error handling here.
   channel->RunRemoteMessagePipeEndpoint(local_id, remote_id);
   return remote_message_pipe.first;
@@ -144,7 +162,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     void* bytes,
     uint32_t* num_bytes,
-    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
+    DispatcherVector* dispatchers,
     uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
@@ -172,16 +190,21 @@ void MessagePipeDispatcher::RemoveWaiterImplNoLock(Waiter* waiter) {
   message_pipe_->RemoveWaiter(port_, waiter);
 }
 
-size_t MessagePipeDispatcher::GetMaximumSerializedSizeImplNoLock(
-    const Channel* /*channel*/) const {
-  lock().AssertAcquired();
-  return sizeof(SerializedMessagePipeDispatcher);
+void MessagePipeDispatcher::StartSerializeImplNoLock(
+    Channel* /*channel*/,
+    size_t* max_size,
+    size_t* max_platform_handles) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
+  *max_size = sizeof(SerializedMessagePipeDispatcher);
+  *max_platform_handles = 0;
 }
 
-bool MessagePipeDispatcher::SerializeAndCloseImplNoLock(Channel* channel,
-                                                        void* destination,
-                                                        size_t* actual_size) {
-  lock().AssertAcquired();
+bool MessagePipeDispatcher::EndSerializeAndCloseImplNoLock(
+    Channel* channel,
+    void* destination,
+    size_t* actual_size,
+    std::vector<embedder::PlatformHandle>* platform_handles) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
 
   // Convert the local endpoint to a proxy endpoint (moving the message queue).
   message_pipe_->ConvertLocalToProxy(port_);
@@ -189,8 +212,11 @@ bool MessagePipeDispatcher::SerializeAndCloseImplNoLock(Channel* channel,
   // Attach the new proxy endpoint to the channel.
   MessageInTransit::EndpointId endpoint_id =
       channel->AttachMessagePipeEndpoint(message_pipe_, port_);
-  DCHECK_NE(endpoint_id, MessageInTransit::kInvalidEndpointId);
-
+  // Note: It's okay to get an endpoint ID of |kInvalidEndpointId|. (It's
+  // possible that the other endpoint -- the one that we're not sending -- was
+  // closed in the intervening time.) In that case, we need to deserialize a
+  // "dead" message pipe dispatcher on the other end. (Note that this is
+  // different from just producing |MOJO_HANDLE_INVALID|.)
   DVLOG(2) << "Serializing message pipe dispatcher (local ID = " << endpoint_id
            << ")";
 

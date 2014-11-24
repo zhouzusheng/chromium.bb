@@ -29,13 +29,13 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "heap/Handle.h"
 #include "modules/geolocation/Geoposition.h"
 #include "modules/geolocation/PositionCallback.h"
 #include "modules/geolocation/PositionError.h"
 #include "modules/geolocation/PositionErrorCallback.h"
 #include "modules/geolocation/PositionOptions.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -145,6 +145,7 @@ private:
     typedef WillBeHeapHashSet<RefPtrWillBeMember<GeoNotifier> > GeoNotifierSet;
 
     class Watchers {
+        DISALLOW_ALLOCATION();
     public:
         void trace(Visitor*);
         bool add(int id, PassRefPtrWillBeRawPtr<GeoNotifier>);

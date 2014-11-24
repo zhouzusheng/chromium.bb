@@ -58,14 +58,16 @@ HTMLStyleElement::~HTMLStyleElement()
 {
     // During tear-down, willRemove isn't called, so m_scopedStyleRegistrationState may still be RegisteredAsScoped or RegisteredInShadowRoot here.
     // Therefore we can't ASSERT(m_scopedStyleRegistrationState == NotRegistered).
+#if !ENABLE(OILPAN)
     StyleElement::clearDocumentData(document(), this);
+#endif
 
     styleLoadEventSender().cancelEvent(this);
 }
 
-PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLStyleElement> HTMLStyleElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLStyleElement(document, createdByParser));
+    return adoptRefWillBeRefCountedGarbageCollected(new HTMLStyleElement(document, createdByParser));
 }
 
 void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -285,6 +287,12 @@ void HTMLStyleElement::setDisabled(bool setDisabled)
 {
     if (CSSStyleSheet* styleSheet = sheet())
         styleSheet->setDisabled(setDisabled);
+}
+
+void HTMLStyleElement::trace(Visitor* visitor)
+{
+    StyleElement::trace(visitor);
+    HTMLElement::trace(visitor);
 }
 
 }

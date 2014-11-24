@@ -27,7 +27,6 @@ class NavigationControllerImpl;
 class RenderViewHostImpl;
 class RenderWidgetHostView;
 class WebContentsView;
-class WebContentsImpl;
 
 enum ResourceRequestAction {
   BLOCK,
@@ -106,7 +105,7 @@ class CONTENT_EXPORT InterstitialPageImpl
 
   // WebContentsObserver implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
 
@@ -119,7 +118,7 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
-  virtual const GURL& GetURL() const OVERRIDE;
+  virtual const GURL& GetMainFrameLastCommittedURL() const OVERRIDE;
   virtual void RenderViewTerminated(RenderViewHost* render_view_host,
                                     base::TerminationStatus status,
                                     int error_code) OVERRIDE;

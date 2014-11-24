@@ -33,7 +33,6 @@
     '../build/win/precompile.gypi',
     '../build/features.gypi',
     '../build/scripts/scripts.gypi',
-    '../modules/modules.gypi',
     '../bindings/bindings.gypi',
     'core.gypi',
   ],
@@ -45,7 +44,7 @@
       '../..',
       '..',
       '<(SHARED_INTERMEDIATE_DIR)/blink',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/bindings',
+      '<(bindings_output_dir)',
     ],
 
     'conditions': [
@@ -197,7 +196,7 @@
       'target_name': 'debugger_script_source',
       'type': 'none',
       'variables': {
-        'input_file_path': '<(bindings_dir)/v8/DebuggerScript.js',
+        'input_file_path': '<(bindings_v8_dir)/DebuggerScript.js',
         'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/DebuggerScriptSource.h',
         'character_array_name': 'DebuggerScriptSource_js',
       },
@@ -209,7 +208,6 @@
       'hard_dependency': 1,
       'dependencies': [
         'webcore_prerequisites',
-        '../bindings/generated_bindings.gyp:generated_bindings',
         'core_generated.gyp:make_core_generated',
         'inspector_overlay_page',
         'inspector_protocol_sources',
@@ -217,6 +215,7 @@
         'injected_canvas_script_source',
         'injected_script_source',
         'debugger_script_source',
+        '../bindings/generated_bindings.gyp:generated_bindings',
         '../platform/platform_generated.gyp:make_platform_generated',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/gin/gin.gyp:gin',
@@ -234,22 +233,22 @@
       ],
       'include_dirs': [
         '<(SHARED_INTERMEDIATE_DIR)/blink',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings',
+        '<(bindings_output_dir)',
         '<@(webcore_include_dirs)',
 
         # FIXME: Remove these once the bindings script generates qualified
         # includes for these correctly. (Sequences don't work yet.)
-        '<(bindings_dir)/v8/custom',
+        '<(bindings_v8_dir)/custom',
         'html',
         'html/shadow',
         'inspector',
         'svg',
       ],
       'sources': [
+        '<@(bindings_files)',
         # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
-        '<@(aggregate_generated_bindings_files)',
-        '<@(bindings_files)',
+        '<@(bindings_core_generated_aggregate_files)',
 
         # Additional .cpp files for HashTools.h
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSPropertyNames.cpp',
@@ -273,6 +272,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.h',
         '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLTokenizerNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/MathMLNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
@@ -365,7 +365,6 @@
         'core_generated.gyp:make_core_generated',
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
-        '../heap/blink_heap.gyp:blink_heap',
         '../platform/blink_platform.gyp:blink_platform',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
@@ -386,7 +385,6 @@
       'export_dependent_settings': [
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
-        '../heap/blink_heap.gyp:blink_heap',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(angle_path)/src/build_angle.gyp:translator',
@@ -442,14 +440,6 @@
               '-fno-strict-aliasing',
             ],
           },
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'export_dependent_settings': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
         }],
         ['OS=="android"', {
           'sources/': [
@@ -580,6 +570,11 @@
       'sources': [
         '<@(webcore_svg_files)',
       ],
+      'conditions': [
+        ['OS=="win" and buildtype=="Official"', {
+          'msvs_shard': 5,
+        }],
+      ],
     },
     {
       'target_name': 'webcore_rendering',
@@ -646,11 +641,6 @@
             ['exclude', 'Linux\\.cpp$'],
           ],
         }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'Gtk\\.cpp$'],
-          ],
-        }],
         ['OS=="android"', {
           'sources/': [
             ['include', 'rendering/RenderThemeChromiumFontProviderLinux\\.cpp$'],
@@ -688,11 +678,6 @@
         ['OS != "linux"', {
           'sources/': [
             ['exclude', 'Linux\\.cpp$'],
-          ],
-        }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'Gtk\\.cpp$'],
           ],
         }],
         ['OS=="android"', {

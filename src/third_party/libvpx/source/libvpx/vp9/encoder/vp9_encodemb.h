@@ -13,7 +13,7 @@
 
 #include "./vpx_config.h"
 #include "vp9/encoder/vp9_block.h"
-#include "vp9/encoder/vp9_onyx_int.h"
+#include "vp9/encoder/vp9_encoder.h"
 #include "vp9/common/vp9_onyxc_int.h"
 
 #ifdef __cplusplus
@@ -33,8 +33,6 @@ void vp9_encode_block_intra(MACROBLOCK *x, int plane, int block,
                             unsigned char *skip);
 
 void vp9_encode_intra_block_plane(MACROBLOCK *x, BLOCK_SIZE bsize, int plane);
-
-int vp9_encode_intra(MACROBLOCK *x, int use_16x16_pred);
 
 #ifdef __cplusplus
 }  // extern "C"

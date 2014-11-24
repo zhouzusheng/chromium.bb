@@ -39,14 +39,14 @@ using blink::WebIDBDatabase;
 
 namespace WebCore {
 
-PassRefPtr<IDBOpenDBRequest> IDBOpenDBRequest::create(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
+PassRefPtrWillBeRawPtr<IDBOpenDBRequest> IDBOpenDBRequest::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
 {
-    RefPtr<IDBOpenDBRequest> request(adoptRef(new IDBOpenDBRequest(context, callbacks, transactionId, version)));
+    RefPtrWillBeRawPtr<IDBOpenDBRequest> request(adoptRefWillBeRefCountedGarbageCollected(new IDBOpenDBRequest(context, callbacks, transactionId, version)));
     request->suspendIfNeeded();
     return request.release();
 }
 
-IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
+IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtrWillBeRawPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
     : IDBRequest(context, IDBAny::createNull(), 0)
     , m_databaseCallbacks(callbacks)
     , m_transactionId(transactionId)
@@ -58,6 +58,12 @@ IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtr<IDBData
 
 IDBOpenDBRequest::~IDBOpenDBRequest()
 {
+}
+
+void IDBOpenDBRequest::trace(Visitor* visitor)
+{
+    visitor->trace(m_databaseCallbacks);
+    IDBRequest::trace(visitor);
 }
 
 const AtomicString& IDBOpenDBRequest::interfaceName() const
@@ -88,7 +94,7 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBData
 
     ASSERT(m_databaseCallbacks);
 
-    RefPtr<IDBDatabase> idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
+    RefPtrWillBeRawPtr<IDBDatabase> idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
     idbDatabase->setMetadata(metadata);
 
     if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
@@ -118,7 +124,7 @@ void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDa
     if (!shouldEnqueueEvent())
         return;
 
-    RefPtr<IDBDatabase> idbDatabase;
+    RefPtrWillBeRawPtr<IDBDatabase> idbDatabase;
     if (resultAsAny()) {
         // Previous onUpgradeNeeded call delivered the backend.
         ASSERT(!backend.get());
@@ -135,6 +141,19 @@ void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDa
     enqueueEvent(Event::create(EventTypeNames::success));
 }
 
+void IDBOpenDBRequest::onSuccess(int64_t oldVersion)
+{
+    IDB_TRACE("IDBOpenDBRequest::onSuccess()");
+    if (!shouldEnqueueEvent())
+        return;
+    if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
+        // This database hasn't had an integer version before.
+        oldVersion = IDBDatabaseMetadata::DefaultIntVersion;
+    }
+    setResult(IDBAny::createUndefined());
+    enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::success, oldVersion, Nullable<unsigned long long>()));
+}
+
 bool IDBOpenDBRequest::shouldEnqueueEvent() const
 {
     if (m_contextStopped || !executionContext())
@@ -145,7 +164,7 @@ bool IDBOpenDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
-bool IDBOpenDBRequest::dispatchEvent(PassRefPtr<Event> event)
+bool IDBOpenDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     // If the connection closed between onUpgradeNeeded and the delivery of the "success" event,
     // an "error" event should be fired instead.

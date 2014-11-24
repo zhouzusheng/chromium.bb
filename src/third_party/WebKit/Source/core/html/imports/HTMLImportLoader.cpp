@@ -33,24 +33,41 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
+#include "core/dom/custom/CustomElementMicrotaskQueue.h"
 #include "core/html/HTMLDocument.h"
-#include "core/html/imports/HTMLImport.h"
 #include "core/html/imports/HTMLImportChild.h"
+#include "core/html/imports/HTMLImportsController.h"
 #include "core/loader/DocumentWriter.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 
 
 namespace WebCore {
 
-HTMLImportLoader::HTMLImportLoader()
-    : m_state(StateLoading)
+HTMLImportLoader::HTMLImportLoader(HTMLImportsController* controller)
+    : m_controller(controller)
+    , m_state(StateLoading)
+    , m_microtaskQueue(CustomElementMicrotaskQueue::create())
 {
 }
 
 HTMLImportLoader::~HTMLImportLoader()
 {
-    if (m_importedDocument)
-        m_importedDocument->setImport(0);
+    clear();
+}
+
+void HTMLImportLoader::importDestroyed()
+{
+    clear();
+}
+
+void HTMLImportLoader::clear()
+{
+    m_controller = 0;
+    if (m_importedDocument) {
+        m_importedDocument->setImportsController(0);
+        m_importedDocument->cancelParsing();
+        m_importedDocument.clear();
+    }
 }
 
 void HTMLImportLoader::startLoading(const ResourcePtr<RawResource>& resource)
@@ -90,11 +107,10 @@ void HTMLImportLoader::notifyFinished(Resource* resource)
 HTMLImportLoader::State HTMLImportLoader::startWritingAndParsing(const ResourceResponse& response)
 {
     ASSERT(!m_imports.isEmpty());
-    HTMLImport* firstImport = m_imports[0];
-    DocumentInit init = DocumentInit(response.url(), 0, firstImport->master()->contextDocument(), firstImport)
-        .withRegistrationContext(firstImport->master()->registrationContext());
+    DocumentInit init = DocumentInit(response.url(), 0, m_controller->master()->contextDocument(), m_controller)
+        .withRegistrationContext(m_controller->master()->registrationContext());
     m_importedDocument = HTMLDocument::create(init);
-    m_writer = DocumentWriter::create(m_importedDocument.get(), response.mimeType(), response.textEncodingName());
+    m_writer = DocumentWriter::create(m_importedDocument.get(), response.mimeType(), "UTF-8");
 
     return StateLoading;
 }
@@ -166,18 +182,38 @@ void HTMLImportLoader::didFinishLoading()
     ASSERT(!m_importedDocument || !m_importedDocument->parsing());
 }
 
-void HTMLImportLoader::addImport(HTMLImportChild* client)
+void HTMLImportLoader::moveToFirst(HTMLImportChild* import)
 {
-    ASSERT(kNotFound == m_imports.find(client));
-    m_imports.append(client);
+    size_t position = m_imports.find(import);
+    ASSERT(kNotFound != position);
+    m_imports.remove(position);
+    m_imports.insert(0, import);
+}
+
+void HTMLImportLoader::addImport(HTMLImportChild* import)
+{
+    ASSERT(kNotFound == m_imports.find(import));
+
+    m_imports.append(import);
+    import->normalize();
     if (isDone())
-        client->didFinishLoading();
+        import->didFinishLoading();
 }
 
 void HTMLImportLoader::removeImport(HTMLImportChild* client)
 {
     ASSERT(kNotFound != m_imports.find(client));
     m_imports.remove(m_imports.find(client));
+}
+
+bool HTMLImportLoader::shouldBlockScriptExecution() const
+{
+    return firstImport()->state().shouldBlockScriptExecution();
+}
+
+PassRefPtr<CustomElementMicrotaskQueue> HTMLImportLoader::microtaskQueue() const
+{
+    return m_microtaskQueue;
 }
 
 } // namespace WebCore

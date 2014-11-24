@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "4.9",
+  "version": "6.7",
   "entries": [
     {
       "id": 1,
@@ -356,7 +356,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     {
       "id": 25,
       "cr_bugs": [152225],
-      "description": "PBO + Readpixels don't work on Intel GPUs on OS X 10.7",
+      "description": "PBO + Readpixels don't work on OS X 10.7",
       "os": {
         "type": "macosx",
         "version": {
@@ -364,7 +364,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "10.8"
         }
       },
-      "vendor_id": "0x8086",
       "features": [
         "disable_async_readpixels"
       ]
@@ -395,21 +394,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
                     "0x0a04", "0x0a16", "0x0a22", "0x0a26", "0x0a2a"],
       "features": [
         "swizzle_rgba_for_async_readpixels"
-      ]
-    },
-    {
-      "id": 29,
-      "cr_bugs": [278606],
-      "description": "Testing fences is broken on Qualcomm.",
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
-      "features": [
-        "disable_async_readpixels"
       ]
     },
     {
@@ -635,18 +619,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 46,
-      "description": "Using D3D11 causes browser crashes on certain Intel GPUs",
-      "cr_bugs": [310808],
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x8086",
-      "features": [
-        "disable_d3d11"
-      ]
-    },
-    {
       "id": 48,
       "description": "Force to use discrete GPU on older MacBookPro models",
       "cr_bugs": [113703],
@@ -657,15 +629,10 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "10.7"
         }
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "MacBookPro"
-        },
-        "version": {
-          "op": "<",
-          "value": "8"
-        }
+      "machine_model_name": ["MacBookPro"],
+      "machine_model_version": {
+        "op": "<",
+        "value": "8"
       },
       "gpu_count": {
         "op": "=",
@@ -922,6 +889,36 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
+      "id": 69,
+      "description": "Some shaders in Skia need more than the min available vertex and fragment shader uniform vectors in case of OSMesa",
+      "cr_bugs": [174845],
+      "driver_vendor": {
+        "op": "=",
+        "value": "osmesa"
+      },
+      "features": [
+       "max_fragment_uniform_vectors_32",
+       "max_varying_vectors_16",
+       "max_vertex_uniform_vectors_256"
+      ]
+    },
+    {
+      "id": 70,
+      "description": "Disable D3D11 on older nVidia drivers",
+      "cr_bugs": [349929],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "<=",
+        "value": "8.17.12.6973"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
       "id": 71,
       "description": "Vivante's support of OES_standard_derivatives is buggy",
       "cr_bugs": [368005],
@@ -934,6 +931,136 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "disable_oes_standard_derivatives"
+      ]
+    },
+    {
+      "id": 72,
+      "description": "Use virtual contexts on NVIDIA with GLES 3.1",
+      "cr_bugs": [369316],
+      "os": {
+        "type": "android"
+      },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "=",
+        "value": "3.1"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "NVidia"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 73,
+      "description": "Using D3D11 causes browser crashes on certain Intel GPUs",
+      "cr_bugs": [310808],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+)  // LONG_STRING_CONST macro
+// Avoid C2026 (string too big) error on VisualStudio.
+LONG_STRING_CONST(
+    {
+      "id": 74,
+      "cr_bugs": [278606, 382686],
+      "description": "Testing EGL sync fences is broken on most Qualcomm drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 76,
+      "cr_bugs": [371530],
+      "description": "Testing EGL sync fences is broken on IMG",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Imagination Technologies"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 77,
+      "cr_bugs": [378691, 373360, 371530],
+      "description": "Testing fences is broken on Mali-400 MP drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "Mali-400 MP"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 78,
+      "cr_bugs": [378691, 373360, 371530],
+      "description": "Testing fences is broken on Broadcom drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Broadcom"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 82,
+      "description": "PBO mappings segfault on certain older Qualcomm drivers",
+      "cr_bugs": [394510],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 86,
+      "description": "Disable use of Direct3D 11 on Matrox video cards",
+      "cr_bugs": [395861],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x102b",
+      "features": [
+        "disable_d3d11"
       ]
     }
   ]

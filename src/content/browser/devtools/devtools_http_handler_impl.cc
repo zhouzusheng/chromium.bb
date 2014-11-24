@@ -48,8 +48,6 @@ namespace content {
 
 namespace {
 
-const char kProtocolVersion[] = "1.0";
-
 const char kDevToolsHandlerThreadName[] = "Chrome_DevToolsHandlerThread";
 
 const char kThumbUrlPrefix[] = "/thumb/";
@@ -135,7 +133,7 @@ static bool TimeComparator(const DevToolsTarget* target1,
 // static
 bool DevToolsHttpHandler::IsSupportedProtocolVersion(
     const std::string& version) {
-  return version == kProtocolVersion;
+  return devtools::IsSupportedProtocolVersion(version);
 }
 
 // static
@@ -261,7 +259,7 @@ void DevToolsHttpHandlerImpl::OnHttpRequest(
     DevToolsTarget* target = GetTarget(target_id);
     GURL page_url;
     if (target)
-      page_url = target->GetUrl();
+      page_url = target->GetURL();
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -321,8 +319,7 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
       server_->Send500(connection_id, "Another client already attached");
       return;
     }
-    browser_target_ = new DevToolsBrowserTarget(
-        thread_->message_loop_proxy().get(), server_.get(), connection_id);
+    browser_target_ = new DevToolsBrowserTarget(server_.get(), connection_id);
     browser_target_->RegisterDomainHandler(
         devtools::Tracing::kName,
         new DevToolsTracingHandler(),
@@ -451,7 +448,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
 
   if (command == "version") {
     base::DictionaryValue version;
-    version.SetString("Protocol-Version", kProtocolVersion);
+    version.SetString("Protocol-Version", devtools::kProtocolVersion);
     version.SetString("WebKit-Version", GetWebKitVersion());
     version.SetString("Browser", GetContentClient()->GetProduct());
     version.SetString("User-Agent", GetContentClient()->GetUserAgent());
@@ -756,10 +753,10 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializeTarget(
                         net::EscapeForHTML(target.GetTitle()));
   dictionary->SetString(kTargetDescriptionField, target.GetDescription());
 
-  GURL url = target.GetUrl();
+  GURL url = target.GetURL();
   dictionary->SetString(kTargetUrlField, url.spec());
 
-  GURL favicon_url = target.GetFaviconUrl();
+  GURL favicon_url = target.GetFaviconURL();
   if (favicon_url.is_valid())
     dictionary->SetString(kTargetFaviconUrlField, favicon_url.spec());
 

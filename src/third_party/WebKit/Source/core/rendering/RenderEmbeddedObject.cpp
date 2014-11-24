@@ -32,7 +32,6 @@
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -191,13 +190,8 @@ void RenderEmbeddedObject::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutSize oldSize = contentBoxRect().size();
-    LayoutRectRecorder recorder(*this);
-
     updateLogicalWidth();
     updateLogicalHeight();
-
-    RenderPart::layout();
 
     m_overflow.clear();
     addVisualEffectOverflow();
@@ -208,32 +202,6 @@ void RenderEmbeddedObject::layout()
         frameView()->addWidgetToUpdate(*this);
 
     clearNeedsLayout();
-
-    if (!canHaveChildren())
-        return;
-
-    // This code copied from RenderMedia::layout().
-    RenderObject* child = m_children.firstChild();
-
-    if (!child)
-        return;
-
-    RenderBox* childBox = toRenderBox(child);
-
-    if (!childBox)
-        return;
-
-    LayoutSize newSize = contentBoxRect().size();
-    if (newSize == oldSize && !childBox->needsLayout())
-        return;
-
-    LayoutStateMaintainer statePusher(*this, locationOffset());
-
-    childBox->setLocation(LayoutPoint(borderLeft(), borderTop()) + LayoutSize(paddingLeft(), paddingTop()));
-    childBox->style()->setHeight(Length(newSize.height(), Fixed));
-    childBox->style()->setWidth(Length(newSize.width(), Fixed));
-    childBox->forceLayout();
-    clearNeedsLayout();
 }
 
 bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float)
@@ -241,16 +209,18 @@ bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity g
     return false;
 }
 
-bool RenderEmbeddedObject::canHaveChildren() const
-{
-    return false;
-}
-
 CompositingReasons RenderEmbeddedObject::additionalCompositingReasons(CompositingTriggerFlags triggers) const
 {
-    if ((triggers & PluginTrigger) && requiresAcceleratedCompositing())
+    if (requiresAcceleratedCompositing())
         return CompositingReasonPlugin;
     return CompositingReasonNone;
+}
+
+RenderBox* RenderEmbeddedObject::embeddedContentBox() const
+{
+    if (!node() || !widget() || !widget()->isFrameView())
+        return 0;
+    return toFrameView(widget())->embeddedContentBox();
 }
 
 }

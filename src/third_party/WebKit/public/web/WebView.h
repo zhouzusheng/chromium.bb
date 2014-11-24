@@ -35,6 +35,8 @@
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
 #include "WebDragOperation.h"
+#include "WebHistoryCommitType.h"
+#include "WebHistoryItem.h"
 #include "WebPageVisibilityState.h"
 #include "WebWidget.h"
 
@@ -62,6 +64,7 @@ struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
+struct WebFloatPoint;
 struct WebWindowFeatures;
 
 class WebView : public WebWidget {
@@ -145,6 +148,10 @@ public:
     // WebWindowFeatures are ignored.
     virtual void setWindowFeatures(const WebWindowFeatures&) = 0;
 
+    // Marks the WebView as being opened by a DOM call. This is relevant
+    // for whether window.close() may be called.
+    virtual void setOpenedByDOM() = 0;
+
 
     // Rubberbanding -------------------------------------------------------
 
@@ -202,16 +209,6 @@ public:
     virtual WebString getTextInRubberband(const WebRect&) = 0;
 
 
-    // Closing -------------------------------------------------------------
-
-    // Runs beforeunload handlers for the current page, returning false if
-    // any handler suppressed unloading.
-    virtual bool dispatchBeforeUnloadEvent() = 0;
-
-    // Runs unload handlers for the current page.
-    virtual void dispatchUnloadEvent() = 0;
-
-
     // Frames --------------------------------------------------------------
 
     virtual WebFrame* mainFrame() = 0;
@@ -238,9 +235,6 @@ public:
     // to ensure that a text field on the page is not eating keystrokes we
     // send it.
     virtual void clearFocusedElement() = 0;
-
-    // Scrolls the node currently in focus into view.
-    virtual void scrollFocusedNodeIntoView() = 0;
 
     // Scrolls the node currently in focus into |rect|, where |rect| is in
     // window space.
@@ -298,14 +292,30 @@ public:
     // is scaled up, < 1.0 is scaled down.
     virtual float pageScaleFactor() const = 0;
 
-    // Scales the page and the scroll offset by a given factor, while ensuring
-    // that the new scroll position does not go beyond the edge of the page.
-    virtual void setPageScaleFactorPreservingScrollOffset(float) = 0;
-
+    // TODO: Obsolete, the origin parameter is ambiguous with two viewports. Remove
+    // once Chromium side users are removed.
     // Scales a page by a factor of scaleFactor and then sets a scroll position to (x, y).
     // setPageScaleFactor() magnifies and shrinks a page without affecting layout.
     // On the other hand, zooming affects layout of the page.
     virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) = 0;
+
+    // TODO: Reevaluate if this is needed once all users are converted to using the
+    // virtual viewport pinch model.
+    // Temporary to keep old style pinch viewport working while we gradually bring up
+    // virtual viewport pinch.
+    virtual void setMainFrameScrollOffset(const WebPoint& origin) = 0;
+
+    // Scales the page without affecting layout by using the pinch-to-zoom viewport.
+    virtual void setPageScaleFactor(float) = 0;
+
+    // Sets the offset of the pinch-to-zoom viewport within the main frame, in
+    // partial CSS pixels. The offset will be clamped so the pinch viewport
+    // stays within the frame's bounds.
+    virtual void setPinchViewportOffset(const WebFloatPoint&) = 0;
+
+    // Gets the pinch viewport's current offset within the page's main frame,
+    // in partial CSS pixels.
+    virtual WebFloatPoint pinchViewportOffset() const = 0;
 
     // PageScaleFactor will be force-clamped between minPageScale and maxPageScale
     // (and these values will persist until setPageScaleFactorLimits is called
@@ -314,14 +324,6 @@ public:
 
     virtual float minimumPageScaleFactor() const = 0;
     virtual float maximumPageScaleFactor() const = 0;
-
-    // Save the WebView's current scroll and scale state. Each call to this function
-    // overwrites the previously saved scroll and scale state.
-    virtual void saveScrollAndScaleState() = 0;
-
-    // Restore the previously saved scroll and scale state. After restoring the
-    // state, this function deletes any saved scroll and scale state.
-    virtual void restoreScrollAndScaleState() = 0;
 
     // Reset any saved values for the scroll and scale state.
     virtual void resetScrollAndScaleState() = 0;
@@ -381,13 +383,12 @@ public:
     // WebView (if there is such an image)
     virtual void copyImageAt(const WebPoint&) = 0;
 
+    // Save as the image located at a particular point in the
+    // WebView (if there is such an image)
+    virtual void saveImageAt(const WebPoint&) = 0;
+
     // Notifies the WebView that a drag has terminated.
     virtual void dragSourceEndedAt(
-        const WebPoint& clientPoint, const WebPoint& screenPoint,
-        WebDragOperation operation) = 0;
-
-    // Notifies the WebView that a drag is going on.
-    virtual void dragSourceMovedTo(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperation operation) = 0;
 
@@ -545,6 +546,7 @@ public:
     // the same z-order number, the later added one will be on top.
     virtual void addPageOverlay(WebPageOverlay*, int /*z-order*/) = 0;
     virtual void removePageOverlay(WebPageOverlay*) = 0;
+
 
     // Testing functionality for TestRunner ---------------------------------
 

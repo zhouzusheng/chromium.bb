@@ -21,6 +21,7 @@
 #ifndef TreeShared_h
 #define TreeShared_h
 
+#include "public/platform/WebPrivatePtr.h"
 #include "wtf/Assertions.h"
 #include "wtf/MainThread.h"
 #include "wtf/Noncopyable.h"
@@ -32,7 +33,7 @@ template<typename NodeType> class TreeShared;
 template<typename NodeType> void adopted(TreeShared<NodeType>*);
 #endif
 
-template<typename NodeType> class TreeShared {
+template<typename NodeType> class TreeShared : public NoBaseWillBeGarbageCollectedFinalized<NodeType> {
     WTF_MAKE_NONCOPYABLE(TreeShared);
 protected:
     TreeShared()
@@ -69,12 +70,12 @@ public:
     void deref()
     {
         ASSERT(isMainThread());
-        ASSERT(m_refCount >= 0);
+        ASSERT(m_refCount > 0);
         ASSERT_WITH_SECURITY_IMPLICATION(!m_deletionHasBegun);
         ASSERT(!m_inRemovedLastRefFunction);
         ASSERT(!m_adoptionIsRequired);
         NodeType* thisNode = static_cast<NodeType*>(this);
-        if (--m_refCount <= 0 && !thisNode->hasTreeSharedParent()) {
+        if (!--m_refCount && !thisNode->hasTreeSharedParent()) {
 #if !ASSERT_DISABLED
             m_inRemovedLastRefFunction = true;
 #endif
@@ -82,10 +83,7 @@ public:
         }
     }
 
-    int refCount() const
-    {
-        return m_refCount;
-    }
+    int refCount() const { return m_refCount; }
 
 private:
     int m_refCount;
@@ -108,6 +106,7 @@ template<typename NodeType> inline void adopted(TreeShared<NodeType>* object)
 {
     if (!object)
         return;
+
     ASSERT_WITH_SECURITY_IMPLICATION(!object->m_deletionHasBegun);
 #if !ASSERT_DISABLED
     ASSERT(!object->m_inRemovedLastRefFunction);

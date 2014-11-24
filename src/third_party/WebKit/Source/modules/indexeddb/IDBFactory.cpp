@@ -35,10 +35,10 @@
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
-#include "modules/indexeddb/IDBFactoryBackendInterface.h"
 #include "modules/indexeddb/IDBHistograms.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBTracing.h"
+#include "modules/indexeddb/IndexedDBClient.h"
 #include "modules/indexeddb/WebIDBCallbacksImpl.h"
 #include "modules/indexeddb/WebIDBDatabaseCallbacksImpl.h"
 #include "platform/weborigin/DatabaseIdentifier.h"
@@ -50,16 +50,23 @@ namespace WebCore {
 
 static const char permissionDeniedErrorMessage[] = "The user denied permission to access the database.";
 
-IDBFactory::IDBFactory(IDBFactoryBackendInterface* permissionClient)
+IDBFactory::IDBFactory(PassRefPtrWillBeRawPtr<IndexedDBClient> permissionClient)
     : m_permissionClient(permissionClient)
 {
+#if !ENABLE(OILPAN)
     // We pass a reference to this object before it can be adopted.
     relaxAdoptionRequirement();
+#endif
     ScriptWrappable::init(this);
 }
 
 IDBFactory::~IDBFactory()
 {
+}
+
+void IDBFactory::trace(Visitor* visitor)
+{
+    visitor->trace(m_permissionClient);
 }
 
 static bool isContextValid(ExecutionContext* context)
@@ -72,7 +79,7 @@ static bool isContextValid(ExecutionContext* context)
     return true;
 }
 
-PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ExecutionContext* context, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBRequest> IDBFactory::getDatabaseNames(ExecutionContext* context, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::getDatabaseNames");
     if (!isContextValid(context))
@@ -82,7 +89,7 @@ PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ExecutionContext* context, E
         return nullptr;
     }
 
-    RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::createNull(), 0);
+    RefPtrWillBeRawPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::createNull(), 0);
 
     if (!m_permissionClient->allowIndexedDB(context, "Database Listing")) {
         request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
@@ -93,7 +100,7 @@ PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ExecutionContext* context, E
     return request;
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, unsigned long long version, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, unsigned long long version, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::open");
     if (!version) {
@@ -103,7 +110,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const S
     return openInternal(context, name, version, exceptionState);
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ExecutionContext* context, const String& name, int64_t version, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBOpenDBRequest> IDBFactory::openInternal(ExecutionContext* context, const String& name, int64_t version, ExceptionState& exceptionState)
 {
     blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
     ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
@@ -118,9 +125,9 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ExecutionContext* context,
         return nullptr;
     }
 
-    RefPtr<IDBDatabaseCallbacks> databaseCallbacks = IDBDatabaseCallbacks::create();
+    RefPtrWillBeRawPtr<IDBDatabaseCallbacks> databaseCallbacks = IDBDatabaseCallbacks::create();
     int64_t transactionId = IDBDatabase::nextTransactionId();
-    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, databaseCallbacks, transactionId, version);
+    RefPtrWillBeRawPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, databaseCallbacks, transactionId, version);
 
     if (!m_permissionClient->allowIndexedDB(context, name)) {
         request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
@@ -131,13 +138,13 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ExecutionContext* context,
     return request;
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBOpenDBRequest> IDBFactory::open(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::open");
     return openInternal(context, name, IDBDatabaseMetadata::NoIntVersion, exceptionState);
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ExecutionContext* context, const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::deleteDatabase");
     blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
@@ -152,7 +159,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ExecutionContext* contex
         return nullptr;
     }
 
-    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, nullptr, 0, IDBDatabaseMetadata::DefaultIntVersion);
+    RefPtrWillBeRawPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, nullptr, 0, IDBDatabaseMetadata::DefaultIntVersion);
 
     if (!m_permissionClient->allowIndexedDB(context, name)) {
         request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
@@ -165,9 +172,8 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ExecutionContext* contex
 
 short IDBFactory::cmp(ExecutionContext* context, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
-    RefPtr<IDBKey> first = scriptValueToIDBKey(&requestState, firstValue);
-    RefPtr<IDBKey> second = scriptValueToIDBKey(&requestState, secondValue);
+    RefPtrWillBeRawPtr<IDBKey> first = scriptValueToIDBKey(toIsolate(context), firstValue);
+    RefPtrWillBeRawPtr<IDBKey> second = scriptValueToIDBKey(toIsolate(context), secondValue);
 
     ASSERT(first);
     ASSERT(second);

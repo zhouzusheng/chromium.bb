@@ -29,19 +29,8 @@
  */
 
 #include "config.h"
-#include "WebNode.h"
+#include "public/web/WebNode.h"
 
-#include "EventListenerWrapper.h"
-#include "FrameLoaderClientImpl.h"
-#include "WebDOMEvent.h"
-#include "WebDOMEventListener.h"
-#include "WebDocument.h"
-#include "WebElement.h"
-#include "WebElementCollection.h"
-#include "WebFrameImpl.h"
-#include "WebNodeList.h"
-#include "WebPluginContainer.h"
-#include "WebPluginContainerImpl.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -56,6 +45,17 @@
 #include "platform/Widget.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebDOMEvent.h"
+#include "public/web/WebDOMEventListener.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebElementCollection.h"
+#include "public/web/WebNodeList.h"
+#include "public/web/WebPluginContainer.h"
+#include "web/EventListenerWrapper.h"
+#include "web/FrameLoaderClientImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPluginContainerImpl.h"
 
 using namespace WebCore;
 
@@ -204,8 +204,15 @@ WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) co
 {
     TrackExceptionState exceptionState;
     WebElement element;
-    if (m_private->isContainerNode())
+    if (m_private->isContainerNode()) {
+#if ENABLE(OILPAN)
+        // FIXME: ContainerNode::querySelector should return an Element raw
+        // pointer.
+        element = toContainerNode(m_private.get())->querySelector(tag, exceptionState).get();
+#else
         element = toContainerNode(m_private.get())->querySelector(tag, exceptionState);
+#endif
+    }
     ec = exceptionState.code();
     return element;
 }
@@ -257,18 +264,18 @@ WebElement WebNode::shadowHost() const
     return WebElement(coreNode->shadowHost());
 }
 
-WebNode::WebNode(const PassRefPtr<Node>& node)
+WebNode::WebNode(const PassRefPtrWillBeRawPtr<Node>& node)
     : m_private(node)
 {
 }
 
-WebNode& WebNode::operator=(const PassRefPtr<Node>& node)
+WebNode& WebNode::operator=(const PassRefPtrWillBeRawPtr<Node>& node)
 {
     m_private = node;
     return *this;
 }
 
-WebNode::operator PassRefPtr<Node>() const
+WebNode::operator PassRefPtrWillBeRawPtr<Node>() const
 {
     return m_private.get();
 }

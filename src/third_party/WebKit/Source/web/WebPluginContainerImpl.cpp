@@ -29,23 +29,22 @@
  */
 
 #include "config.h"
-#include "WebPluginContainerImpl.h"
+#include "web/WebPluginContainerImpl.h"
 
-#include "ChromeClientImpl.h"
-#include "ScrollbarGroup.h"
-#include "WebDataSourceImpl.h"
-#include "WebElement.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebPlugin.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "platform/exported/WrappedResourceResponse.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebPlugin.h"
+#include "public/web/WebViewClient.h"
+#include "web/ChromeClientImpl.h"
+#include "web/ScrollbarGroup.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebViewImpl.h"
 
 #include "HTMLNames.h"
-#include "WebPrintParams.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
@@ -54,13 +53,13 @@
 #include "core/events/MouseEvent.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/WheelEvent.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/FocusController.h"
-#include "core/frame/FrameView.h"
-#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginOcclusionSupport.h"
@@ -87,6 +86,7 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebPrintParams.h"
 
 using namespace WebCore;
 
@@ -247,6 +247,8 @@ void WebPluginContainerImpl::setParent(Widget* widget)
     Widget::setParent(widget);
     if (widget)
         reportGeometry();
+    else if (m_webPlugin)
+        m_webPlugin->containerDidDetachFromParent();
 }
 
 void WebPluginContainerImpl::setPlugin(WebPlugin* plugin)
@@ -315,6 +317,8 @@ int WebPluginContainerImpl::printBegin(const WebPrintParams& printParams) const
 bool WebPluginContainerImpl::printPage(int pageNumber,
                                        WebCore::GraphicsContext* gc)
 {
+    if (gc->paintingDisabled())
+        return true;
     gc->save();
     WebCanvas* canvas = gc->canvas();
     bool ret = m_webPlugin->printPage(pageNumber, canvas);
@@ -436,9 +440,9 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
     ScriptValue result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
 
     // Failure is reported as a null string.
-    String resultStr;
-    result.getString(resultStr);
-    return resultStr;
+    String resultString;
+    result.toString(resultString);
+    return resultString;
 }
 
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
@@ -819,6 +823,8 @@ void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
     WebGestureEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
+    if (event->type() == EventTypeNames::gesturetapdown)
+        focusPlugin();
     WebCursorInfo cursorInfo;
     if (m_webPlugin->handleInputEvent(webEvent, cursorInfo)) {
         event->setDefaultHandled();
@@ -890,6 +896,11 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     }
 
     return clipRect;
+}
+
+bool WebPluginContainerImpl::pluginShouldPersist() const
+{
+    return m_webPlugin->shouldPersist();
 }
 
 } // namespace blink

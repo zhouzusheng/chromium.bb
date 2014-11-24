@@ -201,6 +201,7 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   void SetTraceFilter(int filter);
   void SetTraceOptions(const std::string& options);
   bool InitVideoEngine();
+  bool VerifyApt(const VideoCodec& in, int expected_apt) const;
 
   // webrtc::TraceCallback implementation.
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
@@ -313,6 +314,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
  private:
   typedef std::map<uint32, WebRtcVideoChannelRecvInfo*> RecvChannelMap;
   typedef std::map<uint32, WebRtcVideoChannelSendInfo*> SendChannelMap;
+  typedef std::map<uint32, uint32> SsrcMap;
   typedef int (webrtc::ViERTP_RTCP::* ExtensionSetterFunction)(int, bool, int);
 
   enum MediaDirection { MD_RECV, MD_SEND, MD_SENDRECV };
@@ -334,11 +336,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool ConfigureSending(int channel_id, uint32 local_ssrc_key);
   bool SetNackFec(int channel_id, int red_payload_type, int fec_payload_type,
                   bool nack_enabled);
-  bool SetSendCodec(const webrtc::VideoCodec& codec, int min_bitrate,
-                    int start_bitrate, int max_bitrate);
+  bool SetSendCodec(const webrtc::VideoCodec& codec);
   bool SetSendCodec(WebRtcVideoChannelSendInfo* send_channel,
-                    const webrtc::VideoCodec& codec, int min_bitrate,
-                    int start_bitrate, int max_bitrate);
+                    const webrtc::VideoCodec& codec);
   void LogSendCodecChange(const std::string& reason);
   // Prepares the channel with channel id |info->channel_id()| to receive all
   // codecs in |receive_codecs_| and start receive packets.
@@ -351,9 +351,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool MaybeResetVieSendCodec(WebRtcVideoChannelSendInfo* send_channel,
                               int new_width, int new_height, bool is_screencast,
                               bool* reset);
-  // Checks the current bitrate estimate and modifies the start bitrate
-  // accordingly.
-  void MaybeChangeStartBitrate(int channel_id, webrtc::VideoCodec* video_codec);
+  // Checks the current bitrate estimate and modifies the bitrates
+  // accordingly, including converting kAutoBandwidth to the correct defaults.
+  void MaybeChangeBitrates(int channel_id, webrtc::VideoCodec* video_codec);
   // Helper function for starting the sending of media on all channels or
   // |channel_id|. Note that these two function do not change |sending_|.
   bool StartSend();
@@ -433,7 +433,16 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // work properly), resides in both recv_channels_ and send_channels_ with the
   // ssrc key 0.
   RecvChannelMap recv_channels_;  // Contains all receive channels.
+  // A map from the SSRCs on which RTX packets are received to the media SSRCs
+  // the RTX packets are associated with. RTX packets will be delivered to the
+  // streams matching the primary SSRC.
+  SsrcMap rtx_to_primary_ssrc_;
   std::vector<webrtc::VideoCodec> receive_codecs_;
+  // A map from codec payload types to their associated payload types, if any.
+  // TODO(holmer): This is a temporary solution until webrtc::VideoCodec has
+  // an associated payload type member, when it does we can rely on
+  // receive_codecs_.
+  std::map<int, int> associated_payload_types_;
   bool render_started_;
   uint32 first_receive_ssrc_;
   std::vector<RtpHeaderExtension> receive_extensions_;
@@ -445,9 +454,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   int send_rtx_type_;
   int send_red_type_;
   int send_fec_type_;
-  int send_min_bitrate_;
-  int send_start_bitrate_;
-  int send_max_bitrate_;
   bool sending_;
   std::vector<RtpHeaderExtension> send_extensions_;
 

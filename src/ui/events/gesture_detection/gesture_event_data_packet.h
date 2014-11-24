@@ -20,7 +20,8 @@ class GESTURE_DETECTION_EXPORT GestureEventDataPacket {
     UNDEFINED = -1,        // Used only for a default-constructed packet.
     INVALID,               // The source of the gesture was invalid.
     TOUCH_SEQUENCE_START,  // The start of a new gesture sequence.
-    TOUCH_SEQUENCE_END,    // The end of gesture sequence.
+    TOUCH_SEQUENCE_END,    // The end of a gesture sequence.
+    TOUCH_SEQUENCE_CANCEL, // The gesture sequence was cancelled.
     TOUCH_START,           // A touch down occured during a gesture sequence.
     TOUCH_MOVE,            // A touch move occured during a gesture sequence.
     TOUCH_END,             // A touch up occured during a gesture sequence.
@@ -39,14 +40,16 @@ class GESTURE_DETECTION_EXPORT GestureEventDataPacket {
 
   void Push(const GestureEventData& gesture);
 
+  const base::TimeTicks& timestamp() const { return timestamp_; }
   const GestureEventData& gesture(size_t i) const { return gestures_[i]; }
   size_t gesture_count() const { return gesture_count_; }
   GestureSource gesture_source() const { return gesture_source_; }
 
  private:
-  explicit GestureEventDataPacket(GestureSource source);
+  GestureEventDataPacket(base::TimeTicks timestamp, GestureSource source);
 
   enum { kMaxGesturesPerTouch = 5 };
+  base::TimeTicks timestamp_;
   GestureEventData gestures_[kMaxGesturesPerTouch];
   size_t gesture_count_;
   GestureSource gesture_source_;

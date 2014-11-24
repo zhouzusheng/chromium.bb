@@ -123,9 +123,11 @@ class BrowserContextImpl : public content::BrowserContext,
         int group_id) OVERRIDE;
     virtual content::ResourceContext* GetResourceContext() OVERRIDE;
     virtual content::DownloadManagerDelegate*
-    GetDownloadManagerDelegate() OVERRIDE;
+        GetDownloadManagerDelegate() OVERRIDE;
     virtual content::GeolocationPermissionContext*
-    GetGeolocationPermissionContext() OVERRIDE;
+        GetGeolocationPermissionContext() OVERRIDE;
+    virtual content::BrowserPluginGuestManagerDelegate*
+        GetGuestManagerDelegate() OVERRIDE;
     virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
     virtual bool AllowDictionaryDownloads() OVERRIDE;
 

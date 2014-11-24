@@ -27,8 +27,8 @@
 #include "core/css/RuleFeature.h"
 #include "core/css/StyleRule.h"
 #include "core/css/resolver/MediaQueryResult.h"
-#include "heap/HeapLinkedStack.h"
-#include "heap/HeapTerminatedArray.h"
+#include "platform/heap/HeapLinkedStack.h"
+#include "platform/heap/HeapTerminatedArray.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/LinkedStack.h"
@@ -44,7 +44,8 @@ enum AddRuleFlags {
 
 enum PropertyWhitelistType {
     PropertyWhitelistNone   = 0,
-    PropertyWhitelistCue
+    PropertyWhitelistCue,
+    PropertyWhitelistFirstLetter,
 };
 
 class CSSSelector;
@@ -235,18 +236,7 @@ private:
 
 } // namespace WebCore
 
-namespace WTF {
-
-template <> struct VectorTraits<WebCore::RuleData> : VectorTraitsBase<WebCore::RuleData> {
-    static const bool canInitializeWithMemset = true;
-    static const bool canMoveWithMemcpy = true;
-};
-
-template <> struct VectorTraits<WebCore::MinimalRuleData> : VectorTraitsBase<WebCore::MinimalRuleData> {
-    static const bool canInitializeWithMemset = true;
-    static const bool canMoveWithMemcpy = true;
-};
-
-}
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::RuleData);
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::MinimalRuleData);
 
 #endif // RuleSet_h

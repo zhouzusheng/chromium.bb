@@ -22,7 +22,7 @@
 #define FormDataList_h
 
 #include "core/fileapi/Blob.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/FormData.h"
 #include "wtf/Forward.h"
 #include "wtf/text/CString.h"
@@ -95,12 +95,6 @@ private:
 
 } // namespace WebCore
 
-// FIXME: oilpan: remove once traceability can be derived/inferred.
-namespace WTF {
-template<>
-struct NeedsTracing<WebCore::FormDataList::Item> {
-    static const bool value = true;
-};
-}
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::FormDataList::Item);
 
 #endif // FormDataList_h

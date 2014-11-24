@@ -29,30 +29,34 @@
  */
 
 #include "config.h"
-#include "WebEmbeddedWorkerImpl.h"
+#include "web/WebEmbeddedWorkerImpl.h"
 
-#include "ServiceWorkerGlobalScopeClientImpl.h"
-#include "ServiceWorkerGlobalScopeProxy.h"
-#include "WebDataSourceImpl.h"
-#include "WebFrameImpl.h"
-#include "WebServiceWorkerContextClient.h"
-#include "WebServiceWorkerNetworkProvider.h"
-#include "WebView.h"
-#include "WebWorkerPermissionClientProxy.h"
-#include "WorkerPermissionClient.h"
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
+#include "core/inspector/WorkerDebuggerAgent.h"
+#include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/SubstituteData.h"
 #include "core/workers/WorkerClients.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "heap/Handle.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
 #include "platform/NotImplemented.h"
 #include "platform/SharedBuffer.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
+#include "public/web/WebServiceWorkerContextClient.h"
+#include "public/web/WebServiceWorkerNetworkProvider.h"
+#include "public/web/WebView.h"
+#include "public/web/WebWorkerPermissionClientProxy.h"
+#include "web/ServiceWorkerGlobalScopeClientImpl.h"
+#include "web/ServiceWorkerGlobalScopeProxy.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WorkerPermissionClient.h"
 #include "wtf/Functional.h"
 
 using namespace WebCore;
@@ -74,10 +78,11 @@ public:
 
     void load(ExecutionContext* loadingContext, const KURL& scriptURL, const Closure& callback)
     {
+        ASSERT(loadingContext);
         m_callback = callback;
         m_scriptLoader->setTargetType(ResourceRequest::TargetIsServiceWorker);
         m_scriptLoader->loadAsynchronously(
-            loadingContext, scriptURL, DenyCrossOriginRequests, this);
+            *loadingContext, scriptURL, DenyCrossOriginRequests, this);
     }
 
     virtual void notifyFinished() OVERRIDE
@@ -112,7 +117,7 @@ public:
 
     virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask> task) OVERRIDE
     {
-        toWebFrameImpl(m_embeddedWorker.m_mainFrame)->frame()->document()->postTask(task);
+        toWebLocalFrameImpl(m_embeddedWorker.m_mainFrame)->frame()->document()->postTask(task);
     }
 
     virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task) OVERRIDE
@@ -155,7 +160,7 @@ WebEmbeddedWorkerImpl::~WebEmbeddedWorkerImpl()
     ASSERT(m_webView);
 
     // Detach the client before closing the view to avoid getting called back.
-    toWebFrameImpl(m_mainFrame)->setClient(0);
+    toWebLocalFrameImpl(m_mainFrame)->setClient(0);
 
     m_webView->close();
     m_mainFrame->close();
@@ -182,6 +187,65 @@ void WebEmbeddedWorkerImpl::terminateWorkerContext()
         m_workerThread->stop();
 }
 
+namespace {
+
+void resumeWorkerContextTask(ExecutionContext* context, bool)
+{
+    toWorkerGlobalScope(context)->workerInspectorController()->resume();
+}
+
+void connectToWorkerContextInspectorTask(ExecutionContext* context, bool)
+{
+    toWorkerGlobalScope(context)->workerInspectorController()->connectFrontend();
+}
+
+void reconnectToWorkerContextInspectorTask(ExecutionContext* context, const String& savedState)
+{
+    WorkerInspectorController* ic = toWorkerGlobalScope(context)->workerInspectorController();
+    ic->restoreInspectorStateFromCookie(savedState);
+    ic->resume();
+}
+
+void disconnectFromWorkerContextInspectorTask(ExecutionContext* context, bool)
+{
+    toWorkerGlobalScope(context)->workerInspectorController()->disconnectFrontend();
+}
+
+void dispatchOnInspectorBackendTask(ExecutionContext* context, const String& message)
+{
+    toWorkerGlobalScope(context)->workerInspectorController()->dispatchMessageFromFrontend(message);
+}
+
+} // namespace
+
+void WebEmbeddedWorkerImpl::resumeWorkerContext()
+{
+    if (m_workerThread)
+        m_workerThread->runLoop().postDebuggerTask(createCallbackTask(resumeWorkerContextTask, true));
+}
+
+void WebEmbeddedWorkerImpl::attachDevTools()
+{
+    if (m_workerThread)
+        m_workerThread->runLoop().postDebuggerTask(createCallbackTask(connectToWorkerContextInspectorTask, true));
+}
+
+void WebEmbeddedWorkerImpl::reattachDevTools(const WebString& savedState)
+{
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(reconnectToWorkerContextInspectorTask, String(savedState)));
+}
+
+void WebEmbeddedWorkerImpl::detachDevTools()
+{
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(disconnectFromWorkerContextInspectorTask, true));
+}
+
+void WebEmbeddedWorkerImpl::dispatchDevToolsMessage(const WebString& message)
+{
+    m_workerThread->runLoop().postDebuggerTask(createCallbackTask(dispatchOnInspectorBackendTask, String(message)));
+    WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(m_workerThread.get());
+}
+
 void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
 {
     // Create 'shadow page', which is never displayed and is used mainly to
@@ -192,10 +256,10 @@ void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
     // with SharedWorker.
     ASSERT(!m_webView);
     m_webView = WebView::create(0);
-    m_mainFrame = WebFrame::create(this);
+    m_mainFrame = WebLocalFrame::create(this);
     m_webView->setMainFrame(m_mainFrame);
 
-    WebFrameImpl* webFrame = toWebFrameImpl(m_webView->mainFrame());
+    WebLocalFrameImpl* webFrame = toWebLocalFrameImpl(m_webView->mainFrame());
 
     // Construct substitute data source for the 'shadow page'. We only need it
     // to have same origin as the worker so the loading checks work correctly.
@@ -206,14 +270,14 @@ void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
 }
 
 void WebEmbeddedWorkerImpl::willSendRequest(
-    WebFrame* frame, unsigned, WebURLRequest& request,
+    WebLocalFrame* frame, unsigned, WebURLRequest& request,
     const WebURLResponse& redirectResponse)
 {
     if (m_networkProvider)
         m_networkProvider->willSendRequest(frame->dataSource(), request);
 }
 
-void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
+void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebLocalFrame* frame)
 {
     ASSERT(!m_mainScriptLoader);
     ASSERT(!m_networkProvider);
@@ -222,7 +286,7 @@ void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebFrame* frame)
     m_networkProvider = adoptPtr(m_workerContextClient->createServiceWorkerNetworkProvider(frame->dataSource()));
     m_mainScriptLoader = Loader::create();
     m_mainScriptLoader->load(
-        toWebFrameImpl(m_mainFrame)->frame()->document(),
+        toWebLocalFrameImpl(m_mainFrame)->frame()->document(),
         m_workerStartData.scriptURL,
         bind(&WebEmbeddedWorkerImpl::onScriptLoaderFinished, this));
 }
@@ -242,13 +306,9 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
         (m_workerStartData.startMode == WebEmbeddedWorkerStartModePauseOnStart)
         ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
 
-    // This is to be owned by ServiceWorker's WorkerGlobalScope, and is
-    // guaranteed to be around while the WorkerGlobalScope is alive.
-    WebServiceWorkerContextClient* contextClient = m_workerContextClient.get();
-
-    OwnPtr<WorkerClients> workerClients = WorkerClients::create();
+    OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
     providePermissionClientToWorker(workerClients.get(), m_permissionClient.release());
-    provideServiceWorkerGlobalScopeClientToWorker(workerClients.get(), ServiceWorkerGlobalScopeClientImpl::create(m_workerContextClient.release()));
+    provideServiceWorkerGlobalScopeClientToWorker(workerClients.get(), ServiceWorkerGlobalScopeClientImpl::create(*m_workerContextClient));
 
     OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData =
         WorkerThreadStartupData::create(
@@ -263,7 +323,7 @@ void WebEmbeddedWorkerImpl::onScriptLoaderFinished()
 
     m_mainScriptLoader.clear();
 
-    m_workerGlobalScopeProxy = ServiceWorkerGlobalScopeProxy::create(*this, *toWebFrameImpl(m_mainFrame)->frame()->document(), *contextClient);
+    m_workerGlobalScopeProxy = ServiceWorkerGlobalScopeProxy::create(*this, *toWebLocalFrameImpl(m_mainFrame)->frame()->document(), *m_workerContextClient);
     m_loaderProxy = LoaderProxy::create(*this);
 
     m_workerThread = ServiceWorkerThread::create(*m_loaderProxy, *m_workerGlobalScopeProxy, startupData.release());

@@ -22,9 +22,11 @@
 
 #include <blpwtk2_jswidget.h>
 
+#include <base/bind.h>
+#include <base/message_loop/message_loop.h>
 #include <third_party/WebKit/public/web/WebDOMCustomEvent.h>
 #include <third_party/WebKit/public/web/WebElement.h>
-#include <third_party/WebKit/public/web/WebFrame.h>
+#include <third_party/WebKit/public/web/WebLocalFrame.h>
 #include <third_party/WebKit/public/web/WebPluginContainer.h>
 #include <v8/include/v8.h>
 
@@ -41,7 +43,16 @@ static v8::Handle<v8::Object> toV8(v8::Isolate* isolate, const blink::WebRect& r
     return result;
 }
 
-JsWidget::JsWidget(blink::WebFrame* frame)
+static void scheduleDispatchEvent(const tracked_objects::Location& location,
+                                  JsWidget* widget,
+                                  const blink::WebDOMCustomEvent& event)
+{
+    base::MessageLoop::current()->PostTask(
+        location,
+        base::Bind(&JsWidget::dispatchEvent, base::Unretained(widget), event));
+}
+
+JsWidget::JsWidget(blink::WebLocalFrame* frame)
 : d_container(nullptr)
 , d_frame(frame)
 {
@@ -51,14 +62,20 @@ JsWidget::~JsWidget()
 {
 }
 
+void JsWidget::dispatchEvent(const blink::WebDOMCustomEvent& event)
+{
+    d_webElement.dispatchEvent(event);
+}
+
 // blink::WebPlugin overrides
 
 bool JsWidget::initialize(blink::WebPluginContainer* container)
 {
     d_container = container;
+    d_webElement = container->element();
     blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
     event.initCustomEvent("bbOnInitialize", false, false, blink::WebSerializedScriptValue());
-    d_container->element().dispatchEvent(event);
+    scheduleDispatchEvent(FROM_HERE, this, event);
     return true;
 }
 
@@ -66,7 +83,8 @@ void JsWidget::destroy()
 {
     blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
     event.initCustomEvent("bbOnDestroy", false, false, blink::WebSerializedScriptValue());
-    d_container->element().dispatchEvent(event);
+    scheduleDispatchEvent(FROM_HERE, this, event);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 void JsWidget::updateGeometry(
@@ -94,7 +112,7 @@ void JsWidget::updateGeometry(
     blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
     event.initCustomEvent("bbOnUpdateGeometry", false, false,
                           blink::WebSerializedScriptValue::serialize(detailObj));
-    d_container->element().dispatchEvent(event);
+    scheduleDispatchEvent(FROM_HERE, this, event);
 }
 
 void JsWidget::updateVisibility(bool isVisible)
@@ -112,7 +130,7 @@ void JsWidget::updateVisibility(bool isVisible)
     blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
     event.initCustomEvent("bbOnUpdateVisibility", false, false,
                           blink::WebSerializedScriptValue::serialize(detailObj));
-    d_container->element().dispatchEvent(event);
+    scheduleDispatchEvent(FROM_HERE, this, event);
 }
 
 }  // close namespace blpwtk2

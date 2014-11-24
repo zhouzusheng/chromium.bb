@@ -65,6 +65,7 @@ AudioInputRendererHost::AudioInputRendererHost(
           media::AudioLogFactory::AUDIO_INPUT_CONTROLLER)) {}
 
 AudioInputRendererHost::~AudioInputRendererHost() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(audio_entries_.empty());
 }
 
@@ -117,9 +118,19 @@ void AudioInputRendererHost::OnData(media::AudioInputController* controller,
   NOTREACHED() << "Only low-latency mode is supported.";
 }
 
+void AudioInputRendererHost::OnLog(media::AudioInputController* controller,
+                                   const std::string& message) {
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&AudioInputRendererHost::DoLog,
+                                     this,
+                                     make_scoped_refptr(controller),
+                                     message));
+}
+
 void AudioInputRendererHost::DoCompleteCreation(
     media::AudioInputController* controller) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntry* entry = LookupByController(controller);
   if (!entry)
@@ -131,8 +142,8 @@ void AudioInputRendererHost::DoCompleteCreation(
     return;
   }
 
-  if (!entry->controller->LowLatencyMode()) {
-    NOTREACHED() << "Only low-latency mode is supported.";
+  if (!entry->controller->SharedMemoryAndSyncSocketMode()) {
+    NOTREACHED() << "Only shared-memory/sync-socket mode is supported.";
     DeleteEntryOnError(entry, INVALID_LATENCY_MODE);
     return;
   }
@@ -173,7 +184,7 @@ void AudioInputRendererHost::DoCompleteCreation(
 
 void AudioInputRendererHost::DoSendRecordingMessage(
     media::AudioInputController* controller) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // TODO(henrika): See crbug.com/115262 for details on why this method
   // should be implemented.
 }
@@ -181,9 +192,20 @@ void AudioInputRendererHost::DoSendRecordingMessage(
 void AudioInputRendererHost::DoHandleError(
     media::AudioInputController* controller,
     media::AudioInputController::ErrorCode error_code) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // Log all errors even it is ignored later.
   MediaStreamManager::SendMessageToNativeLog(
       base::StringPrintf("AudioInputController error: %d", error_code));
+
+  // This is a fix for crbug.com/357501. The error can be triggered when closing
+  // the lid on Macs, which causes more problems than it fixes.
+  // Also, in crbug.com/357569, the goal is to remove usage of the error since
+  // it was added to solve a crash on Windows that no longer can be reproduced.
+  if (error_code == media::AudioInputController::NO_DATA_ERROR) {
+    DVLOG(1) << "AudioInputRendererHost@" << this << "::DoHandleError: "
+             << "NO_DATA_ERROR ignored.";
+    return;
+  }
 
   AudioEntry* entry = LookupByController(controller);
   if (!entry)
@@ -191,6 +213,21 @@ void AudioInputRendererHost::DoHandleError(
 
   audio_log_->OnError(entry->stream_id);
   DeleteEntryOnError(entry, AUDIO_INPUT_CONTROLLER_ERROR);
+}
+
+void AudioInputRendererHost::DoLog(media::AudioInputController* controller,
+                                   const std::string& message) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  AudioEntry* entry = LookupByController(controller);
+  if (!entry)
+    return;
+
+  // Add stream ID and current audio level reported by AIC to native log.
+  std::string log_string =
+      base::StringPrintf("[stream_id=%d] ", entry->stream_id);
+  log_string += message;
+  MediaStreamManager::SendMessageToNativeLog(log_string);
+  DVLOG(1) << log_string;
 }
 
 bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message,
@@ -212,7 +249,7 @@ void AudioInputRendererHost::OnCreateStream(
     int render_view_id,
     int session_id,
     const AudioInputHostMsg_CreateStream_Config& config) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   DVLOG(1) << "AudioInputRendererHost@" << this
            << "::OnCreateStream(stream_id=" << stream_id
@@ -237,6 +274,7 @@ void AudioInputRendererHost::OnCreateStream(
   }
 
   // Check if we have the permission to open the device and which device to use.
+  std::string device_name;
   std::string device_id = media::AudioManagerBase::kDefaultDeviceId;
   if (audio_params.format() != media::AudioParameters::AUDIO_FAKE) {
     const StreamDeviceInfo* info = media_stream_manager_->
@@ -249,6 +287,7 @@ void AudioInputRendererHost::OnCreateStream(
     }
 
     device_id = info->device.id;
+    device_name = info->device.name;
   }
 
   // Create a new AudioEntry structure.
@@ -321,12 +360,12 @@ void AudioInputRendererHost::OnCreateStream(
   audio_entries_.insert(std::make_pair(stream_id, entry.release()));
 
   MediaStreamManager::SendMessageToNativeLog(
-      "Audio input stream created successfully.");
+      "Audio input stream created successfully. Device name: " + device_name);
   audio_log_->OnCreated(stream_id, audio_params, device_id);
 }
 
 void AudioInputRendererHost::OnRecordStream(int stream_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntry* entry = LookupById(stream_id);
   if (!entry) {
@@ -339,7 +378,7 @@ void AudioInputRendererHost::OnRecordStream(int stream_id) {
 }
 
 void AudioInputRendererHost::OnCloseStream(int stream_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntry* entry = LookupById(stream_id);
 
@@ -348,7 +387,7 @@ void AudioInputRendererHost::OnCloseStream(int stream_id) {
 }
 
 void AudioInputRendererHost::OnSetVolume(int stream_id, double volume) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntry* entry = LookupById(stream_id);
   if (!entry) {
@@ -369,7 +408,7 @@ void AudioInputRendererHost::SendErrorMessage(
 }
 
 void AudioInputRendererHost::DeleteEntries() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   for (AudioEntryMap::iterator i = audio_entries_.begin();
        i != audio_entries_.end(); ++i) {
@@ -378,7 +417,7 @@ void AudioInputRendererHost::DeleteEntries() {
 }
 
 void AudioInputRendererHost::CloseAndDeleteStream(AudioEntry* entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!entry->pending_close) {
     entry->controller->Close(base::Bind(&AudioInputRendererHost::DeleteEntry,
@@ -389,7 +428,7 @@ void AudioInputRendererHost::CloseAndDeleteStream(AudioEntry* entry) {
 }
 
 void AudioInputRendererHost::DeleteEntry(AudioEntry* entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Delete the entry when this method goes out of scope.
   scoped_ptr<AudioEntry> entry_deleter(entry);
@@ -400,7 +439,7 @@ void AudioInputRendererHost::DeleteEntry(AudioEntry* entry) {
 
 void AudioInputRendererHost::DeleteEntryOnError(AudioEntry* entry,
     ErrorCode error_code) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Sends the error message first before we close the stream because
   // |entry| is destroyed in DeleteEntry().
@@ -410,7 +449,7 @@ void AudioInputRendererHost::DeleteEntryOnError(AudioEntry* entry,
 
 AudioInputRendererHost::AudioEntry* AudioInputRendererHost::LookupById(
     int stream_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntryMap::iterator i = audio_entries_.find(stream_id);
   if (i != audio_entries_.end())
@@ -420,7 +459,7 @@ AudioInputRendererHost::AudioEntry* AudioInputRendererHost::LookupById(
 
 AudioInputRendererHost::AudioEntry* AudioInputRendererHost::LookupByController(
     media::AudioInputController* controller) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Iterate the map of entries.
   // TODO(hclam): Implement a faster look up method.

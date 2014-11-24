@@ -59,7 +59,6 @@ static void setup_rtcd_internal(void)
 
     (void)flags;
 
-
 }
 #endif
 

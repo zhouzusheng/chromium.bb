@@ -30,7 +30,14 @@ class EVENTS_EXPORT PlatformEventSource {
 
   static PlatformEventSource* GetInstance();
 
+  // Adds a dispatcher to the dispatcher list. If a dispatcher is added during
+  // dispatching an event, then the newly added dispatcher also receives that
+  // event.
   void AddPlatformEventDispatcher(PlatformEventDispatcher* dispatcher);
+
+  // Removes a dispatcher from the dispatcher list. Dispatchers can safely be
+  // removed from the dispatcher list during an event is being dispatched,
+  // without affecting the dispatch of the event to other existing dispatchers.
   void RemovePlatformEventDispatcher(PlatformEventDispatcher* dispatcher);
 
   // Installs a PlatformEventDispatcher that receives all the events. The
@@ -47,6 +54,8 @@ class EVENTS_EXPORT PlatformEventSource {
   void AddPlatformEventObserver(PlatformEventObserver* observer);
   void RemovePlatformEventObserver(PlatformEventObserver* observer);
 
+  static scoped_ptr<PlatformEventSource> CreateDefault();
+
  protected:
   PlatformEventSource();
 
@@ -61,16 +70,16 @@ class EVENTS_EXPORT PlatformEventSource {
   friend class ScopedEventDispatcher;
   static PlatformEventSource* instance_;
 
+  // This is invoked when the list of dispatchers changes (i.e. a new dispatcher
+  // is added, or a dispatcher is removed).
+  virtual void OnDispatcherListChanged();
+
   void OnOverriddenDispatcherRestored();
 
-  // Invokes the corresponding methods on the PlatformEventObservers added to
-  // the event-source.
-  // Returns true from |WillProcessEvent()| if any of the observers in the list
-  // consumes the event and returns true from |WillProcessEvent()|.
-  bool WillProcessEvent(PlatformEvent platform_event);
-  void DidProcessEvent(PlatformEvent platform_event);
-
-  typedef std::vector<PlatformEventDispatcher*> PlatformEventDispatcherList;
+  // Use an ObserverList<> instead of an std::vector<> to store the list of
+  // dispatchers, so that adding/removing dispatchers during an event dispatch
+  // is well-defined.
+  typedef ObserverList<PlatformEventDispatcher> PlatformEventDispatcherList;
   PlatformEventDispatcherList dispatchers_;
   PlatformEventDispatcher* overridden_dispatcher_;
 

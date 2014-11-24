@@ -40,8 +40,11 @@ class ValidityState;
 // and form-associated element implementations should use HTMLFormControlElement
 // unless there is a special reason.
 class HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLFormControlElement);
+
 public:
     virtual ~HTMLFormControlElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     String formEnctype() const;
     void setFormEnctype(const AtomicString&);
@@ -52,9 +55,6 @@ public:
     void ancestorDisabledStateWasChanged();
 
     void reset();
-
-    virtual bool formControlValueMatchesRenderer() const { return m_valueMatchesRenderer; }
-    virtual void setFormControlValueMatchesRenderer(bool b) { m_valueMatchesRenderer = b; }
 
     bool wasChangedSinceLastFormControlChangeEvent() const { return m_wasChangedSinceLastFormControlChangeEvent; }
     void setChangedSinceLastFormControlChangeEvent(bool);
@@ -87,12 +87,10 @@ public:
     virtual bool isActivatedSubmit() const { return false; }
     virtual void setActivatedSubmit(bool) { }
 
-    enum CheckValidityDispatchEvents { CheckValidityDispatchEventsAllowed, CheckValidityDispatchEventsNone };
-
     virtual bool willValidate() const OVERRIDE;
     void updateVisibleValidationMessage();
     void hideVisibleValidationMessage();
-    bool checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls = 0, CheckValidityDispatchEvents = CheckValidityDispatchEventsAllowed);
+    bool checkValidity(WillBeHeapVector<RefPtrWillBeMember<FormAssociatedElement> >* unhandledInvalidControls = 0);
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
     virtual void setCustomValidity(const String&) OVERRIDE FINAL;
@@ -143,8 +141,10 @@ protected:
     virtual bool supportsAutofocus() const;
 
 private:
+#if !ENABLE(OILPAN)
     virtual void refFormAssociatedElement() OVERRIDE FINAL { ref(); }
     virtual void derefFormAssociatedElement() OVERRIDE FINAL { deref(); }
+#endif
 
     virtual bool isFormControlElement() const OVERRIDE FINAL { return true; }
     virtual bool alwaysCreateUserAgentShadowRoot() const OVERRIDE { return true; }
@@ -160,7 +160,6 @@ private:
     bool m_isAutofilled : 1;
     bool m_isReadOnly : 1;
     bool m_isRequired : 1;
-    bool m_valueMatchesRenderer : 1;
 
     enum AncestorDisabledState { AncestorDisabledStateUnknown, AncestorDisabledStateEnabled, AncestorDisabledStateDisabled };
     mutable AncestorDisabledState m_ancestorDisabledState;

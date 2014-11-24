@@ -37,7 +37,7 @@
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -79,16 +79,13 @@ enum StyleSharingBehavior {
     DisallowStyleSharing,
 };
 
-// MatchOnlyUserAgentRules is used in media queries, where relative units
-// are interpreted according to the document root element style, and styled only
-// from the User Agent Stylesheet rules.
 enum RuleMatchingBehavior {
     MatchAllRules,
-    MatchAllRulesExcludingSMIL,
-    MatchOnlyUserAgentRules,
+    MatchAllRulesExcludingSMIL
 };
 
-const unsigned styleSharingListSize = 40;
+const unsigned styleSharingListSize = 15;
+const unsigned styleSharingMaxDepth = 32;
 typedef WTF::Deque<Element*, styleSharingListSize> StyleSharingList;
 
 struct CSSPropertyValue {
@@ -122,7 +119,7 @@ public:
         RuleMatchingBehavior = MatchAllRules);
 
     PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle&, RenderStyle* parentStyle, const StyleKeyframe*, const AtomicString& animationName);
-    static PassRefPtrWillBeRawPtr<KeyframeEffectModel> createKeyframeEffectModel(Element&, const WillBeHeapVector<RefPtrWillBeMember<MutableStylePropertySet> >&, KeyframeEffectModel::KeyframeVector&);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, CSSPropertyID, CSSValue*);
 
     PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
 
@@ -130,7 +127,7 @@ public:
     PassRefPtr<RenderStyle> defaultStyleForElement();
     PassRefPtr<RenderStyle> styleForText(Text*);
 
-    static PassRefPtr<RenderStyle> styleForDocument(Document&, CSSFontSelector* = 0);
+    static PassRefPtr<RenderStyle> styleForDocument(Document&);
 
     // FIXME: This only has 5 callers and should be removed. Callers should be explicit about
     // their dependency on Document* instead of grabbing one through StyleResolver.
@@ -138,12 +135,11 @@ public:
 
     // FIXME: It could be better to call appendAuthorStyleSheets() directly after we factor StyleResolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
-    void appendAuthorStyleSheets(unsigned firstNew, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
+    void appendAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
     void resetAuthorStyle(const ContainerNode*);
     void finishAppendAuthorStyleSheets();
 
-    TreeBoundaryCrossingRules& treeBoundaryCrossingRules() { return m_treeBoundaryCrossingRules; }
-    void processScopedRules(const RuleSet& authorRules, const KURL&, ContainerNode* scope = 0);
+    void processScopedRules(const RuleSet& authorRules, CSSStyleSheet*, ContainerNode& scope);
 
     void lazyAppendAuthorStyleSheets(unsigned firstNew, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
     void removePendingAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
@@ -211,7 +207,7 @@ public:
         return m_features;
     }
 
-    StyleSharingList& styleSharingList() { return m_styleSharingList; }
+    StyleSharingList& styleSharingList();
 
     bool hasRulesForId(const AtomicString&) const;
 
@@ -228,6 +224,9 @@ public:
     unsigned accessCount() const { return m_accessCount; }
     void didAccess() { ++m_accessCount; }
 
+    void increaseStyleSharingDepth() { ++m_styleSharingDepth; }
+    void decreaseStyleSharingDepth() { --m_styleSharingDepth; }
+
     PassRefPtr<PseudoElement> createPseudoElementIfNeeded(Element& parent, PseudoId);
 
     virtual void trace(Visitor*) OVERRIDE;
@@ -239,12 +238,11 @@ private:
 private:
     void initWatchedSelectorRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRule> >& watchedSelectors);
 
-    void addTreeBoundaryCrossingRules(const WillBeHeapVector<MinimalRuleData>&, ContainerNode* scope);
-
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
 
     void loadPendingResources(StyleResolverState&);
+    void adjustRenderStyle(StyleResolverState&, Element*);
 
     void appendCSSStyleSheet(CSSStyleSheet*);
 
@@ -257,13 +255,12 @@ private:
     // FIXME: watched selectors should be implemented using injected author stylesheets: http://crbug.com/316960
     void matchWatchSelectorRules(ElementRuleCollector&);
     void collectFeatures();
-    void collectTreeBoundaryCrossingRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
     void resetRuleFeatures();
 
     bool fastRejectSelector(const RuleData&) const;
 
     void applyMatchedProperties(StyleResolverState&, const MatchResult&);
-    void applyAnimatedProperties(StyleResolverState&, Element* animatingElement);
+    bool applyAnimatedProperties(StyleResolverState&, Element* animatingElement);
 
     enum StyleApplicationPass {
         AnimationProperties,
@@ -273,7 +270,7 @@ private:
     template <StyleResolver::StyleApplicationPass pass>
     static inline bool isPropertyForPass(CSSPropertyID);
     template <StyleApplicationPass pass>
-    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, const RuleRange&, bool inheritedOnly);
+    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
     template <StyleApplicationPass pass>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <StyleApplicationPass pass>
@@ -303,17 +300,12 @@ private:
     OwnPtr<MediaQueryEvaluator> m_medium;
     MediaQueryResultList m_viewportDependentMediaQueryResults;
 
-    RefPtr<RenderStyle> m_rootDefaultStyle;
-
     Document& m_document;
     SelectorFilter m_selectorFilter;
 
     OwnPtrWillBeMember<ViewportStyleResolver> m_viewportStyleResolver;
 
-    // FIXME: Oilpan: This should be a WillBeHeapListHashSet.
-    // This is safe for now, but should be updated when we support
-    // heap allocated ListHashSets.
-    ListHashSet<CSSStyleSheet*, 16> m_pendingStyleSheets;
+    WillBeHeapListHashSet<RawPtrWillBeMember<CSSStyleSheet>, 16> m_pendingStyleSheets;
 
     ScopedStyleTree m_styleTree;
 
@@ -331,7 +323,8 @@ private:
 
     StyleResourceLoader m_styleResourceLoader;
 
-    StyleSharingList m_styleSharingList;
+    unsigned m_styleSharingDepth;
+    Vector<OwnPtr<StyleSharingList>, styleSharingMaxDepth> m_styleSharingLists;
 
     OwnPtr<StyleResolverStats> m_styleResolverStats;
     OwnPtr<StyleResolverStats> m_styleResolverStatsTotals;

@@ -57,8 +57,6 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   virtual void ResourceDispatcherHostCreated() OVERRIDE;
   virtual AccessTokenStore* CreateAccessTokenStore() OVERRIDE;
   virtual std::string GetDefaultDownloadName() OVERRIDE;
-  virtual bool SupportsBrowserPlugin(content::BrowserContext* browser_context,
-                                     const GURL& url) OVERRIDE;
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents) OVERRIDE;
   virtual QuotaPermissionContext* CreateQuotaPermissionContext() OVERRIDE;
@@ -74,6 +72,10 @@ class ShellContentBrowserClient : public ContentBrowserClient {
       const base::CommandLine& command_line,
       int child_process_id,
       std::vector<content::FileDescriptorInfo>* mappings) OVERRIDE;
+#endif
+#if defined(OS_WIN)
+  virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
+                                bool* success) OVERRIDE;
 #endif
 
   ShellBrowserContext* browser_context();

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/hash.h"
 #include "base/message_loop/message_loop.h"
@@ -668,15 +669,12 @@ bool BackendImpl::CreateExternalFile(Addr* address) {
       continue;
     }
     base::FilePath name = GetFileName(file_address);
-    int flags = base::PLATFORM_FILE_READ |
-                base::PLATFORM_FILE_WRITE |
-                base::PLATFORM_FILE_CREATE |
-                base::PLATFORM_FILE_EXCLUSIVE_WRITE;
-    base::PlatformFileError error;
-    scoped_refptr<disk_cache::File> file(new disk_cache::File(
-        base::CreatePlatformFile(name, flags, NULL, &error)));
-    if (!file->IsValid()) {
-      if (error != base::PLATFORM_FILE_ERROR_EXISTS) {
+    int flags = base::File::FLAG_READ | base::File::FLAG_WRITE |
+                base::File::FLAG_CREATE | base::File::FLAG_EXCLUSIVE_WRITE;
+    base::File file(name, flags);
+    if (!file.IsValid()) {
+      base::File::Error error = file.error_details();
+      if (error != base::File::FILE_ERROR_EXISTS) {
         LOG(ERROR) << "Unable to create file: " << error;
         return false;
       }
@@ -1266,17 +1264,16 @@ bool BackendImpl::InitBackingStore(bool* file_created) {
 
   base::FilePath index_name = path_.AppendASCII(kIndexName);
 
-  int flags = base::PLATFORM_FILE_READ |
-              base::PLATFORM_FILE_WRITE |
-              base::PLATFORM_FILE_OPEN_ALWAYS |
-              base::PLATFORM_FILE_EXCLUSIVE_WRITE;
-  scoped_refptr<disk_cache::File> file(new disk_cache::File(
-      base::CreatePlatformFile(index_name, flags, file_created, NULL)));
-
-  if (!file->IsValid())
+  int flags = base::File::FLAG_READ | base::File::FLAG_WRITE |
+              base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_EXCLUSIVE_WRITE;
+  base::File base_file(index_name, flags);
+  if (!base_file.IsValid())
     return false;
 
   bool ret = true;
+  *file_created = base_file.created();
+
+  scoped_refptr<disk_cache::File> file(new disk_cache::File(base_file.Pass()));
   if (*file_created)
     ret = CreateBackingStore(file.get());
 
@@ -1285,7 +1282,7 @@ bool BackendImpl::InitBackingStore(bool* file_created) {
     return false;
 
   index_ = new MappedFile();
-  data_ = reinterpret_cast<Index*>(index_->Init(index_name, 0));
+  data_ = static_cast<Index*>(index_->Init(index_name, 0));
   if (!data_) {
     LOG(ERROR) << "Unable to map Index file";
     return false;
@@ -2016,9 +2013,8 @@ bool BackendImpl::CheckIndex() {
   if (!mask_)
     mask_ = data_->header.table_len - 1;
 
-  // Load the table into memory with a single read.
-  scoped_ptr<char[]> buf(new char[current_size]);
-  return index_->Read(buf.get(), current_size, 0);
+  // Load the table into memory.
+  return index_->Preload();
 }
 
 int BackendImpl::CheckAllEntries() {

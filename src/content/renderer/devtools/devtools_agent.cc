@@ -24,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -133,14 +134,6 @@ blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
   return new WebKitClientMessageLoopImpl();
 }
 
-void DevToolsAgent::clearBrowserCache() {
-  Send(new DevToolsHostMsg_ClearBrowserCache(routing_id()));
-}
-
-void DevToolsAgent::clearBrowserCookies() {
-  Send(new DevToolsHostMsg_ClearBrowserCookies(routing_id()));
-}
-
 void DevToolsAgent::resetTraceEventCallback()
 {
   TraceLog::GetInstance()->SetEventCallbackDisabled();
@@ -158,6 +151,17 @@ void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
   } else {
     trace_log->SetEventCallbackDisabled();
   }
+}
+
+void DevToolsAgent::enableTracing(const WebString& category_filter) {
+  TraceLog* trace_log = TraceLog::GetInstance();
+  trace_log->SetEnabled(base::debug::CategoryFilter(category_filter.utf8()),
+                        TraceLog::RECORDING_MODE,
+                        TraceLog::RECORD_UNTIL_FULL);
+}
+
+void DevToolsAgent::disableTracing() {
+  TraceLog::GetInstance()->SetDisabled();
 }
 
 // static
@@ -188,10 +192,13 @@ void DevToolsAgent::startGPUEventsRecording() {
   if (!gpu_channel_host)
     return;
   DCHECK(gpu_route_id_ == MSG_ROUTING_NONE);
+  int32 route_id = gpu_channel_host->GenerateRouteID();
+  bool succeeded = false;
   gpu_channel_host->Send(
-      new GpuChannelMsg_DevToolsStartEventsRecording(&gpu_route_id_));
-  DCHECK(gpu_route_id_ != MSG_ROUTING_NONE);
-  if (gpu_route_id_ != MSG_ROUTING_NONE) {
+      new GpuChannelMsg_DevToolsStartEventsRecording(route_id, &succeeded));
+  DCHECK(succeeded);
+  if (succeeded) {
+    gpu_route_id_ = route_id;
     gpu_channel_host->AddRoute(gpu_route_id_, AsWeakPtr());
   }
 }
@@ -212,26 +219,30 @@ void DevToolsAgent::OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks) {
     return;
   for (size_t i = 0; i < tasks.size(); i++) {
     const GpuTaskInfo& task = tasks[i];
-    WebDevToolsAgent::GPUEvent event(task.timestamp, task.phase, task.foreign,
-        static_cast<size_t>(task.used_gpu_memory_bytes));
+    WebDevToolsAgent::GPUEvent event(
+        task.timestamp, task.phase, task.foreign, task.gpu_memory_used_bytes);
+    event.limitGPUMemoryBytes = task.gpu_memory_limit_bytes;
     web_agent->processGPUEvent(event);
   }
 }
 
 void DevToolsAgent::enableDeviceEmulation(
-    const blink::WebRect& device_rect,
-    const blink::WebRect& view_rect,
-    float device_scale_factor,
-    bool fit_to_view) {
+    const blink::WebDeviceEmulationParams& params) {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
   impl->webview()->settings()->setForceCompositingMode(true);
-  impl->EnableScreenMetricsEmulation(gfx::Rect(device_rect),
-      gfx::Rect(view_rect), device_scale_factor, fit_to_view);
+  impl->EnableScreenMetricsEmulation(params);
 }
 
 void DevToolsAgent::disableDeviceEmulation() {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
   impl->DisableScreenMetricsEmulation();
+}
+
+void DevToolsAgent::setTouchEventEmulationEnabled(
+    bool enabled, bool allow_pinch) {
+  RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
+  impl->Send(new ViewHostMsg_SetTouchEventEmulationEnabled(
+      impl->routing_id(), enabled, allow_pinch));
 }
 
 #if defined(USE_TCMALLOC) && !defined(OS_WIN)

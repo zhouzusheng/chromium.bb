@@ -6,6 +6,7 @@
 #define UI_EVENTS_EVENT_UTILS_H_
 
 #include "base/event_types.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/display.h"
@@ -31,6 +32,11 @@ class Event;
 
 // Updates the list of devices for cached properties.
 EVENTS_EXPORT void UpdateDeviceList();
+
+// Returns a ui::Event wrapping a native event. Ownership of the returned value
+// is transferred to the caller.
+EVENTS_EXPORT scoped_ptr<Event> EventFromNative(
+    const base::NativeEvent& native_event);
 
 // Get the EventType from a native event.
 EVENTS_EXPORT EventType EventTypeFromNative(
@@ -84,6 +90,15 @@ EVENTS_EXPORT int GetChangedMouseButtonFlagsFromNative(
 EVENTS_EXPORT gfx::Vector2d GetMouseWheelOffset(
     const base::NativeEvent& native_event);
 
+// Returns a copy of |native_event|. Depending on the platform, this copy may
+// need to be deleted with ReleaseCopiedNativeEvent().
+base::NativeEvent CopyNativeEvent(
+    const base::NativeEvent& native_event);
+
+// Delete a |native_event| previously created by CopyNativeEvent().
+void ReleaseCopiedNativeEvent(
+    const base::NativeEvent& native_event);
+
 // Gets the touch id from a native event.
 EVENTS_EXPORT int GetTouchId(const base::NativeEvent& native_event);
 
@@ -122,12 +137,6 @@ EVENTS_EXPORT bool GetScrollOffsets(const base::NativeEvent& native_event,
 EVENTS_EXPORT bool GetGestureTimes(const base::NativeEvent& native_event,
                                double* start_time,
                                double* end_time);
-
-// Enable/disable natural scrolling for touchpads.
-EVENTS_EXPORT void SetNaturalScroll(bool enabled);
-
-// In natural scrolling enabled for touchpads?
-EVENTS_EXPORT bool IsNaturalScrollEnabled();
 
 // Returns whether natural scrolling should be used for touchpad.
 EVENTS_EXPORT bool ShouldDefaultToNaturalScroll();

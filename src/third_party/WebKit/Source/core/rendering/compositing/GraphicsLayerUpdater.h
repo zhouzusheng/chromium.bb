@@ -37,6 +37,22 @@ class RenderPart;
 class RenderView;
 
 class GraphicsLayerUpdater {
+    class UpdateContext {
+    public:
+        UpdateContext()
+            : m_compositingStackingContainer(0)
+            , m_compositingAncestor(0)
+        {
+        }
+
+        UpdateContext(const UpdateContext&, const RenderLayer&);
+
+        const RenderLayer* compositingContainer(const RenderLayer&) const;
+    private:
+        const RenderLayer* m_compositingStackingContainer;
+        const RenderLayer* m_compositingAncestor;
+    };
+
 public:
     GraphicsLayerUpdater();
     ~GraphicsLayerUpdater();
@@ -46,8 +62,17 @@ public:
         ForceUpdate,
     };
 
-    void update(RenderLayer&, UpdateType);
+    void update(RenderLayer&, UpdateType, const UpdateContext& = UpdateContext());
     void rebuildTree(RenderLayer&, GraphicsLayerVector& childLayersOfEnclosingLayer);
+
+    bool needsRebuildTree() const { return m_needsRebuildTree; }
+
+#if !ASSERT_DISABLED
+    static void assertNeedsToUpdateGraphicsLayerBitsCleared(RenderLayer&);
+#endif
+
+private:
+    bool m_needsRebuildTree;
 };
 
 } // namespace WebCore

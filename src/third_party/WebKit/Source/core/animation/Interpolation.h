@@ -7,7 +7,7 @@
 
 #include "CSSPropertyNames.h"
 #include "core/animation/InterpolableValue.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -44,7 +44,6 @@ private:
 
     friend class AnimationInterpolableValueTest;
     friend class AnimationInterpolationEffectTest;
-
 };
 
 class StyleInterpolation : public Interpolation {
@@ -80,10 +79,10 @@ public:
         return adoptRefWillBeNoop(new LegacyStyleInterpolation(InterpolableAnimatableValue::create(start), InterpolableAnimatableValue::create(end), id));
     }
 
-    virtual void apply(StyleResolverState&) const;
+    virtual void apply(StyleResolverState&) const OVERRIDE;
 
     virtual bool isLegacyStyleInterpolation() const OVERRIDE FINAL { return true; }
-    AnimatableValue* currentValue() const
+    PassRefPtrWillBeRawPtr<AnimatableValue> currentValue() const
     {
         InterpolableAnimatableValue* value = static_cast<InterpolableAnimatableValue*>(m_cachedValue.get());
         return value->value();
@@ -98,8 +97,54 @@ private:
     }
 };
 
+class LengthStyleInterpolation : public StyleInterpolation {
+public:
+    static PassRefPtrWillBeRawPtr<LengthStyleInterpolation> create(CSSValue* start, CSSValue* end, CSSPropertyID id)
+    {
+        return adoptRefWillBeNoop(new LengthStyleInterpolation(lengthToInterpolableValue(start), lengthToInterpolableValue(end), id));
+    }
+
+    static bool canCreateFrom(const CSSValue&);
+
+    virtual void apply(StyleResolverState&) const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+private:
+    LengthStyleInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, CSSPropertyID id)
+        : StyleInterpolation(start, end, id)
+    { }
+
+    static PassOwnPtrWillBeRawPtr<InterpolableValue> lengthToInterpolableValue(CSSValue*);
+    static PassRefPtrWillBeRawPtr<CSSValue> interpolableValueToLength(InterpolableValue*);
+
+    friend class AnimationInterpolationTest;
+};
+
+class DefaultStyleInterpolation : public StyleInterpolation {
+public:
+    static PassRefPtrWillBeRawPtr<DefaultStyleInterpolation> create(CSSValue* start, CSSValue* end, CSSPropertyID id)
+    {
+        return adoptRefWillBeNoop(new DefaultStyleInterpolation(start, end, id));
+    }
+    virtual void apply(StyleResolverState&) const;
+    virtual void trace(Visitor*) OVERRIDE;
+
+private:
+    DefaultStyleInterpolation(CSSValue* start, CSSValue* end, CSSPropertyID id)
+        : StyleInterpolation(InterpolableBool::create(false), InterpolableBool::create(true), id)
+        , m_startCSSValue(start)
+        , m_endCSSValue(end)
+    {
+    }
+
+    RefPtrWillBeMember<CSSValue> m_startCSSValue;
+    RefPtrWillBeMember<CSSValue> m_endCSSValue;
+};
+
 DEFINE_TYPE_CASTS(StyleInterpolation, Interpolation, value, value->isStyleInterpolation(), value.isStyleInterpolation());
 DEFINE_TYPE_CASTS(LegacyStyleInterpolation, Interpolation, value, value->isLegacyStyleInterpolation(), value.isLegacyStyleInterpolation());
 
 }
+
 #endif

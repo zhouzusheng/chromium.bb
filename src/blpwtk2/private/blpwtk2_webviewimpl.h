@@ -281,7 +281,6 @@ class WebViewImpl : public WebView,
     content::FileChooserParams::Mode d_lastFileChooserMode;
 
     // For calling performCustomContextMenuAction().  TODO: clean this
-    content::RenderFrameHost* d_rfhForContextMenu;
     content::CustomContextMenuContext d_customContext;
 
 

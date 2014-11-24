@@ -24,12 +24,6 @@ namespace cc {
 
 class LayerScrollOffsetDelegate;
 
-struct DidOverscrollParams {
-  gfx::Vector2dF accumulated_overscroll;
-  gfx::Vector2dF latest_overscroll_delta;
-  gfx::Vector2dF current_fling_velocity;
-};
-
 class CC_EXPORT InputHandlerClient {
  public:
   virtual ~InputHandlerClient() {}
@@ -41,7 +35,8 @@ class CC_EXPORT InputHandlerClient {
   // Called when scroll deltas reaching the root scrolling layer go unused.
   // The accumulated overscroll is scoped by the most recent call to
   // InputHandler::ScrollBegin.
-  virtual void DidOverscroll(const DidOverscrollParams& params) = 0;
+  virtual void DidOverscroll(const gfx::Vector2dF& accumulated_overscroll,
+                             const gfx::Vector2dF& latest_overscroll_delta) = 0;
 
  protected:
   InputHandlerClient() {}
@@ -56,6 +51,8 @@ class CC_EXPORT InputHandlerClient {
 // interface and bind it to the handler on the compositor thread.
 class CC_EXPORT InputHandler {
  public:
+  // Note these are used in a histogram. Do not reorder or delete existing
+  // entries.
   enum ScrollStatus { ScrollOnMainThread, ScrollStarted, ScrollIgnored };
   enum ScrollInputType { Gesture, Wheel, NonBubblingGesture };
 
@@ -94,8 +91,6 @@ class CC_EXPORT InputHandler {
   // ScrollIgnored if not.
   virtual ScrollStatus FlingScrollBegin() = 0;
 
-  virtual void NotifyCurrentFlingVelocity(const gfx::Vector2dF& velocity) = 0;
-
   virtual void MouseMoveAt(const gfx::Point& mouse_position) = 0;
 
   // Stop scrolling the selected layer. Should only be called if ScrollBegin()
@@ -123,7 +118,11 @@ class CC_EXPORT InputHandler {
                                        base::TimeDelta duration) = 0;
 
   // Request another callback to InputHandlerClient::Animate().
-  virtual void ScheduleAnimation() = 0;
+  virtual void SetNeedsAnimate() = 0;
+
+  // Whether the layer under |viewport_point| is the currently scrolling layer.
+  virtual bool IsCurrentlyScrollingLayerAt(const gfx::Point& viewport_point,
+                                           ScrollInputType type) = 0;
 
   virtual bool HaveTouchEventHandlersAt(const gfx::Point& viewport_point) = 0;
 

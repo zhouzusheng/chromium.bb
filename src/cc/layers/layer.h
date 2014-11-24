@@ -180,6 +180,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetTransform(const gfx::Transform& transform);
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
+  bool transform_is_invertible() const { return transform_is_invertible_; }
 
   void SetScrollParent(Layer* parent);
 
@@ -265,7 +266,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::Vector2d scroll_offset() const { return scroll_offset_; }
   void SetScrollOffsetFromImplSide(const gfx::Vector2d& scroll_offset);
 
-  gfx::Vector2d MaxScrollOffset() const;
   void SetScrollClipLayerId(int clip_layer_id);
   bool scrollable() const { return scroll_clip_layer_id_ != INVALID_ID; }
 
@@ -282,6 +282,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetHaveWheelEventHandlers(bool have_wheel_event_handlers);
   bool have_wheel_event_handlers() const { return have_wheel_event_handlers_; }
+
+  void SetHaveScrollEventHandlers(bool have_scroll_event_handlers);
+  bool have_scroll_event_handlers() const {
+    return have_scroll_event_handlers_;
+  }
 
   void SetNonFastScrollableRegion(const Region& non_fast_scrollable_region);
   const Region& non_fast_scrollable_region() const {
@@ -358,6 +363,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
   virtual void OnOutputSurfaceCreated() {}
+  virtual bool IsSuitableForGpuRasterization() const;
 
   virtual scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo();
 
@@ -367,6 +373,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void CreateRenderSurface();
   void ClearRenderSurface();
+  void ClearRenderSurfaceLayerList();
 
   // The contents scale converts from logical, non-page-scaled pixels to target
   // pixels. The contents scale is 1 for the root layer as it is already in
@@ -379,6 +386,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -478,9 +486,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // unused resources on the impl thread are returned before commit completes.
   void SetNextCommitWaitsForActivation();
 
-  // Called when the blend mode or filters have been changed.
-  void SetNeedsFilterContextIfNeeded();
-
   void AddDependentNeedsPushProperties();
   void RemoveDependentNeedsPushProperties();
   bool parent_should_know_need_push_properties() const {
@@ -569,9 +574,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // transformed relative to this layer, defines the maximum scroll offset for
   // this layer.
   int scroll_clip_layer_id_;
-  bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
+  bool have_scroll_event_handlers_ : 1;
   bool user_scrollable_horizontal_ : 1;
   bool user_scrollable_vertical_ : 1;
   bool is_root_for_isolated_group_ : 1;
@@ -586,6 +591,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool draw_checkerboard_for_missing_tiles_ : 1;
   bool force_render_surface_ : 1;
   bool is_3d_sorted_ : 1;
+  bool transform_is_invertible_ : 1;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;

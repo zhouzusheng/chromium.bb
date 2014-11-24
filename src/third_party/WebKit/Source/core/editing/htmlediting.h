@@ -199,7 +199,7 @@ VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // Functions returning Range
 
-PassRefPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
+PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
 
 // -------------------------------------------------------------------------
 // HTMLElement
@@ -251,6 +251,12 @@ Position adjustedSelectionStartForStyleComputation(const VisibleSelection&);
 inline bool isWhitespace(UChar c)
 {
     return c == noBreakSpace || c == ' ' || c == '\n' || c == '\t';
+}
+
+// FIXME: Can't really answer this question correctly without knowing the white-space mode.
+inline bool isCollapsibleWhitespace(UChar c)
+{
+    return c == ' ' || c == '\n';
 }
 
 inline bool isAmbiguousBoundaryCharacter(UChar character)

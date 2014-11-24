@@ -5,18 +5,19 @@
 #ifndef CONTENT_PUBLIC_APP_CONTENT_MAIN_RUNNER_H_
 #define CONTENT_PUBLIC_APP_CONTENT_MAIN_RUNNER_H_
 
+#include "build/build_config.h"
 #include "content/common/content_export.h"
 
 namespace content {
 struct ContentMainParams;
 
 // This class is responsible for content initialization, running and shutdown.
-class ContentMainRunner {
+class CONTENT_EXPORT ContentMainRunner {
  public:
   virtual ~ContentMainRunner() {}
 
   // Create a new ContentMainRunner object.
-  CONTENT_EXPORT static ContentMainRunner* Create();
+  static ContentMainRunner* Create();
 
   // Initialize all necessary content state.
   virtual int Initialize(const ContentMainParams& params) = 0;

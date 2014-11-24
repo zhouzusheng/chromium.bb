@@ -16,6 +16,14 @@ std::string DecoderStreamTraits<DemuxerStream::AUDIO>::ToString() {
   return "Audio";
 }
 
+void DecoderStreamTraits<DemuxerStream::AUDIO>::Initialize(
+    DecoderType* decoder,
+    const DecoderConfigType& config,
+    bool low_delay,
+    const PipelineStatusCB& status_cb) {
+  decoder->Initialize(config, status_cb);
+}
+
 bool DecoderStreamTraits<DemuxerStream::AUDIO>::FinishInitialization(
     const StreamInitCB& init_cb,
     DecoderType* decoder,
@@ -47,20 +55,26 @@ std::string DecoderStreamTraits<DemuxerStream::VIDEO>::ToString() {
   return "Video";
 }
 
+void DecoderStreamTraits<DemuxerStream::VIDEO>::Initialize(
+    DecoderType* decoder,
+    const DecoderConfigType& config,
+    bool low_delay,
+    const PipelineStatusCB& status_cb) {
+  decoder->Initialize(config, low_delay, status_cb);
+}
+
 bool DecoderStreamTraits<DemuxerStream::VIDEO>::FinishInitialization(
     const StreamInitCB& init_cb,
     DecoderType* decoder,
     DemuxerStream* stream) {
   DCHECK(stream);
   if (!decoder) {
-    init_cb.Run(false, false);
+    init_cb.Run(false);
     return false;
   }
   if (decoder->NeedsBitstreamConversion())
     stream->EnableBitstreamConverter();
-  // TODO(xhwang): We assume |decoder_->HasAlpha()| does not change after
-  // reinitialization. Check this condition.
-  init_cb.Run(true, decoder->HasAlpha());
+  init_cb.Run(true);
   return true;
 }
 

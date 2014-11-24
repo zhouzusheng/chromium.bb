@@ -30,6 +30,7 @@
 #include "core/dom/RangeBoundaryPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -47,11 +48,11 @@ class Node;
 class NodeWithIndex;
 class Text;
 
-class Range : public RefCounted<Range>, public ScriptWrappable {
+class Range FINAL : public RefCountedWillBeGarbageCollectedFinalized<Range>, public ScriptWrappable {
 public:
-    static PassRefPtr<Range> create(Document&);
-    static PassRefPtr<Range> create(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
-    static PassRefPtr<Range> create(Document&, const Position&, const Position&);
+    static PassRefPtrWillBeRawPtr<Range> create(Document&);
+    static PassRefPtrWillBeRawPtr<Range> create(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
+    static PassRefPtrWillBeRawPtr<Range> create(Document&, const Position&, const Position&);
     ~Range();
 
     Document& ownerDocument() const { ASSERT(m_ownerDocument); return *m_ownerDocument.get(); }
@@ -60,17 +61,13 @@ public:
     Node* endContainer() const { return m_end.container(); }
     int endOffset() const { return m_end.offset(); }
 
-    Node* startContainer(ExceptionState&) const;
-    int startOffset(ExceptionState&) const;
-    Node* endContainer(ExceptionState&) const;
-    int endOffset(ExceptionState&) const;
-    bool collapsed(ExceptionState&) const;
+    bool collapsed() const { return m_start == m_end; }
 
-    Node* commonAncestorContainer(ExceptionState&) const;
+    Node* commonAncestorContainer() const;
     static Node* commonAncestorContainer(Node* containerA, Node* containerB);
     void setStart(PassRefPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
     void setEnd(PassRefPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
-    void collapse(bool toStart, ExceptionState&);
+    void collapse(bool toStart);
     bool isPointInRange(Node* refNode, int offset, ExceptionState&);
     short comparePoint(Node* refNode, int offset, ExceptionState&) const;
     enum CompareResults { NODE_BEFORE, NODE_AFTER, NODE_BEFORE_AND_AFTER, NODE_INSIDE };
@@ -85,15 +82,15 @@ public:
     PassRefPtr<DocumentFragment> extractContents(ExceptionState&);
     PassRefPtr<DocumentFragment> cloneContents(ExceptionState&);
     void insertNode(PassRefPtr<Node>, ExceptionState&);
-    String toString(ExceptionState&) const;
+    String toString() const;
 
     String toHTML() const;
     String text() const;
 
     PassRefPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionState&);
 
-    void detach(ExceptionState&);
-    PassRefPtr<Range> cloneRange(ExceptionState&) const;
+    void detach();
+    PassRefPtrWillBeRawPtr<Range> cloneRange() const;
 
     void setStartAfter(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void setEndBefore(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
@@ -142,12 +139,14 @@ public:
     // for details.
     void expand(const String&, ExceptionState&);
 
-    PassRefPtr<ClientRectList> getClientRects() const;
-    PassRefPtr<ClientRect> getBoundingClientRect() const;
+    PassRefPtrWillBeRawPtr<ClientRectList> getClientRects() const;
+    PassRefPtrWillBeRawPtr<ClientRect> getBoundingClientRect() const;
 
 #ifndef NDEBUG
     void formatForDebugger(char* buffer, unsigned length) const;
 #endif
+
+    void trace(Visitor*);
 
 private:
     explicit Range(Document&);
@@ -158,8 +157,6 @@ private:
     Node* checkNodeWOffset(Node*, int offset, ExceptionState&) const;
     void checkNodeBA(Node*, ExceptionState&) const;
     void checkDeleteExtract(ExceptionState&);
-    int maxStartOffset() const;
-    int maxEndOffset() const;
 
     enum ActionType { DELETE_CONTENTS, EXTRACT_CONTENTS, CLONE_CONTENTS };
     PassRefPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
@@ -173,7 +170,7 @@ private:
     RangeBoundaryPoint m_end;
 };
 
-PassRefPtr<Range> rangeOfContents(Node*);
+PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node*);
 
 bool areRangesEqual(const Range*, const Range*);
 

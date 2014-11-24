@@ -61,7 +61,7 @@ int VoiceDetectionImpl::ProcessCaptureAudio(AudioBuffer* audio) {
   }
   assert(audio->samples_per_split_channel() <= 160);
 
-  int16_t* mixed_data = audio->low_pass_split_data(0);
+  const int16_t* mixed_data = audio->low_pass_split_data(0);
   if (audio->num_channels() > 1) {
     audio->CopyAndMixLowPass(1);
     mixed_data = audio->mixed_low_pass_data(0);
@@ -70,7 +70,7 @@ int VoiceDetectionImpl::ProcessCaptureAudio(AudioBuffer* audio) {
   // TODO(ajm): concatenate data in frame buffer here.
 
   int vad_ret = WebRtcVad_Process(static_cast<Handle*>(handle(0)),
-                                  apm_->split_sample_rate_hz(),
+                                  apm_->proc_split_sample_rate_hz(),
                                   mixed_data,
                                   frame_size_samples_);
   if (vad_ret == 0) {
@@ -146,7 +146,8 @@ int VoiceDetectionImpl::Initialize() {
   }
 
   using_external_vad_ = false;
-  frame_size_samples_ = frame_size_ms_ * (apm_->split_sample_rate_hz() / 1000);
+  frame_size_samples_ = frame_size_ms_ *
+      apm_->proc_split_sample_rate_hz() / 1000;
   // TODO(ajm): intialize frame buffer here.
 
   return apm_->kNoError;
@@ -163,8 +164,8 @@ void* VoiceDetectionImpl::CreateHandle() const {
   return handle;
 }
 
-int VoiceDetectionImpl::DestroyHandle(void* handle) const {
-  return WebRtcVad_Free(static_cast<Handle*>(handle));
+void VoiceDetectionImpl::DestroyHandle(void* handle) const {
+  WebRtcVad_Free(static_cast<Handle*>(handle));
 }
 
 int VoiceDetectionImpl::InitializeHandle(void* handle) const {

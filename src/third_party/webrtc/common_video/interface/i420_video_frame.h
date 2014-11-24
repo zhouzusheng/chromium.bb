@@ -15,6 +15,8 @@
 //
 // Storing and handling of YUV (I420) video frames.
 
+#include <assert.h>
+
 #include "webrtc/common_video/plane.h"
 #include "webrtc/system_wrappers/interface/scoped_refptr.h"
 #include "webrtc/typedefs.h"
@@ -99,6 +101,14 @@ class I420VideoFrame {
   // Get frame timestamp (90kHz).
   virtual uint32_t timestamp() const {return timestamp_;}
 
+  // Set capture ntp time in miliseconds.
+  virtual void set_ntp_time_ms(int64_t ntp_time_ms) {
+    ntp_time_ms_ = ntp_time_ms;
+  }
+
+  // Get capture ntp time in miliseconds.
+  virtual int64_t ntp_time_ms() const {return ntp_time_ms_;}
+
   // Set render time in miliseconds.
   virtual void set_render_time_ms(int64_t render_time_ms) {render_time_ms_ =
                                                    render_time_ms;}
@@ -136,6 +146,7 @@ class I420VideoFrame {
   int width_;
   int height_;
   uint32_t timestamp_;
+  int64_t ntp_time_ms_;
   int64_t render_time_ms_;
 };  // I420VideoFrame
 

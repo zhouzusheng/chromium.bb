@@ -35,30 +35,79 @@
 
 namespace WebCore {
 
+class MicrotaskQueueInvocationScope {
+public:
+#if defined(NDEBUG)
+    explicit MicrotaskQueueInvocationScope(CustomElementMicrotaskQueueBase*) { }
+#else
+    explicit MicrotaskQueueInvocationScope(CustomElementMicrotaskQueueBase* queue)
+        : m_parent(s_top)
+        , m_queue(queue)
+    {
+        s_top = this;
+        ASSERT(m_queue->isEmpty() || !hasReenter());
+    }
+
+    ~MicrotaskQueueInvocationScope()
+    {
+        s_top = m_parent;
+    }
+
+private:
+    bool hasReenter() const
+    {
+        for (MicrotaskQueueInvocationScope* scope = this->m_parent; scope; scope = scope->m_parent) {
+            if (scope->m_queue == m_queue)
+                return true;
+        }
+
+        return false;
+    }
+
+    MicrotaskQueueInvocationScope* m_parent;
+    CustomElementMicrotaskQueueBase* m_queue;
+
+    static MicrotaskQueueInvocationScope* s_top;
+#endif
+};
+
+#if !defined(NDEBUG)
+MicrotaskQueueInvocationScope* MicrotaskQueueInvocationScope::s_top = 0;
+#endif
+
+void CustomElementMicrotaskQueueBase::dispatch()
+{
+    MicrotaskQueueInvocationScope scope(this);
+    doDispatch();
+}
+
+#if !defined(NDEBUG)
+void CustomElementMicrotaskQueueBase::show(unsigned indent)
+{
+    for (unsigned q = 0; q < m_queue.size(); ++q) {
+        if (m_queue[q])
+            m_queue[q]->show(indent);
+        else
+            fprintf(stderr, "%*snull\n", indent, "");
+    }
+}
+#endif
+
 void CustomElementMicrotaskQueue::enqueue(PassOwnPtr<CustomElementMicrotaskStep> step)
 {
     m_queue.append(step);
 }
 
-CustomElementMicrotaskStep::Result CustomElementMicrotaskQueue::dispatch()
+void CustomElementMicrotaskQueue::doDispatch()
 {
-    Result result = Result(0);
-
     unsigned i;
-    for (i = 0; i < m_queue.size(); ++i) {
-        result = Result(result | m_queue[i]->process());
 
-        if (result & CustomElementMicrotaskStep::ShouldStop)
+    for (i = 0; i < m_queue.size(); ++i) {
+        if (CustomElementMicrotaskStep::Processing == m_queue[i]->process())
             break;
     }
 
-    bool wasStopped = i < m_queue.size();
-    if (wasStopped)
-        m_queue.remove(0, i);
-    else
-        m_queue.resize(0);
-
-    return result;
+    m_queue.remove(0, i);
 }
 
 } // namespace WebCore

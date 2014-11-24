@@ -86,11 +86,6 @@ IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
                     content::ConsoleMessageLevel /* level */,
                     std::string /* message */)
 
-// Notifies worker devtools agent that it should pause worker context
-// when it starts and wait until either DevTools client is attached or
-// explicit resume notification is received.
-IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_PauseWorkerContextOnStart)
-
 // Worker DevTools agent should resume worker execution.
 IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_ResumeWorkerContext)
 
@@ -116,12 +111,6 @@ IPC_MESSAGE_ROUTED1(DevToolsHostMsg_DispatchOnEmbedder,
 IPC_MESSAGE_ROUTED1(DevToolsHostMsg_SaveAgentRuntimeState,
                     std::string /* state */)
 
-// Clears browser cache.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCache)
-
-// Clears browser cookies.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCookies)
-
 //-----------------------------------------------------------------------------
 // These are messages sent from the GPU process to the inspected renderer.
 
@@ -129,7 +118,8 @@ IPC_STRUCT_BEGIN(GpuTaskInfo)
   IPC_STRUCT_MEMBER(double, timestamp)
   IPC_STRUCT_MEMBER(int, phase)
   IPC_STRUCT_MEMBER(bool, foreign)
-  IPC_STRUCT_MEMBER(uint64, used_gpu_memory_bytes)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_used_bytes)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_limit_bytes)
 IPC_STRUCT_END()
 
 // Recorded events are passed in chunks to the renderer process.

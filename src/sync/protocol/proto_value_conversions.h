@@ -20,6 +20,7 @@ class AppNotificationSettings;
 class AppSettingSpecifics;
 class AppSpecifics;
 class ArticleSpecifics;
+class AttachmentIdProto;
 class AutofillProfileSpecifics;
 class AutofillSpecifics;
 class BookmarkSpecifics;
@@ -49,6 +50,7 @@ class Media;
 class ManagedUserSettingSpecifics;
 class ManagedUserSharedSettingSpecifics;
 class ManagedUserSpecifics;
+class NavigationRedirect;
 class NigoriSpecifics;
 class PasswordSpecifics;
 class PasswordSpecificsData;
@@ -116,6 +118,9 @@ SYNC_EXPORT_PRIVATE base::DictionaryValue* SessionWindowToValue(
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* TabNavigationToValue(
     const sync_pb::TabNavigation& tab_navigation);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* NavigationRedirectToValue(
+    const sync_pb::NavigationRedirect& navigation_redirect);
 
 // Sub-protocol of PasswordSpecifics.
 
@@ -295,6 +300,9 @@ base::DictionaryValue* SyncCycleCompletedEventInfoToValue(
 
 base::DictionaryValue* ClientConfigParamsToValue(
     const sync_pb::ClientConfigParams& proto);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* AttachmentIdProtoToValue(
+    const sync_pb::AttachmentIdProto& proto);
 
 }  // namespace syncer
 

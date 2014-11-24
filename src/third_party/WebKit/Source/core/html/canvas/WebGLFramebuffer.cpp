@@ -263,7 +263,7 @@ WebGLFramebuffer::WebGLFramebuffer(WebGLRenderingContextBase* ctx)
     , m_hasEverBeenBound(false)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->webGraphicsContext3D()->createFramebuffer());
+    setObject(ctx->webContext()->createFramebuffer());
 }
 
 WebGLFramebuffer::~WebGLFramebuffer()
@@ -302,7 +302,7 @@ void WebGLFramebuffer::attach(GLenum attachment, GLenum attachmentPoint)
     ASSERT(isBound());
     WebGLAttachment* attachmentObject = getAttachment(attachment);
     if (attachmentObject)
-        attachmentObject->attach(context()->webGraphicsContext3D(), attachmentPoint);
+        attachmentObject->attach(context()->webContext(), attachmentPoint);
 }
 
 WebGLSharedObject* WebGLFramebuffer::getAttachmentObject(GLenum attachment) const
@@ -413,7 +413,7 @@ void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(GLenum attachment)
 
     WebGLAttachment* attachmentObject = getAttachment(attachment);
     if (attachmentObject) {
-        attachmentObject->onDetached(context()->webGraphicsContext3D());
+        attachmentObject->onDetached(context()->webContext());
         m_attachments.remove(attachment);
         drawBuffersIfNecessary(false);
         switch (attachment) {
@@ -446,35 +446,13 @@ void WebGLFramebuffer::removeAttachmentFromBoundFramebuffer(WebGLSharedObject* a
             WebGLAttachment* attachmentObject = it->value.get();
             if (attachmentObject->isSharedObject(attachment)) {
                 GLenum attachmentType = it->key;
-                attachmentObject->unattach(context()->webGraphicsContext3D(), attachmentType);
+                attachmentObject->unattach(context()->webContext(), attachmentType);
                 removeAttachmentFromBoundFramebuffer(attachmentType);
                 checkMore = true;
                 break;
             }
         }
     }
-}
-
-GLsizei WebGLFramebuffer::colorBufferWidth() const
-{
-    if (!object())
-        return 0;
-    WebGLAttachment* attachment = getAttachment(GL_COLOR_ATTACHMENT0);
-    if (!attachment)
-        return 0;
-
-    return attachment->width();
-}
-
-GLsizei WebGLFramebuffer::colorBufferHeight() const
-{
-    if (!object())
-        return 0;
-    WebGLAttachment* attachment = getAttachment(GL_COLOR_ATTACHMENT0);
-    if (!attachment)
-        return 0;
-
-    return attachment->height();
 }
 
 GLenum WebGLFramebuffer::colorBufferFormat() const
@@ -601,7 +579,7 @@ void WebGLFramebuffer::drawBuffersIfNecessary(bool force)
         }
     }
     if (reset) {
-        context()->webGraphicsContext3D()->drawBuffersEXT(
+        context()->webContext()->drawBuffersEXT(
             m_filteredDrawBuffers.size(), m_filteredDrawBuffers.data());
     }
 }

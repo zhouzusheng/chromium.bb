@@ -8,7 +8,12 @@
 #include "base/logging.h"
 #include "content/child/child_thread.h"
 #include "content/child/service_worker/service_worker_dispatcher.h"
+#include "content/child/service_worker/service_worker_handle_reference.h"
+#include "content/child/service_worker/service_worker_provider_context.h"
+#include "content/child/service_worker/web_service_worker_impl.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/common/service_worker/service_worker_messages.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerProviderClient.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 
 using blink::WebURL;
@@ -17,39 +22,70 @@ namespace content {
 
 WebServiceWorkerProviderImpl::WebServiceWorkerProviderImpl(
     ThreadSafeSender* thread_safe_sender,
-    int provider_id)
+    ServiceWorkerProviderContext* context)
     : thread_safe_sender_(thread_safe_sender),
-      provider_id_(provider_id) {
+      context_(context),
+      provider_id_(context->provider_id()) {
 }
 
 WebServiceWorkerProviderImpl::~WebServiceWorkerProviderImpl() {
   // Make sure the script client is removed.
-  GetDispatcher()->RemoveScriptClient(provider_id_);
+  RemoveScriptClient();
 }
 
 void WebServiceWorkerProviderImpl::setClient(
     blink::WebServiceWorkerProviderClient* client) {
-  if (client)
-    GetDispatcher()->AddScriptClient(provider_id_, client);
-  else
-    GetDispatcher()->RemoveScriptClient(provider_id_);
+  if (!client) {
+    RemoveScriptClient();
+    return;
+  }
+
+  // TODO(kinuko): Here we could also register the current thread ID
+  // on the provider context so that multiple WebServiceWorkerProviderImpl
+  // (e.g. on document and on dedicated workers) can properly share
+  // the single provider context across threads. (http://crbug.com/366538
+  // for more context)
+  scoped_ptr<ServiceWorkerHandleReference> current =
+      context_->GetCurrentServiceWorkerHandle();
+  GetDispatcher()->AddScriptClient(provider_id_, client);
+  if (!current)
+    return;
+
+  int handle_id = current->info().handle_id;
+  if (handle_id != kInvalidServiceWorkerHandleId) {
+    scoped_ptr<WebServiceWorkerImpl> worker(
+        new WebServiceWorkerImpl(current.Pass(), thread_safe_sender_));
+    client->setCurrentServiceWorker(worker.release());
+  }
 }
 
 void WebServiceWorkerProviderImpl::registerServiceWorker(
     const WebURL& pattern,
     const WebURL& script_url,
     WebServiceWorkerCallbacks* callbacks) {
-  GetDispatcher()->RegisterServiceWorker(pattern, script_url, callbacks);
+  GetDispatcher()->RegisterServiceWorker(
+      provider_id_, pattern, script_url, callbacks);
 }
 
 void WebServiceWorkerProviderImpl::unregisterServiceWorker(
     const WebURL& pattern,
     WebServiceWorkerCallbacks* callbacks) {
-  GetDispatcher()->UnregisterServiceWorker(pattern, callbacks);
+  GetDispatcher()->UnregisterServiceWorker(
+      provider_id_, pattern, callbacks);
+}
+
+void WebServiceWorkerProviderImpl::RemoveScriptClient() {
+  // Remove the script client, but only if the dispatcher is still there.
+  // (For cleanup path we don't need to bother creating a new dispatcher)
+  ServiceWorkerDispatcher* dispatcher =
+      ServiceWorkerDispatcher::GetThreadSpecificInstance();
+  if (dispatcher)
+    dispatcher->RemoveScriptClient(provider_id_);
 }
 
 ServiceWorkerDispatcher* WebServiceWorkerProviderImpl::GetDispatcher() {
-  return ServiceWorkerDispatcher::ThreadSpecificInstance(thread_safe_sender_);
+  return ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
+      thread_safe_sender_);
 }
 
 }  // namespace content

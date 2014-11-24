@@ -41,6 +41,7 @@ struct PipelineMetadata {
   bool has_audio;
   bool has_video;
   gfx::Size natural_size;
+  base::Time timeline_offset;
 };
 
 typedef base::Callback<void(PipelineMetadata)> PipelineMetadataCB;
@@ -169,10 +170,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // been determined yet, then returns 0.
   base::TimeDelta GetMediaDuration() const;
 
-  // Get the total size of the media file.  If the size has not yet been
-  // determined or can not be determined, this value is 0.
-  int64 GetTotalBytes() const;
-
   // Return true if loading progress has been made since the last time this
   // method was called.
   bool DidLoadingProgress() const;
@@ -185,8 +182,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, GetBufferedTimeRanges);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRenderer);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRendererDuringInit);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, EndedCallback);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, AudioStreamShorterThanVideo);
   friend class MediaLog;
@@ -215,13 +210,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // and |seek_pending_|.
   void FinishSeek();
 
-  // DataSourceHost (by way of DemuxerHost) implementation.
-  virtual void SetTotalBytes(int64 total_bytes) OVERRIDE;
-  virtual void AddBufferedByteRange(int64 start, int64 end) OVERRIDE;
+  // DemuxerHost implementaion.
   virtual void AddBufferedTimeRange(base::TimeDelta start,
                                     base::TimeDelta end) OVERRIDE;
-
-  // DemuxerHost implementaion.
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
   virtual void OnDemuxerError(PipelineStatus error) OVERRIDE;
   virtual void AddTextStream(DemuxerStream* text_stream,
@@ -240,9 +231,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // Callback executed by filters to update statistics.
   void OnUpdateStatistics(const PipelineStatistics& stats);
-
-  // Callback executed by audio renderer when it has been disabled.
-  void OnAudioDisabled();
 
   // Callback executed by audio renderer to update clock time.
   void OnAudioTimeUpdate(base::TimeDelta time, base::TimeDelta max_time);
@@ -276,9 +264,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   void DoVideoRendererEnded();
   void DoTextRendererEnded();
   void RunEndedCallbackIfNeeded();
-
-  // Carries out disabling the audio renderer.
-  void AudioDisabledTask();
 
   // Carries out adding a new text stream to the text renderer.
   void AddTextStreamTask(DemuxerStream* text_stream,
@@ -345,16 +330,12 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Whether or not the pipeline is running.
   bool running_;
 
-  // Amount of available buffered data.  Set by filters.
-  Ranges<int64> buffered_byte_ranges_;
+  // Amount of available buffered data as reported by |demuxer_|.
   Ranges<base::TimeDelta> buffered_time_ranges_;
 
-  // True when AddBufferedByteRange() has been called more recently than
+  // True when AddBufferedTimeRange() has been called more recently than
   // DidLoadingProgress().
   mutable bool did_loading_progress_;
-
-  // Total size of the media.  Set by filters.
-  int64 total_bytes_;
 
   // Current volume level (from 0.0f to 1.0f).  This value is set immediately
   // via SetVolume() and a task is dispatched on the task runner to notify the
@@ -395,9 +376,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   bool audio_ended_;
   bool video_ended_;
   bool text_ended_;
-
-  // Set to true in DisableAudioRendererTask().
-  bool audio_disabled_;
 
   // Temporary callback used for Start() and Seek().
   PipelineStatusCB seek_cb_;

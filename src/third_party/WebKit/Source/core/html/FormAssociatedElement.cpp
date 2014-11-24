@@ -36,16 +36,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-class FormAttributeTargetObserver : IdTargetObserver {
-    WTF_MAKE_FAST_ALLOCATED;
+class FormAttributeTargetObserver : public IdTargetObserver {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<FormAttributeTargetObserver> create(const AtomicString& id, FormAssociatedElement*);
+    static PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver> create(const AtomicString& id, FormAssociatedElement*);
+    virtual void trace(Visitor*) OVERRIDE;
     virtual void idTargetChanged() OVERRIDE;
 
 private:
     FormAttributeTargetObserver(const AtomicString& id, FormAssociatedElement*);
 
-    FormAssociatedElement* m_element;
+    RawPtrWillBeMember<FormAssociatedElement> m_element;
 };
 
 FormAssociatedElement::FormAssociatedElement()
@@ -56,6 +57,13 @@ FormAssociatedElement::FormAssociatedElement()
 FormAssociatedElement::~FormAssociatedElement()
 {
     // We can't call setForm here because it contains virtual calls.
+}
+
+void FormAssociatedElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_formAttributeTargetObserver);
+    visitor->trace(m_form);
+    visitor->trace(m_validityState);
 }
 
 ValidityState* FormAssociatedElement::validity()
@@ -70,12 +78,12 @@ void FormAssociatedElement::didMoveToNewDocument(Document& oldDocument)
 {
     HTMLElement* element = toHTMLElement(this);
     if (element->fastHasAttribute(formAttr))
-        m_formAttributeTargetObserver = nullptr;
+        setFormAttributeTargetObserver(nullptr);
 }
 
 void FormAssociatedElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (!m_formWasSetByParser || insertionPoint->highestAncestor() != m_form->highestAncestor())
+    if (!m_formWasSetByParser || insertionPoint->highestAncestorOrSelf() != m_form->highestAncestorOrSelf())
         resetFormOwner();
 
     if (!insertionPoint->inDocument())
@@ -90,10 +98,10 @@ void FormAssociatedElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement* element = toHTMLElement(this);
     if (insertionPoint->inDocument() && element->fastHasAttribute(formAttr))
-        m_formAttributeTargetObserver = nullptr;
+        setFormAttributeTargetObserver(nullptr);
     // If the form and element are both in the same tree, preserve the connection to the form.
     // Otherwise, null out our form and remove ourselves from the form's list of elements.
-    if (m_form && element->highestAncestor() != m_form->highestAncestor())
+    if (m_form && element->highestAncestorOrSelf() != m_form->highestAncestorOrSelf())
         resetFormOwner();
 }
 
@@ -120,7 +128,7 @@ HTMLFormElement* FormAssociatedElement::findAssociatedForm(const HTMLElement* el
 void FormAssociatedElement::formRemovedFromTree(const Node& formRoot)
 {
     ASSERT(m_form);
-    if (toHTMLElement(this)->highestAncestor() == formRoot)
+    if (toHTMLElement(this)->highestAncestorOrSelf() == formRoot)
         return;
     resetFormOwner();
 }
@@ -142,10 +150,18 @@ void FormAssociatedElement::setForm(HTMLFormElement* newForm)
     if (m_form)
         m_form->disassociate(*this);
     if (newForm) {
+#if ENABLE(OILPAN)
+        m_form = newForm;
+#else
         m_form = newForm->createWeakPtr();
+#endif
         m_form->associate(*this);
     } else {
+#if ENABLE(OILPAN)
+        m_form = nullptr;
+#else
         m_form = WeakPtr<HTMLFormElement>();
+#endif
     }
     didChangeForm();
 }
@@ -253,14 +269,21 @@ void FormAssociatedElement::setCustomValidity(const String& error)
     m_customValidationMessage = error;
 }
 
+void FormAssociatedElement::setFormAttributeTargetObserver(PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver> newObserver)
+{
+    if (m_formAttributeTargetObserver)
+        m_formAttributeTargetObserver->unregister();
+    m_formAttributeTargetObserver = newObserver;
+}
+
 void FormAssociatedElement::resetFormAttributeTargetObserver()
 {
     HTMLElement* element = toHTMLElement(this);
     const AtomicString& formId(element->fastGetAttribute(formAttr));
     if (!formId.isNull() && element->inDocument())
-        m_formAttributeTargetObserver = FormAttributeTargetObserver::create(formId, this);
+        setFormAttributeTargetObserver(FormAttributeTargetObserver::create(formId, this));
     else
-        m_formAttributeTargetObserver = nullptr;
+        setFormAttributeTargetObserver(nullptr);
 }
 
 void FormAssociatedElement::formAttributeTargetChanged()
@@ -303,15 +326,21 @@ HTMLElement& toHTMLElement(FormAssociatedElement& associatedElement)
     return const_cast<HTMLElement&>(toHTMLElement(static_cast<const FormAssociatedElement&>(associatedElement)));
 }
 
-PassOwnPtr<FormAttributeTargetObserver> FormAttributeTargetObserver::create(const AtomicString& id, FormAssociatedElement* element)
+PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver> FormAttributeTargetObserver::create(const AtomicString& id, FormAssociatedElement* element)
 {
-    return adoptPtr(new FormAttributeTargetObserver(id, element));
+    return adoptPtrWillBeNoop(new FormAttributeTargetObserver(id, element));
 }
 
 FormAttributeTargetObserver::FormAttributeTargetObserver(const AtomicString& id, FormAssociatedElement* element)
     : IdTargetObserver(toHTMLElement(element)->treeScope().idTargetObserverRegistry(), id)
     , m_element(element)
 {
+}
+
+void FormAttributeTargetObserver::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
+    IdTargetObserver::trace(visitor);
 }
 
 void FormAttributeTargetObserver::idTargetChanged()

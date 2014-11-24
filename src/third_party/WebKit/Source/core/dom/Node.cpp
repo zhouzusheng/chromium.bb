@@ -54,6 +54,7 @@
 #include "core/dom/Text.h"
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/UserActionElementSet.h"
+#include "core/dom/WeakNodeMap.h"
 #include "core/dom/WheelController.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/InsertionPoint.h"
@@ -72,6 +73,7 @@
 #include "core/events/TouchEvent.h"
 #include "core/events/UIEvent.h"
 #include "core/events/WheelEvent.h"
+#include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLDialogElement.h"
@@ -85,6 +87,8 @@
 #include "core/rendering/RenderBox.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "platform/Partitions.h"
+#include "platform/TraceEvent.h"
+#include "platform/TracedValue.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -98,6 +102,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+#if !ENABLE(OILPAN)
 void* Node::operator new(size_t size)
 {
     ASSERT(isMainThread());
@@ -109,6 +114,7 @@ void Node::operator delete(void* ptr)
     ASSERT(isMainThread());
     partitionFree(ptr);
 }
+#endif
 
 #if DUMP_NODE_STATISTICS
 static HashSet<Node*> liveNodeSet;
@@ -260,6 +266,7 @@ Node::~Node()
     liveNodeSet.remove(this);
 #endif
 
+#if !ENABLE(OILPAN)
     if (hasRareData())
         clearRareData();
 
@@ -275,10 +282,20 @@ Node::~Node()
 
     if (m_treeScope)
         m_treeScope->guardDeref();
+#else
+    // With Oilpan, the rare data finalizer also asserts for
+    // this condition (we cannot directly access it here.)
+    RELEASE_ASSERT(hasRareData() || !renderer());
+#endif
 
     InspectorCounters::decrementCounter(InspectorCounters::NodeCounter);
+
+    if (getFlag(HasWeakReferencesFlag))
+        WeakNodeMap::notifyNodeDestroyed(this);
 }
 
+#if !ENABLE(OILPAN)
+// With Oilpan all of this is handled with weak processing of the document.
 void Node::willBeDeletedFromDocument()
 {
     if (!isTreeScopeInitialized())
@@ -289,6 +306,8 @@ void Node::willBeDeletedFromDocument()
     if (hasEventTargetData()) {
         clearEventTargetData();
         document.didClearTouchEventHandlers(this);
+        if (document.frameHost())
+            document.frameHost()->eventHandlerRegistry().didRemoveAllEventHandlers(*this);
     }
 
     if (AXObjectCache* cache = document.existingAXObjectCache())
@@ -296,6 +315,7 @@ void Node::willBeDeletedFromDocument()
 
     document.markers().removeMarkers(this);
 }
+#endif
 
 NodeRareData* Node::rareData() const
 {
@@ -308,18 +328,18 @@ NodeRareData& Node::ensureRareData()
     if (hasRareData())
         return *rareData();
 
-    NodeRareData* data;
     if (isElementNode())
-        data = ElementRareData::create(m_data.m_renderer).leakPtr();
+        m_data.m_rareData = ElementRareData::create(m_data.m_renderer);
     else
-        data = NodeRareData::create(m_data.m_renderer).leakPtr();
-    ASSERT(data);
+        m_data.m_rareData = NodeRareData::create(m_data.m_renderer);
 
-    m_data.m_rareData = data;
+    ASSERT(m_data.m_rareData);
+
     setFlag(HasRareDataFlag);
-    return *data;
+    return *rareData();
 }
 
+#if !ENABLE(OILPAN)
 void Node::clearRareData()
 {
     ASSERT(hasRareData());
@@ -333,6 +353,7 @@ void Node::clearRareData()
     m_data.m_renderer = renderer;
     clearFlag(HasRareDataFlag);
 }
+#endif
 
 Node* Node::toNode()
 {
@@ -361,7 +382,7 @@ PassRefPtr<NodeList> Node::childNodes()
     return ensureRareData().ensureNodeLists().ensureEmptyChildNodeList(*this);
 }
 
-Node& Node::lastDescendant() const
+Node& Node::lastDescendantOrSelf() const
 {
     Node* n = const_cast<Node*>(this);
     while (n && n->lastChild())
@@ -641,7 +662,7 @@ void Node::setIsLink(bool isLink)
 
 void Node::setNeedsStyleInvalidation()
 {
-    setFlag(NeedsStyleInvalidation);
+    setFlag(NeedsStyleInvalidationFlag);
     markAncestorsWithChildNeedsStyleInvalidation();
 }
 
@@ -649,16 +670,14 @@ void Node::markAncestorsWithChildNeedsStyleInvalidation()
 {
     for (Node* node = parentOrShadowHostNode(); node && !node->childNeedsStyleInvalidation(); node = node->parentOrShadowHostNode())
         node->setChildNeedsStyleInvalidation();
-    if (document().childNeedsStyleInvalidation())
-        document().scheduleRenderTreeUpdate();
+    document().scheduleRenderTreeUpdateIfNeeded();
 }
 
 void Node::markAncestorsWithChildNeedsDistributionRecalc()
 {
     for (Node* node = this; node && !node->childNeedsDistributionRecalc(); node = node->parentOrShadowHostNode())
         node->setChildNeedsDistributionRecalc();
-    if (document().childNeedsDistributionRecalc())
-        document().scheduleRenderTreeUpdate();
+    document().scheduleRenderTreeUpdateIfNeeded();
 }
 
 namespace {
@@ -721,7 +740,7 @@ void Node::traceStyleChange(StyleChangeType changeType)
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("style.debug"),
         "Node::setNeedsStyleRecalc",
-        "data", jsonObjectForStyleInvalidation(nodeCount, this)->toJSONString().ascii()
+        "data", TracedValue::fromJSONValue(jsonObjectForStyleInvalidation(nodeCount, this))
     );
 }
 
@@ -743,9 +762,7 @@ void Node::markAncestorsWithChildNeedsStyleRecalc()
 {
     for (ContainerNode* p = parentOrShadowHostNode(); p && !p->childNeedsStyleRecalc(); p = p->parentOrShadowHostNode())
         p->setChildNeedsStyleRecalc();
-
-    if (document().needsStyleRecalc() || document().childNeedsStyleRecalc())
-        document().scheduleRenderTreeUpdate();
+    document().scheduleRenderTreeUpdateIfNeeded();
 }
 
 void Node::setNeedsStyleRecalc(StyleChangeType changeType)
@@ -978,6 +995,8 @@ bool Node::inDetach() const
 
 void Node::detach(const AttachContext& context)
 {
+    DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
+
 #ifndef NDEBUG
     ASSERT(!detachingNode);
     detachingNode = this;
@@ -1004,7 +1023,9 @@ void Node::detach(const AttachContext& context)
     setChildNeedsStyleRecalc();
 
     if (StyleResolver* resolver = document().styleResolver())
-        resolver->ruleFeatureSet().clearStyleInvalidation(this);
+        resolver->ruleFeatureSet().styleInvalidator().clearInvalidation(*this);
+    clearChildNeedsStyleInvalidation();
+    clearNeedsStyleInvalidation();
 
 #ifndef NDEBUG
     detachingNode = 0;
@@ -1943,15 +1964,21 @@ void Node::didMoveToNewDocument(Document& oldDocument)
             document().didAddTouchEventHandler(this);
         }
     }
+    if (oldDocument.frameHost() != document().frameHost()) {
+        if (oldDocument.frameHost())
+            oldDocument.frameHost()->eventHandlerRegistry().didMoveOutOfFrameHost(*this);
+        if (document().frameHost())
+            document().frameHost()->eventHandlerRegistry().didMoveIntoFrameHost(*this);
+    }
 
-    if (Vector<OwnPtr<MutationObserverRegistration> >* registry = mutationObserverRegistry()) {
+    if (WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> >* registry = mutationObserverRegistry()) {
         for (size_t i = 0; i < registry->size(); ++i) {
             document().addMutationObserverTypes(registry->at(i)->mutationTypes());
         }
     }
 
-    if (HashSet<MutationObserverRegistration*>* transientRegistry = transientMutationObserverRegistry()) {
-        for (HashSet<MutationObserverRegistration*>::iterator iter = transientRegistry->begin(); iter != transientRegistry->end(); ++iter) {
+    if (WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >* transientRegistry = transientMutationObserverRegistry()) {
+        for (WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >::iterator iter = transientRegistry->begin(); iter != transientRegistry->end(); ++iter) {
             document().addMutationObserverTypes((*iter)->mutationTypes());
         }
     }
@@ -1968,6 +1995,8 @@ static inline bool tryAddEventListener(Node* targetNode, const AtomicString& eve
         WheelController::from(document)->didAddWheelEventHandler(document);
     else if (isTouchEventType(eventType))
         document.didAddTouchEventHandler(targetNode);
+    if (document.frameHost())
+        document.frameHost()->eventHandlerRegistry().didAddEventHandler(*targetNode, eventType);
 
     return true;
 }
@@ -1989,6 +2018,8 @@ static inline bool tryRemoveEventListener(Node* targetNode, const AtomicString& 
         WheelController::from(document)->didRemoveWheelEventHandler(document);
     else if (isTouchEventType(eventType))
         document.didRemoveTouchEventHandler(targetNode);
+    if (document.frameHost())
+        document.frameHost()->eventHandlerRegistry().didRemoveEventHandler(*targetNode, eventType);
 
     return true;
 }
@@ -2000,16 +2031,32 @@ bool Node::removeEventListener(const AtomicString& eventType, EventListener* lis
 
 void Node::removeAllEventListeners()
 {
+    if (hasEventListeners() && document().frameHost())
+        document().frameHost()->eventHandlerRegistry().didRemoveAllEventHandlers(*this);
     EventTarget::removeAllEventListeners();
     document().didClearTouchEventHandlers(this);
 }
 
-typedef HashMap<Node*, OwnPtr<EventTargetData> > EventTargetDataMap;
+void Node::removeAllEventListenersRecursively()
+{
+    for (Node* node = this; node; node = NodeTraversal::next(*node)) {
+        node->removeAllEventListeners();
+        for (ShadowRoot* root = node->youngestShadowRoot(); root; root = root->olderShadowRoot())
+            root->removeAllEventListenersRecursively();
+    }
+}
+
+typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<Node>, OwnPtr<EventTargetData> > EventTargetDataMap;
 
 static EventTargetDataMap& eventTargetDataMap()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<EventTargetDataMap>, map, (new EventTargetDataMap()));
+    return *map;
+#else
     DEFINE_STATIC_LOCAL(EventTargetDataMap, map, ());
     return map;
+#endif
 }
 
 EventTargetData* Node::eventTargetData()
@@ -2027,12 +2074,14 @@ EventTargetData& Node::ensureEventTargetData()
     return *data;
 }
 
+#if !ENABLE(OILPAN)
 void Node::clearEventTargetData()
 {
     eventTargetDataMap().remove(this);
 }
+#endif
 
-Vector<OwnPtr<MutationObserverRegistration> >* Node::mutationObserverRegistry()
+WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> >* Node::mutationObserverRegistry()
 {
     if (!hasRareData())
         return 0;
@@ -2042,7 +2091,7 @@ Vector<OwnPtr<MutationObserverRegistration> >* Node::mutationObserverRegistry()
     return &data->registry;
 }
 
-HashSet<MutationObserverRegistration*>* Node::transientMutationObserverRegistry()
+WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >* Node::transientMutationObserverRegistry()
 {
     if (!hasRareData())
         return 0;
@@ -2053,7 +2102,7 @@ HashSet<MutationObserverRegistration*>* Node::transientMutationObserverRegistry(
 }
 
 template<typename Registry>
-static inline void collectMatchingObserversForMutation(HashMap<MutationObserver*, MutationRecordDeliveryOptions>& observers, Registry* registry, Node& target, MutationObserver::MutationType type, const QualifiedName* attributeName)
+static inline void collectMatchingObserversForMutation(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, Registry* registry, Node& target, MutationObserver::MutationType type, const QualifiedName* attributeName)
 {
     if (!registry)
         return;
@@ -2061,14 +2110,14 @@ static inline void collectMatchingObserversForMutation(HashMap<MutationObserver*
         const MutationObserverRegistration& registration = **iter;
         if (registration.shouldReceiveMutationFrom(target, type, attributeName)) {
             MutationRecordDeliveryOptions deliveryOptions = registration.deliveryOptions();
-            HashMap<MutationObserver*, MutationRecordDeliveryOptions>::AddResult result = observers.add(&registration.observer(), deliveryOptions);
+            WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>::AddResult result = observers.add(&registration.observer(), deliveryOptions);
             if (!result.isNewEntry)
                 result.storedValue->value |= deliveryOptions;
         }
     }
 }
 
-void Node::getRegisteredMutationObserversOfType(HashMap<MutationObserver*, MutationRecordDeliveryOptions>& observers, MutationObserver::MutationType type, const QualifiedName* attributeName)
+void Node::getRegisteredMutationObserversOfType(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, MutationObserver::MutationType type, const QualifiedName* attributeName)
 {
     ASSERT((type == MutationObserver::Attributes && attributeName) || !attributeName);
     collectMatchingObserversForMutation(observers, mutationObserverRegistry(), *this, type, attributeName);
@@ -2082,7 +2131,7 @@ void Node::getRegisteredMutationObserversOfType(HashMap<MutationObserver*, Mutat
 void Node::registerMutationObserver(MutationObserver& observer, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
 {
     MutationObserverRegistration* registration = 0;
-    Vector<OwnPtr<MutationObserverRegistration> >& registry = ensureRareData().ensureMutationObserverData().registry;
+    WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> >& registry = ensureRareData().ensureMutationObserverData().registry;
     for (size_t i = 0; i < registry.size(); ++i) {
         if (&registry[i]->observer() == &observer) {
             registration = registry[i].get();
@@ -2091,7 +2140,7 @@ void Node::registerMutationObserver(MutationObserver& observer, MutationObserver
     }
 
     if (!registration) {
-        registry.append(MutationObserverRegistration::create(observer, *this, options, attributeFilter));
+        registry.append(MutationObserverRegistration::create(observer, this, options, attributeFilter));
         registration = registry.last().get();
     }
 
@@ -2100,7 +2149,7 @@ void Node::registerMutationObserver(MutationObserver& observer, MutationObserver
 
 void Node::unregisterMutationObserver(MutationObserverRegistration* registration)
 {
-    Vector<OwnPtr<MutationObserverRegistration> >* registry = mutationObserverRegistry();
+    WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> >* registry = mutationObserverRegistry();
     ASSERT(registry);
     if (!registry)
         return;
@@ -2114,6 +2163,11 @@ void Node::unregisterMutationObserver(MutationObserverRegistration* registration
     // before that, in case |this| is destroyed (see MutationObserverRegistration::m_registrationNodeKeepAlive).
     // FIXME: Simplify the registration/transient registration logic to make this understandable by humans.
     RefPtr<Node> protect(this);
+#if ENABLE(OILPAN)
+    // The explicit dispose() is needed to have the registration
+    // object unregister itself promptly.
+    registration->dispose();
+#endif
     registry->remove(index);
 }
 
@@ -2124,7 +2178,7 @@ void Node::registerTransientMutationObserver(MutationObserverRegistration* regis
 
 void Node::unregisterTransientMutationObserver(MutationObserverRegistration* registration)
 {
-    HashSet<MutationObserverRegistration*>* transientRegistry = transientMutationObserverRegistry();
+    WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >* transientRegistry = transientMutationObserverRegistry();
     ASSERT(transientRegistry);
     if (!transientRegistry)
         return;
@@ -2139,14 +2193,14 @@ void Node::notifyMutationObserversNodeWillDetach()
         return;
 
     for (Node* node = parentNode(); node; node = node->parentNode()) {
-        if (Vector<OwnPtr<MutationObserverRegistration> >* registry = node->mutationObserverRegistry()) {
+        if (WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration> >* registry = node->mutationObserverRegistry()) {
             const size_t size = registry->size();
             for (size_t i = 0; i < size; ++i)
                 registry->at(i)->observedSubtreeNodeWillDetach(*this);
         }
 
-        if (HashSet<MutationObserverRegistration*>* transientRegistry = node->transientMutationObserverRegistry()) {
-            for (HashSet<MutationObserverRegistration*>::iterator iter = transientRegistry->begin(); iter != transientRegistry->end(); ++iter)
+        if (WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >* transientRegistry = node->transientMutationObserverRegistry()) {
+            for (WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration> >::iterator iter = transientRegistry->begin(); iter != transientRegistry->end(); ++iter)
                 (*iter)->observedSubtreeNodeWillDetach(*this);
         }
     }
@@ -2163,7 +2217,7 @@ void Node::handleLocalEvents(Event* event)
     fireEventListeners(event);
 }
 
-void Node::dispatchScopedEvent(PassRefPtr<Event> event)
+void Node::dispatchScopedEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     dispatchScopedEventDispatchMediator(EventDispatchMediator::create(event));
 }
@@ -2173,7 +2227,7 @@ void Node::dispatchScopedEventDispatchMediator(PassRefPtr<EventDispatchMediator>
     EventDispatcher::dispatchScopedEvent(this, eventDispatchMediator);
 }
 
-bool Node::dispatchEvent(PassRefPtr<Event> event)
+bool Node::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (event->isMouseEvent())
         return EventDispatcher::dispatchEvent(this, MouseEventDispatchMediator::create(static_pointer_cast<MouseEvent>(event), MouseEventDispatchMediator::SyntheticMouseEvent));
@@ -2195,10 +2249,10 @@ void Node::dispatchSubtreeModifiedEvent()
     dispatchScopedEvent(MutationEvent::create(EventTypeNames::DOMSubtreeModified, true));
 }
 
-bool Node::dispatchDOMActivateEvent(int detail, PassRefPtr<Event> underlyingEvent)
+bool Node::dispatchDOMActivateEvent(int detail, PassRefPtrWillBeRawPtr<Event> underlyingEvent)
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
-    RefPtr<UIEvent> event = UIEvent::create(EventTypeNames::DOMActivate, true, true, document().domWindow(), detail);
+    RefPtrWillBeRawPtr<UIEvent> event = UIEvent::create(EventTypeNames::DOMActivate, true, true, document().domWindow(), detail);
     event->setUnderlyingEvent(underlyingEvent);
     dispatchScopedEvent(event);
     return event->defaultHandled();
@@ -2217,13 +2271,13 @@ bool Node::dispatchMouseEvent(const PlatformMouseEvent& event, const AtomicStrin
 
 bool Node::dispatchGestureEvent(const PlatformGestureEvent& event)
 {
-    RefPtr<GestureEvent> gestureEvent = GestureEvent::create(document().domWindow(), event);
+    RefPtrWillBeRawPtr<GestureEvent> gestureEvent = GestureEvent::create(document().domWindow(), event);
     if (!gestureEvent.get())
         return false;
     return EventDispatcher::dispatchEvent(this, GestureEventDispatchMediator::create(gestureEvent));
 }
 
-bool Node::dispatchTouchEvent(PassRefPtr<TouchEvent> event)
+bool Node::dispatchTouchEvent(PassRefPtrWillBeRawPtr<TouchEvent> event)
 {
     return EventDispatcher::dispatchEvent(this, TouchEventDispatchMediator::create(event));
 }
@@ -2325,6 +2379,7 @@ bool Node::willRespondToTouchEvents()
     return hasEventListeners(EventTypeNames::touchstart) || hasEventListeners(EventTypeNames::touchmove) || hasEventListeners(EventTypeNames::touchcancel) || hasEventListeners(EventTypeNames::touchend);
 }
 
+#if !ENABLE(OILPAN)
 // This is here for inlining
 inline void TreeScope::removedLastRefToScope()
 {
@@ -2369,6 +2424,7 @@ void Node::removedLastRef()
 #endif
     delete this;
 }
+#endif
 
 unsigned Node::connectedSubframeCount() const
 {
@@ -2503,11 +2559,22 @@ void Node::setCustomElementState(CustomElementState newState)
     }
 
     ASSERT(isHTMLElement() || isSVGElement());
-    setFlag(CustomElement);
-    setFlag(newState == Upgraded, CustomElementUpgraded);
+    setFlag(CustomElementFlag);
+    setFlag(newState == Upgraded, CustomElementUpgradedFlag);
 
     if (oldState == NotCustomElement || newState == Upgraded)
         setNeedsStyleRecalc(SubtreeStyleChange); // :unresolved has changed
+}
+
+void Node::trace(Visitor* visitor)
+{
+    visitor->trace(m_parentOrShadowHostNode);
+    visitor->trace(m_previous);
+    visitor->trace(m_next);
+    if (hasRareData())
+        visitor->trace(rareData());
+
+    visitor->trace(m_treeScope);
 }
 
 } // namespace WebCore

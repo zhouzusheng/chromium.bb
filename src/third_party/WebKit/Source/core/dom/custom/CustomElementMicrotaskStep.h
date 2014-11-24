@@ -42,11 +42,15 @@ public:
     virtual ~CustomElementMicrotaskStep() { }
 
     enum Result {
-        Continue   = 1 << 0,
-        ShouldStop = 1 << 1
+        Processing,
+        FinishedProcessing
     };
 
     virtual Result process() = 0;
+
+#if !defined(NDEBUG)
+    virtual void show(unsigned indent) = 0;
+#endif
 };
 
 }

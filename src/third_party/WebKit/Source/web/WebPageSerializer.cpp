@@ -29,15 +29,9 @@
  */
 
 #include "config.h"
-#include "WebPageSerializer.h"
+#include "public/web/WebPageSerializer.h"
 
 #include "HTMLNames.h"
-#include "WebFrame.h"
-#include "WebFrameImpl.h"
-#include "WebPageSerializerClient.h"
-#include "WebPageSerializerImpl.h"
-#include "WebView.h"
-#include "WebViewImpl.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/frame/LocalFrame.h"
@@ -55,6 +49,12 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebFrame.h"
+#include "public/web/WebPageSerializerClient.h"
+#include "public/web/WebView.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPageSerializerImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringConcatenate.h"
 
@@ -86,9 +86,10 @@ void retrieveResourcesForElement(Element* element,
     ASSERT(element);
     // If the node is a frame, we'll process it later in retrieveResourcesForFrame.
     if (isHTMLFrameElementBase(*element) || isHTMLObjectElement(*element) || isHTMLEmbedElement(*element)) {
-        if (LocalFrame* frame = toHTMLFrameOwnerElement(element)->contentFrame()) {
-            if (!visitedFrames->contains(frame))
-                framesToVisit->append(frame);
+        Frame* frame = toHTMLFrameOwnerElement(element)->contentFrame();
+        if (frame && frame->isLocalFrame()) {
+            if (!visitedFrames->contains(toLocalFrame(frame)))
+                framesToVisit->append(toLocalFrame(frame));
             return;
         }
     }
@@ -193,7 +194,7 @@ WebCString WebPageSerializer::serializeToMHTMLUsingBinaryEncoding(WebView* view)
     return WebCString(mhtml->data(), mhtml->size());
 }
 
-bool WebPageSerializer::serialize(WebFrame* frame,
+bool WebPageSerializer::serialize(WebLocalFrame* frame,
                                   bool recursive,
                                   WebPageSerializerClient* client,
                                   const WebVector<WebURL>& links,
@@ -209,7 +210,7 @@ bool WebPageSerializer::retrieveAllResources(WebView* view,
                                              const WebVector<WebCString>& supportedSchemes,
                                              WebVector<WebURL>* resourceURLs,
                                              WebVector<WebURL>* frameURLs) {
-    WebFrameImpl* mainFrame = toWebFrameImpl(view->mainFrame());
+    WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(view->mainFrame());
     if (!mainFrame)
         return false;
 

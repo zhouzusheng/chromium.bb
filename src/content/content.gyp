@@ -6,7 +6,7 @@
   'variables': {
     'chromium_code': 1,  # Use higher warning level.
     'chromium_enable_vtune_jit_for_v8%': 0,  # enable the vtune support for V8 engine.
-    'directxsdk_exists': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/directxsdk)',
+    'directxsdk_exists': '<!pymod_do_main(dir_exists ../third_party/directxsdk)',
   },
   'target_defaults': {
     'defines': ['CONTENT_IMPLEMENTATION'],
@@ -22,13 +22,9 @@
     ],
   },
   'conditions': [
-    ['use_mojo==1', {
-      'includes': [
-        'content_common_mojo_bindings.gypi',
-      ],
-    }],
     ['OS != "ios"', {
       'includes': [
+        'content_common_mojo_bindings.gypi',
         '../build/win_precompile.gypi',
       ],
       'targets': [

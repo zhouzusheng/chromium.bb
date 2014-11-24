@@ -40,6 +40,7 @@
 #include "platform/network/ResourceError.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
+#include "public/platform/WebThreadedDataReceiver.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
@@ -58,6 +59,13 @@ ResourceLoader::RequestCountTracker::RequestCountTracker(ResourceLoaderHost* hos
 ResourceLoader::RequestCountTracker::~RequestCountTracker()
 {
     m_host->decrementRequestCount(m_resource);
+}
+
+ResourceLoader::RequestCountTracker::RequestCountTracker(const RequestCountTracker& other)
+{
+    m_host = other.m_host;
+    m_resource = other.m_resource;
+    m_host->incrementRequestCount(m_resource);
 }
 
 PassRefPtr<ResourceLoader> ResourceLoader::create(ResourceLoaderHost* host, Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
@@ -132,7 +140,7 @@ void ResourceLoader::start()
     ASSERT(!m_request.isNull());
     ASSERT(m_deferredRequest.isNull());
 
-    m_host->willStartLoadingResource(m_request);
+    m_host->willStartLoadingResource(m_resource, m_request);
 
     if (m_options.synchronousPolicy == RequestSynchronously) {
         requestSynchronously();
@@ -176,6 +184,18 @@ void ResourceLoader::setDefersLoading(bool defers)
         m_request = applyOptions(m_deferredRequest);
         m_deferredRequest = ResourceRequest();
         start();
+    }
+}
+
+void ResourceLoader::attachThreadedDataReceiver(PassOwnPtr<blink::WebThreadedDataReceiver> threadedDataReceiver)
+{
+    if (m_loader) {
+        // The implementor of the WebURLLoader assumes ownership of the
+        // threaded data receiver if it signals that it got successfully
+        // attached.
+        blink::WebThreadedDataReceiver* rawThreadedDataReceiver = threadedDataReceiver.leakPtr();
+        if (!m_loader->attachThreadedDataReceiver(rawThreadedDataReceiver))
+            delete rawThreadedDataReceiver;
     }
 }
 
@@ -420,7 +440,7 @@ void ResourceLoader::didFail(blink::WebURLLoader*, const blink::WebURLError& err
     WTF_LOG(ResourceLoading, "Failed to load '%s'.\n", m_resource->url().string().latin1().data());
 
     RefPtr<ResourceLoader> protect(this);
-    RefPtr<ResourceLoaderHost> protectHost(m_host);
+    RefPtrWillBeRawPtr<ResourceLoaderHost> protectHost(m_host.get());
     ResourcePtr<Resource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->setResourceError(error);
@@ -452,7 +472,7 @@ void ResourceLoader::requestSynchronously()
     ASSERT(!m_request.downloadToFile());
 
     RefPtr<ResourceLoader> protect(this);
-    RefPtr<ResourceLoaderHost> protectHost(m_host);
+    RefPtrWillBeRawPtr<ResourceLoaderHost> protectHost(m_host.get());
     ResourcePtr<Resource> protectResource(m_resource);
 
     RELEASE_ASSERT(m_connectionState == ConnectionStateNew);

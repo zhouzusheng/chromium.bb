@@ -41,6 +41,7 @@
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/inspector/JavaScriptCallFrame.h"
 #include "core/inspector/ScriptDebugListener.h"
+#include "platform/JSONValues.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 #include "wtf/dtoa/utils.h"
@@ -222,7 +223,7 @@ void ScriptDebugServer::stepCommandWithFrame(const char* functionName, const Scr
     ASSERT(isPaused());
     v8::HandleScope handleScope(m_isolate);
     v8::Handle<v8::Value> callFrame;
-    if (frame.hasNoValue()) {
+    if (frame.isEmpty()) {
         callFrame = v8::Undefined(m_isolate);
     } else {
         JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(v8::Handle<v8::Object>::Cast(frame.v8Value()));
@@ -248,12 +249,14 @@ void ScriptDebugServer::stepOutOfFunction(const ScriptValue& frame)
     stepCommandWithFrame(stepOutV8MethodName, frame);
 }
 
-bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>& errorData, ScriptValue* newCallFrames, ScriptObject* result)
+bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>& errorData, ScriptValue* newCallFrames, RefPtr<JSONObject>* result)
 {
     class EnableLiveEditScope {
     public:
-        EnableLiveEditScope() { v8::Debug::SetLiveEditEnabled(true); }
-        ~EnableLiveEditScope() { v8::Debug::SetLiveEditEnabled(false); }
+        explicit EnableLiveEditScope(v8::Isolate* isolate) : m_isolate(isolate) { v8::Debug::SetLiveEditEnabled(m_isolate, true); }
+        ~EnableLiveEditScope() { v8::Debug::SetLiveEditEnabled(m_isolate, false); }
+    private:
+        v8::Isolate* m_isolate;
     };
 
     ensureDebuggerScriptCompiled();
@@ -264,11 +267,11 @@ bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& ne
     if (!isPaused())
         contextScope = adoptPtr(new v8::Context::Scope(debuggerContext));
 
-    v8::Handle<v8::Value> argv[] = { v8String(debuggerContext->GetIsolate(), sourceID), v8String(debuggerContext->GetIsolate(), newContent), v8Boolean(preview, debuggerContext->GetIsolate()) };
+    v8::Handle<v8::Value> argv[] = { v8String(m_isolate, sourceID), v8String(m_isolate, newContent), v8Boolean(preview, m_isolate) };
 
     v8::Local<v8::Value> v8result;
     {
-        EnableLiveEditScope enableLiveEditScope;
+        EnableLiveEditScope enableLiveEditScope(m_isolate);
         v8::TryCatch tryCatch;
         tryCatch.SetVerbose(false);
         v8result = callDebuggerMethod("liveEditScriptSource", 3, argv);
@@ -288,8 +291,9 @@ bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& ne
     case 0:
         {
             v8::Local<v8::Value> normalResult = resultTuple->Get(1);
-            if (normalResult->IsObject())
-                *result = ScriptObject(ScriptState::current(), normalResult->ToObject());
+            RefPtr<JSONValue> jsonResult = v8ToJSONValue(m_isolate, normalResult, JSONValue::maxDepth);
+            if (jsonResult)
+                *result = jsonResult->asObject();
             // Call stack may have changed after if the edited function was on the stack.
             if (!preview && isPaused())
                 *newCallFrames = currentCallFrames();
@@ -346,7 +350,7 @@ ScriptValue ScriptDebugServer::currentCallFramesInner(ScopeInfoDetails scopeDeta
         return ScriptValue();
 
     v8::Context::Scope contextScope(pausedContext);
-    return ScriptValue(toV8(currentCallFrame.release(), v8::Handle<v8::Object>(), pausedContext->GetIsolate()), pausedContext->GetIsolate());
+    return ScriptValue(ScriptState::from(pausedContext), toV8(currentCallFrame.release(), v8::Handle<v8::Object>(), pausedContext->GetIsolate()));
 }
 
 ScriptValue ScriptDebugServer::currentCallFrames()
@@ -361,7 +365,7 @@ ScriptValue ScriptDebugServer::currentCallFramesForAsyncStack()
 
 void ScriptDebugServer::interruptAndRun(PassOwnPtr<Task> task, v8::Isolate* isolate)
 {
-    v8::Debug::DebugBreakForCommand(new ClientDataImpl(task), isolate);
+    v8::Debug::DebugBreakForCommand(isolate, new ClientDataImpl(task));
 }
 
 void ScriptDebugServer::runPendingTasks()
@@ -405,8 +409,7 @@ void ScriptDebugServer::handleProgramBreak(v8::Handle<v8::Object> executionState
     }
 
     m_executionState.set(m_isolate, executionState);
-    ScriptState* currentCallFrameState = ScriptState::forContext(m_pausedContext);
-    listener->didPause(currentCallFrameState, currentCallFrames(), ScriptValue(exception, currentCallFrameState->isolate()), breakpointIds);
+    listener->didPause(ScriptState::from(m_pausedContext), currentCallFrames(), ScriptValue(ScriptState::from(m_pausedContext), exception), breakpointIds);
 
     m_runningNestedMessageLoop = true;
     runMessageLoopOnPause(m_pausedContext);
@@ -570,13 +573,11 @@ bool ScriptDebugServer::isPaused()
     return !m_executionState.isEmpty();
 }
 
-void ScriptDebugServer::compileScript(ScriptState* state, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage)
+void ScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage)
 {
-    v8::HandleScope handleScope(m_isolate);
-    v8::Handle<v8::Context> context = state->context();
-    if (context.IsEmpty())
+    if (scriptState->contextIsEmpty())
         return;
-    v8::Context::Scope contextScope(context);
+    ScriptState::Scope scope(scriptState);
 
     v8::Handle<v8::String> source = v8String(m_isolate, expression);
     v8::TryCatch tryCatch;
@@ -599,7 +600,7 @@ void ScriptDebugServer::clearCompiledScripts()
     m_compiledScripts.clear();
 }
 
-void ScriptDebugServer::runScript(ScriptState* state, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage)
+void ScriptDebugServer::runScript(ScriptState* scriptState, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage)
 {
     if (!m_compiledScripts.contains(scriptId))
         return;
@@ -610,21 +611,20 @@ void ScriptDebugServer::runScript(ScriptState* state, const String& scriptId, Sc
     if (script.IsEmpty())
         return;
 
-    v8::Handle<v8::Context> context = state->context();
-    if (context.IsEmpty())
+    if (scriptState->contextIsEmpty())
         return;
-    v8::Context::Scope contextScope(context);
+    ScriptState::Scope scope(scriptState);
     v8::TryCatch tryCatch;
-    v8::Local<v8::Value> value = V8ScriptRunner::runCompiledScript(script, state->executionContext(), m_isolate);
+    v8::Local<v8::Value> value = V8ScriptRunner::runCompiledScript(script, scriptState->executionContext(), m_isolate);
     *wasThrown = false;
     if (tryCatch.HasCaught()) {
         *wasThrown = true;
-        *result = ScriptValue(tryCatch.Exception(), m_isolate);
+        *result = ScriptValue(scriptState, tryCatch.Exception());
         v8::Local<v8::Message> message = tryCatch.Message();
         if (!message.IsEmpty())
             *exceptionMessage = toCoreStringWithUndefinedOrNullCheck(message->Get());
     } else {
-        *result = ScriptValue(value, m_isolate);
+        *result = ScriptValue(scriptState, value);
     }
 }
 

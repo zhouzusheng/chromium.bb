@@ -39,8 +39,8 @@
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/html/track/TextTrackCue.h"
-#include "heap/HeapTerminatedArrayBuilder.h"
 #include "platform/TraceEvent.h"
+#include "platform/heap/HeapTerminatedArrayBuilder.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 #include "wtf/TerminatedArrayBuilder.h"
@@ -117,6 +117,8 @@ static inline PropertyWhitelistType determinePropertyWhitelistType(const AddRule
     for (const CSSSelector* component = &selector; component; component = component->tagHistory()) {
         if (component->pseudoType() == CSSSelector::PseudoCue || (component->m_match == CSSSelector::PseudoElement && component->value() == TextTrackCue::cueShadowPseudoId()))
             return PropertyWhitelistCue;
+        if (component->pseudoType() == CSSSelector::PseudoFirstLetter)
+            return PropertyWhitelistFirstLetter;
     }
     return PropertyWhitelistNone;
 }

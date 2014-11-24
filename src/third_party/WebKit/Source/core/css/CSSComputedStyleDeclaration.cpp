@@ -221,6 +221,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitAnimationPlayState,
     CSSPropertyWebkitAnimationTimingFunction,
     CSSPropertyWebkitAppearance,
+    CSSPropertyBackfaceVisibility,
     CSSPropertyWebkitBackfaceVisibility,
     CSSPropertyWebkitBackgroundClip,
     CSSPropertyWebkitBackgroundComposite,
@@ -269,6 +270,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyGridAutoRows,
     CSSPropertyGridColumnEnd,
     CSSPropertyGridColumnStart,
+    CSSPropertyGridTemplateAreas,
     CSSPropertyGridTemplateColumns,
     CSSPropertyGridTemplateRows,
     CSSPropertyGridRowEnd,
@@ -295,12 +297,13 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitMaskRepeat,
     CSSPropertyWebkitMaskSize,
     CSSPropertyOrder,
+    CSSPropertyPerspective,
     CSSPropertyWebkitPerspective,
+    CSSPropertyPerspectiveOrigin,
     CSSPropertyWebkitPerspectiveOrigin,
     CSSPropertyWebkitPrintColorAdjust,
     CSSPropertyWebkitRtlOrdering,
     CSSPropertyShapeOutside,
-    CSSPropertyShapePadding,
     CSSPropertyShapeImageThreshold,
     CSSPropertyShapeMargin,
     CSSPropertyWebkitTapHighlightColor,
@@ -314,7 +317,9 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitTextSecurity,
     CSSPropertyWebkitTextStrokeColor,
     CSSPropertyWebkitTextStrokeWidth,
+    CSSPropertyTransform,
     CSSPropertyWebkitTransform,
+    CSSPropertyTransformOrigin,
     CSSPropertyWebkitTransformOrigin,
     CSSPropertyTransformStyle,
     CSSPropertyWebkitTransformStyle,
@@ -363,7 +368,6 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyAlignmentBaseline,
     CSSPropertyBaselineShift,
     CSSPropertyDominantBaseline,
-    CSSPropertyKerning,
     CSSPropertyTextAnchor,
     CSSPropertyWritingMode,
     CSSPropertyGlyphOrientationHorizontal,
@@ -1109,7 +1113,9 @@ static PassRefPtrWillBeRawPtr<CSSValue> createLineBoxContainValue(unsigned lineB
 CSSComputedStyleDeclaration::CSSComputedStyleDeclaration(PassRefPtr<Node> n, bool allowVisitedStyle, const String& pseudoElementName)
     : m_node(n)
     , m_allowVisitedStyle(allowVisitedStyle)
+#if !ENABLE(OILPAN)
     , m_refCount(1)
+#endif
 {
     unsigned nameWithoutColonsStart = pseudoElementName[0] == ':' ? (pseudoElementName[1] == ':' ? 2 : 1) : 0;
     m_pseudoElementSpecifier = CSSSelector::pseudoId(CSSSelector::parsePseudoType(
@@ -1120,6 +1126,7 @@ CSSComputedStyleDeclaration::~CSSComputedStyleDeclaration()
 {
 }
 
+#if !ENABLE(OILPAN)
 void CSSComputedStyleDeclaration::ref()
 {
     ++m_refCount;
@@ -1131,6 +1138,7 @@ void CSSComputedStyleDeclaration::deref()
     if (!--m_refCount)
         delete this;
 }
+#endif
 
 String CSSComputedStyleDeclaration::cssText() const
 {
@@ -1435,10 +1443,8 @@ static PassRefPtrWillBeRawPtr<CSSValue> valueForShape(const RenderStyle& style, 
 {
     if (!shapeValue)
         return cssValuePool().createIdentifierValue(CSSValueNone);
-    if (shapeValue->type() == ShapeValue::Outside)
-        return cssValuePool().createIdentifierValue(CSSValueOutsideShape);
     if (shapeValue->type() == ShapeValue::Box)
-        return cssValuePool().createValue(shapeValue->layoutBox());
+        return cssValuePool().createValue(shapeValue->cssBox());
     if (shapeValue->type() == ShapeValue::Image) {
         if (shapeValue->image())
             return shapeValue->image()->cssValue();
@@ -1449,8 +1455,8 @@ static PassRefPtrWillBeRawPtr<CSSValue> valueForShape(const RenderStyle& style, 
 
     RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
     list->append(valueForBasicShape(style, shapeValue->shape()));
-    if (shapeValue->layoutBox() != BoxMissing)
-        list->append(cssValuePool().createValue(shapeValue->layoutBox()));
+    if (shapeValue->cssBox() != BoxMissing)
+        list->append(cssValuePool().createValue(shapeValue->cssBox()));
     return list.release();
 }
 
@@ -1490,8 +1496,11 @@ static bool isLayoutDependent(CSSPropertyID propertyID, PassRefPtr<RenderStyle> 
     case CSSPropertyLeft:
     case CSSPropertyRight:
     case CSSPropertyTop:
+    case CSSPropertyPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOrigin:
+    case CSSPropertyTransform:
     case CSSPropertyWebkitTransform:
+    case CSSPropertyTransformOrigin:
     case CSSPropertyWebkitTransformOrigin:
     case CSSPropertyWidth:
     case CSSPropertyWebkitFilter:
@@ -1559,8 +1568,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
     if (updateLayout) {
         Document& document = styledNode->document();
 
-        // A timing update may be required if a compositor animation is running or animations
-        // have been updated via the api.
+        // A timing update may be required if a compositor animation is running.
         DocumentAnimations::updateAnimationTimingForGetComputedStyle(*styledNode, propertyID);
 
         document.updateRenderTreeForNodeIfNeeded(styledNode);
@@ -1982,7 +1990,10 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
             return valuesForGridShorthand(gridRowShorthand());
         case CSSPropertyGridArea:
             return valuesForGridShorthand(gridAreaShorthand());
-
+        case CSSPropertyGridTemplate:
+            return valuesForGridShorthand(gridTemplateShorthand());
+        case CSSPropertyGrid:
+            return valuesForGridShorthand(gridShorthand());
         case CSSPropertyGridTemplateAreas:
             if (!style->namedGridAreaRowCount()) {
                 ASSERT(!style->namedGridAreaColumnCount());
@@ -2221,11 +2232,18 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
             }
             }
         case CSSPropertyTextIndent: {
+            // If RuntimeEnabledFeatures::css3TextEnabled() returns false or text-indent has only one value(<length> | <percentage>),
+            // getPropertyCSSValue() returns CSSValue.
+            // If RuntimeEnabledFeatures::css3TextEnabled() returns true and text-indent has each-line or hanging,
+            // getPropertyCSSValue() returns CSSValueList.
             RefPtrWillBeRawPtr<CSSValue> textIndent = zoomAdjustedPixelValueForLength(style->textIndent(), *style);
-            if (RuntimeEnabledFeatures::css3TextEnabled() && style->textIndentLine() == TextIndentEachLine) {
+            if (RuntimeEnabledFeatures::css3TextEnabled() && (style->textIndentLine() == TextIndentEachLine || style->textIndentType() == TextIndentHanging)) {
                 RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
                 list->append(textIndent.release());
-                list->append(cssValuePool().createIdentifierValue(CSSValueEachLine));
+                if (style->textIndentLine() == TextIndentEachLine)
+                    list->append(cssValuePool().createIdentifierValue(CSSValueEachLine));
+                if (style->textIndentType() == TextIndentHanging)
+                    list->append(cssValuePool().createIdentifierValue(CSSValueHanging));
                 return list.release();
             }
             return textIndent.release();
@@ -2472,6 +2490,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
             if (!style->hasAspectRatio())
                 return cssValuePool().createIdentifierValue(CSSValueNone);
             return CSSAspectRatioValue::create(style->aspectRatioNumerator(), style->aspectRatioDenominator());
+        case CSSPropertyBackfaceVisibility:
         case CSSPropertyWebkitBackfaceVisibility:
             return cssValuePool().createIdentifierValue((style->backfaceVisibility() == BackfaceVisibilityHidden) ? CSSValueHidden : CSSValueVisible);
         case CSSPropertyWebkitBorderImage:
@@ -2507,10 +2526,12 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         case CSSPropertyWebkitMarginTopCollapse:
         case CSSPropertyWebkitMarginBeforeCollapse:
             return cssValuePool().createValue(style->marginBeforeCollapse());
+        case CSSPropertyPerspective:
         case CSSPropertyWebkitPerspective:
             if (!style->hasPerspective())
                 return cssValuePool().createIdentifierValue(CSSValueNone);
             return zoomAdjustedPixelValue(style->perspective(), *style);
+        case CSSPropertyPerspectiveOrigin:
         case CSSPropertyWebkitPerspectiveOrigin: {
             RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
             if (renderer) {
@@ -2558,8 +2579,10 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         }
         case CSSPropertySpeak:
             return cssValuePool().createValue(style->speak());
+        case CSSPropertyTransform:
         case CSSPropertyWebkitTransform:
             return computedTransform(renderer, *style);
+        case CSSPropertyTransformOrigin:
         case CSSPropertyWebkitTransformOrigin: {
             RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
             if (renderer) {
@@ -2646,9 +2669,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         case CSSPropertyWebkitWrapFlow:
             return cssValuePool().createValue(style->wrapFlow());
         case CSSPropertyShapeMargin:
-            return cssValuePool().createValue(style->shapeMargin());
-        case CSSPropertyShapePadding:
-            return cssValuePool().createValue(style->shapePadding());
+            return cssValuePool().createValue(style->shapeMargin(), *style);
         case CSSPropertyShapeImageThreshold:
             return cssValuePool().createValue(style->shapeImageThreshold(), CSSPrimitiveValue::CSS_NUMBER);
         case CSSPropertyShapeOutside:
@@ -2771,14 +2792,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
             ASSERT_NOT_REACHED();
             break;
 
-        // FIXME: crbug.com/154772 Unimplemented css-transforms properties
-        case CSSPropertyBackfaceVisibility:
-        case CSSPropertyPerspective:
-        case CSSPropertyPerspectiveOrigin:
-        case CSSPropertyTransform:
-        case CSSPropertyTransformOrigin:
-            break;
-
         /* Unimplemented @font-face properties */
         case CSSPropertyFontStretch:
         case CSSPropertySrc:
@@ -2834,7 +2847,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         case CSSPropertyStopOpacity:
         case CSSPropertyColorInterpolation:
         case CSSPropertyColorInterpolationFilters:
-        case CSSPropertyColorProfile:
         case CSSPropertyColorRendering:
         case CSSPropertyFill:
         case CSSPropertyFillOpacity:
@@ -2858,7 +2870,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         case CSSPropertyDominantBaseline:
         case CSSPropertyGlyphOrientationHorizontal:
         case CSSPropertyGlyphOrientationVertical:
-        case CSSPropertyKerning:
         case CSSPropertyTextAnchor:
         case CSSPropertyVectorEffect:
         case CSSPropertyPaintOrder:

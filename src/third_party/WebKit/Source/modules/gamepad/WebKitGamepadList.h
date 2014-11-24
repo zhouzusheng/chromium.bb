@@ -6,8 +6,8 @@
 #define WebKitGamepadList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "heap/Handle.h"
 #include "modules/gamepad/WebKitGamepad.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebGamepads.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -15,15 +15,15 @@
 
 namespace WebCore {
 
-class WebKitGamepadList FINAL : public RefCountedWillBeGarbageCollectedFinalized<WebKitGamepadList>, public ScriptWrappable {
+class WebKitGamepadList FINAL : public GarbageCollectedFinalized<WebKitGamepadList>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<WebKitGamepadList> create()
+    static WebKitGamepadList* create()
     {
-        return adoptRefWillBeNoop(new WebKitGamepadList);
+        return new WebKitGamepadList;
     }
     ~WebKitGamepadList();
 
-    void set(unsigned index, PassRefPtrWillBeRawPtr<WebKitGamepad>);
+    void set(unsigned index, WebKitGamepad*);
     WebKitGamepad* item(unsigned index);
     unsigned length() const { return blink::WebGamepads::itemsLengthCap; }
 
@@ -31,7 +31,7 @@ public:
 
 private:
     WebKitGamepadList();
-    RefPtrWillBeMember<WebKitGamepad> m_items[blink::WebGamepads::itemsLengthCap];
+    Member<WebKitGamepad> m_items[blink::WebGamepads::itemsLengthCap];
 };
 
 } // namespace WebCore

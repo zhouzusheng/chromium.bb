@@ -15,6 +15,7 @@ struct WebPreferences;
 
 namespace blink {
 class WebFrame;
+class WebLocalFrame;
 class WebNode;
 class WebPlugin;
 class WebURLRequest;
@@ -77,10 +78,9 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
       const blink::WebPluginParams& params) = 0;
 
   // The client should handle the navigation externally.
-  virtual void LoadURLExternally(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationPolicy policy) = 0;
+  virtual void LoadURLExternally(blink::WebLocalFrame* frame,
+                                 const blink::WebURLRequest& request,
+                                 blink::WebNavigationPolicy policy) = 0;
 
   // Execute a string of JavaScript in this frame's context.
   virtual void ExecuteJavaScript(const base::string16& javascript) = 0;

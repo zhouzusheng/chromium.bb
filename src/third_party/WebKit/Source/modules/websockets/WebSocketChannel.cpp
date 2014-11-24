@@ -48,7 +48,7 @@
 
 namespace WebCore {
 
-PassRefPtr<WebSocketChannel> WebSocketChannel::create(ExecutionContext* context, WebSocketChannelClient* client)
+PassRefPtrWillBeRawPtr<WebSocketChannel> WebSocketChannel::create(ExecutionContext* context, WebSocketChannelClient* client)
 {
     ASSERT(context);
     ASSERT(client);
@@ -63,7 +63,7 @@ PassRefPtr<WebSocketChannel> WebSocketChannel::create(ExecutionContext* context,
 
     if (context->isWorkerGlobalScope()) {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-        return WorkerThreadableWebSocketChannel::create(workerGlobalScope, client, sourceURL, lineNumber);
+        return WorkerThreadableWebSocketChannel::create(*workerGlobalScope, client, sourceURL, lineNumber);
     }
 
     Document* document = toDocument(context);

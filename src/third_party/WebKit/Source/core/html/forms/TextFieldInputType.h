@@ -41,6 +41,7 @@ class FormDataList;
 // The class represents types of which UI contain text fields.
 // It supports not only the types for BaseTextInputType but also type=number.
 class TextFieldInputType : public InputType, protected SpinButtonElement::SpinButtonOwner {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextFieldInputType);
 protected:
     TextFieldInputType(HTMLInputElement&);
     virtual ~TextFieldInputType();
@@ -49,7 +50,7 @@ protected:
     void handleKeydownEventForSpinButton(KeyboardEvent*);
 
 protected:
-    virtual bool needsContainer() const;
+    virtual bool needsContainer() const { return false; }
     bool shouldHaveSpinButton() const;
     virtual void createShadowSubtree() OVERRIDE;
     virtual void destroyShadowSubtree() OVERRIDE;
@@ -93,6 +94,7 @@ private:
     virtual bool shouldSpinButtonRespondToWheelEvents() OVERRIDE FINAL;
     virtual void spinButtonStepDown() OVERRIDE FINAL;
     virtual void spinButtonStepUp() OVERRIDE FINAL;
+    virtual void spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch) OVERRIDE FINAL;
 
     SpinButtonElement* spinButtonElement() const;
 };

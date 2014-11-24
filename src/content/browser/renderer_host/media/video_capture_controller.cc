@@ -19,10 +19,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/base/yuv_convert.h"
-
-#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
 #include "third_party/libyuv/include/libyuv.h"
-#endif
 
 using media::VideoCaptureFormat;
 
@@ -178,7 +175,7 @@ void VideoCaptureController::AddClient(
     base::ProcessHandle render_process,
     media::VideoCaptureSessionId session_id,
     const media::VideoCaptureParams& params) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureController::AddClient, id " << id.device_id
            << ", " << params.requested_format.frame_size.ToString()
            << ", " << params.requested_format.frame_rate
@@ -212,7 +209,7 @@ void VideoCaptureController::AddClient(
 int VideoCaptureController::RemoveClient(
     const VideoCaptureControllerID& id,
     VideoCaptureControllerEventHandler* event_handler) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureController::RemoveClient, id " << id.device_id;
 
   ControllerClient* client = FindClient(id, event_handler, controller_clients_);
@@ -236,7 +233,7 @@ int VideoCaptureController::RemoveClient(
 }
 
 void VideoCaptureController::StopSession(int session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureController::StopSession, id " << session_id;
 
   ControllerClient* client = FindClient(session_id, controller_clients_);
@@ -251,8 +248,8 @@ void VideoCaptureController::ReturnBuffer(
     const VideoCaptureControllerID& id,
     VideoCaptureControllerEventHandler* event_handler,
     int buffer_id,
-    uint32 sync_point) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    const std::vector<uint32>& sync_points) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   ControllerClient* client = FindClient(id, event_handler, controller_clients_);
 
@@ -267,15 +264,17 @@ void VideoCaptureController::ReturnBuffer(
   scoped_refptr<media::VideoFrame> frame = iter->second;
   client->active_buffers.erase(iter);
 
-  if (frame->format() == media::VideoFrame::NATIVE_TEXTURE)
-    frame->mailbox_holder()->sync_point = sync_point;
+  if (frame->format() == media::VideoFrame::NATIVE_TEXTURE) {
+    for (size_t i = 0; i < sync_points.size(); i++)
+      frame->AppendReleaseSyncPoint(sync_points[i]);
+  }
 
   buffer_pool_->RelinquishConsumerHold(buffer_id, 1);
 }
 
 const media::VideoCaptureFormat&
 VideoCaptureController::GetVideoCaptureFormat() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return video_capture_format_;
 }
 
@@ -333,7 +332,6 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
   if (!buffer)
     return;
   uint8* yplane = NULL;
-#if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
   bool flip = false;
   yplane = reinterpret_cast<uint8*>(buffer->data());
   uint8* uplane =
@@ -418,12 +416,6 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
                         new_unrotated_height,
                         rotation_mode,
                         origin_colorspace);
-#else
-  // Libyuv is not linked in for Android WebView builds, but video capture is
-  // not used in those builds either. Whenever libyuv is added in that build,
-  // address all these #ifdef parts, see http://crbug.com/299611 .
-  NOTREACHED();
-#endif  // if !defined(AVOID_LIBYUV_FOR_ANDROID_WEBVIEW)
   scoped_refptr<media::VideoFrame> frame =
       media::VideoFrame::WrapExternalPackedMemory(
           media::VideoFrame::I420,
@@ -542,7 +534,7 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
     const media::VideoCaptureFormat& buffer_format,
     const scoped_refptr<media::VideoFrame>& frame,
     base::TimeTicks timestamp) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_NE(buffer->id(), VideoCaptureBufferPool::kInvalidId);
 
   int count = 0;
@@ -586,7 +578,7 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
 }
 
 void VideoCaptureController::DoErrorOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   state_ = VIDEO_CAPTURE_STATE_ERROR;
 
   for (ControllerClients::iterator client_it = controller_clients_.begin();
@@ -601,7 +593,7 @@ void VideoCaptureController::DoErrorOnIOThread() {
 
 void VideoCaptureController::DoBufferDestroyedOnIOThread(
     int buffer_id_to_drop) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   for (ControllerClients::iterator client_it = controller_clients_.begin();
        client_it != controller_clients_.end(); ++client_it) {
@@ -645,7 +637,7 @@ VideoCaptureController::FindClient(
 }
 
 int VideoCaptureController::GetClientCount() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return controller_clients_.size();
 }
 

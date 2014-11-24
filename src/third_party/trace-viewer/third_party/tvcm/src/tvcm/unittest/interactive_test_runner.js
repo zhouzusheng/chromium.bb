@@ -28,6 +28,7 @@ tvcm.exportTo('tvcm.unittest', function() {
       this.testFilterString_ = '';
       this.testTypeToRun_ = tvcm.unittest.TestTypes.UNITTEST;
       this.shortFormat_ = false;
+      this.testSuiteName_ = '';
 
       this.rerunPending_ = false;
       this.runner_ = undefined;
@@ -57,10 +58,14 @@ tvcm.exportTo('tvcm.unittest', function() {
       shortFormatEl.addEventListener(
           'click', this.onShortFormatClick_.bind(this));
       this.updateShortFormResultsDisplay_();
-    },
 
-    set title(title) {
-      this.querySelector('#title').textContent = title;
+      // Oh, DOM, how I love you. Title is such a convenient property name and I
+      // refuse to change my worldview because of tooltips.
+      this.__defineSetter__(
+          'title',
+          function(title) {
+            this.querySelector('#title').textContent = title;
+          });
     },
 
     get allTests() {
@@ -128,7 +133,7 @@ tvcm.exportTo('tvcm.unittest', function() {
       if (!this.results_)
         return;
 
-      if (this.testFilterString_.length)
+      if (this.testFilterString_.length || this.testSuiteName_.length)
         this.results_.showHTMLOutput = true;
       else
         this.results_.showHTMLOutput = false;
@@ -173,9 +178,11 @@ tvcm.exportTo('tvcm.unittest', function() {
     onResultsStatsChanged_: function() {
       var statsEl = this.querySelector('#stats');
       var stats = this.results_.getStats();
-      var numTests = this.runner_.testCases.length;
+      var numTestsOverall = this.runner_.testCases.length;
+      var numTestsThatRan = stats.numTestsThatPassed + stats.numTestsThatFailed;
       statsEl.innerHTML =
-          '<span class="unittest-passed">' + numTests + '</span> tests, ' +
+          '<span>' + numTestsThatRan + '/' + numTestsOverall +
+          '</span> tests run, ' +
           '<span class="unittest-failed">' + stats.numTestsThatFailed +
           '</span> failures, ' +
           ' in ' + stats.totalRunTime.toFixed(2) + 'ms.';
@@ -241,7 +248,7 @@ tvcm.exportTo('tvcm.unittest', function() {
           this.runCompleted_.bind(this));
     },
 
-    setState: function(state) {
+    setState: function(state, opt_suppressStateChange) {
       this.suppressStateChange_ = true;
       if (state.testFilterString !== undefined)
         this.testFilterString = state.testFilterString;
@@ -258,14 +265,20 @@ tvcm.exportTo('tvcm.unittest', function() {
       else
         this.testTypeToRun = state.testTypeToRun;
 
-      this.suppressStateChange_ = false;
+      this.testSuiteName_ = state.testSuiteName || '';
+
+      if (!opt_suppressStateChange)
+        this.suppressStateChange_ = false;
+
       this.onShortFormatClick_();
       this.scheduleRerun_();
+      this.suppressStateChange_ = false;
     },
 
     getDefaultState: function() {
       return {
         testFilterString: '',
+        testSuiteName: '',
         shortFormat: false,
         testTypeToRun: tvcm.unittest.TestTypes.UNITTEST
       };
@@ -274,6 +287,7 @@ tvcm.exportTo('tvcm.unittest', function() {
     getState: function() {
       return {
         testFilterString: this.testFilterString_,
+        testSuiteName: this.testSuiteName_,
         shortFormat: this.shortFormat_,
         testTypeToRun: this.testTypeToRun_
       };

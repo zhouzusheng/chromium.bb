@@ -128,9 +128,9 @@ bool ExecutionContext::shouldSanitizeScriptError(const String& sourceURL, Access
     return !(securityOrigin()->canRequest(completeURL(sourceURL)) || corsStatus == SharableCrossOrigin);
 }
 
-void ExecutionContext::reportException(PassRefPtr<ErrorEvent> event, PassRefPtr<ScriptCallStack> callStack, AccessControlStatus corsStatus)
+void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event, PassRefPtr<ScriptCallStack> callStack, AccessControlStatus corsStatus)
 {
-    RefPtr<ErrorEvent> errorEvent = event;
+    RefPtrWillBeRawPtr<ErrorEvent> errorEvent = event;
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
             m_pendingExceptions = adoptPtr(new Vector<OwnPtr<PendingException> >());
@@ -160,14 +160,14 @@ void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel leve
     m_client->addMessage(source, level, message, sourceURL, lineNumber, 0);
 }
 
-void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, ScriptState* state)
+void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, ScriptState* scriptState)
 {
     if (!m_client)
         return;
-    m_client->addMessage(source, level, message, String(), 0, state);
+    m_client->addMessage(source, level, message, String(), 0, scriptState);
 }
 
-bool ExecutionContext::dispatchErrorEvent(PassRefPtr<ErrorEvent> event, AccessControlStatus corsStatus)
+bool ExecutionContext::dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent> event, AccessControlStatus corsStatus)
 {
     if (!m_client)
         return false;
@@ -175,7 +175,7 @@ bool ExecutionContext::dispatchErrorEvent(PassRefPtr<ErrorEvent> event, AccessCo
     if (!target)
         return false;
 
-    RefPtr<ErrorEvent> errorEvent = event;
+    RefPtrWillBeRawPtr<ErrorEvent> errorEvent = event;
     if (shouldSanitizeScriptError(errorEvent->filename(), corsStatus))
         errorEvent = ErrorEvent::createSanitizedError(errorEvent->world());
 
@@ -262,13 +262,6 @@ KURL ExecutionContext::completeURL(const String& url) const
     }
 
     return m_client->virtualCompleteURL(url);
-}
-
-void ExecutionContext::userEventWasHandled()
-{
-    if (!m_client)
-        return;
-    m_client->userEventWasHandled();
 }
 
 void ExecutionContext::disableEval(const String& errorMessage)

@@ -40,7 +40,6 @@ class SVGAnimatedPropertyBase;
 class SubtreeLayoutScope;
 class SVGCursorElement;
 class SVGDocumentExtensions;
-class SVGElementInstance;
 class SVGElementRareData;
 class SVGFitToViewBox;
 class SVGSVGElement;
@@ -50,6 +49,9 @@ void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyName
 class SVGElement : public Element {
 public:
     virtual ~SVGElement();
+
+    virtual short tabIndex() const OVERRIDE;
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 
     bool isOutermostSVGSVGElement() const;
 
@@ -103,18 +105,25 @@ public:
     virtual AffineTransform* supplementalTransform() { return 0; }
 
     void invalidateSVGAttributes() { ensureUniqueElementData().m_animatedSVGAttributesAreDirty = true; }
+    void invalidateSVGPresentationAttributeStyle() { ensureUniqueElementData().m_presentationAttributeStyleIsDirty = true; }
 
-    const HashSet<SVGElementInstance*>& instancesForElement() const;
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instancesForElement() const;
+    void mapInstanceToElement(SVGElement*);
+    void removeInstanceMapping(SVGElement*);
 
     bool getBoundingBox(FloatRect&);
 
     void setCursorElement(SVGCursorElement*);
-    void cursorElementRemoved();
     void setCursorImageValue(CSSCursorImageValue*);
+
+#if !ENABLE(OILPAN)
+    void cursorElementRemoved();
     void cursorImageValueRemoved();
+#endif
 
     SVGElement* correspondingElement();
     void setCorrespondingElement(SVGElement*);
+    SVGUseElement* correspondingUseElement() const;
 
     void synchronizeAnimatedSVGAttribute(const QualifiedName&) const;
 
@@ -146,12 +155,34 @@ public:
 
     SVGAnimatedString* className() { return m_className.get(); }
 
+    bool inUseShadowTree() const;
+
+    class InvalidationGuard {
+        WTF_MAKE_NONCOPYABLE(InvalidationGuard);
+    public:
+        InvalidationGuard(SVGElement* element) : m_element(element) { }
+        ~InvalidationGuard() { m_element->invalidateInstances(); }
+    private:
+        SVGElement* m_element;
+    };
+
+    class InstanceUpdateBlocker {
+        WTF_MAKE_NONCOPYABLE(InstanceUpdateBlocker);
+    public:
+        InstanceUpdateBlocker(SVGElement* targetElement);
+        ~InstanceUpdateBlocker();
+
+    private:
+        SVGElement* m_targetElement;
+    };
+
+    void invalidateInstances();
+
 protected:
     SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual void finishParsingChildren() OVERRIDE;
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) OVERRIDE;
 
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -181,8 +212,6 @@ protected:
     bool hasFocusEventListeners() const;
 
 private:
-    friend class SVGElementInstance;
-
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=77938
     virtual bool areAuthorShadowsAllowed() const OVERRIDE FINAL { return false; }
@@ -190,15 +219,10 @@ private:
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) OVERRIDE FINAL { return computedStyle(pseudoElementSpecifier); }
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
 
     void buildPendingResourcesIfNeeded();
 
-    void mapInstanceToElement(SVGElementInstance*);
-    void removeInstanceMapping(SVGElementInstance*);
-
-    void cleanupAnimatedProperties();
-    friend class CleanUpAnimatedPropertiesCaller;
+    bool supportsSpatialNavigationFocus() const;
 
     HashSet<SVGElement*> m_elementsWithRelativeLengths;
 

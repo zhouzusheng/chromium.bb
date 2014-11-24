@@ -54,8 +54,15 @@ public:
     // Invoked when close() is invoked on the worker context.
     virtual void workerGlobalScopeClosed() = 0;
 
-    // Invoked when the thread has stopped.
+    // Invoked when the thread is stopped and WorkerGlobalScope is being
+    // destructed. (This is be the last method that is called on this
+    // interface)
     virtual void workerGlobalScopeDestroyed() = 0;
+
+    // Invoked when the thread is about to be stopped and WorkerGlobalScope
+    // is to be destructed. (When this is called it is guaranteed that
+    // WorkerGlobalScope is still alive)
+    virtual void willDestroyWorkerGlobalScope() = 0;
 };
 
 } // namespace WebCore

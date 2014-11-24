@@ -58,17 +58,18 @@ class ChildProcessLauncher::Context
         client_thread_id_(BrowserThread::UI),
         termination_status_(base::TERMINATION_STATUS_NORMAL_TERMINATION),
         exit_code_(RESULT_CODE_NORMAL_EXIT),
-        starting_(true)
+        starting_(true),
+        // TODO(earthdok): Re-enable on CrOS http://crbug.com/360622
+#if (defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) || \
+    defined(THREAD_SANITIZER)) && !defined(OS_CHROMEOS)
+        terminate_child_on_shutdown_(false)
+#else
+        terminate_child_on_shutdown_(true)
+#endif
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
         , zygote_(false)
 #endif
         {
-#if defined(OS_POSIX)
-          terminate_child_on_shutdown_ = !CommandLine::ForCurrentProcess()->
-              HasSwitch(switches::kChildCleanExit);
-#else
-          terminate_child_on_shutdown_ = true;
-#endif
   }
 
   void Launch(
@@ -221,7 +222,7 @@ class ChildProcessLauncher::Context
         GetAdditionalMappedFilesForChildProcess(*cmd_line, child_process_id,
                                                 &files_to_register);
 
-    StartChildProcess(cmd_line->argv(), files_to_register,
+    StartChildProcess(cmd_line->argv(), child_process_id, files_to_register,
         base::Bind(&ChildProcessLauncher::Context::OnChildProcessStarted,
                    this_object, client_thread_id, begin_launch_time));
 
@@ -365,6 +366,9 @@ class ChildProcessLauncher::Context
                                      bool background) {
     base::Process process(handle);
     process.SetProcessBackgrounded(background);
+#if defined(OS_ANDROID)
+    SetChildProcessInForeground(handle, !background);
+#endif
   }
 
   static void TerminateInternal(
@@ -499,7 +503,7 @@ void ChildProcessLauncher::SetProcessBackgrounded(bool background) {
 }
 
 void ChildProcessLauncher::SetTerminateChildOnShutdown(
-  bool terminate_on_shutdown) {
+    bool terminate_on_shutdown) {
   if (context_.get())
     context_->set_terminate_child_on_shutdown(terminate_on_shutdown);
 }

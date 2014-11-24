@@ -17,6 +17,7 @@
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_ack_notifier.h"
+#include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_stream_sequencer.h"
 
@@ -26,9 +27,7 @@ namespace test {
 class ReliableQuicStreamPeer;
 }  // namespace test
 
-class IPEndPoint;
 class QuicSession;
-class SSLInfo;
 
 class NET_EXPORT_PRIVATE ReliableQuicStream {
  public:
@@ -36,8 +35,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
                      QuicSession* session);
 
   virtual ~ReliableQuicStream();
-
-  bool WillAcceptStreamFrame(const QuicStreamFrame& frame) const;
 
   // Called when a (potentially duplicate) stream frame has been received
   // for this stream.  Returns false if this frame can not be accepted
@@ -92,6 +89,33 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
   void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
 
+  // Adjust our flow control windows according to new offset in |frame|.
+  virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
+
+  // If our receive window has dropped below the threshold, then send a
+  // WINDOW_UPDATE frame. This is called whenever bytes are consumed from the
+  // sequencer's buffer.
+  void MaybeSendWindowUpdate();
+
+  int num_frames_received() const;
+
+  int num_duplicate_frames_received() const;
+
+  QuicFlowController* flow_controller() { return &flow_controller_; }
+
+  // Called by the stream sequeuncer as bytes are added to the buffer.
+  void AddBytesBuffered(uint64 bytes);
+  // Called by the stream sequeuncer as bytes are removed from the buffer.
+  void RemoveBytesBuffered(uint64 bytes);
+  // Called when bytese are sent to the peer.
+  void AddBytesSent(uint64 bytes);
+  // Called by the stream sequeuncer as bytes are consumed from the buffer.
+  void AddBytesConsumed(uint64 bytes);
+
+  // Returns true if the stream is flow control blocked, by the stream flow
+  // control window or the connection flow control window.
+  bool IsFlowControlBlocked();
+
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
   // and then buffers any remaining data in queued_data_.
@@ -117,15 +141,19 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Close the write side of the socket.  Further writes will fail.
   void CloseWriteSide();
 
-  bool HasBufferedData();
+  bool HasBufferedData() const;
 
-  bool fin_buffered() { return fin_buffered_; }
+  bool fin_buffered() const { return fin_buffered_; }
 
   const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
 
   const QuicStreamSequencer* sequencer() const { return &sequencer_; }
   QuicStreamSequencer* sequencer() { return &sequencer_; }
+
+  void DisableFlowControl() {
+    flow_controller_.Disable();
+  }
 
  private:
   friend class test::ReliableQuicStreamPeer;
@@ -142,6 +170,17 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
     // Can be nullptr.
     scoped_refptr<ProxyAckNotifierDelegate> delegate;
   };
+
+  // Calculates and returns available flow control send window.
+  uint64 SendWindowSize() const;
+
+  // Calculates and returns total number of bytes this stream has received.
+  uint64 TotalReceivedBytes() const;
+
+  // Calls MaybeSendBlocked on our flow controller, and connection level flow
+  // controller. If we are flow control blocked, marks this stream as write
+  // blocked.
+  void MaybeSendBlocked();
 
   std::list<PendingData> queued_data_;
 
@@ -175,6 +214,11 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // True if the session this stream is running under is a server session.
   bool is_server_;
+
+  QuicFlowController flow_controller_;
+
+  // The connection level flow controller. Not owned.
+  QuicFlowController* connection_flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ReliableQuicStream);
 };

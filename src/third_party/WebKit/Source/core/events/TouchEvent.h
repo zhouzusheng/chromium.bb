@@ -39,17 +39,17 @@ public:
 
     static PassRefPtrWillBeRawPtr<TouchEvent> create()
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new TouchEvent);
+        return adoptRefWillBeNoop(new TouchEvent);
     }
     static PassRefPtrWillBeRawPtr<TouchEvent> create(TouchList* touches,
         TouchList* targetTouches, TouchList* changedTouches,
         const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView> view,
         int screenX, int screenY, int pageX, int pageY,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new TouchEvent(touches, targetTouches, changedTouches,
+        return adoptRefWillBeNoop(new TouchEvent(touches, targetTouches, changedTouches,
             type, view, screenX, screenY, pageX, pageY,
-            ctrlKey, altKey, shiftKey, metaKey));
+            ctrlKey, altKey, shiftKey, metaKey, cancelable));
     }
 
     void initTouchEvent(TouchList* touches, TouchList* targetTouches,
@@ -70,6 +70,8 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void preventDefault() OVERRIDE;
+
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
@@ -78,7 +80,7 @@ private:
             TouchList* changedTouches, const AtomicString& type,
             PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int pageX,
             int pageY,
-            bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
+            bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable);
 
     RefPtrWillBeMember<TouchList> m_touches;
     RefPtrWillBeMember<TouchList> m_targetTouches;
@@ -87,10 +89,10 @@ private:
 
 class TouchEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<TouchEventDispatchMediator> create(PassRefPtr<TouchEvent>);
+    static PassRefPtr<TouchEventDispatchMediator> create(PassRefPtrWillBeRawPtr<TouchEvent>);
 
 private:
-    explicit TouchEventDispatchMediator(PassRefPtr<TouchEvent>);
+    explicit TouchEventDispatchMediator(PassRefPtrWillBeRawPtr<TouchEvent>);
     TouchEvent* event() const;
     virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
 };

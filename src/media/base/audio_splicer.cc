@@ -12,7 +12,6 @@
 #include "media/base/audio_bus.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/audio_timestamp_helper.h"
-#include "media/base/buffers.h"
 #include "media/base/vector_math.h"
 
 namespace media {
@@ -36,19 +35,6 @@ static void AccurateTrimStart(int frames_to_trim,
                               const AudioTimestampHelper& timestamp_helper) {
   buffer->TrimStart(frames_to_trim);
   buffer->set_timestamp(timestamp_helper.GetTimestamp());
-  buffer->set_duration(
-      timestamp_helper.GetFrameDuration(buffer->frame_count()));
-}
-
-// AudioBuffer::TrimEnd() is not as accurate as the timestamp helper, so
-// manually adjust the duration after trimming.
-static void AccurateTrimEnd(int frames_to_trim,
-                            const scoped_refptr<AudioBuffer> buffer,
-                            const AudioTimestampHelper& timestamp_helper) {
-  DCHECK(buffer->timestamp() == timestamp_helper.GetTimestamp());
-  buffer->TrimEnd(frames_to_trim);
-  buffer->set_duration(
-      timestamp_helper.GetFrameDuration(buffer->frame_count()));
 }
 
 // Returns an AudioBus whose frame buffer is backed by the provided AudioBuffer.
@@ -91,9 +77,6 @@ class AudioStreamSanitizer {
 
   // Returns the total frame count of all buffers available for output.
   int GetFrameCount() const;
-
-  // Returns the duration of all buffers added to the output queue thus far.
-  base::TimeDelta GetDuration() const;
 
   const AudioTimestampHelper& timestamp_helper() {
     return output_timestamp_helper_;
@@ -180,13 +163,12 @@ bool AudioStreamSanitizer::AddInput(const scoped_refptr<AudioBuffer>& input) {
 
     // Create a buffer with enough silence samples to fill the gap and
     // add it to the output buffer.
-    scoped_refptr<AudioBuffer> gap = AudioBuffer::CreateEmptyBuffer(
-        input->channel_layout(),
-        input->channel_count(),
-        input->sample_rate(),
-        frames_to_fill,
-        expected_timestamp,
-        output_timestamp_helper_.GetFrameDuration(frames_to_fill));
+    scoped_refptr<AudioBuffer> gap =
+        AudioBuffer::CreateEmptyBuffer(input->channel_layout(),
+                                       input->channel_count(),
+                                       input->sample_rate(),
+                                       frames_to_fill,
+                                       expected_timestamp);
     AddOutputBuffer(gap);
 
     // Add the input buffer now that the gap has been filled.
@@ -244,12 +226,6 @@ int AudioStreamSanitizer::GetFrameCount() const {
   return frame_count;
 }
 
-base::TimeDelta AudioStreamSanitizer::GetDuration() const {
-  DCHECK(output_timestamp_helper_.base_timestamp() != kNoTimestamp());
-  return output_timestamp_helper_.GetTimestamp() -
-         output_timestamp_helper_.base_timestamp();
-}
-
 bool AudioStreamSanitizer::DrainInto(AudioStreamSanitizer* output) {
   while (HasNextBuffer()) {
     if (!output->AddInput(GetNextBuffer()))
@@ -262,9 +238,11 @@ AudioSplicer::AudioSplicer(int samples_per_second)
     : max_crossfade_duration_(
           base::TimeDelta::FromMilliseconds(kCrossfadeDurationInMilliseconds)),
       splice_timestamp_(kNoTimestamp()),
+      max_splice_end_timestamp_(kNoTimestamp()),
       output_sanitizer_(new AudioStreamSanitizer(samples_per_second)),
       pre_splice_sanitizer_(new AudioStreamSanitizer(samples_per_second)),
-      post_splice_sanitizer_(new AudioStreamSanitizer(samples_per_second)) {}
+      post_splice_sanitizer_(new AudioStreamSanitizer(samples_per_second)),
+      have_all_pre_splice_buffers_(false) {}
 
 AudioSplicer::~AudioSplicer() {}
 
@@ -272,7 +250,8 @@ void AudioSplicer::Reset() {
   output_sanitizer_->Reset();
   pre_splice_sanitizer_->Reset();
   post_splice_sanitizer_->Reset();
-  splice_timestamp_ = kNoTimestamp();
+  have_all_pre_splice_buffers_ = false;
+  reset_splice_timestamps();
 }
 
 bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
@@ -283,9 +262,10 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
     return output_sanitizer_->AddInput(input);
   }
 
-  // If we're still receiving buffers before the splice point figure out which
-  // sanitizer (if any) to put them in.
-  if (!post_splice_sanitizer_->HasNextBuffer()) {
+  const AudioTimestampHelper& output_ts_helper =
+      output_sanitizer_->timestamp_helper();
+
+  if (!have_all_pre_splice_buffers_) {
     DCHECK(!input->end_of_stream());
 
     // If the provided buffer is entirely before the splice point it can also be
@@ -301,36 +281,15 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
     // to calculating crossfade.
     if (!pre_splice_sanitizer_->HasNextBuffer()) {
       pre_splice_sanitizer_->ResetTimestampState(
-          output_sanitizer_->timestamp_helper().frame_count(),
-          output_sanitizer_->timestamp_helper().base_timestamp());
+          output_ts_helper.frame_count(), output_ts_helper.base_timestamp());
     }
 
-    // If we're processing a splice and the input buffer does not overlap any of
-    // the existing buffers append it to the |pre_splice_sanitizer_|.
-    //
-    // The first overlapping buffer is expected to have a timestamp of exactly
-    // |splice_timestamp_|.  It's not sufficient to check this though, since in
-    // the case of a perfect overlap, the first pre-splice buffer may have the
-    // same timestamp.
-    //
-    // It's also not sufficient to check if the input timestamp is after the
-    // current expected timestamp from |pre_splice_sanitizer_| since the decoder
-    // may have fuzzed the timestamps slightly.
-    if (!pre_splice_sanitizer_->HasNextBuffer() ||
-        input->timestamp() != splice_timestamp_) {
-      return pre_splice_sanitizer_->AddInput(input);
-    }
-
-    // We've received the first overlapping buffer.
-  } else {
-    // TODO(dalecurtis): The pre splice assignment process still leaves the
-    // unlikely case that the decoder fuzzes a later pre splice buffer's
-    // timestamp such that it matches |splice_timestamp_|.
-    //
-    // Watch for these crashes in the field to see if we need a more complicated
-    // assignment process.
-    CHECK(input->timestamp() != splice_timestamp_);
+    return pre_splice_sanitizer_->AddInput(input);
   }
+
+  // The first post splice buffer is expected to match |splice_timestamp_|.
+  if (!post_splice_sanitizer_->HasNextBuffer())
+    CHECK(splice_timestamp_ == input->timestamp());
 
   // At this point we have all the fade out preroll buffers from the decoder.
   // We now need to wait until we have enough data to perform the crossfade (or
@@ -338,21 +297,27 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
   if (!post_splice_sanitizer_->AddInput(input))
     return false;
 
-  if (!input->end_of_stream() &&
-      post_splice_sanitizer_->GetDuration() < max_crossfade_duration_) {
-    return true;
+  // Ensure |output_sanitizer_| has a valid base timestamp so we can use it for
+  // timestamp calculations.
+  if (output_ts_helper.base_timestamp() == kNoTimestamp()) {
+    output_sanitizer_->ResetTimestampState(
+        0, pre_splice_sanitizer_->timestamp_helper().base_timestamp());
   }
 
   // If a splice frame was incorrectly marked due to poor demuxed timestamps, we
-  // may not actually have a splice frame.  In this case, just transfer all data
-  // to the output sanitizer.
-  if (pre_splice_sanitizer_->timestamp_helper().GetTimestamp() ==
-      post_splice_sanitizer_->timestamp_helper().base_timestamp()) {
+  // may not actually have a splice.  Here we check if any frames exist before
+  // the splice.  In this case, just transfer all data to the output sanitizer.
+  if (pre_splice_sanitizer_->GetFrameCount() <=
+      output_ts_helper.GetFramesToTarget(splice_timestamp_)) {
     CHECK(pre_splice_sanitizer_->DrainInto(output_sanitizer_.get()));
     CHECK(post_splice_sanitizer_->DrainInto(output_sanitizer_.get()));
-    splice_timestamp_ = kNoTimestamp();
-    pre_splice_sanitizer_->Reset();
-    post_splice_sanitizer_->Reset();
+    reset_splice_timestamps();
+    return true;
+  }
+
+  // Wait until we have enough data to crossfade or end of stream.
+  if (!input->end_of_stream() &&
+      input->timestamp() + input->duration() < max_splice_end_timestamp_) {
     return true;
   }
 
@@ -365,7 +330,7 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
   CrossfadePostSplice(pre_splice.Pass(), crossfade_buffer);
 
   // Clear the splice timestamp so new splices can be accepted.
-  splice_timestamp_ = kNoTimestamp();
+  reset_splice_timestamps();
   return true;
 }
 
@@ -378,7 +343,13 @@ scoped_refptr<AudioBuffer> AudioSplicer::GetNextBuffer() {
 }
 
 void AudioSplicer::SetSpliceTimestamp(base::TimeDelta splice_timestamp) {
-  DCHECK(splice_timestamp != kNoTimestamp());
+  if (splice_timestamp == kNoTimestamp()) {
+    DCHECK(splice_timestamp_ != kNoTimestamp());
+    DCHECK(!have_all_pre_splice_buffers_);
+    have_all_pre_splice_buffers_ = true;
+    return;
+  }
+
   if (splice_timestamp_ == splice_timestamp)
     return;
 
@@ -388,6 +359,10 @@ void AudioSplicer::SetSpliceTimestamp(base::TimeDelta splice_timestamp) {
   // this case is possible.
   CHECK(splice_timestamp_ == kNoTimestamp());
   splice_timestamp_ = splice_timestamp;
+  max_splice_end_timestamp_ = splice_timestamp_ + max_crossfade_duration_;
+  pre_splice_sanitizer_->Reset();
+  post_splice_sanitizer_->Reset();
+  have_all_pre_splice_buffers_ = false;
 }
 
 scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
@@ -396,21 +371,13 @@ scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
   const AudioTimestampHelper& output_ts_helper =
       output_sanitizer_->timestamp_helper();
 
-  // Ensure |output_sanitizer_| has a valid base timestamp so we can use it for
-  // timestamp calculations.
-  if (output_ts_helper.base_timestamp() == kNoTimestamp()) {
-    output_sanitizer_->ResetTimestampState(
-        0, pre_splice_sanitizer_->timestamp_helper().base_timestamp());
-  }
-
   int frames_before_splice =
       output_ts_helper.GetFramesToTarget(splice_timestamp_);
 
   // Determine crossfade frame count based on available frames in each splicer
   // and capping to the maximum crossfade duration.
   const int max_crossfade_frame_count =
-      output_ts_helper.GetFramesToTarget(splice_timestamp_ +
-                                         max_crossfade_duration_) -
+      output_ts_helper.GetFramesToTarget(max_splice_end_timestamp_) -
       frames_before_splice;
   const int frames_to_crossfade = std::min(
       max_crossfade_frame_count,
@@ -461,13 +428,17 @@ scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
     // If only part of the buffer was consumed, trim it appropriately and stick
     // it into the output queue.
     if (frames_before_splice) {
-      AccurateTrimEnd(preroll->frame_count() - frames_before_splice,
-                      preroll,
-                      output_ts_helper);
+      preroll->TrimEnd(preroll->frame_count() - frames_before_splice);
       CHECK(output_sanitizer_->AddInput(preroll));
       frames_before_splice = 0;
     }
   }
+
+  // Ensure outputs were properly allocated.  The method should not have been
+  // called if there is not enough data to crossfade.
+  // TODO(dalecurtis): Convert to DCHECK() once http://crbug.com/356073 fixed.
+  CHECK(output_bus);
+  CHECK(*crossfade_buffer);
 
   // All necessary buffers have been processed, it's safe to reset.
   pre_splice_sanitizer_->Reset();
@@ -484,8 +455,6 @@ void AudioSplicer::CrossfadePostSplice(
   const AudioTimestampHelper& output_ts_helper =
       output_sanitizer_->timestamp_helper();
   crossfade_buffer->set_timestamp(output_ts_helper.GetTimestamp());
-  crossfade_buffer->set_duration(
-      output_ts_helper.GetFrameDuration(pre_splice_bus->frames()));
 
   // AudioBuffer::ReadFrames() only allows output into an AudioBus, so wrap
   // our AudioBuffer in one so we can avoid extra data copies.

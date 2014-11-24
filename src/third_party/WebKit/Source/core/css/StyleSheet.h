@@ -22,7 +22,7 @@
 #define StyleSheet_h
 
 #include "core/css/CSSParserMode.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
@@ -53,7 +53,7 @@ public:
     virtual bool isLoading() const = 0;
     virtual bool isCSSStyleSheet() const { return false; }
 
-    virtual void trace(Visitor*) = 0;
+    virtual void trace(Visitor*) { }
 };
 
 } // namespace

@@ -39,9 +39,9 @@
 
 namespace WebCore {
 
-static inline SVGCursorElement* resourceReferencedByCursorElement(const String& url, Document& document)
+static inline SVGCursorElement* resourceReferencedByCursorElement(const String& url, TreeScope& treeScope)
 {
-    Element* element = SVGURIReference::targetElementFromIRIString(url, document);
+    Element* element = SVGURIReference::targetElementFromIRIString(url, treeScope);
     return isSVGCursorElement(element) ? toSVGCursorElement(element) : 0;
 }
 
@@ -56,6 +56,8 @@ CSSCursorImageValue::CSSCursorImageValue(PassRefPtrWillBeRawPtr<CSSValue> imageV
 
 CSSCursorImageValue::~CSSCursorImageValue()
 {
+    // The below teardown is all handled by weak pointer processing in oilpan.
+#if !ENABLE(OILPAN)
     if (!isSVGCursor())
         return;
 
@@ -66,9 +68,10 @@ CSSCursorImageValue::~CSSCursorImageValue()
     for (; it != end; ++it) {
         SVGElement* referencedElement = *it;
         referencedElement->cursorImageValueRemoved();
-        if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(url, referencedElement->document()))
+        if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(url, referencedElement->treeScope()))
             cursorElement->removeClient(referencedElement);
     }
+#endif
 }
 
 String CSSCursorImageValue::customCSSText() const
@@ -93,7 +96,7 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
         return false;
 
     String url = toCSSImageValue(m_imageValue.get())->url();
-    if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(url, element->document())) {
+    if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(url, element->treeScope())) {
         // FIXME: This will override hot spot specified in CSS, which is probably incorrect.
         SVGLengthContext lengthContext(0);
         m_hasHotSpot = true;
@@ -107,7 +110,9 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
             clearImageResource();
 
         SVGElement* svgElement = toSVGElement(element);
+#if !ENABLE(OILPAN)
         m_referencedElements.add(svgElement);
+#endif
         svgElement->setCursorImageValue(this);
         cursorElement->addClient(svgElement);
         return true;
@@ -182,10 +187,12 @@ void CSSCursorImageValue::clearImageResource()
     m_accessedImage = false;
 }
 
+#if !ENABLE(OILPAN)
 void CSSCursorImageValue::removeReferencedElement(SVGElement* element)
 {
     m_referencedElements.remove(element);
 }
+#endif
 
 bool CSSCursorImageValue::equals(const CSSCursorImageValue& other) const
 {
@@ -195,6 +202,7 @@ bool CSSCursorImageValue::equals(const CSSCursorImageValue& other) const
 
 void CSSCursorImageValue::traceAfterDispatch(Visitor* visitor)
 {
+    visitor->trace(m_imageValue);
     CSSValue::traceAfterDispatch(visitor);
 }
 

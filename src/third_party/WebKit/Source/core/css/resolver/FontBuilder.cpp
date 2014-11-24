@@ -70,10 +70,7 @@ FontBuilder::FontBuilder()
 
 void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* style, bool useSVGZoomRules)
 {
-    // All documents need to be in a frame (and thus have access to Settings)
-    // for style-resolution to make sense.
-    // Unfortunately SVG Animations currently violate this: crbug.com/260966
-    // ASSERT(m_document->frame());
+    ASSERT(document.frame());
     m_document = &document;
     m_useSVGZoomRules = useSVGZoomRules;
     m_style = style;
@@ -642,7 +639,7 @@ void FontBuilder::updateComputedSize(RenderStyle* style, const RenderStyle* pare
 }
 
 // FIXME: style param should come first
-void FontBuilder::createFont(PassRefPtr<FontSelector> fontSelector, const RenderStyle* parentStyle, RenderStyle* style)
+void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, const RenderStyle* parentStyle, RenderStyle* style)
 {
     if (!m_fontDirty)
         return;
@@ -654,7 +651,7 @@ void FontBuilder::createFont(PassRefPtr<FontSelector> fontSelector, const Render
     m_fontDirty = false;
 }
 
-void FontBuilder::createFontForDocument(PassRefPtr<FontSelector> fontSelector, RenderStyle* documentStyle)
+void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, RenderStyle* documentStyle)
 {
     FontDescription fontDescription = FontDescription();
     fontDescription.setScript(localeToScriptCodeForFontSelection(documentStyle->locale()));

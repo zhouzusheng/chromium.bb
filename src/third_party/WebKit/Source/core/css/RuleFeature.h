@@ -22,15 +22,16 @@
 #ifndef RuleFeature_h
 #define RuleFeature_h
 
-#include "core/css/invalidation/DescendantInvalidationSet.h"
+#include "core/css/CSSSelector.h"
+#include "core/css/invalidation/StyleInvalidator.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
-class CSSSelector;
 class CSSSelectorList;
+class DescendantInvalidationSet;
 class Document;
 class Node;
 class QualifiedName;
@@ -54,6 +55,7 @@ struct RuleFeature {
 class RuleFeatureSet {
 public:
     RuleFeatureSet();
+    ~RuleFeatureSet();
 
     void add(const RuleFeatureSet&);
     void clear();
@@ -70,31 +72,29 @@ public:
     inline bool hasSelectorForAttribute(const AtomicString& attributeName) const
     {
         ASSERT(!attributeName.isEmpty());
-        return m_attributeInvalidationSets.get(attributeName);
+        return m_attributeInvalidationSets.contains(attributeName);
     }
 
     inline bool hasSelectorForClass(const AtomicString& classValue) const
     {
         ASSERT(!classValue.isEmpty());
-        return m_classInvalidationSets.get(classValue);
+        return m_classInvalidationSets.contains(classValue);
     }
 
     inline bool hasSelectorForId(const AtomicString& idValue) const
     {
-        return m_metadata.idsInRules.contains(idValue);
+        return m_idInvalidationSets.contains(idValue);
     }
 
-    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& changedClasses, Element*);
-    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element*);
+    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& changedClasses, Element&);
+    void scheduleStyleInvalidationForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element&);
+    void scheduleStyleInvalidationForAttributeChange(const QualifiedName& attributeName, Element&);
+    void scheduleStyleInvalidationForIdChange(const AtomicString& oldId, const AtomicString& newId, Element&);
+    void scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoType, Element&);
 
-    void scheduleStyleInvalidationForAttributeChange(const QualifiedName& attributeName, Element*);
-
-    // Clears all style invalidation state for the passed node.
-    void clearStyleInvalidation(Node*);
-
-    int hasIdsInSelectors() const
+    bool hasIdsInSelectors() const
     {
-        return m_metadata.idsInRules.size() > 0;
+        return m_idInvalidationSets.size() > 0;
     }
 
     // Marks the given attribute name as "appearing in a selector". Used for
@@ -102,16 +102,14 @@ public:
     // FIXME: record these internally to this class instead calls from StyleResolver to here.
     void addContentAttr(const AtomicString& attributeName);
 
+    StyleInvalidator& styleInvalidator();
+
     Vector<RuleFeature> siblingRules;
     Vector<RuleFeature> uncommonAttributeRules;
 
-    typedef Vector<RefPtr<DescendantInvalidationSet> > InvalidationList;
-    typedef HashMap<Element*, OwnPtr<InvalidationList> > PendingInvalidationMap;
-
-    PendingInvalidationMap& pendingInvalidationMap();
-
 private:
     typedef HashMap<AtomicString, RefPtr<DescendantInvalidationSet> > InvalidationSetMap;
+    typedef HashMap<CSSSelector::PseudoType, RefPtr<DescendantInvalidationSet>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > PseudoTypeInvalidationSetMap;
 
     struct FeatureMetadata {
         FeatureMetadata()
@@ -125,7 +123,6 @@ private:
         bool usesFirstLineRules;
         bool foundSiblingSelector;
         unsigned maxDirectAdjacentSelectors;
-        HashSet<AtomicString> idsInRules;
     };
 
     enum InvalidationSetMode {
@@ -141,32 +138,34 @@ private:
 
     DescendantInvalidationSet& ensureClassInvalidationSet(const AtomicString& className);
     DescendantInvalidationSet& ensureAttributeInvalidationSet(const AtomicString& attributeName);
+    DescendantInvalidationSet& ensureIdInvalidationSet(const AtomicString& attributeName);
+    DescendantInvalidationSet& ensurePseudoInvalidationSet(CSSSelector::PseudoType);
     DescendantInvalidationSet* invalidationSetForSelector(const CSSSelector&);
 
     InvalidationSetMode updateInvalidationSets(const CSSSelector&);
 
     struct InvalidationSetFeatures {
+        InvalidationSetFeatures() : customPseudoElement(false) { }
         Vector<AtomicString> classes;
         Vector<AtomicString> attributes;
         AtomicString id;
         AtomicString tagName;
+        bool customPseudoElement;
     };
 
     static void extractInvalidationSetFeature(const CSSSelector&, InvalidationSetFeatures&);
     const CSSSelector* extractInvalidationSetFeatures(const CSSSelector&, InvalidationSetFeatures&);
-    void addFeaturesToInvalidationSets(const CSSSelector&, const InvalidationSetFeatures&);
+    void addFeaturesToInvalidationSets(const CSSSelector&, const InvalidationSetFeatures&, bool wholeSubtree);
 
-    void addClassToInvalidationSet(const AtomicString& className, Element*);
-
-    InvalidationList& ensurePendingInvalidationList(Element*);
+    void addClassToInvalidationSet(const AtomicString& className, Element&);
 
     FeatureMetadata m_metadata;
     InvalidationSetMap m_classInvalidationSets;
     InvalidationSetMap m_attributeInvalidationSets;
-
-    PendingInvalidationMap m_pendingInvalidationMap;
-
+    InvalidationSetMap m_idInvalidationSets;
+    PseudoTypeInvalidationSetMap m_pseudoInvalidationSets;
     bool m_targetedStyleRecalcEnabled;
+    StyleInvalidator m_styleInvalidator;
 };
 
 

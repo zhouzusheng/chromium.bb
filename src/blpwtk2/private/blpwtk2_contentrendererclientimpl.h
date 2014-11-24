@@ -70,7 +70,7 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     // returns false, the content layer will create the plugin.
     virtual bool OverrideCreatePlugin(
         content::RenderFrame* render_frame,
-        blink::WebFrame* frame,
+        blink::WebLocalFrame* frame,
         const blink::WebPluginParams& params,
         blink::WebPlugin** plugin) OVERRIDE;
 

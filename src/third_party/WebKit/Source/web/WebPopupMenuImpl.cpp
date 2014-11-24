@@ -29,15 +29,8 @@
  */
 
 #include "config.h"
-#include "WebPopupMenuImpl.h"
+#include "web/WebPopupMenuImpl.h"
 
-#include "PopupContainer.h"
-#include "PopupMenuChromium.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebRange.h"
-#include "WebViewClient.h"
-#include "WebWidgetClient.h"
 #include "core/frame/FrameView.h"
 #include "platform/Cursor.h"
 #include "platform/NotImplemented.h"
@@ -55,6 +48,13 @@
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebRange.h"
+#include "public/web/WebViewClient.h"
+#include "public/web/WebWidgetClient.h"
+#include "web/PopupContainer.h"
+#include "web/PopupMenuChromium.h"
+#include "web/WebInputEventConversion.h"
 #include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
@@ -214,7 +214,7 @@ void WebPopupMenuImpl::enterForceCompositingMode(bool enter)
         m_client->didDeactivateCompositor();
     } else if (m_layerTreeView) {
         m_isAcceleratedCompositingActive = true;
-        m_client->didActivateCompositor(0);
+        m_client->didActivateCompositor();
     } else {
         TRACE_EVENT0("webkit", "WebPopupMenuImpl::enterForceCompositingMode(true)");
 
@@ -222,7 +222,7 @@ void WebPopupMenuImpl::enterForceCompositingMode(bool enter)
         m_layerTreeView = m_client->layerTreeView();
         if (m_layerTreeView) {
             m_layerTreeView->setVisible(true);
-            m_client->didActivateCompositor(0);
+            m_client->didActivateCompositor();
             m_isAcceleratedCompositingActive = true;
             m_layerTreeView->setDeviceScaleFactor(m_client->deviceScaleFactor());
             m_rootLayer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(this));
@@ -235,19 +235,15 @@ void WebPopupMenuImpl::enterForceCompositingMode(bool enter)
     }
 }
 
-void WebPopupMenuImpl::didExitCompositingMode()
-{
-    enterForceCompositingMode(false);
-    m_client->didInvalidateRect(IntRect(0, 0, m_size.width, m_size.height));
-}
-
-void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebFloatRect&)
+void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebFloatRect&,
+    WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
     if (!m_widget)
         return;
 
     if (!rect.isEmpty()) {
-        GraphicsContext context(canvas);
+        GraphicsContext context(canvas,
+            contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
         m_widget->paint(&context, rect);
     }
 }

@@ -289,26 +289,6 @@ const char kWebKitLoadsImagesAutomatically[] =
     "webkit.webprefs.loads_images_automatically";
 const char kWebKitPluginsEnabled[] = "webkit.webprefs.plugins_enabled";
 
-// Boolean which specifies whether the bookmark bar is visible on all tabs.
-const char kShowBookmarkBar[] = "bookmark_bar.show_on_all_tabs";
-
-// Boolean which specifies whether the apps shortcut is visible on the bookmark
-// bar.
-const char kShowAppsShortcutInBookmarkBar[] = "bookmark_bar.show_apps_shortcut";
-
-// Boolean which specifies the ids of the bookmark nodes that are expanded in
-// the bookmark editor.
-const char kBookmarkEditorExpandedNodes[] = "bookmark_editor.expanded_nodes";
-
-// Booleans identifying whether normal and reverse auto-logins are enabled.
-const char kAutologinEnabled[] = "autologin.enabled";
-const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
-
-// List to keep track of emails for which the user has rejected one-click
-// sign-in.
-const char kReverseAutologinRejectedEmailList[] =
-    "reverse_autologin.rejected_email_list";
-
 // Boolean that is true when SafeBrowsing is enabled.
 const char kSafeBrowsingEnabled[] = "safebrowsing.enabled";
 
@@ -491,14 +471,12 @@ const char kAlternateProtocolServers[] = "spdy.alternate_protocol";
 // Disables the listed protocol schemes.
 const char kDisabledSchemes[] = "protocol.disabled_schemes";
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 // Last time that a check for cloud policy management was done. This time is
 // recorded on Android so that retries aren't attempted on every startup.
 // Instead the cloud policy registration is retried at least 1 or 3 days later.
 const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
-#endif
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
 // A list of bookmarks to include in a Managed Bookmarks root node. Each
 // list item is a dictionary containing a "name" and an "url" entry, detailing
 // the bookmark name and target URL respectively.
@@ -861,11 +839,6 @@ const char kMultiProfileNeverShowIntro[] =
 const char kMultiProfileWarningShowDismissed[] =
     "settings.multi_profile_warning_show_dismissed";
 
-// A boolean pref recording whether user has dismissed the multiprofile
-// notification.
-const char kMultiProfileNotificationDismissed[] =
-    "settings.multi_profile_notification_dismissed";
-
 // A string pref that holds string enum values of how the user should behave
 // in a multiprofile session. See ChromeOsMultiProfileUserBehavior policy
 // for more details of the valid values.
@@ -965,6 +938,11 @@ const char kCurrentThemeDisplayProperties[] = "extensions.theme.properties";
 // (showing developer packing tools and extensions details)
 const char kExtensionsUIDeveloperMode[] = "extensions.ui.developer_mode";
 
+// Boolean pref which indicates whether the Chrome Apps & Extensions Developer
+// Tool promotion has been dismissed by the user.
+const char kExtensionsUIDismissedADTPromo[] =
+    "extensions.ui.dismissed_adt_promo";
+
 // Dictionary pref that tracks which command belongs to which
 // extension + named command pair.
 const char kExtensionCommands[] = "extensions.commands";
@@ -1024,14 +1002,6 @@ const char kPluginsResourceCacheUpdate[] = "plugins.resource_cache_update";
 // on start-up.
 const char kCheckDefaultBrowser[] = "browser.check_default_browser";
 
-#if defined(OS_WIN)
-// By default, setting Chrome as default during first run on Windows 8 will
-// trigger shutting down the current instance and spawning a new (Metro)
-// Chrome. This boolean preference suppresses this behaviour.
-const char kSuppressSwitchToMetroModeOnSetDefault[] =
-    "browser.suppress_switch_to_metro_mode_on_set_default";
-#endif
-
 // Policy setting whether default browser check should be disabled and default
 // browser registration should take place.
 const char kDefaultBrowserSettingEnabled[] =
@@ -1048,10 +1018,6 @@ const char kShowUpdatePromotionInfoBar[] =
 // Boolean that is false if we should show window manager decorations.  If
 // true, we draw a custom chrome frame (thicker title bar and blue border).
 const char kUseCustomChromeFrame[] = "browser.custom_chrome_frame";
-
-// The preferred position (which corner of screen) for desktop notifications.
-const char kDesktopNotificationPosition[] =
-    "browser.desktop_notification_position";
 
 // Dictionary of content settings applied to all hosts by default.
 const char kDefaultContentSettings[] = "profile.default_content_settings";
@@ -1124,9 +1090,6 @@ const char kAutofillGeneratedCardBubbleTimesShown[] =
 // A dictionary that tracks the defaults to be set on the next invocation
 // of the requestAutocomplete dialog.
 const char kAutofillDialogDefaults[] = "autofill.rac_dialog_defaults";
-
-// Modifying bookmarks is completely disabled when this is set to false.
-const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
 
 #if !defined(OS_ANDROID)
 const char kPinnedTabs[] = "pinned_tabs";
@@ -1326,6 +1289,9 @@ extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 // Preference storing Easy Unlock pairing data.
 extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
 
+// A cache of zero suggest results using JSON serialized into a string.
+const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
+
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
 
@@ -1363,7 +1329,6 @@ const char kCertRevocationCheckingRequiredLocalAnchors[] =
 const char kSSLVersionMin[] = "ssl.version_min";
 const char kSSLVersionMax[] = "ssl.version_max";
 const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
-const char kEnableOriginBoundCerts[] = "ssl.origin_bound_certs.enabled";
 const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
 
 // A boolean pref of the EULA accepted flag.
@@ -1424,13 +1389,6 @@ const char kMetricsInitialLogs[] =
 // user activities.
 const char kMetricsOngoingLogs[] =
     "user_experience_metrics.ongoing_logs_as_protobufs";
-
-// Boolean that is true when bookmark prompt is enabled.
-const char kBookmarkPromptEnabled[] = "bookmark_prompt_enabled";
-
-// Number of times bookmark prompt displayed.
-const char kBookmarkPromptImpressionCount[] =
-    "bookmark_prompt_impression_count";
 
 // 64-bit integer serialization of the base::Time from the last successful seed
 // fetch (i.e. when the Variations server responds with 200 or 304).
@@ -1613,6 +1571,9 @@ const char kBrowserSuppressDefaultBrowserPrompt[] =
 // A collection of position, size, and other data relating to the browser
 // window to restore on startup.
 const char kBrowserWindowPlacement[] = "browser.window_placement";
+
+// Browser window placement for popup windows.
+const char kBrowserWindowPlacementPopup[] = "browser.window_placement_popup";
 
 // A collection of position, size, and other data relating to the task
 // manager window to restore on startup.
@@ -1836,12 +1797,6 @@ const char kDevToolsPortForwardingConfig[] = "devtools.port_forwarding_config";
 const char kDevToolsRemoteEnabled[] = "devtools.remote_enabled";
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// A boolean specifying whether a SPDY proxy is enabled.
-const char kSpdyProxyAuthEnabled[] = "spdy_proxy.enabled";
-const char kSpdyProxyAuthWasEnabledBefore[] = "spdy_proxy.was_enabled_before";
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
-
 // An ID to uniquely identify this client to the invalidator service.
 const char kInvalidatorClientId[] = "invalidator.client_id";
 
@@ -1857,12 +1812,6 @@ const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 // False or lack of settings means XMPPPushClient channel.
 const char kInvalidationServiceUseGCMChannel[] =
     "invalidation_service.use_gcm_channel";
-
-// Local state pref containing a string regex that restricts which accounts
-// can be used to log in to chrome (e.g. "*@google.com"). If missing or blank,
-// all accounts are allowed (no restrictions).
-const char kGoogleServicesUsernamePattern[] =
-    "google.services.username_pattern";
 
 // Local hash of authentication password, used for off-line authentication
 // when on-line authentication is not available.
@@ -1927,14 +1876,20 @@ const char kRemoteAccessHostAllowClientPairing[] =
 const char kRemoteAccessHostAllowGnubbyAuth[] =
     "remote_access.host_allow_gnubby_auth";
 
+// Boolean that indicates whether the Chromoting host should allow connections
+// using relay servers.
+const char kRemoteAccessHostAllowRelayedConnection[] =
+    "remote_access.host_allow_relayed_connection";
+
+// String containing the UDP port range that the Chromoting host should used
+// when connecting to clients. The port range should be in the form:
+// <min_port>-<max_port>. E.g. 12400-12409.
+const char kRemoteAccessHostUdpPortRange[] =
+    "remote_access.host_udp_port_range";
+
 // The last used printer and its settings.
 const char kPrintPreviewStickySettings[] =
     "printing.print_preview_sticky_settings";
-// The root URL of the cloud print service.
-const char kCloudPrintServiceURL[] = "cloud_print.service_url";
-
-// The URL to use to sign in to cloud print.
-const char kCloudPrintSigninURL[] = "cloud_print.signin_url";
 
 // The last requested size of the dialog as it was closed.
 const char kCloudPrintDialogWidth[] = "cloud_print.dialog_size.width";
@@ -1977,74 +1932,12 @@ const char kAuthNegotiateDelegateWhitelist[] =
 // String that specifies the name of a custom GSSAPI library to load.
 const char kGSSAPILibraryName[] = "auth.gssapi_library_name";
 
-// String that specifies the origin allowed to use SpdyProxy
-// authentication, if any.
-const char kSpdyProxyAuthOrigin[] = "auth.spdyproxy.origin";
-
 // Boolean that specifies whether to allow basic auth prompting on cross-
 // domain sub-content requests.
 const char kAllowCrossOriginAuthPrompt[] = "auth.allow_cross_origin_prompt";
 
 // Boolean that specifies whether the built-in asynchronous DNS client is used.
 const char kBuiltInDnsClientEnabled[] = "async_dns.enabled";
-
-// An int64 pref that contains the total size of all HTTP content that has been
-// received from the network.
-const char kHttpReceivedContentLength[] = "http_received_content_length";
-
-// An int64 pref that contains the total original size of all HTTP content that
-// was received over the network.
-const char kHttpOriginalContentLength[] = "http_original_content_length";
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received from the network.
-const char kDailyHttpOriginalContentLength[] =
-    "data_reduction.daily_original_length";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS content
-// that was received from the network.
-const char kDailyHttpReceivedContentLength[] =
-    "data_reduction.daily_received_length";
-
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received while the data reduction proxy is enabled.
-const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_original_length_with_data_reduction_proxy_enabled";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS
-// that was received while the data reduction proxy is enabled.
-const char kDailyContentLengthWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
-
-const char kDailyContentLengthHttpsWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_https_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthShortBypassWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_short_bypass_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthLongBypassWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_long_bypass_with_"
-    "data_reduction_proxy_enabled";
-const char kDailyContentLengthUnknownWithDataReductionProxyEnabled[] =
-    "data_reduction.daily_received_length_unknown_with_"
-    "data_reduction_proxy_enabled";
-
-// A List pref that contains daily totals of the original size of all HTTP/HTTPS
-// that was received via the data reduction proxy.
-const char kDailyOriginalContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_original_length_via_data_reduction_proxy";
-
-// A List pref that contains daily totals of the size of all HTTP/HTTPS
-// that was received via the data reduction proxy.
-const char kDailyContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_received_length_via_data_reduction_proxy";
-
-// An int64 pref that contains an internal representation of midnight on the
-// date of the last update to |kDailyHttp{Original,Received}ContentLength|.
-const char kDailyHttpContentLengthLastUpdateDate[] =
-    "data_reduction.last_update_date";
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 // A pref holding the value of the policy used to explicitly allow or deny
 // access to audio capture devices.  When enabled or not set, the user is
@@ -2193,6 +2086,12 @@ const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
 // after recovery.
 const char kServerBackedDeviceState[] = "server_backed_device_state";
 
+// Customized wallpaper URL, which is already downloaded and scaled.
+// The URL from this preference must never be fetched. It is compared to the
+// URL from customization document to check if wallpaper URL has changed
+// since wallpaper was cached.
+const char kCustomizationDefaultWallpaperURL[] =
+    "customization.default_wallpaper_url";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2234,6 +2133,13 @@ const char kRollbackRequested[] = "RollbackRequested";
 // center for desktop notifications.
 const char kMessageCenterShowedFirstRunBalloon[] =
     "message_center.showed_first_run_balloon";
+
+// Boolean recording whether the user has disabled the notifications
+// menubar or systray icon.
+const char kMessageCenterShowIcon[] = "message_center.show_icon";
+
+const char kMessageCenterForcedOnTaskbar[] =
+    "message_center.was_forced_on_taskbar";
 
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
@@ -2341,6 +2247,11 @@ const char kChromeCreatedLoginItem[] =
 // time.
 const char kMigratedLoginItemPref[] =
   "background_mode.migrated_login_item_pref";
+
+// A boolean that tracks whether to show a notification when trying to quit
+// while there are apps running.
+const char kNotifyWhenAppsKeepChromeAlive[] =
+    "apps.notify-when-apps-keep-chrome-alive";
 #endif
 
 // Set to true if background mode is enabled on this browser.
@@ -2533,10 +2444,6 @@ const char kRLZDisabled[] = "rlz.disabled";
 // The directory in user data dir that contains the profile to be used with the
 // app launcher.
 const char kAppListProfile[] = "app_list.profile";
-
-// Whether to show the app list on a browser relaunch. Used when switching out
-// of metro mode after a user gesture requests showing the app list.
-const char kRestartWithAppList[] = "app_list.show_on_relaunch";
 
 // The number of times the app launcher was launched since last ping and
 // the time of the last ping.

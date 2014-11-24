@@ -665,7 +665,6 @@ square-button
 button
 button-bevel
 inner-spin-button
--webkit-input-speech-button
 listbox
 listitem
 media-enter-fullscreen-button
@@ -846,13 +845,6 @@ geometricPrecision
 economy
 exact
 
-// (-webkit-view-mode:) media feature:
-floating
-fullscreen
-maximized
-minimized
-windowed
-
 // -webkit-hyphenate-limit-lines
 no-limit
 
@@ -919,11 +911,9 @@ off
 optimizeQuality
 -webkit-optimize-contrast
 
-// shape-inside
 // shape-outside
 nonzero
 evenodd
-outside-shape
 at
 // closest-side
 // farthest-side
@@ -994,6 +984,7 @@ span
 
 // text-indent
 each-line
+//hanging   // hanging exists in SVGCSSValueKeywords.in
 
 // (scan:) media feature
 progressive

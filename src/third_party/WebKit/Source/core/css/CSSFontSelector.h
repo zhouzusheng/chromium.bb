@@ -27,11 +27,12 @@
 #define CSSFontSelector_h
 
 #include "core/css/FontFaceCache.h"
+#include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourcePtr.h"
-#include "heap/Handle.h"
 #include "platform/Timer.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/fonts/GenericFontFamilySettings.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -42,42 +43,52 @@ class CSSFontFace;
 class CSSFontFaceRule;
 class CSSFontSelectorClient;
 class CSSSegmentedFontFace;
-class FontResource;
 class Document;
 class FontDescription;
+class FontResource;
 class StyleRuleFontFace;
 
 class FontLoader {
+    DISALLOW_ALLOCATION();
 public:
     explicit FontLoader(ResourceFetcher*);
+    ~FontLoader();
 
     void addFontToBeginLoading(FontResource*);
     void loadPendingFonts();
 
+#if !ENABLE(OILPAN)
     void clearResourceFetcher();
+#endif
+
+    void trace(Visitor*);
 
 private:
     void beginLoadTimerFired(Timer<FontLoader>*);
 
     Timer<FontLoader> m_beginLoadingTimer;
-    Vector<ResourcePtr<FontResource> > m_fontsToBeginLoading;
-    ResourceFetcher* m_resourceFetcher;
+
+    typedef Vector<std::pair<ResourcePtr<FontResource>, ResourceLoader::RequestCountTracker> > FontsToLoadVector;
+    FontsToLoadVector m_fontsToBeginLoading;
+    RawPtrWillBeMember<ResourceFetcher> m_resourceFetcher;
 };
 
 class CSSFontSelector FINAL : public FontSelector {
 public:
-    static PassRefPtr<CSSFontSelector> create(Document* document)
+    static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
-        return adoptRef(new CSSFontSelector(document));
+        return adoptRefWillBeNoop(new CSSFontSelector(document));
     }
     virtual ~CSSFontSelector();
 
     virtual unsigned version() const OVERRIDE { return m_fontFaceCache.version(); }
 
     virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
-    virtual void willUseFontData(const FontDescription&, const AtomicString& family) OVERRIDE;
+    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) OVERRIDE;
 
+#if !ENABLE(OILPAN)
     void clearDocument();
+#endif
 
     void fontLoaded();
 
@@ -98,15 +109,17 @@ public:
     void beginLoadingFontSoon(FontResource*);
     void loadPendingFonts();
 
+    virtual void trace(Visitor*);
+
 private:
     explicit CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.
     FontFaceCache m_fontFaceCache;
-    WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
 
     FontLoader m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;

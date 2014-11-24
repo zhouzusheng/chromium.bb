@@ -42,6 +42,11 @@ class AnimationPlayer;
 class TimedItem;
 class TimedItemTiming;
 
+enum TimingUpdateReason {
+    TimingUpdateOnDemand,
+    TimingUpdateForAnimationFrame
+};
+
 static inline bool isNull(double value)
 {
     return std::isnan(value);
@@ -66,7 +71,7 @@ public:
     class EventDelegate {
     public:
         virtual ~EventDelegate() { };
-        virtual void onEventCondition(const TimedItem*, bool isFirstSample, Phase previousPhase, double previousIteration) = 0;
+        virtual void onEventCondition(const TimedItem*) = 0;
     };
 
     virtual ~TimedItem() { }
@@ -81,20 +86,28 @@ public:
     double timeToReverseEffectChange() const { return ensureCalculated().timeToReverseEffectChange; }
 
     double currentIteration() const { return ensureCalculated().currentIteration; }
-    double duration() const { return iterationDuration(); }
-    double activeDuration() const;
+    double iterationDuration() const;
+
+    // This method returns time in ms as it is unused except via the API.
+    double duration() const { return iterationDuration() * 1000; }
+
+    double activeDuration() const { return activeDurationInternal() * 1000; }
+    double activeDurationInternal() const;
     double timeFraction() const { return ensureCalculated().timeFraction; }
-    double startTime() const { return m_startTime; }
-    double endTime() const { return startTime() + specifiedTiming().startDelay + activeDuration() + specifiedTiming().endDelay; }
+    double startTime() const { return m_startTime * 1000; }
+    double startTimeInternal() const { return m_startTime; }
+    double endTime() const { return endTimeInternal() * 1000; }
+    double endTimeInternal() const { return startTime() + specifiedTiming().startDelay + activeDurationInternal() + specifiedTiming().endDelay; }
 
     const AnimationPlayer* player() const { return m_player; }
     AnimationPlayer* player() { return m_player; }
     AnimationPlayer* player(bool& isNull) { isNull = !m_player; return m_player; }
-    const Timing& specifiedTiming() const { return m_specified; }
-    PassRefPtr<TimedItemTiming> specified();
+    const Timing& specifiedTiming() const { return m_timing; }
+    PassRefPtr<TimedItemTiming> timing();
     void updateSpecifiedTiming(const Timing&);
 
-    double localTime(bool& isNull) const { isNull = !m_player; return ensureCalculated().localTime; }
+    // This method returns time in ms as it is unused except via the API.
+    double localTime(bool& isNull) const { isNull = !m_player; return ensureCalculated().localTime * 1000; }
     double currentIteration(bool& isNull) const { isNull = !ensureCalculated().isInEffect; return ensureCalculated().currentIteration; }
 
 protected:
@@ -103,12 +116,13 @@ protected:
     // When TimedItem receives a new inherited time via updateInheritedTime
     // it will (if necessary) recalculate timings and (if necessary) call
     // updateChildrenAndEffects.
-    void updateInheritedTime(double inheritedTime) const;
+    void updateInheritedTime(double inheritedTime, TimingUpdateReason) const;
     void invalidate() const { m_needsUpdate = true; };
+    bool hasEvents() const { return m_eventDelegate; }
+    void clearEventDelegate() { m_eventDelegate = nullptr; }
 
 private:
 
-    double iterationDuration() const;
     double repeatedDuration() const;
 
     virtual void updateChildrenAndEffects() const = 0;
@@ -116,6 +130,7 @@ private:
     virtual double calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const = 0;
     virtual void didAttach() { };
     virtual void willDetach() { };
+    virtual void specifiedTimingChanged() { };
 
     void attach(AnimationPlayer* player)
     {
@@ -134,7 +149,7 @@ private:
     TimedItem* const m_parent;
     const double m_startTime;
     AnimationPlayer* m_player;
-    Timing m_specified;
+    Timing m_timing;
     OwnPtr<EventDelegate> m_eventDelegate;
 
     mutable struct CalculatedTiming {
@@ -148,7 +163,6 @@ private:
         double timeToForwardsEffectChange;
         double timeToReverseEffectChange;
     } m_calculated;
-    mutable bool m_isFirstSample;
     mutable bool m_needsUpdate;
     mutable double m_lastUpdateTime;
 

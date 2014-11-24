@@ -31,16 +31,16 @@
 #ifndef WebSharedWorkerImpl_h
 #define WebSharedWorkerImpl_h
 
-#include "WebSharedWorker.h"
+#include "public/web/WebSharedWorker.h"
 
-#include "WebContentSecurityPolicy.h"
-#include "WebFrameClient.h"
-#include "WebSharedWorkerClient.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 #include "core/workers/WorkerThread.h"
+#include "public/web/WebContentSecurityPolicy.h"
+#include "public/web/WebFrameClient.h"
+#include "public/web/WebSharedWorkerClient.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/WeakPtr.h"
@@ -83,14 +83,15 @@ public:
     virtual void workerGlobalScopeStarted(WebCore::WorkerGlobalScope*) OVERRIDE;
     virtual void workerGlobalScopeClosed() OVERRIDE;
     virtual void workerGlobalScopeDestroyed() OVERRIDE;
+    virtual void willDestroyWorkerGlobalScope() OVERRIDE { }
 
     // WebCore::WorkerLoaderProxy methods:
     virtual void postTaskToLoader(PassOwnPtr<WebCore::ExecutionContextTask>) OVERRIDE;
     virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<WebCore::ExecutionContextTask>) OVERRIDE;
 
     // WebFrameClient methods to support resource loading thru the 'shadow page'.
-    virtual WebApplicationCacheHost* createApplicationCacheHost(WebFrame*, WebApplicationCacheHostClient*) OVERRIDE;
-    virtual void didFinishDocumentLoad(WebFrame*) OVERRIDE;
+    virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) OVERRIDE;
+    virtual void didFinishDocumentLoad(WebLocalFrame*) OVERRIDE;
 
     // WebSharedWorker methods:
     virtual void startWorkerContext(const WebURL&, const WebString& name, const WebString& contentSecurityPolicy, WebContentSecurityPolicyType) OVERRIDE;

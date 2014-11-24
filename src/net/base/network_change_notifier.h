@@ -224,7 +224,16 @@ class NET_EXPORT NetworkChangeNotifier {
 
   // Register the Observer callbacks for producing histogram data.  This
   // should be called from the network thread to avoid race conditions.
+  // ShutdownHistogramWatcher() must be called prior to NetworkChangeNotifier
+  // destruction.
   static void InitHistogramWatcher();
+
+  // Unregister the Observer callbacks for producing histogram data.  This
+  // should be called from the network thread to avoid race conditions.
+  static void ShutdownHistogramWatcher();
+
+  // Log the |NCN.NetworkOperatorMCCMNC| histogram.
+  static void LogOperatorCodeHistogram(ConnectionType type);
 
   // Allows a second NetworkChangeNotifier to be created for unit testing, so
   // the test suite can create a MockNetworkChangeNotifier, but platform

@@ -51,6 +51,7 @@ class QuadSink;
 class Renderer;
 class ScrollbarAnimationController;
 class ScrollbarLayerImplBase;
+class Tile;
 
 struct AppendQuadsData;
 
@@ -157,7 +158,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   LayerTreeImpl* layer_tree_impl() const { return layer_tree_impl_; }
 
-  scoped_ptr<SharedQuadState> CreateSharedQuadState() const;
+  void PopulateSharedQuadState(SharedQuadState* state) const;
   // WillDraw must be called before AppendQuads. If WillDraw returns false,
   // AppendQuads and DidDraw will not be called. If WillDraw returns true,
   // DidDraw is guaranteed to be called before another WillDraw or before
@@ -178,6 +179,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual RenderPass::Id NextContributingRenderPassId(RenderPass::Id id) const;
 
   virtual void UpdateTilePriorities() {}
+  virtual void NotifyTileInitialized(const Tile* tile) {}
 
   virtual ScrollbarLayerImplBase* ToScrollbarLayer();
 
@@ -275,6 +277,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // so that its list can be recreated.
   void CreateRenderSurface();
   void ClearRenderSurface();
+  void ClearRenderSurfaceLayerList();
 
   DrawProperties<LayerImpl>& draw_properties() {
     return draw_properties_;
@@ -352,6 +355,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -408,6 +412,13 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   }
   bool have_wheel_event_handlers() const { return have_wheel_event_handlers_; }
 
+  void SetHaveScrollEventHandlers(bool have_scroll_event_handlers) {
+    have_scroll_event_handlers_ = have_scroll_event_handlers;
+  }
+  bool have_scroll_event_handlers() const {
+    return have_scroll_event_handlers_;
+  }
+
   void SetNonFastScrollableRegion(const Region& region) {
     non_fast_scrollable_region_ = region;
   }
@@ -440,11 +451,18 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
   bool TransformIsAnimatingOnImplOnly() const;
+  void SetTransformAndInvertibility(const gfx::Transform& transform,
+                                    bool transform_is_invertible);
+  bool transform_is_invertible() const { return transform_is_invertible_; }
 
   // Note this rect is in layer space (not content space).
   void SetUpdateRect(const gfx::RectF& update_rect);
 
   const gfx::RectF& update_rect() const { return update_rect_; }
+
+  void AddDamageRect(const gfx::RectF& damage_rect);
+
+  const gfx::RectF& damage_rect() const { return damage_rect_; }
 
   virtual base::DictionaryValue* LayerTreeAsJson() const;
 
@@ -516,6 +534,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void SetDebugInfo(
       scoped_refptr<base::debug::ConvertableToTraceFormat> other);
 
+  bool IsDrawnRenderSurfaceLayerListMember() const;
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
@@ -579,6 +599,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
+  bool have_scroll_event_handlers_ : 1;
   bool user_scrollable_horizontal_ : 1;
   bool user_scrollable_vertical_ : 1;
   bool stacking_order_changed_ : 1;
@@ -597,6 +618,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool draws_content_ : 1;
   bool hide_layer_and_subtree_ : 1;
   bool force_render_surface_ : 1;
+
+  // Cache transform_'s invertibility.
+  bool transform_is_invertible_ : 1;
 
   // Set for the layer that other layers are fixed to.
   bool is_container_for_fixed_position_layers_ : 1;
@@ -642,6 +666,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Note that plugin layers bypass this and leave it empty.
   // Uses layer (not content) space.
   gfx::RectF update_rect_;
+
+  // This rect is in layer space.
+  gfx::RectF damage_rect_;
 
   // Manages animations for this layer.
   scoped_refptr<LayerAnimationController> layer_animation_controller_;

@@ -68,7 +68,7 @@ DOMSelection::DOMSelection(const TreeScope* treeScope)
 
 void DOMSelection::clearTreeScope()
 {
-    m_treeScope = 0;
+    m_treeScope = nullptr;
 }
 
 const VisibleSelection& DOMSelection::visibleSelection() const
@@ -196,6 +196,7 @@ int DOMSelection::rangeCount() const
 
 void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionState)
 {
+    ASSERT(node);
     if (!m_frame)
         return;
 
@@ -209,6 +210,11 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
 
     // FIXME: Eliminate legacy editing positions
     m_frame->selection().moveTo(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
+}
+
+void DOMSelection::collapse(Node* node, ExceptionState& exceptionState)
+{
+    collapse(node, 0, exceptionState);
 }
 
 void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
@@ -349,7 +355,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
     m_frame->selection().setExtent(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
 }
 
-PassRefPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
 {
     if (!m_frame)
         return nullptr;
@@ -402,7 +408,7 @@ void DOMSelection::addRange(Range* newRange)
         return;
     }
 
-    RefPtr<Range> originalRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> originalRange = selection.firstRange();
 
     if (originalRange->startContainer()->document() != newRange->startContainer()->document()) {
         addConsoleError("The given range does not belong to the current selection's document.");
@@ -413,30 +419,22 @@ void DOMSelection::addRange(Range* newRange)
         return;
     }
 
-    // FIXME: Emit a console error if the combined ranges would form a discontiguous selection.
-    if (newRange->compareBoundaryPoints(Range::START_TO_START, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
-        // We don't support discontiguous selection. We don't do anything if newRange and originalRange don't intersect.
-        if (newRange->compareBoundaryPoints(Range::START_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) > -1) {
-            if (newRange->compareBoundaryPoints(Range::END_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
-                // The original originalRange and newRange intersect.
-                selection.setSelection(VisibleSelection(newRange->startPosition(), originalRange->endPosition(), DOWNSTREAM));
-            } else {
-                // newRange contains the original originalRange.
-                selection.setSelection(VisibleSelection(newRange));
-            }
-        }
-    } else {
-        // We don't support discontiguous selection. We don't do anything if newRange and originalRange don't intersect.
-        if (newRange->compareBoundaryPoints(Range::END_TO_START, originalRange.get(), ASSERT_NO_EXCEPTION) < 1) {
-            if (newRange->compareBoundaryPoints(Range::END_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) == -1) {
-                // The original range contains newRange.
-                selection.setSelection(VisibleSelection(originalRange.get()));
-            } else {
-                // The original range and r intersect.
-                selection.setSelection(VisibleSelection(originalRange->startPosition(), newRange->endPosition(), DOWNSTREAM));
-            }
-        }
+    if (originalRange->compareBoundaryPoints(Range::START_TO_END, newRange, ASSERT_NO_EXCEPTION) < 0
+        || newRange->compareBoundaryPoints(Range::START_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) < 0) {
+        addConsoleError("Discontiguous selection is not supported.");
+        return;
     }
+
+    // FIXME: "Merge the ranges if they intersect" is Blink-specific behavior; other browsers supporting discontiguous
+    // selection (obviously) keep each Range added and return it in getRangeAt(). But it's unclear if we can really
+    // do the same, since we don't support discontiguous selection. Further discussions at
+    // <https://code.google.com/p/chromium/issues/detail?id=353069>.
+
+    Range* start = originalRange->compareBoundaryPoints(Range::START_TO_START, newRange, ASSERT_NO_EXCEPTION) < 0 ? originalRange.get() : newRange;
+    Range* end = originalRange->compareBoundaryPoints(Range::END_TO_END, newRange, ASSERT_NO_EXCEPTION) < 0 ? newRange : originalRange.get();
+    RefPtrWillBeRawPtr<Range> merged = Range::create(originalRange->startContainer()->document(), start->startContainer(), start->startOffset(), end->endContainer(), end->endOffset());
+    EAffinity affinity = selection.selection().affinity();
+    selection.setSelectedRange(merged.get(), affinity);
 }
 
 void DOMSelection::deleteFromDocument()
@@ -449,13 +447,13 @@ void DOMSelection::deleteFromDocument()
     if (selection.isNone())
         return;
 
-    RefPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
     if (!selectedRange)
         return;
 
     selectedRange->deleteContents(ASSERT_NO_EXCEPTION);
 
-    setBaseAndExtent(selectedRange->startContainer(ASSERT_NO_EXCEPTION), selectedRange->startOffset(), selectedRange->startContainer(), selectedRange->startOffset(), ASSERT_NO_EXCEPTION);
+    setBaseAndExtent(selectedRange->startContainer(), selectedRange->startOffset(), selectedRange->startContainer(), selectedRange->startOffset(), ASSERT_NO_EXCEPTION);
 }
 
 bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
@@ -469,7 +467,7 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
         return false;
 
     unsigned nodeIndex = n->nodeIndex();
-    RefPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
 
     ContainerNode* parentNode = n->parentNode();
     if (!parentNode)

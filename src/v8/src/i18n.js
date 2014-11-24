@@ -1,29 +1,6 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 // limitations under the License.
 
 // ECMAScript 402 API implementation.
@@ -281,7 +258,7 @@ function addBoundMethod(obj, methodName, implementation, length) {
   %FunctionRemovePrototype(getter);
   %SetNativeFlag(getter);
 
-  $Object.defineProperty(obj.prototype, methodName, {
+  ObjectDefineProperty(obj.prototype, methodName, {
     get: getter,
     enumerable: false,
     configurable: true
@@ -302,7 +279,7 @@ function supportedLocalesOf(service, locales, options) {
   if (options === undefined) {
     options = {};
   } else {
-    options = toObject(options);
+    options = ToObject(options);
   }
 
   var matcher = options.localeMatcher;
@@ -536,18 +513,6 @@ function parseExtension(extension) {
 
 
 /**
- * Converts parameter to an Object if possible.
- */
-function toObject(value) {
-  if (IS_NULL_OR_UNDEFINED(value)) {
-    throw new $TypeError('Value cannot be converted to an Object.');
-  }
-
-  return $Object(value);
-}
-
-
-/**
  * Populates internalOptions object with boolean key-value pairs
  * from extensionMap and options.
  * Returns filtered extension (number and date format constructors use
@@ -616,15 +581,14 @@ function setOptions(inOptions, extensionMap, keyValues, getOption, outOptions) {
  */
 function freezeArray(array) {
   array.forEach(function(element, index) {
-    $Object.defineProperty(array, index, {value: element,
+    ObjectDefineProperty(array, index, {value: element,
                                           configurable: false,
                                           writable: false,
                                           enumerable: true});
   });
 
-  $Object.defineProperty(array, 'length', {value: array.length,
-                                           writable: false});
-
+  ObjectDefineProperty(array, 'length', {value: array.length,
+                                         writable: false});
   return array;
 }
 
@@ -685,8 +649,8 @@ function getAvailableLocalesOf(service) {
  * Configurable is false by default.
  */
 function defineWEProperty(object, property, value) {
-  $Object.defineProperty(object, property,
-                         {value: value, writable: true, enumerable: true});
+  ObjectDefineProperty(object, property,
+                       {value: value, writable: true, enumerable: true});
 }
 
 
@@ -705,11 +669,11 @@ function addWEPropertyIfDefined(object, property, value) {
  * Defines a property and sets writable, enumerable and configurable to true.
  */
 function defineWECProperty(object, property, value) {
-  $Object.defineProperty(object, property,
-                         {value: value,
-                          writable: true,
-                          enumerable: true,
-                          configurable: true});
+  ObjectDefineProperty(object, property,
+                       {value: value,
+                        writable: true,
+                        enumerable: true,
+                        configurable: true});
 }
 
 
@@ -776,7 +740,7 @@ function initializeLocaleList(locales) {
       return freezeArray(seen);
     }
 
-    var o = toObject(locales);
+    var o = ToObject(locales);
     // Converts it to UInt32 (>>> is shr on 32bit integers).
     var len = o.length >>> 0;
 
@@ -948,8 +912,8 @@ function initializeCollator(collator, locales, options) {
   // We define all properties C++ code may produce, to prevent security
   // problems. If malicious user decides to redefine Object.prototype.locale
   // we can't just use plain x.locale = 'us' or in C++ Set("locale", "us").
-  // Object.defineProperties will either succeed defining or throw an error.
-  var resolved = $Object.defineProperties({}, {
+  // ObjectDefineProperties will either succeed defining or throw an error.
+  var resolved = ObjectDefineProperties({}, {
     caseFirst: {writable: true},
     collation: {value: internalOptions.collation, writable: true},
     ignorePunctuation: {writable: true},
@@ -967,7 +931,7 @@ function initializeCollator(collator, locales, options) {
 
   // Writable, configurable and enumerable are set to false by default.
   %MarkAsInitializedIntlObjectOfType(collator, 'collator', internalCollator);
-  $Object.defineProperty(collator, 'resolved', {value: resolved});
+  ObjectDefineProperty(collator, 'resolved', {value: resolved});
 
   return collator;
 }
@@ -988,7 +952,7 @@ function initializeCollator(collator, locales, options) {
       return new Intl.Collator(locales, options);
     }
 
-    return initializeCollator(toObject(this), locales, options);
+    return initializeCollator(ToObject(this), locales, options);
   },
   DONT_ENUM
 );
@@ -1164,7 +1128,7 @@ function initializeNumberFormat(numberFormat, locales, options) {
                              getOption, internalOptions);
 
   var requestedLocale = locale.locale + extension;
-  var resolved = $Object.defineProperties({}, {
+  var resolved = ObjectDefineProperties({}, {
     currency: {writable: true},
     currencyDisplay: {writable: true},
     locale: {writable: true},
@@ -1189,12 +1153,12 @@ function initializeNumberFormat(numberFormat, locales, options) {
   // We can't get information about number or currency style from ICU, so we
   // assume user request was fulfilled.
   if (internalOptions.style === 'currency') {
-    $Object.defineProperty(resolved, 'currencyDisplay', {value: currencyDisplay,
-                                                         writable: true});
+    ObjectDefineProperty(resolved, 'currencyDisplay', {value: currencyDisplay,
+                                                       writable: true});
   }
 
   %MarkAsInitializedIntlObjectOfType(numberFormat, 'numberformat', formatter);
-  $Object.defineProperty(numberFormat, 'resolved', {value: resolved});
+  ObjectDefineProperty(numberFormat, 'resolved', {value: resolved});
 
   return numberFormat;
 }
@@ -1215,7 +1179,7 @@ function initializeNumberFormat(numberFormat, locales, options) {
       return new Intl.NumberFormat(locales, options);
     }
 
-    return initializeNumberFormat(toObject(this), locales, options);
+    return initializeNumberFormat(ToObject(this), locales, options);
   },
   DONT_ENUM
 );
@@ -1466,12 +1430,10 @@ function appendToDateTimeObject(options, option, match, pairs) {
  */
 function toDateTimeOptions(options, required, defaults) {
   if (options === undefined) {
-    options = null;
+    options = {};
   } else {
-    options = toObject(options);
+    options = TO_OBJECT_INLINE(options);
   }
-
-  options = $Object.apply(this, [options]);
 
   var needsDefault = true;
   if ((required === 'date' || required === 'any') &&
@@ -1487,30 +1449,30 @@ function toDateTimeOptions(options, required, defaults) {
   }
 
   if (needsDefault && (defaults === 'date' || defaults === 'all')) {
-    $Object.defineProperty(options, 'year', {value: 'numeric',
-                                             writable: true,
-                                             enumerable: true,
-                                             configurable: true});
-    $Object.defineProperty(options, 'month', {value: 'numeric',
-                                              writable: true,
-                                              enumerable: true,
-                                              configurable: true});
-    $Object.defineProperty(options, 'day', {value: 'numeric',
+    ObjectDefineProperty(options, 'year', {value: 'numeric',
+                                           writable: true,
+                                           enumerable: true,
+                                           configurable: true});
+    ObjectDefineProperty(options, 'month', {value: 'numeric',
                                             writable: true,
                                             enumerable: true,
                                             configurable: true});
+    ObjectDefineProperty(options, 'day', {value: 'numeric',
+                                          writable: true,
+                                          enumerable: true,
+                                          configurable: true});
   }
 
   if (needsDefault && (defaults === 'time' || defaults === 'all')) {
-    $Object.defineProperty(options, 'hour', {value: 'numeric',
+    ObjectDefineProperty(options, 'hour', {value: 'numeric',
                                              writable: true,
                                              enumerable: true,
                                              configurable: true});
-    $Object.defineProperty(options, 'minute', {value: 'numeric',
+    ObjectDefineProperty(options, 'minute', {value: 'numeric',
                                                writable: true,
                                                enumerable: true,
                                                configurable: true});
-    $Object.defineProperty(options, 'second', {value: 'numeric',
+    ObjectDefineProperty(options, 'second', {value: 'numeric',
                                                writable: true,
                                                enumerable: true,
                                                configurable: true});
@@ -1561,7 +1523,7 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
                              getOption, internalOptions);
 
   var requestedLocale = locale.locale + extension;
-  var resolved = $Object.defineProperties({}, {
+  var resolved = ObjectDefineProperties({}, {
     calendar: {writable: true},
     day: {writable: true},
     era: {writable: true},
@@ -1589,7 +1551,7 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
   }
 
   %MarkAsInitializedIntlObjectOfType(dateFormat, 'dateformat', formatter);
-  $Object.defineProperty(dateFormat, 'resolved', {value: resolved});
+  ObjectDefineProperty(dateFormat, 'resolved', {value: resolved});
 
   return dateFormat;
 }
@@ -1610,7 +1572,7 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
       return new Intl.DateTimeFormat(locales, options);
     }
 
-    return initializeDateTimeFormat(toObject(this), locales, options);
+    return initializeDateTimeFormat(ToObject(this), locales, options);
   },
   DONT_ENUM
 );
@@ -1783,7 +1745,7 @@ function initializeBreakIterator(iterator, locales, options) {
     'type', 'string', ['character', 'word', 'sentence', 'line'], 'word'));
 
   var locale = resolveLocale('breakiterator', locales, options);
-  var resolved = $Object.defineProperties({}, {
+  var resolved = ObjectDefineProperties({}, {
     requestedLocale: {value: locale.locale, writable: true},
     type: {value: internalOptions.type, writable: true},
     locale: {writable: true}
@@ -1795,7 +1757,7 @@ function initializeBreakIterator(iterator, locales, options) {
 
   %MarkAsInitializedIntlObjectOfType(iterator, 'breakiterator',
                                      internalIterator);
-  $Object.defineProperty(iterator, 'resolved', {value: resolved});
+  ObjectDefineProperty(iterator, 'resolved', {value: resolved});
 
   return iterator;
 }
@@ -1816,7 +1778,7 @@ function initializeBreakIterator(iterator, locales, options) {
       return new Intl.v8BreakIterator(locales, options);
     }
 
-    return initializeBreakIterator(toObject(this), locales, options);
+    return initializeBreakIterator(ToObject(this), locales, options);
   },
   DONT_ENUM
 );
@@ -1961,7 +1923,7 @@ function cachedOrNewService(service, locales, options, defaults) {
  * Compares this and that, and returns less than 0, 0 or greater than 0 value.
  * Overrides the built-in method.
  */
-$Object.defineProperty($String.prototype, 'localeCompare', {
+ObjectDefineProperty($String.prototype, 'localeCompare', {
   value: function(that) {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
@@ -1992,7 +1954,7 @@ $Object.defineProperty($String.prototype, 'localeCompare', {
  * If the form is not one of "NFC", "NFD", "NFKC", or "NFKD", then throw
  * a RangeError Exception.
  */
-$Object.defineProperty($String.prototype, 'normalize', {
+ObjectDefineProperty($String.prototype, 'normalize', {
   value: function(that) {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
@@ -2023,7 +1985,7 @@ $Object.defineProperty($String.prototype, 'normalize', {
  * Formats a Number object (this) using locale and options values.
  * If locale or options are omitted, defaults are used.
  */
-$Object.defineProperty($Number.prototype, 'toLocaleString', {
+ObjectDefineProperty($Number.prototype, 'toLocaleString', {
   value: function() {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
@@ -2073,7 +2035,7 @@ function toLocaleDateTime(date, locales, options, required, defaults, service) {
  * If locale or options are omitted, defaults are used - both date and time are
  * present in the output.
  */
-$Object.defineProperty($Date.prototype, 'toLocaleString', {
+ObjectDefineProperty($Date.prototype, 'toLocaleString', {
   value: function() {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
@@ -2098,7 +2060,7 @@ $Object.defineProperty($Date.prototype, 'toLocaleString', {
  * If locale or options are omitted, defaults are used - only date is present
  * in the output.
  */
-$Object.defineProperty($Date.prototype, 'toLocaleDateString', {
+ObjectDefineProperty($Date.prototype, 'toLocaleDateString', {
   value: function() {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
@@ -2123,7 +2085,7 @@ $Object.defineProperty($Date.prototype, 'toLocaleDateString', {
  * If locale or options are omitted, defaults are used - only time is present
  * in the output.
  */
-$Object.defineProperty($Date.prototype, 'toLocaleTimeString', {
+ObjectDefineProperty($Date.prototype, 'toLocaleTimeString', {
   value: function() {
     if (%_IsConstructCall()) {
       throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);

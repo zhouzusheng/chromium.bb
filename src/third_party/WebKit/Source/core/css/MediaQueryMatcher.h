@@ -20,8 +20,7 @@
 #ifndef MediaQueryMatcher_h
 #define MediaQueryMatcher_h
 
-#include "bindings/v8/ScriptState.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -60,7 +59,7 @@ private:
     class Listener FINAL : public NoBaseWillBeGarbageCollected<Listener> {
     public:
         Listener(PassRefPtrWillBeRawPtr<MediaQueryListListener>, PassRefPtrWillBeRawPtr<MediaQueryList>);
-        void evaluate(ScriptState*, MediaQueryEvaluator*);
+        void evaluate(MediaQueryEvaluator*);
 
         MediaQueryListListener* listener() { return m_listener.get(); }
         MediaQueryList* query() { return m_query.get(); }

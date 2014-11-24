@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "sync/base/sync_export.h"
@@ -21,6 +22,7 @@
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
 #include "sync/internal_api/public/events/protocol_event.h"
+#include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
@@ -43,10 +45,11 @@ class HttpPostProviderFactory;
 class InternalComponentsFactory;
 class JsBackend;
 class JsEventHandler;
-class SyncCore;
-class SyncEncryptionHandler;
 class ProtocolEvent;
+class SyncCoreProxy;
+class SyncEncryptionHandler;
 class SyncScheduler;
+class TypeDebugInfoObserver;
 struct Experiments;
 struct UserShare;
 
@@ -333,7 +336,7 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   virtual UserShare* GetUserShare() = 0;
 
   // Returns an instance of the main interface for non-blocking sync types.
-  virtual syncer::SyncCore* GetSyncCore() = 0;
+  virtual syncer::SyncCoreProxy* GetSyncCoreProxy() = 0;
 
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.
@@ -351,8 +354,26 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   // Returns the SyncManager's encryption handler.
   virtual SyncEncryptionHandler* GetEncryptionHandler() = 0;
 
+  virtual scoped_ptr<base::ListValue> GetAllNodesForType(
+      syncer::ModelType type) = 0;
+
   // Ask the SyncManager to fetch updates for the given types.
   virtual void RefreshTypes(ModelTypeSet types) = 0;
+
+  // Returns any buffered protocol events.  Does not clear the buffer.
+  virtual ScopedVector<syncer::ProtocolEvent> GetBufferedProtocolEvents() = 0;
+
+  // Functions to manage registrations of DebugInfoObservers.
+  virtual void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+
+  // Request that all current counter values be emitted as though they had just
+  // been updated.  Useful for initializing new observers' state.
+  virtual void RequestEmitDebugInfo() = 0;
 };
 
 }  // namespace syncer

@@ -60,8 +60,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string driver_date;
     std::string pixel_shader_version;
     std::string vertex_shader_version;
-    std::string machine_model;
-    std::string gl_version;
+    std::string machine_model_name;
+    std::string machine_model_version;
     std::string gl_version_string;
     std::string gl_vendor;
     std::string gl_renderer;
@@ -88,7 +88,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
       Fields_Have_Changed_In_GPUInfo_So_Update_Below);
 
   // Required fields (according to DevTools protocol) first.
-  enumerator->AddString("machineModel", machine_model);
+  enumerator->AddString("machineModelName", machine_model_name);
+  enumerator->AddString("machineModelVersion", machine_model_version);
   EnumerateGPUDevice(enumerator, gpu);
   for (size_t ii = 0; ii < secondary_gpus.size(); ++ii) {
     EnumerateGPUDevice(enumerator, secondary_gpus[ii]);
@@ -112,7 +113,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddString("pixelShaderVersion", pixel_shader_version);
   enumerator->AddString("vertexShaderVersion", vertex_shader_version);
   enumerator->AddString("glVersion", gl_version);
-  enumerator->AddString("glVersionString", gl_version_string);
   enumerator->AddString("glVendor", gl_vendor);
   enumerator->AddString("glRenderer", gl_renderer);
   enumerator->AddString("glExtensions", gl_extensions);

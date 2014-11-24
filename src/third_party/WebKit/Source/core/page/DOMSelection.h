@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -80,10 +80,11 @@ public:
     bool isCollapsed() const;
     int rangeCount() const;
     void collapse(Node*, int offset, ExceptionState&);
+    void collapse(Node*, ExceptionState&);
     void collapseToEnd(ExceptionState&);
     void collapseToStart(ExceptionState&);
     void extend(Node*, int offset, ExceptionState&);
-    PassRefPtr<Range> getRangeAt(int, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Range> getRangeAt(int, ExceptionState&);
     void removeAllRanges();
     void addRange(Range*);
     void deleteFromDocument();
@@ -95,7 +96,7 @@ public:
     // Microsoft Selection Object API
     void empty();
 
-    void trace(Visitor*) { }
+    void trace(Visitor* visitor) { visitor->trace(m_treeScope); }
 
 private:
     explicit DOMSelection(const TreeScope*);
@@ -110,7 +111,7 @@ private:
 
     void addConsoleError(const String& message);
 
-    const TreeScope* m_treeScope;
+    RawPtrWillBeMember<const TreeScope> m_treeScope;
 };
 
 } // namespace WebCore

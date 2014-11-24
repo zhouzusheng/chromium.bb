@@ -94,6 +94,9 @@ class VIEWS_EXPORT Label : public View {
   // Sets the drop shadow's offset from the text.
   void SetShadowOffset(int x, int y);
 
+  // Sets the shadow blur. Default is zero.
+  void set_shadow_blur(double shadow_blur) { shadow_blur_ = shadow_blur; }
+
   // Disables shadows.
   void ClearEmbellishing();
 
@@ -131,6 +134,14 @@ class VIEWS_EXPORT Label : public View {
   // Get or set if the label text can wrap on multiple lines; default is false.
   bool is_multi_line() const { return is_multi_line_; }
   void SetMultiLine(bool multi_line);
+
+  // Get or set if the label text should be obscured before rendering (e.g.
+  // should "Password!" display as "*********"); default is false.
+  bool is_obscured() const { return is_obscured_; }
+  void SetObscured(bool obscured);
+
+  // Get the text as displayed to the user, respecting the 'obscured' flag.
+  const base::string16& layout_text() const { return layout_text_; }
 
   // Sets whether the label text can be split on words.
   // Default is false. This only works when is_multi_line is true.
@@ -213,6 +224,10 @@ class VIEWS_EXPORT Label : public View {
   // Calls ComputeDrawStringFlags().
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DisableSubpixelRendering);
 
+  // Sets both |text_| and |layout_text_| to appropriate values, taking
+  // the label's 'obscured' status into account.
+  void SetTextInternal(const base::string16& text);
+
   void Init(const base::string16& text, const gfx::FontList& font_list);
 
   void RecalculateColors();
@@ -239,6 +254,7 @@ class VIEWS_EXPORT Label : public View {
   bool ShouldShowDefaultTooltip() const;
 
   base::string16 text_;
+  base::string16 layout_text_;
   gfx::FontList font_list_;
   SkColor requested_enabled_color_;
   SkColor actual_enabled_color_;
@@ -254,8 +270,11 @@ class VIEWS_EXPORT Label : public View {
   bool auto_color_readability_;
   mutable gfx::Size text_size_;
   mutable bool text_size_valid_;
+  // Indicates the level of shadow blurring. Default is zero.
+  double shadow_blur_;
   int line_height_;
   bool is_multi_line_;
+  bool is_obscured_;
   bool allow_character_break_;
   ElideBehavior elide_behavior_;
   gfx::HorizontalAlignment horizontal_alignment_;

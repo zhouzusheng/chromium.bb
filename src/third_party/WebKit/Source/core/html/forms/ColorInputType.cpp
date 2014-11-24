@@ -72,9 +72,9 @@ static bool isValidColorString(const String& value)
     return color.setFromString(value) && !color.hasAlpha();
 }
 
-PassRefPtr<InputType> ColorInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> ColorInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new ColorInputType(element));
+    return adoptRefWillBeNoop(new ColorInputType(element));
 }
 
 ColorInputType::~ColorInputType()
@@ -160,7 +160,7 @@ void ColorInputType::handleDOMActivateEvent(Event* event)
 
     Chrome* chrome = this->chrome();
     if (chrome && !m_chooser)
-        m_chooser = chrome->createColorChooser(this, valueAsColor());
+        m_chooser = chrome->createColorChooser(element().document().frame(), this, valueAsColor());
 
     event->setDefaultHandled();
 }

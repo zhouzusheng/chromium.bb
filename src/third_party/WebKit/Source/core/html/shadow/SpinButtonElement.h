@@ -40,13 +40,17 @@ public:
         Down,
         Up,
     };
-
-    class SpinButtonOwner {
+    enum EventDispatch {
+        EventDispatchAllowed,
+        EventDispatchDisallowed,
+    };
+    class SpinButtonOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~SpinButtonOwner() { }
         virtual void focusAndSelectSpinButtonOwner() = 0;
         virtual bool shouldSpinButtonRespondToMouseEvents() = 0;
         virtual bool shouldSpinButtonRespondToWheelEvents() = 0;
+        virtual void spinButtonDidReleaseMouseCapture(EventDispatch) = 0;
         virtual void spinButtonStepDown() = 0;
         virtual void spinButtonStepUp() = 0;
     };
@@ -56,8 +60,8 @@ public:
     // implementation, e.g. during event handling.
     static PassRefPtr<SpinButtonElement> create(Document&, SpinButtonOwner&);
     UpDownState upDownState() const { return m_upDownState; }
-    void releaseCapture();
-    void removeSpinButtonOwner() { m_spinButtonOwner = 0; }
+    void releaseCapture(EventDispatch = EventDispatchAllowed);
+    void removeSpinButtonOwner() { m_spinButtonOwner = nullptr; }
 
     void step(int amount);
 
@@ -66,10 +70,12 @@ public:
 
     void forwardEvent(Event*);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     SpinButtonElement(Document&, SpinButtonOwner&);
 
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext&) OVERRIDE;
     virtual bool isSpinButtonElement() const OVERRIDE { return true; }
     virtual bool isDisabledFormControl() const OVERRIDE { return shadowHost() && shadowHost()->isDisabledFormControl(); }
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
@@ -84,7 +90,7 @@ private:
     bool shouldRespondToMouseEvents();
     virtual bool isMouseFocusable() const OVERRIDE { return false; }
 
-    SpinButtonOwner* m_spinButtonOwner;
+    RawPtrWillBeMember<SpinButtonOwner> m_spinButtonOwner;
     bool m_capturing;
     UpDownState m_upDownState;
     UpDownState m_pressStartingState;

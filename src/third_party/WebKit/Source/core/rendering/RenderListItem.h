@@ -46,13 +46,14 @@ public:
     bool notInList() const { return m_notInList; }
 
     const String& markerText() const;
-    String markerTextWithSuffix() const;
 
     void updateListMarkerNumbers();
     void updateMarkerLocation();
 
     static void updateItemValuesForOrderedList(const HTMLOListElement*);
     static unsigned itemCountForOrderedList(const HTMLOListElement*);
+
+    bool isEmpty() const;
 
 private:
     virtual const char* renderName() const OVERRIDE { return "RenderListItem"; }
@@ -64,7 +65,6 @@ private:
     virtual void insertedIntoTree() OVERRIDE;
     virtual void willBeRemovedFromTree() OVERRIDE;
 
-    virtual bool isEmpty() const OVERRIDE;
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     virtual void layout() OVERRIDE;

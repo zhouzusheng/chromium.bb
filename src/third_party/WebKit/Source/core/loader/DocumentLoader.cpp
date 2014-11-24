@@ -59,6 +59,7 @@
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
+#include "public/platform/WebThreadedDataReceiver.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
 
@@ -187,8 +188,10 @@ void DocumentLoader::stopLoading()
             m_frame->loader().stopLoading();
     }
 
-    if (!loading)
+    if (!loading) {
+        m_fetcher->stopFetching();
         return;
+    }
 
     if (m_loadingMainResource) {
         // Stop the main resource loader and let it send the cancelled message.
@@ -539,13 +542,6 @@ void DocumentLoader::dataReceived(Resource* resource, const char* data, int leng
         cancelMainResourceLoad(ResourceError::cancelledError(m_request.url()));
 }
 
-void DocumentLoader::checkLoadComplete()
-{
-    if (!m_frame || isLoading() || !m_committed)
-        return;
-    m_frame->domWindow()->finishedLoading();
-}
-
 void DocumentLoader::clearRedirectChain()
 {
     m_redirectChain.clear();
@@ -574,7 +570,6 @@ void DocumentLoader::detachFromFrame()
 void DocumentLoader::clearMainResourceLoader()
 {
     m_loadingMainResource = false;
-    checkLoadComplete();
 }
 
 void DocumentLoader::clearMainResourceHandle()
@@ -758,6 +753,12 @@ void DocumentLoader::cancelMainResourceLoad(const ResourceError& resourceError)
         mainResourceLoader()->cancel(error);
 
     mainReceivedError(error);
+}
+
+void DocumentLoader::attachThreadedDataReceiver(PassOwnPtr<blink::WebThreadedDataReceiver> threadedDataReceiver)
+{
+    if (mainResourceLoader())
+        mainResourceLoader()->attachThreadedDataReceiver(threadedDataReceiver);
 }
 
 void DocumentLoader::endWriting(DocumentWriter* writer)

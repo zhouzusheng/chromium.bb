@@ -39,23 +39,23 @@
 
 namespace blink {
 
-class WebFrameImpl;
+class WebLocalFrameImpl;
 class WebPluginContainerImpl;
 class WebPluginLoadObserver;
 
 class FrameLoaderClientImpl FINAL : public WebCore::FrameLoaderClient {
 public:
-    FrameLoaderClientImpl(WebFrameImpl* webFrame);
+    FrameLoaderClientImpl(WebLocalFrameImpl* webFrame);
     virtual ~FrameLoaderClientImpl();
 
-    WebFrameImpl* webFrame() const { return m_webFrame; }
+    WebLocalFrameImpl* webFrame() const { return m_webFrame; }
 
     // WebCore::FrameLoaderClient ----------------------------------------------
 
     // Notifies the WebView delegate that the JS window object has been cleared,
     // giving it a chance to bind native objects to the window before script
     // parsing begins.
-    virtual void dispatchDidClearWindowObjectInWorld(WebCore::DOMWrapperWorld*) OVERRIDE;
+    virtual void dispatchDidClearWindowObjectInMainWorld() OVERRIDE;
     virtual void documentElementAvailable() OVERRIDE;
 
     virtual void didCreateScriptContext(v8::Handle<v8::Context>, int extensionGroup, int worldId) OVERRIDE;
@@ -98,9 +98,9 @@ public:
     virtual void dispatchWillRequestResource(WebCore::FetchRequest*) OVERRIDE;
     virtual void dispatchWillSendSubmitEvent(WebCore::HTMLFormElement*) OVERRIDE;
     virtual void dispatchWillSubmitForm(WebCore::HTMLFormElement*) OVERRIDE;
-    virtual void postProgressStartedNotification(WebCore::LoadStartType) OVERRIDE;
-    virtual void postProgressEstimateChangedNotification() OVERRIDE;
-    virtual void postProgressFinishedNotification() OVERRIDE;
+    virtual void didStartLoading(WebCore::LoadStartType) OVERRIDE;
+    virtual void didStopLoading() OVERRIDE;
+    virtual void progressEstimateChanged(double progressEstimate) OVERRIDE;
     virtual void loadURLExternally(const WebCore::ResourceRequest&, WebCore::NavigationPolicy, const String& suggestedName = String()) OVERRIDE;
     virtual bool navigateBackForward(int offset) const OVERRIDE;
     virtual void didAccessInitialDocument() OVERRIDE;
@@ -114,6 +114,7 @@ public:
     virtual WTF::String doNotTrackValue() OVERRIDE;
     virtual void transitionToCommittedForNewPage() OVERRIDE;
     virtual PassRefPtr<WebCore::LocalFrame> createFrame(const WebCore::KURL&, const WTF::AtomicString& name, const WebCore::Referrer&, WebCore::HTMLFrameOwnerElement*) OVERRIDE;
+    virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const;
     virtual PassRefPtr<WebCore::Widget> createPlugin(
         WebCore::HTMLPlugInElement*, const WebCore::KURL&,
         const Vector<WTF::String>&, const Vector<WTF::String>&,
@@ -144,7 +145,7 @@ public:
 
     virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) OVERRIDE;
 
-    virtual void didRequestAutocomplete(WebCore::HTMLFormElement*) OVERRIDE;
+    virtual void didRequestAutocomplete(WebCore::HTMLFormElement*, const WebCore::Dictionary&) OVERRIDE;
 
     virtual bool allowWebGL(bool enabledPerSettings) OVERRIDE;
     virtual void didLoseWebGLContext(int arbRobustnessContextLostReason) OVERRIDE;
@@ -158,6 +159,8 @@ public:
 
     virtual void didStopAllLoaders() OVERRIDE;
 
+    virtual void dispatchDidChangeManifest() OVERRIDE;
+
 private:
     virtual bool isFrameLoaderClientImpl() const OVERRIDE { return true; }
 
@@ -165,7 +168,7 @@ private:
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.
-    WebFrameImpl* m_webFrame;
+    WebLocalFrameImpl* m_webFrame;
 };
 
 DEFINE_TYPE_CASTS(FrameLoaderClientImpl, WebCore::FrameLoaderClient, client, client->isFrameLoaderClientImpl(), client.isFrameLoaderClientImpl());

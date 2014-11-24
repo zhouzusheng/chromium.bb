@@ -33,10 +33,8 @@
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/rendering/RenderFullScreen.h"
@@ -72,7 +70,7 @@ FullscreenElementStack& FullscreenElementStack::from(Document& document)
     FullscreenElementStack* fullscreen = fromIfExists(document);
     if (!fullscreen) {
         fullscreen = new FullscreenElementStack(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(fullscreen));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(fullscreen));
     }
 
     return *fullscreen;
@@ -195,13 +193,10 @@ void FullscreenElementStack::requestFullScreenForElement(Element* element, unsig
         //   An algorithm is allowed to show a pop-up if, in the task in which the algorithm is running, either:
         //   - an activation behavior is currently being processed whose click event was trusted, or
         //   - the event listener for a trusted click event is being handled.
-        // FIXME: Does this need to null-check settings()?
-        if (!UserGestureIndicator::processingUserGesture() && (!isHTMLMediaElement(*element) || document()->settings()->mediaFullscreenRequiresUserGesture()))
+        if (!UserGestureIndicator::processingUserGesture())
             break;
 
         // There is a previously-established user preference, security risk, or platform limitation.
-        if (!document()->settings() || !document()->settings()->fullScreenEnabled())
-            break;
 
         // 2. Let doc be element's node document. (i.e. "this")
         Document* currentDoc = document();
@@ -273,7 +268,7 @@ void FullscreenElementStack::webkitCancelFullScreen()
 
     // To achieve that aim, remove all the elements from the top document's stack except for the first before
     // calling webkitExitFullscreen():
-    Vector<RefPtr<Element> > replacementFullscreenElementStack;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > replacementFullscreenElementStack;
     replacementFullscreenElementStack.append(fullscreenElementFrom(document()->topDocument()));
     FullscreenElementStack& topFullscreenElementStack = from(document()->topDocument());
     topFullscreenElementStack.m_fullScreenElementStack.swap(replacementFullscreenElementStack);
@@ -374,9 +369,6 @@ void FullscreenElementStack::webkitWillEnterFullScreenForElement(Element* elemen
     ASSERT(element);
     if (!document()->isActive())
         return;
-
-    ASSERT(document()->settings()); // If we're active we must have settings.
-    ASSERT(document()->settings()->fullScreenEnabled());
 
     if (m_fullScreenRenderer)
         m_fullScreenRenderer->unwrapRenderer();
@@ -485,14 +477,14 @@ void FullscreenElementStack::fullScreenChangeDelayTimerFired(Timer<FullscreenEle
     // Since we dispatch events in this function, it's possible that the
     // document will be detached and GC'd. We protect it here to make sure we
     // can finish the function successfully.
-    RefPtr<Document> protectDocument(document());
-    Deque<RefPtr<Node> > changeQueue;
+    RefPtrWillBeRawPtr<Document> protectDocument(document());
+    WillBeHeapDeque<RefPtrWillBeMember<Node> > changeQueue;
     m_fullScreenChangeEventTargetQueue.swap(changeQueue);
-    Deque<RefPtr<Node> > errorQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Node> > errorQueue;
     m_fullScreenErrorEventTargetQueue.swap(errorQueue);
 
     while (!changeQueue.isEmpty()) {
-        RefPtr<Node> node = changeQueue.takeFirst();
+        RefPtrWillBeRawPtr<Node> node = changeQueue.takeFirst();
         if (!node)
             node = document()->documentElement();
         // The dispatchEvent below may have blown away our documentElement.
@@ -508,7 +500,7 @@ void FullscreenElementStack::fullScreenChangeDelayTimerFired(Timer<FullscreenEle
     }
 
     while (!errorQueue.isEmpty()) {
-        RefPtr<Node> node = errorQueue.takeFirst();
+        RefPtrWillBeRawPtr<Node> node = errorQueue.takeFirst();
         if (!node)
             node = document()->documentElement();
         // The dispatchEvent below may have blown away our documentElement.
@@ -581,6 +573,15 @@ void FullscreenElementStack::addDocumentToFullScreenChangeEventQueue(Document* d
     if (!target)
         target = doc;
     m_fullScreenChangeEventTargetQueue.append(target);
+}
+
+void FullscreenElementStack::trace(Visitor* visitor)
+{
+    visitor->trace(m_fullScreenElement);
+    visitor->trace(m_fullScreenElementStack);
+    visitor->trace(m_fullScreenChangeEventTargetQueue);
+    visitor->trace(m_fullScreenErrorEventTargetQueue);
+    DocumentSupplement::trace(visitor);
 }
 
 } // namespace WebCore

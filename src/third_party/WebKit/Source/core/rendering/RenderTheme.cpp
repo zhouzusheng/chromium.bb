@@ -60,10 +60,6 @@
 #include "public/platform/WebRect.h"
 #include "wtf/text/StringBuilder.h"
 
-#if ENABLE(INPUT_SPEECH)
-#include "core/rendering/RenderInputSpeech.h"
-#endif
-
 // The methods in this file are shared by all themes on every platform.
 
 namespace WebCore {
@@ -226,10 +222,6 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, const CachedUAStyl
         return adjustSearchFieldDecorationStyle(style, e);
     case SearchFieldResultsDecorationPart:
         return adjustSearchFieldResultsDecorationStyle(style, e);
-#if ENABLE(INPUT_SPEECH)
-    case InputSpeechButtonPart:
-        return adjustInputFieldSpeechButtonStyle(style, e);
-#endif
     default:
         break;
     }
@@ -245,9 +237,6 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
             o->repaint();
         return false;
     }
-    if (paintInfo.context->paintingDisabled())
-        return false;
-
     ControlPart part = o->style()->appearance();
 
     if (shouldUseFallbackTheme(o->style()))
@@ -342,10 +331,6 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
         return paintSearchFieldDecoration(o, paintInfo, r);
     case SearchFieldResultsDecorationPart:
         return paintSearchFieldResultsDecoration(o, paintInfo, r);
-#if ENABLE(INPUT_SPEECH)
-    case InputSpeechButtonPart:
-        return paintInputFieldSpeechButton(o, paintInfo, r);
-#endif
     default:
         break;
     }
@@ -355,9 +340,6 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
 
 bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
-    if (paintInfo.context->paintingDisabled())
-        return false;
-
     // Call the appropriate paint method based off the appearance value.
     switch (o->style()->appearance()) {
     case TextFieldPart:
@@ -387,9 +369,6 @@ bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, c
     case SearchFieldCancelButtonPart:
     case SearchFieldDecorationPart:
     case SearchFieldResultsDecorationPart:
-#if ENABLE(INPUT_SPEECH)
-    case InputSpeechButtonPart:
-#endif
     default:
         break;
     }
@@ -399,9 +378,6 @@ bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, c
 
 bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
-    if (paintInfo.context->paintingDisabled())
-        return false;
-
     // Call the appropriate paint method based off the appearance value.
     switch (o->style()->appearance()) {
     case MenulistButtonPart:
@@ -429,9 +405,6 @@ bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, 
     case SearchFieldCancelButtonPart:
     case SearchFieldDecorationPart:
     case SearchFieldResultsDecorationPart:
-#if ENABLE(INPUT_SPEECH)
-    case InputSpeechButtonPart:
-#endif
     default:
         break;
     }
@@ -740,7 +713,7 @@ bool RenderTheme::isFocused(const RenderObject* o) const
     node = node->focusDelegate();
     Document& document = node->document();
     LocalFrame* frame = document.frame();
-    return node == document.focusedElement() && node->shouldHaveFocusAppearance() && frame && frame->selection().isFocusedAndActive();
+    return node == document.focusedElement() && node->focused() && node->shouldHaveFocusAppearance() && frame && frame->selection().isFocusedAndActive();
 }
 
 bool RenderTheme::isPressed(const RenderObject* o) const
@@ -833,18 +806,6 @@ void RenderTheme::adjustInnerSpinButtonStyle(RenderStyle*, Element*) const
 void RenderTheme::adjustMenuListStyle(RenderStyle*, Element*) const
 {
 }
-
-#if ENABLE(INPUT_SPEECH)
-void RenderTheme::adjustInputFieldSpeechButtonStyle(RenderStyle* style, Element* element) const
-{
-    RenderInputSpeech::adjustInputFieldSpeechButtonStyle(style, element);
-}
-
-bool RenderTheme::paintInputFieldSpeechButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
-{
-    return RenderInputSpeech::paintInputFieldSpeechButton(object, paintInfo, rect);
-}
-#endif
 
 IntSize RenderTheme::meterSizeForBounds(const RenderMeter*, const IntRect& bounds) const
 {
@@ -1175,6 +1136,8 @@ void RenderTheme::setSizeIfAuto(RenderStyle* style, const IntSize& size)
 
 bool RenderTheme::paintCheckboxUsingFallbackTheme(RenderObject* o, const PaintInfo& i, const IntRect& r)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebFallbackThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);
@@ -1217,6 +1180,8 @@ void RenderTheme::adjustCheckboxStyleUsingFallbackTheme(RenderStyle* style, Elem
 
 bool RenderTheme::paintRadioUsingFallbackTheme(RenderObject* o, const PaintInfo& i, const IntRect& r)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebFallbackThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);

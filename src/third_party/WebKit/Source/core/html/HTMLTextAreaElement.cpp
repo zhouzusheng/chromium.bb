@@ -83,14 +83,14 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document, HTMLFormElement* fo
     , m_cols(defaultCols)
     , m_wrap(SoftWrap)
     , m_isDirty(false)
+    , m_valueIsUpToDate(true)
 {
-    setFormControlValueMatchesRenderer(true);
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(Document& document, HTMLFormElement* form)
 {
-    RefPtr<HTMLTextAreaElement> textArea = adoptRef(new HTMLTextAreaElement(document, form));
+    RefPtrWillBeRawPtr<HTMLTextAreaElement> textArea = adoptRefWillBeRefCountedGarbageCollected(new HTMLTextAreaElement(document, form));
     textArea->ensureUserAgentShadowRoot();
     return textArea.release();
 }
@@ -240,12 +240,9 @@ bool HTMLTextAreaElement::shouldShowFocusRingOnMouseFocus() const
 
 void HTMLTextAreaElement::updateFocusAppearance(bool restorePreviousSelection)
 {
-    if (!restorePreviousSelection || !hasCachedSelection()) {
-        // If this is the first focus, set a caret at the beginning of the text.
-        // This matches some browsers' behavior; see bug 11746 Comment #15.
-        // http://bugs.webkit.org/show_bug.cgi?id=11746#c15
+    if (!restorePreviousSelection)
         setSelectionRange(0, 0);
-    } else
+    else
         restoreCachedSelection();
 
     if (document().frame())
@@ -271,7 +268,7 @@ void HTMLTextAreaElement::handleFocusEvent(Element*, FocusType)
 void HTMLTextAreaElement::subtreeHasChanged()
 {
     setChangedSinceLastFormControlChangeEvent(true);
-    setFormControlValueMatchesRenderer(false);
+    m_valueIsUpToDate = false;
     setNeedsValidityCheck();
 
     if (!focused())
@@ -319,12 +316,12 @@ String HTMLTextAreaElement::sanitizeUserInputValue(const String& proposedValue, 
 
 void HTMLTextAreaElement::updateValue() const
 {
-    if (formControlValueMatchesRenderer())
+    if (m_valueIsUpToDate)
         return;
 
     ASSERT(renderer());
     m_value = innerTextValue();
-    const_cast<HTMLTextAreaElement*>(this)->setFormControlValueMatchesRenderer(true);
+    const_cast<HTMLTextAreaElement*>(this)->m_valueIsUpToDate = true;
     const_cast<HTMLTextAreaElement*>(this)->notifyFormStateChanged();
     m_isDirty = true;
     const_cast<HTMLTextAreaElement*>(this)->updatePlaceholderVisibility(false);
@@ -338,10 +335,12 @@ String HTMLTextAreaElement::value() const
 
 void HTMLTextAreaElement::setValue(const String& value, TextFieldEventBehavior eventBehavior)
 {
-    RefPtr<HTMLTextAreaElement> protector(this);
+    RefPtrWillBeRawPtr<HTMLTextAreaElement> protector(this);
     setValueCommon(value, eventBehavior);
     m_isDirty = true;
     setNeedsValidityCheck();
+    if (document().focusedElement() == this)
+        document().frameHost()->chrome().client().didUpdateTextOfFocusedElementByNonUserInput();
 }
 
 void HTMLTextAreaElement::setNonDirtyValue(const String& value)
@@ -370,7 +369,6 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue, TextFieldEventB
         setLastChangeWasNotUserEdit();
     updatePlaceholderVisibility(false);
     setNeedsStyleRecalc(SubtreeStyleChange);
-    setFormControlValueMatchesRenderer(true);
     m_suggestedValue = String();
 
     // Set the caret to the end of the text value.
@@ -387,6 +385,12 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue, TextFieldEventB
             dispatchFormControlInputEvent();
         dispatchFormControlChangeEvent();
     }
+}
+
+void HTMLTextAreaElement::setInnerTextValue(const String& value)
+{
+    HTMLTextFormControlElement::setInnerTextValue(value);
+    m_valueIsUpToDate = true;
 }
 
 String HTMLTextAreaElement::defaultValue() const
@@ -537,14 +541,14 @@ bool HTMLTextAreaElement::matchesReadWritePseudoClass() const
 void HTMLTextAreaElement::updatePlaceholderText()
 {
     HTMLElement* placeholder = placeholderElement();
-    String placeholderText = strippedPlaceholder();
+    const AtomicString& placeholderText = fastGetAttribute(placeholderAttr);
     if (placeholderText.isEmpty()) {
         if (placeholder)
             userAgentShadowRoot()->removeChild(placeholder);
         return;
     }
     if (!placeholder) {
-        RefPtr<HTMLDivElement> newElement = HTMLDivElement::create(document());
+        RefPtrWillBeRawPtr<HTMLDivElement> newElement = HTMLDivElement::create(document());
         placeholder = newElement.get();
         placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());

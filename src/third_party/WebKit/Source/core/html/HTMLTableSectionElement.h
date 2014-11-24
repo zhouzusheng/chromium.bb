@@ -34,9 +34,10 @@ class ExceptionState;
 
 class HTMLTableSectionElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableSectionElement> create(const QualifiedName&, Document&);
+    static PassRefPtrWillBeRawPtr<HTMLTableSectionElement> create(const QualifiedName&, Document&);
 
-    PassRefPtr<HTMLElement> insertRow(int index, ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(int index, ExceptionState&);
     void deleteRow(int index, ExceptionState&);
 
     int numRows() const;

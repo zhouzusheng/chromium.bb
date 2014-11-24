@@ -32,40 +32,53 @@
 #include "core/dom/Microtask.h"
 
 #include "bindings/v8/V8PerIsolateData.h"
+#include "platform/Task.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Vector.h"
+#include <v8.h>
 
 namespace WebCore {
 
-typedef Vector<MicrotaskCallback> MicrotaskQueue;
-
-static MicrotaskQueue& microtaskQueue()
-{
-    DEFINE_STATIC_LOCAL(MicrotaskQueue, microtaskQueue, ());
-    return microtaskQueue;
-}
-
 void Microtask::performCheckpoint()
 {
-    V8PerIsolateData* isolateData = V8PerIsolateData::current();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    V8PerIsolateData* isolateData = V8PerIsolateData::from(isolate);
     ASSERT(isolateData);
     if (isolateData->recursionLevel() || isolateData->performingMicrotaskCheckpoint())
         return;
     isolateData->setPerformingMicrotaskCheckpoint(true);
 
-    while (!microtaskQueue().isEmpty()) {
-        Vector<MicrotaskCallback> microtasks;
-        microtasks.swap(microtaskQueue());
-        for (size_t i = 0; i < microtasks.size(); ++i) {
-            microtasks[i]();
-        }
+    v8::HandleScope handleScope(isolate);
+    v8::Local<v8::Context> context = isolateData->ensureDomInJSContext();
+    if (!context.IsEmpty()) {
+        v8::Context::Scope scope(context);
+        isolate->RunMicrotasks();
     }
 
     isolateData->setPerformingMicrotaskCheckpoint(false);
 }
 
-void Microtask::enqueueMicrotask(MicrotaskCallback callback)
+static void microtaskFunctionCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    microtaskQueue().append(callback);
+    OwnPtr<blink::WebThread::Task> task = adoptPtr(static_cast<blink::WebThread::Task*>(info.Data().As<v8::External>()->Value()));
+    task->run();
+}
+
+void Microtask::enqueueMicrotask(PassOwnPtr<blink::WebThread::Task> callback)
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    V8PerIsolateData* isolateData = V8PerIsolateData::from(isolate);
+    v8::HandleScope handleScope(isolate);
+    v8::Local<v8::Context> context = isolateData->ensureDomInJSContext();
+    ASSERT(!context.IsEmpty());
+    v8::Context::Scope scope(context);
+    v8::Local<v8::External> handler = v8::External::New(isolate, callback.leakPtr());
+    isolate->EnqueueMicrotask(v8::Function::New(isolate, &microtaskFunctionCallback, handler));
+}
+
+void Microtask::enqueueMicrotask(const Closure& callback)
+{
+    enqueueMicrotask(adoptPtr(new Task(callback)));
 }
 
 } // namespace WebCore

@@ -133,7 +133,7 @@ public:
         const bool* generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
         TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
-    virtual void compileScript(ErrorString*, const String& expression, const String& sourceURL, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage) OVERRIDE;
+    virtual void compileScript(ErrorString*, const String& expression, const String& sourceURL, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage) OVERRIDE;
     virtual void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE;
     virtual void setOverlayMessage(ErrorString*, const String*) OVERRIDE;
     virtual void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId) OVERRIDE FINAL;
@@ -149,9 +149,6 @@ public:
     void didCancelAnimationFrame(Document*, int callbackId);
     bool willFireAnimationFrame(Document*, int callbackId);
     void didFireAnimationFrame();
-    void didAddEventListener(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
-    void didRemoveEventListener(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
-    void didRemoveAllEventListeners(EventTarget*);
     void willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
     void didHandleEvent();
     void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, FormData* body, const HTTPHeaderMap& headers, bool includeCrendentials);
@@ -238,7 +235,7 @@ private:
 
     InjectedScriptManager* m_injectedScriptManager;
     InspectorFrontend::Debugger* m_frontend;
-    ScriptState* m_pausedScriptState;
+    RefPtr<ScriptState> m_pausedScriptState;
     ScriptValue m_currentCallStack;
     ScriptsMap m_scripts;
     BreakpointIdToDebugServerBreakpointIdsMap m_breakpointIdToDebugServerBreakpointIds;

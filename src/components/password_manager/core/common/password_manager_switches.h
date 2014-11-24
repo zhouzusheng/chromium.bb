@@ -5,13 +5,18 @@
 #ifndef COMPONENTS_PASSWORD_MANAGER_CORE_COMMON_PASSWORD_MANAGER_SWITCHES_H_
 #define COMPONENTS_PASSWORD_MANAGER_CORE_COMMON_PASSWORD_MANAGER_SWITCHES_H_
 
+namespace password_manager {
+
 namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
 
+extern const char kEnableAutomaticPasswordSaving[];
 extern const char kEnablePasswordManagerInternalsUI[];
 
 }  // namespace switches
+
+}  // namespace password_manager
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_COMMON_PASSWORD_MANAGER_SWITCHES_H_

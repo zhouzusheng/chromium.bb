@@ -84,7 +84,7 @@ Element* SelectorChecker::parentElement(const SelectorCheckingContext& context, 
         return context.element->parentOrShadowHostElement();
 
     // If context.scope is a shadow host, we should walk up from a shadow root to its shadow host.
-    if (context.behaviorAtBoundary & SelectorChecker::ScopeIsShadowHost)
+    if ((context.behaviorAtBoundary & SelectorChecker::ScopeIsShadowHost) && context.scope == context.element->shadowHost())
         return context.element->parentOrShadowHostElement();
 
     if ((context.behaviorAtBoundary & SelectorChecker::BoundaryBehaviorMask) != SelectorChecker::StaysWithinTreeScope)
@@ -111,7 +111,7 @@ bool SelectorChecker::scopeContainsLastMatchedElement(const SelectorCheckingCont
         return context.scope->contains(context.element);
 
     // If a given element is scope, i.e. shadow host, matches.
-    if (context.element == context.scope)
+    if (context.element == context.scope && (!context.previousElement || context.previousElement->isInDescendantTreeOf(context.element)))
         return true;
 
     ShadowRoot* root = context.element->containingShadowRoot();
@@ -154,8 +154,8 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             if (!context.element->isInShadowTree() || !context.element->isInsertionPoint())
                 return SelectorFailsLocally;
         } else if (context.selector->isShadowPseudoElement()) {
-            if (!context.element->isInShadowTree())
-                return SelectorFailsLocally;
+            if (!context.element->isInShadowTree() || !context.previousElement)
+                return SelectorFailsCompletely;
         } else {
             if ((!context.elementStyle && m_mode == ResolvingStyle) || m_mode == QueryingRules)
                 return SelectorFailsLocally;
@@ -255,6 +255,7 @@ template<typename SiblingTraversalStrategy>
 SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy, MatchResult* result) const
 {
     SelectorCheckingContext nextContext = prepareNextContextForRelation(context);
+    nextContext.previousElement = context.element;
 
     CSSSelector::Relation relation = context.selector->relation();
 
@@ -304,6 +305,10 @@ SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingC
             return match(nextContext, siblingTraversalStrategy, result);
         }
     case CSSSelector::DirectAdjacent:
+        // Shadow roots can't have sibling elements
+        if (selectorMatchesShadowRoot(nextContext.selector))
+            return SelectorFailsCompletely;
+
         if (m_mode == ResolvingStyle) {
             if (ContainerNode* parent = context.element->parentElementOrShadowRoot())
                 parent->setChildrenAffectedByDirectAdjacentRules();
@@ -316,6 +321,10 @@ SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingC
         return match(nextContext, siblingTraversalStrategy, result);
 
     case CSSSelector::IndirectAdjacent:
+        // Shadow roots can't have sibling elements
+        if (selectorMatchesShadowRoot(nextContext.selector))
+            return SelectorFailsCompletely;
+
         if (m_mode == ResolvingStyle) {
             if (ContainerNode* parent = context.element->parentElementOrShadowRoot())
                 parent->setChildrenAffectedByIndirectAdjacentRules();
@@ -676,7 +685,6 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
                 int count = 1 + siblingTraversalStrategy.countElementsBefore(element);
                 if (m_mode == ResolvingStyle) {
                     RenderStyle* childStyle = context.elementStyle ? context.elementStyle : element.renderStyle();
-                    element.setChildIndex(count);
                     if (childStyle)
                         childStyle->setUnique();
                     parent->setChildrenAffectedByForwardPositionalRules();

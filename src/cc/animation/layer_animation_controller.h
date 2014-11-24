@@ -59,6 +59,11 @@ class CC_EXPORT LayerAnimationController
   void UpdateState(bool start_ready_animations,
                    AnimationEventsVector* events);
 
+  // Make animations affect active observers if and only if they affect
+  // pending observers. Any animations that no longer affect any observers
+  // are deleted.
+  void ActivateAnimations();
+
   // Returns the active animation in the given group, animating the given
   // property, if such an animation exists.
   Animation* GetAnimation(int group_id,
@@ -73,7 +78,7 @@ class CC_EXPORT LayerAnimationController
   bool HasActiveAnimation() const;
 
   // Returns true if there are any animations at all to process.
-  bool has_any_animation() const { return !active_animations_.empty(); }
+  bool has_any_animation() const { return !animations_.empty(); }
 
   // Returns true if there is an animation currently animating the given
   // property, or if there is an animation scheduled to animate this property in
@@ -119,6 +124,18 @@ class CC_EXPORT LayerAnimationController
   bool TransformAnimationBoundsForBox(const gfx::BoxF& box,
                                       gfx::BoxF* bounds) const;
 
+  bool HasAnimationThatAffectsScale() const;
+
+  bool HasOnlyTranslationTransforms() const;
+
+  // Sets |max_scale| to the maximum scale along any dimension during active
+  // animations. Returns false if the maximum scale cannot be computed.
+  bool MaximumScale(float* max_scale) const;
+
+  bool needs_to_start_animations_for_testing() {
+    return needs_to_start_animations_;
+  }
+
  protected:
   friend class base::RefCounted<LayerAnimationController>;
 
@@ -151,10 +168,18 @@ class CC_EXPORT LayerAnimationController
   };
   void UpdateActivation(UpdateActivationType type);
 
-  void NotifyObserversOpacityAnimated(float opacity);
-  void NotifyObserversTransformAnimated(const gfx::Transform& transform);
-  void NotifyObserversFilterAnimated(const FilterOperations& filter);
-  void NotifyObserversScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset);
+  void NotifyObserversOpacityAnimated(float opacity,
+                                      bool notify_active_observers,
+                                      bool notify_pending_observers);
+  void NotifyObserversTransformAnimated(const gfx::Transform& transform,
+                                        bool notify_active_observers,
+                                        bool notify_pending_observers);
+  void NotifyObserversFilterAnimated(const FilterOperations& filter,
+                                     bool notify_active_observers,
+                                     bool notify_pending_observers);
+  void NotifyObserversScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset,
+                                           bool notify_active_observers,
+                                           bool notify_pending_observers);
 
   void NotifyObserversAnimationWaitingForDeletion();
 
@@ -163,7 +188,7 @@ class CC_EXPORT LayerAnimationController
 
   AnimationRegistrar* registrar_;
   int id_;
-  ScopedPtrVector<Animation> active_animations_;
+  ScopedPtrVector<Animation> animations_;
 
   // This is used to ensure that we don't spam the registrar.
   bool is_active_;
@@ -176,6 +201,10 @@ class CC_EXPORT LayerAnimationController
   LayerAnimationValueProvider* value_provider_;
 
   AnimationDelegate* layer_animation_delegate_;
+
+  // Only try to start animations when new animations are added or when the
+  // previous attempt at starting animations failed to start all animations.
+  bool needs_to_start_animations_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerAnimationController);
 };

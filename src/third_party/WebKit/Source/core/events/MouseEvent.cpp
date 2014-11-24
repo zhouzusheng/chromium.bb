@@ -46,7 +46,7 @@ MouseEventInit::MouseEventInit()
 
 PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(const AtomicString& type, const MouseEventInit& initializer)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new MouseEvent(type, initializer));
+    return adoptRefWillBeNoop(new MouseEvent(type, initializer));
 }
 
 PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView> view, const PlatformMouseEvent& event, int detail, PassRefPtr<Node> relatedTarget)
@@ -71,7 +71,7 @@ PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(const AtomicString& type, 
     bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
     PassRefPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<Clipboard> clipboard, bool isSimulated)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new MouseEvent(type, canBubble, cancelable, view,
+    return adoptRefWillBeNoop(new MouseEvent(type, canBubble, cancelable, view,
         detail, screenX, screenY, pageX, pageY,
         movementX, movementY,
         ctrlKey, altKey, shiftKey, metaKey, button, relatedTarget, clipboard, isSimulated));
@@ -196,16 +196,16 @@ void MouseEvent::trace(Visitor* visitor)
     MouseRelatedEvent::trace(visitor);
 }
 
-PassRefPtrWillBeRawPtr<SimulatedMouseEvent> SimulatedMouseEvent::create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView> view, PassRefPtr<Event> underlyingEvent)
+PassRefPtrWillBeRawPtr<SimulatedMouseEvent> SimulatedMouseEvent::create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView> view, PassRefPtrWillBeRawPtr<Event> underlyingEvent)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new SimulatedMouseEvent(eventType, view, underlyingEvent));
+    return adoptRefWillBeNoop(new SimulatedMouseEvent(eventType, view, underlyingEvent));
 }
 
 SimulatedMouseEvent::~SimulatedMouseEvent()
 {
 }
 
-SimulatedMouseEvent::SimulatedMouseEvent(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView> view, PassRefPtr<Event> underlyingEvent)
+SimulatedMouseEvent::SimulatedMouseEvent(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView> view, PassRefPtrWillBeRawPtr<Event> underlyingEvent)
     : MouseEvent(eventType, true, true, view, 0, 0, 0, 0, 0,
                  0, 0,
                  false, false, false, false, 0, nullptr, nullptr, true)
@@ -230,12 +230,12 @@ void SimulatedMouseEvent::trace(Visitor* visitor)
     MouseEvent::trace(visitor);
 }
 
-PassRefPtr<MouseEventDispatchMediator> MouseEventDispatchMediator::create(PassRefPtr<MouseEvent> mouseEvent, MouseEventType mouseEventType)
+PassRefPtr<MouseEventDispatchMediator> MouseEventDispatchMediator::create(PassRefPtrWillBeRawPtr<MouseEvent> mouseEvent, MouseEventType mouseEventType)
 {
     return adoptRef(new MouseEventDispatchMediator(mouseEvent, mouseEventType));
 }
 
-MouseEventDispatchMediator::MouseEventDispatchMediator(PassRefPtr<MouseEvent> mouseEvent, MouseEventType mouseEventType)
+MouseEventDispatchMediator::MouseEventDispatchMediator(PassRefPtrWillBeRawPtr<MouseEvent> mouseEvent, MouseEventType mouseEventType)
     : EventDispatchMediator(mouseEvent), m_mouseEventType(mouseEventType)
 {
 }
@@ -272,7 +272,7 @@ bool MouseEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) cons
     // Special case: If it's a double click event, we also send the dblclick event. This is not part
     // of the DOM specs, but is used for compatibility with the ondblclick="" attribute. This is treated
     // as a separate event in other DOM-compliant browsers like Firefox, and so we do the same.
-    RefPtr<MouseEvent> doubleClickEvent = MouseEvent::create();
+    RefPtrWillBeRawPtr<MouseEvent> doubleClickEvent = MouseEvent::create();
     doubleClickEvent->initMouseEvent(EventTypeNames::dblclick, event()->bubbles(), event()->cancelable(), event()->view(),
                                      event()->detail(), event()->screenX(), event()->screenY(), event()->clientX(), event()->clientY(),
                                      event()->ctrlKey(), event()->altKey(), event()->shiftKey(), event()->metaKey(),

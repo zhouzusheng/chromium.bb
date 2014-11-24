@@ -1,3 +1,4 @@
+# For GN compatibility, this file can not have any conditions.
 {
     'variables': {
         'wtf_files': [
@@ -12,6 +13,8 @@
             'ArrayBufferDeallocationObserver.h',
             'ArrayBufferView.cpp',
             'ArrayBufferView.h',
+            'ArrayPiece.cpp',
+            'ArrayPiece.h',
             'Assertions.cpp',
             'Assertions.h',
             'Atomics.h',
@@ -36,6 +39,7 @@
             'DateMath.h',
             'DecimalNumber.cpp',
             'DecimalNumber.h',
+            'DefaultAllocator.cpp',
             'DefaultAllocator.h',
             'Deque.h',
             'DoublyLinkedList.h',
@@ -100,8 +104,6 @@
             'RefCountedLeakCounter.h',
             'RefPtr.h',
             'RetainPtr.h',
-            'SHA1.cpp',
-            'SHA1.h',
             'SaturatedArithmetic.h',
             'SizeLimits.cpp',
             'SpinLock.h',
@@ -207,13 +209,13 @@
         'wtf_unittest_files': [
             'ArrayBufferBuilderTest.cpp',
             'CheckedArithmeticTest.cpp',
+            'DequeTest.cpp',
             'FunctionalTest.cpp',
             'HashMapTest.cpp',
             'HashSetTest.cpp',
             'ListHashSetTest.cpp',
             'MathExtrasTest.cpp',
             'PartitionAllocTest.cpp',
-            'SHA1Test.cpp',
             'SaturatedArithmeticTest.cpp',
             'StringExtrasTest.cpp',
             'StringHasherTest.cpp',

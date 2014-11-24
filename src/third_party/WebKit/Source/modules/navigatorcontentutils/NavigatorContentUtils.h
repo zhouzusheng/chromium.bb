@@ -28,7 +28,8 @@
 #define NavigatorContentUtils_h
 
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "platform/RefCountedSupplement.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -38,28 +39,31 @@ class ExceptionState;
 class Navigator;
 class Page;
 
-class NavigatorContentUtils FINAL : public RefCountedSupplement<Page, NavigatorContentUtils> {
+class NavigatorContentUtils FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorContentUtils>, public WillBeHeapSupplement<Page> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorContentUtils);
 public:
     virtual ~NavigatorContentUtils();
 
-    static const char* supplementName();
     static NavigatorContentUtils* from(Page&);
+    static const char* supplementName();
 
     static void registerProtocolHandler(Navigator&, const String& scheme, const String& url, const String& title, ExceptionState&);
 
     static String isProtocolHandlerRegistered(Navigator&, const String& scheme, const String& url, ExceptionState&);
     static void unregisterProtocolHandler(Navigator&, const String& scheme, const String& url, ExceptionState&);
 
-    static PassRefPtr<NavigatorContentUtils> create(NavigatorContentUtilsClient*);
+    static PassOwnPtrWillBeRawPtr<NavigatorContentUtils> create(PassOwnPtr<NavigatorContentUtilsClient>);
+
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
 
 private:
-    explicit NavigatorContentUtils(NavigatorContentUtilsClient* client)
+    explicit NavigatorContentUtils(PassOwnPtr<NavigatorContentUtilsClient> client)
         : m_client(client)
     { }
 
-    NavigatorContentUtilsClient* client() { return m_client; }
+    NavigatorContentUtilsClient* client() { return m_client.get(); }
 
-    NavigatorContentUtilsClient* m_client;
+    OwnPtr<NavigatorContentUtilsClient> m_client;
 };
 
 } // namespace WebCore

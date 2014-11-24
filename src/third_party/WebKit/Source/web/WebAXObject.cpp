@@ -29,11 +29,9 @@
  */
 
 #include "config.h"
-#include "WebAXObject.h"
+#include "public/web/WebAXObject.h"
 
 #include "HTMLNames.h"
-#include "WebDocument.h"
-#include "WebNode.h"
 #include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/accessibility/AXTable.h"
@@ -43,14 +41,17 @@
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
-#include "core/page/EventHandler.h"
 #include "core/frame/FrameView.h"
+#include "core/page/EventHandler.h"
+#include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebNode.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace WebCore;
@@ -90,16 +91,6 @@ void WebAXObject::enableInlineTextBoxAccessibility()
     AXObjectCache::setInlineTextBoxAccessibility(true);
 }
 
-void WebAXObject::startCachingComputedObjectAttributesUntilTreeMutates()
-{
-    m_private->axObjectCache()->startCachingComputedObjectAttributesUntilTreeMutates();
-}
-
-void WebAXObject::stopCachingComputedObjectAttributes()
-{
-    m_private->axObjectCache()->stopCachingComputedObjectAttributes();
-}
-
 bool WebAXObject::isDetached() const
 {
     if (m_private.isNull())
@@ -116,11 +107,22 @@ int WebAXObject::axID() const
     return m_private->axObjectID();
 }
 
+bool WebAXObject::updateLayoutAndCheckValidity()
+{
+    if (!isDetached()) {
+        Document* document = m_private->document();
+        if (!document || !document->topDocument().view())
+            return false;
+        document->topDocument().view()->updateLayoutAndStyleIfNeededRecursive();
+    }
+
+    // Doing a layout can cause this object to be invalid, so check again.
+    return !isDetached();
+}
+
 bool WebAXObject::updateBackingStoreAndCheckValidity()
 {
-    if (!isDetached())
-        m_private->updateBackingStore();
-    return !isDetached();
+    return updateLayoutAndCheckValidity();
 }
 
 WebString WebAXObject::accessibilityDescription() const
@@ -542,10 +544,24 @@ bool WebAXObject::ariaOwns(WebVector<WebAXObject>& ownsElements) const
     return true;
 }
 
+#if ASSERT_ENABLED
+static bool isLayoutClean(Document* document)
+{
+    if (!document || !document->view())
+        return false;
+    return document->lifecycle().state() >= DocumentLifecycle::LayoutClean
+        || (document->lifecycle().state() == DocumentLifecycle::StyleClean && !document->view()->needsLayout());
+}
+#endif
+
 WebRect WebAXObject::boundingBoxRect() const
 {
     if (isDetached())
         return WebRect();
+
+    // It's not safe to call boundingBoxRect if a layout is pending.
+    // Clients should call updateLayoutAndCheckValidity first.
+    ASSERT(isLayoutClean(m_private->document()));
 
     return pixelSnappedIntRect(m_private->elementRect());
 }

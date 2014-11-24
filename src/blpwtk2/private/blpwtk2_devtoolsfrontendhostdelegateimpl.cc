@@ -55,11 +55,8 @@ void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     manager->RegisterDevToolsClientHostFor(d_agentHost.get(), d_frontendHost.get());
 }
 
-void DevToolsFrontendHostDelegateImpl::WebContentsDestroyed(
-    content::WebContents* webContents)
+void DevToolsFrontendHostDelegateImpl::WebContentsDestroyed()
 {
-    DCHECK(!web_contents());
-
     content::DevToolsManager* manager = content::DevToolsManager::GetInstance();
     manager->ClientHostClosing(d_frontendHost.get());
     d_frontendHost.reset();

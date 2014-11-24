@@ -46,15 +46,6 @@ RenderPart::RenderPart(Element* node)
 
 RenderPart::~RenderPart()
 {
-    clearWidget();
-}
-
-void RenderPart::setWidget(PassRefPtr<Widget> widget)
-{
-    if (widget == this->widget())
-        return;
-
-    RenderWidget::setWidget(widget);
 }
 
 LayerType RenderPart::layerTypeRequired() const
@@ -97,16 +88,13 @@ bool RenderPart::needsPreferredWidthsRecalculation() const
     return embeddedContentBox();
 }
 
-RenderBox* RenderPart::embeddedContentBox() const
-{
-    if (!node() || !widget() || !widget()->isFrameView())
-        return 0;
-    return toFrameView(widget())->embeddedContentBox();
-}
-
 bool RenderPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     if (!widget() || !widget()->isFrameView() || !request.allowsChildFrameContent())
+        return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
+
+    // FIXME: Until RemoteFrames use RemoteFrameViews, we need an explicit check here.
+    if (toFrameView(widget())->frame().isRemoteFrameTemporary())
         return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
 
     FrameView* childFrameView = toFrameView(widget());

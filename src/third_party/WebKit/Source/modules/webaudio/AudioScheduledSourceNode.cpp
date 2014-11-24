@@ -90,7 +90,6 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize,
     if (m_playbackState == SCHEDULED_STATE) {
         // Increment the active source count only if we're transitioning from SCHEDULED_STATE to PLAYING_STATE.
         m_playbackState = PLAYING_STATE;
-        context()->incrementActiveSourceCount();
     }
 
     quantumFrameOffset = startFrame > quantumStartFrame ? startFrame - quantumStartFrame : 0;
@@ -180,7 +179,6 @@ void AudioScheduledSourceNode::finish()
         // Let the context dereference this AudioNode.
         context()->notifyNodeFinishedProcessing(this);
         m_playbackState = FINISHED_STATE;
-        context()->decrementActiveSourceCount();
     }
 
     if (m_hasEndedListener) {
@@ -204,7 +202,7 @@ AudioScheduledSourceNode::NotifyEndedTask::NotifyEndedTask(PassRefPtr<AudioSched
 
 void AudioScheduledSourceNode::NotifyEndedTask::notifyEnded()
 {
-    RefPtr<Event> event = Event::create(EventTypeNames::ended);
+    RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::ended);
     event->setTarget(m_scheduledNode);
     m_scheduledNode->dispatchEvent(event.get());
 }

@@ -32,6 +32,7 @@ namespace syncable {
 class Directory;
 }
 
+class DirectoryTypeDebugInfoEmitter;
 class ModelSafeWorker;
 
 // This class represents the syncable::Directory's processes for requesting and
@@ -44,30 +45,21 @@ class SYNC_EXPORT_PRIVATE DirectoryUpdateHandler : public UpdateHandler {
  public:
   DirectoryUpdateHandler(syncable::Directory* dir,
                          ModelType type,
-                         scoped_refptr<ModelSafeWorker> worker);
+                         scoped_refptr<ModelSafeWorker> worker,
+                         DirectoryTypeDebugInfoEmitter* debug_info_emitter);
   virtual ~DirectoryUpdateHandler();
 
-  // Fills the given parameter with the stored progress marker for this type.
+  // UpdateHandler implementation.
   virtual void GetDownloadProgress(
       sync_pb::DataTypeProgressMarker* progress_marker) const OVERRIDE;
-
-  // Processes the contents of a GetUpdates response message.
-  //
-  // Should be invoked with the progress marker and set of SyncEntities from a
-  // single GetUpdates response message.  The progress marker's type must match
-  // this update handler's type, and the set of SyncEntities must include all
-  // entities of this type found in the response message.
-  virtual void ProcessGetUpdatesResponse(
+  virtual void GetDataTypeContext(sync_pb::DataTypeContext* context) const
+      OVERRIDE;
+  virtual SyncerError ProcessGetUpdatesResponse(
       const sync_pb::DataTypeProgressMarker& progress_marker,
+      const sync_pb::DataTypeContext& mutated_context,
       const SyncEntityList& applicable_updates,
       sessions::StatusController* status) OVERRIDE;
-
-  // If there are updates to apply, apply them on the proper thread.
-  // Delegates to ApplyUpdatesImpl().
   virtual void ApplyUpdates(sessions::StatusController* status) OVERRIDE;
-
-  // Apply updates on the sync thread.  This is for use during initial sync
-  // prior to model association.
   virtual void PassiveApplyUpdates(sessions::StatusController* status) OVERRIDE;
 
  private:
@@ -103,6 +95,7 @@ class SYNC_EXPORT_PRIVATE DirectoryUpdateHandler : public UpdateHandler {
   syncable::Directory* dir_;
   ModelType type_;
   scoped_refptr<ModelSafeWorker> worker_;
+  DirectoryTypeDebugInfoEmitter* debug_info_emitter_;
 
   scoped_ptr<sync_pb::GarbageCollectionDirective> cached_gc_directive_;
 

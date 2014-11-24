@@ -55,10 +55,10 @@ void CSPDirectiveList::reportViolationWithLocation(const String& directiveText, 
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
-void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState* state) const
+void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState* scriptState) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->client()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, state);
+    m_policy->client()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, scriptState);
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
@@ -118,7 +118,7 @@ SourceListDirective* CSPDirectiveList::operativeDirective(SourceListDirective* d
     return directive ? directive : override;
 }
 
-bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directive, const String& consoleMessage, ScriptState* state) const
+bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directive, const String& consoleMessage, ScriptState* scriptState) const
 {
     if (checkEval(directive))
         return true;
@@ -127,7 +127,7 @@ bool CSPDirectiveList::checkEvalAndReportViolation(SourceListDirective* directiv
     if (directive == m_defaultSrc)
         suffix = " Note that 'script-src' was not explicitly set, so 'default-src' is used as a fallback.";
 
-    reportViolationWithState(directive->text(), ContentSecurityPolicy::ScriptSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), state);
+    reportViolationWithState(directive->text(), ContentSecurityPolicy::ScriptSrc, consoleMessage + "\"" + directive->text() + "\"." + suffix + "\n", KURL(), scriptState);
     if (!m_reportOnly) {
         m_policy->reportBlockedScriptExecutionToInspector(directive->text());
         return false;
@@ -252,12 +252,12 @@ bool CSPDirectiveList::allowInlineStyle(const String& contextURL, const WTF::Ord
         checkInline(operativeDirective(m_styleSrc.get()));
 }
 
-bool CSPDirectiveList::allowEval(ScriptState* state, ContentSecurityPolicy::ReportingStatus reportingStatus) const
+bool CSPDirectiveList::allowEval(ScriptState* scriptState, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
     DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "));
 
     return reportingStatus == ContentSecurityPolicy::SendReport ?
-        checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, state) :
+        checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, scriptState) :
         checkEval(operativeDirective(m_scriptSrc.get()));
 }
 
@@ -277,7 +277,7 @@ bool CSPDirectiveList::allowScriptFromSource(const KURL& url, ContentSecurityPol
 
 bool CSPDirectiveList::allowObjectFromSource(const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    if (url.isBlankURL())
+    if (url.protocolIsAbout())
         return true;
     return reportingStatus == ContentSecurityPolicy::SendReport ?
         checkSourceAndReportViolation(operativeDirective(m_objectSrc.get()), url, ContentSecurityPolicy::ObjectSrc) :
@@ -286,7 +286,7 @@ bool CSPDirectiveList::allowObjectFromSource(const KURL& url, ContentSecurityPol
 
 bool CSPDirectiveList::allowChildFrameFromSource(const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    if (url.isBlankURL())
+    if (url.protocolIsAbout())
         return true;
 
     // 'frame-src' is the only directive which overrides something other than the default sources.
@@ -635,6 +635,8 @@ void CSPDirectiveList::addDirective(const String& name, const String& value)
         m_policy->usesScriptHashAlgorithms(m_scriptSrc->hashAlgorithmsUsed());
     } else if (equalIgnoringCase(name, ContentSecurityPolicy::ObjectSrc)) {
         setCSPDirective<SourceListDirective>(name, value, m_objectSrc);
+    } else if (equalIgnoringCase(name, ContentSecurityPolicy::FrameAncestors)) {
+        setCSPDirective<SourceListDirective>(name, value, m_frameAncestors);
     } else if (equalIgnoringCase(name, ContentSecurityPolicy::FrameSrc)) {
         setCSPDirective<SourceListDirective>(name, value, m_frameSrc);
     } else if (equalIgnoringCase(name, ContentSecurityPolicy::ImgSrc)) {
@@ -659,8 +661,6 @@ void CSPDirectiveList::addDirective(const String& name, const String& value)
             setCSPDirective<SourceListDirective>(name, value, m_childSrc);
         else if (equalIgnoringCase(name, ContentSecurityPolicy::FormAction))
             setCSPDirective<SourceListDirective>(name, value, m_formAction);
-        else if (equalIgnoringCase(name, ContentSecurityPolicy::FrameAncestors))
-            setCSPDirective<SourceListDirective>(name, value, m_frameAncestors);
         else if (equalIgnoringCase(name, ContentSecurityPolicy::PluginTypes))
             setCSPDirective<MediaListDirective>(name, value, m_pluginTypes);
         else if (equalIgnoringCase(name, ContentSecurityPolicy::ReflectedXSS))

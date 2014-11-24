@@ -68,12 +68,8 @@ static const float lineHeight = 5.33;
 // Default scrolling animation time period (s).
 static const float scrollTime = 0.433;
 
-static bool isInfiniteOrNonNumberOrNonPercentage(double value, const char* method, ExceptionState& exceptionState)
+static bool isNonPercentage(double value, const char* method, ExceptionState& exceptionState)
 {
-    if (!std::isfinite(value)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(value));
-        return true;
-    }
     if (value < 0 || value > 100) {
         exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexOutsideRange("value", value, 0.0, ExceptionMessages::InclusiveBound, 100.0, ExceptionMessages::InclusiveBound));
         return true;
@@ -88,7 +84,7 @@ VTTRegion::VTTRegion()
     , m_regionAnchor(FloatPoint(defaultAnchorPointX, defaultAnchorPointY))
     , m_viewportAnchor(FloatPoint(defaultAnchorPointX, defaultAnchorPointY))
     , m_scroll(defaultScroll)
-    , m_track(0)
+    , m_track(nullptr)
     , m_currentTop(0)
     , m_scrollTimer(this, &VTTRegion::scrollTimerFired)
 {
@@ -110,7 +106,7 @@ void VTTRegion::setId(const String& id)
 
 void VTTRegion::setWidth(double value, ExceptionState& exceptionState)
 {
-    if (isInfiniteOrNonNumberOrNonPercentage(value, "width", exceptionState))
+    if (isNonPercentage(value, "width", exceptionState))
         return;
 
     m_width = value;
@@ -128,7 +124,7 @@ void VTTRegion::setHeight(long value, ExceptionState& exceptionState)
 
 void VTTRegion::setRegionAnchorX(double value, ExceptionState& exceptionState)
 {
-    if (isInfiniteOrNonNumberOrNonPercentage(value, "regionAnchorX", exceptionState))
+    if (isNonPercentage(value, "regionAnchorX", exceptionState))
         return;
 
     m_regionAnchor.setX(value);
@@ -136,7 +132,7 @@ void VTTRegion::setRegionAnchorX(double value, ExceptionState& exceptionState)
 
 void VTTRegion::setRegionAnchorY(double value, ExceptionState& exceptionState)
 {
-    if (isInfiniteOrNonNumberOrNonPercentage(value, "regionAnchorY", exceptionState))
+    if (isNonPercentage(value, "regionAnchorY", exceptionState))
         return;
 
     m_regionAnchor.setY(value);
@@ -144,7 +140,7 @@ void VTTRegion::setRegionAnchorY(double value, ExceptionState& exceptionState)
 
 void VTTRegion::setViewportAnchorX(double value, ExceptionState& exceptionState)
 {
-    if (isInfiniteOrNonNumberOrNonPercentage(value, "viewportAnchorX", exceptionState))
+    if (isNonPercentage(value, "viewportAnchorX", exceptionState))
         return;
 
     m_viewportAnchor.setX(value);
@@ -152,7 +148,7 @@ void VTTRegion::setViewportAnchorX(double value, ExceptionState& exceptionState)
 
 void VTTRegion::setViewportAnchorY(double value, ExceptionState& exceptionState)
 {
-    if (isInfiniteOrNonNumberOrNonPercentage(value, "viewportAnchorY", exceptionState))
+    if (isNonPercentage(value, "viewportAnchorY", exceptionState))
         return;
 
     m_viewportAnchor.setY(value);
@@ -345,7 +341,7 @@ void VTTRegion::willRemoveVTTCueBox(VTTCueBox* box)
     m_cueContainer->setInlineStyleProperty(CSSPropertyTop, m_currentTop, CSSPrimitiveValue::CSS_PX);
 }
 
-void VTTRegion::appendVTTCueBox(PassRefPtr<VTTCueBox> displayBox)
+void VTTRegion::appendVTTCueBox(PassRefPtrWillBeRawPtr<VTTCueBox> displayBox)
 {
     ASSERT(m_cueContainer);
 
@@ -469,6 +465,13 @@ void VTTRegion::scrollTimerFired(Timer<VTTRegion>*)
 
     stopTimer();
     displayLastVTTCueBox();
+}
+
+void VTTRegion::trace(Visitor* visitor)
+{
+    visitor->trace(m_cueContainer);
+    visitor->trace(m_regionDisplayTree);
+    visitor->trace(m_track);
 }
 
 } // namespace WebCore

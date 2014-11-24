@@ -76,10 +76,9 @@
 // saved resource files.
 
 #include "config.h"
-#include "WebPageSerializerImpl.h"
+#include "web/WebPageSerializerImpl.h"
 
 #include "HTMLNames.h"
-#include "WebFrameImpl.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
@@ -92,6 +91,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "public/platform/WebVector.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
@@ -322,7 +322,7 @@ void WebPageSerializerImpl::openTagToString(Element* element,
                         result.append(attrValue);
                     else {
                         // Get the absolute link
-                        WebFrameImpl* subFrame = WebFrameImpl::fromFrameOwnerElement(element);
+                        WebLocalFrameImpl* subFrame = WebLocalFrameImpl::fromFrameOwnerElement(element);
                         String completeURL = subFrame ? subFrame->frame()->document()->url() :
                                                         param->document->completeURL(attrValue);
                         // Check whether we have local files for those link.
@@ -442,7 +442,7 @@ WebPageSerializerImpl::WebPageSerializerImpl(WebFrame* frame,
 {
     // Must specify available webframe.
     ASSERT(frame);
-    m_specifiedWebFrameImpl = toWebFrameImpl(frame);
+    m_specifiedWebLocalFrameImpl = toWebLocalFrameImpl(frame);
     // Make sure we have non 0 client.
     ASSERT(client);
     // Build local resources map.
@@ -462,14 +462,14 @@ void WebPageSerializerImpl::collectTargetFrames()
     m_framesCollected = true;
 
     // First, process main frame.
-    m_frames.append(m_specifiedWebFrameImpl);
+    m_frames.append(m_specifiedWebLocalFrameImpl);
     // Return now if user only needs to serialize specified frame, not including
     // all sub-frames.
     if (!m_recursiveSerialization)
         return;
     // Collect all frames inside the specified frame.
     for (int i = 0; i < static_cast<int>(m_frames.size()); ++i) {
-        WebFrameImpl* currentFrame = m_frames[i];
+        WebLocalFrameImpl* currentFrame = m_frames[i];
         // Get current using document.
         Document* currentDoc = currentFrame->frame()->document();
         // Go through sub-frames.
@@ -478,8 +478,8 @@ void WebPageSerializerImpl::collectTargetFrames()
         for (unsigned i = 0; Element* element = all->item(i); i++) {
             if (!element->isHTMLElement())
                 continue;
-            WebFrameImpl* webFrame =
-                WebFrameImpl::fromFrameOwnerElement(element);
+            WebLocalFrameImpl* webFrame =
+                WebLocalFrameImpl::fromFrameOwnerElement(element);
             if (webFrame)
                 m_frames.append(webFrame);
         }
@@ -492,10 +492,10 @@ bool WebPageSerializerImpl::serialize()
         collectTargetFrames();
 
     bool didSerialization = false;
-    KURL mainURL = m_specifiedWebFrameImpl->frame()->document()->url();
+    KURL mainURL = m_specifiedWebLocalFrameImpl->frame()->document()->url();
 
     for (unsigned i = 0; i < m_frames.size(); ++i) {
-        WebFrameImpl* webFrame = m_frames[i];
+        WebLocalFrameImpl* webFrame = m_frames[i];
         Document* document = webFrame->frame()->document();
         const KURL& url = document->url();
 

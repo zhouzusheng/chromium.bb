@@ -27,7 +27,6 @@
 #include "core/events/Event.h"
 #include "core/events/EventListener.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGElementInstanceList.h"
 #include "core/svg/SVGUseElement.h"
 
 #include "wtf/RefCountedLeakCounter.h"
@@ -87,21 +86,18 @@ PassRefPtr<SVGElementInstance> SVGElementInstance::create(SVGUseElement* corresp
 }
 
 SVGElementInstance::SVGElementInstance(SVGUseElement* correspondingUseElement, SVGUseElement* directUseElement, PassRefPtr<SVGElement> originalElement)
-    : m_parentInstance(0)
+    : m_parentInstance(nullptr)
     , m_correspondingUseElement(correspondingUseElement)
     , m_directUseElement(directUseElement)
     , m_element(originalElement)
-    , m_previousSibling(0)
-    , m_nextSibling(0)
-    , m_firstChild(0)
-    , m_lastChild(0)
+    , m_previousSibling(nullptr)
+    , m_nextSibling(nullptr)
+    , m_firstChild(nullptr)
+    , m_lastChild(nullptr)
 {
     ASSERT(m_correspondingUseElement);
     ASSERT(m_element);
     ScriptWrappable::init(this);
-
-    // Register as instance for passed element.
-    m_element->mapInstanceToElement(this);
 
 #ifndef NDEBUG
     instanceCounter.increment();
@@ -110,18 +106,20 @@ SVGElementInstance::SVGElementInstance(SVGUseElement* correspondingUseElement, S
 
 SVGElementInstance::~SVGElementInstance()
 {
-    // Call detach because we may be deleted directly if we are a child of a detached instance.
-    detach();
-
 #ifndef NDEBUG
     instanceCounter.decrement();
 #endif
 
+#if !ENABLE(OILPAN)
+    // Call detach because we may be deleted directly if we are a child of a detached instance.
+    detach();
     m_element = nullptr;
+#endif
 }
 
 // It's important not to inline removedLastRef, because we don't want to inline the code to
 // delete an SVGElementInstance at each deref call site.
+#if !ENABLE(OILPAN)
 void SVGElementInstance::removedLastRef()
 {
 #if SECURITY_ASSERT_ENABLED
@@ -129,6 +127,7 @@ void SVGElementInstance::removedLastRef()
 #endif
     delete this;
 }
+#endif
 
 void SVGElementInstance::detach()
 {
@@ -139,62 +138,31 @@ void SVGElementInstance::detach()
         node->detach();
 
     // Deregister as instance for passed element, if we haven't already.
-    if (m_element->instancesForElement().contains(this))
-        m_element->removeInstanceMapping(this);
-    // DO NOT clear ref to m_element because JavaScriptCore uses it for garbage collection
+    if (shadowTreeElement() && m_element->instancesForElement().contains(shadowTreeElement()))
+        m_element->removeInstanceMapping(shadowTreeElement());
 
     m_shadowTreeElement = nullptr;
 
-    m_directUseElement = 0;
-    m_correspondingUseElement = 0;
+    m_directUseElement = nullptr;
+    m_correspondingUseElement = nullptr;
 
+#if !ENABLE(OILPAN)
     removeDetachedChildrenInContainer<SVGElementInstance, SVGElementInstance>(*this);
-}
-
-PassRefPtr<SVGElementInstanceList> SVGElementInstance::childNodes()
-{
-    return SVGElementInstanceList::create(this);
+#endif
 }
 
 void SVGElementInstance::setShadowTreeElement(SVGElement* element)
 {
     ASSERT(element);
     m_shadowTreeElement = element;
+    // Register as instance for passed element.
+    m_element->mapInstanceToElement(shadowTreeElement());
+
 }
 
 void SVGElementInstance::appendChild(PassRefPtr<SVGElementInstance> child)
 {
     appendChildToContainer<SVGElementInstance, SVGElementInstance>(*child, *this);
-}
-
-void SVGElementInstance::invalidateAllInstancesOfElement(SVGElement* element)
-{
-    if (!element || !element->inDocument())
-        return;
-
-    if (element->instanceUpdatesBlocked())
-        return;
-
-    const HashSet<SVGElementInstance*>& set = element->instancesForElement();
-    if (set.isEmpty())
-        return;
-
-    // Mark all use elements referencing 'element' for rebuilding
-    const HashSet<SVGElementInstance*>::const_iterator end = set.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = set.begin(); it != end; ++it) {
-        ASSERT((*it)->shadowTreeElement());
-        ASSERT((*it)->shadowTreeElement()->correspondingElement());
-        ASSERT((*it)->shadowTreeElement()->correspondingElement() == (*it)->correspondingElement());
-        ASSERT((*it)->correspondingElement() == element);
-        (*it)->shadowTreeElement()->setCorrespondingElement(0);
-
-        if (SVGUseElement* element = (*it)->correspondingUseElement()) {
-            ASSERT(element->inDocument());
-            element->invalidateShadowTree();
-        }
-    }
-
-    element->document().updateRenderTreeIfNeeded();
 }
 
 const AtomicString& SVGElementInstance::interfaceName() const
@@ -232,7 +200,7 @@ Document* SVGElementInstance::ownerDocument() const
     return m_element ? m_element->ownerDocument() : 0;
 }
 
-bool SVGElementInstance::dispatchEvent(PassRefPtr<Event> event)
+bool SVGElementInstance::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     SVGElement* element = shadowTreeElement();
     if (!element)
@@ -255,17 +223,17 @@ EventTargetData& SVGElementInstance::ensureEventTargetData()
     return *eventTargetData();
 }
 
-SVGElementInstance::InstanceUpdateBlocker::InstanceUpdateBlocker(SVGElement* targetElement)
-    : m_targetElement(targetElement)
+void SVGElementInstance::trace(Visitor* visitor)
 {
-    if (m_targetElement)
-        m_targetElement->setInstanceUpdatesBlocked(true);
-}
-
-SVGElementInstance::InstanceUpdateBlocker::~InstanceUpdateBlocker()
-{
-    if (m_targetElement)
-        m_targetElement->setInstanceUpdatesBlocked(false);
+    visitor->trace(m_parentInstance);
+    visitor->trace(m_correspondingUseElement);
+    visitor->trace(m_directUseElement);
+    visitor->trace(m_element);
+    visitor->trace(m_shadowTreeElement);
+    visitor->trace(m_previousSibling);
+    visitor->trace(m_nextSibling);
+    visitor->trace(m_firstChild);
+    visitor->trace(m_lastChild);
 }
 
 }

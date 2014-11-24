@@ -44,18 +44,24 @@ ChildNodeList::~ChildNodeList()
     m_parent->nodeLists()->removeChildNodeList(this);
 }
 
-Node* ChildNodeList::itemBefore(const Node* previous) const
-{
-    return LIKELY(!!previous) ? previous->previousSibling() : rootNode().lastChild();
-}
-
-Node* ChildNodeList::traverseForwardToOffset(unsigned offset, Node& currentNode, unsigned& currentOffset, const ContainerNode&) const
+Node* ChildNodeList::traverseForwardToOffset(unsigned offset, Node& currentNode, unsigned& currentOffset) const
 {
     ASSERT(currentOffset < offset);
     Node* next = &currentNode;
     while ((next = next->nextSibling())) {
         if (++currentOffset == offset)
             return next;
+    }
+    return 0;
+}
+
+Node* ChildNodeList::traverseBackwardToOffset(unsigned offset, Node& currentNode, unsigned& currentOffset) const
+{
+    ASSERT(currentOffset > offset);
+    Node* previous = &currentNode;
+    while ((previous = previous->previousSibling())) {
+        if (--currentOffset == offset)
+            return previous;
     }
     return 0;
 }

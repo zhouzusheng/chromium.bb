@@ -9,8 +9,8 @@
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/web_ui_mojo_context_state.h"
 #include "gin/per_context_data.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
@@ -41,18 +41,23 @@ void WebUIMojo::MainFrameObserver::WillReleaseScriptContext(
   web_ui_mojo_->DestroyContextState(context);
 }
 
+void WebUIMojo::MainFrameObserver::DidFinishDocumentLoad() {
+  web_ui_mojo_->OnDidFinishDocumentLoad();
+}
+
 WebUIMojo::WebUIMojo(RenderView* render_view)
     : RenderViewObserver(render_view),
       RenderViewObserverTracker<WebUIMojo>(render_view),
-      main_frame_observer_(this) {
+      main_frame_observer_(this),
+      did_finish_document_load_(false) {
   CreateContextState();
 }
 
 void WebUIMojo::SetBrowserHandle(mojo::ScopedMessagePipeHandle handle) {
-  v8::HandleScope handle_scope(blink::mainThreadIsolate());
-  WebUIMojoContextState* state = GetContextState();
-  if (state)
-    state->SetHandle(handle.Pass());
+  if (did_finish_document_load_)
+    SetHandleOnContextState(handle.Pass());
+  else
+    pending_handle_ = handle.Pass();
 }
 
 WebUIMojo::~WebUIMojo() {
@@ -60,7 +65,8 @@ WebUIMojo::~WebUIMojo() {
 
 void WebUIMojo::CreateContextState() {
   v8::HandleScope handle_scope(blink::mainThreadIsolate());
-  blink::WebFrame* frame = render_view()->GetWebView()->mainFrame();
+  blink::WebLocalFrame* frame =
+      render_view()->GetWebView()->mainFrame()->toWebLocalFrame();
   v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
   gin::PerContextData* context_data = gin::PerContextData::From(context);
   WebUIMojoContextStateData* data = new WebUIMojoContextStateData;
@@ -76,8 +82,23 @@ void WebUIMojo::DestroyContextState(v8::Handle<v8::Context> context) {
   context_data->RemoveUserData(kWebUIMojoContextStateKey);
 }
 
+void WebUIMojo::OnDidFinishDocumentLoad() {
+  did_finish_document_load_ = true;
+  if (pending_handle_.is_valid())
+    SetHandleOnContextState(pending_handle_.Pass());
+}
+
+void WebUIMojo::SetHandleOnContextState(mojo::ScopedMessagePipeHandle handle) {
+  DCHECK(did_finish_document_load_);
+  v8::HandleScope handle_scope(blink::mainThreadIsolate());
+  WebUIMojoContextState* state = GetContextState();
+  if (state)
+    state->SetHandle(handle.Pass());
+}
+
 WebUIMojoContextState* WebUIMojo::GetContextState() {
-  blink::WebFrame* frame = render_view()->GetWebView()->mainFrame();
+  blink::WebLocalFrame* frame =
+      render_view()->GetWebView()->mainFrame()->toWebLocalFrame();
   v8::HandleScope handle_scope(blink::mainThreadIsolate());
   v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
   gin::PerContextData* context_data = gin::PerContextData::From(context);
@@ -89,7 +110,8 @@ WebUIMojoContextState* WebUIMojo::GetContextState() {
   return context_state ? context_state->state.get() : NULL;
 }
 
-void WebUIMojo::DidClearWindowObject(blink::WebFrame* frame, int world_id) {
+void WebUIMojo::DidClearWindowObject(blink::WebLocalFrame* frame,
+                                     int world_id) {
   if (frame != render_view()->GetWebView()->mainFrame())
     return;
 

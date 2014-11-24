@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "google_apis/gcm/base/gcm_export.h"
+#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 
 template <class T> class scoped_refptr;
 
@@ -66,6 +67,8 @@ class GCM_EXPORT GCMClient {
     // In seconds.
     int time_to_live;
     MessageData data;
+
+    static const int kMaximumTTL = 4 * 7 * 24 * 60 * 60;  // 4 weeks.
   };
 
   // Message being received from the other party.
@@ -94,11 +97,17 @@ class GCM_EXPORT GCMClient {
     GCMStatistics();
     ~GCMStatistics();
 
+    bool is_recording;
     bool gcm_client_created;
     std::string gcm_client_state;
     bool connection_client_created;
     std::string connection_state;
     uint64 android_id;
+    std::vector<std::string> registered_app_ids;
+    int send_queue_size;
+    int resend_queue_size;
+
+    GCMStatsRecorder::RecordedActivities recorded_activities;
   };
 
   // A delegate interface that allows the GCMClient instance to interact with
@@ -207,6 +216,12 @@ class GCM_EXPORT GCMClient {
   virtual void Send(const std::string& app_id,
                     const std::string& receiver_id,
                     const OutgoingMessage& message) = 0;
+
+  // Enables or disables internal activity recording.
+  virtual void SetRecording(bool recording) = 0;
+
+  // Clear all recorded GCM activity logs.
+  virtual void ClearActivityLogs() = 0;
 
   // Gets internal states and statistics.
   virtual GCMStatistics GetStatistics() const = 0;

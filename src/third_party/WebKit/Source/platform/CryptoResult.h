@@ -32,17 +32,16 @@
 #define CryptoResult_h
 
 #include "public/platform/WebCrypto.h"
-#include "wtf/RefCounted.h"
+#include "wtf/ThreadSafeRefCounted.h"
 
 namespace WebCore {
 
 // Receives notification of completion of the crypto operation.
-class CryptoResult : public RefCounted<CryptoResult> {
+class CryptoResult : public ThreadSafeRefCounted<CryptoResult> {
 public:
     virtual ~CryptoResult() { }
 
-    virtual void completeWithError() = 0;
-    virtual void completeWithError(const blink::WebString&) = 0;
+    virtual void completeWithError(blink::WebCryptoErrorType, const blink::WebString&) = 0;
     virtual void completeWithBuffer(const blink::WebArrayBuffer&) = 0;
     virtual void completeWithBoolean(bool) = 0;
     virtual void completeWithKey(const blink::WebCryptoKey&) = 0;

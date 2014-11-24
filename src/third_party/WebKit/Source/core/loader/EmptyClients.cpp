@@ -81,7 +81,7 @@ PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuC
     return adoptRef(new EmptyPopupMenu());
 }
 
-PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClient*, const Color&)
+PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
 {
     return nullptr;
 }
@@ -141,7 +141,7 @@ void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequ
 {
 }
 
-void EmptyFrameLoaderClient::didRequestAutocomplete(HTMLFormElement*)
+void EmptyFrameLoaderClient::didRequestAutocomplete(HTMLFormElement*, const Dictionary&)
 {
 }
 

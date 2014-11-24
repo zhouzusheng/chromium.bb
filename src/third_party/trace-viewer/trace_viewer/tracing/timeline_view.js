@@ -70,6 +70,7 @@ tvcm.exportTo('tracing', function() {
                             this.onRequestSelectionChange_.bind(this));
 
       // Bookkeeping.
+      this.onViewportChanged_ = this.onViewportChanged_.bind(this);
       this.onSelectionChanged_ = this.onSelectionChanged_.bind(this);
       document.addEventListener('keydown', this.onKeyDown_.bind(this), true);
       document.addEventListener('keypress', this.onKeypress_.bind(this), true);
@@ -183,6 +184,8 @@ tvcm.exportTo('tracing', function() {
       if (modelInstanceChanged) {
         this.trackViewContainer_.textContent = '';
         if (this.trackView_) {
+          this.trackView_.viewport.removeEventListener(
+              'change', this.onViewportChanged_);
           this.trackView_.removeEventListener(
               'selectionChange', this.onSelectionChanged_);
           this.trackView_.detach();
@@ -201,6 +204,8 @@ tvcm.exportTo('tracing', function() {
         this.findCtl_.controller.timeline = this.trackView_;
         this.trackView_.addEventListener(
             'selectionChange', this.onSelectionChanged_);
+        this.trackView_.viewport.addEventListener(
+            'change', this.onViewportChanged_);
         this.analysisEl_.clearSelectionHistory();
       }
 
@@ -212,8 +217,10 @@ tvcm.exportTo('tracing', function() {
       tvcm.dispatchSimpleEvent(this, 'modelChange');
 
       // Do things that are selection specific
-      if (modelInstanceChanged)
+      if (modelInstanceChanged) {
         this.onSelectionChanged_();
+        this.onViewportChanged_();
+      }
     },
 
     get timeline() {
@@ -247,19 +254,8 @@ tvcm.exportTo('tracing', function() {
       return this.parentElement;
     },
 
-    /**
-     * @return {boolean} Whether the current view is attached to the
-     * document.
-     */
-    get isAttachedToDocument_() {
-      var cur = this;
-      while (cur.parentNode)
-        cur = cur.parentNode;
-      return cur == this.ownerDocument;
-    },
-
     get listenToKeys_() {
-      if (!this.isAttachedToDocument_)
+      if (!tvcm.ui.isElementAttachedToDocument(this))
         return;
       if (!this.focusElement_)
         return true;
@@ -319,11 +315,24 @@ tvcm.exportTo('tracing', function() {
           new tracing.Selection();
       this.analysisEl_.selection = selection;
       this.trackViewContainer_.scrollTop = oldScrollTop;
+      this.timelineViewSidePanelContainer_.selection = selection;
     },
 
     onRequestSelectionChange_: function(e) {
       this.trackView_.selection = e.selection;
       e.stopPropagation();
+    },
+
+    onViewportChanged_: function(e) {
+      var spc = this.timelineViewSidePanelContainer_;
+      if (!this.trackView_) {
+        spc.rangeOfInterest.reset();
+        return;
+      }
+
+      var vr = this.trackView_.viewport.interestRange.asRangeObject();
+      if (!spc.rangeOfInterest.equals(vr))
+        spc.rangeOfInterest = vr;
     }
   };
 

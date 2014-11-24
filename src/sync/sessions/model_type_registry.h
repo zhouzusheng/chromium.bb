@@ -13,6 +13,7 @@
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
+#include "sync/internal_api/public/sessions/type_debug_info_observer.h"
 
 namespace syncer {
 
@@ -23,12 +24,15 @@ class Directory;
 class CommitContributor;
 class DirectoryCommitContributor;
 class DirectoryUpdateHandler;
+class DirectoryTypeDebugInfoEmitter;
 class NonBlockingTypeProcessorCore;
 class NonBlockingTypeProcessor;
 class UpdateHandler;
 
 typedef std::map<ModelType, UpdateHandler*> UpdateHandlerMap;
 typedef std::map<ModelType, CommitContributor*> CommitContributorMap;
+typedef std::map<ModelType, DirectoryTypeDebugInfoEmitter*>
+    DirectoryTypeDebugInfoEmitterMap;
 
 // Keeps track of the sets of active update handlers and commit contributors.
 class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
@@ -67,6 +71,15 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
   // Simple getters.
   UpdateHandlerMap* update_handler_map();
   CommitContributorMap* commit_contributor_map();
+  DirectoryTypeDebugInfoEmitterMap* directory_type_debug_info_emitter_map();
+
+  void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer);
+  void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer);
+  bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer);
+  void RequestEmitDebugInfo();
 
  private:
   ModelTypeSet GetEnabledNonBlockingTypes() const;
@@ -75,12 +88,20 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
   // Sets of handlers and contributors.
   ScopedVector<DirectoryCommitContributor> directory_commit_contributors_;
   ScopedVector<DirectoryUpdateHandler> directory_update_handlers_;
+  ScopedVector<DirectoryTypeDebugInfoEmitter>
+      directory_type_debug_info_emitters_;
+
   ScopedVector<NonBlockingTypeProcessorCore> non_blocking_type_processor_cores_;
 
   // Maps of UpdateHandlers and CommitContributors.
   // They do not own any of the objects they point to.
   UpdateHandlerMap update_handler_map_;
   CommitContributorMap commit_contributor_map_;
+
+  // Map of DebugInfoEmitters for directory types.
+  // Non-blocking types handle debug info differently.
+  // Does not own its contents.
+  DirectoryTypeDebugInfoEmitterMap directory_type_debug_info_emitter_map_;
 
   // The known ModelSafeWorkers.
   std::map<ModelSafeGroup, scoped_refptr<ModelSafeWorker> > workers_map_;
@@ -90,6 +111,14 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
 
   // The set of enabled directory types.
   ModelTypeSet enabled_directory_types_;
+
+  // The set of observers of per-type debug info.
+  //
+  // Each of the DirectoryTypeDebugInfoEmitters needs such a list.  There's
+  // a lot of them, and their lifetimes are unpredictable, so it makes the
+  // book-keeping easier if we just store the list here.  That way it's
+  // guaranteed to live as long as this sync backend.
+  ObserverList<TypeDebugInfoObserver> type_debug_info_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(ModelTypeRegistry);
 };

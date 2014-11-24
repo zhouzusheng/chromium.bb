@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebBlob.h"
+#include "public/web/WebBlob.h"
 
 #include "V8Blob.h"
 #include "bindings/v8/V8Binding.h"
@@ -40,6 +40,12 @@
 using namespace WebCore;
 
 namespace blink {
+
+WebBlob WebBlob::createFromUUID(const WebString& uuid, const WebString& type, long long size)
+{
+    RefPtrWillBeRawPtr<Blob> blob = Blob::create(BlobDataHandle::create(uuid, type, size));
+    return WebBlob(blob);
+}
 
 WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 {

@@ -152,12 +152,12 @@
       'SK_ENABLE_LEGACY_API_ALIASING=1',
       'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
       'GR_GL_IGNORE_ES3_MSAA=0',
-      'SK_SUPPORT_LEGACY_LAYERRASTERIZER_API=1',
       'SK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT',
 
       # This variable contains additional defines, specified in skia's
       # skia_for_chromium_defines.gypi file.
       '<@(skia_for_chromium_defines)',
+      'SK_SUPPORT_LEGACY_GETTOTALCLIP',
     ],
 
     'default_font_cache_limit%': '(20*1024*1024)',

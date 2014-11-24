@@ -18,16 +18,13 @@ class WebPlugin;
 struct WebPluginParams;
 }
 
-namespace WebTestRunner {
-class WebTestProxyBase;
-}
-
 namespace content {
 
 // SHEZ: Remove test code.
 // class MockWebClipboardImpl;
 
 class ShellRenderProcessObserver;
+class WebTestProxyBase;
 
 class ShellContentRendererClient : public ContentRendererClient {
  public:
@@ -40,7 +37,7 @@ class ShellContentRendererClient : public ContentRendererClient {
   virtual void RenderViewCreated(RenderView* render_view) OVERRIDE;
   virtual bool OverrideCreatePlugin(
       RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin) OVERRIDE;
   virtual blink::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
@@ -58,8 +55,7 @@ class ShellContentRendererClient : public ContentRendererClient {
       blink::WebPluginContainer* container) OVERRIDE;
 
  private:
-   void WebTestProxyCreated(RenderView* render_view,
-                            WebTestRunner::WebTestProxyBase* proxy);
+  void WebTestProxyCreated(RenderView* render_view, WebTestProxyBase* proxy);
 
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
   // SHEZ: Remove test code.

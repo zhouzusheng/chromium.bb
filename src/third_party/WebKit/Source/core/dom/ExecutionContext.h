@@ -37,6 +37,7 @@
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/DOMTimer.h"
 #include "platform/LifecycleContext.h"
+#include "platform/Supplementable.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
@@ -54,12 +55,12 @@ class EventListener;
 class EventQueue;
 class EventTarget;
 class ExecutionContextTask;
+class ScriptState;
 class PublicURLManager;
 class SecurityOrigin;
 class ScriptCallStack;
-class ScriptState;
 
-class ExecutionContext : public LifecycleContext<ExecutionContext> {
+class ExecutionContext : public LifecycleContext<ExecutionContext>, public Supplementable<ExecutionContext> {
 public:
     ExecutionContext();
     virtual ~ExecutionContext();
@@ -73,7 +74,6 @@ public:
     ContentSecurityPolicy* contentSecurityPolicy() const;
     const KURL& url() const;
     KURL completeURL(const String& url) const;
-    void userEventWasHandled();
     void disableEval(const String& errorMessage);
     DOMWindow* executingWindow() const;
     String userAgent(const KURL&) const;
@@ -82,7 +82,7 @@ public:
     double timerAlignmentInterval() const;
 
     bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
-    void reportException(PassRefPtr<ErrorEvent>, PassRefPtr<ScriptCallStack>, AccessControlStatus);
+    void reportException(PassRefPtrWillBeRawPtr<ErrorEvent>, PassRefPtr<ScriptCallStack>, AccessControlStatus);
 
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber);
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, ScriptState* = 0);
@@ -131,7 +131,7 @@ protected:
 private:
     friend class DOMTimer; // For installNewTimeout() and removeTimeoutByID() below.
 
-    bool dispatchErrorEvent(PassRefPtr<ErrorEvent>, AccessControlStatus);
+    bool dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent>, AccessControlStatus);
 
     virtual void refExecutionContext() = 0;
     virtual void derefExecutionContext() = 0;

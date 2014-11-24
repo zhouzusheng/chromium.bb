@@ -48,19 +48,16 @@ namespace cc {
 
 RendererCapabilities::RendererCapabilities(ResourceFormat best_texture_format,
                                            bool allow_partial_texture_updates,
-                                           bool using_offscreen_context3d,
                                            int max_texture_size,
                                            bool using_shared_memory_resources)
     : best_texture_format(best_texture_format),
       allow_partial_texture_updates(allow_partial_texture_updates),
-      using_offscreen_context3d(using_offscreen_context3d),
       max_texture_size(max_texture_size),
       using_shared_memory_resources(using_shared_memory_resources) {}
 
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(RGBA_8888),
       allow_partial_texture_updates(false),
-      using_offscreen_context3d(false),
       max_texture_size(0),
       using_shared_memory_resources(false) {}
 
@@ -89,16 +86,13 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
   return layer_tree_host.Pass();
 }
 
-
-LayerTreeHost::LayerTreeHost(
-    LayerTreeHostClient* client,
-    SharedBitmapManager* manager,
-    const LayerTreeSettings& settings)
+LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
+                             SharedBitmapManager* manager,
+                             const LayerTreeSettings& settings)
     : micro_benchmark_controller_(this),
       next_ui_resource_id_(1),
       animating_(false),
       needs_full_tree_sync_(true),
-      needs_filter_context_(false),
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
@@ -114,6 +108,8 @@ LayerTreeHost::LayerTreeHost(
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
       trigger_idle_updates_(true),
+      has_gpu_rasterization_trigger_(false),
+      content_is_suitable_for_gpu_rasterization_(true),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
@@ -181,50 +177,38 @@ static void LayerTreeHostOnOutputSurfaceCreatedCallback(Layer* layer) {
   layer->OnOutputSurfaceCreated();
 }
 
-LayerTreeHost::CreateResult
-LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
+void LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
+  DCHECK(output_surface_lost_);
   TRACE_EVENT1("cc",
                "LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted",
                "success",
                success);
 
-  DCHECK(output_surface_lost_);
-  if (success) {
-    output_surface_lost_ = false;
-
-    if (!contents_texture_manager_ && !settings_.impl_side_painting) {
-      contents_texture_manager_ =
-          PrioritizedResourceManager::Create(proxy_.get());
-      surface_memory_placeholder_ =
-          contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
-    }
-
-    if (root_layer()) {
-      LayerTreeHostCommon::CallFunctionForSubtree(
-          root_layer(),
-          base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
-    }
-
-    client_->DidInitializeOutputSurface(true);
-    return CreateSucceeded;
+  if (!success) {
+    // Tolerate a certain number of recreation failures to work around races
+    // in the output-surface-lost machinery.
+    ++num_failed_recreate_attempts_;
+    if (num_failed_recreate_attempts_ >= 5)
+      LOG(FATAL) << "Failed to create a fallback OutputSurface.";
+    client_->DidFailToInitializeOutputSurface();
+    return;
   }
 
-  // Failure path.
+  output_surface_lost_ = false;
 
-  client_->DidFailToInitializeOutputSurface();
-
-  // Tolerate a certain number of recreation failures to work around races
-  // in the output-surface-lost machinery.
-  ++num_failed_recreate_attempts_;
-  if (num_failed_recreate_attempts_ >= 5) {
-    // We have tried too many times to recreate the output surface. Tell the
-    // host to fall back to software rendering.
-    output_surface_can_be_initialized_ = false;
-    client_->DidInitializeOutputSurface(false);
-    return CreateFailedAndGaveUp;
+  if (!contents_texture_manager_ && !settings_.impl_side_painting) {
+    contents_texture_manager_ =
+        PrioritizedResourceManager::Create(proxy_.get());
+    surface_memory_placeholder_ =
+        contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
   }
 
-  return CreateFailedButTryAgain;
+  if (root_layer()) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer(), base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
+  }
+
+  client_->DidInitializeOutputSurface();
 }
 
 void LayerTreeHost::DeleteContentsTexturesOnImplThread(
@@ -232,11 +216,6 @@ void LayerTreeHost::DeleteContentsTexturesOnImplThread(
   DCHECK(proxy_->IsImplThread());
   if (contents_texture_manager_)
     contents_texture_manager_->ClearAllMemory(resource_provider);
-}
-
-void LayerTreeHost::AcquireLayerTextures() {
-  DCHECK(proxy_->IsMainThread());
-  proxy_->AcquireLayerTextures();
 }
 
 void LayerTreeHost::DidBeginMainFrame() {
@@ -369,6 +348,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
                                          max_page_scale_factor_);
   sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
 
+  sync_tree->SetUseGpuRasterization(UseGpuRasterization());
+
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
   host_impl->SetViewportSize(device_viewport_size_);
@@ -409,6 +390,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     // If we're not in impl-side painting, the tree is immediately
     // considered active.
     sync_tree->DidBecomeActive();
+    host_impl->ActivateAnimations();
     devtools_instrumentation::DidActivateLayerTree(id_, source_frame_number_);
   }
 
@@ -610,6 +592,10 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
 
+  // Reset gpu rasterization flag.
+  // This flag is sticky until a new tree comes along.
+  content_is_suitable_for_gpu_rasterization_ = true;
+
   SetNeedsFullTreeSync();
 }
 
@@ -626,6 +612,18 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
       debug_state_.RecordRenderingStats());
 
   SetNeedsCommit();
+  proxy_->SetDebugState(debug_state);
+}
+
+bool LayerTreeHost::UseGpuRasterization() const {
+  if (settings_.gpu_rasterization_forced) {
+    return true;
+  } else if (settings_.gpu_rasterization_enabled) {
+    return has_gpu_rasterization_trigger_ &&
+           content_is_suitable_for_gpu_rasterization_;
+  } else {
+    return false;
+  }
 }
 
 void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
@@ -792,6 +790,10 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
 
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::CalcDrawProps");
     bool can_render_to_separate_surface = true;
+    // TODO(vmpstr): Passing 0 as the current render surface layer list id means
+    // that we won't be able to detect if a layer is part of |update_list|.
+    // Change this if this information is required.
+    int render_surface_layer_list_id = 0;
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
         root_layer,
         device_viewport_size(),
@@ -803,7 +805,8 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         settings_.can_use_lcd_text,
         can_render_to_separate_surface,
         settings_.layer_transforms_should_scale_layer_contents,
-        &update_list);
+        &update_list,
+        render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
     if (total_frames_used_for_lcd_text_metrics_ <=
@@ -1002,6 +1005,15 @@ void LayerTreeHost::PaintLayerContents(
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
+      // Note the '&&' with previous is-suitable state.
+      // This means that once the layer-tree becomes unsuitable for gpu
+      // rasterization due to some content, it will continue to be unsuitable
+      // even if that content is replaced by gpu-friendly content.
+      // This is to avoid switching back-and-forth between gpu and sw
+      // rasterization which may be both bad for performance and visually
+      // jarring.
+      content_is_suitable_for_gpu_rasterization_ &=
+          it->IsSuitableForGpuRasterization();
     }
 
     occlusion_tracker.LeaveLayer(it);

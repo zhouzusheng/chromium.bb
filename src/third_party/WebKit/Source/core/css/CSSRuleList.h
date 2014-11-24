@@ -22,7 +22,7 @@
 #ifndef CSSRuleList_h
 #define CSSRuleList_h
 
-#include "heap/Handle.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -48,7 +48,7 @@ public:
 
     virtual CSSStyleSheet* styleSheet() const = 0;
 
-    virtual void trace(Visitor*) = 0;
+    virtual void trace(Visitor*) { }
 
 protected:
     CSSRuleList();
@@ -101,6 +101,7 @@ public:
     virtual void trace(Visitor* visitor) OVERRIDE
     {
         visitor->trace(m_rule);
+        CSSRuleList::trace(visitor);
     }
 
 private:

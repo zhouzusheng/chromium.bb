@@ -6,7 +6,6 @@
 
 #include "content/shell/browser/shell.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/client/default_activation_client.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
@@ -21,6 +20,7 @@
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/input_method_factory.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/core/default_activation_client.h"
 
 namespace content {
 
@@ -116,7 +116,7 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
 ShellPlatformDataAura* Shell::platform_ = NULL;
 
 ShellPlatformDataAura::ShellPlatformDataAura(const gfx::Size& initial_size) {
-  aura::Env::CreateInstance();
+  CHECK(aura::Env::GetInstance());
   host_.reset(aura::WindowTreeHost::Create(gfx::Rect(initial_size)));
   host_->InitHost();
   host_->window()->SetLayoutManager(new FillLayout(host_->window()));
@@ -125,8 +125,7 @@ ShellPlatformDataAura::ShellPlatformDataAura(const gfx::Size& initial_size) {
   // focus_client_.reset(new aura::test::TestFocusClient());
   // aura::client::SetFocusClient(host_->window(), focus_client_.get());
 
-  activation_client_.reset(
-      new aura::client::DefaultActivationClient(host_->window()));
+  new wm::DefaultActivationClient(host_->window());
   capture_client_.reset(
       new aura::client::DefaultCaptureClient(host_->window()));
 

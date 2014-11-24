@@ -123,9 +123,6 @@ class WebGraphicsContext3DCommandBufferImpl
       const GURL& active_url,
       GpuChannelHost* host,
       const Attributes& attributes,
-#if !defined(OS_CHROMEOS)
-      bool bind_generates_resources,
-#endif
       bool lose_context_when_out_of_memory,
       const SharedMemoryLimits& limits,
       WebGraphicsContext3DCommandBufferImpl* share_context);
@@ -655,12 +652,19 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor);
 
   // GL_CHROMIUM_map_image
+  // TODO(alexst): remove this old function after blink cleanup.
   virtual WGC3Duint createImageCHROMIUM(
       WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat);
+  virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width,
+                                        WGC3Dsizei height,
+                                        WGC3Denum internalformat,
+                                        WGC3Denum usage);
   virtual void destroyImageCHROMIUM(WGC3Duint image_id);
   virtual void getImageParameterivCHROMIUM(
       WGC3Duint image_id, WGC3Denum pname, WGC3Dint* params);
+  // TODO(alexst): remove this old function after blink cleanup.
   virtual void* mapImageCHROMIUM(WGC3Duint image_id, WGC3Denum access);
+  virtual void* mapImageCHROMIUM(WGC3Duint image_id);
   virtual void unmapImageCHROMIUM(WGC3Duint image_id);
 
   // GL_EXT_multisampled_render_to_texture
@@ -771,9 +775,6 @@ class WebGraphicsContext3DCommandBufferImpl
   scoped_ptr<gpu::gles2::GLES2Implementation> real_gl_;
   scoped_ptr<gpu::gles2::GLES2Interface> trace_gl_;
   Error last_error_;
-#if !defined(OS_CHROMEOS)
-  bool bind_generates_resources_;
-#endif
   bool lose_context_when_out_of_memory_;
   SharedMemoryLimits mem_limits_;
 

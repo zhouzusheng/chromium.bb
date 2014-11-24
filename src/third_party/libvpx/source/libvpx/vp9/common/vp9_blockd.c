@@ -10,8 +10,8 @@
 
 #include "vp9/common/vp9_blockd.h"
 
-MB_PREDICTION_MODE vp9_left_block_mode(const MODE_INFO *cur_mi,
-                                       const MODE_INFO *left_mi, int b) {
+PREDICTION_MODE vp9_left_block_mode(const MODE_INFO *cur_mi,
+                                    const MODE_INFO *left_mi, int b) {
   if (b == 0 || b == 2) {
     if (!left_mi || is_inter_block(&left_mi->mbmi))
       return DC_PRED;
@@ -23,8 +23,8 @@ MB_PREDICTION_MODE vp9_left_block_mode(const MODE_INFO *cur_mi,
   }
 }
 
-MB_PREDICTION_MODE vp9_above_block_mode(const MODE_INFO *cur_mi,
-                                        const MODE_INFO *above_mi, int b) {
+PREDICTION_MODE vp9_above_block_mode(const MODE_INFO *cur_mi,
+                                     const MODE_INFO *above_mi, int b) {
   if (b == 0 || b == 1) {
     if (!above_mi || is_inter_block(&above_mi->mbmi))
       return DC_PRED;
@@ -40,7 +40,7 @@ void vp9_foreach_transformed_block_in_plane(
     const MACROBLOCKD *const xd, BLOCK_SIZE bsize, int plane,
     foreach_transformed_block_visitor visit, void *arg) {
   const struct macroblockd_plane *const pd = &xd->plane[plane];
-  const MB_MODE_INFO* mbmi = &xd->mi_8x8[0]->mbmi;
+  const MB_MODE_INFO* mbmi = &xd->mi[0]->mbmi;
   // block and transform sizes, in number of 4x4 blocks log 2 ("*_b")
   // 4x4=0, 8x8=2, 16x16=4, 32x32=6, 64x64=8
   // transform size varies per plane, look it up in a common way.

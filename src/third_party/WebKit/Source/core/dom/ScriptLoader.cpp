@@ -225,7 +225,7 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         m_willBeParserExecuted = true;
     } else if (client->hasSourceAttribute() && m_parserInserted && !client->asyncAttributeValue()) {
         m_willBeParserExecuted = true;
-    } else if (!client->hasSourceAttribute() && m_parserInserted && !elementDocument.haveStylesheetsAndImportsLoaded()) {
+    } else if (!client->hasSourceAttribute() && m_parserInserted && !elementDocument.isRenderingReady()) {
         m_willBeParserExecuted = true;
         m_readyToBeParserExecuted = true;
     } else if (client->hasSourceAttribute() && !client->asyncAttributeValue() && !m_forceAsync) {
@@ -249,7 +249,7 @@ bool ScriptLoader::fetchScript(const String& sourceUrl)
 {
     ASSERT(m_element);
 
-    RefPtr<Document> elementDocument(m_element->document());
+    RefPtrWillBeRawPtr<Document> elementDocument(m_element->document());
     if (!m_element->inDocument() || m_element->document() != elementDocument)
         return false;
 

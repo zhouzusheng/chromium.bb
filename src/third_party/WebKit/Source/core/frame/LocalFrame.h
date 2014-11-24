@@ -32,17 +32,20 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/NavigationScheduler.h"
 #include "core/page/FrameTree.h"
-#include "heap/Handle.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 
 namespace WebCore {
 
     class Color;
+    class Document;
     class DragImage;
     class Editor;
     class EventHandler;
     class FetchContext;
     class FloatSize;
+    class FrameConsole;
     class FrameSelection;
     class FrameView;
     class InputMethodController;
@@ -50,14 +53,14 @@ namespace WebCore {
     class IntSize;
     class Node;
     class Range;
-    class RenderPart;
+    class RenderView;
     class TreeScope;
     class ScriptController;
     class SpellChecker;
     class TreeScope;
     class VisiblePosition;
 
-    class LocalFrame : public Frame {
+    class LocalFrame : public Frame, public Supplementable<LocalFrame>  {
     public:
         static PassRefPtr<LocalFrame> create(FrameLoaderClient*, FrameHost*, HTMLFrameOwnerElement*);
 
@@ -73,12 +76,14 @@ namespace WebCore {
 
         virtual void willDetachFrameHost() OVERRIDE;
         virtual void detachFromFrameHost() OVERRIDE;
-        void disconnectOwnerElement();
 
-        HTMLFrameOwnerElement* ownerElement() const;
+        virtual void disconnectOwnerElement() OVERRIDE;
 
         virtual void setDOMWindow(PassRefPtrWillBeRawPtr<DOMWindow>) OVERRIDE;
         FrameView* view() const;
+        Document* document() const;
+
+        RenderView* contentRenderer() const; // Root of the render tree for the document contained in this frame.
 
         Editor& editor() const;
         EventHandler& eventHandler() const;
@@ -90,10 +95,14 @@ namespace WebCore {
         FetchContext& fetchContext() const { return loader().fetchContext(); }
         ScriptController& script();
         SpellChecker& spellChecker() const;
-
-        RenderPart* ownerRenderer() const; // Renderer for the element that contains this frame.
+        FrameConsole& console() const;
 
         void didChangeVisibilityState();
+
+        // FIXME: This method is only used by EventHandler to get the highest level
+        // LocalFrame in this frame's in-process subtree. When user gesture tokens
+        // are synchronized across processes this method should be removed.
+        LocalFrame* localFrameRoot();
 
     // ======== All public functions below this point are candidates to move out of LocalFrame into another class. ========
 
@@ -121,11 +130,7 @@ namespace WebCore {
         void deviceOrPageScaleFactorChanged();
         double devicePixelRatio() const;
 
-        // Orientation is the interface orientation in degrees. Some examples are:
-        //  0 is straight up; -90 is when the device is rotated 90 clockwise;
-        //  90 is when rotated counter clockwise.
-        void sendOrientationChangeEvent(int orientation);
-        int orientation() const { return m_orientation; }
+        void sendOrientationChangeEvent();
 
         String documentTypeString() const;
 
@@ -137,7 +142,7 @@ namespace WebCore {
 
         VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
         Document* documentAtPoint(const IntPoint& windowPoint);
-        PassRefPtr<Range> rangeForPoint(const IntPoint& framePoint);
+        PassRefPtrWillBeRawPtr<Range> rangeForPoint(const IntPoint& framePoint);
 
         // Should only be called on the main frame of a page.
         void notifyChromeClientWheelEventHandlerCountChanged() const;
@@ -160,12 +165,11 @@ namespace WebCore {
         const OwnPtr<SpellChecker> m_spellChecker;
         const OwnPtr<FrameSelection> m_selection;
         const OwnPtr<EventHandler> m_eventHandler;
+        const OwnPtr<FrameConsole> m_console;
         OwnPtr<InputMethodController> m_inputMethodController;
 
         float m_pageZoomFactor;
         float m_textZoomFactor;
-
-        int m_orientation;
 
         bool m_inViewSourceMode;
     };
@@ -210,14 +214,14 @@ namespace WebCore {
         return *m_spellChecker;
     }
 
+    inline FrameConsole& LocalFrame::console() const
+    {
+        return *m_console;
+    }
+
     inline InputMethodController& LocalFrame::inputMethodController() const
     {
         return *m_inputMethodController;
-    }
-
-    inline HTMLFrameOwnerElement* LocalFrame::ownerElement() const
-    {
-        return m_ownerElement;
     }
 
     inline bool LocalFrame::inViewSourceMode() const
@@ -244,5 +248,10 @@ namespace WebCore {
     DEFINE_TYPE_CASTS(LocalFrame, Frame, localFrame, localFrame->isLocalFrame(), localFrame.isLocalFrame());
 
 } // namespace WebCore
+
+// During refactoring, there are some places where we need to do type conversions that
+// will not be needed once all instances of LocalFrame and RemoteFrame are sorted out.
+// At that time this #define will be removed and all the uses of it will need to be corrected.
+#define toLocalFrameTemporary toLocalFrame
 
 #endif // LocalFrame_h

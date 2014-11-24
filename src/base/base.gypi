@@ -47,12 +47,12 @@
           'android/jni_android.h',
           'android/jni_array.cc',
           'android/jni_array.h',
-          'android/jni_helper.cc',
-          'android/jni_helper.h',
           'android/jni_registrar.cc',
           'android/jni_registrar.h',
           'android/jni_string.cc',
           'android/jni_string.h',
+          'android/jni_weak_ref.cc',
+          'android/jni_weak_ref.h',
           'android/library_loader/library_loader_hooks.cc',
           'android/library_loader/library_loader_hooks.h',
           'android/memory_pressure_listener_android.cc',
@@ -125,13 +125,11 @@
           'cpu.cc',
           'cpu.h',
           'critical_closure.h',
-          'critical_closure_ios.mm',
+          'critical_closure_internal_ios.mm',
           'debug/alias.cc',
           'debug/alias.h',
           'debug/crash_logging.cc',
           'debug/crash_logging.h',
-          'debug/debug_on_start_win.cc',
-          'debug/debug_on_start_win.h',
           'debug/debugger.cc',
           'debug/debugger.h',
           'debug/debugger_posix.cc',
@@ -139,7 +137,7 @@
           'debug/dump_without_crashing.cc',
           'debug/dump_without_crashing.h',
           'debug/gdi_debug_util_win.cc',
-          'debug/gdi_debug_util_win.h',        
+          'debug/gdi_debug_util_win.h',
           # This file depends on files from the 'allocator' target,
           # but this target does not depend on 'allocator' (see
           # allocator.gyp for details).
@@ -276,6 +274,8 @@
           'mac/mac_logging.cc',
           'mac/mac_util.h',
           'mac/mac_util.mm',
+          'mac/mach_logging.cc',
+          'mac/mach_logging.h',
           'mac/objc_property_releaser.h',
           'mac/objc_property_releaser.mm',
           'mac/os_crash_dumps.cc',
@@ -289,6 +289,8 @@
           'mac/scoped_launch_data.h',
           'mac/scoped_mach_port.cc',
           'mac/scoped_mach_port.h',
+          'mac/scoped_mach_vm.cc',
+          'mac/scoped_mach_vm.h',
           'mac/scoped_nsautorelease_pool.h',
           'mac/scoped_nsautorelease_pool.mm',
           'mac/scoped_nsexception_enabler.h',
@@ -305,8 +307,6 @@
           'memory/aligned_memory.h',
           'memory/discardable_memory.cc',
           'memory/discardable_memory.h',
-          'memory/discardable_memory_allocator_android.cc',
-          'memory/discardable_memory_allocator_android.h',
           'memory/discardable_memory_android.cc',
           'memory/discardable_memory_emulated.cc',
           'memory/discardable_memory_emulated.h',
@@ -355,8 +355,6 @@
           'message_loop/message_pump_android.h',
           'message_loop/message_pump_default.cc',
           'message_loop/message_pump_default.h',
-          'message_loop/message_pump_ozone.cc',
-          'message_loop/message_pump_ozone.h',
           'message_loop/message_pump_win.cc',
           'message_loop/message_pump_win.h',
           'metrics/sample_map.cc',
@@ -735,14 +733,6 @@
                 'message_loop/message_pump_glib.cc',
               ],
           }],
-          ['<(use_x11)==0 or >(nacl_untrusted_build)==1', {
-              'sources!': [
-                'message_loop/message_pump_x11.cc',
-              ],
-          }],
-          ['<(toolkit_uses_gtk)==0 or >(nacl_untrusted_build)==1', {
-            'sources!': ['message_loop/message_pump_gtk.cc'],
-          }],
           ['(OS != "linux" and <(os_bsd) != 1 and OS != "android") or >(nacl_untrusted_build)==1', {
               'sources!': [
                 # Not automatically excluded by the *linux.cc rules.
@@ -780,6 +770,14 @@
             'sources/': [
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
+          }],
+          ['OS == "android" and _toolset == "target"', {
+           'sources': [
+             'memory/discardable_memory_ashmem_allocator.cc',
+             'memory/discardable_memory_ashmem_allocator.h',
+             'memory/discardable_memory_ashmem.cc',
+             'memory/discardable_memory_ashmem.h',
+           ],
           }],
           ['OS == "android" and >(nacl_untrusted_build)==0', {
             'sources!': [
@@ -893,7 +891,6 @@
           ['<(use_ozone) == 1', {
             'sources!': [
               'message_loop/message_pump_glib.cc',
-              'message_loop/message_pump_x11.cc',
             ]
           }],
           ['OS == "linux" and >(nacl_untrusted_build)==0', {

@@ -28,20 +28,21 @@
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/internal_api/sync_core.h"
+#include "sync/internal_api/sync_core_proxy_impl.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/internal_api/syncapi_server_connection_manager.h"
-#include "sync/js/js_arg_list.h"
-#include "sync/js/js_reply_handler.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_value_conversions.h"
 #include "sync/protocol/sync.pb.h"
+#include "sync/sessions/directory_type_debug_info_emitter.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/in_memory_directory_backing_store.h"
@@ -64,10 +65,6 @@ static const int kDefaultNudgeDelayMilliseconds = 200;
 static const int kPreferencesNudgeDelayMilliseconds = 2000;
 static const int kSyncRefreshDelayMsec = 500;
 static const int kSyncSchedulerDelayMsec = 250;
-
-// Maximum count and size for traffic recorder.
-static const unsigned int kMaxMessagesToRecord = 100;
-static const unsigned int kMaxMessageSizeToRecord = 50 * 1024;
 
 GetUpdatesCallerInfo::GetUpdatesSource GetSourceFromReason(
     ConfigureReason reason) {
@@ -172,8 +169,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
       initialized_(false),
       observing_network_connectivity_changes_(false),
       invalidator_state_(DEFAULT_INVALIDATION_ERROR),
-      traffic_recorder_(kMaxMessagesToRecord, kMaxMessageSizeToRecord),
-      encryptor_(NULL),
       report_unrecoverable_error_function_(NULL),
       weak_ptr_factory_(this) {
   // Pre-fill |notification_info_map_|.
@@ -181,14 +176,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
     notification_info_map_.insert(
         std::make_pair(ModelTypeFromInt(i), NotificationInfo()));
   }
-
-  // Bind message handlers.
-  BindJsMessageHandler(
-      "getAllNodes",
-      &SyncManagerImpl::GetAllNodes);
-  BindJsMessageHandler(
-      "getClientServerTraffic",
-      &SyncManagerImpl::GetClientServerTraffic);
 }
 
 SyncManagerImpl::~SyncManagerImpl() {
@@ -357,7 +344,6 @@ void SyncManagerImpl::Init(
 
   database_path_ = database_location.Append(
       syncable::Directory::kSyncDatabaseFilename);
-  encryptor_ = encryptor;
   unrecoverable_error_handler_ = unrecoverable_error_handler.Pass();
   report_unrecoverable_error_function_ = report_unrecoverable_error_function;
 
@@ -413,6 +399,14 @@ void SyncManagerImpl::Init(
 
   sync_core_.reset(new SyncCore(model_type_registry_.get()));
 
+  // Bind the SyncCore WeakPtr to this thread.  This helps us crash earlier if
+  // the pointer is misused in debug mode.
+  base::WeakPtr<SyncCore> weak_core = sync_core_->AsWeakPtr();
+  weak_core.get();
+
+  sync_core_proxy_.reset(
+      new SyncCoreProxyImpl(base::MessageLoopProxy::current(), weak_core));
+
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
   std::vector<SyncEngineEventListener*> listeners;
@@ -424,7 +418,6 @@ void SyncManagerImpl::Init(
       extensions_activity,
       listeners,
       &debug_info_event_listener_,
-      &traffic_recorder_,
       model_type_registry_.get(),
       invalidator_client_id).Pass();
   session_context_->set_account_name(credentials.email);
@@ -946,6 +939,7 @@ void SyncManagerImpl::OnMigrationRequested(ModelTypeSet types) {
 }
 
 void SyncManagerImpl::OnProtocolEvent(const ProtocolEvent& event) {
+  protocol_event_buffer_.RecordProtocolEvent(event);
   FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                     OnProtocolEvent(event));
 }
@@ -957,55 +951,21 @@ void SyncManagerImpl::SetJsEventHandler(
   js_sync_encryption_handler_observer_.SetJsEventHandler(event_handler);
 }
 
-void SyncManagerImpl::ProcessJsMessage(
-    const std::string& name, const JsArgList& args,
-    const WeakHandle<JsReplyHandler>& reply_handler) {
-  if (!initialized_) {
-    NOTREACHED();
-    return;
+scoped_ptr<base::ListValue> SyncManagerImpl::GetAllNodesForType(
+    syncer::ModelType type) {
+  DirectoryTypeDebugInfoEmitterMap* emitter_map =
+      model_type_registry_->directory_type_debug_info_emitter_map();
+  DirectoryTypeDebugInfoEmitterMap::iterator it = emitter_map->find(type);
+
+  if (it == emitter_map->end()) {
+    // This can happen in some cases.  The UI thread makes requests of us
+    // when it doesn't really know which types are enabled or disabled.
+    DLOG(WARNING) << "Asked to return debug info for invalid type "
+                  << ModelTypeToString(type);
+    return scoped_ptr<base::ListValue>();
   }
 
-  if (!reply_handler.IsInitialized()) {
-    DVLOG(1) << "Uninitialized reply handler; dropping unknown message "
-            << name << " with args " << args.ToString();
-    return;
-  }
-
-  JsMessageHandler js_message_handler = js_message_handlers_[name];
-  if (js_message_handler.is_null()) {
-    DVLOG(1) << "Dropping unknown message " << name
-             << " with args " << args.ToString();
-    return;
-  }
-
-  reply_handler.Call(FROM_HERE,
-                     &JsReplyHandler::HandleJsReply,
-                     name, js_message_handler.Run(args));
-}
-
-void SyncManagerImpl::BindJsMessageHandler(
-    const std::string& name,
-    UnboundJsMessageHandler unbound_message_handler) {
-  js_message_handlers_[name] =
-      base::Bind(unbound_message_handler, base::Unretained(this));
-}
-
-JsArgList SyncManagerImpl::GetClientServerTraffic(
-    const JsArgList& args) {
-  base::ListValue return_args;
-  base::ListValue* value = traffic_recorder_.ToValue();
-  if (value != NULL)
-    return_args.Append(value);
-  return JsArgList(&return_args);
-}
-
-JsArgList SyncManagerImpl::GetAllNodes(const JsArgList& args) {
-  ReadTransaction trans(FROM_HERE, GetUserShare());
-  base::ListValue return_args;
-  scoped_ptr<base::ListValue> nodes(
-      trans.GetDirectory()->GetAllNodeDetails(trans.GetWrappedTrans()));
-  return_args.Append(nodes.release());
-  return JsArgList(&return_args);
+  return it->second->GetAllNodes();
 }
 
 void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
@@ -1069,9 +1029,9 @@ UserShare* SyncManagerImpl::GetUserShare() {
   return &share_;
 }
 
-syncer::SyncCore* SyncManagerImpl::GetSyncCore() {
+syncer::SyncCoreProxy* SyncManagerImpl::GetSyncCoreProxy() {
   DCHECK(initialized_);
-  return sync_core_.get();
+  return sync_core_proxy_.get();
 }
 
 const std::string SyncManagerImpl::cache_guid() {
@@ -1159,6 +1119,30 @@ bool SyncManagerImpl::HasUnsyncedItems() {
 
 SyncEncryptionHandler* SyncManagerImpl::GetEncryptionHandler() {
   return sync_encryption_handler_.get();
+}
+
+ScopedVector<syncer::ProtocolEvent>
+    SyncManagerImpl::GetBufferedProtocolEvents() {
+  return protocol_event_buffer_.GetBufferedProtocolEvents();
+}
+
+void SyncManagerImpl::RegisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  model_type_registry_->RegisterDirectoryTypeDebugInfoObserver(observer);
+}
+
+void SyncManagerImpl::UnregisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  model_type_registry_->UnregisterDirectoryTypeDebugInfoObserver(observer);
+}
+
+bool SyncManagerImpl::HasDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  return model_type_registry_->HasDirectoryTypeDebugInfoObserver(observer);
+}
+
+void SyncManagerImpl::RequestEmitDebugInfo() {
+  model_type_registry_->RequestEmitDebugInfo();
 }
 
 // static.

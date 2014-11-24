@@ -22,71 +22,69 @@ class FakeAttachmentStore::Backend
   Backend(
       const scoped_refptr<base::SingleThreadTaskRunner>& frontend_task_runner);
 
-  void Read(const AttachmentId& id, const ReadCallback& callback);
-  void Write(const scoped_refptr<base::RefCountedMemory>& bytes,
-             const WriteCallback& callback);
-  void Drop(const AttachmentId& id, const DropCallback& callback);
+  void Read(const AttachmentIdList& ids, const ReadCallback& callback);
+  void Write(const AttachmentList& attachments, const WriteCallback& callback);
+  void Drop(const AttachmentIdList& ids, const DropCallback& callback);
 
  private:
   friend class base::RefCountedThreadSafe<Backend>;
-  typedef std::map<AttachmentId, Attachment*> AttachmentMap;
 
   ~Backend();
-  Result Remove(const AttachmentId& id);
 
   scoped_refptr<base::SingleThreadTaskRunner> frontend_task_runner_;
   AttachmentMap attachments_;
-  STLValueDeleter<AttachmentMap> attachments_value_deleter_;
 };
 
 FakeAttachmentStore::Backend::Backend(
     const scoped_refptr<base::SingleThreadTaskRunner>& frontend_task_runner)
-    : frontend_task_runner_(frontend_task_runner),
-      attachments_value_deleter_(&attachments_) {}
+    : frontend_task_runner_(frontend_task_runner) {}
 
 FakeAttachmentStore::Backend::~Backend() {}
 
-void FakeAttachmentStore::Backend::Read(const AttachmentId& id,
+void FakeAttachmentStore::Backend::Read(const AttachmentIdList& ids,
                                         const ReadCallback& callback) {
-  AttachmentMap::iterator iter = attachments_.find(id);
-  scoped_ptr<Attachment> attachment;
-  Result result = NOT_FOUND;
-  if (iter != attachments_.end()) {
-    attachment.reset(new Attachment(*iter->second));
-    result = SUCCESS;
+  Result result_code = SUCCESS;
+  AttachmentIdList::const_iterator id_iter = ids.begin();
+  AttachmentIdList::const_iterator id_end = ids.end();
+  scoped_ptr<AttachmentMap> result_map(new AttachmentMap);
+  for (; id_iter != id_end; ++id_iter) {
+    const AttachmentId& id = *id_iter;
+    syncer::AttachmentMap::iterator attachment_iter =
+        attachments_.find(*id_iter);
+    if (attachment_iter != attachments_.end()) {
+      const Attachment& attachment = attachment_iter->second;
+      result_map->insert(std::make_pair(id, attachment));
+    } else {
+      result_code = UNSPECIFIED_ERROR;
+      break;
+    }
   }
   frontend_task_runner_->PostTask(
-      FROM_HERE, base::Bind(callback, result, base::Passed(&attachment)));
+      FROM_HERE, base::Bind(callback, result_code, base::Passed(&result_map)));
 }
 
-void FakeAttachmentStore::Backend::Write(
-    const scoped_refptr<base::RefCountedMemory>& bytes,
-    const WriteCallback& callback) {
-  scoped_ptr<Attachment> attachment = Attachment::Create(bytes);
-  DCHECK(attachment.get());
-  AttachmentId attachment_id(attachment->GetId());
-  attachments_.insert(
-      AttachmentMap::value_type(attachment_id, attachment.release()));
-  frontend_task_runner_->PostTask(FROM_HERE,
-                                  base::Bind(callback, SUCCESS, attachment_id));
-}
-
-void FakeAttachmentStore::Backend::Drop(const AttachmentId& id,
-                                        const DropCallback& callback) {
-  Result result = Remove(id);
-  frontend_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result));
-}
-
-AttachmentStore::Result FakeAttachmentStore::Backend::Remove(
-    const AttachmentId& id) {
-  Result result = NOT_FOUND;
-  AttachmentMap::iterator iter = attachments_.find(id);
-  if (iter != attachments_.end()) {
-    delete iter->second;
-    attachments_.erase(iter);
-    result = SUCCESS;
+void FakeAttachmentStore::Backend::Write(const AttachmentList& attachments,
+                                         const WriteCallback& callback) {
+  AttachmentList::const_iterator iter = attachments.begin();
+  AttachmentList::const_iterator end = attachments.end();
+  for (; iter != end; ++iter) {
+    attachments_.insert(std::make_pair(iter->GetId(), *iter));
   }
-  return result;
+  frontend_task_runner_->PostTask(FROM_HERE, base::Bind(callback, SUCCESS));
+}
+
+void FakeAttachmentStore::Backend::Drop(const AttachmentIdList& ids,
+                                        const DropCallback& callback) {
+  Result result = SUCCESS;
+  AttachmentIdList::const_iterator ids_iter = ids.begin();
+  AttachmentIdList::const_iterator ids_end = ids.end();
+  for (; ids_iter != ids_end; ++ids_iter) {
+    AttachmentMap::iterator attachments_iter = attachments_.find(*ids_iter);
+    if (attachments_iter != attachments_.end()) {
+      attachments_.erase(attachments_iter);
+    }
+  }
+  frontend_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result));
 }
 
 FakeAttachmentStore::FakeAttachmentStore(
@@ -96,27 +94,28 @@ FakeAttachmentStore::FakeAttachmentStore(
 
 FakeAttachmentStore::~FakeAttachmentStore() {}
 
-void FakeAttachmentStore::Read(const AttachmentId& id,
+void FakeAttachmentStore::Read(const AttachmentIdList& ids,
                                const ReadCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&FakeAttachmentStore::Backend::Read, backend_, id, callback));
+      base::Bind(&FakeAttachmentStore::Backend::Read, backend_, ids, callback));
 }
 
-void FakeAttachmentStore::Write(
-    const scoped_refptr<base::RefCountedMemory>& bytes,
-    const WriteCallback& callback) {
+void FakeAttachmentStore::Write(const AttachmentList& attachments,
+                                const WriteCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(
-          &FakeAttachmentStore::Backend::Write, backend_, bytes, callback));
+      base::Bind(&FakeAttachmentStore::Backend::Write,
+                 backend_,
+                 attachments,
+                 callback));
 }
 
-void FakeAttachmentStore::Drop(const AttachmentId& id,
+void FakeAttachmentStore::Drop(const AttachmentIdList& ids,
                                const DropCallback& callback) {
   backend_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&FakeAttachmentStore::Backend::Drop, backend_, id, callback));
+      base::Bind(&FakeAttachmentStore::Backend::Drop, backend_, ids, callback));
 }
 
 }  // namespace syncer

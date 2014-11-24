@@ -90,10 +90,10 @@ public:
 
 private:
     GestureToken()
-        : m_consumableGestures(0),
-        m_timestamp(0),
-        m_outOfProcess(false),
-        m_javascriptPrompt(false)
+        : m_consumableGestures(0)
+        , m_timestamp(0)
+        , m_outOfProcess(false)
+        , m_javascriptPrompt(false)
     {
     }
 
@@ -112,6 +112,7 @@ static bool isDefinite(ProcessingUserGestureState state)
 
 ProcessingUserGestureState UserGestureIndicator::s_state = DefinitelyNotProcessingUserGesture;
 UserGestureIndicator* UserGestureIndicator::s_topmostIndicator = 0;
+bool UserGestureIndicator::s_processedUserGestureInPast = false;
 
 UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
     : m_previousState(s_state)
@@ -131,10 +132,13 @@ UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
         s_state = state;
     }
 
-    if (state == DefinitelyProcessingNewUserGesture)
+    if (state == DefinitelyProcessingNewUserGesture) {
         static_cast<GestureToken*>(m_token.get())->addGesture();
-    else if (state == DefinitelyProcessingUserGesture && s_topmostIndicator == this)
+        s_processedUserGestureInPast = true;
+    } else if (state == DefinitelyProcessingUserGesture && s_topmostIndicator == this) {
         static_cast<GestureToken*>(m_token.get())->addGesture();
+        s_processedUserGestureInPast = true;
+    }
     ASSERT(isDefinite(s_state));
 }
 
@@ -192,6 +196,19 @@ UserGestureToken* UserGestureIndicator::currentToken()
     if (!isMainThread() || !s_topmostIndicator)
         return 0;
     return s_topmostIndicator->m_token.get();
+}
+
+void UserGestureIndicator::clearProcessedUserGestureInPast()
+{
+    if (isMainThread())
+        s_processedUserGestureInPast = false;
+}
+
+bool UserGestureIndicator::processedUserGestureInPast()
+{
+    if (!isMainThread())
+        return false;
+    return s_processedUserGestureInPast;
 }
 
 UserGestureIndicatorDisabler::UserGestureIndicatorDisabler()

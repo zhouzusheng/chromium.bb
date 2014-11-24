@@ -35,6 +35,7 @@ typedef struct {
   double new_mv_count;
   double duration;
   double count;
+  int64_t spatial_layer_id;
 } FIRSTPASS_STATS;
 
 struct twopass_rc {
@@ -43,7 +44,9 @@ struct twopass_rc {
   unsigned int this_iiratio;
   FIRSTPASS_STATS total_stats;
   FIRSTPASS_STATS this_frame_stats;
-  FIRSTPASS_STATS *stats_in, *stats_in_end, *stats_in_start;
+  const FIRSTPASS_STATS *stats_in;
+  const FIRSTPASS_STATS *stats_in_start;
+  const FIRSTPASS_STATS *stats_in_end;
   FIRSTPASS_STATS total_left_stats;
   int first_pass_done;
   int64_t bits_left;
@@ -55,7 +58,6 @@ struct twopass_rc {
   double modified_error_left;
   double kf_intra_err_min;
   double gf_intra_err_min;
-  int static_scene_max_gf_interval;
   int kf_bits;
   // Remaining error from uncoded frames in a gf group. Two pass use only
   int64_t gf_group_error_left;
@@ -89,12 +91,9 @@ void vp9_end_first_pass(struct VP9_COMP *cpi);
 
 void vp9_init_second_pass(struct VP9_COMP *cpi);
 void vp9_rc_get_second_pass_params(struct VP9_COMP *cpi);
-int vp9_twopass_worst_quality(struct VP9_COMP *cpi, FIRSTPASS_STATS *fpstats,
-                              int section_target_bandwitdh);
 
 // Post encode update of the rate control parameters for 2-pass
-void vp9_twopass_postencode_update(struct VP9_COMP *cpi,
-                                   uint64_t bytes_used);
+void vp9_twopass_postencode_update(struct VP9_COMP *cpi);
 #ifdef __cplusplus
 }  // extern "C"
 #endif

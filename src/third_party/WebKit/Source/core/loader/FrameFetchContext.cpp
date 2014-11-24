@@ -34,6 +34,7 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -149,6 +150,9 @@ void FrameFetchContext::dispatchWillSendRequest(DocumentLoader* loader, unsigned
 {
     m_frame->loader().applyUserAgent(request);
     m_frame->loader().client()->dispatchWillSendRequest(loader, identifier, request, redirectResponse);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", "data", InspectorSendRequestEvent::data(identifier, m_frame, request));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::willSendRequest(m_frame, identifier, ensureLoader(loader), request, redirectResponse, initiatorInfo);
 }
 
@@ -159,39 +163,44 @@ void FrameFetchContext::dispatchDidLoadResourceFromMemoryCache(const ResourceReq
 
 void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r, ResourceLoader* resourceLoader)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, r);
+    m_frame->loader().progress().incrementProgress(identifier, r);
     m_frame->loader().client()->dispatchDidReceiveResponse(loader, identifier, r);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", "data", InspectorReceiveResponseEvent::data(identifier, m_frame, r));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, ensureLoader(loader), r, resourceLoader);
 }
 
 void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, data, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, data, dataLength);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, data, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, 0, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, 0, dataLength);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, 0, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier, double finishTime, int64_t encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().completeProgress(identifier);
+    m_frame->loader().progress().completeProgress(identifier);
     m_frame->loader().client()->dispatchDidFinishLoading(loader, identifier);
 
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didFinishLoading(m_frame, identifier, ensureLoader(loader), finishTime, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
 {
-    if (Page* page = m_frame->page())
-        page->progress().completeProgress(identifier);
+    m_frame->loader().progress().completeProgress(identifier);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, 0, true));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didFailLoading(m_frame, identifier, error);
 }
 

@@ -50,7 +50,9 @@ compositionstart
 compositionupdate
 connect
 connecting
+contextlost
 contextmenu
+contextrestored
 copy
 cuechange
 cut
@@ -78,6 +80,7 @@ enter
 error
 exit
 fetch
+finish
 focus
 focusin
 focusout
@@ -136,6 +139,8 @@ paste
 pause
 play
 playing
+pointerlockchange
+pointerlockerror
 popstate
 progress
 ratechange
@@ -168,6 +173,7 @@ speechend
 speechstart
 stalled
 start
+statechange
 storage
 submit
 success
@@ -176,6 +182,7 @@ sync
 textInput
 timeout
 timeupdate
+toggle
 tonechange
 touchcancel
 touchend

@@ -92,23 +92,23 @@ public:
     void setClientRedirect(ClientRedirectPolicy clientRedirect) { m_clientRedirect = clientRedirect; }
 
     Event* triggeringEvent() const { return m_triggeringEvent.get(); }
-    void setTriggeringEvent(PassRefPtr<Event> triggeringEvent) { m_triggeringEvent = triggeringEvent; }
+    void setTriggeringEvent(PassRefPtrWillBeRawPtr<Event> triggeringEvent) { m_triggeringEvent = triggeringEvent; }
 
     FormState* formState() const { return m_formState.get(); }
-    void setFormState(PassRefPtr<FormState> formState) { m_formState = formState; }
+    void setFormState(PassRefPtrWillBeRawPtr<FormState> formState) { m_formState = formState; }
 
     ShouldSendReferrer shouldSendReferrer() const { return m_shouldSendReferrer; }
     void setShouldSendReferrer(ShouldSendReferrer shouldSendReferrer) { m_shouldSendReferrer = shouldSendReferrer; }
 
 private:
-    RefPtr<Document> m_originDocument;
+    RefPtrWillBePersistent<Document> m_originDocument;
     ResourceRequest m_resourceRequest;
     AtomicString m_frameName;
     SubstituteData m_substituteData;
     bool m_lockBackForwardList;
     ClientRedirectPolicy m_clientRedirect;
-    RefPtr<Event> m_triggeringEvent;
-    RefPtr<FormState> m_formState;
+    RefPtrWillBePersistent<Event> m_triggeringEvent;
+    RefPtrWillBePersistent<FormState> m_formState;
     ShouldSendReferrer m_shouldSendReferrer;
 };
 

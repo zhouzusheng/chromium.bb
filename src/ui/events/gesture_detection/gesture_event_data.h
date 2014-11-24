@@ -16,17 +16,24 @@ class GestureEventDataPacket;
 
 struct GESTURE_DETECTION_EXPORT GestureEventData {
   GestureEventData(EventType type,
+                   int motion_event_id,
                    base::TimeTicks time,
                    float x,
                    float y,
+                   int touch_point_count,
+                   const gfx::RectF& bounding_box,
                    const GestureEventDetails& details);
 
   GestureEventData(EventType type,
+                   int motion_event_id,
                    base::TimeTicks time,
                    float x,
-                   float y);
+                   float y,
+                   int touch_point_count,
+                   const gfx::RectF& bounding_box);
 
   EventType type;
+  int motion_event_id;
   base::TimeTicks time;
   float x;
   float y;

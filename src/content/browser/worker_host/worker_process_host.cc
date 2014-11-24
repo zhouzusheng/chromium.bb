@@ -36,6 +36,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
+#include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
@@ -203,6 +204,7 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
+    switches::kEnablePreciseMemoryInfo,
     switches::kEnableServiceWorker,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
@@ -222,18 +224,6 @@ bool debugging_child = false;
         switches::kWaitForDebuggerChildren);
     if (value.empty() || value == switches::kWorkerProcess) {
       cmd_line->AppendSwitch(switches::kWaitForDebugger);
-      debugging_child = true;
-    }
-  }
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDebugChildren)) {
-    // Look to pass-on the kDebugOnStart flag.
-    std::string value = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kDebugChildren);
-    if (value.empty() || value == switches::kWorkerProcess) {
-      // launches a new xterm, and runs the worker process in gdb, reading
-      // optional commands from gdb_chrome file in the working directory.
-      cmd_line->PrependWrapper("xterm -e gdb -x gdb_chrome --args");
       debugging_child = true;
     }
   }
@@ -318,12 +308,26 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
           resource_context_);
   socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
   process_->AddFilter(socket_stream_dispatcher_host);
+
+  WebSocketDispatcherHost::GetRequestContextCallback
+      websocket_request_context_callback(
+          base::Bind(&WorkerProcessHost::GetRequestContext,
+                     base::Unretained(this),
+                     ResourceType::SUB_RESOURCE));
+
+  process_->AddFilter(new WebSocketDispatcherHost(
+      render_process_id, websocket_request_context_callback));
+
   process_->AddFilter(new WorkerDevToolsMessageFilter(process_->GetData().id));
   process_->AddFilter(
-      new IndexedDBDispatcherHost(partition_.indexed_db_context()));
+      new IndexedDBDispatcherHost(process_->GetData().id,
+                                  url_request_context,
+                                  partition_.indexed_db_context(),
+                                  blob_storage_context));
 }
 
-void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
+void WorkerProcessHost::CreateWorker(const WorkerInstance& instance,
+                                     bool pause_on_start) {
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
       process_->GetData().id, instance.url());
 
@@ -334,6 +338,7 @@ void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
   params.name = instance.name();
   params.content_security_policy = instance.content_security_policy();
   params.security_policy_type = instance.security_policy_type();
+  params.pause_on_start = pause_on_start;
   params.route_id = instance.worker_route_id();
   Send(new WorkerProcessMsg_CreateWorker(params));
 

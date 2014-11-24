@@ -36,7 +36,6 @@
 #include "V8Node.h"
 #include "V8WebGLRenderingContext.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
@@ -53,10 +52,10 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
     v8::Handle<v8::Object> holder = info.Holder();
     v8::Isolate* isolate = info.GetIsolate();
     HTMLCanvasElement* impl = V8HTMLCanvasElement::toNative(holder);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, contextIdResource, info[0]);
+    TOSTRING_VOID(V8StringResource<>, contextIdResource, info[0]);
     String contextId = contextIdResource;
     RefPtr<CanvasContextAttributes> attributes;
-    if (contextId == "webgl" || contextId == "experimental-webgl" || contextId == "webkit-3d") {
+    if (contextId == "webgl" || contextId == "experimental-webgl") {
         RefPtr<WebGLContextAttributes> webGLAttributes = WebGLContextAttributes::create();
         if (info.Length() > 1 && info[1]->IsObject()) {
             v8::Handle<v8::Object> jsAttributes = info[1]->ToObject();
@@ -101,10 +100,10 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
     if (result->is2d()) {
         v8::Handle<v8::Value> v8Result = toV8(toCanvasRenderingContext2D(result), info.Holder(), info.GetIsolate());
         if (InspectorInstrumentation::canvasAgentEnabled(&impl->document())) {
-            ScriptState* scriptState = ScriptState::forContext(isolate->GetCurrentContext());
+            ScriptState* scriptState = ScriptState::current(isolate);
             ScriptObject context(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
             ScriptObject wrapped = InspectorInstrumentation::wrapCanvas2DRenderingContextForInstrumentation(&impl->document(), context);
-            if (!wrapped.hasNoValue()) {
+            if (!wrapped.isEmpty()) {
                 v8SetReturnValue(info, wrapped.v8Value());
                 return;
             }
@@ -115,10 +114,10 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
     if (result->is3d()) {
         v8::Handle<v8::Value> v8Result = toV8(toWebGLRenderingContext(result), info.Holder(), info.GetIsolate());
         if (InspectorInstrumentation::canvasAgentEnabled(&impl->document())) {
-            ScriptState* scriptState = ScriptState::forContext(isolate->GetCurrentContext());
+            ScriptState* scriptState = ScriptState::current(isolate);
             ScriptObject glContext(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
             ScriptObject wrapped = InspectorInstrumentation::wrapWebGLRenderingContextForInstrumentation(&impl->document(), glContext);
-            if (!wrapped.hasNoValue()) {
+            if (!wrapped.isEmpty()) {
                 v8SetReturnValue(info, wrapped.v8Value());
                 return;
             }
@@ -136,7 +135,7 @@ void V8HTMLCanvasElement::toDataURLMethodCustom(const v8::FunctionCallbackInfo<v
     HTMLCanvasElement* canvas = V8HTMLCanvasElement::toNative(holder);
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "toDataURL", "HTMLCanvasElement", info.Holder(), info.GetIsolate());
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, info[0]);
+    TOSTRING_VOID(V8StringResource<>, type, info[0]);
     double quality;
     double* qualityPtr = 0;
     if (info.Length() > 1 && info[1]->IsNumber()) {

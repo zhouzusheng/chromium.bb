@@ -476,8 +476,20 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   return false;
 }
 
+template <typename LayerType>
+static bool HasInvertibleOrAnimatedTransform(LayerType* layer) {
+  return layer->transform_is_invertible() || layer->TransformIsAnimating();
+}
+
 static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
                                           bool layer_is_drawn) {
+  // If the layer transform is not invertible, it should not be drawn.
+  // TODO(ajuma): Correctly process subtrees with singular transform for the
+  // case where we may animate to a non-singular transform and wish to
+  // pre-raster.
+  if (!HasInvertibleOrAnimatedTransform(layer))
+    return true;
+
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
@@ -501,6 +513,10 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
 }
 
 static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
+  // If the layer transform is not invertible, it should not be drawn.
+  if (!layer->transform_is_invertible() && !layer->TransformIsAnimating())
+    return true;
+
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
@@ -903,14 +919,17 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
 }
 
 template <typename LayerType>
-static inline void CalculateContentsScale(LayerType* layer,
-                                          float contents_scale,
-                                          float device_scale_factor,
-                                          float page_scale_factor,
-                                          bool animating_transform_to_screen) {
+static inline void CalculateContentsScale(
+    LayerType* layer,
+    float contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
+    float maximum_animation_contents_scale,
+    bool animating_transform_to_screen) {
   layer->CalculateContentsScale(contents_scale,
                                 device_scale_factor,
                                 page_scale_factor,
+                                maximum_animation_contents_scale,
                                 animating_transform_to_screen,
                                 &layer->draw_properties().contents_scale_x,
                                 &layer->draw_properties().contents_scale_y,
@@ -922,6 +941,7 @@ static inline void CalculateContentsScale(LayerType* layer,
         contents_scale,
         device_scale_factor,
         page_scale_factor,
+        maximum_animation_contents_scale,
         animating_transform_to_screen,
         &mask_layer->draw_properties().contents_scale_x,
         &mask_layer->draw_properties().contents_scale_y,
@@ -935,6 +955,7 @@ static inline void CalculateContentsScale(LayerType* layer,
         contents_scale,
         device_scale_factor,
         page_scale_factor,
+        maximum_animation_contents_scale,
         animating_transform_to_screen,
         &replica_mask_layer->draw_properties().contents_scale_x,
         &replica_mask_layer->draw_properties().contents_scale_y,
@@ -948,11 +969,13 @@ static inline void UpdateLayerContentsScale(
     float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
+    float maximum_animation_contents_scale,
     bool animating_transform_to_screen) {
   CalculateContentsScale(layer,
                          ideal_contents_scale,
                          device_scale_factor,
                          page_scale_factor,
+                         maximum_animation_contents_scale,
                          animating_transform_to_screen);
 }
 
@@ -962,6 +985,7 @@ static inline void UpdateLayerContentsScale(
     float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
+    float maximum_animation_contents_scale,
     bool animating_transform_to_screen) {
   if (can_adjust_raster_scale) {
     float ideal_raster_scale =
@@ -998,6 +1022,7 @@ static inline void UpdateLayerContentsScale(
                          contents_scale,
                          device_scale_factor,
                          page_scale_factor,
+                         maximum_animation_contents_scale,
                          animating_transform_to_screen);
 
   if (layer->content_bounds() != old_content_bounds ||
@@ -1006,16 +1031,95 @@ static inline void UpdateLayerContentsScale(
     layer->SetNeedsPushProperties();
 }
 
-static inline RenderSurface* CreateOrReuseRenderSurface(Layer* layer) {
-  // The render surface should always be new on the main thread, as the
-  // RenderSurfaceLayerList should be a new empty list when given to
-  // CalculateDrawProperties.
-  DCHECK(!layer->render_surface());
-  layer->CreateRenderSurface();
-  return layer->render_surface();
+static inline void CalculateAnimationContentsScale(
+    Layer* layer,
+    bool ancestor_is_animating_scale,
+    float ancestor_maximum_animation_contents_scale,
+    const gfx::Transform& parent_transform,
+    const gfx::Transform& combined_transform,
+    bool* combined_is_animating_scale,
+    float* combined_maximum_animation_contents_scale) {
+  *combined_is_animating_scale = false;
+  *combined_maximum_animation_contents_scale = 0.f;
 }
 
-static inline RenderSurfaceImpl* CreateOrReuseRenderSurface(LayerImpl* layer) {
+static inline void CalculateAnimationContentsScale(
+    LayerImpl* layer,
+    bool ancestor_is_animating_scale,
+    float ancestor_maximum_animation_contents_scale,
+    const gfx::Transform& ancestor_transform,
+    const gfx::Transform& combined_transform,
+    bool* combined_is_animating_scale,
+    float* combined_maximum_animation_contents_scale) {
+  if (ancestor_is_animating_scale &&
+      ancestor_maximum_animation_contents_scale == 0.f) {
+    // We've already failed to compute a maximum animated scale at an
+    // ancestor, so we'll continue to fail.
+    *combined_maximum_animation_contents_scale = 0.f;
+    *combined_is_animating_scale = true;
+    return;
+  }
+
+  if (!combined_transform.IsScaleOrTranslation()) {
+    // Computing maximum animated scale in the presence of
+    // non-scale/translation transforms isn't supported.
+    *combined_maximum_animation_contents_scale = 0.f;
+    *combined_is_animating_scale = true;
+    return;
+  }
+
+  // We currently only support computing maximum scale for combinations of
+  // scales and translations. We treat all non-translations as potentially
+  // affecting scale. Animations that include non-translation/scale components
+  // will cause the computation of MaximumScale below to fail.
+  bool layer_is_animating_scale =
+      !layer->layer_animation_controller()->HasOnlyTranslationTransforms();
+
+  if (!layer_is_animating_scale && !ancestor_is_animating_scale) {
+    *combined_maximum_animation_contents_scale = 0.f;
+    *combined_is_animating_scale = false;
+    return;
+  }
+
+  // We don't attempt to accumulate animation scale from multiple nodes,
+  // because of the risk of significant overestimation. For example, one node
+  // may be increasing scale from 1 to 10 at the same time as a descendant is
+  // decreasing scale from 10 to 1. Naively combining these scales would produce
+  // a scale of 100.
+  if (layer_is_animating_scale && ancestor_is_animating_scale) {
+    *combined_maximum_animation_contents_scale = 0.f;
+    *combined_is_animating_scale = true;
+    return;
+  }
+
+  // At this point, we know either the layer or an ancestor, but not both,
+  // is animating scale.
+  *combined_is_animating_scale = true;
+  if (!layer_is_animating_scale) {
+    gfx::Vector2dF layer_transform_scales =
+        MathUtil::ComputeTransform2dScaleComponents(layer->transform(), 0.f);
+    *combined_maximum_animation_contents_scale =
+        ancestor_maximum_animation_contents_scale *
+        std::max(layer_transform_scales.x(), layer_transform_scales.y());
+    return;
+  }
+
+  float layer_maximum_animated_scale = 0.f;
+  if (!layer->layer_animation_controller()->MaximumScale(
+          &layer_maximum_animated_scale)) {
+    *combined_maximum_animation_contents_scale = 0.f;
+    return;
+  }
+  gfx::Vector2dF ancestor_transform_scales =
+      MathUtil::ComputeTransform2dScaleComponents(ancestor_transform, 0.f);
+  *combined_maximum_animation_contents_scale =
+      layer_maximum_animated_scale *
+      std::max(ancestor_transform_scales.x(), ancestor_transform_scales.y());
+}
+
+template <typename LayerType>
+static inline typename LayerType::RenderSurfaceType* CreateOrReuseRenderSurface(
+    LayerType* layer) {
   if (!layer->render_surface()) {
     layer->CreateRenderSurface();
     return layer->render_surface();
@@ -1023,6 +1127,42 @@ static inline RenderSurfaceImpl* CreateOrReuseRenderSurface(LayerImpl* layer) {
 
   layer->render_surface()->ClearLayerLists();
   return layer->render_surface();
+}
+
+template <typename LayerTypePtr>
+static inline void MarkLayerWithRenderSurfaceLayerListId(
+    LayerTypePtr layer,
+    int current_render_surface_layer_list_id) {
+  layer->draw_properties().last_drawn_render_surface_layer_list_id =
+      current_render_surface_layer_list_id;
+}
+
+template <typename LayerTypePtr>
+static inline void MarkMasksWithRenderSurfaceLayerListId(
+    LayerTypePtr layer,
+    int current_render_surface_layer_list_id) {
+  if (layer->mask_layer()) {
+    MarkLayerWithRenderSurfaceLayerListId(layer->mask_layer(),
+                                          current_render_surface_layer_list_id);
+  }
+  if (layer->replica_layer() && layer->replica_layer()->mask_layer()) {
+    MarkLayerWithRenderSurfaceLayerListId(layer->replica_layer()->mask_layer(),
+                                          current_render_surface_layer_list_id);
+  }
+}
+
+template <typename LayerListType>
+static inline void MarkLayerListWithRenderSurfaceLayerListId(
+    LayerListType* layer_list,
+    int current_render_surface_layer_list_id) {
+  for (typename LayerListType::iterator it = layer_list->begin();
+       it != layer_list->end();
+       ++it) {
+    MarkLayerWithRenderSurfaceLayerListId(*it,
+                                          current_render_surface_layer_list_id);
+    MarkMasksWithRenderSurfaceLayerListId(*it,
+                                          current_render_surface_layer_list_id);
+  }
 }
 
 template <typename LayerType>
@@ -1037,12 +1177,19 @@ static inline void RemoveSurfaceForEarlyExit(
   // things to crash. So here we proactively remove any additional
   // layers from the end of the list.
   while (render_surface_layer_list->back() != layer_to_remove) {
-    render_surface_layer_list->back()->ClearRenderSurface();
+    MarkLayerListWithRenderSurfaceLayerListId(
+        &render_surface_layer_list->back()->render_surface()->layer_list(), 0);
+    MarkLayerWithRenderSurfaceLayerListId(render_surface_layer_list->back(), 0);
+
+    render_surface_layer_list->back()->ClearRenderSurfaceLayerList();
     render_surface_layer_list->pop_back();
   }
   DCHECK_EQ(render_surface_layer_list->back(), layer_to_remove);
+  MarkLayerListWithRenderSurfaceLayerListId(
+      &layer_to_remove->render_surface()->layer_list(), 0);
+  MarkLayerWithRenderSurfaceLayerListId(layer_to_remove, 0);
   render_surface_layer_list->pop_back();
-  layer_to_remove->ClearRenderSurface();
+  layer_to_remove->ClearRenderSurfaceLayerList();
 }
 
 struct PreCalculateMetaInformationRecursiveData {
@@ -1070,6 +1217,15 @@ static void PreCalculateMetaInformation(
   bool has_delegated_content = layer->HasDelegatedContent();
   int num_descendants_that_draw_content = 0;
 
+  layer->draw_properties().sorted_for_recursion = false;
+  layer->draw_properties().has_child_with_a_scroll_parent = false;
+
+  if (!HasInvertibleOrAnimatedTransform(layer)) {
+    // Layers with singular transforms should not be drawn, the whole subtree
+    // can be skipped.
+    return;
+  }
+
   if (has_delegated_content) {
     // Layers with delegated content need to be treated as if they have as
     // many children as the number of layers they own delegated quads for.
@@ -1078,15 +1234,12 @@ static void PreCalculateMetaInformation(
     num_descendants_that_draw_content = 1000;
   }
 
-  layer->draw_properties().sorted_for_recursion = false;
-  layer->draw_properties().has_child_with_a_scroll_parent = false;
-
   if (layer->clip_parent())
     recursive_data->num_unclipped_descendants++;
 
   for (size_t i = 0; i < layer->children().size(); ++i) {
     LayerType* child_layer =
-        LayerTreeHostCommon::get_child_as_raw_ptr(layer->children(), i);
+        LayerTreeHostCommon::get_layer_as_raw_ptr(layer->children(), i);
 
     PreCalculateMetaInformationRecursiveData data_for_child;
     PreCalculateMetaInformation(child_layer, &data_for_child);
@@ -1165,6 +1318,11 @@ struct DataForRecursion {
   // passed down the recursion to the children that actually use it.
   gfx::Rect clip_rect_of_target_surface_in_target_space;
 
+  // The maximum amount by which this layer will be scaled during the lifetime
+  // of currently running animations.
+  float maximum_animation_contents_scale;
+
+  bool ancestor_is_animating_scale;
   bool ancestor_clips_subtree;
   typename LayerType::RenderSurfaceType*
       nearest_occlusion_immune_ancestor_surface;
@@ -1233,7 +1391,7 @@ static bool SortChildrenForRecursion(std::vector<LayerType*>* out,
   bool order_changed = false;
   for (size_t i = 0; i < parent.children().size(); ++i) {
     LayerType* current =
-        LayerTreeHostCommon::get_child_as_raw_ptr(parent.children(), i);
+        LayerTreeHostCommon::get_layer_as_raw_ptr(parent.children(), i);
 
     if (current->draw_properties().sorted_for_recursion) {
       order_changed = true;
@@ -1264,18 +1422,26 @@ static void GetNewRenderSurfacesStartIndexAndCount(LayerType* layer,
   *count = layer->draw_properties().num_render_surfaces_added;
 }
 
-template <typename LayerType,
-          typename GetIndexAndCountType>
+// We need to extract a list from the the two flavors of RenderSurfaceListType
+// for use in the sorting function below.
+static LayerList* GetLayerListForSorting(RenderSurfaceLayerList* rsll) {
+  return &rsll->AsLayerList();
+}
+
+static LayerImplList* GetLayerListForSorting(LayerImplList* layer_list) {
+  return layer_list;
+}
+
+template <typename LayerType, typename GetIndexAndCountType>
 static void SortLayerListContributions(
     const LayerType& parent,
-    typename LayerType::RenderSurfaceListType* unsorted,
+    typename LayerType::LayerListType* unsorted,
     size_t start_index_for_all_contributions,
     GetIndexAndCountType get_index_and_count) {
-
   typename LayerType::LayerListType buffer;
   for (size_t i = 0; i < parent.children().size(); ++i) {
     LayerType* child =
-        LayerTreeHostCommon::get_child_as_raw_ptr(parent.children(), i);
+        LayerTreeHostCommon::get_layer_as_raw_ptr(parent.children(), i);
 
     size_t start_index = 0;
     size_t count = 0;
@@ -1299,9 +1465,9 @@ static void CalculateDrawPropertiesInternal(
     const SubtreeGlobals<LayerType>& globals,
     const DataForRecursion<LayerType>& data_from_ancestor,
     typename LayerType::RenderSurfaceListType* render_surface_layer_list,
-    typename LayerType::RenderSurfaceListType* layer_list,
-    std::vector<AccumulatedSurfaceState<LayerType> >*
-        accumulated_surface_state) {
+    typename LayerType::LayerListType* layer_list,
+    std::vector<AccumulatedSurfaceState<LayerType> >* accumulated_surface_state,
+    int current_render_surface_layer_list_id) {
   // This function computes the new matrix transformations recursively for this
   // layer and all its descendants. It also computes the appropriate render
   // surfaces.
@@ -1443,7 +1609,7 @@ static void CalculateDrawPropertiesInternal(
   // The root layer cannot skip CalcDrawProperties.
   if (!IsRootLayer(layer) && SubtreeShouldBeSkipped(layer, layer_is_drawn)) {
     if (layer->render_surface())
-      layer->ClearRenderSurface();
+      layer->ClearRenderSurfaceLayerList();
     return;
   }
 
@@ -1546,6 +1712,22 @@ static void CalculateDrawPropertiesInternal(
   ApplyPositionAdjustment(layer, data_from_ancestor.fixed_container,
       data_from_ancestor.scroll_compensation_matrix, &combined_transform);
 
+  bool combined_is_animating_scale = false;
+  float combined_maximum_animation_contents_scale = 0.f;
+  if (globals.can_adjust_raster_scales) {
+    CalculateAnimationContentsScale(
+        layer,
+        data_from_ancestor.ancestor_is_animating_scale,
+        data_from_ancestor.maximum_animation_contents_scale,
+        data_from_ancestor.parent_matrix,
+        combined_transform,
+        &combined_is_animating_scale,
+        &combined_maximum_animation_contents_scale);
+  }
+  data_for_children.ancestor_is_animating_scale = combined_is_animating_scale;
+  data_for_children.maximum_animation_contents_scale =
+      combined_maximum_animation_contents_scale;
+
   // Compute the 2d scale components of the transform hierarchy up to the target
   // surface. From there, we can decide on a contents scale for the layer.
   float layer_scale_factors = globals.device_scale_factor;
@@ -1566,8 +1748,10 @@ static void CalculateDrawPropertiesInternal(
       globals.can_adjust_raster_scales,
       ideal_contents_scale,
       globals.device_scale_factor,
-      data_from_ancestor.in_subtree_of_page_scale_application_layer ?
-          globals.page_scale_factor : 1.f,
+      data_from_ancestor.in_subtree_of_page_scale_application_layer
+          ? globals.page_scale_factor
+          : 1.f,
+      combined_maximum_animation_contents_scale,
       animating_transform_to_screen);
 
   // The draw_transform that gets computed below is effectively the layer's
@@ -1629,7 +1813,7 @@ static void CalculateDrawPropertiesInternal(
     // subtree
     if (!layer->double_sided() && TransformToParentIsKnown(layer) &&
         IsSurfaceBackFaceVisible(layer, combined_transform)) {
-      layer->ClearRenderSurface();
+      layer->ClearRenderSurfaceLayerList();
       return;
     }
 
@@ -1862,7 +2046,7 @@ static void CalculateDrawPropertiesInternal(
     layer_draw_properties.clip_rect = rect_in_target_space;
   }
 
-  typename LayerType::RenderSurfaceListType& descendants =
+  typename LayerType::LayerListType& descendants =
       (layer->render_surface() ? layer->render_surface()->layer_list()
                                : *layer_list);
 
@@ -1870,8 +2054,11 @@ static void CalculateDrawPropertiesInternal(
   // and should be included in the sorting process.
   size_t sorting_start_index = descendants.size();
 
-  if (!LayerShouldBeSkipped(layer, layer_is_drawn))
+  if (!LayerShouldBeSkipped(layer, layer_is_drawn)) {
+    MarkLayerWithRenderSurfaceLayerListId(layer,
+                                          current_render_surface_layer_list_id);
     descendants.push_back(layer);
+  }
 
   // Any layers that are appended after this point may need to be sorted if we
   // visit the children out of order.
@@ -1924,21 +2111,29 @@ static void CalculateDrawPropertiesInternal(
     LayerType* child =
         layer_draw_properties.has_child_with_a_scroll_parent
             ? sorted_children[i]
-            : LayerTreeHostCommon::get_child_as_raw_ptr(layer->children(), i);
+            : LayerTreeHostCommon::get_layer_as_raw_ptr(layer->children(), i);
 
     child->draw_properties().index_of_first_descendants_addition =
         descendants.size();
     child->draw_properties().index_of_first_render_surface_layer_list_addition =
         render_surface_layer_list->size();
 
-    CalculateDrawPropertiesInternal<LayerType>(child,
-                                               globals,
-                                               data_for_children,
-                                               render_surface_layer_list,
-                                               &descendants,
-                                               accumulated_surface_state);
+    CalculateDrawPropertiesInternal<LayerType>(
+        child,
+        globals,
+        data_for_children,
+        render_surface_layer_list,
+        &descendants,
+        accumulated_surface_state,
+        current_render_surface_layer_list_id);
     if (child->render_surface() &&
+        !child->render_surface()->layer_list().empty() &&
         !child->render_surface()->content_rect().IsEmpty()) {
+      // This child will contribute its render surface, which means
+      // we need to mark just the mask layer (and replica mask layer)
+      // with the id.
+      MarkMasksWithRenderSurfaceLayerListId(
+          child, current_render_surface_layer_list_id);
       descendants.push_back(child);
     }
 
@@ -1955,7 +2150,7 @@ static void CalculateDrawPropertiesInternal(
   if (child_order_changed) {
     SortLayerListContributions(
         *layer,
-        render_surface_layer_list,
+        GetLayerListForSorting(render_surface_layer_list),
         render_surface_layer_list_child_sorting_start_index,
         &GetNewRenderSurfacesStartIndexAndCount<LayerType>);
 
@@ -2122,54 +2317,78 @@ static void CalculateDrawPropertiesInternal(
   }
 }
 
-void LayerTreeHostCommon::CalculateDrawProperties(
-    CalcDrawPropsMainInputs* inputs) {
-  DCHECK(inputs->root_layer);
-  DCHECK(IsRootLayer(inputs->root_layer));
-  DCHECK(inputs->render_surface_layer_list);
+template <typename LayerType, typename RenderSurfaceLayerListType>
+static void ProcessCalcDrawPropsInputs(
+    const LayerTreeHostCommon::CalcDrawPropsInputs<LayerType,
+                                                   RenderSurfaceLayerListType>&
+        inputs,
+    SubtreeGlobals<LayerType>* globals,
+    DataForRecursion<LayerType>* data_for_recursion) {
+  DCHECK(inputs.root_layer);
+  DCHECK(IsRootLayer(inputs.root_layer));
+  DCHECK(inputs.render_surface_layer_list);
+
   gfx::Transform identity_matrix;
-  gfx::Transform scaled_device_transform = inputs->device_transform;
-  scaled_device_transform.Scale(inputs->device_scale_factor,
-                                inputs->device_scale_factor);
-  RenderSurfaceLayerList dummy_layer_list;
 
   // The root layer's render_surface should receive the device viewport as the
   // initial clip rect.
-  gfx::Rect device_viewport_rect(inputs->device_viewport_size);
+  gfx::Rect device_viewport_rect(inputs.device_viewport_size);
 
-  SubtreeGlobals<Layer> globals;
-  globals.layer_sorter = NULL;
-  globals.max_texture_size = inputs->max_texture_size;
-  globals.device_scale_factor = inputs->device_scale_factor;
-  globals.page_scale_factor = inputs->page_scale_factor;
-  globals.page_scale_application_layer = inputs->page_scale_application_layer;
-  globals.can_render_to_separate_surface =
-      inputs->can_render_to_separate_surface;
-  globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
+  gfx::Vector2dF device_transform_scale_components =
+      MathUtil::ComputeTransform2dScaleComponents(inputs.device_transform, 1.f);
+  // Not handling the rare case of different x and y device scale.
+  float device_transform_scale =
+      std::max(device_transform_scale_components.x(),
+               device_transform_scale_components.y());
 
-  DataForRecursion<Layer> data_for_recursion;
-  data_for_recursion.parent_matrix = scaled_device_transform;
-  data_for_recursion.full_hierarchy_matrix = identity_matrix;
-  data_for_recursion.scroll_compensation_matrix = identity_matrix;
-  data_for_recursion.fixed_container = inputs->root_layer;
-  data_for_recursion.clip_rect_in_target_space = device_viewport_rect;
-  data_for_recursion.clip_rect_of_target_surface_in_target_space =
+  gfx::Transform scaled_device_transform = inputs.device_transform;
+  scaled_device_transform.Scale(inputs.device_scale_factor,
+                                inputs.device_scale_factor);
+
+  globals->layer_sorter = NULL;
+  globals->max_texture_size = inputs.max_texture_size;
+  globals->device_scale_factor =
+      inputs.device_scale_factor * device_transform_scale;
+  globals->page_scale_factor = inputs.page_scale_factor;
+  globals->page_scale_application_layer = inputs.page_scale_application_layer;
+  globals->can_render_to_separate_surface =
+      inputs.can_render_to_separate_surface;
+  globals->can_adjust_raster_scales = inputs.can_adjust_raster_scales;
+
+  data_for_recursion->parent_matrix = scaled_device_transform;
+  data_for_recursion->full_hierarchy_matrix = identity_matrix;
+  data_for_recursion->scroll_compensation_matrix = identity_matrix;
+  data_for_recursion->fixed_container = inputs.root_layer;
+  data_for_recursion->clip_rect_in_target_space = device_viewport_rect;
+  data_for_recursion->clip_rect_of_target_surface_in_target_space =
       device_viewport_rect;
-  data_for_recursion.ancestor_clips_subtree = true;
-  data_for_recursion.nearest_occlusion_immune_ancestor_surface = NULL;
-  data_for_recursion.in_subtree_of_page_scale_application_layer = false;
-  data_for_recursion.subtree_can_use_lcd_text = inputs->can_use_lcd_text;
-  data_for_recursion.subtree_is_visible_from_ancestor = true;
+  data_for_recursion->maximum_animation_contents_scale = 0.f;
+  data_for_recursion->ancestor_is_animating_scale = false;
+  data_for_recursion->ancestor_clips_subtree = true;
+  data_for_recursion->nearest_occlusion_immune_ancestor_surface = NULL;
+  data_for_recursion->in_subtree_of_page_scale_application_layer = false;
+  data_for_recursion->subtree_can_use_lcd_text = inputs.can_use_lcd_text;
+  data_for_recursion->subtree_is_visible_from_ancestor = true;
+}
+
+void LayerTreeHostCommon::CalculateDrawProperties(
+    CalcDrawPropsMainInputs* inputs) {
+  LayerList dummy_layer_list;
+  SubtreeGlobals<Layer> globals;
+  DataForRecursion<Layer> data_for_recursion;
+  ProcessCalcDrawPropsInputs(*inputs, &globals, &data_for_recursion);
 
   PreCalculateMetaInformationRecursiveData recursive_data;
   PreCalculateMetaInformation(inputs->root_layer, &recursive_data);
   std::vector<AccumulatedSurfaceState<Layer> > accumulated_surface_state;
-  CalculateDrawPropertiesInternal<Layer>(inputs->root_layer,
-                                         globals,
-                                         data_for_recursion,
-                                         inputs->render_surface_layer_list,
-                                         &dummy_layer_list,
-                                         &accumulated_surface_state);
+  CalculateDrawPropertiesInternal<Layer>(
+      inputs->root_layer,
+      globals,
+      data_for_recursion,
+      inputs->render_surface_layer_list,
+      &dummy_layer_list,
+      &accumulated_surface_state,
+      inputs->current_render_surface_layer_list_id);
 
   // The dummy layer list should not have been used.
   DCHECK_EQ(0u, dummy_layer_list.size());
@@ -2180,55 +2399,26 @@ void LayerTreeHostCommon::CalculateDrawProperties(
 
 void LayerTreeHostCommon::CalculateDrawProperties(
     CalcDrawPropsImplInputs* inputs) {
-  DCHECK(inputs->root_layer);
-  DCHECK(IsRootLayer(inputs->root_layer));
-  DCHECK(inputs->render_surface_layer_list);
-
-  gfx::Transform identity_matrix;
-  gfx::Transform scaled_device_transform = inputs->device_transform;
-  scaled_device_transform.Scale(inputs->device_scale_factor,
-                                inputs->device_scale_factor);
   LayerImplList dummy_layer_list;
-  LayerSorter layer_sorter;
-
-  // The root layer's render_surface should receive the device viewport as the
-  // initial clip rect.
-  gfx::Rect device_viewport_rect(inputs->device_viewport_size);
-
   SubtreeGlobals<LayerImpl> globals;
-  globals.layer_sorter = &layer_sorter;
-  globals.max_texture_size = inputs->max_texture_size;
-  globals.device_scale_factor = inputs->device_scale_factor;
-  globals.page_scale_factor = inputs->page_scale_factor;
-  globals.page_scale_application_layer = inputs->page_scale_application_layer;
-  globals.can_render_to_separate_surface =
-      inputs->can_render_to_separate_surface;
-  globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
-
   DataForRecursion<LayerImpl> data_for_recursion;
-  data_for_recursion.parent_matrix = scaled_device_transform;
-  data_for_recursion.full_hierarchy_matrix = identity_matrix;
-  data_for_recursion.scroll_compensation_matrix = identity_matrix;
-  data_for_recursion.fixed_container = inputs->root_layer;
-  data_for_recursion.clip_rect_in_target_space = device_viewport_rect;
-  data_for_recursion.clip_rect_of_target_surface_in_target_space =
-      device_viewport_rect;
-  data_for_recursion.ancestor_clips_subtree = true;
-  data_for_recursion.nearest_occlusion_immune_ancestor_surface = NULL;
-  data_for_recursion.in_subtree_of_page_scale_application_layer = false;
-  data_for_recursion.subtree_can_use_lcd_text = inputs->can_use_lcd_text;
-  data_for_recursion.subtree_is_visible_from_ancestor = true;
+  ProcessCalcDrawPropsInputs(*inputs, &globals, &data_for_recursion);
+
+  LayerSorter layer_sorter;
+  globals.layer_sorter = &layer_sorter;
 
   PreCalculateMetaInformationRecursiveData recursive_data;
   PreCalculateMetaInformation(inputs->root_layer, &recursive_data);
   std::vector<AccumulatedSurfaceState<LayerImpl> >
       accumulated_surface_state;
-  CalculateDrawPropertiesInternal<LayerImpl>(inputs->root_layer,
-                                             globals,
-                                             data_for_recursion,
-                                             inputs->render_surface_layer_list,
-                                             &dummy_layer_list,
-                                             &accumulated_surface_state);
+  CalculateDrawPropertiesInternal<LayerImpl>(
+      inputs->root_layer,
+      globals,
+      data_for_recursion,
+      inputs->render_surface_layer_list,
+      &dummy_layer_list,
+      &accumulated_surface_state,
+      inputs->current_render_surface_layer_list_id);
 
   // The dummy layer list should not have been used.
   DCHECK_EQ(0u, dummy_layer_list.size());
@@ -2344,7 +2534,6 @@ LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
       continue;
 
     LayerImpl* current_layer = (*it);
-
     gfx::RectF content_rect(current_layer->content_bounds());
     if (!PointHitsRect(screen_space_point,
                        current_layer->screen_space_transform(),
@@ -2383,9 +2572,9 @@ LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
   // region that the given point hits.
   // This walk may not be necessary anymore: http://crbug.com/310817
   for (; layer_impl; layer_impl = layer_impl->parent()) {
-    if (LayerTreeHostCommon::LayerHasTouchEventHandlersAt(screen_space_point,
+     if (LayerTreeHostCommon::LayerHasTouchEventHandlersAt(screen_space_point,
                                                           layer_impl))
-      break;
+       break;
   }
   return layer_impl;
 }

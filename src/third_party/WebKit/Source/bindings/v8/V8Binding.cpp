@@ -50,10 +50,13 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/inspector/BindingVisitors.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xml/XPathNSResolver.h"
+#include "platform/EventTracer.h"
+#include "platform/JSONValues.h"
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
@@ -80,6 +83,22 @@ v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception, v8::Isolate* i
 v8::Handle<v8::Value> throwTypeError(const String& message, v8::Isolate* isolate)
 {
     return V8ThrowException::throwTypeError(message, isolate);
+}
+
+void throwArityTypeErrorForMethod(const char* method, const char* type, unsigned expected, unsigned providedLeastNumMandatoryParams, v8::Isolate* isolate)
+{
+    throwTypeError(ExceptionMessages::failedToExecute(method, type, ExceptionMessages::notEnoughArguments(expected, providedLeastNumMandatoryParams)), isolate);
+}
+
+void throwArityTypeErrorForConstructor(const char* type, unsigned expected, unsigned providedLeastNumMandatoryParams, v8::Isolate* isolate)
+{
+    throwTypeError(ExceptionMessages::failedToConstruct(type, ExceptionMessages::notEnoughArguments(expected, providedLeastNumMandatoryParams)), isolate);
+}
+
+void throwArityTypeError(ExceptionState& exceptionState, unsigned expected, unsigned providedLeastNumMandatoryParams)
+{
+    exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(expected, providedLeastNumMandatoryParams));
+    exceptionState.throwIfNeeded();
 }
 
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
@@ -190,7 +209,7 @@ static inline T toSmallerInt(v8::Handle<v8::Value> value, IntegerConversionConfi
     }
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type '" + String(typeName) + "'.");
         return 0;
@@ -227,7 +246,7 @@ static inline T toSmallerUInt(v8::Handle<v8::Value> value, IntegerConversionConf
     }
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type '" + String(typeName) + "'.");
         return 0;
@@ -299,7 +318,7 @@ int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
         return value->Int32Value();
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type 'long'.)");
         return 0;
@@ -316,7 +335,7 @@ int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
     if (configuration == Clamp)
         return clampTo<int32_t>(numberObject->Value());
 
-    V8TRYCATCH_EXCEPTION_RETURN(int32_t, result, numberObject->Int32Value(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(int32_t, result, numberObject->Int32Value(), exceptionState, 0);
     return result;
 }
 
@@ -345,7 +364,7 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     }
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type 'unsigned long'.)");
         return 0;
@@ -362,7 +381,7 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     if (configuration == Clamp)
         return clampTo<uint32_t>(numberObject->Value());
 
-    V8TRYCATCH_RETURN(uint32_t, result, numberObject->Uint32Value(), 0);
+    TONATIVE_DEFAULT(uint32_t, result, numberObject->Uint32Value(), 0);
     return result;
 }
 
@@ -379,7 +398,7 @@ int64_t toInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
         return value->Int32Value();
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type 'long long'.)");
         return 0;
@@ -425,7 +444,7 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     }
 
     // Can the value be converted to a number?
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     if (numberObject.IsEmpty()) {
         exceptionState.throwTypeError("Not convertible to a number value (of type 'unsigned long long'.)");
         return 0;
@@ -454,7 +473,7 @@ uint64_t toUInt64(v8::Handle<v8::Value> value)
 
 float toFloat(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
 {
-    V8TRYCATCH_EXCEPTION_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
+    TONATIVE_DEFAULT_EXCEPTIONSTATE(v8::Local<v8::Number>, numberObject, value->ToNumber(), exceptionState, 0);
     return numberObject->NumberValue();
 }
 
@@ -499,7 +518,15 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 
 DOMWindow* enteredDOMWindow(v8::Isolate* isolate)
 {
-    return toDOMWindow(isolate->GetEnteredContext());
+    DOMWindow* window = toDOMWindow(isolate->GetEnteredContext());
+    if (!window) {
+        // We don't always have an entered DOM window, for example during microtask callbacks from V8
+        // (where the entered context may be the DOM-in-JS context). In that case, we fall back
+        // to the current context.
+        window = currentDOMWindow(isolate);
+        ASSERT(window);
+    }
+    return window;
 }
 
 DOMWindow* currentDOMWindow(v8::Isolate* isolate)
@@ -560,7 +587,7 @@ LocalFrame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
     return 0;
 }
 
-v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld* world)
+v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld& world)
 {
     ASSERT(context);
     if (context->isDocument()) {
@@ -573,7 +600,7 @@ v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld* w
     return v8::Local<v8::Context>();
 }
 
-v8::Local<v8::Context> toV8Context(v8::Isolate* isolate, LocalFrame* frame, DOMWrapperWorld* world)
+v8::Local<v8::Context> toV8Context(v8::Isolate* isolate, LocalFrame* frame, DOMWrapperWorld& world)
 {
     if (!frame)
         return v8::Local<v8::Context>();
@@ -660,6 +687,60 @@ v8::Isolate* toIsolate(LocalFrame* frame)
     return frame->script().isolate();
 }
 
+PassRefPtr<JSONValue> v8ToJSONValue(v8::Isolate* isolate, v8::Handle<v8::Value> value, int maxDepth)
+{
+    if (value.IsEmpty()) {
+        ASSERT_NOT_REACHED();
+        return nullptr;
+    }
+
+    if (!maxDepth)
+        return nullptr;
+    maxDepth--;
+
+    if (value->IsNull() || value->IsUndefined())
+        return JSONValue::null();
+    if (value->IsBoolean())
+        return JSONBasicValue::create(value->BooleanValue());
+    if (value->IsNumber())
+        return JSONBasicValue::create(value->NumberValue());
+    if (value->IsString())
+        return JSONString::create(toCoreString(value.As<v8::String>()));
+    if (value->IsArray()) {
+        v8::Handle<v8::Array> array = v8::Handle<v8::Array>::Cast(value);
+        RefPtr<JSONArray> inspectorArray = JSONArray::create();
+        uint32_t length = array->Length();
+        for (uint32_t i = 0; i < length; i++) {
+            v8::Local<v8::Value> value = array->Get(v8::Int32::New(isolate, i));
+            RefPtr<JSONValue> element = v8ToJSONValue(isolate, value, maxDepth);
+            if (!element)
+                return nullptr;
+            inspectorArray->pushValue(element);
+        }
+        return inspectorArray;
+    }
+    if (value->IsObject()) {
+        RefPtr<JSONObject> jsonObject = JSONObject::create();
+        v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
+        v8::Local<v8::Array> propertyNames = object->GetPropertyNames();
+        uint32_t length = propertyNames->Length();
+        for (uint32_t i = 0; i < length; i++) {
+            v8::Local<v8::Value> name = propertyNames->Get(v8::Int32::New(isolate, i));
+            // FIXME(yurys): v8::Object should support GetOwnPropertyNames
+            if (name->IsString() && !object->HasRealNamedProperty(v8::Handle<v8::String>::Cast(name)))
+                continue;
+            RefPtr<JSONValue> propertyValue = v8ToJSONValue(isolate, object->Get(name), maxDepth);
+            if (!propertyValue)
+                return nullptr;
+            TOSTRING_DEFAULT(V8StringResource<WithNullCheck>, nameString, name, nullptr);
+            jsonObject->setValue(nameString, propertyValue);
+        }
+        return jsonObject;
+    }
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
 PassOwnPtr<V8ExecutionScope> V8ExecutionScope::create(v8::Isolate* isolate)
 {
     return adoptPtr(new V8ExecutionScope(isolate));
@@ -667,11 +748,48 @@ PassOwnPtr<V8ExecutionScope> V8ExecutionScope::create(v8::Isolate* isolate)
 
 V8ExecutionScope::V8ExecutionScope(v8::Isolate* isolate)
     : m_handleScope(isolate)
-    , m_context(v8::Context::New(isolate))
-    , m_contextScope(m_context)
-    , m_world(DOMWrapperWorld::create())
-    , m_perContextData(V8PerContextData::create(m_context, m_world))
+    , m_contextScope(v8::Context::New(isolate))
+    , m_scriptState(ScriptState::create(isolate->GetCurrentContext(), DOMWrapperWorld::create()))
 {
+}
+
+V8ExecutionScope::~V8ExecutionScope()
+{
+    m_scriptState->disposePerContextData();
+}
+
+void GetDevToolsFunctionInfo(v8::Handle<v8::Function> function, v8::Isolate* isolate, int& scriptId, String& resourceName, int& lineNumber)
+{
+    v8::Handle<v8::Function> originalFunction = getBoundFunction(function);
+    scriptId = originalFunction->ScriptId();
+    v8::ScriptOrigin origin = originalFunction->GetScriptOrigin();
+    if (!origin.ResourceName().IsEmpty()) {
+        resourceName = NativeValueTraits<String>::nativeValue(origin.ResourceName(), isolate);
+        lineNumber = originalFunction->GetScriptLineNumber() + 1;
+    }
+    if (resourceName.isEmpty()) {
+        resourceName = "undefined";
+        lineNumber = 1;
+    }
+}
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> devToolsTraceEventData(ExecutionContext* context, v8::Handle<v8::Function> function, v8::Isolate* isolate)
+{
+    int scriptId = 0;
+    String resourceName;
+    int lineNumber = 1;
+    GetDevToolsFunctionInfo(function, isolate, scriptId, resourceName, lineNumber);
+    return InspectorFunctionCallEvent::data(context, scriptId, resourceName, lineNumber);
+}
+
+ScriptState* V8ExecutionScope::scriptState() const
+{
+    return m_scriptState.get();
+}
+
+v8::Isolate* V8ExecutionScope::isolate() const
+{
+    return m_scriptState->isolate();
 }
 
 } // namespace WebCore

@@ -55,7 +55,7 @@ HttpStreamFactoryImpl::Request::~Request() {
 
 void HttpStreamFactoryImpl::Request::SetSpdySessionKey(
     const SpdySessionKey& spdy_session_key) {
-  DCHECK(!spdy_session_key_.get());
+  CHECK(!spdy_session_key_.get());
   spdy_session_key_.reset(new SpdySessionKey(spdy_session_key));
   RequestSet& request_set =
       factory_->spdy_session_request_map_[spdy_session_key];
@@ -289,6 +289,10 @@ HttpStreamFactoryImpl::Request::RemoveRequestFromHttpPipeliningRequestMap() {
   }
 }
 
+bool HttpStreamFactoryImpl::Request::HasSpdySessionKey() const {
+  return spdy_session_key_.get() != NULL;
+}
+
 void HttpStreamFactoryImpl::Request::OnNewSpdySessionReady(
     Job* job,
     scoped_ptr<HttpStream> stream,
@@ -380,13 +384,17 @@ void HttpStreamFactoryImpl::Request::OnJobSucceeded(Job* job) {
     // they complete? Or do we want to prevent connecting a new SpdySession if
     // we've already got one available for a different hostname where the ip
     // address matches up?
-  } else if (!bound_job_.get()) {
+    return;
+  }
+  if (!bound_job_.get()) {
+    if (jobs_.size() > 1)
+      job->ReportJobSuccededForRequest();
     // We may have other jobs in |jobs_|. For example, if we start multiple jobs
     // for Alternate-Protocol.
     OrphanJobsExcept(job);
-  } else {
-    DCHECK(jobs_.empty());
+    return;
   }
+  DCHECK(jobs_.empty());
 }
 
 }  // namespace net

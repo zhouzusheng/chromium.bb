@@ -12,6 +12,7 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
+#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
@@ -162,18 +163,6 @@ bool CommandBufferProxyImpl::Initialize() {
   return true;
 }
 
-gpu::CommandBuffer::State CommandBufferProxyImpl::GetState() {
-  // Send will flag state with lost context if IPC fails.
-  if (last_state_.error == gpu::error::kNoError) {
-    gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_GetState(route_id_, &state)))
-      OnUpdateState(state);
-  }
-
-  TryUpdateState();
-  return last_state_;
-}
-
 gpu::CommandBuffer::State CommandBufferProxyImpl::GetLastState() {
   return last_state_;
 }
@@ -217,13 +206,15 @@ void CommandBufferProxyImpl::WaitForTokenInRange(int32 start, int32 end) {
                "end",
                end);
   TryUpdateState();
-  while (!InRange(start, end, last_state_.token) &&
-         last_state_.error == gpu::error::kNoError) {
+  if (!InRange(start, end, last_state_.token) &&
+      last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_GetStateFast(route_id_, &state)))
+    if (Send(new GpuCommandBufferMsg_WaitForTokenInRange(
+            route_id_, start, end, &state)))
       OnUpdateState(state);
-    TryUpdateState();
   }
+  DCHECK(InRange(start, end, last_state_.token) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
@@ -234,13 +225,15 @@ void CommandBufferProxyImpl::WaitForGetOffsetInRange(int32 start, int32 end) {
                "end",
                end);
   TryUpdateState();
-  while (!InRange(start, end, last_state_.get_offset) &&
-         last_state_.error == gpu::error::kNoError) {
+  if (!InRange(start, end, last_state_.get_offset) &&
+      last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_GetStateFast(route_id_, &state)))
+    if (Send(new GpuCommandBufferMsg_WaitForGetOffsetInRange(
+            route_id_, start, end, &state)))
       OnUpdateState(state);
-    TryUpdateState();
   }
+  DCHECK(InRange(start, end, last_state_.get_offset) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void CommandBufferProxyImpl::SetGetBuffer(int32 shm_id) {
@@ -249,11 +242,6 @@ void CommandBufferProxyImpl::SetGetBuffer(int32 shm_id) {
 
   Send(new GpuCommandBufferMsg_SetGetBuffer(route_id_, shm_id));
   last_put_offset_ = -1;
-}
-
-void CommandBufferProxyImpl::SetGetOffset(int32 get_offset) {
-  // Not implemented in proxy.
-  NOTREACHED();
 }
 
 scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
@@ -265,7 +253,6 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
     return NULL;
 
   int32 new_id = channel_->ReserveTransferBufferId();
-  DCHECK(transfer_buffers_.find(new_id) == transfer_buffers_.end());
 
   scoped_ptr<base::SharedMemory> shared_memory(
       channel_->factory()->AllocateSharedMemory(size));
@@ -292,9 +279,8 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
   }
 
   *id = new_id;
-  scoped_refptr<gpu::Buffer> buffer =
-      new gpu::Buffer(shared_memory.Pass(), size);
-  transfer_buffers_[new_id] = buffer;
+  scoped_refptr<gpu::Buffer> buffer(
+      gpu::MakeBufferFromSharedMemory(shared_memory.Pass(), size));
   return buffer;
 }
 
@@ -302,68 +288,7 @@ void CommandBufferProxyImpl::DestroyTransferBuffer(int32 id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  // Remove the transfer buffer from the client side cache.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-  if (it != transfer_buffers_.end())
-    transfer_buffers_.erase(it);
-
   Send(new GpuCommandBufferMsg_DestroyTransferBuffer(route_id_, id));
-}
-
-scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::GetTransferBuffer(int32 id) {
-  if (last_state_.error != gpu::error::kNoError)
-    return NULL;
-
-  // Check local cache to see if there is already a client side shared memory
-  // object for this id.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-  if (it != transfer_buffers_.end()) {
-    return it->second;
-  }
-
-  // Assuming we are in the renderer process, the service is responsible for
-  // duplicating the handle. This might not be true for NaCl.
-  base::SharedMemoryHandle handle = base::SharedMemoryHandle();
-  uint32 size;
-  if (!Send(new GpuCommandBufferMsg_GetTransferBuffer(route_id_,
-                                                      id,
-                                                      &handle,
-                                                      &size))) {
-    return NULL;
-  }
-
-  // Cache the transfer buffer shared memory object client side.
-  scoped_ptr<base::SharedMemory> shared_memory(
-      new base::SharedMemory(handle, false));
-
-  // Map the shared memory on demand.
-  if (!shared_memory->memory()) {
-    if (!shared_memory->Map(size))
-      return NULL;
-  }
-
-  scoped_refptr<gpu::Buffer> buffer =
-      new gpu::Buffer(shared_memory.Pass(), size);
-  transfer_buffers_[id] = buffer;
-
-  return buffer;
-}
-
-void CommandBufferProxyImpl::SetToken(int32 token) {
-  // Not implemented in proxy.
-  NOTREACHED();
-}
-
-void CommandBufferProxyImpl::SetParseError(
-    gpu::error::Error error) {
-  // Not implemented in proxy.
-  NOTREACHED();
-}
-
-void CommandBufferProxyImpl::SetContextLostReason(
-    gpu::error::ContextLostReason reason) {
-  // Not implemented in proxy.
-  NOTREACHED();
 }
 
 gpu::Capabilities CommandBufferProxyImpl::GetCapabilities() {
@@ -374,6 +299,7 @@ gfx::GpuMemoryBuffer* CommandBufferProxyImpl::CreateGpuMemoryBuffer(
     size_t width,
     size_t height,
     unsigned internalformat,
+    unsigned usage,
     int32* id) {
   *id = -1;
 
@@ -384,9 +310,8 @@ gfx::GpuMemoryBuffer* CommandBufferProxyImpl::CreateGpuMemoryBuffer(
   DCHECK(gpu_memory_buffers_.find(new_id) == gpu_memory_buffers_.end());
 
   scoped_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer(
-      channel_->factory()->AllocateGpuMemoryBuffer(width,
-                                                   height,
-                                                   internalformat));
+      channel_->factory()->AllocateGpuMemoryBuffer(
+          width, height, internalformat, usage));
   if (!gpu_memory_buffer)
     return NULL;
 
@@ -450,9 +375,14 @@ uint32 CommandBufferProxyImpl::CreateStreamTexture(uint32 texture_id) {
   if (last_state_.error != gpu::error::kNoError)
     return 0;
 
-  int32 stream_id = 0;
+  int32 stream_id = channel_->GenerateRouteID();
+  bool succeeded;
   Send(new GpuCommandBufferMsg_CreateStreamTexture(
-      route_id_, texture_id, &stream_id));
+      route_id_, texture_id, stream_id, &succeeded));
+  if (!succeeded) {
+    DLOG(ERROR) << "GpuCommandBufferMsg_CreateStreamTexture returned failure";
+    return 0;
+  }
   return stream_id;
 }
 
@@ -527,24 +457,15 @@ bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
-CommandBufferProxyImpl::CreateVideoDecoder(media::VideoCodecProfile profile) {
-  int decoder_route_id;
-  scoped_ptr<media::VideoDecodeAccelerator> vda;
-  if (!Send(new GpuCommandBufferMsg_CreateVideoDecoder(route_id_, profile,
-                                                       &decoder_route_id))) {
-    LOG(ERROR) << "Send(GpuCommandBufferMsg_CreateVideoDecoder) failed";
-    return vda.Pass();
-  }
+CommandBufferProxyImpl::CreateVideoDecoder() {
+  return scoped_ptr<media::VideoDecodeAccelerator>(
+      new GpuVideoDecodeAcceleratorHost(channel_, this));
+}
 
-  if (decoder_route_id < 0) {
-    DLOG(ERROR) << "Failed to Initialize GPU decoder on profile: " << profile;
-    return vda.Pass();
-  }
-
-  GpuVideoDecodeAcceleratorHost* decoder_host =
-      new GpuVideoDecodeAcceleratorHost(channel_, decoder_route_id, this);
-  vda.reset(decoder_host);
-  return vda.Pass();
+scoped_ptr<media::VideoEncodeAccelerator>
+CommandBufferProxyImpl::CreateVideoEncoder() {
+  return scoped_ptr<media::VideoEncodeAccelerator>(
+      new GpuVideoEncodeAcceleratorHost(channel_, this));
 }
 
 gpu::error::Error CommandBufferProxyImpl::GetLastError() {
@@ -590,6 +511,11 @@ void CommandBufferProxyImpl::SetOnConsoleMessageCallback(
 void CommandBufferProxyImpl::TryUpdateState() {
   if (last_state_.error == gpu::error::kNoError)
     shared_state()->Read(&last_state_);
+}
+
+gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
+  return reinterpret_cast<gpu::CommandBufferSharedState*>(
+      shared_state_shm_->memory());
 }
 
 }  // namespace content

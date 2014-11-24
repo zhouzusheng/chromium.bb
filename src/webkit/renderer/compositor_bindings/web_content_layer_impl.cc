@@ -47,15 +47,15 @@ void WebContentLayerImpl::setDrawCheckerboardForMissingTiles(bool enable) {
 }
 
 void WebContentLayerImpl::setHasGpuRasterizationHint(bool has_hint) {
-  if (WebLayerImpl::UsingPictureLayer()) {
-    static_cast<PictureLayer*>(layer_->layer())
-        ->SetHasGpuRasterizationHint(has_hint);
-  }
+  // TODO(ajuma): Convert per-layer GPU rasterization hints to per-layer
+  // prepaint-disabling hints (crbug.com/365885).
 }
 
-void WebContentLayerImpl::PaintContents(SkCanvas* canvas,
-                                        const gfx::Rect& clip,
-                                        gfx::RectF* opaque) {
+void WebContentLayerImpl::PaintContents(
+    SkCanvas* canvas,
+    const gfx::Rect& clip,
+    gfx::RectF* opaque,
+    ContentLayerClient::GraphicsContextStatus graphics_context_status) {
   if (!client_)
     return;
 
@@ -63,7 +63,14 @@ void WebContentLayerImpl::PaintContents(SkCanvas* canvas,
   // For picture layers, always record with LCD text.  PictureLayerImpl
   // will turn this off later during rasterization.
   bool use_lcd_text = WebLayerImpl::UsingPictureLayer() || can_use_lcd_text_;
-  client_->paintContents(canvas, clip, use_lcd_text, web_opaque);
+  client_->paintContents(
+      canvas,
+      clip,
+      use_lcd_text,
+      web_opaque,
+      graphics_context_status == ContentLayerClient::GRAPHICS_CONTEXT_ENABLED
+          ? blink::WebContentLayerClient::GraphicsContextEnabled
+          : blink::WebContentLayerClient::GraphicsContextDisabled);
   *opaque = web_opaque;
 }
 

@@ -445,12 +445,10 @@ bool BlockFiles::IsValid(Addr address) {
 
 bool BlockFiles::CreateBlockFile(int index, FileType file_type, bool force) {
   base::FilePath name = Name(index);
-  int flags =
-      force ? base::PLATFORM_FILE_CREATE_ALWAYS : base::PLATFORM_FILE_CREATE;
-  flags |= base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_WRITE;
+  int flags = force ? base::File::FLAG_CREATE_ALWAYS : base::File::FLAG_CREATE;
+  flags |= base::File::FLAG_WRITE | base::File::FLAG_EXCLUSIVE_WRITE;
 
-  scoped_refptr<File> file(new File(
-      base::CreatePlatformFile(name, flags, NULL, NULL)));
+  scoped_refptr<File> file(new File(base::File(name, flags)));
   if (!file->IsValid())
     return false;
 
@@ -508,9 +506,8 @@ bool BlockFiles::OpenBlockFile(int index) {
   }
 
   if (index == 0) {
-    // Load the links file into memory with a single read.
-    scoped_ptr<char[]> buf(new char[file_len]);
-    if (!file->Read(buf.get(), file_len, 0))
+    // Load the links file into memory.
+    if (!file->Preload())
       return false;
   }
 

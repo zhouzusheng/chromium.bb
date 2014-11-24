@@ -15,8 +15,8 @@
 #include "content/renderer/media/crypto/pepper_cdm_wrapper.h"
 
 namespace blink {
-class WebFrame;
 class WebHelperPlugin;
+class WebLocalFrame;
 }
 
 namespace content {
@@ -40,8 +40,9 @@ struct WebHelperPluginDeleter {
 // blink:: objects.
 class PepperCdmWrapperImpl : public PepperCdmWrapper {
  public:
-  static scoped_ptr<PepperCdmWrapper> Create(blink::WebFrame* frame,
-                                             const std::string& pluginType);
+  static scoped_ptr<PepperCdmWrapper> Create(blink::WebLocalFrame* frame,
+                                             const std::string& pluginType,
+                                             const GURL& security_origin);
 
   virtual ~PepperCdmWrapperImpl();
 

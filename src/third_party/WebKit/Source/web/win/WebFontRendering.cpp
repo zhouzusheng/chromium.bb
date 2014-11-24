@@ -16,9 +16,21 @@ void WebFontRendering::setUseDirectWrite(bool useDirectWrite)
 }
 
 // static
+void WebFontRendering::setDirectWriteFactory(IDWriteFactory* factory)
+{
+    WebCore::FontCache::setDirectWriteFactory(factory);
+}
+
+// static
 void WebFontRendering::setUseSubpixelPositioning(bool useSubpixelPositioning)
 {
     WebCore::FontCache::setUseSubpixelPositioning(useSubpixelPositioning);
+}
+
+// static
+void WebFontRendering::addSideloadedFontForTesting(SkTypeface* typeface)
+{
+    WebCore::FontCache::addSideloadedFontForTesting(typeface);
 }
 
 } // namespace blink

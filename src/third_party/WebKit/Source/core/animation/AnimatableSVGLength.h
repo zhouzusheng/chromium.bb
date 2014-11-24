@@ -50,11 +50,10 @@ public:
         return m_length.get();
     }
 
-    virtual void trace(Visitor*) OVERRIDE { }
+    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
 
 protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableSVGLength(PassRefPtr<SVGLength> length)

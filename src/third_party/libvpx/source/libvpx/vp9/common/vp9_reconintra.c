@@ -18,21 +18,17 @@
 #include "vp9/common/vp9_reconintra.h"
 #include "vp9/common/vp9_onyxc_int.h"
 
-const TX_TYPE mode2txfm_map[MB_MODE_COUNT] = {
-    DCT_DCT,    // DC
-    ADST_DCT,   // V
-    DCT_ADST,   // H
-    DCT_DCT,    // D45
-    ADST_ADST,  // D135
-    ADST_DCT,   // D117
-    DCT_ADST,   // D153
-    DCT_ADST,   // D207
-    ADST_DCT,   // D63
-    ADST_ADST,  // TM
-    DCT_DCT,    // NEARESTMV
-    DCT_DCT,    // NEARMV
-    DCT_DCT,    // ZEROMV
-    DCT_DCT     // NEWMV
+const TX_TYPE intra_mode_to_tx_type_lookup[INTRA_MODES] = {
+  DCT_DCT,    // DC
+  ADST_DCT,   // V
+  DCT_ADST,   // H
+  DCT_DCT,    // D45
+  ADST_ADST,  // D135
+  ADST_DCT,   // D117
+  DCT_ADST,   // D153
+  DCT_ADST,   // D207
+  ADST_DCT,   // D63
+  ADST_ADST,  // TM
 };
 
 #define intra_pred_sized(type, size) \
@@ -315,7 +311,7 @@ static void init_intra_pred_fn_ptrs(void) {
 
 static void build_intra_predictors(const MACROBLOCKD *xd, const uint8_t *ref,
                                    int ref_stride, uint8_t *dst, int dst_stride,
-                                   MB_PREDICTION_MODE mode, TX_SIZE tx_size,
+                                   PREDICTION_MODE mode, TX_SIZE tx_size,
                                    int up_available, int left_available,
                                    int right_available, int x, int y,
                                    int plane) {
@@ -351,6 +347,8 @@ static void build_intra_predictors(const MACROBLOCKD *xd, const uint8_t *ref,
   x0 = (-xd->mb_to_left_edge >> (3 + pd->subsampling_x)) + x;
   y0 = (-xd->mb_to_top_edge >> (3 + pd->subsampling_y)) + y;
 
+  vpx_memset(left_col, 129, 64);
+
   // left
   if (left_available) {
     if (xd->mb_to_bottom_edge < 0) {
@@ -370,8 +368,6 @@ static void build_intra_predictors(const MACROBLOCKD *xd, const uint8_t *ref,
       for (i = 0; i < bs; ++i)
         left_col[i] = ref[i * ref_stride - 1];
     }
-  } else {
-    vpx_memset(left_col, 129, bs);
   }
 
   // TODO(hkuang) do not extend 2*bs pixels for all modes.
@@ -438,7 +434,7 @@ static void build_intra_predictors(const MACROBLOCKD *xd, const uint8_t *ref,
 }
 
 void vp9_predict_intra_block(const MACROBLOCKD *xd, int block_idx, int bwl_in,
-                             TX_SIZE tx_size, int mode,
+                             TX_SIZE tx_size, PREDICTION_MODE mode,
                              const uint8_t *ref, int ref_stride,
                              uint8_t *dst, int dst_stride,
                              int aoff, int loff, int plane) {

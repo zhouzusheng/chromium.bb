@@ -53,6 +53,7 @@ public:
     };
 
     virtual bool mainFrameResizesAreOrientationChanges() const = 0;
+    virtual bool shrinksViewportContentToFit() const = 0;
     virtual bool scrollAnimatorEnabled() const = 0;
     virtual bool touchEditingEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
@@ -60,24 +61,33 @@ public:
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
     virtual void setAccelerated2dCanvasMSAASampleCount(int) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForAnimationEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForCanvasEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFiltersEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForGpuRasterizationHintEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) = 0;
     virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) = 0;
     // Not implemented yet, see http://crbug.com/178119
     virtual void setAcceleratedCompositingForTransitionEnabled(bool) { };
-    virtual void setAcceleratedCompositingForPluginsEnabled(bool) = 0;
-    virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForVideoEnabled(bool) = 0;
+    // If set to true, allows frames with an https origin to display passive
+    // contents at an insecure URL. Otherwise, disallows it. The
+    // FrameLoaderClient set to the frame may override the value set by this
+    // method.
     virtual void setAllowDisplayOfInsecureContent(bool) = 0;
     virtual void setAllowFileAccessFromFileURLs(bool) = 0;
     virtual void setAllowCustomScrollbarInMainFrame(bool) = 0;
+    // If set to true, allows frames with an https origin to run active
+    // contents at an insecure URL. This includes WebSockets. Otherwise,
+    // disallows it. The FrameLoaderClient set to the frame may override the
+    // value set by this method.
     virtual void setAllowRunningOfInsecureContent(bool) = 0;
+    // If set to true, allows frames with an https origin to connect WebSockets
+    // with an insecure URL (ws://). Otherwise, disallows it. Only when this is
+    // set to true, this value overrides the value set by
+    // setAllowRunningOfInsecureContent() for WebSockets. The FrameLoaderClient
+    // set to the frame may override the value set by this method.
+    virtual void setAllowConnectingInsecureWebSocket(bool) = 0;
     virtual void setAllowScriptsToCloseWindows(bool) = 0;
     virtual void setAllowUniversalAccessFromFileURLs(bool) = 0;
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
@@ -105,17 +115,14 @@ public:
     virtual void setDeviceSupportsTouch(bool) = 0;
     virtual void setDoubleTapToZoomEnabled(bool) = 0;
     virtual void setDownloadableBinaryFontsEnabled(bool) = 0;
-    virtual void setEditableLinkBehaviorNeverLive() = 0;
     virtual void setEditingBehavior(EditingBehavior) = 0;
     virtual void setEnableScrollAnimator(bool) = 0;
     virtual void setEnableTouchAdjustment(bool) = 0;
     virtual void setRegionBasedColumnsEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
-    virtual void setExperimentalWebSocketEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setForceCompositingMode(bool) = 0;
-    virtual void setFullScreenEnabled(bool) = 0;
     virtual void setGestureTapHighlightEnabled(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
@@ -125,15 +132,14 @@ public:
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;
     virtual void setLayerSquashingEnabled(bool) = 0;
-    virtual void setLayoutFallbackWidth(int) = 0;
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLoadWithOverviewMode(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
     virtual void setMainFrameClipsContent(bool) = 0;
     virtual void setMainFrameResizesAreOrientationChanges(bool) = 0;
     virtual void setMaxTouchPoints(int) = 0;
+    virtual void setMediaControlsOverlayPlayButtonEnabled(bool) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
-    virtual void setMediaFullscreenRequiresUserGesture(bool) = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
@@ -161,6 +167,7 @@ public:
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setShowPaintRects(bool) = 0;
     virtual void setShrinksStandaloneImagesToFit(bool) = 0;
+    virtual void setShrinksViewportContentToFit(bool) = 0;
     virtual void setSmartInsertDeleteEnabled(bool) = 0;
     // Spatial navigation feature, when enabled, improves the experience
     // of keyboard-controlling the web pages which originally were not designed
@@ -182,10 +189,11 @@ public:
     virtual void setTouchEditingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setUnsafePluginPastingEnabled(bool) = 0;
-    virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;
     virtual void setUseSolidColorScrollbars(bool) = 0;
+    virtual void setUseThreadedHTMLParserForDataURLs(bool) = 0;
     virtual void setUseWideViewport(bool) = 0;
+    virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setViewportMetaEnabled(bool) = 0;
@@ -193,7 +201,6 @@ public:
     virtual void setViewportMetaMergeContentQuirk(bool) = 0;
     virtual void setViewportMetaNonUserScalableQuirk(bool) = 0;
     virtual void setViewportMetaZeroValuesQuirk(bool) = 0;
-    virtual void setVisualWordMovementEnabled(bool) = 0;
     virtual void setWebAudioEnabled(bool) = 0;
     virtual void setWebGLErrorsToConsoleEnabled(bool) = 0;
     virtual void setWebSecurityEnabled(bool) = 0;

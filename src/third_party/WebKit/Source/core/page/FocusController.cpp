@@ -48,6 +48,7 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLShadowElement.h"
+#include "core/html/HTMLTextFormControlElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
@@ -87,7 +88,7 @@ Element* FocusNavigationScope::owner() const
         ShadowRoot* shadowRoot = toShadowRoot(root);
         return shadowRoot->isYoungest() ? shadowRoot->host() : shadowRoot->shadowInsertionPointOfYoungerShadowRoot();
     }
-    if (LocalFrame* frame = root->document().frame())
+    if (Frame* frame = root->document().frame())
         return frame->ownerElement();
     return 0;
 }
@@ -120,8 +121,8 @@ FocusNavigationScope FocusNavigationScope::ownedByShadowHost(Node* node)
 
 FocusNavigationScope FocusNavigationScope::ownedByIFrame(HTMLFrameOwnerElement* frame)
 {
-    ASSERT(frame && frame->contentFrame());
-    return FocusNavigationScope(frame->contentFrame()->document());
+    ASSERT(frame && frame->contentFrame() && frame->contentFrame()->isLocalFrame());
+    return FocusNavigationScope(toLocalFrame(frame->contentFrame())->document());
 }
 
 FocusNavigationScope FocusNavigationScope::ownedByShadowInsertionPoint(HTMLShadowElement* shadowInsertionPoint)
@@ -144,6 +145,7 @@ static inline void dispatchEventsOnWindowAndFocusedNode(Document* document, bool
 
     if (!focused && document->focusedElement()) {
         RefPtr<Element> focusedElement(document->focusedElement());
+        focusedElement->setFocus(false);
         focusedElement->dispatchBlurEvent(0);
         if (focusedElement == document->focusedElement()) {
             focusedElement->dispatchFocusOutEvent(EventTypeNames::focusout, 0);
@@ -156,6 +158,7 @@ static inline void dispatchEventsOnWindowAndFocusedNode(Document* document, bool
         window->dispatchEvent(Event::create(focused ? EventTypeNames::focus : EventTypeNames::blur));
     if (focused && document->focusedElement()) {
         RefPtr<Element> focusedElement(document->focusedElement());
+        focusedElement->setFocus(true);
         focusedElement->dispatchFocusEvent(0, FocusTypePage);
         if (focusedElement == document->focusedElement()) {
             document->focusedElement()->dispatchFocusInEvent(EventTypeNames::focusin, 0);
@@ -222,7 +225,6 @@ FocusController::FocusController(Page* page)
     , m_isActive(false)
     , m_isFocused(false)
     , m_isChangingFocusedFrame(false)
-    , m_containingWindowIsVisible(false)
 {
 }
 
@@ -231,7 +233,7 @@ PassOwnPtr<FocusController> FocusController::create(Page* page)
     return adoptPtr(new FocusController(page));
 }
 
-void FocusController::setFocusedFrame(PassRefPtr<LocalFrame> frame)
+void FocusController::setFocusedFrame(PassRefPtr<Frame> frame)
 {
     ASSERT(!frame || frame->page() == m_page);
     if (m_focusedFrame == frame || m_isChangingFocusedFrame)
@@ -239,10 +241,10 @@ void FocusController::setFocusedFrame(PassRefPtr<LocalFrame> frame)
 
     m_isChangingFocusedFrame = true;
 
-    RefPtr<LocalFrame> oldFrame = m_focusedFrame;
-    RefPtr<LocalFrame> newFrame = frame;
+    RefPtr<LocalFrame> oldFrame = (m_focusedFrame && m_focusedFrame->isLocalFrame()) ? toLocalFrame(m_focusedFrame.get()) : 0;
+    RefPtr<LocalFrame> newFrame = (frame && frame->isLocalFrame()) ? toLocalFrame(frame.get()) : 0;
 
-    m_focusedFrame = newFrame;
+    m_focusedFrame = frame.get();
 
     // Now that the frame is updated, fire events and update the selection focused states of both frames.
     if (oldFrame && oldFrame->view()) {
@@ -260,9 +262,46 @@ void FocusController::setFocusedFrame(PassRefPtr<LocalFrame> frame)
     m_page->chrome().client().focusedFrameChanged(newFrame.get());
 }
 
-LocalFrame* FocusController::focusedOrMainFrame() const
+void FocusController::focusDocumentView(PassRefPtr<Frame> frame)
 {
-    if (LocalFrame* frame = focusedFrame())
+    ASSERT(!frame || frame->page() == m_page);
+    if (m_focusedFrame == frame)
+        return;
+
+    RefPtr<LocalFrame> focusedFrame = (m_focusedFrame && m_focusedFrame->isLocalFrame()) ? toLocalFrame(m_focusedFrame.get()) : 0;
+    if (focusedFrame && focusedFrame->view()) {
+        RefPtr<Document> document = focusedFrame->document();
+        Element* focusedElement = document ? document->focusedElement() : 0;
+        if (focusedElement) {
+            focusedElement->dispatchBlurEvent(0);
+            if (focusedElement == document->focusedElement()) {
+                focusedElement->dispatchFocusOutEvent(EventTypeNames::focusout, 0);
+                if (focusedElement == document->focusedElement())
+                    focusedElement->dispatchFocusOutEvent(EventTypeNames::DOMFocusOut, 0);
+            }
+        }
+    }
+
+    RefPtr<LocalFrame> newFocusedFrame = (frame && frame->isLocalFrame()) ? toLocalFrame(frame.get()) : 0;
+    if (newFocusedFrame && newFocusedFrame->view()) {
+        RefPtr<Document> document = newFocusedFrame->document();
+        Element* focusedElement = document ? document->focusedElement() : 0;
+        if (focusedElement) {
+            focusedElement->dispatchFocusEvent(0, FocusTypePage);
+            if (focusedElement == document->focusedElement()) {
+                document->focusedElement()->dispatchFocusInEvent(EventTypeNames::focusin, 0);
+                if (focusedElement == document->focusedElement())
+                    document->focusedElement()->dispatchFocusInEvent(EventTypeNames::DOMFocusIn, 0);
+            }
+        }
+    }
+
+    setFocusedFrame(frame);
+}
+
+Frame* FocusController::focusedOrMainFrame() const
+{
+    if (Frame* frame = focusedFrame())
         return frame;
     return m_page->mainFrame();
 }
@@ -274,17 +313,17 @@ void FocusController::setFocused(bool focused)
 
     m_isFocused = focused;
 
-    if (!m_isFocused)
-        focusedOrMainFrame()->eventHandler().stopAutoscroll();
+    if (!m_isFocused && focusedOrMainFrame()->isLocalFrame())
+        toLocalFrame(focusedOrMainFrame())->eventHandler().stopAutoscroll();
 
     if (!m_focusedFrame)
         setFocusedFrame(m_page->mainFrame());
 
     // setFocusedFrame above might reject to update m_focusedFrame, or
     // m_focusedFrame might be changed by blur/focus event handlers.
-    if (m_focusedFrame && m_focusedFrame->view()) {
-        m_focusedFrame->selection().setFocused(focused);
-        dispatchEventsOnWindowAndFocusedNode(m_focusedFrame->document(), focused);
+    if (m_focusedFrame && m_focusedFrame->isLocalFrame() && toLocalFrame(m_focusedFrame.get())->view()) {
+        toLocalFrame(m_focusedFrame.get())->selection().setFocused(focused);
+        dispatchEventsOnWindowAndFocusedNode(toLocalFrame(m_focusedFrame.get())->document(), focused);
     }
 }
 
@@ -295,7 +334,7 @@ Node* FocusController::findFocusableNodeDecendingDownIntoFrameDocument(FocusType
     // 2) the deepest-nested HTMLFrameOwnerElement.
     while (node && node->isFrameOwnerElement()) {
         HTMLFrameOwnerElement* owner = toHTMLFrameOwnerElement(node);
-        if (!owner->contentFrame())
+        if (!owner->contentFrame() || !owner->contentFrame()->isLocalFrame())
             break;
         Node* foundNode = findFocusableNode(type, FocusNavigationScope::ownedByIFrame(owner), 0);
         if (!foundNode)
@@ -313,8 +352,11 @@ bool FocusController::setInitialFocus(FocusType type)
     // If focus is being set initially, accessibility needs to be informed that system focus has moved
     // into the web area again, even if focus did not change within WebCore. PostNotification is called instead
     // of handleFocusedUIElementChanged, because this will send the notification even if the element is the same.
-    if (AXObjectCache* cache = focusedOrMainFrame()->document()->existingAXObjectCache())
-        cache->postNotification(focusedOrMainFrame()->document(), AXObjectCache::AXFocusedUIElementChanged, true);
+    if (focusedOrMainFrame()->isLocalFrame()) {
+        Document* document = toLocalFrame(focusedOrMainFrame())->document();
+        if (AXObjectCache* cache = document->existingAXObjectCache())
+            cache->postNotification(document, AXObjectCache::AXFocusedUIElementChanged, true);
+    }
 
     return didAdvanceFocus;
 }
@@ -339,7 +381,11 @@ bool FocusController::advanceFocus(FocusType type, bool initialFocus)
 
 bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFocus)
 {
-    LocalFrame* frame = focusedOrMainFrame();
+    // FIXME: Focus advancement won't work with externally rendered frames until after
+    // inter-frame focus control is moved out of Blink.
+    if (!focusedOrMainFrame()->isLocalFrame())
+        return false;
+    LocalFrame* frame = toLocalFrame(focusedOrMainFrame());
     ASSERT(frame);
     Document* document = frame->document();
 
@@ -610,24 +656,19 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
 
     if (Node* mousePressNode = newFocusedFrame->eventHandler().mousePressNode()) {
         if (mousePressNode->renderer() && !mousePressNode->canStartSelection()) {
-            // Don't clear the selection for contentEditable elements, but do clear it for input and textarea. See bug 38696.
-            Node* root = selection.rootEditableElement();
-            if (!root)
+            // Don't clear the selection for contentEditable elements, but do
+            // clear it for input and textarea. See bug 38696.
+            if (!enclosingTextFormControl(selection.start()))
                 return;
-
-            if (Node* shadowAncestorNode = root->deprecatedShadowAncestorNode()) {
-                if (!isHTMLInputElement(*shadowAncestorNode) && !isHTMLTextAreaElement(*shadowAncestorNode))
-                    return;
-            }
         }
     }
 
     selection.clear();
 }
 
-bool FocusController::setFocusedElement(Element* element, PassRefPtr<LocalFrame> newFocusedFrame, FocusType type)
+bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newFocusedFrame, FocusType type)
 {
-    RefPtr<LocalFrame> oldFocusedFrame = focusedFrame();
+    RefPtr<LocalFrame> oldFocusedFrame = toLocalFrame(focusedFrame());
     RefPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : 0;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : 0;
@@ -643,13 +684,13 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtr<LocalFrame>
     RefPtr<Document> newDocument;
     if (element)
         newDocument = &element->document();
-    else if (newFocusedFrame)
-        newDocument = newFocusedFrame->document();
+    else if (newFocusedFrame && newFocusedFrame->isLocalFrame())
+        newDocument = toLocalFrame(newFocusedFrame.get())->document();
 
     if (newDocument && oldDocument == newDocument && newDocument->focusedElement() == element)
         return true;
 
-    clearSelectionIfNeeded(oldFocusedFrame.get(), newFocusedFrame.get(), element);
+    clearSelectionIfNeeded(oldFocusedFrame.get(), toLocalFrame(newFocusedFrame.get()), element);
 
     if (oldDocument && oldDocument != newDocument)
         oldDocument->setFocusedElement(nullptr);
@@ -681,46 +722,7 @@ void FocusController::setActive(bool active)
     if (FrameView* view = m_page->mainFrame()->view())
         view->updateControlTints();
 
-    focusedOrMainFrame()->selection().pageActivationChanged();
-}
-
-static void contentAreaDidShowOrHide(ScrollableArea* scrollableArea, bool didShow)
-{
-    if (didShow)
-        scrollableArea->contentAreaDidShow();
-    else
-        scrollableArea->contentAreaDidHide();
-}
-
-void FocusController::setContainingWindowIsVisible(bool containingWindowIsVisible)
-{
-    if (m_containingWindowIsVisible == containingWindowIsVisible)
-        return;
-
-    m_containingWindowIsVisible = containingWindowIsVisible;
-
-    FrameView* view = m_page->mainFrame()->view();
-    if (!view)
-        return;
-
-    contentAreaDidShowOrHide(view, containingWindowIsVisible);
-
-    for (LocalFrame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        FrameView* frameView = frame->view();
-        if (!frameView)
-            continue;
-
-        const HashSet<ScrollableArea*>* scrollableAreas = frameView->scrollableAreas();
-        if (!scrollableAreas)
-            continue;
-
-        for (HashSet<ScrollableArea*>::const_iterator it = scrollableAreas->begin(), end = scrollableAreas->end(); it != end; ++it) {
-            ScrollableArea* scrollableArea = *it;
-            ASSERT(scrollableArea->scrollbarsCanBeActive());
-
-            contentAreaDidShowOrHide(scrollableArea, containingWindowIsVisible);
-        }
-    }
+    toLocalFrame(focusedOrMainFrame())->selection().pageActivationChanged();
 }
 
 static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& current, FocusCandidate& candidate, FocusCandidate& closest)
@@ -749,7 +751,8 @@ static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& c
     }
 
     LayoutRect intersectionRect = intersection(candidate.rect, closest.rect);
-    if (!intersectionRect.isEmpty() && !areElementsOnSameLine(closest, candidate)) {
+    if (!intersectionRect.isEmpty() && !areElementsOnSameLine(closest, candidate)
+        && intersectionRect == candidate.rect) {
         // If 2 nodes are intersecting, do hit test to find which node in on top.
         LayoutUnit x = intersectionRect.x() + intersectionRect.width() / 2;
         LayoutUnit y = intersectionRect.y() + intersectionRect.height() / 2;
@@ -774,7 +777,7 @@ static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& c
 
 void FocusController::findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, FocusType type, FocusCandidate& closest)
 {
-    Element* focusedElement = (focusedFrame() && focusedFrame()->document()) ? focusedFrame()->document()->focusedElement() : 0;
+    Element* focusedElement = (focusedFrame() && toLocalFrame(focusedFrame())->document()) ? toLocalFrame(focusedFrame())->document()->focusedElement() : 0;
 
     Element* element = ElementTraversal::firstWithin(container);
     FocusCandidate current;
@@ -821,23 +824,23 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
         return scrollInDirection(container, type);
     }
 
-    if (HTMLFrameOwnerElement* frameElement = frameOwnerElement(focusCandidate)) {
-        // If we have an iframe without the src attribute, it will not have a contentFrame().
-        // We ASSERT here to make sure that
-        // updateFocusCandidateIfNeeded() will never consider such an iframe as a candidate.
-        ASSERT(frameElement->contentFrame());
-
+    HTMLFrameOwnerElement* frameElement = frameOwnerElement(focusCandidate);
+    // If we have an iframe without the src attribute, it will not have a contentFrame().
+    // We ASSERT here to make sure that
+    // updateFocusCandidateIfNeeded() will never consider such an iframe as a candidate.
+    ASSERT(!frameElement || frameElement->contentFrame());
+    if (frameElement && frameElement->contentFrame()->isLocalFrame()) {
         if (focusCandidate.isOffscreenAfterScrolling) {
             scrollInDirection(&focusCandidate.visibleNode->document(), type);
             return true;
         }
         // Navigate into a new frame.
         LayoutRect rect;
-        Element* focusedElement = focusedOrMainFrame()->document()->focusedElement();
+        Element* focusedElement = toLocalFrame(focusedOrMainFrame())->document()->focusedElement();
         if (focusedElement && !hasOffscreenRect(focusedElement))
             rect = nodeRectInAbsoluteCoordinates(focusedElement, true /* ignore border */);
-        frameElement->contentFrame()->document()->updateLayoutIgnorePendingStylesheets();
-        if (!advanceFocusDirectionallyInContainer(frameElement->contentFrame()->document(), rect, type)) {
+        toLocalFrame(frameElement->contentFrame())->document()->updateLayoutIgnorePendingStylesheets();
+        if (!advanceFocusDirectionallyInContainer(toLocalFrame(frameElement->contentFrame())->document(), rect, type)) {
             // The new frame had nothing interesting, need to find another candidate.
             return advanceFocusDirectionallyInContainer(container, nodeRectInAbsoluteCoordinates(focusCandidate.visibleNode, true), type);
         }
@@ -851,7 +854,7 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
         }
         // Navigate into a new scrollable container.
         LayoutRect startingRect;
-        Element* focusedElement = focusedOrMainFrame()->document()->focusedElement();
+        Element* focusedElement = toLocalFrame(focusedOrMainFrame())->document()->focusedElement();
         if (focusedElement && !hasOffscreenRect(focusedElement))
             startingRect = nodeRectInAbsoluteCoordinates(focusedElement, true);
         return advanceFocusDirectionallyInContainer(focusCandidate.visibleNode, startingRect, type);
@@ -872,7 +875,10 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
 
 bool FocusController::advanceFocusDirectionally(FocusType type)
 {
-    LocalFrame* curFrame = focusedOrMainFrame();
+    // FIXME: Directional focus changes don't yet work with RemoteFrames.
+    if (!focusedOrMainFrame()->isLocalFrame())
+        return false;
+    LocalFrame* curFrame = toLocalFrame(focusedOrMainFrame());
     ASSERT(curFrame);
 
     Document* focusedDocument = curFrame->document();

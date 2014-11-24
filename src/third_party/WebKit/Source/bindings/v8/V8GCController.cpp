@@ -46,6 +46,8 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLTemplateElement.h"
+#include "core/html/imports/HTMLImportsController.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/svg/SVGElement.h"
 #include "platform/TraceEvent.h"
 
@@ -75,8 +77,12 @@ Node* V8GCController::opaqueRootForGC(Node* node, v8::Isolate*)
     // The same special handling is in V8GCController::gcTree().
     // Maybe should image elements be active DOM nodes?
     // See https://code.google.com/p/chromium/issues/detail?id=164882
-    if (node->inDocument() || (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity()))
-        return &node->document();
+    if (node->inDocument() || (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity())) {
+        Document& document = node->document();
+        if (HTMLImportsController* controller = document.importsController())
+            return controller->master();
+        return &document;
+    }
 
     if (node->isAttributeNode()) {
         Node* ownerElement = toAttr(node)->ownerElement();
@@ -192,6 +198,18 @@ private:
                 if (!traverseTree(toHTMLTemplateElement(*node).content(), partiallyDependentNodes))
                     return false;
             }
+
+            // Document maintains the list of imported documents through HTMLImportsController.
+            if (node->isDocumentNode()) {
+                Document* document = toDocument(node);
+                HTMLImportsController* controller = document->importsController();
+                if (controller && document == controller->master()) {
+                    for (unsigned i = 0; i < controller->loaderCount(); ++i) {
+                        if (!traverseTree(controller->loaderDocumentAt(i), partiallyDependentNodes))
+                            return false;
+                    }
+                }
+            }
         }
         return true;
     }
@@ -214,16 +232,10 @@ private:
         Node** const nodeIteratorEnd = partiallyDependentNodes.end();
         if (nodeIterator == nodeIteratorEnd)
             return;
-        v8::UniqueId id(reinterpret_cast<intptr_t>((*nodeIterator)->unsafePersistent().value()));
+
+        Node* groupRoot = *nodeIterator;
         for (; nodeIterator != nodeIteratorEnd; ++nodeIterator) {
-            // This is safe because we know that GC won't happen before we
-            // dispose the UnsafePersistent (we're just preparing a GC). Though,
-            // we need to keep the UnsafePersistent alive until we're done with
-            // v8::Persistent.
-            UnsafePersistent<v8::Object> unsafeWrapper = (*nodeIterator)->unsafePersistent();
-            v8::Persistent<v8::Object>* wrapper = unsafeWrapper.persistent();
-            wrapper->MarkPartiallyDependent();
-            isolate->SetObjectGroupId(v8::Persistent<v8::Value>::Cast(*wrapper), id);
+            (*nodeIterator)->markAsDependentGroup(groupRoot, isolate);
         }
     }
 
@@ -312,10 +324,18 @@ private:
     bool m_constructRetainedObjectInfos;
 };
 
+static unsigned long long usedHeapSize(v8::Isolate* isolate)
+{
+    v8::HeapStatistics heapStatistics;
+    isolate->GetHeapStatistics(&heapStatistics);
+    return heapStatistics.used_heap_size();
+}
+
 void V8GCController::gcPrologue(v8::GCType type, v8::GCCallbackFlags flags)
 {
     // FIXME: It would be nice if the GC callbacks passed the Isolate directly....
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    TRACE_EVENT_BEGIN1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "GCEvent", "usedHeapSizeBefore", usedHeapSize(isolate));
     if (type == v8::kGCTypeScavenge)
         minorGCPrologue(isolate);
     else if (type == v8::kGCTypeMarkSweepCompact)
@@ -368,11 +388,28 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
     else if (type == v8::kGCTypeMarkSweepCompact)
         majorGCEpilogue(isolate);
 
-    // Force a Blink heap garbage collection when a garbage collection
+    // Forces a Blink heap garbage collection when a garbage collection
     // was forced from V8. This is used for tests that force GCs from
     // JavaScript to verify that objects die when expected.
-    if (flags & v8::kGCCallbackFlagForced)
-        Heap::collectGarbage(ThreadState::HeapPointersOnStack, Heap::ForcedForTesting);
+    if (flags & v8::kGCCallbackFlagForced) {
+        // This single GC is not enough for two reasons:
+        //   (1) The GC is not precise because the GC scans on-stack pointers conservatively.
+        //   (2) One GC is not enough to break a chain of persistent handles. It's possible that
+        //       some heap allocated objects own objects that contain persistent handles
+        //       pointing to other heap allocated objects. To break the chain, we need multiple GCs.
+        //
+        // Regarding (1), we force a precise GC at the end of the current event loop. So if you want
+        // to collect all garbage, you need to wait until the next event loop.
+        // Regarding (2), it would be OK in practice to trigger only one GC per gcEpilogue, because
+        // GCController.collectAll() forces 7 V8's GC.
+        Heap::collectGarbage(ThreadState::HeapPointersOnStack);
+
+        // Forces a precise GC at the end of the current event loop.
+        Heap::setForcePreciseGCForTesting();
+    }
+
+    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "GCEvent", "usedHeapSizeAfter", usedHeapSize(isolate));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "", InspectorUpdateCountersEvent::data());
 }
 
 void V8GCController::minorGCEpilogue(v8::Isolate* isolate)

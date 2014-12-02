@@ -177,6 +177,10 @@ class Toolkit {
     // necessary.
     BLPWTK2_EXPORT static void allowNonWindowContexts_Unsafe();
 
+    // Return the handle handle to the Win32 heap used by the blpwtk2 module's
+    // C runtime system.
+    BLPWTK2_EXPORT static intptr_t getHeapHandle();
+
 protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use
     // the 'destroy()' method, instead of deleting the object directly.

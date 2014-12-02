@@ -5072,6 +5072,11 @@ bool v8::V8::InitializeICUWithData(const void* icu_data) {
 }
 
 
+intptr_t v8::V8::GetHeapHandle() {
+  return _get_heap_handle();
+}
+
+
 const char* v8::V8::GetVersion() {
   return i::Version::GetVersion();
 }

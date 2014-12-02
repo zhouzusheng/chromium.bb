@@ -38,6 +38,11 @@ void Toolkit::allowNonWindowContexts_Unsafe()
     blink::allowNonWindowContexts_Unsafe();
 }
 
+intptr_t Toolkit::getHeapHandle()
+{
+    return _get_heap_handle();
+}
+
 Toolkit::~Toolkit()
 {
 }

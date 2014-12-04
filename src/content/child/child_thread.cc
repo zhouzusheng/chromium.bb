@@ -407,6 +407,11 @@ void ChildThread::SetChannelName(const std::string& channel_name) {
   DCHECK(channel_.get());
 }
 
+IPC::SyncChannel* ChildThread::channelWithCheck() {
+  CHECK(channel_.get());
+  return channel_.get();
+}
+
 MessageRouter* ChildThread::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());
   return &router_;

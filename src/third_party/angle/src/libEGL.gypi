@@ -54,7 +54,7 @@
                 {
                     'target_name': 'libEGL',
                     'type': 'loadable_module',
-                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static' ],
+                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static', 'commit_id' ],
                     'include_dirs':
                     [
                         '.',

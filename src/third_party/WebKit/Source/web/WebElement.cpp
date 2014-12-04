@@ -188,7 +188,7 @@ void WebElement::requestSpellCheck()
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->isTextFormControl()) {
-            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
+            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
             if (innerElement && innerElement->rendererIsEditable()) {
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));

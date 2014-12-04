@@ -74,6 +74,7 @@ class WebViewHost : public ProcessHostListener,
 
     // IPC::Listener overrides
     virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
   private:
     // Message handlers

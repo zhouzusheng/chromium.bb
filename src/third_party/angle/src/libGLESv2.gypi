@@ -98,13 +98,6 @@
                             [
                                 'ANGLE_ENABLE_PERF',
                             ],
-                            'link_settings':
-                            {
-                                'libraries':
-                                [
-                                    '-ld3d9.lib',
-                                ]
-                            },
                         },
                     },
                 },
@@ -112,7 +105,7 @@
                     'target_name': 'libGLESv2_shared',
                     'product_name': 'libGLESv2',
                     'type': 'shared_library',
-                    'dependencies': [ 'libGLESv2_static' ],
+                    'dependencies': [ 'libGLESv2_static', 'commit_id' ],
                     'include_dirs':
                     [
                         '.',

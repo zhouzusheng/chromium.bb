@@ -85,9 +85,13 @@ class CONTENT_EXPORT ChildThread
  protected:
   // SHEZ: Protect this so that we can limit the number of ways this member is
   // SHEZ: accessed.  Since we now allow channel initialization to be deferred,
-  // SHEZ: it is possible that this member would be null.
+  // SHEZ: it is possible that this member would be null.  Anything that needs
+  // SHEZ: to access the channel should use the 'channelWithCheck' method.
   IPC::SyncChannel* channel() { return channel_.get(); }
  public:
+
+  // SHEZ: checking channel accessor.
+  IPC::SyncChannel* channelWithCheck();
 
   MessageRouter* GetRouter();
 

@@ -19,6 +19,7 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
@@ -33,6 +34,10 @@ struct GPUCreateCommandBufferConfig;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
+
+namespace gfx {
+struct GpuMemoryBufferHandle;
+}
 
 namespace IPC {
 struct ChannelHandle;
@@ -59,9 +64,13 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
-  typedef base::Callback<void(bool)> CreateCommandBufferCallback;
+  typedef base::Callback<void(CreateCommandBufferResult)>
+      CreateCommandBufferCallback;
 
   typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
+
+  typedef base::Callback<void(const gfx::GpuMemoryBufferHandle& handle)>
+      CreateGpuMemoryBufferCallback;
 
   static bool gpu_enabled() { return gpu_enabled_; }
 
@@ -125,6 +134,14 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     // Tells the GPU process to delete image.
   void DeleteImage(int client_id, int image_id, int sync_point);
 
+  void CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+                             const gfx::Size& size,
+                             unsigned internalformat,
+                             unsigned usage,
+                             const CreateGpuMemoryBufferCallback& callback);
+  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+                              int sync_point);
+
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
 
@@ -156,9 +173,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
-  void OnCommandBufferCreated(bool succeeded);
+  void OnCommandBufferCreated(CreateCommandBufferResult result);
   void OnDestroyCommandBuffer(int32 surface_id);
   void OnImageCreated(const gfx::Size size);
+  void OnGpuMemoryBufferCreated(const gfx::GpuMemoryBufferHandle& handle);
   void OnDidCreateOffscreenContext(const GURL& url);
   void OnDidLoseContext(bool offscreen,
                         gpu::error::ContextLostReason reason,
@@ -196,6 +214,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // The pending create image requests we need to reply to.
   std::queue<CreateImageCallback> create_image_requests_;
 
+  // The pending create gpu memory buffer requests we need to reply to.
+  std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
 
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;

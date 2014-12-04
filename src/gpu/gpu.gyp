@@ -243,6 +243,8 @@
         'command_buffer/service/gl_surface_mock.cc',
         'command_buffer/service/gl_surface_mock.h',
         'command_buffer/service/gpu_scheduler_unittest.cc',
+        'command_buffer/service/gpu_service_test.cc',
+        'command_buffer/service/gpu_service_test.h',
         'command_buffer/service/id_manager_unittest.cc',
         'command_buffer/service/mailbox_manager_unittest.cc',
         'command_buffer/service/memory_program_cache_unittest.cc',
@@ -276,7 +278,7 @@
         'config/gpu_util_unittest.cc',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -343,7 +345,7 @@
         'command_buffer/tests/occlusion_query_unittest.cc',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -558,6 +560,28 @@
     ['disable_nacl!=1 and OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
+          'target_name': 'command_buffer_common_win64',
+          'type': 'static_library',
+          'variables': {
+            'nacl_win64_target': 1,
+          },
+          'includes': [
+            'command_buffer_common.gypi',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base_win64',
+          ],
+          'defines': [
+            '<@(nacl_win64_defines)',
+            'GPU_IMPLEMENTATION',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+        },
+        {
           'target_name': 'gpu_ipc_win64',
           'type': 'static_library',
           'variables': {
@@ -569,6 +593,7 @@
           'dependencies': [
             '../base/base.gyp:base_win64',
             '../ipc/ipc.gyp:ipc_win64',
+            'command_buffer_common_win64',
           ],
           'defines': [
             '<@(nacl_win64_defines)',

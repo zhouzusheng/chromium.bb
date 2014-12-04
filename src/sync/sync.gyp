@@ -102,6 +102,7 @@
 
         # The sync protocol buffer library.
         {
+          # GN version: //sync/protocol
           'target_name': 'sync_proto',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },

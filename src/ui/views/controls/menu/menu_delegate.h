@@ -103,7 +103,7 @@ class VIEWS_EXPORT MenuDelegate {
 
   // If there is an accelerator for the menu item with id |id| it is set in
   // |accelerator| and true is returned.
-  virtual bool GetAccelerator(int id, ui::Accelerator* accelerator);
+  virtual bool GetAccelerator(int id, ui::Accelerator* accelerator) const;
 
   // Shows the context menu with the specified id. This is invoked when the
   // user does the appropriate gesture to show a context menu. The id
@@ -121,6 +121,7 @@ class VIEWS_EXPORT MenuDelegate {
   // Controller
   virtual bool SupportsCommand(int id) const;
   virtual bool IsCommandEnabled(int id) const;
+  virtual bool IsCommandVisible(int id) const;
   virtual bool GetContextualLabel(int id, base::string16* out) const;
   virtual void ExecuteCommand(int id) {
   }

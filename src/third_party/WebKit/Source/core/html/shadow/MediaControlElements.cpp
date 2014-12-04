@@ -30,7 +30,6 @@
 #include "config.h"
 #include "core/html/shadow/MediaControlElements.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMTokenList.h"
 #include "core/dom/FullscreenElementStack.h"
@@ -47,6 +46,7 @@
 #include "core/rendering/RenderSlider.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderVideo.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -55,7 +55,7 @@ using namespace HTMLNames;
 static const AtomicString& getMediaControlCurrentTimeDisplayElementShadowPseudoId();
 static const AtomicString& getMediaControlTimeRemainingDisplayElementShadowPseudoId();
 
-static const double fadeInDuration = 0.1;
+// This is the duration from mediaControls.css
 static const double fadeOutDuration = 0.3;
 
 MediaControlPanelElement::MediaControlPanelElement(MediaControls& mediaControls)
@@ -66,9 +66,9 @@ MediaControlPanelElement::MediaControlPanelElement(MediaControls& mediaControls)
 {
 }
 
-PassRefPtr<MediaControlPanelElement> MediaControlPanelElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlPanelElement> MediaControlPanelElement::create(MediaControls& mediaControls)
 {
-    return adoptRef(new MediaControlPanelElement(mediaControls));
+    return adoptRefWillBeNoop(new MediaControlPanelElement(mediaControls));
 }
 
 const AtomicString& MediaControlPanelElement::shadowPseudoId() const
@@ -118,10 +118,7 @@ void MediaControlPanelElement::makeOpaque()
     if (m_opaque)
         return;
 
-    setInlineStyleProperty(CSSPropertyTransitionProperty, CSSPropertyOpacity);
-    setInlineStyleProperty(CSSPropertyTransitionDuration, fadeInDuration, CSSPrimitiveValue::CSS_S);
     setInlineStyleProperty(CSSPropertyOpacity, 1.0, CSSPrimitiveValue::CSS_NUMBER);
-
     m_opaque = true;
 
     if (m_isDisplayed)
@@ -133,8 +130,6 @@ void MediaControlPanelElement::makeTransparent()
     if (!m_opaque)
         return;
 
-    setInlineStyleProperty(CSSPropertyTransitionProperty, CSSPropertyOpacity);
-    setInlineStyleProperty(CSSPropertyTransitionDuration, fadeOutDuration, CSSPrimitiveValue::CSS_S);
     setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::CSS_NUMBER);
 
     m_opaque = false;
@@ -154,9 +149,9 @@ MediaControlPanelEnclosureElement::MediaControlPanelEnclosureElement(MediaContro
 {
 }
 
-PassRefPtr<MediaControlPanelEnclosureElement> MediaControlPanelEnclosureElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlPanelEnclosureElement> MediaControlPanelEnclosureElement::create(MediaControls& mediaControls)
 {
-    return adoptRef(new MediaControlPanelEnclosureElement(mediaControls));
+    return adoptRefWillBeNoop(new MediaControlPanelEnclosureElement(mediaControls));
 }
 
 const AtomicString& MediaControlPanelEnclosureElement::shadowPseudoId() const
@@ -173,9 +168,9 @@ MediaControlOverlayEnclosureElement::MediaControlOverlayEnclosureElement(MediaCo
 {
 }
 
-PassRefPtr<MediaControlOverlayEnclosureElement> MediaControlOverlayEnclosureElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlOverlayEnclosureElement> MediaControlOverlayEnclosureElement::create(MediaControls& mediaControls)
 {
-    return adoptRef(new MediaControlOverlayEnclosureElement(mediaControls));
+    return adoptRefWillBeNoop(new MediaControlOverlayEnclosureElement(mediaControls));
 }
 
 const AtomicString& MediaControlOverlayEnclosureElement::shadowPseudoId() const
@@ -191,9 +186,9 @@ MediaControlMuteButtonElement::MediaControlMuteButtonElement(MediaControls& medi
 {
 }
 
-PassRefPtr<MediaControlMuteButtonElement> MediaControlMuteButtonElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlMuteButtonElement> MediaControlMuteButtonElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlMuteButtonElement> button = adoptRef(new MediaControlMuteButtonElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlMuteButtonElement> button = adoptRefWillBeNoop(new MediaControlMuteButtonElement(mediaControls));
     button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
@@ -227,9 +222,9 @@ MediaControlPlayButtonElement::MediaControlPlayButtonElement(MediaControls& medi
 {
 }
 
-PassRefPtr<MediaControlPlayButtonElement> MediaControlPlayButtonElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlPlayButtonElement> MediaControlPlayButtonElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlPlayButtonElement> button = adoptRef(new MediaControlPlayButtonElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlPlayButtonElement> button = adoptRefWillBeNoop(new MediaControlPlayButtonElement(mediaControls));
     button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
@@ -263,9 +258,9 @@ MediaControlOverlayPlayButtonElement::MediaControlOverlayPlayButtonElement(Media
 {
 }
 
-PassRefPtr<MediaControlOverlayPlayButtonElement> MediaControlOverlayPlayButtonElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlOverlayPlayButtonElement> MediaControlOverlayPlayButtonElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlOverlayPlayButtonElement> button = adoptRef(new MediaControlOverlayPlayButtonElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlOverlayPlayButtonElement> button = adoptRefWillBeNoop(new MediaControlOverlayPlayButtonElement(mediaControls));
     button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
@@ -302,9 +297,9 @@ MediaControlToggleClosedCaptionsButtonElement::MediaControlToggleClosedCaptionsB
 {
 }
 
-PassRefPtr<MediaControlToggleClosedCaptionsButtonElement> MediaControlToggleClosedCaptionsButtonElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlToggleClosedCaptionsButtonElement> MediaControlToggleClosedCaptionsButtonElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlToggleClosedCaptionsButtonElement> button = adoptRef(new MediaControlToggleClosedCaptionsButtonElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlToggleClosedCaptionsButtonElement> button = adoptRefWillBeNoop(new MediaControlToggleClosedCaptionsButtonElement(mediaControls));
     button->ensureUserAgentShadowRoot();
     button->setType("button");
     button->hide();
@@ -343,9 +338,9 @@ MediaControlTimelineElement::MediaControlTimelineElement(MediaControls& mediaCon
 {
 }
 
-PassRefPtr<MediaControlTimelineElement> MediaControlTimelineElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlTimelineElement> MediaControlTimelineElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlTimelineElement> timeline = adoptRef(new MediaControlTimelineElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlTimelineElement> timeline = adoptRefWillBeNoop(new MediaControlTimelineElement(mediaControls));
     timeline->ensureUserAgentShadowRoot();
     timeline->setType("range");
     timeline->setAttribute(stepAttr, "any");
@@ -415,9 +410,9 @@ MediaControlVolumeSliderElement::MediaControlVolumeSliderElement(MediaControls& 
 {
 }
 
-PassRefPtr<MediaControlVolumeSliderElement> MediaControlVolumeSliderElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlVolumeSliderElement> MediaControlVolumeSliderElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlVolumeSliderElement> slider = adoptRef(new MediaControlVolumeSliderElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlVolumeSliderElement> slider = adoptRefWillBeNoop(new MediaControlVolumeSliderElement(mediaControls));
     slider->ensureUserAgentShadowRoot();
     slider->setType("range");
     slider->setAttribute(stepAttr, "any");
@@ -478,9 +473,9 @@ MediaControlFullscreenButtonElement::MediaControlFullscreenButtonElement(MediaCo
 {
 }
 
-PassRefPtr<MediaControlFullscreenButtonElement> MediaControlFullscreenButtonElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlFullscreenButtonElement> MediaControlFullscreenButtonElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlFullscreenButtonElement> button = adoptRef(new MediaControlFullscreenButtonElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlFullscreenButtonElement> button = adoptRefWillBeNoop(new MediaControlFullscreenButtonElement(mediaControls));
     button->ensureUserAgentShadowRoot();
     button->setType("button");
     button->hide();
@@ -517,9 +512,9 @@ MediaControlTimeRemainingDisplayElement::MediaControlTimeRemainingDisplayElement
 {
 }
 
-PassRefPtr<MediaControlTimeRemainingDisplayElement> MediaControlTimeRemainingDisplayElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlTimeRemainingDisplayElement> MediaControlTimeRemainingDisplayElement::create(MediaControls& mediaControls)
 {
-    return adoptRef(new MediaControlTimeRemainingDisplayElement(mediaControls));
+    return adoptRefWillBeNoop(new MediaControlTimeRemainingDisplayElement(mediaControls));
 }
 
 static const AtomicString& getMediaControlTimeRemainingDisplayElementShadowPseudoId()
@@ -540,9 +535,9 @@ MediaControlCurrentTimeDisplayElement::MediaControlCurrentTimeDisplayElement(Med
 {
 }
 
-PassRefPtr<MediaControlCurrentTimeDisplayElement> MediaControlCurrentTimeDisplayElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlCurrentTimeDisplayElement> MediaControlCurrentTimeDisplayElement::create(MediaControls& mediaControls)
 {
-    return adoptRef(new MediaControlCurrentTimeDisplayElement(mediaControls));
+    return adoptRefWillBeNoop(new MediaControlCurrentTimeDisplayElement(mediaControls));
 }
 
 static const AtomicString& getMediaControlCurrentTimeDisplayElementShadowPseudoId()
@@ -564,9 +559,9 @@ MediaControlTextTrackContainerElement::MediaControlTextTrackContainerElement(Med
 {
 }
 
-PassRefPtr<MediaControlTextTrackContainerElement> MediaControlTextTrackContainerElement::create(MediaControls& mediaControls)
+PassRefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> MediaControlTextTrackContainerElement::create(MediaControls& mediaControls)
 {
-    RefPtr<MediaControlTextTrackContainerElement> element = adoptRef(new MediaControlTextTrackContainerElement(mediaControls));
+    RefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> element = adoptRefWillBeNoop(new MediaControlTextTrackContainerElement(mediaControls));
     element->hide();
     return element.release();
 }
@@ -604,7 +599,6 @@ void MediaControlTextTrackContainerElement::updateDisplay()
     HTMLVideoElement& video = toHTMLVideoElement(mediaElement());
 
     // 3. Let output be an empty list of absolutely positioned CSS block boxes.
-    Vector<RefPtr<HTMLDivElement> > output;
 
     // 4. If the user agent is exposing a user interface for video, add to
     // output one or more completely transparent positioned CSS block boxes that

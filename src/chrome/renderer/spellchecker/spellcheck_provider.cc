@@ -185,7 +185,6 @@ WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
     UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
     return spellcheck_->GetAutoCorrectionWord(word, routing_id());
   }
-  return base::string16();
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {

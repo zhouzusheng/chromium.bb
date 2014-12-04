@@ -34,7 +34,7 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
@@ -61,33 +61,14 @@ static Node* nodeInsideFrame(Node* node)
     return 0;
 }
 
-// FIXME: SmartClipData is eventually returned via
-// SLookSmartClip.DataExtractionListener:
-// http://img-developer.samsung.com/onlinedocs/sms/com/samsung/android/sdk/look/...
-// however the original author of this change chose to use a string-serialization
-// format (presumably to make IPC easy?).
-// If we're going to use this as a Pickle format, we should at least have the
-// read/write code in one place!
-String SmartClipData::toString()
+IntRect SmartClipData::rect() const
 {
-    if (!m_node)
-        return emptyString();
+    return m_rect;
+}
 
-    const UChar fieldSeparator = 0xFFFE;
-    const UChar rowSeparator = 0xFFFF;
-
-    StringBuilder result;
-    result.append(String::number(m_rect.x()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.y()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.width()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.height()));
-    result.append(fieldSeparator);
-    result.append(m_string);
-    result.append(rowSeparator);
-    return result.toString();
+const String& SmartClipData::clipData() const
+{
+    return m_string;
 }
 
 SmartClip::SmartClip(PassRefPtr<LocalFrame> frame)
@@ -109,7 +90,7 @@ SmartClipData SmartClip::dataForRect(const IntRect& cropRect)
             bestNode = bestNodeInFrame;
     }
 
-    Vector<Node*> hitNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node> > hitNodes;
     collectOverlappingChildNodes(bestNode, resizedCropRect, hitNodes);
 
     if (hitNodes.isEmpty() || hitNodes.size() == bestNode->countChildren()) {
@@ -237,7 +218,7 @@ bool SmartClip::shouldSkipBackgroundImage(Node* node)
     return false;
 }
 
-void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, Vector<Node*>& hitNodes)
+void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& hitNodes)
 {
     if (!parentNode)
         return;

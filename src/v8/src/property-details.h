@@ -5,9 +5,9 @@
 #ifndef V8_PROPERTY_DETAILS_H_
 #define V8_PROPERTY_DETAILS_H_
 
-#include "../include/v8.h"
-#include "allocation.h"
-#include "utils.h"
+#include "include/v8.h"
+#include "src/allocation.h"
+#include "src/utils.h"
 
 // Ecma-262 3rd 8.6.1
 enum PropertyAttributes {
@@ -123,8 +123,6 @@ class Representation {
   bool fits_into(const Representation& other) const {
     return other.is_more_general_than(*this) || other.Equals(*this);
   }
-
-  bool CanContainDouble(double value);
 
   Representation generalize(Representation other) {
     if (other.fits_into(*this)) return *this;

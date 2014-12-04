@@ -20,6 +20,7 @@
         '<(webrtc_root)/modules/modules.gyp:audio_conference_mixer',
         '<(webrtc_root)/modules/modules.gyp:audio_device',
         '<(webrtc_root)/modules/modules.gyp:audio_processing',
+        '<(webrtc_root)/modules/modules.gyp:bitrate_controller',
         '<(webrtc_root)/modules/modules.gyp:media_file',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
@@ -129,7 +130,7 @@
           'conditions': [
             # TODO(henrike): remove build_with_chromium==1 when the bots are
             # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+            ['build_with_chromium==1 and OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -143,6 +144,7 @@
             'voice_engine',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
            ],
@@ -158,6 +160,8 @@
             'test/auto_test/fixtures/after_streaming_fixture.h',
             'test/auto_test/fixtures/before_initialization_fixture.cc',
             'test/auto_test/fixtures/before_initialization_fixture.h',
+            'test/auto_test/fixtures/before_streaming_fixture.cc',
+            'test/auto_test/fixtures/before_streaming_fixture.h',
             'test/auto_test/standard/audio_processing_test.cc',
             'test/auto_test/standard/codec_before_streaming_test.cc',
             'test/auto_test/standard/codec_test.cc',
@@ -207,6 +211,7 @@
             'voice_engine',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
@@ -264,7 +269,7 @@
         }],
         # TODO(henrike): remove build_with_chromium==1 when the bots are using
         # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'targets': [
             {
               'target_name': 'voice_engine_unittests_apk_target',

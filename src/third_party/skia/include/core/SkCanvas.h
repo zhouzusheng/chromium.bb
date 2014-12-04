@@ -18,22 +18,13 @@
 #include "SkRegion.h"
 #include "SkXfermode.h"
 
-// if not defined, we always assume ClipToLayer for saveLayer()
-//#define SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
-
-
-//#define SK_SUPPORT_LEGACY_GETCLIPTYPE
-//#define SK_SUPPORT_LEGACY_GETTOTALCLIP
-//#define SK_SUPPORT_LEGACY_GETTOPDEVICE
-
-//#define SK_SUPPORT_LEGACY_DRAWTEXT_VIRTUAL
 #ifdef SK_SUPPORT_LEGACY_DRAWTEXT_VIRTUAL
     #define SK_LEGACY_DRAWTEXT_VIRTUAL  virtual
 #else
     #define SK_LEGACY_DRAWTEXT_VIRTUAL
 #endif
 
-class SkBounder;
+class SkCanvasClipVisitor;
 class SkBaseDevice;
 class SkDraw;
 class SkDrawFilter;
@@ -239,30 +230,31 @@ public:
     /**
      *  Copy the pixels from the base-layer into the specified buffer (pixels + rowBytes),
      *  converting them into the requested format (SkImageInfo). The base-layer pixels are read
-     *  starting at the specified (x,y) location in the coordinate system of the base-layer.
+     *  starting at the specified (srcX,srcY) location in the coordinate system of the base-layer.
      *
-     *  The specified ImageInfo and (x,y) offset specifies a source rectangle
+     *  The specified ImageInfo and (srcX,srcY) offset specifies a source rectangle
      *
-     *      srcR(x, y, info.width(), info.height());
+     *      srcR.setXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
      *
-     *  SrcR is intersected with the bounds of the base-layer. If this intersection is not empty,
-     *  then we have two sets of pixels (of equal size), the "src" specified by base-layer at (x,y)
-     *  and the "dst" by info+pixels+rowBytes. Replace the dst pixels with the corresponding src
-     *  pixels, performing any colortype/alphatype transformations needed (in the case where the
-     *  src and dst have different colortypes or alphatypes).
+     *  srcR is intersected with the bounds of the base-layer. If this intersection is not empty,
+     *  then we have two sets of pixels (of equal size). Replace the dst pixels with the
+     *  corresponding src pixels, performing any colortype/alphatype transformations needed
+     *  (in the case where the src and dst have different colortypes or alphatypes).
      *
      *  This call can fail, returning false, for several reasons:
+     *  - If srcR does not intersect the base-layer bounds.
      *  - If the requested colortype/alphatype cannot be converted from the base-layer's types.
      *  - If this canvas is not backed by pixels (e.g. picture or PDF)
      */
-    bool readPixels(const SkImageInfo&, void* pixels, size_t rowBytes, int x, int y);
+    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
+                    int srcX, int srcY);
 
     /**
      *  Helper for calling readPixels(info, ...). This call will check if bitmap has been allocated.
      *  If not, it will attempt to call allocPixels(). If this fails, it will return false. If not,
      *  it calls through to readPixels(info, ...) and returns its result.
      */
-    bool readPixels(SkBitmap* bitmap, int x, int y);
+    bool readPixels(SkBitmap* bitmap, int srcX, int srcY);
 
     /**
      *  Helper for allocating pixels and then calling readPixels(info, ...). The bitmap is resized
@@ -979,13 +971,13 @@ public:
         drawPicture call.
         @param picture The recorded drawing commands to analyze/optimize
     */
-    void EXPERIMENTAL_optimize(SkPicture* picture);
+    void EXPERIMENTAL_optimize(const SkPicture* picture);
 
     /** PRIVATE / EXPERIMENTAL -- do not call
         Purge all the discardable optimization information associated with
         'picture'. If NULL is passed in, purge all discardable information.
     */
-    void EXPERIMENTAL_purge(SkPicture* picture);
+    void EXPERIMENTAL_purge(const SkPicture* picture);
 
     /** Draw the picture into this canvas. This method effective brackets the
         playback of the picture's draw calls with save/restore, so the state
@@ -993,7 +985,7 @@ public:
         @param picture The recorded drawing commands to playback into this
                        canvas.
     */
-    virtual void drawPicture(SkPicture& picture);
+    void drawPicture(const SkPicture* picture);
 
     enum VertexMode {
         kTriangles_VertexMode,
@@ -1002,6 +994,11 @@ public:
     };
 
     /** Draw the array of vertices, interpreted as triangles (based on mode).
+
+        If both textures and vertex-colors are NULL, it strokes hairlines with
+        the paint's color. This behavior is a useful debugging mode to visualize
+        the mesh.
+
         @param vmode How to interpret the array of vertices
         @param vertexCount The number of points in the vertices array (and
                     corresponding texs and colors arrays if non-null)
@@ -1063,22 +1060,6 @@ public:
     void popCull();
 
     //////////////////////////////////////////////////////////////////////////
-
-    /** Get the current bounder object.
-        The bounder's reference count is unchaged.
-        @return the canva's bounder (or NULL).
-    */
-    SkBounder*  getBounder() const { return fBounder; }
-
-    /** Set a new bounder (or NULL).
-        Pass NULL to clear any previous bounder.
-        As a convenience, the parameter passed is also returned.
-        If a previous bounder exists, its reference count is decremented.
-        If bounder is not NULL, its reference count is incremented.
-        @param bounder the new bounder (or NULL) to be installed in the canvas
-        @return the set bounder object
-    */
-    virtual SkBounder* setBounder(SkBounder* bounder);
 
     /** Get the current filter object. The filter's reference count is not
         affected. The filter is saved/restored, just like the matrix and clip.
@@ -1149,14 +1130,7 @@ public:
         return &fClipStack;
     }
 
-    class ClipVisitor {
-    public:
-        virtual ~ClipVisitor();
-        virtual void clipRect(const SkRect&, SkRegion::Op, bool antialias) = 0;
-        virtual void clipRRect(const SkRRect&, SkRegion::Op, bool antialias) = 0;
-        virtual void clipPath(const SkPath&, SkRegion::Op, bool antialias) = 0;
-    };
-
+    typedef SkCanvasClipVisitor ClipVisitor;
     /**
      *  Replays the clip operations, back to front, that have been applied to
      *  the canvas, calling the appropriate method on the visitor for each
@@ -1226,12 +1200,17 @@ protected:
         kFullLayer_SaveLayerStrategy,
         kNoLayer_SaveLayerStrategy
     };
-    virtual void willSave(SaveFlags);
-    virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags);
-    virtual void willRestore();
 
-    virtual void didConcat(const SkMatrix&);
-    virtual void didSetMatrix(const SkMatrix&);
+    // Transitional, pending external clients cleanup.
+    virtual void willSave(SaveFlags) { this->willSave(); }
+
+    virtual void willSave() {}
+    virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) {
+        return kFullLayer_SaveLayerStrategy;
+    }
+    virtual void willRestore() {}
+    virtual void didConcat(const SkMatrix&) {}
+    virtual void didSetMatrix(const SkMatrix&) {}
 
     virtual void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&);
 
@@ -1260,6 +1239,8 @@ protected:
     virtual void onClipRegion(const SkRegion& deviceRgn, SkRegion::Op op);
 
     virtual void onDiscard();
+
+    virtual void onDrawPicture(const SkPicture* picture);
 
     // Returns the canvas to be used by DrawIter. Default implementation
     // returns this. Subclasses that encapsulate an indirect canvas may
@@ -1297,7 +1278,6 @@ private:
     // the first N recs that can fit here mean we won't call malloc
     uint32_t    fMCRecStorage[32];
 
-    SkBounder*  fBounder;
     int         fSaveLayerCount;    // number of successful saveLayer calls
     int         fCullCount;         // number of active culls
 
@@ -1317,6 +1297,7 @@ private:
     friend class SkDrawIter;        // needs setupDrawForLayerDevice()
     friend class AutoDrawLooper;
     friend class SkLua;             // needs top layer size and offset
+    friend class SkDebugCanvas;     // needs experimental fAllowSimplifyClip
     friend class SkDeferredDevice;  // needs getTopDevice()
 
     SkBaseDevice* createLayerDevice(const SkImageInfo&);
@@ -1502,6 +1483,25 @@ private:
     const void* fAddr;      // NULL on failure
     SkImageInfo fInfo;
     size_t      fRowBytes;
+};
+
+static inline SkCanvas::SaveFlags operator|(const SkCanvas::SaveFlags lhs,
+                                            const SkCanvas::SaveFlags rhs) {
+    return static_cast<SkCanvas::SaveFlags>(static_cast<int>(lhs) | static_cast<int>(rhs));
+}
+
+static inline SkCanvas::SaveFlags& operator|=(SkCanvas::SaveFlags& lhs,
+                                              const SkCanvas::SaveFlags rhs) {
+    lhs = lhs | rhs;
+    return lhs;
+}
+
+class SkCanvasClipVisitor {
+public:
+    virtual ~SkCanvasClipVisitor();
+    virtual void clipRect(const SkRect&, SkRegion::Op, bool antialias) = 0;
+    virtual void clipRRect(const SkRRect&, SkRegion::Op, bool antialias) = 0;
+    virtual void clipPath(const SkPath&, SkRegion::Op, bool antialias) = 0;
 };
 
 #endif

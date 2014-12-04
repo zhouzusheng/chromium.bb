@@ -89,9 +89,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
     return host_.get();
   }
 
-  // Overridden from NativeWidget:
-  virtual ui::EventHandler* GetEventHandler() OVERRIDE;
-
   // Ensures that the correct window is activated/deactivated based on whether
   // we are being activated/deactivated.
   void HandleActivationChanged(bool active);
@@ -181,6 +178,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
   virtual void OnRootViewLayout() const OVERRIDE;
+  virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
+  virtual void RepostNativeEvent(gfx::NativeEvent native_event) OVERRIDE;
 
   // Overridden from aura::WindowDelegate:
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
@@ -258,9 +257,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // The following factory is used for calls to close the NativeWidgetAura
   // instance.
   base::WeakPtrFactory<DesktopNativeWidgetAura> close_widget_factory_;
-
-  // Can we be made active?
-  bool can_activate_;
 
   // Child of the root, contains |content_window_|.
   aura::Window* content_window_container_;

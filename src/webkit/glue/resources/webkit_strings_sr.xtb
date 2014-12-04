@@ -27,7 +27,7 @@
 <translation id="1930711995431081526">статус</translation>
 <translation id="658823671542763450">пређите на режим целог екрана</translation>
 <translation id="7720026100085573005">преостало време</translation>
-<translation id="370665806235115550">Учитавање...</translation>
+<translation id="370665806235115550">Учитава се...</translation>
 <translation id="2723001399770238859">аудио</translation>
 <translation id="6845533974506654842">притисни</translation>
 <translation id="8244226242650769279">мапа слике</translation>
@@ -81,6 +81,7 @@
 <translation id="8750798805984357768">Изаберите неку од ових опција.</translation>
 <translation id="7740050170769002709">HTML садржај</translation>
 <translation id="6692633176391053278">контрола за промене у корацима</translation>
+<translation id="4975562563186953947">Изабрано: <ph name="SELECTED_COUNT"/></translation>
 <translation id="8541249477527128034">контрола за медије</translation>
 <translation id="2226276347425096477">Скратите овај текст на <ph name="MAX_CHARACTERS"/> знак(ов)а или мање (тренутно користите <ph name="CURRENT_LENGTH"/> знак(ов)а).</translation>
 <translation id="6101327004457443354">укључите звук аудио снимка</translation>

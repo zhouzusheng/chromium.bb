@@ -18,6 +18,8 @@
 #include "content/common/input/input_event_stream_validator.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 
+struct InputHostMsg_HandleInputEvent_ACK_Params;
+
 namespace IPC {
 class Sender;
 }
@@ -32,6 +34,7 @@ class InputAckHandler;
 class InputRouterClient;
 class OverscrollController;
 class RenderWidgetHostImpl;
+struct DidOverscrollParams;
 
 // A default implementation for browser input event routing.
 class CONTENT_EXPORT InputRouterImpl
@@ -71,13 +74,13 @@ class CONTENT_EXPORT InputRouterImpl
   virtual const NativeWebKeyboardEvent* GetLastKeyboardEvent() const OVERRIDE;
   virtual bool ShouldForwardTouchEvent() const OVERRIDE;
   virtual void OnViewUpdated(int view_flags) OVERRIDE;
+  virtual bool HasPendingEvents() const OVERRIDE;
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
 private:
   friend class InputRouterImplTest;
-  friend class MockRenderWidgetHost;
 
   // TouchpadTapSuppressionControllerClient
   virtual void SendMouseEventImmediately(
@@ -146,9 +149,8 @@ private:
       const GestureEventWithLatencyInfo& pinch_event);
 
   // IPC message handlers
-  void OnInputEventAck(blink::WebInputEvent::Type event_type,
-                       InputEventAckState ack_result,
-                       const ui::LatencyInfo& latency_info);
+  void OnInputEventAck(const InputHostMsg_HandleInputEvent_ACK_Params& ack);
+  void OnDidOverscroll(const DidOverscrollParams& params);
   void OnMsgMoveCaretAck();
   void OnSelectRangeAck();
   void OnHasTouchEventHandlers(bool has_handlers);
@@ -159,7 +161,6 @@ private:
   enum AckSource {
     RENDERER,
     CLIENT,
-    OVERSCROLL_CONTROLLER,
     IGNORING_DISPOSITION,
     ACK_SOURCE_NONE
   };
@@ -194,10 +195,6 @@ private:
   void ProcessTouchAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency);
 
-  // Forwards |ack_result| to the client's OverscrollController, if necessary.
-  void ProcessAckForOverscroll(const blink::WebInputEvent& event,
-                               InputEventAckState ack_result);
-
   // Called when a touch timeout-affecting bit has changed, in turn toggling the
   // touch ack timeout feature of the |touch_event_queue_| as appropriate. Input
   // to that determination includes current view properties and the allowed
@@ -208,8 +205,6 @@ private:
   // If a flush has been requested, signals a completed flush to the client if
   // all events have been dispatched (i.e., |HasPendingEvents()| is false).
   void SignalFlushedIfNecessary();
-
-  bool HasPendingEvents() const;
 
   bool IsInOverscrollGesture() const;
 
@@ -279,7 +274,8 @@ private:
   TouchEventQueue touch_event_queue_;
   GestureEventQueue gesture_event_queue_;
   TouchActionFilter touch_action_filter_;
-  InputEventStreamValidator event_stream_validator_;
+  InputEventStreamValidator input_stream_validator_;
+  InputEventStreamValidator output_stream_validator_;
 
   DISALLOW_COPY_AND_ASSIGN(InputRouterImpl);
 };

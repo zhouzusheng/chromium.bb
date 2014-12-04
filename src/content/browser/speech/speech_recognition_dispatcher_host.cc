@@ -21,11 +21,9 @@
 namespace content {
 
 SpeechRecognitionDispatcherHost::SpeechRecognitionDispatcherHost(
-    bool is_guest,
     int render_process_id,
     net::URLRequestContextGetter* context_getter)
     : BrowserMessageFilter(SpeechRecognitionMsgStart),
-      is_guest_(is_guest),
       render_process_id_(render_process_id),
       context_getter_(context_getter),
       weak_factory_(this) {
@@ -45,16 +43,17 @@ SpeechRecognitionDispatcherHost::AsWeakPtr() {
 }
 
 bool SpeechRecognitionDispatcherHost::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(SpeechRecognitionDispatcherHost, message,
-                           *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(SpeechRecognitionDispatcherHost, message)
     IPC_MESSAGE_HANDLER(SpeechRecognitionHostMsg_StartRequest,
                         OnStartRequest)
     IPC_MESSAGE_HANDLER(SpeechRecognitionHostMsg_AbortRequest,
                         OnAbortRequest)
     IPC_MESSAGE_HANDLER(SpeechRecognitionHostMsg_StopCaptureRequest,
                         OnStopCaptureRequest)
+    IPC_MESSAGE_HANDLER(SpeechRecognitionHostMsg_AbortAllRequests,
+                        OnAbortAllRequests)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -87,15 +86,14 @@ void SpeechRecognitionDispatcherHost::OnStartRequest(
 
   int embedder_render_process_id = 0;
   int embedder_render_view_id = MSG_ROUTING_NONE;
-  if (is_guest_) {
+  RenderViewHostImpl* render_view_host =
+      RenderViewHostImpl::FromID(render_process_id_, params.render_view_id);
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      WebContents::FromRenderViewHost(render_view_host));
+  BrowserPluginGuest* guest = web_contents->GetBrowserPluginGuest();
+  if (guest) {
     // If the speech API request was from a guest, save the context of the
     // embedder since we will use it to decide permission.
-    RenderViewHostImpl* render_view_host =
-        RenderViewHostImpl::FromID(render_process_id_, params.render_view_id);
-    WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-        WebContents::FromRenderViewHost(render_view_host));
-    BrowserPluginGuest* guest = web_contents->GetBrowserPluginGuest();
-
     embedder_render_process_id =
         guest->embedder_web_contents()->GetRenderProcessHost()->GetID();
     DCHECK_NE(embedder_render_process_id, 0);
@@ -166,6 +164,11 @@ void SpeechRecognitionDispatcherHost::OnAbortRequest(int render_view_id,
   // started as expected, e.g., due to unsatisfied security requirements.
   if (session_id != SpeechRecognitionManager::kSessionIDInvalid)
     SpeechRecognitionManager::GetInstance()->AbortSession(session_id);
+}
+
+void SpeechRecognitionDispatcherHost::OnAbortAllRequests(int render_view_id) {
+  SpeechRecognitionManager::GetInstance()->AbortAllSessionsForRenderView(
+      render_process_id_, render_view_id);
 }
 
 void SpeechRecognitionDispatcherHost::OnStopCaptureRequest(

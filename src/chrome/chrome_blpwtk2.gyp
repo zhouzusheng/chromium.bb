@@ -38,6 +38,8 @@
         '../base/base.gyp:base_prefs',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../components/components.gyp:keyed_service_content',
+        '../components/components.gyp:keyed_service_core',
+        '../components/components.gyp:pref_registry',
         '../components/components.gyp:user_prefs',
         '../content/content.gyp:content',
         '../ipc/ipc.gyp:ipc',
@@ -114,7 +116,6 @@
         'common/spellcheck_result.h',
         'renderer/printing/print_web_view_helper.cc',
         'renderer/printing/print_web_view_helper.h',
-        'renderer/printing/print_web_view_helper_win.cc',
         'renderer/spellchecker/custom_dictionary_engine.cc',
         'renderer/spellchecker/custom_dictionary_engine.h',
         'renderer/spellchecker/hunspell_engine.cc',
@@ -128,6 +129,19 @@
         'renderer/spellchecker/spellcheck_worditerator.cc',
         'renderer/spellchecker/spellcheck_worditerator.h',
         'renderer/spellchecker/spelling_engine.h',
+      ],
+      'conditions': [
+        ['win_pdf_metafile_for_printing==1', {
+          'sources': [
+            'browser/printing/pdf_to_emf_converter.cc',
+            'browser/printing/pdf_to_emf_converter.h',
+            'renderer/printing/print_web_view_helper_pdf_win.cc',
+          ],
+        }, {
+          'sources': [
+            'renderer/printing/print_web_view_helper_win.cc',
+          ],
+        }],
       ],
     },
   ],

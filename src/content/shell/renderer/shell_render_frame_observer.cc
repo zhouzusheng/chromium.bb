@@ -11,7 +11,7 @@
 
 // SHEZ: Remove test-only code
 // #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
-// #include "content/shell/renderer/test_runner/WebTestRunner.h"
+// #include "content/shell/renderer/test_runner/web_test_runner.h"
 
 #include "third_party/WebKit/public/web/WebFrame.h"
 
@@ -26,7 +26,7 @@ ShellRenderFrameObserver::ShellRenderFrameObserver(RenderFrame* render_frame)
 #if 0
   render_frame->GetWebFrame()->setPermissionClient(
       ShellRenderProcessObserver::GetInstance()->test_interfaces()->
-          testRunner()->webPermissions());
+          testRunner()->GetWebPermissions());
 #endif
 }
 

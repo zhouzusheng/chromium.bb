@@ -19,6 +19,7 @@
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/filename_util.h"
 
@@ -129,6 +130,14 @@ void ShellDevToolsFrontend::DocumentOnLoadCompletedInMainFrame() {
 void ShellDevToolsFrontend::WebContentsDestroyed() {
   DevToolsManager::GetInstance()->ClientHostClosing(frontend_host_.get());
   delete this;
+}
+
+void ShellDevToolsFrontend::RenderProcessGone(base::TerminationStatus status) {
+  // SHEZ: Remove test-only code.
+#if 0
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    WebKitTestController::Get()->DevToolsProcessCrashed();
+#endif
 }
 
 void ShellDevToolsFrontend::InspectedContentsClosing() {

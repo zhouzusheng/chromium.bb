@@ -20,7 +20,7 @@
 #include "config.h"
 #include "core/rendering/InlineFlowBox.h"
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/dom/Document.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
@@ -278,7 +278,7 @@ static inline bool isLastChildForRenderer(RenderObject* ancestor, RenderObject* 
     RenderObject* curr = child;
     RenderObject* parent = curr->parent();
     while (parent && (!parent->isRenderBlock() || parent->isInline())) {
-        if (parent->lastChild() != curr)
+        if (parent->slowLastChild() != curr)
             return false;
         if (parent == ancestor)
             return true;
@@ -1142,12 +1142,17 @@ void InlineFlowBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         return;
 
     PaintPhase paintPhase = paintInfo.phase == PaintPhaseChildOutlines ? PaintPhaseOutline : paintInfo.phase;
-    PaintInfo childInfo(paintInfo);
-    childInfo.phase = paintPhase;
-    childInfo.updatePaintingRootForChildren(&renderer());
 
     // Paint our children.
     if (paintPhase != PaintPhaseSelfOutline) {
+        PaintInfo childInfo(paintInfo);
+        childInfo.phase = paintPhase;
+
+        if (childInfo.paintingRoot && childInfo.paintingRoot->isDescendantOf(&renderer()))
+            childInfo.paintingRoot = 0;
+        else
+            childInfo.updatePaintingRootForChildren(&renderer());
+
         for (InlineBox* curr = firstChild(); curr; curr = curr->nextOnLine()) {
             if (curr->renderer().isText() || !curr->boxModelObject()->hasSelfPaintingLayer())
                 curr->paint(childInfo, paintOffset, lineTop, lineBottom);

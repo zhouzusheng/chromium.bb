@@ -13,7 +13,7 @@ namespace i18n {
 
 // Call this function to load ICU's data tables for the current process.  This
 // function should be called before ICU is used.
-BASE_I18N_EXPORT bool InitializeICU();
+BASE_I18N_EXPORT bool InitializeICU(const void **data);
 
 #if defined(OS_ANDROID)
 // Android uses a file descriptor passed by browser process to initialize ICU

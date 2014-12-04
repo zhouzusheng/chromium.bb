@@ -886,4 +886,9 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 EAT_STREAM_PARAMETERS
 #endif
 
+// Calls OutputDebugString with the formatted string, pre-pended with the time
+// in milliseconds.
+BASE_EXPORT void EnableDebugWithTime(bool enabled);
+BASE_EXPORT void DebugWithTime(const char *format, ...);
+
 #endif  // BASE_LOGGING_H_

@@ -272,4 +272,11 @@ void resetPluginCache(bool reloadPages)
     WebCore::Page::refreshPlugins(reloadPages);
 }
 
+void allowNonWindowContexts_Unsafe()
+{
+#ifdef BB_SUPPORT_NON_WINDOW_CONTEXT
+    WebCore::setNonWindowContextsAllowed(true);
+#endif
+}
+
 } // namespace blink

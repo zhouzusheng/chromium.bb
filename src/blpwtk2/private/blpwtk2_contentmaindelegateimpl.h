@@ -65,11 +65,6 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
 
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
     void appendCommandLineSwitch(const char* switchString);
-    void registerPlugin(const char* pluginPath);
-
-    // Must be called on the browser-main thread.
-    // TODO: clean this up
-    void addPluginsToPluginService();
 
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
@@ -80,7 +75,6 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
         CreateContentRendererClient() OVERRIDE;
 
   private:
-    std::vector<base::FilePath> d_pluginPaths;
     std::vector<std::string> d_commandLineSwitches;
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;

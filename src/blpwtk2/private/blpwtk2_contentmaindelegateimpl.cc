@@ -32,7 +32,6 @@
 #include <base/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
-#include <content/public/browser/plugin_service.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/user_agent.h>
 #include <ui/base/resource/resource_bundle.h>
@@ -103,20 +102,6 @@ void ContentMainDelegateImpl::appendCommandLineSwitch(const char* switchString)
     if (0 == std::strncmp(switchString, "--", 2))
         switchString += 2;
     d_commandLineSwitches.push_back(switchString);
-}
-
-void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
-{
-    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
-    path = base::MakeAbsoluteFilePath(path);
-    d_pluginPaths.push_back(path);
-}
-
-void ContentMainDelegateImpl::addPluginsToPluginService()
-{
-    for (size_t i = 0; i < d_pluginPaths.size(); ++i) {
-        content::PluginService::GetInstance()->AddExtraPluginPath(d_pluginPaths[i]);
-    }
 }
 
 // ContentMainDelegate implementation

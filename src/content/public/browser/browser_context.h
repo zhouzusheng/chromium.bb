@@ -149,6 +149,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // responsible for ensuring that it outlives RenderProcessHost. It's valid to
   // return NULL.
   virtual PushMessagingService* GetPushMessagingService() = 0;
+
+  // Returns true if the spellcheck service should download dictionaries.
+  virtual bool AllowDictionaryDownloads() = 0;
 };
 
 }  // namespace content

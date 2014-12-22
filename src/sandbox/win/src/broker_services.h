@@ -109,6 +109,11 @@ class BrokerServicesBase FINAL : public BrokerServices,
   typedef std::map<uint32_t, std::pair<HANDLE, HANDLE>> TokenCacheMap;
   TokenCacheMap token_cache_;
 
+#if SANDBOX_DLL
+  // Stores the module name where sandbox.lib is linked into.
+  scoped_ptr<wchar_t, base::FreeDeleter> module_path_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(BrokerServicesBase);
 };
 

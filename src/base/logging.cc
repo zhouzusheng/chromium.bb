@@ -45,6 +45,7 @@ typedef pthread_mutex_t* MutexHandle;
 #include <ostream>
 #include <string>
 
+#include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
@@ -543,7 +544,7 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 
 LogMessage::~LogMessage() {
 #if !defined(NDEBUG) && !defined(OS_NACL) && !defined(__UCLIBC__)
-  if (severity_ == LOG_FATAL) {
+  if (severity_ == LOG_FATAL && base::AtExitManager::IsInitialized()) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
     stream_ << std::endl;  // Newline to separate from log message.
@@ -812,4 +813,27 @@ std::wstring GetLogFileFullPath() {
 
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << base::WideToUTF8(std::wstring(wstr));
+}
+
+static bool g_debugWithTimeEnabled = false;
+void EnableDebugWithTime(bool enabled)
+{
+    g_debugWithTimeEnabled = enabled;
+}
+
+void DebugWithTime(const char *format, ...)
+{
+    if (!g_debugWithTimeEnabled) return;
+
+    va_list arglist;
+    va_start(arglist, format);
+
+    static base::TimeTicks START_TIME = base::TimeTicks::Now();
+    int milliseconds = (base::TimeTicks::Now() - START_TIME).InMilliseconds();
+    int threadId = base::PlatformThread::CurrentId();
+
+    char buf[1024];
+    int timeLen = sprintf_s(buf, sizeof(buf), "DWT: %d - %d: ", threadId, milliseconds);
+    _vsprintf_s_l(buf+timeLen, sizeof(buf)-timeLen, format, NULL, arglist);
+    OutputDebugStringA(buf);
 }

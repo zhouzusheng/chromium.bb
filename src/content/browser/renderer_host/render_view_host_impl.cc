@@ -547,7 +547,7 @@ void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
         ++views;
     }
 
-    if (!RenderProcessHost::run_renderer_in_process() &&
+    if (!GetProcess()->IsProcessManagedExternally() &&
         process_handle && views <= 1) {
       // The process can safely be terminated, only if WebContents sets
       // SuddenTerminationAllowed, which indicates that the timer has expired.
@@ -879,6 +879,14 @@ void RenderViewHostImpl::GotFocus() {
   RenderViewHostDelegateView* view = delegate_->GetDelegateView();
   if (view)
     view->GotFocus();
+}
+
+void RenderViewHostImpl::LostFocus() {
+  RenderWidgetHostImpl::LostFocus();  // Notifies the renderer it lost focus.
+
+  RenderViewHostDelegateView* view = delegate_->GetDelegateView();
+  if (view)
+    view->LostFocus();
 }
 
 void RenderViewHostImpl::LostCapture() {

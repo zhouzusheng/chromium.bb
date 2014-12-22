@@ -23,8 +23,8 @@
             'targets':
             [
                 {
-                    'target_name': 'libGLESv2',
-                    'type': 'shared_library',
+                    'target_name': 'libGLESv2_static',
+                    'type': 'static_library',
                     'dependencies': [ 'translator', 'commit_id', 'copy_compiler_dll' ],
                     'includes': [ '../build/common_defines.gypi', ],
                     'include_dirs':
@@ -37,8 +37,8 @@
                     [
                         '<!@(python <(angle_path)/enumerate_files.py \
                              -dirs common libGLESv2 third_party/murmurhash ../include third_party/systeminfo \
-                             -types *.cpp *.h *.hlsl *.vs *.ps *.bat *.def *.rc \
-                             -excludes */d3d/* */d3d9/* */d3d11/*)',
+                             -types *.cpp *.h *.hlsl *.vs *.ps *.bat \
+                             -excludes */d3d/* */d3d9/* */d3d11/* common/version.h libGLESv2/dllmain.cpp)',
                     ],
                     'defines':
                     [
@@ -60,15 +60,12 @@
                             [
                                 'ANGLE_ENABLE_D3D9',
                             ],
-                            'msvs_settings':
+                            'link_settings':
                             {
-                                'VCLinkerTool':
-                                {
-                                    'AdditionalDependencies':
-                                    [
-                                        'd3d9.lib',
-                                    ]
-                                }
+                                'libraries':
+                                [
+                                    '-ld3d9.lib',
+                                ]
                             },
                         }],
                         ['angle_enable_d3d11==1',
@@ -83,15 +80,12 @@
                             [
                                 'ANGLE_ENABLE_D3D11',
                             ],
-                            'msvs_settings':
+                            'link_settings':
                             {
-                                'VCLinkerTool':
-                                {
-                                    'AdditionalDependencies':
-                                    [
-                                        'dxguid.lib',
-                                    ],
-                                },
+                                'libraries':
+                                [
+                                    '-ldxguid.lib',
+                                ],
                             },
                         }],
                     ],
@@ -104,18 +98,26 @@
                             [
                                 'ANGLE_ENABLE_PERF',
                             ],
-                            'msvs_settings':
-                            {
-                                'VCLinkerTool':
-                                {
-                                    'AdditionalDependencies':
-                                    [
-                                        'd3d9.lib',
-                                    ]
-                                }
-                            },
                         },
                     },
+                },
+                {
+                    'target_name': 'libGLESv2_shared',
+                    'product_name': 'libGLESv2',
+                    'type': 'shared_library',
+                    'dependencies': [ 'libGLESv2_static', 'commit_id' ],
+                    'include_dirs':
+                    [
+                        '.',
+                        '../include',
+                    ],
+                    'sources':
+                    [
+                        'common/version.h',
+                        'libGLESv2/dllmain.cpp',
+                        'libGLESv2/libGLESv2.def',
+                        'libGLESv2/libGLESv2.rc',
+                    ],
                 },
             ],
         },

@@ -60,17 +60,20 @@ FrameTree::FrameTree(Navigator* navigator,
                      RenderFrameHostDelegate* render_frame_delegate,
                      RenderViewHostDelegate* render_view_delegate,
                      RenderWidgetHostDelegate* render_widget_delegate,
-                     RenderFrameHostManager::Delegate* manager_delegate)
+                     RenderFrameHostManager::Delegate* manager_delegate,
+                     int render_process_affinity)
     : render_frame_delegate_(render_frame_delegate),
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       manager_delegate_(manager_delegate),
+      render_process_affinity_(render_process_affinity),
       root_(new FrameTreeNode(this,
                               navigator,
                               render_frame_delegate,
                               render_view_delegate,
                               render_widget_delegate,
                               manager_delegate,
+                              render_process_affinity,
                               std::string())),
       focused_frame_tree_node_id_(-1) {
 }
@@ -112,7 +115,7 @@ RenderFrameHostImpl* FrameTree::AddFrame(FrameTreeNode* parent,
                                          const std::string& frame_name) {
   scoped_ptr<FrameTreeNode> node(new FrameTreeNode(
       this, parent->navigator(), render_frame_delegate_, render_view_delegate_,
-      render_widget_delegate_, manager_delegate_, frame_name));
+      render_widget_delegate_, manager_delegate_, render_process_affinity_, frame_name));
   FrameTreeNode* node_ptr = node.get();
   // AddChild is what creates the RenderFrameHost.
   parent->AddChild(node.Pass(), new_routing_id);

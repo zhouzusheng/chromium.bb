@@ -1447,6 +1447,9 @@ Color RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLink) c
     case CSSPropertyOutlineColor:
         result = visitedLink ? visitedLinkOutlineColor() : outlineColor();
         break;
+    case CSSPropertyWebkitCaretColor:
+        result = !caretColor().isCurrentColor() ? caretColor() : visitedLink ? visitedLinkColor() : color();
+        break;
     case CSSPropertyWebkitColumnRuleColor:
         result = visitedLink ? visitedLinkColumnRuleColor() : columnRuleColor();
         break;

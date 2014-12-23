@@ -123,6 +123,7 @@ box-sizing
 -webkit-box-sizing alias_for=box-sizing
 caption-side
 -epub-caption-side alias_for=caption-side
+-webkit-caret-color
 clear
 clip
 -webkit-clip-path

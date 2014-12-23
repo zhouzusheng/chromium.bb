@@ -1344,7 +1344,6 @@ void RenderWidgetHostViewAura::SetCompositionText(
     underlines.push_back(
         blink::WebCompositionUnderline(static_cast<unsigned>(it->start_offset),
                                        static_cast<unsigned>(it->end_offset),
-                                       it->color,
                                        it->thick,
                                        it->background_color));
   }

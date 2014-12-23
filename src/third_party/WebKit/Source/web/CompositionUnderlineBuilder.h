@@ -45,7 +45,7 @@ class CompositionUnderlineBuilder : public WebCore::CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
         : WebCore::CompositionUnderline(u.startOffset, u.endOffset,
-            WebCore::Color(u.color), u.thick,
+            u.thick,
             WebCore::Color(u.backgroundColor)) { }
 };
 

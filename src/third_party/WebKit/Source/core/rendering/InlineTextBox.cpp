@@ -774,9 +774,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
             const Vector<CompositionUnderline>& underlines = renderer().frame()->inputMethodController().customCompositionUnderlines();
             CompositionUnderlineRangeFilter filter(underlines, start(), end());
             for (CompositionUnderlineRangeFilter::ConstIterator it = filter.begin(); it != filter.end(); ++it) {
-                if (it->color == Color::transparent)
-                    continue;
-                paintCompositionUnderline(context, boxOrigin, *it);
+                paintCompositionUnderline(context, boxOrigin, *it, textFillColor);
             }
         }
     }
@@ -1382,7 +1380,7 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
     }
 }
 
-void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatPoint& boxOrigin, const CompositionUnderline& underline)
+void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatPoint& boxOrigin, const CompositionUnderline& underline, const Color& color)
 {
     if (m_truncation == cFullTruncation)
         return;
@@ -1410,7 +1408,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
     start += 1;
     width -= 2;
 
-    ctx->setStrokeColor(underline.color);
+    ctx->setStrokeColor(color);
     ctx->setStrokeThickness(lineThickness);
     ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + logicalHeight() - lineThickness), width, textRenderer().document().printing());
 }

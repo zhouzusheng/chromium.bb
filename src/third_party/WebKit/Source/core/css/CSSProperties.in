@@ -194,6 +194,7 @@ backface-visibility
 -webkit-box-pack
 -webkit-box-reflect converter=convertBoxReflect
 -webkit-box-shadow use_handlers_for=CSSPropertyBoxShadow
+-webkit-caret-color custom_value
 -webkit-clip-path custom_value
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak

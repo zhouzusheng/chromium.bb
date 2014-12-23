@@ -469,7 +469,7 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
     v8::Isolate* isolate = toIsolate(frame);
     v8::HandleScope handleScope(isolate);
 
-    v8::Handle<v8::Context> context = toV8Context(isolate, frame, DOMWrapperWorld::mainWorld());
+    v8::Handle<v8::Context> context = toV8Context(frame, DOMWrapperWorld::mainWorld());
     v8::Context::Scope contextScope(context);
 
     v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();

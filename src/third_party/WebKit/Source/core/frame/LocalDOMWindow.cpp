@@ -1897,7 +1897,7 @@ void LocalDOMWindow::showModalDialog(const String& urlString, const String& dial
     dialogFrame->host()->chrome().runModal();
 }
 
-BBWindowHooks* DOMWindow::bbWindowHooks() const
+BBWindowHooks* LocalDOMWindow::bbWindowHooks() const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;

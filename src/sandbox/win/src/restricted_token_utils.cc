@@ -101,21 +101,6 @@ DWORD CreateRestrictedToken(HANDLE *token_handle,
       restricted_token.AddRestrictingSid(WinNullSid);
       break;
     }
-    case USER_WPFMIN_LOCKDOWN: {
-      privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
-      break;
-    }
-    case USER_WPFMIN_INITIAL: {
-      sid_exceptions.push_back(WinBuiltinUsersSid);
-      sid_exceptions.push_back(WinWorldSid);
-      privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
-      restricted_token.AddRestrictingSid(WinWorldSid);
-      restricted_token.AddRestrictingSidCurrentUser();
-      restricted_token.AddRestrictingSidLogonSession();
-      break;
-    }
     default: {
       return ERROR_BAD_ARGUMENTS;
     }

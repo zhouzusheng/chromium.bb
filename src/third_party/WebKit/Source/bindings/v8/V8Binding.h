@@ -753,10 +753,6 @@ inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t&
 v8::Isolate* toIsolate(ExecutionContext*);
 v8::Isolate* toIsolate(LocalFrame*);
 
-#define BB_SUPPORT_NON_WINDOW_CONTEXT 1
-bool isNonWindowContextsAllowed();
-void setNonWindowContextsAllowed(bool allowed);
-
 DOMWindow* toDOMWindow(v8::Handle<v8::Value>, v8::Isolate*);
 DOMWindow* toDOMWindow(v8::Handle<v8::Context>);
 DOMWindow* enteredDOMWindow(v8::Isolate*);

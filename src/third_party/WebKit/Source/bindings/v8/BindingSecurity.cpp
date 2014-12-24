@@ -47,7 +47,7 @@ static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, DOMWindo
         return false;
 
     if (!callingWindow)
-        return isNonWindowContextsAllowed();
+        return false;
 
     if (callingWindow->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;

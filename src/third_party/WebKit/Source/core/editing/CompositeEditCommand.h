@@ -124,7 +124,7 @@ protected:
     HTMLElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtrWillBeRawPtr<HTMLElement>);
     void removeNodePreservingChildren(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void removeNodeAndPruneAncestors(PassRefPtrWillBeRawPtr<Node>, Node* excludeNode = 0);
-    void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtrWillBeRawPtr<Element> prpNewParent);
+    void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtrWillBeRawPtr<Element> prpNewParent, PassRefPtrWillBeRawPtr<Node> prpRefChild = nullptr);
     void updatePositionForNodeRemovalPreservingChildren(Position&, Node&);
     void prune(PassRefPtrWillBeRawPtr<Node>, Node* excludeNode = 0);
     void replaceTextInNode(PassRefPtrWillBeRawPtr<Text>, unsigned offset, unsigned count, const String& replacementText);
@@ -163,6 +163,13 @@ protected:
     bool breakOutOfEmptyMailBlockquotedParagraph();
 
     Position positionAvoidingSpecialElementBoundary(const Position&);
+
+    bool prepareForBlockCommand(VisiblePosition& startOfSelection, VisiblePosition& endOfSelection,
+                                RefPtrWillBeRawPtr<ContainerNode>& startScope, RefPtrWillBeRawPtr<ContainerNode>& endScope,
+                                int& startIndex, int& endIndex,
+                                bool includeEmptyParagraphAtEnd);
+    void finishBlockCommand(PassRefPtrWillBeRawPtr<ContainerNode> startScope, PassRefPtrWillBeRawPtr<ContainerNode> endScope,
+                            int startIndex, int endIndex);
 
     PassRefPtrWillBeRawPtr<Node> splitTreeToNode(Node*, Node*, bool splitAncestor = false);
 

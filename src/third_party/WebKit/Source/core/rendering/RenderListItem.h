@@ -72,6 +72,8 @@ private:
     bool updateMarkerLocation();
     void updateMarkerLocationAndInvalidateWidth();
 
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     void positionListMarker();
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;

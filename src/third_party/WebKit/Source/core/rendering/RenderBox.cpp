@@ -2263,7 +2263,7 @@ LayoutUnit RenderBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth) con
 
 LayoutUnit RenderBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth, LayoutUnit& marginStart, LayoutUnit& marginEnd) const
 {
-    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth);
+    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth) + additionalMarginStart();
     marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth);
     return availableLogicalWidth - marginStart - marginEnd;
 }
@@ -2410,7 +2410,7 @@ void RenderBox::computeMarginsForDirection(MarginDirection flowDirection, const 
         // Margins are calculated with respect to the logical width of
         // the containing block (8.3)
         // Inline blocks/tables and floats don't have their margins increased.
-        marginStart = minimumValueForLength(marginStartLength, containerWidth);
+        marginStart = minimumValueForLength(marginStartLength, containerWidth) + additionalMarginStart();
         marginEnd = minimumValueForLength(marginEndLength, containerWidth);
         return;
     }
@@ -2425,7 +2425,7 @@ void RenderBox::computeMarginsForDirection(MarginDirection flowDirection, const 
             marginEndLength.setValue(0);
     }
 
-    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth);
+    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth) + additionalMarginStart();
     LayoutUnit marginEndWidth = minimumValueForLength(marginEndLength, containerWidth);
 
     LayoutUnit availableWidth = containerWidth;
@@ -2465,7 +2465,7 @@ void RenderBox::computeMarginsForDirection(MarginDirection flowDirection, const 
         || (containingBlockStyle->isLeftToRightDirection() && containingBlockStyle->textAlign() == WEBKIT_RIGHT));
     if ((marginStartLength.isAuto() && marginBoxWidth < availableWidth) || pushToEndFromTextAlign) {
         marginEnd = marginEndWidth;
-        marginStart = availableWidth - childWidth - marginEnd;
+        marginStart = availableWidth - childWidth - marginEnd + additionalMarginStart();
         return;
     }
 

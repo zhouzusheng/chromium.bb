@@ -340,8 +340,11 @@ bool RenderListItem::updateMarkerLocation()
 
 LayoutUnit RenderListItem::additionalMarginStart() const
 {
-    const_cast<RenderListItem*>(this)->updateMarkerLocation();
-    return m_marker && !m_marker->isInside() ? m_marker->minPreferredLogicalWidth() : LayoutUnit();
+    if (!m_marker || m_marker->isInside())
+        return LayoutUnit();
+
+    const_cast<RenderListItem*>(this)->updateMarkerLocationAndInvalidateWidth();
+    return m_marker->minPreferredLogicalWidth();
 }
 
 void RenderListItem::layout()

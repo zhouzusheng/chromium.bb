@@ -1428,7 +1428,7 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
     // setNeedsLayoutAndPrefWidthsRecalc() only if this RenderText has parent.
     if (parent()) {
         if (shouldSkipRelayoutOnSetText(this))
-            parent()->repaint();
+            parent()->paintInvalidationForWholeRenderer();
         else
             setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     }

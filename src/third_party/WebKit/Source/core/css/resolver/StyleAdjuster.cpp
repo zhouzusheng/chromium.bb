@@ -288,10 +288,10 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
 
     if (e && e->hasTagName(htmlTag)) {
         if (e->document().frame() &&
-            e->document().frame()->ownerElement() &&
-            e->document().frame()->ownerElement()->renderer()) {
+            e->document().frame()->deprecatedLocalOwner() &&
+            e->document().frame()->deprecatedLocalOwner()->renderer()) {
             float ownerEffectiveZoom
-                = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
+                = e->document().frame()->deprecatedLocalOwner()->renderer()->style()->effectiveZoom();
             float childZoom = style->zoom();
             style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }

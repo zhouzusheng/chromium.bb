@@ -34,7 +34,7 @@ class CSSStyleSheet;
 
 class ProcessingInstruction FINAL : public CharacterData, private ResourceOwner<StyleSheetResource> {
 public:
-    static PassRefPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
+    static PassRefPtrWillBeRawPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
     virtual ~ProcessingInstruction();
     virtual void trace(Visitor*) OVERRIDE;
 
@@ -57,7 +57,7 @@ private:
 
     virtual String nodeName() const OVERRIDE;
     virtual NodeType nodeType() const OVERRIDE;
-    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -71,6 +71,7 @@ private:
     virtual bool sheetLoaded() OVERRIDE;
 
     void parseStyleSheet(const String& sheet);
+    void clearSheet();
 
     String m_target;
     String m_localHref;
@@ -85,6 +86,11 @@ private:
 };
 
 DEFINE_NODE_TYPE_CASTS(ProcessingInstruction, nodeType() == Node::PROCESSING_INSTRUCTION_NODE);
+
+inline bool isXSLStyleSheet(const Node& node)
+{
+    return node.nodeType() == Node::PROCESSING_INSTRUCTION_NODE && toProcessingInstruction(node).isXSL();
+}
 
 } // namespace WebCore
 

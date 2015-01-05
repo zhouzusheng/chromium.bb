@@ -65,6 +65,7 @@ class ProcessClientImpl : public ProcessClient,
     virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
     virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
     virtual void OnChannelError() OVERRIDE;
+    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
     // Control message handlers
     void onSetInProcessRendererChannelName(const std::string& channelName);

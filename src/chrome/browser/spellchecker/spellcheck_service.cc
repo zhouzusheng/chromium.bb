@@ -4,7 +4,6 @@
 
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 
-#include "base/platform_file.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_split.h"
@@ -183,9 +182,10 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     SpellcheckHunspellDictionary *d = *it;
     IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
 
-    if (d->GetDictionaryFile() != base::kInvalidPlatformFileValue) {
+    if (d->GetDictionaryFile().IsValid()) {
         file = IPC::GetFileHandleForProcess(
-            d->GetDictionaryFile(), process->GetHandle(), false);
+            d->GetDictionaryFile().GetPlatformFile(),
+            process->GetHandle(), false);
     }
 
     languages.push_back(FileLanguagePair(file, d->GetLanguage()));

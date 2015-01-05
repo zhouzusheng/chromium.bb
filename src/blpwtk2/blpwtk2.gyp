@@ -348,6 +348,15 @@
         'angle/blpangle.def',
         'angle/blpangle.rc',
       ],
+      'defines': [
+        'GL_APICALL=',
+        'GL_GLEXT_PROTOTYPES=',
+        'EGLAPI=',
+      ],
+      'include_dirs': [
+        '<(angle_path)/include',
+        '<(angle_path)/src/common',  # for event_tracer.h
+      ],
     },
     {
       'target_name': 'blpwtk2_subprocess',

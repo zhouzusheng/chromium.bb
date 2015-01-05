@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.7",
+  "version": "7.2",
   "entries": [
     {
       "id": 1,
@@ -860,24 +860,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 67,
-      "description": "Force glFinish() after compositing on Mavericks on Intel GPU",
-      // TODO(ccameron): Get rid of this when we move to CoreAnimation.
-      "cr_bugs": [318877],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": ">=",
-          "value": "10.9"
-        }
-      },
-      "vendor_id": "0x8086",
-      "multi_gpu_category": "active",
-      "features": [
-        "force_gl_finish_after_compositing"
-      ]
-    },
-    {
       "id": 68,
       "description": "Disable partial swaps on linux drivers",
       "cr_bugs": [339493],
@@ -971,9 +953,13 @@ LONG_STRING_CONST(
     {
       "id": 74,
       "cr_bugs": [278606, 382686],
-      "description": "Testing EGL sync fences is broken on most Qualcomm drivers",
+      "description": "Testing EGL sync fences was broken on most Qualcomm drivers",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -984,11 +970,38 @@ LONG_STRING_CONST(
       ]
     },
     {
+      "id": 75,
+      "description": "Mali-400 support of EXT_multisampled_render_to_texture is buggy on Android < 4.3",
+      "cr_bugs": [362435],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "contains",
+        "value": "Mali-400"
+      },
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
       "id": 76,
       "cr_bugs": [371530],
-      "description": "Testing EGL sync fences is broken on IMG",
+      "description": "Testing EGL sync fences was broken on IMG",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -1000,10 +1013,14 @@ LONG_STRING_CONST(
     },
     {
       "id": 77,
-      "cr_bugs": [378691, 373360, 371530],
-      "description": "Testing fences is broken on Mali-400 MP drivers",
+      "cr_bugs": [378691, 373360, 371530, 398964],
+      "description": "Testing fences was broken on Mali ES2 drivers",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -1011,7 +1028,12 @@ LONG_STRING_CONST(
       },
       "gl_renderer": {
         "op": "beginwith",
-        "value": "Mali-400 MP"
+        "value": "Mali"
+      },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.0"
       },
       "features": [
         "disable_egl_khr_fence_sync"
@@ -1020,9 +1042,13 @@ LONG_STRING_CONST(
     {
       "id": 78,
       "cr_bugs": [378691, 373360, 371530],
-      "description": "Testing fences is broken on Broadcom drivers",
+      "description": "Testing fences was broken on Broadcom drivers",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -1030,6 +1056,17 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 79,
+      "cr_bugs": [371530],
+      "description": "Testing ARB sync fences is broken on MacOSX",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "disable_arb_sync"
       ]
     },
     {
@@ -1059,6 +1096,22 @@ LONG_STRING_CONST(
         "type": "win"
       },
       "vendor_id": "0x102b",
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 87,
+      "description": "Disable use of Direct3D 11 on older AMD drivers",
+      "cr_bugs": [402134],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_date": {
+        "op": "<",
+        "value": "2011.1"
+      },
       "features": [
         "disable_d3d11"
       ]

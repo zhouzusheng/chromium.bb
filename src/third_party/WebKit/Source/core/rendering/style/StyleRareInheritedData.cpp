@@ -22,7 +22,8 @@
 #include "config.h"
 #include "core/rendering/style/StyleRareInheritedData.h"
 
-#include "core/rendering/style/CursorList.h"
+#include "core/rendering/style/AppliedTextDecoration.h"
+#include "core/rendering/style/CursorData.h"
 #include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -39,7 +40,7 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     Color colors[5];
     void* ownPtrs[1];
     AtomicString atomicStrings[4];
-    void* refPtrs[2];
+    void* refPtrs[3];
     Length lengths[1];
     float secondFloat;
     unsigned m_bitfields[2];
@@ -92,6 +93,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
     , m_rubyPosition(RenderStyle::initialRubyPosition())
     , m_touchActionDelay(RenderStyle::initialTouchActionDelay())
+    , m_subtreeWillChangeContents(false)
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
@@ -149,6 +151,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
     , m_rubyPosition(o.m_rubyPosition)
     , m_touchActionDelay(o.m_touchActionDelay)
+    , m_subtreeWillChangeContents(o.m_subtreeWillChangeContents)
     , hyphenationString(o.hyphenationString)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
@@ -158,6 +161,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_tabSize(o.m_tabSize)
     , tapHighlightColor(o.tapHighlightColor)
     , caretColor(o.caretColor)
+    , appliedTextDecorations(o.appliedTextDecorations)
 {
 }
 
@@ -213,6 +217,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textIndentLine == o.m_textIndentLine
         && m_textIndentType == o.m_textIndentType
         && m_lineBoxContain == o.m_lineBoxContain
+        && m_subtreeWillChangeContents == o.m_subtreeWillChangeContents
         && hyphenationString == o.hyphenationString
         && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
@@ -222,7 +227,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
         && caretColor == o.caretColor
-        && dataEquivalent(listStyleImage.get(), o.listStyleImage.get());
+        && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
+        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

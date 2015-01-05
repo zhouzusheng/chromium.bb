@@ -31,11 +31,11 @@
 #include "config.h"
 #include "web/ContextMenuClientImpl.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
@@ -164,7 +164,7 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, DocumentMarker& 
 
     // Caret and range selections always return valid normalized ranges.
     RefPtrWillBeRawPtr<Range> selectionRange = selection.toNormalizedRange();
-    Vector<DocumentMarker*> markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
+    WillBeHeapVector<DocumentMarker*> markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     marker = *markers[0];
@@ -469,7 +469,7 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
     v8::Isolate* isolate = toIsolate(frame);
     v8::HandleScope handleScope(isolate);
 
-    v8::Handle<v8::Context> context = toV8Context(isolate, frame, DOMWrapperWorld::mainWorld());
+    v8::Handle<v8::Context> context = toV8Context(frame, DOMWrapperWorld::mainWorld());
     v8::Context::Scope contextScope(context);
 
     v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();

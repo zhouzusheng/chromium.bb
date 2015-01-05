@@ -22,9 +22,8 @@
 #include "config.h"
 #include "core/rendering/HitTestResult.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
+#include "core/HTMLNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -89,7 +88,7 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_isFirstLetter(other.m_isFirstLetter)
 {
     // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
 }
 
 HitTestResult::~HitTestResult()
@@ -110,7 +109,7 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     m_isOverWidget = other.isOverWidget();
 
     // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
 
     return *this;
 }
@@ -276,6 +275,16 @@ IntRect HitTestResult::imageRect() const
 
 KURL HitTestResult::absoluteImageURL() const
 {
+    return absoluteImageURLInternal(false);
+}
+
+KURL HitTestResult::absoluteImageURLIncludingCanvasDataURL() const
+{
+    return absoluteImageURLInternal(true);
+}
+
+KURL HitTestResult::absoluteImageURLInternal(bool allowCanvas) const
+{
     if (!m_innerNonSharedNode)
         return KURL();
 
@@ -284,7 +293,7 @@ KURL HitTestResult::absoluteImageURL() const
         return KURL();
 
     AtomicString urlString;
-    if (isHTMLCanvasElement(*m_innerNonSharedNode)
+    if ((allowCanvas && isHTMLCanvasElement(*m_innerNonSharedNode))
         || isHTMLEmbedElement(*m_innerNonSharedNode)
         || isHTMLImageElement(*m_innerNonSharedNode)
         || isHTMLInputElement(*m_innerNonSharedNode)
@@ -457,14 +466,14 @@ void HitTestResult::append(const HitTestResult& other)
 const HitTestResult::NodeSet& HitTestResult::rectBasedTestResult() const
 {
     if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtr(new NodeSet);
+        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
     return *m_rectBasedTestResult;
 }
 
 HitTestResult::NodeSet& HitTestResult::mutableRectBasedTestResult()
 {
     if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtr(new NodeSet);
+        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
     return *m_rectBasedTestResult;
 }
 

@@ -23,7 +23,6 @@ using blink::WebDocument;
 using blink::WebNode;
 using blink::WebPoint;
 using blink::WebRect;
-using blink::WebSize;
 using blink::WebView;
 
 namespace content {
@@ -73,6 +72,7 @@ bool RendererAccessibilityComplete::OnMessageReceived(
                         OnScrollToPoint)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_SetTextSelection,
                         OnSetTextSelection)
+    IPC_MESSAGE_HANDLER(AccessibilityMsg_HitTest, OnHitTest)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_FatalError, OnFatalError)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -177,14 +177,25 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
   // Generate an event message from each Blink event.
   std::vector<AccessibilityHostMsg_EventParams> event_msgs;
 
+  // If there's a layout complete message, we need to send location changes.
+  bool had_layout_complete_messages = false;
+
   // Loop over each event and generate an updated event message.
   for (size_t i = 0; i < src_events.size(); ++i) {
-    AccessibilityHostMsg_EventParams& event =
-        src_events[i];
+    AccessibilityHostMsg_EventParams& event = src_events[i];
+    if (event.event_type == ui::AX_EVENT_LAYOUT_COMPLETE)
+      had_layout_complete_messages = true;
 
-    WebAXObject obj = document.accessibilityObjectFromID(
-        event.id);
+    WebAXObject obj = document.accessibilityObjectFromID(event.id);
+
+    // Make sure the object still exists.
     if (!obj.updateBackingStoreAndCheckValidity())
+      continue;
+
+    // Make sure it's a descendant of our root node - exceptions include the
+    // scroll area that's the parent of the main document (we ignore it), and
+    // possibly nodes attached to a different document.
+    if (!tree_source_.IsInTree(obj))
       continue;
 
     // When we get a "selected children changed" event, Blink
@@ -201,18 +212,22 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
     serializer_.SerializeChanges(obj, &event_msg.update);
     event_msgs.push_back(event_msg);
 
-#ifndef NDEBUG
-    VLOG(0) << "Accessibility update: \n"
-            << "routing id=" << routing_id()
-            << " event="
-            << AccessibilityEventToString(event.event_type)
+    // For each node in the update, set the location in our map from
+    // ids to locations.
+    for (size_t i = 0; i < event_msg.update.nodes.size(); ++i) {
+      locations_[event_msg.update.nodes[i].id] =
+          event_msg.update.nodes[i].location;
+    }
+
+    VLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
+            << " on node id " << event_msg.id
             << "\n" << event_msg.update.ToString();
-#endif
   }
 
   Send(new AccessibilityHostMsg_Events(routing_id(), event_msgs));
 
-  SendLocationChanges();
+  if (had_layout_complete_messages)
+    SendLocationChanges();
 }
 
 void RendererAccessibilityComplete::SendLocationChanges() {
@@ -244,6 +259,12 @@ void RendererAccessibilityComplete::SendLocationChanges() {
 
     // Save the new location.
     new_locations[id] = new_location;
+
+    // Explore children of this object.
+    std::vector<blink::WebAXObject> children;
+    tree_source_.GetChildren(obj, &children);
+    for (size_t i = 0; i < children.size(); ++i)
+      objs_to_explore.push(children[i]);
   }
   locations_.swap(new_locations);
 
@@ -339,6 +360,19 @@ void RendererAccessibilityComplete::OnSetTextSelection(
     if (input_element && input_element->isTextField())
       input_element->setSelectionRange(start_offset, end_offset);
   }
+}
+
+void RendererAccessibilityComplete::OnHitTest(gfx::Point point) {
+  const WebDocument& document = GetMainDocument();
+  if (document.isNull())
+    return;
+  WebAXObject root_obj = document.accessibilityObject();
+  if (!root_obj.updateBackingStoreAndCheckValidity())
+    return;
+
+  WebAXObject obj = root_obj.hitTest(point);
+  if (!obj.isDetached())
+    HandleAXEvent(obj, ui::AX_EVENT_HOVER);
 }
 
 void RendererAccessibilityComplete::OnEventsAck() {

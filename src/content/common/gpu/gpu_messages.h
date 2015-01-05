@@ -12,6 +12,7 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/gpu_memory_stats.h"
 #include "gpu/command_buffer/common/capabilities.h"
@@ -43,6 +44,8 @@
 
 IPC_ENUM_TRAITS_MAX_VALUE(content::CauseForGpuLaunch,
                           content::CAUSE_FOR_GPU_LAUNCH_MAX_ENUM - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(content::CreateCommandBufferResult,
+                          content::CREATE_COMMAND_BUFFER_RESULT_LAST);
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::GpuPreference,
                           gfx::GpuPreferenceLast)
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::SurfaceType,
@@ -222,13 +225,6 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::MemoryAllocation)
   IPC_STRUCT_TRAITS_MEMBER(priority_cutoff_when_visible)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(gpu::ManagedMemoryStats)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_required)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_nice_to_have)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_allocated)
-  IPC_STRUCT_TRAITS_MEMBER(backbuffer_requested)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(gfx::GLSurfaceHandle)
   IPC_STRUCT_TRAITS_MEMBER(handle)
   IPC_STRUCT_TRAITS_MEMBER(transport_type)
@@ -282,6 +278,18 @@ IPC_MESSAGE_CONTROL3(GpuMsg_DeleteImage,
                      int32, /* image_id */
                      int32 /* sync_point */)
 
+// Tells the GPU process to create a new gpu memory buffer for |handle|.
+IPC_MESSAGE_CONTROL4(GpuMsg_CreateGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferHandle, /* handle */
+                     gfx::Size, /* size */
+                     unsigned, /* internalformat */
+                     unsigned /* usage */)
+
+// Tells the GPU process to destroy buffer.
+IPC_MESSAGE_CONTROL2(GpuMsg_DestroyGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferHandle, /* handle */
+                     int32 /* sync_point */)
+
 // Tells the GPU process to create a context for collecting graphics card
 // information.
 IPC_MESSAGE_CONTROL0(GpuMsg_CollectGraphicsInfo)
@@ -330,7 +338,7 @@ IPC_SYNC_MESSAGE_CONTROL3_1(GpuHostMsg_CreateViewCommandBuffer,
                             int32, /* surface_id */
                             GPUCreateCommandBufferConfig, /* init_params */
                             int32, /* route_id */
-                            bool /* succeeded */)
+                            content::CreateCommandBufferResult /* result */)
 
 // Response from GPU to a GputMsg_Initialize message.
 IPC_MESSAGE_CONTROL2(GpuHostMsg_Initialized,
@@ -357,7 +365,7 @@ IPC_MESSAGE_CONTROL1(GpuMsg_LoadedShader,
 
 // Respond from GPU to a GpuMsg_CreateViewCommandBuffer message.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_CommandBufferCreated,
-                     bool /* succeeded */)
+                     content::CreateCommandBufferResult /* result */)
 
 // Request from GPU to free the browser resources associated with the
 // command buffer.
@@ -367,6 +375,10 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_DestroyCommandBuffer,
 // Response from GPU to a GpuMsg_CreateImage message.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_ImageCreated,
                      gfx::Size /* size */)
+
+// Response from GPU to a GpuMsg_CreateGpuMemoryBuffer message.
+IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryBufferCreated,
+                     gfx::GpuMemoryBufferHandle /* handle */)
 
 // Response from GPU to a GpuMsg_CollectGraphicsInfo.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GraphicsInfoCollected,
@@ -591,11 +603,6 @@ IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetSurfaceVisible, bool /* visible */)
 // Sent to proxy when the gpu memory manager changes its memory allocation.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetMemoryAllocation,
                     gpu::MemoryAllocation /* allocation */)
-
-// Sent to stub from the proxy with statistics on managed memory usage and
-// requirements.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SendClientManagedMemoryStats,
-                    gpu::ManagedMemoryStats /* stats */)
 
 // Sent to stub when proxy is assigned a memory allocation changed callback.
 IPC_MESSAGE_ROUTED1(

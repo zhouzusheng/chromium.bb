@@ -109,25 +109,16 @@ GrPixelConfig ToGrPixelConfig(ResourceFormat format) {
   return kSkia8888_GrPixelConfig;
 }
 
-class IdentityAllocator : public SkBitmap::Allocator {
- public:
-  explicit IdentityAllocator(void* buffer) : buffer_(buffer) {}
-  virtual bool allocPixelRef(SkBitmap* dst, SkColorTable*) OVERRIDE {
-    dst->setPixels(buffer_);
-    return true;
-  }
-
- private:
-  void* buffer_;
-};
-
-void CopyBitmap(const SkBitmap& src, uint8_t* dst, SkColorType dst_colorType) {
-  SkBitmap dst_bitmap;
-  IdentityAllocator allocator(dst);
-  src.copyTo(&dst_bitmap, dst_colorType, &allocator);
+void CopyBitmap(const SkBitmap& src, uint8_t* dst, SkColorType dst_color_type) {
+  SkImageInfo dst_info = src.info();
+  dst_info.fColorType = dst_color_type;
   // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
-  // bitmap data. This check will be removed once crbug.com/293728 is fixed.
-  CHECK_EQ(0u, dst_bitmap.rowBytes() % 4);
+  // bitmap data. There will be no need to call SkAlign4 once crbug.com/293728
+  // is fixed.
+  const size_t dst_row_bytes = SkAlign4(dst_info.minRowBytes());
+  CHECK_EQ(0u, dst_row_bytes % 4);
+  bool success = src.readPixels(dst_info, dst, dst_row_bytes, 0, 0);
+  CHECK_EQ(true, success);
 }
 
 class ScopedSetActiveTexture {
@@ -1321,6 +1312,15 @@ void ResourceProvider::CleanUpGLIfNeeded() {
   }
 
   DCHECK(gl);
+#if DCHECK_IS_ON
+  // Check that all GL resources has been deleted.
+  for (ResourceMap::const_iterator itr = resources_.begin();
+       itr != resources_.end();
+       ++itr) {
+    DCHECK_NE(GLTexture, itr->second.type);
+  }
+#endif  // DCHECK_IS_ON
+
   texture_uploader_.reset();
   texture_id_allocator_.reset();
   buffer_id_allocator_.reset();
@@ -1436,7 +1436,7 @@ void ResourceProvider::ReceiveFromChild(
                           it->size,
                           Resource::Delegated,
                           GL_LINEAR,
-                          GL_CLAMP_TO_EDGE);
+                          it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE);
     } else {
       resource = Resource(0,
                           it->size,
@@ -1444,7 +1444,7 @@ void ResourceProvider::ReceiveFromChild(
                           it->mailbox_holder.texture_target,
                           it->filter,
                           0,
-                          GL_CLAMP_TO_EDGE,
+                          it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE,
                           TextureUsageAny,
                           it->format);
       resource.mailbox = TextureMailbox(it->mailbox_holder.mailbox,
@@ -1606,12 +1606,12 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   DCHECK(!source->lock_for_read_count);
   DCHECK(source->origin != Resource::External || source->mailbox.IsValid());
   DCHECK(source->allocated);
-  DCHECK_EQ(source->wrap_mode, GL_CLAMP_TO_EDGE);
   resource->id = id;
   resource->format = source->format;
   resource->mailbox_holder.texture_target = source->target;
   resource->filter = source->filter;
   resource->size = source->size;
+  resource->is_repeated = (source->wrap_mode == GL_REPEAT);
 
   if (source->type == Bitmap) {
     resource->mailbox_holder.mailbox = source->shared_bitmap_id;

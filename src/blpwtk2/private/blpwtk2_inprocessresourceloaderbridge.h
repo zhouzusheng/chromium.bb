@@ -61,6 +61,8 @@ class InProcessResourceLoaderBridge
     virtual void SetDefersLoading(bool value) OVERRIDE;
     virtual void DidChangePriority(net::RequestPriority new_priority,
                                    int intra_priority_value) OVERRIDE;
+    virtual bool AttachThreadedDataReceiver(
+        blink::WebThreadedDataReceiver* threaded_data_receiver) OVERRIDE;
     virtual void SyncLoad(content::SyncLoadResponse* response) OVERRIDE;
 
     // ResourceContext overrides

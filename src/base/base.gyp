@@ -93,6 +93,32 @@
             }],
           ],
         }],
+        ['OS == "win"', {
+          # Specify delayload for base.dll.
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'DelayLoadDLLs': [
+                'powrprof.dll',
+              ],
+              'AdditionalDependencies': [
+                'powrprof.lib',
+              ],
+            },
+          },
+          # Specify delayload for components that link with base.lib.
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'DelayLoadDLLs': [
+                  'powrprof.dll',
+                ],
+                'AdditionalDependencies': [
+                  'powrprof.lib',
+                ],
+              },
+            },
+          },
+        }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
             'libraries': [
@@ -487,6 +513,7 @@
         'strings/sys_string_conversions_unittest.cc',
         'strings/utf_offset_string_conversions_unittest.cc',
         'strings/utf_string_conversions_unittest.cc',
+        'supports_user_data_unittest.cc',
         'sync_socket_unittest.cc',
         'synchronization/cancellation_flag_unittest.cc',
         'synchronization/condition_variable_unittest.cc',
@@ -569,13 +596,7 @@
         ['OS == "android"', {
           'dependencies': [
             'android/jni_generator/jni_generator.gyp:jni_generator_tests',
-          ],
-          'conditions': [
-            ['gtest_target_type == "shared_library"', {
-              'dependencies': [
-                '../testing/android/native_test.gyp:native_test_native_code',
-              ],
-            }],
+            '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
         ['OS == "ios" and _toolset != "host"', {
@@ -739,6 +760,11 @@
             '../third_party/libc++/libc++.gyp:libcxx_proxy',
           ],
         }],
+        ['tsan==1', {
+          'sources': [
+            'debug/tsan_suppressions.cc',
+          ],
+        }],
       ],
       'cflags!': [
         '-fsanitize=address',
@@ -819,6 +845,30 @@
               ],
             }],
           ],
+          # Specify delayload for base_win64.dll.
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'DelayLoadDLLs': [
+                'powrprof.dll',
+              ],
+              'AdditionalDependencies': [
+                'powrprof.lib',
+              ],
+            },
+          },
+          # Specify delayload for components that link with base_win64.lib.
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'DelayLoadDLLs': [
+                  'powrprof.dll',
+                ],
+                'AdditionalDependencies': [
+                  'powrprof.lib',
+                ],
+              },
+            },
+          },
           # TODO(rvargas): Bug 78117. Remove this.
           'msvs_disabled_warnings': [
             4244,

@@ -132,6 +132,7 @@ class WebViewProxy : public WebView,
 
     // IPC::Listener overrides
     virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
     // Message handlers
     void onUpdateTargetURL(const std::string& url);

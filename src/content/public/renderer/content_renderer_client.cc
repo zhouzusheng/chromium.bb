@@ -160,11 +160,6 @@ bool ContentRendererClient::IsExternalPepperPlugin(
   return false;
 }
 
-bool ContentRendererClient::AllowBrowserPlugin(
-    blink::WebPluginContainer* container) {
-  return false;
-}
-
 bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) {
   return false;
 }

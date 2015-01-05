@@ -66,7 +66,7 @@ public:
     void setProxyConfig(const net::ProxyConfig& config);
     void useSystemProxyConfig();
     void setProtocolHandlers(content::ProtocolHandlerMap* protocolHandlers,
-                             content::ProtocolHandlerScopedVector protocolInterceptors);
+                             content::URLRequestInterceptorScopedVector requestInterceptors);
     const base::FilePath& path() const { return d_path; }
     bool diskCacheEnabled() const { return d_diskCacheEnabled; }
     bool cookiePersistenceEnabled() const { return d_cookiePersistenceEnabled; }
@@ -90,7 +90,7 @@ private:
     // accessed on both UI and IO threads
     base::Lock d_protocolHandlersLock;
     content::ProtocolHandlerMap d_protocolHandlers;
-    content::ProtocolHandlerScopedVector d_protocolInterceptors;
+    content::URLRequestInterceptorScopedVector d_requestInterceptors;
     bool d_gotProtocolHandlers;
 
     base::FilePath d_path;

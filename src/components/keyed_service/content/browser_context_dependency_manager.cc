@@ -95,7 +95,8 @@ void BrowserContextDependencyManager::DoCreateBrowserContextServices(
     // TODO(SHEZ): Do we still need this?
     factory->RegisterUserPrefsOnBrowserContextForTest(context);
 
-    if (is_testing_context && factory->ServiceIsNULLWhileTesting()) {
+    if (is_testing_context && factory->ServiceIsNULLWhileTesting() &&
+        !factory->HasTestingFactory(context)) {
       factory->SetEmptyTestingFactory(context);
     } else if (factory->ServiceIsCreatedWithBrowserContext()) {
       // Create the service.

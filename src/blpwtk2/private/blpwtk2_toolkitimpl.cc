@@ -271,16 +271,11 @@ void ToolkitImpl::startupThreads()
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
         if (d_hostChannel.empty()) {
             d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
-            d_browserThread->messageLoop()->PostTask(
-                FROM_HERE,
-                base::Bind(&ContentMainDelegateImpl::addPluginsToPluginService,
-                           base::Unretained(&d_mainDelegate)));
         }
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
-        d_mainDelegate.addPluginsToPluginService();
     }
 
     InProcessRenderer::init();
@@ -382,11 +377,6 @@ void ToolkitImpl::shutdownThreads()
 void ToolkitImpl::appendCommandLineSwitch(const char* switchString)
 {
     d_mainDelegate.appendCommandLineSwitch(switchString);
-}
-
-void ToolkitImpl::registerPlugin(const char* pluginPath)
-{
-    d_mainDelegate.registerPlugin(pluginPath);
 }
 
 Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)

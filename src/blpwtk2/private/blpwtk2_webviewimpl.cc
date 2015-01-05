@@ -41,6 +41,7 @@
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
+#include <content/public/browser/host_zoom_map.h>
 #include <content/public/browser/media_capture_devices.h>
 #include <content/public/browser/render_frame_host.h>
 #include <content/public/browser/render_view_host.h>
@@ -548,8 +549,9 @@ void WebViewImpl::setZoomPercent(int value)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_webContents->SetZoomLevel(
-        blink::WebView::zoomFactorToZoomLevel((double)value/100));
+    content::HostZoomMap::SetZoomLevel(
+        d_webContents.get(),
+        blink::WebView::zoomFactorToZoomLevel((double)value / 100));
 }
 
 void WebViewImpl::replaceMisspelledRange(const StringRef& text)

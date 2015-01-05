@@ -58,6 +58,7 @@ struct WindowFeatures;
 
 namespace blink {
 class ChromePrintContext;
+class GeolocationClientProxy;
 class SharedWorkerRepositoryClientImpl;
 class TextFinder;
 class WebDataSourceImpl;
@@ -102,11 +103,6 @@ public:
     virtual bool hasVerticalScrollbar() const OVERRIDE;
     virtual WebView* view() const OVERRIDE;
     virtual void setOpener(WebFrame*) OVERRIDE;
-    virtual void appendChild(WebFrame*) OVERRIDE;
-    virtual void removeChild(WebFrame*) OVERRIDE;
-    virtual WebFrame* traversePrevious(bool wrap) const OVERRIDE;
-    virtual WebFrame* traverseNext(bool wrap) const OVERRIDE;
-    virtual WebFrame* findChildByName(const WebString&) const OVERRIDE;
     virtual WebDocument document() const OVERRIDE;
     virtual WebPerformance performance() const OVERRIDE;
     virtual bool dispatchBeforeUnloadEvent() OVERRIDE;
@@ -231,6 +227,9 @@ public:
     virtual bool selectionStartHasSpellingMarkerFor(int from, int length) const OVERRIDE;
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const OVERRIDE;
 
+    // WebLocalFrame methods:
+    virtual void addStyleSheetByURL(const WebString& url) OVERRIDE;
+
     void willDetachParent();
 
     static WebLocalFrameImpl* create(WebFrameClient*);
@@ -247,6 +246,7 @@ public:
     void createFrameView();
 
     static WebLocalFrameImpl* fromFrame(WebCore::LocalFrame*);
+    static WebLocalFrameImpl* fromFrame(WebCore::LocalFrame&);
     static WebLocalFrameImpl* fromFrameOwnerElement(WebCore::Element*);
 
     // If the frame hosts a PluginDocument, this method returns the WebPluginContainerImpl
@@ -312,6 +312,11 @@ public:
     // Invalidates both content area and the scrollbar.
     void invalidateAll() const;
 
+    PassRefPtr<WebCore::LocalFrame> initializeAsChildFrame(WebCore::FrameHost*, WebCore::FrameOwner*, const AtomicString& name, const AtomicString& fallbackName);
+
+    // Returns a hit-tested VisiblePosition for the given point
+    WebCore::VisiblePosition visiblePositionForWindowPoint(const WebPoint&);
+
 private:
     friend class FrameLoaderClientImpl;
 
@@ -321,9 +326,6 @@ private:
     void setWebCoreFrame(PassRefPtr<WebCore::LocalFrame>);
 
     void loadJavaScriptURL(const WebCore::KURL&);
-
-    // Returns a hit-tested VisiblePosition for the given point
-    WebCore::VisiblePosition visiblePositionForWindowPoint(const WebPoint&);
 
     WebPlugin* focusedPluginIfInputMethodSupported();
 
@@ -354,6 +356,8 @@ private:
     float m_inputEventsScaleFactorForEmulation;
 
     UserMediaClientImpl m_userMediaClientImpl;
+
+    OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
 };
 
 DEFINE_TYPE_CASTS(WebLocalFrameImpl, WebFrame, frame, frame->isWebLocalFrame(), frame.isWebLocalFrame());

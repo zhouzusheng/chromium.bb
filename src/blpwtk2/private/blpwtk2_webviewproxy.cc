@@ -519,8 +519,7 @@ bool WebViewProxy::Send(IPC::Message* message)
 bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
 {
     bool handled = true;
-    bool msgIsOk = true;
-    IPC_BEGIN_MESSAGE_MAP_EX(WebViewProxy, message, msgIsOk)
+    IPC_BEGIN_MESSAGE_MAP(WebViewProxy, message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateTargetURL, onUpdateTargetURL)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNavigationState, onUpdateNavigationState)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_DidNavigateMainFramePostCommit, onDidNavigateMainFramePostCommit)
@@ -546,13 +545,14 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
         IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP_EX()
-
-    if (!msgIsOk) {
-        LOG(ERROR) << "bad message " << message.type();
-    }
+    IPC_END_MESSAGE_MAP()
 
     return handled;
+}
+
+void WebViewProxy::OnBadMessageReceived(const IPC::Message& message)
+{
+    LOG(ERROR) << "bad message " << message.type();
 }
 
 // Message handlers

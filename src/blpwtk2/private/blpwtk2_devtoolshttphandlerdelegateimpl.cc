@@ -52,6 +52,7 @@ class Target : public content::DevToolsTarget {
     explicit Target(content::WebContents* webContents);
 
     virtual std::string GetId() const OVERRIDE{ return d_id; }
+    virtual std::string GetParentId() const OVERRIDE{ return std::string(); }
     virtual std::string GetType() const OVERRIDE{ return "page"; }
     virtual std::string GetTitle() const OVERRIDE{ return d_title; }
     virtual std::string GetDescription() const OVERRIDE{ return std::string(); }
@@ -129,7 +130,8 @@ DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
     }
 
     Statics::devToolsHttpHandler = content::DevToolsHttpHandler::Start(
-        new net::TCPListenSocketFactory("127.0.0.1", port), "", this);
+        new net::TCPListenSocketFactory("127.0.0.1", port), "", this,
+        base::FilePath());
 }
 
 DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()

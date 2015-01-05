@@ -55,12 +55,12 @@ class CONTENT_EXPORT RTCVideoRenderer
   };
 
   void OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
-                    const media::VideoCaptureFormat& format);
+                    const media::VideoCaptureFormat& format,
+                    const base::TimeTicks& estimated_capture_time);
 
   // VideoTrackSink implementation. Called on the main thread.
   virtual void OnReadyStateChanged(
       blink::WebMediaStreamSource::ReadyState state) OVERRIDE;
-  virtual void OnEnabledChanged(bool enabled) OVERRIDE;
 
   void RenderSignalingFrame();
 

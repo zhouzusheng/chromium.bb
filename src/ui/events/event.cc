@@ -67,7 +67,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_GESTURE_PINCH_UPDATE);
     CASE_TYPE(ET_GESTURE_LONG_PRESS);
     CASE_TYPE(ET_GESTURE_LONG_TAP);
-    CASE_TYPE(ET_GESTURE_MULTIFINGER_SWIPE);
+    CASE_TYPE(ET_GESTURE_SWIPE);
     CASE_TYPE(ET_GESTURE_TAP_UNCONFIRMED);
     CASE_TYPE(ET_GESTURE_DOUBLE_TAP);
     CASE_TYPE(ET_SCROLL);
@@ -86,10 +86,22 @@ std::string EventTypeName(ui::EventType type) {
 
 bool IsX11SendEventTrue(const base::NativeEvent& event) {
 #if defined(USE_X11)
-  if (event && event->xany.send_event)
-    return true;
-#endif
+  return event && event->xany.send_event;
+#else
   return false;
+#endif
+}
+
+bool X11EventHasNonStandardState(const base::NativeEvent& event) {
+#if defined(USE_X11)
+  const unsigned int kAllStateMask =
+      Button1Mask | Button2Mask | Button3Mask | Button4Mask | Button5Mask |
+      Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask | ShiftMask |
+      LockMask | ControlMask | AnyModifier;
+  return event && (event->xkey.state & ~kAllStateMask) != 0;
+#else
+  return false;
+#endif
 }
 
 }  // namespace
@@ -294,23 +306,46 @@ bool MouseEvent::IsRepeatedClickEvent(
 int MouseEvent::GetRepeatCount(const MouseEvent& event) {
   int click_count = 1;
   if (last_click_event_) {
-    if (event.type() == ui::ET_MOUSE_RELEASED)
-      return last_click_event_->GetClickCount();
-    if (IsX11SendEventTrue(event.native_event()))
+    if (event.type() == ui::ET_MOUSE_RELEASED) {
+      if (event.changed_button_flags() ==
+              last_click_event_->changed_button_flags()) {
+        last_click_complete_ = true;
+        return last_click_event_->GetClickCount();
+      } else {
+        // If last_click_event_ has changed since this button was pressed
+        // return a click count of 1.
+        return click_count;
+      }
+    }
+    if (event.time_stamp() != last_click_event_->time_stamp())
+      last_click_complete_ = true;
+    if (!last_click_complete_ ||
+        IsX11SendEventTrue(event.native_event())) {
       click_count = last_click_event_->GetClickCount();
-    else if (IsRepeatedClickEvent(*last_click_event_, event))
+    } else if (IsRepeatedClickEvent(*last_click_event_, event)) {
       click_count = last_click_event_->GetClickCount() + 1;
+    }
     delete last_click_event_;
   }
   last_click_event_ = new MouseEvent(event);
+  last_click_complete_ = false;
   if (click_count > 3)
     click_count = 3;
   last_click_event_->SetClickCount(click_count);
   return click_count;
 }
 
+void MouseEvent::ResetLastClickForTest() {
+  if (last_click_event_) {
+    delete last_click_event_;
+    last_click_event_ = NULL;
+    last_click_complete_ = false;
+  }
+}
+
 // static
 MouseEvent* MouseEvent::last_click_event_ = NULL;
+bool MouseEvent::last_click_complete_ = false;
 
 int MouseEvent::GetClickCount() const {
   if (type() != ET_MOUSE_PRESSED && type() != ET_MOUSE_RELEASED)
@@ -479,6 +514,42 @@ void TouchEvent::UpdateForRootTransform(
 ////////////////////////////////////////////////////////////////////////////////
 // KeyEvent
 
+// static
+KeyEvent* KeyEvent::last_key_event_ = NULL;
+
+// static
+bool KeyEvent::IsRepeated(const KeyEvent& event) {
+  // A safe guard in case if there were continous key pressed events that are
+  // not auto repeat.
+  const int kMaxAutoRepeatTimeMs = 2000;
+  // Ignore key events that have non standard state masks as it may be
+  // reposted by an IME. IBUS-GTK uses this field to detect the
+  // re-posted event for example. crbug.com/385873.
+  if (X11EventHasNonStandardState(event.native_event()))
+    return false;
+  if (event.is_char())
+    return false;
+  if (event.type() == ui::ET_KEY_RELEASED) {
+    delete last_key_event_;
+    last_key_event_ = NULL;
+    return false;
+  }
+  CHECK_EQ(ui::ET_KEY_PRESSED, event.type());
+  if (!last_key_event_) {
+    last_key_event_ = new KeyEvent(event);
+    return false;
+  }
+  if (event.key_code() == last_key_event_->key_code() &&
+      event.flags() == last_key_event_->flags() &&
+      (event.time_stamp() - last_key_event_->time_stamp()).InMilliseconds() <
+      kMaxAutoRepeatTimeMs) {
+    return true;
+  }
+  delete last_key_event_;
+  last_key_event_ = new KeyEvent(event);
+  return false;
+}
+
 KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
     : Event(native_event,
             EventTypeFromNative(native_event),
@@ -486,7 +557,11 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
       key_code_(KeyboardCodeFromNative(native_event)),
       code_(CodeFromNative(native_event)),
       is_char_(is_char),
+      platform_keycode_(PlatformKeycodeFromNative(native_event)),
       character_(0) {
+  if (IsRepeated(*this))
+    set_flags(flags() | ui::EF_IS_REPEAT);
+
 #if defined(USE_X11)
   NormalizeFlags();
 #endif
@@ -499,6 +574,7 @@ KeyEvent::KeyEvent(EventType type,
     : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
       is_char_(is_char),
+      platform_keycode_(0),
       character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
 
@@ -511,6 +587,7 @@ KeyEvent::KeyEvent(EventType type,
       key_code_(key_code),
       code_(code),
       is_char_(is_char),
+      platform_keycode_(0),
       character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
 
@@ -528,10 +605,13 @@ uint16 KeyEvent::GetCharacter() const {
   DCHECK(native_event()->type == KeyPress ||
          native_event()->type == KeyRelease);
 
-  uint16 ch = 0;
-  if (!IsControlDown())
-    ch = GetCharacterFromXEvent(native_event());
-  return ch ? ch : GetCharacterFromKeyCode(key_code_, flags());
+  // When a control key is held, prefer ASCII characters to non ASCII
+  // characters in order to use it for shortcut keys.  GetCharacterFromKeyCode
+  // returns 'a' for VKEY_A even if the key is actually bound to 'à' in X11.
+  // GetCharacterFromXEvent returns 'à' in that case.
+  return IsControlDown() ?
+      GetCharacterFromKeyCode(key_code_, flags()) :
+      GetCharacterFromXEvent(native_event());
 #else
   if (native_event()) {
     DCHECK(EventTypeFromNative(native_event()) == ET_KEY_PRESSED ||
@@ -586,35 +666,33 @@ void KeyEvent::NormalizeFlags() {
     set_flags(flags() & ~mask);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// TranslatedKeyEvent
-
-TranslatedKeyEvent::TranslatedKeyEvent(const base::NativeEvent& native_event,
-                                       bool is_char)
-    : KeyEvent(native_event, is_char) {
-  SetType(type() == ET_KEY_PRESSED ?
-          ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE);
+bool KeyEvent::IsTranslated() const {
+  switch (type()) {
+    case ET_KEY_PRESSED:
+    case ET_KEY_RELEASED:
+      return false;
+    case ET_TRANSLATED_KEY_PRESS:
+    case ET_TRANSLATED_KEY_RELEASE:
+      return true;
+    default:
+      NOTREACHED();
+      return false;
+  }
 }
 
-TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
-                                       KeyboardCode key_code,
-                                       int flags)
-    : KeyEvent((is_press ? ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE),
-               key_code,
-               flags,
-               false) {
-}
-
-TranslatedKeyEvent::TranslatedKeyEvent(const KeyEvent& key_event)
-    : KeyEvent(key_event) {
-  SetType(type() == ET_KEY_PRESSED ?
-          ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE);
-  set_is_char(false);
-}
-
-void TranslatedKeyEvent::ConvertToKeyEvent() {
-  SetType(type() == ET_TRANSLATED_KEY_PRESS ?
-          ET_KEY_PRESSED : ET_KEY_RELEASED);
+void KeyEvent::SetTranslated(bool translated) {
+  switch (type()) {
+    case ET_KEY_PRESSED:
+    case ET_TRANSLATED_KEY_PRESS:
+      SetType(translated ? ET_TRANSLATED_KEY_PRESS : ET_KEY_PRESSED);
+      break;
+    case ET_KEY_RELEASED:
+    case ET_TRANSLATED_KEY_RELEASE:
+      SetType(translated ? ET_TRANSLATED_KEY_RELEASE : ET_KEY_RELEASED);
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

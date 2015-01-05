@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/debug/crash_logging.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
@@ -53,6 +54,8 @@
 #endif
 
 #if defined(OS_WIN)
+const char kWidevineCdmAdapterFileName[] = "widevinecdmadapter.dll";
+
 extern sandbox::TargetServices* g_target_services;
 
 // Used by EnumSystemLocales for warming up.
@@ -275,6 +278,10 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
     if (!library.is_valid()) {
       LOG(ERROR) << "Failed to load Pepper module from " << path.value()
                  << " (error: " << error.ToString() << ")";
+      if (!base::PathExists(path)) {
+        ReportLoadResult(path, FILE_MISSING);
+        return;
+      }
       ReportLoadResult(path, LOAD_FAILED);
       // Report detailed reason for load failure.
       ReportLoadErrorCode(path, error);
@@ -321,13 +328,16 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // can be loaded. TODO(cpu): consider changing to the loading style of
   // regular plugins.
   if (g_target_services) {
-    // Let Flash load DXVA before lockdown on Vista+.
-    if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
+    // Let Flash and Widevine CDM adapter load DXVA before lockdown on Vista+.
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH) ||
+        path.BaseName().MaybeAsASCII() == kWidevineCdmAdapterFileName) {
       if (base::win::OSInfo::GetInstance()->version() >=
           base::win::VERSION_VISTA) {
         LoadLibraryA("dxva2.dll");
       }
+    }
 
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
       if (base::win::OSInfo::GetInstance()->version() >=
           base::win::VERSION_WIN7) {
         base::CPU cpu;

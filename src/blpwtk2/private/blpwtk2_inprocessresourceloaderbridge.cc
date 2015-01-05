@@ -113,6 +113,12 @@ void InProcessResourceLoaderBridge::DidChangePriority(
 {
 }
 
+bool InProcessResourceLoaderBridge::AttachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver)
+{
+    return false;
+}
+
 void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
 {
     DLOG(ERROR) << "Synchronous requests not supported: url("
@@ -239,7 +245,7 @@ void InProcessResourceLoaderBridge::ensureResponseHeadersSent(
         return;
     }
 
-    webkit_glue::ResourceResponseInfo responseInfo;
+    content::ResourceResponseInfo responseInfo;
     responseInfo.headers = d_responseHeaders;
     responseInfo.content_length = d_responseHeaders->GetContentLength();
     d_responseHeaders->GetMimeTypeAndCharset(&responseInfo.mime_type,

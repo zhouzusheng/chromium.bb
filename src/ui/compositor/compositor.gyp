@@ -49,6 +49,8 @@
         'layer_animation_sequence.h',
         'layer_animator.cc',
         'layer_animator.h',
+        'layer_animator_collection.cc',
+        'layer_animator_collection.h',
         'layer_delegate.h',
         'layer_owner.cc',
         'layer_owner.h',
@@ -118,7 +120,7 @@
         ['use_x11==1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:x11',
-            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ]
         }]
       ]

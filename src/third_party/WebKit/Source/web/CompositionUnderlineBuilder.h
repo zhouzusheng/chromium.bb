@@ -44,7 +44,9 @@ namespace blink {
 class CompositionUnderlineBuilder : public WebCore::CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
-        : WebCore::CompositionUnderline(u.startOffset, u.endOffset, u.thick) { }
+        : WebCore::CompositionUnderline(u.startOffset, u.endOffset,
+            u.thick,
+            WebCore::Color(u.backgroundColor)) { }
 };
 
 } // namespace blink

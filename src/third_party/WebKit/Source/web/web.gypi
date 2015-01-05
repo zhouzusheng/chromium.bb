@@ -245,6 +245,7 @@
       'WebUserGestureIndicator.cpp',
       'WebUserGestureToken.cpp',
       'WebUserMediaRequest.cpp',
+      'WebViewImplRubberband.cpp',
       'WebViewImpl.cpp',
       'WebViewImpl.h',
       'WebWorkerInfo.cpp',

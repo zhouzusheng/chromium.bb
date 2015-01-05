@@ -207,6 +207,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual WebPreferences GetWebkitPreferences() OVERRIDE;
   virtual void UpdateWebkitPreferences(
       const WebPreferences& prefs) OVERRIDE;
+  virtual void EnableAltDragRubberbanding(bool enable) OVERRIDE;
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const OVERRIDE;
   virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;

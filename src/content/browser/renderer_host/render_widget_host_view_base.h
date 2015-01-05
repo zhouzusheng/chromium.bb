@@ -73,6 +73,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual bool IsMouseLocked() OVERRIDE;
   virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
   virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
+  virtual void SetRubberbandRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void HideRubberbandRect() OVERRIDE;
   virtual void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
   virtual void EndFrameSubscription() OVERRIDE;

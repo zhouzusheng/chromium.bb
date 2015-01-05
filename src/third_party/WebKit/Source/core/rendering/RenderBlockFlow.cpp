@@ -2629,7 +2629,8 @@ LayoutUnit RenderBlockFlow::logicalRightFloatOffsetForLine(LayoutUnit logicalTop
 }
 
 GapRects RenderBlockFlow::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-    LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo)
+    LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo,
+    bool& shouldHighlightBeforeSide, bool& isAfterSideSelected)
 {
     GapRects result;
 
@@ -2643,21 +2644,32 @@ GapRects RenderBlockFlow::inlineSelectionGaps(RenderBlock* rootBlock, const Layo
             lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, logicalHeight());
             lastLogicalRight = logicalRightSelectionOffset(rootBlock, logicalHeight());
         }
+        isAfterSideSelected = true;
         return result;
     }
 
     RootInlineBox* lastSelectedLine = 0;
     RootInlineBox* curr;
-    for (curr = firstRootBox(); curr && !curr->hasSelectedChildren(); curr = curr->nextRootBox()) { }
+    for (curr = firstRootBox(); curr && !curr->hasSelectedChildren(); curr = curr->nextRootBox())
+        shouldHighlightBeforeSide = false;
+
+    // We need to fill the top of if the before-side is selected.
+    bool shouldFillTop = !containsStart || shouldHighlightBeforeSide;
+    if (shouldFillTop && curr) {
+        // Set lastLogicalLeft and lastLogicalRight to be the selection left/right of the first line.
+        ASSERT(curr->hasSelectedChildren());
+        getLineSelectionLogicalLeftAndRight(rootBlock, offsetFromRootBlock, curr, lastLogicalLeft, lastLogicalRight);
+    }
 
     // Now paint the gaps for the lines.
     for (; curr && curr->hasSelectedChildren(); curr = curr->nextRootBox()) {
         LayoutUnit selTop =  curr->selectionTopAdjustedForPrecedingBlock();
         LayoutUnit selHeight = curr->selectionHeightAdjustedForPrecedingBlock();
 
-        if (!containsStart && !lastSelectedLine && selectionState() != SelectionStart && selectionState() != SelectionBoth) {
+        if (shouldFillTop && !lastSelectedLine) {
             result.uniteCenter(blockSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop,
                 lastLogicalLeft, lastLogicalRight, selTop, paintInfo));
+            shouldHighlightBeforeSide = false;
         }
 
         LayoutRect logicalRect(curr->logicalLeft(), selTop, curr->logicalWidth(), selTop + selHeight);
@@ -2675,11 +2687,11 @@ GapRects RenderBlockFlow::inlineSelectionGaps(RenderBlock* rootBlock, const Layo
         lastSelectedLine = lastRootBox();
     }
 
-    if (lastSelectedLine && selectionState() != SelectionEnd && selectionState() != SelectionBoth) {
+    isAfterSideSelected = lastSelectedLine == lastRootBox();
+    if (isAfterSideSelected) {
         // Go ahead and update our lastY to be the bottom of the last selected line.
         lastLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + lastSelectedLine->selectionBottom();
-        lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
-        lastLogicalRight = logicalRightSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
+        getLineSelectionLogicalLeftAndRight(rootBlock, offsetFromRootBlock, lastSelectedLine, lastLogicalLeft, lastLogicalRight);
     }
     return result;
 }

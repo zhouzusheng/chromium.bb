@@ -57,15 +57,36 @@ bool FontPlatformFeatures::canExpandAroundIdeographsInComplexText()
 }
 
 static void paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
+    const FontDescription& fontDescription,
     const Glyph* glyphs, unsigned numGlyphs,
     SkPoint* pos, const FloatRect& textRect)
 {
     TextDrawingModeFlags textMode = gc->textDrawingMode();
 
+    FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
+    switch (fontDescription.fontSmoothing()) {
+    case NoSmoothing:
+        fontSmoothingOverride.textFlags = 0;
+        fontSmoothingOverride.lcdExplicitlyRequested = false;
+        break;
+    case Antialiased:
+        fontSmoothingOverride.textFlags = SkPaint::kAntiAlias_Flag;
+        fontSmoothingOverride.lcdExplicitlyRequested = false;
+        break;
+    case SubpixelAntialiased:
+        fontSmoothingOverride.textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+        fontSmoothingOverride.lcdExplicitlyRequested = true;
+        break;
+    default:
+        fontSmoothingOverride.textFlags = font->platformData().paintTextFlags();
+        fontSmoothingOverride.lcdExplicitlyRequested = false;
+        break;
+    }
+
     // We draw text up to two times (once for fill, once for stroke).
     if (textMode & TextModeFill) {
         SkPaint paint = gc->fillPaint();
-        font->platformData().setupPaint(&paint, gc);
+        font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
@@ -77,7 +98,7 @@ static void paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         && gc->strokeThickness() > 0) {
 
         SkPaint paint = gc->strokePaint();
-        font->platformData().setupPaint(&paint, gc);
+        font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
@@ -140,7 +161,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
                 currentWidth += glyphBuffer.advanceAt(from + glyphIndex).width();
             }
             horizontalOffset += currentWidth;
-            paintGlyphs(gc, font, glyphs, chunkLength, pos, textRect);
+            paintGlyphs(gc, font, m_fontDescription, glyphs, chunkLength, pos, textRect);
         }
 
         gc->setCTM(savedMatrix);
@@ -161,7 +182,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     }
 
     const Glyph* glyphs = glyphBuffer.glyphs(from);
-    paintGlyphs(gc, font, glyphs, numGlyphs, pos, textRect);
+    paintGlyphs(gc, font, m_fontDescription, glyphs, numGlyphs, pos, textRect);
 }
 
 void Font::drawComplexText(GraphicsContext* gc, const TextRunPaintInfo& runInfo, const FloatPoint& point) const

@@ -911,6 +911,9 @@ void RenderTableSection::layoutRows()
     unsigned totalRows = m_grid.size();
     bool needToRelayout = false;
 
+    for (unsigned r = 0; r < totalRows; r++)
+        m_grid[r].paginationStrut = 0;
+
     // Set the width of our section now.  The rows will also be this width.
     setLogicalWidth(table()->contentLogicalWidth());
     m_overflow.clear();

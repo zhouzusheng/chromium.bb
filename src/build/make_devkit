@@ -117,10 +117,15 @@ def copyBin(destDir, version):
     'blpwtk2_devtools' + productAppend + '.pak',
     'content_shell.pak',
     'blpv8' + productAppend + '.pdb',
+    'blpv8' + productAppend + '.map',
     'blpwtk2' + productAppend + '.pdb',
+    'blpwtk2' + productAppend + '.map',
     'blpangle' + productAppend + '.pdb',
+    'blpangle' + productAppend + '.map',
     'ffmpegsumo' + productAppend + '.pdb',
+    'ffmpegsumo' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.pdb',
+    'blpwtk2_subprocess' + productAppend + '.map',
   ]
 
   configs = ['Debug', 'Release']
@@ -228,6 +233,7 @@ def main(args):
     bbutil.shellExec('git clean -fdx')
 
   applyVariableToEnvironment('GYP_DEFINES', 'component', 'static_library')
+  applyVariableToEnvironment('GYP_DEFINES', 'bb_generate_map_files', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'bb_version', version)
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')

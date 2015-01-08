@@ -130,6 +130,7 @@ public:
         int argc,
         v8::Handle<v8::Value> argv[]) OVERRIDE;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
+    virtual v8::Isolate* scriptIsolate() const OVERRIDE;
     virtual void reload(bool ignoreCache) OVERRIDE;
     virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) OVERRIDE;
     virtual void loadRequest(const WebURLRequest&) OVERRIDE;

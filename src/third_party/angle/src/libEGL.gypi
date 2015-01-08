@@ -10,9 +10,9 @@
             'targets':
             [
                 {
-                    'target_name': 'libEGL',
-                    'type': 'shared_library',
-                    'dependencies': [ 'libGLESv2', 'commit_id' ],
+                    'target_name': 'libEGL_static',
+                    'type': 'static_library',
+                    'dependencies': [ 'commit_id' ],
                     'include_dirs':
                     [
                         '.',
@@ -23,7 +23,8 @@
                     [
                         '<!@(python <(angle_path)/enumerate_files.py \
                              -dirs common libEGL ../include \
-                             -types *.cpp *.h *.def *.rc)',
+                             -excludes common/version.h libEGL/dllmain.cpp \
+                             -types *.cpp *.h)',
                     ],
                     'defines':
                     [
@@ -32,15 +33,12 @@
                         'EGLAPI=',
                     ],
                     'includes': [ '../build/common_defines.gypi', ],
-                    'msvs_settings':
+                    'link_settings':
                     {
-                        'VCLinkerTool':
-                        {
-                            'AdditionalDependencies':
-                            [
-                                'd3d9.lib',
-                            ],
-                        },
+                        'libraries':
+                        [
+                            '-ld3d9.lib',
+                        ],
                     },
                     'configurations':
                     {
@@ -52,6 +50,23 @@
                             ],
                         },
                     },
+                },
+                {
+                    'target_name': 'libEGL',
+                    'type': 'loadable_module',
+                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static', 'commit_id' ],
+                    'include_dirs':
+                    [
+                        '.',
+                        '../include',
+                    ],
+                    'sources':
+                    [
+                        'common/version.h',
+                        'libEGL/dllmain.cpp',
+                        'libEGL/libEGL.def',
+                        'libEGL/libEGL.rc',
+                    ],
                 },
             ],
         },

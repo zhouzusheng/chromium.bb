@@ -167,6 +167,8 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
     [MeasureAs=PrefixedDocumentExitPointerLock, ImplementedAs=exitPointerLock] void webkitExitPointerLock();
     [MeasureAs=PrefixedDocumentPointerLockElement, ImplementedAs=pointerLockElement] readonly attribute Element webkitPointerLockElement;
 
+    readonly attribute BBPrintInfo bbPrintInfo;
+
     // Event handler attributes
     attribute EventHandler onbeforecopy;
     attribute EventHandler onbeforecut;

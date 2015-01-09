@@ -15,6 +15,7 @@
       'msvs_guid': '647863C0-C7A3-469A-B1ED-AD7283C34BED',
       'dependencies': [
         '../base/base.gyp:base',
+        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
         '../net/net.gyp:net',
         '../ppapi/ppapi.gyp:ppapi_cpp',
         '../third_party/pdfium/pdfium.gyp:pdfium',
@@ -27,6 +28,7 @@
       ],
       'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
+        'blppdfium.rc',
         'button.h',
         'button.cc',
         'chunk_stream.h',
@@ -55,7 +57,6 @@
         'paint_manager.h',
         'pdf.cc',
         'pdf.h',
-        'pdf.rc',
         'progress_control.cc',
         'progress_control.h',
         'pdf_engine.h',
@@ -69,6 +70,11 @@
         '../content/common/page_zoom.cc',
       ],
       'conditions': [
+        ['bb_version!=""', {
+          'product_name': 'blppdfium.<(bb_version)',
+        }, {
+          'product_name': 'blppdfium',
+        }],
         ['pdf_engine==0', {
           'sources': [
             'pdfium/pdfium_assert_matching_enums.cc',
@@ -82,11 +88,6 @@
             'pdfium/pdfium_page.h',
             'pdfium/pdfium_range.cc',
             'pdfium/pdfium_range.h',
-          ],
-        }],
-        ['OS!="win"', {
-          'sources!': [
-            'pdf.rc',
           ],
         }],
         ['OS=="mac"', {

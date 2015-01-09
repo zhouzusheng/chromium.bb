@@ -160,6 +160,8 @@
         'private/blpwtk2_contentmaindelegateimpl.h',
         'private/blpwtk2_contentrendererclientimpl.cc',
         'private/blpwtk2_contentrendererclientimpl.h',
+        'private/blpwtk2_contentutilityclientimpl.cc',
+        'private/blpwtk2_contentutilityclientimpl.h',
         'private/blpwtk2_contextmenuitemimpl.cc',
         'private/blpwtk2_contextmenuitemimpl.h',
         'private/blpwtk2_contextmenuparamsimpl.cc',

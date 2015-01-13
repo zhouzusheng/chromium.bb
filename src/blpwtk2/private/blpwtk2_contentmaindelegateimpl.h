@@ -65,6 +65,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
 
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
     void appendCommandLineSwitch(const char* switchString);
+    void appendSideLoadedFont(const char* fontFile);
 
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
@@ -78,6 +79,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
 
   private:
     std::vector<std::string> d_commandLineSwitches;
+    std::vector<std::string> d_sideLoadedFonts;
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;

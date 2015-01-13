@@ -34,16 +34,35 @@
 #include <chrome/renderer/spellchecker/spellcheck.h>
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
 #include <content/child/request_info.h>
+#include <content/common/sandbox_win.h>
+#include <content/public/renderer/render_font_warmup_win.h>
 #include <content/public/renderer/render_thread.h>
 #include <net/base/net_errors.h>
+#include <skia/ext/fontmgr_default_win.h>
+#include <third_party/skia/include/ports/SkFontMgr.h>
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
 #include <third_party/WebKit/public/web/WebPluginParams.h>
+#include <third_party/WebKit/public/web/win/WebFontRendering.h>
 
 namespace blpwtk2 {
 
-ContentRendererClientImpl::ContentRendererClientImpl()
+static void registerSideloadedFontFile(SkFontMgr* fontmgr, const char* fileName)
 {
+    SkTypeface* typeface = fontmgr->createFromFile(fileName);
+    content::DoPreSandboxWarmupForTypeface(typeface);
+    blink::WebFontRendering::addSideloadedFontForTesting(typeface);
+}
+
+ContentRendererClientImpl::ContentRendererClientImpl(const std::vector<std::string>& sideLoadedFonts)
+{
+    if (content::ShouldUseDirectWrite()) {
+        SkFontMgr* fontMgr = content::GetPreSandboxWarmupFontMgr();
+        SetDefaultSkiaFactory(fontMgr);
+        for (std::size_t i = 0; i < sideLoadedFonts.size(); ++i) {
+            registerSideloadedFontFile(fontMgr, sideLoadedFonts[i].c_str());
+        }
+    }
 }
 
 ContentRendererClientImpl::~ContentRendererClientImpl()

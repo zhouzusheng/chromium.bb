@@ -72,6 +72,7 @@ class ToolkitImpl : public Toolkit {
     void shutdownThreads();
 
     void appendCommandLineSwitch(const char* switchString);
+    void appendSideloadedFont(const char* fontFile);
 
     virtual Profile* createProfile(const ProfileCreateParams& params) OVERRIDE;
 

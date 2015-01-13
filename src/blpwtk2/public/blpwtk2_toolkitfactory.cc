@@ -103,6 +103,12 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
         toolkit->appendCommandLineSwitch(switchString.c_str());
     }
 
+    for (size_t i = 0; i < params.numSideLoadedFonts(); ++i) {
+        StringRef fontFileRef = params.sideLoadedFontAt(i);
+        std::string fontFile(fontFileRef.data(), fontFileRef.length());
+        toolkit->appendSideloadedFont(fontFile.c_str());
+    }
+
     g_created = true;
     return toolkit;
 }

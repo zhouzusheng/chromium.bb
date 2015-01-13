@@ -35,7 +35,7 @@ namespace blpwtk2 {
 // content module.  This is created during the startup process.
 class ContentRendererClientImpl : public content::ContentRendererClient {
   public:
-    ContentRendererClientImpl();
+    explicit ContentRendererClientImpl(const std::vector<std::string>& sideLoadedFonts);
     virtual ~ContentRendererClientImpl();
 
     // Notifies us that the RenderThread has been created.

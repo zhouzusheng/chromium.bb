@@ -379,6 +379,11 @@ void ToolkitImpl::appendCommandLineSwitch(const char* switchString)
     d_mainDelegate.appendCommandLineSwitch(switchString);
 }
 
+void ToolkitImpl::appendSideloadedFont(const char* fontFile)
+{
+    d_mainDelegate.appendSideLoadedFont(fontFile);
+}
+
 Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 {
     DCHECK(Statics::isInApplicationMainThread());

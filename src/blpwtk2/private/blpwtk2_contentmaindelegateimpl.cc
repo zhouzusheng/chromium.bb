@@ -106,11 +106,6 @@ void ContentMainDelegateImpl::appendCommandLineSwitch(const char* switchString)
     d_commandLineSwitches.push_back(switchString);
 }
 
-void ContentMainDelegateImpl::appendSideLoadedFont(const char* fontFile)
-{
-    d_sideLoadedFonts.push_back(fontFile);
-}
-
 // ContentMainDelegate implementation
 bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 {
@@ -194,7 +189,7 @@ content::ContentRendererClient*
 ContentMainDelegateImpl::CreateContentRendererClient()
 {
     CHECK(!d_contentRendererClient.get());
-    d_contentRendererClient.reset(new ContentRendererClientImpl(d_sideLoadedFonts));
+    d_contentRendererClient.reset(new ContentRendererClientImpl());
     return d_contentRendererClient.get();
 }
 

@@ -44,6 +44,7 @@
         '../content/content.gyp:content',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
+        '../pdf/pdf.gyp:pdf',
         '../printing/printing.gyp:printing',
         '../sync/sync.gyp:sync',
         '../skia/skia.gyp:skia',
@@ -52,7 +53,10 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/WebKit/public/blink.gyp:blink',
       ],
-      'include_dirs': [ '..' ],
+      'include_dirs': [
+        '..',
+        '<(DEPTH)/breakpad/src',
+      ],
       'sources': [
         'browser/printing/print_job.cc',
         'browser/printing/print_job.h',
@@ -98,6 +102,8 @@
         'common/chrome_switches.h',
         'common/common_message_generator.cc',
         'common/common_message_generator.h',
+        'common/crash_keys.cc',
+        'common/crash_keys.h',
         'common/pref_names.cc',
         'common/pref_names.h',
         'common/print_messages.cc',
@@ -121,6 +127,13 @@
         'renderer/spellchecker/spellcheck_worditerator.cc',
         'renderer/spellchecker/spellcheck_worditerator.h',
         'renderer/spellchecker/spelling_engine.h',
+        'utility/cloud_print/bitmap_image.cc',
+        'utility/cloud_print/bitmap_image.h',
+        'utility/cloud_print/pwg_encoder.cc',
+        'utility/cloud_print/pwg_encoder.h',
+        'utility/printing_handler.cc',
+        'utility/printing_handler.h',
+        'utility/utility_message_handler.h',
       ],
       'conditions': [
         ['win_pdf_metafile_for_printing==1', {

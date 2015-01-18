@@ -24,6 +24,7 @@
 
 #include <blpwtk2_contentbrowserclientimpl.h>
 #include <blpwtk2_contentrendererclientimpl.h>
+#include <blpwtk2_contentutilityclientimpl.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
 
@@ -32,6 +33,7 @@
 #include <base/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
+#include <chrome/common/chrome_paths.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/user_agent.h>
 #include <ui/base/resource/resource_bundle.h>
@@ -142,6 +144,9 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 
 void ContentMainDelegateImpl::PreSandboxStartup()
 {
+    const base::CommandLine* commandLine = base::CommandLine::ForCurrentProcess();
+    std::string processType = commandLine->GetSwitchValueASCII(switches::kProcessType);
+
     ui::SetResourcesDataDLL((HINSTANCE)g_instDLL);
     ui::ResourceBundle::InitSharedInstance();
     ui::ResourceBundle::GetSharedInstance().AddDLLResources();
@@ -157,24 +162,43 @@ void ContentMainDelegateImpl::PreSandboxStartup()
                 ui::SCALE_FACTOR_NONE);
         }
     }
+
+    if (processType == switches::kUtilityProcess
+     || commandLine->HasSwitch(switches::kSingleProcess))
+    {
+        base::FilePath dirModule;
+        PathService::Get(base::DIR_MODULE, &dirModule);
+
+        base::FilePath pdfDll = dirModule;
+        pdfDll = pdfDll.AppendASCII(BLPPDFIUM_DLL_NAME);
+        PathService::Override(chrome::FILE_PDF_PLUGIN, pdfDll);
+
+        ContentUtilityClientImpl::PreSandboxStartup();
+    }
 }
 
 content::ContentBrowserClient*
 ContentMainDelegateImpl::CreateContentBrowserClient()
 {
-    if (!d_contentBrowserClient.get()) {
-        d_contentBrowserClient.reset(
-            new ContentBrowserClientImpl(d_rendererInfoMap));
-    }
+    CHECK(!d_contentBrowserClient.get());
+    d_contentBrowserClient.reset(new ContentBrowserClientImpl(d_rendererInfoMap));
     return d_contentBrowserClient.get();
 }
 
 content::ContentRendererClient*
 ContentMainDelegateImpl::CreateContentRendererClient()
 {
-    if (!d_contentRendererClient.get())
-        d_contentRendererClient.reset(new ContentRendererClientImpl());
+    CHECK(!d_contentRendererClient.get());
+    d_contentRendererClient.reset(new ContentRendererClientImpl());
     return d_contentRendererClient.get();
+}
+
+content::ContentUtilityClient*
+ContentMainDelegateImpl::CreateContentUtilityClient()
+{
+    CHECK(!d_contentUtilityClient.get());
+    d_contentUtilityClient.reset(new ContentUtilityClientImpl());
+    return d_contentUtilityClient.get();
 }
 
 }  // close namespace blpwtk2

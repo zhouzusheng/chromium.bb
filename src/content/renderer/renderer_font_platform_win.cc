@@ -27,6 +27,8 @@ namespace {
 namespace mswr = Microsoft::WRL;
 namespace mswrw = Microsoft::WRL::Wrappers;
 
+std::vector<std::wstring> g_custom_font_files;
+
 class FontCollectionLoader
     : public mswr::RuntimeClass<mswr::RuntimeClassFlags<mswr::ClassicCom>,
                                 IDWriteFontCollectionLoader> {
@@ -104,15 +106,17 @@ class FontFileStream
   };
 
   HRESULT RuntimeClassInitialize(UINT32 font_key) {
+    std::wstring font_name = g_font_loader->GetFontNameFromKey(font_key);
     base::FilePath path;
-    PathService::Get(base::DIR_WINDOWS_FONTS, &path);
-    path = path.Append(g_font_loader->GetFontNameFromKey(font_key).c_str());
+    if (font_key < g_custom_font_files.size()) {
+      // For custom fonts, the font_name is itself the path to the font file.
+      path = base::FilePath(font_name);
+    }
+    else {
+      PathService::Get(base::DIR_WINDOWS_FONTS, &path);
+      path = path.Append(font_name.c_str());
+    }
     memory_.reset(new base::MemoryMappedFile());
-
-    // Put some debug information on stack.
-    WCHAR font_name[256];
-    path.value().copy(font_name, arraysize(font_name));
-    base::debug::Alias(font_name);
 
     if (!memory_->Initialize(path)) {
       memory_.reset();
@@ -237,12 +241,14 @@ HRESULT FontCollectionLoader::Initialize(IDWriteFactory* factory) {
 }
 
 UINT32 FontCollectionLoader::GetFontMapSize() {
-  return reg_fonts_.size();
+  return g_custom_font_files.size() + reg_fonts_.size();
 }
 
 std::wstring FontCollectionLoader::GetFontNameFromKey(UINT32 idx) {
-  DCHECK(idx < reg_fonts_.size());
-  return reg_fonts_[idx];
+  DCHECK(idx < g_custom_font_files.size() + reg_fonts_.size());
+  if (idx < g_custom_font_files.size())
+    return g_custom_font_files[idx];
+  return reg_fonts_[idx - g_custom_font_files.size()];
 }
 
 bool FontCollectionLoader::LoadFontListFromRegistry() {
@@ -300,6 +306,10 @@ IDWriteFontCollection* GetCustomFontCollection(IDWriteFactory* factory) {
   CHECK(g_font_collection.Get() != NULL);
 
   return g_font_collection.Get();
+}
+
+void AddCustomFontFile(const base::FilePath& filename) {
+  g_custom_font_files.push_back(filename.value());
 }
 
 }  // namespace content

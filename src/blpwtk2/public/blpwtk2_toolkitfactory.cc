@@ -28,7 +28,9 @@
 #include <blpwtk2_toolkitcreateparams.h>
 #include <blpwtk2_toolkitimpl.h>
 
+#include <base/files/file_path.h>
 #include <base/logging.h>  // for DCHECK
+#include <content/renderer/renderer_font_platform_win.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <ui/gl/gl_implementation.h>
@@ -101,6 +103,13 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
         StringRef switchRef = params.commandLineSwitchAt(i);
         std::string switchString(switchRef.data(), switchRef.length());
         toolkit->appendCommandLineSwitch(switchString.c_str());
+    }
+
+    for (size_t i = 0; i < params.numSideLoadedFonts(); ++i) {
+        StringRef fontFileRef = params.sideLoadedFontAt(i);
+        base::FilePath filePath = base::FilePath::FromUTF8Unsafe(
+            std::string(fontFileRef.data(), fontFileRef.length()));
+        content::AddCustomFontFile(filePath);
     }
 
     g_created = true;

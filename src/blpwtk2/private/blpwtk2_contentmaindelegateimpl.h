@@ -73,12 +73,15 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
         CreateContentBrowserClient() OVERRIDE;
     virtual content::ContentRendererClient*
         CreateContentRendererClient() OVERRIDE;
+    virtual content::ContentUtilityClient*
+        CreateContentUtilityClient() OVERRIDE;
 
   private:
     std::vector<std::string> d_commandLineSwitches;
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
+    scoped_ptr<content::ContentUtilityClient> d_contentUtilityClient;
     RendererInfoMap* d_rendererInfoMap;
     bool d_isSubProcess;
 

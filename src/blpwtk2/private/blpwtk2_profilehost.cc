@@ -65,8 +65,7 @@ BrowserContextImpl* ProfileHost::browserContext() const
 bool ProfileHost::OnMessageReceived(const IPC::Message& message)
 {
     bool handled = true;
-    bool msgIsOk = true;
-    IPC_BEGIN_MESSAGE_MAP_EX(ProfileHost, message, msgIsOk)
+    IPC_BEGIN_MESSAGE_MAP(ProfileHost, message)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_SetProxyConfig, onSetProxyConfig)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_UseSystemProxyConfig, onUseSystemProxyConfig)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_SetSpellCheckConfig, onSetSpellCheckConfig)
@@ -75,13 +74,14 @@ bool ProfileHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_AddAutocorrectWords, onAddAutocorrectWords)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_RemoveAutocorrectWords, onRemoveAutocorrectWords)
         IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP_EX()
-
-    if (!msgIsOk) {
-        LOG(ERROR) << "bad message " << message.type();
-    }
+    IPC_END_MESSAGE_MAP()
 
     return handled;
+}
+
+void ProfileHost::OnBadMessageReceived(const IPC::Message& message)
+{
+    LOG(ERROR) << "bad message " << message.type();
 }
 
 // Message handlers

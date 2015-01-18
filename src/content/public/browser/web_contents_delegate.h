@@ -97,6 +97,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void NavigationStateChanged(const WebContents* source,
                                       unsigned changed_flags) {}
 
+  // Called to inform the delegate that the WebContent's visible SSL state (as
+  // defined by SSLStatus) changed.
+  virtual void VisibleSSLStateChanged(const WebContents* source) {}
+
   // Creates a new tab with the already-created WebContents 'new_contents'.
   // The window for the added contents should be reparented correctly when this
   // method returns.  If |disposition| is NEW_POPUP, |initial_pos| should hold
@@ -237,7 +241,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
   virtual void CanDownload(RenderViewHost* render_view_host,
-                           int request_id,
+                           const GURL& url,
                            const std::string& request_method,
                            const base::Callback<void(bool)>& callback);
 
@@ -389,7 +393,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RegisterProtocolHandler(WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const base::string16& title,
                                        bool user_gesture) {}
 
   // Result of string search in the page. This includes the number of matches

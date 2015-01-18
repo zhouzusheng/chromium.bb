@@ -51,7 +51,6 @@
 #include <net/ssl/ssl_config_service_defaults.h>
 #include <net/url_request/data_protocol_handler.h>
 #include <net/url_request/file_protocol_handler.h>
-#include <net/url_request/protocol_intercept_job_factory.h>
 #include <net/url_request/static_http_user_agent_settings.h>
 #include <net/url_request/url_request_context.h>
 #include <net/url_request/url_request_context_storage.h>
@@ -137,7 +136,7 @@ void URLRequestContextGetterImpl::useSystemProxyConfig()
 
 void URLRequestContextGetterImpl::setProtocolHandlers(
     content::ProtocolHandlerMap* protocolHandlers,
-    content::ProtocolHandlerScopedVector protocolInterceptors)
+    content::URLRequestInterceptorScopedVector requestInterceptors)
 {
     // Note: It is guaranteed that this is only called once, and it happens
     //       before GetURLRequestContext() is called on the IO thread.
@@ -154,7 +153,7 @@ void URLRequestContextGetterImpl::setProtocolHandlers(
     base::AutoLock guard(d_protocolHandlersLock);
     DCHECK(!d_gotProtocolHandlers);
     std::swap(d_protocolHandlers, *protocolHandlers);
-    d_protocolInterceptors = protocolInterceptors.Pass();
+    d_requestInterceptors = requestInterceptors.Pass();
     d_gotProtocolHandlers = true;
 }
 
@@ -277,11 +276,11 @@ void URLRequestContextGetterImpl::initialize()
         installProtocolHandlers(jobFactory.get(), &d_protocolHandlers);
     }
     bool setProtocol = jobFactory->SetProtocolHandler(
-        content::kDataScheme,
+        url::kDataScheme,
         new net::DataProtocolHandler);
     DCHECK(setProtocol);
     setProtocol = jobFactory->SetProtocolHandler(
-        content::kFileScheme,
+        url::kFileScheme,
         new net::FileProtocolHandler(
             content::BrowserThread::GetBlockingPool()->
                 GetTaskRunnerWithShutdownBehavior(

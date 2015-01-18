@@ -84,8 +84,7 @@ WebViewHost::~WebViewHost()
 bool WebViewHost::OnMessageReceived(const IPC::Message& message)
 {
     bool handled = true;
-    bool msgIsOk = true;
-    IPC_BEGIN_MESSAGE_MAP_EX(WebViewHost, message, msgIsOk)
+    IPC_BEGIN_MESSAGE_MAP(WebViewHost, message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_LoadUrl, onLoadUrl)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_LoadInspector, onLoadInspector)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_InspectElementAt, onInspectElementAt)
@@ -120,13 +119,14 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Print, onPrint)
         IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP_EX()
-
-    if (!msgIsOk) {
-        LOG(ERROR) << "bad message " << message.type();
-    }
+    IPC_END_MESSAGE_MAP()
 
     return handled;
+}
+
+void WebViewHost::OnBadMessageReceived(const IPC::Message& message)
+{
+    LOG(ERROR) << "bad message " << message.type();
 }
 
 // Message handlers

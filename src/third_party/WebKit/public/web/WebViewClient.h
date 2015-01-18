@@ -56,14 +56,11 @@ class WebElement;
 class WebExternalPopupMenu;
 class WebExternalPopupMenuClient;
 class WebFileChooserCompletion;
-class WebGeolocationClient;
-class WebGeolocationService;
 class WebGestureEvent;
 class WebHitTestResult;
 class WebImage;
 class WebInputElement;
 class WebKeyboardEvent;
-class WebMIDIClient;
 class WebNode;
 class WebPushClient;
 class WebRange;
@@ -136,7 +133,6 @@ public:
     // operations.
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void didChangeContents() { }
-    virtual void didExecuteCommand(const WebString& commandName) { }
 
     // This method is called in response to WebView's handleInputEvent()
     // when the default action for the current keyboard event is not
@@ -202,8 +198,6 @@ public:
     // Called when a new node gets focused.
     virtual void focusedNodeChanged(const WebNode&) { }
 
-    virtual void numberOfWheelEventHandlersChanged(unsigned) { }
-
     // Indicates two things:
     //   1) This view may have a new layout now.
     //   2) Calling layout() is a no-op.
@@ -250,14 +244,6 @@ public:
     virtual void didUpdateInspectorSetting(const WebString& key, const WebString& value) { }
 
 
-    // Geolocation ---------------------------------------------------------
-
-    // Access the embedder API for (client-based) geolocation client .
-    virtual WebGeolocationClient* geolocationClient() { return 0; }
-    // Access the embedder API for (non-client-based) geolocation services.
-    virtual WebGeolocationService* geolocationService() { return 0; }
-
-
     // Speech --------------------------------------------------------------
 
     // Access the embedder API for speech recognition services.
@@ -302,13 +288,10 @@ public:
     }
 
 
-    // Web MIDI -------------------------------------------------------------
-
-    virtual WebMIDIClient* webMIDIClient() { return 0; }
-
     // Push Messaging -------------------------------------------------------
 
     virtual WebPushClient* webPushClient() { return 0; }
+
 
     // Content detection ----------------------------------------------------
 

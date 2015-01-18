@@ -34,12 +34,12 @@ ProcessClientImpl::ProcessClientImpl(
     base::SingleThreadTaskRunner* ipcTaskRunner)
 : d_shutdownEvent(true, false)
 {
-    d_channel.reset(new IPC::SyncChannel(channelId,
+    d_channel = IPC::SyncChannel::Create(channelId,
                                          IPC::Channel::MODE_CLIENT,
                                          this,
                                          ipcTaskRunner,
                                          true,
-                                         &d_shutdownEvent));
+                                         &d_shutdownEvent);
 }
 
 ProcessClientImpl::~ProcessClientImpl()
@@ -80,15 +80,11 @@ bool ProcessClientImpl::OnMessageReceived(const IPC::Message& message)
 {
     if (message.routing_id() == MSG_ROUTING_CONTROL) {
         // Dispatch control messages
-        bool msgIsOk = true;
-        IPC_BEGIN_MESSAGE_MAP_EX(ProcessClientImpl, message, msgIsOk)
+        IPC_BEGIN_MESSAGE_MAP(ProcessClientImpl, message)
             IPC_MESSAGE_HANDLER(BlpControlMsg_SetInProcessRendererChannelName, onSetInProcessRendererChannelName)
             IPC_MESSAGE_UNHANDLED_ERROR()
-        IPC_END_MESSAGE_MAP_EX()
+        IPC_END_MESSAGE_MAP()
 
-        if (!msgIsOk) {
-            LOG(ERROR) << "bad message " << message.type();
-        }
         return true;
     }
 
@@ -120,6 +116,11 @@ void ProcessClientImpl::OnChannelConnected(int32 peer_pid)
 void ProcessClientImpl::OnChannelError()
 {
     LOG(ERROR) << "channel error!";
+}
+
+void ProcessClientImpl::OnBadMessageReceived(const IPC::Message& message)
+{
+    LOG(ERROR) << "bad message " << message.type();
 }
 
 // Control message handlers

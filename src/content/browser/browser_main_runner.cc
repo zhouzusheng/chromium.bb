@@ -4,7 +4,6 @@
 
 #include "content/public/browser/browser_main_runner.h"
 
-#include "base/allocator/allocator_shim.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
@@ -93,14 +92,6 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
 // are NOT deleted. If you need something to run during WM_ENDSESSION add it
 // to browser_shutdown::Shutdown or BrowserProcess::EndSession.
 
-#if defined(OS_WIN) && !defined(NO_TCMALLOC)
-      // When linking shared libraries, NO_TCMALLOC is defined, and dynamic
-      // allocator selection is not supported.
-
-      // Make this call before going multithreaded, or spawning any
-      // subprocesses.
-      base::allocator::SetupSubprocessAllocator();
-#endif
       ui::InitializeInputMethod();
     }
     main_loop_->CreateStartupTasks();
@@ -149,7 +140,12 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
   #if defined(OS_WIN)
       ole_initializer_.reset(NULL);
   #endif
-
+  #if defined(OS_ANDROID)
+      // Forcefully terminates the RunLoop inside MessagePumpForUI, ensuring
+      // proper shutdown for content_browsertests. Shutdown() is not used by
+      // the actual browser.
+      base::MessageLoop::current()->QuitNow();
+  #endif
       main_loop_.reset(NULL);
 
       notification_service_.reset(NULL);

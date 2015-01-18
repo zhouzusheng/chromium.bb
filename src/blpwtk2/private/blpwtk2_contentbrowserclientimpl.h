@@ -81,7 +81,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     virtual net::URLRequestContextGetter* CreateRequestContext(
         content::BrowserContext* browserContext,
         content::ProtocolHandlerMap* protocolHandlers,
-        content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+        content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
 
     // Returns whether a specified URL is handled by the embedder's internal
     // protocol handlers.

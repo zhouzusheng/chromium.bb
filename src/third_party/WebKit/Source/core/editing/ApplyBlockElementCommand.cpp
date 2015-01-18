@@ -27,8 +27,8 @@
 #include "config.h"
 #include "core/editing/ApplyBlockElementCommand.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/VisiblePosition.h"
@@ -59,8 +59,8 @@ void ApplyBlockElementCommand::doApply()
 {
     VisiblePosition startOfSelection;
     VisiblePosition endOfSelection;
-    RefPtr<ContainerNode> startScope;
-    RefPtr<ContainerNode> endScope;
+    RefPtrWillBeRawPtr<ContainerNode> startScope = nullptr;
+    RefPtrWillBeRawPtr<ContainerNode> endScope = nullptr;
     int startIndex;
     int endIndex;
 
@@ -76,15 +76,15 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
     // and there's nothing to move.
     Position start = startOfSelection.deepEquivalent().downstream();
     if (isAtUnsplittableElement(start)) {
-        RefPtr<Element> blockquote = createBlockElement();
+        RefPtrWillBeRawPtr<Element> blockquote = createBlockElement();
         insertNodeAt(blockquote, start);
-        RefPtr<Element> placeholder = createBreakElement(document());
+        RefPtrWillBeRawPtr<Element> placeholder = createBreakElement(document());
         appendNode(placeholder, blockquote);
         setEndingSelection(VisibleSelection(positionBeforeNode(placeholder.get()), DOWNSTREAM, endingSelection().isDirectional()));
         return;
     }
 
-    RefPtr<Element> blockquoteForNextIndent;
+    RefPtrWillBeRawPtr<Element> blockquoteForNextIndent = nullptr;
     VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
     VisiblePosition endOfLastParagraph = endOfParagraph(endOfSelection);
     VisiblePosition endAfterSelection = endOfParagraph(endOfLastParagraph.next());
@@ -192,7 +192,7 @@ void ApplyBlockElementCommand::rangeForParagraphSplittingTextNodesIfNeeded(const
 
         // If end is in the middle of a text node, split.
         if (!endStyle->collapseWhiteSpace() && end.offsetInContainerNode() && end.offsetInContainerNode() < end.containerNode()->maxCharacterOffset()) {
-            RefPtr<Text> endContainer = end.containerText();
+            RefPtrWillBeRawPtr<Text> endContainer = end.containerText();
             splitTextNode(endContainer, end.offsetInContainerNode());
             if (isStartAndEndOnSameNode)
                 start = firstPositionInOrBeforeNode(endContainer->previousSibling());
@@ -215,7 +215,7 @@ VisiblePosition ApplyBlockElementCommand::endOfNextParagrahSplittingTextNodesIfN
     if (!style)
         return endOfNextParagraph;
 
-    RefPtr<Text> text = position.containerText();
+    RefPtrWillBeRawPtr<Text> text = position.containerText();
     if (!style->preserveNewline() || !position.offsetInContainerNode() || !isNewLineAtPosition(firstPositionInNode(text.get())))
         return endOfNextParagraph;
 
@@ -245,12 +245,18 @@ VisiblePosition ApplyBlockElementCommand::endOfNextParagrahSplittingTextNodesIfN
     return VisiblePosition(Position(text.get(), position.offsetInContainerNode() - 1));
 }
 
-PassRefPtr<Element> ApplyBlockElementCommand::createBlockElement() const
+PassRefPtrWillBeRawPtr<Element> ApplyBlockElementCommand::createBlockElement() const
 {
-    RefPtr<Element> element = createHTMLElement(document(), m_tagName);
+    RefPtrWillBeRawPtr<Element> element = createHTMLElement(document(), m_tagName);
     if (m_inlineStyle.length())
         element->setAttribute(styleAttr, m_inlineStyle);
     return element.release();
+}
+
+void ApplyBlockElementCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_endOfLastParagraph);
+    CompositeEditCommand::trace(visitor);
 }
 
 }

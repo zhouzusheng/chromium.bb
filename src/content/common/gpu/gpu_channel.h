@@ -17,6 +17,7 @@
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_memory_manager.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ui/gfx/native_widget_types.h"
@@ -50,9 +51,7 @@ class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
-class GpuChannel : public IPC::Listener,
-                   public IPC::Sender,
-                   public base::RefCountedThreadSafe<GpuChannel> {
+class GpuChannel : public IPC::Listener, public IPC::Sender {
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -61,6 +60,7 @@ class GpuChannel : public IPC::Listener,
              gpu::gles2::MailboxManager* mailbox_manager,
              int client_id,
              bool software);
+  virtual ~GpuChannel();
 
   void Init(base::MessageLoopProxy* io_message_loop,
             base::WaitableEvent* shutdown_event);
@@ -77,7 +77,7 @@ class GpuChannel : public IPC::Listener,
   int TakeRendererFileDescriptor();
 #endif  // defined(OS_POSIX)
 
-  base::ProcessId renderer_pid() const { return channel_->peer_pid(); }
+  base::ProcessId renderer_pid() const { return channel_->GetPeerPID(); }
 
   int client_id() const { return client_id_; }
 
@@ -108,7 +108,7 @@ class GpuChannel : public IPC::Listener,
   // other channels.
   void StubSchedulingChanged(bool scheduled);
 
-  bool CreateViewCommandBuffer(
+  CreateCommandBufferResult CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
@@ -126,9 +126,6 @@ class GpuChannel : public IPC::Listener,
 
   void LoseAllContexts();
   void MarkAllContextsLost();
-
-  // Destroy channel and all contained contexts.
-  void DestroySoon();
 
   // Called to add a listener for a particular message routing ID.
   // Returns true if succeeded.
@@ -154,11 +151,7 @@ class GpuChannel : public IPC::Listener,
 
   uint64 GetMemoryUsage();
 
- protected:
-  virtual ~GpuChannel();
-
  private:
-  friend class base::RefCountedThreadSafe<GpuChannel>;
   friend class GpuChannelMessageFilter;
 
   void OnDestroy();

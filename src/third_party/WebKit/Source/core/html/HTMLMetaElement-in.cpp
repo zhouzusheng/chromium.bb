@@ -23,9 +23,12 @@
 #include "config.h"
 #include "core/html/HTMLMetaElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/loader/FrameLoaderClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -51,10 +54,7 @@ inline HTMLMetaElement::HTMLMetaElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLMetaElement> HTMLMetaElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLMetaElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLMetaElement)
 
 static bool isInvalidSeparator(UChar c)
 {
@@ -72,13 +72,12 @@ void HTMLMetaElement::parseContentAttribute(const String& content, KeyValuePairC
     bool error = false;
 
     // Tread lightly in this code -- it was specifically designed to mimic Win IE's parsing behavior.
-    int keyBegin, keyEnd;
-    int valueBegin, valueEnd;
+    unsigned keyBegin, keyEnd;
+    unsigned valueBegin, valueEnd;
 
-    int i = 0;
-    int length = content.length();
     String buffer = content.lower();
-    while (i < length) {
+    unsigned length = buffer.length();
+    for (unsigned i = 0; i < length; /* no increment here */) {
         // skip to first non-separator, but don't skip past the end of the string
         while (isSeparator(buffer[i])) {
             if (i >= length)
@@ -90,6 +89,8 @@ void HTMLMetaElement::parseContentAttribute(const String& content, KeyValuePairC
         // skip to first separator
         while (!isSeparator(buffer[i])) {
             error |= isInvalidSeparator(buffer[i]);
+            if (i >= length)
+                break;
             i++;
         }
         keyEnd = i;
@@ -113,6 +114,8 @@ void HTMLMetaElement::parseContentAttribute(const String& content, KeyValuePairC
         // skip to first separator
         while (!isSeparator(buffer[i])) {
             error |= isInvalidSeparator(buffer[i]);
+            if (i >= length)
+                break;
             i++;
         }
         valueEnd = i;
@@ -471,6 +474,8 @@ void HTMLMetaElement::process()
             processViewportContentAttribute("width=device-width", ViewportDescription::HandheldFriendlyMeta);
         else if (equalIgnoringCase(nameValue, "mobileoptimized"))
             processViewportContentAttribute("width=device-width, initial-scale=1", ViewportDescription::MobileOptimizedMeta);
+        else if (RuntimeEnabledFeatures::themeColorEnabled() && equalIgnoringCase(nameValue, "theme-color") && document().frame())
+            document().frame()->loader().client()->dispatchDidChangeThemeColor();
     }
 
     // Get the document to process the tag, but only if we're actually part of DOM

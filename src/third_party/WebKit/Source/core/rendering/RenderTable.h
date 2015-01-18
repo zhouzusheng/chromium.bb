@@ -25,7 +25,7 @@
 #ifndef RenderTable_h
 #define RenderTable_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
 #include "wtf/Vector.h"
@@ -227,7 +227,7 @@ public:
         if (documentBeingDestroyed())
             return;
         m_needsSectionRecalc = true;
-        setNeedsLayout();
+        setNeedsLayoutAndFullPaintInvalidation();
     }
 
     RenderTableSection* sectionAbove(const RenderTableSection*, SkipEmptySectionsValue = DoNotSkipEmptySections) const;
@@ -276,6 +276,8 @@ private:
     virtual const char* renderName() const OVERRIDE { return "RenderTable"; }
 
     virtual bool isTable() const OVERRIDE { return true; }
+
+    virtual bool avoidsFloats() const OVERRIDE { return true; }
 
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
     virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;

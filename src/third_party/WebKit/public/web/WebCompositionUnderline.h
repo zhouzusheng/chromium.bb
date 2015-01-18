@@ -31,6 +31,8 @@
 #ifndef WebCompositionUnderline_h
 #define WebCompositionUnderline_h
 
+#include "../platform/WebColor.h"
+
 namespace blink {
 
 // Class WebCompositionUnderline is intended to be used with WebWidget's
@@ -39,16 +41,33 @@ struct WebCompositionUnderline {
     WebCompositionUnderline()
         : startOffset(0)
         , endOffset(0)
-        , thick(false) { }
+        , thick(false)
+        , backgroundColor(0) { }
 
+    // FIXME(huangs): remove this constructor.
     WebCompositionUnderline(unsigned s, unsigned e, bool t)
         : startOffset(s)
         , endOffset(e)
-        , thick(t) { }
+        , thick(t)
+        , backgroundColor(0) { }
 
+    WebCompositionUnderline(unsigned s, unsigned e, bool t, WebColor bc)
+        : startOffset(s)
+        , endOffset(e)
+        , thick(t)
+        , backgroundColor(bc) { }
+
+    bool operator<(const WebCompositionUnderline& other) const
+    {
+        return startOffset != other.startOffset ? startOffset < other.startOffset : endOffset < other.endOffset;
+    }
+
+    // Need to update IPC_STRUCT_TRAITS_BEGIN(blink::WebCompositionUnderline)
+    // if members change.
     unsigned startOffset;
     unsigned endOffset;
     bool thick;
+    WebColor backgroundColor;
 };
 
 } // namespace blink

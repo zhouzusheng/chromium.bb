@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/web/WebRuntimeFeatures.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "web/WebMediaPlayerClientImpl.h"
 
 using namespace WebCore;
@@ -120,6 +120,11 @@ void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
     RuntimeEnabledFeatures::setExperimentalCanvasFeaturesEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableFastMobileScrolling(bool enable)
+{
+    RuntimeEnabledFeatures::setFastMobileScrollingEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableFastTextAutosizing(bool enable)
 {
     RuntimeEnabledFeatures::setFastTextAutosizingEnabled(enable);
@@ -133,11 +138,6 @@ void WebRuntimeFeatures::enableFileSystem(bool enable)
 void WebRuntimeFeatures::enableGamepad(bool enable)
 {
     RuntimeEnabledFeatures::setGamepadEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableLazyLayout(bool enable)
-{
-    // FIXME: Remove this once Chromium stops calling this.
 }
 
 void WebRuntimeFeatures::enableLocalStorage(bool enable)
@@ -225,12 +225,6 @@ void WebRuntimeFeatures::enableTouchIconLoading(bool enable)
     RuntimeEnabledFeatures::setTouchIconLoadingEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableWebAnimationsCSS(bool enable)
-{
-    // FIXME: Remove this method once the runtime flags are removed from Chromium.
-    ASSERT(enable);
-}
-
 void WebRuntimeFeatures::enableWebAnimationsSVG(bool enable)
 {
     RuntimeEnabledFeatures::setWebAnimationsSVGEnabled(enable);
@@ -244,6 +238,11 @@ void WebRuntimeFeatures::enableWebAudio(bool enable)
 void WebRuntimeFeatures::enableWebGLDraftExtensions(bool enable)
 {
     RuntimeEnabledFeatures::setWebGLDraftExtensionsEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableWebGLImageChromium(bool enable)
+{
+    RuntimeEnabledFeatures::setWebGLImageChromiumEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableWebMIDI(bool enable)
@@ -294,6 +293,16 @@ void WebRuntimeFeatures::enableTargetedStyleRecalc(bool enable)
 void WebRuntimeFeatures::enablePreciseMemoryInfo(bool enable)
 {
     RuntimeEnabledFeatures::setPreciseMemoryInfoEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableLayerSquashing(bool enable)
+{
+    RuntimeEnabledFeatures::setLayerSquashingEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableShowModalDialog(bool enable)
+{
+    RuntimeEnabledFeatures::setShowModalDialogEnabled(enable);
 }
 
 } // namespace blink

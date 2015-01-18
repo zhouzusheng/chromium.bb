@@ -18,16 +18,21 @@
                         '.',
                         '../include',
                         'libGLESv2',
-                        '<(SHARED_INTERMEDIATE_DIR)',
                     ],
                     'sources':
                     [
-                        '<!@(python <(angle_build_scripts_path)/enumerate_files.py \
+                        '<!@(python <(angle_path)/enumerate_files.py \
                              -dirs common libEGL ../include \
-                             -exclude common/version.h libEGL/dllmain.cpp \
+                             -excludes common/version.h libEGL/dllmain.cpp \
                              -types *.cpp *.h)',
                     ],
-                    'msvs_disabled_warnings': [ 4267 ],
+                    'defines':
+                    [
+                        'GL_APICALL=',
+                        'GL_GLEXT_PROTOTYPES=',
+                        'EGLAPI=',
+                    ],
+                    'includes': [ '../build/common_defines.gypi', ],
                     'link_settings':
                     {
                         'libraries':
@@ -49,7 +54,7 @@
                 {
                     'target_name': 'libEGL',
                     'type': 'loadable_module',
-                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static' ],
+                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static', 'commit_id' ],
                     'include_dirs':
                     [
                         '.',

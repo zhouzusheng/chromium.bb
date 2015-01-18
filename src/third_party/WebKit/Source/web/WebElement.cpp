@@ -137,14 +137,14 @@ WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index).localName();
+    return constUnwrap<Element>()->attributeAt(index).localName();
 }
 
 WebString WebElement::attributeValue(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index).value();
+    return constUnwrap<Element>()->attributeAt(index).value();
 }
 
 WebString WebElement::innerText()
@@ -188,7 +188,7 @@ void WebElement::requestSpellCheck()
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->isTextFormControl()) {
-            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
+            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
             if (innerElement && innerElement->rendererIsEditable()) {
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));

@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileDescription", "blpv8 Dynamic Link Library"
             VALUE "FileVersion", BLPWTK2_VERSION
             VALUE "InternalName", "blpv8"
-            VALUE "LegalCopyright", "Copyright (C) 2013"
+            VALUE "LegalCopyright", "Copyright (C) 2015"
             VALUE "OriginalFilename", BLPV8_DLL_NAME
             VALUE "ProductName", "blpv8 Dynamic Link Library"
             VALUE "ProductVersion", BLPWTK2_VERSION
@@ -104,7 +104,7 @@ BEGIN
             VALUE "FileDescription", "blpv8 Dynamic Link Library"
             VALUE "FileVersion", BLPWTK2_VERSION
             VALUE "InternalName", "blpv8"
-            VALUE "LegalCopyright", "Copyright (C) 2013"
+            VALUE "LegalCopyright", "Copyright (C) 2015"
             VALUE "OriginalFilename", BLPV8_DLL_NAME
             VALUE "ProductName", "blpv8 Dynamic Link Library"
             VALUE "ProductVersion", BLPWTK2_VERSION

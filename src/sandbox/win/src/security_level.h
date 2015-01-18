@@ -58,13 +58,6 @@ enum IntegrityLevel {
 // ----------------------------|--------------|----------------|----------|
 // USER_UNPROTECTED            | None         | None           | All      |
 // ----------------------------|--------------|----------------|----------|
-// USER_WPFMIN_LOCKDOWN        | RESTRICTED   | All            | Traverse |
-// ----------------------------|--------------|----------------|----------|
-// USER_WPFMIN_INITIAL         | Users        | All except:    | Traverse |
-//                             | Everyone     | Users          |          |
-//                             | LogonUser    | Everyone       |          |
-//                             | User         |                |          |
-// ----------------------------|--------------|----------------|----------|
 //
 // The above restrictions are actually a transformation that is applied to
 // the existing broker process token. The resulting token that will be
@@ -84,8 +77,7 @@ enum TokenLevel {
    USER_NON_ADMIN,
    USER_RESTRICTED_SAME_ACCESS,
    USER_UNPROTECTED,
-   USER_WPFMIN_LOCKDOWN,
-   USER_WPFMIN_INITIAL
+   USER_LAST
 };
 
 // The Job level specifies a set of decreasing security profiles for the

@@ -18,7 +18,7 @@
 <translation id="8785498733064193001">开始播放</translation>
 <translation id="7057186640035488495">电影时间</translation>
 <translation id="8199524924445686405"> 年 </translation>
-<translation id="795667975304826397">未选择文件</translation>
+<translation id="795667975304826397">未选择任何文件</translation>
 <translation id="7789962463072032349">暂停</translation>
 <translation id="6853785296079745596">隐藏可选字幕</translation>
 <translation id="4360991593054037559">请输入有效值。两个最接近的有效值分别为<ph name="VALID_VALUE_LOW"/>和<ph name="VALID_VALUE_HIGHER"/>。</translation>
@@ -81,6 +81,7 @@
 <translation id="8750798805984357768">请从这些选项中选择一个。</translation>
 <translation id="7740050170769002709">HTML 内容</translation>
 <translation id="6692633176391053278">步进器</translation>
+<translation id="4975562563186953947">选择了<ph name="SELECTED_COUNT"/>项</translation>
 <translation id="8541249477527128034">媒体控件</translation>
 <translation id="2226276347425096477">请将该文本减少为 <ph name="MAX_CHARACTERS"/> 个字符或更少（您当前使用了 <ph name="CURRENT_LENGTH"/> 个字符）。</translation>
 <translation id="6101327004457443354">取消对音轨静音</translation>

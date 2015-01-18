@@ -126,8 +126,8 @@
             'glue/fake_socket_factory.h',
           ],
           'dependencies': [
-            'jingle_glue',
             '../base/base.gyp:base',
+            'jingle_glue',
           ],
         },
         {

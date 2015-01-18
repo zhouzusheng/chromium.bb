@@ -64,9 +64,12 @@ class ToolkitCreateParams {
     // so it may not support *all* the switches mentioned on that page.
     BLPWTK2_EXPORT void appendCommandLineSwitch(const StringRef& switchString);
 
-    // Register a plugin at the specified 'pluginPath'.  The 'pluginPath'
-    // should point to a DLL that exports the standard NPAPI entry points.
-    BLPWTK2_EXPORT void registerPlugin(const StringRef& pluginPath);
+    // Register the specified 'fontFile' to be side-loaded so that it is usable
+    // by the in-process renderer.  The DirectWrite font implementation only
+    // has access to %WINDIR%\Fonts by default.  This function allows
+    // applications to load additional fonts.
+    // Note that right now, this only works for in-process renderers.
+    BLPWTK2_EXPORT void appendSideLoadedFontInProcess(const StringRef& fontFile);
 
     // By default, blpwtk2 will automatically load plugins it finds on the
     // system (e.g. from paths in the Windows registry).  Use this method to
@@ -111,8 +114,8 @@ class ToolkitCreateParams {
     int maxSocketsPerProxy() const;
     size_t numCommandLineSwitches() const;
     StringRef commandLineSwitchAt(size_t index) const;
-    size_t numRegisteredPlugins() const;
-    StringRef registeredPluginAt(size_t index) const;
+    size_t numSideLoadedFonts() const;
+    StringRef sideLoadedFontAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;

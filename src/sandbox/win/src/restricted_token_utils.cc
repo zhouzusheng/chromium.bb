@@ -101,21 +101,6 @@ DWORD CreateRestrictedToken(HANDLE *token_handle,
       restricted_token.AddRestrictingSid(WinNullSid);
       break;
     }
-    case USER_WPFMIN_LOCKDOWN: {
-      privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
-      break;
-    }
-    case USER_WPFMIN_INITIAL: {
-      sid_exceptions.push_back(WinBuiltinUsersSid);
-      sid_exceptions.push_back(WinWorldSid);
-      privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
-      restricted_token.AddRestrictingSid(WinWorldSid);
-      restricted_token.AddRestrictingSidCurrentUser();
-      restricted_token.AddRestrictingSidLogonSession();
-      break;
-    }
     default: {
       return ERROR_BAD_ARGUMENTS;
     }
@@ -161,7 +146,7 @@ DWORD StartRestrictedProcessInJob(wchar_t *command_line,
                                   JobLevel job_level,
                                   HANDLE *const job_handle_ret) {
   Job job;
-  DWORD err_code = job.Init(job_level, NULL, 0);
+  DWORD err_code = job.Init(job_level, NULL, 0, 0);
   if (ERROR_SUCCESS != err_code)
     return err_code;
 

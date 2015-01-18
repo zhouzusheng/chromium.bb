@@ -9,6 +9,7 @@
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "crypto/signature_verifier.h"
@@ -21,6 +22,7 @@
 #include "net/cert/single_request_cert_verifier.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
+#include "net/http/transport_security_state.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/ssl/ssl_config_service.h"
 
@@ -38,17 +40,18 @@ class ProofVerifierChromium::Job {
  public:
   Job(ProofVerifierChromium* proof_verifier,
       CertVerifier* cert_verifier,
+      TransportSecurityState* transport_security_state,
       const BoundNetLog& net_log);
 
-  // Starts the proof verification.  If |PENDING| is returned, then |callback|
-  // will be invoked asynchronously when the verification completes.
-  Status VerifyProof(const std::string& hostname,
-                     const std::string& server_config,
-                     const std::vector<std::string>& certs,
-                     const std::string& signature,
-                     std::string* error_details,
-                     scoped_ptr<ProofVerifyDetails>* verify_details,
-                     ProofVerifierCallback* callback);
+  // Starts the proof verification.  If |QUIC_PENDING| is returned, then
+  // |callback| will be invoked asynchronously when the verification completes.
+  QuicAsyncStatus VerifyProof(const std::string& hostname,
+                              const std::string& server_config,
+                              const std::vector<std::string>& certs,
+                              const std::string& signature,
+                              std::string* error_details,
+                              scoped_ptr<ProofVerifyDetails>* verify_details,
+                              ProofVerifierCallback* callback);
 
  private:
   enum State {
@@ -72,6 +75,8 @@ class ProofVerifierChromium::Job {
   // The underlying verifier used for verifying certificates.
   scoped_ptr<SingleRequestCertVerifier> verifier_;
 
+  TransportSecurityState* transport_security_state_;
+
   // |hostname| specifies the hostname for which |certs| is a valid chain.
   std::string hostname_;
 
@@ -89,16 +94,19 @@ class ProofVerifierChromium::Job {
   DISALLOW_COPY_AND_ASSIGN(Job);
 };
 
-ProofVerifierChromium::Job::Job(ProofVerifierChromium* proof_verifier,
-                                CertVerifier* cert_verifier,
-                                const BoundNetLog& net_log)
+ProofVerifierChromium::Job::Job(
+    ProofVerifierChromium* proof_verifier,
+    CertVerifier* cert_verifier,
+    TransportSecurityState* transport_security_state,
+    const BoundNetLog& net_log)
     : proof_verifier_(proof_verifier),
       verifier_(new SingleRequestCertVerifier(cert_verifier)),
+      transport_security_state_(transport_security_state),
       next_state_(STATE_NONE),
       net_log_(net_log) {
 }
 
-ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
+QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     const string& hostname,
     const string& server_config,
     const vector<string>& certs,
@@ -115,7 +123,7 @@ ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
   if (STATE_NONE != next_state_) {
     *error_details = "Certificate is already set and VerifyProof has begun";
     DLOG(DFATAL) << *error_details;
-    return FAILURE;
+    return QUIC_FAILURE;
   }
 
   verify_details_.reset(new ProofVerifyDetailsChromium);
@@ -125,7 +133,7 @@ ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
     verify_details->reset(verify_details_.release());
-    return FAILURE;
+    return QUIC_FAILURE;
   }
 
   // Convert certs to X509Certificate.
@@ -139,7 +147,7 @@ ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
     verify_details->reset(verify_details_.release());
-    return FAILURE;
+    return QUIC_FAILURE;
   }
 
   // We call VerifySignature first to avoid copying of server_config and
@@ -149,7 +157,7 @@ ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
     verify_details->reset(verify_details_.release());
-    return FAILURE;
+    return QUIC_FAILURE;
   }
 
   hostname_ = hostname;
@@ -158,14 +166,14 @@ ProofVerifierChromium::Status ProofVerifierChromium::Job::VerifyProof(
   switch (DoLoop(OK)) {
     case OK:
       verify_details->reset(verify_details_.release());
-      return SUCCESS;
+      return QUIC_SUCCESS;
     case ERR_IO_PENDING:
       callback_.reset(callback);
-      return PENDING;
+      return QUIC_PENDING;
     default:
       *error_details = error_details_;
       verify_details->reset(verify_details_.release());
-      return FAILURE;
+      return QUIC_FAILURE;
   }
 }
 
@@ -221,6 +229,59 @@ int ProofVerifierChromium::Job::DoVerifyCert(int result) {
 
 int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
   verifier_.reset();
+
+#if defined(OFFICIAL_BUILD) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  // TODO(wtc): The following code was copied from ssl_client_socket_nss.cc.
+  // Convert it to a new function that can be called by both files. These
+  // variables simulate the arguments to the new function.
+  const CertVerifyResult& cert_verify_result =
+      verify_details_->cert_verify_result;
+  bool sni_available = true;
+  const std::string& host = hostname_;
+  TransportSecurityState* transport_security_state = transport_security_state_;
+  std::string* pinning_failure_log = &verify_details_->pinning_failure_log;
+
+  // Take care of any mandates for public key pinning.
+  //
+  // Pinning is only enabled for official builds to make sure that others don't
+  // end up with pins that cannot be easily updated.
+  //
+  // TODO(agl): We might have an issue here where a request for foo.example.com
+  // merges into a SPDY connection to www.example.com, and gets a different
+  // certificate.
+
+  // Perform pin validation if, and only if, all these conditions obtain:
+  //
+  // * a TransportSecurityState object is available;
+  // * the server's certificate chain is valid (or suffers from only a minor
+  //   error);
+  // * the server's certificate chain chains up to a known root (i.e. not a
+  //   user-installed trust anchor); and
+  // * the build is recent (very old builds should fail open so that users
+  //   have some chance to recover).
+  //
+  const CertStatus cert_status = cert_verify_result.cert_status;
+  if (transport_security_state &&
+      (result == OK ||
+       (IsCertificateError(result) && IsCertStatusMinorError(cert_status))) &&
+      cert_verify_result.is_issued_by_known_root &&
+      TransportSecurityState::IsBuildTimely()) {
+    if (transport_security_state->HasPublicKeyPins(host, sni_available)) {
+      if (!transport_security_state->CheckPublicKeyPins(
+              host,
+              sni_available,
+              cert_verify_result.public_key_hashes,
+              pinning_failure_log)) {
+        LOG(ERROR) << *pinning_failure_log;
+        result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
+        UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", false);
+        TransportSecurityState::ReportUMAOnPinFailure(host);
+      } else {
+        UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", true);
+      }
+    }
+  }
+#endif
 
   if (result <= ERR_FAILED) {
     error_details_ = StringPrintf("Failed to verify certificate chain: %s",
@@ -310,14 +371,18 @@ bool ProofVerifierChromium::Job::VerifySignature(const string& signed_data,
   return true;
 }
 
-ProofVerifierChromium::ProofVerifierChromium(CertVerifier* cert_verifier)
-    : cert_verifier_(cert_verifier) {}
+ProofVerifierChromium::ProofVerifierChromium(
+    CertVerifier* cert_verifier,
+    TransportSecurityState* transport_security_state)
+    : cert_verifier_(cert_verifier),
+      transport_security_state_(transport_security_state) {
+}
 
 ProofVerifierChromium::~ProofVerifierChromium() {
   STLDeleteElements(&active_jobs_);
 }
 
-ProofVerifierChromium::Status ProofVerifierChromium::VerifyProof(
+QuicAsyncStatus ProofVerifierChromium::VerifyProof(
     const std::string& hostname,
     const std::string& server_config,
     const std::vector<std::string>& certs,
@@ -328,14 +393,18 @@ ProofVerifierChromium::Status ProofVerifierChromium::VerifyProof(
     ProofVerifierCallback* callback) {
   if (!verify_context) {
     *error_details = "Missing context";
-    return FAILURE;
+    return QUIC_FAILURE;
   }
   const ProofVerifyContextChromium* chromium_context =
       reinterpret_cast<const ProofVerifyContextChromium*>(verify_context);
-  scoped_ptr<Job> job(new Job(this, cert_verifier_, chromium_context->net_log));
-  Status status = job->VerifyProof(hostname, server_config, certs, signature,
-                                   error_details, verify_details, callback);
-  if (status == PENDING) {
+  scoped_ptr<Job> job(new Job(this,
+                              cert_verifier_,
+                              transport_security_state_,
+                              chromium_context->net_log));
+  QuicAsyncStatus status = job->VerifyProof(hostname, server_config, certs,
+                                            signature, error_details,
+                                            verify_details, callback);
+  if (status == QUIC_PENDING) {
     active_jobs_.insert(job.release());
   }
   return status;

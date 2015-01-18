@@ -57,10 +57,10 @@ ProcessHostImpl::ProcessHostImpl(RendererInfoMap* rendererInfoMap)
             content::BrowserThread::IO);
 
     std::string channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
-    d_channel.reset(new IPC::ChannelProxy(channelId,
+    d_channel = IPC::ChannelProxy::Create(channelId,
                                           IPC::Channel::MODE_SERVER,
                                           this,
-                                          ioTaskRunner));
+                                          ioTaskRunner);
 }
 
 ProcessHostImpl::~ProcessHostImpl()
@@ -157,8 +157,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
 {
     if (message.routing_id() == MSG_ROUTING_CONTROL) {
         // Dispatch control messages
-        bool msgIsOk = true;
-        IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
+        IPC_BEGIN_MESSAGE_MAP(ProcessHostImpl, message)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_ClearWebCache, onClearWebCache)
@@ -167,11 +166,8 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Destroy, onWebViewDestroy)
             IPC_MESSAGE_UNHANDLED_ERROR()
-        IPC_END_MESSAGE_MAP_EX()
+        IPC_END_MESSAGE_MAP()
 
-        if (!msgIsOk) {
-            LOG(ERROR) << "bad message " << message.type();
-        }
         return true;
     }
 
@@ -193,6 +189,11 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
     }
 
     return listener->OnMessageReceived(message);
+}
+
+void ProcessHostImpl::OnBadMessageReceived(const IPC::Message& message)
+{
+    LOG(ERROR) << "bad message " << message.type();
 }
 
 void ProcessHostImpl::OnChannelConnected(int32 peer_pid)

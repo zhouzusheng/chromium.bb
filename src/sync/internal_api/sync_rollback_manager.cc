@@ -41,34 +41,32 @@ void SyncRollbackManager::Init(
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) {
-  SyncRollbackManagerBase::Init(database_location, event_handler,
-                                sync_server_and_path, sync_server_port,
-                                use_ssl, post_factory.Pass(),
-                                workers, extensions_activity, change_delegate,
-                                credentials, invalidator_client_id,
-                                restored_key_for_bootstrapping,
-                                restored_keystore_key_for_bootstrapping,
-                                internal_components_factory, encryptor,
-                                unrecoverable_error_handler.Pass(),
-                                report_unrecoverable_error_function,
-                                cancelation_signal);
+  if (SyncRollbackManagerBase::InitInternal(
+          database_location,
+          internal_components_factory,
+          unrecoverable_error_handler.Pass(),
+          report_unrecoverable_error_function)) {
+    change_delegate_ = change_delegate;
 
-  change_delegate_ = change_delegate;
+    for (size_t i = 0; i < workers.size(); ++i) {
+      ModelSafeGroup group = workers[i]->GetModelSafeGroup();
+      CHECK(workers_.find(group) == workers_.end());
+      workers_[group] = workers[i];
+    }
 
-  for (size_t i = 0; i < workers.size(); ++i) {
-    ModelSafeGroup group = workers[i]->GetModelSafeGroup();
-    CHECK(workers_.find(group) == workers_.end());
-    workers_[group] = workers[i];
+    rollback_ready_types_ = GetUserShare()->directory->InitialSyncEndedTypes();
+    rollback_ready_types_.RetainAll(BackupTypes());
   }
-
-  rollback_ready_types_ = GetUserShare()->directory->InitialSyncEndedTypes();
-  rollback_ready_types_.RetainAll(BackupTypes());
 }
 
 void SyncRollbackManager::StartSyncingNormally(
     const ModelSafeRoutingInfo& routing_info){
-  std::map<ModelType, syncable::Directory::Metahandles> to_delete;
+  if (rollback_ready_types_.Empty()) {
+    NotifyRollbackDone();
+    return;
+  }
 
+  std::map<ModelType, syncable::Directory::Metahandles> to_delete;
   {
     WriteTransaction trans(FROM_HERE, GetUserShare());
     syncable::Directory::Metahandles unsynced;
@@ -100,6 +98,8 @@ void SyncRollbackManager::StartSyncingNormally(
                    base::Unretained(this),
                    it->first, it->second));
   }
+
+  NotifyRollbackDone();
 }
 
 SyncerError SyncRollbackManager::DeleteOnWorkerThread(
@@ -128,6 +128,13 @@ SyncerError SyncRollbackManager::DeleteOnWorkerThread(
 
   change_delegate_->OnChangesComplete(type);
   return SYNCER_OK;
+}
+
+void SyncRollbackManager::NotifyRollbackDone() {
+  SyncProtocolError error;
+  error.action = ROLLBACK_DONE;
+  FOR_EACH_OBSERVER(SyncManager::Observer, *GetObservers(),
+                    OnActionableError(error));
 }
 
 }  // namespace syncer

@@ -64,7 +64,7 @@
             'unix_domain_socket_util_unittest.cc',
           ],
         }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -99,7 +99,7 @@
         'ipc_test_base.h',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],

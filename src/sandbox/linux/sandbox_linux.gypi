@@ -65,6 +65,7 @@
         '../..',
       ],
       'sources': [
+        'tests/sandbox_test_runner.cc',
         'tests/sandbox_test_runner.h',
         'tests/sandbox_test_runner_function_pointer.cc',
         'tests/sandbox_test_runner_function_pointer.h',
@@ -104,7 +105,7 @@
       ],
       'type': 'shared_library',
       'conditions': [
-        [ 'OS == "android" and gtest_target_type == "shared_library"', {
+        [ 'OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -128,6 +129,7 @@
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
         'seccomp-bpf/sandbox_bpf_compatibility_policy.h',
+        'seccomp-bpf/sandbox_bpf_policy.cc',
         'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
@@ -212,6 +214,13 @@
       ],
       'include_dirs': [
         '../..',
+      ],
+      # Do not use any sanitizer tools with this binary. http://crbug.com/382766
+      'cflags/': [
+        ['exclude', '-fsanitize'],
+      ],
+      'ldflags/': [
+        ['exclude', '-fsanitize'],
       ],
     },
     { 'target_name': 'sandbox_services',

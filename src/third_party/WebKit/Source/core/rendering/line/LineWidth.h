@@ -35,14 +35,12 @@
 namespace WebCore {
 
 class FloatingObject;
-class RenderBlock;
 class RenderObject;
 class RenderRubyRun;
 class RenderBlockFlow;
 
-struct LineSegment;
-
 enum IndentTextOrNot { DoNotIndentText, IndentText };
+enum WhitespaceTreatment { ExcludeWhitespace, IncludeWhitespace };
 
 class LineWidth {
 public:
@@ -50,12 +48,17 @@ public:
 
     bool fitsOnLine() const { return currentWidth() <= (m_availableWidth + LayoutUnit::epsilon()); }
     bool fitsOnLine(float extra) const { return currentWidth() + extra <= (m_availableWidth + LayoutUnit::epsilon()); }
+    bool fitsOnLine(float extra, WhitespaceTreatment whitespaceTreatment) const
+    {
+        return currentWidth() - (whitespaceTreatment == ExcludeWhitespace ? trailingWhitespaceWidth() : 0) + extra <= (m_availableWidth + LayoutUnit::epsilon());
+    }
 
     float currentWidth() const { return m_committedWidth + m_uncommittedWidth; }
     // FIXME: We should eventually replace these three functions by ones that work on a higher abstraction.
     float uncommittedWidth() const { return m_uncommittedWidth; }
     float committedWidth() const { return m_committedWidth; }
     float availableWidth() const { return m_availableWidth; }
+    float trailingWhitespaceWidth() const { return m_trailingWhitespaceWidth; }
 
     void updateAvailableWidth(LayoutUnit minimumHeight = 0);
     void shrinkAvailableWidthForNewFloatIfNeeded(FloatingObject*);
@@ -63,6 +66,7 @@ public:
     void commit();
     void applyOverhang(RenderRubyRun*, RenderObject* startRenderer, RenderObject* endRenderer);
     void fitBelowFloats(bool isFirstLine = false);
+    void setTrailingWhitespaceWidth(float width) { m_trailingWhitespaceWidth = width; }
 
     bool shouldIndentText() const { return m_shouldIndentText == IndentText; }
 
@@ -75,6 +79,7 @@ private:
     float m_uncommittedWidth;
     float m_committedWidth;
     float m_overhangWidth; // The amount by which |m_availableWidth| has been inflated to account for possible contraction due to ruby overhang.
+    float m_trailingWhitespaceWidth;
     float m_left;
     float m_right;
     float m_availableWidth;

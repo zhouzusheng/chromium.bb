@@ -164,13 +164,13 @@ ContentBrowserClientImpl::GetWebContentsViewDelegate(content::WebContents* webCo
 net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
     content::BrowserContext* browserContext,
     content::ProtocolHandlerMap* protocolHandlers,
-    content::ProtocolHandlerScopedVector protocolInterceptors)
+    content::URLRequestInterceptorScopedVector requestInterceptors)
 {
     BrowserContextImpl* contextImpl
         = static_cast<BrowserContextImpl*>(browserContext);
 
     contextImpl->requestContextGetter()->setProtocolHandlers(protocolHandlers,
-                                                             protocolInterceptors.Pass());
+                                                             requestInterceptors.Pass());
     return contextImpl->requestContextGetter();
 }
 
@@ -182,12 +182,12 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
     // Keep in sync with ProtocolHandlers added by
     // URLRequestContextGetterImpl::GetURLRequestContext().
     static const char* const kProtocolList[] = {
-        content::kBlobScheme,
-        content::kFileSystemScheme,
+        url::kBlobScheme,
+        url::kFileSystemScheme,
         content::kChromeUIScheme,
         content::kChromeDevToolsScheme,
-        content::kDataScheme,
-        content::kFileScheme,
+        url::kDataScheme,
+        url::kFileScheme,
     };
     for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
         if (url.scheme() == kProtocolList[i])

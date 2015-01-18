@@ -146,20 +146,35 @@ static void beginDeferredFilter(GraphicsContext* context, FilterData* filterData
         filterData->filter->enableCache();
     FloatRect boundaries = enclosingIntRect(filterData->boundaries);
     context->save();
+
+    FloatSize deviceSize = context->getCTM().mapSize(boundaries.size());
+    float scaledArea = deviceSize.width() * deviceSize.height();
+
+    // If area of scaled size is bigger than the upper limit, adjust the scale
+    // to fit. Note that this only really matters in the non-impl-side painting
+    // case, since the impl-side case never allocates a full-sized backing
+    // store, only tile-sized.
+    // FIXME: remove this once all platforms are using impl-side painting.
+    // crbug.com/169282.
+    if (scaledArea > FilterEffect::maxFilterArea()) {
+        float scale = sqrtf(FilterEffect::maxFilterArea() / scaledArea);
+        context->scale(scale, scale);
+    }
     // Clip drawing of filtered image to primitive boundaries.
     context->clipRect(boundaries);
     if (filterElement->hasAttribute(SVGNames::filterResAttr)) {
         // Get boundaries in device coords.
+        // FIXME: See crbug.com/382491. Is the use of getCTM OK here, given it does not include device
+        // zoom or High DPI adjustments?
         FloatSize size = context->getCTM().mapSize(boundaries.size());
         // Compute the scale amount required so that the resulting offscreen is exactly filterResX by filterResY pixels.
-        FloatSize filterResScale(
-            filterElement->filterResX()->currentValue()->value() / size.width(),
-            filterElement->filterResY()->currentValue()->value() / size.height());
+        float filterResScaleX = filterElement->filterResX()->currentValue()->value() / size.width();
+        float filterResScaleY = filterElement->filterResY()->currentValue()->value() / size.height();
         // Scale the CTM so the primitive is drawn to filterRes.
-        context->scale(filterResScale);
+        context->scale(filterResScaleX, filterResScaleY);
         // Create a resize filter with the inverse scale.
         AffineTransform resizeMatrix;
-        resizeMatrix.scale(1 / filterResScale.width(), 1 / filterResScale.height());
+        resizeMatrix.scale(1 / filterResScaleX, 1 / filterResScaleY);
         imageFilter = builder.buildTransform(resizeMatrix, imageFilter.get());
     }
     // If the CTM contains rotation or shearing, apply the filter to

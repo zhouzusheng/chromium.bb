@@ -38,6 +38,7 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/message_filter.h"
+#include "media/base/media_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
@@ -51,6 +52,10 @@
 
 #if defined(USE_OZONE)
 #include "ui/ozone/ozone_switches.h"
+#endif
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "ui/gfx/x/x11_switches.h"
 #endif
 
 namespace content {
@@ -561,6 +566,8 @@ bool GpuProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(GpuHostMsg_CommandBufferCreated, OnCommandBufferCreated)
     IPC_MESSAGE_HANDLER(GpuHostMsg_DestroyCommandBuffer, OnDestroyCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuHostMsg_ImageCreated, OnImageCreated)
+    IPC_MESSAGE_HANDLER(GpuHostMsg_GpuMemoryBufferCreated,
+                        OnGpuMemoryBufferCreated)
     IPC_MESSAGE_HANDLER(GpuHostMsg_DidCreateOffscreenContext,
                         OnDidCreateOffscreenContext)
     IPC_MESSAGE_HANDLER(GpuHostMsg_DidLoseContext, OnDidLoseContext)
@@ -637,7 +644,9 @@ void GpuProcessHost::CreateViewCommandBuffer(
     surface_refs_.insert(std::make_pair(surface_id,
         GpuSurfaceTracker::GetInstance()->GetSurfaceRefForSurface(surface_id)));
   } else {
-    callback.Run(false);
+    // Could distinguish here between compositing_surface being NULL
+    // and Send failing, if desired.
+    callback.Run(CREATE_COMMAND_BUFFER_FAILED_AND_CHANNEL_LOST);
   }
 }
 
@@ -664,6 +673,34 @@ void GpuProcessHost::DeleteImage(int client_id,
   DCHECK(CalledOnValidThread());
 
   Send(new GpuMsg_DeleteImage(client_id, image_id, sync_point));
+}
+
+void GpuProcessHost::CreateGpuMemoryBuffer(
+    const gfx::GpuMemoryBufferHandle& handle,
+    const gfx::Size& size,
+    unsigned internalformat,
+    unsigned usage,
+    const CreateGpuMemoryBufferCallback& callback) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBuffer");
+
+  DCHECK(CalledOnValidThread());
+
+  if (Send(new GpuMsg_CreateGpuMemoryBuffer(
+          handle, size, internalformat, usage))) {
+    create_gpu_memory_buffer_requests_.push(callback);
+  } else {
+    callback.Run(gfx::GpuMemoryBufferHandle());
+  }
+}
+
+void GpuProcessHost::DestroyGpuMemoryBuffer(
+    const gfx::GpuMemoryBufferHandle& handle,
+    int sync_point) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::DestroyGpuMemoryBuffer");
+
+  DCHECK(CalledOnValidThread());
+
+  Send(new GpuMsg_DestroyGpuMemoryBuffer(handle, sync_point));
 }
 
 void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
@@ -708,7 +745,7 @@ void GpuProcessHost::OnChannelEstablished(
                GpuDataManagerImpl::GetInstance()->GetGPUInfo());
 }
 
-void GpuProcessHost::OnCommandBufferCreated(bool succeeded) {
+void GpuProcessHost::OnCommandBufferCreated(CreateCommandBufferResult result) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnCommandBufferCreated");
 
   if (create_command_buffer_requests_.empty())
@@ -717,7 +754,7 @@ void GpuProcessHost::OnCommandBufferCreated(bool succeeded) {
   CreateCommandBufferCallback callback =
       create_command_buffer_requests_.front();
   create_command_buffer_requests_.pop();
-  callback.Run(succeeded);
+  callback.Run(result);
 }
 
 void GpuProcessHost::OnDestroyCommandBuffer(int32 surface_id) {
@@ -737,6 +774,19 @@ void GpuProcessHost::OnImageCreated(const gfx::Size size) {
   CreateImageCallback callback = create_image_requests_.front();
   create_image_requests_.pop();
   callback.Run(size);
+}
+
+void GpuProcessHost::OnGpuMemoryBufferCreated(
+    const gfx::GpuMemoryBufferHandle& handle) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnGpuMemoryBufferCreated");
+
+  if (create_gpu_memory_buffer_requests_.empty())
+    return;
+
+  CreateGpuMemoryBufferCallback callback =
+      create_gpu_memory_buffer_requests_.front();
+  create_gpu_memory_buffer_requests_.pop();
+  callback.Run(handle);
 }
 
 void GpuProcessHost::OnDidCreateOffscreenContext(const GURL& url) {
@@ -799,6 +849,13 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   if (!ui::LatencyInfo::Verify(params.latency_info,
                                "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
     return;
+
+  gfx::AcceleratedWidget native_widget =
+      GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
+  if (native_widget) {
+    RenderWidgetHelper::OnNativeSurfaceBuffersSwappedOnIOThread(this, params);
+    return;
+  }
 
   gfx::GLSurfaceHandle surface_handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
@@ -930,6 +987,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kGpuSandboxAllowSysVShm,
     switches::kGpuSandboxFailuresFatal,
     switches::kGpuSandboxStartAfterInitialization,
+    switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kTestGLLib,
@@ -945,8 +1003,8 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 #if defined(USE_OZONE)
     switches::kOzonePlatform,
 #endif
-#if defined(OS_WIN)
-    switches::kHighDPISupport,
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+    switches::kX11Display,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -998,7 +1056,7 @@ void GpuProcessHost::SendOutstandingReplies() {
     CreateCommandBufferCallback callback =
         create_command_buffer_requests_.front();
     create_command_buffer_requests_.pop();
-    callback.Run(false);
+    callback.Run(CREATE_COMMAND_BUFFER_FAILED_AND_CHANNEL_LOST);
   }
 }
 

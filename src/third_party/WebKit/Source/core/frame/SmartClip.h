@@ -39,20 +39,22 @@ namespace WebCore {
 class SmartClipData {
 public:
     SmartClipData()
+        : m_isEmpty(true)
     {
     }
 
     SmartClipData(Node* node, IntRect rect, String string)
-        : m_node(node)
+        : m_isEmpty(!node)
         , m_rect(rect)
         , m_string(string)
     {
     }
 
-    String toString();
+    IntRect rect() const;
+    const String& clipData() const;
 
 private:
-    RefPtr<Node> m_node;
+    bool m_isEmpty;
     IntRect m_rect;
     String m_string;
 };
@@ -74,7 +76,7 @@ private:
     Node* minNodeContainsNodes(Node* minNode, Node* newNode);
     Node* findBestOverlappingNode(Node*, const IntRect& cropRect);
     bool shouldSkipBackgroundImage(Node*);
-    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, Vector<Node*>& overlappingNodeInfoTable);
+    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& overlappingNodeInfoTable);
     IntRect convertRectToWindow(const IntRect& nodeRect);
     String extractTextFromNode(Node*);
 

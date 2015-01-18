@@ -68,7 +68,6 @@ class UserGestureToken;
 }
 
 namespace blink {
-class GeolocationClientProxy;
 class LinkHighlight;
 class PopupContainer;
 class WebActiveGestureAnimation;
@@ -116,8 +115,7 @@ public:
     virtual void didExitFullScreen() OVERRIDE;
     virtual void animate(double) OVERRIDE;
     virtual void layout() OVERRIDE;
-    virtual void enterForceCompositingMode(bool enable) OVERRIDE;
-    virtual void paint(WebCanvas*, const WebRect&, PaintOptions = ReadbackFromCompositorIfAvailable) OVERRIDE;
+    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE;
 #if OS(ANDROID)
     virtual void paintCompositedDeprecated(WebCanvas*, const WebRect&) OVERRIDE;
 #endif
@@ -163,7 +161,6 @@ public:
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) OVERRIDE;
     virtual void setPrerendererClient(WebPrerendererClient*) OVERRIDE;
     virtual void setSpellCheckClient(WebSpellCheckClient*) OVERRIDE;
-    virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) OVERRIDE;
     virtual WebSettings* settings() OVERRIDE;
     virtual WebString pageEncoding() const OVERRIDE;
     virtual void setPageEncoding(const WebString&) OVERRIDE;
@@ -264,7 +261,11 @@ public:
                                     unsigned inactiveForegroundColor) OVERRIDE;
     virtual void performCustomContextMenuAction(unsigned action) OVERRIDE;
     virtual void showContextMenu() OVERRIDE;
+    // FIXME: This should be removed when the chromium side patch lands
+    // http://codereview.chromium.org/260623004
     virtual WebString getSmartClipData(WebRect) OVERRIDE;
+    virtual void getSmartClipData(WebRect, WebString&, WebRect&) OVERRIDE;
+    virtual void extractSmartClipData(WebRect, WebString&, WebString&, WebRect&) OVERRIDE;
     virtual void hidePopups() OVERRIDE;
     virtual void addPageOverlay(WebPageOverlay*, int /* zOrder */) OVERRIDE;
     virtual void removePageOverlay(WebPageOverlay*) OVERRIDE;
@@ -276,6 +277,7 @@ public:
     virtual void setContinuousPaintingEnabled(bool) OVERRIDE;
     virtual void setShowScrollBottleneckRects(bool) OVERRIDE;
     virtual void getSelectionRootBounds(WebRect& bounds) const OVERRIDE;
+    virtual void acceptLanguagesChanged() OVERRIDE;
 
     // WebViewImpl
 
@@ -337,11 +339,6 @@ public:
         return m_spellCheckClient;
     }
 
-    WebPasswordGeneratorClient* passwordGeneratorClient() const
-    {
-        return m_passwordGeneratorClient;
-    }
-
     // Returns the page object associated with this view. This may be null when
     // the page is shutting down, but will be valid at all other times.
     WebCore::Page* page() const
@@ -360,7 +357,6 @@ public:
     bool detectContentOnTouch(const WebPoint&);
     bool startPageScaleAnimation(const WebCore::IntPoint& targetPosition, bool useAnchor, float newScale, double durationInSeconds);
 
-    void numberOfWheelEventHandlersChanged(unsigned);
     void hasTouchEventHandlers(bool);
 
     // WebGestureCurveTarget implementation for fling.
@@ -472,7 +468,7 @@ public:
     void computeScaleAndScrollForBlockRect(const WebPoint& hitPoint, const WebRect& blockRect, float padding, float defaultScaleWhenAlreadyLegible, float& scale, WebPoint& scroll);
     WebCore::Node* bestTapNode(const WebCore::PlatformGestureEvent& tapEvent);
     void enableTapHighlightAtPoint(const WebCore::PlatformGestureEvent& tapEvent);
-    void enableTapHighlights(Vector<WebCore::Node*>&);
+    void enableTapHighlights(WillBeHeapVector<RawPtrWillBeMember<WebCore::Node> >&);
     void computeScaleAndScrollForFocusedNode(WebCore::Node* focusedNode, float& scale, WebCore::IntPoint& scroll, bool& needAnimation);
 
     void animateDoubleTapZoom(const WebCore::IntPoint&);
@@ -581,7 +577,6 @@ private:
 
     void setIsAcceleratedCompositingActive(bool);
     void doComposite();
-    void doPixelReadbackToCanvas(WebCanvas*, const WebCore::IntRect&);
     void reallocateRenderer();
     void updateLayerTreeViewport();
     void updateLayerTreeBackgroundColor();
@@ -609,7 +604,6 @@ private:
     WebViewClient* m_client; // Can be 0 (e.g. unittests, shared workers, etc.)
     WebAutofillClient* m_autofillClient;
     WebSpellCheckClient* m_spellCheckClient;
-    WebPasswordGeneratorClient* m_passwordGeneratorClient;
 
     ChromeClientImpl m_chromeClientImpl;
     ContextMenuClientImpl m_contextMenuClientImpl;
@@ -722,7 +716,7 @@ private:
     OwnPtr<SettingsMap> m_inspectorSettingsMap;
 
     // If set, the (plugin) node which has mouse capture.
-    RefPtr<WebCore::Node> m_mouseCaptureNode;
+    RefPtrWillBePersistent<WebCore::Node> m_mouseCaptureNode;
     RefPtr<WebCore::UserGestureToken> m_mouseCaptureGestureToken;
 
     WebCore::IntRect m_rootLayerScrollDamage;
@@ -737,8 +731,6 @@ private:
     // If true, the graphics context is being restored.
     bool m_recreatingGraphicsContext;
     static const WebInputEvent* m_currentInputEvent;
-
-    OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
 
     MediaKeysClientImpl m_mediaKeysClientImpl;
     OwnPtr<WebActiveGestureAnimation> m_gestureAnimation;

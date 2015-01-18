@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/rendering/RenderListItem.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/rendering/FastTextAutosizer.h"
@@ -257,13 +257,13 @@ void RenderListItem::updateValue()
     if (!m_hasExplicitValue) {
         m_isValueUpToDate = false;
         if (m_marker)
-            m_marker->setNeedsLayoutAndPrefWidthsRecalc();
+            m_marker->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     }
 }
 
 static RenderObject* firstNonMarkerChild(RenderObject* parent)
 {
-    RenderObject* result = parent->firstChild();
+    RenderObject* result = parent->slowFirstChild();
     while (result && result->isListMarker())
         result = result->nextSibling();
     return result;
@@ -277,79 +277,90 @@ RenderObject* firstRenderText(RenderObject* curr, RenderObject* stayWithin)
     return curr;
 }
 
-void RenderListItem::updateMarkerLocation()
+void RenderListItem::updateMarkerLocationAndInvalidateWidth()
 {
-    // Sanity check the location of our marker.
-    if (m_marker) {
-        RenderObject* markerParent = m_marker->parent();
-        RenderObject* lineBoxParent = getParentOfFirstLineBox(this, m_marker);
-        if (!lineBoxParent) {
-            // If the marker is currently contained inside an anonymous box,
-            // then we are the only item in that anonymous box (since no line box
-            // parent was found).  It's ok to just leave the marker where it is
-            // in this case.
-            if (markerParent && markerParent->isAnonymousBlock())
-                lineBoxParent = markerParent;
-            else
-                lineBoxParent = this;
-        }
+    ASSERT(m_marker);
 
-        bool fontsAreDifferent = false;
-        RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
-        RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
-        if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
-            fontsAreDifferent = true;
-        }
-
-        if (markerParent != lineBoxParent || m_marker->preferredLogicalWidthsDirty() || fontsAreDifferent) {
-            // FIXME: We should not modify the structure of the render tree
-            // during layout. crbug.com/370461
-            DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
-
-            // Removing and adding the marker can trigger repainting in
-            // containers other than ourselves, so we need to disable LayoutState.
-            LayoutStateDisabler layoutStateDisabler(*this);
-            updateFirstLetter();
-            m_marker->remove();
-            if (fontsAreDifferent) {
-                m_marker->style()->setFontDescription(firstText->style()->fontDescription());
-                m_marker->style()->font().update(m_marker->style()->font().fontSelector());
-            }
-            if (markerParent)
-                markerParent->dirtyLinesFromChangedChild(m_marker);
-            lineBoxParent->addChild(m_marker, firstNonMarker);
-            m_marker->updateMarginsAndContent();
-            // If markerParent is an anonymous block that has lost all its children, destroy it.
-            if (markerParent && markerParent->isAnonymousBlock() && !markerParent->firstChild() && !toRenderBlock(markerParent)->continuation())
-                markerParent->destroy();
-
-            // If the marker is inside we need to redo the preferred width calculations
-            // as the size of the item now includes the size of the list marker.
-            if (m_marker->isInside())
-                containingBlock()->updateLogicalWidth();
-        }
+    // FIXME: We should not modify the structure of the render tree
+    // during layout. crbug.com/370461
+    DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
+    // Removing and adding the marker can trigger repainting in
+    // containers other than ourselves, so we need to disable LayoutState.
+    ForceHorriblySlowRectMapping slowRectMapping(*this);
+    if (updateMarkerLocation()) {
+        // If the marker is inside we need to redo the preferred width calculations
+        // as the size of the item now includes the size of the list marker.
+        if (m_marker->isInside())
+            containingBlock()->updateLogicalWidth();
     }
+}
+
+bool RenderListItem::updateMarkerLocation()
+{
+    ASSERT(m_marker);
+    RenderObject* markerParent = m_marker->parent();
+    RenderObject* lineBoxParent = getParentOfFirstLineBox(this, m_marker);
+    if (!lineBoxParent) {
+        // If the marker is currently contained inside an anonymous box, then we
+        // are the only item in that anonymous box (since no line box parent was
+        // found). It's ok to just leave the marker where it is in this case.
+        if (markerParent && markerParent->isAnonymousBlock())
+            lineBoxParent = markerParent;
+        else
+            lineBoxParent = this;
+    }
+
+    bool fontsAreDifferent = false;
+    RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+    RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+    if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
+        fontsAreDifferent = true;
+    }
+
+    if (markerParent != lineBoxParent || fontsAreDifferent) {
+        updateFirstLetter();
+        m_marker->remove();
+        if (fontsAreDifferent) {
+            m_marker->style()->setFontDescription(firstText->style()->fontDescription());
+            m_marker->style()->font().update(m_marker->style()->font().fontSelector());
+        }
+        // FIXME(crbug.com/391009): Investigate whether this call is needed.
+        if (markerParent)
+            markerParent->dirtyLinesFromChangedChild(m_marker);
+        lineBoxParent->addChild(m_marker, firstNonMarker);
+        m_marker->updateMarginsAndContent();
+        // If markerParent is an anonymous block with no children, destroy it.
+        if (markerParent && markerParent->isAnonymousBlock() && !toRenderBlock(markerParent)->firstChild() && !toRenderBlock(markerParent)->continuation())
+            markerParent->destroy();
+        return true;
+    }
+
+    return false;
 }
 
 LayoutUnit RenderListItem::additionalMarginStart() const
 {
-    const_cast<RenderListItem*>(this)->updateMarkerLocation();
-    return m_marker && !m_marker->isInside() ? m_marker->minPreferredLogicalWidth() : LayoutUnit();
+    if (!m_marker || m_marker->isInside())
+        return LayoutUnit();
+
+    const_cast<RenderListItem*>(this)->updateMarkerLocationAndInvalidateWidth();
+    return m_marker->minPreferredLogicalWidth();
 }
 
 void RenderListItem::layout()
 {
     ASSERT(needsLayout());
 
-    // The marker must be autosized before calling updateMarkerLocation.
-    // It cannot be done in the parent's beginLayout because it is not yet in the render tree.
     if (m_marker) {
-        FastTextAutosizer* textAutosizer = document().fastTextAutosizer();
-        if (textAutosizer)
+        // The marker must be autosized before calling
+        // updateMarkerLocationAndInvalidateWidth. It cannot be done in the
+        // parent's beginLayout because it is not yet in the render tree.
+        if (FastTextAutosizer* textAutosizer = document().fastTextAutosizer())
             textAutosizer->inflateListItem(this, m_marker);
+
+        updateMarkerLocationAndInvalidateWidth();
     }
 
-    updateMarkerLocation();
     RenderBlockFlow::layout();
 }
 
@@ -465,7 +476,7 @@ const String& RenderListItem::markerText() const
 void RenderListItem::explicitValueChanged()
 {
     if (m_marker)
-        m_marker->setNeedsLayoutAndPrefWidthsRecalc();
+        m_marker->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     Node* listNode = enclosingList(this);
     for (RenderListItem* item = this; item; item = nextListItem(listNode, item))
         item->updateValue();
@@ -492,6 +503,13 @@ void RenderListItem::clearExplicitValue()
     m_hasExplicitValue = false;
     m_isValueUpToDate = false;
     explicitValueChanged();
+}
+
+void RenderListItem::setNotInList(bool notInList)
+{
+    m_notInList = notInList;
+    if (m_marker)
+        updateMarkerLocation();
 }
 
 static RenderListItem* previousOrNextItem(bool isListReversed, Node* list, RenderListItem* item)

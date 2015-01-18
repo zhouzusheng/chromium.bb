@@ -82,10 +82,11 @@ void GetCompositionUnderlines(HIMC imm_context,
         underline.start_offset = clause_data[i];
         underline.end_offset = clause_data[i+1];
         underline.thick = false;
+        underline.background_color = SK_ColorTRANSPARENT;
 
         // Use thick underline for the target clause.
-        if (underline.start_offset >= static_cast<unsigned>(target_start) &&
-            underline.end_offset <= static_cast<unsigned>(target_end)) {
+        if (underline.start_offset >= static_cast<uint32>(target_start) &&
+            underline.end_offset <= static_cast<uint32>(target_end)) {
           underline.thick = true;
         }
         underlines->push_back(underline);
@@ -340,21 +341,22 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
   // Set default underlines in case there is no clause information.
   if (!composition->underlines.size()) {
     CompositionUnderline underline;
+    underline.background_color = SK_ColorTRANSPARENT;
     if (target_start > 0) {
-      underline.start_offset = 0;
-      underline.end_offset = target_start;
+      underline.start_offset = 0U;
+      underline.end_offset = static_cast<uint32>(target_start);
       underline.thick = false;
       composition->underlines.push_back(underline);
     }
     if (target_end > target_start) {
-      underline.start_offset = target_start;
-      underline.end_offset = target_end;
+      underline.start_offset = static_cast<uint32>(target_start);
+      underline.end_offset = static_cast<uint32>(target_end);
       underline.thick = true;
       composition->underlines.push_back(underline);
     }
     if (target_end < length) {
-      underline.start_offset = target_end;
-      underline.end_offset = length;
+      underline.start_offset = static_cast<uint32>(target_end);
+      underline.end_offset = static_cast<uint32>(length);
       underline.thick = false;
       composition->underlines.push_back(underline);
     }

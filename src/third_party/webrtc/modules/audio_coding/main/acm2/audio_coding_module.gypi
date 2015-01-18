@@ -36,7 +36,7 @@
       ],
       'dependencies': [
         '<@(audio_coding_dependencies)',
-        'NetEq4',
+        'neteq',
       ],
       'include_dirs': [
         '../interface',
@@ -123,6 +123,7 @@
             'audio_coding_module',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [
@@ -139,6 +140,7 @@
             'audio_coding_module',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [

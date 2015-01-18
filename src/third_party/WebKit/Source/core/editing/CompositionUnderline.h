@@ -26,16 +26,34 @@
 #ifndef CompositionUnderline_h
 #define CompositionUnderline_h
 
+#include "platform/graphics/Color.h"
+
 namespace WebCore {
 
 struct CompositionUnderline {
     CompositionUnderline()
-        : startOffset(0), endOffset(0), thick(false) { }
+        : startOffset(0)
+        , endOffset(0)
+        , thick(false)
+        , backgroundColor(Color::transparent) { }
+
+    // FIXME(huangs): remove this constructor.
     CompositionUnderline(unsigned s, unsigned e, bool t)
-        : startOffset(s), endOffset(e), thick(t) { }
+        : startOffset(s)
+        , endOffset(e)
+        , thick(t)
+        , backgroundColor(Color::transparent) { }
+
+    CompositionUnderline(unsigned s, unsigned e, bool t, const Color& bc)
+        : startOffset(s)
+        , endOffset(e)
+        , thick(t)
+        , backgroundColor(bc) { }
+
     unsigned startOffset;
     unsigned endOffset;
     bool thick;
+    Color backgroundColor;
 };
 
 } // namespace WebCore

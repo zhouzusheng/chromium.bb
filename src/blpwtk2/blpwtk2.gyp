@@ -160,6 +160,8 @@
         'private/blpwtk2_contentmaindelegateimpl.h',
         'private/blpwtk2_contentrendererclientimpl.cc',
         'private/blpwtk2_contentrendererclientimpl.h',
+        'private/blpwtk2_contentutilityclientimpl.cc',
+        'private/blpwtk2_contentutilityclientimpl.h',
         'private/blpwtk2_contextmenuitemimpl.cc',
         'private/blpwtk2_contextmenuitemimpl.h',
         'private/blpwtk2_contextmenuparamsimpl.cc',
@@ -347,6 +349,15 @@
         'angle/blpangle_dllmain.cc',
         'angle/blpangle.def',
         'angle/blpangle.rc',
+      ],
+      'defines': [
+        'GL_APICALL=',
+        'GL_GLEXT_PROTOTYPES=',
+        'EGLAPI=',
+      ],
+      'include_dirs': [
+        '<(angle_path)/include',
+        '<(angle_path)/src/common',  # for event_tracer.h
       ],
     },
     {

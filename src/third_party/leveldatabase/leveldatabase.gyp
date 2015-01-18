@@ -172,7 +172,7 @@
         'env_chromium_unittest.cc',
       ],
       'conditions': [
-        ['OS=="android" and gtest_target_type == "shared_library"', {
+        ['OS=="android"', {
           'type': 'shared_library',
           'dependencies': [
             '../../testing/android/native_test.gyp:native_test_native_code',
@@ -370,6 +370,16 @@
       ],
       'sources': [
         'src/db/write_batch_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_main',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/leveldb_main.cc',
       ],
     },
   ],

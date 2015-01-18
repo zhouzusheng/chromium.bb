@@ -458,7 +458,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
         }
     }
 
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
         rubberbandWalkRenderObject(localContext, child);
     }
 }
@@ -743,11 +743,11 @@ bool WebViewImpl::preStartRubberbanding()
 {
     ASSERT(!isRubberbanding());
 
-    if (!m_page || !m_page->mainFrame() || !m_page->mainFrame()->document())
+    if (!m_page || !m_page->mainFrame() || !m_page->mainFrame()->isLocalFrame() || !m_page->deprecatedLocalMainFrame()->document())
         return false;
 
     RefPtr<Event> event = Event::createCancelable("rubberbandstarting");
-    if (!m_page->mainFrame()->document()->dispatchEvent(event))
+    if (!m_page->deprecatedLocalMainFrame()->document()->dispatchEvent(event))
         return false;
 
     return !event->defaultPrevented();
@@ -760,7 +760,7 @@ void WebViewImpl::startRubberbanding()
     m_rubberbandState = adoptPtr(new RubberbandState());
 
     RubberbandContext context;
-    rubberbandWalkFrame(context, m_page->mainFrame(), LayoutPoint());
+    rubberbandWalkFrame(context, m_page->deprecatedLocalMainFrame(), LayoutPoint());
 }
 
 WebRect WebViewImpl::expandRubberbandRect(const WebRect& rcOrig)
@@ -837,9 +837,9 @@ WebString WebViewImpl::finishRubberbanding(const WebRect& rc)
     WTF::String copied = getTextInRubberbandImpl(rc);
 
     m_rubberbandState.clear();
-    if (m_page && m_page->mainFrame() && m_page->mainFrame()->document()) {
+    if (m_page && m_page->mainFrame() && m_page->mainFrame()->isLocalFrame() && m_page->deprecatedLocalMainFrame()->document()) {
         RefPtr<Event> event = Event::create("rubberbandfinished");
-        m_page->mainFrame()->document()->dispatchEvent(event);
+        m_page->deprecatedLocalMainFrame()->document()->dispatchEvent(event);
     }
 
     return copied;
@@ -851,9 +851,9 @@ void WebViewImpl::abortRubberbanding()
 
     m_rubberbandState.clear();
 
-    if (m_page && m_page->mainFrame() && m_page->mainFrame()->document()) {
+    if (m_page && m_page->mainFrame() && m_page->mainFrame()->isLocalFrame() && m_page->deprecatedLocalMainFrame()->document()) {
         RefPtr<Event> event = Event::create("rubberbandaborted");
-        m_page->mainFrame()->document()->dispatchEvent(event);
+        m_page->deprecatedLocalMainFrame()->document()->dispatchEvent(event);
     }
 }
 
@@ -861,7 +861,7 @@ WebString WebViewImpl::getTextInRubberband(const WebRect& rc)
 {
     ASSERT(!isRubberbanding());
 
-    if (!m_page || !m_page->mainFrame() || rc.isEmpty())
+    if (!m_page || !m_page->mainFrame() || rc.isEmpty() || !m_page->mainFrame()->isLocalFrame())
         return WTF::emptyString();
 
     m_rubberbandState = adoptPtr(new RubberbandState());
@@ -870,7 +870,7 @@ WebString WebViewImpl::getTextInRubberband(const WebRect& rc)
     RubberbandLayerContext layerContext;
     context.m_layerContext = &layerContext;
     layerContext.m_clipRect = (WebCore::IntRect)rc;
-    rubberbandWalkFrame(context, m_page->mainFrame(), LayoutPoint());
+    rubberbandWalkFrame(context, m_page->deprecatedLocalMainFrame(), LayoutPoint());
     WTF::String result = getTextInRubberbandImpl(rc);
     m_rubberbandState.clear();
     return result;

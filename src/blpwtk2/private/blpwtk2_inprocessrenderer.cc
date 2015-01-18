@@ -25,10 +25,26 @@
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop/message_loop.h>
+#include <content/common/sandbox_win.h>
 #include <content/public/renderer/render_thread.h>
 #include <content/renderer/render_process_impl.h>
+#include <third_party/WebKit/public/web/WebRuntimeFeatures.h>
+#include <third_party/WebKit/public/web/win/WebFontRendering.h>
 
 namespace blpwtk2 {
+
+static void InitDirectWrite()
+{
+    // This code is adapted from RendererMainPlatformDelegate::PlatformInitialize,
+    // which is used for out-of-process renderers, but is not used for in-process
+    // renderers.  So, we need to do it here.
+
+    bool useDirectWrite = content::ShouldUseDirectWrite();
+    blink::WebFontRendering::setUseDirectWrite(useDirectWrite);
+    if (useDirectWrite) {
+        blink::WebRuntimeFeatures::enableSubpixelFontScaling(true);
+    }
+}
 
 class InProcessRendererThread : public base::Thread {
 public:
@@ -49,6 +65,7 @@ private:
     virtual void Init() OVERRIDE
     {
         Statics::rendererMessageLoop = message_loop();
+        InitDirectWrite();
         content::RenderThread::InitInProcessRenderer("");
     }
 
@@ -72,6 +89,7 @@ void InProcessRenderer::init()
 
     if (Statics::isRendererMainThreadMode()) {
         Statics::rendererMessageLoop = base::MessageLoop::current();
+        InitDirectWrite();
         content::RenderThread::InitInProcessRenderer("");
     }
     else {

@@ -45,7 +45,7 @@
 #include <content/public/browser/spellcheck_data.h>
 #include <content/public/browser/storage_partition.h>
 #include <components/keyed_service/content/browser_context_dependency_manager.h>
-#include <components/user_prefs/pref_registry_syncable.h>
+#include <components/pref_registry/pref_registry_syncable.h>
 #include <components/user_prefs/user_prefs.h>
 
 namespace blpwtk2 {
@@ -353,41 +353,6 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
     return GetRequestContext();
 }
 
-void BrowserContextImpl::RequestMidiSysExPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame,
-    bool user_gesture,
-    const MidiSysExPermissionCallback& callback)
-{
-    callback.Run(true);
-}
-
-void BrowserContextImpl::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame)
-{
-}
-
-void BrowserContextImpl::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback)
-{
-    callback.Run(true);
-}
-
-void BrowserContextImpl::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id)
-{
-}
-
 content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -406,19 +371,18 @@ BrowserContextImpl::GetDownloadManagerDelegate()
     return 0;
 }
 
-content::GeolocationPermissionContext*
-BrowserContextImpl::GetGeolocationPermissionContext()
-{
-    return 0;
-}
-
-content::BrowserPluginGuestManagerDelegate*
-BrowserContextImpl::GetGuestManagerDelegate()
+content::BrowserPluginGuestManager*
+BrowserContextImpl::GetGuestManager()
 {
     return 0;
 }
 
 quota::SpecialStoragePolicy* BrowserContextImpl::GetSpecialStoragePolicy()
+{
+    return 0;
+}
+
+content::PushMessagingService* BrowserContextImpl::GetPushMessagingService()
 {
     return 0;
 }

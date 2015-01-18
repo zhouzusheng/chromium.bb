@@ -48,6 +48,4 @@
       'command_buffer/client/vertex_array_object_manager.h',
     ]
   },
-  'conditions': [
-  ],
 }

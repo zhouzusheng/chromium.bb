@@ -33,7 +33,8 @@ namespace blpwtk2 {
 
 NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
                                    blpwtk2::NativeView parent,
-                                   NativeViewWidgetDelegate* delegate)
+                                   NativeViewWidgetDelegate* delegate,
+                                   bool activatable)
 : d_delegate(delegate)
 , d_nativeViewHost(new views::NativeViewHost())
 , d_impl(new views::Widget())
@@ -46,6 +47,7 @@ NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
     params.delegate = this;
     params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
+    params.activatable = activatable ? views::Widget::InitParams::ACTIVATABLE_DEFAULT : views::Widget::InitParams::ACTIVATABLE_NO;
     d_impl->set_focus_on_creation(false);
     d_impl->Init(params);
     d_nativeViewHost->Attach(contents);

@@ -42,7 +42,8 @@ class NativeViewWidget : private views::WidgetDelegateView {
   public:
     NativeViewWidget(gfx::NativeView contents,
                      blpwtk2::NativeView parent,
-                     NativeViewWidgetDelegate* delegate);
+                     NativeViewWidgetDelegate* delegate,
+                     bool activatable);
     virtual ~NativeViewWidget();
 
     void destroy();

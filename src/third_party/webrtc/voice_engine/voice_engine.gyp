@@ -55,6 +55,8 @@
         'level_indicator.h',
         'monitor_module.cc',
         'monitor_module.h',
+        'network_predictor.cc',
+        'network_predictor.h',
         'output_mixer.cc',
         'output_mixer.h',
         'shared_data.cc',
@@ -121,6 +123,7 @@
           ],
           'sources': [
             'channel_unittest.cc',
+            'network_predictor_unittest.cc',
             'transmit_mixer_unittest.cc',
             'utility_unittest.cc',
             'voe_audio_processing_unittest.cc',

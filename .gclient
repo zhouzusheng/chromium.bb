@@ -1,7 +1,7 @@
 solutions = [
   {
     u'managed': False,
-    u'name': u'37.0.2062.124',
+    u'name': u'38.0.2125.122',
     u'url': u'https://chromium.googlesource.com/chromium/src.git',
     u'custom_deps': {
       u'build': None,

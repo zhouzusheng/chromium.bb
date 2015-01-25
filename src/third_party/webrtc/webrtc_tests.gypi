@@ -13,6 +13,7 @@
       'dependencies': [
         'video_engine_tests',
         'video_loopback',
+        'video_replay',
         'webrtc_perf_tests',
       ],
     },
@@ -41,11 +42,35 @@
       ],
     },
     {
+      'target_name': 'video_replay',
+      'type': 'executable',
+      'sources': [
+        'test/mac/run_test.mm',
+        'test/run_test.cc',
+        'test/run_test.h',
+        'video/replay.cc',
+      ],
+      'conditions': [
+        ['OS=="mac"', {
+          'sources!': [
+            'test/run_test.cc',
+          ],
+        }],
+      ],
+      'dependencies': [
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        'system_wrappers/source/system_wrappers.gyp:field_trial_default',
+        'test/webrtc_test_common.gyp:webrtc_test_common',
+        'test/webrtc_test_common.gyp:webrtc_test_renderer',
+        'webrtc',
+      ],
+    },
+    {
       'target_name': 'video_engine_tests',
       'type': '<(gtest_target_type)',
       'sources': [
         'video/bitrate_estimator_tests.cc',
-        'video/call_tests.cc',
+        'video/end_to_end_tests.cc',
         'video/send_statistics_proxy_unittest.cc',
         'video/video_send_stream_tests.cc',
         'test/common_unittest.cc',
@@ -77,6 +102,7 @@
         'video/call_perf_tests.cc',
         'video/full_stack.cc',
         'video/rampup_tests.cc',
+        'video/rampup_tests.h',
       ],
       'dependencies': [
         'modules/modules.gyp:neteq_test_support',  # Needed by neteq_performance_unittest.

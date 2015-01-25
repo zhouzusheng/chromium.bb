@@ -39,7 +39,7 @@
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebServiceWorkerProviderClient.h"
 
-namespace WebCore {
+namespace blink {
 
 void fillWithEmptyClients(Page::PageClients& pageClients)
 {
@@ -86,9 +86,9 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, Colo
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return nullptr;
+    return PassRefPtr<DateTimeChooser>();
 }
 
 void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
@@ -104,7 +104,7 @@ String EmptyChromeClient::acceptLanguages()
     return String();
 }
 
-NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy)
+NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy, bool isTransitionNavigation)
 {
     return NavigationPolicyIgnore;
 }

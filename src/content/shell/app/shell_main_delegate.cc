@@ -34,6 +34,13 @@
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 
+#include <chrome/common/chrome_paths.h>
+#include <chrome/common/chrome_utility_messages.h>
+#include <chrome/utility/printing_handler.h>
+#include <content/public/utility/content_utility_client.h>
+#include <content/public/utility/utility_thread.h>
+#include <ipc/ipc_message_macros.h>
+
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
@@ -105,6 +112,51 @@ void InitLogging() {
 
 namespace content {
 
+bool Send(IPC::Message* message)
+{
+    return content::UtilityThread::Get()->Send(message);
+}
+
+class ShellContentUtilityClient : public content::ContentUtilityClient
+{
+  public:
+    ShellContentUtilityClient()
+    {
+        d_handlers.push_back(new PrintingHandler());
+    }
+
+    // Allows the embedder to filter messages.
+    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE
+    {
+        bool handled = true;
+        IPC_BEGIN_MESSAGE_MAP(ShellContentUtilityClient, message)
+            IPC_MESSAGE_HANDLER(ChromeUtilityMsg_StartupPing, onStartupPing)
+            IPC_MESSAGE_UNHANDLED(handled = false)
+        IPC_END_MESSAGE_MAP()
+
+        for (Handlers::iterator it = d_handlers.begin(); !handled && it != d_handlers.end(); ++it)
+            handled = (*it)->OnMessageReceived(message);
+
+        return handled;
+    }
+
+    static void PreSandboxStartup()
+    {
+        PrintingHandler::PreSandboxStartup();
+    }
+
+    void onStartupPing()
+    {
+        Send(new ChromeUtilityHostMsg_ProcessStarted);
+    }
+
+  private:
+    typedef ScopedVector<UtilityMessageHandler> Handlers;
+    Handlers d_handlers;
+
+    DISALLOW_COPY_AND_ASSIGN(ShellContentUtilityClient);
+};
+
 ShellMainDelegate::ShellMainDelegate() {
 }
 
@@ -127,6 +179,9 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   InitLogging();
   CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
+    // If CheckLayoutSystemDeps succeeds, we don't exit early. Instead we
+    // continue and try to load the fonts in WebKitTestPlatformInitialize
+    // below, and then try to bring up the rest of the content module.
     if (!CheckLayoutSystemDeps()) {
       if (exit_code)
         *exit_code = 1;
@@ -146,7 +201,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
-    command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
     command_line.AppendSwitchASCII(switches::kForceDeviceScaleFactor, "1.0");
 #if defined(OS_ANDROID)
     command_line.AppendSwitch(
@@ -161,12 +215,13 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing)) {
       command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
+      command_line.AppendSwitch(switches::kDisableImplSidePainting);
     }
 
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA) || defined(OS_ANDROID)
+#if defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_MACOSX)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
@@ -229,6 +284,20 @@ void ShellMainDelegate::PreSandboxStartup() {
   }
 
   InitializeResourceBundle();
+
+  const base::CommandLine& commandLine = *base::CommandLine::ForCurrentProcess();
+  std::string processType = commandLine.GetSwitchValueASCII(switches::kProcessType);
+
+  if (processType == switches::kUtilityProcess) {
+    base::FilePath dirModule;
+    PathService::Get(base::DIR_MODULE, &dirModule);
+
+    base::FilePath pdfDll = dirModule;
+    pdfDll = pdfDll.AppendASCII("pdf.dll");
+    PathService::Override(chrome::FILE_PDF_PLUGIN, pdfDll);
+
+    ShellContentUtilityClient::PreSandboxStartup();
+  }
 }
 
 int ShellMainDelegate::RunProcess(
@@ -268,8 +337,8 @@ void ShellMainDelegate::InitializeResourceBundle() {
       base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
   if (pak_fd >= 0) {
     // This is clearly wrong. See crbug.com/330930
-    ui::ResourceBundle::InitSharedInstanceWithPakFile(base::File(pak_fd),
-                                                      false);
+    ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
+        base::File(pak_fd), base::MemoryMappedFile::Region::kWholeFile);
     ResourceBundle::GetSharedInstance().AddDataPackFromFile(
         base::File(pak_fd), ui::SCALE_FACTOR_100P);
     return;
@@ -303,6 +372,11 @@ ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
 ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
   renderer_client_.reset(new ShellContentRendererClient);
   return renderer_client_.get();
+}
+
+ContentUtilityClient* ShellMainDelegate::CreateContentUtilityClient() {
+  utility_client_.reset(new ShellContentUtilityClient);
+  return utility_client_.get();
 }
 
 }  // namespace content

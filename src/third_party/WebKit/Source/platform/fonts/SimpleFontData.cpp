@@ -34,7 +34,7 @@
 
 using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 const float smallCapsFontSizeMultiplier = 0.7f;
 const float emphasisMarkFontSizeMultiplier = 0.5f;
@@ -103,11 +103,9 @@ void SimpleFontData::platformGlyphInit()
 {
     GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();
     if (!glyphPageZero) {
-        WTF_LOG_ERROR("Failed to get glyph page zero.");
         m_spaceGlyph = 0;
         m_spaceWidth = 0;
         m_zeroGlyph = 0;
-        m_adjustedSpaceWidth = 0;
         determinePitch();
         m_zeroWidthSpaceGlyph = 0;
         m_missingGlyphData.fontData = this;
@@ -126,7 +124,6 @@ void SimpleFontData::platformGlyphInit()
     m_zeroGlyph = glyphPageZero->glyphForCharacter('0');
     m_fontMetrics.setZeroWidth(widthForGlyph(m_zeroGlyph));
     determinePitch();
-    m_adjustedSpaceWidth = m_treatAsFixedPitch ? ceilf(width) : roundf(width);
 
     // Force the glyph for ZERO WIDTH SPACE to have zero width, unless it is shared with SPACE.
     // Helvetica is an example of a non-zero width ZERO WIDTH SPACE glyph.
@@ -265,4 +262,4 @@ PassRefPtr<SimpleFontData> SimpleFontData::createScaledFontData(const FontDescri
     return platformCreateScaledFontData(fontDescription, scaleFactor);
 }
 
-} // namespace WebCore
+} // namespace blink

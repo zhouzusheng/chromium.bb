@@ -33,7 +33,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class LocalDOMWindow;
@@ -309,7 +309,6 @@ public:
         NamedNodeMapRemoveNamedItemNS = 312,
         OpenWebDatabaseInWorker = 313, // This didn't work because of crbug.com/376039. Available since M37.
         OpenWebDatabaseSyncInWorker = 314, // This didn't work because of crbug.com/376039. Available since M37.
-        PrefixedAllowFullscreenAttribute = 315,
         XHRProgressEventPosition = 316,
         XHRProgressEventTotalSize = 317,
         PrefixedDocumentIsFullscreen = 318,
@@ -369,7 +368,6 @@ public:
         PrefixedIDBTransactionConstructor = 370,
         NotificationPermission = 371,
         RangeDetach = 372,
-        DocumentImportNodeOptionalArgument = 373,
         HTMLTableElementVspace = 374,
         HTMLTableElementHspace = 375,
         PrefixedDocumentExitPointerLock = 376,
@@ -380,22 +378,14 @@ public:
         PrefixedTouchForce = 381,
         PrefixedMouseEventMovementX = 382,
         PrefixedMouseEventMovementY = 383,
-        PrefixedWheelEventDirectionInvertedFromDevice = 384,
-        PrefixedWheelEventInit = 385,
         PrefixedFileRelativePath = 386,
         DocumentCaretRangeFromPoint = 387,
         DocumentGetCSSCanvasContext = 388,
         ElementScrollIntoViewIfNeeded = 389,
-        ElementScrollByLines = 390,
-        ElementScrollByPages = 391,
         RangeCompareNode = 392,
         RangeExpand = 393,
-        HTMLFrameElementWidth = 394,
-        HTMLFrameElementHeight = 395,
         HTMLImageElementX = 396,
         HTMLImageElementY = 397,
-        HTMLOptionsCollectionRemoveElement = 398,
-        HTMLPreElementWrap = 399,
         SelectionBaseNode = 400,
         SelectionBaseOffset = 401,
         SelectionExtentNode = 402,
@@ -404,7 +394,6 @@ public:
         SelectionModify = 405,
         SelectionSetBaseAndExtent = 406,
         SelectionEmpty = 407,
-        SVGFEMorphologyElementSetRadius = 408,
         VTTCue = 409,
         VTTCueRender = 410,
         VTTCueRenderVertical = 411,
@@ -470,6 +459,47 @@ public:
         CSSSelectorPseudoHostContext = 470,
         CSSDeepCombinator = 471,
         SyncXHRWithCredentials = 472,
+        // The above items are available in M37 branch.
+
+        UseAsm = 473,
+        KeyEventNotAllowedInFullScreen = 474,
+        DOMWindowOpen = 475,
+        DOMWindowOpenFeatures = 476,
+        MediaStreamTrackGetSources = 478,
+        AspectRatioFlexItem = 479,
+        DetailsElement = 480,
+        DialogElement = 481,
+        MapElement = 482,
+        MeterElement = 483,
+        ProgressElement = 484,
+        VideoFullscreenAllowedExemption = 485,
+        WebKitPoint = 488,
+        PrefixedHTMLElementDropzone = 490,
+        WheelEventWheelDeltaX = 491,
+        WheelEventWheelDeltaY = 492,
+        WheelEventWheelDelta = 493,
+        SendBeacon = 494,
+        SendBeaconQuotaExceeded = 495,
+        SVGSMILElementInDocument = 501,
+        MouseEventOffsetX = 502,
+        MouseEventOffsetY = 503,
+        MouseEventX = 504,
+        MouseEventY = 505,
+        MouseEventFromElement = 506,
+        MouseEventToElement = 507,
+        RequestFileSystem = 508,
+        RequestFileSystemWorker = 509,
+        RequestFileSystemSyncWorker = 510,
+        UIEventLayerX = 511,
+        UIEventLayerY = 512,
+        UIEventPageX = 513,
+        UIEventPageY = 514,
+        BgPropertiesFixed = 515,
+        HTMLImageElementComposite = 516,
+        DevToolsConsoleTimeline = 517,
+        DevToolsConsoleProfile = 518,
+        SVGStyleElementTitle = 519,
+        PictureSourceSrc = 520,
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
         // Also, run update_use_counter_feature_enum.py in chromium/src/tools/metrics/histograms/
@@ -537,6 +567,6 @@ private:
     BitVector m_CSSFeatureBits;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // UseCounter_h

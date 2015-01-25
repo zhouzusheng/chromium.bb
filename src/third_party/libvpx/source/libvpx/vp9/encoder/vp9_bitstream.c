@@ -20,7 +20,6 @@
 #include "vp9/common/vp9_entropymode.h"
 #include "vp9/common/vp9_entropymv.h"
 #include "vp9/common/vp9_mvref_common.h"
-#include "vp9/common/vp9_pragmas.h"
 #include "vp9/common/vp9_pred_common.h"
 #include "vp9/common/vp9_seg_common.h"
 #include "vp9/common/vp9_systemdependent.h"
@@ -424,10 +423,12 @@ static void write_modes_sb(VP9_COMP *cpi,
   const int bs = (1 << bsl) / 4;
   PARTITION_TYPE partition;
   BLOCK_SIZE subsize;
-  MODE_INFO *m = cm->mi_grid_visible[mi_row * cm->mi_stride + mi_col];
+  const MODE_INFO *m = NULL;
 
   if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols)
     return;
+
+  m = cm->mi_grid_visible[mi_row * cm->mi_stride + mi_col];
 
   partition = partition_lookup[bsl][m->mbmi.sb_type];
   write_partition(cm, xd, bs, mi_row, mi_col, partition, bsize, w);
@@ -521,7 +522,7 @@ static void update_coef_probs_common(vp9_writer* const bc, VP9_COMP *cpi,
   int i, j, k, l, t;
   switch (cpi->sf.use_fast_coef_updates) {
     case TWO_LOOP: {
-      /* dry run to see if there is any udpate at all needed */
+      /* dry run to see if there is any update at all needed */
       int savings = 0;
       int update[2] = {0, 0};
       for (i = 0; i < PLANE_TYPES; ++i) {
@@ -740,7 +741,6 @@ static void encode_quantization(VP9_COMMON *cm,
   write_delta_q(wb, cm->uv_ac_delta_q);
 }
 
-
 static void encode_segmentation(VP9_COMP *cpi,
                                 struct vp9_write_bit_buffer *wb) {
   int i, j;
@@ -802,7 +802,6 @@ static void encode_segmentation(VP9_COMP *cpi,
     }
   }
 }
-
 
 static void encode_txfm_probs(VP9_COMMON *cm, vp9_writer *w) {
   // Mode
@@ -891,39 +890,28 @@ static void write_tile_info(VP9_COMMON *cm, struct vp9_write_bit_buffer *wb) {
 }
 
 static int get_refresh_mask(VP9_COMP *cpi) {
-    // Should the GF or ARF be updated using the transmitted frame or buffer
-#if CONFIG_MULTIPLE_ARF
-    if (!cpi->multi_arf_enabled && cpi->refresh_golden_frame &&
-        !cpi->refresh_alt_ref_frame) {
-#else
-    if (cpi->refresh_golden_frame && !cpi->refresh_alt_ref_frame &&
-        !cpi->use_svc) {
-#endif
-      // Preserve the previously existing golden frame and update the frame in
-      // the alt ref slot instead. This is highly specific to the use of
-      // alt-ref as a forward reference, and this needs to be generalized as
-      // other uses are implemented (like RTC/temporal scaling)
-      //
-      // gld_fb_idx and alt_fb_idx need to be swapped for future frames, but
-      // that happens in vp9_encoder.c:update_reference_frames() so that it can
-      // be done outside of the recode loop.
-      return (cpi->refresh_last_frame << cpi->lst_fb_idx) |
-             (cpi->refresh_golden_frame << cpi->alt_fb_idx);
-    } else {
-      int arf_idx = cpi->alt_fb_idx;
-#if CONFIG_MULTIPLE_ARF
-      // Determine which ARF buffer to use to encode this ARF frame.
-      if (cpi->multi_arf_enabled) {
-        int sn = cpi->sequence_number;
-        arf_idx = (cpi->frame_coding_order[sn] < 0) ?
-            cpi->arf_buffer_idx[sn + 1] :
-            cpi->arf_buffer_idx[sn];
-      }
-#endif
-      return (cpi->refresh_last_frame << cpi->lst_fb_idx) |
-             (cpi->refresh_golden_frame << cpi->gld_fb_idx) |
-             (cpi->refresh_alt_ref_frame << arf_idx);
+  if (!cpi->multi_arf_allowed && cpi->refresh_golden_frame &&
+      cpi->rc.is_src_frame_alt_ref && !cpi->use_svc) {
+    // Preserve the previously existing golden frame and update the frame in
+    // the alt ref slot instead. This is highly specific to the use of
+    // alt-ref as a forward reference, and this needs to be generalized as
+    // other uses are implemented (like RTC/temporal scaling)
+    //
+    // gld_fb_idx and alt_fb_idx need to be swapped for future frames, but
+    // that happens in vp9_encoder.c:update_reference_frames() so that it can
+    // be done outside of the recode loop.
+    return (cpi->refresh_last_frame << cpi->lst_fb_idx) |
+           (cpi->refresh_golden_frame << cpi->alt_fb_idx);
+  } else {
+    int arf_idx = cpi->alt_fb_idx;
+    if ((cpi->pass == 2) && cpi->multi_arf_allowed) {
+      const GF_GROUP *const gf_group = &cpi->twopass.gf_group;
+      arf_idx = gf_group->arf_update_idx[gf_group->index];
     }
+    return (cpi->refresh_last_frame << cpi->lst_fb_idx) |
+           (cpi->refresh_golden_frame << cpi->gld_fb_idx) |
+           (cpi->refresh_alt_ref_frame << arf_idx);
+  }
 }
 
 static size_t encode_tiles(VP9_COMP *cpi, uint8_t *data_ptr) {
@@ -1036,9 +1024,22 @@ static void write_sync_code(struct vp9_write_bit_buffer *wb) {
 
 static void write_profile(BITSTREAM_PROFILE profile,
                           struct vp9_write_bit_buffer *wb) {
-  assert(profile < MAX_PROFILES);
-  vp9_wb_write_bit(wb, profile & 1);
-  vp9_wb_write_bit(wb, profile >> 1);
+  switch (profile) {
+    case PROFILE_0:
+      vp9_wb_write_literal(wb, 0, 2);
+      break;
+    case PROFILE_1:
+      vp9_wb_write_literal(wb, 2, 2);
+      break;
+    case PROFILE_2:
+      vp9_wb_write_literal(wb, 1, 2);
+      break;
+    case PROFILE_3:
+      vp9_wb_write_literal(wb, 6, 3);
+      break;
+    default:
+      assert(0);
+  }
 }
 
 static void write_uncompressed_header(VP9_COMP *cpi,
@@ -1064,14 +1065,14 @@ static void write_uncompressed_header(VP9_COMP *cpi,
     vp9_wb_write_literal(wb, cs, 3);
     if (cs != SRGB) {
       vp9_wb_write_bit(wb, 0);  // 0: [16, 235] (i.e. xvYCC), 1: [0, 255]
-      if (cm->profile >= PROFILE_1) {
+      if (cm->profile == PROFILE_1 || cm->profile == PROFILE_3) {
         vp9_wb_write_bit(wb, cm->subsampling_x);
         vp9_wb_write_bit(wb, cm->subsampling_y);
-        vp9_wb_write_bit(wb, 0);  // has extra plane
+        vp9_wb_write_bit(wb, 0);  // unused
       }
     } else {
-      assert(cm->profile == PROFILE_1);
-      vp9_wb_write_bit(wb, 0);  // has extra plane
+      assert(cm->profile == PROFILE_1 || cm->profile == PROFILE_3);
+      vp9_wb_write_bit(wb, 0);  // unused
     }
 
     write_frame_size(cm, wb);
@@ -1222,4 +1223,3 @@ void vp9_pack_bitstream(VP9_COMP *cpi, uint8_t *dest, size_t *size) {
 
   *size = data - dest;
 }
-

@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/aura
       'target_name': 'aura',
       'type': '<(component)',
       'dependencies': [
@@ -123,6 +124,7 @@
         ['OS=="win"', {
           'dependencies': [
             '../metro_viewer/metro_viewer.gyp:metro_viewer_messages',
+            '../platform_window/win/win_window.gyp:win_window',
             '../../ipc/ipc.gyp:ipc',
           ],
           'sources!': [
@@ -133,6 +135,7 @@
           'dependencies': [
             '../events/ozone/events_ozone.gyp:events_ozone',
             '../ozone/ozone.gyp:ozone',
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
       ],

@@ -6,6 +6,7 @@
 #define CC_TREES_LAYER_TREE_IMPL_H_
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,12 @@ struct hash<cc::LayerImpl*> {
 }  // namespace BASE_HASH_NAMESPACE
 #endif  // COMPILER
 
+namespace base {
+namespace debug {
+class TracedValue;
+}
+}
+
 namespace cc {
 
 class ContextProvider;
@@ -48,6 +55,7 @@ class ResourceProvider;
 class TileManager;
 class UIResourceRequest;
 struct RendererCapabilities;
+struct SelectionHandle;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
@@ -73,22 +81,25 @@ class CC_EXPORT LayerTreeImpl {
   FrameRateCounter* frame_rate_counter() const;
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
-  bool device_viewport_valid_for_tile_management() const;
+  bool resourceless_software_draw() const;
   gfx::Size device_viewport_size() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
   bool IsRecycleTree() const;
   LayerImpl* FindActiveTreeLayerById(int id);
   LayerImpl* FindPendingTreeLayerById(int id);
-  int MaxTextureSize() const;
+  LayerImpl* FindRecycleTreeLayerById(int id);
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
   base::TimeDelta begin_impl_frame_interval() const;
   void SetNeedsCommit();
+  gfx::Rect DeviceViewport() const;
   gfx::Size DrawViewportSize() const;
+  const gfx::Rect ViewportRectForTilePriority() const;
   scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
       LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
+  void InputScrollAnimationFinished();
   bool use_gpu_rasterization() const;
   bool create_low_res_tiling() const;
 
@@ -101,7 +112,8 @@ class CC_EXPORT LayerTreeImpl {
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
   DebugRectHistory* debug_rect_history() const;
-  scoped_ptr<base::Value> AsValue() const;
+  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
+  void AsValueInto(base::debug::TracedValue* dict) const;
 
   // Other public methods
   // ---------------------------------------------------------------------------
@@ -186,6 +198,11 @@ class CC_EXPORT LayerTreeImpl {
 
   void ForceRedrawNextActivation() { next_activation_forces_redraw_ = true; }
 
+  void set_has_ever_been_drawn(bool has_drawn) {
+    has_ever_been_drawn_ = has_drawn;
+  }
+  bool has_ever_been_drawn() const { return has_ever_been_drawn_; }
+
   void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
   const LayerImplList& RenderSurfaceLayerList() const;
@@ -202,6 +219,8 @@ class CC_EXPORT LayerTreeImpl {
   // These should be called by LayerImpl's ctor/dtor.
   void RegisterLayer(LayerImpl* layer);
   void UnregisterLayer(LayerImpl* layer);
+
+  size_t NumLayers();
 
   AnimationRegistrar* animationRegistrar() const;
 
@@ -263,6 +282,14 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
       const gfx::PointF& screen_space_point);
 
+  void RegisterSelection(const LayerSelectionBound& start,
+                         const LayerSelectionBound& end);
+
+  // Compute the current selection handle location and visbility with respect to
+  // the viewport.
+  void GetViewportSelection(ViewportSelectionBound* start,
+                            ViewportSelectionBound* end);
+
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
@@ -286,6 +313,9 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* page_scale_layer_;
   LayerImpl* inner_viewport_scroll_layer_;
   LayerImpl* outer_viewport_scroll_layer_;
+
+  LayerSelectionBound selection_start_;
+  LayerSelectionBound selection_end_;
 
   float page_scale_factor_;
   float page_scale_delta_;
@@ -314,6 +344,8 @@ class CC_EXPORT LayerTreeImpl {
   bool needs_full_tree_sync_;
 
   bool next_activation_forces_redraw_;
+
+  bool has_ever_been_drawn_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
 

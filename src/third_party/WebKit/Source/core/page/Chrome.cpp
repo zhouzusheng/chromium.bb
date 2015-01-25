@@ -43,7 +43,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -73,9 +73,9 @@ void Chrome::invalidateContentsForSlowScroll(const IntRect& updateRect)
     m_client->invalidateContentsForSlowScroll(updateRect);
 }
 
-void Chrome::scroll(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect)
+void Chrome::scroll()
 {
-    m_client->scroll(scrollDelta, rectToScroll, clipRect);
+    m_client->scroll();
     InspectorInstrumentation::didScroll(m_page);
 }
 
@@ -341,7 +341,7 @@ PassOwnPtr<ColorChooser> Chrome::createColorChooser(LocalFrame* frame, ColorChoo
     return m_client->createColorChooser(frame, client, initialColor);
 }
 
-PassRefPtrWillBeRawPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
+PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     notifyPopupOpeningObservers();
     return m_client->openDateTimeChooser(client, parameters);
@@ -413,4 +413,4 @@ void Chrome::willBeDestroyed()
     m_client->chromeDestroyed();
 }
 
-} // namespace WebCore
+} // namespace blink

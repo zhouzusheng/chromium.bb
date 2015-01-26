@@ -352,8 +352,6 @@ static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
-  RenderProcessHostImpl::RegisterRendererMainThreadFactory(
-      CreateInProcessRendererThread);
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
 #else
@@ -393,8 +391,6 @@ int RunNamedProcessTypeMain(
     { switches::kGpuProcess,         GpuMain },
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
-
-  RegisterMainThreadFactories();
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {
@@ -621,6 +617,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       SetContentClient(&empty_content_client_);
     ContentClientInitializer::Set(process_type, delegate_);
 
+    RegisterMainThreadFactories();
+
 #if defined(OS_WIN)
     // Route stdio to parent console (if any) or create one.
     if (command_line.HasSwitch(switches::kEnableLogging))
@@ -713,7 +711,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     else
       CHECK(base::i18n::InitializeICU());
 #else
-    CHECK(base::i18n::InitializeICU());
+    const void* icu_data;
+    CHECK(base::i18n::InitializeICU(&icu_data));
+#if !defined(COMPONENT_BUILD) && defined(USING_V8_SHARED)
+    CHECK(v8::V8::InitializeICUWithData(icu_data));
+#endif
 #endif
 
     InitializeStatsTable(command_line);

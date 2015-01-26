@@ -177,6 +177,21 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
   return false;
 }
 
+bool WebContentsDelegate::ShouldSetKeyboardFocusOnMouseDown() {
+  return true;
+}
+
+bool WebContentsDelegate::ShouldSetLogicalFocusOnMouseDown() {
+  return true;
+}
+
+bool WebContentsDelegate::ShowTooltip(
+    WebContents* web_contents,
+    const base::string16& tooltip_text,
+    blink::WebTextDirection text_direction_hint) {
+  return false;
+}
+
 WebContentsDelegate::~WebContentsDelegate() {
   while (!attached_contents_.empty()) {
     WebContents* web_contents = *attached_contents_.begin();

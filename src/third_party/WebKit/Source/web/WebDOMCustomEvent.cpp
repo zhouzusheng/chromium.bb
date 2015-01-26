@@ -48,4 +48,12 @@ void WebDOMCustomEvent::initCustomEvent(const WebString& type, bool canBubble, b
     unwrap<CustomEvent>()->initCustomEvent(type, canBubble, cancelable, serializedScriptValue.get());
 }
 
+// static
+WebDOMCustomEvent WebDOMCustomEvent::create()
+{
+    WebDOMCustomEvent result;
+    result.m_private = CustomEvent::create();
+    return result;
+}
+
 } // namespace blink

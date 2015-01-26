@@ -38,6 +38,7 @@ class BASE_EXPORT MessagePumpWin : public MessagePump {
   struct RunState {
     Delegate* delegate;
     MessagePumpDispatcher* dispatcher;
+    RunState* previous_state;
 
     // Used to flag that the current Run() invocation should return ASAP.
     bool should_quit;
@@ -46,6 +47,10 @@ class BASE_EXPORT MessagePumpWin : public MessagePump {
     int run_depth;
   };
 
+  void PushRunState(RunState* run_state,
+                    Delegate* delegate,
+                    MessagePumpDispatcher* dispatcher);
+  void PopRunState();
   virtual void DoRunLoop() = 0;
   int GetCurrentDelay() const;
 
@@ -114,7 +119,7 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
   // The application-defined code passed to the hook procedure.
   static const int kMessageFilterCode = 0x5001;
 
-  MessagePumpForUI();
+  MessagePumpForUI(WNDPROC wnd_proc = NULL);
   virtual ~MessagePumpForUI();
 
   // MessagePump methods:
@@ -127,7 +132,7 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
                                        WPARAM wparam,
                                        LPARAM lparam);
   virtual void DoRunLoop();
-  void InitMessageWnd();
+  void InitMessageWnd(WNDPROC wnd_proc);
   void WaitForWork();
   void HandleWorkMessage();
   void HandleTimerMessage();
@@ -138,6 +143,10 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
   // Atom representing the registered window class.
   ATOM atom_;
 
+  // Instance of the module containing the window procedure.
+  HMODULE instance_;
+
+ protected:
   // A hidden message-only window.
   HWND message_hwnd_;
 };

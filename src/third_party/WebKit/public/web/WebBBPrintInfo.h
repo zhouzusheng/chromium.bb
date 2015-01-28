@@ -27,13 +27,10 @@
 #include "../platform/WebColor.h"
 #include "../platform/WebPrivatePtr.h"
 
-namespace WebCore {
-    class BBPrintInfo;
-    class BBPrintHeader;
-}
-
 namespace blink {
 
+class BBPrintInfo;
+class BBPrintHeader;
 class WebString;
 
 class WebBBPrintHeader {
@@ -78,11 +75,11 @@ public:
     bool isNull() const { return m_private.isNull(); }
 
 #if BLINK_IMPLEMENTATION
-    WebBBPrintHeader(const WTF::PassRefPtr<WebCore::BBPrintHeader>&);
+    WebBBPrintHeader(const WTF::PassRefPtr<BBPrintHeader>&);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::BBPrintHeader> m_private;
+    WebPrivatePtr<BBPrintHeader> m_private;
 };
 
 // A container for passing around a reference to AccessibilityObject.
@@ -111,11 +108,11 @@ public:
     bool isNull() const { return m_private.isNull(); }
 
 #if BLINK_IMPLEMENTATION
-    WebBBPrintInfo(const WTF::PassRefPtr<WebCore::BBPrintInfo>&);
+    WebBBPrintInfo(const WTF::PassRefPtr<BBPrintInfo>&);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::BBPrintInfo> m_private;
+    WebPrivatePtr<BBPrintInfo> m_private;
 };
 
 } // namespace blink

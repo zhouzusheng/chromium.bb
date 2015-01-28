@@ -81,7 +81,7 @@ private:
 
 Target::Target(content::WebContents* webContents) {
     d_agentHost =
-        content::DevToolsAgentHost::GetOrCreateFor(webContents->GetRenderViewHost());
+        content::DevToolsAgentHost::GetOrCreateFor(webContents);
     d_id = d_agentHost->GetId();
     d_title = base::UTF16ToUTF8(webContents->GetTitle());
     d_url = webContents->GetURL();
@@ -93,10 +93,7 @@ Target::Target(content::WebContents* webContents) {
 }
 
 bool Target::Activate() const {
-    content::RenderViewHost* rvh = d_agentHost->GetRenderViewHost();
-    if (!rvh)
-        return false;
-    content::WebContents* webContents = content::WebContents::FromRenderViewHost(rvh);
+    content::WebContents* webContents = d_agentHost->GetWebContents();
     if (!webContents)
         return false;
     webContents->GetDelegate()->ActivateContents(webContents);
@@ -104,10 +101,10 @@ bool Target::Activate() const {
 }
 
 bool Target::Close() const {
-    content::RenderViewHost* rvh = d_agentHost->GetRenderViewHost();
-    if (!rvh)
+    content::WebContents* webContents = d_agentHost->GetWebContents();
+    if (!webContents)
         return false;
-    rvh->ClosePage();
+    webContents->GetRenderViewHost()->ClosePage();
     return true;
 }
 
@@ -154,13 +151,12 @@ void DevToolsHttpHandlerDelegateImpl::EnumerateTargets(TargetCallback callback)
     // This is copied from the implementation in content_shell.
 
     TargetList targets;
-    std::vector<content::RenderViewHost*> rvhList =
-        content::DevToolsAgentHost::GetValidRenderViewHosts();
-    for (std::vector<content::RenderViewHost*>::iterator it = rvhList.begin();
-                                                         it != rvhList.end(); ++it) {
-        content::WebContents* webContents = content::WebContents::FromRenderViewHost(*it);
-        if (webContents)
-            targets.push_back(new Target(webContents));
+    std::vector<content::WebContents*> wc_list =
+        content::DevToolsAgentHost::GetInspectableWebContents();
+    for (std::vector<content::WebContents*>::iterator it = wc_list.begin();
+        it != wc_list.end();
+        ++it) {
+        targets.push_back(new Target(*it));
     }
     callback.Run(targets);
 }

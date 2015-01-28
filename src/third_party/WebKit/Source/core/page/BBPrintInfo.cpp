@@ -24,7 +24,7 @@
 #include "core/page/BBPrintInfo.h"
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 BBPrintInfo::BBPrintInfo(Document* document)
     : ActiveDOMObject(document)
@@ -75,4 +75,4 @@ RefPtr<BBPrintHeader> BBPrintInfo::footerRight()
     return d_footerRight;
 }
 
-} // namespace WebCore
+} // namespace blink

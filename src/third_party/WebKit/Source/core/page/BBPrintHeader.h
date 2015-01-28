@@ -28,7 +28,7 @@
 #include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
-namespace WebCore {
+namespace blink {
 
     class BBPrintHeader : public RefCounted<BBPrintHeader> {
     public:
@@ -73,6 +73,6 @@ namespace WebCore {
         unsigned short       d_align;
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BBPrintHeader_h

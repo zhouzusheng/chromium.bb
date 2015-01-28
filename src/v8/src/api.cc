@@ -10,6 +10,7 @@
 #endif  // V8_USE_ADDRESS_SANITIZER
 #include <cmath>  // For isnan.
 #include "include/v8-debug.h"
+#include "include/v8-default-platform.h"
 #include "include/v8-profiler.h"
 #include "include/v8-testing.h"
 #include "src/assert-scope.h"
@@ -30,6 +31,7 @@
 #include "src/heap-snapshot-generator-inl.h"
 #include "src/icu_util.h"
 #include "src/json-parser.h"
+#include "src/libplatform/default-platform.h"
 #include "src/messages.h"
 #include "src/natives.h"
 #include "src/parser.h"
@@ -199,6 +201,20 @@ static inline bool IsExecutionTerminatingCheck(i::Isolate* isolate) {
   }
   return false;
 }
+
+
+namespace platform {
+
+v8::Platform* CreateDefaultPlatform(int thread_pool_size) {
+  return CreateDefaultPlatformImpl(thread_pool_size);
+}
+
+
+bool PumpMessageLoop(v8::Platform* platform, v8::Isolate* isolate) {
+  return PumpMessageLoopImpl(platform, isolate);
+}
+
+}  // namespace platform
 
 
 // --- S t a t i c s ---

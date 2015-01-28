@@ -107,6 +107,7 @@ class BrowserContextImpl : public content::BrowserContext,
         GetGuestManager() OVERRIDE;
     virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
     virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
+    virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
     virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   private:

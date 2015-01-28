@@ -36,6 +36,7 @@
     {
       'target_name': 'v8',
       'dependencies_traverse': 1,
+      'dependencies': ['v8_libplatformimpl'],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
@@ -1322,7 +1323,7 @@
       ],
     },
     {
-      'target_name': 'v8_libplatform',
+      'target_name': 'v8_libplatformimpl',
       'type': 'static_library',
       'variables': {
         'optimize': 'max',
@@ -1334,7 +1335,6 @@
         '../..',
       ],
       'sources': [
-        '../../include/libplatform/libplatform.h',
         '../../src/libplatform/default-platform.cc',
         '../../src/libplatform/default-platform.h',
         '../../src/libplatform/task-queue.cc',
@@ -1524,7 +1524,7 @@
     {
       'target_name': 'mksnapshot',
       'type': 'executable',
-      'dependencies': ['v8_base', 'v8_nosnapshot', 'v8_libplatform'],
+      'dependencies': ['v8_base', 'v8_nosnapshot', 'v8_libplatformimpl'],
       'include_dirs+': [
         '../..',
       ],

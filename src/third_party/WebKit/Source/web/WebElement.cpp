@@ -185,13 +185,13 @@ void WebElement::requestSpellCheck()
         }
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
-            if (innerElement && innerElement->rendererIsEditable()) {
+            if (innerElement && innerElement->hasEditableStyle()) {
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
-        else if (element->rendererIsEditable()) {
+        else if (element->hasEditableStyle()) {
             RefPtr<Range> rangeToCheck = Range::create(element->document(), firstPositionInNode(element), lastPositionInNode(element));
             spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);

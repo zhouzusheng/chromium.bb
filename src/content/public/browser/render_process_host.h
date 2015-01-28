@@ -228,6 +228,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // have changed.
   virtual void NotifyTimezoneChange() = 0;
 
+  // Returns the ServiceRegistry for this process.
+  virtual ServiceRegistry* GetServiceRegistry() = 0;
+
   // Return true if this is a host for an externally managed process.
   virtual bool IsProcessManagedExternally() const = 0;
 

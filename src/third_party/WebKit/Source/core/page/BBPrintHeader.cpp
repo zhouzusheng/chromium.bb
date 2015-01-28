@@ -23,7 +23,7 @@
 #include "config.h"
 #include "BBPrintHeader.h"
 
-namespace WebCore {
+namespace blink {
 
 BBPrintHeader::BBPrintHeader()
 {
@@ -107,4 +107,4 @@ unsigned short BBPrintHeader::align() const
     return d_align;
 }
 
-} // namespace WebCore
+} // namespace blink

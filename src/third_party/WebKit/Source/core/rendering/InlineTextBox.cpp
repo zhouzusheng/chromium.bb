@@ -729,7 +729,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
             const Vector<CompositionUnderline>& underlines = renderer().frame()->inputMethodController().customCompositionUnderlines();
             CompositionUnderlineRangeFilter filter(underlines, start(), end());
             for (CompositionUnderlineRangeFilter::ConstIterator it = filter.begin(); it != filter.end(); ++it) {
-                paintCompositionUnderline(context, boxOrigin, *it, textFillColor);
+                paintCompositionUnderline(context, boxOrigin, *it, textStyle.fillColor);
             }
         }
     }

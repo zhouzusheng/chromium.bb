@@ -44,7 +44,7 @@ class CompositionUnderlineBuilder : public blink::CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
         : blink::CompositionUnderline(u.startOffset, u.endOffset,
-            blink::Color(u.color), u.thick,
+            u.thick,
             blink::Color(u.backgroundColor)) { }
 };
 

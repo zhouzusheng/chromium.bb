@@ -32,6 +32,7 @@
 #define WebWidget_h
 
 #include "../platform/WebCanvas.h"
+#include "../platform/WebColor.h"
 #include "../platform/WebCommon.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"

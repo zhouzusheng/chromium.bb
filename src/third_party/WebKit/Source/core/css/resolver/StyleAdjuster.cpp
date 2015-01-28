@@ -40,6 +40,7 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderTheme.h"
@@ -250,6 +251,32 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         // (The autosizer will update it during layout if it needs to be changed.)
         style->setTextAutosizingMultiplier(e->renderStyle()->textAutosizingMultiplier());
         style->setUnique();
+    }
+
+    if (e && e->hasTagName(htmlTag)) {
+        if (e->document().frame() &&
+            e->document().frame()->deprecatedLocalOwner() &&
+            e->document().frame()->deprecatedLocalOwner()->renderer()) {
+            float ownerEffectiveZoom
+                = e->document().frame()->deprecatedLocalOwner()->renderer()->style()->effectiveZoom();
+            float childZoom = style->zoom();
+            style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
+        }
+    }
+
+    if (e && e->hasTagName(iframeTag)) {
+        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
+        if (iframe->contentDocument() && iframe->contentDocument()->body() &&
+            iframe->contentDocument()->body()->parentNode() &&
+            iframe->contentDocument()->body()->parentNode()->renderer()) {
+            Node* child = iframe->contentDocument()->body()->parentNode();
+            float ownerEffectiveZoom = style->effectiveZoom();
+            float childZoom = child->renderer()->style()->zoom();
+            float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
+            if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
+                child->setNeedsStyleRecalc(SubtreeStyleChange);
+            }
+        }
     }
 
     adjustStyleForAlignment(*style, *parentStyle);

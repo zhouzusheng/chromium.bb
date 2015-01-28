@@ -80,6 +80,7 @@ namespace blink {
     class Storage;
     class StyleMedia;
     class DOMWindowCSS;
+    class BBWindowHooks;
 
     struct WindowFeatures;
 
@@ -333,6 +334,9 @@ enum PageshowEventPersistence {
 
         virtual void trace(Visitor*) OVERRIDE;
 
+        // Bloomberg specific objects/methods
+        BBWindowHooks* bbWindowHooks() const;
+
     protected:
         DOMWindowLifecycleNotifier& lifecycleNotifier();
 
@@ -381,6 +385,7 @@ enum PageshowEventPersistence {
         mutable RefPtrWillBeMember<Navigator> m_navigator;
         mutable RefPtrWillBeMember<Location> m_location;
         mutable RefPtrWillBeMember<StyleMedia> m_media;
+        mutable RefPtrWillBeMember<BBWindowHooks> m_bbWindowHooks;
 
         String m_status;
         String m_defaultStatus;

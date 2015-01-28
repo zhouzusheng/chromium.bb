@@ -37,7 +37,6 @@
             'common/tls.h',
             'common/utilities.cpp',
             'common/utilities.h',
-            'common/version.h',
             'libEGL/Config.cpp',
             'libEGL/Config.h',
             'libEGL/Display.cpp',
@@ -45,8 +44,6 @@
             'libEGL/Surface.cpp',
             'libEGL/Surface.h',
             'libEGL/libEGL.cpp',
-            'libEGL/libEGL.def',
-            'libEGL/libEGL.rc',
             'libEGL/main.cpp',
             'libEGL/main.h',
             'libEGL/resource.h',
@@ -61,9 +58,9 @@
             'targets':
             [
                 {
-                    'target_name': 'libEGL',
-                    'type': 'shared_library',
-                    'dependencies': [ 'libGLESv2', 'commit_id' ],
+                    'target_name': 'libEGL_static',
+                    'type': 'static_library',
+                    'dependencies': [ 'commit_id' ],
                     'include_dirs':
                     [
                         '.',
@@ -98,15 +95,12 @@
                         }],
                     ],
                     'includes': [ '../build/common_defines.gypi', ],
-                    'msvs_settings':
+                    'link_settings':
                     {
-                        'VCLinkerTool':
-                        {
-                            'AdditionalDependencies':
-                            [
-                                'd3d9.lib',
-                            ],
-                        },
+                        'libraries':
+                        [
+                            '-ld3d9.lib',
+                        ],
                     },
                     'configurations':
                     {
@@ -118,6 +112,23 @@
                             ],
                         },
                     },
+                },
+                {
+                    'target_name': 'libEGL',
+                    'type': 'loadable_module',
+                    'dependencies': [ 'libGLESv2_shared', 'libEGL_static', 'commit_id' ],
+                    'include_dirs':
+                    [
+                        '.',
+                        '../include',
+                    ],
+                    'sources':
+                    [
+                        'common/version.h',
+                        'libEGL/dllmain.cpp',
+                        'libEGL/libEGL.def',
+                        'libEGL/libEGL.rc',
+                    ],
                 },
             ],
         },

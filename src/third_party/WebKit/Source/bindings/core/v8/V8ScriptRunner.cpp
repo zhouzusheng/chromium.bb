@@ -139,7 +139,7 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
         } else {
             // Consume existing cache data:
             CachedMetadata* cachedMetadata = resource->cachedMetadata(dataTypeID);
-            v8::ScriptCompiler::CachedData* cachedData = new v8::ScriptCompiler::CachedData(
+            v8::ScriptCompiler::CachedData* cachedData = v8::ScriptCompiler::CachedData::create(
                 reinterpret_cast<const uint8_t*>(cachedMetadata->data()),
                 cachedMetadata->size(),
                 v8::ScriptCompiler::CachedData::BufferNotOwned);

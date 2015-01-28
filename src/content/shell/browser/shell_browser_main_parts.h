@@ -24,6 +24,10 @@ namespace net {
 class NetLog;
 }
 
+namespace wm {
+class WMState;
+}
+
 namespace content {
 
 class ShellBrowserContext;
@@ -39,6 +43,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   virtual void PreEarlyInitialization() OVERRIDE;
   virtual void PreMainMessageLoopStart() OVERRIDE;
   virtual void PostMainMessageLoopStart() OVERRIDE;
+  virtual void ToolkitInitialized() OVERRIDE;
   virtual void PreMainMessageLoopRun() OVERRIDE;
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
@@ -61,6 +66,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   scoped_ptr<net::NetLog> net_log_;
   scoped_ptr<ShellBrowserContext> browser_context_;
   scoped_ptr<ShellBrowserContext> off_the_record_browser_context_;
+  scoped_ptr<wm::WMState> wm_state_;
 
   // For running content_browsertests.
   const MainFunctionParams parameters_;

@@ -675,7 +675,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // ensures that we only resize as fast as we can paint.  We only need to
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
-  } else if (!resizing_mode_selector_->is_synchronous_mode()) {
+  } else if (!resizing_mode_selector_->is_synchronous_mode() && browser_size_ == size_) {
     resize_ack = NO_RESIZE_ACK;
   }
 
@@ -761,6 +761,8 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
 
   if (orientation_changed)
     OnOrientationChange();
+
+  browser_size_ = params.new_size;
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {

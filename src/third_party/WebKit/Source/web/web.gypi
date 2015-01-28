@@ -108,6 +108,7 @@
       'WebAXObject.cpp',
       'WebArrayBufferConverter.cpp',
       'WebArrayBufferView.cpp',
+      'WebBBPrintInfo.cpp',
       'WebBindings.cpp',
       'WebBlob.cpp',
       'WebCache.cpp',

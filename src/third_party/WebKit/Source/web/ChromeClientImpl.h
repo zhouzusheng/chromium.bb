@@ -188,7 +188,7 @@ private:
     void setCursor(const WebCursorInfo&);
 
     WebViewImpl* m_webView;  // weak pointer
-    WebCore::Node* m_lastMouseOverNode; // weak pointer
+    Node* m_lastMouseOverNode; // weak pointer
     bool m_lastTooltipHadText;
     bool m_toolbarsVisible;
     bool m_statusbarVisible;

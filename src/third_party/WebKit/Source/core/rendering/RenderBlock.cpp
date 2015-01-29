@@ -2503,7 +2503,7 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
         logicalLeft = lineEndingLogicalLeft;
 
     if (rightGap)
-        logicalRight = min(logicalRightSelectionOffset(rootBlock, selTop), logicalRightSelectionOffset(rootBlock, selTop + selHeight));
+        logicalRight = std::min(logicalRightSelectionOffset(rootBlock, selTop), logicalRightSelectionOffset(rootBlock, selTop + selHeight));
     else if (!ltr) {
         if (containsStartOfSelection)
             // this will be adjusted further below if the last selected box has a selection rect
@@ -2520,13 +2520,13 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
             InlineBox* firstBox = line->firstSelectedBox();
             LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForPaintInvalidation(rootBlock, false) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
-                logicalLeft = min(logicalLeft, firstBoxSelRect.x());
+                logicalLeft = std::min(logicalLeft, firstBoxSelRect.x());
         }
         if (containsEndOfSelection) {
             InlineBox* lastBox = line->lastSelectedBox();
             LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForPaintInvalidation(rootBlock, false) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
-                logicalRight = min(logicalRight, lastBoxSelRect.maxX());
+                logicalRight = std::min(logicalRight, lastBoxSelRect.maxX());
         }
     }
     else {
@@ -2629,10 +2629,10 @@ void RenderBlock::getLineEndingGapLogicalLeftAndRight(RenderBlock* rootBlock, co
 
     if (style()->isLeftToRightDirection()) {
         logicalLeft = max(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
-        logicalRight = min(logicalLeft + lineEndingGapWidth, endPaddingToRoot + min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalRight = std::min(logicalLeft + lineEndingGapWidth, endPaddingToRoot + std::min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
     }
     else {
-        logicalRight = min(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalRight = std::min(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), std::min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
         logicalLeft = max(logicalRight - lineEndingGapWidth, max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)) - endPaddingToRoot);
     }
 }

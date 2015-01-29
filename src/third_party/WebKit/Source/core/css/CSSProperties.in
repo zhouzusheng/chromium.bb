@@ -310,6 +310,7 @@ visibility animatable, inherited
 -webkit-box-pack
 -webkit-box-reflect converter=convertBoxReflect
 -webkit-box-shadow animatable, use_handlers_for=CSSPropertyBoxShadow
+-webkit-caret-color inherited, custom_value
 -webkit-clip-path animatable, custom_value
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak

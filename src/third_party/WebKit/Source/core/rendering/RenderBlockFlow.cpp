@@ -2843,11 +2843,19 @@ bool RenderBlockFlow::avoidsFloats() const
 LayoutUnit RenderBlockFlow::logicalLeftSelectionOffset(RenderBlock* rootBlock, LayoutUnit position)
 {
     LayoutUnit logicalLeft = logicalLeftOffsetForLine(position, false);
-    if (logicalLeft == logicalLeftOffsetForContent())
-        return RenderBlock::logicalLeftSelectionOffset(rootBlock, position);
+    if (logicalLeft == logicalLeftOffsetForContent()) {
+        logicalLeft = RenderBlock::logicalLeftSelectionOffset(rootBlock, position);
+        if (isListItem() && style()->isLeftToRightDirection()) {
+            logicalLeft += additionalMarginStart();
+        }
+        return logicalLeft;
+    }
 
     RenderBlock* cb = this;
     while (cb != rootBlock) {
+        if (cb->isListItem() && cb->style()->isLeftToRightDirection()) {
+            logicalLeft += cb->additionalMarginStart();
+        }
         logicalLeft += cb->logicalLeft();
         cb = cb->containingBlock();
     }
@@ -2857,11 +2865,19 @@ LayoutUnit RenderBlockFlow::logicalLeftSelectionOffset(RenderBlock* rootBlock, L
 LayoutUnit RenderBlockFlow::logicalRightSelectionOffset(RenderBlock* rootBlock, LayoutUnit position)
 {
     LayoutUnit logicalRight = logicalRightOffsetForLine(position, false);
-    if (logicalRight == logicalRightOffsetForContent())
-        return RenderBlock::logicalRightSelectionOffset(rootBlock, position);
+    if (logicalRight == logicalRightOffsetForContent()) {
+        logicalRight = RenderBlock::logicalRightSelectionOffset(rootBlock, position);
+        if (isListItem() && !style()->isLeftToRightDirection()) {
+            logicalRight -= additionalMarginStart();
+        }
+        return logicalRight;
+    }
 
     RenderBlock* cb = this;
     while (cb != rootBlock) {
+        if (cb->isListItem() && !cb->style()->isLeftToRightDirection()) {
+            logicalRight -= cb->additionalMarginStart();
+        }
         logicalRight += cb->logicalLeft();
         cb = cb->containingBlock();
     }

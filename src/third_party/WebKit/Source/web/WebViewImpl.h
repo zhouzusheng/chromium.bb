@@ -284,8 +284,8 @@ public:
     Color baseBackgroundColor() const { return m_baseBackgroundColor; }
 
     // Rubberbanding
-    void rubberbandWalkFrame(const RubberbandContext&, WebCore::LocalFrame*, const WebCore::LayoutPoint&);
-    void rubberbandWalkRenderObject(const RubberbandContext&, WebCore::RenderObject*);
+    void rubberbandWalkFrame(const RubberbandContext&, LocalFrame*, const LayoutPoint&);
+    void rubberbandWalkRenderObject(const RubberbandContext&, RenderObject*);
     WTF::String getTextInRubberbandImpl(const WebRect&);
     bool handleAltDragRubberbandEvent(const WebInputEvent&);
 

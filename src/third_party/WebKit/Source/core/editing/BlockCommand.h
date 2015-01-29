@@ -28,7 +28,7 @@
 
 #include "CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class BlockCommand : public CompositeEditCommand {
 protected:
@@ -42,6 +42,6 @@ private:
     void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BlockCommand_h

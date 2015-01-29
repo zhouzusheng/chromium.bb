@@ -29,11 +29,21 @@
 #include "core/dom/Document.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
+
+static const HTMLQualifiedName& getBlockQuoteName(const Node* parent)
+{
+    if (isHTMLUListElement(parent))
+        return ulTag;
+    else if (isHTMLOListElement(parent))
+        return olTag;
+    else
+        return blockquoteTag;
+}
 
 IndentBlockCommand::IndentBlockCommand(Document& document)
     : BlockCommand(document)
@@ -57,12 +67,12 @@ void IndentBlockCommand::indentSiblings(PassRefPtr<Node> prpFirstSibling, PassRe
     RefPtr<Node> refChild;
     bool needToMergeNextSibling = false;
 
-    WebCore::QualifiedName blockQName = isListElement(firstSibling->parentNode())
-                                        ? toElement(firstSibling->parentNode())->tagQName()
-                                        : blockquoteTag;
+    const blink::HTMLQualifiedName blockQName
+        = getBlockQuoteName(firstSibling->parentNode());
 
     RefPtr<Node> previousSibling = previousRenderedSiblingExcludingWhitespace(firstSibling.get());
-    if (previousSibling && previousSibling->hasTagName(blockQName)) {
+    if (previousSibling && previousSibling->isElementNode()
+            && toElement(previousSibling)->hasTagName(blockQName)) {
         blockForIndent = toElement(previousSibling.get());
         firstSibling = previousSibling->nextSibling();
     }

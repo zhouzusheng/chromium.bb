@@ -30,9 +30,9 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

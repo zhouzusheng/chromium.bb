@@ -1504,6 +1504,10 @@ void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
 #endif
 }
 
+void RenderViewHostImpl::EnableAltDragRubberbanding(bool enable) {
+  Send(new ViewMsg_EnableAltDragRubberbanding(GetRoutingID(), enable));
+}
+
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderViewHostImpl::OnShowPopup(
     const ViewHostMsg_ShowPopup_Params& params) {

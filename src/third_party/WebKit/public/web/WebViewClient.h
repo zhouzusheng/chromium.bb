@@ -213,6 +213,10 @@ public:
     // Returns comma separated list of accept languages.
     virtual WebString acceptLanguages() { return WebString(); }
 
+    // Called when a rubberband rectangle should be displayed or hidden.
+    virtual void setRubberbandRect(const WebRect&) { }
+    virtual void hideRubberbandRect() { }
+
 
     // Session history -----------------------------------------------------
 

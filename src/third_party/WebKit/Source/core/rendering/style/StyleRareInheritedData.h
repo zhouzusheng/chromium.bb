@@ -149,6 +149,8 @@ public:
 
     Color tapHighlightColor;
 
+    StyleColor caretColor;
+
     RefPtr<AppliedTextDecorationList> appliedTextDecorations;
 
 private:

@@ -848,6 +848,15 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitBorderImage(StyleResolver
     state.style()->setBorderImage(image);
 }
 
+void StyleBuilderFunctions::applyValueCSSPropertyWebkitCaretColor(StyleResolverState& state, CSSValue* value)
+{
+    if (value->isPrimitiveValue()) {
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+        Color col = state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyWebkitCaretColor));
+        state.style()->setCaretColor(col);
+    }
+}
+
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitClipPath(StyleResolverState& state, CSSValue* value)
 {
     if (value->isPrimitiveValue()) {

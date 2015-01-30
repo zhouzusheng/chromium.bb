@@ -79,7 +79,6 @@
       'dependencies': [
         'sql',
         'test_support_sql',
-        '../base/base.gyp:run_all_unittests',
         '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'sources': [
@@ -88,6 +87,11 @@
         'recovery_unittest.cc',
         'sqlite_features_unittest.cc',
         'statement_unittest.cc',
+        'test/paths.cc',
+        'test/paths.h',
+        'test/run_all_unittests.cc',
+        'test/sql_test_suite.cc',
+        'test/sql_test_suite.h',
         'transaction_unittest.cc',
       ],
       'include_dirs': [

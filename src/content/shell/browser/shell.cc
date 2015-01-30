@@ -12,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/printing/print_view_manager.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -99,6 +100,8 @@ Shell* Shell::CreateShell(WebContents* web_contents,
 
   shell->web_contents_.reset(web_contents);
   web_contents->SetDelegate(shell);
+
+  printing::PrintViewManager::CreateForWebContents(web_contents);
 
   shell->PlatformSetContents();
 
@@ -206,6 +209,12 @@ void Shell::GoBackOrForward(int offset) {
   web_contents_->Focus();
 }
 
+void Shell::Print() {
+  printing::PrintViewManager* printViewManager =
+    printing::PrintViewManager::FromWebContents(web_contents_.get());
+  printViewManager->PrintNow();
+}
+
 void Shell::Reload() {
   web_contents_->GetController().Reload(false);
   web_contents_->Focus();
@@ -222,6 +231,7 @@ void Shell::UpdateNavigationControls(bool to_different_document) {
 
   PlatformEnableUIControl(BACK_BUTTON, current_index > 0);
   PlatformEnableUIControl(FORWARD_BUTTON, current_index < max_index);
+  PlatformEnableUIControl(PRINT_BUTTON, !web_contents_->IsLoading());
   PlatformEnableUIControl(STOP_BUTTON,
       to_different_document && web_contents_->IsLoading());
 }

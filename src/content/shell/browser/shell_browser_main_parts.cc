@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
@@ -46,6 +47,10 @@
 #if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(OS_LINUX)
 #include "ui/base/ime/input_method_initializer.h"
 #endif
+
+namespace printing {
+  extern PrintJobManager* g_print_job_manager;
+}
 
 namespace content {
 
@@ -140,6 +145,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::Initialize();
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
 
+  printing::g_print_job_manager = new printing::PrintJobManager();
   devtools_delegate_.reset(new ShellDevToolsDelegate(browser_context_.get()));
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
@@ -186,6 +192,7 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code)  {
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
   if (devtools_delegate_)
     devtools_delegate_->Stop();
+  delete printing::g_print_job_manager;
   browser_context_.reset();
   off_the_record_browser_context_.reset();
 }

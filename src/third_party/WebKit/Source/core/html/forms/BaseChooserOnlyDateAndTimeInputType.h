@@ -32,15 +32,13 @@
 #include "platform/DateTimeChooser.h"
 #include "platform/DateTimeChooserClient.h"
 
-namespace WebCore {
+namespace blink {
 
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BaseChooserOnlyDateAndTimeInputType);
 protected:
-    explicit BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
+    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
     virtual ~BaseChooserOnlyDateAndTimeInputType();
-
-    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     void closeDateTimeChooser();
@@ -61,7 +59,7 @@ private:
     virtual void didChooseValue(double) OVERRIDE;
     virtual void didEndChooser() OVERRIDE;
 
-    RefPtrWillBeMember<DateTimeChooser> m_dateTimeChooser;
+    RefPtr<DateTimeChooser> m_dateTimeChooser;
 };
 
 }

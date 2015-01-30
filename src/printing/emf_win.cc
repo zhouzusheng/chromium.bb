@@ -169,9 +169,14 @@ Emf::Emf() : emf_(NULL), hdc_(NULL), page_count_(0) {
 }
 
 Emf::~Emf() {
+  Close();
+}
+
+void Emf::Close() {
   DCHECK(!hdc_);
   if (emf_)
     DeleteEnhMetaFile(emf_);
+  emf_ = NULL;
 }
 
 bool Emf::InitToFile(const base::FilePath& metafile_path) {
@@ -409,7 +414,7 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
         DCHECK(bitmap.get());
         if (bitmap.get()) {
           SkAutoLockPixels lock(*bitmap.get());
-          DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
+          DCHECK_EQ(bitmap->colorType(), kN32_SkColorType);
           const uint32_t* pixels =
               static_cast<const uint32_t*>(bitmap->getPixels());
           if (pixels == NULL) {

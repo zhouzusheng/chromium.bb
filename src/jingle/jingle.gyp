@@ -13,6 +13,7 @@
     ['enable_webrtc==1 or OS!="android"', {
       'targets': [
         # A library of various utils for integration with libjingle.
+        # GN version: //jingle:jingle_glue
         {
           'target_name': 'jingle_glue',
           'type': 'static_library',
@@ -33,6 +34,8 @@
         #
         # TODO(akalin): Separate out the XMPP stuff from this library into
         # its own library.
+        #
+        # GN version: //jingle:notifier
         {
           'target_name': 'notifier',
           'type': 'static_library',
@@ -100,6 +103,7 @@
             '../third_party/libjingle/libjingle.gyp:libjingle',
           ],
         },
+        # GN version: //jingle:notifier_test_util
         {
           'target_name': 'notifier_test_util',
           'type': 'static_library',
@@ -116,20 +120,7 @@
             '../base/base.gyp:base',
           ],
         },
-        {
-          'target_name': 'jingle_glue_test_util',
-          'type': 'static_library',
-          'sources': [
-            'glue/fake_network_manager.cc',
-            'glue/fake_network_manager.h',
-            'glue/fake_socket_factory.cc',
-            'glue/fake_socket_factory.h',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            'jingle_glue',
-          ],
-        },
+        # GN version: //jingle:jingle_unittests
         {
           'target_name': 'jingle_unittests',
           'type': 'executable',
@@ -175,7 +166,6 @@
           ],
           'dependencies': [
             'jingle_glue',
-            'jingle_glue_test_util',
             'notifier',
             'notifier_test_util',
             '../base/base.gyp:base',
@@ -196,6 +186,7 @@
           'target_name': 'jingle_glue_test_util',
           'type': 'none',
         },
+        # GN version: //jingle:notifier
         {
           'target_name': 'notifier',
           'type': 'static_library',

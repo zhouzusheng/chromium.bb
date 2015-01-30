@@ -20,6 +20,7 @@
 namespace IPC {
 
 class SyncMessage;
+class ChannelFactory;
 
 // This is similar to ChannelProxy, with the added feature of supporting sending
 // synchronous messages.
@@ -67,6 +68,13 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   static scoped_ptr<SyncChannel> Create(
       const IPC::ChannelHandle& channel_handle,
       IPC::Channel::Mode mode,
+      Listener* listener,
+      base::SingleThreadTaskRunner* ipc_task_runner,
+      bool create_pipe_now,
+      base::WaitableEvent* shutdown_event);
+
+  static scoped_ptr<SyncChannel> Create(
+      scoped_ptr<ChannelFactory> factory,
       Listener* listener,
       base::SingleThreadTaskRunner* ipc_task_runner,
       bool create_pipe_now,

@@ -27,11 +27,11 @@
 
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/web_contents_observer.h>
-#include <content/public/browser/devtools_frontend_host_delegate.h>
+#include <content/public/browser/devtools_client_host.h>
+#include <content/public/browser/devtools_frontend_host.h>
 
 namespace content {
     class DevToolsAgentHost;
-    class DevToolsClientHost;
 }  // close namespace content
 
 namespace blpwtk2 {
@@ -40,7 +40,8 @@ namespace blpwtk2 {
 // TODO: document this
 class DevToolsFrontendHostDelegateImpl
     : public content::WebContentsObserver,
-        public content::DevToolsFrontendHostDelegate {
+      public content::DevToolsFrontendHost::Delegate,
+      public content::DevToolsClientHost {
   public:
     DevToolsFrontendHostDelegateImpl(content::WebContents* inspectorContents,
                                      content::DevToolsAgentHost* agentHost);
@@ -54,16 +55,22 @@ class DevToolsFrontendHostDelegateImpl
     virtual void WebContentsDestroyed() OVERRIDE;
 
 
-    // ======== DevToolsFrontendHostDelegate overrides ===========
+    // ======== DevToolsFrontendHost::Delegate overrides ===========
 
-    // Dispatch the message from the frontend to the frontend host.
-    virtual void DispatchOnEmbedder(const std::string& message) OVERRIDE {}
+    virtual void HandleMessageFromDevToolsFrontend(
+        const std::string& message) OVERRIDE;
+    virtual void HandleMessageFromDevToolsFrontendToBackend(
+        const std::string& message) OVERRIDE;
+
+
+    // ========= DevToolsClientHost overrides =========
+    virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
     virtual void InspectedContentsClosing() OVERRIDE {}
+    virtual void ReplacedWithAnotherClient() OVERRIDE {}
 
   private:
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;
-    scoped_ptr<content::DevToolsClientHost> d_frontendHost;
-
+    scoped_ptr<content::DevToolsFrontendHost> d_frontendHost;
 };
 
 

@@ -27,8 +27,6 @@
 
 #include "public/platform/WebString.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebBBPrintHeader::setText(const WebString& text)
@@ -48,7 +46,7 @@ void WebBBPrintHeader::setFontFamily(const WebString& fontFamily)
 
 void WebBBPrintHeader::setColor(WebColor color)
 {
-    m_private->setColor(WebCore::RGBColor::create(color));
+    m_private->setColor(RGBColor::create(color));
 }
 
 void WebBBPrintHeader::setVerticalMargin(float verticalMargin)
@@ -123,7 +121,7 @@ void WebBBPrintHeader::assign(const WebBBPrintHeader& other)
     m_private = other.m_private;
 }
 
-WebBBPrintHeader::WebBBPrintHeader(const PassRefPtr<WebCore::BBPrintHeader>& header)
+WebBBPrintHeader::WebBBPrintHeader(const PassRefPtr<BBPrintHeader>& header)
 : m_private(header)
 {
 }
@@ -168,7 +166,7 @@ void WebBBPrintInfo::assign(const WebBBPrintInfo& other)
     m_private = other.m_private;
 }
 
-WebBBPrintInfo::WebBBPrintInfo(const PassRefPtr<WebCore::BBPrintInfo>& info)
+WebBBPrintInfo::WebBBPrintInfo(const PassRefPtr<BBPrintInfo>& info)
 : m_private(info)
 {
 }

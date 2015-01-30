@@ -131,7 +131,7 @@ void ContentBrowserClientImpl::RenderProcessWillLaunch(
 void ContentBrowserClientImpl::OverrideWebkitPrefs(
     content::RenderViewHost* render_view_host,
     const GURL& url,
-    WebPreferences* prefs)
+    content::WebPreferences* prefs)
 {
     content::WebContents* webContents =
         content::WebContents::FromRenderViewHost(render_view_host);
@@ -178,7 +178,7 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
 {
     if (!url.is_valid())
         return false;
-    DCHECK_EQ(url.scheme(), StringToLowerASCII(url.scheme()));
+    DCHECK_EQ(url.scheme(), base::StringToLowerASCII(url.scheme()));
     // Keep in sync with ProtocolHandlers added by
     // URLRequestContextGetterImpl::GetURLRequestContext().
     static const char* const kProtocolList[] = {

@@ -103,6 +103,8 @@
         'gin',
       ],
       'sources': [
+        'test/file.cc',
+        'test/file.h',
         'test/file_runner.cc',
         'test/file_runner.h',
         'test/gc.cc',
@@ -127,6 +129,7 @@
         'modules/timer_unittest.cc',
         'per_context_data_unittest.cc',
         'shell_runner_unittest.cc',
+        'shell/gin_shell_unittest.cc',
         'test/run_all_unittests.cc',
         'test/run_js_tests.cc',
         'wrappable_unittest.cc',

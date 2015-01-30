@@ -43,7 +43,7 @@
 #include "core/frame/Settings.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
 FrameFetchContext::FrameFetchContext(LocalFrame* frame)
     : m_frame(frame)
@@ -60,22 +60,25 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
     bool isMainResource = type == FetchMainResource;
     if (!isMainResource) {
         String outgoingReferrer;
+        ReferrerPolicy referrerPolicy;
         String outgoingOrigin;
         if (request.httpReferrer().isNull()) {
             outgoingReferrer = document->outgoingReferrer();
+            referrerPolicy = document->referrerPolicy();
             outgoingOrigin = document->outgoingOrigin();
         } else {
             outgoingReferrer = request.httpReferrer();
+            referrerPolicy = request.referrerPolicy();
             outgoingOrigin = SecurityOrigin::createFromString(outgoingReferrer)->toString();
         }
 
-        outgoingReferrer = SecurityPolicy::generateReferrerHeader(document->referrerPolicy(), request.url(), outgoingReferrer);
+        outgoingReferrer = SecurityPolicy::generateReferrerHeader(referrerPolicy, request.url(), outgoingReferrer);
         if (outgoingReferrer.isEmpty())
             request.clearHTTPReferrer();
-        else if (!request.httpReferrer())
-            request.setHTTPReferrer(Referrer(outgoingReferrer, document->referrerPolicy()));
+        else
+            request.setHTTPReferrer(Referrer(outgoingReferrer, referrerPolicy));
 
-        FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(outgoingOrigin));
+        request.addHTTPOriginIfNeeded(AtomicString(outgoingOrigin));
     }
 
     // The remaining modifications are only necessary for HTTP and HTTPS.
@@ -83,9 +86,6 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
         return;
 
     m_frame->loader().applyUserAgent(request);
-
-    // Default to sending an empty Origin header if one hasn't been set yet.
-    FrameLoader::addHTTPOriginIfNeeded(request, nullAtom);
 }
 
 void FrameFetchContext::setFirstPartyForCookies(ResourceRequest& request)
@@ -203,4 +203,4 @@ void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, un
     dispatchDidFinishLoading(ensureLoader(loader), identifier, 0, 0);
 }
 
-} // namespace WebCore
+} // namespace blink

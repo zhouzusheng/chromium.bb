@@ -48,11 +48,11 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/site_instance.h>
+#include <content/public/common/web_preferences.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
 #include <ui/base/win/hidden_window.h>
 #include <ui/shell_dialogs/selected_file_info.h>
-#include <webkit/common/webpreferences.h>
 
 namespace blpwtk2 {
 
@@ -223,7 +223,7 @@ void WebViewImpl::handleExternalProtocol(const GURL& url)
     d_delegate->handleExternalProtocol(this, url.spec());
 }
 
-void WebViewImpl::overrideWebkitPrefs(WebPreferences* prefs)
+void WebViewImpl::overrideWebkitPrefs(content::WebPreferences* prefs)
 {
     prefs->dom_paste_enabled = d_properties.domPasteEnabled;
     prefs->javascript_can_access_clipboard = d_properties.javascriptCanAccessClipboard;
@@ -308,7 +308,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     DCHECK(inspectedContents);
 
     scoped_refptr<content::DevToolsAgentHost> agentHost
-        = content::DevToolsAgentHost::GetOrCreateFor(inspectedContents->GetRenderViewHost());
+        = content::DevToolsAgentHost::GetOrCreateFor(inspectedContents);
 
     d_devToolsFrontEndHost.reset(
         new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
@@ -601,7 +601,8 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
     d_widget = new blpwtk2::NativeViewWidget(
         d_webContents->GetNativeView(),
         parent,
-        this);
+        this,
+        d_properties.takeKeyboardFocusOnMouseDown);
 
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());
@@ -1013,32 +1014,28 @@ void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view
 #endif
 }
 
-void WebViewImpl::DidFinishLoad(int64 frame_id,
-                                const GURL& validated_url,
-                                bool is_main_frame,
-                                content::RenderViewHost* render_view_host)
+void WebViewImpl::DidFinishLoad(content::RenderFrameHost* render_frame_host,
+                                const GURL& validated_url)
 {
     DCHECK(Statics::isInBrowserMainThread());
     if (d_wasDestroyed || !d_delegate) return;
 
     // TODO: figure out what to do for iframes
-    if (is_main_frame) {
+    if (!render_frame_host->GetParent()) {
         d_delegate->didFinishLoad(this, validated_url.spec());
     }
 }
 
-void WebViewImpl::DidFailLoad(int64 frame_id,
+void WebViewImpl::DidFailLoad(content::RenderFrameHost* render_frame_host,
                               const GURL& validated_url,
-                              bool is_main_frame,
                               int error_code,
-                              const base::string16& error_description,
-                              content::RenderViewHost* render_view_host)
+                              const base::string16& error_description)
 {
     DCHECK(Statics::isInBrowserMainThread());
     if (d_wasDestroyed || !d_delegate) return;
 
     // TODO: figure out what to do for iframes
-    if (is_main_frame) {
+    if (!render_frame_host->GetParent()) {
         d_delegate->didFailLoad(this, validated_url.spec());
     }
 }

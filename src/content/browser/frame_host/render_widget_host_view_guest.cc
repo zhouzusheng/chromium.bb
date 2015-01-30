@@ -74,7 +74,7 @@ void RenderWidgetHostViewGuest::WasShown() {
   // |guest_| is NULL during test.
   if ((guest_ && guest_->is_in_destruction()) || !host_->is_hidden())
     return;
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewGuest::WasHidden() {
@@ -109,8 +109,11 @@ void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
+    if (!gesture_recognizer_->ProcessTouchEventPreDispatch(*(*iter), this))
+      continue;
+
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-    gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
+    gestures.reset(gesture_recognizer_->ProcessTouchEventPostDispatch(
         *(*iter), result, this));
     ProcessGestures(gestures.get());
   }
@@ -354,7 +357,7 @@ void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config config) {
+    const SkColorType color_type) {
   CHECK(guest_);
   guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
 }
@@ -544,8 +547,8 @@ void RenderWidgetHostViewGuest::ProcessGestures(
   }
 }
 
-SkBitmap::Config RenderWidgetHostViewGuest::PreferredReadbackFormat() {
-  return SkBitmap::kARGB_8888_Config;
+SkColorType RenderWidgetHostViewGuest::PreferredReadbackFormat() {
+  return kN32_SkColorType;
 }
 
 RenderWidgetHostViewBase*

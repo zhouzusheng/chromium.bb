@@ -23,8 +23,8 @@
 #include "config.h"
 #include "core/page/BBWindowHooks.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/V8BindingMacros.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/V8BindingMacros.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/Document.h"
@@ -43,7 +43,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 BBWindowHooks::BBWindowHooks(LocalFrame *frame)
     : DOMWindowProperty(frame)
@@ -67,22 +67,22 @@ void BBWindowHooks::appendTextContent(Node *node, StringBuilder& content,
     } else if (node->nodeType() == Node::TEXT_NODE) {
         content.append((static_cast<CharacterData*>(node))->data());
     } else {
-        if (node->hasTagName(WebCore::HTMLNames::brTag)) {
+        if (node->hasTagName(HTMLNames::brTag)) {
             content.append('\n');
         } else {
             for (Node* child = node->firstChild(); child;
                 child = child->nextSibling()) {
                     appendTextContent(child, content, excluder, mask);
                     if (!matchSelector(child, excluder) && isBlock(child) &&
-                        !(child->hasTagName(WebCore::HTMLNames::tdTag) ||
-                        child->hasTagName(WebCore::HTMLNames::thTag))) {
+                        !(child->hasTagName(HTMLNames::tdTag) ||
+                        child->hasTagName(HTMLNames::thTag))) {
                             content.append('\n');
                     } else if (child->nextSibling()) {
                         if (!matchSelector(child->nextSibling(), excluder)) {
-                            if (child->hasTagName(WebCore::HTMLNames::tdTag) ||
-                                child->hasTagName(WebCore::HTMLNames::thTag)) {
+                            if (child->hasTagName(HTMLNames::tdTag) ||
+                                child->hasTagName(HTMLNames::thTag)) {
                                     content.append('\t');
-                            } else if (child->hasTagName(WebCore::HTMLNames::trTag)
+                            } else if (child->hasTagName(HTMLNames::trTag)
                                 || isBlock(child->nextSibling())) {
                                     content.append('\n');
                             }
@@ -95,7 +95,7 @@ void BBWindowHooks::appendTextContent(Node *node, StringBuilder& content,
 
 bool BBWindowHooks::isBlock(Node* node)
 {
-    return WebCore::isBlock(node);
+    return blink::isBlock(node);
 }
 
 String BBWindowHooks::getPlainText(Node* node, const String& excluder, const String& mask)
@@ -141,8 +141,8 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
         return false;
     }
 
-    WebCore::LocalFrame *frame = range->ownerDocument().frame();
-    WebCore::VisibleSelection s(range);
+    LocalFrame *frame = range->ownerDocument().frame();
+    VisibleSelection s(range);
     frame->spellChecker().clearMisspellingsAndBadGrammar(s);
     frame->spellChecker().markMisspellingsAndBadGrammar(s, false, s);
     return true;
@@ -152,20 +152,20 @@ void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 {
     range->ownerDocument().markers().removeMarkers(range,
         DocumentMarker::MarkerTypes(mask),
-        static_cast<WebCore::DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>
+        static_cast<DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>
         (removeMarkerFlag));
 }
 
 void BBWindowHooks::addMarker(Range* range, long markerType)
 {
     range->ownerDocument().markers().addMarker(range,
-        static_cast<WebCore::DocumentMarker::MarkerType>(markerType));
+        static_cast<DocumentMarker::MarkerType>(markerType));
 
 }
 
 PassRefPtr<Range> BBWindowHooks::findPlainText(Range* range, const String& target, long options)
 {
-    return WebCore::findPlainText(range, target, options);
+    return blink::findPlainText(range, target, options);
 }
 
 bool BBWindowHooks::checkSpellingForNode(Node* node)
@@ -174,13 +174,14 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
         return false;
     }
 
-    WTF::RefPtr<WebCore::Element> e = toElement(node);
+    WTF::RefPtr<Element> e = toElement(node);
 
     if (e && e->isSpellCheckingEnabled()) {
-        WebCore::LocalFrame *frame = e->document().frame();
+        LocalFrame *frame = e->document().frame();
         if (frame) {
-            WebCore::VisibleSelection s(WebCore::firstPositionInOrBeforeNode(e.get()),
-                WebCore::lastPositionInOrAfterNode(e.get()));
+            VisibleSelection s(
+                firstPositionInOrBeforeNode(e.get()),
+                lastPositionInOrAfterNode(e.get()));
             if (frame->settings() && !frame->settings()->asynchronousSpellCheckingEnabled()) {
                 frame->spellChecker().clearMisspellingsAndBadGrammar(s);
             }
@@ -193,10 +194,10 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
 
 PassRefPtr<ClientRect> BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
 {
-    WebCore::VisiblePosition visiblePos = WebCore::VisiblePosition(
-        WebCore::Position(node, offset, WebCore::Position::PositionIsOffsetInAnchor));
-    WebCore::IntRect rc = visiblePos.absoluteCaretBounds();
+    VisiblePosition visiblePos = VisiblePosition(
+        Position(node, offset, Position::PositionIsOffsetInAnchor));
+    IntRect rc = visiblePos.absoluteCaretBounds();
     return ClientRect::create(rc);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -182,7 +182,6 @@ MainMessagePump* MainMessagePump::current()
 MainMessagePump::MainMessagePump()
 : base::MessagePumpForUI(base::win::WrappedWindowProc<wndProcThunk>)
 , d_hasAutoPumpTimer(false)
-, d_didNotifyWillProcessMsg(false)
 , d_moreWorkIsPlausible(false)
 {
 }
@@ -231,12 +230,9 @@ void MainMessagePump::cleanup()
 bool MainMessagePump::preHandleMessage(const MSG& msg)
 {
     if (CallMsgFilter(const_cast<MSG*>(&msg), kMessageFilterCode)) {
-        d_didNotifyWillProcessMsg = false;
         return true;
     }
     else {
-        WillProcessMessage(msg);
-        d_didNotifyWillProcessMsg = true;
         uint32_t action = base::MessagePumpDispatcher::POST_DISPATCH_PERFORM_DEFAULT;
         if (state_->dispatcher) {
             action = state_->dispatcher->Dispatch(msg);
@@ -251,11 +247,6 @@ bool MainMessagePump::preHandleMessage(const MSG& msg)
 
 void MainMessagePump::postHandleMessage(const MSG& msg)
 {
-    if (d_didNotifyWillProcessMsg) {
-        d_didNotifyWillProcessMsg = false;
-        DidProcessMessage(msg);
-    }
-
     // There is no Windows hook that notifies us when exiting a modal dialog
     // loop.  However, when postHandleMessage is called, we can assume that we
     // are back in the application's main loop, so turn off the modal loop flag

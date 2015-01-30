@@ -51,7 +51,7 @@
 #include "platform/text/WritingMode.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(short i)
     : CSSValue(PrimitiveClass)
@@ -2068,9 +2068,6 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EPosition e)
     case FixedPosition:
         m_value.valueID = CSSValueFixed;
         break;
-    case StickyPosition:
-        m_value.valueID = CSSValueSticky;
-        break;
     }
 }
 
@@ -2086,8 +2083,6 @@ template<> inline CSSPrimitiveValue::operator EPosition() const
         return AbsolutePosition;
     case CSSValueFixed:
         return FixedPosition;
-    case CSSValueSticky:
-        return StickyPosition;
     default:
         break;
     }
@@ -3434,7 +3429,7 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontWeight weight)
         m_value.valueID = CSSValue800;
         return;
     case FontWeight700:
-        m_value.valueID = CSSValue700;
+        m_value.valueID = CSSValueBold;
         return;
     case FontWeight600:
         m_value.valueID = CSSValue600;
@@ -3443,7 +3438,7 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontWeight weight)
         m_value.valueID = CSSValue500;
         return;
     case FontWeight400:
-        m_value.valueID = CSSValue400;
+        m_value.valueID = CSSValueNormal;
         return;
     case FontWeight300:
         m_value.valueID = CSSValue300;
@@ -3526,6 +3521,74 @@ template<> inline CSSPrimitiveValue::operator FontStyle() const
     }
     ASSERT_NOT_REACHED();
     return FontStyleNormal;
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontStretch stretch)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (stretch) {
+    case FontStretchUltraCondensed:
+        m_value.valueID = CSSValueUltraCondensed;
+        return;
+    case FontStretchExtraCondensed:
+        m_value.valueID = CSSValueExtraCondensed;
+        return;
+    case FontStretchCondensed:
+        m_value.valueID = CSSValueCondensed;
+        return;
+    case FontStretchSemiCondensed:
+        m_value.valueID = CSSValueSemiCondensed;
+        return;
+    case FontStretchNormal:
+        m_value.valueID = CSSValueNormal;
+        return;
+    case FontStretchSemiExpanded:
+        m_value.valueID = CSSValueSemiExpanded;
+        return;
+    case FontStretchExpanded:
+        m_value.valueID = CSSValueExpanded;
+        return;
+    case FontStretchExtraExpanded:
+        m_value.valueID = CSSValueExtraExpanded;
+        return;
+    case FontStretchUltraExpanded:
+        m_value.valueID = CSSValueUltraExpanded;
+        return;
+    }
+
+    ASSERT_NOT_REACHED();
+    m_value.valueID = CSSValueNormal;
+}
+
+template<> inline CSSPrimitiveValue::operator FontStretch() const
+{
+    ASSERT(isValueID());
+    switch (m_value.valueID) {
+    case CSSValueUltraCondensed:
+        return FontStretchUltraCondensed;
+    case CSSValueExtraCondensed:
+        return FontStretchExtraCondensed;
+    case CSSValueCondensed:
+        return FontStretchCondensed;
+    case CSSValueSemiCondensed:
+        return FontStretchSemiCondensed;
+    case CSSValueNormal:
+        return FontStretchNormal;
+    case CSSValueSemiExpanded:
+        return FontStretchSemiExpanded;
+    case CSSValueExpanded:
+        return FontStretchExpanded;
+    case CSSValueExtraExpanded:
+        return FontStretchExtraExpanded;
+    case CSSValueUltraExpanded:
+        return FontStretchUltraExpanded;
+    default:
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return FontStretchNormal;
 }
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(FontVariant smallCaps)
@@ -4035,6 +4098,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EImageRendering e)
     case ImageRenderingOptimizeQuality:
         m_value.valueID = CSSValueOptimizequality;
         break;
+    case ImageRenderingPixelated:
+        m_value.valueID = CSSValuePixelated;
+        break;
     case ImageRenderingOptimizeContrast:
         m_value.valueID = CSSValueWebkitOptimizeContrast;
         break;
@@ -4051,6 +4117,8 @@ template<> inline CSSPrimitiveValue::operator EImageRendering() const
         return ImageRenderingOptimizeSpeed;
     case CSSValueOptimizequality:
         return ImageRenderingOptimizeQuality;
+    case CSSValuePixelated:
+        return ImageRenderingPixelated;
     case CSSValueWebkitOptimizeContrast:
         return ImageRenderingOptimizeContrast;
     default:
@@ -4089,122 +4157,6 @@ template<> inline CSSPrimitiveValue::operator ETransformStyle3D() const
 
     ASSERT_NOT_REACHED();
     return TransformStyle3DFlat;
-}
-
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(WrapFlow wrapFlow)
-: CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_VALUE_ID;
-    switch (wrapFlow) {
-    case WrapFlowAuto:
-        m_value.valueID = CSSValueAuto;
-        break;
-    case WrapFlowBoth:
-        m_value.valueID = CSSValueBoth;
-        break;
-    case WrapFlowStart:
-        m_value.valueID = CSSValueStart;
-        break;
-    case WrapFlowEnd:
-        m_value.valueID = CSSValueEnd;
-        break;
-    case WrapFlowMaximum:
-        m_value.valueID = CSSValueMaximum;
-        break;
-    case WrapFlowClear:
-        m_value.valueID = CSSValueClear;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator WrapFlow() const
-{
-    ASSERT(isValueID());
-    switch (m_value.valueID) {
-    case CSSValueAuto:
-        return WrapFlowAuto;
-    case CSSValueBoth:
-        return WrapFlowBoth;
-    case CSSValueStart:
-        return WrapFlowStart;
-    case CSSValueEnd:
-        return WrapFlowEnd;
-    case CSSValueMaximum:
-        return WrapFlowMaximum;
-    case CSSValueClear:
-        return WrapFlowClear;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return WrapFlowAuto;
-}
-
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(WrapThrough wrapThrough)
-: CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_VALUE_ID;
-    switch (wrapThrough) {
-    case WrapThroughWrap:
-        m_value.valueID = CSSValueWrap;
-        break;
-    case WrapThroughNone:
-        m_value.valueID = CSSValueNone;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator WrapThrough() const
-{
-    ASSERT(isValueID());
-    switch (m_value.valueID) {
-    case CSSValueWrap:
-        return WrapThroughWrap;
-    case CSSValueNone:
-        return WrapThroughNone;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return WrapThroughWrap;
-}
-
-template<> inline CSSPrimitiveValue::operator GridAutoFlow() const
-{
-    ASSERT(isValueID());
-    switch (m_value.valueID) {
-    case CSSValueNone:
-        return AutoFlowNone;
-    case CSSValueColumn:
-        return AutoFlowColumn;
-    case CSSValueRow:
-        return AutoFlowRow;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return AutoFlowNone;
-
-}
-
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(GridAutoFlow flow)
-    : CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_VALUE_ID;
-    switch (flow) {
-    case AutoFlowNone:
-        m_value.valueID = CSSValueNone;
-        break;
-    case AutoFlowColumn:
-        m_value.valueID = CSSValueColumn;
-        break;
-    case AutoFlowRow:
-        m_value.valueID = CSSValueRow;
-        break;
-    }
 }
 
 enum LengthConversion {
@@ -4773,6 +4725,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ItemPosition itemPosition
     case ItemPositionBaseline:
         m_value.valueID = CSSValueBaseline;
         break;
+    case ItemPositionLastBaseline:
+        m_value.valueID = CSSValueLastBaseline;
+        break;
     case ItemPositionCenter:
         m_value.valueID = CSSValueCenter;
         break;
@@ -4812,6 +4767,8 @@ template<> inline CSSPrimitiveValue::operator ItemPosition() const
         return ItemPositionStretch;
     case CSSValueBaseline:
         return ItemPositionBaseline;
+    case CSSValueLastBaseline:
+        return ItemPositionLastBaseline;
     case CSSValueCenter:
         return ItemPositionCenter;
     case CSSValueStart:

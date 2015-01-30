@@ -3,6 +3,16 @@
 # found in the LICENSE file.
 
 {
+  'target_defaults': {
+    'variables': {
+      # This code gets run a lot and debugged rarely, so it should be fast
+      # by default. See http://crbug.com/388949.
+      'debug_optimize': '2',
+      'win_debug_Optimization': '2',
+      # Run time checks are incompatible with any level of optimizations.
+      'win_debug_RuntimeChecks': '0',
+    },
+  },
   'variables': {
     'tcmalloc_dir': '../../third_party/tcmalloc/chromium',
     'use_vtable_verify%': 0,
@@ -14,11 +24,6 @@
     {
       'target_name': 'allocator',
       'type': 'static_library',
-      # Make sure the allocation library is optimized to
-      # the hilt in official builds.
-      'variables': {
-        'optimize': 'max',
-      },
       'direct_dependent_settings': {
         'configurations': {
           'Common_Base': {
@@ -310,12 +315,6 @@
           ],
           'sources': [
             'allocator_shim_win.cc',
-            'generic_allocators.cc',
-          ],
-          # sources! means that these are not compiled directly.
-          'sources!': [
-            # Included by allocator_shim_win.cc for maximal inlining.
-            'generic_allocators.cc',
           ],
         }],
         ['profiling!=1', {

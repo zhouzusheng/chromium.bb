@@ -36,6 +36,7 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"
+#include "WebBeginFrameArgs.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
@@ -89,7 +90,12 @@ public:
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
-    virtual void animate(double monotonicFrameBeginTime) { }
+    // FIXME: Remove this function once Chrome side patch lands.
+    void animate(double monotonicFrameBeginTime)
+    {
+        beginFrame(WebBeginFrameArgs(monotonicFrameBeginTime));
+    }
+    virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.

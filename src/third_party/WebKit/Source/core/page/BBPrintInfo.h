@@ -28,7 +28,7 @@
 #include "core/page/BBPrintHeader.h"
 #include <wtf/RefCounted.h>
 
-namespace WebCore {
+namespace blink {
 
     class Document;
 
@@ -56,6 +56,6 @@ namespace WebCore {
         RefPtr<BBPrintHeader> d_footerRight;
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BBPrintInfo_h

@@ -55,6 +55,7 @@ class ShellBrowserContext : public BrowserContext {
   virtual BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual PushMessagingService* GetPushMessagingService() OVERRIDE;
+  virtual SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
   virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   net::URLRequestContextGetter* CreateRequestContext(

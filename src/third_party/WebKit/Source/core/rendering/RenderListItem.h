@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLOListElement;
 class RenderListMarker;
@@ -33,6 +33,7 @@ class RenderListMarker;
 class RenderListItem FINAL : public RenderBlockFlow {
 public:
     explicit RenderListItem(Element*);
+    virtual void trace(Visitor*) OVERRIDE;
 
     int value() const { if (!m_isValueUpToDate) updateValueNow(); return m_value; }
     void updateValue();
@@ -85,7 +86,7 @@ private:
     void explicitValueChanged();
 
     int m_explicitValue;
-    RenderListMarker* m_marker;
+    RawPtrWillBeMember<RenderListMarker> m_marker;
     mutable int m_value;
 
     bool m_hasExplicitValue : 1;
@@ -95,6 +96,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListItem, isListItem());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderListItem_h

@@ -37,10 +37,9 @@
 #include <ui/gfx/native_widget_types.h>
 #include <third_party/WebKit/public/web/WebTextDirection.h>
 
-struct WebPreferences;
-
 namespace content {
     class WebContents;
+    struct WebPreferences;
 }  // close namespace content
 
 namespace views {
@@ -94,7 +93,7 @@ class WebViewImpl : public WebView,
         const content::CustomContextMenuContext& context);
     void handleFindRequest(const FindOnPageRequest& request);
     void handleExternalProtocol(const GURL& url);
-    void overrideWebkitPrefs(WebPreferences* prefs);
+    void overrideWebkitPrefs(content::WebPreferences* prefs);
 
     /////////////// WebView overrides
 
@@ -243,20 +242,16 @@ class WebViewImpl : public WebView,
     // pages, DidFinishLoad is invoked for frames that were not sending
     // navigational events before. It is safe to ignore these events.
     virtual void DidFinishLoad(
-        int64 frame_id,
-        const GURL& validated_url,
-        bool is_main_frame,
-        content::RenderViewHost* render_view_host) OVERRIDE;
+        content::RenderFrameHost* render_frame_host,
+        const GURL& validated_url) OVERRIDE;
 
     // This method is like DidFinishLoad, but when the load failed or was
     // cancelled, e.g. window.stop() is invoked.
     virtual void DidFailLoad(
-        int64 frame_id,
+        content::RenderFrameHost* render_frame_host,
         const GURL& validated_url,
-        bool is_main_frame,
         int error_code,
-        const base::string16& error_description,
-        content::RenderViewHost* render_view_host) OVERRIDE;
+        const base::string16& error_description) OVERRIDE;
 
   private:
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;

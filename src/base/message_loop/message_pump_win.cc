@@ -35,22 +35,6 @@ static const int kMsgHaveWork = WM_USER + 1;
 //-----------------------------------------------------------------------------
 // MessagePumpWin public:
 
-void MessagePumpWin::AddObserver(MessagePumpObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void MessagePumpWin::RemoveObserver(MessagePumpObserver* observer) {
-  observers_.RemoveObserver(observer);
-}
-
-void MessagePumpWin::WillProcessMessage(const MSG& msg) {
-  FOR_EACH_OBSERVER(MessagePumpObserver, observers_, WillProcessEvent(msg));
-}
-
-void MessagePumpWin::DidProcessMessage(const MSG& msg) {
-  FOR_EACH_OBSERVER(MessagePumpObserver, observers_, DidProcessEvent(msg));
-}
-
 void MessagePumpWin::PushRunState(
     RunState* run_state,
     Delegate* delegate,
@@ -381,8 +365,6 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
   if (CallMsgFilter(const_cast<MSG*>(&msg), kMessageFilterCode))
     return true;
 
-  WillProcessMessage(msg);
-
   uint32_t action = MessagePumpDispatcher::POST_DISPATCH_PERFORM_DEFAULT;
   if (state_->dispatcher)
     action = state_->dispatcher->Dispatch(msg);
@@ -393,7 +375,6 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
     DispatchMessage(&msg);
   }
 
-  DidProcessMessage(msg);
   return true;
 }
 

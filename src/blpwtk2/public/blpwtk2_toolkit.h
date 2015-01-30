@@ -170,17 +170,6 @@ class Toolkit {
     // processes.
     virtual void clearWebCache() = 0;
 
-    // Do not use this function unless you know what you're doing.  It relaxes
-    // a bunch of security checks in the V8 binding layer in order to allow non
-    // window contexts.  Note that it has been explicitly marked 'Unsafe' in
-    // order to discourage its use except in cases where it is absolutely
-    // necessary.
-    BLPWTK2_EXPORT static void allowNonWindowContexts_Unsafe();
-
-    // Return the handle handle to the Win32 heap used by the blpwtk2 module's
-    // C runtime system.
-    BLPWTK2_EXPORT static intptr_t getHeapHandle();
-
 protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use
     // the 'destroy()' method, instead of deleting the object directly.

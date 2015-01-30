@@ -79,6 +79,11 @@ class WebMediaPlayerMS
   // Methods for painting.
   virtual void paint(blink::WebCanvas* canvas,
                      const blink::WebRect& rect,
+                     unsigned char alpha,
+                     SkXfermode::Mode mode);
+  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect,
                      unsigned char alpha);
 
   // True if the loaded media has a playable video/audio track.
@@ -140,6 +145,8 @@ class WebMediaPlayerMS
   blink::WebMediaPlayer::ReadyState ready_state_;
 
   blink::WebTimeRanges buffered_;
+
+  float volume_;
 
   // Used for DCHECKs to ensure methods calls executed in the correct thread.
   base::ThreadChecker thread_checker_;

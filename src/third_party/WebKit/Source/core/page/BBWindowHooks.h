@@ -31,7 +31,7 @@
 #include <wtf/text/WTFString.h>
 #include <wtf/ArrayBuffer.h>
 
-namespace WebCore {
+namespace blink {
 
     class LocalFrame;
     class Node;
@@ -61,6 +61,6 @@ namespace WebCore {
         void appendTextContent(Node *node, StringBuilder& content, const String& excluder, const String& mask);
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BBWindowHooks_h

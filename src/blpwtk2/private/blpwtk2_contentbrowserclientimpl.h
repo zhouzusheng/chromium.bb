@@ -56,7 +56,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // to the embedder to update it if it wants.
     virtual void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
                                      const GURL& url,
-                                     WebPreferences* prefs) OVERRIDE;
+                                     content::WebPreferences* prefs) OVERRIDE;
 
     // Returns true whether the embedder supports in-process renderers or not.
     // When running "in process", the browser maintains a RenderProcessHost which

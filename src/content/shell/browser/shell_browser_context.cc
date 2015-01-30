@@ -124,6 +124,7 @@ void ShellBrowserContext::InitWhileIOAllowed() {
   pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
   pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
   pref_registry_->RegisterIntegerPref("browser.autospellcorrect_behavior", 0xFF);
+  pref_registry_->RegisterBooleanPref("printing.enabled", true);
   base::PrefServiceFactory factory;
   factory.SetUserPrefsFile(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
   pref_service_ = factory.Create(pref_registry_.get());
@@ -222,6 +223,10 @@ quota::SpecialStoragePolicy* ShellBrowserContext::GetSpecialStoragePolicy() {
 }
 
 PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
+  return NULL;
+}
+
+SSLHostStateDelegate* ShellBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
 }
 

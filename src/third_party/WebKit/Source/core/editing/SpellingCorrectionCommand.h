@@ -29,7 +29,7 @@
 #include "core/dom/Range.h"
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class SpellingCorrectionCommand FINAL : public CompositeEditCommand {
 public:
@@ -47,6 +47,6 @@ private:
     String m_correction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpellingCorrectionCommand_h

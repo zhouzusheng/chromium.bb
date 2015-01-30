@@ -17,18 +17,18 @@
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
+#include "content/common/mojo/service_registry_impl.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 #if defined(OS_MACOSX)
 #include <IOSurface/IOSurfaceAPI.h>
 #include "base/mac/scoped_cftyperef.h"
 #endif
-
-struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
 namespace base {
 class CommandLine;
@@ -50,7 +50,6 @@ class MojoApplicationHost;
 class P2PSocketDispatcherHost;
 #endif
 class PeerConnectionTrackerHost;
-class RenderProcessHostMojoImpl;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -101,9 +100,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual size_t NumListeners() OVERRIDE;
-  virtual bool WaitForBackingStoreMsg(int render_widget_id,
-                                      const base::TimeDelta& max_delay,
-                                      IPC::Message* msg) OVERRIDE;
   virtual void ReceivedBadMessage() OVERRIDE;
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
@@ -145,6 +141,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
   virtual bool IsProcessManagedExternally() const OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
@@ -251,18 +248,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
-  // Establish a connection to a renderer-provided service. See
-  // content/common/mojo/mojo_service_names.h for a list of services.
-  void ConnectTo(const base::StringPiece& service_name,
-                 mojo::ScopedMessagePipeHandle handle);
+  // Call this function to resume the navigation when it was deferred
+  // immediately after receiving response headers.
+  void ResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
 
-  template <typename Interface>
-  void ConnectTo(const base::StringPiece& service_name,
-                 mojo::InterfacePtr<Interface>* ptr) {
-    mojo::MessagePipe pipe;
-    ptr->Bind(pipe.handle0.Pass());
-    ConnectTo(service_name, pipe.handle1.Pass());
-  }
+  // Activates Mojo for this process. Does nothing if Mojo is already activated.
+  void EnsureMojoActivated();
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -289,6 +280,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   friend class VisitRelayingRenderProcessHost;
 
   void MaybeActivateMojo();
+  bool ShouldUseMojoChannel() const;
+  scoped_ptr<IPC::ChannelProxy> CreateChannelProxy(
+      const std::string& channel_id);
 
   // Creates and adds the IO thread message filters.
   void CreateMessageFilters();
@@ -300,10 +294,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
   void OnCloseACK(int old_route_id);
-
-  // CompositorSurfaceBuffersSwapped handler when there's no RWH.
-  void OnCompositorSurfaceBuffersSwappedNoHost(
-      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
 
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
@@ -337,6 +327,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
                                  IPC::Message* reply);
   void GpuMemoryBufferAllocated(IPC::Message* reply,
                                 const gfx::GpuMemoryBufferHandle& handle);
+  void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
+                                const gfx::GpuMemoryBufferId& id);
 
   scoped_ptr<MojoApplicationHost> mojo_application_host_;
   bool mojo_activation_required_;

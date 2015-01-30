@@ -29,6 +29,7 @@
 #include "core/events/Event.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
+#include "core/page/Page.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/ColumnInfo.h"
 #include "core/rendering/RenderBlock.h"
@@ -37,12 +38,10 @@
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "wtf/text/StringBuilder.h"
 
 #include "public/web/WebViewClient.h"
-
-using namespace WebCore;
-using namespace std;
 
 namespace blink {
 
@@ -50,8 +49,8 @@ class RubberbandCandidate {
   public:
     WTF::String m_text;
     std::vector<LayoutUnit> m_charPositions;
-    WebCore::LayoutRect m_absRect;
-    WebCore::LayoutRect m_clipRect;
+    LayoutRect m_absRect;
+    LayoutRect m_clipRect;
     LayoutUnit m_spaceWidth;
     int m_start;
     int m_len;
@@ -92,7 +91,7 @@ struct RubberbandCandidate_YSorter {
 class RubberbandStateImpl {
   public:
     std::vector<RubberbandCandidate> m_candidates;
-    WebCore::IntPoint m_startPoint;
+    IntPoint m_startPoint;
 };
 
 RubberbandState::RubberbandState()
@@ -107,7 +106,7 @@ RubberbandState::~RubberbandState()
 
 class RubberbandLayerContext {
   public:
-    WebCore::LayoutRect m_clipRect;
+    LayoutRect m_clipRect;
     FloatSize m_frameScrollOffset;
     FloatSize m_layerScrollOffset;
     double m_translateX;
@@ -144,9 +143,9 @@ class RubberbandContext {
   public:
     const RubberbandContext* m_parent;
     RubberbandLayerContext* m_layerContext;
-    const WebCore::RenderObject* m_renderer;
-    const WebCore::RenderBlock* m_containingBlock;
-    WebCore::LayoutPoint m_layoutTopLeft;  // relative to the layer's top-left
+    const RenderObject* m_renderer;
+    const RenderBlock* m_containingBlock;
+    LayoutPoint m_layoutTopLeft;  // relative to the layer's top-left
 
     RubberbandContext()
     : m_parent(0)
@@ -156,7 +155,7 @@ class RubberbandContext {
     {
     }
 
-    explicit RubberbandContext(const RubberbandContext* parent, const WebCore::RenderObject* renderer)
+    explicit RubberbandContext(const RubberbandContext* parent, const RenderObject* renderer)
     : m_parent(parent)
     , m_renderer(renderer)
     , m_containingBlock(renderer ? renderer->containingBlock() : 0)
@@ -205,7 +204,7 @@ class RubberbandContext {
     }
 };
 
-static bool isClipped(WebCore::EOverflow overflow)
+static bool isClipped(EOverflow overflow)
 {
     return overflow == OAUTO
         || overflow == OHIDDEN
@@ -249,9 +248,9 @@ static void appendWithoutNewlines(WTF::StringBuilder *builder, const CHAR_TYPE* 
     }
 }
 
-static WebCore::IntRect getRubberbandRect(const WebCore::IntPoint& start, const WebCore::IntPoint& extent)
+static IntRect getRubberbandRect(const IntPoint& start, const IntPoint& extent)
 {
-    WebCore::IntRect rc;
+    IntRect rc;
     rc.shiftXEdgeTo(std::min(start.x(), extent.x()));
     rc.shiftMaxXEdgeTo(std::max(start.x(), extent.x()));
     rc.shiftYEdgeTo(std::min(start.y(), extent.y()));
@@ -259,7 +258,7 @@ static WebCore::IntRect getRubberbandRect(const WebCore::IntPoint& start, const 
     return rc;
 }
 
-void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, WebCore::LocalFrame* frame, const WebCore::LayoutPoint& clientTopLeft)
+void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFrame* frame, const LayoutPoint& clientTopLeft)
 {
     frame->document()->updateLayout();
 
@@ -304,7 +303,7 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, WebCore:
     rubberbandWalkRenderObject(localContext, renderer);
 }
 
-void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, WebCore::RenderObject* renderer)
+void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, RenderObject* renderer)
 {
     RubberbandContext localContext(&context, renderer);
 
@@ -369,7 +368,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
         ASSERT(cbContext->m_parent);
         ASSERT(cbContext->m_parent->m_layerContext);
 
-        WebCore::LayoutPoint offset;
+        LayoutPoint offset;
         if (!cb->hasLayer() && cbContext->m_layerContext == localContext.m_layerContext)
             offset.move(cb->frameRect().x(), cb->frameRect().y());
 
@@ -382,7 +381,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
     bool isVisible = !renderer->style() || renderer->style()->visibility() == VISIBLE;
 
     if (renderer->isBox()) {
-        WebCore::RenderBox* renderBox = toRenderBox(renderer);
+        RenderBox* renderBox = toRenderBox(renderer);
 
         // HACK: RenderTableSection is not a containing block, but the cell
         //       positions seem to be relative to RenderTableSection instead of
@@ -413,10 +412,10 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
         }
     }
     else if (renderer->isText() && isVisible && isTextRubberbandable(renderer)) {
-        WebCore::RenderText* renderText = toRenderText(renderer);
+        RenderText* renderText = toRenderText(renderer);
 
         WTF::String text(renderText->text());
-        for (WebCore::InlineTextBox* textBox = renderText->firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
+        for (InlineTextBox* textBox = renderText->firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
             LayoutUnit textBoxTop = textBox->root().lineTop();
             LayoutUnit textBoxHeight = textBox->root().lineBottom() - textBoxTop;
             LayoutUnit textBoxLeft = textBox->x();
@@ -451,7 +450,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
                     const Font& font = renderer->style()->font();
                     UChar space = ' ';
                     candidate.m_spaceWidth = font.width(
-                        RenderBlockFlow::constructTextRun(renderer, font, &space, 1, renderer->style(), candidate.m_isLTR ? LTR : RTL));
+                        constructTextRun(renderer, font, &space, 1, renderer->style(), candidate.m_isLTR ? LTR : RTL));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }
@@ -467,7 +466,7 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
 {
     ASSERT(isRubberbanding());
 
-    WebCore::LayoutRect rc = rcOrig;
+    LayoutRect rc = rcOrig;
 
     RubberbandStateImpl* stateImpl = m_rubberbandState->m_impl;
 
@@ -685,7 +684,7 @@ bool WebViewImpl::handleAltDragRubberbandEvent(const WebInputEvent& inputEvent)
     if (!isRubberbanding()) {
         if (inputEvent.type == WebInputEvent::MouseDown && preStartRubberbanding()) {
             startRubberbanding();
-            m_rubberbandState->m_impl->m_startPoint = WebCore::IntPoint(mouseEvent.x, mouseEvent.y);
+            m_rubberbandState->m_impl->m_startPoint = IntPoint(mouseEvent.x, mouseEvent.y);
             return true;
         }
 
@@ -695,8 +694,8 @@ bool WebViewImpl::handleAltDragRubberbandEvent(const WebInputEvent& inputEvent)
         if (m_client)
             m_client->hideRubberbandRect();
 
-        WebCore::IntPoint start = m_rubberbandState->m_impl->m_startPoint;
-        WebCore::IntPoint extent = WebCore::IntPoint(mouseEvent.x, mouseEvent.y);
+        IntPoint start = m_rubberbandState->m_impl->m_startPoint;
+        IntPoint extent = IntPoint(mouseEvent.x, mouseEvent.y);
         WebRect rc = expandRubberbandRect(getRubberbandRect(start, extent));
         if (rc.isEmpty()) {
             abortRubberbanding();
@@ -710,8 +709,8 @@ bool WebViewImpl::handleAltDragRubberbandEvent(const WebInputEvent& inputEvent)
     }
     else {
         if (m_client) {
-            WebCore::IntPoint start = m_rubberbandState->m_impl->m_startPoint;
-            WebCore::IntPoint extent = WebCore::IntPoint(mouseEvent.x, mouseEvent.y);
+            IntPoint start = m_rubberbandState->m_impl->m_startPoint;
+            IntPoint extent = IntPoint(mouseEvent.x, mouseEvent.y);
             WebRect rc = expandRubberbandRect(getRubberbandRect(start, extent));
             m_client->setRubberbandRect(rc);
         }
@@ -767,7 +766,7 @@ WebRect WebViewImpl::expandRubberbandRect(const WebRect& rcOrig)
 {
     ASSERT(isRubberbanding());
 
-    WebCore::LayoutRect rc = rcOrig;
+    LayoutRect rc = rcOrig;
 
     RubberbandStateImpl* stateImpl = m_rubberbandState->m_impl;
 
@@ -869,7 +868,7 @@ WebString WebViewImpl::getTextInRubberband(const WebRect& rc)
     RubberbandContext context;
     RubberbandLayerContext layerContext;
     context.m_layerContext = &layerContext;
-    layerContext.m_clipRect = (WebCore::IntRect)rc;
+    layerContext.m_clipRect = (IntRect)rc;
     rubberbandWalkFrame(context, m_page->deprecatedLocalMainFrame(), LayoutPoint());
     WTF::String result = getTextInRubberbandImpl(rc);
     m_rubberbandState.clear();

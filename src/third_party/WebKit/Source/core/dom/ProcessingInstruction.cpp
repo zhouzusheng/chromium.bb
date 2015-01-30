@@ -34,7 +34,7 @@
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/parser/XMLDocumentParser.h" // for parseAttributes()
 
-namespace WebCore {
+namespace blink {
 
 inline ProcessingInstruction::ProcessingInstruction(Document& document, const String& target, const String& data)
     : CharacterData(document, data, CreateOther)
@@ -219,6 +219,7 @@ void ProcessingInstruction::setXSLStyleSheet(const String& href, const KURL& bas
 
     ASSERT(m_isXSL);
     m_sheet = XSLStyleSheet::create(this, href, baseURL);
+    RefPtrWillBeRawPtr<Document> protect(&document());
     parseStyleSheet(sheet);
 }
 

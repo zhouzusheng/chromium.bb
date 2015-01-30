@@ -1912,7 +1912,7 @@ void adjustColRectForSpanningHeader(const RenderBlock* columnBlock, ColumnInfo* 
 {
     if (colInfo && colInfo->spanningHeaderColumnCount() > 1) {
         if (columnIndex == 0) {
-            unsigned columnSpan = min(colInfo->spanningHeaderColumnCount(), colInfo->desiredColumnCount());
+            unsigned columnSpan = std::min(colInfo->spanningHeaderColumnCount(), colInfo->desiredColumnCount());
             LayoutUnit expansion = (columnSpan - 1) * (columnBlock->columnGap() + colInfo->desiredColumnWidth());
             colRect.expand(expansion, 0);
         }

@@ -3778,6 +3778,9 @@ bool RenderBlock::hasLineIfEmpty() const
     if (node()->isRootEditableElement())
         return true;
 
+    if (node()->rendererIsEditable() && isTableCell())
+        return true;
+
     if (node()->isShadowRoot() && isHTMLInputElement(*toShadowRoot(node())->host()))
         return true;
 

@@ -24,11 +24,6 @@
     {
       'target_name': 'allocator',
       'type': 'static_library',
-      # Make sure the allocation library is optimized to
-      # the hilt in official builds.
-      'variables': {
-        'optimize': 'max',
-      },
       'direct_dependent_settings': {
         'configurations': {
           'Common_Base': {
@@ -320,12 +315,6 @@
           ],
           'sources': [
             'allocator_shim_win.cc',
-            'generic_allocators.cc',
-          ],
-          # sources! means that these are not compiled directly.
-          'sources!': [
-            # Included by allocator_shim_win.cc for maximal inlining.
-            'generic_allocators.cc',
           ],
         }],
         ['profiling!=1', {

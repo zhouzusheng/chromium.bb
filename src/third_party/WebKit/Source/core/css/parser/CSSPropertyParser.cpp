@@ -5347,6 +5347,7 @@ bool CSSPropertyParser::fastParseColor(RGBA32& rgb, const StringType& name, bool
 }
 
 template bool CSSPropertyParser::fastParseColor(RGBA32&, const String&, bool strict);
+template bool CSSPropertyParser::fastParseColor(RGBA32&, const AtomicString&, bool strict);
 
 bool CSSPropertyParser::isCalculation(CSSParserValue* value)
 {

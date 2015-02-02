@@ -387,6 +387,11 @@ content::PushMessagingService* BrowserContextImpl::GetPushMessagingService()
     return 0;
 }
 
+content::SSLHostStateDelegate* BrowserContextImpl::GetSSLHostStateDelegate()
+{
+    return 0;
+}
+
 bool BrowserContextImpl::AllowDictionaryDownloads()
 {
     return false;

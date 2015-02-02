@@ -91,10 +91,6 @@ def copyIncludeFiles(destDir):
       [os.path.join(srcDir, 'blpwtk2', 'public'),
        os.path.join(srcDir, 'out', 'Debug', 'gen', 'blpwtk2', 'public')])
 
-  copyIncludeFilesFrom(
-      os.path.join(destDir, 'include', 'npapi'),
-      [os.path.join(srcDir, 'third_party', 'npapi', 'bindings')])
-
   copyIncludeFilesFrom(os.path.join(destDir, 'include', 'v8'),
                        [os.path.join(srcDir, 'v8', 'include')])
 
@@ -109,6 +105,7 @@ def copyBin(destDir, version):
     'blpv8' + productAppend + '.dll',
     'blpwtk2' + productAppend + '.dll',
     'blpangle' + productAppend + '.dll',
+    'blppdfium' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
     'd3dcompiler_46.dll',
     'icudtl.dat',
@@ -122,6 +119,8 @@ def copyBin(destDir, version):
     'blpwtk2' + productAppend + '.map',
     'blpangle' + productAppend + '.pdb',
     'blpangle' + productAppend + '.map',
+    'blppdfium' + productAppend + '.pdb',
+    'blppdfium' + productAppend + '.map',
     'ffmpegsumo' + productAppend + '.pdb',
     'ffmpegsumo' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.pdb',
@@ -268,7 +267,6 @@ def main(args):
   os.mkdir(os.path.join(destDir, 'bin', 'Release'))
   os.mkdir(os.path.join(destDir, 'include'))
   os.mkdir(os.path.join(destDir, 'include', 'blpwtk2'))
-  os.mkdir(os.path.join(destDir, 'include', 'npapi'))
   os.mkdir(os.path.join(destDir, 'include', 'v8'))
   os.mkdir(os.path.join(destDir, 'lib'))
   os.mkdir(os.path.join(destDir, 'lib', 'Debug'))

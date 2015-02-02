@@ -34,12 +34,14 @@ class ShellMainDelegate : public ContentMainDelegate {
 #endif
   virtual ContentBrowserClient* CreateContentBrowserClient() OVERRIDE;
   virtual ContentRendererClient* CreateContentRendererClient() OVERRIDE;
+  virtual ContentUtilityClient* CreateContentUtilityClient() OVERRIDE;
 
   static void InitializeResourceBundle();
 
  private:
   scoped_ptr<ShellContentBrowserClient> browser_client_;
   scoped_ptr<ShellContentRendererClient> renderer_client_;
+  scoped_ptr<ContentUtilityClient> utility_client_;
   ShellContentClient content_client_;
 
 #if defined(OS_ANDROID)

@@ -10,6 +10,9 @@
 #include "chrome/common/spellcheck_result.h"
 #include "ipc/ipc_message_macros.h"
 
+#if !defined(ENABLE_SPELLCHECK)
+#error "Spellcheck should be enabled"
+#endif
 
 #define IPC_MESSAGE_START SpellCheckMsgStart
 

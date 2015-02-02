@@ -225,7 +225,7 @@ bool IsLocalePartiallyPopulated(const std::string& locale_name) {
 bool IsLocaleAvailable(const std::string& locale) {
   // If locale has any illegal characters in it, we don't want to try to
   // load it because it may be pointing outside the locale data file directory.
-  if (!file_util::IsFilenameLegal(base::ASCIIToUTF16(locale)))
+  if (!base::i18n::IsFilenameLegal(base::ASCIIToUTF16(locale)))
     return false;
 
   // IsLocalePartiallyPopulated() can be called here for an early return w/o
@@ -309,6 +309,11 @@ namespace l10n_util {
 
 std::string GetCanonicalLocale(const std::string& locale) {
   return base::i18n::GetCanonicalLocale(locale.c_str());
+}
+
+std::string GetLanguage(const std::string& locale) {
+  const std::string::size_type hyphen_pos = locale.find('-');
+  return std::string(locale, 0, hyphen_pos);
 }
 
 bool CheckAndResolveLocale(const std::string& locale,
@@ -397,7 +402,7 @@ bool CheckAndResolveLocale(const std::string& locale,
 #endif
 }
 
-std::string GetApplicationLocale(const std::string& pref_locale) {
+std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
 #if defined(OS_MACOSX)
 
   // Use any override (Cocoa for the browser), otherwise use the preference
@@ -411,12 +416,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   if (app_locale.empty())
     app_locale = "en-US";
 
-  // Windows/Linux call SetICUDefaultLocale after determining the actual locale
-  // with CheckAndResolveLocal to make ICU APIs work in that locale.
-  // Mac doesn't use a locale directory tree of resources (it uses Mac style
-  // resources), so mirror the Windows/Linux behavior of calling
-  // SetICUDefaultLocale.
-  base::i18n::SetICUDefaultLocale(app_locale);
   return app_locale;
 
 #else
@@ -478,7 +477,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   std::vector<std::string>::const_iterator i = candidates.begin();
   for (; i != candidates.end(); ++i) {
     if (CheckAndResolveLocale(*i, &resolved_locale)) {
-      base::i18n::SetICUDefaultLocale(resolved_locale);
       return resolved_locale;
     }
   }
@@ -486,13 +484,24 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   // Fallback on en-US.
   const std::string fallback_locale("en-US");
   if (IsLocaleAvailable(fallback_locale)) {
-    base::i18n::SetICUDefaultLocale(fallback_locale);
     return fallback_locale;
   }
 
   return std::string();
 
 #endif
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale,
+                                 bool set_icu_locale) {
+  const std::string locale = GetApplicationLocaleInternal(pref_locale);
+  if (set_icu_locale && !locale.empty())
+    base::i18n::SetICUDefaultLocale(locale);
+  return locale;
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale) {
+  return GetApplicationLocale(pref_locale, true /* set_icu_locale */);
 }
 
 bool IsLocaleNameTranslated(const char* locale,
@@ -515,24 +524,15 @@ base::string16 GetDisplayNameForLocale(const std::string& locale,
   std::string locale_code = locale;
   // Internally, we use the language code of zh-CN and zh-TW, but we want the
   // display names to be Chinese (Simplified) and Chinese (Traditional) instead
-  // of Chinese (China) and Chinese (Taiwan).  To do that, we pass zh-Hans
-  // and zh-Hant to ICU. Even with this mapping, we'd get
-  // 'Chinese (Simplified Han)' and 'Chinese (Traditional Han)' in English and
-  // even longer results in other languages. Arguably, they're better than
-  // the current results : Chinese (China) / Chinese (Taiwan).
-  // TODO(jungshik): Do one of the following:
-  // 1. Special-case Chinese by getting the custom-translation for them
-  // 2. Recycle IDS_ENCODING_{SIMP,TRAD}_CHINESE.
-  // 3. Get translations for two directly from the ICU resouce bundle
-  // because they're not accessible with other any API.
-  // 4. Patch ICU to special-case zh-Hans/zh-Hant for us.
-  // #1 and #2 wouldn't work if display_locale != current UI locale although
-  // we can think of additional hack to work around the problem.
-  // #3 can be potentially expensive.
+  // of Chinese (China) and Chinese (Taiwan).
+  // Translate uses "tl" (Tagalog) to mean "fil" (Filipino) until Google
+  // translate is changed to understand "fil". Make "tl" alias to "fil".
   if (locale_code == "zh-CN")
     locale_code = "zh-Hans";
   else if (locale_code == "zh-TW")
     locale_code = "zh-Hant";
+  else if (locale_code == "tl")
+    locale_code = "fil";
 
   base::string16 display_name;
 #if defined(OS_ANDROID)

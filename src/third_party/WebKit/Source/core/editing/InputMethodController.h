@@ -32,7 +32,7 @@
 #include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Editor;
 class EditorClient;
@@ -115,6 +115,6 @@ private:
     bool setSelectionOffsets(const PlainTextRange&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InputMethodController_h

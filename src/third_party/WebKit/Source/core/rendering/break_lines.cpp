@@ -32,7 +32,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 enum WordBreakSwitch {
     Default,
@@ -223,4 +223,4 @@ int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator& lazyBreakIterator, 
     }
 }
 
-} // namespace WebCore
+} // namespace blink

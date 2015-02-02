@@ -29,7 +29,7 @@
 #include "core/editing/EditCommand.h"
 #include "core/editing/FrameSelection.h"
 
-namespace WebCore {
+namespace blink {
 
 class SetSelectionCommand FINAL : public SimpleEditCommand {
 public:
@@ -48,6 +48,6 @@ private:
     VisibleSelection m_selectionToSet;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SetSelectionCommand_h

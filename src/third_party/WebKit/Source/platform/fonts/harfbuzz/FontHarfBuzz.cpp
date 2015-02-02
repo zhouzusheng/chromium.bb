@@ -44,7 +44,7 @@
 
 #include "wtf/unicode/Unicode.h"
 
-namespace WebCore {
+namespace blink {
 
 bool FontPlatformFeatures::canReturnFallbackFontsForComplexText()
 {
@@ -56,66 +56,103 @@ bool FontPlatformFeatures::canExpandAroundIdeographsInComplexText()
     return false;
 }
 
+static SkPaint textFillPaint(GraphicsContext* gc, const SimpleFontData* font,
+                             const FontPlatformData::FontSmoothingOverride& fontSmoothingOverride)
+{
+    SkPaint paint = gc->fillPaint();
+    font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
+    gc->adjustTextRenderMode(&paint);
+    paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+    return paint;
+}
+
+static SkPaint textStrokePaint(GraphicsContext* gc, const SimpleFontData* font, bool isFilling,
+                               const FontPlatformData::FontSmoothingOverride& fontSmoothingOverride)
+{
+    SkPaint paint = gc->strokePaint();
+    font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
+    gc->adjustTextRenderMode(&paint);
+    paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+    if (isFilling) {
+        // If there is a shadow and we filled above, there will already be
+        // a shadow. We don't want to draw it again or it will be too dark
+        // and it will go on top of the fill.
+        //
+        // Note that this isn't strictly correct, since the stroke could be
+        // very thick and the shadow wouldn't account for this. The "right"
+        // thing would be to draw to a new layer and then draw that layer
+        // with a shadow. But this is a lot of extra work for something
+        // that isn't normally an issue.
+        paint.setLooper(0);
+    }
+    return paint;
+}
+
+static void initFontSmoothingOverride(
+        FontPlatformData::FontSmoothingOverride* fontSmoothingOverride,
+        const SimpleFontData* font,
+        const FontDescription& fontDescription)
+{
+    switch (fontDescription.fontSmoothing()) {
+    case NoSmoothing:
+        fontSmoothingOverride->textFlags = 0;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case Antialiased:
+        fontSmoothingOverride->textFlags = SkPaint::kAntiAlias_Flag;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case SubpixelAntialiased:
+        fontSmoothingOverride->textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+        fontSmoothingOverride->lcdExplicitlyRequested = true;
+        break;
+    default:
+        fontSmoothingOverride->textFlags = font->platformData().paintTextFlags();
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    }
+}
+
 static void paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     const FontDescription& fontDescription,
-    const Glyph* glyphs, unsigned numGlyphs,
-    SkPoint* pos, const FloatRect& textRect)
+    const Glyph glyphs[], unsigned numGlyphs,
+    const SkPoint pos[], const FloatRect& textRect)
 {
     TextDrawingModeFlags textMode = gc->textDrawingMode();
 
     FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
-    switch (fontDescription.fontSmoothing()) {
-    case NoSmoothing:
-        fontSmoothingOverride.textFlags = 0;
-        fontSmoothingOverride.lcdExplicitlyRequested = false;
-        break;
-    case Antialiased:
-        fontSmoothingOverride.textFlags = SkPaint::kAntiAlias_Flag;
-        fontSmoothingOverride.lcdExplicitlyRequested = false;
-        break;
-    case SubpixelAntialiased:
-        fontSmoothingOverride.textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
-        fontSmoothingOverride.lcdExplicitlyRequested = true;
-        break;
-    default:
-        fontSmoothingOverride.textFlags = font->platformData().paintTextFlags();
-        fontSmoothingOverride.lcdExplicitlyRequested = false;
-        break;
-    }
+    initFontSmoothingOverride(&fontSmoothingOverride, font, fontDescription);
 
     // We draw text up to two times (once for fill, once for stroke).
     if (textMode & TextModeFill) {
-        SkPaint paint = gc->fillPaint();
-        font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
-        gc->adjustTextRenderMode(&paint);
-        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-
+        SkPaint paint = textFillPaint(gc, font, fontSmoothingOverride);
         gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 
-    if ((textMode & TextModeStroke)
-        && gc->strokeStyle() != NoStroke
-        && gc->strokeThickness() > 0) {
-
-        SkPaint paint = gc->strokePaint();
-        font->platformData().setupPaint(&paint, gc, &fontSmoothingOverride);
-        gc->adjustTextRenderMode(&paint);
-        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-
-        if (textMode & TextModeFill) {
-            // If there is a shadow and we filled above, there will already be
-            // a shadow. We don't want to draw it again or it will be too dark
-            // and it will go on top of the fill.
-            //
-            // Note that this isn't strictly correct, since the stroke could be
-            // very thick and the shadow wouldn't account for this. The "right"
-            // thing would be to draw to a new layer and then draw that layer
-            // with a shadow. But this is a lot of extra work for something
-            // that isn't normally an issue.
-            paint.setLooper(0);
-        }
-
+    if ((textMode & TextModeStroke) && gc->hasStroke()) {
+        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill, fontSmoothingOverride);
         gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
+    }
+}
+
+static void paintGlyphsHorizontal(GraphicsContext* gc, const SimpleFontData* font,
+    const FontDescription& fontDescription,
+    const Glyph glyphs[], unsigned numGlyphs,
+    const SkScalar xpos[], SkScalar constY, const FloatRect& textRect)
+{
+    TextDrawingModeFlags textMode = gc->textDrawingMode();
+
+    FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
+    initFontSmoothingOverride(&fontSmoothingOverride, font, fontDescription);
+
+    if (textMode & TextModeFill) {
+        SkPaint paint = textFillPaint(gc, font, fontSmoothingOverride);
+        gc->drawPosTextH(glyphs, numGlyphs * sizeof(Glyph), xpos, constY, textRect, paint);
+    }
+
+    if ((textMode & TextModeStroke) && gc->hasStroke()) {
+        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill, fontSmoothingOverride);
+        gc->drawPosTextH(glyphs, numGlyphs * sizeof(Glyph), xpos, constY, textRect, paint);
     }
 }
 
@@ -126,11 +163,11 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     SkScalar x = SkFloatToScalar(point.x());
     SkScalar y = SkFloatToScalar(point.y());
 
-    SkAutoSTMalloc<32, SkPoint> storage(numGlyphs);
-    SkPoint* pos = storage.get();
-
     const OpenTypeVerticalData* verticalData = font->verticalData();
     if (font->platformData().orientation() == Vertical && verticalData) {
+        SkAutoSTMalloc<32, SkPoint> storage(numGlyphs);
+        SkPoint* pos = storage.get();
+
         AffineTransform savedMatrix = gc->getCTM();
         gc->concatCTM(AffineTransform(0, -1, 1, 0, point.x(), point.y()));
         gc->concatCTM(AffineTransform(1, 0, 0, 1, -point.x(), -point.y()));
@@ -168,12 +205,27 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         return;
     }
 
+    if (!glyphBuffer.hasVerticalAdvances()) {
+        SkAutoSTMalloc<64, SkScalar> storage(numGlyphs);
+        SkScalar* xpos = storage.get();
+        const FloatSize* adv = glyphBuffer.advances(from);
+        for (unsigned i = 0; i < numGlyphs; i++) {
+            xpos[i] = x;
+            x += SkFloatToScalar(adv[i].width());
+        }
+        const Glyph* glyphs = glyphBuffer.glyphs(from);
+        paintGlyphsHorizontal(gc, font, m_fontDescription, glyphs, numGlyphs, xpos, SkFloatToScalar(y), textRect);
+        return;
+    }
+
     // FIXME: text rendering speed:
     // Android has code in their WebCore fork to special case when the
     // GlyphBuffer has no advances other than the defaults. In that case the
     // text drawing can proceed faster. However, it's unclear when those
     // patches may be upstreamed to WebKit so we always use the slower path
     // here.
+    SkAutoSTMalloc<32, SkPoint> storage(numGlyphs);
+    SkPoint* pos = storage.get();
     const FloatSize* adv = glyphBuffer.advances(from);
     for (unsigned i = 0; i < numGlyphs; i++) {
         pos[i].set(x, y);
@@ -192,9 +244,7 @@ void Font::drawComplexText(GraphicsContext* gc, const TextRunPaintInfo& runInfo,
 
     TextDrawingModeFlags textMode = gc->textDrawingMode();
     bool fill = textMode & TextModeFill;
-    bool stroke = (textMode & TextModeStroke)
-        && gc->strokeStyle() != NoStroke
-        && gc->strokeThickness() > 0;
+    bool stroke = (textMode & TextModeStroke) && gc->hasStroke();
 
     if (!fill && !stroke)
         return;
@@ -263,4 +313,4 @@ FloatRect Font::selectionRectForComplexText(const TextRun& run,
     return shaper.selectionRect(point, height, from, to);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -46,7 +46,7 @@
 class SkTypeface;
 typedef uint32_t SkFontID;
 
-namespace WebCore {
+namespace blink {
 
 class GraphicsContext;
 class HarfBuzzFace;
@@ -85,12 +85,15 @@ public:
 #if OS(WIN)
     void setMinSizeForAntiAlias(unsigned size) { m_minSizeForAntiAlias = size; }
     unsigned minSizeForAntiAlias() const { return m_minSizeForAntiAlias; }
+    void setMinSizeForSubpixel(float size) { m_minSizeForSubpixel = size; }
+    float minSizeForSubpixel() const { return m_minSizeForSubpixel; }
     void setHinting(SkPaint::Hinting style)
     {
         m_style.useAutoHint = 0;
         m_style.hintStyle = style;
     }
 #endif
+    bool fontContainsCharacter(UChar32 character);
 
 #if ENABLE(OPENTYPE_VERTICAL)
     PassRefPtr<OpenTypeVerticalData> verticalData() const;
@@ -139,9 +142,10 @@ private:
     int m_paintTextFlags;
     bool m_useSubpixelPositioning;
     unsigned m_minSizeForAntiAlias;
+    float m_minSizeForSubpixel;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ifdef FontPlatformDataHarfBuzz_h

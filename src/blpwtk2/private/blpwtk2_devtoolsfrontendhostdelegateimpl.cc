@@ -22,9 +22,14 @@
 
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
 
+#include <base/json/json_reader.h>
+#include <base/strings/string_number_conversions.h>
+#include <base/strings/utf_string_conversions.h>
+#include <base/values.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_client_host.h>
 #include <content/public/browser/devtools_manager.h>
+#include <content/public/browser/render_frame_host.h>
 #include <content/public/browser/web_contents.h>
 
 namespace blpwtk2 {
@@ -35,9 +40,6 @@ DevToolsFrontendHostDelegateImpl::DevToolsFrontendHostDelegateImpl(
 : WebContentsObserver(inspectorContents)
 , d_agentHost(agentHost)
 {
-    d_frontendHost.reset(
-        content::DevToolsClientHost::CreateDevToolsFrontendHost(web_contents(),
-                                                                this));
 }
 
 DevToolsFrontendHostDelegateImpl::~DevToolsFrontendHostDelegateImpl()
@@ -49,20 +51,70 @@ DevToolsFrontendHostDelegateImpl::~DevToolsFrontendHostDelegateImpl()
 void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     content::RenderViewHost* renderViewHost)
 {
-    content::DevToolsClientHost::SetupDevToolsFrontendClient(
-        web_contents()->GetRenderViewHost());
-    content::DevToolsManager* manager = content::DevToolsManager::GetInstance();
-    manager->RegisterDevToolsClientHostFor(d_agentHost.get(), d_frontendHost.get());
+    d_frontendHost.reset(content::DevToolsFrontendHost::Create(renderViewHost, this));
+    content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(d_agentHost.get(), this);
 }
 
 void DevToolsFrontendHostDelegateImpl::WebContentsDestroyed()
 {
-    content::DevToolsManager* manager = content::DevToolsManager::GetInstance();
-    manager->ClientHostClosing(d_frontendHost.get());
-    d_frontendHost.reset();
+    content::DevToolsManager::GetInstance()->ClientHostClosing(this);
     d_agentHost = 0;
 }
 
+void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
+    const std::string& message)
+{
+    // This implementation was copied from shell_devtools_frontend.cc
+
+    std::string method;
+    std::string browser_message;
+    int id = 0;
+
+    base::ListValue* params = NULL;
+    base::DictionaryValue* dict = NULL;
+    scoped_ptr<base::Value> parsed_message(base::JSONReader::Read(message));
+    if (!parsed_message ||
+        !parsed_message->GetAsDictionary(&dict) ||
+        !dict->GetString("method", &method) ||
+        !dict->GetList("params", &params)) {
+        return;
+    }
+
+    if (method != "sendMessageToBrowser" ||
+        params->GetSize() != 1 ||
+        !params->GetString(0, &browser_message)) {
+        return;
+    }
+    dict->GetInteger("id", &id);
+
+    content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
+        this, browser_message);
+
+    if (id) {
+        std::string code = "InspectorFrontendAPI.embedderMessageAck(" +
+            base::IntToString(id) + ",\"\");";
+        base::string16 javascript = base::UTF8ToUTF16(code);
+        web_contents()->GetMainFrame()->ExecuteJavaScript(javascript);
+    }
+}
+
+void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontendToBackend(
+    const std::string& message)
+{
+    // This implementation was copied from shell_devtools_frontend.cc
+
+    content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
+        this, message);
+}
+
+void DevToolsFrontendHostDelegateImpl::DispatchOnInspectorFrontend(const std::string& message)
+{
+    // This implementation was copied from shell_devtools_frontend.cc
+
+    std::string code = "InspectorFrontendAPI.dispatchMessage(" + message + ");";
+    base::string16 javascript = base::UTF8ToUTF16(code);
+    web_contents()->GetMainFrame()->ExecuteJavaScript(javascript);
+}
 
 }  // close namespace blpwtk2
 

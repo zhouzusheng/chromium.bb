@@ -29,7 +29,7 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 SetSelectionCommand::SetSelectionCommand(const VisibleSelection& selection, FrameSelection::SetSelectionOptions options)
     : SimpleEditCommand(*selection.base().document())
@@ -51,4 +51,4 @@ void SetSelectionCommand::doUnapply()
     selection.setSelection(startingSelection(), m_options);
 }
 
-} // namespace WebCore
+} // namespace blink

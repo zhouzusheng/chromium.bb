@@ -18,7 +18,7 @@ WebContents::CreateParams::CreateParams(BrowserContext* context)
       main_frame_routing_id(MSG_ROUTING_NONE),
       render_process_affinity(SiteInstance::kNoProcessAffinity),
       initially_hidden(false),
-      guest_instance_id(0),
+      guest_delegate(NULL),
       context(NULL) {}
 
 WebContents::CreateParams::CreateParams(
@@ -31,7 +31,7 @@ WebContents::CreateParams::CreateParams(
       main_frame_routing_id(MSG_ROUTING_NONE),
       render_process_affinity(SiteInstance::kNoProcessAffinity),
       initially_hidden(false),
-      guest_instance_id(0),
+      guest_delegate(NULL),
       context(NULL) {}
 
 WebContents::CreateParams::~CreateParams() {

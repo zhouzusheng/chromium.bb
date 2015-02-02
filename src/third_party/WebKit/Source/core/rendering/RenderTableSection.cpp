@@ -37,9 +37,7 @@
 #include "core/rendering/SubtreeLayoutScope.h"
 #include "wtf/HashSet.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -79,6 +77,18 @@ static inline void updateLogicalHeightForCell(RenderTableSection::RowStruct& row
     }
 }
 
+void RenderTableSection::CellStruct::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(cells);
+#endif
+}
+
+void RenderTableSection::RowStruct::trace(Visitor* visitor)
+{
+    visitor->trace(row);
+    visitor->trace(rowRenderer);
+}
 
 RenderTableSection::RenderTableSection(Element* element)
     : RenderBox(element)
@@ -97,6 +107,17 @@ RenderTableSection::RenderTableSection(Element* element)
 
 RenderTableSection::~RenderTableSection()
 {
+}
+
+void RenderTableSection::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_children);
+    visitor->trace(m_grid);
+    visitor->trace(m_overflowingCells);
+    visitor->trace(m_cellsCollapsedBorders);
+#endif
+    RenderBox::trace(visitor);
 }
 
 void RenderTableSection::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -187,7 +208,7 @@ void RenderTableSection::ensureRows(unsigned numRows)
     unsigned oldSize = m_grid.size();
     m_grid.grow(numRows);
 
-    unsigned effectiveColumnCount = max(1u, table()->numEffCols());
+    unsigned effectiveColumnCount = std::max(1u, table()->numEffCols());
     for (unsigned row = oldSize; row < m_grid.size(); ++row)
         m_grid[row].row.grow(effectiveColumnCount);
 }
@@ -302,7 +323,7 @@ void RenderTableSection::distributeExtraRowSpanHeightToPercentRows(RenderTableCe
 
     const unsigned rowSpan = cell->rowSpan();
     const unsigned rowIndex = cell->rowIndex();
-    int percent = min(totalPercent, 100);
+    int percent = std::min(totalPercent, 100);
     const int tableHeight = m_rowPos[m_grid.size()] + extraRowSpanningHeight;
 
     // Our algorithm matches Firefox. Extra spanning height would be distributed Only in first percent height rows
@@ -315,7 +336,7 @@ void RenderTableSection::distributeExtraRowSpanHeightToPercentRows(RenderTableCe
                 // FIXME: Note that this is wrong if we have a percentage above 100% and may make us grow
                 // above the available space.
 
-                toAdd = min(toAdd, extraRowSpanningHeight);
+                toAdd = std::min(toAdd, extraRowSpanningHeight);
                 accumulatedPositionIncrease += toAdd;
                 extraRowSpanningHeight -= toAdd;
                 percent -= m_grid[row].logicalHeight.percent();
@@ -471,7 +492,7 @@ unsigned RenderTableSection::calcRowHeightHavingOnlySpanningCells(unsigned row)
     for (unsigned col = 0; col < totalCols; col++) {
         const CellStruct& rowSpanCell = cellAt(row, col);
         if (rowSpanCell.cells.size() && rowSpanCell.cells[0]->rowSpan() > 1)
-            rowHeight = max(rowHeight, rowSpanCell.cells[0]->logicalHeightForRowSizing() / rowSpanCell.cells[0]->rowSpan());
+            rowHeight = std::max(rowHeight, rowSpanCell.cells[0]->logicalHeightForRowSizing() / rowSpanCell.cells[0]->rowSpan());
     }
 
     return rowHeight;
@@ -621,14 +642,14 @@ void RenderTableSection::updateBaselineForCell(RenderTableCell* cell, unsigned r
     // until the end of this function.
     LayoutUnit baselinePosition = cell->cellBaselinePosition() - cell->intrinsicPaddingBefore();
     if (baselinePosition > cell->borderBefore() + (cell->paddingBefore() - cell->intrinsicPaddingBefore())) {
-        m_grid[row].baseline = max(m_grid[row].baseline, baselinePosition);
+        m_grid[row].baseline = std::max(m_grid[row].baseline, baselinePosition);
 
         int cellStartRowBaselineDescent = 0;
         if (cell->rowSpan() == 1) {
-            baselineDescent = max(baselineDescent, cell->logicalHeightForRowSizing() - baselinePosition);
+            baselineDescent = std::max(baselineDescent, cell->logicalHeightForRowSizing() - baselinePosition);
             cellStartRowBaselineDescent = baselineDescent;
         }
-        m_rowPos[row + 1] = max<int>(m_rowPos[row + 1], m_rowPos[row] + m_grid[row].baseline + cellStartRowBaselineDescent);
+        m_rowPos[row + 1] = std::max<int>(m_rowPos[row + 1], m_rowPos[row] + m_grid[row].baseline + cellStartRowBaselineDescent);
     }
 }
 
@@ -656,7 +677,7 @@ static LayoutUnit shezPageRemainingLogicalHeightForOffset(LayoutState* layoutSta
 
 int RenderTableSection::calcRowLogicalHeight()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 #endif
 
@@ -676,7 +697,7 @@ int RenderTableSection::calcRowLogicalHeight()
         m_rowPos[0] = 0;
 
     SpanningRenderTableCells rowSpanCells;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     HashSet<const RenderTableCell*> uniqueCells;
 #endif
 
@@ -685,7 +706,7 @@ int RenderTableSection::calcRowLogicalHeight()
         LayoutUnit baselineDescent = 0;
 
         // Our base size is the biggest logical height from our cells' styles (excluding row spanning cells).
-        m_rowPos[r + 1] = max(m_rowPos[r] + minimumValueForLength(m_grid[r].logicalHeight, 0).round(), 0);
+        m_rowPos[r + 1] = std::max(m_rowPos[r] + minimumValueForLength(m_grid[r].logicalHeight, 0).round(), 0);
 
         Row& row = m_grid[r].row;
         unsigned totalCols = row.size();
@@ -701,7 +722,7 @@ int RenderTableSection::calcRowLogicalHeight()
                 if (cell->rowSpan() > 1) {
                     // For row spanning cells, we only handle them for the first row they span. This ensures we take their baseline into account.
                     if (lastRowSpanCell != cell && cell->rowIndex() == r) {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
                         ASSERT(!uniqueCells.contains(cell));
                         uniqueCells.add(cell);
 #endif
@@ -723,7 +744,7 @@ int RenderTableSection::calcRowLogicalHeight()
                     cell->forceChildLayout();
                 }
 
-                m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r] + cell->logicalHeightForRowSizing());
+                m_rowPos[r + 1] = std::max(m_rowPos[r + 1], m_rowPos[r] + cell->logicalHeightForRowSizing());
 
                 // Find out the baseline.
                 updateBaselineForCell(cell, r, baselineDescent);
@@ -732,7 +753,7 @@ int RenderTableSection::calcRowLogicalHeight()
 
         // Add the border-spacing to our final position.
         m_rowPos[r + 1] += borderSpacingForRow(r);
-        m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r]);
+        m_rowPos[r + 1] = std::max(m_rowPos[r + 1], m_rowPos[r]);
     }
 
     if (!rowSpanCells.isEmpty())
@@ -807,14 +828,14 @@ void RenderTableSection::distributeExtraLogicalHeightToPercentRows(int& extraLog
     unsigned totalRows = m_grid.size();
     int totalHeight = m_rowPos[totalRows] + extraLogicalHeight;
     int totalLogicalHeightAdded = 0;
-    totalPercent = min(totalPercent, 100);
+    totalPercent = std::min(totalPercent, 100);
     int rowHeight = m_rowPos[1] - m_rowPos[0];
     for (unsigned r = 0; r < totalRows; ++r) {
         if (totalPercent > 0 && m_grid[r].logicalHeight.isPercent()) {
-            int toAdd = min<int>(extraLogicalHeight, (totalHeight * m_grid[r].logicalHeight.percent() / 100) - rowHeight);
+            int toAdd = std::min<int>(extraLogicalHeight, (totalHeight * m_grid[r].logicalHeight.percent() / 100) - rowHeight);
             // If toAdd is negative, then we don't want to shrink the row (this bug
             // affected Outlook Web Access).
-            toAdd = max(0, toAdd);
+            toAdd = std::max(0, toAdd);
             totalLogicalHeightAdded += toAdd;
             extraLogicalHeight -= toAdd;
             totalPercent -= m_grid[r].logicalHeight.percent();
@@ -900,7 +921,7 @@ static bool shouldFlexCellChild(RenderObject* cellDescendant)
 
 void RenderTableSection::layoutRows()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 #endif
 
@@ -1006,7 +1027,7 @@ redoLayout:
                 if (cell->isBaselineAligned()) {
                     LayoutUnit baseline = cell->cellBaselinePosition();
                     if (baseline > cell->borderBefore() + cell->paddingBefore())
-                        m_grid[r].baseline = max(m_grid[r].baseline, baseline);
+                        m_grid[r].baseline = std::max(m_grid[r].baseline, baseline);
                 }
             }
 
@@ -1024,18 +1045,11 @@ redoLayout:
 
             LayoutSize childOffset(cell->location() - oldCellRect.location());
             if (childOffset.width() || childOffset.height()) {
-                if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-                    view()->addLayoutDelta(childOffset);
-
                 // If the child moved, we have to repaint it as well as any floating/positioned
                 // descendants. An exception is if we need a layout. In this case, we know we're going to
                 // repaint ourselves (and the child) anyway.
-                if (!table()->selfNeedsLayout() && cell->checkForPaintInvalidation()) {
-                    if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-                        cell->setMayNeedPaintInvalidation(true);
-                    else
-                        cell->repaintDuringLayoutIfMoved(oldCellRect);
-                }
+                if (!table()->selfNeedsLayout() && cell->checkForPaintInvalidation())
+                    cell->setMayNeedPaintInvalidation(true);
             }
 
             if (rowIndex == r && rHeight > maxCellHeight) {
@@ -1082,7 +1096,7 @@ void RenderTableSection::computeOverflowFromCells(unsigned totalRows, unsigned n
     unsigned totalCellsCount = nEffCols * totalRows;
     unsigned maxAllowedOverflowingCellsCount = totalCellsCount < gMinTableSizeToUseFastPaintPathWithOverflowingCell ? 0 : gMaxAllowedOverflowingCellRatioForFastPaintPath * totalCellsCount;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool hasOverflowingCell = false;
 #endif
     // Now that our height has been determined, add in overflow from cells.
@@ -1095,7 +1109,7 @@ void RenderTableSection::computeOverflowFromCells(unsigned totalRows, unsigned n
             if (r < totalRows - 1 && cell == primaryCellAt(r + 1, c))
                 continue;
             addOverflowFromChild(cell);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
             hasOverflowingCell |= cell->hasVisualOverflow();
 #endif
             if (cell->hasVisualOverflow() && !m_forceSlowPaintPathWithOverflowingCell) {
@@ -1240,7 +1254,7 @@ int RenderTableSection::firstLineBoxBaseline() const
         const RenderTableCell* cell = cs.primaryCell();
         // Only cells with content have a baseline
         if (cell && cell->contentLogicalHeight())
-            firstLineBaseline = max<int>(firstLineBaseline, cell->logicalTop() + cell->paddingBefore() + cell->borderBefore() + cell->contentLogicalHeight());
+            firstLineBaseline = std::max<int>(firstLineBaseline, cell->logicalTop() + cell->paddingBefore() + cell->borderBefore() + cell->contentLogicalHeight());
     }
 
     return firstLineBaseline;
@@ -1469,7 +1483,7 @@ void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& pa
             }
         } else {
             // The overflowing cells should be scarce to avoid adding a lot of cells to the HashSet.
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
             unsigned totalRows = m_grid.size();
             unsigned totalCols = table()->columns().size();
             ASSERT(m_overflowingCells.size() < totalRows * totalCols * gMaxAllowedOverflowingCellRatioForFastPaintPath);
@@ -1723,19 +1737,19 @@ void RenderTableSection::removeCachedCollapsedBorders(const RenderTableCell* cel
         return;
 
     for (int side = CBSBefore; side <= CBSEnd; ++side)
-        m_cellsCollapsedBorders.remove(make_pair(cell, side));
+        m_cellsCollapsedBorders.remove(std::make_pair(cell, side));
 }
 
 void RenderTableSection::setCachedCollapsedBorder(const RenderTableCell* cell, CollapsedBorderSide side, CollapsedBorderValue border)
 {
     ASSERT(table()->collapseBorders());
-    m_cellsCollapsedBorders.set(make_pair(cell, side), border);
+    m_cellsCollapsedBorders.set(std::make_pair(cell, side), border);
 }
 
 CollapsedBorderValue& RenderTableSection::cachedCollapsedBorder(const RenderTableCell* cell, CollapsedBorderSide side)
 {
     ASSERT(table()->collapseBorders());
-    HashMap<pair<const RenderTableCell*, int>, CollapsedBorderValue>::iterator it = m_cellsCollapsedBorders.find(make_pair(cell, side));
+    WillBeHeapHashMap<pair<RawPtrWillBeMember<const RenderTableCell>, int>, CollapsedBorderValue>::iterator it = m_cellsCollapsedBorders.find(std::make_pair(cell, side));
     ASSERT_WITH_SECURITY_IMPLICATION(it != m_cellsCollapsedBorders.end());
     return it->value;
 }
@@ -1751,8 +1765,6 @@ RenderTableSection* RenderTableSection::createAnonymousWithParentRenderer(const 
 
 void RenderTableSection::setLogicalPositionForCell(RenderTableCell* cell, unsigned effectiveColumn) const
 {
-    LayoutPoint oldCellLocation = cell->location();
-
     LayoutPoint cellLocation(0, m_rowPos[cell->rowIndex()]);
     int horizontalBorderSpacing = table()->hBorderSpacing();
 
@@ -1763,9 +1775,6 @@ void RenderTableSection::setLogicalPositionForCell(RenderTableCell* cell, unsign
         cellLocation.setX(table()->columnPositions()[effectiveColumn] + horizontalBorderSpacing);
 
     cell->setLogicalLocation(cellLocation);
-
-    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-        view()->addLayoutDelta(oldCellLocation - cell->location());
 }
 
-} // namespace WebCore
+} // namespace blink

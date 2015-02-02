@@ -18,6 +18,9 @@
 #include "ui/gfx/size.h"
 
 namespace base {
+namespace debug {
+class TracedValue;
+}
 class Value;
 }
 
@@ -29,8 +32,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void SetTilingRect(const gfx::Rect& tiling_rect);
-  gfx::Rect tiling_rect() const { return tiling_.tiling_rect(); }
+  gfx::Size tiling_size() const { return tiling_.tiling_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
   // If non-empty, all pictures tiles inside this rect are recorded. There may
@@ -47,13 +49,16 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   // If this pile contains any valid recordings. May have false positives.
   bool HasRecordings() const { return has_any_recordings_; }
 
+  void set_is_mask(bool is_mask) { is_mask_ = is_mask; }
+  bool is_mask() const { return is_mask_; }
+
   static void ComputeTileGridInfo(const gfx::Size& tile_grid_size,
                                   SkTileGridFactory::TileGridInfo* info);
 
   void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
-  scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* array) const;
 
  protected:
   class CC_EXPORT PictureInfo {
@@ -115,6 +120,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   // A hint about whether there are any recordings. This may be a false
   // positive.
   bool has_any_recordings_;
+  bool is_mask_;
 
  private:
   void SetBufferPixels(int buffer_pixels);

@@ -8,11 +8,11 @@
 #include "core/css/CSSFontFaceSource.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFontFaceSource : public CSSFontFaceSource {
 public:
-    LocalFontFaceSource(const String& fontName) : m_fontName(fontName) { }
+    LocalFontFaceSource(const String& fontName);
     virtual bool isLocal() const { return true; }
     virtual bool isLocalFontAvailable(const FontDescription&) OVERRIDE;
 
@@ -28,9 +28,10 @@ private:
     };
 
     AtomicString m_fontName;
+    bool m_needToAdjustForBoldItalic;
     LocalFontHistograms m_histograms;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

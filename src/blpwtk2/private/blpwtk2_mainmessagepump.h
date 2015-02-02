@@ -64,7 +64,6 @@ class MainMessagePump : public base::MessagePumpForUI {
     scoped_ptr<base::RunLoop> d_runLoop;
     RunState d_runState;
     bool d_hasAutoPumpTimer;
-    bool d_didNotifyWillProcessMsg;
     bool d_moreWorkIsPlausible;  // whether or not we need work scheduled
 
     DISALLOW_COPY_AND_ASSIGN(MainMessagePump);

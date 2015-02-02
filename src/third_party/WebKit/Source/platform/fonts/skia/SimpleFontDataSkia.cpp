@@ -43,7 +43,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "wtf/unicode/Unicode.h"
 
-namespace WebCore {
+namespace blink {
 
 // This is the largest VDMX table which we'll try to load and parse.
 static const size_t maxVDMXTableSize = 1024 * 1024; // 1 MB
@@ -131,13 +131,6 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setLineSpacing(lroundf(ascent) + lroundf(descent) + lroundf(lineGap));
 
-    SkScalar underlineThickness, underlinePosition;
-    if (metrics.hasUnderlineThickness(&underlineThickness)
-        && metrics.hasUnderlinePosition(&underlinePosition)) {
-        m_fontMetrics.setUnderlineThickness(SkScalarToFloat(underlineThickness));
-        m_fontMetrics.setUnderlinePosition(SkScalarToFloat(-underlinePosition));
-    }
-
     if (platformData().orientation() == Vertical && !isTextOrientationFallback()) {
         static const uint32_t vheaTag = SkSetFourByteTag('v', 'h', 'e', 'a');
         static const uint32_t vorgTag = SkSetFourByteTag('V', 'O', 'R', 'G');
@@ -152,6 +145,12 @@ void SimpleFontData::platformInit()
     // m_avgCharWidth in order for text entry widgets to be sized correctly.
 #if OS(WIN)
     m_maxCharWidth = SkScalarRoundToInt(metrics.fMaxCharWidth);
+
+    // Older version of the DirectWrite API doesn't implement support for max
+    // char width. Fall back on a multiple of the ascent. This is entirely
+    // arbitrary but comes pretty close to the expected value in most cases.
+    if (m_maxCharWidth < 1)
+        m_maxCharWidth = ascent * 2;
 #else
     // FIXME: This seems incorrect and should probably use fMaxCharWidth as
     // the code path above.
@@ -253,7 +252,6 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
     return SkScalarToFloat(width);
 }
 
-#if USE(HARFBUZZ)
 bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters, size_t length) const
 {
     if (!m_combiningCharacterSequenceSupport)
@@ -279,7 +277,6 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
     }
     return false;
 }
-#endif
 
 bool SimpleFontData::fillGlyphPage(GlyphPage* pageToFill, unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength) const
 {
@@ -305,4 +302,4 @@ bool SimpleFontData::fillGlyphPage(GlyphPage* pageToFill, unsigned offset, unsig
     return haveGlyphs;
 }
 
-} // namespace WebCore
+} // namespace blink

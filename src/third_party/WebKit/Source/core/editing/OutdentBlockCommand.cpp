@@ -30,9 +30,9 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -40,7 +40,7 @@ static bool hasListAncestor(Node* node, Node* stayWithin)
 {
     node = node->parentNode();
     while (node != stayWithin) {
-        if (isListElement(node))
+        if (isHTMLListElement(node))
             return true;
         node = node->parentNode();
     }
@@ -49,7 +49,7 @@ static bool hasListAncestor(Node* node, Node* stayWithin)
 
 static bool isIndentationBlock(Node* node, Node* stayWithin)
 {
-    if (isListElement(node)) {
+    if (isHTMLListElement(node)) {
         return hasListAncestor(node, stayWithin);
     }
     return node->hasTagName(blockquoteTag);

@@ -28,6 +28,7 @@
 // #include "content/shell/renderer/webkit_test_runner.h"
 // #include "content/test/mock_webclipboard_impl.h"
 
+#include "ppapi/shared_impl/ppapi_switches.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -39,6 +40,7 @@
 #include "third_party/skia/include/ports/SkFontMgr.h"
 #endif
 
+#include "chrome/renderer/printing/print_web_view_helper.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 
@@ -116,6 +118,7 @@ void ShellContentRendererClient::RenderFrameCreated(RenderFrame* render_frame) {
 void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
   new ShellRenderViewObserver(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
+  new printing::PrintWebViewHelper(render_view);
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
@@ -236,6 +239,35 @@ void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
   test_runner->proxy()->SetDelegate(
       ShellRenderProcessObserver::GetInstance()->test_delegate());
 #endif
+}
+
+bool ShellContentRendererClient::IsPluginAllowedToUseCompositorAPI(
+    const GURL& url) {
+  // SHEZ: Remove test code.
+#if 0
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnablePepperTesting);
+#endif
+  return false;
+}
+
+bool ShellContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
+    const GURL& url) {
+  // SHEZ: Remove test code.
+#if 0
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnablePepperTesting);
+#endif
+  return false;
+}
+
+bool ShellContentRendererClient::IsPluginAllowedToUseDevChannelAPIs() {
+  // SHEZ: Remove test code.
+#if 0
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnablePepperTesting);
+#endif
+  return false;
 }
 
 }  // namespace content

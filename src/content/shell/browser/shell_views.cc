@@ -187,6 +187,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   enum UIControl {
     BACK_BUTTON,
     FORWARD_BUTTON,
+    PRINT_BUTTON,
     STOP_BUTTON
   };
 
@@ -230,6 +231,9 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     } else if (control == FORWARD_BUTTON) {
       forward_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
           : views::CustomButton::STATE_DISABLED);
+    } else if (control == PRINT_BUTTON) {
+      print_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
+          : views::CustomButton::STATE_DISABLED);
     } else if (control == STOP_BUTTON) {
       stop_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
           : views::CustomButton::STATE_DISABLED);
@@ -252,15 +256,14 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     }
 
     context_menu_model_.reset(new ContextMenuModel(shell_, params));
-    context_menu_runner_.reset(
-        new views::MenuRunner(context_menu_model_.get()));
+    context_menu_runner_.reset(new views::MenuRunner(
+        context_menu_model_.get(), views::MenuRunner::CONTEXT_MENU));
 
     if (context_menu_runner_->RunMenuAt(web_view_->GetWidget(),
                                         NULL,
                                         gfx::Rect(screen_point, gfx::Size()),
                                         views::MENU_ANCHOR_TOPRIGHT,
-                                        ui::MENU_SOURCE_NONE,
-                                        views::MenuRunner::CONTEXT_MENU) ==
+                                        ui::MENU_SOURCE_NONE) ==
         views::MenuRunner::MENU_DELETED) {
       return;
     }
@@ -314,6 +317,15 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
                                     views::GridLayout::FIXED,
                                     forward_button_size.width(),
                                     forward_button_size.width() / 2);
+      // Print button
+      print_button_ = new views::LabelButton(this, base::ASCIIToUTF16("Print"));
+      print_button_->SetStyle(views::Button::STYLE_BUTTON);
+      gfx::Size print_button_size = print_button_->GetPreferredSize();
+      toolbar_column_set->AddColumn(views::GridLayout::CENTER,
+                                    views::GridLayout::CENTER, 0,
+                                    views::GridLayout::FIXED,
+                                    print_button_size.width(),
+                                    print_button_size.width() / 2);
       // Refresh button
       refresh_button_ =
           new views::LabelButton(this, base::ASCIIToUTF16("Refresh"));
@@ -346,6 +358,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_layout->StartRow(0, 0);
       toolbar_layout->AddView(back_button_);
       toolbar_layout->AddView(forward_button_);
+      toolbar_layout->AddView(print_button_);
       toolbar_layout->AddView(refresh_button_);
       toolbar_layout->AddView(stop_button_);
       toolbar_layout->AddView(url_entry_);
@@ -402,6 +415,8 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       shell_->GoBackOrForward(-1);
     else if (sender == forward_button_)
       shell_->GoBackOrForward(1);
+    else if (sender == print_button_)
+      shell_->Print();
     else if (sender == refresh_button_)
       shell_->Reload();
     else if (sender == stop_button_)
@@ -463,6 +478,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   View* toolbar_view_;
   views::LabelButton* back_button_;
   views::LabelButton* forward_button_;
+  views::LabelButton* print_button_;
   views::LabelButton* refresh_button_;
   views::LabelButton* stop_button_;
   views::Textfield* url_entry_;
@@ -480,6 +496,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
 #if defined(OS_CHROMEOS)
 wm::WMTestHelper* Shell::wm_test_helper_ = NULL;
+gfx::Screen* Shell::test_screen_ = NULL;
 #endif
 views::ViewsDelegate* Shell::views_delegate_ = NULL;
 
@@ -491,8 +508,8 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
-  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
-                                 aura::TestScreen::Create(gfx::Size()));
+  test_screen_ = aura::TestScreen::Create(gfx::Size());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_);
   wm_test_helper_ = new wm::WMTestHelper(default_window_size,
                                          GetContextFactory());
 #else
@@ -506,6 +523,9 @@ void Shell::PlatformExit() {
 #if defined(OS_CHROMEOS)
   delete wm_test_helper_;
   wm_test_helper_ = NULL;
+
+  delete test_screen_;
+  test_screen_ = NULL;
 #endif
   delete views_delegate_;
   views_delegate_ = NULL;
@@ -530,6 +550,9 @@ void Shell::PlatformEnableUIControl(UIControl control, bool is_enabled) {
         is_enabled);
   } else if (control == FORWARD_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::FORWARD_BUTTON,
+        is_enabled);
+  } else if (control == PRINT_BUTTON) {
+    delegate_view->EnableUIControl(ShellWindowDelegateView::PRINT_BUTTON,
         is_enabled);
   } else if (control == STOP_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::STOP_BUTTON,
@@ -567,7 +590,6 @@ void Shell::PlatformCreateWindow(int width, int height) {
   views::Widget::InitParams params;
   params.bounds = gfx::Rect(0, 0, width, height);
   params.delegate = new ShellWindowDelegateView(this);
-  //params.remove_standard_frame = true;
   window_widget_->Init(params);
 #endif
 

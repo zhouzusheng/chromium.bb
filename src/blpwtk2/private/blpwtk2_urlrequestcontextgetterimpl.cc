@@ -46,8 +46,8 @@
 #include <net/proxy/proxy_service.h>
 #include <net/proxy/proxy_config_service.h>
 #include <net/proxy/proxy_config_service_fixed.h>
-#include <net/ssl/default_server_bound_cert_store.h>
-#include <net/ssl/server_bound_cert_service.h>
+#include <net/ssl/channel_id_service.h>
+#include <net/ssl/default_channel_id_store.h>
 #include <net/ssl/ssl_config_service_defaults.h>
 #include <net/url_request/data_protocol_handler.h>
 #include <net/url_request/file_protocol_handler.h>
@@ -201,8 +201,8 @@ void URLRequestContextGetterImpl::initialize()
     d_storage->set_network_delegate(new NetworkDelegateImpl());
     d_storage->set_cookie_store(
         new net::CookieMonster(d_cookieStore.get(), 0));
-    d_storage->set_server_bound_cert_service(new net::ServerBoundCertService(
-        new net::DefaultServerBoundCertStore(0),
+    d_storage->set_channel_id_service(new net::ChannelIDService(
+        new net::DefaultChannelIDStore(0),
         base::WorkerPool::GetTaskRunner(true)));
     d_storage->set_http_user_agent_settings(
         new net::StaticHttpUserAgentSettings(
@@ -225,8 +225,8 @@ void URLRequestContextGetterImpl::initialize()
         d_urlRequestContext->cert_verifier();
     networkSessionParams.transport_security_state =
         d_urlRequestContext->transport_security_state();
-    networkSessionParams.server_bound_cert_service =
-        d_urlRequestContext->server_bound_cert_service();
+    networkSessionParams.channel_id_service =
+        d_urlRequestContext->channel_id_service();
     networkSessionParams.proxy_service =
         d_urlRequestContext->proxy_service();
     networkSessionParams.ssl_config_service =

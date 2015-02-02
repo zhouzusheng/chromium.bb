@@ -18,6 +18,9 @@
       'src/include/',
     ],
     'conditions': [
+      ['OS!="win"', {
+        'sources/': [ ['exclude', '_win.(h|cc)$'], ],
+      }],
       ['use_snappy', {
         'defines': [
           'USE_SNAPPY=1',
@@ -42,12 +45,6 @@
             '../../third_party/snappy/snappy.gyp:snappy',
           ],
         }],
-        ['OS=="win"', {
-          'sources': [
-            'env_chromium_win.cc',
-            'env_chromium_win.h',
-          ],
-        }],
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -69,10 +66,13 @@
       'sources': [
         # Include and then exclude so that all files show up in IDEs, even if
         # they don't build.
+        'chromium_logger.h',
         'env_chromium.cc',
         'env_chromium.h',
         'env_chromium_stdio.cc',
         'env_chromium_stdio.h',
+        'env_chromium_win.cc',
+        'env_chromium_win.h',
         'env_idb.h',
         'port/port_chromium.cc',
         'port/port_chromium.h',
@@ -159,7 +159,7 @@
         'src/util/status.cc',
       ],
       'sources/': [
-        ['exclude', '_(android|example|portable|posix)\\.cc$'],
+        ['exclude', '_(example|posix)\\.(h|cc)$'],
       ],
     },
     {

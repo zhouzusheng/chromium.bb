@@ -192,7 +192,7 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_IME_CHAR:
         case WM_SYSCHAR:
         case WM_CHAR: {
-            ui::KeyEvent uiKeyboardEvent(msg, event->message == WM_CHAR);
+            ui::KeyEvent uiKeyboardEvent(msg);
             content::NativeWebKeyboardEvent blinkKeyboardEvent(&uiKeyboardEvent);
 
             blinkKeyboardEvent.modifiers &= ~(

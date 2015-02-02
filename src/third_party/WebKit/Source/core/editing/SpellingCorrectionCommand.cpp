@@ -32,7 +32,7 @@
 #include "core/editing/TextIterator.h"
 #include "core/frame/Frame.h"
 
-namespace WebCore {
+namespace blink {
 
 SpellingCorrectionCommand::SpellingCorrectionCommand(PassRefPtr<Range> rangeToBeCorrected, const String& correction)
     : CompositeEditCommand(rangeToBeCorrected->startContainer()->document())
@@ -52,4 +52,4 @@ void SpellingCorrectionCommand::doApply()
     applyCommandToComposite(InsertTextCommand::create(document(), m_correction));
 }
 
-} // namespace WebCore
+} // namespace blink

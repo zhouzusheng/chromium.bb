@@ -52,8 +52,6 @@
         'ipc_sync_channel_unittest.cc',
         'ipc_sync_message_unittest.cc',
         'ipc_sync_message_unittest.h',
-        'ipc_test_base.cc',
-        'ipc_test_base.h',
         'run_all_unittests.cc',
         'sync_socket_unittest.cc',
         'unix_domain_socket_util_unittest.cc',

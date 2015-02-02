@@ -28,7 +28,7 @@
 
 #include "BlockCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class OutdentBlockCommand : public BlockCommand {
 public:
@@ -50,6 +50,6 @@ private:
     virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* stayWithin, Node* lastNode) OVERRIDE;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OutdentBlockCommand_h

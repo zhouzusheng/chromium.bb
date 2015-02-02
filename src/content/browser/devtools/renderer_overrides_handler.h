@@ -23,8 +23,8 @@ class Message;
 
 namespace content {
 
-class DevToolsAgentHost;
 class DevToolsTracingHandler;
+class RenderViewHostImpl;
 
 // Overrides Inspector commands before they are sent to the renderer.
 // May override the implementation completely, ignore it, or handle
@@ -32,20 +32,18 @@ class DevToolsTracingHandler;
 class CONTENT_EXPORT RendererOverridesHandler
     : public DevToolsProtocol::Handler {
  public:
-  explicit RendererOverridesHandler(DevToolsAgentHost* agent);
+  RendererOverridesHandler();
   virtual ~RendererOverridesHandler();
 
   void OnClientDetached();
   void OnSwapCompositorFrame(const cc::CompositorFrameMetadata& frame_metadata);
   void OnVisibilityChanged(bool visible);
+  void SetRenderViewHost(RenderViewHostImpl* host);
+  void ClearRenderViewHost();
+  bool OnSetTouchEventEmulationEnabled();
 
  private:
   void InnerSwapCompositorFrame();
-  void ParseCaptureParameters(DevToolsProtocol::Command* command,
-                              std::string* format, int* quality,
-                              double* scale);
-  base::DictionaryValue* CreateScreenshotResponse(
-      const std::vector<unsigned char>& png_data);
 
   // DOM domain.
   scoped_refptr<DevToolsProtocol::Response>
@@ -84,7 +82,8 @@ class CONTENT_EXPORT RendererOverridesHandler
 
   void ScreenshotCaptured(
       scoped_refptr<DevToolsProtocol::Command> command,
-      scoped_refptr<base::RefCountedBytes> png_data);
+      const unsigned char* png_data,
+      size_t png_size);
 
   void ScreencastFrameCaptured(
       const std::string& format,
@@ -100,13 +99,12 @@ class CONTENT_EXPORT RendererOverridesHandler
   void NotifyScreencastVisibility(bool visible);
 
   // Input domain.
-  scoped_refptr<DevToolsProtocol::Response> InputDispatchMouseEvent(
-      scoped_refptr<DevToolsProtocol::Command> command);
-  scoped_refptr<DevToolsProtocol::Response> InputDispatchGestureEvent(
+  scoped_refptr<DevToolsProtocol::Response> InputEmulateTouchFromMouseEvent(
       scoped_refptr<DevToolsProtocol::Command> command);
 
-  DevToolsAgentHost* agent_;
+  RenderViewHostImpl* host_;
   scoped_refptr<DevToolsProtocol::Command> screencast_command_;
+  bool has_last_compositor_frame_metadata_;
   cc::CompositorFrameMetadata last_compositor_frame_metadata_;
   base::TimeTicks last_frame_time_;
   int capture_retry_count_;

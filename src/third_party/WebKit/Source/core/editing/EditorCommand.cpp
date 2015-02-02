@@ -28,8 +28,8 @@
 #include "config.h"
 #include "core/editing/Editor.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
@@ -39,6 +39,7 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/editing/CreateLinkCommand.h"
 #include "core/editing/FormatBlockCommand.h"
+#include "core/editing/FrameSelection.h"
 #include "core/editing/IndentBlockCommand.h"
 #include "core/editing/IndentOutdentCommand.h"
 #include "core/editing/InsertListCommand.h"
@@ -47,6 +48,7 @@
 #include "core/editing/SpellChecker.h"
 #include "core/editing/TypingCommand.h"
 #include "core/editing/UnlinkCommand.h"
+#include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
@@ -65,7 +67,7 @@
 #include "public/platform/Platform.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -200,7 +202,7 @@ static bool executeInsertFragment(LocalFrame& frame, PassRefPtrWillBeRawPtr<Docu
     return true;
 }
 
-static bool executeInsertNode(LocalFrame& frame, PassRefPtrWillBeRawPtr<Node> content)
+static bool executeInsertElement(LocalFrame& frame, PassRefPtrWillBeRawPtr<HTMLElement> content)
 {
     ASSERT(frame.document());
     RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
@@ -223,6 +225,21 @@ static bool expandSelectionToGranularity(LocalFrame& frame, TextGranularity gran
     EAffinity affinity = frame.selection().affinity();
     frame.selection().setSelectedRange(newRange.get(), affinity, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
+}
+
+static TriState selectionListState(const FrameSelection& selection, const QualifiedName& tagName)
+{
+    if (selection.isCaret()) {
+        if (enclosingElementWithTag(selection.selection().start(), tagName))
+            return TrueTriState;
+    } else if (selection.isRange()) {
+        Element* startElement = enclosingElementWithTag(selection.selection().start(), tagName);
+        Element* endElement = enclosingElementWithTag(selection.selection().end(), tagName);
+        if (startElement && endElement && startElement == endElement)
+            return TrueTriState;
+    }
+
+    return FalseTriState;
 }
 
 static TriState stateStyle(LocalFrame& frame, CSSPropertyID propertyID, const char* desiredValue)
@@ -256,12 +273,13 @@ static unsigned verticalScrollDistance(LocalFrame& frame)
     RenderObject* renderer = focusedElement->renderer();
     if (!renderer || !renderer->isBox())
         return 0;
-    RenderStyle* style = renderer->style();
+    RenderBox& renderBox = toRenderBox(*renderer);
+    RenderStyle* style = renderBox.style();
     if (!style)
         return 0;
-    if (!(style->overflowY() == OSCROLL || style->overflowY() == OAUTO || focusedElement->rendererIsEditable()))
+    if (!(style->overflowY() == OSCROLL || style->overflowY() == OAUTO || focusedElement->hasEditableStyle()))
         return 0;
-    int height = std::min<int>(toRenderBox(renderer)->clientHeight(), frame.view()->visibleHeight());
+    int height = std::min<int>(renderBox.clientHeight(), frame.view()->visibleHeight());
     return static_cast<unsigned>(max(max<int>(height * ScrollableArea::minFractionToStepWhenPaging(), height - ScrollableArea::maxOverlapBetweenPages()), 1));
 }
 
@@ -500,7 +518,7 @@ static bool executeInsertHorizontalRule(LocalFrame& frame, Event*, EditorCommand
     RefPtrWillBeRawPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
         rule->setIdAttribute(AtomicString(value));
-    return executeInsertNode(frame, rule.release());
+    return executeInsertElement(frame, rule.release());
 }
 
 static bool executeInsertHTML(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
@@ -522,7 +540,7 @@ static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, c
     ASSERT(frame.document());
     RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
     image->setSrc(value);
-    return executeInsertNode(frame, image.release());
+    return executeInsertElement(frame, image.release());
 }
 
 static bool executeInsertLineBreak(LocalFrame& frame, Event* event, EditorCommandSource source, const String&)
@@ -545,7 +563,7 @@ static bool executeInsertLineBreak(LocalFrame& frame, Event* event, EditorComman
 
 static bool executeInsertNewline(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
 {
-    LocalFrame* targetFrame = WebCore::targetFrame(frame, event);
+    LocalFrame* targetFrame = blink::targetFrame(frame, event);
     return targetFrame->eventHandler().handleTextInputEvent("\n", event, targetFrame->editor().canEditRichly() ? TextEventInputKeyboard : TextEventInputLineBreak);
 }
 
@@ -1325,7 +1343,7 @@ static TriState stateItalic(LocalFrame& frame, Event*)
 
 static TriState stateOrderedList(LocalFrame& frame, Event*)
 {
-    return frame.editor().selectionOrderedListState();
+    return selectionListState(frame.selection(), olTag);
 }
 
 static TriState stateStrikethrough(LocalFrame& frame, Event*)
@@ -1370,7 +1388,7 @@ static TriState stateUnderline(LocalFrame& frame, Event*)
 
 static TriState stateUnorderedList(LocalFrame& frame, Event*)
 {
-    return frame.editor().selectionUnorderedListState();
+    return selectionListState(frame.selection(), ulTag);
 }
 
 static TriState stateJustifyCenter(LocalFrame& frame, Event*)
@@ -1652,14 +1670,14 @@ static const CommandMap& createCommandMap()
     // Unbookmark (not supported)
 
     CommandMap& commandMap = *new CommandMap;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     HashSet<int> idSet;
 #endif
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(commands); ++i) {
         const CommandEntry& command = commands[i];
         ASSERT(!commandMap.get(command.name));
         commandMap.set(command.name, &command.command);
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         ASSERT(!idSet.contains(command.command.idForUserMetrics));
         idSet.add(command.command.idForUserMetrics);
 #endif
@@ -1682,6 +1700,48 @@ Editor::Command Editor::command(const String& commandName)
 Editor::Command Editor::command(const String& commandName, EditorCommandSource source)
 {
     return Command(internalCommand(commandName), source, &m_frame);
+}
+
+bool Editor::executeCommand(const String& commandName)
+{
+    // Specially handling commands that Editor::execCommand does not directly
+    // support.
+    if (commandName == "DeleteToEndOfParagraph") {
+        if (!deleteWithDirection(DirectionForward, ParagraphBoundary, true, false))
+            deleteWithDirection(DirectionForward, CharacterGranularity, true, false);
+        return true;
+    }
+    if (commandName == "DeleteBackward")
+        return command(AtomicString("BackwardDelete")).execute();
+    if (commandName == "DeleteForward")
+        return command(AtomicString("ForwardDelete")).execute();
+    if (commandName == "AdvanceToNextMisspelling") {
+        // Wee need to pass false here or else the currently selected word will never be skipped.
+        spellChecker().advanceToNextMisspelling(false);
+        return true;
+    }
+    if (commandName == "ToggleSpellPanel") {
+        spellChecker().showSpellingGuessPanel();
+        return true;
+    }
+    return command(commandName).execute();
+}
+
+bool Editor::executeCommand(const String& commandName, const String& value)
+{
+    // moveToBeginningOfDocument and moveToEndfDocument are only handled by WebKit for editable nodes.
+    if (!canEdit() && commandName == "moveToBeginningOfDocument")
+        return m_frame.eventHandler().bubblingScroll(ScrollUp, ScrollByDocument);
+
+    if (!canEdit() && commandName == "moveToEndOfDocument")
+        return m_frame.eventHandler().bubblingScroll(ScrollDown, ScrollByDocument);
+
+    if (commandName == "showGuessPanel") {
+        spellChecker().showSpellingGuessPanel();
+        return true;
+    }
+
+    return command(commandName).execute(value);
 }
 
 Editor::Command::Command()
@@ -1766,4 +1826,4 @@ int Editor::Command::idForHistogram() const
     return isSupported() ? m_command->idForUserMetrics : 0;
 }
 
-} // namespace WebCore
+} // namespace blink

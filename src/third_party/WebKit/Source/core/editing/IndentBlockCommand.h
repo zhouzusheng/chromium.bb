@@ -28,7 +28,7 @@
 
 #include "BlockCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class QualifiedName;
 
@@ -54,6 +54,6 @@ private:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IndentBlockCommand_h

@@ -35,6 +35,7 @@
 
 #include <content/public/common/common_param_traits.h>
 #include <ipc/ipc_message_macros.h>
+#include <ui/gfx/ipc/gfx_param_traits.h>
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT

@@ -27,6 +27,7 @@
 #include "base/sys_info.h"
 #include "base/time/time.h"
 #include "blink/public/resources/grit/blink_resources.h"
+#include "blink/public/resources/grit/blink_inspector_resources.h"
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/child_thread.h"
 #include "content/child/content_child_helpers.h"

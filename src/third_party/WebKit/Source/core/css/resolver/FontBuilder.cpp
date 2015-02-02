@@ -178,7 +178,16 @@ void FontBuilder::setFontFamilyValue(CSSValue* value)
         AtomicString face;
         Settings* settings = m_document->settings();
         if (contentValue->isString()) {
-            face = AtomicString(contentValue->getStringValue());
+            WTF::String wtfFace = contentValue->getStringValue();
+            if (wtfFace.endsWith(" Italic")) {
+                scope.fontDescription().setStyle(FontStyleItalic);
+                wtfFace = wtfFace.substring(0, wtfFace.length() - 7);
+            }
+            if (wtfFace.endsWith(" Bold")) {
+                scope.fontDescription().setWeight(FontWeightBold);
+                wtfFace = wtfFace.substring(0, wtfFace.length() - 5);
+            }
+            face = AtomicString(wtfFace);
         } else if (settings) {
             switch (contentValue->getValueID()) {
             case CSSValueWebkitBody:

@@ -219,8 +219,11 @@
   "components/resources/components_scaled_resources.grd": {
     "structures": [30350],
   },
-  "third_party/WebKit/public/blink_resources.grd": {
+  "third_party/WebKit/public/blink_inspector_resources.grd": {
     "includes": [30500],
+  },
+  "third_party/WebKit/public/blink_resources.grd": {
+    "includes": [30510],
   },
   # Resource ids starting at 31000 are reserved for projects built on Chromium.
 }

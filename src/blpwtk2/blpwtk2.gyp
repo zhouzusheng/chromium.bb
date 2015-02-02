@@ -426,6 +426,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_inspector_resources.pak',
             ],
           },
           'inputs': [

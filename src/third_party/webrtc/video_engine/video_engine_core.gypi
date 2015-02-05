@@ -122,6 +122,8 @@
           'type': '<(gtest_target_type)',
           'dependencies': [
             'video_engine_core',
+            '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
+	    '<(webrtc_root)/modules/modules.gyp:video_render_module_internal_impl',
             '<(webrtc_root)/test/test.gyp:test_support_main',
           ],
           'sources': [
@@ -134,9 +136,7 @@
             'vie_remb_unittest.cc',
           ],
           'conditions': [
-            # TODO(henrike): remove build_with_chromium==1 when the bots are
-            # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android"', {
+            ['OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -145,9 +145,7 @@
         },
       ], # targets
       'conditions': [
-        # TODO(henrike): remove build_with_chromium==1 when the bots are using
-        # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'targets': [
             {
               'target_name': 'video_engine_core_unittests_apk_target',

@@ -25,7 +25,9 @@
         {
           'target_name': 'skia_library',
           'type': 'none',
-          'includes': ['skia_system.gypi'],
+          'includes': [
+            'skia_system.gypi',
+          ],
         },
       ],
     }],

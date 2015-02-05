@@ -226,8 +226,6 @@
       'export_dependent_settings': [
         'base',
       ],
-
-
     },
     {
       'target_name': 'base_message_loop_tests',
@@ -527,7 +525,8 @@
         'template_util_unittest.cc',
         'test/expectations/expectation_unittest.cc',
         'test/expectations/parser_unittest.cc',
-        'test/statistics_delta_reader_unittest.cc',
+        'test/histogram_tester_unittest.cc',
+        'test/test_pending_task_unittest.cc',
         'test/test_reg_util_win_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
@@ -687,6 +686,14 @@
                 '../third_party/icu/icu.gyp:icudata',
               ],
             }],
+            ['incremental_chrome_dll', {
+              'defines': [
+                # Used only to workaround a linker bug, do not use this
+                # otherwise, and don't make it broader scope. See
+                # http://crbug.com/251251.
+                'INCREMENTAL_LINKING',
+              ],
+            }],
           ],
         }, {  # OS != "win"
           'dependencies': [
@@ -730,49 +737,6 @@
       'direct_dependent_settings': {
         'defines': [
           'PERF_TEST',
-        ],
-      },
-    },
-    {
-      'target_name': 'sanitizer_options',
-      'type': 'static_library',
-      'toolsets': ['host', 'target'],
-      'variables': {
-         # Every target is going to depend on sanitizer_options, so allow
-         # this one to depend on itself.
-         'prune_self_dependency': 1,
-         # Do not let 'none' targets depend on this one, they don't need to.
-         'link_dependency': 1,
-       },
-      'sources': [
-        'debug/sanitizer_options.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      # Some targets may want to opt-out from ASan, TSan and MSan and link
-      # without the corresponding runtime libraries. We drop the libc++
-      # dependency and omit the compiler flags to avoid bringing instrumented
-      # code to those targets.
-      'conditions': [
-        ['use_custom_libcxx==1', {
-          'dependencies!': [
-            '../third_party/libc++/libc++.gyp:libcxx_proxy',
-          ],
-        }],
-        ['tsan==1', {
-          'sources': [
-            'debug/tsan_suppressions.cc',
-          ],
-        }],
-      ],
-      'cflags/': [
-        ['exclude', '-fsanitize='],
-        ['exclude', '-fsanitize-'],
-      ],
-      'direct_dependent_settings': {
-        'ldflags': [
-          '-Wl,-u_sanitizer_options_link_helper',
         ],
       },
     },

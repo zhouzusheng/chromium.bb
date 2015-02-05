@@ -7,6 +7,10 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/pref_names.h"
+
+// SHEZ: Remove dependency on chrome's grit.
+// #include "chrome/grit/locale_settings.h"
+
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"

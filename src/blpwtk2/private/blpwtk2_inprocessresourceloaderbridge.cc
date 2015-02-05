@@ -22,6 +22,7 @@
 
 #include <blpwtk2_inprocessresourceloaderbridge.h>
 
+#include <blpwtk2_resourcecontext.h>
 #include <blpwtk2_resourceloader.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_string.h>
@@ -34,10 +35,54 @@
 #include <net/base/mime_sniffer.h>
 #include <net/base/net_errors.h>
 #include <net/http/http_response_headers.h>
+#include <url/gurl.h>
 
 namespace blpwtk2 {
 
-InProcessResourceLoaderBridge::InProcessResourceLoaderBridge(
+class InProcessResourceLoaderBridge::InProcessResourceContext
+    : public base::RefCounted<InProcessResourceContext>
+    , public ResourceContext {
+  public:
+    InProcessResourceContext(
+        const content::RequestInfo& requestInfo);
+
+    // accessors
+    const GURL& url() const;
+
+    // manipulators
+    bool start(content::RequestPeer* peer);
+    void cancel();
+    void dispose();
+
+    // ResourceContext overrides
+    virtual void replaceStatusLine(const StringRef& newStatus) OVERRIDE;
+    virtual void addResponseHeader(const StringRef& header) OVERRIDE;
+    virtual void addResponseData(const char* buffer, int length) OVERRIDE;
+    virtual void failed() OVERRIDE;
+    virtual void finish() OVERRIDE;
+
+  private:
+    void startLoad();
+    void cancelLoad();
+    void ensureResponseHeadersSent(const char* buffer, int length);
+
+    GURL d_url;
+    scoped_refptr<net::HttpResponseHeaders> d_responseHeaders;
+    content::RequestPeer* d_peer;
+    void* d_userData;
+    int64 d_totalTransferSize;
+    bool d_started;
+    bool d_waitingForCancelLoad;  // waiting for cancelLoad()
+    bool d_canceled;
+    bool d_failed;
+    bool d_finished;
+
+    DISALLOW_COPY_AND_ASSIGN(InProcessResourceContext);
+};
+
+// InProcessResourceContext
+
+InProcessResourceLoaderBridge::InProcessResourceContext::InProcessResourceContext(
     const content::RequestInfo& requestInfo)
 : d_url(requestInfo.url)
 , d_peer(0)
@@ -55,18 +100,14 @@ InProcessResourceLoaderBridge::InProcessResourceLoaderBridge(
     d_responseHeaders = new net::HttpResponseHeaders("HTTP/1.1 200 OK\0\0");
 }
 
-InProcessResourceLoaderBridge::~InProcessResourceLoaderBridge()
+// accessors
+const GURL& InProcessResourceLoaderBridge::InProcessResourceContext::url() const
 {
+    return d_url;
 }
 
-// webkit_glue::ResourceLoaderBridge overrides
-
-void InProcessResourceLoaderBridge::SetRequestBody(
-    content::ResourceRequestBody* request_body)
-{
-}
-
-bool InProcessResourceLoaderBridge::Start(content::RequestPeer* peer)
+// manipulators
+bool InProcessResourceLoaderBridge::InProcessResourceContext::start(content::RequestPeer* peer)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_started);
@@ -77,16 +118,14 @@ bool InProcessResourceLoaderBridge::Start(content::RequestPeer* peer)
 
     d_peer = peer;
 
-    // Safe to use base::Unretained because this object will only get deleted
-    // when d_peer->OnCompleteRequest is called.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(&InProcessResourceLoaderBridge::startLoad,
-                   base::Unretained(this)));
+        base::Bind(&InProcessResourceContext::startLoad,
+                   this));
     return true;
 }
 
-void InProcessResourceLoaderBridge::Cancel()
+void InProcessResourceLoaderBridge::InProcessResourceContext::cancel()
 {
     DCHECK(Statics::isInApplicationMainThread());
 
@@ -99,36 +138,19 @@ void InProcessResourceLoaderBridge::Cancel()
     d_waitingForCancelLoad = true;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(&InProcessResourceLoaderBridge::cancelLoad,
-                   base::Unretained(this)));
+        base::Bind(&InProcessResourceContext::cancelLoad,
+                   this));
 }
 
-void InProcessResourceLoaderBridge::SetDefersLoading(bool value)
+void InProcessResourceLoaderBridge::InProcessResourceContext::dispose()
 {
-}
-
-void InProcessResourceLoaderBridge::DidChangePriority(
-    net::RequestPriority new_priority,
-    int intra_priority_value)
-{
-}
-
-bool InProcessResourceLoaderBridge::AttachThreadedDataReceiver(
-    blink::WebThreadedDataReceiver* threaded_data_receiver)
-{
-    return false;
-}
-
-void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
-{
-    DLOG(ERROR) << "Synchronous requests not supported: url("
-                << d_url << ")";
-    response->error_code = net::ERR_FAILED;
+    DCHECK(Statics::isInApplicationMainThread());
+    d_peer = NULL;
 }
 
 // ResourceContext overrides
 
-void InProcessResourceLoaderBridge::replaceStatusLine(
+void InProcessResourceLoaderBridge::InProcessResourceContext::replaceStatusLine(
     const StringRef& newStatus)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -139,7 +161,7 @@ void InProcessResourceLoaderBridge::replaceStatusLine(
     d_responseHeaders->ReplaceStatusLine(str);
 }
 
-void InProcessResourceLoaderBridge::addResponseHeader(const StringRef& header)
+void InProcessResourceLoaderBridge::InProcessResourceContext::addResponseHeader(const StringRef& header)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_failed);
@@ -149,7 +171,7 @@ void InProcessResourceLoaderBridge::addResponseHeader(const StringRef& header)
     d_responseHeaders->AddHeader(str);
 }
 
-void InProcessResourceLoaderBridge::addResponseData(const char* buffer,
+void InProcessResourceLoaderBridge::InProcessResourceContext::addResponseData(const char* buffer,
                                                     int length)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -157,22 +179,26 @@ void InProcessResourceLoaderBridge::addResponseData(const char* buffer,
 
     if (0 != length) {
         d_totalTransferSize += length;
-        ensureResponseHeadersSent(buffer, length);
-        d_peer->OnReceivedData(buffer, length, length);
+
+        if (d_peer) {
+            ensureResponseHeadersSent(buffer, length);
+            d_peer->OnReceivedData(buffer, length, length);
+        }
     }
 }
 
-void InProcessResourceLoaderBridge::failed()
+void InProcessResourceLoaderBridge::InProcessResourceContext::failed()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_finished);
     d_failed = true;
 }
 
-void InProcessResourceLoaderBridge::finish()
+void InProcessResourceLoaderBridge::InProcessResourceContext::finish()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_finished);
+
     d_finished = true;
 
     if (d_waitingForCancelLoad) {
@@ -182,18 +208,23 @@ void InProcessResourceLoaderBridge::finish()
         return;
     }
 
-    ensureResponseHeadersSent(0, 0);
+    if (d_peer) {
+        ensureResponseHeadersSent(0, 0);
 
-    int errorCode = d_failed ? net::ERR_FAILED
-                             : d_canceled ? net::ERR_ABORTED
-                                          : net::OK;
+        int errorCode = d_failed ? net::ERR_FAILED
+                                 : d_canceled ? net::ERR_ABORTED
+                                              : net::OK;
 
-    // We will get deleted inside this callback.
-    d_peer->OnCompletedRequest(errorCode, false, false, "",
-                               base::TimeTicks::Now(), d_totalTransferSize);
+        // InProcessResourceLoaderBridge will get deleted inside this callback.
+        d_peer->OnCompletedRequest(errorCode, false, false, "",
+                                   base::TimeTicks::Now(), d_totalTransferSize);
+    }
+
+    // This is to balance the AddRef from startLoad()
+    Release();
 }
 
-void InProcessResourceLoaderBridge::startLoad()
+void InProcessResourceLoaderBridge::InProcessResourceContext::startLoad()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_started);
@@ -207,26 +238,32 @@ void InProcessResourceLoaderBridge::startLoad()
     }
 
     d_started = true;
+
+    // Adding a reference on behalf of the embedder. This is Release'd
+    // on finish()
+    AddRef();
     Statics::inProcessResourceLoader->start(d_url.spec(), this, &d_userData);
 }
 
-void InProcessResourceLoaderBridge::cancelLoad()
+void InProcessResourceLoaderBridge::InProcessResourceContext::cancelLoad()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(d_waitingForCancelLoad);
 
     if (!d_started || d_finished) {
-        // Resource canceled before we could start it on the loader, or the
-        // loader finished before we could notify it of cancellation.  We can
-        // now safely destroy ourself.
+        if (d_peer) {
+            // Resource canceled before we could start it on the loader, or the
+            // loader finished before we could notify it of cancellation.  We can
+            // now safely destroy ourself.
 
-        // We will get deleted inside this callback.
-        d_peer->OnCompletedRequest(net::ERR_ABORTED,
-                                   false,
-                                   false,
-                                   "",
-                                   base::TimeTicks::Now(),
-                                   d_totalTransferSize);
+            // InProcessResourceLoaderBridge will get deleted inside this callback.
+            d_peer->OnCompletedRequest(net::ERR_ABORTED,
+                                       false,
+                                       false,
+                                       "",
+                                       base::TimeTicks::Now(),
+                                       d_totalTransferSize);
+        }
         return;
     }
 
@@ -235,11 +272,12 @@ void InProcessResourceLoaderBridge::cancelLoad()
     Statics::inProcessResourceLoader->cancel(this, d_userData);
 }
 
-void InProcessResourceLoaderBridge::ensureResponseHeadersSent(
+void InProcessResourceLoaderBridge::InProcessResourceContext::ensureResponseHeadersSent(
     const char* buffer,
     int length)
 {
     DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_peer);
 
     if (!d_responseHeaders.get()) {
         return;
@@ -262,6 +300,66 @@ void InProcessResourceLoaderBridge::ensureResponseHeadersSent(
 
     d_peer->OnReceivedResponse(responseInfo);
 }
+
+
+// InProcessResourceLoaderBridge
+
+InProcessResourceLoaderBridge::InProcessResourceLoaderBridge(
+    const content::RequestInfo& requestInfo)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(Statics::inProcessResourceLoader);
+
+    d_context = new InProcessResourceContext(requestInfo);
+}
+
+InProcessResourceLoaderBridge::~InProcessResourceLoaderBridge()
+{
+    d_context->dispose();
+}
+
+// webkit_glue::ResourceLoaderBridge overrides
+
+void InProcessResourceLoaderBridge::SetRequestBody(
+    content::ResourceRequestBody* request_body)
+{
+}
+
+bool InProcessResourceLoaderBridge::Start(content::RequestPeer* peer)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    return d_context->start(peer);
+}
+
+void InProcessResourceLoaderBridge::Cancel()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    d_context->cancel();
+}
+
+void InProcessResourceLoaderBridge::SetDefersLoading(bool value)
+{
+}
+
+void InProcessResourceLoaderBridge::DidChangePriority(
+    net::RequestPriority new_priority,
+    int intra_priority_value)
+{
+}
+
+bool InProcessResourceLoaderBridge::AttachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver)
+{
+    return false;
+}
+
+void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
+{
+    DLOG(ERROR) << "Synchronous requests not supported: url("
+                << d_context->url() << ")";
+    response->error_code = net::ERR_FAILED;
+}
+
 
 }  // close namespace blpwtk2
 

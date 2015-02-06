@@ -62,7 +62,7 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
 
     // Allows the embedder to override the ResourceLoaderBridge used.
     // If it returns NULL, the content layer will provide a bridge.
-    virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+    virtual content::ResourceLoaderBridge* OverrideResourceLoaderBridge(
         const content::RequestInfo& request_info) OVERRIDE;
 
     // Allows the embedder to override creating a plugin. If it returns true, then

@@ -24,13 +24,14 @@
 #ifndef BBPrintHeader_h
 #define BBPrintHeader_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/css/RGBColor.h"
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 
-    class BBPrintHeader : public RefCounted<BBPrintHeader> {
+    class BBPrintHeader : public RefCounted<BBPrintHeader>, public ScriptWrappableBase {
     public:
         enum Align {
             LEFT = 0,

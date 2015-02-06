@@ -21,7 +21,8 @@
  */
 
 [
-    ActiveDOMObject
+    ActiveDOMObject,
+    NotScriptWrappable,
 ] interface BBPrintInfo {
 
     readonly attribute BBPrintHeader headerLeft;

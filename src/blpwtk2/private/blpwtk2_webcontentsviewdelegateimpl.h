@@ -59,6 +59,16 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
     virtual void TakeFocus(bool reverse) OVERRIDE;
     virtual void SizeChanged(const gfx::Size& size) OVERRIDE;
 
+#if defined(TOOLKIT_VIEWS) || defined(USE_AURA)
+  virtual void ShowDisambiguationPopup(
+      const gfx::Rect& target_rect,
+      const SkBitmap& zoomed_bitmap,
+      const gfx::NativeView content,
+      const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+      const base::Callback<void(ui::MouseEvent*)>& mouse_cb) OVERRIDE;
+  virtual void HideDisambiguationPopup() OVERRIDE;
+#endif
+
   private:
     content::WebContents* d_webContents;
 

@@ -148,5 +148,18 @@ void WebContentsViewDelegateImpl::SizeChanged(const gfx::Size& size)
 {
 }
 
+void WebContentsViewDelegateImpl::ShowDisambiguationPopup(
+      const gfx::Rect& target_rect,
+      const SkBitmap& zoomed_bitmap,
+      const gfx::NativeView content,
+      const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+      const base::Callback<void(ui::MouseEvent*)>& mouse_cb)
+{
+}
+
+void WebContentsViewDelegateImpl::HideDisambiguationPopup()
+{
+}
+
 }  // close namespace blpwtk2
 

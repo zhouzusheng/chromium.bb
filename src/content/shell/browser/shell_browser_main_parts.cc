@@ -27,6 +27,7 @@
 #include "net/grit/net_resources.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/wm/core/wm_state.h"
 #include "url/gurl.h"
 
 #if defined(ENABLE_PLUGINS)
@@ -110,6 +111,10 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_ANDROID)
   base::MessageLoopForUI::current()->Start();
 #endif
+}
+
+void ShellBrowserMainParts::ToolkitInitialized() {
+  wm_state_.reset(new wm::WMState);
 }
 
 void ShellBrowserMainParts::PreEarlyInitialization() {

@@ -5,12 +5,19 @@
 #ifndef CHROME_RENDERER_RENDERER_FONT_PLATFORM_WIN_H_
 #define CHROME_RENDERER_RENDERER_FONT_PLATFORM_WIN_H_
 
+#include "content/common/content_export.h"
+
 struct IDWriteFactory;
 struct IDWriteFontCollection;
+
+namespace base {
+class FilePath;
+}  // namespace base
 
 namespace content {
 
 IDWriteFontCollection* GetCustomFontCollection(IDWriteFactory* factory);
+CONTENT_EXPORT void AddCustomFontFile(const base::FilePath& filename);
 
 }  // namespace content
 

@@ -64,6 +64,7 @@ namespace blink {
 class AnimationTimeline;
 class AXObjectCache;
 class Attr;
+class BBPrintInfo;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
@@ -1013,6 +1014,8 @@ public:
     bool isStopped() const { return m_lifecycle.state() == DocumentLifecycle::Stopped; }
     bool isDisposed() const { return m_lifecycle.state() == DocumentLifecycle::Disposed; }
 
+    PassRefPtr<BBPrintInfo> bbPrintInfo();
+
     enum HttpRefreshType {
         HttpRefreshFromHeader,
         HttpRefreshFromMetaTag
@@ -1359,6 +1362,8 @@ private:
     // live and die together. Without Oilpan, the templateDocumentHost
     // is a manually managed backpointer from m_templateDocument.
     RawPtrWillBeMember<Document> m_templateDocumentHost;
+
+    RefPtr<BBPrintInfo> m_bbPrintInfo;
 
     Timer<Document> m_didAssociateFormControlsTimer;
     WillBeHeapHashSet<RefPtrWillBeMember<Element> > m_associatedFormControls;

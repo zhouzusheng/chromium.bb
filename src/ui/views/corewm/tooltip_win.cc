@@ -5,6 +5,7 @@
 #include "ui/views/corewm/tooltip_win.h"
 
 #include <winuser.h>
+#include <algorithm>
 
 #include "base/debug/stack_trace.h"
 #include "base/i18n/rtl.h"
@@ -132,7 +133,7 @@ void TooltipWin::SetText(aura::Window* window,
   gfx::Display display(
       gfx::Screen::GetNativeScreen()->GetDisplayNearestPoint(screen_point));
   const gfx::Rect monitor_bounds = display.bounds();
-  int max_width = (monitor_bounds.width() + 1) / 2;
+  int max_width = std::min(800, (monitor_bounds.width() + 1) / 2);
   SendMessage(tooltip_hwnd_, TTM_SETMAXTIPWIDTH, 0, max_width);
 }
 

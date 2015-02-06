@@ -65,6 +65,7 @@ void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
 {
     WriteParam(m, p.takeKeyboardFocusOnMouseDown);
     WriteParam(m, p.takeLogicalFocusOnMouseDown);
+    WriteParam(m, p.activateWindowOnMouseDown);
     WriteParam(m, p.domPasteEnabled);
     WriteParam(m, p.javascriptCanAccessClipboard);
 }
@@ -74,6 +75,8 @@ bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter
     if (!ReadParam(m, iter, &r->takeKeyboardFocusOnMouseDown))
         return false;
     if (!ReadParam(m, iter, &r->takeLogicalFocusOnMouseDown))
+        return false;
+    if (!ReadParam(m, iter, &r->activateWindowOnMouseDown))
         return false;
     if (!ReadParam(m, iter, &r->domPasteEnabled))
         return false;
@@ -88,6 +91,8 @@ void ParamTraits<WebViewProperties>::Log(const param_type& p, std::string* l)
     LogParam(p.takeKeyboardFocusOnMouseDown, l);
     l->append(", ");
     LogParam(p.takeLogicalFocusOnMouseDown, l);
+    l->append(", ");
+    LogParam(p.activateWindowOnMouseDown, l);
     l->append(", ");
     LogParam(p.domPasteEnabled, l);
     l->append(", ");

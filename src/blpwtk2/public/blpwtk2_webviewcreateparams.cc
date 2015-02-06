@@ -32,6 +32,7 @@ WebViewCreateParams::WebViewCreateParams()
 : d_initiallyVisible(true)
 , d_takeKeyboardFocusOnMouseDown(true)
 , d_takeLogicalFocusOnMouseDown(true)
+, d_activateWindowOnMouseDown(true)
 , d_domPasteEnabled(false)
 , d_javascriptCanAccessClipboard(false)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
@@ -52,6 +53,11 @@ void WebViewCreateParams::setTakeKeyboardFocusOnMouseDown(bool enable)
 void WebViewCreateParams::setTakeLogicalFocusOnMouseDown(bool enable)
 {
     d_takeLogicalFocusOnMouseDown = enable;
+}
+
+void WebViewCreateParams::setActivateWindowOnMouseDown(bool enable)
+{
+    d_activateWindowOnMouseDown = enable;
 }
 
 void WebViewCreateParams::setDOMPasteEnabled(bool enable)

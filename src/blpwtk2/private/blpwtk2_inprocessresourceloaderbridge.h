@@ -24,30 +24,17 @@
 #define INCLUDED_BLPWTK2_INPROCESSRESOURCELOADERBRIDGE_H
 
 #include <blpwtk2_config.h>
-
-#include <blpwtk2_resourcecontext.h>
-
 #include <base/memory/ref_counted.h>
-#include <url/gurl.h>
 #include <webkit/child/resource_loader_bridge.h>
-
-namespace base {
-class MessageLoop;
-}  // close namespace base
 
 namespace content {
 struct RequestInfo;
 }  // close namespace content
 
-namespace net {
-class HttpResponseHeaders;
-}  // close namespace net
-
 namespace blpwtk2 {
 
 class InProcessResourceLoaderBridge
-    : public webkit_glue::ResourceLoaderBridge,
-      public ResourceContext {
+    : public webkit_glue::ResourceLoaderBridge {
   public:
     InProcessResourceLoaderBridge(
         const content::RequestInfo& requestInfo);
@@ -65,28 +52,9 @@ class InProcessResourceLoaderBridge
         blink::WebThreadedDataReceiver* threaded_data_receiver) OVERRIDE;
     virtual void SyncLoad(content::SyncLoadResponse* response) OVERRIDE;
 
-    // ResourceContext overrides
-    virtual void replaceStatusLine(const StringRef& newStatus) OVERRIDE;
-    virtual void addResponseHeader(const StringRef& header) OVERRIDE;
-    virtual void addResponseData(const char* buffer, int length) OVERRIDE;
-    virtual void failed() OVERRIDE;
-    virtual void finish() OVERRIDE;
-
   private:
-    void startLoad();
-    void cancelLoad();
-    void ensureResponseHeadersSent(const char* buffer, int length);
-
-    GURL d_url;
-    scoped_refptr<net::HttpResponseHeaders> d_responseHeaders;
-    content::RequestPeer* d_peer;
-    void* d_userData;
-    int64 d_totalTransferSize;
-    bool d_started;
-    bool d_waitingForCancelLoad;  // waiting for cancelLoad()
-    bool d_canceled;
-    bool d_failed;
-    bool d_finished;
+    class InProcessResourceContext;
+    scoped_refptr<InProcessResourceContext> d_context;
 
     DISALLOW_COPY_AND_ASSIGN(InProcessResourceLoaderBridge);
 };

@@ -43,18 +43,7 @@ void ListMarkerPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffs
 
     if (m_renderListMarker.isImage()) {
         context->drawImage(m_renderListMarker.image()->image(&m_renderListMarker, marker.size()).get(), marker);
-        if (m_renderListMarker.selectionState() != RenderObject::SelectionNone) {
-            LayoutRect selRect = m_renderListMarker.localSelectionRect();
-            selRect.moveBy(boxOrigin);
-            context->fillRect(pixelSnappedIntRect(selRect), m_renderListMarker.selectionBackgroundColor());
-        }
         return;
-    }
-
-    if (m_renderListMarker.selectionState() != RenderObject::SelectionNone) {
-        LayoutRect selRect = m_renderListMarker.localSelectionRect();
-        selRect.moveBy(boxOrigin);
-        context->fillRect(pixelSnappedIntRect(selRect), m_renderListMarker.selectionBackgroundColor());
     }
 
     const Color color(m_renderListMarker.resolveColor(CSSPropertyColor));
@@ -193,11 +182,8 @@ void ListMarkerPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffs
         }
 
         const UChar suffix = m_renderListMarker.listMarkerSuffix(type, m_renderListMarker.listItem()->value());
-        UChar suffixStr[2] = {
-            m_renderListMarker.style()->isLeftToRightDirection() ? suffix : ' ',
-            m_renderListMarker.style()->isLeftToRightDirection() ? ' ' : suffix
-        };
-        TextRun suffixRun = constructTextRun(&m_renderListMarker, font, suffixStr, 2, m_renderListMarker.style(), m_renderListMarker.style()->direction());
+        UChar suffixStr[1] = { suffix };
+        TextRun suffixRun = constructTextRun(&m_renderListMarker, font, suffixStr, 1, m_renderListMarker.style(), m_renderListMarker.style()->direction());
         TextRunPaintInfo suffixRunInfo(suffixRun);
         suffixRunInfo.bounds = marker;
 

@@ -80,6 +80,12 @@
     readonly attribute long scrollWidth;
     readonly attribute long scrollHeight;
 
+    // Bloomberg-specific extensions
+    attribute long bbScrollLeftNoZoomAdjust;
+    attribute long bbScrollTopNoZoomAdjust;
+    readonly attribute long bbScrollWidthNoZoomAdjust;
+    readonly attribute long bbScrollHeightNoZoomAdjust;
+
     void focus();
     void blur();
     void scrollIntoView(optional boolean alignWithTop);

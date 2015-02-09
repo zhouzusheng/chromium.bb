@@ -470,6 +470,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowDestroyed,
                         OnWindowlessPluginDummyWindowDestroyed)
 #endif
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SetRubberbandRect, OnSetRubberbandRect)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_HideRubberbandRect, OnHideRubberbandRect)
 #if defined(OS_MACOSX) || defined(USE_AURA)
     IPC_MESSAGE_HANDLER(InputHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
@@ -1233,6 +1235,14 @@ void RenderWidgetHostImpl::OnSelectionBoundsChanged(
   if (view_) {
     view_->SelectionBoundsChanged(params);
   }
+}
+
+void RenderWidgetHostImpl::OnSetRubberbandRect(const gfx::Rect& rect) {
+  view_->SetRubberbandRect(rect);
+}
+
+void RenderWidgetHostImpl::OnHideRubberbandRect() {
+  view_->HideRubberbandRect();
 }
 
 void RenderWidgetHostImpl::UpdateVSyncParameters(base::TimeTicks timebase,

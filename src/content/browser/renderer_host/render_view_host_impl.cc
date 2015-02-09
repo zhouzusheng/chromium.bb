@@ -1472,6 +1472,10 @@ void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
 #endif
 }
 
+void RenderViewHostImpl::EnableAltDragRubberbanding(bool enable) {
+  Send(new ViewMsg_EnableAltDragRubberbanding(GetRoutingID(), enable));
+}
+
 void RenderViewHostImpl::SetState(RenderViewHostImplState rvh_state) {
   // We update the number of RenderViews in a SiteInstance when the
   // swapped out status of this RenderView gets flipped to/from live.

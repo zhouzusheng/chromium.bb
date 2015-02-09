@@ -1785,9 +1785,12 @@ void FrameSelection::revealSelection(const ScrollAlignment& alignment, RevealExt
         return;
     case CaretSelection:
         rect = absoluteCaretBounds();
+        rect.inflateY(rect.height()/2);
         break;
     case RangeSelection:
         rect = revealExtentOption == RevealExtent ? VisiblePosition(extent()).absoluteCaretBounds() : enclosingIntRect(bounds());
+        if (revealExtentOption == RevealExtent)
+            rect.inflateY(rect.height()/2);
         break;
     }
 

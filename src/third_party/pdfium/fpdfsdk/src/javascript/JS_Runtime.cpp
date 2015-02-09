@@ -27,7 +27,7 @@
 #include "../../include/javascript/global.h"
 #include "../../include/javascript/console.h"
 
-#include <libplatform/libplatform.h>
+#include <v8-default-platform.h>
 
 CJS_RuntimeFactory::~CJS_RuntimeFactory()
 {

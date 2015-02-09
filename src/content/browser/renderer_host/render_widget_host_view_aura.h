@@ -288,6 +288,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                                const gfx::Rect& new_bounds) OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
+  virtual bool ShouldTryFocusOnMouseDown() const OVERRIDE;
   virtual bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
       const gfx::Point& location) OVERRIDE;
@@ -499,6 +500,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Is this a fullscreen view?
   bool is_fullscreen_;
+
+  // True if we have capture due to the mouse being down.
+  bool has_capture_from_mouse_down_;
 
   // Our parent host view, if this is a popup.  NULL otherwise.
   RenderWidgetHostViewAura* popup_parent_host_view_;

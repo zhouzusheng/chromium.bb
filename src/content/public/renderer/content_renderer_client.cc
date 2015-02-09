@@ -84,6 +84,12 @@ blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
   return NULL;
 }
 
+content::ResourceLoaderBridge*
+ContentRendererClient::OverrideResourceLoaderBridge(
+    const content::RequestInfo& request_info) {
+  return NULL;
+}
+
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
 }

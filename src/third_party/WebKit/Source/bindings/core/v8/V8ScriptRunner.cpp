@@ -83,7 +83,7 @@ v8::Local<v8::Script> compileAndConsumeCache(v8::Isolate* isolate, v8::Handle<v8
 {
     // Consume existing cache data:
     CachedMetadata* cachedMetadata = resource->cachedMetadata(cacheTag);
-    v8::ScriptCompiler::CachedData* cachedData = new v8::ScriptCompiler::CachedData(
+    v8::ScriptCompiler::CachedData* cachedData = v8::ScriptCompiler::CachedData::create(
         reinterpret_cast<const uint8_t*>(cachedMetadata->data()),
         cachedMetadata->size(),
         v8::ScriptCompiler::CachedData::BufferNotOwned);

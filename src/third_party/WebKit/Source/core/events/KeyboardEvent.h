@@ -43,6 +43,7 @@ struct KeyboardEventInit : public UIEventInit {
     bool shiftKey;
     bool metaKey;
     bool repeat;
+    bool bbIsNumLock;
 };
 
 class KeyboardEvent FINAL : public UIEventWithKeyState {
@@ -94,6 +95,7 @@ public:
     virtual int keyCode() const OVERRIDE; // key code for keydown and keyup, character for keypress
     virtual int charCode() const OVERRIDE; // character code for keypress, 0 for keydown and keyup
     bool repeat() const { return m_isAutoRepeat; }
+    bool bbIsNumLock() const { return m_bbIsNumLock; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual bool isKeyboardEvent() const OVERRIDE;
@@ -113,6 +115,7 @@ private:
     String m_keyIdentifier;
     unsigned m_location;
     bool m_isAutoRepeat : 1;
+    bool m_bbIsNumLock : 1;
 };
 
 class KeyboardEventDispatchMediator : public EventDispatchMediator {

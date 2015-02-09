@@ -202,6 +202,9 @@
     // window.toString() requires special handling in V8
     [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] stringifier;
 
+    // Bloomberg specific objects/methods
+    readonly attribute BBWindowHooks bbWindowHooks;
+
     [NotEnumerable] getter Window (unsigned long index);
     [Custom, NotEnumerable] getter Window (DOMString name);
 };

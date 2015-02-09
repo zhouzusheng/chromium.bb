@@ -34,6 +34,7 @@
     [InitializedByEventConstructor] readonly attribute boolean          altKey;
     [InitializedByEventConstructor] readonly attribute boolean          metaKey;
     [InitializedByEventConstructor] readonly attribute boolean          repeat;
+    readonly attribute boolean          bbIsNumLock;
 
     boolean getModifierState(DOMString keyArgument);
 

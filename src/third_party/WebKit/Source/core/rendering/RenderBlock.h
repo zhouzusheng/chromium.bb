@@ -162,11 +162,11 @@ public:
     virtual bool shouldPaintSelectionGaps() const OVERRIDE FINAL;
     GapRects selectionGapRectsForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const;
     LayoutRect logicalLeftSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                       RenderObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+                                       const RenderObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect logicalRightSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                        RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+                                        const RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect lineEndingSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                      RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+                                      const RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     void getLineEndingGapLogicalLeftAndRight(const RenderBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
                                              LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
     void getSelectionGapInfo(const RenderBlock* rootBlock, bool& leftGap, bool& rightGap) const;
@@ -248,7 +248,8 @@ public:
     virtual LayoutUnit logicalRightSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const;
 
     GapRects selectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* = 0) const;
+        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
+        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
 
 #if ENABLE(ASSERT)
     void checkPositionedObjectsNeedLayout();
@@ -399,9 +400,6 @@ private:
         return selectionGapRectsForPaintInvalidation(paintInvalidationContainer);
     }
     bool isSelectionRoot() const;
-    GapRects selectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                           LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
-                           bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
     GapRects blockSelectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
                                 LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
                                 bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;

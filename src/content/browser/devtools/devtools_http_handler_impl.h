@@ -84,6 +84,8 @@ class DevToolsHttpHandlerImpl
       const std::string& host,
       const DevToolsManagerDelegate::TargetList& targets);
 
+  void OnHttpServerInitialized(const net::IPEndPoint& ip_address);
+
   DevToolsTarget* GetTarget(const std::string& id);
 
   void Init();
@@ -121,6 +123,7 @@ class DevToolsHttpHandlerImpl
   std::string frontend_url_;
   const scoped_ptr<ServerSocketFactory> server_socket_factory_;
   scoped_ptr<net::HttpServer> server_;
+  scoped_ptr<net::IPEndPoint> server_ip_address_;
   typedef std::map<int, DevToolsAgentHostClient*> ConnectionToClientMap;
   ConnectionToClientMap connection_to_client_ui_;
   const scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;

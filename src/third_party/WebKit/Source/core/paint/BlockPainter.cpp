@@ -429,9 +429,12 @@ void BlockPainter::paintSelection(PaintInfo& paintInfo, const LayoutPoint& paint
         LayoutUnit lastTop = 0;
         LayoutUnit lastLeft = m_renderBlock.logicalLeftSelectionOffset(&m_renderBlock, lastTop);
         LayoutUnit lastRight = m_renderBlock.logicalRightSelectionOffset(&m_renderBlock, lastTop);
+        bool shouldHighlightBeforeSide = false;
+        bool isAfterSideSelected = false;
         GraphicsContextStateSaver stateSaver(*paintInfo.context);
 
-        LayoutRect gapRectsBounds = m_renderBlock.selectionGaps(&m_renderBlock, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight, &paintInfo);
+        LayoutRect gapRectsBounds = m_renderBlock.selectionGaps(&m_renderBlock, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight, &paintInfo,
+                                                                shouldHighlightBeforeSide, isAfterSideSelected);
         if (!gapRectsBounds.isEmpty()) {
             RenderLayer* layer = m_renderBlock.enclosingLayer();
             gapRectsBounds.moveBy(-paintOffset);

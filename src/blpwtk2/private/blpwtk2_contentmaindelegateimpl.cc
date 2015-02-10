@@ -150,7 +150,9 @@ void ContentMainDelegateImpl::PreSandboxStartup()
     ui::SetResourcesDataDLL((HINSTANCE)g_instDLL);
     ui::ResourceBundle::InitSharedInstance();
     ui::ResourceBundle::GetSharedInstance().AddDLLResources();
-    if (!d_isSubProcess) {
+    if (!d_isSubProcess || processType == switches::kRendererProcess) {
+        // Load the devtools pak file in the renderer process as well, because
+        // there are blink devtools resources that we need.
         base::FilePath pak_file;
         base::FilePath pak_dir;
         PathService::Get(base::DIR_MODULE, &pak_dir);

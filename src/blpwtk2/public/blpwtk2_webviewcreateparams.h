@@ -50,6 +50,11 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // disable that behavior.
     void setTakeLogicalFocusOnMouseDown(bool enable);
 
+    // By default, the root owner of the WebView will activate on mouse down.
+    // (mimicking upstream chromium behavior). However, setting this flag to
+    // false will disable that behavior.
+    void setActivateWindowOnMouseDown(bool enable);
+
     // By default, Javascript will not be able to paste into the DOM.  However,
     // setting this flag will enable that behavior.  Note that this will only
     // work if "setJavascriptCanAccessClipboard(true)" is also set.
@@ -106,6 +111,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool initiallyVisible() const { return d_initiallyVisible; }
     bool takeKeyboardFocusOnMouseDown() const { return d_takeKeyboardFocusOnMouseDown; }
     bool takeLogicalFocusOnMouseDown() const { return d_takeLogicalFocusOnMouseDown; }
+    bool activateWindowOnMouseDown() const { return d_activateWindowOnMouseDown; }
     bool domPasteEnabled() const { return d_domPasteEnabled; }
     bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
@@ -115,6 +121,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool d_initiallyVisible;
     bool d_takeKeyboardFocusOnMouseDown;
     bool d_takeLogicalFocusOnMouseDown;
+    bool d_activateWindowOnMouseDown;
     bool d_domPasteEnabled;
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;

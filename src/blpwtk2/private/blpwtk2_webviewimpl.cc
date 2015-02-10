@@ -602,7 +602,7 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         d_webContents->GetNativeView(),
         parent,
         this,
-        d_properties.takeKeyboardFocusOnMouseDown);
+        d_properties.activateWindowOnMouseDown);
 
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());

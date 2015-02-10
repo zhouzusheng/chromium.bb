@@ -357,7 +357,9 @@ void BlockPainter::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& 
         // For each rect, we clip to the rect, and then we adjust our coords.
         LayoutRect colRect = m_renderBlock.columnRectAt(colInfo, i);
         m_renderBlock.flipForWritingMode(colRect);
+        LayoutUnit blockDelta = (m_renderBlock.isHorizontalWritingMode() ? colRect.height() : colRect.width());
         LayoutUnit logicalLeftOffset = (m_renderBlock.isHorizontalWritingMode() ? colRect.x() : colRect.y()) - m_renderBlock.logicalLeftOffsetForContent();
+        m_renderBlock.adjustColRectForSpanningHeader(colInfo, i, colRect);
         LayoutSize offset = m_renderBlock.isHorizontalWritingMode() ? LayoutSize(logicalLeftOffset, currLogicalTopOffset) : LayoutSize(currLogicalTopOffset, logicalLeftOffset);
         if (colInfo->progressionAxis() == ColumnInfo::BlockAxis) {
             if (m_renderBlock.isHorizontalWritingMode())
@@ -393,7 +395,6 @@ void BlockPainter::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& 
                 paintContents(info, adjustedPaintOffset);
         }
 
-        LayoutUnit blockDelta = (m_renderBlock.isHorizontalWritingMode() ? colRect.height() : colRect.width());
         if (m_renderBlock.style()->isFlippedBlocksWritingMode())
             currLogicalTopOffset += blockDelta;
         else

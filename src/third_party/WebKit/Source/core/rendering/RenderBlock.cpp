@@ -146,6 +146,27 @@ private:
     bool m_hadVerticalLayoutOverflow;
 };
 
+static bool isSpanningHeader(RenderObject* ro)
+{
+    return ro->style()->columnSpanCount() > 1 && !ro->style()->hasSpanAllColumns();
+}
+
+static bool isWithinSpanningHeader(RenderBox* box)
+{
+    RenderBox* curr = box;
+    RenderView* renderView = box->view();
+    while (curr && curr != renderView) {
+        if (isSpanningHeader(curr)) {
+            return true;
+        }
+        if (curr->hasColumns()) {
+            return false;
+        }
+        curr = curr->containingBlock();
+    }
+    return false;
+}
+
 RenderBlock::RenderBlock(ContainerNode* node)
     : RenderBox(node)
     , m_hasMarginBeforeQuirk(false)
@@ -468,9 +489,9 @@ void RenderBlock::addChildToContinuation(RenderObject* newChild, RenderObject* b
 
     // A continuation always consists of two potential candidates: a block or an anonymous
     // column span box holding column span children.
-    bool childIsNormal = newChild->isInline() || !newChild->style()->columnSpan();
-    bool bcpIsNormal = beforeChildParent->isInline() || !beforeChildParent->style()->columnSpan();
-    bool flowIsNormal = flow->isInline() || !flow->style()->columnSpan();
+    bool childIsNormal = newChild->isInline() || !newChild->style()->hasSpanAllColumns();
+    bool bcpIsNormal = beforeChildParent->isInline() || !beforeChildParent->style()->hasSpanAllColumns();
+    bool flowIsNormal = flow->isInline() || !flow->style()->hasSpanAllColumns();
 
     if (flow == beforeChildParent) {
         flow->addChildIgnoringContinuation(newChild, beforeChild);
@@ -514,7 +535,7 @@ void RenderBlock::addChildToAnonymousColumnBlocks(RenderObject* newChild, Render
     }
 
     // See if the child can be placed in the box.
-    bool newChildHasColumnSpan = newChild->style()->columnSpan() && !newChild->isInline();
+    bool newChildHasColumnSpan = newChild->style()->hasSpanAllColumns() && !newChild->isInline();
     bool beforeChildParentHoldsColumnSpans = beforeChildParent->isAnonymousColumnSpanBlock();
 
     if (newChildHasColumnSpan == beforeChildParentHoldsColumnSpans) {
@@ -787,7 +808,7 @@ RenderBlockFlow* RenderBlock::columnsBlockForSpanningElement(RenderObject* newCh
     // cross the streams and have to cope with both types of continuations mixed together).
     // This function currently supports (1) and (2).
     RenderBlockFlow* columnsBlockAncestor = 0;
-    if (!newChild->isText() && newChild->style()->columnSpan() && !newChild->isBeforeOrAfterContent()
+    if (!newChild->isText() && newChild->style()->hasSpanAllColumns() && !newChild->isBeforeOrAfterContent()
         && !newChild->isFloatingOrOutOfFlowPositioned() && !newChild->isInline() && !isAnonymousColumnSpanBlock()) {
         columnsBlockAncestor = containingColumnsBlock(false);
         if (columnsBlockAncestor) {
@@ -1521,7 +1542,7 @@ void RenderBlock::addVisualOverflowFromTheme()
 bool RenderBlock::createsBlockFormattingContext() const
 {
     return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
-        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->columnSpan();
+        || style()->specifiesColumns() || isRenderFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isDocumentElement() || style()->hasSpanAllColumns();
 }
 
 void RenderBlock::updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox* child)
@@ -1749,7 +1770,7 @@ void RenderBlock::markForPaginationRelayoutIfNeeded(SubtreeLayoutScope& layoutSc
     if (needsLayout())
         return;
 
-    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(*this, logicalTop()) != pageLogicalOffset()))
+    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(*this, logicalTop()) != pageLogicalOffset()) || (view()->layoutState()->columnInfo() && view()->layoutState()->columnInfo()->spanningHeaderSizeChanged()))
         layoutScope.setChildNeedsLayout(this);
 }
 
@@ -1916,7 +1937,7 @@ GapRects RenderBlock::selectionGaps(const RenderBlock* rootBlock, const LayoutPo
     if (!isRenderBlockFlow()) // FIXME: Make multi-column selection gap filling work someday.
         return result;
 
-    if (hasColumns() || hasTransform() || style()->columnSpan()) {
+    if (hasColumns() || hasTransform() || style()->hasSpanAllColumns()) {
         // FIXME: We should learn how to gap fill multiple columns and transforms eventually.
         lastLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + logicalHeight();
         lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, logicalHeight());
@@ -2330,6 +2351,31 @@ LayoutUnit RenderBlock::textIndentOffset() const
     return minimumValueForLength(style()->textIndent(), cw);
 }
 
+LayoutUnit RenderBlock::adjustLogicalTopForSpanningHeader(RenderBox* child,
+                                                          ColumnInfo* colInfo,
+                                                          LayoutUnit logicalTop)
+{
+    if (!colInfo || isWithinSpanningHeader(child)) {
+        return logicalTop;
+    }
+
+    LayoutUnit pageLogicalHeight = pageLogicalHeightForOffset(logicalTop);
+    ASSERT(pageLogicalHeight);
+
+    LayoutUnit containerOffset = offsetFromLogicalTopOfFirstPage();
+    LayoutUnit totalOffset = logicalTop + containerOffset;
+    unsigned currentColumn = totalOffset / pageLogicalHeight;
+    if (currentColumn > 0 && currentColumn < colInfo->spanningHeaderColumnCount()) {
+        LayoutUnit columnTop = currentColumn * pageLogicalHeight;
+        LayoutUnit posInColumn = totalOffset - columnTop;
+        if (posInColumn < colInfo->spanningHeaderHeight()) {
+            logicalTop = logicalTop - posInColumn + colInfo->spanningHeaderHeight();
+        }
+    }
+
+    return logicalTop;
+}
+
 void RenderBlock::markLinesDirtyInBlockRange(LayoutUnit logicalTop, LayoutUnit logicalBottom, RootInlineBox* highest)
 {
     if (logicalTop >= logicalBottom)
@@ -2485,6 +2531,7 @@ public:
 
     LayoutRect columnRect() const { return m_colRect; }
     bool hasMore() const { return m_colIndex >= 0; }
+    int columnIndex() const { return m_colIndex; }
 
     void adjust(LayoutSize& offset) const
     {
@@ -2525,9 +2572,11 @@ bool RenderBlock::hitTestColumns(const HitTestRequest& request, HitTestResult& r
     if (!hasColumns())
         return false;
 
+    ColumnInfo* colInfo = columnInfo();
     for (ColumnRectIterator it(*this); it.hasMore(); it.advance()) {
         LayoutRect hitRect = locationInContainer.boundingBox();
         LayoutRect colRect = it.columnRect();
+        adjustColRectForSpanningHeader(colInfo, it.columnIndex(), colRect);
         colRect.moveBy(accumulatedOffset);
         if (locationInContainer.intersects(colRect)) {
             // The point is inside this column.
@@ -2552,6 +2601,21 @@ void RenderBlock::adjustForColumnRect(LayoutSize& offset, const LayoutPoint& loc
         if (colRect.contains(locationInContainer)) {
             it.adjust(offset);
             return;
+        }
+    }
+}
+
+void RenderBlock::adjustColRectForSpanningHeader(ColumnInfo* colInfo, unsigned columnIndex, LayoutRect& colRect) const
+{
+    if (colInfo && colInfo->spanningHeaderColumnCount() > 1) {
+        if (columnIndex == 0) {
+            unsigned columnSpan = std::min(colInfo->spanningHeaderColumnCount(), colInfo->desiredColumnCount());
+            LayoutUnit expansion = (columnSpan - 1) * (columnGap() + colInfo->desiredColumnWidth());
+            colRect.expand(expansion, 0);
+        }
+        else if (columnIndex < colInfo->spanningHeaderColumnCount()) {
+            colRect.setHeight(colRect.height()-colInfo->spanningHeaderHeight());
+            colRect.move(0, colInfo->spanningHeaderHeight());
         }
     }
 }
@@ -3052,6 +3116,7 @@ void RenderBlock::adjustRectForColumns(LayoutRect& r) const
         // and issue paint invalidations only that portion.
         LayoutUnit logicalLeftOffset = logicalLeftOffsetForContent();
         LayoutRect colRect = columnRectAt(colInfo, startColumn);
+        adjustColRectForSpanningHeader(colInfo, startColumn, colRect);
         LayoutRect paintInvalidationRect = r;
 
         if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
@@ -4043,9 +4108,21 @@ LayoutUnit RenderBlock::nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundar
 
     // The logicalOffset is in our coordinate space.  We can add in our pushed offset.
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned nextColumn = (totalOffset + remainingLogicalHeight + 1) / pageLogicalHeight;
+        if (nextColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
     if (pageBoundaryRule == ExcludePageBoundary)
-        return logicalOffset + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
-    return logicalOffset + remainingLogicalHeight;
+        return logicalOffset + spanningHeaderHeight + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
+    return logicalOffset + spanningHeaderHeight + remainingLogicalHeight;
 }
 
 LayoutUnit RenderBlock::pageLogicalHeightForOffset(LayoutUnit offset) const
@@ -4246,7 +4323,7 @@ RenderBlockFlow* RenderBlock::createAnonymousColumnsWithParentRenderer(const Ren
 RenderBlockFlow* RenderBlock::createAnonymousColumnSpanWithParentRenderer(const RenderObject* parent)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), BLOCK);
-    newStyle->setColumnSpan(ColumnSpanAll);
+    newStyle->setHasSpanAllColumns();
 
     RenderBlockFlow* newBox = RenderBlockFlow::createAnonymous(&parent->document());
     parent->updateAnonymousChildStyle(newBox, newStyle.get());

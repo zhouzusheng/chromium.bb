@@ -182,6 +182,8 @@ public:
     virtual LayoutSize columnOffset(const LayoutPoint&) const OVERRIDE;
     void adjustForColumnRect(LayoutSize& offset, const LayoutPoint& locationInContainer) const;
 
+    void adjustColRectForSpanningHeader(ColumnInfo* colInfo, unsigned columnIndex, LayoutRect& colRect) const;
+
     void addContinuationWithOutline(RenderInline*);
 
     virtual RenderBoxModelObject* virtualContinuation() const OVERRIDE FINAL { return continuation(); }
@@ -338,6 +340,10 @@ protected:
     virtual void invalidatePaintOfSubtreesIfNeeded(const PaintInvalidationState& childPaintInvalidationState) OVERRIDE;
 
 private:
+    LayoutUnit adjustLogicalTopForSpanningHeader(RenderBox* child,
+                                                 ColumnInfo* colInfo,
+                                                 LayoutUnit logicalTop);
+
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
 

@@ -17,7 +17,7 @@
 #include "content/shell/renderer/shell_content_renderer_client.h"
 
 // SHEZ: disable test code
-// #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
+// #include "content/shell/renderer/test_runner/web_test_interfaces.h"
 // #include "content/shell/renderer/webkit_test_runner.h"
 
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
@@ -60,7 +60,7 @@ ShellRenderProcessObserver::~ShellRenderProcessObserver() {
 void ShellRenderProcessObserver::SetTestDelegate(WebTestDelegate* delegate) {
   // SHEZ: Remove test-only code.
 #if 0
-  test_interfaces_->setDelegate(delegate);
+  test_interfaces_->SetDelegate(delegate);
   test_delegate_ = delegate;
 #endif
 }
@@ -69,7 +69,7 @@ void ShellRenderProcessObserver::SetMainWindow(RenderView* view) {
   // SHEZ: Remove test-only code.
 #if 0
   WebKitTestRunner* test_runner = WebKitTestRunner::Get(view);
-  test_interfaces_->setWebView(view->GetWebView(), test_runner->proxy());
+  test_interfaces_->SetWebView(view->GetWebView(), test_runner->proxy());
   main_test_runner_ = test_runner;
 #endif
 }
@@ -90,7 +90,7 @@ void ShellRenderProcessObserver::WebKitInitialized() {
   }
 
   test_interfaces_.reset(new WebTestInterfaces);
-  test_interfaces_->resetAll();
+  test_interfaces_->ResetAll();
 #endif
 }
 

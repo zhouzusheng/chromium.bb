@@ -285,7 +285,6 @@ bool ChooseFallbackFont(HDC hdc,
   return found_fallback;
 }
 
-
 }  // namespace
 
 namespace internal {

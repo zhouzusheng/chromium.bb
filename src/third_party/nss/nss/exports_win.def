@@ -303,3 +303,4 @@ VFY_End
 VFY_Update
 VFY_VerifyDataDirect
 VFY_VerifyDigestDirect
+_SGN_VerifyPKCS1DigestInfo

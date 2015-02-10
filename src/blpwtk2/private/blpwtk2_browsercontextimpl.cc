@@ -32,7 +32,7 @@
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 
 #include <base/files/file_path.h>
-#include <base/file_util.h>
+#include <base/files/file_util.h>
 #include <base/logging.h>  // for CHECK
 #include <base/prefs/pref_service_factory.h>
 #include <base/prefs/pref_service.h>
@@ -377,7 +377,7 @@ BrowserContextImpl::GetGuestManager()
     return 0;
 }
 
-quota::SpecialStoragePolicy* BrowserContextImpl::GetSpecialStoragePolicy()
+storage::SpecialStoragePolicy* BrowserContextImpl::GetSpecialStoragePolicy()
 {
     return 0;
 }

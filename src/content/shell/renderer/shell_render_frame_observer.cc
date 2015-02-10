@@ -10,10 +10,10 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 
 // SHEZ: Remove test-only code
-// #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
+// #include "content/shell/renderer/test_runner/web_test_interfaces.h"
 // #include "content/shell/renderer/test_runner/web_test_runner.h"
 
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 namespace content {
 
@@ -25,8 +25,10 @@ ShellRenderFrameObserver::ShellRenderFrameObserver(RenderFrame* render_frame)
   // SHEZ: Remove test-only code.
 #if 0
   render_frame->GetWebFrame()->setPermissionClient(
-      ShellRenderProcessObserver::GetInstance()->test_interfaces()->
-          testRunner()->GetWebPermissions());
+      ShellRenderProcessObserver::GetInstance()
+          ->test_interfaces()
+          ->TestRunner()
+          ->GetWebPermissions());
 #endif
 }
 

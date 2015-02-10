@@ -38,7 +38,7 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_delegate.h>
 #include <content/public/common/content_switches.h>
-#include <net/socket/tcp_listen_socket.h>
+#include <net/socket/tcp_server_socket.h>
 
 namespace blpwtk2 {
 
@@ -49,14 +49,14 @@ namespace {
 // the future.
 class Target : public content::DevToolsTarget {
   public:
-    explicit Target(content::WebContents* webContents);
+    explicit Target(scoped_refptr<content::DevToolsAgentHost> agentHost);
 
-    virtual std::string GetId() const OVERRIDE{ return d_id; }
+    virtual std::string GetId() const OVERRIDE{ return d_agentHost->GetId(); }
     virtual std::string GetParentId() const OVERRIDE{ return std::string(); }
     virtual std::string GetType() const OVERRIDE{ return "page"; }
-    virtual std::string GetTitle() const OVERRIDE{ return d_title; }
+    virtual std::string GetTitle() const OVERRIDE{ return d_agentHost->GetTitle(); }
     virtual std::string GetDescription() const OVERRIDE{ return std::string(); }
-    virtual GURL GetURL() const OVERRIDE{ return d_url; }
+    virtual GURL GetURL() const OVERRIDE{ return d_agentHost->GetURL(); }
     virtual GURL GetFaviconURL() const OVERRIDE{ return d_faviconUrl; }
     virtual base::TimeTicks GetLastActivityTime() const OVERRIDE{
         return d_lastActivityTime;
@@ -72,43 +72,51 @@ class Target : public content::DevToolsTarget {
 
 private:
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;
-    std::string d_id;
-    std::string d_title;
-    GURL d_url;
     GURL d_faviconUrl;
     base::TimeTicks d_lastActivityTime;
 };
 
-Target::Target(content::WebContents* webContents) {
-    d_agentHost =
-        content::DevToolsAgentHost::GetOrCreateFor(webContents);
-    d_id = d_agentHost->GetId();
-    d_title = base::UTF16ToUTF8(webContents->GetTitle());
-    d_url = webContents->GetURL();
-    content::NavigationController& controller = webContents->GetController();
-    content::NavigationEntry* entry = controller.GetActiveEntry();
-    if (entry != NULL && entry->GetURL().is_valid())
-        d_faviconUrl = entry->GetFavicon().url;
-    d_lastActivityTime = webContents->GetLastActiveTime();
+Target::Target(scoped_refptr<content::DevToolsAgentHost> agentHost)
+: d_agentHost(agentHost)
+{
+    if (content::WebContents* webContents = d_agentHost->GetWebContents()) {
+        content::NavigationController& controller = webContents->GetController();
+        content::NavigationEntry* entry = controller.GetActiveEntry();
+        if (entry != NULL && entry->GetURL().is_valid())
+            d_faviconUrl = entry->GetFavicon().url;
+        d_lastActivityTime = webContents->GetLastActiveTime();
+    }
 }
 
 bool Target::Activate() const {
-    content::WebContents* webContents = d_agentHost->GetWebContents();
-    if (!webContents)
-        return false;
-    webContents->GetDelegate()->ActivateContents(webContents);
-    return true;
+    return d_agentHost->Activate();
 }
 
 bool Target::Close() const {
-    content::WebContents* webContents = d_agentHost->GetWebContents();
-    if (!webContents)
-        return false;
-    webContents->GetRenderViewHost()->ClosePage();
-    return true;
+    return d_agentHost->Close();
 }
 
+class TCPServerSocketFactory
+    : public content::DevToolsHttpHandler::ServerSocketFactory {
+ public:
+  TCPServerSocketFactory(const std::string& address, int port, int backlog)
+      : content::DevToolsHttpHandler::ServerSocketFactory(
+            address, port, backlog) {}
+
+ private:
+  // content::DevToolsHttpHandler::ServerSocketFactory.
+  virtual scoped_ptr<net::ServerSocket> Create() const OVERRIDE {
+    return scoped_ptr<net::ServerSocket>(
+        new net::TCPServerSocket(NULL, net::NetLog::Source()));
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(TCPServerSocketFactory);
+};
+
 }  // close anonymous namespace
+
+
+// DevToolsHttpHandlerDelegateImpl -----------------------------------------
 
 DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
 {
@@ -127,7 +135,9 @@ DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
     }
 
     Statics::devToolsHttpHandler = content::DevToolsHttpHandler::Start(
-        new net::TCPListenSocketFactory("127.0.0.1", port), "", this,
+        scoped_ptr<content::DevToolsHttpHandler::ServerSocketFactory>(
+            new TCPServerSocketFactory("127.0.0.1", port, 1)),
+        "", this,
         base::FilePath());
 }
 
@@ -138,24 +148,42 @@ DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()
     Statics::devToolsHttpHandler = 0;
 }
 
+
+// DevToolsManagerDelegateImpl -----------------------------------------------
+// TODO: move this to a separate file
+
+DevToolsManagerDelegateImpl::DevToolsManagerDelegateImpl()
+{
+}
+
+DevToolsManagerDelegateImpl::~DevToolsManagerDelegateImpl()
+{
+}
+
+base::DictionaryValue* DevToolsManagerDelegateImpl::HandleCommand(
+      content::DevToolsAgentHost* agentHost,
+      base::DictionaryValue* command)
+{
+    return NULL;
+}
+
 scoped_ptr<content::DevToolsTarget>
-DevToolsHttpHandlerDelegateImpl::CreateNewTarget(const GURL& url)
+DevToolsManagerDelegateImpl::CreateNewTarget(const GURL& url)
 {
     // TODO(SHEZ): implement this
     NOTIMPLEMENTED();
     return scoped_ptr<content::DevToolsTarget>();
 }
 
-void DevToolsHttpHandlerDelegateImpl::EnumerateTargets(TargetCallback callback)
+void DevToolsManagerDelegateImpl::EnumerateTargets(TargetCallback callback)
 {
     // This is copied from the implementation in content_shell.
 
     TargetList targets;
-    std::vector<content::WebContents*> wc_list =
-        content::DevToolsAgentHost::GetInspectableWebContents();
-    for (std::vector<content::WebContents*>::iterator it = wc_list.begin();
-        it != wc_list.end();
-        ++it) {
+    content::DevToolsAgentHost::List agents =
+        content::DevToolsAgentHost::GetOrCreateAll();
+    for (content::DevToolsAgentHost::List::iterator it = agents.begin();
+         it != agents.end(); ++it) {
         targets.push_back(new Target(*it));
     }
     callback.Run(targets);

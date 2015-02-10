@@ -87,8 +87,9 @@
             'pitch_filter_c.c',
           ],
         }],
-        ['target_arch=="mipsel"', {
+        ['target_arch=="mipsel" and mips_arch_variant!="r6" and android_webview_build==0', {
           'sources': [
+            'entropy_coding_mips.c',
             'filters_mips.c',
             'lattice_mips.c',
             'pitch_estimator_mips.c',
@@ -138,6 +139,15 @@
             'lattice_neon.S',
             'lpc_masking_model_neon.S',
             'transform_neon.S',
+          ],
+          'conditions': [
+            # Disable LTO in isac_neon target due to compiler bug
+            ['use_lto==1', {
+              'cflags!': [
+                '-flto',
+                '-ffat-lto-objects',
+              ],
+            }],
           ],
         },
       ],

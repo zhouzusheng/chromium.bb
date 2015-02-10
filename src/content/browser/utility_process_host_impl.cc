@@ -87,8 +87,8 @@ UtilityMainThreadFactoryFunction g_utility_main_thread_factory = NULL;
 static bool g_run_utility_in_process_ = false;
 
 UtilityProcessHost* UtilityProcessHost::Create(
-    UtilityProcessHostClient* client,
-    base::SequencedTaskRunner* client_task_runner) {
+    const scoped_refptr<UtilityProcessHostClient>& client,
+    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner) {
   return new UtilityProcessHostImpl(client, client_task_runner);
 }
 
@@ -108,8 +108,8 @@ void UtilityProcessHost::SetRunUtilityInProcess(bool value) {
 }
 
 UtilityProcessHostImpl::UtilityProcessHostImpl(
-    UtilityProcessHostClient* client,
-    base::SequencedTaskRunner* client_task_runner)
+    const scoped_refptr<UtilityProcessHostClient>& client,
+    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner)
     : client_(client),
       client_task_runner_(client_task_runner),
       is_batch_mode_(false),
@@ -279,15 +279,23 @@ bool UtilityProcessHostImpl::StartProcess() {
 }
 
 bool UtilityProcessHostImpl::OnMessageReceived(const IPC::Message& message) {
+  if (!client_.get())
+    return true;
+
   client_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(base::IgnoreResult(
-          &UtilityProcessHostClient::OnMessageReceived), client_.get(),
+      base::Bind(
+          base::IgnoreResult(&UtilityProcessHostClient::OnMessageReceived),
+          client_.get(),
           message));
+
   return true;
 }
 
 void UtilityProcessHostImpl::OnProcessLaunchFailed() {
+  if (!client_.get())
+    return;
+
   client_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&UtilityProcessHostClient::OnProcessLaunchFailed,
@@ -295,6 +303,9 @@ void UtilityProcessHostImpl::OnProcessLaunchFailed() {
 }
 
 void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {
+  if (!client_.get())
+    return;
+
   client_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&UtilityProcessHostClient::OnProcessCrashed, client_.get(),

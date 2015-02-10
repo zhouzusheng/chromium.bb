@@ -43,6 +43,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
+#include "core/rendering/RenderReplaced.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/style/GridPosition.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -55,17 +56,6 @@
 namespace blink {
 
 using namespace HTMLNames;
-
-// FIXME: This is duplicated with StyleResolver.cpp
-// Perhaps this should move onto ElementResolveContext or even Element?
-static inline bool isAtShadowBoundary(const Element* element)
-{
-    if (!element)
-        return false;
-    ContainerNode* parentNode = element->parentNode();
-    return parentNode && parentNode->isShadowRoot();
-}
-
 
 static EDisplay equivalentBlockDisplay(EDisplay display, bool isFloating, bool strictParsing)
 {
@@ -410,6 +400,16 @@ void StyleAdjuster::adjustStyleForTagName(RenderStyle* style, RenderStyle* paren
 
     if (isHTMLPlugInElement(element)) {
         style->setRequiresAcceleratedCompositingForExternalReasons(toHTMLPlugInElement(element).shouldAccelerate());
+
+        // Plugins should get the standard replaced width/height instead of 'auto'.
+        // Replaced renderers get this for free, and fallback content doesn't count.
+        if (toHTMLPlugInElement(element).usePlaceholderContent()) {
+            if (style->width().isAuto())
+                style->setWidth(Length(RenderReplaced::defaultWidth, Fixed));
+            if (style->height().isAuto())
+                style->setHeight(Length(RenderReplaced::defaultHeight, Fixed));
+        }
+
         return;
     }
 }

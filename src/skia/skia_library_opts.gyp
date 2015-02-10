@@ -254,7 +254,7 @@
           'sources': [
             '../third_party/skia/src/opts/SkBlitRow_opts_SSE4_asm.S',
           ],
-       }],
+        }],
       ],
     },
     {

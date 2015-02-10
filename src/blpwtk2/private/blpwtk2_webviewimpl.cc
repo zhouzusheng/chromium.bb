@@ -263,7 +263,7 @@ void WebViewImpl::loadUrl(const StringRef& url)
     d_webContents->GetController().LoadURL(
         gurl,
         content::Referrer(),
-        content::PageTransitionFromInt(content::PAGE_TRANSITION_TYPED | content::PAGE_TRANSITION_FROM_ADDRESS_BAR),
+        ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
         std::string());
 }
 
@@ -616,7 +616,6 @@ void WebViewImpl::onDestroyed(NativeViewWidget* source)
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,
-                                  int32 page_id,
                                   const GURL& url)
 {
     DCHECK(Statics::isInBrowserMainThread());

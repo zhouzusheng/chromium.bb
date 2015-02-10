@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "7.2",
+  "version": "7.10",
   "entries": [
     {
       "id": 1,
@@ -175,7 +175,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 11,
       "description": "Limit max texure size to 4096 on Macs with Intel GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -212,7 +216,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 14,
       "description": "Limit max texure size and cube map texture size to 4096 on Macs with AMD GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x1002",
       "features": [
@@ -994,6 +1002,68 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_d3d11"
+      ]
+    },
+    {
+      "id": 88,
+      "description": "Always rewrite vec/mat constructors to be consistent",
+      "cr_bugs": [398694],
+      "features": [
+        "scalarize_vec_and_mat_constructor_args"
+      ]
+    },
+    {
+      "id": 89,
+      "description": "Mac drivers handle struct scopes incorrectly",
+      "cr_bugs": [403957],
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "regenerate_struct_names"
+      ]
+    },
+    {
+      "id": 90,
+      "description": "Linux AMD drivers handle struct scopes incorrectly",
+      "cr_bugs": [403957],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "regenerate_struct_names"
+      ]
+    },
+    {
+      "id": 91,
+      "cr_bugs": [150500, 414816],
+      "description": "ETC1 non-power-of-two sized textures crash older IMG drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 5.*",
+      "features": [
+        "etc1_power_of_two_only"
+      ]
+    },
+    {
+      "id": 93,
+      "description": "The GL implementation on the Android emulator has problems with PBOs.",
+      "cr_bugs": [340882],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "VMware.*",
+      "gl_renderer": "Gallium.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "=",
+        "value": "3.0"
+      },
+      "features": [
+        "disable_async_readpixels"
       ]
     }
   ]

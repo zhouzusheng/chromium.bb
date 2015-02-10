@@ -38,14 +38,14 @@
 namespace blink {
 
 // This class is used for converting from WebCompositionUnderline to
-// blink::CompositionUnderline.
+// CompositionUnderline.
 
-class CompositionUnderlineBuilder : public blink::CompositionUnderline {
+class CompositionUnderlineBuilder : public CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
-        : blink::CompositionUnderline(u.startOffset, u.endOffset,
+        : CompositionUnderline(u.startOffset, u.endOffset,
             u.thick,
-            blink::Color(u.backgroundColor)) { }
+            Color(u.backgroundColor)) { }
 };
 
 } // namespace blink

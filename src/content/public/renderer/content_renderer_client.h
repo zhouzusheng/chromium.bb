@@ -11,11 +11,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_transition_types.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
+#include "ui/base/page_transition_types.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -49,17 +49,15 @@ struct WebPluginParams;
 struct WebURLError;
 }
 
-namespace webkit_glue {
-class ResourceLoaderBridge;
-}
-
 namespace content {
+class BrowserPluginDelegate;
 class DocumentState;
 class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
 struct KeySystemInfo;
 struct RequestInfo;
+class ResourceLoaderBridge;
 struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
@@ -105,6 +103,11 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual blink::WebPlugin* CreatePluginReplacement(
       RenderFrame* render_frame,
       const base::FilePath& plugin_path);
+
+  // Creates a delegate for browser plugin.
+  virtual BrowserPluginDelegate* CreateBrowserPluginDelegate(
+      RenderFrame* render_frame,
+      const std::string& mime_type);
 
   // Returns true if the embedder has an error page to show for the given http
   // status code. If so |error_domain| should be set to according to WebURLError
@@ -176,7 +179,7 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Allows the embedder to override the ResourceLoaderBridge used.
   // If it returns NULL, the content layer will provide a bridge.
-  virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+  virtual content::ResourceLoaderBridge* OverrideResourceLoaderBridge(
       const content::RequestInfo& request_info);
 
   // Returns true if the renderer process should schedule the idle handler when
@@ -217,7 +220,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
   virtual bool WillSendRequest(blink::WebFrame* frame,
-                               PageTransition transition_type,
+                               ui::PageTransition transition_type,
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url);

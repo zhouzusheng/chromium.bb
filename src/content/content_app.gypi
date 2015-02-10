@@ -30,13 +30,11 @@
     'app/content_main_runner.cc',
     'app/mojo/mojo_init.cc',
     'app/mojo/mojo_init.h',
-    'app/startup_helper_win.cc',
     'public/app/android_library_loader_hooks.h',
     'public/app/content_main.h',
     'public/app/content_main_delegate.cc',
     'public/app/content_main_delegate.h',
     'public/app/content_main_runner.h',
-    'public/app/startup_helper_win.h',
   ],
   'conditions': [
     ['((OS=="linux" and os_posix==1 and use_aura==1) or OS=="android") and use_allocator!="none"', {
@@ -47,7 +45,7 @@
     }],
     ['OS=="win"', {
       'dependencies': [
-        '../sandbox/sandbox.gyp:sandbox',
+        'content_startup_helper_win',
       ],
     }],
     ['OS=="ios"', {
@@ -61,7 +59,6 @@
         '../mojo/mojo_base.gyp:mojo_application_bindings',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../mojo/mojo_base.gyp:mojo_system_impl',
-        '../mojo/mojo.gyp:mojo_application_manager',
      ],
     }],
   ],

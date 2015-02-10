@@ -27,8 +27,6 @@
 #include <base/strings/utf_string_conversions.h>
 #include <base/values.h>
 #include <content/public/browser/devtools_agent_host.h>
-#include <content/public/browser/devtools_client_host.h>
-#include <content/public/browser/devtools_manager.h>
 #include <content/public/browser/render_frame_host.h>
 #include <content/public/browser/web_contents.h>
 
@@ -52,12 +50,12 @@ void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     content::RenderViewHost* renderViewHost)
 {
     d_frontendHost.reset(content::DevToolsFrontendHost::Create(renderViewHost, this));
-    content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(d_agentHost.get(), this);
+    d_agentHost->AttachClient(this);
 }
 
 void DevToolsFrontendHostDelegateImpl::WebContentsDestroyed()
 {
-    content::DevToolsManager::GetInstance()->ClientHostClosing(this);
+    d_agentHost->DetachClient();
     d_agentHost = 0;
 }
 
@@ -87,8 +85,7 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
     }
     dict->GetInteger("id", &id);
 
-    content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
-        this, browser_message);
+    d_agentHost->DispatchProtocolMessage(browser_message);
 
     if (id) {
         std::string code = "InspectorFrontendAPI.embedderMessageAck(" +
@@ -103,17 +100,25 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontendToBacken
 {
     // This implementation was copied from shell_devtools_frontend.cc
 
-    content::DevToolsManager::GetInstance()->DispatchOnInspectorBackend(
-        this, message);
+    d_agentHost->DispatchProtocolMessage(message);
 }
 
-void DevToolsFrontendHostDelegateImpl::DispatchOnInspectorFrontend(const std::string& message)
+void DevToolsFrontendHostDelegateImpl::DispatchProtocolMessage(
+        content::DevToolsAgentHost* agentHost,
+        const std::string& message)
 {
     // This implementation was copied from shell_devtools_frontend.cc
 
     std::string code = "InspectorFrontendAPI.dispatchMessage(" + message + ");";
     base::string16 javascript = base::UTF8ToUTF16(code);
     web_contents()->GetMainFrame()->ExecuteJavaScript(javascript);
+}
+
+void DevToolsFrontendHostDelegateImpl::AgentHostClosed(
+        content::DevToolsAgentHost* agentHost,
+        bool replacedWithAnotherClient)
+{
+    // TODO: notify blpwtk2 clients?
 }
 
 }  // close namespace blpwtk2

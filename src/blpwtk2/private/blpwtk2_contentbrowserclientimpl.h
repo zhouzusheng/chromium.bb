@@ -87,6 +87,10 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // protocol handlers.
     virtual bool IsHandledURL(const GURL& url) OVERRIDE;
 
+    // Creates a new DevToolsManagerDelegate. The caller owns the returned value.
+    // It's valid to return NULL.
+    virtual content::DevToolsManagerDelegate* GetDevToolsManagerDelegate() OVERRIDE;
+
   private:
     RendererInfoMap* d_rendererInfoMap;
 

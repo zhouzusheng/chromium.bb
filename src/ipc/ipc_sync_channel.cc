@@ -229,7 +229,7 @@ base::LazyInstance<base::ThreadLocalPointer<SyncChannel::ReceivedSyncMsgQueue> >
 
 SyncChannel::SyncContext::SyncContext(
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event)
     : ChannelProxy::Context(listener, ipc_task_runner),
       received_sync_msgs_(ReceivedSyncMsgQueue::AddContext()),
@@ -429,7 +429,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
     const IPC::ChannelHandle& channel_handle,
     Channel::Mode mode,
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
     base::WaitableEvent* shutdown_event) {
   scoped_ptr<SyncChannel> channel =
@@ -442,7 +442,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
 scoped_ptr<SyncChannel> SyncChannel::Create(
     scoped_ptr<ChannelFactory> factory,
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
     base::WaitableEvent* shutdown_event) {
   scoped_ptr<SyncChannel> channel =
@@ -454,7 +454,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
 // static
 scoped_ptr<SyncChannel> SyncChannel::Create(
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event) {
   return make_scoped_ptr(
       new SyncChannel(listener, ipc_task_runner, shutdown_event));
@@ -462,12 +462,12 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
 
 SyncChannel::SyncChannel(
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event)
     : ChannelProxy(new SyncContext(listener, ipc_task_runner, shutdown_event)) {
   // The current (listener) thread must be distinct from the IPC thread, or else
   // sending synchronous messages will deadlock.
-  DCHECK_NE(ipc_task_runner, base::ThreadTaskRunnerHandle::Get());
+  DCHECK_NE(ipc_task_runner.get(), base::ThreadTaskRunnerHandle::Get().get());
   StartWatching();
 }
 

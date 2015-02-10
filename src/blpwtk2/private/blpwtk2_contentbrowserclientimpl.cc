@@ -23,6 +23,8 @@
 #include <blpwtk2_contentbrowserclientimpl.h>
 
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_devtoolshttphandlerdelegateimpl.h>  // for DevToolsManagerDelegateImpl
+                                                      // TODO: move this
 #include <blpwtk2_statics.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
@@ -125,7 +127,7 @@ void ContentBrowserClientImpl::RenderProcessWillLaunch(
     DCHECK(Statics::isInBrowserMainThread());
     int id = host->GetID();
     host->AddFilter(new SpellCheckMessageFilter(id));
-    host->AddFilter(new PrintingMessageFilter(id));
+    host->AddFilter(new printing::PrintingMessageFilter(id));
 }
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(
@@ -194,6 +196,11 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
             return true;
     }
     return false;
+}
+
+content::DevToolsManagerDelegate* ContentBrowserClientImpl::GetDevToolsManagerDelegate()
+{
+    return new DevToolsManagerDelegateImpl();
 }
 
 }  // close namespace blpwtk2

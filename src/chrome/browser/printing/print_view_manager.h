@@ -22,14 +22,11 @@ class PrintViewManager : public PrintViewManagerBase,
  public:
   virtual ~PrintViewManager();
 
+#if !defined(DISABLE_BASIC_PRINTING)
   // Same as PrintNow(), but for the case where a user prints with the system
   // dialog from print preview.
   bool PrintForSystemDialogNow();
-
-  // Same as PrintNow(), but for the case where we want to send the result to
-  // another destination.
-  // TODO(mad) Add an argument so we can pass the destination interface.
-  bool PrintToDestination();
+#endif  // !DISABLE_BASIC_PRINTING
 
   // Initiate print preview of the current document by first notifying the
   // renderer. Since this happens asynchronous, the print preview dialog

@@ -2055,7 +2055,7 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(const RenderBlock *rootBlo
     }
 
     if (leftGap)
-        logicalLeft = max(logicalLeftSelectionOffset(rootBlock, selTop), logicalLeftSelectionOffset(rootBlock, selTop + selHeight));
+        logicalLeft = std::max(logicalLeftSelectionOffset(rootBlock, selTop), logicalLeftSelectionOffset(rootBlock, selTop + selHeight));
     else if (ltr) {
         if (containsStartOfSelection)
             // this will be adjusted further below if the first selected box has a selection rect
@@ -2099,13 +2099,13 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(const RenderBlock *rootBlo
             InlineBox* lastBox = line->lastSelectedBox();
             LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
-                logicalRight = max(logicalRight, lastBoxSelRect.maxX());
+                logicalRight = std::max(logicalRight, lastBoxSelRect.maxX());
         }
         if (containsEndOfSelection) {
             InlineBox* firstBox = line->firstSelectedBox();
             LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
-                logicalLeft = max(logicalLeft, firstBoxSelRect.x());
+                logicalLeft = std::max(logicalLeft, firstBoxSelRect.x());
         }
     }
 }
@@ -2176,7 +2176,7 @@ LayoutRect RenderBlock::lineEndingSelectionGap(const RenderBlock* rootBlock, con
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(lineEndingLogicalLeft, rootBlockLogicalTop, lineEndingLogicalWidth, logicalHeight));
     if (paintInfo)
-        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor());
+        paintInfo->context->fillRect(alignSelectionRectToDevicePixels(gapRect), selObj->selectionBackgroundColor());
     return gapRect;
 }
 
@@ -2193,12 +2193,12 @@ void RenderBlock::getLineEndingGapLogicalLeftAndRight(const RenderBlock* rootBlo
     endPaddingToRoot += rootBlock->paddingEnd();
 
     if (style()->isLeftToRightDirection()) {
-        logicalLeft = max(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalLeft = std::max(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + logicalEnd, std::max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
         logicalRight = std::min(logicalLeft + lineEndingGapWidth, endPaddingToRoot + std::min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
     }
     else {
-        logicalRight = std::min(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), std::min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
-        logicalLeft = max(logicalRight - lineEndingGapWidth, max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)) - endPaddingToRoot);
+        logicalRight = std::min(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + logicalEnd, std::min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalLeft = std::max(logicalRight - lineEndingGapWidth, std::max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)) - endPaddingToRoot);
     }
 }
 

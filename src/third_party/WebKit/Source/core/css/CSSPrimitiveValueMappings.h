@@ -2781,6 +2781,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWhiteSpace e)
     case PRE_WRAP:
         m_value.valueID = CSSValuePreWrap;
         break;
+    case BB_PRE_WRAP_TEXT:
+        m_value.valueID = CSSValueBbPreWrapText;
+        break;
     case PRE_LINE:
         m_value.valueID = CSSValuePreLine;
         break;
@@ -2805,6 +2808,8 @@ template<> inline CSSPrimitiveValue::operator EWhiteSpace() const
         return PRE;
     case CSSValuePreWrap:
         return PRE_WRAP;
+    case CSSValueBbPreWrapText:
+        return BB_PRE_WRAP_TEXT;
     case CSSValuePreLine:
         return PRE_LINE;
     case CSSValueNormal:

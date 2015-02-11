@@ -107,6 +107,13 @@ class ToolkitCreateParams {
 
     BLPWTK2_EXPORT void setTooltipStyle(NativeFont font);
 
+    // This method is used to set the HTML file used to format header and
+    // footer of printed pages.
+    BLPWTK2_EXPORT void setHeaderFooterHTML(const StringRef& htmlContent);
+
+    // This method enables printing background graphics.
+    BLPWTK2_EXPORT void enablePrintBackgroundGraphics();
+
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
@@ -120,6 +127,8 @@ class ToolkitCreateParams {
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;
     NativeFont tooltipFont() const;
+    StringRef headerFooterHTMLContent() const;
+    bool isPrintBackgroundGraphicsEnabled() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

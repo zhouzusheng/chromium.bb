@@ -480,7 +480,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   //base::StringValue html(
   //    ResourceBundle::GetSharedInstance().GetLocalizedString(
   //        IDR_PRINT_PREVIEW_PAGE));
-  base::StringValue html("");
+  base::StringValue html(params.header_footer_html);
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 

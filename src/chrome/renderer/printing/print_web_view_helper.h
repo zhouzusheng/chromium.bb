@@ -218,7 +218,8 @@ class PrintWebViewHelper
                          blink::WebFrame* frame,
                          Metafile* metafile,
                          gfx::Size* page_size_in_dpi,
-                         gfx::Rect* content_area_in_dpi);
+                         gfx::Rect* content_area_in_dpi,
+                         int page_count);
 #else
   void PrintPageInternal(const PrintMsg_PrintPage_Params& params,
                          const gfx::Size& canvas_size,

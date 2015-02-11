@@ -42,7 +42,8 @@ bool PrintWebViewHelper::RenderPreviewPage(
                     print_preview_context_.prepared_frame(),
                     initial_render_metafile,
                     NULL,
-                    NULL);
+                    NULL,
+                    print_preview_context_.total_page_count());
   print_preview_context_.RenderedPreviewPage(
       base::TimeTicks::Now() - begin_time);
   if (draft_metafile.get()) {
@@ -83,6 +84,16 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
   std::vector<gfx::Size> page_size_in_dpi(printed_pages.size());
   std::vector<gfx::Rect> content_area_in_dpi(printed_pages.size());
 
+  // header_footer_info_ was filled only in print preview
+  if (params.params.display_header_footer && !is_preview_enabled_) {
+    header_footer_info_.reset(new base::DictionaryValue());
+    header_footer_info_->SetDouble(kSettingHeaderFooterDate,
+                                   base::Time::Now().ToJsTime());
+    header_footer_info_->SetString(kSettingHeaderFooterURL, params.params.url);
+    header_footer_info_->SetString(kSettingHeaderFooterTitle,
+                                   params.params.title);
+  }
+
   PrintMsg_PrintPage_Params page_params;
   page_params.params = params.params;
   for (size_t i = 0; i < printed_pages.size(); ++i) {
@@ -92,7 +103,7 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                       frame,
                       &metafile,
                       &page_size_in_dpi[i],
-                      &content_area_in_dpi[i]);
+                      &content_area_in_dpi[i], page_count);
   }
 
   // blink::printEnd() for PDF should be called before metafile is closed.
@@ -151,7 +162,8 @@ void PrintWebViewHelper::PrintPageInternal(
     WebFrame* frame,
     Metafile* metafile,
     gfx::Size* page_size_in_dpi,
-    gfx::Rect* content_area_in_dpi) {
+    gfx::Rect* content_area_in_dpi,
+    int page_count) {
   PageSizeMargins page_layout_in_points;
   double css_scale_factor = 1.0f;
   ComputePageLayoutInPointsForCss(frame, params.page_number, params.params,
@@ -201,7 +213,9 @@ void PrintWebViewHelper::PrintPageInternal(
     // |page_number| is 0-based, so 1 is added.
     PrintHeaderAndFooter(canvas.get(),
                          params.page_number + 1,
-                         print_preview_context_.total_page_count(),
+                         // print_preview_context is initialized only when print
+                         // preview is displayed
+                         page_count, //print_preview_context_.total_page_count(),
                          scale_factor,
                          page_layout_in_points,
                          *header_footer_info_,

@@ -82,20 +82,6 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
   std::vector<gfx::Size> page_size_in_dpi(printed_pages.size());
   std::vector<gfx::Rect> content_area_in_dpi(printed_pages.size());
 
-  // header_footer_info_ was filled only in print preview
-  if (params.params.display_header_footer && !is_preview_enabled_) {
-    if (frame) {
-        blink::WebString url = frame->document().url().string();
-        blink::WebString title = frame->document().title();
-
-        header_footer_info_.reset(new base::DictionaryValue());
-        header_footer_info_->SetDouble(kSettingHeaderFooterDate,
-                                       base::Time::Now().ToJsTime());
-        header_footer_info_->SetString(kSettingHeaderFooterURL, url);
-        header_footer_info_->SetString(kSettingHeaderFooterTitle, title);
-    }
-  }
-
   PrintMsg_PrintPage_Params page_params;
   page_params.params = params.params;
   for (size_t i = 0; i < printed_pages.size(); ++i) {

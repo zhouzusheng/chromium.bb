@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/printing/print_job_manager.h"
@@ -268,14 +267,6 @@ void PrintingMessageFilter::GetPrintSettingsForRenderView(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (wc) {
-    // URL and title wes empty if the printing is done without preview
-    GURL url = wc->GetVisibleURL();
-    base::string16 title = wc->GetTitle();
-    if (url != GURL::EmptyGURL()) {
-      base::string16 spec = base::UTF8ToUTF16(url.spec());
-      printer_query->SetURLAndTitle(spec, title);
-    }
-
     scoped_ptr<PrintingUIWebContentsObserver> wc_observer(
         new PrintingUIWebContentsObserver(wc));
     BrowserThread::PostTask(

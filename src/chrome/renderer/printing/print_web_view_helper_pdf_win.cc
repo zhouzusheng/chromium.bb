@@ -16,6 +16,7 @@
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
 #include "skia/ext/vector_canvas.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 
@@ -86,12 +87,16 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
 
   // header_footer_info_ was filled only in print preview
   if (params.params.display_header_footer && !is_preview_enabled_) {
-    header_footer_info_.reset(new base::DictionaryValue());
-    header_footer_info_->SetDouble(kSettingHeaderFooterDate,
-                                   base::Time::Now().ToJsTime());
-    header_footer_info_->SetString(kSettingHeaderFooterURL, params.params.url);
-    header_footer_info_->SetString(kSettingHeaderFooterTitle,
-                                   params.params.title);
+    if (frame) {
+        blink::WebString url = frame->document().url().string();
+        blink::WebString title = frame->document().title();
+
+        header_footer_info_.reset(new base::DictionaryValue());
+        header_footer_info_->SetDouble(kSettingHeaderFooterDate,
+                                       base::Time::Now().ToJsTime());
+        header_footer_info_->SetString(kSettingHeaderFooterURL, url);
+        header_footer_info_->SetString(kSettingHeaderFooterTitle, title);
+    }
   }
 
   PrintMsg_PrintPage_Params page_params;

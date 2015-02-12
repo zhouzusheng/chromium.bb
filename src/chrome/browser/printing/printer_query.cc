@@ -35,12 +35,7 @@ void PrinterQuery::GetSettingsDone(const PrintSettings& new_settings,
   is_print_dialog_box_shown_ = false;
   last_status_ = result;
   if (result != PrintingContext::FAILED) {
-    // Keep a copy of url and title and reassign back to settings
-    base::string16 url = settings_.url();
-    base::string16 title = settings_.title();
     settings_ = new_settings;
-    settings_.set_url(url);
-    settings_.set_title(title);
     cookie_ = PrintSettings::NewCookie();
   } else {
     // Failure.
@@ -108,12 +103,6 @@ void PrinterQuery::SetSettings(const base::DictionaryValue& new_settings,
       base::Bind(&PrintJobWorker::SetSettings,
                  base::Unretained(worker_.get()),
                  new_settings.DeepCopy()));
-}
-
-void PrinterQuery::SetURLAndTitle(const base::string16& url,
-                                  const base::string16& title) {
-  settings_.set_url(url);
-  settings_.set_title(title);
 }
 
 void PrinterQuery::SetWorkerDestination(

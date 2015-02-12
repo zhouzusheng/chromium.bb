@@ -58,9 +58,6 @@ class PrinterQuery : public PrintJobWorkerOwner {
   void SetSettings(const base::DictionaryValue& new_settings,
                    const base::Closure& callback);
 
-  // Updates the page URL and title.
-  void SetURLAndTitle(const base::string16& url, const base::string16& title);
-
   // Set a destination for the worker.
   void SetWorkerDestination(PrintDestinationInterface* destination);
 

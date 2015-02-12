@@ -89,6 +89,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::threadMode = params.threadMode();
     Statics::pumpMode = params.pumpMode();
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
+    Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
 

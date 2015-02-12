@@ -278,7 +278,9 @@ void ToolkitImpl::startupThreads()
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
-    InProcessRenderer::init();
+    if (!Statics::isInProcessRendererDisabled)
+        InProcessRenderer::init();
+
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {
@@ -354,7 +356,9 @@ void ToolkitImpl::shutdownThreads()
     DCHECK(0 == Statics::numProfiles);
 
     MainMessagePump::current()->cleanup();
-    InProcessRenderer::cleanup();
+
+    if (!Statics::isInProcessRendererDisabled)
+        InProcessRenderer::cleanup();
 
     if (Statics::isRendererMainThreadMode()) {
         delete base::MessageLoop::current();
@@ -449,6 +453,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     int rendererAffinity = singleProcess ? Constants::IN_PROCESS_RENDERER
                                          : params.rendererAffinity();
 
+    DCHECK(rendererAffinity != Constants::IN_PROCESS_RENDERER || !Statics::isInProcessRendererDisabled);
     DCHECK(singleProcess ||
            rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
            (rendererAffinity == Constants::IN_PROCESS_RENDERER &&

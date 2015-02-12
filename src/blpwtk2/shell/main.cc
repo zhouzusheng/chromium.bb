@@ -999,8 +999,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     }
 
     blpwtk2::ToolkitCreateParams toolkitParams;
-    if (isHost) {
+    if (isHost || (!g_in_process_renderer && hostChannel.empty())) {
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::ORIGINAL);
+        toolkitParams.disableInProcessRenderer();
     }
     else {
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);

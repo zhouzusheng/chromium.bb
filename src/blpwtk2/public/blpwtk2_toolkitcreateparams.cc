@@ -47,6 +47,7 @@ struct ToolkitCreateParamsImpl {
     NativeFont d_tooltipFont;
     std::string d_headerFooterHTMLContent;
     bool d_printBackgroundGraphics;
+    bool d_inProcessRendererDisabled;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -55,6 +56,7 @@ struct ToolkitCreateParamsImpl {
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
     , d_printBackgroundGraphics(false)
+    , d_inProcessRendererDisabled(false)
     {
     }
 };
@@ -91,6 +93,11 @@ void ToolkitCreateParams::setThreadMode(ThreadMode::Value mode)
 void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 {
     d_impl->d_pumpMode = mode;
+}
+
+void ToolkitCreateParams::disableInProcessRenderer()
+{
+    d_impl->d_inProcessRendererDisabled = true;
 }
 
 void ToolkitCreateParams::setMaxSocketsPerProxy(int count)
@@ -176,6 +183,11 @@ ThreadMode::Value ToolkitCreateParams::threadMode() const
 PumpMode::Value ToolkitCreateParams::pumpMode() const
 {
     return d_impl->d_pumpMode;
+}
+
+bool ToolkitCreateParams::isInProcessRendererDisabled() const
+{
+    return d_impl->d_inProcessRendererDisabled;
 }
 
 bool ToolkitCreateParams::isMaxSocketsPerProxySet() const

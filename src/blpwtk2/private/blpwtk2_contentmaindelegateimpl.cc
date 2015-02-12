@@ -136,6 +136,11 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
                                         subprocess.value().c_str());
     }
 
+    // Even if the app has disabled the in-process renderer, we must make sure
+    // it is not disabled if --single-process is on the command-line.
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+        Statics::isInProcessRendererDisabled = false;
+
     InitLogging();
     SetContentClient(&d_contentClient);
 

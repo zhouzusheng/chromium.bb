@@ -45,6 +45,8 @@ struct ToolkitCreateParamsImpl {
     std::string d_dictionaryPath;
     std::string d_hostChannel;
     NativeFont d_tooltipFont;
+    std::string d_headerFooterHTMLContent;
+    bool d_printBackgroundGraphics;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -52,6 +54,7 @@ struct ToolkitCreateParamsImpl {
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
+    , d_printBackgroundGraphics(false)
     {
     }
 };
@@ -154,6 +157,17 @@ void ToolkitCreateParams::setTooltipStyle(NativeFont font)
     d_impl->d_tooltipFont = font;
 }
 
+void ToolkitCreateParams::setHeaderFooterHTML(const StringRef& htmlContent)
+{
+    d_impl->d_headerFooterHTMLContent.assign(htmlContent.data(),
+                                             htmlContent.length());
+}
+
+void ToolkitCreateParams::enablePrintBackgroundGraphics()
+{
+    d_impl->d_printBackgroundGraphics = true;
+}
+
 ThreadMode::Value ToolkitCreateParams::threadMode() const
 {
     return d_impl->d_threadMode;
@@ -215,6 +229,16 @@ StringRef ToolkitCreateParams::hostChannel() const
 NativeFont ToolkitCreateParams::tooltipFont() const
 {
     return d_impl->d_tooltipFont;
+}
+
+StringRef ToolkitCreateParams::headerFooterHTMLContent() const
+{
+    return d_impl->d_headerFooterHTMLContent;
+}
+
+bool  ToolkitCreateParams::isPrintBackgroundGraphicsEnabled() const
+{
+    return d_impl->d_printBackgroundGraphics;
 }
 
 }  // close namespace blpwtk2

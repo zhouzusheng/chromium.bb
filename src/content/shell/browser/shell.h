@@ -160,6 +160,7 @@ class Shell : public WebContentsDelegate,
 
  private:
   enum UIControl {
+    NEW_BUTTON,
     BACK_BUTTON,
     FORWARD_BUTTON,
     PRINT_BUTTON,

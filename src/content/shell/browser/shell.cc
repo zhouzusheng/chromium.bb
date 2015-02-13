@@ -31,8 +31,8 @@
 
 namespace content {
 
-const int Shell::kDefaultTestWindowWidthDip = 800;
-const int Shell::kDefaultTestWindowHeightDip = 600;
+const int Shell::kDefaultTestWindowWidthDip = 1600;
+const int Shell::kDefaultTestWindowHeightDip = 1200;
 
 std::vector<Shell*> Shell::windows_;
 base::Callback<void(Shell*)> Shell::shell_created_callback_;

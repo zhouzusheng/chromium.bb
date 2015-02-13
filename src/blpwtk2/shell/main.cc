@@ -1390,8 +1390,8 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
                                 WS_OVERLAPPEDWINDOW, // top-level window
                                 CW_USEDEFAULT,       // default horizontal position
                                 CW_USEDEFAULT,       // default vertical position
-                                CW_USEDEFAULT,       // default width
-                                CW_USEDEFAULT,       // default height
+                                1600,                // same width,
+                                1200,                // and height as content_shell
                                 (HWND) NULL,         // no owner window
                                 (HMENU) NULL,        // use class menu
                                 g_instance,          // handle to application instance

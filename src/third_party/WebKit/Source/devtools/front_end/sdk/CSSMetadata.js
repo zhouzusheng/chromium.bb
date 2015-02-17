@@ -491,7 +491,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "none", "scroll", "slide", "alternate"
     ] },
     "white-space": { values: [
-        "normal", "nowrap", "pre", "pre-line", "pre-wrap"
+        "normal", "nowrap", "pre", "pre-line", "pre-wrap", "-bb-pre-wrap-text"
     ] },
     "box-lines": { values: [
         "single", "multiple"

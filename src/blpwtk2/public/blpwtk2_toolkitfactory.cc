@@ -30,9 +30,12 @@
 
 #include <base/files/file_path.h>
 #include <base/logging.h>  // for DCHECK
+#include <base/strings/string16.h>
+#include <base/strings/utf_string_conversions.h>
 #include <content/renderer/renderer_font_platform_win.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
+#include <printing/print_settings.h>
 #include <ui/gl/gl_implementation.h>
 #include <ui/views/corewm/tooltip_win.h>
 
@@ -86,6 +89,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::threadMode = params.threadMode();
     Statics::pumpMode = params.pumpMode();
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
+    Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
 
@@ -111,6 +115,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
             std::string(fontFileRef.data(), fontFileRef.length()));
         content::AddCustomFontFile(filePath);
     }
+
+    std::string html(params.headerFooterHTMLContent().data(),
+                     params.headerFooterHTMLContent().length());
+    printing::PrintSettings::SetDefaultPrinterSettings(
+        base::UTF8ToUTF16(html), params.isPrintBackgroundGraphicsEnabled());
 
     g_created = true;
     return toolkit;

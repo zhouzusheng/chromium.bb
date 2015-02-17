@@ -51,6 +51,12 @@ class ToolkitCreateParams {
     // the pump mode.
     BLPWTK2_EXPORT void setPumpMode(PumpMode::Value mode);
 
+    // By default, the in-process renderer is enabled.  This uses some
+    // additional resources, even if in-process WebViews are not created.  Call
+    // this method to disable the in-process renderer completely.  It is then
+    // undefined behavior to create WebViews using 'IN_PROCESS_RENDERER'.
+    BLPWTK2_EXPORT void disableInProcessRenderer();
+
     // Set the maximum number of sockets per proxy, up to a maximum of 99.
     // Note that each Profile maintains its own pool of connections, so this is
     // actually the maximum number of sockets per proxy *per profile*.  The
@@ -107,9 +113,17 @@ class ToolkitCreateParams {
 
     BLPWTK2_EXPORT void setTooltipStyle(NativeFont font);
 
+    // This method is used to set the HTML file used to format header and
+    // footer of printed pages.
+    BLPWTK2_EXPORT void setHeaderFooterHTML(const StringRef& htmlContent);
+
+    // This method enables printing background graphics.
+    BLPWTK2_EXPORT void enablePrintBackgroundGraphics();
+
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
+    bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;
     size_t numCommandLineSwitches() const;
@@ -120,6 +134,8 @@ class ToolkitCreateParams {
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;
     NativeFont tooltipFont() const;
+    StringRef headerFooterHTMLContent() const;
+    bool isPrintBackgroundGraphicsEnabled() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

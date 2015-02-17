@@ -148,7 +148,7 @@ void ContentBrowserClientImpl::OverrideWebkitPrefs(
 
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()
 {
-    return true;
+    return !Statics::isInProcessRendererDisabled;
 }
 
 void ContentBrowserClientImpl::ResourceDispatcherHostCreated()

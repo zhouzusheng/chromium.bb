@@ -37,6 +37,7 @@ base::MessageLoop* Statics::browserMainMessageLoop = 0;
 BrowserContextImplManager* Statics::browserContextImplManager = 0;
 ProcessHostManager* Statics::processHostManager = 0;
 bool Statics::hasDevTools = false;
+bool Statics::isInProcessRendererDisabled = false;
 int Statics::numProfiles = 0;
 
 static int lastRoutingId = 0;

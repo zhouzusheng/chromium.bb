@@ -86,6 +86,9 @@ struct Statics {
     // Whether or not devtools is available.
     static bool hasDevTools;
 
+    // Whether or not the in-process renderer is disabled.
+    static bool isInProcessRendererDisabled;
+
     // Number of Profiles that have not yet been destroyed.  This is
     // incremented and decremented from the application's main thread.
     static int numProfiles;

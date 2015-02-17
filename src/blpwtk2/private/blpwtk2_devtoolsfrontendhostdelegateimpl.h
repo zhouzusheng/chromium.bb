@@ -27,7 +27,7 @@
 
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/web_contents_observer.h>
-#include <content/public/browser/devtools_client_host.h>
+#include <content/public/browser/devtools_agent_host_client.h>
 #include <content/public/browser/devtools_frontend_host.h>
 
 namespace content {
@@ -41,7 +41,7 @@ namespace blpwtk2 {
 class DevToolsFrontendHostDelegateImpl
     : public content::WebContentsObserver,
       public content::DevToolsFrontendHost::Delegate,
-      public content::DevToolsClientHost {
+      public content::DevToolsAgentHostClient {
   public:
     DevToolsFrontendHostDelegateImpl(content::WebContents* inspectorContents,
                                      content::DevToolsAgentHost* agentHost);
@@ -63,10 +63,11 @@ class DevToolsFrontendHostDelegateImpl
         const std::string& message) OVERRIDE;
 
 
-    // ========= DevToolsClientHost overrides =========
-    virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
-    virtual void InspectedContentsClosing() OVERRIDE {}
-    virtual void ReplacedWithAnotherClient() OVERRIDE {}
+    // ========= DevToolsAgentHostClient overrides =========
+    virtual void DispatchProtocolMessage(content::DevToolsAgentHost* agentHost,
+                                         const std::string& message) OVERRIDE;
+    virtual void AgentHostClosed(content::DevToolsAgentHost* agentHost,
+                                 bool replacedWithAnotherClient) OVERRIDE;
 
   private:
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;

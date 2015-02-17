@@ -142,10 +142,20 @@ class PRINTING_EXPORT PrintSettings {
 
   double min_shrink() const { return min_shrink_; }
 
+  const base::string16& header_footer_html() const {
+    return s_header_footer_html;
+  }
+
   // Cookie generator. It is used to initialize PrintedDocument with its
   // associated PrintSettings, to be sure that each generated PrintedPage is
   // correctly associated with its corresponding PrintedDocument.
   static int NewCookie();
+
+  // Sets the default value for header_footer_html and
+  // print_background_graphics configuration.
+  static void SetDefaultPrinterSettings(
+      const base::string16& header_footer_html,
+      bool print_background_graphics);
 
  private:
   // Multi-page printing. Each PageRange describes a from-to page combination.
@@ -217,6 +227,12 @@ class PRINTING_EXPORT PrintSettings {
 
   // If margin type is custom, this is what was requested.
   PageMargins requested_custom_margins_in_points_;
+
+  // The HTML content used to format header and footer of printed pages.
+  static base::string16 s_header_footer_html;
+
+  // Stores the default value of printing background graphics configuration.
+  static bool s_print_background_graphics;
 };
 
 }  // namespace printing

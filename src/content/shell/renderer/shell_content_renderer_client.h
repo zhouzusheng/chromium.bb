@@ -17,6 +17,10 @@ class WebPlugin;
 struct WebPluginParams;
 }
 
+namespace web_cache {
+class WebCacheRenderProcessObserver;
+}
+
 namespace content {
 
 // SHEZ: Remove test code.
@@ -57,6 +61,7 @@ class ShellContentRendererClient : public ContentRendererClient {
  private:
   void WebTestProxyCreated(RenderView* render_view, WebTestProxyBase* proxy);
 
+  scoped_ptr<web_cache::WebCacheRenderProcessObserver> web_cache_observer_;
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
   // SHEZ: Remove test code.
   // scoped_ptr<MockWebClipboardImpl> clipboard_;

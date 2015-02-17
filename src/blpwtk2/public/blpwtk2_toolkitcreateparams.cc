@@ -45,6 +45,9 @@ struct ToolkitCreateParamsImpl {
     std::string d_dictionaryPath;
     std::string d_hostChannel;
     NativeFont d_tooltipFont;
+    std::string d_headerFooterHTMLContent;
+    bool d_printBackgroundGraphics;
+    bool d_inProcessRendererDisabled;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -52,6 +55,8 @@ struct ToolkitCreateParamsImpl {
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
+    , d_printBackgroundGraphics(false)
+    , d_inProcessRendererDisabled(false)
     {
     }
 };
@@ -88,6 +93,11 @@ void ToolkitCreateParams::setThreadMode(ThreadMode::Value mode)
 void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 {
     d_impl->d_pumpMode = mode;
+}
+
+void ToolkitCreateParams::disableInProcessRenderer()
+{
+    d_impl->d_inProcessRendererDisabled = true;
 }
 
 void ToolkitCreateParams::setMaxSocketsPerProxy(int count)
@@ -154,6 +164,17 @@ void ToolkitCreateParams::setTooltipStyle(NativeFont font)
     d_impl->d_tooltipFont = font;
 }
 
+void ToolkitCreateParams::setHeaderFooterHTML(const StringRef& htmlContent)
+{
+    d_impl->d_headerFooterHTMLContent.assign(htmlContent.data(),
+                                             htmlContent.length());
+}
+
+void ToolkitCreateParams::enablePrintBackgroundGraphics()
+{
+    d_impl->d_printBackgroundGraphics = true;
+}
+
 ThreadMode::Value ToolkitCreateParams::threadMode() const
 {
     return d_impl->d_threadMode;
@@ -162,6 +183,11 @@ ThreadMode::Value ToolkitCreateParams::threadMode() const
 PumpMode::Value ToolkitCreateParams::pumpMode() const
 {
     return d_impl->d_pumpMode;
+}
+
+bool ToolkitCreateParams::isInProcessRendererDisabled() const
+{
+    return d_impl->d_inProcessRendererDisabled;
 }
 
 bool ToolkitCreateParams::isMaxSocketsPerProxySet() const
@@ -215,6 +241,16 @@ StringRef ToolkitCreateParams::hostChannel() const
 NativeFont ToolkitCreateParams::tooltipFont() const
 {
     return d_impl->d_tooltipFont;
+}
+
+StringRef ToolkitCreateParams::headerFooterHTMLContent() const
+{
+    return d_impl->d_headerFooterHTMLContent;
+}
+
+bool  ToolkitCreateParams::isPrintBackgroundGraphicsEnabled() const
+{
+    return d_impl->d_printBackgroundGraphics;
 }
 
 }  // close namespace blpwtk2

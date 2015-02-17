@@ -27,6 +27,10 @@ const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 // Disables controls that support touch base text editing.
 const char kDisableTouchEditing[] = "disable-touch-editing";
 
+// Enables a zoomed popup bubble that allows the user to select a link.
+const char kEnableLinkDisambiguationPopup[] =
+    "enable-link-disambiguation-popup";
+
 // Enables an experimental focus manager to track text input clients.
 const char kEnableTextInputFocusManager[] = "enable-text-input-focus-manager";
 
@@ -43,5 +47,9 @@ const char kLang[] = "lang";
 // Disable ui::MessageBox. This is useful when running as part of scripts that
 // do not have a user interface.
 const char kNoMessageBox[] = "no-message-box";
+
+// On Windows only: requests that Chrome connect to the running Metro viewer
+// process.
+const char kViewerConnect[] = "connect-to-metro-viewer";
 
 }  // namespace switches

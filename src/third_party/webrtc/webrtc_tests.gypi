@@ -8,6 +8,15 @@
 {
   'targets': [
     {
+      'target_name': 'rtc_unittests',
+      'type': 'executable',
+      'dependencies': [
+        'base/base.gyp:rtc_base',
+        'base/base_tests.gyp:rtc_base_tests_utils',
+        'base/base_tests.gyp:rtc_base_tests',
+      ],
+    },
+    {
       'target_name': 'webrtc_tests',
       'type': 'none',
       'dependencies': [
@@ -37,6 +46,7 @@
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
+        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
         'webrtc',
       ],
@@ -59,9 +69,10 @@
       ],
       'dependencies': [
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-        'system_wrappers/source/system_wrappers.gyp:field_trial_default',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
+        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
         'webrtc',
       ],
     },
@@ -77,17 +88,15 @@
         'test/testsupport/metrics/video_metrics_unittest.cc',
       ],
       'dependencies': [
-        'modules/modules.gyp:rtp_rtcp',
+        '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
+        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
         'test/metrics.gyp:metrics',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/test.gyp:test_main',
-        'test/webrtc_test_common.gyp:webrtc_test_video_render_dependencies',
         'webrtc',
       ],
       'conditions': [
-        # TODO(henrike): remove build_with_chromium==1 when the bots are
-        # using Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -109,13 +118,10 @@
         'modules/modules.gyp:rtp_rtcp',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/test.gyp:test_main',
-        'test/webrtc_test_common.gyp:webrtc_test_video_render_dependencies',
         'webrtc',
       ],
       'conditions': [
-        # TODO(henrike): remove build_with_chromium==1 when the bots are
-        # using Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -124,9 +130,7 @@
     },
   ],
   'conditions': [
-    # TODO(henrike): remove build_with_chromium==1 when the bots are using
-    # Chromium's buildbots.
-    ['build_with_chromium==1 and OS=="android"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'video_engine_tests_apk_target',

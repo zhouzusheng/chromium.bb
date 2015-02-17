@@ -103,7 +103,7 @@ bool EditCommandComposition::belongsTo(const LocalFrame& frame) const
 void EditCommandComposition::unapply()
 {
     ASSERT(m_document);
-    RefPtr<LocalFrame> frame = m_document->frame();
+    RefPtrWillBeRawPtr<LocalFrame> frame = m_document->frame();
     ASSERT(frame);
 
     // Changes to the document may have been made since the last editing operation that require a layout, as in <rdar://problem/5658603>.
@@ -123,7 +123,7 @@ void EditCommandComposition::unapply()
 void EditCommandComposition::reapply()
 {
     ASSERT(m_document);
-    RefPtr<LocalFrame> frame = m_document->frame();
+    RefPtrWillBeRawPtr<LocalFrame> frame = m_document->frame();
     ASSERT(frame);
 
     // Changes to the document may have been made since the last editing operation that require a layout, as in <rdar://problem/5658603>.
@@ -1193,16 +1193,12 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
             bool endInParagraph = comparePositions(visibleEnd, endOfParagraphToMove) <= 0;
 
             startIndex = 0;
-            if (startInParagraph) {
-                RefPtrWillBeRawPtr<Range> startRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleStart.deepEquivalent().parentAnchoredEquivalent());
-                startIndex = TextIterator::rangeLength(startRange.get(), true);
-            }
+            if (startInParagraph)
+                startIndex = TextIterator::rangeLength(startOfParagraphToMove.toParentAnchoredPosition(), visibleStart.toParentAnchoredPosition(), true);
 
             endIndex = 0;
-            if (endInParagraph) {
-                RefPtrWillBeRawPtr<Range> endRange = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
-                endIndex = TextIterator::rangeLength(endRange.get(), true);
-            }
+            if (endInParagraph)
+                endIndex = TextIterator::rangeLength(startOfParagraphToMove.toParentAnchoredPosition(), visibleEnd.toParentAnchoredPosition(), true);
         }
     }
 
@@ -1261,8 +1257,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
         document().updateLayoutIgnorePendingStylesheets();
     }
 
-    RefPtrWillBeRawPtr<Range> startToDestinationRange(Range::create(document(), firstPositionInNode(document().documentElement()), destination.deepEquivalent().parentAnchoredEquivalent()));
-    destinationIndex = TextIterator::rangeLength(startToDestinationRange.get(), true);
+    destinationIndex = TextIterator::rangeLength(firstPositionInNode(document().documentElement()), destination.toParentAnchoredPosition(), true);
 
     setEndingSelection(VisibleSelection(destination, originalIsDirectional));
     ASSERT(endingSelection().isCaretOrRange());

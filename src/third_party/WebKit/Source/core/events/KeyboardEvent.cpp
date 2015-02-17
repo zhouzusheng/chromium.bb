@@ -101,7 +101,6 @@ KeyboardEvent::KeyboardEvent()
     , m_isAutoRepeat(false)
     , m_bbIsNumLock(false)
 {
-    ScriptWrappable::init(this);
 }
 
 KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* view)
@@ -113,7 +112,6 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
     , m_isAutoRepeat(key.isAutoRepeat())
     , m_bbIsNumLock(key.bbIsNumLock())
 {
-    ScriptWrappable::init(this);
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventInit& initializer)
@@ -123,7 +121,6 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventI
     , m_isAutoRepeat(initializer.repeat)
     , m_bbIsNumLock(initializer.bbIsNumLock)
 {
-    ScriptWrappable::init(this);
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, AbstractView *view,
@@ -135,7 +132,6 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool
     , m_isAutoRepeat(false)
     , m_bbIsNumLock(false)
 {
-    ScriptWrappable::init(this);
 }
 
 KeyboardEvent::~KeyboardEvent()

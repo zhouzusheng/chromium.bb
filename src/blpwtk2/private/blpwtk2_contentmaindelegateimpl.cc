@@ -30,7 +30,7 @@
 
 #include <base/command_line.h>
 #include <base/files/file_path.h>
-#include <base/file_util.h>
+#include <base/files/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
 #include <chrome/common/chrome_paths.h>
@@ -136,6 +136,11 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
                                         subprocess.value().c_str());
     }
 
+    // Even if the app has disabled the in-process renderer, we must make sure
+    // it is not disabled if --single-process is on the command-line.
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+        Statics::isInProcessRendererDisabled = false;
+
     InitLogging();
     SetContentClient(&d_contentClient);
 
@@ -150,7 +155,9 @@ void ContentMainDelegateImpl::PreSandboxStartup()
     ui::SetResourcesDataDLL((HINSTANCE)g_instDLL);
     ui::ResourceBundle::InitSharedInstance();
     ui::ResourceBundle::GetSharedInstance().AddDLLResources();
-    if (!d_isSubProcess) {
+    if (!d_isSubProcess || processType == switches::kRendererProcess) {
+        // Load the devtools pak file in the renderer process as well, because
+        // there are blink devtools resources that we need.
         base::FilePath pak_file;
         base::FilePath pak_dir;
         PathService::Get(base::DIR_MODULE, &pak_dir);

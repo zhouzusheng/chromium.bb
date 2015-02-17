@@ -244,7 +244,7 @@ def main(args):
   # from the default installed location.
   bpcDevPath = os.environ.get('BPCDEV_PATH')
   if bpcDevPath:
-    windowsSdkPath = os.path.join(bpcDevPath, 'win_sdk8.0_patched_for_chromium')
+    windowsSdkPath = os.path.join(bpcDevPath, 'win_sdk8.0')
     directXSdkPath = os.path.join(bpcDevPath, 'directx_june2010')
     if os.path.isdir(windowsSdkPath):
       applyVariableToEnvironment('GYP_DEFINES', 'windows_sdk_path', windowsSdkPath.replace('\\', '/'))

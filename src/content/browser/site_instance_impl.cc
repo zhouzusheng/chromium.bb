@@ -139,6 +139,8 @@ RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
                                                         process_, site_);
     }
 
+    TRACE_EVENT2("navigation", "SiteInstanceImpl::GetProcess",
+                 "site id", id_, "process id", process_->GetID());
     GetContentClient()->browser()->SiteInstanceGotProcess(this);
 
     if (has_site_)
@@ -150,6 +152,8 @@ RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
 }
 
 void SiteInstanceImpl::SetSite(const GURL& url) {
+  TRACE_EVENT2("navigation", "SiteInstanceImpl::SetSite",
+               "site id", id_, "url", url.possibly_invalid_spec());
   // A SiteInstance's site should not change.
   // TODO(creis): When following links or script navigations, we can currently
   // render pages from other sites in this SiteInstance.  This will eventually

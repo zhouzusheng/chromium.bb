@@ -28,6 +28,14 @@
 
 namespace blink {
 
+// Sides used when drawing borders and outlines. The values should run clockwise from top.
+enum BoxSide {
+    BSTop,
+    BSRight,
+    BSBottom,
+    BSLeft
+};
+
 enum StyleRecalcChange {
     NoChange,
     NoInherit,
@@ -306,7 +314,7 @@ enum EAnimPlayState {
 };
 
 enum EWhiteSpace {
-    NORMAL, PRE, PRE_WRAP, PRE_LINE, NOWRAP, KHTML_NOWRAP
+    NORMAL, PRE, PRE_WRAP, BB_PRE_WRAP_TEXT, PRE_LINE, NOWRAP, KHTML_NOWRAP
 };
 
 // The order of this enum must match the order of the text align values in CSSValueKeywords.in.

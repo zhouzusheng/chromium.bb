@@ -125,7 +125,7 @@ void URLRequestContextGetterImpl::useSystemProxyConfig()
     scoped_ptr<net::ProxyConfigService> proxyConfigService(
         net::ProxyService::CreateSystemProxyConfigService(
             ioLoop->message_loop_proxy(),
-            fileLoop));
+            fileLoop->message_loop_proxy()));
 
     GetNetworkTaskRunner()->PostTask(
         FROM_HERE,
@@ -188,7 +188,7 @@ void URLRequestContextGetterImpl::initialize()
                 content::BrowserThread::GetMessageLoopProxyForThread(
                     content::BrowserThread::FILE),
                 true,
-                (quota::SpecialStoragePolicy*)0,
+                (storage::SpecialStoragePolicy*)0,
                 (content::CookieCryptoDelegate*)0);
     }
 

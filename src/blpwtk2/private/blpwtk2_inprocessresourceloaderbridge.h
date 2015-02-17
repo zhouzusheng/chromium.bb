@@ -25,7 +25,7 @@
 
 #include <blpwtk2_config.h>
 #include <base/memory/ref_counted.h>
-#include <webkit/child/resource_loader_bridge.h>
+#include <content/child/resource_loader_bridge.h>
 
 namespace content {
 struct RequestInfo;
@@ -34,7 +34,7 @@ struct RequestInfo;
 namespace blpwtk2 {
 
 class InProcessResourceLoaderBridge
-    : public webkit_glue::ResourceLoaderBridge {
+    : public content::ResourceLoaderBridge {
   public:
     InProcessResourceLoaderBridge(
         const content::RequestInfo& requestInfo);

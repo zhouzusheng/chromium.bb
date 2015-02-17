@@ -24,15 +24,16 @@
 #ifndef BBPrintInfo_h
 #define BBPrintInfo_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/page/BBPrintHeader.h"
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
 
 namespace blink {
 
     class Document;
 
-    class BBPrintInfo : public RefCounted<BBPrintInfo>, public ActiveDOMObject {
+    class BBPrintInfo : public RefCounted<BBPrintInfo>, public ActiveDOMObject, public ScriptWrappableBase {
     public:
 
         static PassRefPtr<BBPrintInfo> create(Document* document) { return adoptRef(new BBPrintInfo(document)); }

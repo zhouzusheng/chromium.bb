@@ -20,7 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-interface BBPrintHeader {
+[
+    NotScriptWrappable,
+] interface BBPrintHeader {
 
     // align
     const unsigned short LEFT       = 0;

@@ -24,12 +24,13 @@
 #ifndef BBWindowHooks_h
 #define BBWindowHooks_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/ArrayBuffer.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
+#include "wtf/ArrayBuffer.h"
 
 namespace blink {
 
@@ -39,7 +40,7 @@ namespace blink {
     class Range;
     class ClientRect;
 
-    class BBWindowHooks : public RefCounted<BBWindowHooks>, public DOMWindowProperty {
+    class BBWindowHooks : public RefCounted<BBWindowHooks>, public DOMWindowProperty, public ScriptWrappableBase {
     public:
         static PassRefPtr<BBWindowHooks> create(LocalFrame *frame) { return adoptRef(new BBWindowHooks(frame)); }
 

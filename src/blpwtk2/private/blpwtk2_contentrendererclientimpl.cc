@@ -135,7 +135,7 @@ void ContentRendererClientImpl::GetNavigationErrorStrings(
     }
 }
 
-webkit_glue::ResourceLoaderBridge*
+content::ResourceLoaderBridge*
 ContentRendererClientImpl::OverrideResourceLoaderBridge(
     const content::RequestInfo& request_info)
 {

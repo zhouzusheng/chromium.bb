@@ -150,7 +150,6 @@ class WebViewImpl : public WebView,
 
     // Notification that the target URL has changed.
     virtual void UpdateTargetURL(content::WebContents* source,
-                                 int32 page_id,
                                  const GURL& url) OVERRIDE;
 
     // Notifies the delegate that this contents is starting or is done loading

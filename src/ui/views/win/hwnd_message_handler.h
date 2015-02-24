@@ -510,6 +510,13 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // is true, |SetCursor| will be a no-op.
   bool is_cursor_overridden_;
 
+  // Set when OnDestroy gets called (i.e. when WM_DESTROY is handled).  This is
+  // necessary to handle the odd case where WM_NCDESTROY is received without
+  // first receiving WM_DESTROY (can happen in cases where the process that
+  // owns the parent window is killed unexpectedly, and the child HWND receives
+  // WM_NCDESTROY without first getting WM_DESTROY).
+  bool handled_wm_destroy_;
+
   // The current cursor.
   HCURSOR current_cursor_;
 

@@ -1353,8 +1353,17 @@ void RenderFlexibleBox::applyStretchAlignmentToChild(RenderBox& child, LayoutUni
             LayoutUnit desiredLogicalHeight = child.constrainLogicalHeightByMinMax(stretchedLogicalHeight, heightBeforeStretching - child.borderAndPaddingLogicalHeight());
 
             // FIXME: Can avoid laying out here in some cases. See https://webkit.org/b/87905.
-            if (desiredLogicalHeight != child.logicalHeight()) {
+            bool isLogicalHeightDirty = desiredLogicalHeight != child.logicalHeight();
+
+            // Update the overridden height if it isn't already set. This is needed for nested row-based flexboxes.
+            // When the content of the inner flexbox causes a relayout, the inner flexbox will update its height
+            // based on its contents. If the height is set by the parent, the relayout will consider the allocated
+            // space provided by the parent flexbox.
+            if (isLogicalHeightDirty || !child.hasOverrideHeight()) {
                 child.setOverrideLogicalContentHeight(desiredLogicalHeight - child.borderAndPaddingLogicalHeight());
+            }
+
+            if (isLogicalHeightDirty) {
                 child.setLogicalHeight(0);
                 // We cache the child's intrinsic content logical height to avoid it being reset to the stretched height.
                 // FIXME: This is fragile. RenderBoxes should be smart enough to determine their intrinsic content logical

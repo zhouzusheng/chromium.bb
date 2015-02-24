@@ -27,7 +27,7 @@
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 {
-    sandbox::SandboxInterfaceInfo sandboxInfo;
+    sandbox::SandboxInterfaceInfo sandboxInfo = {0};
     content::InitializeSandboxInfo(&sandboxInfo);
     {
         HMODULE blpwtk2Module = LoadLibraryA(BLPWTK2_DLL_NAME);

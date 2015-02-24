@@ -341,6 +341,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_system_default_icon_(false),
       restored_enabled_(false),
       is_cursor_overridden_(false),
+      handled_wm_destroy_(false),
       current_cursor_(NULL),
       previous_cursor_(NULL),
       active_mouse_tracking_flags_(0),
@@ -943,8 +944,12 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
 
   if (delegate_) {
     delegate_->PostHandleMSG(message, w_param, l_param);
-    if (message == WM_NCDESTROY)
+    if (message == WM_NCDESTROY) {
+      if (!handled_wm_destroy_) {
+        OnDestroy();
+      }
       delegate_->HandleDestroyed();
+    }
   }
 
   if (message == WM_ACTIVATE && IsTopLevelWindow(window))
@@ -1368,6 +1373,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
 void HWNDMessageHandler::OnDestroy() {
   WTSUnRegisterSessionNotification(hwnd());
   delegate_->HandleDestroying();
+  handled_wm_destroy_ = true;
 }
 
 void HWNDMessageHandler::OnDisplayChange(UINT bits_per_pixel,

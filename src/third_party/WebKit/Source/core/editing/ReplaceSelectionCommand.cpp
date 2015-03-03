@@ -978,6 +978,16 @@ void ReplaceSelectionCommand::doApply()
                 insertParagraphSeparator();
         }
         insertionPos = endingSelection().start();
+
+        // If the selection included an entire paragraph, then the previous deleteSelection
+        // command would have deleted the end of the paragraph separator.  If we are inserting
+        // in nested mode, then we should add back a paragraph separator.
+        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph) {
+            insertParagraphSeparator();
+            setEndingSelection(endingSelection().visibleStart().previous());
+            visibleStart = endingSelection().visibleStart();
+            insertionPos = endingSelection().start();
+        }
     } else {
         ASSERT(selection.isCaret());
         if (fragment.hasInterchangeNewlineAtStart()) {

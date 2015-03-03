@@ -94,6 +94,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
+        '../content/app/resources/content_resources.gyp:content_resources',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_child',
@@ -140,6 +141,7 @@
         '../content/app/startup_helper_win.cc',
         '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
         '<(products_h)',
         '<(version_cc)',

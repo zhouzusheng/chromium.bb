@@ -51,6 +51,7 @@
       'dependencies': [
         'sql',
         '../base/base.gyp:base',
+        '../testing/gtest.gyp:gtest',
       ],
       'export_dependent_settings': [
         'sql',
@@ -79,6 +80,8 @@
       'dependencies': [
         'sql',
         'test_support_sql',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
         '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'sources': [
@@ -112,11 +115,48 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
+        ['sqlite_enable_fts2', {
+          'defines': [
+            'SQLITE_ENABLE_FTS2',
+          ],
+        }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
     },
   ],
   'conditions': [
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'sql_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'sql_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'sql_unittests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'sql_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'sql_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'sql_unittests.isolate',
+          ],
+        },
+      ],
+    }],
   ],
 }

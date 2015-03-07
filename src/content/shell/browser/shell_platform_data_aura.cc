@@ -9,11 +9,8 @@
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-
-// SHEZ: Remove test-only code
-// #include "ui/aura/test/test_focus_client.h"
-// #include "ui/aura/test/test_window_tree_client.h"
-
+#include "ui/aura/test/test_focus_client.h"
+#include "ui/aura/test/test_window_tree_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method.h"
@@ -32,29 +29,25 @@ class FillLayout : public aura::LayoutManager {
       : root_(root) {
   }
 
-  virtual ~FillLayout() {}
+  ~FillLayout() override {}
 
  private:
   // aura::LayoutManager:
-  virtual void OnWindowResized() OVERRIDE {
-  }
+  void OnWindowResized() override {}
 
-  virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {
+  void OnWindowAddedToLayout(aura::Window* child) override {
     child->SetBounds(root_->bounds());
   }
 
-  virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE {
-  }
+  void OnWillRemoveWindowFromLayout(aura::Window* child) override {}
 
-  virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE {
-  }
+  void OnWindowRemovedFromLayout(aura::Window* child) override {}
 
-  virtual void OnChildWindowVisibilityChanged(aura::Window* child,
-                                              bool visible) OVERRIDE {
-  }
+  void OnChildWindowVisibilityChanged(aura::Window* child,
+                                      bool visible) override {}
 
-  virtual void SetChildBounds(aura::Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE {
+  void SetChildBounds(aura::Window* child,
+                      const gfx::Rect& requested_bounds) override {
     SetChildBoundsDirect(child, requested_bounds);
   }
 
@@ -76,7 +69,7 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
                                  input_method_.get());
   }
 
-  virtual ~MinimalInputEventFilter() {
+  ~MinimalInputEventFilter() override {
     host_->window()->RemovePreTargetHandler(this);
     host_->window()->SetProperty(aura::client::kRootWindowInputMethodKey,
                                  static_cast<ui::InputMethod*>(NULL));
@@ -84,7 +77,7 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
 
  private:
   // ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
+  void OnKeyEvent(ui::KeyEvent* event) override {
     // See the comment in InputMethodEventFilter::OnKeyEvent() for details.
     if (event->IsTranslated()) {
       event->SetTranslated(false);
@@ -95,7 +88,7 @@ class MinimalInputEventFilter : public ui::internal::InputMethodDelegate,
   }
 
   // ui::internal::InputMethodDelegate:
-  virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& event) OVERRIDE {
+  bool DispatchKeyEventPostIME(const ui::KeyEvent& event) override {
     // See the comment in InputMethodEventFilter::DispatchKeyEventPostIME() for
     // details.
     ui::KeyEvent aura_event(event);
@@ -121,18 +114,14 @@ ShellPlatformDataAura::ShellPlatformDataAura(const gfx::Size& initial_size) {
   host_->InitHost();
   host_->window()->SetLayoutManager(new FillLayout(host_->window()));
 
-  // SHEZ: Remove test-only code
-  // focus_client_.reset(new aura::test::TestFocusClient());
-  // aura::client::SetFocusClient(host_->window(), focus_client_.get());
+  focus_client_.reset(new aura::test::TestFocusClient());
+  aura::client::SetFocusClient(host_->window(), focus_client_.get());
 
   new wm::DefaultActivationClient(host_->window());
   capture_client_.reset(
       new aura::client::DefaultCaptureClient(host_->window()));
-
-  // SHEZ: Remove test-only code
-  // window_tree_client_.reset(
-  //     new aura::test::TestWindowTreeClient(host_->window()));
-
+  window_tree_client_.reset(
+      new aura::test::TestWindowTreeClient(host_->window()));
   ime_filter_.reset(new MinimalInputEventFilter(host_.get()));
 }
 

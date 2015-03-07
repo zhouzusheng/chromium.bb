@@ -48,6 +48,7 @@
       'include_dirs': ['.'],
       'sources': [
         'dsp/alpha_processing.c',
+        'dsp/alpha_processing_sse2.c',
         'dsp/cpu.c',
         'dsp/dec.c',
         'dsp/dec_clip_tables.c',
@@ -67,6 +68,9 @@
         'dsp/yuv_sse2.c',
       ],
       'conditions': [
+        ['OS == "android"', {
+          'includes': [ '../../build/android/cpufeatures.gypi' ],
+        }],
         ['order_profiling != 0', {
           'target_conditions' : [
             ['_toolset=="target"', {

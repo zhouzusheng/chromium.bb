@@ -4,9 +4,7 @@
 
 #include "content/shell/browser/notify_done_forwarder.h"
 
-// SHEZ: Remove test-only code
-// #include "content/shell/browser/webkit_test_controller.h"
-
+#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_messages.h"
 
 namespace content {
@@ -29,8 +27,7 @@ bool NotifyDoneForwarder::OnMessageReceived(const IPC::Message& message) {
 }
 
 void NotifyDoneForwarder::OnTestFinishedInSecondaryWindow() {
-  // SHEZ: Remove test-only code
-  // WebKitTestController::Get()->TestFinishedInSecondaryWindow();
+  WebKitTestController::Get()->TestFinishedInSecondaryWindow();
 }
 
 }  // namespace content

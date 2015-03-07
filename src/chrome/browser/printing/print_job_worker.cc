@@ -10,16 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/values.h"
-
-// SHEZ: Remove dependency on g_browser_process
-// #include "chrome/browser/browser_process.h"
-
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
-
-// LEVI: Remove chrome resources.
-// #include "chrome/grit/generated_resources.h"
-
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -45,10 +39,10 @@ void HoldRefCallback(const scoped_refptr<printing::PrintJobWorkerOwner>& owner,
 class PrintingContextDelegate : public PrintingContext::Delegate {
  public:
   PrintingContextDelegate(int render_process_id, int render_view_id);
-  virtual ~PrintingContextDelegate();
+  ~PrintingContextDelegate() override;
 
-  virtual gfx::NativeView GetParentView() OVERRIDE;
-  virtual std::string GetAppLocale() OVERRIDE;
+  gfx::NativeView GetParentView() override;
+  std::string GetAppLocale() override;
 
  private:
   int render_process_id_;
@@ -75,7 +69,7 @@ gfx::NativeView PrintingContextDelegate::GetParentView() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
-  return "en-US";
+  return g_browser_process->GetApplicationLocale();
 }
 
 void NotificationCallback(PrintJobWorkerOwner* print_job,
@@ -231,9 +225,8 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
   base::string16 document_name =
       printing::SimplifyDocumentTitle(document_->name());
   if (document_name.empty()) {
-    // TODO(LEVI): Set this to what it should really be
     document_name = printing::SimplifyDocumentTitle(
-        L"Default Print Document Title");
+        l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
   }
   PrintingContext::Result result =
       printing_context_->NewDocument(document_name);

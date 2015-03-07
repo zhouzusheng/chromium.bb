@@ -41,7 +41,7 @@ class TaskSynchronizer;
 
 // HRTFDatabaseLoader will asynchronously load the default HRTFDatabase in a new thread.
 
-class PLATFORM_EXPORT HRTFDatabaseLoader FINAL : public GarbageCollectedFinalized<HRTFDatabaseLoader> {
+class PLATFORM_EXPORT HRTFDatabaseLoader final : public GarbageCollectedFinalized<HRTFDatabaseLoader> {
 public:
     // Lazily creates a HRTFDatabaseLoader (if not already created) for the given sample-rate
     // and starts loading asynchronously (when created the first time).

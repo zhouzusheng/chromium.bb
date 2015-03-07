@@ -214,6 +214,8 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'src/app_container_test.cc',
@@ -244,6 +246,8 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'tests/common/controller.cc',
@@ -259,6 +263,8 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'src/app_container_unittest.cc',

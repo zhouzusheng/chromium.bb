@@ -38,7 +38,6 @@ static void initialize_dec() {
 
   if (!init_done) {
     vp9_rtcd();
-    vp9_init_neighbors();
     vp9_init_intra_predictors();
     init_done = 1;
   }
@@ -69,6 +68,7 @@ VP9Decoder *vp9_decoder_create() {
   cm->current_video_frame = 0;
   pbi->ready_for_new_data = 1;
   cm->bit_depth = VPX_BITS_8;
+  cm->dequant_bit_depth = VPX_BITS_8;
 
   // vp9_init_dequantizer() is first called here. Add check in
   // frame_init_dequantizer() to avoid unnecessary calling of
@@ -232,6 +232,8 @@ int vp9_receive_compressed_data(VP9Decoder *pbi,
       cm->frame_refs[0].buf->corrupted = 1;
   }
 
+  pbi->ready_for_new_data = 0;
+
   // Check if the previous frame was a frame without any references to it.
   if (cm->new_fb_idx >= 0 && cm->frame_bufs[cm->new_fb_idx].ref_count == 0)
     cm->release_fb_cb(cm->cb_priv,
@@ -239,8 +241,19 @@ int vp9_receive_compressed_data(VP9Decoder *pbi,
   cm->new_fb_idx = get_free_fb(cm);
 
   if (setjmp(cm->error.jmp)) {
+    const VP9WorkerInterface *const winterface = vp9_get_worker_interface();
+    int i;
+
     pbi->need_resync = 1;
     cm->error.setjmp = 0;
+
+    // Synchronize all threads immediately as a subsequent decode call may
+    // cause a resize invalidating some allocations.
+    winterface->sync(&pbi->lf_worker);
+    for (i = 0; i < pbi->num_tile_workers; ++i) {
+      winterface->sync(&pbi->tile_workers[i]);
+    }
+
     vp9_clear_system_state();
 
     // We do not know if the missing frame(s) was supposed to update
@@ -279,8 +292,6 @@ int vp9_receive_compressed_data(VP9Decoder *pbi,
     cm->current_video_frame++;
   }
 
-  pbi->ready_for_new_data = 0;
-
   cm->error.setjmp = 0;
   return retcode;
 }
@@ -296,11 +307,11 @@ int vp9_get_raw_frame(VP9Decoder *pbi, YV12_BUFFER_CONFIG *sd,
   if (pbi->ready_for_new_data == 1)
     return ret;
 
+  pbi->ready_for_new_data = 1;
+
   /* no raw frame to show!!! */
   if (!cm->show_frame)
     return ret;
-
-  pbi->ready_for_new_data = 1;
 
 #if CONFIG_VP9_POSTPROC
   if (!cm->show_existing_frame) {

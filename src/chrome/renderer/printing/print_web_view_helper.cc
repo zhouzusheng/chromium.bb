@@ -19,10 +19,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
-
-// LEVI: Remove chrome resources.
-// #include "chrome/grit/browser_resources.h"
-
+#include "chrome/grit/browser_resources.h"
+#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
@@ -64,16 +62,15 @@ enum PrintPreviewHelperEvents {
 
 const double kMinDpi = 1.0;
 
+#if !defined(ENABLE_PRINT_PREVIEW)
+bool g_is_preview_enabled_ = false;
+#else
+bool g_is_preview_enabled_ = true;
+
 const char kPageLoadScriptFormat[] =
     "document.open(); document.write(%s); document.close();";
 
 const char kPageSetupScriptFormat[] = "setup(%s);";
-
-#if defined(ENABLE_FULL_PRINTING)
-bool g_is_preview_enabled_ = true;
-#else
-bool g_is_preview_enabled_ = false;
-#endif
 
 void ExecuteScript(blink::WebFrame* frame,
                    const char* script_format,
@@ -83,6 +80,7 @@ void ExecuteScript(blink::WebFrame* frame,
   std::string script = base::StringPrintf(script_format, json.c_str());
   frame->executeScript(blink::WebString(base::UTF8ToUTF16(script)));
 }
+#endif  // !defined(ENABLE_PRINT_PREVIEW)
 
 int GetDPI(const PrintMsg_Print_Params* print_params) {
 #if defined(OS_MACOSX)
@@ -445,6 +443,7 @@ blink::WebView* FrameReference::view() {
   return view_;
 }
 
+#if defined(ENABLE_PRINT_PREVIEW)
 // static - Not anonymous so that platform implementations can use it.
 void PrintWebViewHelper::PrintHeaderAndFooter(
     blink::WebCanvas* canvas,
@@ -472,10 +471,8 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   blink::WebLocalFrame* frame = blink::WebLocalFrame::create(NULL);
   web_view->setMainFrame(frame);
 
-  // LEVI: Remove chrome resources.
-  //base::StringValue html(ResourceBundle::GetSharedInstance().GetLocalizedString(
-  //    IDR_PRINT_PREVIEW_PAGE));
-  base::StringValue html("");
+  base::StringValue html(ResourceBundle::GetSharedInstance().GetLocalizedString(
+      IDR_PRINT_PREVIEW_PAGE));
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 
@@ -509,6 +506,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
 
   device->setDrawingArea(SkPDFDevice::kContent_DrawingArea);
 }
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 
 // static - Not anonymous so that platform implementations can use it.
 float PrintWebViewHelper::RenderPageContent(blink::WebFrame* frame,
@@ -832,6 +830,13 @@ void PrintWebViewHelper::PrintPage(blink::WebLocalFrame* frame,
                                    bool user_initiated) {
   DCHECK(frame);
 
+  // Allow Prerendering to cancel this print request if necessary.
+  if (prerender::PrerenderHelper::IsPrerendering(
+          render_view()->GetMainRenderFrame())) {
+    Send(new ChromeViewHostMsg_CancelPrerenderForPrinting(routing_id()));
+    return;
+  }
+
   if (!IsScriptInitiatedPrintAllowed(frame, user_initiated))
     return;
 
@@ -846,10 +851,10 @@ void PrintWebViewHelper::PrintPage(blink::WebLocalFrame* frame,
 bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintWebViewHelper, message)
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintPages, OnPrintPages)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintForSystemDialog, OnPrintForSystemDialog)
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
     IPC_MESSAGE_HANDLER(PrintMsg_InitiatePrintPreview, OnInitiatePrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintPreview, OnPrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintForPrintPreview, OnPrintForPrintPreview)
@@ -946,7 +951,7 @@ bool PrintWebViewHelper::GetPrintFrame(blink::WebLocalFrame** frame) {
   return true;
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 void PrintWebViewHelper::OnPrintPages() {
   blink::WebLocalFrame* frame;
   if (GetPrintFrame(&frame))
@@ -961,7 +966,7 @@ void PrintWebViewHelper::OnPrintForSystemDialog() {
   }
   Print(frame, print_preview_context_.source_node());
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void PrintWebViewHelper::GetPageSizeAndContentAreaFromPageLayout(
     const PageSizeMargins& page_layout_in_points,

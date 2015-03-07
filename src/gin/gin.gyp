@@ -101,10 +101,12 @@
       'target_name': 'gin_test',
       'type': 'static_library',
       'dependencies': [
+        '../testing/gtest.gyp:gtest',
         '../v8/tools/gyp/v8.gyp:v8',
         'gin',
       ],
       'export_dependent_settings': [
+        '../testing/gtest.gyp:gtest',
         'gin',
       ],
       'sources': [
@@ -124,6 +126,7 @@
       'target_name': 'gin_unittests',
       'type': 'executable',
       'dependencies': [
+        '../base/base.gyp:test_support_base',
         '../v8/tools/gyp/v8.gyp:v8',
         'gin_test',
       ],

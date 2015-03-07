@@ -48,6 +48,11 @@
             'mock_apple_keychain.h',
           ],
         }],
+        [ 'OS == "android"', {
+            'includes': [
+              '../build/android/cpufeatures.gypi',
+            ],
+        }],
         [ 'os_bsd==1', {
           'link_settings': {
             'libraries': [
@@ -172,6 +177,9 @@
         'crypto_test_support',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
+        '../base/base.gyp:test_support_base',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {

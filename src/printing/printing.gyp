@@ -209,6 +209,8 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:run_all_unittests',
+        '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -287,5 +289,33 @@
     },
   ],
   'conditions': [
+    ['OS == "android"', {
+      'targets': [
+        {
+          # GN: //printing:printing_jni_headers
+          'target_name': 'printing_jni_headers',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/printing/PrintingContext.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'printing',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          # GN: //printing:printing_java
+          'target_name': 'printing_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '../printing/android/java',
+          },
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'includes': [ '../build/java.gypi'  ],
+        }
+      ]
+    }],
   ]
 }

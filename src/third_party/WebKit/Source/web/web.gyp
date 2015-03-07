@@ -59,7 +59,7 @@
                 '../core/core.gyp:webcore',
                 '../modules/modules.gyp:modules',
                 '<(DEPTH)/skia/skia.gyp:skia',
-                '<(angle_path)/src/build_angle.gyp:translator',
+                '<(angle_path)/src/angle.gyp:translator',
                 '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
                 '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
@@ -85,6 +85,12 @@
                 ['component=="shared_library"', {
                     'dependencies': [
                         '../core/core.gyp:webcore_generated',
+                        '../core/core.gyp:webcore_testing',
+                        '../modules/modules.gyp:modules_testing',
+                        '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
+                        '<(DEPTH)/base/base.gyp:test_support_base',
+                        '<(DEPTH)/testing/gmock.gyp:gmock',
+                        '<(DEPTH)/testing/gtest.gyp:gtest',
                         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
                         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
                         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -113,10 +119,17 @@
                       ],
                     },
                     'sources': [
+                        # Compile Blink unittest files into blink_web.dll in component build mode
+                        '<@(bindings_unittest_files)',
+                        '<@(core_unittest_files)',
+                        '<@(modules_unittest_files)',
+                        # FIXME: the next line should not be needed. We prefer to run these unit tests outside blink_web.dll.
+                        '<@(platform_web_unittest_files)',
+                        '<@(web_unittest_files)',
                         'WebTestingSupport.cpp',
                     ],
                     'conditions': [
-                        ['OS=="win" or OS=="mac"', {
+                        ['use_openssl==0 and (OS=="win" or OS=="mac")', {
                             'dependencies': [
                                 '<(DEPTH)/third_party/nss/nss.gyp:*',
                             ],
@@ -202,11 +215,16 @@
                     'type': 'static_library',
                     'dependencies': [
                         '../config.gyp:config',
+                        '../core/core.gyp:webcore_generated',
+                        '../core/core.gyp:webcore_testing',
+                        '../modules/modules.gyp:modules_testing',
                         '../wtf/wtf.gyp:wtf',
                         '<(DEPTH)/skia/skia.gyp:skia',
+                        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                     ],
                     'include_dirs': [
                         '../../',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink',  # gen/blink
                     ],
                     'sources': [
                         'WebTestingSupport.cpp',
@@ -228,6 +246,7 @@
                 {
                     'target_name': 'copy_mesa',
                     'type': 'none',
+                    'dependencies': ['<(DEPTH)/third_party/mesa/mesa.gyp:osmesa'],
                     'copies': [{
                         'destination': '<(PRODUCT_DIR)/DumpRenderTree.app/Contents/MacOS/',
                         'files': ['<(PRODUCT_DIR)/osmesa.so'],

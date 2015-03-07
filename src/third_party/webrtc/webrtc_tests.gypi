@@ -14,6 +14,15 @@
         'base/base.gyp:rtc_base',
         'base/base_tests.gyp:rtc_base_tests_utils',
         'base/base_tests.gyp:rtc_base_tests',
+        'libjingle/xmllite/xmllite.gyp:rtc_xmllite',
+        'libjingle/xmpp/xmpp.gyp:rtc_xmpp',
+        'p2p/p2p.gyp:rtc_p2p',
+        'rtc_p2p_unittest',
+        'rtc_sound_tests',
+        'rtc_xmllite_unittest',
+        'rtc_xmpp_unittest',
+        'sound/sound.gyp:rtc_sound',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
     },
     {
@@ -43,11 +52,14 @@
         }],
       ],
       'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
         '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+        'test/test.gyp:test_main',
         'webrtc',
       ],
     },
@@ -68,11 +80,13 @@
         }],
       ],
       'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
         '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
         'webrtc',
       ],
     },
@@ -88,7 +102,9 @@
         'test/testsupport/metrics/video_metrics_unittest.cc',
       ],
       'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
         '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
         'test/metrics.gyp:metrics',
         'test/webrtc_test_common.gyp:webrtc_test_common',
@@ -114,8 +130,10 @@
         'video/rampup_tests.h',
       ],
       'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
         'modules/modules.gyp:neteq_test_support',  # Needed by neteq_performance_unittest.
         'modules/modules.gyp:rtp_rtcp',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/test.gyp:test_main',
         'webrtc',
@@ -151,6 +169,19 @@
     ['test_isolation_mode != "noop"', {
       'targets': [
         {
+          'target_name': 'rtc_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'rtc_unittests',
+          ],
+          'includes': [
+            'build/isolate.gypi',
+          ],
+          'sources': [
+            'rtc_unittests.isolate',
+          ],
+        },
+        {
           'target_name': 'video_engine_tests_run',
           'type': 'none',
           'dependencies': [
@@ -158,7 +189,6 @@
           ],
           'includes': [
             'build/isolate.gypi',
-            'video_engine_tests.isolate',
           ],
           'sources': [
             'video_engine_tests.isolate',
@@ -172,7 +202,6 @@
           ],
           'includes': [
             'build/isolate.gypi',
-            'webrtc_perf_tests.isolate',
           ],
           'sources': [
             'webrtc_perf_tests.isolate',

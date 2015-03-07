@@ -101,6 +101,7 @@
         'sandbox',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
+        '../testing/gtest.gyp:gtest',
       ],
       'include_dirs': [
         '..',

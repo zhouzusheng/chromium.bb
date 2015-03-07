@@ -12,19 +12,10 @@
 #include "base/path_service.h"
 #include "base/threading/thread.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
-#include "content/shell/browser/shell_url_request_context_getter.h"
 #include "content/shell/common/shell_switches.h"
-
-#include "base/prefs/json_pref_store.h"
-#include "base/prefs/pref_registry_simple.h"
-#include "base/prefs/pref_service_factory.h"
-#include "base/prefs/pref_service.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/user_prefs/user_prefs.h"
 
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
@@ -36,38 +27,32 @@
 
 namespace content {
 
-class ShellBrowserContext::ShellResourceContext : public ResourceContext {
- public:
-  ShellResourceContext() : getter_(NULL) {}
-  virtual ~ShellResourceContext() {}
+ShellBrowserContext::ShellResourceContext::ShellResourceContext()
+    : getter_(NULL) {
+}
 
-  // ResourceContext implementation:
-  virtual net::HostResolver* GetHostResolver() OVERRIDE {
-    CHECK(getter_);
-    return getter_->host_resolver();
-  }
-  virtual net::URLRequestContext* GetRequestContext() OVERRIDE {
-    CHECK(getter_);
-    return getter_->GetURLRequestContext();
-  }
+ShellBrowserContext::ShellResourceContext::~ShellResourceContext() {
+}
 
-  void set_url_request_context_getter(ShellURLRequestContextGetter* getter) {
-    getter_ = getter;
-  }
+net::HostResolver*
+ShellBrowserContext::ShellResourceContext::GetHostResolver() {
+  CHECK(getter_);
+  return getter_->host_resolver();
+}
 
- private:
-  ShellURLRequestContextGetter* getter_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShellResourceContext);
-};
+net::URLRequestContext*
+ShellBrowserContext::ShellResourceContext::GetRequestContext() {
+  CHECK(getter_);
+  return getter_->GetURLRequestContext();
+}
 
 ShellBrowserContext::ShellBrowserContext(bool off_the_record,
                                          net::NetLog* net_log)
-    : off_the_record_(off_the_record),
-      net_log_(net_log),
+    : resource_context_(new ShellResourceContext),
       ignore_certificate_errors_(false),
-      guest_manager_(NULL),
-      resource_context_(new ShellResourceContext) {
+      off_the_record_(off_the_record),
+      net_log_(net_log),
+      guest_manager_(NULL) {
   InitWhileIOAllowed();
 }
 
@@ -76,15 +61,12 @@ ShellBrowserContext::~ShellBrowserContext() {
     BrowserThread::DeleteSoon(
       BrowserThread::IO, FROM_HERE, resource_context_.release());
   }
-  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
 }
 
 void ShellBrowserContext::InitWhileIOAllowed() {
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kIgnoreCertificateErrors) ||
-      cmd_line->HasSwitch(switches::kDumpRenderTree)) {
+  if (cmd_line->HasSwitch(switches::kIgnoreCertificateErrors))
     ignore_certificate_errors_ = true;
-  }
   if (cmd_line->HasSwitch(switches::kContentShellDataPath)) {
     path_ = cmd_line->GetSwitchValuePath(switches::kContentShellDataPath);
     return;
@@ -111,19 +93,6 @@ void ShellBrowserContext::InitWhileIOAllowed() {
 
   if (!base::PathExists(path_))
     base::CreateDirectory(path_);
-  base::FilePath pref_file = path_.AppendASCII("prefs.json");
-  pref_registry_ = new PrefRegistrySimple();
-  pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
-  pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
-  pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
-  pref_registry_->RegisterBooleanPref("browser.enable_autospellcorrect", true);
-  pref_registry_->RegisterBooleanPref("printing.enabled", true);
-  base::PrefServiceFactory factory;
-  factory.SetUserPrefsFile(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
-  pref_service_ = factory.Create(pref_registry_.get());
-  user_prefs::UserPrefs::Set(this, pref_service_.get());
-
-  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this);
 }
 
 base::FilePath ShellBrowserContext::GetPath() const {
@@ -135,16 +104,10 @@ bool ShellBrowserContext::IsOffTheRecord() const {
 }
 
 DownloadManagerDelegate* ShellBrowserContext::GetDownloadManagerDelegate()  {
-  DownloadManager* manager = BrowserContext::GetDownloadManager(this);
-
   if (!download_manager_delegate_.get()) {
     download_manager_delegate_.reset(new ShellDownloadManagerDelegate());
-    download_manager_delegate_->SetDownloadManager(manager);
-    CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-    if (cmd_line->HasSwitch(switches::kDumpRenderTree)) {
-      download_manager_delegate_->SetDownloadBehaviorForTesting(
-          path_.Append(FILE_PATH_LITERAL("downloads")));
-    }
+    download_manager_delegate_->SetDownloadManager(
+        BrowserContext::GetDownloadManager(this));
   }
 
   return download_manager_delegate_.get();
@@ -154,11 +117,11 @@ net::URLRequestContextGetter* ShellBrowserContext::GetRequestContext()  {
   return GetDefaultStoragePartition(this)->GetURLRequestContext();
 }
 
-net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
+ShellURLRequestContextGetter*
+ShellBrowserContext::CreateURLRequestContextGetter(
     ProtocolHandlerMap* protocol_handlers,
     URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(!url_request_getter_.get());
-  url_request_getter_ = new ShellURLRequestContextGetter(
+  return new ShellURLRequestContextGetter(
       ignore_certificate_errors_,
       GetPath(),
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO),
@@ -166,6 +129,14 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
       protocol_handlers,
       request_interceptors.Pass(),
       net_log_);
+}
+
+net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
+    ProtocolHandlerMap* protocol_handlers,
+    URLRequestInterceptorScopedVector request_interceptors) {
+  DCHECK(!url_request_getter_.get());
+  url_request_getter_ = CreateURLRequestContextGetter(
+      protocol_handlers, request_interceptors.Pass());
   resource_context_->set_url_request_context_getter(url_request_getter_.get());
   return url_request_getter_.get();
 }

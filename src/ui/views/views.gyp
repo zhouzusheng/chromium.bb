@@ -207,6 +207,11 @@
       'drag_utils.cc',
       'drag_utils.h',
       'drag_utils_aura.cc',
+      'event_monitor.h',
+      'event_monitor_aura.cc',
+      'event_monitor_aura.h',
+      'event_monitor_mac.h',
+      'event_monitor_mac.mm',
       'focus/external_focus_tracker.cc',
       'focus/external_focus_tracker.h',
       'focus/focus_manager.cc',
@@ -253,7 +258,7 @@
       'metrics_mac.cc',
       'mouse_constants.h',
       'mouse_watcher.h',
-      'mouse_watcher_aura.cc',
+      'mouse_watcher.cc',
       'native_cursor.h',
       'native_cursor_aura.cc',
       'native_cursor_mac.mm',
@@ -529,6 +534,7 @@
       'controls/textfield/textfield_unittest.cc',
       'controls/textfield/textfield_model_unittest.cc',
       'controls/tree/tree_view_unittest.cc',
+      'event_monitor_mac_unittest.mm',
       'focus/focus_manager_unittest.cc',
       'focus/focus_traversal_unittest.cc',
       'ime/input_method_bridge_unittest.cc',
@@ -660,6 +666,7 @@
           'dependencies': [
             '../../build/linux/system.gyp:x11',
             '../../build/linux/system.gyp:xrandr',
+            '../events/devices/events_devices.gyp:events_devices',
             '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
@@ -688,5 +695,200 @@
         }],
       ],
     }, # target_name: views
-  ],
+    {
+      # GN version: //ui/views:test_support
+      'target_name': 'views_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../ipc/ipc.gyp:test_support_ipc',
+        '../../skia/skia.gyp:skia',
+        '../../testing/gtest.gyp:gtest',
+        '../base/ui_base.gyp:ui_base',
+        '../compositor/compositor.gyp:compositor',
+        '../compositor/compositor.gyp:compositor_test_support',
+        '../events/events.gyp:events',
+        '../events/events.gyp:events_test_support',
+        '../events/platform/events_platform.gyp:events_platform',
+        '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'views',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        '<@(views_test_support_sources)',
+      ],
+      'conditions': [
+        ['chromeos==1', {
+          'sources!': [
+            'test/ui_controls_factory_desktop_aurax11.cc',
+            'test/ui_controls_factory_desktop_aurax11.h',
+          ],
+        }],
+        ['use_aura==1', {
+          'sources': [ '<@(views_test_support_aura_sources)' ],
+          'dependencies': [
+            '../aura/aura.gyp:aura',
+            '../aura/aura.gyp:aura_test_support',
+            '../wm/wm.gyp:wm',
+          ],
+        }],
+      ],
+    },  # target_name: views_test_support
+    {
+      # GN version: //ui/views:views_unittests
+      'target_name': 'views_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:base_i18n',
+        '../../base/base.gyp:test_support_base',
+        '../../skia/skia.gyp:skia',
+        '../../testing/gtest.gyp:gtest',
+        '../../third_party/icu/icu.gyp:icui18n',
+        '../../third_party/icu/icu.gyp:icuuc',
+        '../../url/url.gyp:url_lib',
+        '../accessibility/accessibility.gyp:accessibility',
+        '../base/ui_base.gyp:ui_base',
+        '../base/ui_base.gyp:ui_base_test_support',
+        '../compositor/compositor.gyp:compositor',
+        '../events/events.gyp:events',
+        '../events/events.gyp:events_base',
+        '../events/events.gyp:events_test_support',
+        '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
+        '../resources/ui_resources.gyp:ui_resources',
+        '../resources/ui_resources.gyp:ui_test_pak',
+        '../strings/ui_strings.gyp:ui_strings',
+        'views',
+        'views_test_support',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        '<@(views_unittests_sources)',
+      ],
+      'conditions': [
+        ['chromeos==1', {
+          'sources!': [
+            'ime/input_method_bridge_unittest.cc',
+          ],
+        }],
+        ['OS=="win"', {
+          'dependencies': [
+            '../../third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
+          ],
+          'link_settings': {
+            'libraries': [
+              '-limm32.lib',
+              '-loleacc.lib',
+              '-lcomctl32.lib',
+            ]
+          },
+          'include_dirs': [
+            '../third_party/wtl/include',
+          ],
+          'msvs_settings': {
+            'VCManifestTool': {
+              'AdditionalManifestFiles': [
+                '$(ProjectDir)\\test\\views_unittest.manifest',
+              ],
+            },
+          },
+        }],
+        ['OS=="win" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '../../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
+        ['OS=="linux" and use_allocator!="none"', {
+           # See http://crbug.com/162998#c4 for why this is needed.
+          'dependencies': [
+            '../../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../../build/linux/system.gyp:x11',
+            '../../build/linux/system.gyp:xext',
+            '../events/devices/events_devices.gyp:events_devices',
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
+          ],
+        }],
+        ['use_ozone==1', {
+          'sources!': [
+            'corewm/capture_controller_unittest.cc',
+          ],
+        }],
+        ['use_aura==1', {
+          'sources': [ '<@(views_unittests_aura_sources)' ],
+          'dependencies': [
+            '../aura/aura.gyp:aura',
+            '../aura/aura.gyp:aura_test_support',
+            '../wm/wm.gyp:wm',
+          ],
+          'conditions': [
+            ['chromeos == 0', {
+              'sources': [ '<@(views_unittests_desktop_aura_sources)' ],
+            }],
+          ]
+        }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
+          ],
+        }],
+        ['OS=="mac"', {
+          # views_unittests not yet compiling on Mac. http://crbug.com/378134
+          'sources!': [
+            'bubble/bubble_window_targeter_unittest.cc',
+            'controls/button/custom_button_unittest.cc',
+            'controls/native/native_view_host_unittest.cc',
+            'controls/menu/menu_controller_unittest.cc',
+            'ime/input_method_bridge_unittest.cc',
+            'focus/focus_manager_unittest.cc',
+            'widget/window_reorderer_unittest.cc',
+          ]
+        }],
+      ],
+    },  # target_name: views_unittests
+  ],  # targets
+  'conditions': [
+    ['OS=="mac"', {
+      'targets': [
+        {
+          # GN version: //ui/views:macviews_interactive_ui_tests
+          'target_name': 'macviews_interactive_ui_tests',
+          'type': 'executable',
+          'dependencies': [
+            '../../base/base.gyp:base',
+            '../../base/base.gyp:test_support_base',
+            '../../skia/skia.gyp:skia',
+            '../../testing/gtest.gyp:gtest',
+            '../compositor/compositor.gyp:compositor_test_support',
+            '../resources/ui_resources.gyp:ui_resources',
+            '../resources/ui_resources.gyp:ui_test_pak',
+            '../strings/ui_strings.gyp:ui_strings',
+            'views',
+            'views_test_support',
+          ],
+          'sources': [
+            'run_all_unittests.cc',
+            'widget/native_widget_mac_interactive_uitest.mm',
+          ],
+          'conditions': [
+            ['use_aura == 1', {
+              'dependencies': [
+                '../aura/aura.gyp:aura',
+                '../wm/wm.gyp:wm',
+              ],
+            }],
+          ],
+        },  # target_name: macviews_interactive_ui_tests
+      ],  # targets
+    }],
+  ],  # conditions
 }

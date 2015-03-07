@@ -9,8 +9,11 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job_manager.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/printing/print_view_manager_observer.h"
+#include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -32,8 +35,6 @@ static base::LazyInstance<ScriptedPrintPreviewClosureMap>
 
 namespace printing {
 
-extern PrintJobManager* g_print_job_manager;
-
 PrintViewManager::PrintViewManager(content::WebContents* web_contents)
     : PrintViewManagerBase(web_contents),
       observer_(NULL),
@@ -45,11 +46,30 @@ PrintViewManager::~PrintViewManager() {
   DCHECK_EQ(NOT_PREVIEWING, print_preview_state_);
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 bool PrintViewManager::PrintForSystemDialogNow() {
   return PrintNowInternal(new PrintMsg_PrintForSystemDialog(routing_id()));
 }
-#endif  // !DISABLE_BASIC_PRINTING
+
+bool PrintViewManager::BasicPrint() {
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller)
+    return false;
+  content::WebContents* print_preview_dialog =
+      dialog_controller->GetPrintPreviewForContents(web_contents());
+  if (print_preview_dialog) {
+    if (!print_preview_dialog->GetWebUI())
+      return false;
+    PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
+        print_preview_dialog->GetWebUI()->GetController());
+    print_preview_ui->OnShowSystemDialog();
+    return true;
+  } else {
+    return PrintNow();
+  }
+}
+#endif  // ENABLE_BASIC_PRINTING
 bool PrintViewManager::PrintPreviewNow(bool selection_only) {
   // Users can send print commands all they want and it is beyond
   // PrintViewManager's control. Just ignore the extra commands.
@@ -124,13 +144,12 @@ void PrintViewManager::OnSetupScriptedPrintPreview(IPC::Message* reply_msg) {
     return;
   }
 
-  // LEVI: comment-out print preview UI
-  // PrintPreviewDialogController* dialog_controller =
-  //     PrintPreviewDialogController::GetInstance();
-  // if (!dialog_controller) {
-  //   Send(reply_msg);
-  //   return;
-  // }
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller) {
+    Send(reply_msg);
+    return;
+  }
 
   print_preview_state_ = SCRIPTED_PREVIEW;
   base::Closure callback =
@@ -142,21 +161,17 @@ void PrintViewManager::OnSetupScriptedPrintPreview(IPC::Message* reply_msg) {
 }
 
 void PrintViewManager::OnShowScriptedPrintPreview(bool source_is_modifiable) {
-  // LEVI: comment-out print preview UI
-  // PrintPreviewDialogController* dialog_controller =
-  //     PrintPreviewDialogController::GetInstance();
-  // if (!dialog_controller) {
-  //   PrintPreviewDone();
-  //   return;
-  // }
-  // dialog_controller->PrintPreview(web_contents());
-  // PrintHostMsg_RequestPrintPreview_Params params;
-  // params.is_modifiable = source_is_modifiable;
-  // PrintPreviewUI::SetInitialParams(
-  //     dialog_controller->GetPrintPreviewForContents(web_contents()), params);
-
-  // LEVI: pretend we are done
-  PrintPreviewDone();
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller) {
+    PrintPreviewDone();
+    return;
+  }
+  dialog_controller->PrintPreview(web_contents());
+  PrintHostMsg_RequestPrintPreview_Params params;
+  params.is_modifiable = source_is_modifiable;
+  PrintPreviewUI::SetInitialParams(
+      dialog_controller->GetPrintPreviewForContents(web_contents()), params);
 }
 
 void PrintViewManager::OnScriptedPrintPreviewReply(IPC::Message* reply_msg) {

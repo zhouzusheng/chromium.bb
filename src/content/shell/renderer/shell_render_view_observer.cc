@@ -25,13 +25,10 @@ ShellRenderViewObserver::~ShellRenderViewObserver() {
 
 void ShellRenderViewObserver::DidClearWindowObject(
     blink::WebLocalFrame* frame) {
-  // SHEZ: Remove test code.
-#if 0
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kExposeInternalsForTesting)) {
     blink::WebTestingSupport::injectInternalsObject(frame);
   }
-#endif
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kExposeIpcEcho)) {

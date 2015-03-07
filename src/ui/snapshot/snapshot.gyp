@@ -29,8 +29,6 @@
         'snapshot_export.h',
         'snapshot_ios.mm',
         'snapshot_mac.mm',
-        'snapshot_win.cc',
-        'snapshot_win.h',
       ],
       'include_dirs': [
         '..',
@@ -62,6 +60,8 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
+        '../../base/base.gyp:test_support_base',
+        '../../testing/gtest.gyp:gtest',
         '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
@@ -75,6 +75,8 @@
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
+            '../../base/base.gyp:test_support_base',
+            '../aura/aura.gyp:aura_test_support',
             '../compositor/compositor.gyp:compositor',
             '../compositor/compositor.gyp:compositor_test_support',
             '../wm/wm.gyp:wm',
@@ -88,25 +90,5 @@
         }],
       ],
     },
-  ],
-  'conditions': [
-    ['OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'snapshot_test_support',
-          'type': 'static_library',
-          'sources': [
-            'test/snapshot_desktop.h',
-            'test/snapshot_desktop_win.cc',
-          ],
-          'dependencies': [
-            'snapshot',
-          ],
-          'include_dirs': [
-            '../..',
-          ],
-        },
-      ],
-    }],
   ],
 }

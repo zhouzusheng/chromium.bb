@@ -142,6 +142,7 @@
     ['build_ffmpegsumo != 0', {
       'includes': [
         'ffmpeg_generated.gypi',
+        '../../build/util/version.gypi',
       ],
       'variables': {
         # Path to platform configuration files.
@@ -149,16 +150,45 @@
       },
       'targets': [
         {
+          'target_name': 'ffmpegsumo_resources',
+          'type': 'none',
+          'conditions': [
+            ['branding == "Chrome"', {
+              'variables': {
+                 'branding_path': '../../chrome/app/theme/google_chrome/BRANDING',
+              },
+            }, { # else branding!="Chrome"
+              'variables': {
+                 'branding_path': '../../chrome/app/theme/chromium/BRANDING',
+              },
+            }],
+          ],
+          'variables': {
+            'output_dir': 'ffmpegsumo',
+            'template_input_path': '../../chrome/app/chrome_version.rc.version',
+          },
+          'sources': [
+            'ffmpegsumo.ver',
+          ],
+          'includes': [
+            '../../chrome/version_resource_rules.gypi',
+          ],
+        },
+        {
           'target_name': 'ffmpegsumo',
           'type': 'loadable_module',
           'sources': [
             '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
+            '<(SHARED_INTERMEDIATE_DIR)/ffmpegsumo/ffmpegsumo_version.rc',
           ],
           'include_dirs': [
             '<(platform_config_root)',
             '.',
+          ],
+          'dependencies': [
+            'ffmpegsumo_resources',
           ],
           'defines': [
             'HAVE_AV_CONFIG_H',
@@ -428,10 +458,6 @@
   ],  # conditions
   'targets': [
     {
-      'variables': {
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-      },
       'target_name': 'ffmpeg',
       'sources': [
         # Files needed for stub generation rules.
@@ -464,14 +490,8 @@
             # Adds C99 types for Visual C++.
             'chromium/include/win/inttypes.h',
           ],
-          # SHEZ: Changed upstream code here to fix the dependency to be
-          #       conditional on the build_ffmpegsumo flag.
-          'conditions': [
-            ['build_ffmpegsumo != 0', {
-              'dependencies': [
-                'ffmpegsumo',
-              ],
-            }],
+          'dependencies': [
+            'ffmpegsumo',
           ],
           'direct_dependent_settings': {
             'include_dirs': [

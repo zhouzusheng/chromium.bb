@@ -464,7 +464,7 @@ def ConvertToMSBuildSettings(msvs_settings, stderr=sys.stderr):
                                      'while converting to MSBuild.' %
                                      (msvs_tool_name, msvs_setting)),
                                     stderr)
-    elif msvs_tool_name != 'MASM':  # TODO(shez): Add MASM support?
+    else:
       print >> stderr, ('Warning: unrecognized tool %s while converting to '
                         'MSBuild.' % msvs_tool_name)
   return msbuild_settings

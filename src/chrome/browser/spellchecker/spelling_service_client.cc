@@ -80,8 +80,7 @@ bool SpellingServiceClient::RequestTextCheck(
       "\"key\":%s"
       "}"
       "}";
-  // SHEZ: remove dependency on google_apis
-  std::string api_key = ""; // base::GetQuotedJSONString(google_apis::GetAPIKey());
+  std::string api_key = base::GetQuotedJSONString(google_apis::GetAPIKey());
   std::string request = base::StringPrintf(
       kSpellingRequest,
       type,

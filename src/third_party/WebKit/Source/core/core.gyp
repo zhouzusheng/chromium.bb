@@ -200,6 +200,7 @@
         # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
         '<@(bindings_core_v8_generated_aggregate_files)',
+        '<@(bindings_core_v8_generated_union_type_files)',
 
         # Additional .cpp files for HashTools.h
         '<(blink_core_output_dir)/CSSPropertyNames.cpp',
@@ -238,8 +239,8 @@
         # Generated from MediaTypeNames.in
         '<(blink_core_output_dir)/MediaTypeNames.cpp',
 
-        # Generated from CSSTokenizer-in.cpp
-        '<(blink_core_output_dir)/CSSTokenizer.cpp',
+        # Generated from BisonCSSTokenizer-in.cpp
+        '<(blink_core_output_dir)/BisonCSSTokenizer.cpp',
 
         # Generated from BisonCSSParser-in.cpp
         '<(blink_core_output_dir)/BisonCSSParser.cpp',
@@ -318,7 +319,7 @@
         '../platform/blink_platform.gyp:blink_platform',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(angle_path)/src/build_angle.gyp:translator',
+        '<(angle_path)/src/angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -337,7 +338,7 @@
         '../config.gyp:config',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(angle_path)/src/build_angle.gyp:translator',
+        '<(angle_path)/src/angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -620,9 +621,9 @@
         ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
       ],
       'conditions': [
-        # Shard this taret into parts to work around linker limitations.
+        # Shard this target into parts to work around linker limitations.
         # on link time code generation builds.
-        ['OS=="win" and buildtype=="Official"', {
+        ['OS=="win" and (buildtype=="Official" or (fastbuild==0 and win_z7==1))', {
           'msvs_shard': 19,
         }],
         ['OS != "linux"', {
@@ -732,6 +733,63 @@
             ]
           },
         }],
+      ],
+    },
+    {
+      # GN version: //third_party/WebKit/Source/core:testing
+      'target_name': 'webcore_testing',
+      'type': 'static_library',
+      'dependencies': [
+        '../config.gyp:config',
+        'webcore',
+        'webcore_generated',
+      ],
+      'defines': [
+        'BLINK_IMPLEMENTATION=1',
+        'INSIDE_BLINK',
+      ],
+      'include_dirs': [
+        '<(bindings_core_v8_dir)',  # FIXME: Remove once http://crbug.com/236119 is fixed.
+        'testing',
+        'testing/v8',
+      ],
+      'sources': [
+        # Note: file list duplicated in GN build.
+        '<@(generated_core_testing_dictionary_files)',
+        '<@(webcore_testing_files)',
+        '<(bindings_core_v8_output_dir)/V8DictionaryTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8DictionaryTest.h',
+        '<(bindings_core_v8_output_dir)/V8GarbageCollectedScriptWrappable.cpp',
+        '<(bindings_core_v8_output_dir)/V8GarbageCollectedScriptWrappable.h',
+        '<(bindings_core_v8_output_dir)/V8GCObservation.cpp',
+        '<(bindings_core_v8_output_dir)/V8GCObservation.h',
+        '<(bindings_core_v8_output_dir)/V8PrivateScriptTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8PrivateScriptTest.h',
+        '<(bindings_core_v8_output_dir)/V8TypeConversions.cpp',
+        '<(bindings_core_v8_output_dir)/V8TypeConversions.h',
+        '<(bindings_core_v8_output_dir)/V8UnionTypesTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8UnionTypesTest.h',
+        '<(bindings_core_v8_output_dir)/V8Internals.cpp',
+        '<(bindings_core_v8_output_dir)/V8Internals.h',
+        '<(bindings_core_v8_output_dir)/V8InternalProfilers.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalProfilers.h',
+        '<(bindings_core_v8_output_dir)/V8InternalSettings.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalSettings.h',
+        '<(bindings_core_v8_output_dir)/V8InternalSettingsGenerated.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalSettingsGenerated.h',
+        '<(bindings_core_v8_output_dir)/V8InternalRuntimeFlags.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalRuntimeFlags.h',
+        '<(bindings_core_v8_output_dir)/V8LayerRect.cpp',
+        '<(bindings_core_v8_output_dir)/V8LayerRect.h',
+        '<(bindings_core_v8_output_dir)/V8LayerRectList.cpp',
+        '<(bindings_core_v8_output_dir)/V8LayerRectList.h',
+        '<(bindings_core_v8_output_dir)/V8RefCountedScriptWrappable.cpp',
+        '<(bindings_core_v8_output_dir)/V8RefCountedScriptWrappable.h',
+        '<(bindings_core_v8_output_dir)/V8InternalDictionary.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalDictionary.h',
+      ],
+      'sources/': [
+        ['exclude', 'testing/js'],
       ],
     },
   ],  # targets

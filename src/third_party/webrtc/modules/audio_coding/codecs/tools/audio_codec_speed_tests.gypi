@@ -15,6 +15,7 @@
       'audio_processing',
       'iSACFix',
       'webrtc_opus',
+      '<(DEPTH)/testing/gtest.gyp:gtest',
       '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       '<(webrtc_root)/test/test.gyp:test_support_main',
     ],
@@ -54,7 +55,6 @@
           ],
           'includes': [
             '../../../../build/isolate.gypi',
-            'audio_codec_speed_tests.isolate',
           ],
           'sources': [
             'audio_codec_speed_tests.isolate',

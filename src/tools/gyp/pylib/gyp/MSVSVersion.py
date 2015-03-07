@@ -154,8 +154,14 @@ def _RegistryQuery(key, value=None):
   Return:
     stdout from reg.exe, or None for failure.
   """
-  # SHEZ: Modified upstream code here: don't bother checking sysnative
-  text = _RegistryQueryBase('System32', key, value)
+  text = None
+  try:
+    text = _RegistryQueryBase('Sysnative', key, value)
+  except OSError, e:
+    if e.errno == errno.ENOENT:
+      text = _RegistryQueryBase('System32', key, value)
+    else:
+      raise
   return text
 
 

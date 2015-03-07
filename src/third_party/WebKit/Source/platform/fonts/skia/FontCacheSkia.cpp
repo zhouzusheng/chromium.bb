@@ -36,17 +36,13 @@
 #include "SkFontMgr.h"
 #include "SkStream.h"
 #include "SkTypeface.h"
-#include "platform/NotImplemented.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFaceCreationParams.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "public/platform/Platform.h"
-
-// SHEZ: Remove linux-specific header
-// #include "public/platform/linux/WebSandboxSupport.h"
-
+#include "public/platform/linux/WebSandboxSupport.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/CString.h"

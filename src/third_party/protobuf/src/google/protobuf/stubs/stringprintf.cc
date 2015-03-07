@@ -37,9 +37,7 @@
 #include <stdio.h> // MSVC requires this for _vsnprintf
 #include <vector>
 #include <google/protobuf/stubs/common.h>
-
-// SHEZ: Remove test-specific code.
-// #include <google/protobuf/testing/googletest.h>
+#include <google/protobuf/testing/googletest.h>
 
 namespace google {
 namespace protobuf {

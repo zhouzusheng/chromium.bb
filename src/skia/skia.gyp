@@ -8,7 +8,7 @@
     # However, in the static mode, we need to build skia as multiple targets
     # in order to support the use case where a platform (e.g. Android) may
     # already have a copy of skia as a system library.
-    ['component=="static_library" and use_system_skia==0', {
+    ['component=="static_library"', {
       'targets': [
         {
           'target_name': 'skia_library',
@@ -16,17 +16,11 @@
           'includes': [
             'skia_library.gypi',
             'skia_common.gypi',
-          ],
-        },
-      ],
-    }],
-    ['component=="static_library" and use_system_skia==1', {
-      'targets': [
-        {
-          'target_name': 'skia_library',
-          'type': 'none',
-          'includes': [
-            'skia_system.gypi',
+            '../build/android/increase_size_for_speed.gypi',
+            # Disable LTO due to compiler error
+            # in mems_in_disjoint_alias_sets_p, at alias.c:393
+            # crbug.com/422255
+            '../build/android/disable_lto.gypi',
           ],
         },
       ],
@@ -51,6 +45,7 @@
           'includes': [
             'skia_chrome.gypi',
             'skia_common.gypi',
+            '../build/android/increase_size_for_speed.gypi',
           ],
         },
       ],
@@ -64,6 +59,7 @@
             'skia_library.gypi',
             'skia_chrome.gypi',
             'skia_common.gypi',
+            '../build/android/increase_size_for_speed.gypi',
           ],
           'defines': [
             'SKIA_DLL',
@@ -146,6 +142,9 @@
       ],
       'sources': [
         'tools/filter_fuzz_stub/filter_fuzz_stub.cc',
+      ],
+      'includes': [
+        '../build/android/increase_size_for_speed.gypi',
       ],
     },
   ],

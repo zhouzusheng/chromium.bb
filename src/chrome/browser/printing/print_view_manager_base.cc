@@ -9,17 +9,16 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/printer_query.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
-#include "components/user_prefs/user_prefs.h"
-
-// LEVI: Remove chrome resources.
-// #include "chrome/grit/generated_resources.h"
-
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -30,6 +29,10 @@
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(ENABLE_PRINT_PREVIEW)
+#include "chrome/browser/printing/print_error_dialog.h"
+#endif
+
 using base::TimeDelta;
 using content::BrowserThread;
 
@@ -39,22 +42,22 @@ namespace {
 
 }  // namespace
 
-PrintJobManager* g_print_job_manager = NULL;
-
 PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       number_pages_(0),
       printing_succeeded_(false),
       inside_inner_message_loop_(false),
       cookie_(0),
-      queue_(g_print_job_manager->queue()) {
+      queue_(g_browser_process->print_job_manager()->queue()) {
   DCHECK(queue_.get());
 #if !defined(OS_MACOSX)
   expecting_first_page_ = true;
 #endif  // OS_MACOSX
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
   printing_enabled_.Init(
       prefs::kPrintingEnabled,
-      user_prefs::UserPrefs::Get(web_contents->GetBrowserContext()),
+      profile->GetPrefs(),
       base::Bind(&PrintViewManagerBase::UpdateScriptedPrintingBlocked,
                  base::Unretained(this)));
 }
@@ -64,11 +67,11 @@ PrintViewManagerBase::~PrintViewManagerBase() {
   DisconnectFromCurrentPrintJob();
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 bool PrintViewManagerBase::PrintNow() {
   return PrintNowInternal(new PrintMsg_PrintPages(routing_id()));
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void PrintViewManagerBase::UpdateScriptedPrintingBlocked() {
   Send(new PrintMsg_SetScriptedPrintingBlocked(
@@ -99,7 +102,7 @@ void PrintViewManagerBase::RenderProcessGone(base::TerminationStatus status) {
 base::string16 PrintViewManagerBase::RenderSourceName() {
   base::string16 name(web_contents()->GetTitle());
   if (name.empty())
-    name = L"Default Print Document Title";  // TODO(LEVI): Set this to what it really should be
+    name = l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE);
   return name;
 }
 
@@ -155,7 +158,7 @@ void PrintViewManagerBase::OnDidPrintPage(
 #if !defined(OS_WIN)
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
-                    metafile.PassAs<MetafilePlayer>(),
+                    metafile.Pass(),
                     params.page_size,
                     params.content_area);
 
@@ -179,8 +182,8 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
     return;
   }
 
-#if defined(ENABLE_FULL_PRINTING)
-  // TODO(LEVI): Notify user in some way
+#if defined(ENABLE_PRINT_PREVIEW)
+  chrome::ShowPrintErrorDialog();
 #endif
 
   ReleasePrinterQuery();
@@ -192,6 +195,11 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
 }
 
 void PrintViewManagerBase::OnShowInvalidPrinterSettingsError() {
+  chrome::ShowMessageBox(NULL,
+                         base::string16(),
+                         l10n_util::GetStringUTF16(
+                             IDS_PRINT_INVALID_PRINTER_SETTINGS),
+                         chrome::MESSAGE_BOX_TYPE_WARNING);
 }
 
 void PrintViewManagerBase::DidStartLoading(
@@ -497,6 +505,12 @@ void PrintViewManagerBase::ReleasePrinterQuery() {
 
   int cookie = cookie_;
   cookie_ = 0;
+
+  printing::PrintJobManager* print_job_manager =
+      g_browser_process->print_job_manager();
+  // May be NULL in tests.
+  if (!print_job_manager)
+    return;
 
   scoped_refptr<printing::PrinterQuery> printer_query;
   printer_query = queue_->PopPrinterQuery(cookie);

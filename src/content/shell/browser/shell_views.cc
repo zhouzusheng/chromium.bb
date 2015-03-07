@@ -30,15 +30,7 @@
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/grid_layout.h"
-
-// SHEZ: Remove test-only code
-// #include "ui/views/test/desktop_test_views_delegate.h"
-
-// SHEZ: Added the following to fill-in code from DesktopTestViewsDelegate
-#include "ui/views/views_delegate.h"
-#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
-#include "ui/views/widget/native_widget_aura.h"
-
+#include "ui/views/test/desktop_test_views_delegate.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -59,77 +51,16 @@
 namespace content {
 
 namespace {
-
 // ViewDelegate implementation for aura content shell
-class ShellViewsDelegateAura : public views::ViewsDelegate {
+class ShellViewsDelegateAura : public views::DesktopTestViewsDelegate {
  public:
   ShellViewsDelegateAura() : use_transparent_windows_(false) {
-    // SHEZ: Copied from TestViewsDelegate
-    DCHECK(!ViewsDelegate::views_delegate);
-    ViewsDelegate::views_delegate = this;
   }
 
-  virtual ~ShellViewsDelegateAura() {
-    // SHEZ: Copied from TestViewsDelegate
-    ViewsDelegate::views_delegate = NULL;
-  }
+  ~ShellViewsDelegateAura() override {}
 
   void SetUseTransparentWindows(bool transparent) {
     use_transparent_windows_ = transparent;
-  }
-
-  // SHEZ: Upstream code gets these overrides from the TestViewsDelegate
-  // SHEZ: implementation.  Note that TestViewsDelegate has been
-  // SHEZ: minimized away.
-  virtual void SaveWindowPlacement(const views::Widget* widget,
-      const std::string& window_name,
-      const gfx::Rect& bounds,
-      ui::WindowShowState show_state) OVERRIDE {}
-  virtual bool GetSavedWindowPlacement(
-      const views::Widget* widget,
-      const std::string& window_name,
-      gfx::Rect* bounds,
-      ui::WindowShowState* show_state) const OVERRIDE { return false; }
-  virtual void NotifyAccessibilityEvent(
-      views::View* view,
-      ui::AXEvent event_type) OVERRIDE{}
-  virtual void NotifyMenuItemFocused(const base::string16& menu_name,
-      const base::string16& menu_item_name,
-      int item_index,
-      int item_count,
-      bool has_submenu) OVERRIDE {}
-#if defined(OS_WIN)
-  virtual HICON GetDefaultWindowIcon() const OVERRIDE { return NULL; }
-  virtual bool IsWindowInMetro(gfx::NativeWindow window) const OVERRIDE { return false; }
-#endif
-  virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
-      views::Widget* widget) OVERRIDE { return NULL; }
-  virtual void AddRef() OVERRIDE { }
-  virtual void ReleaseRef() OVERRIDE { }
-  virtual content::WebContents* CreateWebContents(
-      content::BrowserContext* browser_context,
-      content::SiteInstance* site_instance) OVERRIDE { return NULL; }
-  virtual base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() OVERRIDE { return base::TimeDelta(); }
-
-  // SHEZ: Upstream code gets these overrides from the DesktopTestViewsDelegate
-  // SHEZ: implementation.  Note that DesktopTestViewsDelegate has been
-  // SHEZ: minimized away.
-  virtual void OnBeforeWidgetInit(views::Widget::InitParams* params,
-      views::internal::NativeWidgetDelegate* delegate) OVERRIDE
-  {
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
-    // If we already have a native_widget, we don't have to try to come
-    // up with one.
-    if (params->native_widget)
-      return;
-
-    if (params->parent && params->type != views::Widget::InitParams::TYPE_MENU) {
-      params->native_widget = new views::NativeWidgetAura(delegate);
-    }
-    else if (!params->parent && !params->context) {
-      params->native_widget = new views::DesktopNativeWidgetAura(delegate);
-    }
-#endif
   }
 
  private:
@@ -151,16 +82,13 @@ class ContextMenuModel : public ui::SimpleMenuModel,
   }
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override { return false; }
+  bool IsCommandIdEnabled(int command_id) const override { return true; }
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     return false;
   }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
-    return true;
-  }
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE { return false; }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     switch (command_id) {
       case COMMAND_OPEN_DEVTOOLS:
         shell_->ShowDevToolsForElementAt(params_.x, params_.y);
@@ -187,7 +115,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   enum UIControl {
     BACK_BUTTON,
     FORWARD_BUTTON,
-    PRINT_BUTTON,
     STOP_BUTTON
   };
 
@@ -196,7 +123,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_view_(new View),
       contents_view_(new View) {
   }
-  virtual ~ShellWindowDelegateView() {}
+  ~ShellWindowDelegateView() override {}
 
   // Update the state of UI controls
   void SetAddressBarURL(const GURL& url) {
@@ -230,9 +157,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
           : views::CustomButton::STATE_DISABLED);
     } else if (control == FORWARD_BUTTON) {
       forward_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
-          : views::CustomButton::STATE_DISABLED);
-    } else if (control == PRINT_BUTTON) {
-      print_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
           : views::CustomButton::STATE_DISABLED);
     } else if (control == STOP_BUTTON) {
       stop_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
@@ -317,15 +241,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
                                     views::GridLayout::FIXED,
                                     forward_button_size.width(),
                                     forward_button_size.width() / 2);
-      // Print button
-      print_button_ = new views::LabelButton(this, base::ASCIIToUTF16("Print"));
-      print_button_->SetStyle(views::Button::STYLE_BUTTON);
-      gfx::Size print_button_size = print_button_->GetPreferredSize();
-      toolbar_column_set->AddColumn(views::GridLayout::CENTER,
-                                    views::GridLayout::CENTER, 0,
-                                    views::GridLayout::FIXED,
-                                    print_button_size.width(),
-                                    print_button_size.width() / 2);
       // Refresh button
       refresh_button_ =
           new views::LabelButton(this, base::ASCIIToUTF16("Refresh"));
@@ -358,7 +273,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_layout->StartRow(0, 0);
       toolbar_layout->AddView(back_button_);
       toolbar_layout->AddView(forward_button_);
-      toolbar_layout->AddView(print_button_);
       toolbar_layout->AddView(refresh_button_);
       toolbar_layout->AddView(stop_button_);
       toolbar_layout->AddView(url_entry_);
@@ -390,11 +304,10 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     }
   }
   // Overridden from TextfieldController
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE {
-  }
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE {
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override {}
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override {
    if (sender == url_entry_ && key_event.key_code() == ui::VKEY_RETURN) {
      std::string text = base::UTF16ToUTF8(url_entry_->text());
      GURL url(text);
@@ -409,14 +322,11 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from ButtonListener
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE {
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override {
     if (sender == back_button_)
       shell_->GoBackOrForward(-1);
     else if (sender == forward_button_)
       shell_->GoBackOrForward(1);
-    else if (sender == print_button_)
-      shell_->Print();
     else if (sender == refresh_button_)
       shell_->Reload();
     else if (sender == stop_button_)
@@ -424,35 +334,33 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from WidgetDelegateView
-  virtual bool CanResize() const OVERRIDE { return true; }
-  virtual bool CanMaximize() const OVERRIDE { return true; }
-  virtual bool CanMinimize() const OVERRIDE { return true; }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
-    return title_;
-  }
-  virtual void WindowClosing() OVERRIDE {
+  bool CanResize() const override { return true; }
+  bool CanMaximize() const override { return true; }
+  bool CanMinimize() const override { return true; }
+  base::string16 GetWindowTitle() const override { return title_; }
+  void WindowClosing() override {
     if (shell_) {
       delete shell_;
       shell_ = NULL;
     }
   }
-  virtual View* GetContentsView() OVERRIDE { return this; }
+  View* GetContentsView() override { return this; }
 
   // Overridden from View
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+  gfx::Size GetMinimumSize() const override {
     // We want to be able to make the window smaller than its initial
     // (preferred) size.
     return gfx::Size();
   }
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     if (details.is_add && details.child == this) {
       InitShellWindow();
     }
   }
 
   // Overridden from AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     switch (accelerator.key_code()) {
     case ui::VKEY_F5:
       shell_->Reload();
@@ -479,7 +387,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   View* toolbar_view_;
   views::LabelButton* back_button_;
   views::LabelButton* forward_button_;
-  views::LabelButton* print_button_;
   views::LabelButton* refresh_button_;
   views::LabelButton* stop_button_;
   views::Textfield* url_entry_;
@@ -551,9 +458,6 @@ void Shell::PlatformEnableUIControl(UIControl control, bool is_enabled) {
         is_enabled);
   } else if (control == FORWARD_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::FORWARD_BUTTON,
-        is_enabled);
-  } else if (control == PRINT_BUTTON) {
-    delegate_view->EnableUIControl(ShellWindowDelegateView::PRINT_BUTTON,
         is_enabled);
   } else if (control == STOP_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::STOP_BUTTON,

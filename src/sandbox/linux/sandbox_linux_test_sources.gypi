@@ -9,15 +9,17 @@
     'sandbox',
     'sandbox_linux_test_utils',
     '../base/base.gyp:base',
+    '../base/base.gyp:test_support_base',
+    '../testing/gtest.gyp:gtest',
   ],
   'include_dirs': [
     '../..',
   ],
   'sources': [
-    'services/broker_process_unittest.cc',
     'services/scoped_process_unittest.cc',
     'services/thread_helpers_unittests.cc',
     'services/yama_unittests.cc',
+    'syscall_broker/broker_process_unittest.cc',
     'tests/main.cc',
     'tests/scoped_temporary_file.cc',
     'tests/scoped_temporary_file.h',

@@ -15,11 +15,12 @@
          'video_processing',
          'webrtc_video_coding',
          'webrtc_utility',
+         '<(DEPTH)/testing/gtest.gyp:gtest',
          '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
          '<(webrtc_root)/test/test.gyp:test_support',
          '<(webrtc_root)/test/metrics.gyp:metrics',
          '<(webrtc_root)/common_video/common_video.gyp:common_video',
-         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
          '<(webrtc_root)/test/webrtc_test_common.gyp:webrtc_test_common',
       ],
       'sources': [

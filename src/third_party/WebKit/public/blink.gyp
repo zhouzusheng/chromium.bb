@@ -64,5 +64,16 @@
                 '../Source/platform/blink_platform.gyp:blink_common',
             ],
         },
+        {
+            # GN version: //third_party/WebKit/public:test_support
+            'target_name': 'blink_test_support',
+            'type': 'none',
+            'dependencies': [
+                '../Source/web/web.gyp:blink_web_test_support',
+            ],
+            'export_dependent_settings': [
+                '../Source/web/web.gyp:blink_web_test_support',
+            ],
+        },
     ],
 }

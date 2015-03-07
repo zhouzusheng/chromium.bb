@@ -18,6 +18,9 @@
       }],
     ],
   },
+  'includes': [
+    'content_tests.gypi',
+  ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [

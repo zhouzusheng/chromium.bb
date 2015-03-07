@@ -16,15 +16,15 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-
-// SHEZ: remove test only code
-// #include "content/public/test/layouttest_support.h"
-
+#include "content/public/test/layouttest_support.h"
+#include "content/shell/app/blink_test_platform_support.h"
 #include "content/shell/app/shell_crash_reporter_client.h"
-#include "content/shell/app/webkit_test_platform_support.h"
+#include "content/shell/browser/layout_test/layout_test_browser_main.h"
+#include "content/shell/browser/layout_test/layout_test_content_browser_client.h"
 #include "content/shell/browser/shell_browser_main.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/layout_test/layout_test_content_renderer_client.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
 #include "media/base/media_switches.h"
 #include "net/cookies/cookie_monster.h"
@@ -34,13 +34,6 @@
 #include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
-
-#include <chrome/common/chrome_paths.h>
-#include <chrome/common/chrome_utility_messages.h>
-#include <chrome/utility/printing_handler.h>
-#include <content/public/utility/content_utility_client.h>
-#include <content/public/utility/utility_thread.h>
-#include <ipc/ipc_message_macros.h>
 
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
 
@@ -69,6 +62,7 @@
 #include <windows.h>
 #include "base/logging_win.h"
 #include "components/crash/app/breakpad_win.h"
+#include "content/shell/common/v8_breakpad_support_win.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -113,51 +107,6 @@ void InitLogging() {
 
 namespace content {
 
-bool Send(IPC::Message* message)
-{
-    return content::UtilityThread::Get()->Send(message);
-}
-
-class ShellContentUtilityClient : public content::ContentUtilityClient
-{
-  public:
-    ShellContentUtilityClient()
-    {
-        d_handlers.push_back(new PrintingHandler());
-    }
-
-    // Allows the embedder to filter messages.
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE
-    {
-        bool handled = true;
-        IPC_BEGIN_MESSAGE_MAP(ShellContentUtilityClient, message)
-            IPC_MESSAGE_HANDLER(ChromeUtilityMsg_StartupPing, onStartupPing)
-            IPC_MESSAGE_UNHANDLED(handled = false)
-        IPC_END_MESSAGE_MAP()
-
-        for (Handlers::iterator it = d_handlers.begin(); !handled && it != d_handlers.end(); ++it)
-            handled = (*it)->OnMessageReceived(message);
-
-        return handled;
-    }
-
-    static void PreSandboxStartup()
-    {
-        PrintingHandler::PreSandboxStartup();
-    }
-
-    void onStartupPing()
-    {
-        Send(new ChromeUtilityHostMsg_ProcessStarted);
-    }
-
-  private:
-    typedef ScopedVector<UtilityMessageHandler> Handlers;
-    Handlers d_handlers;
-
-    DISALLOW_COPY_AND_ASSIGN(ShellContentUtilityClient);
-};
-
 ShellMainDelegate::ShellMainDelegate() {
 }
 
@@ -168,10 +117,12 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #if defined(OS_WIN)
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kContentShellProviderName);
+
+  v8_breakpad_support::SetUp();
 #endif
 #if defined(OS_MACOSX)
   // Needs to happen before InitializeResourceBundle() and before
-  // WebKitTestPlatformInitialize() are called.
+  // BlinkTestPlatformInitialize() are called.
   OverrideFrameworkBundlePath();
   OverrideChildProcessPath();
   EnsureCorrectResolutionSettings();
@@ -181,7 +132,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
     // If CheckLayoutSystemDeps succeeds, we don't exit early. Instead we
-    // continue and try to load the fonts in WebKitTestPlatformInitialize
+    // continue and try to load the fonts in BlinkTestPlatformInitialize
     // below, and then try to bring up the rest of the content module.
     if (!CheckLayoutSystemDeps()) {
       if (exit_code)
@@ -191,8 +142,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   }
 
   if (command_line.HasSwitch(switches::kDumpRenderTree)) {
-    // SHEZ: remove test-only code
-    //EnableBrowserLayoutTestMode();
+    EnableBrowserLayoutTestMode();
 
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kEnableLogging);
@@ -241,7 +191,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     net::RemoveProprietaryMediaTypesAndCodecsForTests();
 #endif
 
-    if (!WebKitTestPlatformInitialize()) {
+    if (!BlinkTestPlatformInitialize()) {
       if (exit_code)
         *exit_code = 1;
       return true;
@@ -288,20 +238,6 @@ void ShellMainDelegate::PreSandboxStartup() {
   }
 
   InitializeResourceBundle();
-
-  const base::CommandLine& commandLine = *base::CommandLine::ForCurrentProcess();
-  std::string processType = commandLine.GetSwitchValueASCII(switches::kProcessType);
-
-  if (processType == switches::kUtilityProcess) {
-    base::FilePath dirModule;
-    PathService::Get(base::DIR_MODULE, &dirModule);
-
-    base::FilePath pdfDll = dirModule;
-    pdfDll = pdfDll.AppendASCII("pdf.dll");
-    PathService::Override(chrome::FILE_PDF_PLUGIN, pdfDll);
-
-    ShellContentUtilityClient::PreSandboxStartup();
-  }
 }
 
 int ShellMainDelegate::RunProcess(
@@ -317,7 +253,11 @@ int ShellMainDelegate::RunProcess(
 #endif
 
   browser_runner_.reset(BrowserMainRunner::Create());
-  return ShellBrowserMain(main_function_params, browser_runner_);
+  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kDumpRenderTree) ||
+                 command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)
+             ? LayoutTestBrowserMain(main_function_params, browser_runner_)
+             : ShellBrowserMain(main_function_params, browser_runner_);
 }
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
@@ -369,18 +309,21 @@ void ShellMainDelegate::InitializeResourceBundle() {
 }
 
 ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
-  browser_client_.reset(new ShellContentBrowserClient);
+  browser_client_.reset(
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
+          new LayoutTestContentBrowserClient :
+          new ShellContentBrowserClient);
+
   return browser_client_.get();
 }
 
 ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
-  renderer_client_.reset(new ShellContentRendererClient);
-  return renderer_client_.get();
-}
+  renderer_client_.reset(
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
+          new LayoutTestContentRendererClient :
+          new ShellContentRendererClient);
 
-ContentUtilityClient* ShellMainDelegate::CreateContentUtilityClient() {
-  utility_client_.reset(new ShellContentUtilityClient);
-  return utility_client_.get();
+  return renderer_client_.get();
 }
 
 }  // namespace content

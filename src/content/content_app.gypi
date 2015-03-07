@@ -39,6 +39,18 @@
         '../base/allocator/allocator.gyp:allocator',
       ],
     }],
+    ['OS=="android"', {
+      'sources!': [
+        'app/content_main.cc',
+      ],
+      'dependencies': [
+        'content.gyp:content_jni_headers',
+        '../skia/skia.gyp:skia',
+      ],
+      'includes': [
+        '../build/android/cpufeatures.gypi',
+      ],
+    }],
     ['OS=="win"', {
       'dependencies': [
         'content_startup_helper_win',
@@ -52,9 +64,9 @@
       ],
     }, {  # OS!="ios"
       'dependencies': [
-        '../mojo/mojo_base.gyp:mojo_application_bindings',
+        '../mojo/edk/mojo_edk.gyp:mojo_system_impl',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/mojo_base.gyp:mojo_system_impl',
+        '../mojo/public/mojo_public.gyp:mojo_application_bindings',
      ],
     }],
   ],

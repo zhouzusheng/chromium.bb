@@ -63,7 +63,6 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:run_all_unittests',
-        '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icuuc',
         'url_lib',
       ],
@@ -100,31 +99,5 @@
     },
   ],
   'conditions': [
-    ['use_icu_alternatives_on_android==1 and OS=="android"', {
-      'targets': [
-        {
-          'target_name': 'url_jni_headers',
-          'type': 'none',
-          'sources': [
-            'android/java/src/org/chromium/url/IDNStringUtil.java'
-          ],
-          'variables': {
-            'jni_gen_package': 'url',
-          },
-          'includes': [ '../build/jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'url_java',
-          'type': 'none',
-          'variables': {
-            'java_in_dir': '../url/android/java',
-          },
-          'dependencies': [
-            '../base/base.gyp:base',
-          ],
-          'includes': [ '../build/java.gypi' ],
-        },
-      ],
-    }],
   ],
 }

@@ -7,27 +7,6 @@
     'use_snappy%': 1,
   },
   'conditions': [
-    ['OS == "android" and android_webview_build == 1', {
-      'variables': {
-        # Snappy not used in Android WebView
-        # crbug.com/236780
-        'use_snappy': 0,
-      },
-    }],
-    ['OS=="android"', {
-      'targets': [{
-        'target_name': 'env_chromium_unittests_apk',
-        'type': 'none',
-        'dependencies': [
-          '<(DEPTH)/base/base.gyp:base_java',
-          'env_chromium_unittests',
-        ],
-        'variables': {
-          'test_suite_name': 'env_chromium_unittests',
-        },
-        'includes': [ '../../build/apk_test.gypi' ],
-      }],
-    }],
   ],
   'target_defaults': {
     'defines': [
@@ -188,8 +167,6 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'leveldatabase',
-        '../../base/base.gyp:test_support_base',
-        '../../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'env_chromium_unittest.cc',

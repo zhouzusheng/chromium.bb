@@ -5,6 +5,8 @@
 #ifndef CHROME_COMMON_SPELLCHECK_MARKER_H_
 #define CHROME_COMMON_SPELLCHECK_MARKER_H_
 
+#include "base/basictypes.h"
+
 class SpellCheckMarker {
  public:
   // A predicate to test spellcheck marker validity.

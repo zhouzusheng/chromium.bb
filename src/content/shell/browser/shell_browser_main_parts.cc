@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/storage_partition.h"
@@ -41,6 +42,10 @@
 #if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(OS_LINUX)
 #include "ui/base/ime/input_method_initializer.h"
 #endif
+
+namespace printing {
+  extern PrintJobManager* g_print_job_manager;
+}
 
 namespace content {
 
@@ -147,6 +152,8 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::Initialize();
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
 
+  printing::g_print_job_manager = new printing::PrintJobManager();
+
   // CreateHttpHandler retains ownership over DevToolsHttpHandler.
   devtools_http_handler_ =
       ShellDevToolsManagerDelegate::CreateHttpHandler(browser_context_.get());
@@ -170,6 +177,7 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
     devtools_http_handler_->Stop();
     devtools_http_handler_ = nullptr;
   }
+  delete printing::g_print_job_manager;
   browser_context_.reset();
   off_the_record_browser_context_.reset();
 }

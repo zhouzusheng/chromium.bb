@@ -10,6 +10,7 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "printing/page_range.h"
 #include "printing/page_size_margins.h"

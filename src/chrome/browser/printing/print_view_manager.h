@@ -26,11 +26,6 @@ class PrintViewManager : public PrintViewManagerBase,
   // Same as PrintNow(), but for the case where a user prints with the system
   // dialog from print preview.
   bool PrintForSystemDialogNow();
-
-  // Same as PrintNow(), but for the case where a user press "ctrl+shift+p" to
-  // show the native system dialog. This can happen from both initiator and
-  // preview dialog.
-  bool BasicPrint();
 #endif  // ENABLE_BASIC_PRINTING
 
   // Initiate print preview of the current document by first notifying the

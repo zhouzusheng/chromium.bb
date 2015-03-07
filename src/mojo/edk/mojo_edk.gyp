@@ -41,8 +41,6 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_system_impl',
         'mojo_test_support_impl',
         '../public/mojo_public.gyp:mojo_test_support',
@@ -56,7 +54,6 @@
       'target_name': 'mojo_run_all_perftests',
       'type': 'static_library',
       'dependencies': [
-        '../../base/base.gyp:test_support_base',
         'mojo_system_impl',
         'mojo_test_support_impl',
         '../public/mojo_public.gyp:mojo_test_support',
@@ -71,7 +68,6 @@
       'target_name': 'mojo_public_bindings_unittests',
       'type': 'executable',
       'dependencies': [
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_unittests',
         '../public/mojo_public.gyp:mojo_cpp_bindings',
         '../public/mojo_public.gyp:mojo_environment_standalone',
@@ -105,7 +101,6 @@
       'target_name': 'mojo_public_environment_unittests',
       'type': 'executable',
       'dependencies': [
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_unittests',
         '../public/mojo_public.gyp:mojo_environment_standalone',
         '../public/mojo_public.gyp:mojo_public_test_utils',
@@ -125,7 +120,6 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_unittests',
         '../public/mojo_public.gyp:mojo_application_standalone',
         '../public/mojo_public.gyp:mojo_utility',
@@ -140,7 +134,6 @@
       'target_name': 'mojo_public_system_unittests',
       'type': 'executable',
       'dependencies': [
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_unittests',
         '../public/mojo_public.gyp:mojo_public_test_utils',
       ],
@@ -154,7 +147,6 @@
       'target_name': 'mojo_public_utility_unittests',
       'type': 'executable',
       'dependencies': [
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_unittests',
         '../public/mojo_public.gyp:mojo_public_test_utils',
         '../public/mojo_public.gyp:mojo_utility',
@@ -181,7 +173,6 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_run_all_perftests',
         '../public/mojo_public.gyp:mojo_public_test_utils',
         '../public/mojo_public.gyp:mojo_utility',
@@ -309,7 +300,6 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_common_test_support',
         'mojo_system_impl',
       ],
@@ -360,9 +350,7 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
         '../../base/base.gyp:test_support_perf',
-        '../../testing/gtest.gyp:gtest',
         'mojo_common_test_support',
         'mojo_system_impl',
       ],
@@ -438,8 +426,6 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_system_impl',
       ],
       'sources': [

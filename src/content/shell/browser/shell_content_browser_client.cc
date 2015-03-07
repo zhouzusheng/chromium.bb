@@ -17,8 +17,11 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
 #include "content/shell/browser/ipc_echo_message_filter.h"
-#include "content/shell/browser/layout_test/layout_test_browser_main_parts.h"
-#include "content/shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.h"
+
+// SHEZ: Remove test-only code.
+// #include "content/shell/browser/layout_test/layout_test_browser_main_parts.h"
+// #include "content/shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.h"
+
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_access_token_store.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -34,6 +37,9 @@
 #include "content/shell/common/webkit_test_helpers.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
+
+#include "chrome/browser/printing/printing_message_filter.h"
+#include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/path_utils.h"
@@ -138,14 +144,21 @@ ShellContentBrowserClient::~ShellContentBrowserClient() {
 BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const MainFunctionParams& parameters) {
   shell_browser_main_parts_ =
+      // SHEZ: Remove test-only code.
+#if 0
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)
           ? new LayoutTestBrowserMainParts(parameters)
-          : new ShellBrowserMainParts(parameters);
+          :
+#endif
+          new ShellBrowserMainParts(parameters);
   return shell_browser_main_parts_;
 }
 
 void ShellContentBrowserClient::RenderProcessWillLaunch(
     RenderProcessHost* host) {
+  int id = host->GetID();
+  host->AddFilter(new SpellCheckMessageFilter(id));
+  host->AddFilter(new printing::PrintingMessageFilter(id));
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kExposeIpcEcho))
     host->AddFilter(new IPCEchoMessageFilter());
 }
@@ -244,14 +257,21 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
     WebPreferences* prefs) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
+  // SHEZ: Remove test code.
+#if 0
   WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
+#endif
 }
 
 void ShellContentBrowserClient::ResourceDispatcherHostCreated() {
   resource_dispatcher_host_delegate_.reset(
+      // SHEZ: Remove test-only code.
+#if 0
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)
           ? new LayoutTestResourceDispatcherHostDelegate
-          : new ShellResourceDispatcherHostDelegate);
+          :
+#endif
+          new ShellResourceDispatcherHostDelegate);
   ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
 }
@@ -341,6 +361,10 @@ void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                                  bool* success) {
   // Add sideloaded font files for testing. See also DIR_WINDOWS_FONTS
   // addition in |StartSandboxedProcess|.
+
+#if 0
+  // TODO(SHEZ): Fix this.
+
   std::vector<std::string> font_files = GetSideloadFontFiles();
   for (std::vector<std::string>::const_iterator i(font_files.begin());
       i != font_files.end();
@@ -349,6 +373,7 @@ void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
         sandbox::TargetPolicy::FILES_ALLOW_READONLY,
         base::UTF8ToWide(*i).c_str());
   }
+#endif
 }
 #endif  // OS_WIN
 

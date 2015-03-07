@@ -61,7 +61,6 @@
       'target_name': 'sandbox_linux_test_utils',
       'type': 'static_library',
       'dependencies': [
-        '../testing/gtest.gyp:gtest',
       ],
       'include_dirs': [
         '../..',
@@ -161,7 +160,6 @@
       'includes': [
         # Disable LTO due to compiler bug
         # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57703
-        '../../build/android/disable_lto.gypi',
       ],
       'include_dirs': [
         '../..',
@@ -318,69 +316,5 @@
     },
   ],
   'conditions': [
-    [ 'OS=="android"', {
-      'targets': [
-      {
-        'target_name': 'sandbox_linux_unittests_stripped',
-        'type': 'none',
-        'dependencies': [ 'sandbox_linux_unittests' ],
-        'actions': [{
-          'action_name': 'strip sandbox_linux_unittests',
-          'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
-          'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
-          'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
-        }],
-      },
-      {
-        'target_name': 'sandbox_linux_unittests_deps',
-        'type': 'none',
-        'dependencies': [
-          'sandbox_linux_unittests_stripped',
-        ],
-        # For the component build, ensure dependent shared libraries are
-        # stripped and put alongside sandbox_linux_unittests to simplify pushing
-        # to the device.
-        'variables': {
-           'output_dir': '<(PRODUCT_DIR)/sandbox_linux_unittests_deps/',
-           'native_binary': '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped',
-           'include_main_binary': 0,
-        },
-        'includes': [
-          '../../build/android/native_app_dependencies.gypi'
-        ],
-      }],
-    }],
-    [ 'OS=="android"', {
-      'targets': [
-        {
-        'target_name': 'sandbox_linux_jni_unittests_apk',
-        'type': 'none',
-        'variables': {
-          'test_suite_name': 'sandbox_linux_jni_unittests',
-        },
-        'dependencies': [
-          'sandbox_linux_jni_unittests',
-        ],
-        'includes': [ '../../build/apk_test.gypi' ],
-        }
-      ],
-    }],
-    ['test_isolation_mode != "noop"', {
-      'targets': [
-        {
-          'target_name': 'sandbox_linux_unittests_run',
-          'type': 'none',
-          'dependencies': [
-            'sandbox_linux_unittests',
-          ],
-          'includes': [
-            '../../build/isolate.gypi',
-          ],
-          'sources': [
-            '../sandbox_linux_unittests.isolate',
-          ],
-        },
-      ],
-    }],
   ],
 }

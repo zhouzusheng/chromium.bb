@@ -17,6 +17,13 @@
 #include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/shell/common/shell_switches.h"
 
+#include "base/prefs/json_pref_store.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service_factory.h"
+#include "base/prefs/pref_service.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/user_prefs/user_prefs.h"
+
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
 #elif defined(OS_LINUX)
@@ -61,6 +68,7 @@ ShellBrowserContext::~ShellBrowserContext() {
     BrowserThread::DeleteSoon(
       BrowserThread::IO, FROM_HERE, resource_context_.release());
   }
+  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
 }
 
 void ShellBrowserContext::InitWhileIOAllowed() {
@@ -93,6 +101,19 @@ void ShellBrowserContext::InitWhileIOAllowed() {
 
   if (!base::PathExists(path_))
     base::CreateDirectory(path_);
+  base::FilePath pref_file = path_.AppendASCII("prefs.json");
+  pref_registry_ = new PrefRegistrySimple();
+  pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
+  pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
+  pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
+  pref_registry_->RegisterBooleanPref("browser.enable_autospellcorrect", true);
+  pref_registry_->RegisterBooleanPref("printing.enabled", true);
+  base::PrefServiceFactory factory;
+  factory.SetUserPrefsFile(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
+  pref_service_ = factory.Create(pref_registry_.get());
+  user_prefs::UserPrefs::Set(this, pref_service_.get());
+
+  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this);
 }
 
 base::FilePath ShellBrowserContext::GetPath() const {

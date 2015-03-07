@@ -19,8 +19,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/grit/browser_resources.h"
-#include "chrome/renderer/prerender/prerender_helper.h"
+
+// LEVI: Remove chrome resources.
+// #include "chrome/grit/browser_resources.h"
+
 #include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
@@ -471,8 +473,10 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   blink::WebLocalFrame* frame = blink::WebLocalFrame::create(NULL);
   web_view->setMainFrame(frame);
 
-  base::StringValue html(ResourceBundle::GetSharedInstance().GetLocalizedString(
-      IDR_PRINT_PREVIEW_PAGE));
+  // LEVI: Remove chrome resources.
+  //base::StringValue html(ResourceBundle::GetSharedInstance().GetLocalizedString(
+  //    IDR_PRINT_PREVIEW_PAGE));
+  base::StringValue html("");
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 
@@ -829,13 +833,6 @@ void PrintWebViewHelper::DidStopLoading() {
 void PrintWebViewHelper::PrintPage(blink::WebLocalFrame* frame,
                                    bool user_initiated) {
   DCHECK(frame);
-
-  // Allow Prerendering to cancel this print request if necessary.
-  if (prerender::PrerenderHelper::IsPrerendering(
-          render_view()->GetMainRenderFrame())) {
-    Send(new ChromeViewHostMsg_CancelPrerenderForPrinting(routing_id()));
-    return;
-  }
 
   if (!IsScriptInitiatedPrintAllowed(frame, user_initiated))
     return;

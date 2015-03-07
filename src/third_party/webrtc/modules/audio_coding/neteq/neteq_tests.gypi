@@ -73,7 +73,6 @@
       'target_name': 'RTPjitter',
       'type': 'executable',
       'dependencies': [
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPjitter.cc',
@@ -85,7 +84,6 @@
       'type': 'executable',
       'dependencies': [
         'neteq_unittest_tools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
       ],
@@ -99,7 +97,6 @@
       'type': 'executable',
       'dependencies': [
         'neteq_test_tools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
        'test/RTPchange.cc',
@@ -111,7 +108,6 @@
       'type': 'executable',
       'dependencies': [
        'neteq_test_tools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPtimeshift.cc',
@@ -123,7 +119,6 @@
       'type': 'executable',
       'dependencies': [
         'neteq_test_tools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPcat.cc',
@@ -160,7 +155,6 @@
         'neteq',
         'PCM16B',
         'neteq_unittest_tools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
       ],
       'sources': [
@@ -192,7 +186,6 @@
         'neteq',
         'neteq_test_support',
         'webrtc_opus',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
@@ -208,7 +201,6 @@
         'neteq',
         'neteq_test_support',
         'iSACFix',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
@@ -232,7 +224,6 @@
         'iLBC',
         'iSAC',
         'CNG',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'direct_dependent_settings': {
         'include_dirs': [

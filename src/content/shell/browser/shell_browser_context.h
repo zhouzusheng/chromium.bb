@@ -15,6 +15,9 @@
 #include "content/shell/browser/shell_url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 
+class PrefRegistrySimple;
+class PrefService;
+
 namespace net {
 class NetLog;
 }
@@ -113,6 +116,8 @@ class ShellBrowserContext : public BrowserContext {
   base::FilePath path_;
   BrowserPluginGuestManager* guest_manager_;
   scoped_refptr<ShellURLRequestContextGetter> url_request_getter_;
+  scoped_refptr<PrefRegistrySimple> pref_registry_;
+  scoped_ptr<PrefService> pref_service_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserContext);
 };

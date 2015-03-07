@@ -291,7 +291,6 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
         'mojo_test_support',
       ],
       'sources': [
@@ -340,30 +339,5 @@
     },
   ],
   'conditions': [
-    ['OS == "android"', {
-      'targets': [
-        {
-          # GN version: //mojo/public/java_system
-          'target_name': 'mojo_public_java',
-          'type': 'none',
-          'variables': {
-            'java_in_dir': 'java/system',
-          },
-          'includes': [ '../../build/java.gypi' ],
-        },
-        {
-        # GN version: //mojo/public/java_bindings
-          'target_name': 'mojo_bindings_java',
-          'type': 'none',
-          'variables': {
-            'java_in_dir': 'java/bindings',
-           },
-           'dependencies': [
-             'mojo_public_java',
-           ],
-           'includes': [ '../../build/java.gypi' ],
-        },
-      ],
-    }],
   ],
 }

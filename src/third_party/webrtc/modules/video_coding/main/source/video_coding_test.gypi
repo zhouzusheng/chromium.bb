@@ -15,7 +15,6 @@
          'video_processing',
          'webrtc_video_coding',
          'webrtc_utility',
-         '<(DEPTH)/testing/gtest.gyp:gtest',
          '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
          '<(webrtc_root)/test/test.gyp:test_support',
          '<(webrtc_root)/test/metrics.gyp:metrics',

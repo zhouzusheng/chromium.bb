@@ -9,6 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/renderer/content_renderer_client.h"
 
+class SpellCheck;
+
 namespace web_cache {
 class WebCacheRenderProcessObserver;
 }
@@ -33,6 +35,7 @@ class ShellContentRendererClient : public ContentRendererClient {
 
  private:
   scoped_ptr<web_cache::WebCacheRenderProcessObserver> web_cache_observer_;
+  scoped_ptr<SpellCheck> spellcheck_;
 };
 
 }  // namespace content

@@ -29,11 +29,9 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
-        '../build/android/increase_size_for_speed.gypi',
         # Disable LTO due to compiler error
         # in mems_in_disjoint_alias_sets_p, at alias.c:393
         # crbug.com/422255
-        '../build/android/disable_lto.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -165,7 +163,6 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
-        '../build/android/increase_size_for_speed.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -220,7 +217,6 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
-        '../build/android/increase_size_for_speed.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -269,7 +265,6 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
-        '../build/android/increase_size_for_speed.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -301,10 +296,8 @@
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
-            '../build/android/increase_size_for_speed.gypi',
             # Disable LTO due to Neon issues
             # crbug.com/408997
-            '../build/android/disable_lto.gypi',
           ],
           'include_dirs': [
             '../third_party/skia/include/core',

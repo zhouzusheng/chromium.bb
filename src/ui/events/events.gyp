@@ -288,10 +288,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:run_all_unittests',
-        '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx_test_support',
@@ -372,20 +369,5 @@
     },
   ],
   'conditions': [
-    ['OS == "android"', {
-      'targets': [
-        {
-          'target_name': 'events_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'events_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'events_unittests',
-          },
-          'includes': [ '../../build/apk_test.gypi' ],
-        },
-      ],
-    }],
   ],
 }

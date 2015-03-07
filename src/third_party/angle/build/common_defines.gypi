@@ -5,7 +5,7 @@
 {
     'variables':
     {
-        'component%': 'static_library',
+        'component%': 'shared_library',
         'angle_path%': '..',
         'windows_sdk_path%': 'C:/Program Files (x86)/Windows Kits/8.0',
         'windows_8_1_sdk_path%': 'C:/Program Files (x86)/Windows Kits/8.1',

@@ -698,7 +698,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../skia/skia.gyp:skia',
-        '../../testing/gtest.gyp:gtest',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
       ],

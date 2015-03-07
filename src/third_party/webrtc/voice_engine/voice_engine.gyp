@@ -108,7 +108,6 @@
           'type': '<(gtest_target_type)',
           'dependencies': [
             'voice_engine',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             # The rest are to satisfy the unittests' include chain.
             # This would be unnecessary if we used qualified includes.
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
@@ -144,8 +143,6 @@
           'type': 'executable',
           'dependencies': [
             'voice_engine',
-            '<(DEPTH)/testing/gmock.gyp:gmock',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
@@ -213,7 +210,6 @@
           'type': 'executable',
           'dependencies': [
             'voice_engine',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',

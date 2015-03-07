@@ -52,9 +52,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
-        '../../testing/gtest.gyp:gtest',
         'native_theme',
       ],
       'sources': [

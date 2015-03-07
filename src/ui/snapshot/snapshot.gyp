@@ -60,8 +60,6 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
-        '../../testing/gtest.gyp:gtest',
         '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
@@ -75,8 +73,6 @@
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
-            '../../base/base.gyp:test_support_base',
-            '../aura/aura.gyp:aura_test_support',
             '../compositor/compositor.gyp:compositor',
             '../compositor/compositor.gyp:compositor_test_support',
             '../wm/wm.gyp:wm',

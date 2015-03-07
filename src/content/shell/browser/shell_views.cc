@@ -30,7 +30,15 @@
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/grid_layout.h"
-#include "ui/views/test/desktop_test_views_delegate.h"
+
+// SHEZ: Remove test-only code
+// #include "ui/views/test/desktop_test_views_delegate.h"
+
+// SHEZ: Added the following to fill-in code from DesktopTestViewsDelegate
+#include "ui/views/views_delegate.h"
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#include "ui/views/widget/native_widget_aura.h"
+
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -51,16 +59,77 @@
 namespace content {
 
 namespace {
+
 // ViewDelegate implementation for aura content shell
-class ShellViewsDelegateAura : public views::DesktopTestViewsDelegate {
+class ShellViewsDelegateAura : public views::ViewsDelegate {
  public:
   ShellViewsDelegateAura() : use_transparent_windows_(false) {
+    // SHEZ: Copied from TestViewsDelegate
+    DCHECK(!ViewsDelegate::views_delegate);
+    ViewsDelegate::views_delegate = this;
   }
 
-  ~ShellViewsDelegateAura() override {}
+  ~ShellViewsDelegateAura() override {
+    // SHEZ: Copied from TestViewsDelegate
+    ViewsDelegate::views_delegate = NULL;
+  }
 
   void SetUseTransparentWindows(bool transparent) {
     use_transparent_windows_ = transparent;
+  }
+
+  // SHEZ: Upstream code gets these overrides from the TestViewsDelegate
+  // SHEZ: implementation.  Note that TestViewsDelegate has been
+  // SHEZ: minimized away.
+  void SaveWindowPlacement(const views::Widget* widget,
+      const std::string& window_name,
+      const gfx::Rect& bounds,
+      ui::WindowShowState show_state) override {}
+  bool GetSavedWindowPlacement(
+      const views::Widget* widget,
+      const std::string& window_name,
+      gfx::Rect* bounds,
+      ui::WindowShowState* show_state) const override { return false; }
+  void NotifyAccessibilityEvent(
+      views::View* view,
+      ui::AXEvent event_type) override {}
+  void NotifyMenuItemFocused(const base::string16& menu_name,
+      const base::string16& menu_item_name,
+      int item_index,
+      int item_count,
+      bool has_submenu) override {}
+#if defined(OS_WIN)
+  HICON GetDefaultWindowIcon() const override { return NULL; }
+  bool IsWindowInMetro(gfx::NativeWindow window) const override { return false; }
+#endif
+  views::NonClientFrameView* CreateDefaultNonClientFrameView(
+      views::Widget* widget) override { return NULL; }
+  void AddRef() override { }
+  void ReleaseRef() override { }
+  content::WebContents* CreateWebContents(
+      content::BrowserContext* browser_context,
+      content::SiteInstance* site_instance) override { return NULL; }
+  base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() override { return base::TimeDelta(); }
+
+  // SHEZ: Upstream code gets these overrides from the DesktopTestViewsDelegate
+  // SHEZ: implementation.  Note that DesktopTestViewsDelegate has been
+  // SHEZ: minimized away.
+  void OnBeforeWidgetInit(views::Widget::InitParams* params,
+      views::internal::NativeWidgetDelegate* delegate) override
+  {
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+    // If we already have a native_widget, we don't have to try to come
+    // up with one.
+    if (params->native_widget)
+      return;
+
+    if (params->parent && params->type != views::Widget::InitParams::TYPE_MENU) {
+      params->native_widget = new views::NativeWidgetAura(delegate);
+    }
+    else if (!params->parent && !params->context) {
+      params->native_widget = new views::DesktopNativeWidgetAura(delegate);
+    }
+#endif
   }
 
  private:
@@ -115,6 +184,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   enum UIControl {
     BACK_BUTTON,
     FORWARD_BUTTON,
+    PRINT_BUTTON,
     STOP_BUTTON
   };
 
@@ -157,6 +227,9 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
           : views::CustomButton::STATE_DISABLED);
     } else if (control == FORWARD_BUTTON) {
       forward_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
+          : views::CustomButton::STATE_DISABLED);
+    } else if (control == PRINT_BUTTON) {
+      print_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
           : views::CustomButton::STATE_DISABLED);
     } else if (control == STOP_BUTTON) {
       stop_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
@@ -241,6 +314,15 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
                                     views::GridLayout::FIXED,
                                     forward_button_size.width(),
                                     forward_button_size.width() / 2);
+      // Print button
+      print_button_ = new views::LabelButton(this, base::ASCIIToUTF16("Print"));
+      print_button_->SetStyle(views::Button::STYLE_BUTTON);
+      gfx::Size print_button_size = print_button_->GetPreferredSize();
+      toolbar_column_set->AddColumn(views::GridLayout::CENTER,
+                                    views::GridLayout::CENTER, 0,
+                                    views::GridLayout::FIXED,
+                                    print_button_size.width(),
+                                    print_button_size.width() / 2);
       // Refresh button
       refresh_button_ =
           new views::LabelButton(this, base::ASCIIToUTF16("Refresh"));
@@ -273,6 +355,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_layout->StartRow(0, 0);
       toolbar_layout->AddView(back_button_);
       toolbar_layout->AddView(forward_button_);
+      toolbar_layout->AddView(print_button_);
       toolbar_layout->AddView(refresh_button_);
       toolbar_layout->AddView(stop_button_);
       toolbar_layout->AddView(url_entry_);
@@ -327,6 +410,8 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       shell_->GoBackOrForward(-1);
     else if (sender == forward_button_)
       shell_->GoBackOrForward(1);
+    else if (sender == print_button_)
+      shell_->Print();
     else if (sender == refresh_button_)
       shell_->Reload();
     else if (sender == stop_button_)
@@ -387,6 +472,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   View* toolbar_view_;
   views::LabelButton* back_button_;
   views::LabelButton* forward_button_;
+  views::LabelButton* print_button_;
   views::LabelButton* refresh_button_;
   views::LabelButton* stop_button_;
   views::Textfield* url_entry_;
@@ -458,6 +544,9 @@ void Shell::PlatformEnableUIControl(UIControl control, bool is_enabled) {
         is_enabled);
   } else if (control == FORWARD_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::FORWARD_BUTTON,
+        is_enabled);
+  } else if (control == PRINT_BUTTON) {
+    delegate_view->EnableUIControl(ShellWindowDelegateView::PRINT_BUTTON,
         is_enabled);
   } else if (control == STOP_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::STOP_BUTTON,

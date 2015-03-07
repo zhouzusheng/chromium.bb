@@ -327,7 +327,6 @@
         'gl_binding_output_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/gl',
       },
       'dependencies': [
-        '../../testing/gmock.gyp:gmock',
         '../../third_party/khronos/khronos.gyp:khronos_headers',
         'gl',
       ],

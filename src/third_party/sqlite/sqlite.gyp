@@ -180,7 +180,6 @@
       'includes': [
         # Disable LTO due to ELF section name out of range
         # crbug.com/422251
-        '../../build/android/disable_lto.gypi',
       ],
     },
   ],

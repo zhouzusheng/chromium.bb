@@ -115,8 +115,6 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:run_all_unittests',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
@@ -144,8 +142,6 @@
         'courgette_lib',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
       ],
     },
   ],

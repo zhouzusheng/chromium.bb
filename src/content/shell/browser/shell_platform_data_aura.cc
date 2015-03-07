@@ -9,8 +9,11 @@
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
-#include "ui/aura/test/test_focus_client.h"
-#include "ui/aura/test/test_window_tree_client.h"
+
+// SHEZ: Remove test-only code
+// #include "ui/aura/test/test_focus_client.h"
+// #include "ui/aura/test/test_window_tree_client.h"
+
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method.h"
@@ -114,14 +117,18 @@ ShellPlatformDataAura::ShellPlatformDataAura(const gfx::Size& initial_size) {
   host_->InitHost();
   host_->window()->SetLayoutManager(new FillLayout(host_->window()));
 
-  focus_client_.reset(new aura::test::TestFocusClient());
-  aura::client::SetFocusClient(host_->window(), focus_client_.get());
+  // SHEZ: Remove test-only code
+  // focus_client_.reset(new aura::test::TestFocusClient());
+  // aura::client::SetFocusClient(host_->window(), focus_client_.get());
 
   new wm::DefaultActivationClient(host_->window());
   capture_client_.reset(
       new aura::client::DefaultCaptureClient(host_->window()));
-  window_tree_client_.reset(
-      new aura::test::TestWindowTreeClient(host_->window()));
+
+  // SHEZ: Remove test-only code
+  // window_tree_client_.reset(
+  //     new aura::test::TestWindowTreeClient(host_->window()));
+
   ime_filter_.reset(new MinimalInputEventFilter(host_.get()));
 }
 

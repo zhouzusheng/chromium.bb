@@ -1,7 +1,7 @@
 solutions = [
   {
     u'managed': False,
-    u'name': u'src',
+    u'name': u'40.0.2214.115',
     u'url': u'https://chromium.googlesource.com/chromium/src.git',
     u'custom_deps': {
       u'build': None,
@@ -29,7 +29,7 @@ solutions = [
       u'src/third_party/hunspell_dictionaries': None,
       u'src/native_client': None,
     },
-    u'deps_file': u'.DEPS.git',
+    u'deps_file': u'DEPS',
     u'safesync_url': u''
   }
 ]

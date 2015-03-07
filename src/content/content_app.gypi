@@ -39,18 +39,6 @@
         '../base/allocator/allocator.gyp:allocator',
       ],
     }],
-    ['OS=="android"', {
-      'sources!': [
-        'app/content_main.cc',
-      ],
-      'dependencies': [
-        'content.gyp:content_jni_headers',
-        '../skia/skia.gyp:skia',
-      ],
-      'includes': [
-        '../build/android/cpufeatures.gypi',
-      ],
-    }],
     ['OS=="win"', {
       'dependencies': [
         'content_startup_helper_win',

@@ -88,7 +88,6 @@
         [ 'branding == "Chrome" and enable_pepper_cdms==1', {
           'dependencies': [
             '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
-            '<(DEPTH)/media/media_cdm_adapter.gyp:cdmadapter',
             'widevine_cdm_version_h',
             'widevine_cdm_binaries',
             'widevinecdmadapter_resources',

@@ -1044,11 +1044,9 @@
        ],
       'export_dependent_settings': [
         '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../mojo/services/public/mojo_services_public.gyp:mojo_geometry_bindings',
       ],
       'dependencies': [
         '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../mojo/services/public/mojo_services_public.gyp:mojo_geometry_bindings',
       ],
     },
     {
@@ -1061,7 +1059,6 @@
         'media',
         'media_mojo_bindings',
         '../base/base.gyp:base',
-        '../mojo/mojo_geometry_converters.gyp:mojo_geometry_lib',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../mojo/public/mojo_public.gyp:mojo_application_base',
         '../mojo/public/mojo_public.gyp:mojo_application_bindings',
@@ -1114,8 +1111,6 @@
         'media_mojo_bindings',
         'media_mojo_lib',
         '../base/base.gyp:base',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
         '../mojo/edk/mojo_edk.gyp:mojo_run_all_unittests',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
       ],
@@ -1136,8 +1131,6 @@
         'media_test_support',
         'mojo_media_renderer_app',
         '../base/base.gyp:base',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
         '../mojo/mojo_base.gyp:mojo_application_chromium',
         '<(mojo_system_for_loadable_module)',
       ],
@@ -1165,11 +1158,8 @@
         'shared_memory_support',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
-        '../base/base.gyp:test_support_base',
         '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -1449,10 +1439,6 @@
       'target_name': 'media_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
-        '../base/base.gyp:test_support_base',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        '../testing/perf/perf_test.gyp:perf_test',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_test_support',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -1505,8 +1491,6 @@
         'shared_memory_support',
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'audio/mock_audio_manager.cc',
@@ -1719,147 +1703,6 @@
         },
       ],
     }],
-    ['OS=="android"', {
-      'targets': [
-        {
-          # TODO(GN)
-          'target_name': 'media_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'media_java',
-            'media_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'media_unittests',
-          },
-          'includes': ['../build/apk_test.gypi'],
-        },
-        {
-          # TODO(GN)
-          'target_name': 'media_perftests_apk',
-          'type': 'none',
-          'dependencies': [
-            'media_java',
-            'media_perftests',
-          ],
-          'variables': {
-            'test_suite_name': 'media_perftests',
-          },
-          'includes': ['../build/apk_test.gypi'],
-        },
-        {
-          # GN: //media/base/android:media_android_jni_headers
-          'target_name': 'media_android_jni_headers',
-          'type': 'none',
-          'sources': [
-            'base/android/java/src/org/chromium/media/AudioManagerAndroid.java',
-            'base/android/java/src/org/chromium/media/AudioRecordInput.java',
-            'base/android/java/src/org/chromium/media/MediaCodecBridge.java',
-            'base/android/java/src/org/chromium/media/MediaDrmBridge.java',
-            'base/android/java/src/org/chromium/media/MediaPlayerBridge.java',
-            'base/android/java/src/org/chromium/media/MediaPlayerListener.java',
-            'base/android/java/src/org/chromium/media/UsbMidiDeviceAndroid.java',
-            'base/android/java/src/org/chromium/media/UsbMidiDeviceFactoryAndroid.java',
-            'base/android/java/src/org/chromium/media/WebAudioMediaCodecBridge.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'media',
-          },
-          'includes': ['../build/jni_generator.gypi'],
-        },
-        {
-          # GN: //media/base/android:video_capture_android_jni_headers
-          'target_name': 'video_capture_android_jni_headers',
-          'type': 'none',
-          'sources': [
-            'base/android/java/src/org/chromium/media/VideoCapture.java',
-            'base/android/java/src/org/chromium/media/VideoCaptureFactory.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'media',
-          },
-          'includes': ['../build/jni_generator.gypi'],
-        },
-        {
-          # GN: //media/base/android:android
-          'target_name': 'player_android',
-          'type': 'static_library',
-          'sources': [
-            'base/android/audio_decoder_job.cc',
-            'base/android/audio_decoder_job.h',
-            'base/android/browser_cdm_factory_android.cc',
-            'base/android/demuxer_android.h',
-            'base/android/demuxer_stream_player_params.cc',
-            'base/android/demuxer_stream_player_params.h',
-            'base/android/media_codec_bridge.cc',
-            'base/android/media_codec_bridge.h',
-            'base/android/media_common_android.h',
-            'base/android/media_decoder_job.cc',
-            'base/android/media_decoder_job.h',
-            'base/android/media_drm_bridge.cc',
-            'base/android/media_drm_bridge.h',
-            'base/android/media_jni_registrar.cc',
-            'base/android/media_jni_registrar.h',
-            'base/android/media_player_android.cc',
-            'base/android/media_player_android.h',
-            'base/android/media_player_bridge.cc',
-            'base/android/media_player_bridge.h',
-            'base/android/media_player_listener.cc',
-            'base/android/media_player_listener.h',
-            'base/android/media_player_manager.h',
-            'base/android/media_resource_getter.cc',
-            'base/android/media_resource_getter.h',
-            'base/android/media_source_player.cc',
-            'base/android/media_source_player.h',
-            'base/android/media_url_interceptor.h',
-            'base/android/video_decoder_job.cc',
-            'base/android/video_decoder_job.h',
-            'base/android/webaudio_media_codec_bridge.cc',
-            'base/android/webaudio_media_codec_bridge.h',
-            'base/android/webaudio_media_codec_info.h',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
-            '../ui/gl/gl.gyp:gl',
-            '../url/url.gyp:url_lib',
-            'media_android_jni_headers',
-          ],
-          'include_dirs': [
-            # Needed by media_drm_bridge.cc.
-            '<(SHARED_INTERMEDIATE_DIR)',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-        },
-        {
-          # GN: //media/base/android:media_java
-          'target_name': 'media_java',
-          'type': 'none',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'media_android_imageformat',
-          ],
-          'export_dependent_settings': [
-            '../base/base.gyp:base',
-          ],
-          'variables': {
-            'java_in_dir': 'base/android/java',
-          },
-          'includes': ['../build/java.gypi'],
-        },
-        {
-          # GN: //media/base/android:media_android_imageformat
-          'target_name': 'media_android_imageformat',
-          'type': 'none',
-          'variables': {
-            'source_file': 'video/capture/android/video_capture_device_android.h',
-          },
-          'includes': [ '../build/android/java_cpp_enum.gypi' ],
-        },
-      ],
-    }],
     ['media_use_ffmpeg==1', {
       'targets': [
         {
@@ -1869,8 +1712,6 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../base/base.gyp:test_support_base',
-            '../testing/gtest.gyp:gtest',
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
             'media',
             'media_test_support',
@@ -1884,9 +1725,6 @@
           'target_name': 'ffmpeg_regression_tests',
           'type': 'executable',
           'dependencies': [
-            '../base/base.gyp:test_support_base',
-            '../testing/gmock.gyp:gmock',
-            '../testing/gtest.gyp:gtest',
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             'media',

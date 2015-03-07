@@ -66,7 +66,6 @@
         'geometry/vector3d_f.h',
       ],
       'includes': [
-        '../../build/android/increase_size_for_speed.gypi',
       ],
     },
     {
@@ -309,7 +308,6 @@
         'win/window_impl.h',
       ],
       'includes': [
-        '../../build/android/increase_size_for_speed.gypi',
       ],
       'conditions': [
         ['OS=="ios"', {
@@ -443,7 +441,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../skia/skia.gyp:skia',
-        '../../testing/gtest.gyp:gtest',
       ],
       'conditions': [
         ['OS == "mac"', {

@@ -346,9 +346,15 @@
       # use_libjpeg_turbo is set.
       'use_system_libjpeg%': 0,
 
-      # By default, component is set to static_library and it can be overriden
+      # By default, component is set to shared_library and it can be overriden
       # by the GYP command line or by ~/.gyp/include.gypi.
-      'component%': 'static_library',
+      'component%': 'shared_library',
+
+      # By default, don't include PPAPI plugin examples for blpwtk2.
+      'bb_ppapi_examples%': 0,
+
+      # By default, put type in pdb name.
+      'dont_include_type_in_pdb%': 0,
 
       # /analyze is off by default on Windows because it is very slow and noisy.
       # Enable with GYP_DEFINES=win_analyze=1
@@ -1073,8 +1079,8 @@
       'google_api_key%': '',
       'google_default_client_id%': '',
       'google_default_client_secret%': '',
-      # Native Client is enabled by default.
-      'disable_nacl%': '0',
+      # Native Client is disabled by default.
+      'disable_nacl%': '1',
 
       # Set to 1 to support old history files
       'support_pre_M6_history_database%': '1',
@@ -1130,6 +1136,8 @@
     'component%': '<(component)',
     'win_analyze%': '<(win_analyze)',
     'enable_resource_whitelist_generation%': '<(enable_resource_whitelist_generation)',
+    'bb_ppapi_examples%': '<(bb_ppapi_examples)',
+    'dont_include_type_in_pdb%': '<(dont_include_type_in_pdb)',
     'use_titlecase_in_grd%': '<(use_titlecase_in_grd)',
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
@@ -1315,6 +1323,9 @@
 
     # Experimental setting to optimize Chrome's DLLs with PGO.
     'chrome_pgo_phase%': '0',
+
+    # Whether or not we want to embed manifests in Windows.
+    'win_embed_manifest%': '0',
 
     # Clang stuff.
     'clang%': '<(clang)',
@@ -2835,6 +2846,13 @@
               }
             }
           }],  # win_z7!=0
+          ['dont_include_type_in_pdb==1', {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'ProgramDatabaseFile': '<(PRODUCT_DIR)/$(TargetName).pdb',
+              }
+            },
+          }],
           ['win_analyze', {
             'defines!': [
               # This is prohibited when running /analyze.
@@ -2976,6 +2994,19 @@
       }],
       ['enable_managed_users==1', {
         'defines': ['ENABLE_MANAGED_USERS=1'],
+      }],
+      ['win_embed_manifest==1', {
+        'msvs_settings': {
+          'VCManifestTool': {
+            'EmbedManifest': 'true',
+          },
+        },
+      }, {
+        'msvs_settings': {
+          'VCManifestTool': {
+            'EmbedManifest': 'false',
+          },
+        },
       }],
       ['spdy_proxy_auth_property != ""', {
         'defines': ['SPDY_PROXY_AUTH_PROPERTY="<(spdy_proxy_auth_property)"'],
@@ -5478,6 +5509,10 @@
           4510, # Default constructor could not be generated
           4512, # Assignment operator could not be generated
           4610, # Object can never be instantiated
+
+          # Unreachable code warning in xtree.
+          # TODO(shez): Find a solution for this.
+          4702,
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
@@ -5543,11 +5578,6 @@
             ],
           },
           'target_conditions': [
-            ['_type=="executable"', {
-              'VCManifestTool': {
-                'EmbedManifest': 'true',
-              },
-            }],
             ['_type=="executable" and ">(win_exe_compatibility_manifest)"!=""', {
               'VCManifestTool': {
                 'AdditionalManifestFiles': [

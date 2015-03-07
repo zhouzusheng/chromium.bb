@@ -64,6 +64,7 @@ class Shell : public WebContentsDelegate,
                            const std::string& data,
                            const GURL& base_url);
   void GoBackOrForward(int offset);
+  void Print();
   void Reload();
   void Stop();
   void UpdateNavigationControls(bool to_different_document);
@@ -158,6 +159,7 @@ class Shell : public WebContentsDelegate,
   enum UIControl {
     BACK_BUTTON,
     FORWARD_BUTTON,
+    PRINT_BUTTON,
     STOP_BUTTON
   };
 

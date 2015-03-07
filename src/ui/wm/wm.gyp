@@ -120,11 +120,8 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
-        '../../testing/gtest.gyp:gtest',
         '../aura/aura.gyp:aura',
-        '../aura/aura.gyp:aura_test_support',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',

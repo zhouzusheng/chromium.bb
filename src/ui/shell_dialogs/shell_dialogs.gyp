@@ -94,9 +94,7 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../base/base.gyp:test_support_base',
         '../../base/base.gyp:run_all_unittests',
-        '../../testing/gtest.gyp:gtest',
         'shell_dialogs',
       ],
       'sources': [

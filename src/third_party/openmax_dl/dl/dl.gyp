@@ -261,22 +261,6 @@
             'sp/src/arm/armv7/omxSP_FFTInv_CCSToR_F32_Sfs_s.S',
           ],
           'conditions': [
-            ['OS=="android"', {
-              # We only do run-time NEON detection on Android.
-              'includes': [
-                '../../../build/android/cpufeatures.gypi',
-              ],
-              'link_settings' : {
-                'libraries': [
-                  # To get the __android_log_print routine
-                  '-llog',
-                ],
-              },
-              'sources': [
-                # Detection routine
-                'sp/src/arm/detect.c',
-              ],
-            }],
           ],
         },
       ],

@@ -111,7 +111,8 @@ base::DictionaryValue* BuildParams(base::ListValue* suggestion_info,
                                    const std::string& country) {
   base::DictionaryValue* params = new base::DictionaryValue;
   params->Set("suggestionInfo", suggestion_info);
-  params->SetString("key", google_apis::GetAPIKey());
+  // SHEZ: remove dependency on google_apis
+  params->SetString("key", ""); // google_apis::GetAPIKey());
   params->SetString("language", language);
   params->SetString("originCountry", country);
   params->SetString("clientName", "Chrome");

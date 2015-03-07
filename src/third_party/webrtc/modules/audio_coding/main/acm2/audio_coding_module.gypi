@@ -126,7 +126,6 @@
             '<@(audio_coding_dependencies)',
             'audio_coding_module',
             'neteq_unittest_tools',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'sources': [
             'acm_receive_test.cc',
@@ -145,7 +144,6 @@
             '<@(audio_coding_dependencies)',
             'audio_coding_module',
             'neteq_unittest_tools',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'sources': [
             'acm_send_test.cc',
@@ -159,7 +157,6 @@
           'type': 'executable',
           'dependencies': [
             'audio_coding_module',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
@@ -177,7 +174,6 @@
           'type': 'executable',
           'dependencies': [
             'audio_coding_module',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',

@@ -173,17 +173,18 @@ void SpellCheckProvider::requestCheckingOfText(
     spellcheck_markers.push_back(
         SpellCheckMarker(markers[i], marker_offsets[i]));
   }
-  RequestTextChecking(text, completion, spellcheck_markers);
+  // SHEZ: check text locally for now
+  //RequestTextChecking(text, completion, spellcheck_markers);
+  spellcheck_->RequestTextChecking(text, completion);
   UMA_HISTOGRAM_COUNTS("SpellCheck.api.async", text.length());
 }
 
 WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableSpellingAutoCorrect)) {
+  {
     UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
     return spellcheck_->GetAutoCorrectionWord(word, routing_id());
   }
-  return base::string16();
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {

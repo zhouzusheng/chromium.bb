@@ -72,7 +72,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_message_loop_tests',
-        '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
         'edk/mojo_edk.gyp:mojo_common_test_support',
         'edk/mojo_edk.gyp:mojo_run_all_unittests',
@@ -157,63 +156,5 @@
     },
   ],
   'conditions': [
-    ['OS=="android"', {
-      'targets': [
-        {
-          'target_name': 'mojo_jni_headers',
-          'type': 'none',
-          'dependencies': [
-            'mojo_java_set_jni_headers',
-          ],
-          'sources': [
-            'android/javatests/src/org/chromium/mojo/MojoTestCase.java',
-            'android/javatests/src/org/chromium/mojo/bindings/ValidationTestUtil.java',
-            'android/system/src/org/chromium/mojo/system/impl/CoreImpl.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'mojo',
-          },
-          'includes': [ '../build/jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'libmojo_system_java',
-          'type': 'static_library',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            'edk/mojo_edk.gyp:mojo_system_impl',
-            'mojo_common_lib',
-            'mojo_environment_chromium',
-            'mojo_jni_headers',
-          ],
-          'sources': [
-            'android/system/core_impl.cc',
-            'android/system/core_impl.h',
-          ],
-        },
-        {
-          'target_name': 'mojo_java_set_jni_headers',
-          'type': 'none',
-          'variables': {
-            'jni_gen_package': 'mojo',
-            'input_java_class': 'java/util/HashSet.class',
-          },
-          'includes': [ '../build/jar_file_jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'mojo_system_java',
-          'type': 'none',
-          'dependencies': [
-            '../base/base.gyp:base_java',
-            'libmojo_system_java',
-            'public/mojo_public.gyp:mojo_public_java',
-          ],
-          'variables': {
-            'java_in_dir': '<(DEPTH)/mojo/android/system',
-          },
-          'includes': [ '../build/java.gypi' ],
-        },
-      ]
-    }]
   ]
 }

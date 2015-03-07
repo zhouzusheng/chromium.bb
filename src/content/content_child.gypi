@@ -315,11 +315,6 @@
         ],
       }
     ],
-    ['OS=="android"', {
-      'includes': [
-        '../build/android/cpufeatures.gypi',
-      ],
-    }],
     ['enable_plugins==0', {
       'sources!': [
         'child/browser_font_resource_trusted.cc',

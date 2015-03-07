@@ -1,7 +1,46 @@
-## This page intentionally left blank. ##
-#
-# Workaround for VS2013 automatically creating .gitattributes files with
-# default settings that we don't want.
-# See also:
-# http://connect.microsoft.com/VisualStudio/feedback/details/804948/inappropriately-creates-gitattributes-file
-# http://crbug.com/342064
+*.gypi text
+*.gyp  text
+
+*.cc  text
+*.cpp text
+*.c   text
+*.hpp text
+*.h   text
+*.hxx text
+
+*.css  text
+*.html text
+*.htm  text
+*.json text
+*.js   text
+*.svg  text
+
+*.idl text
+*.in  text
+*.mk  text
+*.py  text
+*.txt text
+*.xml text
+*.xsd text
+
+# shell scripts (typically run through cygwin during the build process) must
+# have LF endings
+*.sh eol=lf
+
+*.avi  binary
+*.gif  binary
+*.jpeg binary
+*.jpg  binary
+*.mov  binary
+*.mp3  binary
+*.mp4  binary
+*.mpeg binary
+*.mpg  binary
+*.oga  binary
+*.ogg  binary
+*.ogv  binary
+*.ogx  binary
+*.png  binary
+*.webm binary
+*.webp binary
+

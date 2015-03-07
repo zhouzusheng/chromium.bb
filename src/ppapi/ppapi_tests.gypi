@@ -82,31 +82,6 @@
 #        },
 #      ],
     },
-    {
-      # GN version: //ppapi:ppapi_unittest_shared
-      'target_name': 'ppapi_unittest_shared',
-      'type': 'static_library',
-      'dependencies': [
-        'ppapi_proxy',
-        'ppapi_shared',
-        '../base/base.gyp:test_support_base',
-        '../ipc/ipc.gyp:ipc',
-        '../ipc/ipc.gyp:test_support_ipc',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-      ],
-      'sources': [
-        # Note: sources list duplicated in GN build.
-        'proxy/ppapi_proxy_test.cc',
-        'proxy/ppapi_proxy_test.h',
-        'proxy/resource_message_test_sink.cc',
-        'proxy/resource_message_test_sink.h',
-        'shared_impl/test_globals.cc',
-        'shared_impl/test_globals.h',
-        'shared_impl/unittest_utils.cc',
-        'shared_impl/unittest_utils.h',
-      ],
-    },
 
     {
       'target_name': 'ppapi_perftests',
@@ -117,9 +92,6 @@
       'dependencies': [
         'ppapi_proxy',
         'ppapi_shared',
-        'ppapi_unittest_shared',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'proxy/ppapi_perftests.cc',
@@ -144,15 +116,10 @@
         'ppapi_host',
         'ppapi_proxy',
         'ppapi_shared',
-        'ppapi_unittest_shared',
         '../base/base.gyp:run_all_unittests',
-        '../base/base.gyp:test_support_base',
         '../gpu/gpu.gyp:gpu_ipc',
         '../ipc/ipc.gyp:ipc',
-        '../ipc/ipc.gyp:test_support_ipc',
         '../media/media.gyp:shared_memory_support',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '../ui/surface/surface.gyp:surface',
       ],
       'sources': [

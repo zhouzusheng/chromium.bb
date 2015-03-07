@@ -216,14 +216,6 @@
         ['exclude', '/mac/']
       ],
     }],
-    [ 'OS == "android" and target_arch == "arm"', {
-      'sources': [
-        '../third_party/skia/src/core/SkUtilsArm.cpp',
-      ],
-      'includes': [
-        '../build/android/cpufeatures.gypi',
-      ],
-    }],
     [ 'target_arch == "arm" or target_arch == "arm64" or \
        target_arch == "mipsel" or target_arch == "mips64el"', {
       'sources!': [

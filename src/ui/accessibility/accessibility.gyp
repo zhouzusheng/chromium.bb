@@ -70,7 +70,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:run_all_unittests',
-        '../../testing/gtest.gyp:gtest',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'accessibility',

@@ -10,10 +10,16 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
+
+// SHEZ: Remove dependency on g_browser_process
+// #include "chrome/browser/browser_process.h"
+
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
-#include "chrome/grit/generated_resources.h"
+
+// LEVI: Remove chrome resources.
+// #include "chrome/grit/generated_resources.h"
+
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -69,7 +75,7 @@ gfx::NativeView PrintingContextDelegate::GetParentView() {
 }
 
 std::string PrintingContextDelegate::GetAppLocale() {
-  return g_browser_process->GetApplicationLocale();
+  return "en-US";
 }
 
 void NotificationCallback(PrintJobWorkerOwner* print_job,
@@ -225,8 +231,9 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
   base::string16 document_name =
       printing::SimplifyDocumentTitle(document_->name());
   if (document_name.empty()) {
+    // TODO(LEVI): Set this to what it should really be
     document_name = printing::SimplifyDocumentTitle(
-        l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
+        L"Default Print Document Title");
   }
   PrintingContext::Result result =
       printing_context_->NewDocument(document_name);

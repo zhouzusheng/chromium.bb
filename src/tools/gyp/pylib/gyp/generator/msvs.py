@@ -23,6 +23,10 @@ import gyp.MSVSVersion as MSVSVersion
 from gyp.common import GypError
 from gyp.common import OrderedSet
 
+# SHEZ: Made the following changes:
+# * Add 'msvs_print_missing_sources' option to suppress printing the list of
+#   missing files.
+
 # TODO: Remove once bots are on 2.7, http://crbug.com/241769
 def _import_OrderedDict():
   import collections
@@ -1000,7 +1004,7 @@ def _GenerateMSVSProject(project, options, version, generator_flags):
   _GenerateRulesForMSVS(p, project_dir, options, spec,
                         sources, excluded_sources,
                         actions_to_add)
-  list_excluded = generator_flags.get('msvs_list_excluded_files', True)
+  list_excluded = generator_flags.get('msvs_list_excluded_files', False)
   sources, excluded_sources, excluded_idl = (
       _AdjustSourcesAndConvertToFilterHierarchy(spec, options, project_dir,
                                                 sources, excluded_sources,
@@ -1882,6 +1886,14 @@ def _InitNinjaFlavor(params, target_list, target_dicts):
         '-tclean',
         '$(ProjectName)',
       ]
+    if not spec.get('msvs_external_builder_clcompile_cmd'):
+      spec['msvs_external_builder_clcompile_cmd'] = [
+        sys.executable,
+        '$(OutDir)/gyp-win-tool',
+        'cl-compile',
+        '$(ProjectDir)',
+        '$(SelectedFiles)',
+      ]
 
 
 def CalculateVariables(default_variables, params):
@@ -2008,7 +2020,7 @@ def GenerateOutput(target_list, target_dicts, data, params):
                     '\n'.join(set(missing_sources))
     if generator_flags.get('msvs_error_on_missing_sources', False):
       raise GypError(error_message)
-    else:
+    elif generator_flags.get('msvs_print_missing_sources', False):
       print >> sys.stdout, "Warning: " + error_message
 
 
@@ -3199,7 +3211,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   targets_files_of_rules = set()
   rule_dependencies = set()
   extension_to_rule_name = {}
-  list_excluded = generator_flags.get('msvs_list_excluded_files', True)
+  list_excluded = generator_flags.get('msvs_list_excluded_files', False)
 
   # Don't generate rules if we are using an external builder like ninja.
   if not spec.get('msvs_external_builder'):

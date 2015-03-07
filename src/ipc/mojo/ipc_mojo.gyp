@@ -52,14 +52,11 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../ipc.gyp:ipc',
-        '../ipc.gyp:test_support_ipc',
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
-        '../../base/base.gyp:test_support_base',
         '../../mojo/edk/mojo_edk.gyp:mojo_system_impl',
         '../../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../../testing/gtest.gyp:gtest',
         'ipc_mojo',
       ],
       'include_dirs': [
@@ -78,15 +75,12 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../ipc.gyp:ipc',
-        '../ipc.gyp:test_support_ipc',
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
-        '../../base/base.gyp:test_support_base',
         '../../base/base.gyp:test_support_perf',
         '../../mojo/edk/mojo_edk.gyp:mojo_system_impl',
         '../../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../../testing/gtest.gyp:gtest',
         'ipc_mojo',
       ],
       'include_dirs': [

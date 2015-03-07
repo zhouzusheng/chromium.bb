@@ -9,8 +9,6 @@
     'sandbox',
     'sandbox_linux_test_utils',
     '../base/base.gyp:base',
-    '../base/base.gyp:test_support_base',
-    '../testing/gtest.gyp:gtest',
   ],
   'include_dirs': [
     '../..',

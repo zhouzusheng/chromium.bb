@@ -334,11 +334,6 @@
                 'libvpx_srcs_arm_neon.gypi',
               ],
             }],
-            ['OS == "android"', {
-              'includes': [
-                '../../build/android/cpufeatures.gypi',
-              ],
-            }],
             ['OS == "ios"', {
               'xcode_settings': {
                 'OTHER_CFLAGS!': [

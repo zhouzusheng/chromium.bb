@@ -98,44 +98,5 @@
     },
   ],
   'conditions': [
-    ['OS == "android"', {
-      'targets': [
-        {
-          'target_name': 'device_battery_jni_headers',
-          'type': 'none',
-          'sources': [
-            'android/java/src/org/chromium/device/battery/BatteryStatusManager.java',
-          ],
-          'variables': {
-            'jni_gen_package': 'device_battery',
-          },
-          'includes': [ '../../build/jni_generator.gypi' ],
-        },
-        {
-          'target_name': 'device_battery_java',
-          'type': 'none',
-          'dependencies': [
-            '../../base/base.gyp:base',
-          ],
-          'variables': {
-            'java_in_dir': '../../device/battery/android/java',
-          },
-          'includes': [ '../../build/java.gypi' ],
-        },
-        {
-          'target_name': 'device_battery_javatests',
-          'type': 'none',
-          'variables': {
-            'java_in_dir': '../../device/battery/android/javatests',
-          },
-          'dependencies': [
-            '../../base/base.gyp:base',
-            '../../base/base.gyp:base_java_test_support',
-            'device_battery_java',
-          ],
-          'includes': [ '../../build/java.gypi' ],
-        },
-      ],
-    }],
   ],
 }

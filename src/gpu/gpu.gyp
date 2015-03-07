@@ -32,7 +32,6 @@
       'includes': [
         # Disable LTO due to ELF section name out of range
         # crbug.com/422251
-        '../build/android/disable_lto.gypi',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
@@ -129,8 +128,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '<(angle_path)/src/angle.gyp:translator_static',
       ],
       'variables': {
@@ -157,10 +154,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/base.gyp:test_support_base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '<(angle_path)/src/angle.gyp:translator',
         '../ui/gl/gl.gyp:gl',
         '../ui/gfx/gfx.gyp:gfx',
@@ -293,8 +287,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '<(angle_path)/src/angle.gyp:translator',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_test_support',
@@ -363,8 +355,6 @@
       'target_name': 'gpu_unittest_utils',
       'type': 'static_library',
       'dependencies': [
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
         '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl_unittest_utils',
         'gpu',
@@ -460,10 +450,8 @@
           'type': 'static_library',
           'includes': [
             'command_buffer_service.gypi',
-            '../build/android/increase_size_for_speed.gypi',
             # Disable LTO due to ELF section name out of range
             # crbug.com/422251
-            '../build/android/disable_lto.gypi',
           ],
           'dependencies': [
             'command_buffer_common',
@@ -516,7 +504,6 @@
             'gles2_cmd_helper.gypi',
             'gpu_config.gypi',
             'gpu_ipc.gypi',
-            '../build/android/increase_size_for_speed.gypi',
           ],
           'defines': [
             'GPU_IMPLEMENTATION',
@@ -624,34 +611,6 @@
               'msvs_target_platform': 'x64',
             },
           },
-        },
-      ],
-    }],
-    ['OS == "android"', {
-      'targets': [
-        {
-          'target_name': 'gl_tests_apk',
-          'type': 'none',
-          'dependencies': [
-            'gl_tests',
-          ],
-          'variables': {
-            'test_suite_name': 'gl_tests',
-          },
-          'includes': [
-            '../build/apk_test.gypi',
-          ],
-        },
-        {
-          'target_name': 'gpu_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'gpu_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'gpu_unittests',
-          },
-          'includes': [ '../build/apk_test.gypi' ],
         },
       ],
     }],

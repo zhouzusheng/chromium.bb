@@ -2478,8 +2478,11 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     active_mouse_tracking_flags_ = 0;
   } else if (event.type() == ui::ET_MOUSEWHEEL) {
     // Reroute the mouse wheel to the window under the pointer if applicable.
-    return (ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
-            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
+    bool handled = ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
+            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg));
+
+    SetMsgHandled(handled);
+    return handled ? 0 : 1;
   }
 
   // There are cases where the code handling the message destroys the window,

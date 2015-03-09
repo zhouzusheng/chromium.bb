@@ -66,6 +66,10 @@ void DependencyManager::CreateContextServices(base::SupportsUserData* context,
   for (const auto& dependency_node : construction_order) {
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
+
+    // TODO(SHEZ): Do we still need this?
+    factory->RegisterUserPrefsOnBrowserContextForTest(context);
+
     if (is_testing_context && factory->ServiceIsNULLWhileTesting() &&
         !factory->HasTestingFactory(context)) {
       factory->SetEmptyTestingFactory(context);

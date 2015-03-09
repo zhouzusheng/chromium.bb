@@ -621,9 +621,9 @@ void RenderWidgetHostImpl::WasResized() {
   if (!size_changed && !side_payload_changed)
     return;
 
-  // We don't expect to receive an ACK when the requested size or the physical
-  // backing size is empty, or when the main viewport size didn't change.
-  if (!params->new_size.IsEmpty() && !params->physical_backing_size.IsEmpty() &&
+  // We don't expect to receive an ACK when the requested size is empty or when
+  // the main viewport size didn't change.
+  if (!params->new_size.IsEmpty() &&
       size_changed) {
     resize_ack_pending_ = g_check_for_pending_resize_ack;
   }
@@ -643,6 +643,10 @@ void RenderWidgetHostImpl::GotFocus() {
   Focus();
   if (delegate_)
     delegate_->RenderWidgetGotFocus(this);
+}
+
+void RenderWidgetHostImpl::LostFocus() {
+  Blur();
 }
 
 void RenderWidgetHostImpl::Focus() {
@@ -1465,6 +1469,14 @@ void RenderWidgetHostImpl::OnSetTooltipText(
   // trying to detect the directionality from the tooltip text rather than the
   // element direction.  One could argue that would be a preferable solution
   // but we use the current approach to match Fx & IE's behavior.
+
+  if (delegate_) {
+    const bool showTooltipHandled = delegate_->ShowTooltip(tooltip_text, 
+                                                           text_direction_hint);
+    if (showTooltipHandled) {
+        return;
+    }
+  }
   base::string16 wrapped_tooltip_text = tooltip_text;
   if (!tooltip_text.empty()) {
     if (text_direction_hint == blink::WebTextDirectionLeftToRight) {
@@ -1991,6 +2003,14 @@ void RenderWidgetHostImpl::OnSyntheticGestureCompleted(
 
 bool RenderWidgetHostImpl::IgnoreInputEvents() const {
   return ignore_input_events_ || process_->IgnoreInputEvents();
+}
+
+bool RenderWidgetHostImpl::ShouldSetKeyboardFocusOnMouseDown() const {
+  return !delegate_ || delegate_->ShouldSetKeyboardFocusOnMouseDown();
+}
+
+bool RenderWidgetHostImpl::ShouldSetLogicalFocusOnMouseDown() const {
+  return !delegate_ || delegate_->ShouldSetLogicalFocusOnMouseDown();
 }
 
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {

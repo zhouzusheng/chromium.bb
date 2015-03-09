@@ -17,6 +17,16 @@ namespace ui {
 static const char* const kHWNDSupportMouseWheelRerouting =
     "__HWND_MW_REROUTE_OK";
 
+static bool IsBlpwtk1Window(HWND window) {
+  char buf[MAX_PATH];
+  int len = ::GetWindowTextA(window, buf, MAX_PATH-1);
+  buf[len] = 0;
+  if (0 == strncmp(buf, "WebkitCtrl ", 11)) {
+    return true;
+  }
+  return false;
+}
+
 static bool WindowSupportsRerouteMouseWheel(HWND window) {
   while (GetWindowLong(window, GWL_STYLE) & WS_CHILD) {
     if (!IsWindow(window))
@@ -25,6 +35,13 @@ static bool WindowSupportsRerouteMouseWheel(HWND window) {
     if (ViewProp::GetValue(window, kHWNDSupportMouseWheelRerouting) != NULL) {
       return true;
     }
+
+    // SHEZ: If this is a blpwtk1 window, then it supports rerouting mouse
+    // SHEZ: wheel.
+    if (IsBlpwtk1Window(window)) {
+      return true;
+    }
+
     window = GetParent(window);
   }
   return false;
@@ -50,6 +67,20 @@ static bool CanRedirectMouseWheelFrom(HWND window) {
     return false;
 
   return true;
+}
+
+static bool IsInsideBlpwtk1Window(HWND window) {
+  while (GetWindowLong(window, GWL_STYLE) & WS_CHILD) {
+    if (!IsWindow(window))
+      break;
+
+    if (IsBlpwtk1Window(window)) {
+      return true;
+    }
+
+    window = GetParent(window);
+  }
+  return false;
 }
 
 ViewProp* SetWindowSupportsRerouteMouseWheel(HWND hwnd) {
@@ -90,7 +121,10 @@ bool RerouteMouseWheel(HWND window, WPARAM w_param, LPARAM l_param) {
         // If this message is reflected from a child window in a different
         // process (happens with out of process windowed plugins) then
         // we don't want to reroute the wheel message.
-        return false;
+        // SHEZ: Except, if that window happens to be our blpwtk1 window.
+        if (!IsInsideBlpwtk1Window(window_under_wheel)) {
+          return false;
+        }
       } else {
         // The wheel is scrolling over an unrelated window. Make sure that we
         // have marked that window as supporting mouse wheel rerouting.

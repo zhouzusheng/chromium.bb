@@ -340,10 +340,13 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       remove_standard_frame_(false),
       use_system_default_icon_(false),
       restored_enabled_(false),
+      is_cursor_overridden_(false),
+      handled_wm_destroy_(false),
       current_cursor_(NULL),
       previous_cursor_(NULL),
       active_mouse_tracking_flags_(0),
       is_right_mouse_pressed_on_caption_(false),
+      is_delegate_nc_dragging_(false),
       lock_updates_count_(0),
       ignore_window_pos_changes_(false),
       last_monitor_(NULL),
@@ -784,6 +787,11 @@ bool HWNDMessageHandler::SetTitle(const base::string16& title) {
 }
 
 void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
+  if (is_cursor_overridden_) {
+    current_cursor_ = cursor;
+    return;
+  }
+
   if (cursor) {
     previous_cursor_ = ::SetCursor(cursor);
     current_cursor_ = cursor;
@@ -936,8 +944,12 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
 
   if (delegate_) {
     delegate_->PostHandleMSG(message, w_param, l_param);
-    if (message == WM_NCDESTROY)
+    if (message == WM_NCDESTROY) {
+      if (!handled_wm_destroy_) {
+        OnDestroy();
+      }
       delegate_->HandleDestroyed();
+    }
   }
 
   if (message == WM_ACTIVATE && IsTopLevelWindow(window))
@@ -1289,6 +1301,12 @@ void HWNDMessageHandler::OnCancelMode() {
 }
 
 void HWNDMessageHandler::OnCaptureChanged(HWND window) {
+  if (is_delegate_nc_dragging_) {
+    is_delegate_nc_dragging_ = false;
+    delegate_->HandleNCDragEnd();
+    return;
+  }
+
   delegate_->HandleCaptureLost();
 }
 
@@ -1355,6 +1373,7 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
 void HWNDMessageHandler::OnDestroy() {
   WTSUnRegisterSessionNotification(hwnd());
   delegate_->HandleDestroying();
+  handled_wm_destroy_ = true;
 }
 
 void HWNDMessageHandler::OnDisplayChange(UINT bits_per_pixel,
@@ -1574,6 +1593,31 @@ LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
 LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
                                          WPARAM w_param,
                                          LPARAM l_param) {
+  if (message == WM_NCLBUTTONDOWN) {
+    DCHECK(!is_delegate_nc_dragging_);
+    is_delegate_nc_dragging_ = delegate_->HandleNCDragBegin(w_param);
+    if (is_delegate_nc_dragging_) {
+      nc_dragging_hittest_code_ = w_param;
+      SetCapture();
+      return 0;
+    }
+  }
+  else if (is_delegate_nc_dragging_) {
+    // When the delegate handles non-client dragging, we do SetCaputure.  This
+    // causes subsequent mouse moves to come in as WM_MOUSEMOVE instead of
+    // coming in as WM_NCMOUSEMOVE.
+    if (message == WM_MOUSEMOVE) {
+      delegate_->HandleNCDragMove();
+      return 0;
+    }
+    else if (message == WM_LBUTTONUP) {
+      is_delegate_nc_dragging_ = false;
+      ReleaseCapture();
+      delegate_->HandleNCDragEnd();
+      return 0;
+    }
+  }
+
   return HandleMouseEventInternal(message, w_param, l_param, true);
 }
 
@@ -1739,6 +1783,20 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
 }
 
 LRESULT HWNDMessageHandler::OnNCHitTest(const gfx::Point& point) {
+  if (is_delegate_nc_dragging_) {
+    return nc_dragging_hittest_code_;
+  }
+  else {
+    // Give the delegate a chance to do its own non-client hit testing.
+    // Note that this is similar to the GetNonClientComponent used below,
+    // but this is unconditional and gives the delegate a chance to handle
+    // this event regardless of how the aura/views setup has been done.
+    LRESULT result;
+    if (delegate_->HandleNCHitTest(&result, point)) {
+      return result;
+    }
+  }
+
   if (!delegate_->IsWidgetWindow()) {
     SetMsgHandled(FALSE);
     return 0;
@@ -1991,6 +2049,7 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       break;
     case HTTOPLEFT:
     case HTBOTTOMRIGHT:
+    case HTOBJECT:  /* see blpwtk2_webviewimpl.cc: HTBOTTOMRIGHT is 'special' in Windows, so we don't use it */
       cursor = IDC_SIZENWSE;
       break;
     case HTTOPRIGHT:
@@ -1998,6 +2057,7 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       cursor = IDC_SIZENESW;
       break;
     case HTCLIENT:
+      is_cursor_overridden_ = false;
       SetCursor(current_cursor_);
       return 1;
     case LOWORD(HTERROR):  // Use HTERROR's LOWORD value for valid comparison.
@@ -2007,6 +2067,7 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       // Use the default value, IDC_ARROW.
       break;
   }
+  is_cursor_overridden_ = true;
   ::SetCursor(LoadCursor(NULL, cursor));
   return 1;
 }

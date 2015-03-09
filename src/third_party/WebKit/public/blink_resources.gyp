@@ -18,6 +18,13 @@
           },
           'includes': [ '../../../build/grit_action.gypi' ],
         },
+        {
+          'action_name': 'generate_blink_inspector_resources',
+          'variables': {
+            'grit_grd_file': 'blink_inspector_resources.grd',
+          },
+          'includes': [ '../../../build/grit_action.gypi' ],
+        },
       ],
       'direct_dependent_settings': {
         'include_dirs': [

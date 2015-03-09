@@ -607,8 +607,8 @@ void RenderFrameHostImpl::OnAddMessageToConsole(
     return;
 
   // Pass through log level only on WebUI pages to limit console spew.
-  int32 resolved_level =
-      HasWebUIScheme(delegate_->GetMainFrameLastCommittedURL()) ? level : 0;
+  int32 resolved_level = level;
+      // upstream: HasWebUIScheme(delegate_->GetMainFrameLastCommittedURL()) ? level : 0;
 
   // LogMessages can be persisted so this shouldn't be logged in incognito mode.
   if (resolved_level >= ::logging::GetMinLogLevel()

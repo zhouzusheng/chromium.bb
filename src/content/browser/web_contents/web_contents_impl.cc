@@ -210,7 +210,7 @@ WebContents* WebContents::CreateWithSessionStorage(
     const WebContents::CreateParams& params,
     const SessionStorageNamespaceMap& session_storage_namespace_map) {
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, NULL);
+      params.browser_context, NULL, params.render_process_affinity);
 
   for (SessionStorageNamespaceMap::const_iterator it =
            session_storage_namespace_map.begin();
@@ -285,7 +285,8 @@ WebContentsImpl::ColorChooserInfo::~ColorChooserInfo() {
 // WebContentsImpl -------------------------------------------------------------
 
 WebContentsImpl::WebContentsImpl(BrowserContext* browser_context,
-                                 WebContentsImpl* opener)
+                                 WebContentsImpl* opener,
+                                 int render_process_affinity)
     : delegate_(NULL),
       controller_(this, browser_context),
       render_view_host_delegate_view_(NULL),
@@ -298,7 +299,8 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context,
                   this,
                   this,
                   this,
-                  this),
+                  this,
+                  render_process_affinity),
       is_loading_(false),
       is_load_to_different_document_(false),
       crashed_status_(base::TERMINATION_STATUS_STILL_RUNNING),
@@ -416,7 +418,8 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
     WebContentsImpl* opener) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateWithOpener");
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, params.opener_suppressed ? NULL : opener);
+      params.browser_context, params.opener_suppressed ? NULL : opener,
+      params.render_process_affinity);
 
   if (params.guest_delegate) {
     // This makes |new_contents| act as a guest.
@@ -1391,6 +1394,23 @@ bool WebContentsImpl::HandleGestureEvent(
   return false;
 }
 
+bool WebContentsImpl::ShouldSetKeyboardFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetKeyboardFocusOnMouseDown();
+}
+
+bool WebContentsImpl::ShouldSetLogicalFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetLogicalFocusOnMouseDown();
+}
+
+bool WebContentsImpl::ShowTooltip(
+    const base::string16& tooltip_text,
+    blink::WebTextDirection text_direction_hint) {
+  if (delegate_) {
+    return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
+  }
+  return false;
+}
+
 void WebContentsImpl::HandleMouseDown() {
   if (delegate_)
     delegate_->HandleMouseDown();
@@ -1526,6 +1546,7 @@ void WebContentsImpl::CreateNewWindow(
   CreateParams create_params(GetBrowserContext(), site_instance.get());
   create_params.routing_id = route_id;
   create_params.main_frame_routing_id = main_frame_route_id;
+  create_params.render_process_affinity = frame_tree_.RenderProcessAffinity();
   create_params.opener = this;
   create_params.opener_suppressed = params.opener_suppressed;
   if (params.disposition == NEW_BACKGROUND_TAB)
@@ -1563,9 +1584,20 @@ void WebContentsImpl::CreateNewWindow(
   }
 
   if (delegate_) {
+    ContentCreatedParams delegate_params;
+    delegate_params.disposition = params.disposition;
+    delegate_params.x = params.features.x;
+    delegate_params.y = params.features.y;
+    delegate_params.width = params.features.width;
+    delegate_params.height = params.features.height;
+    delegate_params.x_set = params.features.xSet;
+    delegate_params.y_set = params.features.ySet;
+    delegate_params.width_set = params.features.widthSet;
+    delegate_params.height_set = params.features.heightSet;
+    delegate_params.additional_features = params.additional_features;
     delegate_->WebContentsCreated(
         this, params.opener_render_frame_id, params.frame_name,
-        params.target_url, new_contents);
+        params.target_url, delegate_params, new_contents);
   }
 
   if (params.opener_suppressed) {

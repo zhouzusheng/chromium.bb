@@ -515,7 +515,7 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
     eventInit.bubbles = true;
     eventInit.cancelable = true;
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(detailObj, isolate));
+    event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(isolate, detailObj));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

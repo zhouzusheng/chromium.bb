@@ -1965,7 +1965,7 @@ BBWindowHooks* LocalDOMWindow::bbWindowHooks() const
     if (!isCurrentlyDisplayedInFrame())
         return 0;
     if (!m_bbWindowHooks)
-        m_bbWindowHooks = BBWindowHooks::create(m_frame);
+        m_bbWindowHooks = BBWindowHooks::create(frame());
     return m_bbWindowHooks.get();
 }
 

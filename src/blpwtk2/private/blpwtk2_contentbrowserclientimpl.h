@@ -49,14 +49,14 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // Notifies that a render process will be created. This is called before
     // the content layer adds its own BrowserMessageFilters, so that the
     // embedder's IPC filters have priority.
-    virtual void RenderProcessWillLaunch(content::RenderProcessHost* host) OVERRIDE;
+    void RenderProcessWillLaunch(content::RenderProcessHost* host) override;
 
     // Called by WebContents to override the WebKit preferences that are used by
     // the renderer. The content layer will add its own settings, and then it's up
     // to the embedder to update it if it wants.
-    virtual void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
-                                     const GURL& url,
-                                     content::WebPreferences* prefs) OVERRIDE;
+    void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
+                             const GURL& url,
+                             content::WebPreferences* prefs) override;
 
     // Returns true whether the embedder supports in-process renderers or not.
     // When running "in process", the browser maintains a RenderProcessHost which
@@ -65,31 +65,31 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // same, it's just not crossing a process boundary. This returns false by
     // default. If implementations return true, they must also implement
     // StartInProcessRendererThread and StopInProcessRendererThread.
-    virtual bool SupportsInProcessRenderer() OVERRIDE;
+    bool SupportsInProcessRenderer() override;
 
-    virtual void ResourceDispatcherHostCreated() OVERRIDE;
+    void ResourceDispatcherHostCreated() override;
 
     // If content creates the WebContentsView implementation, it will ask the
     // embedder to return an (optional) delegate to customize it. The view will
     // own the delegate.
-    virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
-        content::WebContents* webContents);
+    content::WebContentsViewDelegate* GetWebContentsViewDelegate(
+        content::WebContents* webContents) override;
 
     // Creates the main net::URLRequestContextGetter.  Should only be called
     // once per ContentBrowserClient object.
     // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
-    virtual net::URLRequestContextGetter* CreateRequestContext(
+    net::URLRequestContextGetter* CreateRequestContext(
         content::BrowserContext* browserContext,
         content::ProtocolHandlerMap* protocolHandlers,
-        content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
+        content::URLRequestInterceptorScopedVector request_interceptors) override;
 
     // Returns whether a specified URL is handled by the embedder's internal
     // protocol handlers.
-    virtual bool IsHandledURL(const GURL& url) OVERRIDE;
+    bool IsHandledURL(const GURL& url) override;
 
     // Creates a new DevToolsManagerDelegate. The caller owns the returned value.
     // It's valid to return NULL.
-    virtual content::DevToolsManagerDelegate* GetDevToolsManagerDelegate() OVERRIDE;
+    content::DevToolsManagerDelegate* GetDevToolsManagerDelegate() override;
 
   private:
     RendererInfoMap* d_rendererInfoMap;

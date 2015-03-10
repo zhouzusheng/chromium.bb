@@ -27,8 +27,6 @@
 
 #include <blpwtk2_webframe.h>
 
-#include <base/compiler_specific.h>  // for OVERRIDE
-
 namespace blink {
     class WebFrame;
 }  // close namespace blink
@@ -39,8 +37,8 @@ namespace blpwtk2 {
 class WebFrameImpl : public WebFrame {
   public:
     WebFrameImpl(blink::WebFrame* impl);
-    virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
-    virtual v8::Isolate* scriptIsolate() const OVERRIDE;
+    v8::Local<v8::Context> mainWorldScriptContext() const override;
+    v8::Isolate* scriptIsolate() const override;
 
   private:
     blink::WebFrame* d_impl;

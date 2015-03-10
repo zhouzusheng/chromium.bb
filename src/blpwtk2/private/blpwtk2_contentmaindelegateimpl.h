@@ -44,12 +44,12 @@ class ContentClient : public content::ContentClient {
     virtual ~ContentClient();
 
     // Returns the user agent.
-    virtual std::string GetUserAgent() const OVERRIDE;
+    std::string GetUserAgent() const override;
 
     // Return the contents of a resource in a StringPiece given the resource id.
-    virtual base::StringPiece GetDataResource(
+    base::StringPiece GetDataResource(
         int resource_id,
-        ui::ScaleFactor scale_factor) const OVERRIDE;
+        ui::ScaleFactor scale_factor) const override;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentClient);
@@ -67,14 +67,11 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     void appendCommandLineSwitch(const char* switchString);
 
     // ContentMainDelegate implementation
-    virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
-    virtual void PreSandboxStartup() OVERRIDE;
-    virtual content::ContentBrowserClient*
-        CreateContentBrowserClient() OVERRIDE;
-    virtual content::ContentRendererClient*
-        CreateContentRendererClient() OVERRIDE;
-    virtual content::ContentUtilityClient*
-        CreateContentUtilityClient() OVERRIDE;
+    bool BasicStartupComplete(int* exit_code) override;
+    void PreSandboxStartup() override;
+    content::ContentBrowserClient* CreateContentBrowserClient() override;
+    content::ContentRendererClient* CreateContentRendererClient() override;
+    content::ContentUtilityClient* CreateContentUtilityClient() override;
 
   private:
     std::vector<std::string> d_commandLineSwitches;

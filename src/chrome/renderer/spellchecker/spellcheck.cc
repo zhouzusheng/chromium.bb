@@ -49,7 +49,7 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
 class RequestSpellcheckForView : public content::RenderViewVisitor {
  public:
   RequestSpellcheckForView() {}
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+  bool Visit(content::RenderView* render_view) override;
  private:
   DISALLOW_COPY_AND_ASSIGN(RequestSpellcheckForView);
 };

@@ -38,12 +38,12 @@ class DevToolsHttpHandlerDelegateImpl
     virtual ~DevToolsHttpHandlerDelegateImpl();
 
     // ====== DevToolsHttpHandlerDelegate overrides =======
-    virtual std::string GetDiscoveryPageHTML() OVERRIDE { return std::string(); }
-    virtual bool BundlesFrontendResources() OVERRIDE { return true; }
-    virtual base::FilePath GetDebugFrontendDir() OVERRIDE { return base::FilePath(); }
-    virtual scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
+    std::string GetDiscoveryPageHTML() override { return std::string(); }
+    bool BundlesFrontendResources() override { return true; }
+    base::FilePath GetDebugFrontendDir() override { return base::FilePath(); }
+    scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
         net::StreamListenSocket::Delegate* delegate,
-        std::string* name) OVERRIDE { return scoped_ptr<net::StreamListenSocket>(); }
+        std::string* name) override { return scoped_ptr<net::StreamListenSocket>(); }
 };
 
 // TODO: document this
@@ -54,16 +54,16 @@ class DevToolsManagerDelegateImpl : public content::DevToolsManagerDelegate {
   virtual ~DevToolsManagerDelegateImpl();
 
   // DevToolsManagerDelegate implementation.
-  virtual void Inspect(content::BrowserContext* browserContext,
-                       content::DevToolsAgentHost* agentHost) OVERRIDE {}
-  virtual void DevToolsAgentStateChanged(content::DevToolsAgentHost* agentHost,
-                                         bool attached) OVERRIDE {}
-  virtual base::DictionaryValue* HandleCommand(
+  void Inspect(content::BrowserContext* browserContext,
+               content::DevToolsAgentHost* agentHost) override {}
+  void DevToolsAgentStateChanged(content::DevToolsAgentHost* agentHost,
+                                         bool attached) override {}
+  base::DictionaryValue* HandleCommand(
       content::DevToolsAgentHost* agentHost,
-      base::DictionaryValue* command) OVERRIDE;
-  virtual scoped_ptr<content::DevToolsTarget> CreateNewTarget(const GURL& url) OVERRIDE;
-  virtual void EnumerateTargets(TargetCallback callback) OVERRIDE;
-  virtual std::string GetPageThumbnailData(const GURL& url) { return std::string(); }
+      base::DictionaryValue* command) override;
+  scoped_ptr<content::DevToolsTarget> CreateNewTarget(const GURL& url) override;
+  void EnumerateTargets(TargetCallback callback) override;
+  std::string GetPageThumbnailData(const GURL& url) override { return std::string(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DevToolsManagerDelegateImpl);

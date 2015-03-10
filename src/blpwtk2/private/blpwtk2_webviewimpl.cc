@@ -48,11 +48,11 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/site_instance.h>
+#include <content/public/common/file_chooser_file_info.h>
 #include <content/public/common/web_preferences.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
 #include <ui/base/win/hidden_window.h>
-#include <ui/shell_dialogs/selected_file_info.h>
 
 namespace blpwtk2 {
 
@@ -61,7 +61,7 @@ public:
     DummyMediaStreamUI() {}
     virtual ~DummyMediaStreamUI() {}
 
-    virtual gfx::NativeViewId OnStarted(const base::Closure& stop) OVERRIDE
+    gfx::NativeViewId OnStarted(const base::Closure& stop) override
     {
         return 0;
     }
@@ -508,10 +508,9 @@ void WebViewImpl::fileChooserCompleted(const StringRef* paths,
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
-    std::vector<ui::SelectedFileInfo> files(numPaths);
+    std::vector<content::FileChooserFileInfo> files(numPaths);
     for (size_t i = 0; i < numPaths; ++i) {
         files[i].file_path = base::FilePath::FromUTF8Unsafe(paths[i].toStdString());
-        files[i].local_path = files[i].file_path;
         files[i].display_name = files[i].file_path.BaseName().value();
     }
 

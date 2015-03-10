@@ -39,40 +39,40 @@ public:
     virtual ~ViewsDelegateImpl();
 
 private:
-    virtual void SaveWindowPlacement(
+    void SaveWindowPlacement(
         const views::Widget* widget,
         const std::string& window_name,
         const gfx::Rect& bounds,
-        ui::WindowShowState show_state) OVERRIDE {}
-    virtual bool GetSavedWindowPlacement(
+        ui::WindowShowState show_state) override {}
+    bool GetSavedWindowPlacement(
         const views::Widget* widget,
         const std::string& window_name,
         gfx::Rect* bounds,
-        ui::WindowShowState* show_state) const OVERRIDE;
-    virtual void NotifyAccessibilityEvent(
+        ui::WindowShowState* show_state) const override;
+    void NotifyAccessibilityEvent(
         views::View* view,
-        ui::AXEvent event_type) OVERRIDE{}
-    virtual void NotifyMenuItemFocused(
+        ui::AXEvent event_type) override {}
+    void NotifyMenuItemFocused(
         const base::string16& menu_name,
         const base::string16& menu_item_name,
         int item_index,
         int item_count,
-        bool has_submenu) OVERRIDE {}
+        bool has_submenu) override {}
 #if defined(OS_WIN)
-    virtual HICON GetDefaultWindowIcon() const OVERRIDE;
-    virtual bool IsWindowInMetro(gfx::NativeWindow window) const OVERRIDE;
+    HICON GetDefaultWindowIcon() const override;
+    bool IsWindowInMetro(gfx::NativeWindow window) const override;
 #endif
-    virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
-        views::Widget* widget) OVERRIDE;
-    virtual void AddRef() OVERRIDE { }
-    virtual void ReleaseRef() OVERRIDE { }
-    virtual content::WebContents* CreateWebContents(
+    views::NonClientFrameView* CreateDefaultNonClientFrameView(
+        views::Widget* widget) override;
+    void AddRef() override { }
+    void ReleaseRef() override { }
+    content::WebContents* CreateWebContents(
         content::BrowserContext* browser_context,
-        content::SiteInstance* site_instance) OVERRIDE;
-    virtual base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() OVERRIDE;
-    virtual void OnBeforeWidgetInit(
+        content::SiteInstance* site_instance) override;
+    base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() override;
+    void OnBeforeWidgetInit(
         views::Widget::InitParams* params,
-        views::internal::NativeWidgetDelegate* delegate) OVERRIDE;
+        views::internal::NativeWidgetDelegate* delegate) override;
 
     DISALLOW_COPY_AND_ASSIGN(ViewsDelegateImpl);
 };

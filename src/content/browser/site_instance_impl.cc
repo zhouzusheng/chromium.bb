@@ -118,7 +118,7 @@ RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
         bool is_in_process = CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kSingleProcess);
         base::ProcessHandle processHandle =
-            is_in_process ? base::Process::Current().handle()
+            is_in_process ? base::GetCurrentProcessHandle()
                           : base::kNullProcessHandle;
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(

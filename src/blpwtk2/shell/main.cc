@@ -54,7 +54,6 @@ bool g_custom_tooltip = false;
 bool g_no_plugin_discovery = false;
 HANDLE g_hJob;
 
-#define OVERRIDE override
 #define BUTTON_WIDTH 72
 #define URLBAR_HEIGHT  24
 #define AUTO_PUMP 1
@@ -284,7 +283,7 @@ public:
 
     ///////// WebViewDelegate overrides
 
-    virtual void updateTargetURL(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    void updateTargetURL(blpwtk2::WebView* source, const blpwtk2::StringRef& url) override
     {
         assert(source == d_webView);
         std::string str(url.data(), url.length());
@@ -297,8 +296,8 @@ public:
     // Notification that the navigation state of the specified 'source' has
     // been updated.  This notification can be used to update the state of UI
     // controls for back/forward actions.
-    virtual void updateNavigationState(blpwtk2::WebView* source,
-                                       const NavigationState& state) OVERRIDE
+    void updateNavigationState(blpwtk2::WebView* source,
+                               const NavigationState& state) override
     {
         assert(source == d_webView);
 
@@ -313,7 +312,7 @@ public:
     }
 
     // Invoked when a main frame navigation occurs.
-    virtual void didNavigateMainFramePostCommit(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    void didNavigateMainFramePostCommit(blpwtk2::WebView* source, const blpwtk2::StringRef& url) override
     {
         assert(source == d_webView);
         blpwtk2::String surl(url);
@@ -330,7 +329,7 @@ public:
     // is the notification that guarantees that the 'mainFrame()' method on the
     // WebView can be used (for in-process WebViews, and in the renderer
     // thread).
-    virtual void didFinishLoad(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    void didFinishLoad(blpwtk2::WebView* source, const blpwtk2::StringRef& url) override
     {
         assert(source == d_webView);
         std::string str(url.data(), url.length());
@@ -342,8 +341,8 @@ public:
 
     // Invoked when the main frame failed loading the specified 'url', or was
     // cancelled (e.g. window.stop() was called).
-    virtual void didFailLoad(blpwtk2::WebView* source,
-                             const blpwtk2::StringRef& url) OVERRIDE
+    void didFailLoad(blpwtk2::WebView* source,
+                     const blpwtk2::StringRef& url) override
     {
         assert(source == d_webView);
         std::string str(url.data(), url.length());
@@ -358,10 +357,10 @@ public:
     // destroy the specified 'newView'.  The delegate for the 'newView' will
     // initially be null, it can be set by modifying the specified
     // 'newViewDelegate'.
-    virtual void didCreateNewView(blpwtk2::WebView* source,
-                                  blpwtk2::WebView* newView,
-                                  const blpwtk2::NewViewParams& params,
-                                  blpwtk2::WebViewDelegate** newViewDelegate) OVERRIDE
+    void didCreateNewView(blpwtk2::WebView* source,
+                          blpwtk2::WebView* newView,
+                          const blpwtk2::NewViewParams& params,
+                          blpwtk2::WebViewDelegate** newViewDelegate) override
     {
         assert(source == d_webView);
 
@@ -391,7 +390,7 @@ public:
     // Invoked when the WebView needs to be destroyed, for example by using
     // 'window.close'.  The default implementation of this method is to simply
     // destroy the specified 'source'.
-    virtual void destroyView(blpwtk2::WebView* source) OVERRIDE
+    void destroyView(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: destroyView()\n");
@@ -400,7 +399,7 @@ public:
 
     // Invoked when WebKit is done tabbing backwards through controls in the page.  This
     // is only invoked if 'enableFocusBefore(true)' was called on the WebView.
-    virtual void focusBefore(blpwtk2::WebView* source) OVERRIDE
+    void focusBefore(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: focusBefore()\n");
@@ -408,21 +407,21 @@ public:
 
     // Invoked when WebKit is done tabbing forwards through controls in the page.  This
     // is only invoked if 'enableFocusAfter(true)' was called on the WebView.
-    virtual void focusAfter(blpwtk2::WebView* source) OVERRIDE
+    void focusAfter(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: focusAfter()\n");
     }
 
     // Notification that |source| has gained focus.
-    virtual void focused(blpwtk2::WebView* source) OVERRIDE
+    void focused(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: focused\n");
     }
 
     // Notification that |source| has lost focus.
-    virtual void blurred(blpwtk2::WebView* source) OVERRIDE
+    void blurred(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: blurred\n");
@@ -452,7 +451,7 @@ public:
         }
     }
 
-    virtual void runFileChooser(blpwtk2::WebView* source, const blpwtk2::FileChooserParams& params) OVERRIDE
+    void runFileChooser(blpwtk2::WebView* source, const blpwtk2::FileChooserParams& params) override
     {
         assert(source == d_webView);
 
@@ -557,7 +556,7 @@ public:
         d_webView->fileChooserCompleted(selectedFilesRef.data(), selectedFilesRef.size());
     }
 
-    virtual void showContextMenu(blpwtk2::WebView* source, const blpwtk2::ContextMenuParams& params) OVERRIDE
+    void showContextMenu(blpwtk2::WebView* source, const blpwtk2::ContextMenuParams& params) override
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: showContextMenu\n");
@@ -573,7 +572,7 @@ public:
         DestroyMenu(menu);
     }
 
-    virtual void handleExternalProtocol(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    void handleExternalProtocol(blpwtk2::WebView* source, const blpwtk2::StringRef& url) override
     {
         assert(source == d_webView);
         std::string target(url.data(), url.length());
@@ -585,7 +584,7 @@ public:
         ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
 
-    virtual void requestNCHitTest(blpwtk2::WebView* source)
+    void requestNCHitTest(blpwtk2::WebView* source) override
     {
         assert(source == d_webView);
         POINT pt;
@@ -634,9 +633,9 @@ public:
         d_webView->onNCHitTestResult(pt.x, pt.y, result);
     }
 
-    virtual void ncDragBegin(blpwtk2::WebView* source,
-                             int hitTestCode,
-                             const POINT& startPoint)
+    void ncDragBegin(blpwtk2::WebView* source,
+                     int hitTestCode,
+                     const POINT& startPoint) override
     {
         assert(source == d_webView);
         char buf[1024];
@@ -645,7 +644,7 @@ public:
         OutputDebugStringA(buf);
     }
 
-    virtual void ncDragMove(blpwtk2::WebView* source, const POINT& movePoint)
+    void ncDragMove(blpwtk2::WebView* source, const POINT& movePoint) override
     {
         assert(source == d_webView);
         char buf[1024];
@@ -654,7 +653,7 @@ public:
         OutputDebugStringA(buf);
     }
 
-    virtual void ncDragEnd(blpwtk2::WebView* source, const POINT& endPoint)
+    void ncDragEnd(blpwtk2::WebView* source, const POINT& endPoint) override
     {
         assert(source == d_webView);
         char buf[1024];
@@ -663,9 +662,9 @@ public:
         OutputDebugStringA(buf);
     }
 
-    virtual void showTooltip(blpwtk2::WebView* source,
-                             const blpwtk2::StringRef& tooltipText,
-                             blpwtk2::TextDirection::Value direction)
+    void showTooltip(blpwtk2::WebView* source,
+                     const blpwtk2::StringRef& tooltipText,
+                     blpwtk2::TextDirection::Value direction) override
     {
         assert(source == d_webView);
         if (!tooltipText.isEmpty()) {
@@ -690,7 +689,7 @@ public:
         d_webView->find(d_findText, false, forward);
     }
 
-    virtual void findState(blpwtk2::WebView* source, int numberOfMatches, int activeMatchOrdinal, bool finalUpdate) OVERRIDE
+    void findState(blpwtk2::WebView* source, int numberOfMatches, int activeMatchOrdinal, bool finalUpdate) override
     {
         char buf[1024];
         sprintf_s(buf, sizeof(buf), "FIND: count:%d, current:%d, final:%s\n",
@@ -1599,7 +1598,7 @@ class DummyResourceLoader : public blpwtk2::ResourceLoader {
 public:
     static const char PREFIX[];
 
-    virtual bool canHandleURL(const blpwtk2::StringRef& url) OVERRIDE
+    bool canHandleURL(const blpwtk2::StringRef& url) override
     {
         if (url.length() <= (int)strlen(PREFIX))
             return false;
@@ -1609,9 +1608,9 @@ public:
         return true;
     }
 
-    virtual void start(const blpwtk2::StringRef& url,
-                       blpwtk2::ResourceContext* context,
-                       void** userData) OVERRIDE
+    void start(const blpwtk2::StringRef& url,
+               blpwtk2::ResourceContext* context,
+               void** userData) override
     {
         assert(canHandleURL(url));
 
@@ -1643,8 +1642,8 @@ public:
         context->finish();
     }
 
-    virtual void cancel(blpwtk2::ResourceContext* context,
-                        void* userData)
+    void cancel(blpwtk2::ResourceContext* context,
+                void* userData) override
     {
         assert(false);  // everything is loaded in start(), so we should never
                         // get canceled

@@ -110,12 +110,12 @@ class SpellcheckService : public KeyedService,
                const content::NotificationDetails& details) override;
 
   // content::SpellcheckData::Observer implementation.
-  virtual void OnCustomWordsChanged(
+  void OnCustomWordsChanged(
       const std::vector<base::StringPiece>& words_added,
-      const std::vector<base::StringPiece>& words_removed) OVERRIDE;
-  virtual void OnAutocorrectWordsChanged(
+      const std::vector<base::StringPiece>& words_removed) override;
+  void OnAutocorrectWordsChanged(
       const std::map<base::StringPiece, base::StringPiece>& words_added,
-      const std::vector<base::StringPiece>& words_removed) OVERRIDE;
+      const std::vector<base::StringPiece>& words_removed) override;
 
   // SpellcheckCustomDictionary::Observer implementation.
   void OnCustomDictionaryLoaded() override;

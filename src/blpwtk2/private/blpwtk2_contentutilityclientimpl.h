@@ -42,7 +42,7 @@ class ContentUtilityClientImpl : public content::ContentUtilityClient {
     static void PreSandboxStartup();
 
     // Allows the embedder to filter messages.
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
 
     // Message handler for the chrome ping message.  This message is sent to
     // the utility process right after it is started, and the utility process

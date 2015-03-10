@@ -68,7 +68,7 @@ void DependencyManager::CreateContextServices(base::SupportsUserData* context,
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
 
     // TODO(SHEZ): Do we still need this?
-    factory->RegisterUserPrefsOnBrowserContextForTest(context);
+    factory->RegisterUserPrefsOnContextForTest(context);
 
     if (is_testing_context && factory->ServiceIsNULLWhileTesting() &&
         !factory->HasTestingFactory(context)) {

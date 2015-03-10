@@ -249,7 +249,6 @@ bool DragController::performDrag(DragData* dragData)
             dataTransfer->setAccessPolicy(DataTransferNumb); // Invalidate clipboard here for security
         }
         if (preventedDefault) {
-            m_page->dragCaretController().clear();
             m_documentUnderMouse = nullptr;
             return true;
         }

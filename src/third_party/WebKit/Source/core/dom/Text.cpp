@@ -254,7 +254,7 @@ bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& pa
     if (!parent.canHaveWhitespaceChildren())
         return false;
 
-    if (style.preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
+    if (style.preserveNewline()) // pre/pre-wrap/-bb-pre-wrap-text/pre-line always make renderers.
         return true;
 
     const RenderObject* prev = NodeRenderingTraversal::previousSiblingRenderer(this);

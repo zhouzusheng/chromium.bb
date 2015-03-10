@@ -83,6 +83,7 @@
 #include "core/loader/MixedContentChecker.h"
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
+#include "core/page/BBWindowHooks.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/CreateWindow.h"
@@ -619,6 +620,7 @@ void LocalDOMWindow::reset()
     m_sessionStorage = nullptr;
     m_localStorage = nullptr;
     m_applicationCache = nullptr;
+    m_bbWindowHooks = nullptr;
 #if ENABLE(ASSERT)
     m_hasBeenReset = true;
 #endif
@@ -1956,6 +1958,15 @@ void LocalDOMWindow::showModalDialog(const String& urlString, const String& dial
         return;
     UserGestureIndicatorDisabler disabler;
     dialogFrame->host()->chrome().runModal();
+}
+
+BBWindowHooks* LocalDOMWindow::bbWindowHooks() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbWindowHooks)
+        m_bbWindowHooks = BBWindowHooks::create(frame());
+    return m_bbWindowHooks.get();
 }
 
 LocalDOMWindow* LocalDOMWindow::anonymousIndexedGetter(uint32_t index)

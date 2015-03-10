@@ -49,7 +49,6 @@ class NotificationMessageFilter;
 class P2PSocketDispatcherHost;
 #endif
 class PeerConnectionTrackerHost;
-class RendererMainThread;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -84,7 +83,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public ChildProcessLauncher::Client,
       public ui::GpuSwitchingObserver {
  public:
-  RenderProcessHostImpl(BrowserContext* browser_context,
+  RenderProcessHostImpl(int host_id,
+                        base::ProcessHandle externally_managed_handle,
+                        BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         bool is_isolated_guest);
   ~RenderProcessHostImpl() override;
@@ -97,6 +98,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void RemoveRoute(int32 routing_id) override;
   void AddObserver(RenderProcessHostObserver* observer) override;
   void RemoveObserver(RenderProcessHostObserver* observer) override;
+  size_t NumListeners() override;
   void ReceivedBadMessage() override;
   void WidgetRestored() override;
   void WidgetHidden() override;
@@ -137,6 +139,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
   void NotifyTimezoneChange() override;
   ServiceRegistry* GetServiceRegistry() override;
+  bool IsProcessManagedExternally() const override;
   const base::TimeTicks& GetInitTimeForNavigationMetrics() const override;
 
   // IPC::Sender via RenderProcessHost.
@@ -174,6 +177,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Fires the webrtc log message callback with |message|, if callback is set.
   void WebRtcLogMessage(const std::string& message);
 #endif
+
+  // This value is guaranteed to never be returned by GenerateUniqueId() below.
+  static int kInvalidId;
+
+  // Generate a new unique host id.
+  static int GenerateUniqueId();
 
   // Used to extend the lifetime of the sessions until the render view
   // in the renderer is fully closed. This is static because its also called
@@ -216,14 +225,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       BrowserContext* browser_context,
       RenderProcessHost* process,
       const GURL& url);
-
-  static base::MessageLoop* GetInProcessRendererThreadForTesting();
-
-  // This forces a renderer that is running "in process" to shut down.
-  static void ShutDownInProcessRenderer();
-
-  static void RegisterRendererMainThreadFactory(
-      RendererMainThreadFactoryFunction create);
 
 #if defined(OS_ANDROID)
   const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
@@ -309,13 +310,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // results to |*command_line|.
   void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
-  // Copies applicable command line switches from the given |browser_cmd| line
-  // flags to the output |renderer_cmd| line flags. Not all switches will be
-  // copied over.
-  void PropagateBrowserCommandLineToRenderer(
-      const base::CommandLine& browser_cmd,
-      base::CommandLine* renderer_cmd) const;
-
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
 
@@ -370,8 +364,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // closure per notification that must be freed when the notification closes.
   scoped_refptr<NotificationMessageFilter> notification_message_filter_;
 
-  // Used in single-process mode.
-  scoped_ptr<base::Thread> in_process_renderer_;
 
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
@@ -389,6 +381,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // messages that are sent once the process handle is available.  This is
   // because the queued messages may have dependencies on the init messages.
   std::queue<IPC::Message*> queued_messages_;
+
+  // Handle for the renderer process if it is managed externally, otherwise
+  // this will be set to base::kNullProcessHandle (which means the
+  // RenderProcessHostImpl is the one that launches the process).
+  base::ProcessHandle externally_managed_handle_;
 
   // The globally-unique identifier for this RPH.
   int id_;

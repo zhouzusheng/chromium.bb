@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 //
 
-// main.cpp: DLL entry point and management of thread-local data.
+// main.cpp: Management of thread-local data.
 
 #include "libEGL/main.h"
 
@@ -49,7 +49,7 @@ void DeallocateCurrent()
 
 }
 
-extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
+extern "C" BOOL libEGLMain(DWORD reason)
 {
     switch (reason)
     {

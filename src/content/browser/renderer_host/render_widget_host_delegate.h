@@ -9,6 +9,8 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
+#include "base/strings/string16.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 
 namespace blink {
 class WebMouseWheelEvent;
@@ -60,6 +62,17 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Callback to inform the browser that the renderer did not process the
   // specified gesture event.  Returns true if the |event| was handled.
   virtual bool HandleGestureEvent(const blink::WebGestureEvent& event);
+
+  // Returns true if RWHV should take focus on mouse-down.
+  virtual bool ShouldSetKeyboardFocusOnMouseDown();
+  virtual bool ShouldSetLogicalFocusOnMouseDown();
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(const base::string16& tooltip_text,
+                           blink::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}

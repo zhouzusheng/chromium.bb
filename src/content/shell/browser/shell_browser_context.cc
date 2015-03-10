@@ -103,10 +103,11 @@ void ShellBrowserContext::InitWhileIOAllowed() {
     base::CreateDirectory(path_);
   base::FilePath pref_file = path_.AppendASCII("prefs.json");
   pref_registry_ = new PrefRegistrySimple();
+  // TODO: remove these string literals
   pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
   pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
   pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
-  pref_registry_->RegisterBooleanPref("browser.enable_autospellcorrect", true);
+  pref_registry_->RegisterIntegerPref("browser.autospellcorrect_behavior", 0xFF);
   pref_registry_->RegisterBooleanPref("printing.enabled", true);
   base::PrefServiceFactory factory;
   factory.SetUserPrefsFile(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
@@ -213,6 +214,10 @@ PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
 
 SSLHostStateDelegate* ShellBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
+}
+
+bool ShellBrowserContext::AllowDictionaryDownloads() {
+  return true;
 }
 
 }  // namespace content

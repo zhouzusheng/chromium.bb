@@ -317,6 +317,15 @@ const char kEnableCredentialManagerAPI[]    = "enable-credential-manager-api";
 // Use a BeginFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
 
+// Enables CSS3 Text Decorations.
+const char kEnableCSS3TextDecorations[] = "enable-css3-text-decorations";
+
+// Enables CSS3 Text.
+const char kEnableCSS3Text[] = "enable-css3-text";
+
+// Enables CSS Grid Layout.
+const char kEnableCSSGridLayout[] = "enable-css-grid-layout";
+
 // Enable the creation of compositing layers when it would prevent LCD text.
 const char kEnablePreferCompositingToLCDText[] =
     "enable-prefer-compositing-to-lcd-text";

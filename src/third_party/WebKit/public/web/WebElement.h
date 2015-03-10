@@ -78,6 +78,8 @@ public:
     // This function will update the layout if required.
     BLINK_EXPORT WebRect boundsInViewportSpace();
 
+    BLINK_EXPORT void requestSpellCheck();
+
     // Returns the image contents of this element or a null WebImage
     // if there isn't any.
     BLINK_EXPORT WebImage imageContents();

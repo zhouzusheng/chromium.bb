@@ -525,6 +525,10 @@ class CONTENT_EXPORT WebContentsImpl
   bool HandleWheelEvent(const blink::WebMouseWheelEvent& event) override;
   bool PreHandleGestureEvent(const blink::WebGestureEvent& event) override;
   bool HandleGestureEvent(const blink::WebGestureEvent& event) override;
+  bool ShouldSetKeyboardFocusOnMouseDown() override;
+  bool ShouldSetLogicalFocusOnMouseDown() override;
+  bool ShowTooltip(const base::string16& tooltip_text,
+                   blink::WebTextDirection text_direction_hint) override;
   void DidSendScreenRects(RenderWidgetHostImpl* rwh) override;
   BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
   BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager()
@@ -695,7 +699,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // See WebContents::Create for a description of these parameters.
   WebContentsImpl(BrowserContext* browser_context,
-                  WebContentsImpl* opener);
+                  WebContentsImpl* opener,
+                  int render_process_affinity);
 
   // Add and remove observers for page navigation notifications. The order in
   // which notifications are sent to observers is undefined. Clients must be

@@ -72,6 +72,11 @@
       }, {  # otherwise, assume Chrome/Chromium.
         'ffmpeg_branding%': '<(branding)',
       }],
+      ['bb_version!=""', {
+        'ffmpeg_product_name%': 'ffmpegsumo.<(bb_version)',
+      }, {
+        'ffmpeg_product_name%': 'ffmpegsumo',
+      }],
     ],
 
     'build_ffmpegsumo%': 1,
@@ -151,17 +156,20 @@
       'targets': [
         {
           'target_name': 'ffmpegsumo',
+          'product_name': '<(ffmpeg_product_name)',
           'type': 'loadable_module',
           'sources': [
             '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
+            'ffmpeg.rc',
           ],
           'include_dirs': [
             '<(platform_config_root)',
             '.',
           ],
           'dependencies': [
+            '../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
           ],
           'defines': [
             'HAVE_AV_CONFIG_H',
@@ -356,7 +364,7 @@
             }],  # OS == "mac"
             ['OS == "win"', {
               'sources': [
-                '<(shared_generated_dir)/ffmpegsumo.def',
+                '<(shared_generated_dir)/<(ffmpeg_product_name).def',
               ],
               'include_dirs': [
                 'chromium/include/win',
@@ -410,14 +418,14 @@
                     '<@(sig_files)',
                   ],
                   'outputs': [
-                    '<(shared_generated_dir)/ffmpegsumo.def',
+                    '<(shared_generated_dir)/<(ffmpeg_product_name).def',
                   ],
                   'action': ['python',
                              '<(generate_stubs_script)',
                              '-i', '<(INTERMEDIATE_DIR)',
                              '-o', '<(shared_generated_dir)',
                              '-t', 'windows_def',
-                             '-m', 'ffmpegsumo.dll',
+                             '-m', '<(ffmpeg_product_name).dll',
                              '<@(_inputs)',
                   ],
                   'message': 'Generating FFmpeg export definitions',
@@ -436,10 +444,6 @@
         'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
       },
       'target_name': 'ffmpeg',
-      'sources': [
-        # Files needed for stub generation rules.
-        '<@(sig_files)',
-      ],
       'defines': [
         '__STDC_CONSTANT_MACROS',  # FFmpeg uses INT64_C.
       ],
@@ -484,33 +488,33 @@
             ],
             'link_settings': {
               'libraries': [
-                '<(output_dir)/ffmpegsumo.lib',
+                '<(output_dir)/<(ffmpeg_product_name).lib',
               ],
               'msvs_settings': {
                 'VCLinkerTool': {
                   'DelayLoadDLLs': [
-                    'ffmpegsumo.dll',
+                    '<(ffmpeg_product_name).dll',
                   ],
                 },
               },
             },
           },
-          'rules': [
+          'actions': [
             {
-              'rule_name': 'generate_libs',
-              'extension': 'sigs',
+              'action_name': 'generate_libs',
               'inputs': [
                 '<(generate_stubs_script)',
                 '<@(sig_files)',
               ],
               'outputs': [
-                '<(output_dir)/<(RULE_INPUT_ROOT).lib',
+                '<(output_dir)/<(ffmpeg_product_name).lib',
               ],
               'action': ['python', '<(generate_stubs_script)',
                          '-i', '<(intermediate_dir)',
                          '-o', '<(output_dir)',
                          '-t', '<(outfile_type)',
-                         '<@(RULE_INPUT_PATH)',
+                         '-m', '<(ffmpeg_product_name).dll',
+                         '<@(sig_files)',
               ],
               'message': 'Generating FFmpeg import libraries',
             },

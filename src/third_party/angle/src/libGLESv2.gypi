@@ -40,7 +40,6 @@
             'common/tls.h',
             'common/utilities.cpp',
             'common/utilities.h',
-            'common/version.h',
             'libGLESv2/BinaryStream.h',
             'libGLESv2/Buffer.cpp',
             'libGLESv2/Buffer.h',
@@ -491,12 +490,14 @@
             },
         },
         {
-            'target_name': 'libGLESv2',
+            'target_name': 'libGLESv2_shared',
+            'product_name': 'libGLESv2',
             'type': 'shared_library',
             'dependencies': [ 'libANGLE' ],
             'includes': [ '../build/common_defines.gypi', ],
             'sources':
             [
+                'libGLESv2/dllmain.cpp',
                 'libGLESv2/libGLESv2.cpp',
                 'libGLESv2/libGLESv2.def',
                 'libGLESv2/libGLESv2.rc',
@@ -542,7 +543,6 @@
             'sources':
             [
                 'libGLESv2/libGLESv2.cpp',
-                'libGLESv2/libGLESv2.rc',
             ],
             'conditions':
             [

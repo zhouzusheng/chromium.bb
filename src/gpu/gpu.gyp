@@ -343,7 +343,6 @@
         ['OS == "win"', {
           'dependencies': [
             '../third_party/angle/src/angle.gyp:libEGL',
-            '../third_party/angle/src/angle.gyp:libGLESv2',
           ],
         }],
       ],

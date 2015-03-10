@@ -49,6 +49,9 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   void OverrideWebkitPrefs(RenderViewHost* render_view_host,
                            const GURL& url,
                            WebPreferences* prefs) override;
+  bool SupportsInProcessRenderer() override;
+  void StartInProcessRendererThread(const std::string& channel_id) override;
+  void StopInProcessRendererThread() override;
   void ResourceDispatcherHostCreated() override;
   AccessTokenStore* CreateAccessTokenStore() override;
   std::string GetDefaultDownloadName() override;

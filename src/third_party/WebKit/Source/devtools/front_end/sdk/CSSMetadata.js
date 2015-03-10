@@ -482,7 +482,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "baseline", "middle", "sub", "super", "text-top", "text-bottom", "top", "bottom", "-webkit-baseline-middle"
     ] },
     "white-space": { values: [
-        "normal", "nowrap", "pre", "pre-line", "pre-wrap"
+        "normal", "nowrap", "pre", "pre-line", "pre-wrap", "-bb-pre-wrap-text"
     ] },
     "box-lines": { values: [
         "single", "multiple"

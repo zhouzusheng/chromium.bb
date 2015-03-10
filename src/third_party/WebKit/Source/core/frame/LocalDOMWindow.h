@@ -41,6 +41,7 @@
 
 namespace blink {
 
+class BBWindowHooks;
 class CSSRuleList;
 class CSSStyleDeclaration;
 class Console;
@@ -295,6 +296,9 @@ public:
 
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
 
+    // Bloomberg specific objects/methods
+    BBWindowHooks* bbWindowHooks() const;
+
 protected:
     DOMWindowLifecycleNotifier& lifecycleNotifier();
 
@@ -366,6 +370,7 @@ private:
     mutable RefPtrWillBeMember<Navigator> m_navigator;
     mutable RefPtrWillBeMember<Location> m_location;
     mutable RefPtrWillBeMember<StyleMedia> m_media;
+    mutable RefPtrWillBeMember<BBWindowHooks> m_bbWindowHooks;
 
     String m_status;
     String m_defaultStatus;

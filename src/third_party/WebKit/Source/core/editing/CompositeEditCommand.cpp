@@ -396,17 +396,23 @@ void CompositeEditCommand::removeNodeAndPruneAncestors(PassRefPtrWillBeRawPtr<No
     prune(parent.release(), excludeNode);
 }
 
-void CompositeEditCommand::moveRemainingSiblingsToNewParent(Node* node, Node* pastLastNodeToMove, PassRefPtrWillBeRawPtr<Element> prpNewParent)
+void CompositeEditCommand::moveRemainingSiblingsToNewParent(Node* node, Node* pastLastNodeToMove, PassRefPtrWillBeRawPtr<Element> prpNewParent, PassRefPtrWillBeRawPtr<Node> prpRefChild)
 {
+    ASSERT(!prpRefChild || prpRefChild->parentNode() == prpNewParent);
+
     NodeVector nodesToRemove;
     RefPtrWillBeRawPtr<Element> newParent = prpNewParent;
+    RefPtrWillBeRawPtr<Node> refChild = prpRefChild;
 
     for (; node && node != pastLastNodeToMove; node = node->nextSibling())
         nodesToRemove.append(node);
 
     for (unsigned i = 0; i < nodesToRemove.size(); i++) {
         removeNode(nodesToRemove[i]);
-        appendNode(nodesToRemove[i], newParent);
+        if (refChild)
+            insertNodeBefore(nodesToRemove[i], refChild);
+        else
+            appendNode(nodesToRemove[i], newParent);
     }
 }
 
@@ -1461,6 +1467,60 @@ Position CompositeEditCommand::positionAvoidingSpecialElementBoundary(const Posi
         result = original;
 
     return result;
+}
+
+bool CompositeEditCommand::prepareForBlockCommand(VisiblePosition& startOfSelection, VisiblePosition& endOfSelection,
+                                                  RefPtrWillBeRawPtr<ContainerNode>& startScope, RefPtrWillBeRawPtr<ContainerNode>& endScope,
+                                                  int& startIndex, int& endIndex,
+                                                  bool includeEmptyParagraphAtEnd)
+{
+    if (!endingSelection().rootEditableElement())
+        return false;
+
+    VisiblePosition visibleEnd = endingSelection().visibleEnd();
+    VisiblePosition visibleStart = endingSelection().visibleStart();
+    if (visibleStart.isNull() || visibleStart.isOrphan() || visibleEnd.isNull() || visibleEnd.isOrphan())
+        return false;
+
+    // When a selection ends at the start of a paragraph, we rarely paint
+    // the selection gap before that paragraph, because there often is no gap.
+    // In a case like this, it's not obvious to the user that the selection
+    // ends "inside" that paragraph, so it would be confusing if Indent/Outdent
+    // operated on that paragraph.
+    // FIXME: We paint the gap before some paragraphs that are indented with left
+    // margin/padding, but not others.  We should make the gap painting more consistent and
+    // then use a left margin/padding rule here.
+    if (visibleEnd != visibleStart && isStartOfParagraph(visibleEnd) && (!includeEmptyParagraphAtEnd || !isEndOfParagraph(visibleEnd))) {
+        VisibleSelection newSelection(visibleStart, visibleEnd.previous(CannotCrossEditingBoundary), endingSelection().isDirectional());
+        if (newSelection.isNone())
+            return false;
+        setEndingSelection(newSelection);
+    }
+
+    VisibleSelection selection = selectionForParagraphIteration(endingSelection());
+    startOfSelection = selection.visibleStart();
+    endOfSelection = selection.visibleEnd();
+    ASSERT(!startOfSelection.isNull());
+    ASSERT(!endOfSelection.isNull());
+    startIndex = indexForVisiblePosition(startOfSelection, startScope);
+    endIndex = indexForVisiblePosition(endOfSelection, endScope);
+    return true;
+}
+
+void CompositeEditCommand::finishBlockCommand(PassRefPtrWillBeRawPtr<ContainerNode> startScope, PassRefPtrWillBeRawPtr<ContainerNode> endScope,
+                                              int startIndex, int endIndex)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+
+    ASSERT(startScope == endScope);
+    ASSERT(startIndex >= 0);
+    ASSERT(startIndex <= endIndex);
+    if (startScope == endScope && startIndex >= 0 && startIndex <= endIndex) {
+        VisiblePosition start(visiblePositionForIndex(startIndex, startScope.get()));
+        VisiblePosition end(visiblePositionForIndex(endIndex, endScope.get()));
+        if (start.isNotNull() && end.isNotNull())
+            setEndingSelection(VisibleSelection(start, end, endingSelection().isDirectional()));
+    }
 }
 
 // Splits the tree parent by parent until we reach the specified ancestor. We use VisiblePositions

@@ -81,6 +81,21 @@ class WebSettingsImpl;
 
 struct WebSelectionBound;
 
+class RubberbandContext;
+class RubberbandStateImpl;
+class RubberbandState {
+
+    // Not implemented.
+    RubberbandState(const RubberbandState&);
+    RubberbandState& operator=(const RubberbandState&);
+
+  public:
+    RubberbandState();
+    ~RubberbandState();
+
+    RubberbandStateImpl* m_impl;
+};
+
 class WebViewImpl final : public WebView
     , public RefCounted<WebViewImpl>
     , public WebGestureCurveTarget
@@ -285,6 +300,23 @@ public:
     WebDevToolsAgentPrivate* devToolsAgentPrivate() { return m_devToolsAgent.get(); }
 
     Color baseBackgroundColor() const { return m_baseBackgroundColor; }
+
+    // Rubberbanding
+    void rubberbandWalkFrame(const RubberbandContext&, LocalFrame*, const LayoutPoint&);
+    void rubberbandWalkRenderObject(const RubberbandContext&, RenderObject*);
+    WTF::String getTextInRubberbandImpl(const WebRect&);
+    bool handleAltDragRubberbandEvent(const WebInputEvent&);
+
+    virtual bool isAltDragRubberbandingEnabled() const override;
+    virtual void enableAltDragRubberbanding(bool) override;
+    virtual bool isRubberbanding() const override;
+    virtual bool preStartRubberbanding() override;
+    virtual void startRubberbanding() override;
+    virtual WebRect expandRubberbandRect(const WebRect&) override;
+    virtual WebString finishRubberbanding(const WebRect&) override;
+    virtual void abortRubberbanding() override;
+    virtual WebString getTextInRubberband(const WebRect&) override;
+
 
     PageOverlayList* pageOverlays() const { return m_pageOverlays.get(); }
 
@@ -698,6 +730,10 @@ private:
 
     OwnPtr<WebDevToolsAgentPrivate> m_devToolsAgent;
     OwnPtr<PageOverlayList> m_pageOverlays;
+    OwnPtr<RubberbandState> m_rubberbandState;
+
+    // Whether Alt+Mousedrag rubberbanding is enabled or not.
+    bool m_isAltDragRubberbandingEnabled;
 
     // Whether the webview is rendering transparently.
     bool m_isTransparent;

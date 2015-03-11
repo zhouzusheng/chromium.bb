@@ -507,6 +507,12 @@ void RenderWidgetHostViewBase::GestureEventAck(
     InputEventAckState ack_result) {
 }
 
+void RenderWidgetHostViewBase::SetRubberbandRect(const gfx::Rect& rect) {
+}
+
+void RenderWidgetHostViewBase::HideRubberbandRect() {
+}
+
 void RenderWidgetHostViewBase::SetPopupType(blink::WebPopupType popup_type) {
   popup_type_ = popup_type;
 }

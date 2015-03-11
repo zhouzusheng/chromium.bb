@@ -716,7 +716,8 @@ TriState EditingStyle::triStateOfStyle(const VisibleSelection& selection) const
         if (node.renderer() && node.hasEditableStyle()) {
             RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> nodeStyle = CSSComputedStyleDeclaration::create(&node);
             if (nodeStyle) {
-                TriState nodeState = triStateOfStyle(nodeStyle.get(), node.isTextNode() ? EditingStyle::DoNotIgnoreTextOnlyProperties : EditingStyle::IgnoreTextOnlyProperties);
+                // SHEZ: always use DoNotIgnoreTextOnlyProperties
+                TriState nodeState = triStateOfStyle(nodeStyle.get(), EditingStyle::DoNotIgnoreTextOnlyProperties);
                 if (nodeIsStart) {
                     state = nodeState;
                     nodeIsStart = false;

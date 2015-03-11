@@ -44,11 +44,11 @@ public:
 private:
     explicit IndentBlockCommand(Document&);
 
-    virtual EditAction editingAction() const OVERRIDE { return EditActionIndent; }
+    virtual EditAction editingAction() const override { return EditActionIndent; }
     PassRefPtr<Element> createIndentBlock(const QualifiedName& tagName) const;
     void indentSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* lastNode);
 
-    virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node*, Node* lastNode) OVERRIDE
+    virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node*, Node* lastNode) override
     {
         indentSiblings(prpFirstSibling, prpLastSibling, lastNode);
     }

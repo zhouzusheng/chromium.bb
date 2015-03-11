@@ -42,12 +42,12 @@ public:
 private:
     explicit OutdentBlockCommand(Document&);
 
-    virtual EditAction editingAction() const OVERRIDE { return EditActionOutdent; }
+    virtual EditAction editingAction() const override { return EditActionOutdent; }
     PassRefPtr<Node> splitStart(Node* ancestor, PassRefPtr<Node> prpChild);
     PassRefPtr<Node> splitEnd(Node* ancestor, PassRefPtr<Node> prpChild);
     void outdentSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* indentBlock);
 
-    virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* stayWithin, Node* lastNode) OVERRIDE;
+    virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* stayWithin, Node* lastNode) override;
 };
 
 } // namespace blink

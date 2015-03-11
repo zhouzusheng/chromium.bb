@@ -44,7 +44,7 @@ namespace blink {
 // if available.
 const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
-void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const Font*) const
+void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const Font*, const BBFontSmoothingOverride* fontSmoothingOverride) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -52,7 +52,17 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
     paint->setFakeBoldText(m_syntheticBold);
     paint->setTextSkewX(m_syntheticItalic ? -SK_Scalar1 / 4 : 0);
 
-    uint32_t textFlags = paintTextFlags();
+    uint32_t textFlags;
+    bool lcdExplicitlyRequested;
+    if (fontSmoothingOverride) {
+        textFlags = fontSmoothingOverride->textFlags;
+        lcdExplicitlyRequested = fontSmoothingOverride->lcdExplicitlyRequested;
+    }
+    else {
+        textFlags = paintTextFlags();
+        lcdExplicitlyRequested = false;
+    }
+
     uint32_t flags = paint->getFlags();
     static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
         SkPaint::kLCDRenderText_Flag |
@@ -81,7 +91,8 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
             flags |= SkPaint::kSubpixelText_Flag;
 
         // Only set painting flags when we're actually painting.
-        if (context && !context->couldUseLCDRenderedText()) {
+        // SHEZ: don't remove cleartype if it was explicitly requested
+        if (!lcdExplicitlyRequested && context && !context->couldUseLCDRenderedText()) {
             textFlags &= ~SkPaint::kLCDRenderText_Flag;
             // If we *just* clear our request for LCD, then GDI seems to
             // sometimes give us AA text, and sometimes give us BW text. Since the

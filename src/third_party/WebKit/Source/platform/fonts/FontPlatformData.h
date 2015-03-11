@@ -66,6 +66,11 @@ class Font;
 class GraphicsContext;
 class HarfBuzzFace;
 
+struct BBFontSmoothingOverride {
+    bool lcdExplicitlyRequested;
+    uint32_t textFlags;
+};
+
 class PLATFORM_EXPORT FontPlatformData {
 public:
     // Used for deleted values in the font cache's hash tables. The hash table
@@ -144,7 +149,7 @@ public:
     // The returned styles are all actual styles without FontRenderStyle::NoPreference.
     const FontRenderStyle& fontRenderStyle() const { return m_style; }
 #endif
-    void setupPaint(SkPaint*, GraphicsContext* = 0, const Font* = 0) const;
+    void setupPaint(SkPaint*, GraphicsContext* = 0, const Font* = 0, const BBFontSmoothingOverride* = 0) const;
 
 #if OS(WIN)
     int paintTextFlags() const { return m_paintTextFlags; }

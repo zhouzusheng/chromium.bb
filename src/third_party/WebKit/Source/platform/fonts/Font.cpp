@@ -749,19 +749,21 @@ int Font::emphasisMarkHeight(const AtomicString& mark) const
     return markFontData->fontMetrics().height();
 }
 
-SkPaint Font::textFillPaint(GraphicsContext* gc, const SimpleFontData* font) const
+SkPaint Font::textFillPaint(GraphicsContext* gc, const SimpleFontData* font,
+                            const BBFontSmoothingOverride* fontSmoothingOverride) const
 {
     SkPaint paint = gc->fillPaint();
-    font->platformData().setupPaint(&paint, gc, this);
+    font->platformData().setupPaint(&paint, gc, this, fontSmoothingOverride);
     gc->adjustTextRenderMode(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
     return paint;
 }
 
-SkPaint Font::textStrokePaint(GraphicsContext* gc, const SimpleFontData* font, bool isFilling) const
+SkPaint Font::textStrokePaint(GraphicsContext* gc, const SimpleFontData* font, bool isFilling,
+                              const BBFontSmoothingOverride* fontSmoothingOverride) const
 {
     SkPaint paint = gc->strokePaint();
-    font->platformData().setupPaint(&paint, gc, this);
+    font->platformData().setupPaint(&paint, gc, this, fontSmoothingOverride);
     gc->adjustTextRenderMode(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
     if (isFilling) {
@@ -779,20 +781,48 @@ SkPaint Font::textStrokePaint(GraphicsContext* gc, const SimpleFontData* font, b
     return paint;
 }
 
+static void initFontSmoothingOverride(
+        BBFontSmoothingOverride* fontSmoothingOverride,
+        const SimpleFontData* font,
+        const FontDescription& fontDescription)
+{
+    switch (fontDescription.fontSmoothing()) {
+    case NoSmoothing:
+        fontSmoothingOverride->textFlags = 0;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case Antialiased:
+        fontSmoothingOverride->textFlags = SkPaint::kAntiAlias_Flag;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case SubpixelAntialiased:
+        fontSmoothingOverride->textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+        fontSmoothingOverride->lcdExplicitlyRequested = true;
+        break;
+    default:
+        fontSmoothingOverride->textFlags = font->platformData().paintTextFlags();
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    }
+}
+
 void Font::paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     const Glyph glyphs[], unsigned numGlyphs,
     const SkPoint pos[], const FloatRect& textRect) const
 {
     TextDrawingModeFlags textMode = gc->textDrawingMode();
 
+    BBFontSmoothingOverride fontSmoothingOverride;
+    initFontSmoothingOverride(&fontSmoothingOverride, font, m_fontDescription);
+
     // We draw text up to two times (once for fill, once for stroke).
     if (textMode & TextModeFill) {
-        SkPaint paint = textFillPaint(gc, font);
+        SkPaint paint = textFillPaint(gc, font, &fontSmoothingOverride);
         gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 
     if ((textMode & TextModeStroke) && gc->hasStroke()) {
-        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill);
+        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill, &fontSmoothingOverride);
         gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 }
@@ -803,13 +833,16 @@ void Font::paintGlyphsHorizontal(GraphicsContext* gc, const SimpleFontData* font
 {
     TextDrawingModeFlags textMode = gc->textDrawingMode();
 
+    BBFontSmoothingOverride fontSmoothingOverride;
+    initFontSmoothingOverride(&fontSmoothingOverride, font, m_fontDescription);
+
     if (textMode & TextModeFill) {
-        SkPaint paint = textFillPaint(gc, font);
+        SkPaint paint = textFillPaint(gc, font, &fontSmoothingOverride);
         gc->drawPosTextH(glyphs, numGlyphs * sizeof(Glyph), xpos, constY, textRect, paint);
     }
 
     if ((textMode & TextModeStroke) && gc->hasStroke()) {
-        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill);
+        SkPaint paint = textStrokePaint(gc, font, textMode & TextModeFill, &fontSmoothingOverride);
         gc->drawPosTextH(glyphs, numGlyphs * sizeof(Glyph), xpos, constY, textRect, paint);
     }
 }

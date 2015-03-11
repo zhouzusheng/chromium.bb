@@ -49,6 +49,8 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     short hyphenationShorts[3];
 
     Color touchColors;
+
+    StyleColor caretColor;
 };
 
 COMPILE_ASSERT(sizeof(StyleRareInheritedData) == sizeof(SameSizeAsStyleRareInheritedData), StyleRareInheritedData_should_bit_pack);
@@ -95,6 +97,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , hyphenationLimitLines(-1)
     , m_tabSize(RenderStyle::initialTabSize())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
+    , caretColor(RenderStyle::initialCaretColor())
 {
 }
 
@@ -153,6 +156,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
     , m_tabSize(o.m_tabSize)
     , tapHighlightColor(o.tapHighlightColor)
+    , caretColor(o.caretColor)
     , appliedTextDecorations(o.appliedTextDecorations)
 {
 }
@@ -216,6 +220,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
+        && caretColor == o.caretColor
         && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
         && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
 }

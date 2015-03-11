@@ -312,7 +312,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, R
         RenderLayer* layer = toRenderLayerModelObject(renderer)->layer();
         RubberbandLayerContext& layerContext = *localContext.m_layerContext;
 
-        if (layer->hasTransform()) {
+        if (layer->hasTransformRelatedProperty()) {
             TransformationMatrix matrix = layer->currentTransform();
             if (!isSupportedTransform(matrix)) {
                 return;

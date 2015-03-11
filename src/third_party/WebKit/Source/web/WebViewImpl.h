@@ -306,15 +306,15 @@ public:
     WTF::String getTextInRubberbandImpl(const WebRect&);
     bool handleAltDragRubberbandEvent(const WebInputEvent&);
 
-    virtual bool isAltDragRubberbandingEnabled() const OVERRIDE;
-    virtual void enableAltDragRubberbanding(bool) OVERRIDE;
-    virtual bool isRubberbanding() const OVERRIDE;
-    virtual bool preStartRubberbanding() OVERRIDE;
-    virtual void startRubberbanding() OVERRIDE;
-    virtual WebRect expandRubberbandRect(const WebRect&) OVERRIDE;
-    virtual WebString finishRubberbanding(const WebRect&) OVERRIDE;
-    virtual void abortRubberbanding() OVERRIDE;
-    virtual WebString getTextInRubberband(const WebRect&) OVERRIDE;
+    virtual bool isAltDragRubberbandingEnabled() const override;
+    virtual void enableAltDragRubberbanding(bool) override;
+    virtual bool isRubberbanding() const override;
+    virtual bool preStartRubberbanding() override;
+    virtual void startRubberbanding() override;
+    virtual WebRect expandRubberbandRect(const WebRect&) override;
+    virtual WebString finishRubberbanding(const WebRect&) override;
+    virtual void abortRubberbanding() override;
+    virtual WebString getTextInRubberband(const WebRect&) override;
 
 
     PageOverlayList* pageOverlays() const { return m_pageOverlays.get(); }

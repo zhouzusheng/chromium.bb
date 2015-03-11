@@ -29,6 +29,8 @@
 #include "core/editing/CompositionUnderline.h"
 #include "core/editing/PlainTextRange.h"
 #include "platform/heap/Handle.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
 
 namespace blink {

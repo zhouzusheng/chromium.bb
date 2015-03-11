@@ -37,7 +37,7 @@ private:
     void paintSingleCompositionBackgroundRun(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color backgroundColor, int startPos, int endPos);
     void paintSelection(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color textColor);
     void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration);
-    void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&);
+    void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&, const Color& color);
     unsigned underlinePaintStart(const CompositionUnderline&);
     unsigned underlinePaintEnd(const CompositionUnderline&);
 

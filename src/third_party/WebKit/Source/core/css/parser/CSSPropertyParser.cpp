@@ -1278,8 +1278,8 @@ bool CSSPropertyParser::parseValue(CSSPropertyID propId, bool important)
         else
             validPrimitive = validUnit(value, FLength | FNonNeg);
         break;
-    case CSSPropertyWebkitColumnSpan: // none | all | 1 (will be dropped in the unprefixed property)
-        validPrimitive = id == CSSValueAll || id == CSSValueNone || (value->unit == CSSPrimitiveValue::CSS_NUMBER && value->fValue == 1);
+    case CSSPropertyWebkitColumnSpan: // none | all | <number> (SHEZ: support for "1" will be dropped upstream in the unprefixed property)
+        validPrimitive = id == CSSValueAll || id == CSSValueNone || value->unit == CSSPrimitiveValue::CSS_NUMBER;
         break;
     case CSSPropertyWebkitColumnWidth:         // auto | <length>
         parsedValue = parseColumnWidth();

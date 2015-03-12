@@ -570,7 +570,7 @@ bool RenderProcessHostImpl::Init() {
   RegisterMojoServices();
 
   if (IsProcessManagedExternally() &&
-      !base::Process(externally_managed_handle_).is_current()) {
+      externally_managed_handle_ != base::GetCurrentProcessHandle()) {
     // Renderer is running in a separate process that is being managed
     // externally.
     OnProcessLaunched();  // Fake a callback that the process is ready.
@@ -578,7 +578,7 @@ bool RenderProcessHostImpl::Init() {
   else
   // Single-process mode not supported in multiple-dll mode currently.
   if (IsProcessManagedExternally()) {
-    DCHECK(base::Process(externally_managed_handle_).is_current());
+    DCHECK(externally_managed_handle_ == base::GetCurrentProcessHandle());
     DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
 
     // Crank up a thread and run the initialization there.  With the way that
@@ -935,7 +935,7 @@ void RenderProcessHostImpl::ReceivedBadMessage() {
   if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
     return;
 
-  if (base::Process(externally_managed_handle_).is_current()) {
+  if (externally_managed_handle_ == base::GetCurrentProcessHandle()) {
     // In single process mode it is better if we don't suicide but just
     // crash.
     CHECK(false);
@@ -1508,7 +1508,7 @@ void RenderProcessHostImpl::Cleanup() {
     message_port_message_filter_ = NULL;
     RemoveUserData(kSessionStorageHolderKey);
 
-    if (base::Process(externally_managed_handle_).is_current())
+    if (externally_managed_handle_ == base::GetCurrentProcessHandle())
       GetContentClient()->browser()->StopInProcessRendererThread();
 
     // Remove ourself from the list of renderer processes so that we can't be

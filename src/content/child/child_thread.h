@@ -211,6 +211,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
 
   void Init(const Options& options);
   void InitChannel();
+  void InitManagers();
   scoped_ptr<IPC::SyncChannel> CreateChannel(bool use_mojo_channel);
 
   // IPC message handlers.

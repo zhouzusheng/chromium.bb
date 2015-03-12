@@ -296,6 +296,8 @@ void ChildThread::Init(const Options& options) {
 
   if (!channel_name_.empty())
     InitChannel();
+
+  InitManagers();
 }
 
 void ChildThread::InitChannel() {
@@ -366,7 +368,9 @@ void ChildThread::InitChannel() {
       ::HeapProfilerStop,
       ::GetHeapProfile));
 #endif
+}
 
+void ChildThread::InitManagers() {
   shared_bitmap_manager_.reset(
       new ChildSharedBitmapManager(thread_safe_sender()));
 

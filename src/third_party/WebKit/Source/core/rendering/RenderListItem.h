@@ -73,7 +73,7 @@ private:
     bool updateMarkerLocation();
     void updateMarkerLocationAndInvalidateWidth();
 
-    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+    virtual LayoutUnit additionalMarginStart() const override;
 
     void positionListMarker();
 

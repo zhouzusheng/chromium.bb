@@ -1239,8 +1239,7 @@ void RenderText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset,
         return;
 
     if (shouldSkipRelayoutOnSetText(this)) {
-        firstTextBox()->setStart(0);
-        firstTextBox()->setLen(text->length());
+        firstTextBox()->setStartAndLen(0, text->length());
         m_linesDirty = false;
         setText(text, force);
         return;
@@ -1439,7 +1438,7 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
     // setNeedsLayoutAndPrefWidthsRecalc() only if this RenderText has parent.
     if (parent()) {
         if (shouldSkipRelayoutOnSetText(this))
-            parent()->setShouldDoFullPaintInvalidation(true);
+            parent()->setShouldDoFullPaintInvalidation();
         else
             setNeedsLayoutAndPrefWidthsRecalc();
     }

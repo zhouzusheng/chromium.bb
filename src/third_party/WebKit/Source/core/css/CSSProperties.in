@@ -318,7 +318,7 @@ visibility animatable, inherited
 -webkit-column-rule-color animatable, custom_all
 -webkit-column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
 -webkit-column-rule-width animatable, converter=convertLineWidth<unsigned short>
--webkit-column-span type_name=ColumnSpan
+-webkit-column-span type_name=unsigned int, name_for_methods=ColumnSpanCount, custom_all
 -webkit-column-width animatable, converter=convertComputedLength<float>, custom_all
 -webkit-filter animatable, custom_value
 -webkit-highlight inherited, converter=convertString<CSSValueNone>

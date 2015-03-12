@@ -257,7 +257,7 @@ bool RenderMultiColumnFlowThread::descendantIsValidColumnSpanner(RenderObject* d
     ASSERT(descendant->isDescendantOf(this));
 
     // The spec says that column-span only applies to in-flow block-level elements.
-    if (descendant->style()->columnSpan() != ColumnSpanAll || !descendant->isBox() || descendant->isInline() || descendant->isFloatingOrOutOfFlowPositioned())
+    if (!descendant->style()->hasSpanAllColumns() || !descendant->isBox() || descendant->isInline() || descendant->isFloatingOrOutOfFlowPositioned())
         return false;
 
     if (!descendant->containingBlock()->isRenderBlockFlow()) {

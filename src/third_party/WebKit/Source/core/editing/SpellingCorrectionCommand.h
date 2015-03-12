@@ -31,7 +31,7 @@
 
 namespace blink {
 
-class SpellingCorrectionCommand FINAL : public CompositeEditCommand {
+class SpellingCorrectionCommand final : public CompositeEditCommand {
 public:
     static PassRefPtr<SpellingCorrectionCommand> create(PassRefPtr<Range> rangeToBeCorrected, const String& correction)
     {
@@ -39,7 +39,7 @@ public:
     }
 private:
     SpellingCorrectionCommand(PassRefPtr<Range> rangeToBeCorrected, const String& correction);
-    virtual void doApply() OVERRIDE;
+    virtual void doApply() override;
 
     RefPtr<Range> m_rangeToBeCorrected;
     VisibleSelection m_selectionToBeCorrected;

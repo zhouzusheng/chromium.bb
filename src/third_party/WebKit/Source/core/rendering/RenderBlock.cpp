@@ -1514,6 +1514,16 @@ void RenderBlock::addVisualOverflowFromTheme()
     addVisualOverflow(inflatedRect);
 }
 
+LayoutUnit RenderBlock::additionalMarginStart() const
+{
+    if (isInline() || !parent() || parent()->childrenInline() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
+        return 0;
+    }
+
+    RenderBox *previousBox = previousSiblingBox();
+    return previousBox ? previousBox->additionalMarginStart() : 40;
+}
+
 bool RenderBlock::createsBlockFormattingContext() const
 {
     return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
@@ -3281,6 +3291,9 @@ void RenderBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
             marginStart += startMarginLength.value();
         if (endMarginLength.isFixed())
             marginEnd += endMarginLength.value();
+        // SHEZ: additionalMarginStart is treated as fixed margin
+        if (child->isBox())
+            marginStart += toRenderBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;

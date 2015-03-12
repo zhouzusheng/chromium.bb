@@ -489,7 +489,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                 DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
                 d_inProcessRendererHost.reset(
                     new ManagedRenderProcessHost(
-                        base::Process::Current().handle(),
+                        base::GetCurrentProcessHandle(),
                         browserContext));
                 d_inProcessRendererInfo.d_hostId =
                     d_inProcessRendererHost->id();

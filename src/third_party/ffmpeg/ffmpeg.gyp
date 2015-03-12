@@ -147,6 +147,7 @@
     ['build_ffmpegsumo != 0', {
       'includes': [
         'ffmpeg_generated.gypi',
+        '../../build/util/version.gypi',
       ],
       'variables': {
         # Path to platform configuration files.
@@ -163,12 +164,12 @@
             '<(platform_config_root)/libavutil/avconfig.h',
             'ffmpeg.rc',
           ],
-          'dependencies': [
-            '../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
-          ],
           'include_dirs': [
             '<(platform_config_root)',
             '.',
+          ],
+          'dependencies': [
+            '../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
           ],
           'defines': [
             'HAVE_AV_CONFIG_H',

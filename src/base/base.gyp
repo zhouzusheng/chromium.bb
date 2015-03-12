@@ -98,10 +98,14 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'DelayLoadDLLs': [
+                'cfgmgr32.dll',
                 'powrprof.dll',
+                'setupapi.dll',
               ],
               'AdditionalDependencies': [
+                'cfgmgr32.lib',
                 'powrprof.lib',
+                'setupapi.lib',
               ],
             },
           },
@@ -110,10 +114,14 @@
             'msvs_settings': {
               'VCLinkerTool': {
                 'DelayLoadDLLs': [
+                  'cfgmgr32.dll',
                   'powrprof.dll',
+                  'setupapi.dll',
                 ],
                 'AdditionalDependencies': [
+                  'cfgmgr32.lib',
                   'powrprof.lib',
+                  'setupapi.lib',
                 ],
               },
             },
@@ -146,7 +154,7 @@
             ],
           },
         }],
-        ['OS != "win" and OS != "ios"', {
+        ['OS != "win" and (OS != "ios" or _toolset == "host")', {
             'dependencies': ['../third_party/libevent/libevent.gyp:libevent'],
         },],
         ['component=="shared_library"', {
@@ -221,6 +229,9 @@
               'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
             }],
           ],
+        }],
+        ['OS == "ios"', {
+          'toolsets': ['host', 'target'],
         }],
       ],
       'export_dependent_settings': [
@@ -370,6 +381,7 @@
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
         'command_line_unittest.cc',
+        'containers/adapters_unittest.cc',
         'containers/hash_tables_unittest.cc',
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
@@ -436,6 +448,7 @@
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_memory_manager_unittest.cc',
         'memory/discardable_memory_unittest.cc',
+        'memory/discardable_shared_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
@@ -486,6 +499,7 @@
         'process/memory_unittest_mac.mm',
         'process/process_metrics_unittest.cc',
         'process/process_metrics_unittest_ios.cc',
+        'process/process_unittest.cc',
         'process/process_util_unittest.cc',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
@@ -602,6 +616,7 @@
           'sources/': [
             # Only test the iOS-meaningful portion of process_utils.
             ['exclude', '^process/memory_unittest'],
+            ['exclude', '^process/process_unittest\\.cc$'],
             ['exclude', '^process/process_util_unittest\\.cc$'],
             ['include', '^process/process_util_unittest_ios\\.cc$'],
             # Requires spawning processes.
@@ -742,6 +757,20 @@
     },
   ],
   'conditions': [
+    ['OS=="ios" and "<(GENERATOR)"=="ninja"', {
+      'targets': [
+        {
+          'target_name': 'test_launcher',
+          'toolsets': ['host'],
+          'type': 'executable',
+          'dependencies': [
+          ],
+          'sources': [
+            'test/launcher/test_launcher_ios.cc',
+          ],
+        },
+      ],
+    }],
     ['OS!="ios"', {
       'targets': [
         {
@@ -811,10 +840,14 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'DelayLoadDLLs': [
+                'cfgmgr32.dll',
                 'powrprof.dll',
+                'setupapi.dll',
               ],
               'AdditionalDependencies': [
+                'cfgmgr32.lib',
                 'powrprof.lib',
+                'setupapi.lib',
               ],
             },
           },
@@ -823,10 +856,14 @@
             'msvs_settings': {
               'VCLinkerTool': {
                 'DelayLoadDLLs': [
+                  'cfgmgr32.dll',
                   'powrprof.dll',
+                  'setupapi.dll',
                 ],
                 'AdditionalDependencies': [
+                  'cfgmgr32.lib',
                   'powrprof.lib',
+                  'setupapi.lib',
                 ],
               },
             },

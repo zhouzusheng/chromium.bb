@@ -34,7 +34,6 @@
 #include <chrome/renderer/spellchecker/spellcheck.h>
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
 #include <content/child/request_info.h>
-#include <content/common/sandbox_win.h>
 #include <content/public/renderer/render_font_warmup_win.h>
 #include <content/public/renderer/render_thread.h>
 #include <net/base/net_errors.h>
@@ -42,12 +41,13 @@
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
 #include <third_party/WebKit/public/web/WebPluginParams.h>
+#include <ui/gfx/win/direct_write.h>
 
 namespace blpwtk2 {
 
 ContentRendererClientImpl::ContentRendererClientImpl()
 {
-    if (content::ShouldUseDirectWrite()) {
+    if (gfx::win::ShouldUseDirectWrite()) {
         SkFontMgr* fontMgr = content::GetPreSandboxWarmupFontMgr();
         SetDefaultSkiaFactory(fontMgr);
     }

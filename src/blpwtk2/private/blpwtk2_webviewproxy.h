@@ -84,43 +84,43 @@ class WebViewProxy : public WebView,
 
     // ========== WebView overrides ================
 
-    virtual void destroy() OVERRIDE;
-    virtual WebFrame* mainFrame() OVERRIDE;
-    virtual void loadUrl(const StringRef& url) OVERRIDE;
-    virtual void loadInspector(WebView* inspectedView) OVERRIDE;
-    virtual void inspectElementAt(const POINT& point) OVERRIDE;
-    virtual void reload(bool ignoreCache) OVERRIDE;
-    virtual void goBack() OVERRIDE;
-    virtual void goForward() OVERRIDE;
-    virtual void stop() OVERRIDE;
-    virtual void takeKeyboardFocus() OVERRIDE;
-    virtual void setLogicalFocus(bool focused) OVERRIDE;
-    virtual void show() OVERRIDE;
-    virtual void hide() OVERRIDE;
-    virtual void setParent(NativeView parent) OVERRIDE;
-    virtual void embedChild(NativeView child) OVERRIDE;
-    virtual void move(int left, int top, int width, int height) OVERRIDE;
-    virtual void cutSelection() OVERRIDE;
-    virtual void copySelection() OVERRIDE;
-    virtual void paste() OVERRIDE;
-    virtual void deleteSelection() OVERRIDE;
-    virtual void enableFocusBefore(bool enabled) OVERRIDE;
-    virtual void enableFocusAfter(bool enabled) OVERRIDE;
-    virtual void enableNCHitTest(bool enabled) OVERRIDE;
-    virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
-    virtual void fileChooserCompleted(const StringRef* paths,
-                                      size_t numPaths) OVERRIDE;
-    virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
-    virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
-    virtual void enableCustomTooltip(bool enabled) OVERRIDE;
-    virtual void setZoomPercent(int value) OVERRIDE;
-    virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
-    virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
-    virtual void rootWindowPositionChanged() OVERRIDE;
-    virtual void rootWindowSettingsChanged() OVERRIDE;
-    virtual void print() OVERRIDE;
-    virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
-    virtual void setDelegate(WebViewDelegate* delegate) OVERRIDE;
+    void destroy() override;
+    WebFrame* mainFrame() override;
+    void loadUrl(const StringRef& url) override;
+    void loadInspector(WebView* inspectedView) override;
+    void inspectElementAt(const POINT& point) override;
+    void reload(bool ignoreCache) override;
+    void goBack() override;
+    void goForward() override;
+    void stop() override;
+    void takeKeyboardFocus() override;
+    void setLogicalFocus(bool focused) override;
+    void show() override;
+    void hide() override;
+    void setParent(NativeView parent) override;
+    void embedChild(NativeView child) override;
+    void move(int left, int top, int width, int height) override;
+    void cutSelection() override;
+    void copySelection() override;
+    void paste() override;
+    void deleteSelection() override;
+    void enableFocusBefore(bool enabled) override;
+    void enableFocusAfter(bool enabled) override;
+    void enableNCHitTest(bool enabled) override;
+    void onNCHitTestResult(int x, int y, int result) override;
+    void fileChooserCompleted(const StringRef* paths,
+                              size_t numPaths) override;
+    void performCustomContextMenuAction(int actionId) override;
+    void enableAltDragRubberbanding(bool enabled) override;
+    void enableCustomTooltip(bool enabled) override;
+    void setZoomPercent(int value) override;
+    void find(const StringRef& text, bool matchCase, bool forward) override;
+    void replaceMisspelledRange(const StringRef& text) override;
+    void rootWindowPositionChanged() override;
+    void rootWindowSettingsChanged() override;
+    void print() override;
+    void handleInputEvents(const InputEvent *events, size_t eventsCount) override;
+    void setDelegate(WebViewDelegate* delegate) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.
@@ -128,11 +128,11 @@ class WebViewProxy : public WebView,
 
   private:
     // IPC::Sender override
-    virtual bool Send(IPC::Message* message) OVERRIDE;
+    bool Send(IPC::Message* message) override;
 
     // IPC::Listener overrides
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
+    void OnBadMessageReceived(const IPC::Message& message) override;
 
     // Message handlers
     void onUpdateTargetURL(const std::string& url);

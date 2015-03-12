@@ -73,21 +73,17 @@ class ToolkitImpl : public Toolkit {
 
     void appendCommandLineSwitch(const char* switchString);
 
-    virtual Profile* createProfile(const ProfileCreateParams& params) OVERRIDE;
-
-    virtual bool hasDevTools() OVERRIDE;
-
-    virtual void destroy() OVERRIDE;
-
-    virtual WebView* createWebView(NativeView parent,
-                                   WebViewDelegate* delegate,
-                                   const WebViewCreateParams& params) OVERRIDE;
-
-    virtual String createHostChannel(int timeoutInMilliseconds) OVERRIDE;
-
-    virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
-    virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
-    virtual void clearWebCache() OVERRIDE;
+    // blpwtk2::Toolkit overrides
+    Profile* createProfile(const ProfileCreateParams& params) override;
+    bool hasDevTools() override;
+    void destroy() override;
+    WebView* createWebView(NativeView parent,
+                           WebViewDelegate* delegate,
+                           const WebViewCreateParams& params) override;
+    String createHostChannel(int timeoutInMilliseconds) override;
+    bool preHandleMessage(const NativeMsg* msg) override;
+    void postHandleMessage(const NativeMsg* msg) override;
+    void clearWebCache() override;
 
   private:
     void createInProcessHost();

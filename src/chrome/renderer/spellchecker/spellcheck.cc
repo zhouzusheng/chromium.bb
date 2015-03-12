@@ -32,7 +32,7 @@ namespace {
 class UpdateSpellcheckEnabled : public content::RenderViewVisitor {
  public:
   explicit UpdateSpellcheckEnabled(bool enabled) : enabled_(enabled) {}
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+  bool Visit(content::RenderView* render_view) override;
 
  private:
   bool enabled_;  // New spellcheck-enabled state.
@@ -49,7 +49,7 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
 class RequestSpellcheckForView : public content::RenderViewVisitor {
  public:
   RequestSpellcheckForView() {}
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+  bool Visit(content::RenderView* render_view) override;
  private:
   DISALLOW_COPY_AND_ASSIGN(RequestSpellcheckForView);
 };
@@ -64,9 +64,9 @@ bool RequestSpellcheckForView::Visit(content::RenderView* render_view) {
 class DocumentMarkersCollector : public content::RenderViewVisitor {
  public:
   DocumentMarkersCollector() {}
-  virtual ~DocumentMarkersCollector() {}
+  ~DocumentMarkersCollector() override {}
   const std::vector<uint32>& markers() const { return markers_; }
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+  bool Visit(content::RenderView* render_view) override;
 
  private:
   std::vector<uint32> markers_;
@@ -87,8 +87,8 @@ bool DocumentMarkersCollector::Visit(content::RenderView* render_view) {
 class DocumentMarkersRemover : public content::RenderViewVisitor {
  public:
   explicit DocumentMarkersRemover(const std::vector<std::string>& words);
-  virtual ~DocumentMarkersRemover() OVERRIDE {}
-  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+  ~DocumentMarkersRemover() override {}
+  bool Visit(content::RenderView* render_view) override;
 
  private:
   WebVector<WebString> words_;

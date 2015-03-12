@@ -25,7 +25,6 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/compiler_specific.h>  // for OVERRIDE
 #include <base/threading/platform_thread.h>
 
 namespace base {
@@ -58,7 +57,7 @@ class BrowserThread : private base::PlatformThread::Delegate {
     base::MessageLoop* messageLoop() const;
 
   private:
-    virtual void ThreadMain() OVERRIDE;
+    void ThreadMain() override;
 
     sandbox::SandboxInterfaceInfo* d_sandboxInfo;
     BrowserMainRunner* d_mainRunner;

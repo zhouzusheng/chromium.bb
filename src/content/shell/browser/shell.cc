@@ -7,7 +7,6 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -20,6 +19,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/renderer_preferences.h"
+
+// SHEZ: Remove test-only code.
+// #include "content/shell/browser/layout_test/layout_test_devtools_frontend.h"
+// #include "content/shell/browser/layout_test/layout_test_javascript_dialog_manager.h"
+
 #include "content/shell/browser/notify_done_forwarder.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
@@ -47,7 +51,7 @@ class Shell::DevToolsWebContentsObserver : public WebContentsObserver {
   }
 
   // WebContentsObserver
-  virtual void WebContentsDestroyed() OVERRIDE {
+  void WebContentsDestroyed() override {
     shell_->OnDevToolsWebContentsDestroyed();
   }
 
@@ -342,8 +346,17 @@ void Shell::DidNavigateMainFramePostCommit(WebContents* web_contents) {
 }
 
 JavaScriptDialogManager* Shell::GetJavaScriptDialogManager() {
-  if (!dialog_manager_)
-    dialog_manager_.reset(new ShellJavaScriptDialogManager());
+  if (!dialog_manager_) {
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    dialog_manager_.reset(
+        // SHEZ: Remove test-only code.
+#if 0
+        command_line.HasSwitch(switches::kDumpRenderTree)
+        ? new LayoutTestJavaScriptDialogManager
+        :
+#endif
+        new ShellJavaScriptDialogManager);
+  }
   return dialog_manager_.get();
 }
 
@@ -399,8 +412,16 @@ void Shell::TitleWasSet(NavigationEntry* entry, bool explicit_set) {
 void Shell::InnerShowDevTools(const std::string& settings,
                               const std::string& frontend_url) {
   if (!devtools_frontend_) {
-    devtools_frontend_ = ShellDevToolsFrontend::Show(
-        web_contents(), settings, frontend_url);
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDumpRenderTree)) {
+      // SHEZ: Remove test-only code.
+#if 0
+      devtools_frontend_ = LayoutTestDevToolsFrontend::Show(
+          web_contents(), settings, frontend_url);
+#endif
+    } else {
+      devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents());
+    }
     devtools_observer_.reset(new DevToolsWebContentsObserver(
         this, devtools_frontend_->frontend_shell()->web_contents()));
   }

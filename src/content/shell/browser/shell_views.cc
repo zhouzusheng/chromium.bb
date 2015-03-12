@@ -69,7 +69,7 @@ class ShellViewsDelegateAura : public views::ViewsDelegate {
     ViewsDelegate::views_delegate = this;
   }
 
-  virtual ~ShellViewsDelegateAura() {
+  ~ShellViewsDelegateAura() override {
     // SHEZ: Copied from TestViewsDelegate
     ViewsDelegate::views_delegate = NULL;
   }
@@ -81,41 +81,41 @@ class ShellViewsDelegateAura : public views::ViewsDelegate {
   // SHEZ: Upstream code gets these overrides from the TestViewsDelegate
   // SHEZ: implementation.  Note that TestViewsDelegate has been
   // SHEZ: minimized away.
-  virtual void SaveWindowPlacement(const views::Widget* widget,
+  void SaveWindowPlacement(const views::Widget* widget,
       const std::string& window_name,
       const gfx::Rect& bounds,
-      ui::WindowShowState show_state) OVERRIDE {}
-  virtual bool GetSavedWindowPlacement(
+      ui::WindowShowState show_state) override {}
+  bool GetSavedWindowPlacement(
       const views::Widget* widget,
       const std::string& window_name,
       gfx::Rect* bounds,
-      ui::WindowShowState* show_state) const OVERRIDE { return false; }
-  virtual void NotifyAccessibilityEvent(
+      ui::WindowShowState* show_state) const override { return false; }
+  void NotifyAccessibilityEvent(
       views::View* view,
-      ui::AXEvent event_type) OVERRIDE{}
-  virtual void NotifyMenuItemFocused(const base::string16& menu_name,
+      ui::AXEvent event_type) override {}
+  void NotifyMenuItemFocused(const base::string16& menu_name,
       const base::string16& menu_item_name,
       int item_index,
       int item_count,
-      bool has_submenu) OVERRIDE {}
+      bool has_submenu) override {}
 #if defined(OS_WIN)
-  virtual HICON GetDefaultWindowIcon() const OVERRIDE { return NULL; }
-  virtual bool IsWindowInMetro(gfx::NativeWindow window) const OVERRIDE { return false; }
+  HICON GetDefaultWindowIcon() const override { return NULL; }
+  bool IsWindowInMetro(gfx::NativeWindow window) const override { return false; }
 #endif
-  virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
-      views::Widget* widget) OVERRIDE { return NULL; }
-  virtual void AddRef() OVERRIDE { }
-  virtual void ReleaseRef() OVERRIDE { }
-  virtual content::WebContents* CreateWebContents(
+  views::NonClientFrameView* CreateDefaultNonClientFrameView(
+      views::Widget* widget) override { return NULL; }
+  void AddRef() override { }
+  void ReleaseRef() override { }
+  content::WebContents* CreateWebContents(
       content::BrowserContext* browser_context,
-      content::SiteInstance* site_instance) OVERRIDE { return NULL; }
-  virtual base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() OVERRIDE { return base::TimeDelta(); }
+      content::SiteInstance* site_instance) override { return NULL; }
+  base::TimeDelta GetDefaultTextfieldObscuredRevealDuration() override { return base::TimeDelta(); }
 
   // SHEZ: Upstream code gets these overrides from the DesktopTestViewsDelegate
   // SHEZ: implementation.  Note that DesktopTestViewsDelegate has been
   // SHEZ: minimized away.
-  virtual void OnBeforeWidgetInit(views::Widget::InitParams* params,
-      views::internal::NativeWidgetDelegate* delegate) OVERRIDE
+  void OnBeforeWidgetInit(views::Widget::InitParams* params,
+      views::internal::NativeWidgetDelegate* delegate) override
   {
 #if defined(USE_AURA) && !defined(OS_CHROMEOS)
     // If we already have a native_widget, we don't have to try to come
@@ -151,16 +151,13 @@ class ContextMenuModel : public ui::SimpleMenuModel,
   }
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override { return false; }
+  bool IsCommandIdEnabled(int command_id) const override { return true; }
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     return false;
   }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
-    return true;
-  }
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE { return false; }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     switch (command_id) {
       case COMMAND_OPEN_DEVTOOLS:
         shell_->ShowDevToolsForElementAt(params_.x, params_.y);
@@ -197,7 +194,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       toolbar_view_(new View),
       contents_view_(new View) {
   }
-  virtual ~ShellWindowDelegateView() {}
+  ~ShellWindowDelegateView() override {}
 
   // Update the state of UI controls
   void SetAddressBarURL(const GURL& url) {
@@ -404,11 +401,10 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     }
   }
   // Overridden from TextfieldController
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE {
-  }
-  virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const ui::KeyEvent& key_event) OVERRIDE {
+  void ContentsChanged(views::Textfield* sender,
+                       const base::string16& new_contents) override {}
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override {
    if (sender == url_entry_ && key_event.key_code() == ui::VKEY_RETURN) {
      std::string text = base::UTF16ToUTF8(url_entry_->text());
      GURL url(text);
@@ -423,8 +419,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from ButtonListener
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE {
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override {
     if (sender == new_button_) {
       Shell::CreateNewWindow(shell_->web_contents()->GetBrowserContext(),
                              shell_->web_contents()->GetVisibleURL(),
@@ -444,35 +439,33 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   }
 
   // Overridden from WidgetDelegateView
-  virtual bool CanResize() const OVERRIDE { return true; }
-  virtual bool CanMaximize() const OVERRIDE { return true; }
-  virtual bool CanMinimize() const OVERRIDE { return true; }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
-    return title_;
-  }
-  virtual void WindowClosing() OVERRIDE {
+  bool CanResize() const override { return true; }
+  bool CanMaximize() const override { return true; }
+  bool CanMinimize() const override { return true; }
+  base::string16 GetWindowTitle() const override { return title_; }
+  void WindowClosing() override {
     if (shell_) {
       delete shell_;
       shell_ = NULL;
     }
   }
-  virtual View* GetContentsView() OVERRIDE { return this; }
+  View* GetContentsView() override { return this; }
 
   // Overridden from View
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+  gfx::Size GetMinimumSize() const override {
     // We want to be able to make the window smaller than its initial
     // (preferred) size.
     return gfx::Size();
   }
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     if (details.is_add && details.child == this) {
       InitShellWindow();
     }
   }
 
   // Overridden from AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     switch (accelerator.key_code()) {
     case ui::VKEY_F5:
       shell_->Reload();

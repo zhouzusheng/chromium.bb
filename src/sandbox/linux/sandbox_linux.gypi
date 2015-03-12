@@ -119,7 +119,16 @@
       'sources': [
         'bpf_dsl/bpf_dsl.cc',
         'bpf_dsl/bpf_dsl.h',
+        'bpf_dsl/bpf_dsl_forward.h',
+        'bpf_dsl/bpf_dsl_impl.h',
         'bpf_dsl/cons.h',
+        'bpf_dsl/dump_bpf.cc',
+        'bpf_dsl/dump_bpf.h',
+        'bpf_dsl/policy.cc',
+        'bpf_dsl/policy.h',
+        'bpf_dsl/policy_compiler.cc',
+        'bpf_dsl/policy_compiler.h',
+        'bpf_dsl/trap_registry.h',
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',
         'seccomp-bpf/codegen.cc',
@@ -132,8 +141,6 @@
         'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
-        'seccomp-bpf/sandbox_bpf_policy.cc',
-        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
@@ -149,6 +156,10 @@
       ],
       'defines': [
         'SANDBOX_IMPLEMENTATION',
+      ],
+      'includes': [
+        # Disable LTO due to compiler bug
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57703
       ],
       'include_dirs': [
         '../..',
@@ -207,16 +218,23 @@
     { 'target_name': 'sandbox_services',
       'type': '<(component)',
       'sources': [
-        'services/broker_process.cc',
-        'services/broker_process.h',
         'services/init_process_reaper.cc',
         'services/init_process_reaper.h',
         'services/scoped_process.cc',
         'services/scoped_process.h',
         'services/thread_helpers.cc',
         'services/thread_helpers.h',
-        'services/yama.h',
         'services/yama.cc',
+        'services/yama.h',
+        'syscall_broker/broker_client.cc',
+        'syscall_broker/broker_client.h',
+        'syscall_broker/broker_common.h',
+        'syscall_broker/broker_host.cc',
+        'syscall_broker/broker_host.h',
+        'syscall_broker/broker_policy.cc',
+        'syscall_broker/broker_policy.h',
+        'syscall_broker/broker_process.cc',
+        'syscall_broker/broker_process.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',

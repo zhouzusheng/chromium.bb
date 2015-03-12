@@ -159,7 +159,7 @@
             'audio_coding_module',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [
@@ -176,7 +176,7 @@
             'audio_coding_module',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [

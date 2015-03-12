@@ -37,26 +37,26 @@ class PrefStore : public PersistentPrefStore {
     virtual ~PrefStore();
 
     // PrefStore
-    virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
-    virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
-    virtual bool HasObservers() const OVERRIDE;
-    virtual bool IsInitializationComplete() const OVERRIDE;
-    virtual bool GetValue(const std::string& key,
-                        const base::Value** result) const OVERRIDE;
+    void AddObserver(PrefStore::Observer* observer) override;
+    void RemoveObserver(PrefStore::Observer* observer) override;
+    bool HasObservers() const override;
+    bool IsInitializationComplete() const override;
+    bool GetValue(const std::string& key,
+                  const base::Value** result) const override;
 
     // PersistentPrefStore
-    virtual bool GetMutableValue(const std::string& key,
-                                base::Value** result) OVERRIDE;
-    virtual void SetValue(const std::string& key, base::Value* value) OVERRIDE;
-    virtual void SetValueSilently(const std::string& key,
-                                base::Value* value) OVERRIDE;
-    virtual void RemoveValue(const std::string& key) OVERRIDE;
-    virtual bool ReadOnly() const OVERRIDE;
-    virtual PrefReadError GetReadError() const OVERRIDE;
-    virtual PrefReadError ReadPrefs() OVERRIDE;
-    virtual void ReadPrefsAsync(ReadErrorDelegate* delegate) OVERRIDE;
-    virtual void CommitPendingWrite() OVERRIDE;
-    virtual void ReportValueChanged(const std::string& key) OVERRIDE;
+    bool GetMutableValue(const std::string& key,
+                         base::Value** result) override;
+    void SetValue(const std::string& key, base::Value* value) override;
+    void SetValueSilently(const std::string& key,
+                          base::Value* value) override;
+    void RemoveValue(const std::string& key) override;
+    bool ReadOnly() const override;
+    PrefReadError GetReadError() const override;
+    PrefReadError ReadPrefs() override;
+    void ReadPrefsAsync(ReadErrorDelegate* delegate) override;
+    void CommitPendingWrite() override;
+    void ReportValueChanged(const std::string& key) override;
 
 private:
     void OnInitializationCompleted();

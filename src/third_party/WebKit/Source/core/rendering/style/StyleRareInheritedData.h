@@ -112,7 +112,6 @@ public:
     unsigned wordBreak : 2; // EWordBreak
     unsigned overflowWrap : 1; // EOverflowWrap
     unsigned lineBreak : 3; // LineBreak
-    unsigned resize : 2; // EResize
     unsigned userSelect : 2; // EUserSelect
     unsigned rubberbandable : 2;  // ERubberbandable
     unsigned speak : 3; // ESpeak

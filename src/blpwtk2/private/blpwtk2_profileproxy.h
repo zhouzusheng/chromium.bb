@@ -68,26 +68,26 @@ class ProfileProxy : public Profile,
     int routingId() const;
 
     // Profile overrides, must only be called on the application-main thread.
-    virtual void destroy() OVERRIDE;
-    virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
-    virtual void useSystemProxyConfig() OVERRIDE;
-    virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
-    virtual void addCustomWords(const StringRef* words,
-                                size_t numWords) OVERRIDE;
-    virtual void removeCustomWords(const StringRef* words,
-                                   size_t numWords) OVERRIDE;
-    virtual void addAutocorrectWords(const StringRef* badWords,
-                                     const StringRef* goodWords,
-                                     size_t numWords) OVERRIDE;
-    virtual void removeAutocorrectWords(const StringRef* badWords,
-                                        size_t numWords) OVERRIDE;
+    void destroy() override;
+    void setProxyConfig(const ProxyConfig& config) override;
+    void useSystemProxyConfig() override;
+    void setSpellCheckConfig(const SpellCheckConfig& config) override;
+    void addCustomWords(const StringRef* words,
+                        size_t numWords) override;
+    void removeCustomWords(const StringRef* words,
+                           size_t numWords) override;
+    void addAutocorrectWords(const StringRef* badWords,
+                             const StringRef* goodWords,
+                             size_t numWords) override;
+    void removeAutocorrectWords(const StringRef* badWords,
+                                size_t numWords) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.
     virtual ~ProfileProxy();
 
     // IPC::Sender override
-    virtual bool Send(IPC::Message* message) OVERRIDE;
+    bool Send(IPC::Message* message) override;
 
     ProcessClient* d_processClient;
     int d_routingId;

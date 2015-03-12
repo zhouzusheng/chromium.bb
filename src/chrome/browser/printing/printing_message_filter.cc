@@ -10,6 +10,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/printer_query.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
@@ -129,7 +130,7 @@ bool PrintingMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_ScriptedPrint, OnScriptedPrint)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_UpdatePrintSettings,
                                     OnUpdatePrintSettings)
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
     IPC_MESSAGE_HANDLER(PrintHostMsg_CheckForCancel, OnCheckForCancel)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -424,7 +425,7 @@ void PrintingMessageFilter::OnUpdatePrintSettingsReply(
   }
 }
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 void PrintingMessageFilter::OnCheckForCancel(int32 preview_ui_id,
                                              int preview_request_id,
                                              bool* cancel) {

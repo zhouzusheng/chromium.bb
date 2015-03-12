@@ -124,6 +124,7 @@ void WebDevToolsFrontendImpl::windowObjectCleared()
             "     ['append', 2],"
             "     ['bringToFront', 0],"
             "     ['closeWindow', 0],"
+            "     ['loadCompleted', 0],"
             "     ['indexPath', 2],"
             "     ['inspectElementCompleted', 0],"
             "     ['inspectedURLChanged', 1],"
@@ -159,7 +160,23 @@ void WebDevToolsFrontendImpl::windowObjectCleared()
             "InspectorFrontendHost.loaded = function() {};"
             "InspectorFrontendHost.hiddenPanels = function() { return ""; };"
             "InspectorFrontendHost.localizedStringsURL = function() { return ""; };"
-            "InspectorFrontendHost.close = function(url) { };";
+            "InspectorFrontendHost.close = function(url) { };"
+            ""
+            "(function() {"
+            "function getValue(property)"
+            "{"
+            "    if (property == 'padding-left') {"
+            "        return {"
+            "            getFloatValue: function() { return this.__paddingLeft; },"
+            "            __paddingLeft: parseFloat(this.paddingLeft)"
+            "        };"
+            "    }"
+            "    throw new Error('getPropertyCSSValue is undefined');"
+            "}"
+            ""
+            "window.CSSStyleDeclaration.prototype.getPropertyCSSValue = getValue;"
+            "window.CSSPrimitiveValue = { CSS_PX: 'CSS_PX' };"
+            "})();";
         scriptController->executeScriptInMainWorld(installAdditionalAPI, ScriptController::ExecuteScriptWhenScriptsDisabled);
     }
 }

@@ -106,7 +106,8 @@ static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInf
     if (!hasSource(mediaElement))
         return paintMediaButton(paintInfo.context, rect, mediaPlayDisabled);
 
-    return paintMediaButton(paintInfo.context, rect, mediaControlElementType(object->node()) == MediaPlayButton ? mediaPlay : mediaPause);
+    Image * image = !object->node()->isMediaControlElement() || mediaControlElementType(object->node()) == MediaPlayButton ? mediaPlay : mediaPause;
+    return paintMediaButton(paintInfo.context, rect, image);
 }
 
 static bool paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -345,15 +346,24 @@ static bool paintMediaCastButton(RenderObject* object, const PaintInfo& paintInf
     if (!mediaElement)
         return false;
 
-    static Image* mediaCastOnButton = platformResource("mediaplayerCastOn");
-    static Image* mediaCastOffButton = platformResource("mediaplayerCastOff");
+    static Image* mediaCastOn = platformResource("mediaplayerCastOn");
+    static Image* mediaCastOff = platformResource("mediaplayerCastOff");
+    // To ensure that the overlaid cast button is visible when overlaid on pale videos we use a
+    // different version of it for the overlaid case with a semi-opaque background.
+    static Image* mediaOverlayCastOff = platformResource("mediaplayerOverlayCastOff");
 
-    if (mediaElement->isPlayingRemotely()) {
-        return paintMediaButton(paintInfo.context, rect, mediaCastOnButton);
+    switch (mediaControlElementType(object->node())) {
+    case MediaCastOnButton:
+    case MediaOverlayCastOnButton:
+        return paintMediaButton(paintInfo.context, rect, mediaCastOn);
+    case MediaCastOffButton:
+        return paintMediaButton(paintInfo.context, rect, mediaCastOff);
+    case MediaOverlayCastOffButton:
+        return paintMediaButton(paintInfo.context, rect, mediaOverlayCastOff);
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
     }
-
-    return paintMediaButton(paintInfo.context, rect, mediaCastOffButton);
-
 }
 
 bool RenderMediaControls::paintMediaControlsPart(MediaControlElementType part, RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)

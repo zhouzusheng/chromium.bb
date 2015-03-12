@@ -99,6 +99,7 @@ RenderTableSection::RenderTableSection(Element* element)
     , m_outerBorderBefore(0)
     , m_outerBorderAfter(0)
     , m_needsCellRecalc(false)
+    , m_forceSlowPaintPathWithOverflowingCell(false)
     , m_hasMultipleCellLevels(false)
 {
     // init RenderObject attributes
@@ -991,7 +992,8 @@ void RenderTableSection::layoutRows()
 redoLayout:
     for (unsigned r = rowStart; r < totalRows; r++) {
         // Set the row's x/y position and width/height.
-        if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer) {
+        RenderTableRow* rowRenderer = m_grid[r].rowRenderer;
+        if (rowRenderer) {
             rowRenderer->setLocation(LayoutPoint(0, m_rowPos[r]));
             rowRenderer->setLogicalWidth(logicalWidth());
 
@@ -1084,12 +1086,15 @@ redoLayout:
 
             cell->layoutIfNeeded();
 
+            if (rowRenderer)
+                rowRenderer->addOverflowFromCell(cell);
+
             LayoutSize childOffset(cell->location() - oldCellRect.location());
             if (childOffset.width() || childOffset.height()) {
                 // If the child moved, we have to issue paint invalidations to it as well as any floating/positioned
                 // descendants. An exception is if we need a layout. In this case, we know we're going to
                 // issue paint invalidations ourselves (and the child) anyway.
-                if (!table()->selfNeedsLayout() && cell->checkForPaintInvalidation())
+                if (!table()->selfNeedsLayout())
                     cell->setMayNeedPaintInvalidation(true);
             }
 
@@ -1332,10 +1337,10 @@ CellSpan RenderTableSection::dirtiedRows(const LayoutRect& damageRect) const
 
     // To issue paint invalidations for the border we might need to paint invalidate the first or last row even if they are not spanned themselves.
     if (coveredRows.start() >= m_rowPos.size() - 1 && m_rowPos[m_rowPos.size() - 1] + table()->outerBorderAfter() >= damageRect.y())
-        --coveredRows.start();
+        coveredRows.decreaseStart();
 
     if (!coveredRows.end() && m_rowPos[0] - table()->outerBorderBefore() <= damageRect.maxY())
-        ++coveredRows.end();
+        coveredRows.increaseEnd();
 
     return coveredRows;
 }
@@ -1350,10 +1355,10 @@ CellSpan RenderTableSection::dirtiedColumns(const LayoutRect& damageRect) const
     const Vector<int>& columnPos = table()->columnPositions();
     // To issue paint invalidations for the border we might need to paint invalidate the first or last column even if they are not spanned themselves.
     if (coveredColumns.start() >= columnPos.size() - 1 && columnPos[columnPos.size() - 1] + table()->outerBorderEnd() >= damageRect.x())
-        --coveredColumns.start();
+        coveredColumns.decreaseStart();
 
     if (!coveredColumns.end() && columnPos[0] - table()->outerBorderStart() <= damageRect.maxX())
-        ++coveredColumns.end();
+        coveredColumns.increaseEnd();
 
     return coveredColumns;
 }
@@ -1419,7 +1424,7 @@ void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& pa
 void RenderTableSection::imageChanged(WrappedImagePtr, const IntRect*)
 {
     // FIXME: Examine cells and issue paint invalidations of only the rect the image paints in.
-    setShouldDoFullPaintInvalidation(true);
+    setShouldDoFullPaintInvalidation();
 }
 
 void RenderTableSection::recalcCells()

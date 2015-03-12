@@ -72,9 +72,8 @@ public:
     bool cookiePersistenceEnabled() const { return d_cookiePersistenceEnabled; }
 
     // net::URLRequestContextGetter implementation.
-    virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
-    virtual scoped_refptr<base::SingleThreadTaskRunner>
-    GetNetworkTaskRunner() const OVERRIDE;
+    net::URLRequestContext* GetURLRequestContext() override;
+    scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner() const override;
 
 private:
     // Called on the IO thread.

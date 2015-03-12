@@ -72,43 +72,41 @@ class BrowserContextImpl : public content::BrowserContext,
     void reallyDestroy();
 
     // Profile overrides, must only be called on the browser-main thread.
-    virtual void destroy() OVERRIDE;
-    virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
-    virtual void useSystemProxyConfig() OVERRIDE;
-    virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
-    virtual void addCustomWords(const StringRef* words,
-                                size_t numWords) OVERRIDE;
-    virtual void removeCustomWords(const StringRef* words,
-                                   size_t numWords) OVERRIDE;
-    virtual void addAutocorrectWords(const StringRef* badWords,
-                                     const StringRef* goodWords,
-                                     size_t numWords) OVERRIDE;
-    virtual void removeAutocorrectWords(const StringRef* badWords,
-                                        size_t numWords) OVERRIDE;
+    void destroy() override;
+    void setProxyConfig(const ProxyConfig& config) override;
+    void useSystemProxyConfig() override;
+    void setSpellCheckConfig(const SpellCheckConfig& config) override;
+    void addCustomWords(const StringRef* words,
+                        size_t numWords) override;
+    void removeCustomWords(const StringRef* words,
+                           size_t numWords) override;
+    void addAutocorrectWords(const StringRef* badWords,
+                             const StringRef* goodWords,
+                             size_t numWords) override;
+    void removeAutocorrectWords(const StringRef* badWords,
+                                size_t numWords) override;
 
 
     // ======== content::BrowserContext implementation =============
 
-    virtual base::FilePath GetPath() const OVERRIDE;
-    virtual bool IsOffTheRecord() const OVERRIDE;
-    virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
-    virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
-        int rendererChildId) OVERRIDE;
-    virtual net::URLRequestContextGetter* GetMediaRequestContext() OVERRIDE;
-    virtual net::URLRequestContextGetter*
-    GetMediaRequestContextForRenderProcess(int rendererChildId) OVERRIDE;
-    virtual net::URLRequestContextGetter*
+    base::FilePath GetPath() const override;
+    bool IsOffTheRecord() const override;
+    net::URLRequestContextGetter* GetRequestContext() override;
+    net::URLRequestContextGetter* GetRequestContextForRenderProcess(
+        int rendererChildId) override;
+    net::URLRequestContextGetter* GetMediaRequestContext() override;
+    net::URLRequestContextGetter*
+    GetMediaRequestContextForRenderProcess(int rendererChildId) override;
+    net::URLRequestContextGetter*
     GetMediaRequestContextForStoragePartition(
-        const base::FilePath& partitionPath, bool inMemory) OVERRIDE;
-    virtual content::ResourceContext* GetResourceContext() OVERRIDE;
-    virtual content::DownloadManagerDelegate*
-        GetDownloadManagerDelegate() OVERRIDE;
-    virtual content::BrowserPluginGuestManager*
-        GetGuestManager() OVERRIDE;
-    virtual storage::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
-    virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
-    virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
-    virtual bool AllowDictionaryDownloads() OVERRIDE;
+        const base::FilePath& partitionPath, bool inMemory) override;
+    content::ResourceContext* GetResourceContext() override;
+    content::DownloadManagerDelegate* GetDownloadManagerDelegate() override;
+    content::BrowserPluginGuestManager* GetGuestManager() override;
+    storage::SpecialStoragePolicy* GetSpecialStoragePolicy() override;
+    content::PushMessagingService* GetPushMessagingService() override;
+    content::SSLHostStateDelegate* GetSSLHostStateDelegate() override;
+    bool AllowDictionaryDownloads() override;
 
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;

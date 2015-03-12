@@ -97,142 +97,141 @@ class WebViewImpl : public WebView,
 
     /////////////// WebView overrides
 
-    virtual void destroy() OVERRIDE;
-    virtual WebFrame* mainFrame() OVERRIDE;
-    virtual void loadUrl(const StringRef& url) OVERRIDE;
-    virtual void loadInspector(WebView* inspectedView) OVERRIDE;
-    virtual void inspectElementAt(const POINT& point) OVERRIDE;
-    virtual void reload(bool ignoreCache) OVERRIDE;
-    virtual void goBack() OVERRIDE;
-    virtual void goForward() OVERRIDE;
-    virtual void stop() OVERRIDE;
-    virtual void takeKeyboardFocus() OVERRIDE;
-    virtual void setLogicalFocus(bool focused) OVERRIDE;
-    virtual void show() OVERRIDE;
-    virtual void hide() OVERRIDE;
-    virtual void setParent(NativeView parent) OVERRIDE;
-    virtual void embedChild(NativeView child) OVERRIDE;
-    virtual void move(int left, int top, int width, int height) OVERRIDE;
-    virtual void cutSelection() OVERRIDE;
-    virtual void copySelection() OVERRIDE;
-    virtual void paste() OVERRIDE;
-    virtual void deleteSelection() OVERRIDE;
-    virtual void enableFocusBefore(bool enabled) OVERRIDE;
-    virtual void enableFocusAfter(bool enabled) OVERRIDE;
-    virtual void enableNCHitTest(bool enabled) OVERRIDE;
-    virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
-    virtual void fileChooserCompleted(const StringRef* paths,
-                                      size_t numPaths) OVERRIDE;
-    virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
-    virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
-    virtual void enableCustomTooltip(bool enabled) OVERRIDE;
-    virtual void setZoomPercent(int value) OVERRIDE;
-    virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
-    virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
-    virtual void rootWindowPositionChanged() OVERRIDE;
-    virtual void rootWindowSettingsChanged() OVERRIDE;
-    virtual void print() OVERRIDE;
-    virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
-    virtual void setDelegate(WebViewDelegate* delegate) OVERRIDE;
+    void destroy() override;
+    WebFrame* mainFrame() override;
+    void loadUrl(const StringRef& url) override;
+    void loadInspector(WebView* inspectedView) override;
+    void inspectElementAt(const POINT& point) override;
+    void reload(bool ignoreCache) override;
+    void goBack() override;
+    void goForward() override;
+    void stop() override;
+    void takeKeyboardFocus() override;
+    void setLogicalFocus(bool focused) override;
+    void show() override;
+    void hide() override;
+    void setParent(NativeView parent) override;
+    void embedChild(NativeView child) override;
+    void move(int left, int top, int width, int height) override;
+    void cutSelection() override;
+    void copySelection() override;
+    void paste() override;
+    void deleteSelection() override;
+    void enableFocusBefore(bool enabled) override;
+    void enableFocusAfter(bool enabled) override;
+    void enableNCHitTest(bool enabled) override;
+    void onNCHitTestResult(int x, int y, int result) override;
+    void fileChooserCompleted(const StringRef* paths,
+                              size_t numPaths) override;
+    void performCustomContextMenuAction(int actionId) override;
+    void enableAltDragRubberbanding(bool enabled) override;
+    void enableCustomTooltip(bool enabled) override;
+    void setZoomPercent(int value) override;
+    void find(const StringRef& text, bool matchCase, bool forward) override;
+    void replaceMisspelledRange(const StringRef& text) override;
+    void rootWindowPositionChanged() override;
+    void rootWindowSettingsChanged() override;
+    void print() override;
+    void handleInputEvents(const InputEvent *events, size_t eventsCount) override;
+    void setDelegate(WebViewDelegate* delegate) override;
 
   private:
     void createWidget(blpwtk2::NativeView parent);
 
     /////// NativeViewWidgetDelegate overrides
 
-    virtual void onDestroyed(NativeViewWidget* source) OVERRIDE;
-    virtual bool OnNCHitTest(int* result) OVERRIDE;
-    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
-    virtual void OnNCDragMove() OVERRIDE;
-    virtual void OnNCDragEnd() OVERRIDE;
+    void onDestroyed(NativeViewWidget* source) override;
+    bool OnNCHitTest(int* result) override;
+    bool OnNCDragBegin(int hitTestCode) override;
+    void OnNCDragMove() override;
+    void OnNCDragEnd() override;
 
     /////// WebContentsDelegate overrides
 
     // Notification that the target URL has changed.
-    virtual void UpdateTargetURL(content::WebContents* source,
-                                 const GURL& url) OVERRIDE;
+    void UpdateTargetURL(content::WebContents* source,
+                         const GURL& url) override;
 
     // Notifies the delegate that this contents is starting or is done loading
     // some resource. The delegate should use this notification to represent
     // loading feedback. See WebContents::IsLoading()
-    virtual void LoadingStateChanged(content::WebContents* source,
-                                     bool to_different_document) OVERRIDE;
+    void LoadingStateChanged(content::WebContents* source,
+                             bool to_different_document) override;
 
     // Invoked when a main frame navigation occurs.
-    virtual void DidNavigateMainFramePostCommit(content::WebContents* source) OVERRIDE;
+    void DidNavigateMainFramePostCommit(content::WebContents* source) override;
 
     // Called when a file selection is to be done.
-    virtual void RunFileChooser(content::WebContents* source,
-                                const content::FileChooserParams& params) OVERRIDE;
+    void RunFileChooser(content::WebContents* source,
+                        const content::FileChooserParams& params) override;
 
     // This is called when WebKit tells us that it is done tabbing through
     // controls on the page. Provides a way for WebContentsDelegates to handle
     // this. Returns true if the delegate successfully handled it.
-    virtual bool TakeFocus(content::WebContents* source, bool reverse) OVERRIDE;
+    bool TakeFocus(content::WebContents* source, bool reverse) override;
 
     // Notification that |contents| has gained focus.
-    virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
+    void WebContentsFocused(content::WebContents* contents) override;
 
     // Notification that |contents| has lost focus.
-    virtual void WebContentsBlurred(content::WebContents* contents) OVERRIDE;
+    void WebContentsBlurred(content::WebContents* contents) override;
 
     // Notifies the delegate about the creation of a new WebContents. This
     // typically happens when popups are created.
-    virtual void WebContentsCreated(content::WebContents* source_contents,
-                                    int opener_render_frame_id,
-                                    const base::string16& frame_name,
-                                    const GURL& target_url,
-                                    const content::ContentCreatedParams& params,
-                                    content::WebContents* new_contents) OVERRIDE;
+    void WebContentsCreated(content::WebContents* source_contents,
+                            int opener_render_frame_id,
+                            const base::string16& frame_name,
+                            const GURL& target_url,
+                            const content::ContentCreatedParams& params,
+                            content::WebContents* new_contents) override;
 
     // Request the delegate to close this web contents, and do whatever cleanup
     // it needs to do.
-    virtual void CloseContents(content::WebContents* source) OVERRIDE;
+    void CloseContents(content::WebContents* source) override;
 
     // Request the delegate to move this WebContents to the specified position
     // in screen coordinates.
-    virtual void MoveContents(content::WebContents* source, const gfx::Rect& pos) OVERRIDE;
+    void MoveContents(content::WebContents* source, const gfx::Rect& pos) override;
 
     // Called to determine if the WebContents is contained in a popup window
     // or a panel window.
-    virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
+    bool IsPopupOrPanel(const content::WebContents* source) const override;
 
     // Asks permission to use the camera and/or microphone. If permission is
     // granted, a call should be made to |callback| with the devices. If the
     // request is denied, a call should be made to |callback| with an empty list
     // of devices. |request| has the details of the request (e.g. which of audio
     // and/or video devices are requested, and lists of available devices).
-    virtual void RequestMediaAccessPermission(
+    void RequestMediaAccessPermission(
         content::WebContents* web_contents,
         const content::MediaStreamRequest& request,
-        const content::MediaResponseCallback& callback) OVERRIDE;
+        const content::MediaResponseCallback& callback) override;
 
     // Return true if the RWHV should take focus on mouse-down.
-    virtual bool ShouldSetKeyboardFocusOnMouseDown() OVERRIDE;
-    virtual bool ShouldSetLogicalFocusOnMouseDown() OVERRIDE;
+    bool ShouldSetKeyboardFocusOnMouseDown() override;
+    bool ShouldSetLogicalFocusOnMouseDown() override;
 
     // Allows delegate to show a custom tooltip. If the delegate doesn't want a
     // custom tooltip, it should just return 'false'. Otherwise, it should show
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
     // custom tooltip.
-    virtual bool ShowTooltip(content::WebContents* source,
-                             const base::string16& tooltip_text,
-                             blink::WebTextDirection text_direction_hint) OVERRIDE;
+    bool ShowTooltip(content::WebContents* source,
+                     const base::string16& tooltip_text,
+                     blink::WebTextDirection text_direction_hint) override;
 
     // Information about current find request
-    virtual void FindReply(content::WebContents* source_contents,
-                           int request_id,
-                           int number_of_matches,
-                           const gfx::Rect& selection_rect,
-                           int active_match_ordinal,
-                           bool final_update) OVERRIDE;
+    void FindReply(content::WebContents* source_contents,
+                   int request_id,
+                   int number_of_matches,
+                   const gfx::Rect& selection_rect,
+                   int active_match_ordinal,
+                   bool final_update) override;
 
     /////// WebContentsObserver overrides
 
     // This method is invoked after the WebContents decided which RenderViewHost
     // to use for the next navigation, but before the navigation starts.
-    virtual void AboutToNavigateRenderView(
-        content::RenderViewHost* render_view_host) OVERRIDE;
+    void AboutToNavigateRenderView(content::RenderViewHost* render_view_host) override;
 
     // This method is invoked when the navigation is done, i.e. the spinner of
     // the tab will stop spinning, and the onload event was dispatched.
@@ -240,17 +239,17 @@ class WebViewImpl : public WebView,
     // If the WebContents is displaying replacement content, e.g. network error
     // pages, DidFinishLoad is invoked for frames that were not sending
     // navigational events before. It is safe to ignore these events.
-    virtual void DidFinishLoad(
+    void DidFinishLoad(
         content::RenderFrameHost* render_frame_host,
-        const GURL& validated_url) OVERRIDE;
+        const GURL& validated_url) override;
 
     // This method is like DidFinishLoad, but when the load failed or was
     // cancelled, e.g. window.stop() is invoked.
-    virtual void DidFailLoad(
+    void DidFailLoad(
         content::RenderFrameHost* render_frame_host,
         const GURL& validated_url,
         int error_code,
-        const base::string16& error_description) OVERRIDE;
+        const base::string16& error_description) override;
 
   private:
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;

@@ -102,8 +102,8 @@ DeleteSelectionCommand::DeleteSelectionCommand(const VisibleSelection& selection
 
 void DeleteSelectionCommand::initializeStartEnd(Position& start, Position& end)
 {
-    HTMLElement* startSpecialContainer = 0;
-    HTMLElement* endSpecialContainer = 0;
+    HTMLElement* startSpecialContainer = nullptr;
+    HTMLElement* endSpecialContainer = nullptr;
 
     start = m_selectionToDelete.start();
     end = m_selectionToDelete.end();
@@ -845,7 +845,10 @@ void DeleteSelectionCommand::doApply()
     if (placeholder) {
         if (m_sanitizeMarkup)
             removeRedundantBlocks();
-        insertNodeAt(placeholder.get(), m_endingPosition);
+        // handleGeneralDelete cause DOM mutation events so |m_endingPosition|
+        // can be out of document.
+        if (m_endingPosition.inDocument())
+            insertNodeAt(placeholder.get(), m_endingPosition);
     }
 
     rebalanceWhitespaceAt(m_endingPosition);

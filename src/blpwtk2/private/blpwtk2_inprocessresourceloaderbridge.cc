@@ -55,11 +55,11 @@ class InProcessResourceLoaderBridge::InProcessResourceContext
     void dispose();
 
     // ResourceContext overrides
-    virtual void replaceStatusLine(const StringRef& newStatus) OVERRIDE;
-    virtual void addResponseHeader(const StringRef& header) OVERRIDE;
-    virtual void addResponseData(const char* buffer, int length) OVERRIDE;
-    virtual void failed() OVERRIDE;
-    virtual void finish() OVERRIDE;
+    void replaceStatusLine(const StringRef& newStatus) override;
+    void addResponseHeader(const StringRef& header) override;
+    void addResponseData(const char* buffer, int length) override;
+    void failed() override;
+    void finish() override;
 
   private:
     void startLoad();

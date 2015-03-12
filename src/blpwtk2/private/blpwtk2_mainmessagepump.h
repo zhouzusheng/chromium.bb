@@ -59,7 +59,7 @@ class MainMessagePump : public base::MessagePumpForUI {
                                          LPARAM lparam);
 
     // MessagePump overrides
-    virtual void ScheduleDelayedWork(const base::TimeTicks& delayed_work_time) OVERRIDE;
+    void ScheduleDelayedWork(const base::TimeTicks& delayed_work_time) override;
 
     scoped_ptr<base::RunLoop> d_runLoop;
     RunState d_runState;

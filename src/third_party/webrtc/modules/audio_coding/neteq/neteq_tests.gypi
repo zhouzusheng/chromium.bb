@@ -85,7 +85,7 @@
       'dependencies': [
         'neteq_unittest_tools',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
       ],
       'sources': [
         'tools/rtp_analyze.cc',

@@ -51,24 +51,24 @@ class Target : public content::DevToolsTarget {
   public:
     explicit Target(scoped_refptr<content::DevToolsAgentHost> agentHost);
 
-    virtual std::string GetId() const OVERRIDE{ return d_agentHost->GetId(); }
-    virtual std::string GetParentId() const OVERRIDE{ return std::string(); }
-    virtual std::string GetType() const OVERRIDE{ return "page"; }
-    virtual std::string GetTitle() const OVERRIDE{ return d_agentHost->GetTitle(); }
-    virtual std::string GetDescription() const OVERRIDE{ return std::string(); }
-    virtual GURL GetURL() const OVERRIDE{ return d_agentHost->GetURL(); }
-    virtual GURL GetFaviconURL() const OVERRIDE{ return d_faviconUrl; }
-    virtual base::TimeTicks GetLastActivityTime() const OVERRIDE{
+    std::string GetId() const override { return d_agentHost->GetId(); }
+    std::string GetParentId() const override { return std::string(); }
+    std::string GetType() const override { return "page"; }
+    std::string GetTitle() const override { return d_agentHost->GetTitle(); }
+    std::string GetDescription() const override { return std::string(); }
+    GURL GetURL() const override { return d_agentHost->GetURL(); }
+    GURL GetFaviconURL() const override { return d_faviconUrl; }
+    base::TimeTicks GetLastActivityTime() const override {
         return d_lastActivityTime;
     }
-    virtual bool IsAttached() const OVERRIDE{
+    bool IsAttached() const override {
         return d_agentHost->IsAttached();
     }
-    virtual scoped_refptr<content::DevToolsAgentHost> GetAgentHost() const OVERRIDE{
+    scoped_refptr<content::DevToolsAgentHost> GetAgentHost() const override {
         return d_agentHost;
     }
-    virtual bool Activate() const OVERRIDE;
-    virtual bool Close() const OVERRIDE;
+    bool Activate() const override;
+    bool Close() const override;
 
 private:
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;
@@ -105,7 +105,7 @@ class TCPServerSocketFactory
 
  private:
   // content::DevToolsHttpHandler::ServerSocketFactory.
-  virtual scoped_ptr<net::ServerSocket> Create() const OVERRIDE {
+  scoped_ptr<net::ServerSocket> Create() const override {
     return scoped_ptr<net::ServerSocket>(
         new net::TCPServerSocket(NULL, net::NetLog::Source()));
   }

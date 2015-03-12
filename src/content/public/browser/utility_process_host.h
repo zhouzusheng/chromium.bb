@@ -45,7 +45,7 @@ class UtilityProcessHost : public IPC::Sender,
   static bool run_utility_in_process();
   static void SetRunUtilityInProcess(bool value);
 
-  virtual ~UtilityProcessHost() {}
+  ~UtilityProcessHost() override {}
 
   // Starts utility process in batch mode. Caller must call EndBatchMode()
   // to finish the utility process.

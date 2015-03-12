@@ -122,6 +122,7 @@ public:
         RowStruct()
             : rowRenderer(nullptr)
             , baseline()
+            , paginationStrut()
         {
         }
         void trace(Visitor*);
@@ -129,6 +130,7 @@ public:
         Row row;
         RawPtrWillBeMember<RenderTableRow> rowRenderer;
         LayoutUnit baseline;
+        LayoutUnit paginationStrut;
         Length logicalHeight;
     };
 

@@ -79,6 +79,7 @@ interface Element : Node {
     readonly attribute long scrollHeight;
 
     // Bloomberg-specific extensions
+    void bbRequestSpellCheck();
     attribute long bbScrollLeftNoZoomAdjust;
     attribute long bbScrollTopNoZoomAdjust;
     readonly attribute long bbScrollWidthNoZoomAdjust;

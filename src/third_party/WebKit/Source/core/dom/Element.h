@@ -187,7 +187,9 @@ public:
     virtual int scrollWidth();
     virtual int scrollHeight();
 
+#define BB_HAS_ELEMENT_EXTENSIONS
     // Bloomberg-specific extensions
+    void bbRequestSpellCheck();
     virtual int bbScrollLeftNoZoomAdjust();
     virtual int bbScrollTopNoZoomAdjust();
     virtual void setBbScrollLeftNoZoomAdjust(int);

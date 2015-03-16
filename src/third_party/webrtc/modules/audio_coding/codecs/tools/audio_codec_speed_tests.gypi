@@ -54,7 +54,6 @@
           ],
           'includes': [
             '../../../../build/isolate.gypi',
-            'audio_codec_speed_tests.isolate',
           ],
           'sources': [
             'audio_codec_speed_tests.isolate',

@@ -47,25 +47,25 @@ class JsWidget : public blink::WebPlugin {
     void dispatchEvent(const blink::WebDOMCustomEvent& event);
 
     // blink::WebPlugin overrides
-    virtual bool initialize(blink::WebPluginContainer*) OVERRIDE;
-    virtual void destroy() OVERRIDE;
-    virtual NPObject* scriptableObject() OVERRIDE { return nullptr; }
-    virtual void paint(blink::WebCanvas*, const blink::WebRect&) OVERRIDE {}
-    virtual void updateGeometry(
+    bool initialize(blink::WebPluginContainer*) override;
+    void destroy() override;
+    NPObject* scriptableObject() override { return nullptr; }
+    void paint(blink::WebCanvas*, const blink::WebRect&) override {}
+    void updateGeometry(
         const blink::WebRect& frameRect, const blink::WebRect& clipRect,
-        const blink::WebVector<blink::WebRect>& cutOutsRects, bool isVisible) OVERRIDE;
-    virtual void updateFocus(bool) OVERRIDE {}
-    virtual void updateVisibility(bool isVisible) OVERRIDE;
-    virtual bool acceptsInputEvents() OVERRIDE { return false; }
-    virtual bool handleInputEvent(const blink::WebInputEvent&, blink::WebCursorInfo&) OVERRIDE { return false; }
-    virtual void didReceiveResponse(const blink::WebURLResponse&) OVERRIDE {}
-    virtual void didReceiveData(const char* data, int dataLength) OVERRIDE {}
-    virtual void didFinishLoading() OVERRIDE {}
-    virtual void didFailLoading(const blink::WebURLError&) OVERRIDE {}
-    virtual void didFinishLoadingFrameRequest(
-        const blink::WebURL&, void* notifyData) OVERRIDE {}
-    virtual void didFailLoadingFrameRequest(
-        const blink::WebURL&, void* notifyData, const blink::WebURLError&) OVERRIDE {}
+        const blink::WebVector<blink::WebRect>& cutOutsRects, bool isVisible) override;
+    void updateFocus(bool) override {}
+    void updateVisibility(bool isVisible) override;
+    bool acceptsInputEvents() override { return false; }
+    bool handleInputEvent(const blink::WebInputEvent&, blink::WebCursorInfo&) override { return false; }
+    void didReceiveResponse(const blink::WebURLResponse&) override {}
+    void didReceiveData(const char* data, int dataLength) override {}
+    void didFinishLoading() override {}
+    void didFailLoading(const blink::WebURLError&) override {}
+    void didFinishLoadingFrameRequest(
+        const blink::WebURL&, void* notifyData) override {}
+    void didFailLoadingFrameRequest(
+        const blink::WebURL&, void* notifyData, const blink::WebURLError&) override {}
 
   private:
     blink::WebPluginContainer* d_container;

@@ -73,8 +73,8 @@ class WebViewHost : public ProcessHostListener,
     virtual ~WebViewHost();
 
     // IPC::Listener overrides
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
+    void OnBadMessageReceived(const IPC::Message& message) override;
 
   private:
     // Message handlers
@@ -113,51 +113,51 @@ class WebViewHost : public ProcessHostListener,
     void onPrint();
 
     // IPC::Sender override
-    virtual bool Send(IPC::Message* message) OVERRIDE;
+    bool Send(IPC::Message* message) override;
 
     // WebViewImplClient overrides
-    virtual void updateNativeViews(blpwtk2::NativeView webview,
-                                   blpwtk2::NativeView hiddenView) OVERRIDE;
-    virtual void aboutToNativateRenderView(int routingId) OVERRIDE;
-    virtual void findStateWithReqId(int reqId,
-                                    int numberOfMatches,
-                                    int activeMatchOrdinal,
-                                    bool finalUpdate) OVERRIDE;
+    void updateNativeViews(blpwtk2::NativeView webview,
+                           blpwtk2::NativeView hiddenView) override;
+    void aboutToNativateRenderView(int routingId) override;
+    void findStateWithReqId(int reqId,
+                            int numberOfMatches,
+                            int activeMatchOrdinal,
+                            bool finalUpdate) override;
 
     // WebViewDelegate overrides
-    virtual void updateTargetURL(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void updateNavigationState(WebView* source,
-                                       const NavigationState& state) OVERRIDE;
-    virtual void didNavigateMainFramePostCommit(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didFinishLoad(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didFailLoad(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didCreateNewView(WebView* source,
-                                  WebView* newView,
-                                  const NewViewParams& params,
-                                  WebViewDelegate** newViewDelegate) OVERRIDE;
-    virtual void destroyView(WebView* source) OVERRIDE;
-    virtual void focusBefore(WebView* source) OVERRIDE;
-    virtual void focusAfter(WebView* source) OVERRIDE;
-    virtual void focused(WebView* source) OVERRIDE;
-    virtual void blurred(WebView* source) OVERRIDE;
-    virtual void runFileChooser(WebView* source,
-                                const FileChooserParams& params) OVERRIDE;
-    virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
-    virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
-    virtual void requestNCHitTest(WebView* source) OVERRIDE;
-    virtual void ncDragBegin(WebView* source,
-                             int hitTestCode,
-                             const POINT& startPoint) OVERRIDE;
-    virtual void ncDragMove(WebView* source, const POINT& movePoint) OVERRIDE;
-    virtual void ncDragEnd(WebView* source, const POINT& endPoint) OVERRIDE;
-    virtual void showTooltip(WebView* source,
-                             const StringRef& tooltipText,
-                             TextDirection::Value direction) OVERRIDE;
-    virtual void findState(WebView* source,
-                           int numberOfMatches,
-                           int activeMatchOrdinal,
-                           bool finalUpdate) OVERRIDE;
+    void updateTargetURL(WebView* source, const StringRef& url) override;
+    void updateNavigationState(WebView* source,
+                               const NavigationState& state) override;
+    void didNavigateMainFramePostCommit(WebView* source, const StringRef& url) override;
+    void didFinishLoad(WebView* source, const StringRef& url) override;
+    void didFailLoad(WebView* source, const StringRef& url) override;
+    void didCreateNewView(WebView* source,
+                          WebView* newView,
+                          const NewViewParams& params,
+                          WebViewDelegate** newViewDelegate) override;
+    void destroyView(WebView* source) override;
+    void focusBefore(WebView* source) override;
+    void focusAfter(WebView* source) override;
+    void focused(WebView* source) override;
+    void blurred(WebView* source) override;
+    void runFileChooser(WebView* source,
+                        const FileChooserParams& params) override;
+    void showContextMenu(WebView* source, const ContextMenuParams& params) override;
+    void handleExternalProtocol(WebView* source, const StringRef& url) override;
+    void moveView(WebView* source, int x, int y, int width, int height) override;
+    void requestNCHitTest(WebView* source) override;
+    void ncDragBegin(WebView* source,
+                     int hitTestCode,
+                     const POINT& startPoint) override;
+    void ncDragMove(WebView* source, const POINT& movePoint) override;
+    void ncDragEnd(WebView* source, const POINT& endPoint) override;
+    void showTooltip(WebView* source,
+                     const StringRef& tooltipText,
+                     TextDirection::Value direction) override;
+    void findState(WebView* source,
+                   int numberOfMatches,
+                   int activeMatchOrdinal,
+                   bool finalUpdate) override;
 
     ProcessHost* d_processHost;
     WebViewImpl* d_webView;

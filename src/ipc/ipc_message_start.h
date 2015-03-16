@@ -114,6 +114,8 @@ enum IPCMessageStart {
   WebCacheMsgStart,
   ManifestManagerMsgStart,
   ExtensionUtilityMsgStart,
+  GeofencingMsgStart,
+  LayoutTestMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

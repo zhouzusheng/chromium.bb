@@ -44,12 +44,12 @@ class ResourceContextImpl : public content::ResourceContext {
 
     // ======== content::ResourceContext implementation =============
 
-    virtual net::HostResolver* GetHostResolver() OVERRIDE;
+    net::HostResolver* GetHostResolver() override;
 
     // DEPRECATED: This is no longer a valid given isolated apps/sites and
     // storage partitioning. This getter returns the default context associated
     // with a BrowsingContext.
-    virtual net::URLRequestContext* GetRequestContext() OVERRIDE;
+    net::URLRequestContext* GetRequestContext() override;
 
   private:
     scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;

@@ -93,8 +93,6 @@
         'audio/android/opensles_output.cc',
         'audio/android/opensles_output.h',
         'audio/android/opensles_wrapper.cc',
-        'audio/audio_buffers_state.cc',
-        'audio/audio_buffers_state.h',
         'audio/audio_device_name.cc',
         'audio/audio_device_name.h',
         'audio/audio_device_thread.cc',
@@ -124,6 +122,8 @@
         'audio/audio_output_proxy.h',
         'audio/audio_output_resampler.cc',
         'audio/audio_output_resampler.h',
+        'audio/audio_output_stream_sink.cc',
+        'audio/audio_output_stream_sink.h',
         'audio/audio_power_monitor.cc',
         'audio/audio_power_monitor.h',
         'audio/audio_source_diverter.h',
@@ -202,12 +202,6 @@
         'audio/win/wavein_input_win.h',
         'audio/win/waveout_output_win.cc',
         'audio/win/waveout_output_win.h',
-        'base/android/demuxer_android.h',
-        'base/android/demuxer_stream_player_params.cc',
-        'base/android/demuxer_stream_player_params.h',
-        'base/android/media_player_manager.h',
-        'base/android/media_resource_getter.cc',
-        'base/android/media_resource_getter.h',
         'base/audio_block_fifo.cc',
         'base/audio_block_fifo.h',
         'base/audio_buffer.cc',
@@ -256,10 +250,16 @@
         'base/buffers.h',
         'base/byte_queue.cc',
         'base/byte_queue.h',
+        'base/cdm_callback_promise.cc',
+        'base/cdm_callback_promise.h',
+        'base/cdm_factory.cc',
+        'base/cdm_factory.h',
         'base/cdm_promise.cc',
         'base/cdm_promise.h',
         'base/channel_mixer.cc',
         'base/channel_mixer.h',
+        'base/channel_mixing_matrix.cc',
+        'base/channel_mixing_matrix.h',
         'base/container_names.cc',
         'base/container_names.h',
         'base/data_buffer.cc',
@@ -282,6 +282,9 @@
         'base/demuxer_stream_provider.h',
         'base/djb2.cc',
         'base/djb2.h',
+        'base/eme_constants.h',
+        'base/key_system_info.cc',
+        'base/key_system_info.h',
         'base/keyboard_event_counter.cc',
         'base/keyboard_event_counter.h',
         'base/mac/avfoundation_glue.h',
@@ -407,6 +410,7 @@
         'filters/decrypting_video_decoder.h',
         'filters/ffmpeg_audio_decoder.cc',
         'filters/ffmpeg_audio_decoder.h',
+        'filters/ffmpeg_bitstream_converter.h',
         'filters/ffmpeg_demuxer.cc',
         'filters/ffmpeg_demuxer.h',
         'filters/ffmpeg_glue.cc',
@@ -517,6 +521,8 @@
         'video/capture/video_capture_device.h',
         'video/capture/video_capture_device_factory.cc',
         'video/capture/video_capture_device_factory.h',
+        'video/capture/video_capture_device_info.cc',
+        'video/capture/video_capture_device_info.h',
         'video/capture/video_capture_types.cc',
         'video/capture/video_capture_types.h',
         'video/capture/win/capability_list_win.cc',
@@ -600,8 +606,11 @@
             'filters/audio_file_reader.h',
             'filters/blocking_url_protocol.cc',
             'filters/blocking_url_protocol.h',
+            'filters/ffmpeg_aac_bitstream_converter.cc',
+            'filters/ffmpeg_aac_bitstream_converter.h',
             'filters/ffmpeg_audio_decoder.cc',
             'filters/ffmpeg_audio_decoder.h',
+            'filters/ffmpeg_bitstream_converter.h',
             'filters/ffmpeg_demuxer.cc',
             'filters/ffmpeg_demuxer.h',
             'filters/ffmpeg_glue.cc',
@@ -932,6 +941,8 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'filters/ffmpeg_aac_bitstream_converter.cc',
+            'filters/ffmpeg_aac_bitstream_converter.h',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter.cc',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter.h',
             'filters/h264_to_annex_b_bitstream_converter.cc',
@@ -1029,14 +1040,14 @@
         'mojo/interfaces/media_renderer.mojom',
         'mojo/interfaces/demuxer_stream.mojom',
       ],
-      'includes': [ 
+      'includes': [
         '../mojo/public/tools/bindings/mojom_bindings_generator.gypi'
        ],
       'export_dependent_settings': [
-        '../mojo/mojo_base.gyp:mojo_cpp_bindings',
+        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        '../mojo/mojo_base.gyp:mojo_cpp_bindings',
+        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
       ],
     },
     {
@@ -1049,9 +1060,11 @@
         'media',
         'media_mojo_bindings',
         '../base/base.gyp:base',
-        '../mojo/mojo_base.gyp:mojo_application_base',
-        '../mojo/mojo_base.gyp:mojo_application_bindings',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
+        '../mojo/public/mojo_public.gyp:mojo_application_base',
+        '../mojo/public/mojo_public.gyp:mojo_application_bindings',
+        '../skia/skia.gyp:skia',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '<(mojo_system_for_component)',
       ],
       'export_dependent_settings': [
@@ -1067,7 +1080,7 @@
       ],
     },
     {
-      'target_name': 'media_mojo_renderer_app',
+      'target_name': 'mojo_media_renderer_app',
       'type': 'loadable_module',
       'includes': [
         '../mojo/mojo_variables.gypi',
@@ -1080,10 +1093,15 @@
         'shared_memory_support',
       ],
       'sources': [
+        'mojo/services/demuxer_stream_provider_shim.cc',
+        'mojo/services/demuxer_stream_provider_shim.h',
         'mojo/services/mojo_demuxer_stream_adapter.cc',
         'mojo/services/mojo_demuxer_stream_adapter.h',
         'mojo/services/mojo_renderer_service.cc',
         'mojo/services/mojo_renderer_service.h',
+        'mojo/services/renderer_config.cc',
+        'mojo/services/renderer_config.h',
+        'mojo/services/renderer_config_default.cc',
       ],
     },
     {
@@ -1094,15 +1112,15 @@
         'media_mojo_bindings',
         'media_mojo_lib',
         '../base/base.gyp:base',
+        '../mojo/edk/mojo_edk.gyp:mojo_run_all_unittests',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/mojo_base.gyp:mojo_run_all_unittests',
       ],
       'sources': [
         'mojo/services/media_type_converters_unittest.cc',
       ],
     },
     {
-      'target_name': 'media_mojo_renderer_apptest',
+      'target_name': 'mojo_media_renderer_apptest',
       'type': 'loadable_module',
       'includes': [
         '../mojo/mojo_variables.gypi',
@@ -1111,8 +1129,8 @@
         'media',
         'media_mojo_bindings',
         'media_mojo_lib',
-        'media_mojo_renderer_app',
         'media_test_support',
+        'mojo_media_renderer_app',
         '../base/base.gyp:base',
         '../mojo/mojo_base.gyp:mojo_application_chromium',
         '<(mojo_system_for_loadable_module)',
@@ -1120,15 +1138,15 @@
       'sources': [
         'mojo/services/renderer_unittest.cc',
       ],
-    }, 
+    },
     {
       'target_name': 'media_mojo',
       'type': 'none',
       'dependencies': [
         'media_mojo_lib',
         'media_mojo_lib_unittests',
-        'media_mojo_renderer_app',
-        'media_mojo_renderer_apptest',
+        'mojo_media_renderer_apptest',
+        'mojo_media_renderer_app',
       ]
     },
     {
@@ -1203,6 +1221,7 @@
         'base/callback_holder.h',
         'base/callback_holder_unittest.cc',
         'base/channel_mixer_unittest.cc',
+        'base/channel_mixing_matrix_unittest.cc',
         'base/container_names_unittest.cc',
         'base/data_buffer_unittest.cc',
         'base/decoder_buffer_queue_unittest.cc',
@@ -1311,6 +1330,7 @@
             'filters/audio_decoder_unittest.cc',
             'filters/audio_file_reader_unittest.cc',
             'filters/blocking_url_protocol_unittest.cc',
+            'filters/ffmpeg_aac_bitstream_converter_unittest.cc',
             'filters/ffmpeg_demuxer_unittest.cc',
             'filters/ffmpeg_glue_unittest.cc',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
@@ -1379,6 +1399,7 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'filters/ffmpeg_aac_bitstream_converter_unittest.cc',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
             'filters/h264_to_annex_b_bitstream_converter_unittest.cc',
             'formats/common/stream_parser_test_base.cc',
@@ -1787,6 +1808,23 @@
               ],
             }],
           ],  # target_conditions
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop" and archive_gpu_tests==1', {
+      'targets': [
+        {
+          'target_name': 'media_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'media_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'media_unittests.isolate',
+          ],
         },
       ],
     }],

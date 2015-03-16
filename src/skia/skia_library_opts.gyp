@@ -29,6 +29,9 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        # Disable LTO due to compiler error
+        # in mems_in_disjoint_alias_sets_p, at alias.c:393
+        # crbug.com/422255
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -293,6 +296,8 @@
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
+            # Disable LTO due to Neon issues
+            # crbug.com/408997
           ],
           'include_dirs': [
             '../third_party/skia/include/core',

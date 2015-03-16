@@ -57,7 +57,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // General functions ---------------------------------------------------------
 
-  virtual ~RenderProcessHost() {}
+  ~RenderProcessHost() override {}
 
   // Initialize the new renderer process, returning true on success. This must
   // be called once before the object can be used, but can be called after
@@ -233,6 +233,13 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Return true if this is a host for an externally managed process.
   virtual bool IsProcessManagedExternally() const = 0;
+
+  // PlzNavigate
+  // Returns the time the first call to Init completed successfully (after a new
+  // renderer process was created); further calls to Init won't change this
+  // value.
+  // Note: Do not use! Will disappear after PlzNavitate is completed.
+  virtual const base::TimeTicks& GetInitTimeForNavigationMetrics() const = 0;
 
   // Static management functions -----------------------------------------------
 

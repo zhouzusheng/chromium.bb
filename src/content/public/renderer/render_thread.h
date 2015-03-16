@@ -56,7 +56,7 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   static void CleanUpInProcessRenderer();
 
   RenderThread();
-  virtual ~RenderThread();
+  ~RenderThread() override;
 
   virtual base::MessageLoop* GetMessageLoop() = 0;
   virtual IPC::SyncChannel* GetChannel() = 0;

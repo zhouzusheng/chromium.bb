@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/prefs/pref_member.h"
 #include "content/public/browser/browser_message_filter.h"
 
 #if defined(OS_WIN)
@@ -38,13 +39,12 @@ class PrintingMessageFilter : public content::BrowserMessageFilter {
   PrintingMessageFilter(int render_process_id);
 
   // content::BrowserMessageFilter methods.
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                content::BrowserThread::ID* thread) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
-  virtual ~PrintingMessageFilter();
+  ~PrintingMessageFilter() override;
 
 #if defined(OS_WIN)
   // Used to pass resulting EMF from renderer to browser in printing.
@@ -106,7 +106,7 @@ class PrintingMessageFilter : public content::BrowserMessageFilter {
   void OnUpdatePrintSettingsReply(scoped_refptr<PrinterQuery> printer_query,
                                   IPC::Message* reply_msg);
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   // Check to see if print preview has been cancelled.
   void OnCheckForCancel(int32 preview_ui_id,
                         int preview_request_id,

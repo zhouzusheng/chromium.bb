@@ -270,10 +270,6 @@ void RemoteWindowTreeHostWin::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
 }
 
-void RemoteWindowTreeHostWin::PostNativeEvent(
-    const base::NativeEvent& native_event) {
-}
-
 ui::EventProcessor* RemoteWindowTreeHostWin::GetEventProcessor() {
   return dispatcher();
 }

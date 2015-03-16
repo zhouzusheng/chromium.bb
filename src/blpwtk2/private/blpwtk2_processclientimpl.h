@@ -53,19 +53,19 @@ class ProcessClientImpl : public ProcessClient,
     ~ProcessClientImpl();
 
     // ProcessClient overrides
-    virtual void addRoute(int routingId, IPC::Listener* listener) OVERRIDE;
-    virtual void removeRoute(int routingId) OVERRIDE;
-    virtual IPC::Listener* findListener(int routingId) OVERRIDE;
+    void addRoute(int routingId, IPC::Listener* listener) override;
+    void removeRoute(int routingId) override;
+    IPC::Listener* findListener(int routingId) override;
 
     // IPC::Sender overrides
-    virtual bool Send(IPC::Message* message) OVERRIDE;
+    bool Send(IPC::Message* message) override;
 
   private:
     // IPC::Listener overrides
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-    virtual void OnChannelError() OVERRIDE;
-    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
+    void OnChannelConnected(int32 peer_pid) override;
+    void OnChannelError() override;
+    void OnBadMessageReceived(const IPC::Message& message) override;
 
     // Control message handlers
     void onSetInProcessRendererChannelName(const std::string& channelName);

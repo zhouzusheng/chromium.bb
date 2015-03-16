@@ -25,7 +25,6 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/compiler_specific.h>  // for OVERRIDE
 #include <base/memory/scoped_vector.h>
 #include <base/process/process_handle.h>
 #include <base/threading/platform_thread.h>
@@ -83,7 +82,7 @@ class ProcessHostManager : private base::PlatformThread::Delegate {
     void timerExpired();
 
     // PlatformThread::Delegate override
-    virtual void ThreadMain() OVERRIDE;
+    void ThreadMain() override;
 
     base::PlatformThreadHandle d_threadHandle;
     base::Timer d_timer;

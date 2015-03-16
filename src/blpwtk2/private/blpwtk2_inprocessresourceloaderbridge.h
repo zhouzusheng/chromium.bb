@@ -41,16 +41,16 @@ class InProcessResourceLoaderBridge
     virtual ~InProcessResourceLoaderBridge();
 
     // webkit_glue::ResourceLoaderBridge overrides
-    virtual void SetRequestBody(
-        content::ResourceRequestBody* request_body) OVERRIDE;
-    virtual bool Start(content::RequestPeer* peer) OVERRIDE;
-    virtual void Cancel() OVERRIDE;
-    virtual void SetDefersLoading(bool value) OVERRIDE;
-    virtual void DidChangePriority(net::RequestPriority new_priority,
-                                   int intra_priority_value) OVERRIDE;
-    virtual bool AttachThreadedDataReceiver(
-        blink::WebThreadedDataReceiver* threaded_data_receiver) OVERRIDE;
-    virtual void SyncLoad(content::SyncLoadResponse* response) OVERRIDE;
+    void SetRequestBody(
+        content::ResourceRequestBody* request_body) override;
+    bool Start(content::RequestPeer* peer) override;
+    void Cancel() override;
+    void SetDefersLoading(bool value) override;
+    void DidChangePriority(net::RequestPriority new_priority,
+                           int intra_priority_value) override;
+    bool AttachThreadedDataReceiver(
+        blink::WebThreadedDataReceiver* threaded_data_receiver) override;
+    void SyncLoad(content::SyncLoadResponse* response) override;
 
   private:
     class InProcessResourceContext;

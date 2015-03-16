@@ -25,7 +25,6 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/compiler_specific.h>  // for OVERRIDE
 #include <content/public/browser/web_contents_view_delegate.h>
 
 namespace content {
@@ -43,30 +42,30 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
     // ====== WebContentsViewDelegate overrides
 
     // Returns a delegate to process drags not handled by content.
-    virtual content::WebDragDestDelegate* GetDragDestDelegate() OVERRIDE;
+    content::WebDragDestDelegate* GetDragDestDelegate() override;
 
     // Shows a context menu.
-    virtual void ShowContextMenu(
+    void ShowContextMenu(
         content::RenderFrameHost* renderFrameHost,
-        const content::ContextMenuParams& params) OVERRIDE;
+        const content::ContextMenuParams& params) override;
 
     // These methods allow the embedder to intercept WebContentsViewWin's
     // implementation of these WebContentsView methods. See the WebContentsView
     // interface documentation for more information about these methods.
-    virtual void StoreFocus() OVERRIDE;
-    virtual void RestoreFocus() OVERRIDE;
-    virtual bool Focus() OVERRIDE;
-    virtual void TakeFocus(bool reverse) OVERRIDE;
-    virtual void SizeChanged(const gfx::Size& size) OVERRIDE;
+    void StoreFocus() override;
+    void RestoreFocus() override;
+    bool Focus() override;
+    void TakeFocus(bool reverse) override;
+    void SizeChanged(const gfx::Size& size) override;
 
 #if defined(TOOLKIT_VIEWS) || defined(USE_AURA)
-  virtual void ShowDisambiguationPopup(
-      const gfx::Rect& target_rect,
-      const SkBitmap& zoomed_bitmap,
-      const gfx::NativeView content,
-      const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
-      const base::Callback<void(ui::MouseEvent*)>& mouse_cb) OVERRIDE;
-  virtual void HideDisambiguationPopup() OVERRIDE;
+    void ShowDisambiguationPopup(
+        const gfx::Rect& target_rect,
+        const SkBitmap& zoomed_bitmap,
+        const gfx::NativeView content,
+        const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+        const base::Callback<void(ui::MouseEvent*)>& mouse_cb) override;
+    void HideDisambiguationPopup() override;
 #endif
 
   private:

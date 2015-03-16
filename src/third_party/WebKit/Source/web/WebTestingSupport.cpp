@@ -26,6 +26,7 @@
 #include "config.h"
 #include "public/web/WebTestingSupport.h"
 
+#include "bindings/modules/v8/V8InternalsPartial.h"
 #include "core/testing/v8/WebCoreTestSupport.h"
 #include "public/web/WebLocalFrame.h"
 #include <v8/include/v8.h>
@@ -35,6 +36,7 @@ namespace blink {
 void WebTestingSupport::injectInternalsObject(WebLocalFrame* frame)
 {
     // SHEZ: Remove test-only code.
+    // V8InternalsPartial::initialize();
     // v8::HandleScope handleScope(v8::Isolate::GetCurrent());
     // WebCoreTestSupport::injectInternalsObject(frame->mainWorldScriptContext());
 }

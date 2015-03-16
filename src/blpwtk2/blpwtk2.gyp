@@ -339,8 +339,8 @@
       'type': 'loadable_module',
       'dependencies': [
         'blpwtk2_generate_sources',
-        '<(angle_path)/src/build_angle.gyp:libGLESv2_static',
-        '<(angle_path)/src/build_angle.gyp:libEGL_static',
+        '<(angle_path)/src/angle.gyp:libGLESv2_static',
+        '<(angle_path)/src/angle.gyp:libEGL_static',
       ],
       'conditions': [
         ['bb_version!=""', {

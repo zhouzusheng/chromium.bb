@@ -39,10 +39,10 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     virtual ~ContentRendererClientImpl();
 
     // Notifies us that the RenderThread has been created.
-    virtual void RenderThreadStarted() OVERRIDE;
+    void RenderThreadStarted() override;
 
     // Notifies that a new RenderView has been created.
-    virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
+    void RenderViewCreated(content::RenderView* render_view) override;
 
     // Returns the information to display when a navigation error occurs.
     // If |error_html| is not null then it may be set to a HTML page containing
@@ -52,27 +52,27 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     // Either of the out parameters may be not written to in certain cases
     // (lack of information on the error code) so the caller should take care to
     // initialize the string values with safe defaults before the call.
-    virtual void GetNavigationErrorStrings(
+    void GetNavigationErrorStrings(
         content::RenderView* render_view,
         blink::WebFrame* frame,
         const blink::WebURLRequest& failed_request,
         const blink::WebURLError& error,
         std::string* error_html,
-        base::string16* error_description) OVERRIDE;
+        base::string16* error_description) override;
 
     // Allows the embedder to override the ResourceLoaderBridge used.
     // If it returns NULL, the content layer will provide a bridge.
-    virtual content::ResourceLoaderBridge* OverrideResourceLoaderBridge(
-        const content::RequestInfo& request_info) OVERRIDE;
+    content::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+        const content::RequestInfo& request_info) override;
 
     // Allows the embedder to override creating a plugin. If it returns true, then
     // |plugin| will contain the created plugin, although it could be NULL. If it
     // returns false, the content layer will create the plugin.
-    virtual bool OverrideCreatePlugin(
+    bool OverrideCreatePlugin(
         content::RenderFrame* render_frame,
         blink::WebLocalFrame* frame,
         const blink::WebPluginParams& params,
-        blink::WebPlugin** plugin) OVERRIDE;
+        blink::WebPlugin** plugin) override;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentRendererClientImpl);

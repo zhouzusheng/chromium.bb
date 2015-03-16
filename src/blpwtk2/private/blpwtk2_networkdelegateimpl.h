@@ -45,24 +45,24 @@ private:
     // ERR_IO_PENDING if the result is not ready yet. A status code other than OK
     // and ERR_IO_PENDING will cancel the request and report the status code as
     // the reason.
-    virtual int OnBeforeURLRequest(net::URLRequest* request,
-                                   const net::CompletionCallback& callback,
-                                   GURL* new_url) OVERRIDE;
+    int OnBeforeURLRequest(net::URLRequest* request,
+                           const net::CompletionCallback& callback,
+                           GURL* new_url) override;
 
     // Called right before the HTTP headers are sent. Allows the delegate to
     // read/write |headers| before they get sent out. |callback| and |headers| are
     // valid only until OnCompleted or OnURLRequestDestroyed is called for this
     // request.
     // Returns a net status code.
-    virtual int OnBeforeSendHeaders(net::URLRequest* request,
-                                    const net::CompletionCallback& callback,
-                                    net::HttpRequestHeaders* headers) OVERRIDE;
+    int OnBeforeSendHeaders(net::URLRequest* request,
+                            const net::CompletionCallback& callback,
+                            net::HttpRequestHeaders* headers) override;
 
     // Called right before the HTTP request(s) are being sent to the network.
     // |headers| is only valid until OnCompleted or OnURLRequestDestroyed is
     // called for this request.
-    virtual void OnSendHeaders(net::URLRequest* request,
-                               const net::HttpRequestHeaders& headers) OVERRIDE;
+    void OnSendHeaders(net::URLRequest* request,
+                       const net::HttpRequestHeaders& headers) override;
 
     // Called for HTTP requests when the headers have been received. Returns a net
     // status code, generally either OK to continue with the request or
@@ -75,37 +75,37 @@ private:
     // |original_response_headers|.
     // |callback|, |original_response_headers|, and |override_response_headers|
     // are only valid until OnURLRequestDestroyed is called for this request.
-    virtual int OnHeadersReceived(
+    int OnHeadersReceived(
         net::URLRequest* request,
         const net::CompletionCallback& callback,
         const net::HttpResponseHeaders* original_response_headers,
         scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-        GURL* allowed_unsafe_redirect_url) OVERRIDE;
+        GURL* allowed_unsafe_redirect_url) override;
 
     // Called right after a redirect response code was received.
     // |new_location| is only valid until OnURLRequestDestroyed is called for this
     // request.
-    virtual void OnBeforeRedirect(net::URLRequest* request,
-                                  const GURL& new_location) OVERRIDE;
+    void OnBeforeRedirect(net::URLRequest* request,
+                          const GURL& new_location) override;
 
     // This corresponds to URLRequestDelegate::OnResponseStarted.
-    virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+    void OnResponseStarted(net::URLRequest* request) override;
 
     // Called every time we read raw bytes.
-    virtual void OnRawBytesRead(const net::URLRequest& request, int bytes_read) OVERRIDE;
+    void OnRawBytesRead(const net::URLRequest& request, int bytes_read) override;
 
     // Indicates that the URL request has been completed or failed.
     // |started| indicates whether the request has been started. If false,
     // some information like the socket address is not available.
-    virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
+    void OnCompleted(net::URLRequest* request, bool started) override;
 
     // Called when an URLRequest is being destroyed. Note that the request is
     // being deleted, so it's not safe to call any methods that may result in
     // a virtual method call.
-    virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
+    void OnURLRequestDestroyed(net::URLRequest* request) override;
 
     // Corresponds to ProxyResolverJSBindings::OnError.
-    virtual void OnPACScriptError(int line_number, const base::string16& error) OVERRIDE;
+    void OnPACScriptError(int line_number, const base::string16& error) override;
 
     // Called when a request receives an authentication challenge
     // specified by |auth_info|, and is unable to respond using cached
@@ -124,40 +124,40 @@ private:
     //    asynchronously. |callback| will be invoked when the decision is made,
     //    and one of the other AuthRequiredResponse values will be passed in with
     //    the same semantics as described above.
-    virtual AuthRequiredResponse OnAuthRequired(
+    AuthRequiredResponse OnAuthRequired(
         net::URLRequest* request,
         const net::AuthChallengeInfo& auth_info,
         const AuthCallback& callback,
-        net::AuthCredentials* credentials) OVERRIDE;
+        net::AuthCredentials* credentials) override;
 
     // Called when reading cookies to allow the network delegate to block access
     // to the cookie. This method will never be invoked when
     // LOAD_DO_NOT_SEND_COOKIES is specified.
-    virtual bool OnCanGetCookies(const net::URLRequest& request,
-                                 const net::CookieList& cookie_list) OVERRIDE;
+    bool OnCanGetCookies(const net::URLRequest& request,
+                         const net::CookieList& cookie_list) override;
 
     // Called when a cookie is set to allow the network delegate to block access
     // to the cookie. This method will never be invoked when
     // LOAD_DO_NOT_SAVE_COOKIES is specified.
-    virtual bool OnCanSetCookie(const net::URLRequest& request,
-                                const std::string& cookie_line,
-                                net::CookieOptions* options) OVERRIDE;
+    bool OnCanSetCookie(const net::URLRequest& request,
+                        const std::string& cookie_line,
+                        net::CookieOptions* options) override;
 
     // Called when a file access is attempted to allow the network delegate to
     // allow or block access to the given file path.  Returns true if access is
     // allowed.
-    virtual bool OnCanAccessFile(const net::URLRequest& request,
-                                 const base::FilePath& path) const OVERRIDE;
+    bool OnCanAccessFile(const net::URLRequest& request,
+                         const base::FilePath& path) const override;
 
     // Returns true if the given request may be rejected when the
     // URLRequestThrottlerManager believes the server servicing the
     // request is overloaded or down.
-    virtual bool OnCanThrottleRequest(const net::URLRequest& request) const OVERRIDE;
+    bool OnCanThrottleRequest(const net::URLRequest& request) const override;
 
     // Called before a SocketStream tries to connect.
-    virtual int OnBeforeSocketStreamConnect(
+    int OnBeforeSocketStreamConnect(
         net::SocketStream* socket,
-        const net::CompletionCallback& callback) OVERRIDE;
+        const net::CompletionCallback& callback) override;
 
     DISALLOW_COPY_AND_ASSIGN(NetworkDelegateImpl);
 };

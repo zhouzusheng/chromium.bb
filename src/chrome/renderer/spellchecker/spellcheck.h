@@ -43,7 +43,7 @@ class SpellCheck : public content::RenderProcessObserver,
   };
 
   SpellCheck();
-  virtual ~SpellCheck();
+  ~SpellCheck() override;
 
   // TODO: Try to move that all to SpellcheckLanguage.
   void Init(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
@@ -128,7 +128,7 @@ class SpellCheck : public content::RenderProcessObserver,
        std::set<base::string16>* suggestions_set);
 
   // RenderProcessObserver implementation:
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+   bool OnControlMessageReceived(const IPC::Message& message) override;
 
   // Message handlers.
   void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,

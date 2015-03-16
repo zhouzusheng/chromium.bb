@@ -51,23 +51,21 @@ class DevToolsFrontendHostDelegateImpl
 
     // ======== WebContentsObserver overrides ============
 
-    virtual void RenderViewCreated(content::RenderViewHost* renderViewHost) OVERRIDE;
-    virtual void WebContentsDestroyed() OVERRIDE;
+    void RenderViewCreated(content::RenderViewHost* renderViewHost) override;
+    void WebContentsDestroyed() override;
 
 
     // ======== DevToolsFrontendHost::Delegate overrides ===========
 
-    virtual void HandleMessageFromDevToolsFrontend(
-        const std::string& message) OVERRIDE;
-    virtual void HandleMessageFromDevToolsFrontendToBackend(
-        const std::string& message) OVERRIDE;
+    void HandleMessageFromDevToolsFrontend(const std::string& message) override;
+    void HandleMessageFromDevToolsFrontendToBackend(const std::string& message) override;
 
 
     // ========= DevToolsAgentHostClient overrides =========
-    virtual void DispatchProtocolMessage(content::DevToolsAgentHost* agentHost,
-                                         const std::string& message) OVERRIDE;
-    virtual void AgentHostClosed(content::DevToolsAgentHost* agentHost,
-                                 bool replacedWithAnotherClient) OVERRIDE;
+    void DispatchProtocolMessage(content::DevToolsAgentHost* agentHost,
+                                 const std::string& message) override;
+    void AgentHostClosed(content::DevToolsAgentHost* agentHost,
+                         bool replacedWithAnotherClient) override;
 
   private:
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;

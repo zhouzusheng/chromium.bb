@@ -102,8 +102,8 @@ DeleteSelectionCommand::DeleteSelectionCommand(const VisibleSelection& selection
 
 void DeleteSelectionCommand::initializeStartEnd(Position& start, Position& end)
 {
-    HTMLElement* startSpecialContainer = 0;
-    HTMLElement* endSpecialContainer = 0;
+    HTMLElement* startSpecialContainer = nullptr;
+    HTMLElement* endSpecialContainer = nullptr;
 
     start = m_selectionToDelete.start();
     end = m_selectionToDelete.end();
@@ -654,27 +654,8 @@ void DeleteSelectionCommand::mergeParagraphs()
     // FIXME: Consider RTL.
     if (!m_startsAtEmptyLine && isStartOfParagraph(mergeDestination) && startOfParagraphToMove.absoluteCaretBounds().x() > mergeDestination.absoluteCaretBounds().x()) {
         if (isHTMLBRElement(*mergeDestination.deepEquivalent().downstream().deprecatedNode())) {
-
-            Node *rootEditNode = startOfParagraphToMove.deepEquivalent().rootEditableElement();
-
             removeNodeAndPruneAncestors(mergeDestination.deepEquivalent().downstream().deprecatedNode());
-
-            // removeNodeAndPruneAncestors can remove the nodes startOfParagraphToMove (or any other Position) is pointing to.
-            if (startOfParagraphToMove.deepEquivalent().isOrphan()) {
-                if (!m_upstreamStart.isOrphan()) {
-                    // If m_upstreamStart is still valid, use it as the end of the selection.
-                    m_endingPosition = m_upstreamStart;
-                }
-                else {
-                    // Both the start and end of the selection have been deleted, set m_endingPosition to something valid.
-                    m_endingPosition = firstEditablePositionInNode(rootEditNode);
-                    m_upstreamStart = m_endingPosition;
-                }
-            }
-            else {
-                m_endingPosition = startOfParagraphToMove.deepEquivalent();
-            }
-
+            m_endingPosition = startOfParagraphToMove.deepEquivalent();
             return;
         }
     }
@@ -864,7 +845,10 @@ void DeleteSelectionCommand::doApply()
     if (placeholder) {
         if (m_sanitizeMarkup)
             removeRedundantBlocks();
-        insertNodeAt(placeholder.get(), m_endingPosition);
+        // handleGeneralDelete cause DOM mutation events so |m_endingPosition|
+        // can be out of document.
+        if (m_endingPosition.inDocument())
+            insertNodeAt(placeholder.get(), m_endingPosition);
     }
 
     rebalanceWhitespaceAt(m_endingPosition);

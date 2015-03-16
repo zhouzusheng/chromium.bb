@@ -264,7 +264,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             float childZoom = child->renderer()->style()->zoom();
             float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
             if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
-                child->setNeedsStyleRecalc(SubtreeStyleChange);
+                child->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Zoom));
             }
         }
     }
@@ -320,6 +320,19 @@ void StyleAdjuster::adjustStyleForAlignment(RenderStyle& style, const RenderStyl
         } else {
             style.setAlignSelf(parentStyle.alignItems());
             style.setAlignSelfOverflowAlignment(parentStyle.alignItemsOverflowAlignment());
+        }
+    }
+
+    // Block Containers: For table cells, the behavior of the 'auto' depends on the computed
+    // value of 'vertical-align', otherwise behaves as 'start'.
+    // Flex Containers: 'auto' computes to 'flex-start'.
+    // Grid Containers: 'auto' computes to 'start', and 'stretch' behaves like 'start'.
+    if ((style.justifyContent() == ContentPositionAuto) && (style.justifyContentDistribution() == ContentDistributionDefault)) {
+        if (style.isDisplayFlexibleOrGridBox()) {
+            if (style.isDisplayFlexibleBox())
+                style.setJustifyContent(ContentPositionFlexStart);
+            else
+                style.setJustifyContent(ContentPositionStart);
         }
     }
 }

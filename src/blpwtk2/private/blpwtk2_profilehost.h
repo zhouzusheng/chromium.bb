@@ -56,8 +56,8 @@ class ProfileHost : public ProcessHostListener {
     BrowserContextImpl* browserContext() const;
 
     // IPC::Listener overrides
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
+    void OnBadMessageReceived(const IPC::Message& message) override;
 
   private:
     // Message handlers

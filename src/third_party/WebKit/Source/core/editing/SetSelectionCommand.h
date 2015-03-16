@@ -31,7 +31,7 @@
 
 namespace blink {
 
-class SetSelectionCommand FINAL : public SimpleEditCommand {
+class SetSelectionCommand final : public SimpleEditCommand {
 public:
     static PassRefPtr<SetSelectionCommand> create(const VisibleSelection& selection, FrameSelection::SetSelectionOptions options)
     {
@@ -41,8 +41,8 @@ public:
 private:
     SetSelectionCommand(const VisibleSelection&, FrameSelection::SetSelectionOptions);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     FrameSelection::SetSelectionOptions m_options;
     VisibleSelection m_selectionToSet;

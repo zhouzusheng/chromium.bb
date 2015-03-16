@@ -58,21 +58,21 @@ class ProcessHostImpl : public ProcessHost,
     std::string channelInfo() const;
 
     // ProcessHost overrides
-    virtual void addRoute(int routingId, ProcessHostListener* listener) OVERRIDE;
-    virtual void removeRoute(int routingId) OVERRIDE;
-    virtual ProcessHostListener* findListener(int routingId) OVERRIDE;
-    virtual int getUniqueRoutingId() OVERRIDE;
-    virtual base::ProcessHandle processHandle() OVERRIDE;
+    void addRoute(int routingId, ProcessHostListener* listener) override;
+    void removeRoute(int routingId) override;
+    ProcessHostListener* findListener(int routingId) override;
+    int getUniqueRoutingId() override;
+    base::ProcessHandle processHandle() override;
 
     // IPC::Sender overrides
-    virtual bool Send(IPC::Message* message) OVERRIDE;
+    bool Send(IPC::Message* message) override;
 
   private:
     // IPC::Listener overrides
-    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
-    virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-    virtual void OnChannelError() OVERRIDE;
+    bool OnMessageReceived(const IPC::Message& message) override;
+    void OnBadMessageReceived(const IPC::Message& message) override;
+    void OnChannelConnected(int32 peer_pid) override;
+    void OnChannelError() override;
 
     // Control message handlers
     void onSync();

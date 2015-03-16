@@ -75,7 +75,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , wordBreak(RenderStyle::initialWordBreak())
     , overflowWrap(RenderStyle::initialOverflowWrap())
     , lineBreak(LineBreakAuto)
-    , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
     , rubberbandable(RenderStyle::initialRubberbandable())
     , speak(SpeakNormal)
@@ -133,7 +132,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , wordBreak(o.wordBreak)
     , overflowWrap(o.overflowWrap)
     , lineBreak(o.lineBreak)
-    , resize(o.resize)
     , userSelect(o.userSelect)
     , rubberbandable(o.rubberbandable)
     , speak(o.speak)
@@ -199,7 +197,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && wordBreak == o.wordBreak
         && overflowWrap == o.overflowWrap
         && lineBreak == o.lineBreak
-        && resize == o.resize
         && userSelect == o.userSelect
         && rubberbandable == o.rubberbandable
         && speak == o.speak

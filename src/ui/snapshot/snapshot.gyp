@@ -29,8 +29,6 @@
         'snapshot_export.h',
         'snapshot_ios.mm',
         'snapshot_mac.mm',
-        'snapshot_win.cc',
-        'snapshot_win.h',
       ],
       'include_dirs': [
         '..',
@@ -88,25 +86,5 @@
         }],
       ],
     },
-  ],
-  'conditions': [
-    ['OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'snapshot_test_support',
-          'type': 'static_library',
-          'sources': [
-            'test/snapshot_desktop.h',
-            'test/snapshot_desktop_win.cc',
-          ],
-          'dependencies': [
-            'snapshot',
-          ],
-          'include_dirs': [
-            '../..',
-          ],
-        },
-      ],
-    }],
   ],
 }

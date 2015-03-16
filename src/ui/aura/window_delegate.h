@@ -104,7 +104,7 @@ class AURA_EXPORT WindowDelegate : public ui::EventHandler {
   virtual void GetHitTestMask(gfx::Path* mask) const = 0;
 
  protected:
-  virtual ~WindowDelegate() {}
+  ~WindowDelegate() override {}
 };
 
 }  // namespace aura

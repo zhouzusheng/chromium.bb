@@ -73,6 +73,8 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SpellChecker.h"
+#include "core/editing/SpellCheckRequester.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
@@ -97,6 +99,7 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLTableRowsCollection.h"
 #include "core/html/HTMLTemplateElement.h"
+#include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Chrome.h"
@@ -773,6 +776,47 @@ int Element::scrollHeight()
     if (RenderBox* rend = renderBox())
         return adjustLayoutUnitForAbsoluteZoom(rend->scrollHeight(), *rend).toDouble();
     return 0;
+}
+
+void Element::bbRequestSpellCheck()
+{
+    if (!document().frame() ||
+        !document().frame()->spellChecker().isContinuousSpellCheckingEnabled()) {
+        return;
+    }
+
+    SpellCheckRequester& spellCheckRequester = document().frame()->spellChecker().spellCheckRequester();
+    Element* element = this;
+    Node* stayWithin = this;
+    while (element) {
+        if (element->isFrameOwnerElement()) {
+            Document* contentDocument = toHTMLFrameOwnerElement(element)->contentDocument();
+            if (contentDocument && contentDocument->documentElement()) {
+                contentDocument->documentElement()->bbRequestSpellCheck();
+            }
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else if (element->isTextFormControl()) {
+            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
+            if (innerElement && innerElement->hasEditableStyle()) {
+                VisiblePosition startPos(firstPositionInNode(innerElement));
+                VisiblePosition endPos(lastPositionInNode(innerElement));
+                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            }
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else if (element->hasEditableStyle()) {
+            VisiblePosition startPos(firstPositionInNode(element));
+            VisiblePosition endPos(lastPositionInNode(element));
+            RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else {
+            element = ElementTraversal::next(*element, stayWithin);
+        }
+    }
 }
 
 int Element::bbScrollLeftNoZoomAdjust()

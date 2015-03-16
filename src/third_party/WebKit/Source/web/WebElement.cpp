@@ -33,23 +33,12 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementTraversal.h"
 #include "core/dom/Fullscreen.h"
 #include "core/dom/NamedNodeMap.h"
-#include "core/dom/NodeTraversal.h"
-#include "core/dom/Position.h"
-#include "core/dom/Range.h"
 #include "core/dom/custom/CustomElementProcessingStack.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/SpellChecker.h"
-#include "core/editing/SpellCheckRequester.h"
-#include "core/frame/LocalFrame.h"
-#include "core/html/HTMLElement.h"
-#include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/HTMLTextFormControlElement.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
-#include "platform/text/TextChecking.h"
 #include "public/platform/WebRect.h"
 #include "public/web/WebDocument.h"
 #include "wtf/PassRefPtr.h"
@@ -162,45 +151,9 @@ WebRect WebElement::boundsInViewportSpace()
 
 void WebElement::requestSpellCheck()
 {
-    Element* element = unwrap<Element>();
-    if (!element ||
-        !element->document().frame() ||
-        !element->document().frame()->spellChecker().isContinuousSpellCheckingEnabled()) {
-        return;
-    }
-
-    SpellCheckRequester& spellCheckRequester = element->document().frame()->spellChecker().spellCheckRequester();
-    Node* stayWithin = element;
-    while (element) {
-        if (element->isFrameOwnerElement()) {
-            Document* contentDocument = toHTMLFrameOwnerElement(element)->contentDocument();
-            if (contentDocument && contentDocument->documentElement()) {
-                WebElement documentElement = contentDocument->documentElement();
-                documentElement.requestSpellCheck();
-            }
-            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
-        }
-        else if (element->isTextFormControl()) {
-            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
-            if (innerElement && innerElement->hasEditableStyle()) {
-                VisiblePosition startPos(firstPositionInNode(innerElement));
-                VisiblePosition endPos(lastPositionInNode(innerElement));
-                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
-                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
-            }
-            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
-        }
-        else if (element->hasEditableStyle()) {
-            VisiblePosition startPos(firstPositionInNode(element));
-            VisiblePosition endPos(lastPositionInNode(element));
-            RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
-            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
-            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
-        }
-        else {
-            element = ElementTraversal::next(*element, stayWithin);
-        }
-    }
+#ifdef BB_HAS_ELEMENT_EXTENSIONS
+    unwrap<Element>()->bbRequestSpellCheck();
+#endif
 }
 
 WebImage WebElement::imageContents()

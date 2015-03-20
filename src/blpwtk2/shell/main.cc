@@ -63,7 +63,7 @@ HANDLE g_hJob;
 
 // control ids
 enum {
-    IDC_BACK,
+    IDC_BACK = 1001,
     IDC_FORWARD,
     IDC_RELOAD,
     IDC_STOP,

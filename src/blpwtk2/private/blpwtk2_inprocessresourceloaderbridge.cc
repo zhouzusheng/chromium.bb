@@ -43,8 +43,7 @@ class InProcessResourceLoaderBridge::InProcessResourceContext
     : public base::RefCounted<InProcessResourceContext>
     , public ResourceContext {
   public:
-    InProcessResourceContext(
-        const content::RequestInfo& requestInfo);
+    InProcessResourceContext(const content::RequestInfo& requestInfo);
 
     // accessors
     const GURL& url() const;
@@ -172,19 +171,27 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::addResponseHeader(
 }
 
 void InProcessResourceLoaderBridge::InProcessResourceContext::addResponseData(const char* buffer,
-                                                    int length)
+                                                                              int length)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_failed);
 
-    if (0 != length) {
-        d_totalTransferSize += length;
+    if (0 == length)
+        return;
 
-        if (d_peer) {
-            ensureResponseHeadersSent(buffer, length);
-            d_peer->OnReceivedData(buffer, length, length);
-        }
-    }
+    d_totalTransferSize += length;
+
+    if (!d_peer)
+        return;
+
+    ensureResponseHeadersSent(buffer, length);
+
+    // The bridge might have been disposed when sending the response
+    // headers, so we need to check again.
+    if (!d_peer)
+        return;
+
+    d_peer->OnReceivedData(buffer, length, length);
 }
 
 void InProcessResourceLoaderBridge::InProcessResourceContext::failed()
@@ -205,12 +212,19 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::finish()
         // Application finished before we could notify it that the resource
         // was canceled.  We should wait for 'cancelLoad()' to get called,
         // where we will destroy ourself.
+
+        // This is to balance the AddRef from startLoad().
+        Release();
         return;
     }
 
     if (d_peer) {
         ensureResponseHeadersSent(0, 0);
+    }
 
+    // The bridge might have been disposed when the headers were sent,
+    // so check this again.
+    if (d_peer) {
         int errorCode = d_failed ? net::ERR_FAILED
                                  : d_canceled ? net::ERR_ABORTED
                                               : net::OK;
@@ -220,7 +234,7 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::finish()
                                    base::TimeTicks::Now(), d_totalTransferSize);
     }
 
-    // This is to balance the AddRef from startLoad()
+    // This is to balance the AddRef from startLoad().
     Release();
 }
 
@@ -240,7 +254,7 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::startLoad()
     d_started = true;
 
     // Adding a reference on behalf of the embedder. This is Release'd
-    // on finish()
+    // on finish().
     AddRef();
     Statics::inProcessResourceLoader->start(d_url.spec(), this, &d_userData);
 }
@@ -287,7 +301,7 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::ensureResponseHead
     responseInfo.headers = d_responseHeaders;
     responseInfo.content_length = d_responseHeaders->GetContentLength();
     d_responseHeaders->GetMimeTypeAndCharset(&responseInfo.mime_type,
-        &responseInfo.charset);
+                                             &responseInfo.charset);
     d_responseHeaders = 0;
 
     if (responseInfo.mime_type.empty() && length > 0) {

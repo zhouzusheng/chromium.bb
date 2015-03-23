@@ -16,7 +16,10 @@
 #include "base/values.h"
 #include "content/browser/geolocation/location_arbitrator_impl.h"
 #include "content/public/common/geoposition.h"
-#include "google_apis/google_api_keys.h"
+
+// SHEZ: Trim fat
+// #include "google_apis/google_api_keys.h"
+
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
@@ -190,6 +193,8 @@ struct AccessPointLess {
 };
 
 GURL FormRequestURL(const GURL& url) {
+  // SHEZ: Trim fat
+#if 0
   if (url == LocationArbitratorImpl::DefaultNetworkProviderURL()) {
     std::string api_key = google_apis::GetAPIKey();
     if (!api_key.empty()) {
@@ -202,6 +207,7 @@ GURL FormRequestURL(const GURL& url) {
       return url.ReplaceComponents(replacements);
     }
   }
+#endif
   return url;
 }
 

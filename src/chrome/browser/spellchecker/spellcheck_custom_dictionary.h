@@ -13,7 +13,9 @@
 #include "base/observer_list.h"
 #include "chrome/browser/spellchecker/spellcheck_dictionary.h"
 #include "chrome/common/spellcheck_common.h"
-#include "sync/api/syncable_service.h"
+
+// SHEZ: Trim fat
+// #include "sync/api/syncable_service.h"
 
 // Defines a custom dictionary where users can add their own words. All words
 // must be UTF8, between 1 and 99 bytes long, and without leading or trailing
@@ -24,8 +26,9 @@
 //   foo
 //   checksum_v1 = ec3df4034567e59e119fcf87f2d9bad4
 //
-class SpellcheckCustomDictionary : public SpellcheckDictionary,
-                                   public syncer::SyncableService {
+class SpellcheckCustomDictionary : public SpellcheckDictionary
+                                    // Trim fat: , public syncer::SyncableService
+{
  public:
   // A change to the dictionary.
   class Change {
@@ -108,6 +111,8 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // Overridden from SpellcheckDictionary:
   void Load() override;
 
+  // SHEZ: Trim fat
+#if 0
   // Overridden from syncer::SyncableService:
   syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
@@ -119,6 +124,7 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
       const syncer::SyncChangeList& change_list) override;
+#endif
 
  private:
   friend class DictionarySyncIntegrationTestHelper;
@@ -150,10 +156,13 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // |dictionary_change| are sorted.
   void Save(const Change& dictionary_change);
 
+  // SHEZ: Trim fat
+#if 0
   // Notifies the sync service of the |dictionary_change|. Syncs up to the
   // maximum syncable words on the server. Disables syncing of this dictionary
   // if the server contains the maximum number of syncable words.
   syncer::SyncError Sync(const Change& dictionary_change);
+#endif
 
   // Notifies observers of the dictionary change if the dictionary has been
   // changed.
@@ -168,11 +177,14 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // Observers for changes in dictionary load status and content changes.
   ObserverList<Observer> observers_;
 
+  // SHEZ: Trim fat.
+#if 0
   // Used to send local changes to the sync infrastructure.
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
 
   // Used to send sync-related errors to the sync infrastructure.
   scoped_ptr<syncer::SyncErrorFactory> sync_error_handler_;
+#endif
 
   // True if the dictionary has been loaded. Otherwise false.
   bool is_loaded_;

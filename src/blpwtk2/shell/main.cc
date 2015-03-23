@@ -55,21 +55,21 @@ bool g_no_plugin_discovery = false;
 HANDLE g_hJob;
 
 #define BUTTON_WIDTH 72
+#define FIND_LABEL_WIDTH (BUTTON_WIDTH*3/4)
+#define FIND_ENTRY_WIDTH (BUTTON_WIDTH*6/4)
+#define FIND_BUTTON_WIDTH (BUTTON_WIDTH/4)
 #define URLBAR_HEIGHT  24
 #define AUTO_PUMP 1
 
-// button ids
+// control ids
 enum {
-    IDC_START_OF_BUTTONS = 1000,
-    IDC_BACK,
+    IDC_BACK = 1001,
     IDC_FORWARD,
     IDC_RELOAD,
     IDC_STOP,
-    IDC_FIND,
+    IDC_FIND_ENTRY,
     IDC_FIND_PREV,
     IDC_FIND_NEXT,
-    IDC_END_OF_BUTTONS,
-    NUM_BUTTONS = IDC_END_OF_BUTTONS - IDC_START_OF_BUTTONS - 1
 };
 
 // menu ids
@@ -276,7 +276,10 @@ public:
         assert(0 == rect.top);
         d_webView->move(0, URLBAR_HEIGHT, rect.right, rect.bottom-URLBAR_HEIGHT);
 
-        int x = NUM_BUTTONS * BUTTON_WIDTH;
+        int x = (4 * BUTTON_WIDTH) +
+            FIND_LABEL_WIDTH +
+            FIND_ENTRY_WIDTH +
+            (2 * FIND_BUTTON_WIDTH);
         MoveWindow(d_urlEntryWnd, x, 0, rect.right-x, URLBAR_HEIGHT, TRUE);
     }
 
@@ -1145,7 +1148,7 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 shell->d_webView->setZoomPercent(zoom_values[wmId - IDM_ZOOM_025]);
             }
             return 0;
-        case IDC_FIND:
+        case IDC_FIND_ENTRY:
             if (HIWORD(wParam) == EN_CHANGE) {
                 shell->find();
             }
@@ -1311,6 +1314,13 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         break;
     case WM_ERASEBKGND:
         return 1;
+    case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = ::BeginPaint(hwnd, &ps);
+            ::FillRect(hdc, &ps.rcPaint, (HBRUSH)::GetStockObject(BLACK_BRUSH));
+            ::EndPaint(hwnd, &ps);
+        }
+        return 0;
     case WM_DESTROY:
         delete shell;
         return 0;
@@ -1475,34 +1485,31 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
 
     hwnd = CreateWindow(L"STATIC", L"Find: ",
                         WS_CHILD | WS_VISIBLE | SS_RIGHT | SS_CENTERIMAGE,
-                        x, 0, BUTTON_WIDTH*3/4, URLBAR_HEIGHT,
+                        x, 0, FIND_LABEL_WIDTH, URLBAR_HEIGHT,
                         mainWnd, 0, g_instance, 0);
     assert(hwnd);
-    x += BUTTON_WIDTH*3/4;
+    x += FIND_LABEL_WIDTH;
 
     HWND findEntryHwnd = CreateWindow(L"EDIT", 0,
                         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT |
-                        ES_AUTOVSCROLL | ES_AUTOHSCROLL,  x, 0, BUTTON_WIDTH*6/4,
-                        URLBAR_HEIGHT, mainWnd, (HMENU)IDC_FIND, g_instance, 0);
-
+                        ES_AUTOVSCROLL | ES_AUTOHSCROLL,  x, 0, FIND_ENTRY_WIDTH,
+                        URLBAR_HEIGHT, mainWnd, (HMENU)IDC_FIND_ENTRY, g_instance, 0);
     assert(findEntryHwnd);
-    x += BUTTON_WIDTH*6/4;
+    x += FIND_ENTRY_WIDTH;
 
     hwnd = CreateWindow(L"BUTTON", L"\u2191",
                         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                        x, 0, BUTTON_WIDTH/4, URLBAR_HEIGHT,
+                        x, 0, FIND_BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_FIND_PREV, g_instance, 0);
-
     assert(hwnd);
-    x += BUTTON_WIDTH/4;
+    x += FIND_BUTTON_WIDTH;
 
     hwnd = CreateWindow(L"BUTTON", L"\u2193",
                         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                        x, 0, BUTTON_WIDTH/4, URLBAR_HEIGHT,
+                        x, 0, FIND_BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_FIND_NEXT, g_instance, 0);
-
     assert(hwnd);
-    x += BUTTON_WIDTH/4;
+    x += FIND_BUTTON_WIDTH;
 
     // This control is positioned by resizeSubViews.
     HWND urlEntryWnd = CreateWindow(L"EDIT", 0,

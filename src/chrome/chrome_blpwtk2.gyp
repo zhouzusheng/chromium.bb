@@ -46,7 +46,6 @@
         '../net/net.gyp:net',
         '../pdf/pdf.gyp:pdf',
         '../printing/printing.gyp:printing',
-        '../sync/sync.gyp:sync',
         '../skia/skia.gyp:skia',
         '../third_party/hunspell/hunspell.gyp:hunspell',
         '../third_party/icu/icu.gyp:icui18n',

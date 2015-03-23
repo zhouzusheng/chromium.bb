@@ -8,7 +8,8 @@
     '../crypto/crypto.gyp:crypto',
     '../device/battery/battery.gyp:device_battery',
     '../device/battery/battery.gyp:device_battery_mojo_bindings',
-    '../google_apis/google_apis.gyp:google_apis',
+    # SHEZ: Trim fat
+    # '../google_apis/google_apis.gyp:google_apis',
     '../net/net.gyp:net',
     '../skia/skia.gyp:skia',
     '../sql/sql.gyp:sql',

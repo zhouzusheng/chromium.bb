@@ -5,7 +5,8 @@
 {
   'dependencies': [
     '../base/base.gyp:base',
-    '../courgette/courgette.gyp:courgette_lib',
+    # SHEZ: Trim fat
+    # '../courgette/courgette.gyp:courgette_lib',
     '../mojo/public/mojo_public.gyp:mojo_application_bindings',
   ],
   'sources': [

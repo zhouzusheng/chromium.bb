@@ -15,10 +15,12 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "content/public/browser/browser_thread.h"
-#include "sync/api/sync_change.h"
-#include "sync/api/sync_data.h"
-#include "sync/api/sync_error_factory.h"
-#include "sync/protocol/sync.pb.h"
+
+// SHEZ: Trim fat
+// #include "sync/api/sync_change.h"
+// #include "sync/api/sync_data.h"
+// #include "sync/api/sync_error_factory.h"
+// #include "sync/protocol/sync.pb.h"
 
 using content::BrowserThread;
 using chrome::spellcheck_common::WordList;
@@ -239,7 +241,8 @@ bool SpellcheckCustomDictionary::AddWord(const std::string& word) {
   int result = dictionary_change.Sanitize(GetWords());
   Apply(dictionary_change);
   Notify(dictionary_change);
-  Sync(dictionary_change);
+  // SHEZ: Trim fat
+  // Sync(dictionary_change);
   Save(dictionary_change);
   return result == VALID_CHANGE;
 }
@@ -251,7 +254,8 @@ bool SpellcheckCustomDictionary::RemoveWord(const std::string& word) {
   int result = dictionary_change.Sanitize(GetWords());
   Apply(dictionary_change);
   Notify(dictionary_change);
-  Sync(dictionary_change);
+  // SHEZ: Trim fat
+  // Sync(dictionary_change);
   Save(dictionary_change);
   return result == VALID_CHANGE;
 }
@@ -277,7 +281,9 @@ bool SpellcheckCustomDictionary::IsLoaded() {
 
 bool SpellcheckCustomDictionary::IsSyncing() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return !!sync_processor_.get();
+  // SHEZ: Trim fat
+  // return !!sync_processor_.get();
+  return false;
 }
 
 void SpellcheckCustomDictionary::Load() {
@@ -291,6 +297,8 @@ void SpellcheckCustomDictionary::Load() {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
+// SHEZ: Trim fat
+#if 0
 syncer::SyncMergeResult SpellcheckCustomDictionary::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
@@ -391,6 +399,7 @@ syncer::SyncError SpellcheckCustomDictionary::ProcessSyncChanges(
 
   return syncer::SyncError();
 }
+#endif
 
 // static
 WordList SpellcheckCustomDictionary::LoadDictionaryFile(
@@ -435,7 +444,8 @@ void SpellcheckCustomDictionary::OnLoaded(WordList custom_words) {
   Change dictionary_change(custom_words);
   dictionary_change.Sanitize(GetWords());
   Apply(dictionary_change);
-  Sync(dictionary_change);
+  // SHEZ: Trim fat
+  // Sync(dictionary_change);
   is_loaded_ = true;
   FOR_EACH_OBSERVER(Observer, observers_, OnCustomDictionaryLoaded());
 }
@@ -466,6 +476,8 @@ void SpellcheckCustomDictionary::Save(
                  custom_dictionary_path_));
 }
 
+// SHEZ: Trim fat
+#if 0
 syncer::SyncError SpellcheckCustomDictionary::Sync(
     const SpellcheckCustomDictionary::Change& dictionary_change) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -524,6 +536,7 @@ syncer::SyncError SpellcheckCustomDictionary::Sync(
 
   return error;
 }
+#endif
 
 void SpellcheckCustomDictionary::Notify(
     const SpellcheckCustomDictionary::Change& dictionary_change) {

@@ -16,7 +16,10 @@
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
-#include "google_apis/google_api_keys.h"
+
+// SHEZ: Trim fat
+// #include "google_apis/google_api_keys.h"
+
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/http_user_agent_settings.h"
@@ -299,8 +302,11 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
 
   // Setup downstream fetcher.
   std::vector<std::string> downstream_args;
+  // SHEZ: Trim fat
+#if 0
   downstream_args.push_back(
       "key=" + net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
+#endif
   downstream_args.push_back("pair=" + request_key);
   downstream_args.push_back("output=pb");
   GURL downstream_url(std::string(kWebServiceBaseUrl) +
@@ -319,8 +325,11 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // Setup upstream fetcher.
   // TODO(hans): Support for user-selected grammars.
   std::vector<std::string> upstream_args;
+  // SHEZ: Trim fat
+#if 0
   upstream_args.push_back("key=" +
       net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
+#endif
   upstream_args.push_back("pair=" + request_key);
   upstream_args.push_back("output=pb");
   upstream_args.push_back(

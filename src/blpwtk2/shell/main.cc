@@ -924,6 +924,16 @@ void runHost()
     ::CloseHandle(g_hJob);
 }
 
+void logMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity,
+                       const char* file,
+                       int line,
+                       const char* message)
+{
+    char buf[4096];
+    sprintf_s(buf, sizeof(buf), "[%s:%d] %s\n", file, line, message);
+    OutputDebugStringA(buf);
+}
+
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 {
     g_instance = instance;
@@ -1025,6 +1035,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     toolkitParams.setHeaderFooterHTML(getHeaderFooterHTMLContent());
     toolkitParams.enablePrintBackgroundGraphics();
     toolkitParams.setDictionaryPath(g_dictDir);
+    toolkitParams.setLogMessageHandler(logMessageHandler);
     g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
 
     if (isHost) {

@@ -46,15 +46,20 @@ namespace blpwtk2 {
 
 static void InitLogging()
 {
-    base::FilePath log_filename;
-    PathService::Get(base::DIR_EXE, &log_filename);
-    log_filename = log_filename.AppendASCII("blpwtk2.log");
     logging::LoggingSettings settings;
-    settings.logging_dest = logging::LOG_TO_ALL;
-    settings.log_file = log_filename.value().c_str();
-    settings.delete_old = logging::DELETE_OLD_LOG_FILE;
+    if (!logging::GetWtk2LogMessageHandler()) {
+        base::FilePath log_filename;
+        PathService::Get(base::DIR_EXE, &log_filename);
+        log_filename = log_filename.AppendASCII("blpwtk2.log");
+        settings.logging_dest = logging::LOG_TO_ALL;
+        settings.log_file = log_filename.value().c_str();
+        settings.delete_old = logging::DELETE_OLD_LOG_FILE;
+        logging::SetLogItems(true, true, true, true);
+    }
+    else {
+        settings.logging_dest = logging::LOG_NONE;
+    }
     logging::InitLogging(settings);
-    logging::SetLogItems(true, true, true, true);
 }
 
 ContentClient::ContentClient()

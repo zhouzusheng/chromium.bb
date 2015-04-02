@@ -280,6 +280,11 @@ typedef bool (*LogMessageHandlerFunction)(int severity,
 BASE_EXPORT void SetLogMessageHandler(LogMessageHandlerFunction handler);
 BASE_EXPORT LogMessageHandlerFunction GetLogMessageHandler();
 
+// As above, but for wtk2.  This takes precedence over the log handler
+// installed via 'SetLogMessageHandler'.
+BASE_EXPORT void SetWtk2LogMessageHandler(LogMessageHandlerFunction handler);
+BASE_EXPORT LogMessageHandlerFunction GetWtk2LogMessageHandler();
+
 typedef int LogSeverity;
 const LogSeverity LOG_VERBOSE = -1;  // This is level 1 verbosity
 // Note: the log severities are used to index into the array of names,

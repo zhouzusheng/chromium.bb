@@ -118,6 +118,9 @@ bool show_error_dialogs = false;
 LogAssertHandlerFunction log_assert_handler = NULL;
 // A log message handler that gets notified of every log message we process.
 LogMessageHandlerFunction log_message_handler = NULL;
+// Another log message handler that gets notified of every log message we
+// process.  This takes precedence over 'log_message_handler'.
+LogMessageHandlerFunction wtk2_log_message_handler = NULL;
 
 // Helper functions to wrap platform differences.
 
@@ -445,6 +448,14 @@ LogMessageHandlerFunction GetLogMessageHandler() {
   return log_message_handler;
 }
 
+void SetWtk2LogMessageHandler(LogMessageHandlerFunction handler) {
+  wtk2_log_message_handler = handler;
+}
+
+LogMessageHandlerFunction GetWtk2LogMessageHandler() {
+  return wtk2_log_message_handler;
+}
+
 // Explicit instantiations for commonly used comparisons.
 template std::string* MakeCheckOpString<int, int>(
     const int&, const int&, const char* names);
@@ -548,6 +559,15 @@ LogMessage::~LogMessage() {
     trace.OutputToStream(&stream_);
   }
 #endif
+
+  // Give the wtk2 log message handler first dibs on the message.
+  if (wtk2_log_message_handler &&
+      wtk2_log_message_handler(severity_, file_, line_,
+                               message_start_, stream_.str())) {
+    // The handler took care of it, no further processing.
+    return;
+  }
+
   stream_ << std::endl;
   std::string str_newline(stream_.str());
 

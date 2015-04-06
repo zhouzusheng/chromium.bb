@@ -38,6 +38,21 @@ struct ToolkitCreateParamsImpl;
 // the toolkit.
 class ToolkitCreateParams {
   public:
+    enum LogMessageSeverity {
+        kSeverityVerbose = 0,
+        kSeverityInfo = 1,
+        kSeverityWarning = 2,
+        kSeverityError = 3,
+        kSeverityFatal = 4,
+    };
+
+    // The callback function that will be invoked whenever a log message
+    // happens.
+    typedef void(*LogMessageHandler)(LogMessageSeverity severity,
+                                     const char* file,
+                                     int line,
+                                     const char* message);
+
     BLPWTK2_EXPORT ToolkitCreateParams();
     BLPWTK2_EXPORT ToolkitCreateParams(const ToolkitCreateParams&);
     BLPWTK2_EXPORT ~ToolkitCreateParams();
@@ -50,6 +65,11 @@ class ToolkitCreateParams {
     // By default, blpwtk2 uses 'PumpMode::MANUAL'.  Use this method to change
     // the pump mode.
     BLPWTK2_EXPORT void setPumpMode(PumpMode::Value mode);
+
+    // By default, log messages go to a "blpwtk2.log" file and to debug output.
+    // Use this method to install a custom log message handler instead.  Note
+    // that the handler callback can be invoked from any thread.
+    BLPWTK2_EXPORT void setLogMessageHandler(LogMessageHandler handler);
 
     // By default, the in-process renderer is enabled.  This uses some
     // additional resources, even if in-process WebViews are not created.  Call
@@ -123,6 +143,7 @@ class ToolkitCreateParams {
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
+    LogMessageHandler logMessageHandler() const;
     bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;

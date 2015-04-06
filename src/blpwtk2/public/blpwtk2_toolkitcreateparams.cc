@@ -38,6 +38,7 @@ namespace blpwtk2 {
 struct ToolkitCreateParamsImpl {
     ThreadMode::Value d_threadMode;
     PumpMode::Value d_pumpMode;
+    ToolkitCreateParams::LogMessageHandler d_logMessageHandler;
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_sideLoadedFonts;
@@ -52,6 +53,7 @@ struct ToolkitCreateParamsImpl {
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
+    , d_logMessageHandler(0)
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
@@ -93,6 +95,11 @@ void ToolkitCreateParams::setThreadMode(ThreadMode::Value mode)
 void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 {
     d_impl->d_pumpMode = mode;
+}
+
+void ToolkitCreateParams::setLogMessageHandler(LogMessageHandler handler)
+{
+    d_impl->d_logMessageHandler = handler;
 }
 
 void ToolkitCreateParams::disableInProcessRenderer()
@@ -183,6 +190,11 @@ ThreadMode::Value ToolkitCreateParams::threadMode() const
 PumpMode::Value ToolkitCreateParams::pumpMode() const
 {
     return d_impl->d_pumpMode;
+}
+
+ToolkitCreateParams::LogMessageHandler ToolkitCreateParams::logMessageHandler() const
+{
+    return d_impl->d_logMessageHandler;
 }
 
 bool ToolkitCreateParams::isInProcessRendererDisabled() const

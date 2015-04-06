@@ -42,6 +42,7 @@
 namespace blpwtk2 {
 
 static bool g_created = false;
+static ToolkitCreateParams::LogMessageHandler g_logMessageHandler = nullptr;
 
 static void setMaxSocketsPerProxy(int count)
 {
@@ -77,6 +78,34 @@ static void setMaxSocketsPerProxy(int count)
     }
 }
 
+static bool wtk2LogMessageHandlerFunction(int severity,
+                                          const char* file,
+                                          int line,
+                                          size_t message_start,
+                                          const std::string& str)
+{
+    ToolkitCreateParams::LogMessageSeverity severity2;
+    switch (severity) {
+    case logging::LOG_INFO:
+        severity2 = ToolkitCreateParams::kSeverityInfo;
+        break;
+    case logging::LOG_WARNING:
+        severity2 = ToolkitCreateParams::kSeverityWarning;
+        break;
+    case logging::LOG_ERROR:
+        severity2 = ToolkitCreateParams::kSeverityError;
+        break;
+    case logging::LOG_FATAL:
+        severity2 = ToolkitCreateParams::kSeverityFatal;
+        break;
+    default:
+        severity2 = ToolkitCreateParams::kSeverityVerbose;
+        break;
+    }
+    g_logMessageHandler(severity2, file, line, str.c_str() + message_start);
+    return true;
+}
+
 // static
 Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
 {
@@ -90,6 +119,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::pumpMode = params.pumpMode();
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
     Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
+
+    g_logMessageHandler = params.logMessageHandler();
+    if (g_logMessageHandler) {
+        logging::SetWtk2LogMessageHandler(wtk2LogMessageHandlerFunction);
+    }
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
 

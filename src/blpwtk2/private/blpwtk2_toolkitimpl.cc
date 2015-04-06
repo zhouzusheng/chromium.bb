@@ -102,6 +102,13 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+
+    if (!d_hostChannel.empty()) {
+        // Eagerly startup threads so that we connect the host channel when
+        // the toolkit is initialized, instead of waiting for the first
+        // profile/webview to be created.
+        startupThreads();
+    }
 }
 
 ToolkitImpl::~ToolkitImpl()

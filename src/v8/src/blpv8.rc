@@ -70,12 +70,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Bloomberg LP"
             VALUE "FileDescription", "blpv8 Dynamic Link Library"
-            VALUE "FileVersion", BLPWTK2_VERSION
+            VALUE "FileVersion", BLPWTK2_RC_VERSION
             VALUE "InternalName", "blpv8"
             VALUE "LegalCopyright", "Copyright (C) 2015"
             VALUE "OriginalFilename", BLPV8_DLL_NAME
             VALUE "ProductName", "blpv8 Dynamic Link Library"
-            VALUE "ProductVersion", BLPWTK2_VERSION
+            VALUE "ProductVersion", BLPWTK2_RC_VERSION
         END
     END
     BLOCK "VarFileInfo"
@@ -102,12 +102,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "blpv8 Dynamic Link Library"
-            VALUE "FileVersion", BLPWTK2_VERSION
+            VALUE "FileVersion", BLPWTK2_RC_VERSION
             VALUE "InternalName", "blpv8"
             VALUE "LegalCopyright", "Copyright (C) 2015"
             VALUE "OriginalFilename", BLPV8_DLL_NAME
             VALUE "ProductName", "blpv8 Dynamic Link Library"
-            VALUE "ProductVersion", BLPWTK2_VERSION
+            VALUE "ProductVersion", BLPWTK2_RC_VERSION
         END
     END
     BLOCK "VarFileInfo"

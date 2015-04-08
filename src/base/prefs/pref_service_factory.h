@@ -59,7 +59,7 @@ class BASE_PREFS_EXPORT PrefServiceFactory {
 
   // Specifies to use an actual file-backed user pref store.
   void SetUserPrefsFile(const base::FilePath& prefs_file,
-                        base::SequencedTaskRunner* task_runner);
+                        const scoped_refptr<base::SequencedTaskRunner>& task_runner);
 
   void set_async(bool async) {
     async_ = async;

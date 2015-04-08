@@ -100,6 +100,7 @@ class ShellViewsDelegateAura : public views::ViewsDelegate {
       bool has_submenu) override {}
 #if defined(OS_WIN)
   HICON GetDefaultWindowIcon() const override { return NULL; }
+  HICON GetSmallWindowIcon() const override { return NULL;  }
   bool IsWindowInMetro(gfx::NativeWindow window) const override { return false; }
 #endif
   views::NonClientFrameView* CreateDefaultNonClientFrameView(

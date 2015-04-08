@@ -26,6 +26,7 @@ namespace content {
 
 class DownloadManagerDelegate;
 class ShellDownloadManagerDelegate;
+class ZoomLevelDelegate;
 
 class ShellBrowserContext : public BrowserContext {
  public:
@@ -39,6 +40,8 @@ class ShellBrowserContext : public BrowserContext {
 
   // BrowserContext implementation.
   base::FilePath GetPath() const override;
+  scoped_ptr<ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& partition_path) override;
   bool IsOffTheRecord() const override;
   DownloadManagerDelegate* GetDownloadManagerDelegate() override;
   net::URLRequestContextGetter* GetRequestContext() override;

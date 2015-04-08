@@ -95,6 +95,7 @@ void ProgressTracker::dispose()
 {
     if (m_inProgress)
         progressCompleted();
+    ASSERT(!m_inProgress);
 }
 
 double ProgressTracker::estimatedProgress() const

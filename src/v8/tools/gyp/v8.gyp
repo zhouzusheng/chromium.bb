@@ -111,6 +111,8 @@
           'conditions': [
             ['bb_version!=""', {
               'product_name': 'blpv8.<(bb_version)',
+            }, {
+              'product_name': 'blpv8',
             }],
             ['OS=="win" and win_use_allocator_shim==1', {
               'dependencies': [

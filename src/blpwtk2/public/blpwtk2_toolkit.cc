@@ -22,13 +22,9 @@
 
 #include <blpwtk2_toolkit.h>
 
-#include <third_party/WebKit/public/web/WebKit.h>
-
 // dependencies needed for SubProcessMain()
 #include <blpwtk2_contentmaindelegateimpl.h>
-#include <blpwtk2_products.h>
 #include <content/public/app/content_main.h>
-#include <ui/gl/gl_implementation.h>
 
 
 namespace blpwtk2 {
@@ -45,7 +41,6 @@ extern "C" __declspec(dllexport)
 int SubProcessMain(HINSTANCE hInstance,
                    sandbox::SandboxInterfaceInfo* sandboxInfo)
 {
-    gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
     blpwtk2::ContentMainDelegateImpl delegate(true);
     content::ContentMainParams params(&delegate);
     params.instance = hInstance;

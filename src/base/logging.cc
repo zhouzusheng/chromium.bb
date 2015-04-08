@@ -45,6 +45,7 @@ typedef pthread_mutex_t* MutexHandle;
 #include <ostream>
 #include <string>
 
+#include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
@@ -116,6 +117,9 @@ bool show_error_dialogs = false;
 LogAssertHandlerFunction log_assert_handler = NULL;
 // A log message handler that gets notified of every log message we process.
 LogMessageHandlerFunction log_message_handler = NULL;
+// Another log message handler that gets notified of every log message we
+// process.  This takes precedence over 'log_message_handler'.
+LogMessageHandlerFunction wtk2_log_message_handler = NULL;
 
 // Helper functions to wrap platform differences.
 
@@ -443,6 +447,14 @@ LogMessageHandlerFunction GetLogMessageHandler() {
   return log_message_handler;
 }
 
+void SetWtk2LogMessageHandler(LogMessageHandlerFunction handler) {
+  wtk2_log_message_handler = handler;
+}
+
+LogMessageHandlerFunction GetWtk2LogMessageHandler() {
+  return wtk2_log_message_handler;
+}
+
 // Explicit instantiations for commonly used comparisons.
 template std::string* MakeCheckOpString<int, int>(
     const int&, const int&, const char* names);
@@ -539,13 +551,22 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 
 LogMessage::~LogMessage() {
 #if !defined(NDEBUG) && !defined(OS_NACL) && !defined(__UCLIBC__)
-  if (severity_ == LOG_FATAL) {
+  if (severity_ == LOG_FATAL && base::AtExitManager::IsInitialized()) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
     stream_ << std::endl;  // Newline to separate from log message.
     trace.OutputToStream(&stream_);
   }
 #endif
+
+  // Give the wtk2 log message handler first dibs on the message.
+  if (wtk2_log_message_handler &&
+      wtk2_log_message_handler(severity_, file_, line_,
+                               message_start_, stream_.str())) {
+    // The handler took care of it, no further processing.
+    return;
+  }
+
   stream_ << std::endl;
   std::string str_newline(stream_.str());
 
@@ -808,4 +829,27 @@ std::wstring GetLogFileFullPath() {
 
 std::ostream& std::operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << base::WideToUTF8(wstr);
+}
+
+static bool g_debugWithTimeEnabled = false;
+void EnableDebugWithTime(bool enabled)
+{
+    g_debugWithTimeEnabled = enabled;
+}
+
+void DebugWithTime(const char *format, ...)
+{
+    if (!g_debugWithTimeEnabled) return;
+
+    va_list arglist;
+    va_start(arglist, format);
+
+    static base::TimeTicks START_TIME = base::TimeTicks::Now();
+    int milliseconds = (base::TimeTicks::Now() - START_TIME).InMilliseconds();
+    int threadId = base::PlatformThread::CurrentId();
+
+    char buf[1024];
+    int timeLen = sprintf_s(buf, sizeof(buf), "DWT: %d - %d: ", threadId, milliseconds);
+    _vsprintf_s_l(buf+timeLen, sizeof(buf)-timeLen, format, NULL, arglist);
+    OutputDebugStringA(buf);
 }

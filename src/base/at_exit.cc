@@ -74,6 +74,12 @@ void AtExitManager::ProcessCallbacksNow() {
   }
 }
 
+// static
+bool AtExitManager::IsInitialized()
+{
+    return NULL != g_top_manager;
+}
+
 AtExitManager::AtExitManager(bool shadow) : next_manager_(g_top_manager) {
   DCHECK(shadow || !g_top_manager);
   g_top_manager = this;

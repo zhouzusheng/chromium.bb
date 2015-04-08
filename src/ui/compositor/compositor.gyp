@@ -78,7 +78,6 @@
           'dependencies': [
             '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
             '<(angle_path)/src/angle.gyp:libEGL',
-            '<(angle_path)/src/angle.gyp:libGLESv2',
           ],
         }],
       ],

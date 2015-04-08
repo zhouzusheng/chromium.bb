@@ -127,7 +127,7 @@ ThreadedDataProvider::ThreadedDataProvider(
       shm_size_(shm_size),
       background_thread_(static_cast<WebThreadImpl&>(
           *threaded_data_receiver->backgroundThread())),
-      ipc_channel_(ChildThread::current()->channel()),
+      ipc_channel_(ChildThread::current()->channelWithCheck()),
       threaded_data_receiver_(threaded_data_receiver),
       resource_filter_active_(false),
       main_thread_task_runner_(main_thread_task_runner),
@@ -146,13 +146,13 @@ ThreadedDataProvider::ThreadedDataProvider(
       background_thread_weak_factory_->GetWeakPtr(),
       main_thread_weak_factory_.GetWeakPtr(), request_id);
 
-  ChildThread::current()->channel()->AddFilter(filter_.get());
+  ChildThread::current()->channelWithCheck()->AddFilter(filter_.get());
 }
 
 ThreadedDataProvider::~ThreadedDataProvider() {
   DCHECK(ChildThread::current());
 
-  ChildThread::current()->channel()->RemoveFilter(filter_.get());
+  ChildThread::current()->channelWithCheck()->RemoveFilter(filter_.get());
 
   delete threaded_data_receiver_;
 }

@@ -5,6 +5,7 @@
 #include "ui/views/corewm/tooltip_win.h"
 
 #include <winuser.h>
+#include <algorithm>
 
 #include "base/debug/stack_trace.h"
 #include "base/i18n/rtl.h"
@@ -17,6 +18,8 @@
 
 namespace views {
 namespace corewm {
+
+static HFONT s_tooltipFont = 0;
 
 TooltipWin::TooltipWin(HWND parent)
     : parent_hwnd_(parent),
@@ -35,6 +38,10 @@ TooltipWin::TooltipWin(HWND parent)
 TooltipWin::~TooltipWin() {
   if (tooltip_hwnd_)
     DestroyWindow(tooltip_hwnd_);
+}
+
+void TooltipWin::SetTooltipStyle(HFONT font) {
+  s_tooltipFont = font;
 }
 
 bool TooltipWin::HandleNotify(int w_param, NMHDR* l_param, LRESULT* l_result) {
@@ -70,6 +77,11 @@ bool TooltipWin::EnsureTooltipWindow() {
   }
 
   l10n_util::AdjustUIFontForWindow(tooltip_hwnd_);
+
+  if (s_tooltipFont) {
+    SendMessage(tooltip_hwnd_, WM_SETFONT,
+                reinterpret_cast<WPARAM>(s_tooltipFont), TRUE);
+  }
 
   SendMessage(tooltip_hwnd_, TTM_ADDTOOL, 0,
               reinterpret_cast<LPARAM>(&toolinfo_));
@@ -121,7 +133,7 @@ void TooltipWin::SetText(aura::Window* window,
   gfx::Display display(
       gfx::Screen::GetNativeScreen()->GetDisplayNearestPoint(screen_point));
   const gfx::Rect monitor_bounds = display.bounds();
-  int max_width = (monitor_bounds.width() + 1) / 2;
+  int max_width = std::min(800, (monitor_bounds.width() + 1) / 2);
   SendMessage(tooltip_hwnd_, TTM_SETMAXTIPWIDTH, 0, max_width);
 }
 

@@ -58,6 +58,8 @@ struct RequestInfo;
 // The main thread of a child process derives from this class.
 class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
  public:
+  // If the channel_name is empty, channel initialization will be deferred
+  // until SetChannelName() is called.
   struct CONTENT_EXPORT Options {
     Options();
     explicit Options(bool mojo);
@@ -83,7 +85,20 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // IPC::Sender implementation:
   bool Send(IPC::Message* msg) override;
 
+  // Perform deferred channel initialization for the case where ChildThread
+  // was constructed with an empty channel_name.
+  void SetChannelName(const std::string& channel_name);
+
+ protected:
+  // SHEZ: Protect this so that we can limit the number of ways this member is
+  // SHEZ: accessed.  Since we now allow channel initialization to be deferred,
+  // SHEZ: it is possible that this member would be null.  Anything that needs
+  // SHEZ: to access the channel should use the 'channelWithCheck' method.
   IPC::SyncChannel* channel() { return channel_.get(); }
+ public:
+
+  // SHEZ: checking channel accessor.
+  IPC::SyncChannel* channelWithCheck();
 
   MessageRouter* GetRouter();
 
@@ -207,6 +222,8 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   };
 
   void Init(const Options& options);
+  void InitChannel();
+  void InitManagers();
   scoped_ptr<IPC::SyncChannel> CreateChannel(bool use_mojo_channel);
 
   // IPC message handlers.
@@ -245,6 +262,8 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // The OnChannelError() callback was invoked - the channel is dead, don't
   // attempt to communicate.
   bool on_channel_error_called_;
+
+  bool use_mojo_channel_;
 
   base::MessageLoop* message_loop_;
 

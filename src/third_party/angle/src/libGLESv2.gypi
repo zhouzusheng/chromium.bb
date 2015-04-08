@@ -591,7 +591,8 @@
             ],
         },
         {
-            'target_name': 'libGLESv2',
+            'target_name': 'libGLESv2_shared',
+            'product_name': 'libGLESv2',
             'type': 'shared_library',
             'dependencies': [ 'libANGLE' ],
             'includes': [ '../build/common_defines.gypi', ],

@@ -172,6 +172,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the SSL host state decisions for this context. The context may
   // return NULL, implementing the default exception storage strategy.
   virtual SSLHostStateDelegate* GetSSLHostStateDelegate() = 0;
+
+  // Returns true if the spellcheck service should download dictionaries.
+  virtual bool AllowDictionaryDownloads() = 0;
 };
 
 }  // namespace content

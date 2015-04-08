@@ -812,6 +812,25 @@ void DesktopWindowTreeHostWin::HandleClientSizeChanged(
     OnHostResized(new_size);
 }
 
+bool DesktopWindowTreeHostWin::HandleNCHitTest(LRESULT* result, const gfx::Point& point) {
+  int intResult;
+  bool handled = native_widget_delegate_->OnNCHitTest(&intResult, point);
+  *result = intResult;
+  return handled;
+}
+
+bool DesktopWindowTreeHostWin::HandleNCDragBegin(int hit_test_code) {
+  return native_widget_delegate_->OnNCDragBegin(hit_test_code);
+}
+
+void DesktopWindowTreeHostWin::HandleNCDragMove() {
+  return native_widget_delegate_->OnNCDragMove();
+}
+
+void DesktopWindowTreeHostWin::HandleNCDragEnd() {
+  return native_widget_delegate_->OnNCDragEnd();
+}
+
 void DesktopWindowTreeHostWin::HandleFrameChanged() {
   SetWindowTransparency();
   // Replace the frame and layout the contents.
@@ -820,6 +839,11 @@ void DesktopWindowTreeHostWin::HandleFrameChanged() {
 
 void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_SETFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(true);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnFocus();
@@ -827,6 +851,11 @@ void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
 
 void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_KILLFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(false);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnBlur();

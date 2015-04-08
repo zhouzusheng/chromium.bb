@@ -14,11 +14,6 @@ void KeyedServiceBaseFactory::RegisterUserPrefsOnContextForTest(
   // context responsible for all pref registration on every service
   // that used contexts. Now we don't and there are timing issues.
   //
-  // With normal contexts, prefs can simply be registered at
-  // DependencyManager::RegisterProfilePrefsForServices time.
-  // With incognito contexts, we just never register since incognito
-  // contexts share the same pref services with their parent contexts.
-  //
   // Testing contexts throw a wrench into the mix, in that some tests will
   // swap out the PrefService after we've registered user prefs on the original
   // PrefService. Test code that does this is responsible for either manually

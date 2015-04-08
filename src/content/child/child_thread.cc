@@ -254,6 +254,7 @@ scoped_ptr<IPC::SyncChannel> ChildThread::CreateChannel(bool use_mojo_channel) {
 
 void ChildThread::Init(const Options& options) {
   channel_name_ = options.channel_name;
+  use_mojo_channel_ = options.use_mojo_channel;
 
   g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
@@ -264,7 +265,6 @@ void ChildThread::Init(const Options& options) {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
-  channel_ = CreateChannel(options.use_mojo_channel);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!in_browser_process_)
     IPC::Logging::GetInstance()->SetIPCSender(this);
@@ -303,6 +303,14 @@ void ChildThread::Init(const Options& options) {
   navigator_connect_dispatcher_ =
       new NavigatorConnectDispatcher(thread_safe_sender_.get());
 
+  if (!channel_name_.empty())
+    InitChannel();
+
+  InitManagers();
+}
+
+void ChildThread::InitChannel() {
+  channel_ = CreateChannel(use_mojo_channel_);
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(resource_message_filter_.get());
@@ -373,7 +381,9 @@ void ChildThread::Init(const Options& options) {
       ::HeapProfilerStop,
       ::GetHeapProfile));
 #endif
+}
 
+void ChildThread::InitManagers() {
   shared_bitmap_manager_.reset(
       new ChildSharedBitmapManager(thread_safe_sender()));
 
@@ -396,18 +406,20 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
-  channel_->RemoveFilter(histogram_message_filter_.get());
-  channel_->RemoveFilter(sync_message_filter_.get());
-
-  // The ChannelProxy object caches a pointer to the IPC thread, so need to
-  // reset it as it's not guaranteed to outlive this object.
-  // NOTE: this also has the side-effect of not closing the main IPC channel to
-  // the browser process.  This is needed because this is the signal that the
-  // browser uses to know that this process has died, so we need it to be alive
-  // until this process is shut down, and the OS closes the handle
-  // automatically.  We used to watch the object handle on Windows to do this,
-  // but it wasn't possible to do so on POSIX.
-  channel_->ClearIPCTaskRunner();
+  if (channel_) {
+    channel_->RemoveFilter(histogram_message_filter_.get());
+    channel_->RemoveFilter(sync_message_filter_.get());
+  
+    // The ChannelProxy object caches a pointer to the IPC thread, so need to
+    // reset it as it's not guaranteed to outlive this object.
+    // NOTE: this also has the side-effect of not closing the main IPC channel to
+    // the browser process.  This is needed because this is the signal that the
+    // browser uses to know that this process has died, so we need it to be alive
+    // until this process is shut down, and the OS closes the handle
+    // automatically.  We used to watch the object handle on Windows to do this,
+    // but it wasn't possible to do so on POSIX.
+    channel_->ClearIPCTaskRunner();
+  }
   g_lazy_tls.Pointer()->Set(NULL);
 }
 
@@ -430,12 +442,28 @@ void ChildThread::OnChannelError() {
 
 bool ChildThread::Send(IPC::Message* msg) {
   DCHECK(base::MessageLoop::current() == message_loop());
+  DCHECK(!channel_name_.empty());  // Trying to send a message before setting
+                                   // the channel name is a very bad thing.
   if (!channel_) {
     delete msg;
     return false;
   }
 
   return channel_->Send(msg);
+}
+
+void ChildThread::SetChannelName(const std::string& channel_name) {
+  DCHECK(!channel_name.empty());
+  DCHECK(channel_name_.empty());
+  DCHECK(!channel_.get());
+  channel_name_ = channel_name;
+  InitChannel();
+  DCHECK(channel_.get());
+}
+
+IPC::SyncChannel* ChildThread::channelWithCheck() {
+  CHECK(channel_.get());
+  return channel_.get();
 }
 
 MessageRouter* ChildThread::GetRouter() {

@@ -31,7 +31,6 @@
       ],
       'dependencies': [
         '<(angle_path)/src/angle.gyp:libEGL',
-        '<(angle_path)/src/angle.gyp:libGLESv2',
       ],
       'link_settings': {
         'libraries': [

@@ -32,7 +32,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
-#include <content/renderer/renderer_font_platform_win.h>
+#include <content/public/common/dwrite_font_platform_win.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <printing/print_settings.h>

@@ -404,6 +404,8 @@ void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id
   RenderThreadImpl* thread = RenderThreadImpl::current();
   thread->SetChannelName(channel_id);  // This will create the channel.
 
+  thread->channelWithCheck()->SetListenerTaskRunner(thread->GetRendererScheduler()->DefaultTaskRunner());
+
   // MessageFilters can only be added when the channel has been created.  If
   // the channel was not provided at init time, then AddFilter would place the
   // MessageFilter on a deferred list, until the channel gets created.
@@ -529,7 +531,6 @@ void RenderThreadImpl::Init() {
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
   renderer_scheduler_ = RendererScheduler::Create();
-  channel()->SetListenerTaskRunner(renderer_scheduler_->DefaultTaskRunner());
   embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
 
   media_stream_center_ = NULL;
@@ -1023,7 +1024,10 @@ void RenderThreadImpl::SetResourceDispatchTaskQueue(
   // particular task runner.
   resource_scheduling_filter_ =
       new ResourceSchedulingFilter(resource_task_queue, resource_dispatcher());
-  channel()->AddFilter(resource_scheduling_filter_.get());
+
+  // SHEZ: use AddFilter instead of channel()->AddFilter in order to support
+  // SHEZ: deferred channel creation
+  AddFilter(resource_scheduling_filter_.get());
 
   // The ChildResourceMessageFilter and the ResourceDispatcher need to use the
   // same queue to ensure tasks are executed in the expected order.

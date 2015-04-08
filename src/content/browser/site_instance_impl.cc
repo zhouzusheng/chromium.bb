@@ -115,7 +115,7 @@ RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
             ? affinity
             : RenderProcessHostImpl::GenerateUniqueId();
         DCHECK(!RenderProcessHost::FromID(id));
-        bool is_in_process = CommandLine::ForCurrentProcess()->HasSwitch(
+        bool is_in_process = base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kSingleProcess);
         base::ProcessHandle processHandle =
             is_in_process ? base::GetCurrentProcessHandle()

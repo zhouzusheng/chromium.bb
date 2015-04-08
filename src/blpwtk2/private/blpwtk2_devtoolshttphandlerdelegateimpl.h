@@ -41,9 +41,8 @@ class DevToolsHttpHandlerDelegateImpl
     std::string GetDiscoveryPageHTML() override { return std::string(); }
     bool BundlesFrontendResources() override { return true; }
     base::FilePath GetDebugFrontendDir() override { return base::FilePath(); }
-    scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
-        net::StreamListenSocket::Delegate* delegate,
-        std::string* name) override { return scoped_ptr<net::StreamListenSocket>(); }
+    scoped_ptr<net::ServerSocket> CreateSocketForTethering(
+        std::string* name) override { return scoped_ptr<net::ServerSocket>(); }
 };
 
 // TODO: document this

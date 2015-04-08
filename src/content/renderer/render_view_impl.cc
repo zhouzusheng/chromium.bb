@@ -2438,7 +2438,7 @@ void RenderViewImpl::SetSize(const gfx::Size& new_size) {
     return;
   }
   need_update_rect_for_auto_resize_ = true;
-  Resize(new_size, new_size, top_controls_layout_height_, new_size,
+  Resize(new_size, new_size, top_controls_shrink_blink_size_, top_controls_height_, new_size,
          resizer_rect_, is_fullscreen_, NO_RESIZE_ACK);
 }
 

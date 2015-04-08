@@ -276,7 +276,7 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
 bool ShellContentBrowserClient::SupportsInProcessRenderer()
 {
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
-  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
 #else
   // Single-process is an unsupported and not fully tested mode, so don't
   // enable it for official Chrome builds (except on Android).

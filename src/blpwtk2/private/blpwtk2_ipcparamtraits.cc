@@ -359,53 +359,53 @@ bool ParamTraits<NewViewParams>::Read(const Message* m, PickleIterator* iter, pa
     bool boolValue;
     float floatValue;
 
-    if (!m->ReadInt(iter, &intValue))
+    if (!iter->ReadInt(&intValue))
         return false;
     r->setDisposition(static_cast<blpwtk2::NewViewDisposition::Value>(intValue));
     {
         int length;
         const char* bytes;
-        if (!m->ReadLength(iter, &length))
+        if (!iter->ReadLength(&length))
             return false;
-        if (!m->ReadBytes(iter, &bytes, length))
+        if (!iter->ReadBytes(&bytes, length))
             return false;
         r->setTargetUrl(blpwtk2::StringRef(bytes, length));
     }
-    if (!m->ReadBool(iter, &boolValue))
+    if (!iter->ReadBool(&boolValue))
         return false;
     if (boolValue) {
-        if (!m->ReadFloat(iter, &floatValue))
+        if (!iter->ReadFloat(&floatValue))
             return false;
         r->setX(floatValue);
     }
-    if (!m->ReadBool(iter, &boolValue))
+    if (!iter->ReadBool(&boolValue))
         return false;
     if (boolValue) {
-        if (!m->ReadFloat(iter, &floatValue))
+        if (!iter->ReadFloat(&floatValue))
             return false;
         r->setY(floatValue);
     }
-    if (!m->ReadBool(iter, &boolValue))
+    if (!iter->ReadBool(&boolValue))
         return false;
     if (boolValue) {
-        if (!m->ReadFloat(iter, &floatValue))
+        if (!iter->ReadFloat(&floatValue))
             return false;
         r->setWidth(floatValue);
     }
-    if (!m->ReadBool(iter, &boolValue))
+    if (!iter->ReadBool(&boolValue))
         return false;
     if (boolValue) {
-        if (!m->ReadFloat(iter, &floatValue))
+        if (!iter->ReadFloat(&floatValue))
             return false;
         r->setHeight(floatValue);
     }
 
-    if (!m->ReadLength(iter, &length))
+    if (!iter->ReadLength(&length))
         return false;
     for (int i = 0; i < length; ++i) {
-        if (!m->ReadLength(iter, &strLength))
+        if (!iter->ReadLength(&strLength))
             return false;
-        if (!m->ReadBytes(iter, &bytes, strLength))
+        if (!iter->ReadBytes(&bytes, strLength))
             return false;
         r->addAdditionalFeature(StringRef(bytes, strLength));
     }
@@ -466,12 +466,12 @@ void ParamTraits<net::ProxyServer>::Write(Message* m, const param_type& p)
 bool ParamTraits<net::ProxyServer>::Read(const Message* m, PickleIterator* iter, param_type* r)
 {
     int scheme;
-    if (!m->ReadInt(iter, &scheme))
+    if (!iter->ReadInt(&scheme))
         return false;
     r->internalScheme() = static_cast<net::ProxyServer::Scheme>(scheme);
-    if (!m->ReadString(iter, &r->internalHostPortPair().internalHost()))
+    if (!iter->ReadString(&r->internalHostPortPair().internalHost()))
         return false;
-    if (!m->ReadUInt16(iter, &r->internalHostPortPair().internalPort()))
+    if (!iter->ReadUInt16(&r->internalHostPortPair().internalPort()))
         return false;
     return true;
 }
@@ -588,13 +588,13 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
         return false;
     r->setAutocorrectBehavior(intValue);
 
-    if (!m->ReadLength(iter, &length))
+    if (!iter->ReadLength(&length))
         return false;
     strs.resize(length);
     for (size_t i = 0; i < strs.size(); ++i) {
-        if (!m->ReadLength(iter, &length))
+        if (!iter->ReadLength(&length))
             return false;
-        if (!m->ReadBytes(iter, &bytes, length))
+        if (!iter->ReadBytes(&bytes, length))
             return false;
         strs[i].assign(bytes, length);
     }

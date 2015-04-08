@@ -425,7 +425,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       Shell::CreateNewWindow(shell_->web_contents()->GetBrowserContext(),
                              shell_->web_contents()->GetVisibleURL(),
                              NULL,
-                             MSG_ROUTING_NONE,
                              gfx::Size());
     } else if (sender == back_button_)
       shell_->GoBackOrForward(-1);

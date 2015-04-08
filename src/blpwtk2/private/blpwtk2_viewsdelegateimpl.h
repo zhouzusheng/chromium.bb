@@ -60,6 +60,7 @@ private:
         bool has_submenu) override {}
 #if defined(OS_WIN)
     HICON GetDefaultWindowIcon() const override;
+    HICON GetSmallWindowIcon() const override;
     bool IsWindowInMetro(gfx::NativeWindow window) const override;
 #endif
     views::NonClientFrameView* CreateDefaultNonClientFrameView(

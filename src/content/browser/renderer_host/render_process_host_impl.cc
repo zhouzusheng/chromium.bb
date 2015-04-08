@@ -1393,8 +1393,8 @@ base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
 }
 
 bool RenderProcessHostImpl::Shutdown(int exit_code, bool wait) {
-  if (run_renderer_in_process())
-    return false;  // Single process mode never shuts down the renderer.
+  if (IsProcessManagedExternally())
+    return false;  // Externally managed process never shuts down the renderer.
 
 #if defined(OS_ANDROID)
   // Android requires a different approach for killing.
@@ -1816,7 +1816,7 @@ bool RenderProcessHostImpl::IsSuitableHost(
     RenderProcessHost* host,
     BrowserContext* browser_context,
     const GURL& site_url) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return true;
 
   if (host->GetBrowserContext() != browser_context)

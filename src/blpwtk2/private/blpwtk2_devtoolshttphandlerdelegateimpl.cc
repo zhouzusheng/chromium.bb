@@ -143,8 +143,7 @@ DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
 
 DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()
 {
-    // Stop() will delete the object
-    Statics::devToolsHttpHandler->Stop();
+    delete Statics::devToolsHttpHandler;
     Statics::devToolsHttpHandler = 0;
 }
 

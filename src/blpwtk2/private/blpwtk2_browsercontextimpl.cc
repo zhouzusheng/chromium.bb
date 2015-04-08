@@ -310,6 +310,12 @@ void BrowserContextImpl::removeAutocorrectWords(const StringRef* badWords,
 
 // ======== content::BrowserContext implementation =============
 
+scoped_ptr<content::ZoomLevelDelegate>
+BrowserContextImpl::CreateZoomLevelDelegate(const base::FilePath& partition_path)
+{
+    return scoped_ptr<content::ZoomLevelDelegate>();
+}
+
 base::FilePath BrowserContextImpl::GetPath() const
 {
     DCHECK(!d_isDestroyed);

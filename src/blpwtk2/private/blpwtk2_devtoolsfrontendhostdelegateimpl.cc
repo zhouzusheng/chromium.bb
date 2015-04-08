@@ -34,7 +34,7 @@ namespace blpwtk2 {
 
 DevToolsFrontendHostDelegateImpl::DevToolsFrontendHostDelegateImpl(
     content::WebContents* inspectorContents,
-    content::DevToolsAgentHost* agentHost)
+    const scoped_refptr<content::DevToolsAgentHost>& agentHost)
 : WebContentsObserver(inspectorContents)
 , d_agentHost(agentHost)
 {
@@ -49,7 +49,7 @@ DevToolsFrontendHostDelegateImpl::~DevToolsFrontendHostDelegateImpl()
 void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     content::RenderViewHost* renderViewHost)
 {
-    d_frontendHost.reset(content::DevToolsFrontendHost::Create(renderViewHost, this));
+    d_frontendHost.reset(content::DevToolsFrontendHost::Create(web_contents()->GetMainFrame(), this));
     d_agentHost->AttachClient(this);
 }
 

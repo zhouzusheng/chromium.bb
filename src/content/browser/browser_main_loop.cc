@@ -618,7 +618,7 @@ int BrowserMainLoop::PreCreateThreads() {
 
   if (GetContentClient()->browser()->SupportsInProcessRenderer()) {
     RenderProcessHost::AdjustCommandLineForInProcessRenderer(
-        CommandLine::ForCurrentProcess());
+        base::CommandLine::ForCurrentProcess());
   }
 
   return result_code_;

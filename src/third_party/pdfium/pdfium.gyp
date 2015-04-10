@@ -709,7 +709,6 @@
         ],
       'dependencies': [
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
       ],
       'export_dependent_settings': [
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',

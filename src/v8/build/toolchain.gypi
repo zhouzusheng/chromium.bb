@@ -39,6 +39,7 @@
     # TODO(bradchen): get rid of nacl_target_arch when someday
     # NaCl V8 builds stop using the ARM simulator
     'nacl_target_arch%': 'none',     # must be set externally
+    'v8_as_shared_library%': 1,
 
     # Setting 'v8_can_use_vfp32dregs' to 'true' will cause V8 to use the VFP
     # registers d16-d31 in the generated code, both in the snapshot and for the
@@ -871,12 +872,8 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '0',
+            'RuntimeLibrary': '1',  # /MTd
             'conditions': [
-              ['component=="shared_library"', {
-                'RuntimeLibrary': '3',  # /MDd
-              }, {
-                'RuntimeLibrary': '1',  # /MTd
-              }],
             ],
           },
           'VCLinkerTool': {
@@ -913,17 +910,13 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '1',
+            'RuntimeLibrary': '1',  # /MTd
             'InlineFunctionExpansion': '2',
             'EnableIntrinsicFunctions': 'true',
             'FavorSizeOrSpeed': '0',
             'StringPooling': 'true',
             'BasicRuntimeChecks': '0',
             'conditions': [
-              ['component=="shared_library"', {
-                'RuntimeLibrary': '3',  # /MDd
-              }, {
-                'RuntimeLibrary': '1',  # /MTd
-              }],
             ],
           },
           'VCLinkerTool': {
@@ -962,17 +955,13 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '2',
+            'RuntimeLibrary': '1',  # /MTd
             'InlineFunctionExpansion': '2',
             'EnableIntrinsicFunctions': 'true',
             'FavorSizeOrSpeed': '0',
             'StringPooling': 'true',
             'BasicRuntimeChecks': '0',
             'conditions': [
-              ['component=="shared_library"', {
-                'RuntimeLibrary': '3',  #/MDd
-              }, {
-                'RuntimeLibrary': '1',  #/MTd
-              }],
             ],
           },
           'VCLinkerTool': {
@@ -1115,12 +1104,8 @@
                 'EnableIntrinsicFunctions': 'true',
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
+                'RuntimeLibrary': '0',  #/MT
                 'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '2',  #/MD
-                  }, {
-                    'RuntimeLibrary': '0',  #/MT
-                  }],
                 ],
               },
               'VCLinkerTool': {

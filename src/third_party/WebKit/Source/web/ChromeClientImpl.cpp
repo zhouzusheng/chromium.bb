@@ -280,6 +280,7 @@ WebNavigationPolicy ChromeClientImpl::getNavigationPolicy(const WindowFeatures& 
         || !features.scrollbarsVisible
         || !features.menuBarVisible
         || !features.resizable;
+    asPopup = asPopup || features.additionalFeatures.contains("popup=1");
 
     NavigationPolicy policy = NavigationPolicyNewForegroundTab;
     if (asPopup)

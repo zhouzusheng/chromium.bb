@@ -19,6 +19,7 @@ class GURL;
 struct ViewMsg_SwapOut_Params;
 
 namespace base {
+class CommandLine;
 class TimeDelta;
 }
 
@@ -74,6 +75,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // listeners own it any more, it will delete itself.
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
   virtual void RemoveRoute(int32 routing_id) = 0;
+  virtual size_t NumListeners() = 0;
 
   // Add and remove observers for lifecycle events. The order in which
   // notifications are sent to observers is undefined. Observers must be sure to
@@ -236,6 +238,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the ServiceRegistry for this process.
   virtual ServiceRegistry* GetServiceRegistry() = 0;
 
+  // Return true if this is a host for an externally managed process.
+  virtual bool IsProcessManagedExternally() const = 0;
+
   // PlzNavigate
   // Returns the time the first call to Init completed successfully (after a new
   // renderer process was created); further calls to Init won't change this
@@ -257,18 +262,13 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Static management functions -----------------------------------------------
 
-  // Flag to run the renderer in process.  This is primarily
-  // for debugging purposes.  When running "in process", the
-  // browser maintains a single RenderProcessHost which communicates
-  // to a RenderProcess which is instantiated in the same process
-  // with the Browser.  All IPC between the Browser and the
-  // Renderer is the same, it's just not crossing a process boundary.
+  // Adjust the specified command line for in-process renderers.  This is used
+  // to adjust the command-line for *this* process.
+  static void AdjustCommandLineForInProcessRenderer(base::CommandLine* command_line);
 
-  static bool run_renderer_in_process();
-
-  // This also calls out to ContentBrowserClient::GetApplicationLocale and
-  // modifies the current process' command line.
-  static void SetRunRendererInProcess(bool value);
+  // Adjust the specified command line for in-process renderers in blpwtk2
+  // client processes.
+  static void AdjustCommandLineForRenderer(base::CommandLine* command_line);
 
   // Allows iteration over all the RenderProcessHosts in the browser. Note
   // that each host may not be active, and therefore may have NULL channels.
@@ -297,6 +297,14 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // the caller is free to create a new renderer.
   static RenderProcessHost* GetExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);
+
+  // Create a new RenderProcessHost using the specified 'processHandle' and the
+  // specified 'browserContext'.
+  static RenderProcessHost* CreateProcessHost(base::ProcessHandle processHandle,
+                                              content::BrowserContext* browserContext);
+
+  // Clear the web cache on all renderers.
+  static void ClearWebCacheOnAllRenderers();
 
   // Overrides the default heuristic for limiting the max renderer process
   // count.  This is useful for unit testing process limit behaviors.  It is

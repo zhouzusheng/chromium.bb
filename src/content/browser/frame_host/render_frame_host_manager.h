@@ -181,13 +181,18 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // RenderWidgetHostDelegate are what will be installed into all
   // RenderViewHosts that are created.
   //
+  // The |render_process_affinity| argument can be
+  // SiteInstance::kNoProcessAffinity, in which case, the default process
+  // affinity will be used.
+  //
   // You must call Init() before using this class.
   RenderFrameHostManager(
       FrameTreeNode* frame_tree_node,
       RenderFrameHostDelegate* render_frame_delegate,
       RenderViewHostDelegate* render_view_delegate,
       RenderWidgetHostDelegate* render_widget_delegate,
-      Delegate* delegate);
+      Delegate* delegate,
+      int render_process_affinity);
   ~RenderFrameHostManager() override;
 
   // For arguments, see WebContentsImpl constructor.
@@ -614,6 +619,10 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // The intersitial page currently shown if any, not own by this class
   // (the InterstitialPage is self-owned, it deletes itself when hidden).
   InterstitialPageImpl* interstitial_page_;
+
+  // Render process affinity, or SiteInstance::kNoProcessAffinity if there is
+  // no affinity.
+  int render_process_affinity_;
 
   NotificationRegistrar registrar_;
 

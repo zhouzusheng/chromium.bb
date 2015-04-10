@@ -51,7 +51,7 @@ void BackgroundParsingTask::Run() {
   source_->parser->ParseOnBackground();
 
   if (script_data != NULL) {
-    source_->cached_data.Reset(new ScriptCompiler::CachedData(
+    source_->cached_data.Reset(ScriptCompiler::CachedData::create(
         script_data->data(), script_data->length(),
         ScriptCompiler::CachedData::BufferOwned));
     script_data->ReleaseDataOwnership();

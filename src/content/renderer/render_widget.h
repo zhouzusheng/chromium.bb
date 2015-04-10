@@ -608,6 +608,9 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
+  // The size of the RenderWidget expected by the host.
+  gfx::Size browser_size_;
+
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 

@@ -72,6 +72,14 @@ private:
 
     virtual void scrollBy(const ScrollToOptions&) override;
     virtual void scrollTo(const ScrollToOptions&) override;
+
+    // Bloomberg-specific extensions
+    virtual int bbScrollLeftNoZoomAdjust();
+    virtual int bbScrollTopNoZoomAdjust();
+    virtual void setBbScrollLeftNoZoomAdjust(int);
+    virtual void setBbScrollTopNoZoomAdjust(int);
+    virtual int bbScrollWidthNoZoomAdjust();
+    virtual int bbScrollHeightNoZoomAdjust();
 };
 
 } // namespace blink

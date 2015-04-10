@@ -601,8 +601,8 @@ public:
 
     static bool collapseWhiteSpace(EWhiteSpace ws)
     {
-        // Pre and prewrap do not collapse whitespace.
-        return ws != PRE && ws != PRE_WRAP;
+        // pre, pre-wrap and -bb-pre-wrap-text do not collapse whitespace.
+        return ws != PRE && ws != PRE_WRAP && ws != BB_PRE_WRAP_TEXT;
     }
 
     bool collapseWhiteSpace() const
@@ -624,7 +624,7 @@ public:
 
     bool breakOnlyAfterWhiteSpace() const
     {
-        return whiteSpace() == PRE_WRAP || lineBreak() == LineBreakAfterWhiteSpace;
+        return whiteSpace() == PRE_WRAP || whiteSpace() == BB_PRE_WRAP_TEXT || lineBreak() == LineBreakAfterWhiteSpace;
     }
 
     bool breakWords() const

@@ -93,6 +93,12 @@ Location* RemoteDOMWindow::location() const
     return nullptr;
 }
 
+BBWindowHooks* RemoteDOMWindow::bbWindowHooks() const
+{
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
 bool RemoteDOMWindow::offscreenBuffering() const
 {
     ASSERT_NOT_REACHED();

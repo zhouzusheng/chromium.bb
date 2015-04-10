@@ -16,6 +16,7 @@ namespace blink {
 
 class ApplicationCache;
 class BarProp;
+class BBWindowHooks;
 class CSSRuleList;
 class CSSStyleDeclaration;
 class Console;
@@ -67,6 +68,9 @@ public:
     Navigator* clientInformation() const { return navigator(); }
     // FIXME: Temporary, until window.location is implemented for remote frames.
     virtual Location* location() const = 0;
+
+    // Bloomberg-specific extension.
+    virtual BBWindowHooks* bbWindowHooks() const = 0;
 
     virtual bool offscreenBuffering() const = 0;
 

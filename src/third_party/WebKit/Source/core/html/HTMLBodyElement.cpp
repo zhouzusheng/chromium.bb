@@ -373,4 +373,66 @@ void HTMLBodyElement::scrollTo(const ScrollToOptions& scrollToOptions)
     scrollFrameTo(scrollToOptions);
 }
 
+int HTMLBodyElement::bbScrollLeftNoZoomAdjust()
+{
+    // Update the document's layout.
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    FrameView* view = document.view();
+    return view ? view->scrollX() : 0;
+}
+
+int HTMLBodyElement::bbScrollTopNoZoomAdjust()
+{
+    // Update the document's layout.
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    FrameView* view = document.view();
+    return view ? view->scrollY() : 0;
+}
+
+void HTMLBodyElement::setBbScrollLeftNoZoomAdjust(int scrollLeft)
+{
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    LocalFrame* frame = document.frame();
+    if (!frame)
+        return;
+    FrameView* view = frame->view();
+    if (!view)
+        return;
+    view->setScrollPosition(IntPoint(scrollLeft, view->scrollY()));
+}
+
+void HTMLBodyElement::setBbScrollTopNoZoomAdjust(int scrollTop)
+{
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    LocalFrame* frame = document.frame();
+    if (!frame)
+        return;
+    FrameView* view = frame->view();
+    if (!view)
+        return;
+    view->setScrollPosition(IntPoint(view->scrollX(), scrollTop));
+}
+
+int HTMLBodyElement::bbScrollWidthNoZoomAdjust()
+{
+    // Update the document's layout.
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    FrameView* view = document.view();
+    return view ? view->contentsWidth() : 0;
+}
+
+int HTMLBodyElement::bbScrollHeightNoZoomAdjust()
+{
+    // Update the document's layout.
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    FrameView* view = document.view();
+    return view ? view->contentsHeight() : 0;
+}
+
 } // namespace blink

@@ -81,6 +81,13 @@ interface Element : Node {
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(double x, double y);
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(optional ScrollToOptions scrollToOptions);
 
+    // Bloomberg-specific extensions
+    void bbRequestSpellCheck();
+    attribute long bbScrollLeftNoZoomAdjust;
+    attribute long bbScrollTopNoZoomAdjust;
+    readonly attribute long bbScrollWidthNoZoomAdjust;
+    readonly attribute long bbScrollHeightNoZoomAdjust;
+
     void focus();
     void blur();
     void scrollIntoView(optional boolean alignWithTop);

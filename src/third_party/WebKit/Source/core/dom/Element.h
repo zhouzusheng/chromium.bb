@@ -194,6 +194,16 @@ public:
     void scroll(double x, double y) { scrollTo(x, y); }
     void scroll(const ScrollToOptions& scrollToOptions) { scrollTo(scrollToOptions); }
 
+#define BB_HAS_ELEMENT_EXTENSIONS
+    // Bloomberg-specific extensions
+    void bbRequestSpellCheck();
+    virtual int bbScrollLeftNoZoomAdjust();
+    virtual int bbScrollTopNoZoomAdjust();
+    virtual void setBbScrollLeftNoZoomAdjust(int);
+    virtual void setBbScrollTopNoZoomAdjust(int);
+    virtual int bbScrollWidthNoZoomAdjust();
+    virtual int bbScrollHeightNoZoomAdjust();
+
     IntRect boundsInRootViewSpace();
 
     PassRefPtrWillBeRawPtr<ClientRectList> getClientRects();

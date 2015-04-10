@@ -32,6 +32,7 @@
 #include "web/ContextMenuClientImpl.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "core/CSSPropertyNames.h"
@@ -515,7 +516,7 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
     eventInit.bubbles = true;
     eventInit.cancelable = true;
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(isolate, detailObj));
+    event->setSerializedDetail(SerializedScriptValueFactory::instance().createAndSwallowExceptions(isolate, detailObj));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

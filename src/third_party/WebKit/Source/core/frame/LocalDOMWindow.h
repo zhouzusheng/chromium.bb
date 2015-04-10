@@ -95,6 +95,7 @@ public:
     BarProp* toolbar() const override;
     Navigator* navigator() const override;
     Location* location() const override;
+    BBWindowHooks* bbWindowHooks() const override;
     bool offscreenBuffering() const override;
     int outerHeight() const override;
     int outerWidth() const override;
@@ -235,9 +236,6 @@ public:
     void acceptLanguagesChanged();
 
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
-
-    // Bloomberg specific objects/methods
-    BBWindowHooks* bbWindowHooks() const;
 
 protected:
     DOMWindowLifecycleNotifier& lifecycleNotifier();

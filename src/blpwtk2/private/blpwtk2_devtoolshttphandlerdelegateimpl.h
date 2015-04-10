@@ -34,8 +34,8 @@ namespace blpwtk2 {
 class DevToolsHttpHandlerDelegateImpl
     : public content::DevToolsHttpHandlerDelegate {
   public:
-    DevToolsHttpHandlerDelegateImpl();
-    virtual ~DevToolsHttpHandlerDelegateImpl();
+    DevToolsHttpHandlerDelegateImpl() {}
+    virtual ~DevToolsHttpHandlerDelegateImpl() {}
 
     // ====== DevToolsHttpHandlerDelegate overrides =======
     std::string GetDiscoveryPageHTML() override { return std::string(); }

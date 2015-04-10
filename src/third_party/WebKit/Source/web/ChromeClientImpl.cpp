@@ -368,7 +368,7 @@ bool ChromeClientImpl::shouldReportDetailedMessageForSource(LocalFrame& localFra
     return webframe && webframe->client() && webframe->client()->shouldReportDetailedMessageForSource(url);
 }
 
-void ChromeClientImpl::addMessageToConsole(LocalFrame* localFrame, MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace)
+void ChromeClientImpl::addMessageToConsole(LocalFrame* localFrame, MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, unsigned columnNumber, const String& sourceID, const String& stackTrace)
 {
     WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(localFrame);
     if (frame && frame->client()) {
@@ -376,6 +376,7 @@ void ChromeClientImpl::addMessageToConsole(LocalFrame* localFrame, MessageSource
             WebConsoleMessage(static_cast<WebConsoleMessage::Level>(level), message),
             sourceID,
             lineNumber,
+            columnNumber,
             stackTrace);
     }
 }

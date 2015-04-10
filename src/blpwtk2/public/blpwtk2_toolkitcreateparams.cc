@@ -39,6 +39,7 @@ struct ToolkitCreateParamsImpl {
     ThreadMode::Value d_threadMode;
     PumpMode::Value d_pumpMode;
     ToolkitCreateParams::LogMessageHandler d_logMessageHandler;
+    ToolkitCreateParams::ConsoleLogMessageHandler d_consoleLogMessageHandler;
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_sideLoadedFonts;
@@ -54,6 +55,7 @@ struct ToolkitCreateParamsImpl {
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
     , d_logMessageHandler(0)
+    , d_consoleLogMessageHandler(0)
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
@@ -100,6 +102,11 @@ void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 void ToolkitCreateParams::setLogMessageHandler(LogMessageHandler handler)
 {
     d_impl->d_logMessageHandler = handler;
+}
+
+void ToolkitCreateParams::setConsoleLogMessageHandler(ConsoleLogMessageHandler handler)
+{
+    d_impl->d_consoleLogMessageHandler = handler;
 }
 
 void ToolkitCreateParams::disableInProcessRenderer()
@@ -195,6 +202,11 @@ PumpMode::Value ToolkitCreateParams::pumpMode() const
 ToolkitCreateParams::LogMessageHandler ToolkitCreateParams::logMessageHandler() const
 {
     return d_impl->d_logMessageHandler;
+}
+
+ToolkitCreateParams::ConsoleLogMessageHandler ToolkitCreateParams::consoleLogMessageHandler() const
+{
+    return d_impl->d_consoleLogMessageHandler;
 }
 
 bool ToolkitCreateParams::isInProcessRendererDisabled() const

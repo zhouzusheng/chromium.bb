@@ -223,6 +223,11 @@ void FontBuilder::setFamilyDescription(FontDescription& fontDescription, const F
     fontDescription.setGenericFamily(familyDescription.genericFamily);
     fontDescription.setFamily(isInitial ? standardFontFamily() : familyDescription.family);
 
+    if (familyDescription.boldOverride)
+        fontDescription.setWeight(FontWeightBold);
+    if (familyDescription.italicOverride)
+        fontDescription.setStyle(FontStyleItalic);
+
     if (fontDescription.keywordSize() && fontDescription.fixedPitchFontType() != oldFixedPitchFontType)
         setSize(fontDescription, FontDescription::Size(fontDescription.keywordSize(), 0.0f, false));
 }

@@ -128,6 +128,10 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // visible viewport.
   virtual void SetInsets(const gfx::Insets& insets) = 0;
 
+  // Show/hide a rubberband rect
+  virtual void SetRubberbandRect(const gfx::Rect& rect) = 0;
+  virtual void HideRubberbandRect() = 0;
+
   // Begin subscribing for presentation events and captured frames.
   // |subscriber| is now owned by this object, it will be called only on the
   // UI thread.

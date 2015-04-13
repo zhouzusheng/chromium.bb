@@ -266,6 +266,30 @@ static bool requiresRecomputingBounds(const Font& font, const FloatRect& bounds)
     return fontDescription.letterSpacing() < 0 || fontDescription.wordSpacing() < 0;
 }
 
+static void initFontSmoothingOverride(BBFontSmoothingOverride* fontSmoothingOverride,
+                                      const SimpleFontData* font,
+                                      const FontDescription& fontDescription)
+{
+    switch (fontDescription.fontSmoothing()) {
+    case NoSmoothing:
+        fontSmoothingOverride->textFlags = 0;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case Antialiased:
+        fontSmoothingOverride->textFlags = SkPaint::kAntiAlias_Flag;
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    case SubpixelAntialiased:
+        fontSmoothingOverride->textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+        fontSmoothingOverride->lcdExplicitlyRequested = true;
+        break;
+    default:
+        fontSmoothingOverride->textFlags = font->platformData().paintTextFlags();
+        fontSmoothingOverride->lcdExplicitlyRequested = false;
+        break;
+    }
+}
+
 PassTextBlobPtr Font::buildTextBlob(const GlyphBuffer& glyphBuffer, const FloatRect& bounds) const
 {
     ASSERT(RuntimeEnabledFeatures::textBlobEnabled());
@@ -285,11 +309,14 @@ PassTextBlobPtr Font::buildTextBlob(const GlyphBuffer& glyphBuffer, const FloatR
         if (fontData->platformData().orientation() == Vertical)
             return nullptr;
 
+        BBFontSmoothingOverride fontSmoothingOverride;
+        initFontSmoothingOverride(&fontSmoothingOverride, fontData, m_fontDescription);
+
         // FIXME: FontPlatformData makes some decisions on the device scale
         // factor, which is found via the GraphicsContext. This should be fixed
         // to avoid correctness problems here.
         SkPaint paint;
-        fontData->platformData().setupPaint(&paint, 0, this);
+        fontData->platformData().setupPaint(&paint, 0, this, &fontSmoothingOverride);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
         unsigned start = i++;
@@ -686,31 +713,6 @@ SkPaint Font::textStrokePaint(GraphicsContext* gc, const SimpleFontData* font, b
         paint.setLooper(0);
     }
     return paint;
-}
-
-static void initFontSmoothingOverride(
-        BBFontSmoothingOverride* fontSmoothingOverride,
-        const SimpleFontData* font,
-        const FontDescription& fontDescription)
-{
-    switch (fontDescription.fontSmoothing()) {
-    case NoSmoothing:
-        fontSmoothingOverride->textFlags = 0;
-        fontSmoothingOverride->lcdExplicitlyRequested = false;
-        break;
-    case Antialiased:
-        fontSmoothingOverride->textFlags = SkPaint::kAntiAlias_Flag;
-        fontSmoothingOverride->lcdExplicitlyRequested = false;
-        break;
-    case SubpixelAntialiased:
-        fontSmoothingOverride->textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
-        fontSmoothingOverride->lcdExplicitlyRequested = true;
-        break;
-    default:
-        fontSmoothingOverride->textFlags = font->platformData().paintTextFlags();
-        fontSmoothingOverride->lcdExplicitlyRequested = false;
-        break;
-    }
 }
 
 void Font::paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,

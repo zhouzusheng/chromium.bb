@@ -74,6 +74,14 @@ Element* enclosingAnchorElement(const Position&);
 Element* enclosingElementWithTag(const Position&, const QualifiedName&);
 Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 
+Node* previousRenderedSibling(const Node* node);
+Node* nextRenderedSibling(const Node* node);
+Node* previousRenderedSiblingExcludingWhitespace(const Node* node);
+Node* nextRenderedSiblingExcludingWhitespace(const Node* node);
+
+Node* blockExtentStart(Node* node, const Node* stayWithin = 0);
+Node* blockExtentEnd(Node* node, const Node* stayWithin = 0);
+
 HTMLSpanElement* tabSpanElement(const Node*);
 Element* isLastPositionBeforeTable(const VisiblePosition&);
 Element* isFirstPositionAfterTable(const VisiblePosition&);
@@ -117,7 +125,7 @@ bool isRenderedHTMLTableElement(const Node*);
 bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
-bool isHTMLListElement(Node*);
+bool isHTMLListElement(const Node*);
 bool isListItem(const Node*);
 bool isNodeRendered(const Node&);
 bool isNodeVisiblyContainedWithin(Node&, const Range&);

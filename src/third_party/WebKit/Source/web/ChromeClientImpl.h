@@ -186,6 +186,8 @@ private:
 
     WebViewImpl* m_webView;  // weak pointer
     WindowFeatures m_windowFeatures;
+    Node* m_lastMouseOverNode; // weak pointer
+    bool m_lastTooltipHadText;
 
     PagePopupDriver* m_pagePopupDriver;
 };

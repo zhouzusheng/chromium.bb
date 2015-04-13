@@ -238,6 +238,8 @@ private:
     virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
     virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
 
+    virtual bool canBeSelectionLeaf() const { return !firstLineBox(); }
+
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
     int borderHalfTop(bool outer) const;

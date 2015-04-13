@@ -48,6 +48,7 @@ struct SkPoint;
 
 namespace blink {
 
+struct BBFontSmoothingOverride;
 class FloatPoint;
 class FloatRect;
 class FontData;
@@ -140,8 +141,8 @@ private:
     // Returns the total advance.
     float buildGlyphBuffer(const TextRunPaintInfo&, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
     PassTextBlobPtr buildTextBlob(const GlyphBuffer&, const FloatRect& bounds) const;
-    SkPaint textFillPaint(GraphicsContext*, const SimpleFontData*) const;
-    SkPaint textStrokePaint(GraphicsContext*, const SimpleFontData*, bool isFilling) const;
+    SkPaint textFillPaint(GraphicsContext*, const SimpleFontData*, const BBFontSmoothingOverride*) const;
+    SkPaint textStrokePaint(GraphicsContext*, const SimpleFontData*, bool isFilling, const BBFontSmoothingOverride*) const;
     void paintGlyphs(GraphicsContext*, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
         const SkPoint pos[], const FloatRect& textRect) const;
     void paintGlyphsHorizontal(GraphicsContext*, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,

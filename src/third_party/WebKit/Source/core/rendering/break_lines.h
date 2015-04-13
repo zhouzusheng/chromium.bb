@@ -21,13 +21,14 @@
 #ifndef break_lines_h
 #define break_lines_h
 
+#include "core/rendering/style/RenderStyleConstants.h"
 #include "wtf/unicode/Unicode.h"
 
 namespace blink {
 
 class LazyLineBreakIterator;
 
-int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos);
+int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos, EWordBreak wordBreak);
 int nextBreakablePositionBreakAll(LazyLineBreakIterator& lazyBreakIterator, int pos);
 
 enum class LineBreakType {
@@ -35,10 +36,10 @@ enum class LineBreakType {
     BreakAll, // word-break:break-all allows breaks between letters/numbers
 };
 
-inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, LineBreakType lineBreakType = LineBreakType::Normal)
+inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, EWordBreak wordBreak, LineBreakType lineBreakType = LineBreakType::Normal)
 {
     if (pos > nextBreakable)
-        nextBreakable = lineBreakType == LineBreakType::BreakAll ? nextBreakablePositionBreakAll(lazyBreakIterator, pos) : nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos);
+        nextBreakable = lineBreakType == LineBreakType::BreakAll ? nextBreakablePositionBreakAll(lazyBreakIterator, pos) : nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, wordBreak);
     return pos == nextBreakable;
 }
 

@@ -1845,6 +1845,8 @@ PassRefPtrWillBeRawPtr<CSSValue> RenderStyleCSSValueMapping::get(CSSPropertyID p
         return cssValuePool().createValue(style.textUnderlinePosition());
     case CSSPropertyWebkitTextDecorationsInEffect:
         return renderTextDecorationFlagsToCSSValue(style.textDecorationsInEffect());
+    case CSSPropertyWebkitCaretColor:
+        return currentColorOrValidColor(style, style.caretColor());
     case CSSPropertyWebkitTextFillColor:
         return currentColorOrValidColor(style, style.textFillColor());
     case CSSPropertyWebkitTextEmphasisColor:

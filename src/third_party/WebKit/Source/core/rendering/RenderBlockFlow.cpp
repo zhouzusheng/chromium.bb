@@ -555,7 +555,7 @@ void RenderBlockFlow::setLogicalTopForChild(RenderBox& child, LayoutUnit logical
 void RenderBlockFlow::layoutBlockChild(RenderBox& child, MarginInfo& marginInfo, LayoutUnit& previousFloatLogicalBottom)
 {
     ColumnInfo* columnInfo = view()->layoutState()->columnInfo();
-    RenderBox* previousBox = child->previousSiblingBox();
+    RenderBox* previousBox = child.previousSiblingBox();
     bool previousBoxWasFirst = (previousBox == firstChildBox());
     bool shouldSetSpanningHeaderInfo = hasColumns() && columnInfo && previousBoxWasFirst;
     bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpanCount() > 1 && !previousBox->style()->hasSpanAllColumns();
@@ -1353,7 +1353,7 @@ LayoutUnit RenderBlockFlow::collapseMargins(RenderBox& child, MarginInfo& margin
     if (layoutState->isPaginated() && layoutState->pageLogicalHeight() && logicalTop > beforeCollapseLogicalTop) {
         LayoutUnit oldLogicalTop = logicalTop;
         logicalTop = std::min(logicalTop, nextPageLogicalTop(beforeCollapseLogicalTop));
-        logicalTop = adjustLogicalTopForSpanningHeader(child, layoutState->columnInfo(), logicalTop);
+        logicalTop = adjustLogicalTopForSpanningHeader(&child, layoutState->columnInfo(), logicalTop);
         setLogicalHeight(logicalHeight() + (logicalTop - oldLogicalTop));
     }
 
@@ -1574,7 +1574,7 @@ LayoutUnit RenderBlockFlow::estimateLogicalTopPosition(RenderBox& child, const M
     LayoutState* layoutState = view()->layoutState();
     if (layoutState->isPaginated() && layoutState->pageLogicalHeight() && logicalTopEstimate > logicalHeight()) {
         logicalTopEstimate = std::min(logicalTopEstimate, nextPageLogicalTop(logicalHeight()));
-        logicalTopEstimate = adjustLogicalTopForSpanningHeader(child, layoutState->columnInfo(), logicalTopEstimate);
+        logicalTopEstimate = adjustLogicalTopForSpanningHeader(&child, layoutState->columnInfo(), logicalTopEstimate);
     }
 
     logicalTopEstimate += getClearDelta(&child, logicalTopEstimate);

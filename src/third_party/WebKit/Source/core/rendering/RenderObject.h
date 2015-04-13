@@ -635,7 +635,7 @@ public:
     LocalFrame* frame() const { return document().frame(); }
 
     virtual RenderMultiColumnSpannerPlaceholder* spannerPlaceholder() const { return 0; }
-    bool isColumnSpanAll() const { return style()->columnSpan() == ColumnSpanAll && spannerPlaceholder(); }
+    bool isColumnSpanAll() const { return style()->hasSpanAllColumns() && spannerPlaceholder(); }
 
     // Returns the object containing this one. Can be different from parent for positioned elements.
     // If paintInvalidationContainer and paintInvalidationContainerSkipped are not null, on return *paintInvalidationContainerSkipped

@@ -1415,8 +1415,6 @@ void RenderListMarker::computePreferredLogicalWidths()
 
 void RenderListMarker::updateMargins()
 {
-    const FontMetrics& fontMetrics = style()->fontMetrics();
-
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 

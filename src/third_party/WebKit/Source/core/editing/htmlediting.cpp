@@ -613,7 +613,7 @@ Node* highestEnclosingNodeOfType(const Position& p, bool (*nodeIsOfType)(const N
 Node* previousRenderedSibling(const Node* node)
 {
     Node* result = node->previousSibling();
-    while (result && !isNodeRendered(result))
+    while (result && !isNodeRendered(*result))
         result = result->previousSibling();
     return result;
 }
@@ -621,7 +621,7 @@ Node* previousRenderedSibling(const Node* node)
 Node* nextRenderedSibling(const Node* node)
 {
     Node* result = node->nextSibling();
-    while (result && !isNodeRendered(result))
+    while (result && !isNodeRendered(*result))
         result = result->nextSibling();
     return result;
 }

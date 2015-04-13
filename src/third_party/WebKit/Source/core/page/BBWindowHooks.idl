@@ -21,12 +21,11 @@
  */
 
 [
-    NotScriptWrappable,
+    WillBeGarbageCollected,
 ] interface BBWindowHooks {
 
     boolean isBlock(Node node);
     DOMString getPlainText(Node node, optional DOMString excluder, optional DOMString mask);
-    void fakePaint(Document document);
     void setTextMatchMarkerVisibility(Document document, boolean highlight);
     boolean checkSpellingForRange(Range range);
     void removeMarker(Range range, long mask, long removeMarkerFlag);

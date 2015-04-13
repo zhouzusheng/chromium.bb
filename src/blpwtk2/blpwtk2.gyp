@@ -35,7 +35,6 @@
     ],
   },
   'variables': {
-    'angle_bindings_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/private/blpangle_bindings.cc',
     'products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
     'version_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.h',
     'version_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.cc',
@@ -62,22 +61,6 @@
             '--output-version-h', '<(version_h)',
             '--output-version-cc', '<(version_cc)',
             '--version', '<(bb_version)',
-          ],
-        },
-        {
-          'action_name': 'Generate angle bindings',
-          'inputs': [
-            'gen_angle_bindings.py',
-            '<(angle_path)/src/libGLESv2/libGLESv2.def',
-            '<(angle_path)/src/libEGL/libEGL.def',
-          ],
-          'outputs': [
-            '<(angle_bindings_cc)',
-          ],
-          'action': [
-            'python',
-            '<@(_inputs)',
-            '--output-bindings-cc', '<(angle_bindings_cc)',
           ],
         },
       ],
@@ -124,7 +107,6 @@
         '../ui/views/views.gyp:views',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        'blpangle',
         'blpwtk2_generate_sources',
       ],
       'conditions': [
@@ -335,36 +317,6 @@
       },
     },
     {
-      'target_name': 'blpangle',
-      'type': 'loadable_module',
-      'dependencies': [
-        'blpwtk2_generate_sources',
-        '<(angle_path)/src/angle.gyp:libGLESv2_static',
-        '<(angle_path)/src/angle.gyp:libEGL_static',
-      ],
-      'conditions': [
-        ['bb_version!=""', {
-          'product_name': 'blpangle.<(bb_version)',
-        }],
-      ],
-      'sources': [
-        '<(angle_bindings_cc)',
-        'angle/blpangle_dllmain.cc',
-        'angle/blpangle.def',
-        'angle/blpangle.rc',
-      ],
-      'defines': [
-        'GL_APICALL=',
-        'GL_GLEXT_PROTOTYPES=',
-        'EGLAPI=',
-        'EGL_EGLEXT_PROTOTYPES=',
-      ],
-      'include_dirs': [
-        '<(angle_path)/include',
-        '<(angle_path)/src',  # for event_tracer.h
-      ],
-    },
-    {
       'target_name': 'blpwtk2_subprocess',
       'type': 'executable',
       'msvs_settings': {
@@ -425,7 +377,7 @@
           'action_name': 'repack_blpwtk2_devtools',
           'variables': {
             'pak_inputs': [
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/blink/devtools_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_inspector_resources.pak',
             ],
           },

@@ -7,7 +7,6 @@
     '../base/base.gyp:base',
     # SHEZ: Trim fat
     # '../courgette/courgette.gyp:courgette_lib',
-    '../mojo/public/mojo_public.gyp:mojo_application_bindings',
   ],
   'sources': [
     'public/utility/content_utility_client.cc',

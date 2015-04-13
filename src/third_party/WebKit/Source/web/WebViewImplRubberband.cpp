@@ -284,13 +284,13 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
         layerContext.m_scaleX = context.m_layerContext->m_scaleX;
         layerContext.m_scaleY = context.m_layerContext->m_scaleY;
 
-        layerContext.m_clipRect = localContext.calcAbsRect(LayoutRect(LayoutPoint(), view->size()));
+        layerContext.m_clipRect = localContext.calcAbsRect(LayoutRect(LayoutPoint(), LayoutSize(view->size())));
         layerContext.m_clipRect.intersect(context.m_layerContext->m_clipRect);
     }
     else {
         layerContext.m_translateX = clientTopLeft.x();
         layerContext.m_translateY = clientTopLeft.y();
-        layerContext.m_clipRect = localContext.calcAbsRect(LayoutRect(LayoutPoint(), view->size()));
+        layerContext.m_clipRect = localContext.calcAbsRect(LayoutRect(LayoutPoint(), LayoutSize(view->size())));
     }
 
     if (layerContext.m_clipRect.isEmpty()) {

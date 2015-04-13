@@ -41,7 +41,7 @@
 #include <third_party/WebKit/public/web/WebView.h>
 #include <third_party/WebKit/public/web/WebInputEvent.h>
 #include <ui/events/event.h>
-#include <ui/gfx/size.h>
+#include <ui/gfx/geometry/size.h>
 
 namespace blpwtk2 {
 
@@ -253,7 +253,7 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_MBUTTONUP:
         case WM_RBUTTONUP: {
             ui::MouseEvent uiMouseEvent(msg);
-            blink::WebMouseEvent blinkMouseEvent = content::MakeWebMouseEvent(&uiMouseEvent);
+            blink::WebMouseEvent blinkMouseEvent = content::MakeWebMouseEvent(uiMouseEvent);
             rv->GetWebView()->handleInputEvent(blinkMouseEvent);
 
         } break;

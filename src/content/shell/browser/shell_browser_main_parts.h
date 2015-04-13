@@ -48,7 +48,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   void PostMainMessageLoopRun() override;
 
   DevToolsHttpHandler* devtools_http_handler() {
-    return devtools_http_handler_;
+    return devtools_http_handler_.get();
   }
 
   ShellBrowserContext* browser_context() { return browser_context_.get(); }
@@ -82,7 +82,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   const MainFunctionParams parameters_;
   bool run_message_loop_;
 
-  DevToolsHttpHandler* devtools_http_handler_;
+  scoped_ptr<DevToolsHttpHandler> devtools_http_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

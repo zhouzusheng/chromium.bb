@@ -69,13 +69,12 @@ class ProcessHostManager : private base::PlatformThread::Delegate {
         ConnectedProcessHostEntry(ProcessHost* processHost,
                                   base::ProcessHandle processHandle)
         : d_host(processHost)
-        , d_waitableEvent(processHandle)
+        , d_waitableEvent(base::win::ScopedHandle(processHandle))
         {
         }
 
         ~ConnectedProcessHostEntry()
         {
-            d_waitableEvent.Release();
         }
     };
 

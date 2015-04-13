@@ -31,7 +31,7 @@
 
 #include <base/compiler_specific.h>
 #include <ipc/ipc_sender.h>
-#include <ui/gfx/rect.h>
+#include <ui/gfx/geometry/rect.h>
 
 #include <string>
 #include <vector>

@@ -35,14 +35,15 @@ void ShellContentRendererClient::RenderThreadStarted() {
 void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
   new ShellRenderViewObserver(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
-  new printing::PrintWebViewHelper(render_view);
+  new printing::PrintWebViewHelper(render_view, true, true,
+                                   scoped_ptr<printing::PrintWebViewHelper::Delegate>(printing::PrintWebViewHelper::CreateEmptyDelegate()));
 }
 
 bool ShellContentRendererClient::IsPluginAllowedToUseCompositorAPI(
     const GURL& url) {
   // SHEZ: Remove test code.
 #if 0
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnablePepperTesting);
 #endif
   return false;
@@ -51,7 +52,7 @@ bool ShellContentRendererClient::IsPluginAllowedToUseCompositorAPI(
 bool ShellContentRendererClient::IsPluginAllowedToUseDevChannelAPIs() {
   // SHEZ: Remove test code.
 #if 0
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnablePepperTesting);
 #endif
   return false;

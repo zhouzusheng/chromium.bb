@@ -32,11 +32,10 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
-#include <content/renderer/renderer_font_platform_win.h>
+#include <content/public/common/dwrite_font_platform_win.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <printing/print_settings.h>
-#include <ui/gl/gl_implementation.h>
 #include <ui/views/corewm/tooltip_win.h>
 
 namespace blpwtk2 {
@@ -111,8 +110,6 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
 {
     DCHECK(!g_created);
     DCHECK(!ToolkitImpl::instance());
-
-    gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
 
     Statics::initApplicationMainThread();
     Statics::threadMode = params.threadMode();

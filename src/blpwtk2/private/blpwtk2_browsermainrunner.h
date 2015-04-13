@@ -31,6 +31,7 @@
 namespace content {
     class BrowserMainRunner;
     class BrowserContext;
+    class DevToolsHttpHandler;
 }  // close namespace content
 
 namespace sandbox {
@@ -40,7 +41,6 @@ namespace sandbox {
 namespace blpwtk2 {
 
 class BrowserContextImplManager;
-class DevToolsHttpHandlerDelegateImpl;
 class ManagedRenderProcessHost;
 class ProcessHostManager;
 class RendererInfoMap;
@@ -65,7 +65,7 @@ class BrowserMainRunner {
     content::MainFunctionParams d_mainParams;
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
-    scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
+    scoped_ptr<content::DevToolsHttpHandler> d_devtoolsHttpHandler;
     scoped_ptr<ViewsDelegateImpl> d_viewsDelegate;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);

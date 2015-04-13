@@ -89,6 +89,8 @@ class BrowserContextImpl : public content::BrowserContext,
 
     // ======== content::BrowserContext implementation =============
 
+    scoped_ptr<content::ZoomLevelDelegate> CreateZoomLevelDelegate(
+        const base::FilePath& partition_path) override;
     base::FilePath GetPath() const override;
     bool IsOffTheRecord() const override;
     net::URLRequestContextGetter* GetRequestContext() override;

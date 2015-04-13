@@ -22,23 +22,17 @@
 
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 
-#include <blpwtk2_statics.h>
-
 #include <base/command_line.h>
 #include <base/files/file_path.h>
 #include <base/path_service.h>
-#include <base/strings/string_number_conversions.h>
 #include <base/strings/utf_string_conversions.h>
 #include <content/public/browser/devtools_agent_host.h>
-#include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/devtools_target.h>
 #include <content/public/browser/favicon_status.h>
 #include <content/public/browser/navigation_entry.h>
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_delegate.h>
-#include <content/public/common/content_switches.h>
-#include <net/socket/tcp_server_socket.h>
 
 namespace blpwtk2 {
 
@@ -96,57 +90,7 @@ bool Target::Close() const {
     return d_agentHost->Close();
 }
 
-class TCPServerSocketFactory
-    : public content::DevToolsHttpHandler::ServerSocketFactory {
- public:
-  TCPServerSocketFactory(const std::string& address, int port, int backlog)
-      : content::DevToolsHttpHandler::ServerSocketFactory(
-            address, port, backlog) {}
-
- private:
-  // content::DevToolsHttpHandler::ServerSocketFactory.
-  scoped_ptr<net::ServerSocket> Create() const override {
-    return scoped_ptr<net::ServerSocket>(
-        new net::TCPServerSocket(NULL, net::NetLog::Source()));
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(TCPServerSocketFactory);
-};
-
 }  // close anonymous namespace
-
-
-// DevToolsHttpHandlerDelegateImpl -----------------------------------------
-
-DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
-{
-    int port = 0;
-    const base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
-    if (command_line.HasSwitch(switches::kRemoteDebuggingPort)) {
-        int temp_port;
-        std::string port_str =
-            command_line.GetSwitchValueASCII(switches::kRemoteDebuggingPort);
-        if (base::StringToInt(port_str, &temp_port) &&
-            temp_port > 0 && temp_port < 65535) {
-                port = temp_port;
-        } else {
-            DLOG(WARNING) << "Invalid http debugger port number " << temp_port;
-        }
-    }
-
-    Statics::devToolsHttpHandler = content::DevToolsHttpHandler::Start(
-        scoped_ptr<content::DevToolsHttpHandler::ServerSocketFactory>(
-            new TCPServerSocketFactory("127.0.0.1", port, 1)),
-        "", this,
-        base::FilePath());
-}
-
-DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()
-{
-    // Stop() will delete the object
-    Statics::devToolsHttpHandler->Stop();
-    Statics::devToolsHttpHandler = 0;
-}
 
 
 // DevToolsManagerDelegateImpl -----------------------------------------------

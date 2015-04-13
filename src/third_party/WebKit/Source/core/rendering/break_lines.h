@@ -29,11 +29,17 @@ namespace blink {
 class LazyLineBreakIterator;
 
 int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos, EWordBreak wordBreak);
+int nextBreakablePositionBreakAll(LazyLineBreakIterator& lazyBreakIterator, int pos);
 
-inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, EWordBreak wordBreak)
+enum class LineBreakType {
+    Normal,
+    BreakAll, // word-break:break-all allows breaks between letters/numbers
+};
+
+inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, EWordBreak wordBreak, LineBreakType lineBreakType = LineBreakType::Normal)
 {
     if (pos > nextBreakable)
-        nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, wordBreak);
+        nextBreakable = lineBreakType == LineBreakType::BreakAll ? nextBreakablePositionBreakAll(lazyBreakIterator, pos) : nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, wordBreak);
     return pos == nextBreakable;
 }
 

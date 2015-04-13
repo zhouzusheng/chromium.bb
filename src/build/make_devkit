@@ -226,9 +226,9 @@ def main(args):
   if doClean:
     print("Cleaning source tree...")
     sys.stdout.flush()
-    outDir = os.path.join(srcDir, 'out')
-    if os.path.exists(outDir):
-      shutil.rmtree(outDir)
+    buildOutDir = os.path.join(srcDir, 'out')
+    if os.path.exists(buildOutDir):
+      shutil.rmtree(buildOutDir)
     bbutil.shellExec('git clean -fdx')
 
   applyVariableToEnvironment('GYP_DEFINES', 'component', 'static_library')
@@ -302,6 +302,13 @@ def main(args):
       rc = bbutil.shellExecNoPipe('git push origin tag ' + tag)
       if rc != 0:
         return rc
+
+  print("Compressing...")
+  sys.stdout.flush()
+  os.chdir(outDir)
+  rc = bbutil.shellExecNoPipe('7zr.exe a {}.7z {}'.format(version, version))
+  if rc != 0:
+    return rc
 
   print("All done!")
   return 0

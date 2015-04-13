@@ -32,7 +32,7 @@
 #include <base/memory/weak_ptr.h>
 #include <ipc/ipc_listener.h>
 #include <ipc/ipc_sender.h>
-#include <ui/gfx/rect.h>
+#include <ui/gfx/geometry/rect.h>
 
 #include <string>
 

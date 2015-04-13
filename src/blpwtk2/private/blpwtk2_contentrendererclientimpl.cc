@@ -75,7 +75,8 @@ void ContentRendererClientImpl::RenderViewCreated(
     new RenderViewObserverImpl(render_view);
 
     new SpellCheckProvider(render_view, d_spellcheck.get());
-    new printing::PrintWebViewHelper(render_view);
+    new printing::PrintWebViewHelper(render_view, true, true,
+                                     scoped_ptr<printing::PrintWebViewHelper::Delegate>(printing::PrintWebViewHelper::CreateEmptyDelegate()));
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(

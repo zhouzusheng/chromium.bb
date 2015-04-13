@@ -44,7 +44,7 @@ class DevToolsFrontendHostDelegateImpl
       public content::DevToolsAgentHostClient {
   public:
     DevToolsFrontendHostDelegateImpl(content::WebContents* inspectorContents,
-                                     content::DevToolsAgentHost* agentHost);
+                                     const scoped_refptr<content::DevToolsAgentHost>& agentHost);
     virtual ~DevToolsFrontendHostDelegateImpl();
 
     content::DevToolsAgentHost* agentHost() const { return d_agentHost.get(); }

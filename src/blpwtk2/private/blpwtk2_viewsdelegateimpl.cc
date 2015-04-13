@@ -53,6 +53,11 @@ HICON ViewsDelegateImpl::GetDefaultWindowIcon() const
     return NULL;
 }
 
+HICON ViewsDelegateImpl::GetSmallWindowIcon() const
+{
+    return NULL;
+}
+
 bool ViewsDelegateImpl::IsWindowInMetro(gfx::NativeWindow window) const
 {
     return false;

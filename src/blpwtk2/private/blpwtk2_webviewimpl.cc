@@ -315,7 +315,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     d_devToolsFrontEndHost.reset(
         new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
 
-    GURL url = Statics::devToolsHttpHandler->GetFrontendURL();
+    GURL url = Statics::devToolsHttpHandler->GetFrontendURL("/devtools/devtools.html");
     loadUrl(url.spec());
 }
 
@@ -794,7 +794,7 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
     // The new WebViewImpl doesn't receive these WebContentsObserver callbacks
     // in the WebContentsCreated() path, so let's invoke them manually.
     newView->RenderViewCreated(new_contents->GetRenderViewHost());
-    newView->AboutToNavigateRenderView(new_contents->GetRenderViewHost());
+    newView->AboutToNavigateRenderFrame(new_contents->GetMainFrame());
 }
 
 void WebViewImpl::CloseContents(content::WebContents* source)
@@ -1001,16 +1001,16 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 
 /////// WebContentsObserver overrides
 
-void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view_host)
+void WebViewImpl::AboutToNavigateRenderFrame(content::RenderFrameHost* render_frame_host)
 {
     DCHECK(Statics::isInBrowserMainThread());
     if (d_wasDestroyed) return;
     if (d_implClient) {
-        int routingId = render_view_host->GetRoutingID();
+        int routingId = d_webContents->GetRenderViewHost()->GetRoutingID();
         d_implClient->aboutToNativateRenderView(routingId);
     }
 #ifdef BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
-    render_view_host->EnableAltDragRubberbanding(d_altDragRubberbandingEnabled);
+    d_webContents->GetRenderViewHost()->EnableAltDragRubberbanding(d_altDragRubberbandingEnabled);
 #endif
 }
 

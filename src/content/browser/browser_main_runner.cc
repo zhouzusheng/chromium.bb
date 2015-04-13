@@ -19,16 +19,11 @@
 #include "ui/base/ime/input_method_initializer.h"
 
 #if defined(OS_WIN)
-#include <dwrite.h>
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "net/cert/sha256_legacy_support_win.h"
 #include "sandbox/win/src/sidestep/preamble_patcher.h"
-#include "skia/ext/fontmgr_default_win.h"
-#include "third_party/skia/include/ports/SkFontMgr.h"
-#include "third_party/skia/include/ports/SkTypeface_win.h"
 #include "ui/base/win/scoped_ole_initializer.h"
-#include "ui/gfx/platform_font_win.h"
 #include "ui/gfx/switches.h"
 #include "ui/gfx/win/direct_write.h"
 #endif
@@ -116,34 +111,6 @@ void InstallSha256LegacyHooks() {
 #endif  // _WIN64
 }
 
-void MaybeEnableDirectWriteFontRendering() {
-  if (gfx::win::ShouldUseDirectWrite() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDirectWriteForUI) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableHarfBuzzRenderText)) {
-    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
-    HMODULE dwrite_dll = LoadLibraryW(L"dwrite.dll");
-    if (!dwrite_dll)
-      return;
-
-    DWriteCreateFactoryProc dwrite_create_factory_proc =
-        reinterpret_cast<DWriteCreateFactoryProc>(
-            GetProcAddress(dwrite_dll, "DWriteCreateFactory"));
-    // Not finding the DWriteCreateFactory function indicates a corrupt dll.
-    CHECK(dwrite_create_factory_proc);
-
-    IDWriteFactory* factory = NULL;
-
-    CHECK(SUCCEEDED(
-        dwrite_create_factory_proc(DWRITE_FACTORY_TYPE_SHARED,
-                                   __uuidof(IDWriteFactory),
-                                   reinterpret_cast<IUnknown**>(&factory))));
-    SetDefaultSkiaFactory(SkFontMgr_New_DirectWrite(factory));
-    gfx::PlatformFontWin::set_use_skia_for_font_metrics(true);
-  }
-}
-
 }  // namespace
 
 #endif  // OS_WIN
@@ -197,7 +164,7 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // on Windows 8 Metro mode.
       ole_initializer_.reset(new ui::ScopedOleInitializer);
       // Enable DirectWrite font rendering if needed.
-      MaybeEnableDirectWriteFontRendering();
+      gfx::win::MaybeInitializeDirectWrite();
 #endif  // OS_WIN
 
       main_loop_.reset(new BrowserMainLoop(parameters));
@@ -284,7 +251,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // Forcefully terminates the RunLoop inside MessagePumpForUI, ensuring
       // proper shutdown for content_browsertests. Shutdown() is not used by
       // the actual browser.
-      base::MessageLoop::current()->QuitNow();
+      if (base::MessageLoop::current()->is_running())
+        base::MessageLoop::current()->QuitNow();
   #endif
       main_loop_.reset(NULL);
 

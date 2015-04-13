@@ -227,7 +227,7 @@ public:
         return createAnonymousWithParentRenderer(parent);
     }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 
     // Flip the rect so it aligns with the coordinates used by the rowPos and columnPos vectors.
     LayoutRect logicalRectForWritingModeAndDirection(const LayoutRect&) const;
@@ -253,7 +253,7 @@ private:
 
     virtual void layout() override;
 
-    virtual void paintObject(PaintInfo&, const LayoutPoint&) override;
+    virtual void paintObject(const PaintInfo&, const LayoutPoint&) override;
 
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
@@ -262,9 +262,8 @@ private:
     void ensureRows(unsigned);
 
     bool rowHasOnlySpanningCells(unsigned);
-    unsigned calcRowHeightHavingOnlySpanningCells(unsigned);
-    void updateRowsHeightHavingOnlySpanningCells(RenderTableCell*, struct SpanningRowsHeight&);
-    bool isHeightNeededForRowHavingOnlySpanningCells(unsigned);
+    unsigned calcRowHeightHavingOnlySpanningCells(unsigned, int&, unsigned, unsigned&, Vector<int>&);
+    void updateRowsHeightHavingOnlySpanningCells(RenderTableCell*, struct SpanningRowsHeight&, unsigned&, Vector<int>&);
 
     void populateSpanningRowsHeightFromCell(RenderTableCell*, struct SpanningRowsHeight&);
     void distributeExtraRowSpanHeightToPercentRows(RenderTableCell*, int, int&, Vector<int>&);
@@ -328,6 +327,10 @@ DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTableSection, isTableSection());
 
 #if ENABLE(OILPAN)
 namespace WTF {
+
+template<> struct VectorTraits<blink::RenderTableSection::CellStruct> : VectorTraitsBase<blink::RenderTableSection::CellStruct> {
+    static const bool needsDestruction = false;
+};
 
 template<> struct VectorTraits<blink::RenderTableSection::RowStruct> : VectorTraitsBase<blink::RenderTableSection::RowStruct> {
     static const bool needsDestruction = false;

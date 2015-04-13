@@ -41,9 +41,6 @@ static void InitDirectWrite()
 
     bool useDirectWrite = gfx::win::ShouldUseDirectWrite();
     blink::WebFontRendering::setUseDirectWrite(useDirectWrite);
-    if (useDirectWrite) {
-        blink::WebRuntimeFeatures::enableSubpixelFontScaling(true);
-    }
 }
 
 class InProcessRendererThread : public base::Thread {

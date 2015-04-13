@@ -8,6 +8,7 @@
   'dependencies': [
     'sandbox',
     'sandbox_linux_test_utils',
+    'sandbox_services',
     '../base/base.gyp:base',
   ],
   'include_dirs': [
@@ -15,13 +16,16 @@
   ],
   'sources': [
     'services/scoped_process_unittest.cc',
+    'services/syscall_wrappers_unittest.cc',
     'services/thread_helpers_unittests.cc',
     'services/yama_unittests.cc',
+    'syscall_broker/broker_file_permission_unittest.cc',
     'syscall_broker/broker_process_unittest.cc',
     'tests/main.cc',
     'tests/scoped_temporary_file.cc',
     'tests/scoped_temporary_file.h',
     'tests/scoped_temporary_file_unittest.cc',
+    'tests/test_utils_unittest.cc',
     'tests/unit_tests_unittest.cc',
   ],
   'conditions': [
@@ -40,6 +44,7 @@
         'seccomp-bpf/bpf_tests_unittest.cc',
         'seccomp-bpf/codegen_unittest.cc',
         'seccomp-bpf/errorcode_unittest.cc',
+        'seccomp-bpf/sandbox_bpf_unittest.cc',
         'seccomp-bpf/syscall_iterator_unittest.cc',
         'seccomp-bpf/syscall_unittest.cc',
       ],
@@ -47,6 +52,7 @@
     [ 'compile_credentials==1', {
       'sources': [
         'services/credentials_unittest.cc',
+        'services/proc_util_unittest.cc',
         'services/unix_domain_socket_unittest.cc',
       ],
     }],

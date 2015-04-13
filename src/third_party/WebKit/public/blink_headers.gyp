@@ -13,6 +13,8 @@
             'include_dirs': [ '..' ],
           },
         },
-    ]
+    ],
+    'conditions': [
+    ],
 }
 

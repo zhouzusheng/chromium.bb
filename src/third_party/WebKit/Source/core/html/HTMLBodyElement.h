@@ -70,6 +70,9 @@ private:
     virtual int scrollHeight() override;
     virtual int scrollWidth() override;
 
+    virtual void scrollBy(const ScrollToOptions&) override;
+    virtual void scrollTo(const ScrollToOptions&) override;
+
     // Bloomberg-specific extensions
     virtual int bbScrollLeftNoZoomAdjust();
     virtual int bbScrollTopNoZoomAdjust();

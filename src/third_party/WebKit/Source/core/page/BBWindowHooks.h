@@ -40,13 +40,14 @@ namespace blink {
     class Range;
     class ClientRect;
 
-    class BBWindowHooks : public RefCounted<BBWindowHooks>, public DOMWindowProperty, public ScriptWrappableBase {
+    class BBWindowHooks : public RefCountedWillBeGarbageCollected<BBWindowHooks>, public ScriptWrappable, public DOMWindowProperty {
+        DEFINE_WRAPPERTYPEINFO();
+        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BBWindowHooks);
     public:
-        static PassRefPtr<BBWindowHooks> create(LocalFrame *frame) { return adoptRef(new BBWindowHooks(frame)); }
+        static PassRefPtrWillBeRawPtr<BBWindowHooks> create(LocalFrame *frame) { return adoptRefWillBeNoop(new BBWindowHooks(frame)); }
 
         bool isBlock(Node* node);
         String getPlainText(Node* node, const String& excluder = "", const String& mask = "");
-        void fakePaint(Document* document);
         void setTextMatchMarkerVisibility(Document* document, bool highlight);
         bool checkSpellingForRange(Range* range);
         void removeMarker(Range* range, long mask, long removeMarkerFlag);
@@ -54,6 +55,8 @@ namespace blink {
         PassRefPtr<Range> findPlainText(Range* range, const String& target, long options);
         bool checkSpellingForNode(Node* node);
         PassRefPtr<ClientRect> getAbsoluteCaretRectAtOffset(Node* node, long offset);
+
+        virtual void trace(Visitor*) override;
 
     private:
 

@@ -37,15 +37,11 @@
 
 namespace blink {
 
-class LineInfo;
 class LineLayoutState;
 struct PaintInfo;
 class RenderInline;
-class RenderRubyRun;
-class RenderText;
 class WordMeasurement;
 
-template <class Run> class BidiRunList;
 typedef WTF::ListHashSet<RenderBox*, 16> TrackedRendererListHashSet;
 typedef WTF::HashMap<const RenderBlock*, OwnPtr<TrackedRendererListHashSet> > TrackedDescendantsMap;
 typedef WTF::HashMap<const RenderBox*, OwnPtr<HashSet<RenderBlock*> > > TrackedContainerMap;
@@ -72,8 +68,8 @@ public:
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
     // If you have a RenderBlock, use firstChild or lastChild instead.
-    void slowFirstChild() const WTF_DELETED_FUNCTION;
-    void slowLastChild() const WTF_DELETED_FUNCTION;
+    void slowFirstChild() const = delete;
+    void slowLastChild() const = delete;
 
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
@@ -129,6 +125,8 @@ public:
         return descendants && !descendants->isEmpty();
     }
 
+    void notifyScrollbarThicknessChanged() { m_widthAvailableToChildrenChanged = true; }
+
     void setHasMarkupTruncation(bool b) { m_hasMarkupTruncation = b; }
     bool hasMarkupTruncation() const { return m_hasMarkupTruncation; }
 
@@ -159,17 +157,6 @@ public:
     LayoutUnit blockDirectionOffset(const LayoutSize& offsetFromBlock) const;
     LayoutUnit inlineDirectionOffset(const LayoutSize& offsetFromBlock) const;
 
-    virtual bool shouldPaintSelectionGaps() const override final;
-    GapRects selectionGapRectsForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const;
-    LayoutRect logicalLeftSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                       const RenderObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
-    LayoutRect logicalRightSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                        const RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
-    LayoutRect lineEndingSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                      const RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
-    void getLineEndingGapLogicalLeftAndRight(const RenderBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
-                                             LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
-    void getSelectionGapInfo(const RenderBlock* rootBlock, bool& leftGap, bool& rightGap) const;
     RenderBlock* blockBeforeWithinSelectionRoot(LayoutSize& offset) const;
 
     virtual void setSelectionState(SelectionState) override;
@@ -220,22 +207,21 @@ public:
     void setPageLogicalOffset(LayoutUnit offset) { m_pageLogicalOffset = offset; }
 
     // Accessors for logical width/height and margins in the containing block's block-flow direction.
-    LayoutUnit logicalWidthForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->width() : child->height(); }
-    LayoutUnit logicalHeightForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->height() : child->width(); }
-    LayoutSize logicalSizeForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->size() : child->size().transposedSize(); }
-    LayoutUnit logicalTopForChild(const RenderBox* child) const { return isHorizontalWritingMode() ? child->y() : child->x(); }
-    LayoutUnit marginBeforeForChild(const RenderBoxModelObject* child) const { return child->marginBefore(style()); }
-    LayoutUnit marginAfterForChild(const RenderBoxModelObject* child) const { return child->marginAfter(style()); }
-    LayoutUnit marginStartForChild(const RenderBoxModelObject* child) const { return child->marginStart(style()); }
-    LayoutUnit marginEndForChild(const RenderBoxModelObject* child) const { return child->marginEnd(style()); }
-    void setMarginStartForChild(RenderBox* child, LayoutUnit value) const { child->setMarginStart(value, style()); }
-    void setMarginEndForChild(RenderBox* child, LayoutUnit value) const { child->setMarginEnd(value, style()); }
-    void setMarginBeforeForChild(RenderBox* child, LayoutUnit value) const { child->setMarginBefore(value, style()); }
-    void setMarginAfterForChild(RenderBox* child, LayoutUnit value) const { child->setMarginAfter(value, style()); }
-    LayoutUnit collapsedMarginBeforeForChild(const RenderBox* child) const;
-    LayoutUnit collapsedMarginAfterForChild(const RenderBox* child) const;
+    LayoutUnit logicalWidthForChild(const RenderBox& child) const { return isHorizontalWritingMode() ? child.size().width() : child.size().height(); }
+    LayoutUnit logicalHeightForChild(const RenderBox& child) const { return isHorizontalWritingMode() ? child.size().height() : child.size().width(); }
+    LayoutSize logicalSizeForChild(const RenderBox& child) const { return isHorizontalWritingMode() ? child.size() : child.size().transposedSize(); }
+    LayoutUnit logicalTopForChild(const RenderBox& child) const { return isHorizontalWritingMode() ? child.location().y() : child.location().x(); }
+    LayoutUnit marginBeforeForChild(const RenderBoxModelObject& child) const { return child.marginBefore(style()); }
+    LayoutUnit marginAfterForChild(const RenderBoxModelObject& child) const { return child.marginAfter(style()); }
+    LayoutUnit marginStartForChild(const RenderBoxModelObject& child) const { return child.marginStart(style()); }
+    LayoutUnit marginEndForChild(const RenderBoxModelObject& child) const { return child.marginEnd(style()); }
+    void setMarginStartForChild(RenderBox& child, LayoutUnit value) const { child.setMarginStart(value, style()); }
+    void setMarginEndForChild(RenderBox& child, LayoutUnit value) const { child.setMarginEnd(value, style()); }
+    void setMarginBeforeForChild(RenderBox& child, LayoutUnit value) const { child.setMarginBefore(value, style()); }
+    void setMarginAfterForChild(RenderBox& child, LayoutUnit value) const { child.setMarginAfter(value, style()); }
+    LayoutUnit collapsedMarginBeforeForChild(const RenderBox& child) const;
+    LayoutUnit collapsedMarginAfterForChild(const RenderBox& child) const;
 
-    virtual void updateFirstLetter();
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     virtual void scrollbarsChanged(bool /*horizontalScrollbarChanged*/, bool /*verticalScrollbarChanged*/) { }
@@ -248,10 +234,6 @@ public:
 
     virtual LayoutUnit logicalLeftSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const;
     virtual LayoutUnit logicalRightSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const;
-
-    GapRects selectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
-        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
 
 #if ENABLE(ASSERT)
     void checkPositionedObjectsNeedLayout();
@@ -281,17 +263,18 @@ protected:
     void layoutPositionedObjects(bool relayoutChildren, PositionedLayoutBehavior = DefaultLayout);
     void markFixedPositionObjectForLayoutIfNeeded(RenderObject* child, SubtreeLayoutScope&);
 
-    LayoutUnit marginIntrinsicLogicalWidthForChild(RenderBox* child) const;
+    LayoutUnit marginIntrinsicLogicalWidthForChild(RenderBox& child) const;
 
     int beforeMarginInLineDirection(LineDirectionMode) const;
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 public:
-    virtual void paintObject(PaintInfo&, const LayoutPoint&) override;
-    virtual void paintChildren(PaintInfo&, const LayoutPoint&);
+    virtual void paintObject(const PaintInfo&, const LayoutPoint&) override;
+    virtual void paintChildren(const PaintInfo&, const LayoutPoint&);
 
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to RenderBlockFlow
-    virtual void paintFloats(PaintInfo&, const LayoutPoint&, bool) { }
+    virtual void paintFloats(const PaintInfo&, const LayoutPoint&, bool) { }
+    virtual void paintSelection(const PaintInfo&, const LayoutPoint&) { }
 
 protected:
     virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, float& /* logicalLeft */, float& /* logicalWidth */) const { }
@@ -334,11 +317,11 @@ protected:
     void addOverflowFromBlockChildren();
     void addVisualOverflowFromTheme();
 
-    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer) const override;
+    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
 
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
-    void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox*);
+    void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox&);
 
     virtual bool isInlineBlockOrInlineTable() const override final { return isInline() && isReplaced(); }
 
@@ -371,12 +354,10 @@ private:
 
     virtual bool isSelfCollapsingBlock() const override;
 
+    void removeAnonymousWrappersIfRequired();
+
     void insertIntoTrackedRendererMaps(RenderBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
     static void removeFromTrackedRendererMaps(RenderBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
-
-    void createFirstLetterRenderer(RenderObject* firstLetterBlock, RenderText& currentChild, unsigned length);
-    void updateFirstLetterStyle(RenderObject* firstLetterBlock, RenderObject* firstLetterContainer);
-    bool isInvalidFirstLetterRenderer(RenderObject*) const;
 
     Node* nodeForHitTest() const;
 
@@ -403,18 +384,7 @@ private:
     virtual void updateDragState(bool dragOn) override final;
     virtual void childBecameNonInline(RenderObject* child) override final;
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override final
-    {
-        return selectionGapRectsForPaintInvalidation(paintInvalidationContainer);
-    }
     bool isSelectionRoot() const;
-    GapRects blockSelectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
-                                bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
-    void getLineSelectionLogicalLeftAndRight(const RenderBlock *rootBlock, const LayoutSize& offsetFromRootBlock, RootInlineBox* line,
-                                             LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
-    LayoutRect blockSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                 LayoutUnit lastLogicalTop, LayoutUnit lastLogicalLeft, LayoutUnit lastLogicalRight, LayoutUnit logicalBottom, const PaintInfo*) const;
 
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to RenderBlockFlow
     virtual void clipOutFloatingObjects(const RenderBlock*, const PaintInfo*, const LayoutPoint&, const LayoutSize&) const { };
@@ -426,6 +396,7 @@ private:
 
 private:
     virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override final;
+    bool isInlineBoxWrapperActuallyChild() const;
 
     void adjustPointToColumnContents(LayoutPoint&) const;
 
@@ -462,7 +433,7 @@ protected:
     enum PageBoundaryRule { ExcludePageBoundary, IncludePageBoundary };
     LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule = ExcludePageBoundary) const;
 
-    bool createsBlockFormattingContext() const;
+    bool createsNewFormattingContext() const;
 
 public:
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit offset) const;
@@ -499,7 +470,7 @@ protected:
     unsigned m_hasMarginAfterQuirk : 1;
     unsigned m_beingDestroyed : 1;
     unsigned m_hasMarkupTruncation : 1;
-    unsigned m_hasBorderOrPaddingLogicalWidthChanged : 1;
+    unsigned m_widthAvailableToChildrenChanged  : 1;
     mutable unsigned m_hasOnlySelfCollapsingChildren : 1;
     mutable unsigned m_descendantsWithFloatsMarkedForLayout : 1;
 

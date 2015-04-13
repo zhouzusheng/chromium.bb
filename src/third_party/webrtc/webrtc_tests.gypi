@@ -53,7 +53,7 @@
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
         '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
         '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
         'test/test.gyp:test_main',
         'webrtc',
       ],
@@ -85,9 +85,12 @@
       ],
     },
     {
+      # TODO(pbos): Rename target to webrtc_tests or rtc_tests, this target is
+      # not meant to only include video.
       'target_name': 'video_engine_tests',
       'type': '<(gtest_target_type)',
       'sources': [
+        'modules/audio_processing/agc/test/agc_manager_unittest.cc',
         'video/bitrate_estimator_tests.cc',
         'video/end_to_end_tests.cc',
         'video/send_statistics_proxy_unittest.cc',
@@ -99,9 +102,12 @@
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
         '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
+        '<(webrtc_root)/test/test.gyp:channel_transport',
+        '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         'test/metrics.gyp:metrics',
-        'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/test.gyp:test_main',
+        'test/webrtc_test_common.gyp:webrtc_test_common',
+        'tools/tools.gyp:agc_manager',
         'webrtc',
       ],
       'conditions': [
@@ -117,17 +123,21 @@
       'type': '<(gtest_target_type)',
       'sources': [
         'modules/audio_coding/neteq/test/neteq_performance_unittest.cc',
+        'modules/audio_processing/agc/test/agc_manager_integrationtest.cc',
         'video/call_perf_tests.cc',
         'video/full_stack.cc',
         'video/rampup_tests.cc',
         'video/rampup_tests.h',
       ],
       'dependencies': [
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
+        '<(webrtc_root)/test/test.gyp:channel_transport',
+        '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         'modules/modules.gyp:neteq_test_support',  # Needed by neteq_performance_unittest.
         'modules/modules.gyp:rtp_rtcp',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
-        'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/test.gyp:test_main',
+        'test/webrtc_test_common.gyp:webrtc_test_common',
+        'tools/tools.gyp:agc_manager',
         'webrtc',
       ],
       'conditions': [

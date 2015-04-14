@@ -134,11 +134,9 @@ public:
 
     BLINK_EXPORT static void enablePreciseMemoryInfo(bool);
 
-    BLINK_EXPORT static void enableLayerSquashing(bool);
+    BLINK_EXPORT static void enableLayerSquashing(bool) { }
 
     BLINK_EXPORT static void enableShowModalDialog(bool);
-
-    BLINK_EXPORT static void enableLaxMixedContentChecking(bool);
 
     BLINK_EXPORT static void enableCredentialManagerAPI(bool);
 
@@ -149,6 +147,8 @@ public:
     BLINK_EXPORT static void enableV8IdleTasks(bool);
 
     BLINK_EXPORT static void enableSVG1DOM(bool);
+
+    BLINK_EXPORT static void enableReducedReferrerGranularity(bool);
 
 private:
     WebRuntimeFeatures();

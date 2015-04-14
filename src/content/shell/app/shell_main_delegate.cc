@@ -190,7 +190,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif  // OS_MACOSX
 
   InitLogging();
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
 
   // SHEZ: Remove test-only code
 #if 0
@@ -233,16 +233,22 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
       command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
       command_line.AppendSwitch(switches::kDisableImplSidePainting);
+      // Text blobs are normally disabled when kDisableImplSidePainting is
+      // present to ensure correct LCD behavior, but for layout tests we want
+      // them on because LCD is always suppressed.
+      command_line.AppendSwitch(switches::kForceTextBlobs);
+    }
+
+    if (!command_line.HasSwitch(switches::kEnableDisplayList2dCanvas)) {
+      command_line.AppendSwitch(switches::kDisableDisplayList2dCanvas);
     }
 
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_MACOSX)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
-#endif
 
     command_line.AppendSwitch(switches::kEnableFileCookies);
 
@@ -276,10 +282,10 @@ void ShellMainDelegate::PreSandboxStartup() {
   // cpu_brand info.
   base::CPU cpu_info;
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     crash_reporter::SetCrashReporterClient(g_shell_crash_client.Pointer());
 #if defined(OS_MACOSX)
@@ -340,7 +346,7 @@ int ShellMainDelegate::RunProcess(
 
   // SHEZ: Remove test-only code
 #if 0
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   return command_line.HasSwitch(switches::kDumpRenderTree) ||
                  command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)
              ? LayoutTestBrowserMain(main_function_params, browser_runner_)
@@ -350,10 +356,10 @@ int ShellMainDelegate::RunProcess(
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 void ShellMainDelegate::ZygoteForked() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     breakpad::InitCrashReporter(process_type);
   }
@@ -400,10 +406,11 @@ ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
   browser_client_.reset(
       // SHEZ: Remove test-only code.
 #if 0
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
-          new LayoutTestContentBrowserClient :
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kDumpRenderTree) ?
+                            new LayoutTestContentBrowserClient :
 #endif
-          new ShellContentBrowserClient);
+                            new ShellContentBrowserClient);
 
   return browser_client_.get();
 }
@@ -412,10 +419,11 @@ ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
   renderer_client_.reset(
       // SHEZ: Remove test-only code.
 #if 0
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
-          new LayoutTestContentRendererClient :
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+                             switches::kDumpRenderTree) ?
+                             new LayoutTestContentRendererClient :
 #endif
-          new ShellContentRendererClient);
+                             new ShellContentRendererClient);
 
   return renderer_client_.get();
 }

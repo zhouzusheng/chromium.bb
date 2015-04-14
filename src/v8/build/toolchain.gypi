@@ -30,7 +30,6 @@
 {
   'variables': {
     'msvs_use_common_release': 0,
-    'gcc_version%': 'unknown',
     'clang%': 0,
     'v8_target_arch%': '<(target_arch)',
     # Native Client builds currently use the V8 ARM JIT and
@@ -901,6 +900,9 @@
             },
           }],
         ],
+        'defines': [
+          'ENABLE_SLOW_DCHECKS',
+        ],
       },  # DebugBase0
       # Abstract configuration for v8_optimized_debug == 1.
       'DebugBase1': {
@@ -921,6 +923,9 @@
             'LinkIncremental': '2',
           },
         },
+        'defines': [
+          'ENABLE_SLOW_DCHECKS',
+        ],
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
             OS=="qnx"', {
@@ -934,14 +939,6 @@
               '-fdata-sections',
               '-ffunction-sections',
               '-O1', # TODO(2807) should be -O3.
-            ],
-            'conditions': [
-              ['gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
             ],
           }],
           ['OS=="mac"', {
@@ -985,9 +982,6 @@
               '-fdata-sections',
               '-ffunction-sections',
             ],
-            'defines': [
-              'OPTIMIZED_DEBUG'
-            ],
             'conditions': [
               # TODO(crbug.com/272548): Avoid -O3 in NaCl
               ['nacl_target_arch=="none"', {
@@ -996,12 +990,6 @@
                 }, {
                 'cflags': ['-O2'],
                 'cflags!': ['-O3'],
-              }],
-              ['gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
               }],
             ],
           }],
@@ -1021,7 +1009,8 @@
           'V8_ENABLE_CHECKS',
           'OBJECT_PRINT',
           'VERIFY_HEAP',
-          'DEBUG'
+          'DEBUG',
+          'TRACE_MAPS'
         ],
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
@@ -1042,6 +1031,7 @@
                 # TODO(2304): pass DISABLE_DEBUG_ASSERT instead of hiding DEBUG.
                 'defines!': [
                   'DEBUG',
+                  'ENABLE_SLOW_DCHECKS',
                 ],
               }],
             ],
@@ -1074,12 +1064,6 @@
               '<(wno_array_bounds)',
             ],
             'conditions': [
-              [ 'gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
               # TODO(crbug.com/272548): Avoid -O3 in NaCl
               ['nacl_target_arch=="none"', {
                 'cflags': ['-O3'],
@@ -1099,14 +1083,6 @@
               '-fdata-sections',
               '-ffunction-sections',
               '-O2',
-            ],
-            'conditions': [
-              [ 'gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
             ],
           }],
           ['OS=="mac"', {

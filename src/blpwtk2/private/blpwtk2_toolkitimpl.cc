@@ -44,8 +44,6 @@
 #include <blpwtk2_webviewproxy.h>
 
 #include <base/command_line.h>
-#include <base/files/file_enumerator.h>
-#include <base/files/file_util.h>
 #include <base/message_loop/message_loop.h>
 #include <base/path_service.h>
 #include <base/synchronization/waitable_event.h>
@@ -58,8 +56,6 @@
 #include <content/public/common/content_switches.h>
 #include <sandbox/win/src/win_utils.h>
 
-#include <TlHelp32.h>  // for CreateToolhelp32Snapshot
-
 extern HANDLE g_instDLL;  // set in DllMain
 
 namespace blpwtk2 {
@@ -71,115 +67,6 @@ static scoped_ptr<base::MessagePump> messagePumpForUIFactory()
     }
 
     return scoped_ptr<base::MessagePump>(new base::MessagePumpForUI());
-}
-
-static bool loadRunningProcessIds(std::set<int>* pids)
-{
-    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hProcessSnap == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    PROCESSENTRY32 pe32;
-    pe32.dwSize = sizeof(PROCESSENTRY32);
-    if (!Process32First(hProcessSnap, &pe32)) {
-        CloseHandle(hProcessSnap);
-        return false;
-    }
-
-    do {
-        pids->insert(pe32.th32ProcessID);
-    } while (Process32Next(hProcessSnap, &pe32));
-
-    CloseHandle(hProcessSnap);
-    return true;
-}
-
-// Returns true if 'dirName' matches the pattern "<prefix><number>_<number>"
-// for any prefix in 'prefixes'.  If so, load the first <number> into 'pid'.
-static bool isScopedDir(const std::wstring& dirName,
-                        const std::vector<std::wstring>& prefixes,
-                        int *pid)
-{
-    const wchar_t* dirNameC = dirName.c_str();
-    for (std::size_t i = 0; i < prefixes.size(); ++i) {
-        if (prefixes[i].length() >= dirName.length()) {
-            continue;
-        }
-        if (0 != wcsncmp(dirNameC, prefixes[i].data(), prefixes[i].length())) {
-            continue;
-        }
-        const wchar_t* pidStart = dirNameC + prefixes[i].length();
-        if (!iswdigit(*pidStart)) {
-            continue;
-        }
-        *pid = *pidStart - '0';
-        const wchar_t* pidEnd = pidStart + 1;
-        while (iswdigit(*pidEnd)) {
-            *pid *= 10;
-            *pid += *pidEnd - '0';
-            ++pidEnd;
-        }
-        if (*pidEnd != '_') {
-            continue;
-        }
-        const wchar_t* randStart = pidEnd + 1;
-        if (!iswdigit(*randStart)) {
-            continue;
-        }
-        const wchar_t* randEnd = randStart + 1;
-        while (iswdigit(*randEnd)) {
-            ++randEnd;
-        }
-        if (*randEnd != 0) {
-            continue;
-        }
-        return true;
-    }
-    return false;
-}
-
-static void deleteTemporaryScopedDirs()
-{
-    std::set<int> pids;
-    if (!loadRunningProcessIds(&pids)) {
-        return;
-    }
-
-    base::FilePath tempPath;
-    if (!base::GetTempDir(&tempPath)) {
-        return;
-    }
-
-    std::vector<std::wstring> prefixes;
-    prefixes.push_back(L"scoped_dir");
-    prefixes.push_back(L"scoped_dir_");
-    prefixes.push_back(L"blpwtk2_");
-
-    int count = 0;
-    base::FileEnumerator enumerator(
-        tempPath,
-        false,
-        base::FileEnumerator::DIRECTORIES);
-    for (base::FilePath path = enumerator.Next(); !path.empty(); path = enumerator.Next()) {
-        std::wstring baseName = path.BaseName().value();
-        int pid;
-        if (isScopedDir(baseName, prefixes, &pid)) {
-            if (pids.end() == pids.find(pid)) {
-                base::DeleteFile(path, true);
-                ++count;
-                if (count == 100) {
-                    // There are thousands of these directories currently in
-                    // people's TEMP.  We'll just delete a 100 of them at a
-                    // time, and over time, they will all be gone.
-                    // This is so that blpwtk2 doesn't take a really really
-                    // long time to startup the first time this function is
-                    // called.
-                    return;
-                }
-            }
-        }
-    }
 }
 
 static ToolkitImpl* g_instance = 0;
@@ -204,11 +91,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
     // If host channel is set, we must not be in ORIGINAL thread mode.
     DCHECK(d_hostChannel.empty() || !Statics::isOriginalThreadMode());
 
-    if (d_hostChannel.empty()) {
-        // Do this only if we are the host.
-        deleteTemporaryScopedDirs();
-    }
-    else {
+    if (!d_hostChannel.empty()) {
         // If another process is our host, then explicitly disable sandbox
         // in *this* process.
         // Since both 'broker_services' and 'target_services' will be null in
@@ -219,6 +102,13 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+
+    if (!d_hostChannel.empty()) {
+        // Eagerly startup threads so that we connect the host channel when
+        // the toolkit is initialized, instead of waiting for the first
+        // profile/webview to be created.
+        startupThreads();
+    }
 }
 
 ToolkitImpl::~ToolkitImpl()

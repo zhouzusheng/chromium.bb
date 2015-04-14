@@ -934,6 +934,29 @@ void logMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity
     OutputDebugStringA(buf);
 }
 
+void consoleLogMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity,
+                              const blpwtk2::StringRef& file,
+                              unsigned line,
+                              unsigned column,
+                              const blpwtk2::StringRef& message,
+                              const blpwtk2::StringRef& stack_trace)
+{
+    std::string fileStr(file.data(), file.length());
+    std::string messageStr(message.data(), message.length());
+    std::string stackTraceStr(stack_trace.data(), stack_trace.length());
+
+    char buf[4096];
+
+    if (stackTraceStr.empty()) {
+        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\n", fileStr.c_str(), line, column, messageStr.c_str());
+    }
+    else {
+        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\nStack Trace:%s\n", fileStr.c_str(), line, column, messageStr.c_str(), stackTraceStr.c_str());
+    }
+
+    OutputDebugStringA(buf);
+}
+
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 {
     g_instance = instance;
@@ -1036,6 +1059,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     toolkitParams.enablePrintBackgroundGraphics();
     toolkitParams.setDictionaryPath(g_dictDir);
     toolkitParams.setLogMessageHandler(logMessageHandler);
+    toolkitParams.setConsoleLogMessageHandler(consoleLogMessageHandler);
+
     g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
 
     if (isHost) {

@@ -25,8 +25,8 @@
       'conditions': [
         ['OS == "android"', {
           'dependencies': [
-            'public/mojo_public.gyp:mojo_bindings_java',
-            'public/mojo_public.gyp:mojo_public_java',
+            'mojo_public.gyp:mojo_bindings_java',
+            'mojo_public.gyp:mojo_public_java',
           ],
         }],
       ]
@@ -73,25 +73,18 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_message_loop_tests',
         '../url/url.gyp:url_lib',
-        'edk/mojo_edk.gyp:mojo_common_test_support',
-        'edk/mojo_edk.gyp:mojo_run_all_unittests',
         'mojo_common_lib',
+        'mojo_edk.gyp:mojo_system_impl',
+        'mojo_edk.gyp:mojo_common_test_support',
+        'mojo_edk.gyp:mojo_run_all_unittests',
         'mojo_environment_chromium',
-        'public/mojo_public.gyp:mojo_cpp_bindings',
-        'public/mojo_public.gyp:mojo_public_test_utils',
+        'mojo_public.gyp:mojo_cpp_bindings',
+        'mojo_public.gyp:mojo_public_test_utils',
       ],
       'sources': [
         'common/common_type_converters_unittest.cc',
         'common/handle_watcher_unittest.cc',
         'common/message_pump_mojo_unittest.cc',
-        'edk/test/multiprocess_test_helper_unittest.cc',
-      ],
-      'conditions': [
-        ['OS=="ios"', {
-          'sources!': [
-            'edk/test/multiprocess_test_helper_unittest.cc',
-          ],
-        }],
       ],
     },
     {
@@ -132,6 +125,8 @@
         'environment/default_async_waiter_impl.h',
         'environment/default_logger_impl.cc',
         'environment/default_logger_impl.h',
+        'environment/default_run_loop_impl.cc',
+        'environment/default_run_loop_impl.h',
       ],
       'include_dirs': [
         '..',
@@ -148,10 +143,10 @@
       'dependencies': [
         'mojo_common_lib',
         'mojo_environment_chromium',
-        'public/mojo_public.gyp:mojo_application_base',
+        'mojo_public.gyp:mojo_application_base',
        ],
       'export_dependent_settings': [
-        'public/mojo_public.gyp:mojo_application_base',
+        'mojo_public.gyp:mojo_application_base',
        ],
     },
   ],

@@ -25,25 +25,13 @@
 #define KeyboardEvent_h
 
 #include "core/events/EventDispatchMediator.h"
+#include "core/events/KeyboardEventInit.h"
 #include "core/events/UIEventWithKeyState.h"
 
 namespace blink {
 
 class EventDispatcher;
 class PlatformKeyboardEvent;
-
-struct KeyboardEventInit : public UIEventInit {
-    KeyboardEventInit();
-
-    String keyIdentifier;
-    unsigned location;
-    bool ctrlKey;
-    bool altKey;
-    bool shiftKey;
-    bool metaKey;
-    bool repeat;
-    bool bbIsNumLock;
-};
 
 class KeyboardEvent final : public UIEventWithKeyState {
     DEFINE_WRAPPERTYPEINFO();
@@ -122,7 +110,7 @@ public:
     static PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> create(PassRefPtrWillBeRawPtr<KeyboardEvent>);
 private:
     explicit KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent>);
-    virtual bool dispatchEvent(EventDispatcher*) const override;
+    virtual bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(KeyboardEvent);

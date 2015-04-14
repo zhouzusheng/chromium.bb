@@ -4,6 +4,7 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
+#include "media/base/renderer_factory.h"
 #include "third_party/WebKit/public/web/WebPluginPlaceholder.h"
 
 namespace content {
@@ -127,6 +128,11 @@ bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
   return false;
 }
 
+bool ContentRendererClient::ShouldForwardToGuestContainer(
+    const IPC::Message& msg) {
+  return false;
+}
+
 bool ContentRendererClient::WillSendRequest(
     blink::WebFrame* frame,
     ui::PageTransition transition_type,
@@ -172,6 +178,11 @@ bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) {
 
 void ContentRendererClient::AddKeySystems(
     std::vector<media::KeySystemInfo>* key_systems) {
+}
+
+scoped_ptr<media::RendererFactory>
+ContentRendererClient::CreateMediaRendererFactory(RenderFrame* render_frame) {
+  return nullptr;
 }
 
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(

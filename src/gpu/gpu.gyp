@@ -123,28 +123,21 @@
     },
     {
       # GN version: //gpu:angle_unittests
+      # TODO(kbr): port this refactoring to the GN build.
       'target_name': 'angle_unittests',
       'type': '<(gtest_target_type)',
+      'includes': [
+        '../third_party/angle/build/common_defines.gypi',
+      ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '<(angle_path)/src/angle.gyp:translator_static',
-      ],
-      'variables': {
-        'ANGLE_DIR': '<(angle_path)',
-      },
-      'includes': [
-        '../third_party/angle/tests/preprocessor_tests/preprocessor_tests.gypi',
-        '../third_party/angle/tests/compiler_tests/compiler_tests.gypi',
       ],
       'include_dirs': [
         '..',
-        '<(angle_path)/include',
-        '<(angle_path)/src',
-        '<(angle_path)/src/compiler/preprocessor',
-        '<(angle_path)/tests',
+        '../third_party/angle/include',
       ],
-      'sources': [
+      'sources':
+      [
         'angle_unittest_main.cc',
       ],
     },
@@ -243,6 +236,7 @@
         'command_buffer/service/program_cache_unittest.cc',
         'command_buffer/service/shader_manager_unittest.cc',
         'command_buffer/service/shader_translator_unittest.cc',
+        'command_buffer/service/shader_translator_cache_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
         'command_buffer/service/texture_manager_unittest.cc',
@@ -312,6 +306,7 @@
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_chromium_path_rendering_unittest.cc',
+        'command_buffer/tests/gl_clear_framebuffer_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
         'command_buffer/tests/gl_gpu_memory_buffer_unittest.cc',
@@ -343,6 +338,7 @@
         ['OS == "win"', {
           'dependencies': [
             '../third_party/angle/src/angle.gyp:libEGL',
+            '../third_party/angle/src/angle.gyp:libGLESv2',
           ],
         }],
       ],
@@ -610,6 +606,26 @@
               'msvs_target_platform': 'x64',
             },
           },
+        },
+      ],
+    }],
+    ['OS == "win"', {
+      'targets': [
+        {
+          # TODO(kbr): port this target to the GN build.
+          'target_name': 'angle_end2end_tests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+          ],
+          'includes':
+          [
+            '../third_party/angle/build/common_defines.gypi',
+          ],
+          'sources':
+          [
+            'angle_end2end_tests_main.cc',
+          ],
         },
       ],
     }],

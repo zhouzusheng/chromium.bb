@@ -19,7 +19,7 @@ typedef HANDLE MutexHandle;
 #include <mach-o/dyld.h>
 #elif defined(OS_POSIX)
 #if defined(OS_NACL)
-#include <sys/time.h> // timespec doesn't seem to be in <time.h>
+#include <sys/time.h>  // timespec doesn't seem to be in <time.h>
 #else
 #include <sys/syscall.h>
 #endif
@@ -77,8 +77,7 @@ VlogInfo* g_vlog_info_prev = NULL;
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
   "INFO", "WARNING", "ERROR", "FATAL" };
 
-const char* log_severity_name(int severity)
-{
+const char* log_severity_name(int severity) {
   if (severity >= 0 && severity < LOG_NUM_SEVERITIES)
     return log_severity_names[severity];
   return "UNKNOWN";
@@ -156,7 +155,7 @@ uint64 TickCount() {
 void DeleteFilePath(const PathString& log_name) {
 #if defined(OS_WIN)
   DeleteFile(log_name.c_str());
-#elif defined (OS_NACL)
+#elif defined(OS_NACL)
   // Do nothing; unlink() isn't supported on NaCl.
 #else
   unlink(log_name.c_str());
@@ -363,7 +362,7 @@ bool BaseInitLoggingImpl(const LoggingSettings& settings) {
   // Can log only to the system debug log.
   CHECK_EQ(settings.logging_dest & ~LOG_TO_SYSTEM_DEBUG_LOG, 0);
 #endif
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   // Don't bother initializing g_vlog_info unless we use one of the
   // vlog switches.
   if (command_line->HasSwitch(switches::kV) ||
@@ -561,25 +560,29 @@ LogMessage::~LogMessage() {
 #endif
 
   // Give the wtk2 log message handler first dibs on the message.
+  bool wtk2_handled = false;
   if (wtk2_log_message_handler &&
       wtk2_log_message_handler(severity_, file_, line_,
                                message_start_, stream_.str())) {
     // The handler took care of it, no further processing.
-    return;
+    // Unless the severity is fatal!  Then we want to crash (further below).
+    wtk2_handled = true;
+    if (severity_ != LOG_FATAL)
+        return;
   }
 
   stream_ << std::endl;
   std::string str_newline(stream_.str());
 
   // Give any log message handler first dibs on the message.
-  if (log_message_handler &&
+  if (!wtk2_handled && log_message_handler &&
       log_message_handler(severity_, file_, line_,
                           message_start_, str_newline)) {
     // The handler took care of it, no further processing.
     return;
   }
 
-  if ((logging_destination & LOG_TO_SYSTEM_DEBUG_LOG) != 0) {
+  if (!wtk2_handled && (logging_destination & LOG_TO_SYSTEM_DEBUG_LOG) != 0) {
 #if defined(OS_WIN)
     OutputDebugStringA(str_newline.c_str());
 #elif defined(OS_ANDROID)
@@ -603,7 +606,7 @@ LogMessage::~LogMessage() {
 #endif
     ignore_result(fwrite(str_newline.data(), str_newline.size(), 1, stderr));
     fflush(stderr);
-  } else if (severity_ >= kAlwaysPrintErrorLevel) {
+  } else if (!wtk2_handled && severity_ >= kAlwaysPrintErrorLevel) {
     // When we're only outputting to a log file, above a certain log level, we
     // should still output to stderr so that we can better detect and diagnose
     // problems with unit tests, especially on the buildbots.
@@ -612,7 +615,7 @@ LogMessage::~LogMessage() {
   }
 
   // write to log file
-  if ((logging_destination & LOG_TO_FILE) != 0) {
+  if (!wtk2_handled && (logging_destination & LOG_TO_FILE) != 0) {
     // We can have multiple threads and/or processes, so try to prevent them
     // from clobbering each other's writes.
     // If the client app did not call InitLogging, and the lock has not
@@ -681,7 +684,7 @@ void LogMessage::Init(const char* file, int line) {
   if (log_timestamp) {
     time_t t = time(NULL);
     struct tm local_time = {0};
-#if _MSC_VER >= 1400
+#ifdef _MSC_VER
     localtime_s(&local_time, &t);
 #else
     localtime_r(&t, &local_time);
@@ -727,8 +730,8 @@ SystemErrorCode GetLastSystemErrorCode() {
 
 #if defined(OS_WIN)
 BASE_EXPORT std::string SystemErrorCodeToString(SystemErrorCode error_code) {
-  const int error_message_buffer_size = 256;
-  char msgbuf[error_message_buffer_size];
+  const int kErrorMessageBufferSize = 256;
+  char msgbuf[kErrorMessageBufferSize];
   DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
   DWORD len = FormatMessageA(flags, NULL, error_code, 0, msgbuf,
                              arraysize(msgbuf), NULL);
@@ -829,7 +832,7 @@ std::wstring GetLogFileFullPath() {
 }  // namespace logging
 
 std::ostream& std::operator<<(std::ostream& out, const wchar_t* wstr) {
-  return out << base::WideToUTF8(std::wstring(wstr));
+  return out << base::WideToUTF8(wstr);
 }
 
 static bool g_debugWithTimeEnabled = false;

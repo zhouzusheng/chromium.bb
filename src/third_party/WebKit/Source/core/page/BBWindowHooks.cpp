@@ -50,6 +50,11 @@ BBWindowHooks::BBWindowHooks(LocalFrame *frame)
 {
 }
 
+void BBWindowHooks::trace(Visitor* visitor)
+{
+    DOMWindowProperty::trace(visitor);
+}
+
 bool BBWindowHooks::matchSelector(Node *node, const String& selector)
 {
     if (node->isElementNode() && !selector.isEmpty()) {
@@ -103,28 +108,6 @@ String BBWindowHooks::getPlainText(Node* node, const String& excluder, const Str
     StringBuilder content;
     appendTextContent(node, content, excluder, mask);
     return content.toString();
-}
-
-void BBWindowHooks::fakePaint(Document* document)
-{
-    LocalFrame *frame = document->frame();
-
-    // Do a "fake" paint in order to execute the code that computes the
-    // rendered rect for each text match.
-    if (frame->view() && frame->contentRenderer()) {
-        document->updateLayout();  // Ensure layout is up to date.
-        LayoutRect visibleRect = frame->view()->visibleContentRect();
-        if (!visibleRect.isEmpty()) {
-            GraphicsContext context(static_cast<SkCanvas*>(0));
-
-            PaintBehavior oldBehavior = frame->view()->paintBehavior();
-            frame->view()->setPaintBehavior(
-                oldBehavior | PaintBehaviorFlattenCompositingLayers);
-            frame->view()->paintContents(
-                &context, enclosingIntRect(visibleRect));
-            frame->view()->setPaintBehavior(oldBehavior);
-        }
-    }
 }
 
 void BBWindowHooks::setTextMatchMarkerVisibility(Document* document, bool highlight)

@@ -32,17 +32,18 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
-#include <content/renderer/renderer_font_platform_win.h>
+#include <content/public/common/dwrite_font_platform_win.h>
+#include <content/renderer/render_frame_impl.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <printing/print_settings.h>
-#include <ui/gl/gl_implementation.h>
 #include <ui/views/corewm/tooltip_win.h>
 
 namespace blpwtk2 {
 
 static bool g_created = false;
 static ToolkitCreateParams::LogMessageHandler g_logMessageHandler = nullptr;
+static ToolkitCreateParams::ConsoleLogMessageHandler g_consoleLogMessageHandler = nullptr;
 
 static void setMaxSocketsPerProxy(int count)
 {
@@ -78,32 +79,45 @@ static void setMaxSocketsPerProxy(int count)
     }
 }
 
+static ToolkitCreateParams::LogMessageSeverity decodeLogSeverity(int severity)
+{
+    switch (severity) {
+    case logging::LOG_INFO:
+        return ToolkitCreateParams::kSeverityInfo;
+    case logging::LOG_WARNING:
+        return ToolkitCreateParams::kSeverityWarning;
+    case logging::LOG_ERROR:
+        return ToolkitCreateParams::kSeverityError;
+    case logging::LOG_FATAL:
+        return ToolkitCreateParams::kSeverityFatal;
+    default:
+        return ToolkitCreateParams::kSeverityVerbose;
+    }
+}
+
 static bool wtk2LogMessageHandlerFunction(int severity,
                                           const char* file,
                                           int line,
                                           size_t message_start,
                                           const std::string& str)
 {
-    ToolkitCreateParams::LogMessageSeverity severity2;
-    switch (severity) {
-    case logging::LOG_INFO:
-        severity2 = ToolkitCreateParams::kSeverityInfo;
-        break;
-    case logging::LOG_WARNING:
-        severity2 = ToolkitCreateParams::kSeverityWarning;
-        break;
-    case logging::LOG_ERROR:
-        severity2 = ToolkitCreateParams::kSeverityError;
-        break;
-    case logging::LOG_FATAL:
-        severity2 = ToolkitCreateParams::kSeverityFatal;
-        break;
-    default:
-        severity2 = ToolkitCreateParams::kSeverityVerbose;
-        break;
-    }
-    g_logMessageHandler(severity2, file, line, str.c_str() + message_start);
+    g_logMessageHandler(decodeLogSeverity(severity), file, line, str.c_str() + message_start);
     return true;
+}
+
+static void wtk2ConsoleLogMessageHandlerFunction(int severity,
+                                                 const std::string& file,
+                                                 int line,
+                                                 int column,
+                                                 const std::string& message,
+                                                 const std::string& stack_trace)
+{
+    g_consoleLogMessageHandler(decodeLogSeverity(severity),
+                               StringRef(file.data(), file.length()),
+                               line,
+                               column,
+                               StringRef(message.data(), message.length()),
+                               StringRef(stack_trace.data(), stack_trace.length()));
 }
 
 // static
@@ -111,8 +125,6 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
 {
     DCHECK(!g_created);
     DCHECK(!ToolkitImpl::instance());
-
-    gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
 
     Statics::initApplicationMainThread();
     Statics::threadMode = params.threadMode();
@@ -123,6 +135,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     g_logMessageHandler = params.logMessageHandler();
     if (g_logMessageHandler) {
         logging::SetWtk2LogMessageHandler(wtk2LogMessageHandlerFunction);
+    }
+
+    g_consoleLogMessageHandler = params.consoleLogMessageHandler();
+    if (g_consoleLogMessageHandler) {
+        content::RenderFrameImpl::SetConsoleLogMessageHandler(wtk2ConsoleLogMessageHandlerFunction);
     }
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());

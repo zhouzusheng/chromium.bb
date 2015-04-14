@@ -31,8 +31,11 @@
 #if !defined(EGL_PLATFORM_ANGLE_TYPE_ANGLE)
 #define EGL_PLATFORM_ANGLE_TYPE_ANGLE 0x3202
 #endif
-#if !defined(EGL_PLATFORM_ANGLE_TYPE_D3D11_WARP_ANGLE)
-#define EGL_PLATFORM_ANGLE_TYPE_D3D11_WARP_ANGLE 0x3206
+#if !defined(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE)
+#define EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE 0x3207
+#endif
+#if !defined(EGL_PLATFORM_ANGLE_USE_WARP_ANGLE)
+#define EGL_PLATFORM_ANGLE_USE_WARP_ANGLE 0x3208
 #endif
 
 namespace gfx {
@@ -349,8 +352,9 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
 }
 
 EGLNativeDisplayType GetPlatformDefaultEGLNativeDisplay() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableD3D11) ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp))
     return GetDC(NULL);
   return EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE;
 }

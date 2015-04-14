@@ -15,6 +15,7 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
         '<(DEPTH)/gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
@@ -120,8 +121,6 @@
         'scoped_make_current.h',
         'sync_control_vsync_provider.cc',
         'sync_control_vsync_provider.h',
-        '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
-        '<(gl_binding_output_dir)/gl_bindings_autogen_gl.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.h',
       ],
@@ -185,12 +184,30 @@
             'gl_surface_egl.h',
             'gl_egl_api_implementation.cc',
             'gl_egl_api_implementation.h',
-            '<(gl_binding_output_dir)/gl_bindings_autogen_egl.cc',
-            '<(gl_binding_output_dir)/gl_bindings_autogen_egl.h',
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/khronos',
         ],
+        }],
+        ['OS in ("win", "linux")', {
+          'sources': [
+            '<(gl_binding_output_dir)/gl_bindings_autogen_egl.cc',
+            '<(gl_binding_output_dir)/gl_bindings_autogen_egl.h',
+          ],
+        }],
+        ['OS != "android"', {
+          'sources': [
+            '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
+            '<(gl_binding_output_dir)/gl_bindings_autogen_gl.h',
+          ],
+        }],
+        ['OS == "android"', {
+          'sources': [
+            'gl_bindings_autogen_egl_android.cc',
+            'gl_bindings_autogen_egl_android.h',
+            'gl_bindings_autogen_gl_android.cc',
+            'gl_bindings_autogen_gl_android.h',
+          ],
         }],
         ['OS in ("android", "linux")', {
           'sources': [
@@ -210,6 +227,8 @@
             'gl_context_glx.h',
             'gl_glx_api_implementation.cc',
             'gl_glx_api_implementation.h',
+            'gl_image_glx.cc',
+            'gl_image_glx.h',
             'gl_surface_glx.cc',
             'gl_surface_glx.h',
             'gl_egl_api_implementation.cc',
@@ -263,6 +282,8 @@
           'sources': [
             'gl_context_cgl.cc',
             'gl_context_cgl.h',
+            'gl_fence_apple.cc',
+            'gl_fence_apple.h',
             'gl_image_io_surface.cc',
             'gl_image_io_surface.h',
             'scoped_cgl.cc',
@@ -308,14 +329,6 @@
         ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             '../android/ui_android.gyp:ui_java',
-          ],
-        }],
-        ['ubsan==1', {
-          # Due to a bug in LLVM (http://llvm.org/bugs/show_bug.cgi?id=21349),
-          # compilation hangs for some GL source files. Disable -O2 temporarily
-          # until http://crbug.com/426271 is fixed.
-          'cflags!': [
-            '-O2',
           ],
         }],
       ],

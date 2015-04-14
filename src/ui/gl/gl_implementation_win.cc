@@ -29,11 +29,13 @@
 #include "software_renderer.h"
 #endif
 
+#include <blpwtk2_products.h>
+
 namespace gfx {
 
 namespace {
 
-const wchar_t kD3DCompiler[] = L"D3DCompiler_46.dll";
+const wchar_t kD3DCompiler[] = L"D3DCompiler_47.dll";
 
 void GL_BINDING_CALL MarshalClearDepthToClearDepthf(GLclampd depth) {
   glClearDepthf(static_cast<GLclampf>(depth));
@@ -162,7 +164,8 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       LoadD3DXLibrary(module_path, kD3DCompiler);
 
       base::FilePath gles_path;
-      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      const base::CommandLine* command_line =
+          base::CommandLine::ForCurrentProcess();
       bool using_swift_shader =
           command_line->GetSwitchValueASCII(switches::kUseGL) == "swiftshader";
       if (using_swift_shader) {
@@ -176,81 +179,57 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
         gles_path = module_path;
       }
 
-      if (GetBLPAngleDLLName()) {
-        // Load blpangle.dll instead of libglesv2.dll and libegl.dll.
-        base::NativeLibrary blpangle_library = base::LoadNativeLibrary(
-            gles_path.AppendASCII(GetBLPAngleDLLName()), NULL);
-        if (!blpangle_library) {
-          DVLOG(1) << GetBLPAngleDLLName() << " not found";
-          return false;
-        }
-
-        GLGetProcAddressProc get_proc_address =
-            reinterpret_cast<GLGetProcAddressProc>(
-                base::GetFunctionPointerFromNativeLibrary(
-                    blpangle_library, "blpangle_getProcAddress"));
-        if (!get_proc_address) {
-            LOG(ERROR) << "blpangle_getProcAddress not found.";
-            base::UnloadNativeLibrary(blpangle_library);
-            return false;
-        }
-
-        SetGLGetProcAddressProc(get_proc_address);
-        AddGLNativeLibrary(blpangle_library);
+      // Load libglesv2.dll before libegl.dll because the latter is dependent on
+      // the former and if there is another version of libglesv2.dll in the dll
+      // search path, it will get loaded instead.
+      base::NativeLibrary gles_library = base::LoadNativeLibrary(
+          gles_path.AppendASCII(BLPCR_GLESV2_DLL_NAME), NULL);
+      if (!gles_library) {
+        LOG(WARNING) << BLPCR_GLESV2_DLL_NAME << " not found";
+        return false;
       }
-      else {
-        // Load libglesv2.dll before libegl.dll because the latter is dependent on
-        // the former and if there is another version of libglesv2.dll in the dll
-        // search path, it will get loaded instead.
-        base::NativeLibrary gles_library = base::LoadNativeLibrary(
-            gles_path.Append(L"libglesv2.dll"), NULL);
-        if (!gles_library) {
-          DVLOG(1) << "libglesv2.dll not found";
-          return false;
-        }
 
-        // When using EGL, first try eglGetProcAddress and then Windows
-        // GetProcAddress on both the EGL and GLES2 DLLs.
-        base::NativeLibrary egl_library = base::LoadNativeLibrary(
-            gles_path.Append(L"libegl.dll"), NULL);
-        if (!egl_library) {
-          DVLOG(1) << "libegl.dll not found.";
-          base::UnloadNativeLibrary(gles_library);
-          return false;
-        }
+      // When using EGL, first try eglGetProcAddress and then Windows
+      // GetProcAddress on both the EGL and GLES2 DLLs.
+      base::NativeLibrary egl_library = base::LoadNativeLibrary(
+          gles_path.AppendASCII(BLPCR_EGL_DLL_NAME), NULL);
+      if (!egl_library) {
+        LOG(WARNING) << BLPCR_EGL_DLL_NAME << " not found.";
+        base::UnloadNativeLibrary(gles_library);
+        return false;
+      }
 
 #if defined(ENABLE_SWIFTSHADER)
-        if (using_swift_shader) {
-          SetupSoftwareRenderer(gles_library);
-        }
+      if (using_swift_shader) {
+        SetupSoftwareRenderer(gles_library);
+      }
 #endif
 
-        if (!using_swift_shader) {
-          SetTraceFunctionPointersFunc set_trace_function_pointers =
-              reinterpret_cast<SetTraceFunctionPointersFunc>(
-                  base::GetFunctionPointerFromNativeLibrary(
-                      gles_library, "SetTraceFunctionPointers"));
-          if (set_trace_function_pointers) {
-            set_trace_function_pointers(&AngleGetTraceCategoryEnabledFlag,
-                                        &AngleAddTraceEvent);
-          }
-        }
-
-        GLGetProcAddressProc get_proc_address =
-            reinterpret_cast<GLGetProcAddressProc>(
+      if (!using_swift_shader) {
+        SetTraceFunctionPointersFunc set_trace_function_pointers =
+            reinterpret_cast<SetTraceFunctionPointersFunc>(
                 base::GetFunctionPointerFromNativeLibrary(
-                    egl_library, "eglGetProcAddress"));
-        if (!get_proc_address) {
-          LOG(ERROR) << "eglGetProcAddress not found.";
-          base::UnloadNativeLibrary(egl_library);
-          base::UnloadNativeLibrary(gles_library);
-          return false;
+                    gles_library, "SetTraceFunctionPointers"));
+        if (set_trace_function_pointers) {
+          set_trace_function_pointers(&AngleGetTraceCategoryEnabledFlag,
+                                      &AngleAddTraceEvent);
         }
-
-        SetGLGetProcAddressProc(get_proc_address);
-        AddGLNativeLibrary(egl_library);
-        AddGLNativeLibrary(gles_library);
       }
+
+      GLGetProcAddressProc get_proc_address =
+          reinterpret_cast<GLGetProcAddressProc>(
+              base::GetFunctionPointerFromNativeLibrary(
+                  egl_library, "eglGetProcAddress"));
+      if (!get_proc_address) {
+        LOG(ERROR) << "eglGetProcAddress not found.";
+        base::UnloadNativeLibrary(egl_library);
+        base::UnloadNativeLibrary(gles_library);
+        return false;
+      }
+
+      SetGLGetProcAddressProc(get_proc_address);
+      AddGLNativeLibrary(egl_library);
+      AddGLNativeLibrary(gles_library);
       SetGLImplementation(kGLImplementationEGLGLES2);
 
       InitializeStaticGLBindingsGL();

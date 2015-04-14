@@ -244,13 +244,9 @@ def main(args):
   # from the default installed location.
   bpcDevPath = os.environ.get('BPCDEV_PATH')
   if bpcDevPath:
-    windowsSdkPath = os.path.join(bpcDevPath, 'win_sdk8.0')
-    directXSdkPath = os.path.join(bpcDevPath, 'directx_june2010')
+    windowsSdkPath = os.path.join(bpcDevPath, 'win_sdk8.1')
     if os.path.isdir(windowsSdkPath):
       applyVariableToEnvironment('GYP_DEFINES', 'windows_sdk_path', windowsSdkPath.replace('\\', '/'))
-    if os.path.isdir(directXSdkPath):
-      applyVariableToEnvironment('GYP_DEFINES', 'directx_sdk_path', directXSdkPath.replace('\\', '/'))
-      os.environ['DXSDK_DIR'] = directXSdkPath
 
   if 'GYP_GENERATORS' in os.environ:
     return execGyp(args)

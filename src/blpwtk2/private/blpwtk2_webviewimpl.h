@@ -229,9 +229,14 @@ class WebViewImpl : public WebView,
 
     /////// WebContentsObserver overrides
 
-    // This method is invoked after the WebContents decided which RenderViewHost
-    // to use for the next navigation, but before the navigation starts.
-    void AboutToNavigateRenderView(content::RenderViewHost* render_view_host) override;
+    // This method is invoked after the WebContents decides which RenderFrameHost
+    // to use for the next browser-initiated navigation, but before the navigation
+    // starts.  It is not called for most renderer-initiated navigations, and it
+    // does not guarantee that the navigation will commit (e.g., 204s, downloads).
+    //
+    // DEPRECATED.  This method is difficult to use correctly and should be
+    // removed.  TODO(creis): Remove in http://crbug.com/424641.
+    void AboutToNavigateRenderFrame(content::RenderFrameHost* render_frame_host) override;
 
     // This method is invoked when the navigation is done, i.e. the spinner of
     // the tab will stop spinning, and the onload event was dispatched.

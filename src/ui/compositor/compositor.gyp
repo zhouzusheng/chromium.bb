@@ -62,6 +62,7 @@
         'layer_tree_owner.cc',
         'layer_tree_owner.h',
         'layer_type.h',
+        'reflector.cc',
         'reflector.h',
         'scoped_animation_duration_scale_mode.cc',
         'scoped_animation_duration_scale_mode.h',
@@ -77,6 +78,7 @@
           'dependencies': [
             '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
             '<(angle_path)/src/angle.gyp:libEGL',
+            '<(angle_path)/src/angle.gyp:libGLESv2',
           ],
         }],
       ],
@@ -88,6 +90,7 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/cc/cc.gyp:cc_surfaces',
+        '<(DEPTH)/gpu/blink/gpu_blink.gyp:gpu_blink',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
         '<(DEPTH)/ui/base/ui_base.gyp:ui_base',

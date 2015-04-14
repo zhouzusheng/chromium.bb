@@ -37,7 +37,7 @@ PrefServiceFactory::~PrefServiceFactory() {}
 
 void PrefServiceFactory::SetUserPrefsFile(
     const base::FilePath& prefs_file,
-    base::SequencedTaskRunner* task_runner) {
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner) {
   user_prefs_ = new JsonPrefStore(
       prefs_file, task_runner, scoped_ptr<PrefFilter>());
 }

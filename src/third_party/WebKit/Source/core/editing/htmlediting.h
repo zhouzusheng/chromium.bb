@@ -36,7 +36,6 @@ namespace blink {
 
 class Document;
 class Element;
-class ExceptionState;
 class HTMLBRElement;
 class HTMLElement;
 class HTMLLIElement;
@@ -95,6 +94,11 @@ int caretMaxOffset(const Node*);
 
 // boolean functions on Node
 
+inline bool isEmptyNonEditableNodeInEditable(const Node* node)
+{
+    return !node->hasChildren() && !node->hasEditableStyle() && node->parentNode() && node->parentNode()->hasEditableStyle();
+}
+
 // FIXME: editingIgnoresContent, canHaveChildrenForEditing, and isAtomicNode
 // should be renamed to reflect its usage.
 
@@ -102,7 +106,7 @@ int caretMaxOffset(const Node*);
 // There are no VisiblePositions inside these nodes.
 inline bool editingIgnoresContent(const Node* node)
 {
-    return !node->canContainRangeEndPoint();
+    return !node->canContainRangeEndPoint() || isEmptyNonEditableNodeInEditable(node);
 }
 
 inline bool canHaveChildrenForEditing(const Node* node)
@@ -123,7 +127,7 @@ bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
 bool isHTMLListElement(const Node*);
 bool isListItem(const Node*);
-bool isNodeRendered(const Node*);
+bool isNodeRendered(const Node&);
 bool isNodeVisiblyContainedWithin(Node&, const Range&);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool areIdenticalElements(const Node*, const Node*);
@@ -177,7 +181,6 @@ enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool lineBreakExistsAtPosition(const Position&);
-bool isVisiblyAdjacent(const Position& first, const Position& second);
 bool isAtUnsplittableElement(const Position&);
 
 // miscellaneous functions on Position
@@ -207,14 +210,6 @@ int indexForVisiblePosition(const VisiblePosition&, RefPtrWillBeRawPtr<Container
 VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // -------------------------------------------------------------------------
-// Range
-// -------------------------------------------------------------------------
-
-// Functions returning Range
-
-PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
-
-// -------------------------------------------------------------------------
 // HTMLElement
 // -------------------------------------------------------------------------
 
@@ -226,7 +221,6 @@ PassRefPtrWillBeRawPtr<HTMLOListElement> createOrderedListElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLUListElement> createUnorderedListElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLLIElement> createListItemElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
-PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
 HTMLElement* outermostEnclosingList(Node*, HTMLElement* rootList = nullptr);
@@ -239,7 +233,6 @@ Node* enclosingListChild(Node*);
 // Functions returning Element
 
 PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Text> tabTextNode);
 PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, const String& tabText);
 PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document&);
 

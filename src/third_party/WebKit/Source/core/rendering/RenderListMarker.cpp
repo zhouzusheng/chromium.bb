@@ -1120,13 +1120,13 @@ LayoutRect RenderListMarker::localSelectionRect()
     if (!box)
         return LayoutRect(LayoutPoint(), size());
     RootInlineBox& root = inlineBoxWrapper()->root();
-    LayoutUnit newLogicalTop = root.block().style()->slowIsFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
+    LayoutUnit newLogicalTop = root.block().style()->isFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
     if (root.block().style()->isHorizontalWritingMode())
-        return LayoutRect(0, newLogicalTop, width(), root.selectionHeight());
-    return LayoutRect(newLogicalTop, 0, root.selectionHeight(), height());
+        return LayoutRect(0, newLogicalTop, size().width(), root.selectionHeight());
+    return LayoutRect(newLogicalTop, 0, root.selectionHeight(), size().height());
 }
 
-void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void RenderListMarker::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     ListMarkerPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -1163,7 +1163,7 @@ void RenderListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
     if (o != m_image->data())
         return;
 
-    if (width() != m_image->imageSize(this, style()->effectiveZoom()).width() + cMarkerPadding || height() != m_image->imageSize(this, style()->effectiveZoom()).height() || m_image->errorOccurred())
+    if (size() != m_image->imageSize(this, style()->effectiveZoom()) + LayoutSize(cMarkerPadding, 0) || m_image->errorOccurred())
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     else
         setShouldDoFullPaintInvalidation();
@@ -1415,8 +1415,6 @@ void RenderListMarker::computePreferredLogicalWidths()
 
 void RenderListMarker::updateMargins()
 {
-    const FontMetrics& fontMetrics = style()->fontMetrics();
-
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 
@@ -1570,7 +1568,7 @@ IntRect RenderListMarker::getRelativeMarkerRect()
 
     if (!style()->isHorizontalWritingMode()) {
         relativeRect = relativeRect.transposedRect();
-        relativeRect.setX(width() - relativeRect.x() - relativeRect.width());
+        relativeRect.setX(size().width() - relativeRect.x() - relativeRect.width());
     }
 
     return relativeRect;
@@ -1593,8 +1591,11 @@ LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayer
         return LayoutRect();
 
     RootInlineBox& root = inlineBoxWrapper()->root();
-    LayoutRect rect(0, root.selectionTop() - y(), width(), root.selectionHeight());
+    LayoutRect rect(0, root.selectionTop() - location().y(), size().width(), root.selectionHeight());
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
+    // FIXME: groupedMapping() leaks the squashing abstraction.
+    if (paintInvalidationContainer->layer()->groupedMapping())
+        RenderLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 

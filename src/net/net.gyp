@@ -376,12 +376,7 @@
         }],
         [ 'enable_websockets != 1', {
             'sources/': [
-              ['exclude', '^socket_stream/'],
               ['exclude', '^websockets/'],
-            ],
-            'sources!': [
-              'spdy/spdy_websocket_stream.cc',
-              'spdy/spdy_websocket_stream.h',
             ],
         }],
         [ 'enable_mdns != 1', {
@@ -447,6 +442,12 @@
             },
           },
         ],
+        [ 'OS == "ios" or OS == "mac"', {
+            'sources': [
+              '<@(net_base_mac_ios_sources)',
+            ],
+          },
+        ],
         ['OS=="android" and _toolset=="target" and android_webview_build == 0', {
           'dependencies': [
              'net_java',
@@ -492,10 +493,14 @@
             ['include', '^base/platform_mime_util_linux\\.cc$'],
             ['include', '^base/address_tracker_linux\\.cc$'],
             ['include', '^base/address_tracker_linux\\.h$'],
+            ['include', '^base/net_util_linux\\.cc$'],
+            ['include', '^base/net_util_linux\\.h$'],
           ],
         }],
         ['OS == "ios"', {
           'sources/': [
+            ['include', '^base/net_util_mac\\.cc$'],
+            ['include', '^base/net_util_mac\\.h$'],
             ['include', '^base/network_change_notifier_mac\\.cc$'],
             ['include', '^base/network_config_watcher_mac\\.cc$'],
             ['include', '^base/platform_mime_util_mac\\.mm$'],
@@ -546,6 +551,11 @@
           ],
           'sources': [
             '<@(net_linux_test_sources)',
+          ],
+        }],
+        ['OS == "mac" or OS == "ios"', {
+          'sources': [
+            '<@(net_base_test_mac_ios_sources)',
           ],
         }],
         ['chromeos==1', {
@@ -651,9 +661,11 @@
         }],
         [ 'enable_websockets != 1', {
             'sources/': [
-              ['exclude', '^socket_stream/'],
               ['exclude', '^websockets/'],
-              ['exclude', '^spdy/spdy_websocket_stream_unittest\\.cc$'],
+              ['exclude', '^server/'],
+            ],
+            'dependencies!': [
+              'http_server',
             ],
         }],
         ['disable_file_support==1', {
@@ -901,6 +913,8 @@
         'server/http_server_response_info.h',
         'server/web_socket.cc',
         'server/web_socket.h',
+        'server/web_socket_encoder.cc',
+        'server/web_socket_encoder.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],

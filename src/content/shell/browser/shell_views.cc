@@ -100,6 +100,7 @@ class ShellViewsDelegateAura : public views::ViewsDelegate {
       bool has_submenu) override {}
 #if defined(OS_WIN)
   HICON GetDefaultWindowIcon() const override { return NULL; }
+  HICON GetSmallWindowIcon() const override { return NULL;  }
   bool IsWindowInMetro(gfx::NativeWindow window) const override { return false; }
 #endif
   views::NonClientFrameView* CreateDefaultNonClientFrameView(
@@ -424,7 +425,6 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       Shell::CreateNewWindow(shell_->web_contents()->GetBrowserContext(),
                              shell_->web_contents()->GetVisibleURL(),
                              NULL,
-                             MSG_ROUTING_NONE,
                              gfx::Size());
     } else if (sender == back_button_)
       shell_->GoBackOrForward(-1);

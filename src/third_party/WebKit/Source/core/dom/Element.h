@@ -48,6 +48,7 @@ class ClientRectList;
 class CustomElementDefinition;
 class DOMStringMap;
 class DOMTokenList;
+class Dictionary;
 class Document;
 class ElementRareData;
 class ElementShadow;
@@ -59,6 +60,7 @@ class Locale;
 class MutableStylePropertySet;
 class PropertySetCSSStyleDeclaration;
 class PseudoElement;
+class ScrollToOptions;
 class ShadowRoot;
 class StylePropertySet;
 
@@ -181,11 +183,16 @@ public:
     virtual double scrollLeft();
     virtual double scrollTop();
     virtual void setScrollLeft(double);
-    virtual void setScrollLeft(const Dictionary& scrollOptionsHorizontal, ExceptionState&);
     virtual void setScrollTop(double);
-    virtual void setScrollTop(const Dictionary& scrollOptionsVertical, ExceptionState&);
     virtual int scrollWidth();
     virtual int scrollHeight();
+
+    virtual void scrollBy(double x, double y);
+    virtual void scrollBy(const ScrollToOptions&);
+    virtual void scrollTo(double x, double y);
+    virtual void scrollTo(const ScrollToOptions&);
+    void scroll(double x, double y) { scrollTo(x, y); }
+    void scroll(const ScrollToOptions& scrollToOptions) { scrollTo(scrollToOptions); }
 
 #define BB_HAS_ELEMENT_EXTENSIONS
     // Bloomberg-specific extensions
@@ -201,6 +208,9 @@ public:
 
     PassRefPtrWillBeRawPtr<ClientRectList> getClientRects();
     PassRefPtrWillBeRawPtr<ClientRect> getBoundingClientRect();
+
+    const AtomicString& computedRole();
+    String computedName();
 
     // Returns the absolute bounding box translated into screen coordinates:
     IntRect screenRect() const;
@@ -421,6 +431,7 @@ public:
     virtual bool matchesReadWritePseudoClass() const { return false; }
     virtual bool matchesValidityPseudoClasses() const { return false; }
     bool matches(const String& selectors, ExceptionState&);
+    Element* closest(const String& selectors, ExceptionState&);
     virtual bool shouldAppearIndeterminate() const { return false; }
 
     DOMTokenList& classList();
@@ -456,7 +467,7 @@ public:
     void clearHasPendingResources() { clearElementFlag(HasPendingResources); }
     virtual void buildPendingResource() { };
 
-    void setCustomElementDefinition(PassRefPtr<CustomElementDefinition>);
+    void setCustomElementDefinition(PassRefPtrWillBeRawPtr<CustomElementDefinition>);
     CustomElementDefinition* customElementDefinition() const;
 
     bool containsFullScreenElement() const { return hasElementFlag(ContainsFullScreenElement); }
@@ -486,8 +497,6 @@ public:
 
     InputMethodContext& inputMethodContext();
     bool hasInputMethodContext() const;
-
-    void setPrefix(const AtomicString&, ExceptionState&);
 
     void synchronizeAttribute(const AtomicString& localName) const;
 
@@ -540,15 +549,22 @@ protected:
 
     Node* insertAdjacent(const String& where, Node* newChild, ExceptionState&);
 
+    virtual void parserDidSetAttributes() { };
+
+    void scrollRenderBoxBy(const ScrollToOptions&);
+    void scrollRenderBoxTo(const ScrollToOptions&);
+    void scrollFrameBy(const ScrollToOptions&);
+    void scrollFrameTo(const ScrollToOptions&);
+
 private:
     bool hasElementFlag(ElementFlags mask) const { return hasRareData() && hasElementFlagInternal(mask); }
     void setElementFlag(ElementFlags, bool value = true);
     void clearElementFlag(ElementFlags);
     bool hasElementFlagInternal(ElementFlags) const;
 
-    bool isElementNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isDocumentFragment() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isDocumentNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isDocumentFragment() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isDocumentNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
 
@@ -563,6 +579,7 @@ private:
     inline void checkForEmptyStyleChange();
 
     void updatePseudoElement(PseudoId, StyleRecalcChange);
+    bool updateFirstLetter(Element*);
 
     inline void createPseudoElementIfNeeded(PseudoId);
 
@@ -637,7 +654,7 @@ private:
 
     bool isJavaScriptURLAttribute(const Attribute&) const;
 
-    v8::Handle<v8::Object> wrapCustomElement(v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    v8::Handle<v8::Object> wrapCustomElement(v8::Isolate*, v8::Handle<v8::Object> creationContext);
 
     RefPtrWillBeMember<ElementData> m_elementData;
 };

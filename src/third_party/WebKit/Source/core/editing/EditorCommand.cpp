@@ -63,6 +63,7 @@
 #include "core/page/EventHandler.h"
 #include "core/rendering/RenderBox.h"
 #include "platform/KillRing.h"
+#include "platform/UserGestureIndicator.h"
 #include "platform/scroll/Scrollbar.h"
 #include "public/platform/Platform.h"
 #include "wtf/text/AtomicString.h"
@@ -112,7 +113,6 @@ static bool applyCommandToFrame(LocalFrame& frame, EditorCommandSource source, E
         frame.editor().applyStyleToSelection(style, action);
         return true;
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         frame.editor().applyStyle(style);
         return true;
     }
@@ -187,7 +187,6 @@ static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource so
         frame.editor().applyParagraphStyleToSelection(style.get(), action);
         return true;
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         frame.editor().applyParagraphStyle(style.get());
         return true;
     }
@@ -306,7 +305,6 @@ static bool executeCopy(LocalFrame& frame, Event*, EditorCommandSource, const St
 
 static bool executeCreateLink(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
-    // FIXME: If userInterface is true, we should display a dialog box to let the user enter a URL.
     if (value.isEmpty())
         return false;
     ASSERT(frame.document());
@@ -339,7 +337,6 @@ static bool executeDelete(LocalFrame& frame, Event*, EditorCommandSource source,
         return true;
     }
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         // If the current selection is a caret, delete the preceding character. IE performs forwardDelete, but we currently side with Firefox.
         // Doesn't scroll to make the selection visible, or modify the kill ring (this time, siding with IE, not Firefox).
         ASSERT(frame.document());
@@ -475,7 +472,6 @@ static bool executeForwardDelete(LocalFrame& frame, Event*, EditorCommandSource 
         frame.editor().deleteWithDirection(DirectionForward, CharacterGranularity, false, true);
         return true;
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         // Doesn't scroll to make the selection visible, or modify the kill ring.
         // ForwardDelete is not implemented in IE or Firefox, so this behavior is only needed for
         // backward compatibility with ourselves, and for consistency with Delete.
@@ -536,10 +532,10 @@ static bool executeInsertHTMLNested(LocalFrame& frame, Event*, EditorCommandSour
 
 static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
-    // FIXME: If userInterface is true, we should display a dialog box and let the user choose a local image.
     ASSERT(frame.document());
     RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
-    image->setSrc(value);
+    if (!value.isEmpty())
+        image->setSrc(value);
     return executeInsertElement(frame, image.release());
 }
 
@@ -549,7 +545,6 @@ static bool executeInsertLineBreak(LocalFrame& frame, Event* event, EditorComman
     case CommandFromMenuOrKeyBinding:
         return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\n", event, TextEventInputLineBreak);
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         // Doesn't scroll to make the selection visible, or modify the kill ring.
         // InsertLineBreak is not implemented in IE or Firefox, so this behavior is only needed for
         // backward compatibility with ourselves, and for consistency with other commands.
@@ -1204,7 +1199,7 @@ static bool supportedCopyCut(LocalFrame* frame)
         return false;
 
     Settings* settings = frame->settings();
-    bool defaultValue = settings && settings->javaScriptCanAccessClipboard();
+    bool defaultValue = (settings && settings->javaScriptCanAccessClipboard()) || UserGestureIndicator::processingUserGesture();
     return frame->editor().client().canCopyCut(frame, defaultValue);
 }
 
@@ -1279,7 +1274,6 @@ static bool enabledDelete(LocalFrame& frame, Event* event, EditorCommandSource s
     case CommandFromMenuOrKeyBinding:
         return frame.editor().canDelete();
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         // "Delete" from DOM is like delete/backspace keypress, affects selected range if non-empty,
         // otherwise removes a character
         return enabledInEditableText(frame, event, source);
@@ -1786,7 +1780,6 @@ bool Editor::Command::isSupported() const
     case CommandFromMenuOrKeyBinding:
         return true;
     case CommandFromDOM:
-    case CommandFromDOMWithUserInterface:
         return m_command->isSupportedFromDOM(m_frame.get());
     }
     ASSERT_NOT_REACHED();

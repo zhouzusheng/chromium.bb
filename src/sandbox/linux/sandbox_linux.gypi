@@ -129,15 +129,12 @@
         'bpf_dsl/policy_compiler.cc',
         'bpf_dsl/policy_compiler.h',
         'bpf_dsl/trap_registry.h',
-        'seccomp-bpf/basicblock.cc',
-        'seccomp-bpf/basicblock.h',
         'seccomp-bpf/codegen.cc',
         'seccomp-bpf/codegen.h',
         'seccomp-bpf/die.cc',
         'seccomp-bpf/die.h',
         'seccomp-bpf/errorcode.cc',
         'seccomp-bpf/errorcode.h',
-        'seccomp-bpf/instruction.h',
         'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
@@ -152,6 +149,7 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services',
         'sandbox_services_headers',
       ],
       'defines': [
@@ -180,6 +178,7 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services',
         'seccomp_bpf',
       ],
       'defines': [
@@ -222,13 +221,19 @@
         'services/init_process_reaper.h',
         'services/scoped_process.cc',
         'services/scoped_process.h',
+        'services/syscall_wrappers.cc',
+        'services/syscall_wrappers.h',
         'services/thread_helpers.cc',
         'services/thread_helpers.h',
         'services/yama.cc',
         'services/yama.h',
+        'syscall_broker/broker_channel.cc',
+        'syscall_broker/broker_channel.h',
         'syscall_broker/broker_client.cc',
         'syscall_broker/broker_client.h',
         'syscall_broker/broker_common.h',
+        'syscall_broker/broker_file_permission.cc',
+        'syscall_broker/broker_file_permission.h',
         'syscall_broker/broker_host.cc',
         'syscall_broker/broker_host.h',
         'syscall_broker/broker_policy.cc',
@@ -247,6 +252,8 @@
           'sources': [
             'services/credentials.cc',
             'services/credentials.h',
+            'services/proc_util.cc',
+            'services/proc_util.h',
           ],
           'dependencies': [
             # for capabilities.cc.

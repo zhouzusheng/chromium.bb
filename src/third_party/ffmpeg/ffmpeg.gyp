@@ -90,7 +90,7 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['target_arch != "arm" and os_config != "linux-noasm"', {
+    ['(target_arch == "ia32" or target_arch == "x64") and os_config != "linux-noasm"', {
       'targets': [
         {
           'target_name': 'ffmpeg_yasm',
@@ -143,7 +143,7 @@
           },
         },
       ] # targets
-    }], # arch != arm
+    }], # (target_arch == "ia32" or target_arch == "x64")
     ['build_ffmpegsumo != 0', {
       'includes': [
         'ffmpeg_generated.gypi',
@@ -198,6 +198,8 @@
               # matroskadec.c has a "failed:" label that's only used if some
               # CONFIG_ flags we don't set are set.
               '-Wno-unused-label',
+              # This fires on `av_assert0(!"valid element size")` in utils.c
+              '-Wno-string-conversion',
             ],
           },
           'cflags': [
@@ -207,7 +209,7 @@
             '-Wno-deprecated-declarations',
           ],
           'conditions': [
-            ['target_arch != "arm" and target_arch != "mipsel" and os_config != "linux-noasm"', {
+            ['(target_arch == "ia32" or target_arch == "x64") and os_config != "linux-noasm"', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -306,6 +308,8 @@
                   '-L<(shared_generated_dir)',
                 ],
                 'libraries': [
+                  '-lm',
+                  '-lrt',
                   '-lz',
                 ],
               },
@@ -400,6 +404,14 @@
                   # TODO(wolenetz): We should fix this.  http://crbug.com/171009
                   'msvs_disabled_warnings' : [
                     4267
+                  ],
+                }],
+                ['win_use_allocator_shim==1', {
+                  'dependencies': [
+                    '../../base/allocator/allocator.gyp:allocator',
+                  ],
+                  'sources': [
+                    'chromium/dllmain.cc',
                   ],
                 }],
               ],

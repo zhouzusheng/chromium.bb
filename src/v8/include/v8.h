@@ -1179,7 +1179,7 @@ class V8_EXPORT ScriptCompiler {
      * function will be called on a background thread, so it's OK to block and
      * wait for the data, if the embedder doesn't have data yet. Returns the
      * length of the data returned. When the data ends, GetMoreData should
-     * return 0. Caller takes ownership of the data.
+     * return 0. Caller will release the data by calling |ReleaseData|.
      *
      * When streaming UTF-8 data, V8 handles multi-byte characters split between
      * two data chunks, but doesn't handle multi-byte characters split between
@@ -1192,6 +1192,11 @@ class V8_EXPORT ScriptCompiler {
      * V8 has parsed the data it received so far.
      */
     virtual size_t GetMoreData(const uint8_t** src) = 0;
+
+    /**
+     * Release data that was previously obtained from |GetMoreData|.
+     */
+    virtual void ReleaseData(const uint8_t* src) = 0;
   };
 
 

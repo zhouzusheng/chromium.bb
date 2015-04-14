@@ -53,6 +53,15 @@ class ToolkitCreateParams {
                                      int line,
                                      const char* message);
 
+    // The callback function that will be invoked whenever a log message
+    // is printed to the Web Console
+    typedef void(*ConsoleLogMessageHandler)(LogMessageSeverity severity,
+                                            const StringRef& file,
+                                            unsigned line,
+                                            unsigned column,
+                                            const StringRef& message,
+                                            const StringRef& stack_trace);
+
     BLPWTK2_EXPORT ToolkitCreateParams();
     BLPWTK2_EXPORT ToolkitCreateParams(const ToolkitCreateParams&);
     BLPWTK2_EXPORT ~ToolkitCreateParams();
@@ -70,6 +79,10 @@ class ToolkitCreateParams {
     // Use this method to install a custom log message handler instead.  Note
     // that the handler callback can be invoked from any thread.
     BLPWTK2_EXPORT void setLogMessageHandler(LogMessageHandler handler);
+
+    // Use this method to install a custom log message handler for the
+    // Web Console. This handler is only used for in-process renderers.
+    BLPWTK2_EXPORT void setConsoleLogMessageHandler(ConsoleLogMessageHandler handler);
 
     // By default, the in-process renderer is enabled.  This uses some
     // additional resources, even if in-process WebViews are not created.  Call
@@ -144,6 +157,7 @@ class ToolkitCreateParams {
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
     LogMessageHandler logMessageHandler() const;
+    ConsoleLogMessageHandler consoleLogMessageHandler() const;
     bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;

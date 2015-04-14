@@ -90,11 +90,14 @@ void FrameConsole::addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleM
 
     String messageURL;
     unsigned lineNumber = 0;
+    unsigned columnNumber = 0;
     if (consoleMessage->callStack() && consoleMessage->callStack()->size()) {
         lineNumber = consoleMessage->callStack()->at(0).lineNumber();
+        columnNumber = consoleMessage->callStack()->at(0).columnNumber();
         messageURL = consoleMessage->callStack()->at(0).sourceURL();
     } else {
         lineNumber = consoleMessage->lineNumber();
+        columnNumber = consoleMessage->columnNumber();
         messageURL = consoleMessage->url();
     }
 
@@ -105,7 +108,7 @@ void FrameConsole::addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleM
 
     RefPtrWillBeRawPtr<ScriptCallStack> reportedCallStack = nullptr;
     if (consoleMessage->source() != ConsoleAPIMessageSource) {
-        if (consoleMessage->callStack() && frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL))
+        if (consoleMessage->callStack() && (consoleMessage->level() >= ErrorMessageLevel || frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL)))
             reportedCallStack = consoleMessage->callStack();
     } else {
         if (!frame().host() || (consoleMessage->scriptArguments() && !consoleMessage->scriptArguments()->argumentCount()))
@@ -114,14 +117,14 @@ void FrameConsole::addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleM
         if (!allClientReportingMessageTypes().contains(consoleMessage->type()))
             return;
 
-        if (frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL))
+        if (consoleMessage->level() >= ErrorMessageLevel || frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL))
             reportedCallStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
     }
 
     String stackTrace;
     if (reportedCallStack)
         stackTrace = FrameConsole::formatStackTraceString(consoleMessage->message(), reportedCallStack);
-    frame().chromeClient().addMessageToConsole(m_frame, consoleMessage->source(), consoleMessage->level(), consoleMessage->message(), lineNumber, messageURL, stackTrace);
+    frame().chromeClient().addMessageToConsole(m_frame, consoleMessage->source(), consoleMessage->level(), consoleMessage->message(), lineNumber, columnNumber, messageURL, stackTrace);
 }
 
 void FrameConsole::reportResourceResponseReceived(DocumentLoader* loader, unsigned long requestIdentifier, const ResourceResponse& response)

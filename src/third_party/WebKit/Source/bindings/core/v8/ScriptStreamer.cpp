@@ -117,6 +117,11 @@ public:
         return length;
     }
 
+    virtual void ReleaseData(const uint8_t* src) override
+    {
+        delete[] src;
+    }
+
     void didFinishLoading()
     {
         ASSERT(isMainThread());

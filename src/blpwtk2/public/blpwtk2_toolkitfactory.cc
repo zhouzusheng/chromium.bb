@@ -173,6 +173,14 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
         base::UTF8ToUTF16(html), params.isPrintBackgroundGraphicsEnabled());
 
     g_created = true;
+
+    if (!params.hostChannel().isEmpty()) {
+        // Eagerly startup threads so that we connect the host channel when
+        // the toolkit is initialized, instead of waiting for the first
+        // profile/webview to be created.
+        toolkit->startupThreads();
+    }
+
     return toolkit;
 }
 

@@ -118,7 +118,7 @@ class WebViewHost : public ProcessHostListener,
     // WebViewImplClient overrides
     void updateNativeViews(blpwtk2::NativeView webview,
                            blpwtk2::NativeView hiddenView) override;
-    void aboutToNativateRenderView(int routingId) override;
+    void gotNewRenderViewRoutingId(int renderViewRoutingId) override;
     void findStateWithReqId(int reqId,
                             int numberOfMatches,
                             int activeMatchOrdinal,

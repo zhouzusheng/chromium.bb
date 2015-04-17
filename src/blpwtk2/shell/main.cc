@@ -59,7 +59,7 @@ HANDLE g_hJob;
 #define FIND_ENTRY_WIDTH (BUTTON_WIDTH*6/4)
 #define FIND_BUTTON_WIDTH (BUTTON_WIDTH/4)
 #define URLBAR_HEIGHT  24
-#define AUTO_PUMP 1
+//#define AUTO_PUMP 1
 
 // control ids
 enum {

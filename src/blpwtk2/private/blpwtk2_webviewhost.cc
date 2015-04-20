@@ -335,11 +335,11 @@ void WebViewHost::updateNativeViews(blpwtk2::NativeView webview,
     Send(new BlpWebViewMsg_UpdateNativeViews(d_routingId, webview, hiddenView));
 }
 
-void WebViewHost::aboutToNativateRenderView(int rendererRoutingId)
+void WebViewHost::gotNewRenderViewRoutingId(int renderViewRoutingId)
 {
     if (d_isInProcess) {
-        Send(new BlpWebViewMsg_AboutToNavigateRenderView(d_routingId,
-                                                         rendererRoutingId));
+        Send(new BlpWebViewMsg_GotNewRenderViewRoutingId(d_routingId,
+                                                         renderViewRoutingId));
     }
 }
 

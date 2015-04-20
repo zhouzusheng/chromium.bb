@@ -37,7 +37,7 @@ public:
 
     virtual void updateNativeViews(blpwtk2::NativeView webview,
                                    blpwtk2::NativeView hiddenView) = 0;
-    virtual void aboutToNativateRenderView(int rendererRoutingId) = 0;
+    virtual void gotNewRenderViewRoutingId(int renderViewRoutingId) = 0;
     virtual void findStateWithReqId(int reqId,
                                     int numberOfMatches,
                                     int activeMatchOrdinal,

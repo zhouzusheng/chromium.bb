@@ -168,6 +168,6 @@ IPC_MESSAGE_ROUTED1(BlpWebViewMsg_MoveAck,
 IPC_MESSAGE_ROUTED2(BlpWebViewMsg_UpdateNativeViews,
                     blpwtk2::NativeViewForTransit /* webview */,
                     blpwtk2::NativeViewForTransit /* hiddenView */)
-IPC_MESSAGE_ROUTED1(BlpWebViewMsg_AboutToNavigateRenderView,
-                    int /* rendererRoutingId */)
+IPC_MESSAGE_ROUTED1(BlpWebViewMsg_GotNewRenderViewRoutingId,
+                    int /* renderViewRoutingId */)
 

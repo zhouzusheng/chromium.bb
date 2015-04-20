@@ -94,6 +94,7 @@ class WebViewImpl : public WebView,
     void handleFindRequest(const FindOnPageRequest& request);
     void handleExternalProtocol(const GURL& url);
     void overrideWebkitPrefs(content::WebPreferences* prefs);
+    void onRenderViewHostMadeCurrent(content::RenderViewHost* renderViewHost);
 
     /////////////// WebView overrides
 
@@ -229,14 +230,15 @@ class WebViewImpl : public WebView,
 
     /////// WebContentsObserver overrides
 
-    // This method is invoked after the WebContents decides which RenderFrameHost
-    // to use for the next browser-initiated navigation, but before the navigation
-    // starts.  It is not called for most renderer-initiated navigations, and it
-    // does not guarantee that the navigation will commit (e.g., 204s, downloads).
-    //
-    // DEPRECATED.  This method is difficult to use correctly and should be
-    // removed.  TODO(creis): Remove in http://crbug.com/424641.
-    void AboutToNavigateRenderFrame(content::RenderFrameHost* render_frame_host) override;
+    // This is called when a RVH is created for a WebContents, but not if it's an
+    // interstitial.
+    void RenderViewCreated(content::RenderViewHost* render_view_host) override;
+
+    // This method is invoked when a WebContents swaps its visible RenderViewHost
+    // with another one, possibly changing processes. The RenderViewHost that has
+    // been replaced is in |old_host|, which is NULL if the old RVH was shut down.
+    void RenderViewHostChanged(content::RenderViewHost* old_host,
+                               content::RenderViewHost* new_host) override;
 
     // This method is invoked when the navigation is done, i.e. the spinner of
     // the tab will stop spinning, and the onload event was dispatched.

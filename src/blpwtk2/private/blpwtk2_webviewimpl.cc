@@ -229,6 +229,20 @@ void WebViewImpl::overrideWebkitPrefs(content::WebPreferences* prefs)
     prefs->javascript_can_access_clipboard = d_properties.javascriptCanAccessClipboard;
 }
 
+void WebViewImpl::onRenderViewHostMadeCurrent(content::RenderViewHost* renderViewHost)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(renderViewHost);
+    if (d_wasDestroyed) return;
+    if (d_implClient) {
+        int routingId = renderViewHost->GetRoutingID();
+        d_implClient->gotNewRenderViewRoutingId(routingId);
+    }
+#ifdef BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
+    renderViewHost->EnableAltDragRubberbanding(d_altDragRubberbandingEnabled);
+#endif
+}
+
 void WebViewImpl::destroy()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -791,10 +805,9 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                  delegateParams,
                                  &newView->d_delegate);
 
-    // The new WebViewImpl doesn't receive these WebContentsObserver callbacks
-    // in the WebContentsCreated() path, so let's invoke them manually.
+    // The new WebViewImpl doesn't receive this WebContentsObserver callback
+    // in the WebContentsCreated() path, so let's invoke it manually.
     newView->RenderViewCreated(new_contents->GetRenderViewHost());
-    newView->AboutToNavigateRenderFrame(new_contents->GetMainFrame());
 }
 
 void WebViewImpl::CloseContents(content::WebContents* source)
@@ -1001,17 +1014,15 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 
 /////// WebContentsObserver overrides
 
-void WebViewImpl::AboutToNavigateRenderFrame(content::RenderFrameHost* render_frame_host)
+void WebViewImpl::RenderViewCreated(content::RenderViewHost* render_view_host)
 {
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed) return;
-    if (d_implClient) {
-        int routingId = d_webContents->GetRenderViewHost()->GetRoutingID();
-        d_implClient->aboutToNativateRenderView(routingId);
-    }
-#ifdef BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
-    d_webContents->GetRenderViewHost()->EnableAltDragRubberbanding(d_altDragRubberbandingEnabled);
-#endif
+    onRenderViewHostMadeCurrent(render_view_host);
+}
+
+void WebViewImpl::RenderViewHostChanged(content::RenderViewHost* old_host,
+                                        content::RenderViewHost* new_host)
+{
+    onRenderViewHostMadeCurrent(new_host);
 }
 
 void WebViewImpl::DidFinishLoad(content::RenderFrameHost* render_frame_host,

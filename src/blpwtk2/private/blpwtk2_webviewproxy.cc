@@ -59,10 +59,10 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeWebView(0)
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
-, d_rendererRoutingId(0)
+, d_renderViewRoutingId(0)
 , d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
-, d_gotRendererInfo(false)
+, d_gotRenderViewInfo(false)
 , d_ncDragNeedsAck(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -91,10 +91,10 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeWebView(0)
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
-, d_rendererRoutingId(0)
+, d_renderViewRoutingId(0)
 , d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
-, d_gotRendererInfo(false)
+, d_gotRenderViewInfo(false)
 , d_ncDragNeedsAck(false)
 {
     profileProxy->incrementWebViewCount();
@@ -127,10 +127,10 @@ WebFrame* WebViewProxy::mainFrame()
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(d_isMainFrameAccessible)
         << "You should wait for didFinishLoad";
-    DCHECK(d_gotRendererInfo);
+    DCHECK(d_gotRenderViewInfo);
 
     if (!d_mainFrame.get()) {
-        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
         DCHECK(rv);
 
         blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
@@ -169,9 +169,9 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(d_isMainFrameAccessible)
         << "You should wait for didFinishLoad";
-    DCHECK(d_gotRendererInfo);
+    DCHECK(d_gotRenderViewInfo);
 
-    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
     DCHECK(rv);
 
     for (size_t i=0; i < eventsCount; ++i) {
@@ -316,10 +316,10 @@ void WebViewProxy::takeKeyboardFocus()
 void WebViewProxy::setLogicalFocus(bool focused)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    if (d_gotRendererInfo) {
+    if (d_gotRenderViewInfo) {
         // If we have the renderer in-process, then set the logical focus
         // immediately so that handleInputEvents will work as expected.
-        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
         DCHECK(rv);
         rv->SetFocus(focused);
     }
@@ -383,12 +383,12 @@ void WebViewProxy::moveImpl(const gfx::Rect& rc)
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_moveAckPending);
 
-    if (d_gotRendererInfo && !rc.IsEmpty()) {
+    if (d_gotRenderViewInfo && !rc.IsEmpty()) {
         // If we have renderer info (only happens if we are in-process), we can
         // start resizing the RenderView while we are in the main thread.  This
         // is to avoid a round-trip delay waiting for the resize to get to the
         // browser thread, and it sending a ViewMsg_Resize back to this thread.
-        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
         DCHECK(rv);
         rv->SetSize(rc.size());
     }
@@ -543,7 +543,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
-        IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_GotNewRenderViewRoutingId, onGotNewRenderViewRoutingId)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -760,23 +760,23 @@ void WebViewProxy::onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, bl
     d_nativeHiddenView = (blpwtk2::NativeView)hiddenView;
 }
 
-void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)
+void WebViewProxy::onGotNewRenderViewRoutingId(int renderViewRoutingId)
 {
     content::RenderView* rv =
-        content::RenderView::FromRoutingID(rendererRoutingId);
+        content::RenderView::FromRoutingID(renderViewRoutingId);
     if (!rv) {
         // The RenderView has not been created yet.  Keep reposting this task
         // until the RenderView is available.
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
-            base::Bind(&WebViewProxy::onAboutToNavigateRenderView,
+            base::Bind(&WebViewProxy::onGotNewRenderViewRoutingId,
                        AsWeakPtr(),
-                       rendererRoutingId));
+                       renderViewRoutingId));
         return;
     }
 
-    d_gotRendererInfo = true;
-    d_rendererRoutingId = rendererRoutingId;
+    d_gotRenderViewInfo = true;
+    d_renderViewRoutingId = renderViewRoutingId;
 }
 
 }  // close namespace blpwtk2

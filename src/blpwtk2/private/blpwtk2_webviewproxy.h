@@ -164,7 +164,7 @@ class WebViewProxy : public WebView,
                      bool finalUpdate);
     void onMoveAck(const gfx::Rect& lastRect);
     void onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView);
-    void onAboutToNavigateRenderView(int rendererRoutingId);
+    void onGotNewRenderViewRoutingId(int renderViewRoutingId);
 
 
     ProfileProxy* d_profileProxy;
@@ -175,11 +175,11 @@ class WebViewProxy : public WebView,
     blpwtk2::NativeView d_nativeWebView;
     blpwtk2::NativeView d_nativeHiddenView;
     int d_routingId;
-    int d_rendererRoutingId;
+    int d_renderViewRoutingId;
     gfx::Rect d_lastMoveRect;
     bool d_moveAckPending;
     bool d_isMainFrameAccessible;
-    bool d_gotRendererInfo;
+    bool d_gotRenderViewInfo;
     bool d_ncDragNeedsAck;
 };
 

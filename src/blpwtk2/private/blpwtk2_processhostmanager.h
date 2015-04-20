@@ -66,10 +66,18 @@ class ProcessHostManager : private base::PlatformThread::Delegate {
         ProcessHost* d_host;
         base::WaitableEvent d_waitableEvent;
 
+        static base::ProcessHandle duplicateHandle(base::ProcessHandle handle)
+        {
+            base::ProcessHandle duplicate;
+            BOOL ret = ::DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS);
+            CHECK(ret);
+            return duplicate;
+        }
+
         ConnectedProcessHostEntry(ProcessHost* processHost,
                                   base::ProcessHandle processHandle)
         : d_host(processHost)
-        , d_waitableEvent(base::win::ScopedHandle(processHandle))
+        , d_waitableEvent(base::win::ScopedHandle(duplicateHandle(processHandle)))
         {
         }
 

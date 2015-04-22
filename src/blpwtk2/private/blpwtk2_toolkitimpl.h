@@ -85,6 +85,7 @@ class ToolkitImpl : public Toolkit {
     void postHandleMessage(const NativeMsg* msg) override;
     void clearWebCache() override;
     void setTimerHiddenPageAlignmentInterval(double) override;
+    v8::Local<v8::Context> createWebScriptContext() override;
 
   private:
     void createInProcessHost();

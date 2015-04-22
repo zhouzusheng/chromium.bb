@@ -83,6 +83,7 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_webviewcreateparams.h>
+#include <v8.h>
 
 namespace blpwtk2 {
 
@@ -173,6 +174,9 @@ class Toolkit {
     // By default, timers on hidden pages are aligned so that they fire once per
     // second at most.  This API changes that alignment interval.
     virtual void setTimerHiddenPageAlignmentInterval(double) = 0;
+
+    // Creates a V8 context that can access the DOM.
+    virtual v8::Local<v8::Context> createWebScriptContext() = 0;
 
   protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use

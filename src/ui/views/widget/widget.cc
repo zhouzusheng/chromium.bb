@@ -496,6 +496,10 @@ void Widget::SetBounds(const gfx::Rect& bounds) {
   native_widget_->SetBounds(bounds);
 }
 
+void Widget::SetBoundsNoDPIAdjustment(const gfx::Rect& bounds) {
+  native_widget_->SetBoundsNoDPIAdjustment(bounds);
+}
+
 void Widget::SetSize(const gfx::Size& size) {
   native_widget_->SetSize(size);
 }
@@ -1524,6 +1528,11 @@ bool Widget::GetSavedWindowPlacement(gfx::Rect* bounds,
 }
 
 scoped_ptr<InputMethod> Widget::CreateInputMethod() {
+  if (!HasFocusManager()) {
+    // TODO(shez): Figure out why HasFocusManager is sometimes false
+    LOG(WARNING) << "HasFocusManager is false!";
+    return scoped_ptr<InputMethod>();
+  }
   scoped_ptr<InputMethod> input_method(native_widget_->CreateInputMethod());
   if (input_method.get())
     input_method->Init(this);

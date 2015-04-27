@@ -30,6 +30,7 @@
 #include <third_party/WebKit/public/web/WebRuntimeFeatures.h>
 #include <third_party/WebKit/public/web/win/WebFontRendering.h>
 #include <ui/gfx/win/direct_write.h>
+#include <ui/gfx/win/dpi.h>
 
 namespace blpwtk2 {
 
@@ -41,6 +42,7 @@ static void InitDirectWrite()
 
     bool useDirectWrite = gfx::win::ShouldUseDirectWrite();
     blink::WebFontRendering::setUseDirectWrite(useDirectWrite);
+    blink::WebFontRendering::setDeviceScaleFactor(gfx::GetDPIScale());
 }
 
 class InProcessRendererThread : public base::Thread {

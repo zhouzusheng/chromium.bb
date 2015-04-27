@@ -2737,7 +2737,8 @@ LayoutRect RenderBlockFlow::selectionRectForPaintInvalidation(const RenderLayerM
 {
     LayoutRect rect = selectionGapRectsForPaintInvalidation(paintInvalidationContainer);
     // FIXME: groupedMapping() leaks the squashing abstraction.
-    if (paintInvalidationContainer->layer()->groupedMapping())
+    // TODO(shez): Investigate why layer() is sometimes null here.
+    if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
         RenderLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }

@@ -77,6 +77,7 @@ public:
     DataTransfer* dataTransfer() const { return isDragEvent() ? m_dataTransfer.get() : 0; }
 
     bool fromTouch() const { return m_syntheticEventType == PlatformMouseEvent::FromTouch; }
+    bool fromContextMenuKey() const { return m_syntheticEventType == PlatformMouseEvent::FromContextMenuKey; }
 
     virtual const AtomicString& interfaceName() const override;
 

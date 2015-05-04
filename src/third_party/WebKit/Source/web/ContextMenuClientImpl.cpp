@@ -183,9 +183,9 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, String& descript
 }
 
 // Forward declare this, it is implemented at the end of this file.
-static bool fireBbContextMenuEvent(LocalFrame*, WebContextMenuData&);
+static bool fireBbContextMenuEvent(LocalFrame*, WebContextMenuData&, bool);
 
-void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu)
+void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool fromContextMenuKey)
 {
     // Displaying the context menu in this function is a big hack as we don't
     // have context, i.e. whether this is being invoked via a script or in
@@ -392,7 +392,7 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu)
 
     data.node = r.innerNonSharedNode();
 
-    if (!fireBbContextMenuEvent(selectedFrame, data) && m_webView->client()) {
+    if (!fireBbContextMenuEvent(selectedFrame, data, fromContextMenuKey) && m_webView->client()) {
         WebLocalFrameImpl* selectedWebFrame = WebLocalFrameImpl::fromFrame(selectedFrame);
         selectedWebFrame->client()->showContextMenu(data);
     }
@@ -477,7 +477,7 @@ static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object
     obj->Set(v8::String::NewFromUtf8(isolate, name), array);
 }
 
-static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
+static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data, bool fromContextMenuKey)
 {
     v8::Isolate* isolate = toIsolate(frame);
     v8::HandleScope handleScope(isolate);
@@ -511,6 +511,7 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data)
     exposeString(isolate, detailObj, "frameURL", data.frameURL.string().utf8());
     exposeBool(isolate, detailObj, "hasImageContents", data.hasImageContents);
     exposeString(isolate, detailObj, "srcURL", data.srcURL.string().utf8());
+    exposeBool(isolate, detailObj, "fromContextMenuKey", fromContextMenuKey);
 
     CustomEventInit eventInit;
     eventInit.bubbles = true;
